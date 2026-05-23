@@ -1,0 +1,139 @@
+import request from "@/utils/request";
+
+// API 前缀来自分系统包 module_xxx → /xxx
+// 对齐 module_example/demo：业务接口固定为 /{prefix}/{module_name}
+const API_PATH = "/{{ api_route_prefix }}/{{ module_name }}";
+
+const {{ class_name }}API = {
+  // 列表查询
+  list{{ class_name }}(query: {{ class_name }}PageQuery) {
+    return request<ApiResponse<PageResult<{{ class_name }}Table[]>>>({
+      url: `${API_PATH}/list`,
+      method: "get",
+      params: query,
+    });
+  },
+
+  // 详情查询
+  detail{{ class_name }}(id: number) {
+    return request<ApiResponse<{{ class_name }}Table>>({
+      url: `${API_PATH}/detail/${id}`,
+      method: "get",
+    });
+  },
+
+  // 新增
+  create{{ class_name }}(body: {{ class_name }}Form) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/create`,
+      method: "post",
+      data: body,
+    });
+  },
+
+  // 修改（带主键）
+  update{{ class_name }}(id: number, body: {{ class_name }}Form) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/update/${id}`,
+      method: "put",
+      data: body,
+    });
+  },
+
+  // 删除（支持批量）
+  delete{{ class_name }}(ids: number[]) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/delete`,
+      method: "delete",
+      data: ids,
+    });
+  },
+
+  // 批量启用/停用
+  batch{{ class_name }}(body: BatchType) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/available/setting`,
+      method: "patch",
+      data: body,
+    });
+  },
+
+  // 导出
+  export{{ class_name }}(query: {{ class_name }}PageQuery) {
+    return request<Blob>({
+      url: `${API_PATH}/export`,
+      method: "post",
+      data: query,
+      responseType: "blob",
+    });
+  },
+
+  // 下载导入模板
+  downloadTemplate{{ class_name }}() {
+    return request<Blob>({
+      url: `${API_PATH}/download/template`,
+      method: "post",
+      responseType: "blob",
+    });
+  },
+
+  // 导入
+  import{{ class_name }}(body: FormData) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/import`,
+      method: "post",
+      data: body,
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  },
+};
+
+export default {{ class_name }}API;
+
+// ------------------------------
+// TS 类型声明
+// ------------------------------
+
+// 列表查询参数
+export interface {{ class_name }}PageQuery extends PageQuery {
+  {% for column in columns %}
+  {# query_type 为 BETWEEN 的字段由范围查询或单独字段表达，勿生成标量；勿使用不存在的 column.column #}
+  {# 主键列默认不参与查询（避免 id 混入搜索类型）；若确需查询请在模板中单独放开 #}
+  {% if column.is_query and column.column_name != pk_column_name and column.query_type != "BETWEEN" and column.column_name not in ['created_time', 'updated_time'] %}
+  {# LIKE 走字符串；EQ 等与列 python_type 一致（来自 DB→Python 映射） #}
+  {{ column.column_name }}?: {{
+    'string' if column.query_type == 'LIKE'
+    else (column.python_type | python_to_ts_type)
+  }};
+  {% endif %}
+  {% endfor %}
+  created_time?: string[];
+  updated_time?: string[];
+}
+
+// 列表展示项
+export interface {{ class_name }}Table extends BaseType {
+  {% if pk_column_name != 'id' and pk_column %}
+  {{ pk_column_name }}?: {{ pk_column.python_type | python_to_ts_type }};
+  {% endif %}
+  {% for column in columns %}
+  {% if column.column_name not in ['id', 'uuid', 'status', 'description', 'created_time', 'updated_time'] and column.column_name != pk_column_name %}
+  {{ column.column_name }}?: {{ column.python_type | python_to_ts_type }};
+  {% endif %}
+  {% endfor %}
+  created_by?: CommonType;
+  updated_by?: CommonType;
+  deleted_by?: CommonType;
+}
+
+// 新增/修改/详情表单参数
+export interface {{ class_name }}Form extends BaseFormType {
+  {% if pk_column_name != 'id' and pk_column %}
+  {{ pk_column_name }}?: {{ pk_column.python_type | python_to_ts_type }};
+  {% endif %}
+  {% for column in columns %}
+  {% if (column.is_insert or column.is_edit) and column.column_name not in ['uuid', 'status', 'description', 'created_time', 'updated_time', 'created_id', 'updated_id'] and column.column_name != pk_column_name %}
+  {{ column.column_name }}?: {{ column.python_type | python_to_ts_type }};
+  {% endif %}
+  {% endfor %}
+}
