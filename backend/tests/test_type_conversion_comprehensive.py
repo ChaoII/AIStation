@@ -5,6 +5,7 @@
 """
 
 import pytest
+
 from app.common.constant import GenConstant
 from app.config.setting import settings
 from app.plugin.module_generator.gencode.tools.gen_util import GenUtils

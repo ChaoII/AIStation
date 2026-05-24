@@ -54,15 +54,13 @@
               复制代码
             </el-link>
           </div>
-
-          <Codemirror
-            ref="cmRef"
-            v-model:value="code"
-            :options="cmOptions"
-            border
-            :readonly="true"
+          <CodeEditor
+            v-model="code"
+            :language="codeLanguage"
+            :theme="codeTheme"
+            readonly
             height="100%"
-            width="100%"
+            border
           />
         </el-scrollbar>
       </el-col>
@@ -71,16 +69,9 @@
 </template>
 
 <script setup lang="ts">
-import "codemirror/mode/javascript/javascript.js";
-import "codemirror/mode/python/python.js";
-import "codemirror/mode/htmlmixed/htmlmixed.js";
-import "codemirror/theme/dracula.css";
-import { computed, inject, onUnmounted, ref, watch } from "vue";
-import Codemirror from "codemirror-editor-vue3";
-import type { EditorConfiguration } from "codemirror";
-import type { CmComponentRef } from "codemirror-editor-vue3";
+import { computed } from "vue";
+import CodeEditor from "@/components/CodeEditor/index.vue";
 import { CopyDocument } from "@element-plus/icons-vue";
-import { GENCODE_CM_KEY } from "../gencodeInjectionKeys";
 import type { TreeNode } from "../types";
 
 defineOptions({ name: "GenPreviewStep" });
@@ -94,7 +85,8 @@ const props = defineProps<{
   previewLoading: boolean;
   previewTypeOptions: string[];
   filteredTreeData: TreeNode[];
-  cmOptions: EditorConfiguration;
+  codeLanguage: string;
+  codeTheme: string;
 }>();
 
 const isTreeEmpty = computed(() => !props.filteredTreeData || props.filteredTreeData.length === 0);
@@ -105,21 +97,6 @@ const emit = defineEmits<{
   "file-click": [data: TreeNode];
   "copy-code": [];
 }>();
-
-const cmRef = ref<CmComponentRef>();
-const injected = inject(GENCODE_CM_KEY, undefined);
-
-watch(
-  cmRef,
-  (v) => {
-    if (injected) injected.value = v;
-  },
-  { immediate: true }
-);
-
-onUnmounted(() => {
-  if (injected) injected.value = undefined;
-});
 
 function onTreeNodeClick(data: TreeNode) {
   emit("file-click", data);

@@ -51,13 +51,13 @@
             复制
           </el-link>
         </div>
-        <Codemirror
+        <CodeEditor
           ref="sqlRef"
-          v-model:value="sqlText"
-          :options="sqlOptions"
-          border
+          v-model="sqlText"
+          language="sql"
+          :theme="codeTheme"
           height="360px"
-          width="100%"
+          border
         />
       </el-scrollbar>
     </div>
@@ -169,12 +169,8 @@
 </template>
 
 <script setup lang="ts">
-import "codemirror/mode/sql/sql.js";
-import "codemirror/theme/dracula.css";
 import { ref, watch, nextTick, computed } from "vue";
-import Codemirror from "codemirror-editor-vue3";
-import type { EditorConfiguration } from "codemirror";
-import type { CmComponentRef } from "codemirror-editor-vue3";
+import CodeEditor from "@/components/CodeEditor/index.vue";
 import { ElMessage } from "element-plus";
 import { ArrowDown, CopyDocument } from "@element-plus/icons-vue";
 import { useClipboard } from "@vueuse/core";
@@ -222,11 +218,10 @@ const settingsStore = useSettingsStore();
 
 const editMode = ref<"sql" | "visual">("visual");
 const sqlText = ref("");
-const sqlRef = ref<CmComponentRef>();
+const sqlRef = ref();
 const visual = ref<VisualBuildState>(visualPresetSingle("mysql"));
 const visualPreviewSql = ref("");
 
-/** 单表 / 主子表：与「模板按钮」等价，用语义化文案降低理解成本 */
 const templateKind = computed({
   get: (): "single" | "masterSub" => (visual.value.subEnabled ? "masterSub" : "single"),
   set: (v: string) => {
@@ -234,31 +229,7 @@ const templateKind = computed({
   },
 });
 
-const codeTheme = ref(settingsStore.theme === ThemeMode.DARK ? "dracula" : "default");
-
-const sqlOptions: EditorConfiguration = {
-  mode: "text/x-sql",
-  lineNumbers: true,
-  smartIndent: true,
-  indentUnit: 2,
-  tabSize: 2,
-  readOnly: false,
-  theme: codeTheme.value,
-  lineWrapping: true,
-  autofocus: false,
-};
-
-watch(
-  () => settingsStore.theme,
-  (t) => {
-    const newTheme = t === ThemeMode.DARK ? "dracula" : "default";
-    codeTheme.value = newTheme;
-    sqlOptions.theme = newTheme;
-    if (sqlRef.value?.cminstance) {
-      sqlRef.value.cminstance.setOption("theme", newTheme);
-    }
-  }
-);
+const codeTheme = computed(() => (settingsStore.theme === ThemeMode.DARK ? "one-dark" : "default"));
 
 function onDialogOpened() {
   dialectWatchSkip = true;
@@ -266,8 +237,8 @@ function onDialogOpened() {
   sqlText.value = "";
   visual.value = visualPresetSingle("mysql");
   visualPreviewSql.value = "";
+  dialectWatchSkip = false;
   void nextTick(() => {
-    dialectWatchSkip = false;
     applyLinkFromGenIfAny();
   });
 }
@@ -302,7 +273,6 @@ watch(
 watch(editMode, (m) => {
   if (m === "sql") {
     sqlText.value = buildSqlFromVisual(applySubColumns(visual.value));
-    void nextTick(() => sqlRef.value?.cminstance?.refresh());
   } else {
     visualPreviewSql.value = buildSqlFromVisual(applySubColumns(visual.value));
   }
@@ -332,9 +302,8 @@ function syncVisualToSql() {
   sqlText.value = buildSqlFromVisual(applySubColumns(visual.value));
   editMode.value = "sql";
   void nextTick(() => {
-    sqlRef.value?.cminstance?.refresh();
+    ElMessage.success("已切换到「写 SQL」，可继续改");
   });
-  ElMessage.success("已切换到「写 SQL」，可继续改");
 }
 
 function onSqlPresetCommand(cmd: string) {

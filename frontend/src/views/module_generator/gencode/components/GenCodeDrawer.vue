@@ -41,7 +41,8 @@
         :preview-loading="previewLoading"
         :preview-type-options="previewTypeOptions"
         :filtered-tree-data="filteredTreeData"
-        :cm-options="cmOptions"
+        :code-language="codeLanguage"
+        :code-theme="codeTheme"
         @file-click="emit('file-click', $event)"
         @copy-code="emit('copy-code')"
       />
@@ -101,7 +102,6 @@
 import { computed } from "vue";
 import type { FormRules } from "element-plus";
 import { Close, Right, FolderOpened, Back, Download, Finished } from "@element-plus/icons-vue";
-import type { EditorConfiguration } from "codemirror";
 import type { GenTableSchema } from "@/api/module_generator/gencode";
 import type { DictTable } from "@/api/module_system/dict";
 import EnhancedDrawer from "@/components/CURD/EnhancedDrawer.vue";
@@ -123,7 +123,8 @@ const props = defineProps<{
   previewLoading: boolean;
   previewTypeOptions: string[];
   filteredTreeData: TreeNode[];
-  cmOptions: EditorConfiguration;
+  codeLanguage: string;
+  codeTheme: string;
   bulkSet: (field: string | string[], value: unknown) => void;
 }>();
 

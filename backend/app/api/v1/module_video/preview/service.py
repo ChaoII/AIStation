@@ -1,16 +1,15 @@
-from typing import Dict
 
+from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.exceptions import CustomException
 from app.core.media_server import media_server
+
 from ..camera.crud import CameraCRUD
-from ..camera.schema import CameraOutSchema
-from app.api.v1.module_system.auth.schema import AuthSchema
 
 
 class PreviewService:
 
     @classmethod
-    async def get_play_urls_service(cls, camera_id: int, auth: AuthSchema) -> Dict:
+    async def get_play_urls_service(cls, camera_id: int, auth: AuthSchema) -> dict:
         camera = await CameraCRUD(auth).get_by_id_crud(id=camera_id)
         if not camera:
             raise CustomException(msg="摄像机不存在")

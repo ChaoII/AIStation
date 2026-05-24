@@ -84,7 +84,6 @@
       :title="dialogVisible.title"
       width="1000px"
       @close="handleCloseDialog"
-      @opened="handleDialogOpened"
     >
       <el-splitter direction="horizontal" style="height: 500px">
         <el-splitter-panel size="300px" :min="200" :max="400">
@@ -184,13 +183,13 @@
               <span class="code-editor-title">处理器</span>
               <span class="code-editor-tip">定义 handler(*args, **kwargs) 函数</span>
             </div>
-            <Codemirror
+            <CodeEditor
               ref="codeEditorRef"
-              v-model:value="formData.func"
-              :options="codeEditorOptions"
+              v-model="formData.func"
+              language="python"
+              theme="one-dark"
+              :height="`calc(100% - 40px)`"
               border
-              height="calc(100% - 40px)"
-              width="100%"
             />
           </div>
         </el-splitter-panel>
@@ -353,29 +352,15 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
-import { nextTick, onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { vue3CronPlus } from "vue3-cron-plus";
 import "vue3-cron-plus/dist/index.css";
 import OperationColumn from "@/components/OperationColumn/index.vue";
 import IntervalTab from "@/components/IntervalTab/index.vue";
-import Codemirror, { CmComponentRef } from "codemirror-editor-vue3";
-import type { EditorConfiguration } from "codemirror";
-import "codemirror/mode/python/python.js";
-import "codemirror/theme/dracula.css";
+import CodeEditor from "@/components/CodeEditor/index.vue";
 
 const dictStore = useDictStore();
-
-const codeEditorOptions: EditorConfiguration = {
-  mode: "python",
-  lineNumbers: true,
-  smartIndent: true,
-  indentUnit: 4,
-  tabSize: 4,
-  theme: "dracula",
-  lineWrapping: true,
-  autofocus: false,
-};
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const dataFormRef = ref();
@@ -383,7 +368,7 @@ const executeFormRef = ref();
 const submitLoading = ref(false);
 const openCron = ref(false);
 const openInterval = ref(false);
-const codeEditorRef = ref<CmComponentRef>();
+const codeEditorRef = ref();
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_task:cronjob:node",
@@ -595,14 +580,6 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
     kwargsList.value = [];
   }
   dialogVisible.visible = true;
-}
-
-function handleDialogOpened() {
-  nextTick(() => {
-    setTimeout(() => {
-      codeEditorRef.value?.refresh?.();
-    }, 100);
-  });
 }
 
 async function handleSubmit() {

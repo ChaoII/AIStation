@@ -206,7 +206,8 @@
       :preview-loading="previewLoading"
       :preview-type-options="previewTypeOptions"
       :filtered-tree-data="filteredTreeData"
-      :cm-options="cmOptions"
+      :code-language="codeLanguage"
+      :code-theme="codeTheme"
       :bulk-set="bulkSet"
       @close="handleClose"
       @prev-step="prevStep"
@@ -228,11 +229,9 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { ref, reactive, computed, onActivated, watch, nextTick, unref, provide } from "vue";
+import { ref, reactive, computed, onActivated, nextTick, unref, provide } from "vue";
 import { useClipboard } from "@vueuse/core";
 import { useRoute } from "vue-router";
-import type { EditorConfiguration } from "codemirror";
-import type { CmComponentRef } from "codemirror-editor-vue3";
 import { ElMessage, ElMessageBox, type FormInstance } from "element-plus";
 import { MagicStick } from "@element-plus/icons-vue";
 import GencodeAPI, {
@@ -252,7 +251,7 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import CreateTableDialog, { type CreateTableSubmitMeta } from "./components/CreateTableDialog.vue";
 import GenCodeDrawer from "./components/GenCodeDrawer.vue";
 import ImportDbTableDialog from "./components/ImportDbTableDialog.vue";
-import { GENCODE_BASIC_FORM_KEY, GENCODE_CM_KEY } from "./gencodeInjectionKeys";
+import { GENCODE_BASIC_FORM_KEY } from "./gencodeInjectionKeys";
 import type { TreeNode } from "./types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
@@ -276,13 +275,11 @@ interface FileData {
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
-// 组件引用（与子组件 inject 同步，供校验 / CodeMirror 主题）
-const cmRef = ref<CmComponentRef>();
+// 组件引用（与子组件 inject 同步，供校验）
 const basicInfo = ref<FormInstance>();
 const importDbDialogRef = ref<InstanceType<typeof ImportDbTableDialog>>();
 
 provide(GENCODE_BASIC_FORM_KEY, basicInfo);
-provide(GENCODE_CM_KEY, cmRef);
 
 // 状态管理
 const loading = ref(false);
@@ -401,28 +398,8 @@ const contentConfig = reactive<IContentConfig<GenTablePageQuery>>({
 
 const settingsStore = useSettingsStore();
 
-// 主题计算属性
-const codeTheme = computed(() => (settingsStore.theme === ThemeMode.DARK ? "dracula" : "default"));
-
-// 监听主题变化并更新CodeMirror实例
-watch(codeTheme, (newTheme) => {
-  if (cmRef.value && cmRef.value.cminstance) {
-    cmRef.value.cminstance.setOption("theme", newTheme);
-  }
-});
-
-// CodeMirror配置
-const cmOptions: EditorConfiguration = {
-  mode: "text/javascript",
-  lineNumbers: true,
-  smartIndent: true,
-  indentUnit: 2,
-  tabSize: 2,
-  readOnly: false,
-  theme: codeTheme.value,
-  lineWrapping: true,
-  autofocus: false,
-};
+const codeTheme = computed(() => (settingsStore.theme === ThemeMode.DARK ? "one-dark" : "default"));
+const codeLanguage = ref("javascript");
 
 // 工具函数
 const { copy } = useClipboard();
@@ -542,13 +519,10 @@ function findFirstLeafInTree(nodes: TreeNode[]): TreeNode | null {
 
 /** 按文件名切换预览区语法高亮 */
 function applyPreviewEditorMode(fileLabel: string) {
-  const inst = cmRef.value?.cminstance;
-  if (!inst) return;
-  let mode = "text/javascript";
-  if (fileLabel.endsWith(".py")) mode = "text/x-python";
-  else if (fileLabel.endsWith(".vue")) mode = "text/html";
-  else if (fileLabel.endsWith(".ts")) mode = "text/typescript";
-  inst.setOption("mode", mode);
+  if (fileLabel.endsWith(".py")) codeLanguage.value = "python";
+  else if (fileLabel.endsWith(".vue")) codeLanguage.value = "html";
+  else if (fileLabel.endsWith(".ts")) codeLanguage.value = "typescript";
+  else codeLanguage.value = "javascript";
 }
 
 /** 获取生成预览 */

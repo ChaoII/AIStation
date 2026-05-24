@@ -1,8 +1,7 @@
-from datetime import datetime
-from typing import Optional, List
 from pydantic import BaseModel, Field
 
-from app.core.base_schema import BaseSchema
+from app.core.base_schema import BaseSchema, CommonSchema
+from app.core.validator import DateTimeStr
 
 
 class CameraCreateSchema(BaseModel):
@@ -10,33 +9,33 @@ class CameraCreateSchema(BaseModel):
     device_type: str = Field(default="IP_CAMERA", description="设备类型")
     stream_type: str = Field(default="MAIN", description="码流类型")
 
-    rtsp_url_main: Optional[str] = Field(default=None, description="主码流RTSP")
-    rtsp_url_sub: Optional[str] = Field(default=None, description="子码流RTSP")
-    onvif_address: Optional[str] = Field(default=None, description="ONVIF地址")
+    rtsp_url_main: str | None = Field(default=None, description="主码流RTSP")
+    rtsp_url_sub: str | None = Field(default=None, description="子码流RTSP")
+    onvif_address: str | None = Field(default=None, description="ONVIF地址")
     onvif_port: int = Field(default=80, description="ONVIF端口")
 
-    gb28181_device_id: Optional[str] = Field(default=None, description="GB28181设备ID")
-    gb28181_channel_id: Optional[str] = Field(default=None, description="GB28181通道ID")
+    gb28181_device_id: str | None = Field(default=None, description="GB28181设备ID")
+    gb28181_channel_id: str | None = Field(default=None, description="GB28181通道ID")
 
-    username: Optional[str] = Field(default=None, max_length=64, description="用户名")
-    password: Optional[str] = Field(default=None, max_length=128, description="密码")
+    username: str | None = Field(default=None, max_length=64, description="用户名")
+    password: str | None = Field(default=None, max_length=128, description="密码")
 
-    group_id: Optional[int] = Field(default=None, description="分组ID")
-    location: Optional[str] = Field(default=None, max_length=256, description="安装位置")
-    latitude: Optional[float] = Field(default=None, description="纬度")
-    longitude: Optional[float] = Field(default=None, description="经度")
+    group_id: int | None = Field(default=None, description="分组ID")
+    location: str | None = Field(default=None, max_length=256, description="安装位置")
+    latitude: float | None = Field(default=None, description="纬度")
+    longitude: float | None = Field(default=None, description="经度")
 
-    brand: Optional[str] = Field(default=None, max_length=64, description="品牌")
-    model_name: Optional[str] = Field(default=None, max_length=64, description="型号")
-    firmware: Optional[str] = Field(default=None, max_length=64, description="固件")
+    brand: str | None = Field(default=None, max_length=64, description="品牌")
+    model_name: str | None = Field(default=None, max_length=64, description="型号")
+    firmware: str | None = Field(default=None, max_length=64, description="固件")
 
-    extra: Optional[dict] = Field(default=None, description="扩展属性")
+    extra: dict | None = Field(default=None, description="扩展属性")
     sort_order: int = Field(default=0, description="排序")
-    description: Optional[str] = Field(default=None, max_length=255, description="备注")
+    description: str | None = Field(default=None, max_length=255, description="备注")
 
 
 class CameraUpdateSchema(CameraCreateSchema):
-    name: Optional[str] = Field(default=None, max_length=128, description="摄像机名称")
+    name: str | None = Field(default=None, max_length=128, description="摄像机名称")
 
 
 class CameraOutSchema(BaseSchema):
@@ -44,31 +43,57 @@ class CameraOutSchema(BaseSchema):
     device_type: str = Field(description="设备类型")
     stream_type: str = Field(description="码流类型")
 
-    rtsp_url_main: Optional[str] = None
-    rtsp_url_sub: Optional[str] = None
-    onvif_address: Optional[str] = None
+    rtsp_url_main: str | None = None
+    rtsp_url_sub: str | None = None
+    onvif_address: str | None = None
     onvif_port: int = 80
 
-    gb28181_device_id: Optional[str] = None
-    gb28181_channel_id: Optional[str] = None
+    gb28181_device_id: str | None = None
+    gb28181_channel_id: str | None = None
 
     status: str = "OFFLINE"
-    stream_status: Optional[str] = None
-    stream_id: Optional[str] = None
-    last_online_time: Optional[str] = None
+    stream_status: str | None = None
+    stream_id: str | None = None
+    stream_source: str | None = None
+    last_online_time: DateTimeStr | None = None
 
-    group_id: Optional[int] = None
-    group: Optional[dict] = None
+    group_id: int | None = None
+    group: CommonSchema | None = None
 
-    location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    location: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
-    brand: Optional[str] = None
-    model_name: Optional[str] = None
-    firmware: Optional[str] = None
+    brand: str | None = None
+    model_name: str | None = None
+    firmware: str | None = None
 
-    extra: Optional[dict] = None
+    extra: dict | None = None
     sort_order: int = 0
 
-    play_urls: Optional[dict] = None
+    play_urls: dict | None = None
+
+
+class CameraGroupCreateSchema(BaseModel):
+    name: str = Field(..., max_length=64, description="分组名称")
+    parent_id: int | None = Field(default=None, description="上级分组ID")
+    sort_order: int = Field(default=0, description="排序")
+    status: bool = Field(default=True, description="是否启用")
+    description: str | None = Field(default=None, max_length=255, description="备注")
+
+
+class CameraGroupUpdateSchema(CameraGroupCreateSchema):
+    name: str | None = Field(default=None, max_length=64, description="分组名称")
+
+
+class CameraGroupOutSchema(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    name: str
+    parent_id: int | None = None
+    sort_order: int = 0
+    status: bool = True
+    description: str | None = None
+    created_at: DateTimeStr | None = None
+    updated_at: DateTimeStr | None = None

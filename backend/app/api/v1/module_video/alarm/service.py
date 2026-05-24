@@ -1,31 +1,34 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from app.core.exceptions import CustomException
 from app.api.v1.module_system.auth.schema import AuthSchema
-from .model import AlarmRecordModel, AlarmRuleModel
+from app.core.exceptions import CustomException
+
 from .schema import (
-    AlarmRuleCreateSchema, AlarmRuleUpdateSchema,
-    AlarmRuleOutSchema, AlarmRecordOutSchema, AlarmRecordConfirmSchema
+    AlarmRecordConfirmSchema,
+    AlarmRecordOutSchema,
+    AlarmRuleCreateSchema,
+    AlarmRuleOutSchema,
+    AlarmRuleUpdateSchema,
 )
 
 
 class AlarmService:
 
     @classmethod
-    async def get_rule_list_service(cls, auth: AuthSchema, search: Optional[Any] = None) -> List[Dict]:
+    async def get_rule_list_service(cls, auth: AuthSchema, search: Any | None = None) -> list[dict]:
         from .crud import AlarmRuleCRUD
         rules = await AlarmRuleCRUD(auth).get_list_crud(search=search.__dict__ if search else None)
         return [AlarmRuleOutSchema.model_validate(r).model_dump() for r in rules]
 
     @classmethod
-    async def create_rule_service(cls, data: AlarmRuleCreateSchema, auth: AuthSchema) -> Dict:
+    async def create_rule_service(cls, data: AlarmRuleCreateSchema, auth: AuthSchema) -> dict:
         from .crud import AlarmRuleCRUD
         new_rule = await AlarmRuleCRUD(auth).create(data=data)
         return AlarmRuleOutSchema.model_validate(new_rule).model_dump()
 
     @classmethod
-    async def update_rule_service(cls, id: int, data: AlarmRuleUpdateSchema, auth: AuthSchema) -> Dict:
+    async def update_rule_service(cls, id: int, data: AlarmRuleUpdateSchema, auth: AuthSchema) -> dict:
         from .crud import AlarmRuleCRUD
         rule = await AlarmRuleCRUD(auth).get_by_id_crud(id=id)
         if not rule:
@@ -34,12 +37,12 @@ class AlarmService:
         return AlarmRuleOutSchema.model_validate(updated).model_dump()
 
     @classmethod
-    async def delete_rule_service(cls, ids: List[int], auth: AuthSchema) -> None:
+    async def delete_rule_service(cls, ids: list[int], auth: AuthSchema) -> None:
         from .crud import AlarmRuleCRUD
         await AlarmRuleCRUD(auth).delete(ids=ids)
 
     @classmethod
-    async def get_record_list_service(cls, auth: AuthSchema, search: Optional[Any] = None) -> List[Dict]:
+    async def get_record_list_service(cls, auth: AuthSchema, search: Any | None = None) -> list[dict]:
         from .crud import AlarmRecordCRUD
         records = await AlarmRecordCRUD(auth).get_list_crud(
             search=search.__dict__ if search else None,
@@ -48,7 +51,7 @@ class AlarmService:
         return [AlarmRecordOutSchema.model_validate(r).model_dump() for r in records]
 
     @classmethod
-    async def get_realtime_alarms_service(cls, auth: AuthSchema) -> List[Dict]:
+    async def get_realtime_alarms_service(cls, auth: AuthSchema) -> list[dict]:
         from .crud import AlarmRecordCRUD
         records = await AlarmRecordCRUD(auth).get_list_crud(
             search={"status": "PENDING"},
@@ -57,7 +60,7 @@ class AlarmService:
         return [AlarmRecordOutSchema.model_validate(r).model_dump() for r in records[:100]]
 
     @classmethod
-    async def confirm_alarm_service(cls, id: int, data: AlarmRecordConfirmSchema, auth: AuthSchema) -> Dict:
+    async def confirm_alarm_service(cls, id: int, data: AlarmRecordConfirmSchema, auth: AuthSchema) -> dict:
         from .crud import AlarmRecordCRUD
         record = await AlarmRecordCRUD(auth).get(id=id)
         if not record:
@@ -72,12 +75,12 @@ class AlarmService:
         return AlarmRecordOutSchema.model_validate(updated).model_dump()
 
     @classmethod
-    async def delete_record_service(cls, ids: List[int], auth: AuthSchema) -> None:
+    async def delete_record_service(cls, ids: list[int], auth: AuthSchema) -> None:
         from .crud import AlarmRecordCRUD
         await AlarmRecordCRUD(auth).delete(ids=ids)
 
     @classmethod
-    async def create_alarm_record(cls, auth: AuthSchema, data: Dict) -> Dict:
+    async def create_alarm_record(cls, auth: AuthSchema, data: dict) -> dict:
         from .crud import AlarmRecordCRUD
         new_record = await AlarmRecordCRUD(auth).create(data=data)
         return AlarmRecordOutSchema.model_validate(new_record).model_dump()

@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path
 from fastapi.responses import JSONResponse
 
+from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
 from app.core.dependencies import get_current_user
-from app.core.base_params import PaginationQueryParam
-from app.core.media_server import media_server
-from app.api.v1.module_system.auth.schema import AuthSchema
+
 from .service import PreviewService
 
 PreviewRouter = APIRouter(prefix="/preview", tags=["实时预览"])

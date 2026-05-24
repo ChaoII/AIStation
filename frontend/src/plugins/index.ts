@@ -6,7 +6,6 @@ import { setupRouter } from "@/router";
 import { setupStore } from "@/store";
 import { setupElIcons } from "./icons";
 import { setupPermission } from "./permission";
-import { InstallCodeMirror } from "codemirror-editor-vue3";
 import ElementPlus from "element-plus";
 
 export default {
@@ -23,8 +22,6 @@ export default {
     setupElIcons(app);
     // 路由守卫
     setupPermission();
-    // 注册 CodeMirror
-    app.use(InstallCodeMirror);
     // 注册 ElementPlus
     app.use(ElementPlus);
   },

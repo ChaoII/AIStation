@@ -24,6 +24,110 @@ from app.utils.console import console_close, console_run
 from .initialize import InitializeData
 
 
+async def _ensure_algorithm_columns() -> None:
+    """Add new columns to existing algorithm tables if they don't exist."""
+    from sqlalchemy import text as sa_text
+
+    from app.core.database import async_engine
+
+    new_columns = {
+        "video_algorithms": [
+            ("model_file_config", "JSONB"),
+            ("runtime_config", "JSONB"),
+            ("preset_params", "JSONB"),
+        ],
+        "video_algorithm_tasks": [
+            ("runtime_overrides", "JSONB"),
+            ("params_overrides", "JSONB"),
+        ],
+    }
+    async with async_engine.begin() as conn:
+        for table, columns in new_columns.items():
+            for col_name, col_type in columns:
+                try:
+                    await conn.execute(
+                        sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
+                    )
+                except Exception:
+                    pass  # column may already exist
+
+
+async def _ensure_deploy_menu() -> None:
+    """Ensure the 智能布控 menu entry exists in the database."""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "VideoDeploy")
+            )
+            existing_menu = existing.scalar_one_or_none()
+            if existing_menu:
+                if existing_menu.icon or not existing_menu.title:
+                    existing_menu.icon = None
+                if not existing_menu.title:
+                    existing_menu.title = "智能布控"
+            else:
+                parent = await db.execute(
+                    select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+                )
+                parent_menu = parent.scalar_one_or_none()
+                if not parent_menu:
+                    log.warning("⚠️  未找到视频监控父菜单，跳过智能布控菜单注册")
+                    return
+
+                menu = MenuModel(
+                    name="智能布控",
+                    type=2,
+                    icon=None,
+                    order=9,
+                    route_name="VideoDeploy",
+                    route_path="/video/deploy",
+                    component_path="module_video/deploy/index",
+                    permission="module_video:deploy:query",
+                    parent_id=parent_menu.id,
+                    status="0",
+                    is_deleted=False,
+                    title="智能布控",
+                )
+                db.add(menu)
+                await db.flush()
+
+                from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+                admin_role = await db.execute(
+                    select(RoleModel).where(RoleModel.id == 1)
+                )
+                admin = admin_role.scalar_one_or_none()
+                if admin:
+                    db.add(RoleMenusModel(role_id=admin.id, menu_id=menu.id))
+                log.info("✅ 智能布控菜单已注册")
+
+            # Assign icons to video sub-menus that lack them
+            icon_map = {
+                "实时预览": "el-icon-VideoCameraFilled",
+                "录像回放": "el-icon-VideoPlay",
+                "相机管理": "el-icon-CameraFilled",
+                "分组管理": "el-icon-FolderOpened",
+                "录像计划": "el-icon-Timer",
+                "报警管理": "el-icon-BellFilled",
+                "算法管理": "el-icon-Aim",
+                "布局管理": "el-icon-Grid",
+                "事件联动": "el-icon-Connection",
+                "智能布控": "el-icon-MagicStick",
+            }
+            for name, icon in icon_map.items():
+                menu_item = await db.execute(
+                    select(MenuModel).where(MenuModel.name == name, MenuModel.type == 2)
+                )
+                item = menu_item.scalar_one_or_none()
+                if item and (not item.icon or item.icon != icon):
+                    item.icon = icon
+            log.info("✅ 视频模块菜单图标已更新")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     """
@@ -42,6 +146,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     try:
         await InitializeData().init_db()
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
+        await _ensure_algorithm_columns()
+        await _ensure_deploy_menu()
         await import_modules_async(
             modules=settings.EVENT_LIST, desc="全局事件", app=app, status=True
         )
@@ -136,7 +242,7 @@ def register_routers(app: FastAPI) -> None:
     from app.api.v1.module_common import common_router
     from app.api.v1.module_monitor import monitor_router
     from app.api.v1.module_system import system_router
-    from app.api.v1.module_video import video_router, _register_video_routers
+    from app.api.v1.module_video import _register_video_routers, video_router
 
     _register_video_routers()
     app.include_router(common_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])

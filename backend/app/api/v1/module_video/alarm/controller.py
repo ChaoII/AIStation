@@ -1,16 +1,16 @@
-from typing import Optional
-from fastapi import APIRouter, Depends, Body, Path, Query
+
+from fastapi import APIRouter, Body, Depends, Path, Query
 from fastapi.responses import JSONResponse
 
-from app.common.response import SuccessResponse
-from app.common.request import PaginationService
-from app.core.router_class import OperationLogRoute
-from app.core.dependencies import get_current_user, AuthPermission
-from app.core.base_params import PaginationQueryParam
-from app.core.logger import logger
 from app.api.v1.module_system.auth.schema import AuthSchema
+from app.common.request import PaginationService
+from app.common.response import SuccessResponse
+from app.core.base_params import PaginationQueryParam
+from app.core.dependencies import AuthPermission, get_current_user
+from app.core.router_class import OperationLogRoute
+
+from .schema import AlarmRecordConfirmSchema, AlarmRuleCreateSchema, AlarmRuleUpdateSchema
 from .service import AlarmService
-from .schema import AlarmRuleCreateSchema, AlarmRuleUpdateSchema, AlarmRecordConfirmSchema
 
 AlarmRouter = APIRouter(route_class=OperationLogRoute, prefix="/alarm", tags=["告警管理"])
 
@@ -56,10 +56,10 @@ async def delete_rule_controller(
 @AlarmRouter.get("/record/list", summary="查询告警记录列表")
 async def get_record_list_controller(
     page: PaginationQueryParam = Depends(),
-    camera_id: Optional[int] = Query(None, description="摄像机ID"),
-    alarm_type: Optional[str] = Query(None, description="告警类型"),
-    severity: Optional[str] = Query(None, description="严重级别"),
-    status: Optional[str] = Query(None, description="状态"),
+    camera_id: int | None = Query(None, description="摄像机ID"),
+    alarm_type: str | None = Query(None, description="告警类型"),
+    severity: str | None = Query(None, description="严重级别"),
+    status: str | None = Query(None, description="状态"),
     auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:query"])),
 ) -> JSONResponse:
     from .param import AlarmRecordQueryParam

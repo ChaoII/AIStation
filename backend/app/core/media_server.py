@@ -1,9 +1,9 @@
-import httpx
-from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
-from app.core.logger import logger
+import httpx
+
 from app.config.setting import settings
+from app.core.logger import logger
 
 
 class MediaServerClient:
@@ -12,9 +12,9 @@ class MediaServerClient:
         secret = secret or settings.ZLM_SECRET
         self.base_url = base_url.rstrip("/")
         self.secret = secret
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
-    async def _request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
+    async def _request(self, endpoint: str, params: dict | None = None) -> dict:
         url = urljoin(f"{self.base_url}/", endpoint.lstrip("/"))
         data = {"secret": self.secret} if self.secret else {}
         if params:
@@ -37,10 +37,12 @@ class MediaServerClient:
             await self._client.aclose()
             self._client = None
 
-    async def add_stream_proxy(self, url: str, stream_id: str, **kwargs) -> Dict:
+    async def add_stream_proxy(self, url: str, stream_id: str, **kwargs) -> dict:
         params = {
             "url": url,
-            "stream_id": stream_id,
+            "stream": stream_id,
+            "vhost": kwargs.get("vhost", "__defaultVhost__"),
+            "app": kwargs.get("app", "live"),
             "enable_rtsp": kwargs.get("enable_rtsp", True),
             "enable_rtmp": kwargs.get("enable_rtmp", True),
             "enable_hls": kwargs.get("enable_hls", True),
@@ -50,12 +52,12 @@ class MediaServerClient:
         }
         return await self._request("/index/api/addStreamProxy", params)
 
-    async def close_stream(self, stream_id: str) -> Dict:
+    async def close_stream(self, stream_id: str) -> dict:
         return await self._request("/index/api/close_streams", {
             "stream_id": stream_id
         })
 
-    async def get_media_list(self, scheme: str = "") -> List[Dict]:
+    async def get_media_list(self, scheme: str = "") -> list[dict]:
         result = await self._request("/index/api/getMediaList", {"scheme": scheme})
         return result if isinstance(result, list) else []
 
@@ -64,22 +66,22 @@ class MediaServerClient:
         data = result if isinstance(result, list) else []
         return len(data) > 0
 
-    async def start_record(self, stream_id: str, type: str = "mp4", app: str = "live") -> Dict:
+    async def start_record(self, stream_id: str, type: str = "mp4", app: str = "live") -> dict:
         return await self._request("/index/api/startRecord", {
             "type": type, "app": app, "stream_id": stream_id,
         })
 
-    async def stop_record(self, stream_id: str, type: str = "mp4", app: str = "live") -> Dict:
+    async def stop_record(self, stream_id: str, type: str = "mp4", app: str = "live") -> dict:
         return await self._request("/index/api/stopRecord", {
             "type": type, "app": app, "stream_id": stream_id,
         })
 
-    async def get_record_status(self, stream_id: str, type: str = "mp4", app: str = "live") -> Dict:
+    async def get_record_status(self, stream_id: str, type: str = "mp4", app: str = "live") -> dict:
         return await self._request("/index/api/getRecordStatus", {
             "type": type, "app": app, "stream_id": stream_id,
         })
 
-    async def get_record_files(self, stream_id: str, app: str = "live", period: str = "") -> List[Dict]:
+    async def get_record_files(self, stream_id: str, app: str = "live", period: str = "") -> list[dict]:
         result = await self._request("/index/api/getMp4RecordFile", {
             "app": app, "stream_id": stream_id, "period": period,
         })
@@ -97,12 +99,20 @@ class MediaServerClient:
         result = await self._request("/index/api/version")
         return result if isinstance(result, str) else ""
 
-    def get_play_urls(self, stream_id: str, app: str = "live") -> Dict[str, str]:
+    async def webrtc_signaling(self, stream_id: str, sdp_offer: str, app: str = "live", play_type: str = "play") -> dict:
+        url = f"{self.base_url}/index/api/webrtc"
+        params = {"secret": self.secret, "app": app, "stream": stream_id, "type": play_type}
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, params=params, content=sdp_offer, headers={"Content-Type": "text/plain"})
+            resp.raise_for_status()
+            return resp.json()
+
+    def get_play_urls(self, stream_id: str, app: str = "live") -> dict[str, str]:
         host = self.base_url.replace("http://", "").replace("https://", "")
         return {
             "webrtc": f"webrtc://{host}/rtc/{app}/{stream_id}",
-            "flv": f"{self.base_url}/{app}/{stream_id}.flv",
-            "hls": f"{self.base_url}/{app}/{stream_id}.hls.m3u8",
+            "flv": f"{self.base_url}/{app}/{stream_id}.live.flv",
+            "hls": f"{self.base_url}/{app}/{stream_id}/hls.m3u8",
             "ws_flv": f"ws://{host}/{app}/{stream_id}.live.flv",
             "rtsp": f"rtsp://{host}/{app}/{stream_id}",
             "rtmp": f"rtmp://{host}/{app}/{stream_id}",
