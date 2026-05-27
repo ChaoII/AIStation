@@ -337,6 +337,21 @@
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
         </el-form-item>
+        <el-form-item label="关联摄像机" prop="camera_id">
+          <el-select v-model="ruleForm.camera_id" filterable placeholder="选择摄像机" style="width: 100%">
+            <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="算法布控任务" prop="algorithm_task_id">
+          <el-select v-model="ruleForm.algorithm_task_id" filterable clearable placeholder="可选—关联智能布控任务" style="width: 100%">
+            <el-option
+              v-for="t in algorithmTaskOptions"
+              :key="t.id"
+              :label="(t.camera?.name || '?') + ' — ' + (t.algorithm?.name || '?')"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="告警类型" prop="alarm_type">
@@ -361,6 +376,81 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="通知方式" prop="notify_channels">
+          <div style="width: 100%">
+            <el-checkbox-group v-model="ruleChannelSelection">
+              <el-checkbox label="WS_PUSH">WS 推送</el-checkbox>
+              <el-checkbox label="SMS">短信</el-checkbox>
+              <el-checkbox label="EMAIL">邮件</el-checkbox>
+              <el-checkbox label="WEBHOOK">Webhook/REST API</el-checkbox>
+            </el-checkbox-group>
+            <div v-if="ruleChannelSelection.includes('EMAIL')" class="notify-config-block">
+              <div class="notify-config-label">邮件收件人</div>
+              <el-input
+                v-model="ruleChannelEmailTo"
+                placeholder="admin@example.com, ops@example.com（逗号分隔）"
+                clearable
+                size="small"
+              />
+            </div>
+            <div v-if="ruleChannelSelection.includes('SMS')" class="notify-config-block">
+              <div class="notify-config-label">短信接收号码</div>
+              <el-input
+                v-model="ruleChannelSmsPhones"
+                placeholder="13800138000, 13900139000（逗号分隔）"
+                clearable
+                size="small"
+              />
+            </div>
+            <div v-if="ruleChannelSelection.includes('WEBHOOK')" class="notify-config-block">
+              <div class="notify-config-label">Webhook URL</div>
+              <div class="notify-webhook-row">
+                <el-select v-model="ruleChannelWebhookMethod" size="small" style="width: 100px">
+                  <el-option label="POST" value="POST" />
+                  <el-option label="GET" value="GET" />
+                </el-select>
+                <el-input
+                  v-model="ruleChannelWebhookUrl"
+                  placeholder="https://hooks.example.com/alarm"
+                  clearable
+                  size="small"
+                />
+              </div>
+              <div class="notify-config-label" style="margin-top: 6px">签名密钥（可选）</div>
+              <el-input
+                v-model="ruleChannelWebhookSecret"
+                placeholder="留空则使用全局配置"
+                clearable
+                size="small"
+                type="password"
+                show-password
+              />
+              <div class="notify-config-label" style="margin-top: 6px">自定义请求头（JSON 格式，可选）</div>
+              <el-input
+                v-model="ruleChannelWebhookHeaders"
+                placeholder='{"Authorization": "Bearer xxx"}'
+                clearable
+                size="small"
+                :rows="2"
+                type="textarea"
+              />
+              <div class="notify-config-label" style="margin-top: 6px">
+                请求体模板（可选，支持变量替换）
+              </div>
+              <el-input
+                v-model="ruleChannelWebhookTemplate"
+                placeholder='留空则发送完整JSON: {"alarm_id":1,"alarm_type":"INTRUSION",...}'
+                clearable
+                size="small"
+                :rows="3"
+                type="textarea"
+              />
+              <div class="notify-config-hint">
+              可用变量: <code>{{ alarm_vars.alarm_type }}</code> <code>{{ alarm_vars.severity }}</code> <code>{{ alarm_vars.camera_name }}</code> <code>{{ alarm_vars.alarm_time }}</code> <code>{{ alarm_vars.description }}</code> <code>{{ alarm_vars.rule_name }}</code> <code>{{ alarm_vars.snapshot_url }}</code> <code>{{ alarm_vars.payload }}</code>
+              </div>
+            </div>
+          </div>
+        </el-form-item>
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="灵敏度" prop="sensitivity">
@@ -378,6 +468,32 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="生效时段">
+          <div class="schedule-grid-wrapper">
+            <div class="schedule-header-row">
+              <div class="schedule-corner" />
+              <div v-for="h in 24" :key="h" class="schedule-header-cell">
+                {{ String(h - 1).padStart(2, "0") }}
+              </div>
+            </div>
+            <div v-for="day in 7" :key="day" class="schedule-row">
+              <div class="schedule-day-label">{{ weekDays[day - 1] }}</div>
+              <div
+                v-for="hour in 24"
+                :key="hour"
+                class="schedule-cell"
+                :class="{ active: ruleScheduleGrid[day - 1]?.[hour - 1] }"
+                @mousedown.prevent="onRuleCellMouseDown(day - 1, hour - 1, $event)"
+                @mouseenter="onRuleCellMouseEnter(day - 1, hour - 1)"
+              />
+            </div>
+          </div>
+          <div class="schedule-actions">
+            <el-button size="small" @click="fillRuleSchedule(true)">全选</el-button>
+            <el-button size="small" @click="fillRuleSchedule(false)">清空</el-button>
+            <el-button size="small" @click="fillRuleWorkHours">工作日 08-18</el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-switch v-model="ruleForm.status" />
         </el-form-item>
@@ -482,9 +598,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeMount } from "vue";
+import { ref, reactive, onBeforeMount, computed } from "vue";
 import { ElMessage } from "element-plus";
 import { getCameraList } from "@/api/module_video/camera";
+import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
   getAlarmRecordList,
   getAlarmRuleList,
@@ -523,6 +640,30 @@ const {
 const ruleSubmitLoading = ref(false);
 const ruleFormRef = ref();
 const cameraOptions = ref<any[]>([]);
+const algorithmTaskOptions = ref<any[]>([]);
+const ruleScheduleGrid = ref<boolean[][]>(Array.from({ length: 7 }, () => Array(24).fill(false)));
+const ruleDragState = ref<{ active: boolean; mode: "set" | "clear" }>({ active: false, mode: "set" });
+const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+const ruleChannelSelection = ref<string[]>([]);
+const ruleChannelEmailTo = ref("");
+const ruleChannelSmsPhones = ref("");
+const ruleChannelWebhookUrl = ref("");
+const ruleChannelWebhookMethod = ref("POST");
+const ruleChannelWebhookSecret = ref("");
+const ruleChannelWebhookHeaders = ref("");
+const ruleChannelWebhookTemplate = ref("");
+
+const alarm_vars = computed(() => ({
+  alarm_type: "{{alarm_type}}",
+  severity: "{{severity}}",
+  camera_name: "{{camera_name}}",
+  alarm_time: "{{alarm_time}}",
+  description: "{{description}}",
+  rule_name: "{{rule_name}}",
+  snapshot_url: "{{snapshot_url}}",
+  payload: "{{payload}}",
+}));
 
 const detailDrawer = reactive({
   visible: false,
@@ -701,10 +842,14 @@ const ruleDialogVisible = reactive({
 const ruleForm = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
+  camera_id: undefined as number | undefined,
+  algorithm_task_id: undefined as number | undefined,
   alarm_type: "MOTION",
   severity: "WARNING",
   sensitivity: 50,
   interval_seconds: 30,
+  notify_channels: [] as string[],
+  schedule_json: null as any,
   status: true,
   description: undefined as string | undefined,
 });
@@ -712,13 +857,70 @@ const ruleForm = reactive({
 const initialRuleForm = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
+  camera_id: undefined as number | undefined,
+  algorithm_task_id: undefined as number | undefined,
   alarm_type: "MOTION" as const,
   severity: "WARNING" as const,
   sensitivity: 50,
   interval_seconds: 30,
+  notify_channels: [] as string[],
+  schedule_json: null as any,
   status: true,
   description: undefined as string | undefined,
 };
+
+function onRuleCellMouseDown(day: number, hour: number, e: MouseEvent) {
+  if (e.button !== 0) return;
+  const current = ruleScheduleGrid.value[day][hour];
+  ruleDragState.value = { active: true, mode: current ? "clear" : "set" };
+  ruleScheduleGrid.value[day][hour] = !current;
+}
+
+function onRuleCellMouseEnter(day: number, hour: number) {
+  if (!ruleDragState.value.active) return;
+  ruleScheduleGrid.value[day][hour] = ruleDragState.value.mode === "set";
+}
+
+function onRuleDragEnd() {
+  ruleDragState.value.active = false;
+}
+
+function fillRuleSchedule(val: boolean) {
+  for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) ruleScheduleGrid.value[d][h] = val;
+}
+
+function fillRuleWorkHours() {
+  fillRuleSchedule(false);
+  for (let d = 0; d < 5; d++) for (let h = 8; h < 18; h++) ruleScheduleGrid.value[d][h] = true;
+}
+
+function ruleScheduleGridToJson() {
+  const slots: { day: number; start: number; end: number }[] = [];
+  for (let d = 0; d < 7; d++) {
+    let start = -1;
+    for (let h = 0; h <= 24; h++) {
+      const active = h < 24 && ruleScheduleGrid.value[d][h];
+      if (active && start === -1) start = h;
+      if (!active && start !== -1) {
+        slots.push({ day: d, start, end: h });
+        start = -1;
+      }
+    }
+  }
+  return slots.length ? { type: "weekly", slots } : null;
+}
+
+function jsonToRuleScheduleGrid(json: any) {
+  ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
+  if (!json?.slots) return;
+  for (const slot of json.slots) {
+    if (slot.day >= 0 && slot.day < 7) {
+      for (let h = slot.start; h < slot.end && h < 24; h++) {
+        ruleScheduleGrid.value[slot.day][h] = true;
+      }
+    }
+  }
+}
 
 async function resetRuleForm() {
   if (ruleFormRef.value) {
@@ -726,6 +928,15 @@ async function resetRuleForm() {
     ruleFormRef.value.clearValidate();
   }
   Object.assign(ruleForm, initialRuleForm);
+  ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
+  ruleChannelSelection.value = [];
+  ruleChannelEmailTo.value = "";
+  ruleChannelSmsPhones.value = "";
+  ruleChannelWebhookUrl.value = "";
+  ruleChannelWebhookMethod.value = "POST";
+  ruleChannelWebhookSecret.value = "";
+  ruleChannelWebhookHeaders.value = "";
+  ruleChannelWebhookTemplate.value = "";
 }
 
 async function handleCloseRuleDialog() {
@@ -739,7 +950,40 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
     ruleDialogVisible.title = "编辑规则";
     const res = await getAlarmRuleList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
-    if (item) Object.assign(ruleForm, item);
+    if (item) {
+      Object.assign(ruleForm, item);
+      jsonToRuleScheduleGrid(ruleForm.schedule_json);
+      // Parse notify_channels into selection + per-channel config
+      const channels = item.notify_channels || [];
+      ruleChannelSelection.value = [];
+      ruleChannelEmailTo.value = "";
+      ruleChannelSmsPhones.value = "";
+      ruleChannelWebhookUrl.value = "";
+      ruleChannelWebhookMethod.value = "POST";
+      ruleChannelWebhookSecret.value = "";
+      ruleChannelWebhookHeaders.value = "";
+      ruleChannelWebhookTemplate.value = "";
+      for (const entry of channels) {
+        if (typeof entry === "string") {
+          ruleChannelSelection.value.push(entry);
+        } else if (typeof entry === "object" && entry.channel) {
+          ruleChannelSelection.value.push(entry.channel);
+          if (entry.channel === "EMAIL" && entry.recipients) {
+            ruleChannelEmailTo.value = (entry.recipients as string[]).join(", ");
+          }
+          if (entry.channel === "SMS" && entry.phones) {
+            ruleChannelSmsPhones.value = (entry.phones as string[]).join(", ");
+          }
+          if (entry.channel === "WEBHOOK") {
+            ruleChannelWebhookUrl.value = entry.url || "";
+            ruleChannelWebhookMethod.value = entry.method || "POST";
+            ruleChannelWebhookSecret.value = entry.secret || "";
+            ruleChannelWebhookHeaders.value = entry.headers ? JSON.stringify(entry.headers) : "";
+            ruleChannelWebhookTemplate.value = entry.template || "";
+          }
+        }
+      }
+    }
   } else {
     ruleDialogVisible.title = "新增规则";
     ruleForm.id = undefined;
@@ -747,14 +991,49 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
   ruleDialogVisible.visible = true;
 }
 
+function buildNotifyChannels(): any[] {
+  const result: any[] = [];
+  for (const ch of ruleChannelSelection.value) {
+    if (ch === "EMAIL" && ruleChannelEmailTo.value.trim()) {
+      result.push({ channel: "EMAIL", recipients: ruleChannelEmailTo.value.split(",").map((s) => s.trim()).filter(Boolean) });
+    } else if (ch === "SMS" && ruleChannelSmsPhones.value.trim()) {
+      result.push({ channel: "SMS", phones: ruleChannelSmsPhones.value.split(",").map((s) => s.trim()).filter(Boolean) });
+    } else if (ch === "WEBHOOK" && ruleChannelWebhookUrl.value.trim()) {
+      const entry: any = { channel: "WEBHOOK", url: ruleChannelWebhookUrl.value.trim(), method: ruleChannelWebhookMethod.value };
+      if (ruleChannelWebhookSecret.value.trim()) entry.secret = ruleChannelWebhookSecret.value.trim();
+      if (ruleChannelWebhookHeaders.value.trim()) {
+        try { entry.headers = JSON.parse(ruleChannelWebhookHeaders.value.trim()); } catch { /* skip invalid json */ }
+      }
+      if (ruleChannelWebhookTemplate.value.trim()) entry.template = ruleChannelWebhookTemplate.value.trim();
+      result.push(entry);
+    } else {
+      result.push(ch);
+    }
+  }
+  return result;
+}
+
 async function handleSubmitRule() {
   ruleSubmitLoading.value = true;
   const id = ruleForm.id;
   try {
+    const payload: any = {
+      name: ruleForm.name,
+      camera_id: ruleForm.camera_id,
+      algorithm_task_id: ruleForm.algorithm_task_id || null,
+      alarm_type: ruleForm.alarm_type,
+      severity: ruleForm.severity,
+      sensitivity: ruleForm.sensitivity,
+      interval_seconds: ruleForm.interval_seconds,
+      notify_channels: buildNotifyChannels(),
+      schedule_json: ruleScheduleGridToJson(),
+      status: ruleForm.status,
+      description: ruleForm.description || null,
+    };
     if (id) {
-      await updateAlarmRule(id, { id, ...ruleForm });
+      await updateAlarmRule(id, payload);
     } else {
-      await createAlarmRule(ruleForm);
+      await createAlarmRule(payload);
     }
     ruleDialogVisible.visible = false;
     await resetRuleForm();
@@ -801,11 +1080,15 @@ function statusLabel(status: string) {
   return map[(status || "").toUpperCase()] || status;
 }
 
-// Populate camera search options
+// Populate camera search options and algorithm tasks
 async function loadCameraOptions() {
   try {
-    const res = await getCameraList({ page_size: 100 });
-    cameraOptions.value = res.data?.data?.items || [];
+    const [camRes, taskRes] = await Promise.all([
+      getCameraList({ page_size: 100 }),
+      getAlgorithmTaskList({ page_size: 100 }),
+    ]);
+    cameraOptions.value = camRes.data?.data?.items || [];
+    algorithmTaskOptions.value = taskRes.data?.data?.items || [];
     const searchItem: any = recordSearchConfig.formItems.find((i: any) => i.prop === "camera_id");
     if (searchItem) {
       searchItem.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
@@ -817,6 +1100,10 @@ async function loadCameraOptions() {
 
 onBeforeMount(() => {
   loadCameraOptions();
+  document.addEventListener("mouseup", onRuleDragEnd);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("mouseup", onRuleDragEnd);
 });
 </script>
 
@@ -892,5 +1179,92 @@ onBeforeMount(() => {
 
 .text-muted {
   color: var(--el-text-color-placeholder);
+}
+
+/* Schedule Grid */
+.schedule-grid-wrapper {
+  padding-bottom: 4px;
+  overflow-x: auto;
+}
+.schedule-header-row {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+.schedule-corner {
+  flex-shrink: 0;
+  width: 44px;
+}
+.schedule-header-cell {
+  flex-shrink: 0;
+  width: 24px;
+  font-size: 10px;
+  line-height: 20px;
+  color: var(--el-text-color-placeholder);
+  text-align: center;
+}
+.schedule-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.schedule-day-label {
+  flex-shrink: 0;
+  width: 44px;
+  padding-right: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: right;
+}
+.schedule-cell {
+  flex-shrink: 0;
+  width: 24px;
+  height: 20px;
+  cursor: pointer;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 2px;
+  transition: all 0.15s;
+}
+.schedule-cell:hover {
+  border-color: var(--el-color-primary);
+}
+.schedule-cell.active {
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+}
+.schedule-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.notify-config-block {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 4px;
+}
+.notify-config-label {
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.notify-webhook-row {
+  display: flex;
+  gap: 8px;
+}
+.notify-config-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--el-text-color-placeholder);
+}
+.notify-config-hint code {
+  padding: 0 2px;
+  font-family: monospace;
+  color: var(--el-color-primary);
+  background: var(--el-fill-color);
+  border-radius: 2px;
 }
 </style>

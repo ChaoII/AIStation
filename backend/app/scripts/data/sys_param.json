@@ -126,5 +126,157 @@
     "config_type": true,
     "status": "0",
     "description": "初始化数据"
+  },
+  {
+    "config_name": "SMTP服务器",
+    "config_key": "notify_smtp_host",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-邮件服务器地址"
+  },
+  {
+    "config_name": "SMTP端口",
+    "config_key": "notify_smtp_port",
+    "config_value": "587",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-邮件服务器端口"
+  },
+  {
+    "config_name": "SMTP用户名",
+    "config_key": "notify_smtp_user",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-邮件登录用户名"
+  },
+  {
+    "config_name": "SMTP密码",
+    "config_key": "notify_smtp_pass",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-邮件登录密码"
+  },
+  {
+    "config_name": "发件人地址",
+    "config_key": "notify_smtp_from",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-发件人邮箱地址"
+  },
+  {
+    "config_name": "发件人名称",
+    "config_key": "notify_smtp_from_name",
+    "config_value": "告警通知",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-发件人显示名称"
+  },
+  {
+    "config_name": "SMTP启用SSL",
+    "config_key": "notify_smtp_ssl",
+    "config_value": "0",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-是否使用SSL连接(1是0否)"
+  },
+  {
+    "config_name": "管理员邮箱",
+    "config_key": "notify_admin_email",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-默认接收告警邮件的管理员邮箱"
+  },
+  {
+    "config_name": "SMS API地址",
+    "config_key": "notify_sms_api_url",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-短信网关HTTP API地址"
+  },
+  {
+    "config_name": "SMS AccessKey",
+    "config_key": "notify_sms_access_key",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-短信网关访问密钥"
+  },
+  {
+    "config_name": "SMS Secret",
+    "config_key": "notify_sms_secret",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-短信网关密钥"
+  },
+  {
+    "config_name": "SMS签名",
+    "config_key": "notify_sms_sign",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-短信签名"
+  },
+  {
+    "config_name": "SMS模板",
+    "config_key": "notify_sms_template",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-短信模板ID或内容"
+  },
+  {
+    "config_name": "Webhook默认URL",
+    "config_key": "notify_webhook_default_url",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-Webhook默认推送地址"
+  },
+  {
+    "config_name": "Webhook默认方法",
+    "config_key": "notify_webhook_default_method",
+    "config_value": "POST",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-Webhook请求方法(POST/GET)"
+  },
+  {
+    "config_name": "Webhook重试次数",
+    "config_key": "notify_webhook_retry_count",
+    "config_value": "3",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-Webhook推送失败最大重试次数"
+  },
+  {
+    "config_name": "Webhook重试间隔(秒)",
+    "config_key": "notify_webhook_retry_interval",
+    "config_value": "5",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-Webhook重试间隔时间，每次重试乘以attempt"
+  },
+  {
+    "config_name": "Webhook共享密钥",
+    "config_key": "notify_webhook_secret",
+    "config_value": "",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-用于HMAC-SHA256签名webhook请求体的密钥"
+  },
+  {
+    "config_name": "WebSocket推送启用",
+    "config_key": "notify_ws_enabled",
+    "config_value": "1",
+    "config_type": true,
+    "status": "0",
+    "description": "通知-是否启用WebSocket实时推送(1是0否)"
   }
 ]

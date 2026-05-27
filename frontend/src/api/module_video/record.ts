@@ -27,3 +27,11 @@ export function stopRecord(streamId: string) {
 export function getRecordFileList(data?: any) {
   return request({ url: "/video/record/file/list", method: "get", params: data });
 }
+
+export function getRecordFilePlayUrl(id: number) {
+  return request({ url: `/video/record/file/${id}/play-url`, method: "get" });
+}
+
+export function getRecordLogList(data?: any) {
+  return request({ url: "/video/record/log/list", method: "get", params: data });
+}

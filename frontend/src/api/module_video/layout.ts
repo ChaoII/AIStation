@@ -4,6 +4,10 @@ export function getLayoutList(data?: any) {
   return request({ url: "/video/layout/list", method: "get", params: data });
 }
 
+export function getLayoutDetail(id: number) {
+  return request({ url: `/video/layout/detail/${id}`, method: "get" });
+}
+
 export function createLayout(data: any) {
   return request({ url: "/video/layout/create", method: "post", data });
 }

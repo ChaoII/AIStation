@@ -1,3 +1,4 @@
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -44,4 +45,18 @@ class RecordFileOutSchema(BaseSchema):
     record_type: str = "CONTINUOUS"
     format: str = "mp4"
     status: str = "COMPLETED"
+    camera: CommonSchema | None = None
+
+
+class RecordExecutionLogOutSchema(BaseSchema):
+    plan_id: int
+    camera_id: int
+    stream_id: str | None = None
+    trigger_type: str = "SCHEDULED"
+    start_time: DateTimeStr | None = None
+    end_time: DateTimeStr | None = None
+    duration: int | None = None
+    status: str = "RECORDING"
+    error_msg: str | None = None
+    file_count: int = 0
     camera: CommonSchema | None = None

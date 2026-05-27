@@ -31,9 +31,8 @@ async def get_layout_detail_controller(
     id: int = Path(..., description="布局ID"),
     auth: AuthSchema = Depends(AuthPermission(["module_video:layout:query"])),
 ) -> JSONResponse:
-    result = await LayoutService.get_layout_list_service(auth=auth)
-    item = next((x for x in result if x.get("id") == id), None)
-    return SuccessResponse(data=item, msg="查询成功")
+    result = await LayoutService.get_layout_detail_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="查询成功")
 
 
 @LayoutRouter.post("/create", summary="创建布局")

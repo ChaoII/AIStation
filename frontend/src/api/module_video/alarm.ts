@@ -31,3 +31,7 @@ export function confirmAlarm(id: number, status: string) {
 export function deleteAlarmRecord(ids: number[]) {
   return request({ url: "/video/alarm/record/delete", method: "delete", data: { ids } });
 }
+
+export function testNotification(channel: string, config?: any) {
+  return request({ url: "/video/alarm/notification/test", method: "post", data: { channel, config: config || {} } });
+}

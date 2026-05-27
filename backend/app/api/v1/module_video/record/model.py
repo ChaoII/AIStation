@@ -1,11 +1,14 @@
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import MappedBase, ModelMixin, UserMixin
+
+if TYPE_CHECKING:
+    from app.api.v1.module_video.camera.model import CameraModel
 
 
 class RecordPlanModel(ModelMixin, UserMixin):
@@ -48,3 +51,29 @@ class RecordFileModel(MappedBase):
     status: Mapped[str] = mapped_column(String(16), default="COMPLETED", comment="状态: RECORDING/COMPLETED/CORRUPTED")
 
     created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=datetime.now)
+
+
+class RecordExecutionLog(MappedBase):
+    __tablename__ = "video_record_execution_logs"
+    __table_args__ = ({'comment': '录制执行日志表'})
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(Integer, ForeignKey("video_record_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    plan: Mapped[Optional["RecordPlanModel"]] = relationship(lazy="selectin")
+
+    camera_id: Mapped[int] = mapped_column(Integer, ForeignKey("video_cameras.id", ondelete="CASCADE"), nullable=False, index=True)
+    camera: Mapped[Optional["CameraModel"]] = relationship(lazy="selectin")
+
+    stream_id: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="ZLM stream_id")
+    trigger_type: Mapped[str] = mapped_column(String(16), default="SCHEDULED", comment="触发方式: SCHEDULED/MANUAL/ALARM")
+
+    start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="录制开始时间")
+    end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="录制结束时间")
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="录制时长(秒)")
+
+    status: Mapped[str] = mapped_column(String(16), default="RECORDING", comment="状态: RECORDING/COMPLETED/FAILED/STOPPED")
+    error_msg: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="错误信息")
+    file_count: Mapped[int] = mapped_column(Integer, default=0, comment="生成文件数")
+
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=datetime.now)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, onupdate=datetime.now, default=datetime.now)

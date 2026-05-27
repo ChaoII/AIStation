@@ -68,6 +68,26 @@
         </el-input-number>
       </div>
 
+      <div class="toolbar-group">
+        <span class="toolbar-label">方案</span>
+        <el-dropdown @command="handleLoadLayout" trigger="click">
+          <button class="layout-btn"><el-icon><FolderOpened /></el-icon></button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="ly in savedLayouts" :key="ly.id" :command="ly">
+                {{ ly.name }} <span style="color:var(--el-text-color-placeholder);font-size:11px">({{ ly.grid_type }}路)</span>
+              </el-dropdown-item>
+              <el-dropdown-item v-if="!savedLayouts.length" disabled>暂无方案</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-tooltip content="保存当前布局" placement="bottom">
+          <button class="layout-btn" :disabled="boundCount === 0" @click="openSaveLayout">
+            <el-icon><Plus /></el-icon>
+          </button>
+        </el-tooltip>
+      </div>
+
       <div class="toolbar-group" style="margin-left:auto">
         <el-tooltip content="清空所有窗口" placement="bottom">
           <button
@@ -323,6 +343,21 @@
       </div>
     </div>
   </div>
+
+  <el-dialog v-model="showSaveLayout" title="保存布局方案" width="400px" append-to-body @close="layoutName = ''">
+    <el-form>
+      <el-form-item label="方案名称">
+        <el-input v-model="layoutName" placeholder="例如：4路默认布局" maxlength="64" />
+      </el-form-item>
+      <div style="font-size:12px;color:var(--el-text-color-secondary);line-height:1.6">
+        将保存当前 {{ boundCount }} 个窗口的摄像机配置为布局方案。
+      </div>
+    </el-form>
+    <template #footer>
+      <el-button @click="showSaveLayout = false">取消</el-button>
+      <el-button type="primary" :disabled="!layoutName.trim()" :loading="savingLayout" @click="saveLayout">保存</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup lang="ts">
@@ -349,6 +384,7 @@ import {
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import { getPlayUrls } from "@/api/module_video/preview";
 import { getRealtimeAlarms, confirmAlarm } from "@/api/module_video/alarm";
+import { getLayoutList, createLayout } from "@/api/module_video/layout";
 import MultiCameraGrid from "@/components/Video/MultiCameraGrid.vue";
 
 const layouts = [
@@ -409,6 +445,10 @@ const tourInterval = ref(30);
 const tourProgress = ref(0);
 const isRecording = ref(false);
 const quickStreamId = ref("");
+const savedLayouts = ref<any[]>([]);
+const showSaveLayout = ref(false);
+const layoutName = ref("");
+const savingLayout = ref(false);
 let tourTimer: ReturnType<typeof setInterval> | null = null;
 let tourTickTimer: ReturnType<typeof setInterval> | null = null;
 let alarmPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -652,6 +692,58 @@ function handleClearAll() {
   nextWindowId.value = 1;
 }
 
+// ---- Layout save/load ----
+
+function openSaveLayout() {
+  layoutName.value = "";
+  showSaveLayout.value = true;
+}
+
+async function saveLayout() {
+  const name = layoutName.value.trim();
+  if (!name) return;
+  savingLayout.value = true;
+  const windows: Record<string, number> = {};
+  for (const [wid, cam] of Object.entries(cameraBindings.value)) {
+    if (cam?.id) windows[wid] = cam.id;
+  }
+  try {
+    await createLayout({
+      name,
+      grid_type: layoutType.value,
+      layout_config: { windows, grid_type: layoutType.value },
+    });
+    showSaveLayout.value = false;
+    fetchSavedLayouts();
+  } catch {}
+  savingLayout.value = false;
+}
+
+async function fetchSavedLayouts() {
+  try {
+    const res = await getLayoutList({ page_size: 50 });
+    savedLayouts.value = res.data?.data?.items || [];
+  } catch { savedLayouts.value = []; }
+}
+
+async function handleLoadLayout(layout: any) {
+  const config = layout.layout_config;
+  if (!config?.windows) return;
+  handleClearAll();
+  layoutType.value = config.grid_type || layout.grid_type || "4";
+  await nextTick();
+  const entries = Object.entries(config.windows) as [string, number][];
+  entries.sort((a, b) => {
+    const na = parseInt(a[0].replace(/\D/g, "")) || 0;
+    const nb = parseInt(b[0].replace(/\D/g, "")) || 0;
+    return na - nb;
+  });
+  for (const [, camId] of entries) {
+    const cam = cameras.value.find((c: any) => c.id === camId);
+    if (cam) handleAddToAnyWindow(cam);
+  }
+}
+
 function handleWindowFullscreen(windowId: string) {
   if (fullscreenWindow.value === windowId) {
     fullscreenWindow.value = null;
@@ -873,6 +965,7 @@ onMounted(() => {
   fetchCameras();
   fetchGroups();
   fetchAlarms();
+  fetchSavedLayouts();
   alarmPollTimer = setInterval(fetchAlarms, 5000);
   updateTime();
   timeTimer = setInterval(updateTime, 1000);

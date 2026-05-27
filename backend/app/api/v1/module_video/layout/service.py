@@ -18,6 +18,13 @@ class LayoutService:
         return [LayoutOutSchema.model_validate(item).model_dump() for item in items]
 
     @classmethod
+    async def get_layout_detail_service(cls, id: int, auth: AuthSchema) -> dict:
+        item = await LayoutCRUD(auth).get_by_id_crud(id=id)
+        if not item:
+            raise CustomException(msg="布局不存在")
+        return LayoutOutSchema.model_validate(item).model_dump()
+
+    @classmethod
     async def create_layout_service(cls, data: LayoutCreateSchema, auth: AuthSchema) -> dict:
         item = await LayoutCRUD(auth).create(data=data)
         return LayoutOutSchema.model_validate(item).model_dump()

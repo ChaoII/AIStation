@@ -1,4 +1,3 @@
-
 from fastapi import Query
 
 from app.core.validator import DateTimeStr
@@ -30,3 +29,23 @@ class RecordFileQueryParam:
         self.format = format
         if start_time and end_time:
             self.start_time = ("between", (start_time, end_time))
+            self.end_time = None
+
+
+class RecordExecutionLogQueryParam:
+    def __init__(
+        self,
+        camera_id: int | None = Query(None, description="摄像机ID"),
+        plan_id: int | None = Query(None, description="计划ID"),
+        status: str | None = Query(None, description="状态"),
+        trigger_type: str | None = Query(None, description="触发方式"),
+        start_time: DateTimeStr | None = Query(None, description="开始时间"),
+        end_time: DateTimeStr | None = Query(None, description="结束时间"),
+    ) -> None:
+        self.camera_id = camera_id
+        self.plan_id = plan_id
+        self.status = status
+        self.trigger_type = trigger_type
+        if start_time and end_time:
+            self.start_time = ("between", (start_time, end_time))
+            self.end_time = None

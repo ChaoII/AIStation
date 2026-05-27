@@ -79,6 +79,20 @@ async def get_realtime_alarms_controller(
     return SuccessResponse(data=result, msg="查询成功")
 
 
+@AlarmRouter.post("/notification/test", summary="测试通知推送")
+async def test_notification_controller(
+    channel: str = Body(..., description="通道类型: WS_PUSH/EMAIL/SMS/WEBHOOK"),
+    config: dict = Body(default={}, description="通道配置参数"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:create"])),
+) -> JSONResponse:
+    from app.common.response import ErrorResponse
+    from app.utils.notification import send_test_notification
+    result = await send_test_notification(auth.db, channel, config)
+    if result["success"]:
+        return SuccessResponse(data=result, msg="测试推送成功")
+    return ErrorResponse(msg=result.get("error", "推送失败"))
+
+
 @AlarmRouter.put("/record/confirm/{id}", summary="确认告警")
 async def confirm_alarm_controller(
     data: AlarmRecordConfirmSchema,

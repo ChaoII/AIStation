@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -11,6 +13,8 @@ from .schema import (
     AlarmRuleOutSchema,
     AlarmRuleUpdateSchema,
 )
+
+log = logging.getLogger(__name__)
 
 
 class AlarmService:
@@ -83,4 +87,20 @@ class AlarmService:
     async def create_alarm_record(cls, auth: AuthSchema, data: dict) -> dict:
         from .crud import AlarmRecordCRUD
         new_record = await AlarmRecordCRUD(auth).create(data=data)
-        return AlarmRecordOutSchema.model_validate(new_record).model_dump()
+        result = AlarmRecordOutSchema.model_validate(new_record).model_dump()
+        # Dispatch notification asynchronously
+        rule = None
+        if data.get("rule_id"):
+            rule = await AlarmService.get_rule_detail_service(auth, data["rule_id"])
+        try:
+            from app.utils.notification import dispatch_notification
+            asyncio.ensure_future(dispatch_notification(auth, result, rule))
+        except Exception as e:
+            log.warning("Failed to dispatch notification: %s", e)
+        return result
+
+    @classmethod
+    async def get_rule_detail_service(cls, auth: AuthSchema, rule_id: int) -> dict | None:
+        from .crud import AlarmRuleCRUD
+        rule = await AlarmRuleCRUD(auth).get_by_id_crud(id=rule_id)
+        return AlarmRuleOutSchema.model_validate(rule).model_dump() if rule else None

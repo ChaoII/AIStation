@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path, Request
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -8,7 +8,7 @@ from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .param import RecordFileQueryParam, RecordPlanQueryParam
+from .param import RecordExecutionLogQueryParam, RecordFileQueryParam, RecordPlanQueryParam
 from .schema import RecordPlanCreateSchema, RecordPlanUpdateSchema
 from .service import RecordService
 
@@ -100,3 +100,42 @@ async def delete_file_controller(
 ) -> JSONResponse:
     await RecordService.delete_file_service(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
+
+
+@RecordRouter.get("/file/{id}/play-url", summary="获取录制文件播放地址")
+async def get_file_play_url_controller(
+    id: int = Path(..., description="文件ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:query"])),
+) -> JSONResponse:
+    result = await RecordService.get_file_play_url_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="查询成功")
+
+
+# ---- 录制执行日志 ----
+
+@RecordRouter.get("/log/list", summary="查询录制执行日志")
+async def get_execution_log_list_controller(
+    page: PaginationQueryParam = Depends(),
+    search: RecordExecutionLogQueryParam = Depends(),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:query"])),
+) -> JSONResponse:
+    result_list = await RecordService.get_execution_log_list_service(search=search, auth=auth, order_by=page.order_by)
+    result = await PaginationService.paginate(data_list=result_list, page_no=page.page_no, page_size=page.page_size)
+    return SuccessResponse(data=result, msg="查询成功")
+
+
+@RecordRouter.get("/log/detail/{id}", summary="查询录制执行日志详情")
+async def get_execution_log_detail_controller(
+    id: int = Path(..., description="日志ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:query"])),
+) -> JSONResponse:
+    result = await RecordService.get_execution_log_detail_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="查询成功")
+
+
+# ---- ZLM 录制回调 Webhook ----
+
+@RecordRouter.post("/webhook/on_record_mp4", summary="ZLM录制完成回调", include_in_schema=False)
+async def on_record_mp4_webhook(request: Request) -> dict:
+    data = await request.json()
+    return await RecordService.handle_record_webhook(data)

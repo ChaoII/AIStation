@@ -12,6 +12,8 @@
 
 import { Auth } from "@/utils/auth";
 
+const WS_BASE = import.meta.env.VITE_API_BASE_URL || "";
+
 /**
  * WebSocket 服务实例约定接口
  */
@@ -61,6 +63,54 @@ export function setupWebSocket() {
   }
 
   try {
+    // 建立告警通知 WebSocket 连接
+    const token = Auth.getAccessToken();
+    const wsUrl = `${WS_BASE.replace(/^http/, "ws")}/api/v1/video/alarm/ws?token=${token}`;
+    const alarmWs = new WebSocket(wsUrl);
+
+    alarmWs.onopen = () => {
+      console.log("[WebSocket] 告警通知连接已建立");
+      // 发送心跳
+      alarmWs.send(JSON.stringify({ type: "ping" }));
+    };
+
+    alarmWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "pong") return;
+        // 收到告警通知，触发自定义事件供页面消费
+        window.dispatchEvent(new CustomEvent("alarm-notification", { detail: data }));
+        console.log("[WebSocket] 收到告警通知:", data.alarm_type);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    alarmWs.onclose = () => {
+      console.log("[WebSocket] 告警通知连接已关闭");
+    };
+
+    alarmWs.onerror = (err) => {
+      console.warn("[WebSocket] 告警通知连接出错:", err);
+    };
+
+    registerWebSocketInstance("alarm", {
+      closeWebSocket: () => alarmWs.close(),
+    });
+
+    // 定时心跳保持连接
+    const heartbeat = setInterval(() => {
+      try {
+        alarmWs.send(JSON.stringify({ type: "ping" }));
+      } catch {
+        clearInterval(heartbeat);
+      }
+    }, 30000);
+
+    registerWebSocketInstance("alarm-heartbeat", {
+      cleanup: () => clearInterval(heartbeat),
+    });
+
     isInitialized = true;
     console.log("[WebSocket] 初始化成功");
   } catch (error) {

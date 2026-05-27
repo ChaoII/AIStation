@@ -66,24 +66,24 @@ class MediaServerClient:
         data = result if isinstance(result, list) else []
         return len(data) > 0
 
-    async def start_record(self, stream_id: str, type: str = "mp4", app: str = "live") -> dict:
+    async def start_record(self, stream_id: str, type: str = "mp4", app: str = "live", vhost: str = "__defaultVhost__") -> dict:
         return await self._request("/index/api/startRecord", {
-            "type": type, "app": app, "stream_id": stream_id,
+            "type": type, "vhost": vhost, "app": app, "stream": stream_id,
         })
 
-    async def stop_record(self, stream_id: str, type: str = "mp4", app: str = "live") -> dict:
+    async def stop_record(self, stream_id: str, type: str = "mp4", app: str = "live", vhost: str = "__defaultVhost__") -> dict:
         return await self._request("/index/api/stopRecord", {
-            "type": type, "app": app, "stream_id": stream_id,
+            "type": type, "vhost": vhost, "app": app, "stream": stream_id,
         })
 
-    async def get_record_status(self, stream_id: str, type: str = "mp4", app: str = "live") -> dict:
+    async def get_record_status(self, stream_id: str, type: str = "mp4", app: str = "live", vhost: str = "__defaultVhost__") -> dict:
         return await self._request("/index/api/getRecordStatus", {
-            "type": type, "app": app, "stream_id": stream_id,
+            "type": type, "vhost": vhost, "app": app, "stream": stream_id,
         })
 
-    async def get_record_files(self, stream_id: str, app: str = "live", period: str = "") -> list[dict]:
+    async def get_record_files(self, stream_id: str, app: str = "live", period: str = "", vhost: str = "__defaultVhost__") -> list[dict]:
         result = await self._request("/index/api/getMp4RecordFile", {
-            "app": app, "stream_id": stream_id, "period": period,
+            "vhost": vhost, "app": app, "stream": stream_id, "period": period,
         })
         return result if isinstance(result, list) else []
 
@@ -117,6 +117,9 @@ class MediaServerClient:
             "rtsp": f"rtsp://{host}/{app}/{stream_id}",
             "rtmp": f"rtmp://{host}/{app}/{stream_id}",
         }
+
+    def get_record_file_url(self, stream_id: str, file_name: str, app: str = "record") -> str:
+        return f"{self.base_url}/{app}/{stream_id}/{file_name}"
 
 
 media_server = MediaServerClient()

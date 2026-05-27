@@ -128,6 +128,53 @@ async def _ensure_deploy_menu() -> None:
             log.info("✅ 视频模块菜单图标已更新")
 
 
+NOTIFY_PARAMS = [
+    ("notify_smtp_host", "SMTP服务器", ""),
+    ("notify_smtp_port", "SMTP端口", "587"),
+    ("notify_smtp_user", "SMTP用户名", ""),
+    ("notify_smtp_pass", "SMTP密码", ""),
+    ("notify_smtp_from", "发件人地址", ""),
+    ("notify_smtp_from_name", "发件人名称", "告警通知"),
+    ("notify_smtp_ssl", "SMTP启用SSL", "0"),
+    ("notify_admin_email", "管理员邮箱", ""),
+    ("notify_sms_api_url", "SMS API地址", ""),
+    ("notify_sms_access_key", "SMS AccessKey", ""),
+    ("notify_sms_secret", "SMS Secret", ""),
+    ("notify_sms_sign", "SMS签名", ""),
+    ("notify_sms_template", "SMS模板", ""),
+    ("notify_webhook_default_url", "Webhook默认URL", ""),
+    ("notify_webhook_default_method", "Webhook默认方法", "POST"),
+    ("notify_webhook_retry_count", "Webhook重试次数", "3"),
+    ("notify_webhook_retry_interval", "Webhook重试间隔(秒)", "5"),
+    ("notify_webhook_secret", "Webhook共享密钥", ""),
+    ("notify_ws_enabled", "WebSocket推送启用", "1"),
+]
+
+
+async def _ensure_notification_params() -> None:
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.params.model import ParamsModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            for key, name, default in NOTIFY_PARAMS:
+                existing = await db.execute(
+                    select(ParamsModel).where(ParamsModel.config_key == key)
+                )
+                if not existing.scalar_one_or_none():
+                    db.add(ParamsModel(
+                        config_name=name,
+                        config_key=key,
+                        config_value=default,
+                        config_type=True,
+                        status="0",
+                        description="通知配置",
+                    ))
+        log.info("✅ 通知系统参数已确保")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     """
@@ -148,6 +195,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
         await _ensure_algorithm_columns()
         await _ensure_deploy_menu()
+        await _ensure_notification_params()
         await import_modules_async(
             modules=settings.EVENT_LIST, desc="全局事件", app=app, status=True
         )
@@ -165,6 +213,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             ws_callback=ws_limit_callback,
         )
         log.info("✅ 请求限流器初始化完成")
+
+        import asyncio
+
+        from app.api.v1.module_video.record.scheduler import start_record_scheduler
+        asyncio.create_task(start_record_scheduler())
+        log.info("✅ 录制定时器已启动")
 
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
@@ -188,6 +242,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     try:
         await SchedulerUtil.shutdown(wait=False)
         log.info("✅ 定时任务调度器已关闭")
+        from app.api.v1.module_video.record.scheduler import stop_record_scheduler
+        await stop_record_scheduler()
+        log.info("✅ 录制定时器已关闭")
         await FastAPILimiter.close()
         log.info("✅ 请求限制器已关闭")
         await import_modules_async(modules=settings.EVENT_LIST, desc="全局事件", app=app, status=False)
@@ -257,6 +314,10 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(
         router=WS_AI, dependencies=[Depends(WebSocketRateLimiter(times=1, seconds=5))]
     )
+
+    from app.api.v1.module_video.alarm.ws import AlarmWSRouter
+
+    app.include_router(AlarmWSRouter)
     # 先将动态路由注册到应用，使用速率限制器
     from app.core.discover import get_dynamic_router
 

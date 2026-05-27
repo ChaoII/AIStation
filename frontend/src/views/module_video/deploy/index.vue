@@ -358,6 +358,7 @@ const cameraOptions = ref<any[]>([]);
 const algorithmOptions = ref<any[]>([]);
 const algoConfig = ref<any>(null);
 const overrideParams = ref<Record<string, any>>({});
+let suppressOverrideReset = false;
 
 function paramLabel(key: any): string {
   return (paramLabels as Record<string, string>)[key] || key;
@@ -472,13 +473,10 @@ watch(
         if (algo.preset_params) config.params = algo.preset_params;
         if (algo.output_schema) config.output = algo.output_schema;
         algoConfig.value = config;
-        if (config.params) {
-          const init: Record<string, any> = {};
-          for (const key of Object.keys(config.params)) {
-            init[key] = config.params[key];
-          }
-          overrideParams.value = init;
+        if (config.params && !suppressOverrideReset) {
+          overrideParams.value = { ...config.params };
         }
+        suppressOverrideReset = false;
       }
     } catch {
       /* noop */
@@ -572,6 +570,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
     const res = await getAlgorithmTaskList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
+      suppressOverrideReset = true;
       formData.id = item.id;
       formData.camera_id = item.camera_id;
       formData.algorithm_id = item.algorithm_id;

@@ -185,6 +185,146 @@
           </div>
         </el-form>
       </el-tab-pane>
+      <el-tab-pane label="通知配置" name="notification">
+        <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
+          <el-divider>WebSocket 推送</el-divider>
+          <div v-for="(item, key) in wsNotifyConfigs" :key="key">
+            <el-form-item :label="item.config_name">
+              <el-switch
+                inline-prompt
+                active-text="启用"
+                inactive-text="禁用"
+                :model-value="item.config_value === '1'"
+                @update:model-value="
+                  (value) => {
+                    item.config_value = value ? '1' : '0';
+                    markModified(key);
+                  }
+                "
+              />
+            </el-form-item>
+          </div>
+          <el-form-item label=" ">
+            <el-button type="primary" size="small" @click="handleTestNotify('WS_PUSH')">
+              测试 WS 推送
+            </el-button>
+          </el-form-item>
+
+          <el-divider>SMTP 邮件</el-divider>
+          <div v-for="(item, key) in smtpConfigs" :key="key">
+            <el-form-item :label="item.config_name">
+              <template v-if="key === 'notify_smtp_ssl'">
+                <el-switch
+                  inline-prompt
+                  active-text="SSL"
+                  inactive-text="TLS"
+                  :model-value="item.config_value === '1'"
+                  @update:model-value="
+                    (value) => {
+                      item.config_value = value ? '1' : '0';
+                      markModified(key);
+                    }
+                  "
+                />
+              </template>
+              <template v-else-if="key === 'notify_smtp_pass'">
+                <el-input
+                  v-model="item.config_value"
+                  type="password"
+                  show-password
+                  clearable
+                  style="width: 100%"
+                  @input="markModified(key)"
+                />
+              </template>
+              <template v-else>
+                <el-input
+                  v-model="item.config_value"
+                  clearable
+                  style="width: 100%"
+                  @input="markModified(key)"
+                />
+              </template>
+            </el-form-item>
+          </div>
+          <el-form-item label=" ">
+            <el-button type="primary" size="small" @click="handleTestNotify('EMAIL')">
+              测试邮件推送
+            </el-button>
+          </el-form-item>
+
+          <el-divider>短信网关</el-divider>
+          <div v-for="(item, key) in smsConfigs" :key="key">
+            <el-form-item :label="item.config_name">
+              <template v-if="key === 'notify_sms_secret'">
+                <el-input
+                  v-model="item.config_value"
+                  type="password"
+                  show-password
+                  clearable
+                  style="width: 100%"
+                  @input="markModified(key)"
+                />
+              </template>
+              <template v-else>
+                <el-input
+                  v-model="item.config_value"
+                  clearable
+                  style="width: 100%"
+                  @input="markModified(key)"
+                />
+              </template>
+            </el-form-item>
+          </div>
+          <el-form-item label=" ">
+            <el-button type="primary" size="small" @click="handleTestNotify('SMS')">
+              测试短信推送
+            </el-button>
+          </el-form-item>
+
+          <el-divider>Webhook / REST API</el-divider>
+          <div v-for="(item, key) in webhookConfigs" :key="key">
+            <el-form-item :label="item.config_name">
+              <template v-if="key === 'notify_webhook_secret'">
+                <el-input
+                  v-model="item.config_value"
+                  type="password"
+                  show-password
+                  clearable
+                  style="width: 100%"
+                  @input="markModified(key)"
+                />
+              </template>
+              <template v-else>
+                <el-input
+                  v-model="item.config_value"
+                  clearable
+                  style="width: 100%"
+                  @input="markModified(key)"
+                />
+              </template>
+            </el-form-item>
+          </div>
+          <el-form-item label=" ">
+            <el-button type="primary" size="small" @click="handleTestNotify('WEBHOOK')">
+              测试 Webhook 推送
+            </el-button>
+          </el-form-item>
+
+          <el-divider>默认接收人</el-divider>
+          <div v-for="(item, key) in defaultRecipientConfigs" :key="key">
+            <el-form-item :label="item.config_name">
+              <el-input
+                v-model="item.config_value"
+                clearable
+                style="width: 100%"
+                :placeholder="key === 'notify_admin_email' ? 'admin@example.com' : ''"
+                @input="markModified(key)"
+              />
+            </el-form-item>
+          </div>
+        </el-form>
+      </el-tab-pane>
       <el-tab-pane label="演示环境配置" name="demo">
         <el-form :model="configState" label-suffix=":" label-width="auto" label-position="right">
           <!-- 系统配置 -->
@@ -292,6 +432,7 @@ import EnhancedDrawer from "@/components/CURD/EnhancedDrawer.vue";
 import SingleImageUpload from "@/components/Upload/SingleImageUpload.vue";
 import { useAppStore } from "@/store/modules/app.store";
 import { DeviceEnum } from "@/enums/settings/device.enum";
+import { testNotification } from "@/api/module_video/alarm";
 
 // 定义列表项类型
 interface ListItem {
@@ -412,7 +553,12 @@ const submitChanges = async () => {
         logoConfigs.value[key as keyof typeof logoConfigs.value] ||
         securityPrivacyConfigs.value[key as keyof typeof securityPrivacyConfigs.value] ||
         userAgreementConfigs.value[key as keyof typeof userAgreementConfigs.value] ||
-        demoConfigs.value[key as keyof typeof demoConfigs.value];
+        demoConfigs.value[key as keyof typeof demoConfigs.value] ||
+        smtpConfigs.value[key as keyof typeof smtpConfigs.value] ||
+        smsConfigs.value[key as keyof typeof smsConfigs.value] ||
+        webhookConfigs.value[key as keyof typeof webhookConfigs.value] ||
+        wsNotifyConfigs.value[key as keyof typeof wsNotifyConfigs.value] ||
+        defaultRecipientConfigs.value[key as keyof typeof defaultRecipientConfigs.value];
       return item && item.id ? ParamsAPI.updateParams(item.id, { ...item }) : Promise.resolve();
     });
     await Promise.all(otherUpdatePromises);
@@ -455,11 +601,27 @@ const resetForm = async () => {
       userAgreementConfigs.value[key as keyof typeof userAgreementConfigs.value].config_value =
         configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
     } else if (demoConfigs.value[key as keyof typeof demoConfigs.value]) {
-      // 除了IP白名单外的演示配置项
       if (key !== "ip_white_list") {
         demoConfigs.value[key as keyof typeof demoConfigs.value].config_value =
           configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
       }
+    } else if (smtpConfigs.value[key as keyof typeof smtpConfigs.value]) {
+      smtpConfigs.value[key as keyof typeof smtpConfigs.value].config_value =
+        configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
+    } else if (smsConfigs.value[key as keyof typeof smsConfigs.value]) {
+      smsConfigs.value[key as keyof typeof smsConfigs.value].config_value =
+        configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
+    } else if (webhookConfigs.value[key as keyof typeof webhookConfigs.value]) {
+      webhookConfigs.value[key as keyof typeof webhookConfigs.value].config_value =
+        configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
+    } else if (wsNotifyConfigs.value[key as keyof typeof wsNotifyConfigs.value]) {
+      wsNotifyConfigs.value[key as keyof typeof wsNotifyConfigs.value].config_value =
+        configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
+    } else if (defaultRecipientConfigs.value[key as keyof typeof defaultRecipientConfigs.value]) {
+      defaultRecipientConfigs.value[
+        key as keyof typeof defaultRecipientConfigs.value
+      ].config_value =
+        configStore.configData[key as keyof typeof configStore.configData]?.config_value || "";
     }
     delete modifiedFields[key];
   }
@@ -655,6 +817,47 @@ const demoConfigs = computed(() => ({
   ip_white_list: configStore.configData.ip_white_list,
 }));
 
+const cfg = (key: string) => (configStore.configData as any)[key];
+
+// WebSocket推送配置
+const wsNotifyConfigs = computed(() => ({
+  notify_ws_enabled: cfg("notify_ws_enabled"),
+}));
+
+// SMTP邮件配置
+const smtpConfigs = computed(() => ({
+  notify_smtp_host: cfg("notify_smtp_host"),
+  notify_smtp_port: cfg("notify_smtp_port"),
+  notify_smtp_user: cfg("notify_smtp_user"),
+  notify_smtp_pass: cfg("notify_smtp_pass"),
+  notify_smtp_from: cfg("notify_smtp_from"),
+  notify_smtp_from_name: cfg("notify_smtp_from_name"),
+  notify_smtp_ssl: cfg("notify_smtp_ssl"),
+}));
+
+// SMS网关配置
+const smsConfigs = computed(() => ({
+  notify_sms_api_url: cfg("notify_sms_api_url"),
+  notify_sms_access_key: cfg("notify_sms_access_key"),
+  notify_sms_secret: cfg("notify_sms_secret"),
+  notify_sms_sign: cfg("notify_sms_sign"),
+  notify_sms_template: cfg("notify_sms_template"),
+}));
+
+// Webhook配置
+const webhookConfigs = computed(() => ({
+  notify_webhook_default_url: cfg("notify_webhook_default_url"),
+  notify_webhook_default_method: cfg("notify_webhook_default_method"),
+  notify_webhook_retry_count: cfg("notify_webhook_retry_count"),
+  notify_webhook_retry_interval: cfg("notify_webhook_retry_interval"),
+  notify_webhook_secret: cfg("notify_webhook_secret"),
+}));
+
+// 默认接收人
+const defaultRecipientConfigs = computed(() => ({
+  notify_admin_email: cfg("notify_admin_email"),
+}));
+
 // logo配置项
 const logoConfigs = computed(() => ({
   sys_web_logo: {
@@ -689,6 +892,28 @@ const handleUploadSuccess = (fileInfo: UploadFilePath, type: string) => {
 const handleUploadError = (error: any) => {
   console.error("上传失败:", error.message || "未知错误");
   ElMessage.error(`上传失败：${error.message || "请稍后重试"}`);
+};
+
+const handleTestNotify = async (channel: string) => {
+  const cv = (key: string) => (configStore.configData as any)[key]?.config_value ?? "";
+  const config: any = {};
+  if (channel === "EMAIL") {
+    const adminEmail = cv("notify_admin_email");
+    if (adminEmail) config.recipients = [adminEmail];
+  } else if (channel === "WEBHOOK") {
+    config.url = cv("notify_webhook_default_url");
+    config.method = cv("notify_webhook_default_method") || "POST";
+    const secret = cv("notify_webhook_secret");
+    if (secret) config.secret = secret;
+  } else if (channel === "SMS") {
+    config.phones = [];
+  }
+
+  try {
+    await testNotification(channel, config);
+  } catch {
+    // 拦截器已显示错误消息
+  }
 };
 
 onMounted(() => {
