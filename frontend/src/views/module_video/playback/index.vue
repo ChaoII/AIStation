@@ -113,7 +113,7 @@
       <!-- Main Content -->
       <div class="pb-content">
         <!-- Player -->
-        <div class="pb-player">
+        <div class="pb-player" @mousemove="showControls" @mouseleave="hideControlsDelayed">
           <video
             v-if="currentVideoUrl && !useFlv"
             :key="currentVideoUrl"
@@ -121,11 +121,11 @@
             :src="currentVideoUrl"
             class="player-video"
             autoplay
-            controls
-            @loadedmetadata="onVideoMeta"
+            @loadedmetadata="onLoadedMetadata"
             @timeupdate="onTimeUpdate"
-            @ended="onEnded"
-            @click.stop="handleVideoClick"
+            @ended="onVideoEnded"
+            @error="onVideoError"
+            @click.stop="togglePlay"
           />
           <div v-else-if="currentVideoUrl && useFlv" ref="flvContainerRef" class="player-flv-wrap">
             <video ref="flvVideoRef" autoplay playsinline muted class="player-video" />
@@ -167,7 +167,7 @@
           </div>
 
           <!-- Controls overlay -->
-          <div v-if="currentRecording" class="player-ctrl" @click.stop>
+          <div v-if="currentRecording" class="player-ctrl" :class="{ hidden: !controlsVisible }" @click.stop @mousemove.stop="showControls">
             <div class="ctrl-bg" />
             <div class="ctrl-inner">
               <div class="ctrl-group ctrl-left">
@@ -450,6 +450,25 @@ const zoomLevels = [
 
 const currentTimeStr = computed(() => formatSeconds(currentTime.value));
 const durationStr = computed(() => formatSeconds(duration.value));
+
+// Controls auto-hide
+const controlsVisible = ref(true);
+let controlsTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showControls() {
+  controlsVisible.value = true;
+  if (controlsTimer) clearTimeout(controlsTimer);
+  controlsTimer = setTimeout(() => {
+    if (isPlaying.value) controlsVisible.value = false;
+  }, 3000);
+}
+
+function hideControlsDelayed() {
+  if (controlsTimer) clearTimeout(controlsTimer);
+  controlsTimer = setTimeout(() => {
+    controlsVisible.value = false;
+  }, 1500);
+}
 
 const rulerHours = computed(() => {
   const count = Math.ceil(visibleHours.value);
@@ -775,6 +794,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroyMpegtsPlayer();
+  if (controlsTimer) clearTimeout(controlsTimer);
 });
 </script>
 
@@ -1206,6 +1226,12 @@ onBeforeUnmount(() => {
   left: 0;
   right: 0;
   z-index: 4;
+  transition: opacity 0.3s ease;
+  pointer-events: auto;
+}
+.player-ctrl.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 .ctrl-bg {
   position: absolute;
