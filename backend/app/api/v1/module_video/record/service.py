@@ -69,23 +69,9 @@ class RecordService:
     @classmethod
     async def start_recording_service(cls, camera_id: int, stream_id: str, auth: AuthSchema) -> dict:
         try:
-            # Look up camera for RTSP URL
-            async with async_db_session() as session:
-                result = await session.execute(
-                    select(CameraModel).where(
-                        CameraModel.id == camera_id,
-                        CameraModel.is_deleted.is_(False),
-                    )
-                )
-                camera = result.scalar_one_or_none()
-                if not camera:
-                    raise CustomException(msg="摄像机不存在")
+            # Use HTTP-FLV URL for recording (reliable across Docker/host)
+            flv_url = f"{settings.ZLM_BASE_URL}/live/{stream_id}.live.flv"
 
-            rtsp_url = camera.rtsp_url_main or camera.rtsp_url_sub
-            if not rtsp_url:
-                raise CustomException(msg="摄像机未配置RTSP地址")
-
-            # Record via FFmpeg (more reliable than ZLM API)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = RECORDINGS_DIR / stream_id
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +79,7 @@ class RecordService:
 
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-i", rtsp_url,
+                "-i", flv_url,
                 "-c", "copy", "-f", "mp4",
                 "-y", str(output_path),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
