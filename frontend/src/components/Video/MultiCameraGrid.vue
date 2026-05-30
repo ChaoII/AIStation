@@ -281,12 +281,12 @@ function contextAction(action: string) {
       break;
     case "record":
       if (state?.camera) {
-        emit("startRecord", wid, state.camera.id, state.camera.stream_id || state.camera.id);
+        emit("startRecord", wid, state.camera.id, state.camera.stream_id || `camera_${state.camera.id}`);
       }
       break;
     case "stopRecord":
       if (state?.camera) {
-        emit("stopRecord", wid, state.camera.stream_id || state.camera.id);
+        emit("stopRecord", wid, state.camera.stream_id || `camera_${state.camera.id}`);
       }
       break;
     case "close":
@@ -302,10 +302,11 @@ function contextAction(action: string) {
 
 function toggleRecord(w: WindowState) {
   if (!w.camera) return;
+  const sid = w.camera.stream_id || `camera_${w.camera.id}`;
   if (props.recordingWindows?.[w.id]) {
-    emit("stopRecord", w.id, w.camera.stream_id || w.camera.id);
+    emit("stopRecord", w.id, sid);
   } else {
-    emit("startRecord", w.id, w.camera.id, w.camera.stream_id || w.camera.id);
+    emit("startRecord", w.id, w.camera.id, sid);
   }
 }
 

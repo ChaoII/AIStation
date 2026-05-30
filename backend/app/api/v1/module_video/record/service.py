@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -76,7 +77,8 @@ class RecordService:
         try:
             result = await media_server.stop_record(stream_id=stream_id)
             await cls._complete_running_logs(stream_id)
-            # Fetch recorded files from ZLM and persist to DB (backup of webhook)
+            # Give ZLM time to finalize the MP4 before fetching file list
+            await asyncio.sleep(1)
             await cls._sync_recorded_files(stream_id)
             return {"stream_id": stream_id, "zlm_result": result}
         except Exception as e:

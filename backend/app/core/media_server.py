@@ -85,6 +85,9 @@ class MediaServerClient:
         result = await self._request("/index/api/getMp4RecordFile", {
             "vhost": vhost, "app": app, "stream": stream_id, "period": period,
         })
+        # ZLM returns {"paths": [...], "rootPath": "..."} inside "data"
+        if isinstance(result, dict) and "paths" in result:
+            return result["paths"]
         return result if isinstance(result, list) else []
 
     async def get_snap(self, stream_id: str, app: str = "live", timeout_sec: int = 10) -> bytes:
