@@ -29,7 +29,10 @@
             @error="onPlayerError(w.id)"
           />
         </div>
-        <div class="window-watermark">{{ w.camera.name }}</div>
+        <div class="window-watermark">
+          <span v-if="props.recordingWindows?.[w.id]" class="rec-label">● REC</span>
+          {{ w.camera.name }}
+        </div>
         <div class="window-actions">
           <el-tooltip content="全屏" placement="top">
             <button class="action-btn" @click.stop="emit('fullscreen', w.id)">
@@ -54,9 +57,23 @@
               <el-icon><Monitor /></el-icon>
             </button>
           </el-tooltip>
-          <el-tooltip content="关闭" placement="top">
-            <button class="action-btn danger" @click.stop="emit('removeCamera', w.id)">
-              <el-icon><Close /></el-icon>
+          <el-tooltip :content="props.recordingWindows?.[w.id] ? '停止录像' : '开始录像'" placement="top">
+            <button
+              class="action-btn"
+              :class="{ recording: props.recordingWindows?.[w.id] }"
+              @click.stop="toggleRecord(w)"
+            >
+              <el-icon><VideoCamera /></el-icon>
+            </button>
+          </el-tooltip>
+          <el-tooltip content="查看回放" placement="top">
+            <button class="action-btn" @click.stop="emit('goPlayback', w.camera.id)">
+              <el-icon><Clock /></el-icon>
+            </button>
+          </el-tooltip>
+          <el-tooltip content="停止" placement="top">
+            <button class="action-btn" @click.stop="emit('removeCamera', w.id)">
+              <el-icon><Icon icon="mdi:stop" /></el-icon>
             </button>
           </el-tooltip>
         </div>
@@ -86,10 +103,17 @@
           <el-icon><Microphone /></el-icon>
           {{ contextMenu.muted ? "取消静音" : "静音" }}
         </div>
+        <div class="context-item" :class="{ 'recording-text': contextMenu.recording }" @click="contextAction(contextMenu.recording ? 'stopRecord' : 'record')">
+          {{ contextMenu.recording ? "⏹ 停止录像" : "⏺ 开始录像" }}
+        </div>
         <div class="context-divider" />
         <div class="context-item danger" @click="contextAction('close')">
           <el-icon><Close /></el-icon>
           关闭
+        </div>
+        <div class="context-item" @click="contextAction('playback')">
+          <el-icon><VideoPlay /></el-icon>
+          查看回放
         </div>
       </div>
     </Teleport>
@@ -103,10 +127,12 @@ import {
   Camera,
   Close,
   VideoCamera,
+  Clock,
   Microphone,
   MuteNotification,
 } from "@element-plus/icons-vue";
 import LivePlayer from "./LivePlayer.vue";
+import { Icon } from "@iconify/vue";
 
 interface WindowState {
   id: string;
@@ -121,6 +147,7 @@ const props = defineProps<{
   layout: string;
   cameraBindings: Record<string, any>;
   protocol: "flv" | "hls" | "webrtc";
+  recordingWindows?: Record<string, boolean>;
 }>();
 
 const emit = defineEmits<{
@@ -131,6 +158,9 @@ const emit = defineEmits<{
   (e: "swapCamera", fromId: string, toId: string): void;
   (e: "toggleMute", windowId: string): void;
   (e: "ptz", windowId: string): void;
+  (e: "startRecord", windowId: string, cameraId: number, streamId: string): void;
+  (e: "stopRecord", windowId: string, streamId: string): void;
+  (e: "goPlayback", cameraId: number): void;
 }>();
 
 const activeWindow = ref<string | null>(null);
@@ -145,6 +175,7 @@ const contextMenu = reactive({
   windowId: "",
   camera: null as any,
   muted: false,
+  recording: false,
 });
 
 const gridClass = computed(() => `grid-${props.layout}`);
@@ -168,6 +199,7 @@ const windows = computed(() => {
       state.error = false;
       state.muted = false;
     }
+    windowStates.value[id] = state;
     return state;
   });
 });
@@ -230,6 +262,7 @@ function onContextMenu(e: MouseEvent, w: WindowState) {
   contextMenu.windowId = w.id;
   contextMenu.camera = w.camera;
   contextMenu.muted = w.muted;
+  contextMenu.recording = !!props.recordingWindows?.[w.id];
 }
 
 function contextAction(action: string) {
@@ -246,9 +279,33 @@ function contextAction(action: string) {
     case "mute":
       toggleMute(wid);
       break;
+    case "record":
+      if (state?.camera) {
+        emit("startRecord", wid, state.camera.id, state.camera.stream_id || state.camera.id);
+      }
+      break;
+    case "stopRecord":
+      if (state?.camera) {
+        emit("stopRecord", wid, state.camera.stream_id || state.camera.id);
+      }
+      break;
     case "close":
       emit("removeCamera", wid);
       break;
+    case "playback":
+      if (state?.camera) {
+        emit("goPlayback", state.camera.id);
+      }
+      break;
+  }
+}
+
+function toggleRecord(w: WindowState) {
+  if (!w.camera) return;
+  if (props.recordingWindows?.[w.id]) {
+    emit("stopRecord", w.id, w.camera.stream_id || w.camera.id);
+  } else {
+    emit("startRecord", w.id, w.camera.id, w.camera.stream_id || w.camera.id);
   }
 }
 
@@ -347,6 +404,14 @@ onBeforeUnmount(() => {
   grid-template-rows: repeat(4, 1fr);
   grid-template-columns: repeat(4, 1fr);
 }
+.grid-13 {
+  grid-template-rows: repeat(4, 1fr);
+  grid-template-columns: repeat(4, 1fr);
+}
+.grid-13 .grid-window:nth-child(6) {
+  grid-row: 2 / 4;
+  grid-column: 2 / 4;
+}
 
 .grid-window {
   position: relative;
@@ -394,7 +459,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   pointer-events: none;
-  background: linear-gradient(rgba(0,0,0,0.85), transparent);
+  background: linear-gradient(rgba(0, 0, 0, 0.85), transparent);
 }
 
 .window-actions {
@@ -434,8 +499,23 @@ onBeforeUnmount(() => {
   color: var(--el-color-danger);
 }
 .action-btn.danger:hover {
-  color: #fff;
-  background: var(--el-color-danger);
+  color: var(--el-color-danger);
+  background: rgba(244, 67, 54, 0.15);
+}
+.action-btn.recording {
+  color: var(--el-color-danger);
+}
+.rec-label {
+  display: inline;
+  margin-right: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--el-color-danger);
+  animation: rec-blink 1.5s ease-in-out infinite;
+}
+@keyframes rec-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 @keyframes pulse {
@@ -501,6 +581,10 @@ onBeforeUnmount(() => {
 }
 .context-item.danger {
   color: var(--el-color-danger);
+}
+.context-item.recording-text {
+  color: var(--el-color-danger);
+  font-weight: 600;
 }
 .context-divider {
   height: 1px;

@@ -14,6 +14,7 @@ class AlgorithmCreateSchema(BaseModel):
     model_file_config: dict | None = Field(default=None, description="模型配置（格式、加密密钥等）")
     runtime_config: dict | None = Field(default=None, description="运行时配置（推理引擎、GPU、线程等）")
     preset_params: dict | None = Field(default=None, description="预设算法参数（阈值等）")
+    param_meta: dict | None = Field(default=None, description="参数元数据定义（标签、类型、选项、单位、说明等）")
     input_params: dict | None = Field(default=None, description="输入参数配置")
     output_schema: dict | None = Field(default=None, description="输出数据格式")
     status: bool = Field(default=True, description="是否启用")
@@ -35,6 +36,7 @@ class AlgorithmOutSchema(BaseSchema):
     model_file_config: dict | None = None
     runtime_config: dict | None = None
     preset_params: dict | None = None
+    param_meta: dict | None = None
     input_params: dict | None = None
     output_schema: dict | None = None
     status: bool = True

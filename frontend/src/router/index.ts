@@ -67,11 +67,17 @@ export const constantRoutes: RouteRecordRaw[] = [
       },
     ],
   },
-  // 通配 404 必须置于静态路由最后，否则会抢先匹配 /、/home 等
   {
     path: "/:pathMatch(.*)*",
     component: () => import("@/views/error/404.vue"),
     meta: { hidden: true, title: "404" },
+  },
+  // Big screen display (standalone, no sidebar)
+  {
+    path: "/video/big-screen",
+    name: "VideoBigScreen",
+    meta: { hidden: true, title: "大屏展示" },
+    component: () => import("@/views/module_video/layout/big-screen.vue"),
   },
 ];
 

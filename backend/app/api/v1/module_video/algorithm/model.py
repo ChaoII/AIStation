@@ -22,6 +22,7 @@ class AlgorithmModel(ModelMixin, UserMixin):
     model_file_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="模型配置（格式、加密密钥、解密参数等）")
     runtime_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="运行时配置（推理引擎、GPU、线程数、批处理大小等）")
     preset_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="预设算法参数（按算法类型动态定义，如置信度阈值、人数上限等）")
+    param_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="参数元数据定义（标签、类型、选项、单位、说明等）")
 
     input_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="输入参数配置")
     output_schema: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="输出数据格式（绘制框、标签、颜色等）")

@@ -16,7 +16,7 @@ from app.config.setting import get_settings
 
 get_settings.cache_clear()
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.core.database import async_db_session
 from app.core.logger import log
@@ -271,34 +271,75 @@ ALGORITHMS = [
     {"name": "区域入侵检测", "code": "intrusion_detect", "version": "2.1.0",
      "algorithm_type": "INTRUSION", "status": True,
      "model_path": "/models/intrusion/v2.1.0/engine.onnx",
-     "input_params": {"min_confidence": {"type": "float", "default": 0.6, "range": [0.1, 1.0]}},
+     "model_file_config": {"format": "onnx", "encrypt": {"enabled": False, "method": None}},
+     "runtime_config": {"engine": "tensorrt", "gpu": {"enabled": True, "device_id": 0}, "threads": 4, "batch_size": 1, "input_width": 640, "input_height": 640},
+     "preset_params": {"confidence": 0.5, "nms_threshold": 0.45},
+     "param_meta": {
+         "confidence": {"label": "置信度阈值", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "检测置信度阈值，低于此值的结果将被过滤"},
+         "nms_threshold": {"label": "NMS 阈值", "type": "float", "default": 0.45, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "非极大值抑制阈值，值越小重复框越少"},
+     },
      "description": "基于 YOLOv8 的区域入侵检测"},
     {"name": "越界检测", "code": "line_crossing", "version": "1.8.0",
      "algorithm_type": "LINE_CROSSING", "status": True,
      "model_path": "/models/line_crossing/v1.8.0/engine.onnx",
-     "input_params": {"line_width": {"type": "int", "default": 3},
-                      "direction": {"type": "str", "default": "both", "enum": ["both", "a_to_b", "b_to_a"]}},
+     "model_file_config": {"format": "onnx", "encrypt": {"enabled": False, "method": None}},
+     "runtime_config": {"engine": "tensorrt", "gpu": {"enabled": True, "device_id": 0}, "threads": 4, "batch_size": 1, "input_width": 640, "input_height": 640},
+     "preset_params": {"confidence": 0.4, "nms_threshold": 0.4, "line": [[0.3, 0.5], [0.7, 0.5]], "direction": "both"},
+     "param_meta": {
+         "confidence": {"label": "置信度阈值", "type": "float", "default": 0.4, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "目标检测置信度"},
+         "nms_threshold": {"label": "NMS 阈值", "type": "float", "default": 0.4, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "非极大值抑制阈值"},
+         "line": {"label": "越界线坐标", "type": "polyline", "default": [[0.3, 0.5], [0.7, 0.5]], "unit": "归一化坐标", "hint": "在画面中绘制一条虚拟线，两点确定一条直线"},
+         "direction": {"label": "检测方向", "type": "select", "default": "both", "options": [{"label": "双向", "value": "both"}, {"label": "A→B", "value": "a_to_b"}, {"label": "B→A", "value": "b_to_a"}], "hint": "越界方向过滤器"},
+     },
      "description": "电子围栏越界检测"},
     {"name": "人脸检测", "code": "face_detect", "version": "3.2.0",
      "algorithm_type": "FACE_DETECT", "status": True,
      "model_path": "/models/face/v3.2.0/engine.onnx",
-     "input_params": {"min_face_size": {"type": "int", "default": 40},
-                      "quality_threshold": {"type": "float", "default": 0.7}},
+     "model_file_config": {"format": "onnx", "encrypt": {"enabled": False, "method": None}},
+     "runtime_config": {"engine": "tensorrt", "gpu": {"enabled": True, "device_id": 0}, "threads": 4, "batch_size": 4, "input_width": 640, "input_height": 640},
+     "preset_params": {"confidence": 0.6, "nms_threshold": 0.4, "min_face_size": 50, "max_face_size": 500, "similarity_threshold": 0.7},
+     "param_meta": {
+         "confidence": {"label": "置信度阈值", "type": "float", "default": 0.6, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "人脸检测置信度"},
+         "nms_threshold": {"label": "NMS 阈值", "type": "float", "default": 0.4, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "非极大值抑制阈值"},
+         "min_face_size": {"label": "最小人脸", "type": "int", "default": 50, "min": 20, "max": 300, "step": 10, "unit": "像素", "hint": "小于此尺寸的人脸将被忽略"},
+         "max_face_size": {"label": "最大人脸", "type": "int", "default": 500, "min": 100, "max": 2000, "step": 50, "unit": "像素", "hint": "大于此尺寸的人脸将被忽略"},
+         "similarity_threshold": {"label": "比对阈值", "type": "float", "default": 0.7, "min": 0.5, "max": 1.0, "step": 0.05, "unit": "", "hint": "人脸比对相似度阈值，越高越严格"},
+     },
      "description": "基于 ArcFace 的人脸检测与比对"},
     {"name": "车辆检测", "code": "vehicle_detect", "version": "1.5.0",
      "algorithm_type": "VEHICLE_DETECT", "status": True,
      "model_path": "/models/vehicle/v1.5.0/engine.onnx",
+     "model_file_config": {"format": "onnx", "encrypt": {"enabled": False, "method": None}},
+     "runtime_config": {"engine": "tensorrt", "gpu": {"enabled": True, "device_id": 0}, "threads": 4, "batch_size": 1, "input_width": 640, "input_height": 640},
+     "preset_params": {"confidence": 0.5, "nms_threshold": 0.45, "vehicle_types": ["car", "truck", "bus", "motorcycle"]},
+     "param_meta": {
+         "confidence": {"label": "置信度阈值", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "车辆检测置信度"},
+         "nms_threshold": {"label": "NMS 阈值", "type": "float", "default": 0.45, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "非极大值抑制阈值"},
+         "vehicle_types": {"label": "检测车型", "type": "multi-select", "default": ["car", "truck", "bus", "motorcycle"], "options": [{"label": "轿车", "value": "car"}, {"label": "卡车", "value": "truck"}, {"label": "巴士", "value": "bus"}, {"label": "摩托车", "value": "motorcycle"}, {"label": "自行车", "value": "bicycle"}, {"label": "三轮车", "value": "tricycle"}], "hint": "选择需要检测的车辆类型"},
+     },
      "description": "车辆类型、颜色、车牌检测"},
     {"name": "烟火检测", "code": "fire_smoke", "version": "2.0.0",
      "algorithm_type": "FIRE_SMOKE", "status": True,
      "model_path": "/models/fire_smoke/v2.0.0/engine.onnx",
-     "input_params": {"confidence": {"type": "float", "default": 0.5}},
+     "model_file_config": {"format": "onnx", "encrypt": {"enabled": False, "method": None}},
+     "runtime_config": {"engine": "tensorrt", "gpu": {"enabled": True, "device_id": 0}, "threads": 4, "batch_size": 1, "input_width": 640, "input_height": 640},
+     "preset_params": {"confidence": 0.5, "nms_threshold": 0.45},
+     "param_meta": {
+         "confidence": {"label": "置信度阈值", "type": "float", "default": 0.5, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "烟火检测置信度，建议设 0.4~0.6 之间"},
+         "nms_threshold": {"label": "NMS 阈值", "type": "float", "default": 0.45, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "非极大值抑制阈值"},
+     },
      "description": "基于 YOLOv8 的烟火检测"},
     {"name": "人员聚集检测", "code": "crowd_detect", "version": "1.3.0",
      "algorithm_type": "CROWD_DETECT", "status": False,
      "model_path": "/models/crowd/v1.3.0/engine.onnx",
-     "input_params": {"density_threshold": {"type": "float", "default": 0.8},
-                      "area_sqm": {"type": "float", "default": 50}},
+     "model_file_config": {"format": "onnx", "encrypt": {"enabled": False, "method": None}},
+     "runtime_config": {"engine": "tensorrt", "gpu": {"enabled": True, "device_id": 0}, "threads": 4, "batch_size": 1, "input_width": 640, "input_height": 640},
+     "preset_params": {"confidence": 0.3, "max_count": 100, "alert_threshold": 50},
+     "param_meta": {
+         "confidence": {"label": "检测置信度", "type": "float", "default": 0.3, "min": 0.1, "max": 1.0, "step": 0.05, "unit": "", "hint": "人员检测置信度阈值"},
+         "max_count": {"label": "人数上限", "type": "int", "default": 100, "min": 10, "max": 500, "step": 10, "unit": "人", "hint": "区域内最多检测人数，超过则停止检测"},
+         "alert_threshold": {"label": "告警阈值", "type": "int", "default": 50, "min": 10, "max": 500, "step": 5, "unit": "人", "hint": "超过此人数触发聚集告警"},
+     },
      "description": "人员密度/聚集检测（当前版本性能待优化）"},
 ]
 
@@ -418,31 +459,18 @@ def make_alarm_records(camera_ids, rule_ids):
 LAYOUTS = [
     {"name": "四画面布局", "grid_type": "4",
      "layout_config": {
-         "rows": 2, "cols": 2,
-         "windows": [
-             {"index": 0, "title": "正门全景", "x": 0, "y": 0},
-             {"index": 1, "title": "停车场南区", "x": 1, "y": 0},
-             {"index": 2, "title": "大厅入口", "x": 0, "y": 1},
-             {"index": 3, "title": "仓库主入口", "x": 1, "y": 1},
-         ],
+         "grid_type": "4",
+         "windows": {},
      }, "is_default": True, "description": "默认四画面 — 覆盖主要出入口"},
     {"name": "九画面布局", "grid_type": "9",
      "layout_config": {
-         "rows": 3, "cols": 3,
-         "windows": [{"index": i, "title": f"窗口{i + 1}", "x": i % 3, "y": i // 3}
-                     for i in range(9)],
+         "grid_type": "9",
+         "windows": {},
      }, "is_default": False, "description": "九画面 — 全量设备轮巡"},
     {"name": "重点区域布局", "grid_type": "6",
      "layout_config": {
-         "rows": 2, "cols": 3,
-         "windows": [
-             {"index": 0, "title": "正门全景", "x": 0, "y": 0},
-             {"index": 1, "title": "大厅入口", "x": 1, "y": 0},
-             {"index": 2, "title": "停车场南区", "x": 2, "y": 0},
-             {"index": 3, "title": "仓库主入口", "x": 0, "y": 1},
-             {"index": 4, "title": "二楼走廊东", "x": 1, "y": 1},
-             {"index": 5, "title": "三楼办公区", "x": 2, "y": 1},
-         ],
+         "grid_type": "6",
+         "windows": {},
      }, "is_default": False, "description": "六画面 — 重点区域直连"},
 ]
 
@@ -582,8 +610,23 @@ async def seed():
                     algo_ids[data["name"]] = obj.id
                 log.info("✅ 已插入算法数据")
             else:
+                # Update existing algorithm records with latest seed data
+                for a in ALGORITHMS:
+                    stmt = (
+                        update(AlgorithmModel)
+                        .where(AlgorithmModel.code == a["code"])
+                        .values(
+                            model_file_config=a.get("model_file_config", {}),
+                            runtime_config=a.get("runtime_config", {}),
+                            preset_params=a.get("preset_params", {}),
+                            param_meta=a.get("param_meta", {}),
+                        )
+                    )
+                    await db.execute(stmt)
+                await db.flush()
                 result = await db.execute(select(AlgorithmModel))
                 algo_ids = {g.name: g.id for g in result.scalars().all()}
+                log.info("✅ 已更新算法数据")
 
             # 6. Algorithm Tasks
             if not skip["算法任务"]:

@@ -338,12 +338,23 @@
           <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
         </el-form-item>
         <el-form-item label="关联摄像机" prop="camera_id">
-          <el-select v-model="ruleForm.camera_id" filterable placeholder="选择摄像机" style="width: 100%">
+          <el-select
+            v-model="ruleForm.camera_id"
+            filterable
+            placeholder="选择摄像机"
+            style="width: 100%"
+          >
             <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="算法布控任务" prop="algorithm_task_id">
-          <el-select v-model="ruleForm.algorithm_task_id" filterable clearable placeholder="可选—关联智能布控任务" style="width: 100%">
+          <el-select
+            v-model="ruleForm.algorithm_task_id"
+            filterable
+            clearable
+            placeholder="可选—关联智能布控任务"
+            style="width: 100%"
+          >
             <el-option
               v-for="t in algorithmTaskOptions"
               :key="t.id"
@@ -425,7 +436,9 @@
                 type="password"
                 show-password
               />
-              <div class="notify-config-label" style="margin-top: 6px">自定义请求头（JSON 格式，可选）</div>
+              <div class="notify-config-label" style="margin-top: 6px">
+                自定义请求头（JSON 格式，可选）
+              </div>
               <el-input
                 v-model="ruleChannelWebhookHeaders"
                 placeholder='{"Authorization": "Bearer xxx"}'
@@ -446,7 +459,15 @@
                 type="textarea"
               />
               <div class="notify-config-hint">
-              可用变量: <code>{{ alarm_vars.alarm_type }}</code> <code>{{ alarm_vars.severity }}</code> <code>{{ alarm_vars.camera_name }}</code> <code>{{ alarm_vars.alarm_time }}</code> <code>{{ alarm_vars.description }}</code> <code>{{ alarm_vars.rule_name }}</code> <code>{{ alarm_vars.snapshot_url }}</code> <code>{{ alarm_vars.payload }}</code>
+                可用变量:
+                <code>{{ alarm_vars.alarm_type }}</code>
+                <code>{{ alarm_vars.severity }}</code>
+                <code>{{ alarm_vars.camera_name }}</code>
+                <code>{{ alarm_vars.alarm_time }}</code>
+                <code>{{ alarm_vars.description }}</code>
+                <code>{{ alarm_vars.rule_name }}</code>
+                <code>{{ alarm_vars.snapshot_url }}</code>
+                <code>{{ alarm_vars.payload }}</code>
               </div>
             </div>
           </div>
@@ -642,7 +663,10 @@ const ruleFormRef = ref();
 const cameraOptions = ref<any[]>([]);
 const algorithmTaskOptions = ref<any[]>([]);
 const ruleScheduleGrid = ref<boolean[][]>(Array.from({ length: 7 }, () => Array(24).fill(false)));
-const ruleDragState = ref<{ active: boolean; mode: "set" | "clear" }>({ active: false, mode: "set" });
+const ruleDragState = ref<{ active: boolean; mode: "set" | "clear" }>({
+  active: false,
+  mode: "set",
+});
 const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 const ruleChannelSelection = ref<string[]>([]);
@@ -995,16 +1019,38 @@ function buildNotifyChannels(): any[] {
   const result: any[] = [];
   for (const ch of ruleChannelSelection.value) {
     if (ch === "EMAIL" && ruleChannelEmailTo.value.trim()) {
-      result.push({ channel: "EMAIL", recipients: ruleChannelEmailTo.value.split(",").map((s) => s.trim()).filter(Boolean) });
+      result.push({
+        channel: "EMAIL",
+        recipients: ruleChannelEmailTo.value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
     } else if (ch === "SMS" && ruleChannelSmsPhones.value.trim()) {
-      result.push({ channel: "SMS", phones: ruleChannelSmsPhones.value.split(",").map((s) => s.trim()).filter(Boolean) });
+      result.push({
+        channel: "SMS",
+        phones: ruleChannelSmsPhones.value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      });
     } else if (ch === "WEBHOOK" && ruleChannelWebhookUrl.value.trim()) {
-      const entry: any = { channel: "WEBHOOK", url: ruleChannelWebhookUrl.value.trim(), method: ruleChannelWebhookMethod.value };
-      if (ruleChannelWebhookSecret.value.trim()) entry.secret = ruleChannelWebhookSecret.value.trim();
+      const entry: any = {
+        channel: "WEBHOOK",
+        url: ruleChannelWebhookUrl.value.trim(),
+        method: ruleChannelWebhookMethod.value,
+      };
+      if (ruleChannelWebhookSecret.value.trim())
+        entry.secret = ruleChannelWebhookSecret.value.trim();
       if (ruleChannelWebhookHeaders.value.trim()) {
-        try { entry.headers = JSON.parse(ruleChannelWebhookHeaders.value.trim()); } catch { /* skip invalid json */ }
+        try {
+          entry.headers = JSON.parse(ruleChannelWebhookHeaders.value.trim());
+        } catch {
+          /* skip invalid json */
+        }
       }
-      if (ruleChannelWebhookTemplate.value.trim()) entry.template = ruleChannelWebhookTemplate.value.trim();
+      if (ruleChannelWebhookTemplate.value.trim())
+        entry.template = ruleChannelWebhookTemplate.value.trim();
       result.push(entry);
     } else {
       result.push(ch);

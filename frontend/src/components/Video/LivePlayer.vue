@@ -55,22 +55,28 @@ let pc: RTCPeerConnection | null = null;
 let abortController: AbortController | null = null;
 
 function destroyPlayer() {
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
-  }
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
-  if (playerInstance?.destroy) {
-    playerInstance.destroy();
-    playerInstance = null;
-  }
-  if (videoRef.value) {
-    videoRef.value.src = "";
-    videoRef.value.srcObject = null;
-    videoRef.value.load();
+  console.log("[LivePlayer] destroyPlayer enter", props.streamId);
+  try {
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+    if (pc) {
+      pc.close();
+      pc = null;
+    }
+    if (playerInstance?.destroy) {
+      playerInstance.destroy();
+      playerInstance = null;
+    }
+    if (videoRef.value) {
+      videoRef.value.src = "";
+      videoRef.value.srcObject = null;
+      videoRef.value.load();
+    }
+    console.log("[LivePlayer] destroyPlayer done");
+  } catch (e) {
+    console.warn("[LivePlayer] destroyPlayer error:", e);
   }
 }
 
@@ -304,6 +310,7 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  console.log("[LivePlayer] onBeforeUnmount");
   destroyPlayer();
 });
 

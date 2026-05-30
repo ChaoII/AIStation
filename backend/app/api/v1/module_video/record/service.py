@@ -76,9 +76,74 @@ class RecordService:
         try:
             result = await media_server.stop_record(stream_id=stream_id)
             await cls._complete_running_logs(stream_id)
+            # Fetch recorded files from ZLM and persist to DB (backup of webhook)
+            await cls._sync_recorded_files(stream_id)
             return {"stream_id": stream_id, "zlm_result": result}
         except Exception as e:
             raise CustomException(msg=f"停止录制失败: {e}")
+
+    @classmethod
+    async def _sync_recorded_files(cls, stream_id: str):
+        try:
+            files = await media_server.get_record_files(stream_id=stream_id)
+            if not files:
+                return
+            # Look up camera_id by stream_id
+            camera_id = None
+            async with async_db_session() as session:
+                result = await session.execute(
+                    select(CameraModel.id).where(
+                        CameraModel.stream_id == stream_id,
+                        CameraModel.is_deleted.is_(False),
+                    )
+                )
+                cam = result.scalar_one_or_none()
+                if cam:
+                    camera_id = cam
+            if not camera_id:
+                return
+            now = datetime.now()
+            for f in files:
+                file_name = f.get("file_name", "")
+                if not file_name:
+                    continue
+                # Skip if already recorded (webhook may have created it)
+                async with async_db_session() as session:
+                    existing = await session.execute(
+                        select(RecordFileModel.id).where(
+                            RecordFileModel.file_path == file_name,
+                            RecordFileModel.stream_id == stream_id,
+                        )
+                    )
+                    if existing.scalar_one_or_none():
+                        continue
+                    record_file = RecordFileModel(
+                        camera_id=camera_id,
+                        stream_id=stream_id,
+                        file_path=file_name,
+                        file_size=f.get("file_size", 0),
+                        duration=f.get("duration", 0),
+                        start_time=cls._parse_zlm_time(f.get("start_time")) or now,
+                        end_time=cls._parse_zlm_time(f.get("time")) or now,
+                        record_type="MANUAL",
+                        format="mp4",
+                        status="COMPLETED",
+                    )
+                    session.add(record_file)
+                    await session.commit()
+        except Exception:
+            pass  # Non-critical: webhook will also create these entries
+
+    @staticmethod
+    def _parse_zlm_time(time_str: str | None) -> datetime | None:
+        if not time_str:
+            return None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return datetime.strptime(time_str, fmt)
+            except ValueError:
+                continue
+        return None
 
     @classmethod
     async def _get_plan_ids_for_camera(cls, camera_id: int) -> list[int]:

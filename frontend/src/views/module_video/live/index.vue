@@ -6,40 +6,51 @@
         <span class="brand-text">实时预览</span>
       </div>
 
-      <span style="width:1px;height:20px;background:var(--el-border-color);margin:0 4px" />
-      <span style="display:flex;gap:2px;margin-right:8px">
-        <el-tooltip :content="showDevicePanel ? '隐藏设备面板' : '显示设备面板'" placement="bottom">
-          <button
-            class="layout-btn"
-            :class="{ active: showDevicePanel }"
-            @click="showDevicePanel = !showDevicePanel"
-          >
-            <el-icon><FolderOpened /></el-icon>
-          </button>
+      <span class="toolbar-divider" />
+
+      <div class="panel-toggles">
+        <el-tooltip content="设备面板开关" placement="bottom">
+          <span class="panel-switch-item">
+            <el-icon><Icon icon="mdi:file-tree" /></el-icon>
+            <el-switch v-model="showDevicePanel" size="small" />
+          </span>
         </el-tooltip>
-        <el-tooltip :content="showAlarmPanel ? '隐藏告警面板' : '显示告警面板'" placement="bottom">
-          <button
-            class="layout-btn"
-            :class="{ active: showAlarmPanel }"
-            @click="showAlarmPanel = !showAlarmPanel"
-          >
+        <el-tooltip content="告警面板开关" placement="bottom">
+          <span class="panel-switch-item">
             <el-icon><Bell /></el-icon>
-          </button>
+            <el-switch v-model="showAlarmPanel" size="small" />
+          </span>
         </el-tooltip>
-      </span>
+      </div>
+
+      <span class="toolbar-divider" />
 
       <div class="toolbar-group">
         <span class="toolbar-label">布局</span>
-        <div class="layout-buttons">
-          <button
-            v-for="l in layouts"
-            :key="l.value"
-            class="layout-btn"
-            :class="{ active: layoutType === l.value }"
-            @click="layoutType = l.value"
-            v-html="l.svg"
-          />
-        </div>
+        <el-popover
+          v-model:visible="showLayoutPopover"
+          trigger="click"
+          placement="bottom"
+          :width="196"
+          popper-class="layout-popover"
+        >
+          <template #reference>
+            <button class="layout-btn layout-btn-current" v-html="currentLayoutSvg" />
+          </template>
+          <div class="layout-popover-grid">
+            <button
+              v-for="l in layouts"
+              :key="l.value"
+              class="layout-popover-item"
+              :class="{ active: layoutType === l.value }"
+              @click="
+                layoutType = l.value;
+                showLayoutPopover = false;
+              "
+              v-html="l.svg"
+            />
+          </div>
+        </el-popover>
       </div>
 
       <div class="toolbar-group">
@@ -50,10 +61,42 @@
       </div>
 
       <div class="toolbar-group">
-        <el-tooltip content="轮巡开关" placement="bottom">
-          <el-switch v-model="tourMode" size="small" style="--el-switch-on-color:#409eff" />
+        <div class="scheme-split">
+          <el-dropdown trigger="click" @command="handleLayoutSelect">
+            <button class="scheme-split-select">
+              <el-icon><Download /></el-icon>
+              <span>{{ selectedLayoutName || '加载方案' }}</span>
+              <el-icon class="scheme-arrow"><ArrowDown /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="ly in savedLayouts" :key="ly.id" :command="ly">
+                  {{ ly.name }}
+                  <span style="color: var(--el-text-color-placeholder); font-size: 11px">
+                    ({{ ly.grid_type }}路)
+                  </span>
+                </el-dropdown-item>
+                <el-dropdown-item v-if="!savedLayouts.length" disabled>暂无方案</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-tooltip content="保存当前布局" placement="bottom">
+            <button class="scheme-split-save" :disabled="boundCount === 0" @click="openSaveLayout">
+              <el-icon><Icon icon="mdi:content-save" /></el-icon>
+            </button>
+          </el-tooltip>
+        </div>
+      </div>
+
+      <span class="toolbar-divider" />
+
+      <div class="toolbar-group">
+        <el-tooltip content="自动轮巡切换摄像机画面" placement="bottom">
+          <span class="panel-switch-item">
+            <el-icon><Refresh /></el-icon>
+            <el-switch v-model="tourMode" size="small" />
+          </span>
         </el-tooltip>
-        <span v-if="tourMode" style="font-size:12px;color:var(--el-text-color-secondary);white-space:nowrap">轮巡</span>
         <el-input-number
           v-if="tourMode"
           v-model="tourInterval"
@@ -68,33 +111,9 @@
         </el-input-number>
       </div>
 
-      <div class="toolbar-group">
-        <span class="toolbar-label">方案</span>
-        <el-dropdown @command="handleLoadLayout" trigger="click">
-          <button class="layout-btn"><el-icon><FolderOpened /></el-icon></button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item v-for="ly in savedLayouts" :key="ly.id" :command="ly">
-                {{ ly.name }} <span style="color:var(--el-text-color-placeholder);font-size:11px">({{ ly.grid_type }}路)</span>
-              </el-dropdown-item>
-              <el-dropdown-item v-if="!savedLayouts.length" disabled>暂无方案</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-tooltip content="保存当前布局" placement="bottom">
-          <button class="layout-btn" :disabled="boundCount === 0" @click="openSaveLayout">
-            <el-icon><Plus /></el-icon>
-          </button>
-        </el-tooltip>
-      </div>
-
-      <div class="toolbar-group" style="margin-left:auto">
+      <div class="toolbar-right">
         <el-tooltip content="清空所有窗口" placement="bottom">
-          <button
-            class="layout-btn"
-            :disabled="boundCount === 0"
-            @click="handleClearAll"
-          >
+          <button class="layout-btn" :disabled="boundCount === 0" @click="handleClearAll">
             <el-icon><Delete /></el-icon>
           </button>
         </el-tooltip>
@@ -108,20 +127,6 @@
             <el-icon><Close /></el-icon>
           </button>
         </el-tooltip>
-      </div>
-
-      <div class="quick-connect">
-        <el-input
-          v-model="quickStreamId"
-          size="small"
-          placeholder="stream ID"
-          style="width: 120px"
-          clearable
-          @keyup.enter="handleQuickConnect"
-        />
-        <el-button size="small" type="primary" icon="VideoCamera" @click="handleQuickConnect">
-          播放
-        </el-button>
       </div>
     </div>
 
@@ -199,12 +204,16 @@
           :layout="fullscreenWindow ? '1' : layoutType"
           :camera-bindings="displayBindings"
           :protocol="globalProtocol"
+          :recording-windows="recordingWindows"
           @open-camera="handleOpenCamera"
           @remove-camera="handleRemoveCamera"
           @fullscreen="handleWindowFullscreen"
           @snapshot="handleSnapshot"
           @swap-camera="handleSwapCamera"
           @ptz="handlePtzToggle"
+          @start-record="handleStartRecord"
+          @stop-record="handleStopRecord"
+          @go-playback="goToPlayback"
         />
         <Transition name="slide-up">
           <div v-if="showPtz && activeWindowId && !fullscreenWindow" class="ptz-panel">
@@ -342,26 +351,71 @@
         <span class="status-item">{{ currentTime }}</span>
       </div>
     </div>
-  </div>
 
-  <el-dialog v-model="showSaveLayout" title="保存布局方案" width="400px" append-to-body @close="layoutName = ''">
-    <el-form>
-      <el-form-item label="方案名称">
-        <el-input v-model="layoutName" placeholder="例如：4路默认布局" maxlength="64" />
-      </el-form-item>
-      <div style="font-size:12px;color:var(--el-text-color-secondary);line-height:1.6">
-        将保存当前 {{ boundCount }} 个窗口的摄像机配置为布局方案。
-      </div>
-    </el-form>
-    <template #footer>
-      <el-button @click="showSaveLayout = false">取消</el-button>
-      <el-button type="primary" :disabled="!layoutName.trim()" :loading="savingLayout" @click="saveLayout">保存</el-button>
-    </template>
-  </el-dialog>
+    <!-- 保存布局对话框 -->
+    <el-dialog
+      v-model="showSaveLayout"
+      title="保存布局方案"
+      width="460px"
+      append-to-body
+      @close="saveMode = 'create'; layoutName = ''; selectedOverwriteId = null"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="操作方式">
+          <el-radio-group v-model="saveMode">
+            <el-radio value="create">创建新方案</el-radio>
+            <el-radio value="overwrite">覆盖现有方案</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <template v-if="saveMode === 'create'">
+          <el-form-item
+            label="方案名称"
+            :error="layoutNameError"
+          >
+            <el-input
+              v-model="layoutName"
+              placeholder="例如：4路默认布局"
+              maxlength="64"
+              @input="validateLayoutName"
+            />
+          </el-form-item>
+        </template>
+
+        <template v-if="saveMode === 'overwrite'">
+          <el-form-item label="选择方案">
+            <el-select v-model="selectedOverwriteId" placeholder="选择要覆盖的方案" style="width: 100%">
+              <el-option v-for="ly in savedLayouts" :key="ly.id" :value="ly.id" :label="`${ly.name} (${ly.grid_type}路)`" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <el-form-item label="当前布局">
+          <span style="font-size: 13px; color: var(--el-text-color-regular)">
+            {{ layoutType }}路 · {{ boundCount }} 个窗口
+          </span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showSaveLayout = false">取消</el-button>
+        <el-button
+          type="primary"
+          :disabled="!canSave"
+          :loading="savingLayout"
+          @click="saveLayout"
+        >
+          {{ saveMode === 'overwrite' ? '覆盖保存' : '创建保存' }}
+        </el-button>
+      </template>
+    </el-dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { Icon } from "@iconify/vue";
+import { useRoute, useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
 import {
   Bell,
   FolderOpened,
@@ -380,11 +434,15 @@ import {
   Bottom,
   ZoomIn,
   ZoomOut,
+  Download,
+  ArrowDown,
+  Refresh,
 } from "@element-plus/icons-vue";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import { getPlayUrls } from "@/api/module_video/preview";
 import { getRealtimeAlarms, confirmAlarm } from "@/api/module_video/alarm";
-import { getLayoutList, createLayout } from "@/api/module_video/layout";
+import { getLayoutList, createLayout, updateLayout } from "@/api/module_video/layout";
+import { startRecord, stopRecord } from "@/api/module_video/record";
 import MultiCameraGrid from "@/components/Video/MultiCameraGrid.vue";
 
 const layouts = [
@@ -409,10 +467,19 @@ const layouts = [
     svg: '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="0.5" y="0.5" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="5.8" y="0.5" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="11.2" y="0.5" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="0.5" y="5.8" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="5.8" y="5.8" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="11.2" y="5.8" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="0.5" y="11.2" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="5.8" y="11.2" width="4.3" height="4.3" rx="1" fill="currentColor"/><rect x="11.2" y="11.2" width="4.3" height="4.3" rx="1" fill="currentColor"/></svg>',
   },
   {
+    value: "13",
+    svg: '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="0.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="8.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="0.5" y="4.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="4.5" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="12.5" y="4.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="0.5" y="8.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="8.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="0.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="8.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/></svg>',
+  },
+  {
     value: "16",
     svg: '<svg width="16" height="16" viewBox="0 0 16 16"><rect x="0.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="8.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="0.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="0.5" y="4.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="4.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="8.5" y="4.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="4.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="0.5" y="8.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="8.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="8.5" y="8.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="8.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="0.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="4.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="8.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/><rect x="12.5" y="12.5" width="3" height="3" rx="0.8" fill="currentColor"/></svg>',
   },
 ];
+const showLayoutPopover = ref(false);
+const currentLayoutSvg = computed(() => {
+  const layout = layouts.find((l) => l.value === layoutType.value);
+  return layout?.svg || layouts[0].svg;
+});
 
 const protocols = [
   { value: "flv", label: "FLV" },
@@ -427,26 +494,31 @@ const groupList = ref<any[]>([]);
 const layoutType = ref("4");
 const cameraBindings = ref<Record<string, any>>({});
 const fullscreenWindow = ref<string | null>(null);
+const router = useRouter();
+const route = useRoute();
 const alarmList = ref<any[]>([]);
 const deviceSearch = ref("");
 const alarmActiveFilter = ref("all");
 const draggingCameraId = ref<number | null>(null);
 const deviceTreeRef = ref<any>(null);
+const gridRef = ref<InstanceType<typeof MultiCameraGrid> | null>(null);
 const gridPanelRef = ref<HTMLElement | null>(null);
 const toolbarRef = ref<HTMLElement | null>(null);
 const isFullscreen = ref(false);
 const showPtz = ref(false);
 const showDevicePanel = ref(true);
 const showAlarmPanel = ref(true);
+const recordingWindows = ref<Record<string, boolean>>({});
 const nextWindowId = ref(1);
 
 const tourMode = ref(false);
 const tourInterval = ref(30);
 const tourProgress = ref(0);
-const isRecording = ref(false);
-const quickStreamId = ref("");
 const savedLayouts = ref<any[]>([]);
+const selectedLayoutId = ref<number | null>(null);
 const showSaveLayout = ref(false);
+const saveMode = ref<"create" | "overwrite">("create");
+const selectedOverwriteId = ref<number | null>(null);
 const layoutName = ref("");
 const savingLayout = ref(false);
 let tourTimer: ReturnType<typeof setInterval> | null = null;
@@ -454,6 +526,7 @@ let tourTickTimer: ReturnType<typeof setInterval> | null = null;
 let alarmPollTimer: ReturnType<typeof setInterval> | null = null;
 let timeTimer: ReturnType<typeof setInterval> | null = null;
 const currentTime = ref("");
+let unmounted = false;
 
 const alarmFilters = [
   { key: "all", label: "全部" },
@@ -462,7 +535,28 @@ const alarmFilters = [
   { key: "INFO", label: "一般" },
 ];
 
+const selectedLayoutName = computed(() => {
+  if (!selectedLayoutId.value) return '';
+  const layout = savedLayouts.value.find((l: any) => l.id === selectedLayoutId.value);
+  return layout ? layout.name : '';
+});
+
 const boundCount = computed(() => Object.keys(cameraBindings.value).length);
+
+const layoutNameError = computed(() => {
+  if (saveMode.value !== 'create' || !layoutName.value.trim()) return '';
+  const exists = savedLayouts.value.some((l: any) => l.name === layoutName.value.trim() && l.id !== selectedOverwriteId.value);
+  return exists ? '该名称已存在' : '';
+});
+
+const canSave = computed(() => {
+  if (saveMode.value === 'create') return !!layoutName.value.trim() && !layoutNameError.value;
+  return !!selectedOverwriteId.value;
+});
+
+function validateLayoutName() {
+  // triggers layoutNameError computed reactivity
+}
 
 const onlineCount = computed(() => cameras.value.filter((c: any) => c.status === "ONLINE").length);
 const offlineCount = computed(
@@ -690,29 +784,39 @@ function handlePtzToggle(windowId: string) {
 function handleClearAll() {
   cameraBindings.value = {};
   nextWindowId.value = 1;
+  recordingWindows.value = {};
 }
 
 // ---- Layout save/load ----
 
 function openSaveLayout() {
   layoutName.value = "";
+  saveMode.value = "create";
+  selectedOverwriteId.value = null;
   showSaveLayout.value = true;
 }
 
 async function saveLayout() {
-  const name = layoutName.value.trim();
-  if (!name) return;
   savingLayout.value = true;
   const windows: Record<string, number> = {};
   for (const [wid, cam] of Object.entries(cameraBindings.value)) {
     if (cam?.id) windows[wid] = cam.id;
   }
+  const data = {
+    name: saveMode.value === 'create' ? layoutName.value.trim() : '',
+    grid_type: layoutType.value,
+    layout_config: { windows, grid_type: layoutType.value },
+  };
   try {
-    await createLayout({
-      name,
-      grid_type: layoutType.value,
-      layout_config: { windows, grid_type: layoutType.value },
-    });
+    if (saveMode.value === 'overwrite' && selectedOverwriteId.value) {
+      const target = savedLayouts.value.find((l: any) => l.id === selectedOverwriteId.value);
+      if (target) {
+        data.name = target.name;
+        await updateLayout(selectedOverwriteId.value, data);
+      }
+    } else {
+      await createLayout(data);
+    }
     showSaveLayout.value = false;
     fetchSavedLayouts();
   } catch {}
@@ -723,10 +827,18 @@ async function fetchSavedLayouts() {
   try {
     const res = await getLayoutList({ page_size: 50 });
     savedLayouts.value = res.data?.data?.items || [];
-  } catch { savedLayouts.value = []; }
+  } catch {
+    savedLayouts.value = [];
+  }
 }
 
-async function handleLoadLayout(layout: any) {
+function handleLayoutSelect(layout: any) {
+  if (!layout) return;
+  selectedLayoutId.value = layout.id;
+  applyLayout(layout);
+}
+
+async function applyLayout(layout: any) {
   const config = layout.layout_config;
   if (!config?.windows) return;
   handleClearAll();
@@ -738,9 +850,9 @@ async function handleLoadLayout(layout: any) {
     const nb = parseInt(b[0].replace(/\D/g, "")) || 0;
     return na - nb;
   });
-  for (const [, camId] of entries) {
+  for (const [wid, camId] of entries) {
     const cam = cameras.value.find((c: any) => c.id === camId);
-    if (cam) handleAddToAnyWindow(cam);
+    if (cam) handleAddToAnyWindow(cam, wid);
   }
 }
 
@@ -778,10 +890,6 @@ function handleSnapshot(windowId?: string) {
   }
 }
 
-function handleToggleRecord() {
-  isRecording.value = !isRecording.value;
-}
-
 function handleToggleAudio() {
   // Audio toggle logic
 }
@@ -790,14 +898,33 @@ function handleClearAlarms() {
   alarmList.value = [];
 }
 
-function handleQuickConnect() {
-  const sid = quickStreamId.value.trim();
-  if (!sid) return;
-  const wid = `w${nextWindowId.value++}`;
-  cameraBindings.value = {
-    ...cameraBindings.value,
-    [wid]: { id: sid, name: sid, stream_id: sid, status: "ONLINE", preferredProtocol: "flv" },
-  };
+async function handleStartRecord(windowId: string, cameraId: number, streamId: string) {
+  try {
+    await startRecord(cameraId, streamId);
+    recordingWindows.value = { ...recordingWindows.value, [windowId]: true };
+  } catch {
+    /* noop */
+  }
+}
+
+async function handleStopRecord(windowId: string, streamId: string) {
+  try {
+    await stopRecord(streamId);
+    const copy = { ...recordingWindows.value };
+    delete copy[windowId];
+    recordingWindows.value = copy;
+    ElMessage.success({
+      message: "录像已保存",
+      duration: 4000,
+    });
+  } catch {
+    /* noop */
+  }
+}
+
+function goToPlayback(cameraId?: number) {
+  const query = cameraId ? { camera_id: cameraId } : {};
+  router.push({ path: "/video/playback", query });
 }
 
 function handleToggleFullscreen() {
@@ -949,7 +1076,8 @@ watch(tourMode, (val) => {
   }
 });
 
-watch(layoutType, () => {
+watch(layoutType, (nv, ov) => {
+  console.log("[LivePage] layoutType changed", ov, "->", nv);
   const max = parseInt(layoutType.value);
   const entries = Object.entries(cameraBindings.value);
   if (entries.length > max) {
@@ -962,6 +1090,7 @@ watch(layoutType, () => {
 });
 
 onMounted(() => {
+  console.log("[LivePage] onMounted");
   fetchCameras();
   fetchGroups();
   fetchAlarms();
@@ -970,14 +1099,84 @@ onMounted(() => {
   updateTime();
   timeTimer = setInterval(updateTime, 1000);
   document.addEventListener("fullscreenchange", onFullscreenChange);
+  // Auto-load layout from query param (from layout management page)
+  const layoutId = route.query.layout_id ? Number(route.query.layout_id) : null;
+  if (layoutId) {
+    console.log("[LivePage] auto-loading layout", layoutId);
+    getLayoutList({ page_size: 50 })
+      .then((res: any) => {
+        if (unmounted) {
+          console.log("[LivePage] getLayoutList resolved after unmount, skipping");
+          return;
+        }
+        const items = res.data?.data?.items || [];
+        const layout = items.find((i: any) => i.id === layoutId);
+        if (layout) {
+          console.log("[LivePage] found layout, creating watcher");
+          selectedLayoutId.value = layout.id;
+          const unwatch = watch(
+            cameras,
+            (cams) => {
+              if (unmounted) {
+                console.log("[LivePage] layout watcher fired after unmount");
+                unwatch();
+                return;
+              }
+              if (cams.length > 0) {
+                console.log("[LivePage] applying layout via watcher");
+                applyLayout(layout);
+                unwatch();
+              }
+            },
+            { immediate: true }
+          );
+        }
+      })
+      .catch((e: any) => {
+        console.warn("[LivePage] getLayoutList failed", e);
+      });
+  }
+});
+
+let defaultLayoutApplied = false;
+
+// Auto-load default layout when savedLayouts loads
+watch(savedLayouts, (layouts) => {
+  if (unmounted || defaultLayoutApplied) return;
+  if (route.query.layout_id) return;
+  const dl = layouts.find((l: any) => l.is_default);
+  if (!dl) return;
+  defaultLayoutApplied = true;
+  selectedLayoutId.value = dl.id;
+  const uw = watch(cameras, (cams) => {
+    if (unmounted) { uw(); return; }
+    if (cams.length > 0) {
+      applyLayout(dl);
+      uw();
+    }
+  }, { immediate: true });
 });
 
 onBeforeUnmount(() => {
-  if (alarmPollTimer) clearInterval(alarmPollTimer);
-  if (tourTimer) clearInterval(tourTimer);
-  if (tourTickTimer) clearInterval(tourTickTimer);
-  if (timeTimer) clearInterval(timeTimer);
+  console.log("[LivePage] onBeforeUnmount");
+  unmounted = true;
+  if (alarmPollTimer) {
+    clearInterval(alarmPollTimer);
+    console.log("[LivePage] cleared alarmPollTimer");
+  }
+  if (tourTimer) {
+    clearInterval(tourTimer);
+  }
+  if (tourTickTimer) {
+    clearInterval(tourTickTimer);
+  }
+  if (timeTimer) {
+    clearInterval(timeTimer);
+  }
   document.removeEventListener("fullscreenchange", onFullscreenChange);
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
 });
 </script>
 
@@ -1005,13 +1204,27 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--el-border-color-light);
 }
 
+.toolbar-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 20px;
+  background: var(--el-border-color);
+}
+
+.toolbar-right {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+
 .toolbar-group {
   display: flex;
   flex-shrink: 0;
   gap: 4px;
   align-items: center;
 }
-
 
 .toolbar-brand {
   display: flex;
@@ -1053,12 +1266,17 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 28px;
   padding: 0;
+  font-size: 16px;
   color: var(--el-text-color-secondary);
   cursor: pointer;
   background: var(--el-fill-color);
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
   transition: all 0.15s;
+}
+.layout-btn-current {
+  width: 28px;
+  height: 28px;
 }
 .layout-btn:disabled {
   cursor: not-allowed;
@@ -1082,19 +1300,115 @@ onBeforeUnmount(() => {
   border-color: var(--el-color-primary);
 }
 
+.panel-toggles {
+  display: flex;
+  gap: 6px;
+  margin-right: 8px;
+}
+.panel-switch-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 15px;
+  color: var(--el-text-color-secondary);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.panel-switch-item:hover {
+  background: var(--el-fill-color);
+}
+
 .more-btn {
   font-size: 18px;
   line-height: 1;
 }
 
-.quick-connect {
-  display: flex;
+.layout-popover-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
+  padding: 2px;
+}
+.layout-popover-item {
+  display: flex;
   align-items: center;
-  padding-left: 16px;
-  border-left: 1px solid var(--el-border-color-light);
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.layout-popover-item:hover {
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  border-color: var(--el-border-color-hover);
+}
+.layout-popover-item.active {
+  color: var(--el-color-primary);
+  background: color-mix(in srgb, var(--el-color-primary) 10%, transparent);
+  border-color: var(--el-color-primary);
 }
 
+.scheme-split {
+  display: flex;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.scheme-split:hover {
+  border-color: var(--el-border-color-hover);
+}
+.scheme-split-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  background: var(--el-fill-color);
+  border: none;
+  border-right: 1px solid var(--el-border-color);
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.scheme-split-select:hover {
+  background: var(--el-fill-color-light);
+}
+.scheme-arrow {
+  font-size: 12px;
+  margin-left: 2px;
+}
+.scheme-split-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 15px;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  background: var(--el-fill-color);
+  border: none;
+  transition: all 0.15s;
+}
+.scheme-split-save:hover:not(:disabled) {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.scheme-split-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
 .count-total::before {
   content: "共 ";
 }

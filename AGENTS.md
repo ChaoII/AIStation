@@ -114,3 +114,37 @@ For existing DBs, use the menu management UI or manual `INSERT`.
 - When creating a model that inherits `MappedBase` directly (no `ModelMixin`), CRUDBase skips `created_id`/`updated_id` but also skips soft-delete.
 - Tree structures use `parent_id` FK + `children` relationship + `traversal_to_tree(flat_dicts)` from `app/utils/common_util.py`.
 - Frontend API functions are named `getXxxList`, `getXxxDetail`, `createXxx`, `updateXxx`, `deleteXxx` — co-located by module in `src/api/`.
+
+### Gotcha: `v-model` with separate reactive object + dynamic keys
+
+When using `v-for="(val, key) in objA"` with `v-model="objB[key]"` where `objB` is a **separate** reactive object populated from `objA`, the initial value may not be tracked correctly by Vue 3's reactivity system — especially with `el-switch` (boolean values appear as `undefined` despite being set).  
+
+**Fix**: bind `v-model` directly to the same object being iterated: `v-model="objA[key]"`. No intermediate mapping object.
+
+### Gotcha: Using `watch` vs `@change` for async data loading
+
+A `watch` on a reactive property that triggers an async data load can race with other code that also modifies the same property. **Use `@change` on the form control instead** + a dedicated async handler function. This guarantees synchronous control flow and avoids double-fetch/race conditions.
+
+### Gotcha: Multi-root component inside `<Transition mode="out-in">` causes white screen
+
+When a component with **two or more root elements** in its `<template>` is rendered inside `<transition mode="out-in">` (e.g., via `<router-view>`), Vue cannot animate the leave transition. The `<Transition>` component hangs waiting for the leave animation to complete, so the **enter phase never starts** and the next page never mounts — resulting in a blank white screen.
+
+Vue logs: `"Component inside <Transition> renders non-element root node that cannot be animated"`.
+
+**Fix**: Ensure the component has exactly **one root element** by wrapping all content (including dialogs, modals, etc.) inside a single container `<div>`. For example, move `<el-dialog>` from a sibling position to inside the main container div:
+
+```html
+<!-- ❌ BAD: two roots -->
+<template>
+  <div class="page">...</div>
+  <el-dialog v-model="visible">...</el-dialog>
+</template>
+
+<!-- ✅ GOOD: single root, dialog inside wrapper -->
+<template>
+  <div class="page">
+    ...
+    <el-dialog v-model="visible">...</el-dialog>
+  </div>
+</template>
+```

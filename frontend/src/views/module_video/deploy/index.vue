@@ -176,6 +176,7 @@
               filterable
               placeholder="选择算法"
               style="width: 280px"
+              @change="handleAlgorithmChange"
             >
               <el-option v-for="a in algorithmOptions" :key="a.id" :label="a.name" :value="a.id" />
             </el-select>
@@ -255,52 +256,63 @@
             算法参数覆盖
             <span class="form-section-desc">不填则使用算法预设值</span>
           </div>
-          <div class="algo-config-display">
-            <div class="config-block">
-              <div class="config-block-title">模型</div>
-              <div class="config-item">格式: {{ algoConfig.model?.format || "-" }}</div>
-              <div v-if="algoConfig.model?.encrypt?.enabled" class="config-item">
-                加密: {{ algoConfig.model.encrypt.method }}
-              </div>
-            </div>
-            <div class="config-block">
-              <div class="config-block-title">运行时</div>
-              <div class="config-item">引擎: {{ algoConfig.runtime?.engine }}</div>
-              <div class="config-item">
-                GPU:
+          <div class="algo-config-header">
+            <span class="config-block-title">模型 / 运行时</span>
+            <span class="config-summary">
+              格式: {{ algoConfig.model?.format || "-" }}
+              <template v-if="algoConfig.runtime">
+                | 引擎: {{ algoConfig.runtime.engine || "-" }} | GPU:
                 {{
-                  algoConfig.runtime?.gpu?.enabled
+                  algoConfig.runtime.gpu?.enabled
                     ? "设备" + algoConfig.runtime.gpu.device_id
                     : "关闭"
                 }}
-              </div>
-            </div>
-            <div class="config-block">
-              <div class="config-block-title">算法参数</div>
-              <div v-for="(val, key) in algoConfig.params" :key="key" class="config-override-row">
-                <span class="override-label">{{ paramLabel(key) }}</span>
-                <el-input-number
-                  v-if="typeof val === 'number'"
-                  v-model="overrideParams[key]"
-                  :placeholder="String(val)"
-                  controls-position="right"
-                  size="small"
-                  style="width: 120px"
-                />
-                <el-switch
-                  v-else-if="typeof val === 'boolean'"
-                  v-model="overrideParams[key]"
-                  size="small"
-                />
-                <el-input
-                  v-else
-                  v-model="overrideParams[key]"
-                  :placeholder="String(val)"
-                  size="small"
-                  style="width: 150px"
-                />
-                <span class="override-default">预设: {{ val }}</span>
-              </div>
+              </template>
+            </span>
+          </div>
+          <div class="config-block">
+            <div class="config-block-title">算法参数</div>
+            <div v-for="(val, key) in algoConfig.params" :key="key" class="config-override-row">
+              <span class="override-label">{{ paramLabel(key) }}</span>
+
+              <el-input-number
+                v-if="typeof val === 'number'"
+                v-model="algoConfig.params[key]"
+                :placeholder="String(val)"
+                controls-position="right"
+                size="small"
+                style="width: 140px"
+              />
+
+              <el-switch
+                v-else-if="typeof val === 'boolean'"
+                v-model="algoConfig.params[key]"
+                size="small"
+              />
+
+              <el-select
+                v-else-if="Array.isArray(val) && val.every((v: any) => typeof v === 'string')"
+                v-model="algoConfig.params[key]"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                size="small"
+                style="width: 240px"
+                placeholder="多选，可输入新增"
+              >
+                <el-option v-for="opt in val" :key="opt" :label="opt" :value="opt" />
+              </el-select>
+
+              <el-input
+                v-else
+                v-model="algoConfig.params[key]"
+                :placeholder="String(val)"
+                size="small"
+                style="width: 200px"
+              />
+
+              <span class="override-default">预设: {{ displayVal(val) }}</span>
             </div>
           </div>
         </div>
@@ -326,22 +338,6 @@ import {
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 
-const paramLabels: Record<string, string> = {
-  confidence: "置信度阈值",
-  nms_threshold: "NMS 阈值",
-  max_count: "人数上限",
-  min_face_size: "最小人脸",
-  similarity_threshold: "相似度阈值",
-  alert_threshold: "告警阈值",
-  max_face_size: "最大人脸",
-  vehicle_types: "车辆类型",
-  behaviors: "行为类型",
-  alert_cooldown: "告警冷却(秒)",
-  idle_seconds: "滞留秒数",
-  min_object_area: "最小面积(像素)",
-  direction: "检测方向",
-};
-
 interface TablePageQuery {
   page_no: number;
   page_size: number;
@@ -357,11 +353,15 @@ const dataFormRef = ref();
 const cameraOptions = ref<any[]>([]);
 const algorithmOptions = ref<any[]>([]);
 const algoConfig = ref<any>(null);
-const overrideParams = ref<Record<string, any>>({});
-let suppressOverrideReset = false;
+const algoParams = ref<Record<string, any> | null>(null);
 
-function paramLabel(key: any): string {
-  return (paramLabels as Record<string, string>)[key] || key;
+function paramLabel(key: string | number): string {
+  return String(key);
+}
+
+function displayVal(val: any): string {
+  if (Array.isArray(val)) return `[${val.join(", ")}]`;
+  return String(val);
 }
 
 const scheduleGrid = ref<boolean[][]>(Array.from({ length: 7 }, () => Array(24).fill(false)));
@@ -457,32 +457,31 @@ const formData = reactive({
 
 const initialFormData = { ...formData };
 
-watch(
-  () => formData.algorithm_id,
-  async (newId) => {
-    algoConfig.value = null;
-    overrideParams.value = {};
-    if (!newId) return;
-    try {
-      const res = await getAlgorithmList({ page_size: 100 });
-      const algo = res.data?.data?.items?.find((a: any) => a.id === newId);
-      if (algo) {
-        const config: any = {};
-        if (algo.model_file_config) config.model = algo.model_file_config;
-        if (algo.runtime_config) config.runtime = algo.runtime_config;
-        if (algo.preset_params) config.params = algo.preset_params;
-        if (algo.output_schema) config.output = algo.output_schema;
-        algoConfig.value = config;
-        if (config.params && !suppressOverrideReset) {
-          overrideParams.value = { ...config.params };
-        }
-        suppressOverrideReset = false;
+async function handleAlgorithmChange(algoId: number) {
+  algoConfig.value = null;
+  algoParams.value = null;
+  if (!algoId) return;
+  try {
+    const res = await getAlgorithmList({ page_size: 100 });
+    const algo = res.data?.data?.items?.find((a: any) => a.id === algoId);
+    if (algo) {
+      const config: any = {};
+      if (algo.model_file_config && Object.keys(algo.model_file_config).length > 0)
+        config.model = algo.model_file_config;
+      if (algo.runtime_config && Object.keys(algo.runtime_config).length > 0)
+        config.runtime = algo.runtime_config;
+      if (algo.preset_params && Object.keys(algo.preset_params).length > 0) {
+        algoParams.value = { ...algo.preset_params };
+        config.params = { ...algo.preset_params };
       }
-    } catch {
-      /* noop */
+      if (algo.output_schema && Object.keys(algo.output_schema).length > 0)
+        config.output = algo.output_schema;
+      algoConfig.value = config;
     }
+  } catch {
+    /* noop */
   }
-);
+}
 
 const scheduleGridToJson = () => {
   const slots: { day: number; start: number; end: number }[] = [];
@@ -555,6 +554,8 @@ async function resetForm() {
     dataFormRef.value.clearValidate();
   }
   Object.assign(formData, initialFormData);
+  algoConfig.value = null;
+  algoParams.value = null;
   scheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
 }
 
@@ -570,7 +571,6 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
     const res = await getAlgorithmTaskList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
-      suppressOverrideReset = true;
       formData.id = item.id;
       formData.camera_id = item.camera_id;
       formData.algorithm_id = item.algorithm_id;
@@ -579,10 +579,10 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.statusBool = item.status === "RUNNING";
       formData.description = item.description;
       if (item.schedule_json) jsonToScheduleGrid(item.schedule_json);
-      // Load existing overrides
-      if (item.params_overrides || item.runtime_overrides) {
-        const merged = { ...item.params_overrides, ...item.runtime_overrides };
-        overrideParams.value = merged;
+      // Load algorithm config and merge existing overrides
+      await handleAlgorithmChange(item.algorithm_id);
+      if (item.params_overrides && algoConfig.value?.params) {
+        Object.assign(algoConfig.value.params, item.params_overrides);
       }
     }
   } else {
@@ -597,12 +597,14 @@ async function handleSubmit() {
     if (valid) {
       submitLoading.value = true;
       const id = formData.id;
-      // Build overrides: only send non-null values
+      // Build overrides: diff current params from original presets
       const paramsOverrides: Record<string, any> = {};
       const runtimeOverrides: Record<string, any> = {};
-      for (const [k, v] of Object.entries(overrideParams.value)) {
-        if (v !== null && v !== undefined && v !== "") {
-          paramsOverrides[k] = v;
+      if (algoConfig.value?.params && algoParams.value) {
+        for (const [k, v] of Object.entries(algoConfig.value.params)) {
+          if (v !== algoParams.value[k]) {
+            paramsOverrides[k] = v;
+          }
         }
       }
       const payload: any = {
@@ -751,23 +753,24 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-placeholder);
 }
 
-.algo-config-display {
+.algo-config-header {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 8px 12px;
   background: var(--el-fill-color-lighter);
   border-radius: 6px;
+  margin-bottom: 10px;
 }
 .config-block-title {
-  margin-bottom: 4px;
+  flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
   color: var(--el-text-color-secondary);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
-.config-item {
+.config-summary {
   font-size: 12px;
   color: var(--el-text-color-placeholder);
 }
@@ -786,5 +789,14 @@ onBeforeUnmount(() => {
   margin-left: 4px;
   font-size: 11px;
   color: var(--el-text-color-placeholder);
+}
+.override-unit {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+.slider-wrap {
+  display: flex;
+  align-items: center;
 }
 </style>

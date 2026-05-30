@@ -33,5 +33,9 @@ export function deleteAlarmRecord(ids: number[]) {
 }
 
 export function testNotification(channel: string, config?: any) {
-  return request({ url: "/video/alarm/notification/test", method: "post", data: { channel, config: config || {} } });
+  return request({
+    url: "/video/alarm/notification/test",
+    method: "post",
+    data: { channel, config: config || {} },
+  });
 }

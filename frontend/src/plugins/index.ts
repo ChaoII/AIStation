@@ -24,5 +24,10 @@ export default {
     setupPermission();
     // 注册 ElementPlus
     app.use(ElementPlus);
+
+    // 全局错误处理，防止组件销毁异常导致路由切换失败
+    app.config.errorHandler = (err, instance, info) => {
+      console.error("[Global Error]", err, info);
+    };
   },
 };
