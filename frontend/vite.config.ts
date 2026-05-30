@@ -54,6 +54,11 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           changeOrigin: true,
           ws: true,
         },
+        "/recordings": {
+          target: "http://127.0.0.1:8001",
+          secure: false,
+          changeOrigin: true,
+        },
         "/index/api": {
           target: "http://127.0.0.1:8080",
           secure: false,

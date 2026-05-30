@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
@@ -340,13 +341,17 @@ def register_files(app: FastAPI) -> None:
     """
     # 挂载静态文件目录
     if settings.STATIC_ENABLE:
-        # 确保静态资源根目录存在
         settings.STATIC_ROOT.mkdir(parents=True, exist_ok=True)
         app.mount(
             path=settings.STATIC_URL,
             app=StaticFiles(directory=settings.STATIC_ROOT),
             name=settings.STATIC_DIR,
         )
+
+    # 挂载录制文件目录
+    from app.api.v1.module_video.record.service import RECORDINGS_DIR
+    if RECORDINGS_DIR.exists():
+        app.mount("/recordings", app=StaticFiles(directory=str(RECORDINGS_DIR)), name="recordings")
 
 
 def reset_api_docs(app: FastAPI) -> None:

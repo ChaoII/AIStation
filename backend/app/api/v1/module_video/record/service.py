@@ -1,11 +1,16 @@
 import asyncio
+import os
+import signal
+import subprocess
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select, update as sa_update
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.api.v1.module_video.camera.model import CameraModel
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.media_server import media_server
@@ -50,102 +55,120 @@ class RecordService:
     async def delete_plan_service(cls, ids: list[int], auth: AuthSchema) -> None:
         await RecordPlanCRUD(auth).delete(ids=ids)
 
+RECORDINGS_DIR = Path(settings.ZLM_RECORD_PATH) if hasattr(settings, 'ZLM_RECORD_PATH') and settings.ZLM_RECORD_PATH else Path("recordings")
+if not RECORDINGS_DIR.is_absolute():
+    RECORDINGS_DIR = Path.cwd() / RECORDINGS_DIR
+RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Track running FFmpeg processes: stream_id -> subprocess.Popen
+_running_recordings: dict[str, subprocess.Popen] = {}
+
+
+class RecordService:
+
     @classmethod
     async def start_recording_service(cls, camera_id: int, stream_id: str, auth: AuthSchema) -> dict:
         try:
-            result = await media_server.start_record(stream_id=stream_id)
+            # Look up camera for RTSP URL
+            async with async_db_session() as session:
+                result = await session.execute(
+                    select(CameraModel).where(
+                        CameraModel.id == camera_id,
+                        CameraModel.is_deleted.is_(False),
+                    )
+                )
+                camera = result.scalar_one_or_none()
+                if not camera:
+                    raise CustomException(msg="摄像机不存在")
+
+            rtsp_url = camera.rtsp_url_main or camera.rtsp_url_sub
+            if not rtsp_url:
+                raise CustomException(msg="摄像机未配置RTSP地址")
+
+            # Record via FFmpeg (more reliable than ZLM API)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = RECORDINGS_DIR / stream_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"{ts}.mp4"
+
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-i", rtsp_url,
+                "-c", "copy", "-f", "mp4",
+                "-y", str(output_path),
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            _running_recordings[stream_id] = proc
+
+            # Create execution log
             plan_ids = await cls._get_plan_ids_for_camera(camera_id)
             if plan_ids:
                 for pid in plan_ids:
                     log_entry = RecordExecutionLog(
-                        plan_id=pid,
-                        camera_id=camera_id,
-                        stream_id=stream_id,
-                        trigger_type="MANUAL",
-                        status="RECORDING",
-                        start_time=datetime.now(),
+                        plan_id=pid, camera_id=camera_id, stream_id=stream_id,
+                        trigger_type="MANUAL", status="RECORDING", start_time=datetime.now(),
                     )
                     async with async_db_session() as session:
                         session.add(log_entry)
                         await session.commit()
-            return {"camera_id": camera_id, "stream_id": stream_id, "zlm_result": result}
+
+            return {"camera_id": camera_id, "stream_id": stream_id, "output": str(output_path)}
         except Exception as e:
             raise CustomException(msg=f"启动录制失败: {e}")
 
     @classmethod
     async def stop_recording_service(cls, stream_id: str, auth: AuthSchema) -> dict:
         try:
-            result = await media_server.stop_record(stream_id=stream_id)
-            await cls._complete_running_logs(stream_id)
-            # Give ZLM time to finalize the MP4 before fetching file list
-            await asyncio.sleep(1)
-            await cls._sync_recorded_files(stream_id)
-            return {"stream_id": stream_id, "zlm_result": result}
-        except Exception as e:
-            raise CustomException(msg=f"停止录制失败: {e}")
+            proc = _running_recordings.pop(stream_id, None)
+            if proc:
+                proc.send_signal(signal.SIGTERM)
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
 
-    @classmethod
-    async def _sync_recorded_files(cls, stream_id: str):
-        try:
-            files = await media_server.get_record_files(stream_id=stream_id)
-            if not files:
-                return
-            # Look up camera_id by stream_id
-            camera_id = None
-            async with async_db_session() as session:
-                result = await session.execute(
-                    select(CameraModel.id).where(
-                        CameraModel.stream_id == stream_id,
-                        CameraModel.is_deleted.is_(False),
-                    )
-                )
-                cam = result.scalar_one_or_none()
-                if cam:
-                    camera_id = cam
-            if not camera_id:
-                return
-            now = datetime.now()
-            for f in files:
-                file_name = f.get("file_name", "")
-                if not file_name:
-                    continue
-                # Skip if already recorded (webhook may have created it)
+            await cls._complete_running_logs(stream_id)
+
+            # Find the recorded file
+            record_dir = RECORDINGS_DIR / stream_id
+            files = sorted(record_dir.glob("*.mp4"), key=os.path.getmtime) if record_dir.exists() else []
+            if files:
+                latest = files[-1]
+                file_size = latest.stat().st_size
+                # Look up camera_id by stream_id
+                camera_id = None
                 async with async_db_session() as session:
-                    existing = await session.execute(
-                        select(RecordFileModel.id).where(
-                            RecordFileModel.file_path == file_name,
-                            RecordFileModel.stream_id == stream_id,
+                    result = await session.execute(
+                        select(CameraModel.id).where(
+                            CameraModel.stream_id == stream_id,
+                            CameraModel.is_deleted.is_(False),
                         )
                     )
-                    if existing.scalar_one_or_none():
-                        continue
+                    cam = result.scalar_one_or_none()
+                    if cam:
+                        camera_id = cam
+
+                if camera_id:
                     record_file = RecordFileModel(
                         camera_id=camera_id,
                         stream_id=stream_id,
-                        file_path=file_name,
-                        file_size=f.get("file_size", 0),
-                        duration=f.get("duration", 0),
-                        start_time=cls._parse_zlm_time(f.get("start_time")) or now,
-                        end_time=cls._parse_zlm_time(f.get("time")) or now,
+                        file_path=str(latest),
+                        file_size=file_size,
+                        duration=0,
+                        start_time=datetime.fromtimestamp(latest.stat().st_ctime),
+                        end_time=datetime.now(),
                         record_type="MANUAL",
                         format="mp4",
                         status="COMPLETED",
                     )
-                    session.add(record_file)
-                    await session.commit()
-        except Exception:
-            pass  # Non-critical: webhook will also create these entries
+                    async with async_db_session() as session:
+                        session.add(record_file)
+                        await session.commit()
 
-    @staticmethod
-    def _parse_zlm_time(time_str: str | None) -> datetime | None:
-        if not time_str:
-            return None
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-            try:
-                return datetime.strptime(time_str, fmt)
-            except ValueError:
-                continue
-        return None
+            return {"stream_id": stream_id, "file_size": files[-1].stat().st_size if files else 0}
+        except Exception as e:
+            raise CustomException(msg=f"停止录制失败: {e}")
 
     @classmethod
     async def _get_plan_ids_for_camera(cls, camera_id: int) -> list[int]:
@@ -209,11 +232,9 @@ class RecordService:
         file_obj = await RecordFileCRUD(auth).get(id=id)
         if not file_obj:
             raise CustomException(msg="录制文件不存在")
-        play_url = media_server.get_record_file_url(
-            stream_id=file_obj.stream_id or "",
-            file_name=file_obj.file_path.split("/")[-1],
-            app="record",
-        )
+        # Build play URL from local file path
+        fp = Path(str(file_obj.file_path))
+        play_url = f"/recordings/{file_obj.stream_id}/{fp.name}" if file_obj.stream_id else ""
         return {
             "id": file_obj.id,
             "camera_id": file_obj.camera_id,
