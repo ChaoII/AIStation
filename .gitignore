@@ -46,3 +46,4 @@ backend/env/.env.prod
 frontend/.env.development
 frontend/.env.production
 docker-compose.yaml
+backend/data/recordings/
