@@ -655,7 +655,7 @@ async function seekTo(r: any) {
       currentVideoUrl.value = playUrl;
     }
   } catch {
-    currentVideoUrl.value = r.file_path;
+    currentVideoUrl.value = `/record/live/${r.stream_id}/${r.file_path}`;
     useFlv.value = false;
   }
   loading.value = false;

@@ -346,6 +346,17 @@ def register_files(app: FastAPI) -> None:
             app=StaticFiles(directory=settings.STATIC_ROOT),
             name=settings.STATIC_DIR,
         )
+     # 挂载录制文件目录 — try simpler path
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from app.api.v1.module_video.record.service import RECORDINGS_DIR
+
+    @app.get("/recordings/{stream_id}/{file_name}")
+    async def serve_recording(stream_id: str, file_name: str):
+        fp = RECORDINGS_DIR / stream_id / Path(file_name).name
+        if fp.exists() and fp.is_file():
+            return FileResponse(str(fp), media_type="video/mp4")
+        return HTMLResponse(status_code=404)
 
 
 def reset_api_docs(app: FastAPI) -> None:
