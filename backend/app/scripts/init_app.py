@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator
-from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI
@@ -9,7 +8,7 @@ from fastapi.openapi.docs import (
     get_swagger_ui_html,
     get_swagger_ui_oauth2_redirect_html,
 )
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter, WebSocketRateLimiter
@@ -347,17 +346,6 @@ def register_files(app: FastAPI) -> None:
             app=StaticFiles(directory=settings.STATIC_ROOT),
             name=settings.STATIC_DIR,
         )
-
-    # 挂载录制文件目录 — 使用端点而非静态挂载（避免被中间件拦截）
-    from fastapi.responses import FileResponse
-    from app.api.v1.module_video.record.service import RECORDINGS_DIR
-    
-    @app.get("/recordings/{stream_id}/{file_name}")
-    async def serve_record_file(stream_id: str, file_name: str):
-        file_path = RECORDINGS_DIR / stream_id / file_name
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path), media_type="video/mp4")
-        return JSONResponse(status_code=404, content={"msg": "File not found"})
 
 
 def reset_api_docs(app: FastAPI) -> None:

@@ -59,6 +59,11 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           secure: false,
           changeOrigin: true,
         },
+        "/record": {
+          target: "http://127.0.0.1:8080",
+          secure: false,
+          changeOrigin: true,
+        },
         "/index/api": {
           target: "http://127.0.0.1:8080",
           secure: false,

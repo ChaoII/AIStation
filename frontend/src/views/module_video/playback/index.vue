@@ -116,14 +116,16 @@
         <div class="pb-player">
           <video
             v-if="currentVideoUrl && !useFlv"
+            :key="currentVideoUrl"
             ref="videoRef"
-            autoplay
-            playsinline
+            :src="currentVideoUrl"
             class="player-video"
+            autoplay
+            controls
+            @loadedmetadata="onVideoMeta"
             @timeupdate="onTimeUpdate"
-            @loadedmetadata="onLoadedMetadata"
-            @ended="onVideoEnded"
-            @error="onVideoError"
+            @ended="onEnded"
+            @click.stop="handleVideoClick"
           />
           <div v-else-if="currentVideoUrl && useFlv" ref="flvContainerRef" class="player-flv-wrap">
             <video ref="flvVideoRef" autoplay playsinline muted class="player-video" />
