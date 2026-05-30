@@ -169,7 +169,26 @@ class RecordService:
         cls, auth: AuthSchema, search: Any | None = None, order_by: list[dict[str, str]] | None = None
     ) -> list[dict]:
         plans = await RecordPlanCRUD(auth).get_list_crud(search=search.__dict__ if search else None, order_by=order_by)
-        return [RecordPlanOutSchema.model_validate(p).model_dump() for p in plans]
+        result = []
+        for p in plans:
+            item = RecordPlanOutSchema.model_validate(p).model_dump()
+            # Add running state
+            camera_id = item.get("camera_id")
+            if camera_id:
+                async with async_db_session() as session:
+                    from sqlalchemy import select as sa_select
+                    r = await session.execute(
+                        sa_select(CameraModel.stream_id).where(
+                            CameraModel.id == camera_id,
+                            CameraModel.is_deleted.is_(False),
+                        )
+                    )
+                    stream_id = r.scalar_one_or_none()
+                item["is_running"] = stream_id in _running_recordings if stream_id else False
+            else:
+                item["is_running"] = False
+            result.append(item)
+        return result
 
     @classmethod
     async def create_plan_service(cls, data: RecordPlanCreateSchema, auth: AuthSchema) -> dict:
@@ -187,6 +206,66 @@ class RecordService:
     @classmethod
     async def delete_plan_service(cls, ids: list[int], auth: AuthSchema) -> None:
         await RecordPlanCRUD(auth).delete(ids=ids)
+
+    @classmethod
+    async def toggle_plan_service(cls, id: int, auth: AuthSchema) -> dict:
+        plan = await RecordPlanCRUD(auth).get_by_id_crud(id=id)
+        if not plan:
+            raise CustomException(msg="录制计划不存在")
+        new_status = not plan.status
+        updated = await RecordPlanCRUD(auth).update(id=id, data={"status": new_status})
+        return {"id": id, "status": new_status}
+
+    @classmethod
+    async def execute_plan_service(cls, id: int, auth: AuthSchema) -> dict:
+        plan = await RecordPlanCRUD(auth).get_by_id_crud(id=id)
+        if not plan:
+            raise CustomException(msg="录制计划不存在")
+        async with async_db_session() as session:
+            from sqlalchemy import select as sa_select
+            result = await session.execute(
+                sa_select(CameraModel).where(
+                    CameraModel.id == plan.camera_id,
+                    CameraModel.is_deleted.is_(False),
+                )
+            )
+            camera = result.scalar_one_or_none()
+            if not camera or not camera.stream_id:
+                raise CustomException(msg="摄像机未配置或流未启动")
+        stream_id = camera.stream_id
+        if stream_id in _running_recordings:
+            raise CustomException(msg="该计划已在执行中")
+        await cls._start_ffmpeg_recording(plan.camera_id, stream_id, "SCHEDULED")
+        async with async_db_session() as session:
+            log_entry = RecordExecutionLog(
+                plan_id=plan.id, camera_id=plan.camera_id, stream_id=stream_id,
+                trigger_type="MANUAL", status="RECORDING", start_time=datetime.now(),
+            )
+            session.add(log_entry)
+            await session.commit()
+        return {"id": id, "stream_id": stream_id, "status": "running"}
+
+    @classmethod
+    async def stop_plan_service(cls, id: int, auth: AuthSchema) -> dict:
+        plan = await RecordPlanCRUD(auth).get_by_id_crud(id=id)
+        if not plan:
+            raise CustomException(msg="录制计划不存在")
+        async with async_db_session() as session:
+            from sqlalchemy import select as sa_select
+            result = await session.execute(
+                sa_select(CameraModel).where(
+                    CameraModel.id == plan.camera_id,
+                    CameraModel.is_deleted.is_(False),
+                )
+            )
+            camera = result.scalar_one_or_none()
+            if not camera or not camera.stream_id:
+                raise CustomException(msg="摄像机未配置")
+        stream_id = camera.stream_id
+        if stream_id not in _running_recordings:
+            raise CustomException(msg="该计划未在执行中")
+        await cls._stop_ffmpeg_recording(stream_id)
+        return {"id": id, "stream_id": stream_id, "status": "stopped"}
 
     @classmethod
     async def _get_plan_ids_for_camera(cls, camera_id: int) -> list[int]:

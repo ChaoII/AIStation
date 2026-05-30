@@ -54,6 +54,33 @@ async def delete_plan_controller(
     return SuccessResponse(msg="删除成功")
 
 
+@RecordRouter.post("/plan/{id}/toggle", summary="启用/禁用录制计划")
+async def toggle_plan_controller(
+    id: int = Path(..., description="计划ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:update"])),
+) -> JSONResponse:
+    result = await RecordService.toggle_plan_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="操作成功")
+
+
+@RecordRouter.post("/plan/{id}/execute", summary="立即执行录制计划")
+async def execute_plan_controller(
+    id: int = Path(..., description="计划ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:update"])),
+) -> JSONResponse:
+    result = await RecordService.execute_plan_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="计划已触发")
+
+
+@RecordRouter.post("/plan/{id}/stop", summary="停止正在执行的计划")
+async def stop_plan_controller(
+    id: int = Path(..., description="计划ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:update"])),
+) -> JSONResponse:
+    result = await RecordService.stop_plan_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="计划已停止")
+
+
 @RecordRouter.post("/start/{camera_id}/{stream_id}", summary="启动录制")
 async def start_record_controller(
     camera_id: int = Path(..., description="摄像机ID"),

@@ -159,11 +159,34 @@
                 v-if="contentCols.find((col) => col.prop === 'status')?.show"
                 key="status"
                 label="状态"
-                width="70"
+                width="100"
                 align="center"
               >
                 <template #default="scope">
-                  <el-switch v-model="scope.row.status" disabled />
+                  <div style="display: flex; align-items: center; gap: 4px; justify-content: center">
+                    <span
+                      class="status-dot"
+                      :class="scope.row.is_running ? 'running' : 'stopped'"
+                    />
+                    <span style="font-size: 12px">{{ scope.row.is_running ? '录制中' : '已停止' }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                v-if="contentCols.find((col) => col.prop === 'enabled')?.show"
+                key="enabled"
+                label="启用"
+                width="60"
+                align="center"
+              >
+                <template #default="scope">
+                  <el-switch
+                    :model-value="scope.row.status"
+                    :loading="scope.row._toggling"
+                    size="small"
+                    @click.stop
+                    @change="(v: boolean) => togglePlan(scope.row, v)"
+                  />
                 </template>
               </el-table-column>
               <el-table-column
@@ -179,29 +202,55 @@
                 fixed="right"
                 label="操作"
                 align="center"
-                min-width="150"
+                min-width="220"
               >
                 <template #default="scope">
-                  <el-button
-                    v-hasPerm="['module_video:record:update']"
-                    type="primary"
-                    size="small"
-                    link
-                    icon="edit"
-                    @click="handleOpenDialog('update', scope.row.id)"
-                  >
-                    编辑
-                  </el-button>
-                  <el-button
-                    v-hasPerm="['module_video:record:delete']"
-                    type="danger"
-                    size="small"
-                    link
-                    icon="delete"
-                    @click="handleRowDelete(scope.row.id)"
-                  >
-                    删除
-                  </el-button>
+                  <div style="display: flex; gap: 4px; justify-content: center; flex-wrap: wrap">
+                    <el-button
+                      v-if="!scope.row.is_running"
+                      v-hasPerm="['module_video:record:update']"
+                      type="success"
+                      size="small"
+                      link
+                      icon="VideoPlay"
+                      :loading="scope.row._executing"
+                      @click="executePlan(scope.row)"
+                    >
+                      执行
+                    </el-button>
+                    <el-button
+                      v-if="scope.row.is_running"
+                      v-hasPerm="['module_video:record:update']"
+                      type="warning"
+                      size="small"
+                      link
+                      icon="VideoPause"
+                      :loading="scope.row._stopping"
+                      @click="stopPlan(scope.row)"
+                    >
+                      停止
+                    </el-button>
+                    <el-button
+                      v-hasPerm="['module_video:record:update']"
+                      type="primary"
+                      size="small"
+                      link
+                      icon="edit"
+                      @click="handleOpenDialog('update', scope.row.id)"
+                    >
+                      编辑
+                    </el-button>
+                    <el-button
+                      v-hasPerm="['module_video:record:delete']"
+                      type="danger"
+                      size="small"
+                      link
+                      icon="delete"
+                      @click="handleRowDelete(scope.row.id)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -349,140 +398,134 @@
 
     <!-- ============ 执行日志 ============ -->
     <template v-if="activeTab === 'log'">
-      <div class="log-toolbar">
-        <div class="log-filters">
-          <el-select
-            v-model="logFilter.camera_id"
-            placeholder="摄像机"
-            clearable
-            filterable
-            style="width: 160px"
-            size="small"
-          >
-            <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-          <el-select
-            v-model="logFilter.status"
-            placeholder="状态"
-            clearable
-            style="width: 120px"
-            size="small"
-          >
-            <el-option label="录制中" value="RECORDING" />
-            <el-option label="已完成" value="COMPLETED" />
-            <el-option label="失败" value="FAILED" />
-            <el-option label="已停止" value="STOPPED" />
-          </el-select>
-          <el-select
-            v-model="logFilter.trigger_type"
-            placeholder="触发方式"
-            clearable
-            style="width: 130px"
-            size="small"
-          >
-            <el-option label="定时" value="SCHEDULED" />
-            <el-option label="手动" value="MANUAL" />
-            <el-option label="告警" value="ALARM" />
-          </el-select>
-          <el-date-picker
-            v-model="logFilter.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            size="small"
-            style="width: 240px"
-          />
-          <el-button size="small" type="primary" @click="fetchLogs">搜索</el-button>
-          <el-button size="small" @click="resetLogFilter">重置</el-button>
-        </div>
-      </div>
-      <div class="log-table-wrap">
-        <el-table
-          v-loading="logLoading"
-          :data="logItems"
-          border
-          stripe
-          height="100%"
-          style="width: 100%"
-        >
-          <template #empty><el-empty :image-size="80" description="暂无日志" /></template>
-          <el-table-column type="index" label="序号" width="60" align="center" />
-          <el-table-column label="摄像机" min-width="140">
-            <template #default="{ row }">{{ row.camera?.name || `#${row.camera_id}` }}</template>
-          </el-table-column>
-          <el-table-column prop="stream_id" label="流ID" min-width="160">
-            <template #default="{ row }">
-              <span class="mono">{{ row.stream_id }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="触发方式" width="90" align="center">
-            <template #default="{ row }">
-              <el-tag :type="triggerTagType(row.trigger_type)" size="small" effect="plain">
-                {{ triggerLabel(row.trigger_type) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="90" align="center">
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">
-                {{ statusLabel(row.status) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="开始时间" prop="start_time" width="170" sortable>
-            <template #default="{ row }">
-              <span class="mono">{{ row.start_time }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="结束时间" prop="end_time" width="170" sortable>
-            <template #default="{ row }">
-              <span class="mono">{{ row.end_time || "-" }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="时长" width="90" align="center">
-            <template #default="{ row }">{{ row.duration ? `${row.duration}s` : "-" }}</template>
-          </el-table-column>
-          <el-table-column label="文件数" prop="file_count" width="70" align="center" />
-          <el-table-column label="错误信息" min-width="160">
-            <template #default="{ row }">
-              <span v-if="row.error_msg" class="log-error">{{ row.error_msg }}</span>
-              <span v-else class="log-none">-</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="创建时间" prop="created_at" width="170" sortable>
-            <template #default="{ row }">
-              <span class="mono">{{ row.created_at }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-      <div class="log-pagination">
-        <el-pagination
-          v-model:current-page="logPageNo"
-          v-model:page-size="logPageSize"
-          :total="logTotal"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next"
-          small
-          background
-          @current-change="fetchLogs"
-          @size-change="fetchLogs"
-        />
-      </div>
+      <PageSearch
+        ref="logSearchRef"
+        :search-config="logSearchConfig"
+        @query-click="fetchLogs"
+        @reset-click="resetLogFilter"
+      />
+      <PageContent ref="logContentRef" :content-config="logContentConfig">
+        <template #table="{ data, loading, tableRef, pagination }">
+          <div class="data-table__content">
+            <el-table
+              :ref="tableRef as any"
+              v-loading="loading"
+              :data="data"
+              height="100%"
+              border
+              stripe
+            >
+              <template #empty><el-empty :image-size="80" description="暂无日志" /></template>
+              <el-table-column type="index" label="序号" width="60" align="center" />
+              <el-table-column label="摄像机" min-width="140">
+                <template #default="{ row }">{{ row.camera?.name || `#${row.camera_id}` }}</template>
+              </el-table-column>
+              <el-table-column prop="stream_id" label="流ID" min-width="160">
+                <template #default="{ row }">
+                  <span class="mono">{{ row.stream_id }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="触发方式" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="triggerTagType(row.trigger_type)" size="small" effect="plain">
+                    {{ triggerLabel(row.trigger_type) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="statusTagType(row.status)" size="small">
+                    {{ statusLabel(row.status) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="开始时间" prop="start_time" width="170" sortable>
+                <template #default="{ row }">
+                  <span class="mono">{{ row.start_time }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="结束时间" prop="end_time" width="170" sortable>
+                <template #default="{ row }">
+                  <span class="mono">{{ row.end_time || "-" }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="时长" width="90" align="center">
+                <template #default="{ row }">{{ row.duration ? `${row.duration}s` : "-" }}</template>
+              </el-table-column>
+              <el-table-column label="文件数" width="80" align="center">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.file_count > 0"
+                    type="primary"
+                    size="small"
+                    link
+                    @click="showLogFiles(row)"
+                  >
+                    {{ row.file_count }}个
+                  </el-button>
+                  <span v-else class="log-none">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="错误信息" min-width="160">
+                <template #default="{ row }">
+                  <span v-if="row.error_msg" class="log-error">{{ row.error_msg }}</span>
+                  <span v-else class="log-none">-</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="data-table__pagination">
+            <el-pagination
+              v-model:current-page="logPage.page_no"
+              v-model:page-size="logPage.page_size"
+              :page-sizes="[10, 20, 30, 50]"
+              :total="logTotal"
+              layout="total, sizes, prev, pager, next, jumper"
+              background
+              small
+              @current-change="fetchLogs"
+              @size-change="fetchLogs"
+            />
+          </div>
+        </template>
+      </PageContent>
     </template>
+
+    <!-- 录制文件预览对话框 -->
+    <el-dialog v-model="filePreviewVisible" title="录制文件" width="660px" append-to-body destroy-on-close>
+      <el-table :data="filePreviewItems" border stripe v-loading="filePreviewLoading" max-height="400">
+        <template #empty><el-empty :image-size="60" description="暂无文件" /></template>
+        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column label="文件大小" width="100" align="center">
+          <template #default="{ row }">{{ (row.file_size / 1048576).toFixed(1) }}MB</template>
+        </el-table-column>
+        <el-table-column label="开始时间" prop="start_time" width="170" />
+        <el-table-column label="时长" width="80" align="center">
+          <template #default="{ row }">{{ row.duration ? `${row.duration}s` : '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" align="center">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" link @click="playRecordFile(row)">播放</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { useRouter } from "vue-router";
 import {
   getRecordPlanList,
   createRecordPlan,
   updateRecordPlan,
   deleteRecordPlan,
   getRecordLogList,
+  getRecordFileList,
+  toggleRecordPlan,
+  executeRecordPlan,
+  stopRecordPlan,
 } from "@/api/module_video/record";
 import { getCameraList } from "@/api/module_video/camera";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -545,6 +588,7 @@ const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boole
   { prop: "storage_days", label: "存储", show: true },
   { prop: "stream_type", label: "码流", show: true },
   { prop: "status", label: "状态", show: true },
+  { prop: "enabled", label: "启用", show: true },
   { prop: "created_time", label: "创建时间", show: true },
   { prop: "operation", label: "操作", show: true },
 ]);
@@ -575,6 +619,35 @@ const contentConfig = reactive<IContentConfig<any>>({
 
 function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
+}
+
+async function togglePlan(row: any, val: boolean) {
+  row._toggling = true;
+  try {
+    await toggleRecordPlan(row.id);
+    row.status = val;
+  } catch {}
+  row._toggling = false;
+}
+
+async function executePlan(row: any) {
+  row._executing = true;
+  try {
+    const res = await executeRecordPlan(row.id);
+    row.is_running = true;
+    ElMessage.success("计划已触发执行");
+  } catch {}
+  row._executing = false;
+}
+
+async function stopPlan(row: any) {
+  row._stopping = true;
+  try {
+    await stopRecordPlan(row.id);
+    row.is_running = false;
+    ElMessage.success("计划已停止");
+  } catch {}
+  row._stopping = false;
 }
 
 const dialogVisible = reactive({
@@ -751,84 +824,137 @@ function planTypeTag(type: string): any {
 }
 
 // ===== Execution Log =====
-const logLoading = ref(false);
-const logItems = ref<any[]>([]);
+const logSearchRef = ref();
+const logContentRef = ref();
 const logTotal = ref(0);
-const logPageNo = ref(1);
-const logPageSize = ref(20);
+const logPage = reactive({ page_no: 1, page_size: 20 });
 
-const logFilter = reactive({
-  camera_id: undefined as number | undefined,
-  status: undefined as string | undefined,
-  trigger_type: undefined as string | undefined,
-  dateRange: undefined as [string, string] | undefined,
+const logSearchConfig = reactive<ISearchConfig>({
+  permPrefix: "module_video:record",
+  colon: true,
+  isExpandable: true,
+  showNumber: 3,
+  form: { labelWidth: "auto" },
+  formItems: [
+    {
+      prop: "camera_id",
+      label: "摄像机",
+      type: "select",
+      options: [],
+      attrs: { placeholder: "请选择摄像机", clearable: true, filterable: true, style: { width: "180px" } },
+    },
+    {
+      prop: "status",
+      label: "状态",
+      type: "select",
+      options: [
+        { label: "录制中", value: "RECORDING" },
+        { label: "已完成", value: "COMPLETED" },
+        { label: "失败", value: "FAILED" },
+        { label: "已停止", value: "STOPPED" },
+      ],
+      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "140px" } },
+    },
+    {
+      prop: "trigger_type",
+      label: "触发方式",
+      type: "select",
+      options: [
+        { label: "定时", value: "SCHEDULED" },
+        { label: "手动", value: "MANUAL" },
+        { label: "告警", value: "ALARM" },
+      ],
+      attrs: { placeholder: "请选择触发方式", clearable: true, style: { width: "140px" } },
+    },
+    {
+      prop: "start_time",
+      label: "时间范围",
+      type: "daterange",
+      attrs: {
+        rangeSeparator: "至", startPlaceholder: "开始日期", endPlaceholder: "结束日期",
+        valueFormat: "YYYY-MM-DD HH:mm:ss", style: { width: "260px" },
+      },
+    },
+  ],
+});
+
+const logContentConfig = reactive<IContentConfig<any>>({
+  permPrefix: "module_video:record",
+  pk: "id",
+  cols: [],
+  hideColumnFilter: true,
+  toolbar: [],
+  defaultToolbar: ["refresh"],
+  pagination: { pageSize: 20, pageSizes: [10, 20, 30, 50] },
+  request: { page_no: "page_no", page_size: "page_size" },
+  indexAction: async (params) => {
+    const p: any = { ...params };
+    const sf = logSearchRef.value?.searchData;
+    if (sf?.camera_id) p.camera_id = sf.camera_id;
+    if (sf?.status) p.status = sf.status;
+    if (sf?.trigger_type) p.trigger_type = sf.trigger_type;
+    if (sf?.start_time?.length === 2) {
+      p.start_time = sf.start_time[0];
+      p.end_time = sf.start_time[1];
+    }
+    const res = await getRecordLogList(p);
+    logTotal.value = res.data?.data?.total || 0;
+    return { total: res.data?.data?.total || 0, list: res.data?.data?.items || [] };
+  },
+  deleteAction: async () => {},
 });
 
 function resetLogFilter() {
-  logFilter.camera_id = undefined;
-  logFilter.status = undefined;
-  logFilter.trigger_type = undefined;
-  logFilter.dateRange = undefined;
-  fetchLogs();
+  logSearchRef.value?.resetSearch();
 }
 
 function triggerLabel(t: string) {
   return ({ SCHEDULED: "定时", MANUAL: "手动", ALARM: "告警" } as Record<string, string>)[t] || t;
 }
 function triggerTagType(t: string): any {
-  return (
-    ({ SCHEDULED: "success", MANUAL: "primary", ALARM: "danger" } as Record<string, string>)[t] ||
-    ""
-  );
+  return ({ SCHEDULED: "success", MANUAL: "primary", ALARM: "danger" } as Record<string, string>)[t] || "";
 }
 function statusLabel(s: string) {
-  return (
-    (
-      { RECORDING: "录制中", COMPLETED: "已完成", FAILED: "失败", STOPPED: "已停止" } as Record<
-        string,
-        string
-      >
-    )[s] || s
-  );
+  return ({ RECORDING: "录制中", COMPLETED: "已完成", FAILED: "失败", STOPPED: "已停止" } as Record<string, string>)[s] || s;
 }
 function statusTagType(s: string): any {
-  return (
-    (
-      { RECORDING: "warning", COMPLETED: "success", FAILED: "danger", STOPPED: "info" } as Record<
-        string,
-        string
-      >
-    )[s] || ""
-  );
+  return ({ RECORDING: "warning", COMPLETED: "success", FAILED: "danger", STOPPED: "info" } as Record<string, string>)[s] || "";
 }
 
 async function fetchLogs() {
-  logLoading.value = true;
+  logContentRef.value?.handleQuery();
+}
+
+// File preview
+const filePreviewVisible = ref(false);
+const filePreviewLoading = ref(false);
+const filePreviewItems = ref<any[]>([]);
+
+async function showLogFiles(logRow: any) {
+  filePreviewVisible.value = true;
+  filePreviewLoading.value = true;
+  filePreviewItems.value = [];
   try {
-    const params: any = { page_no: logPageNo.value, page_size: logPageSize.value };
-    if (logFilter.camera_id) params.camera_id = logFilter.camera_id;
-    if (logFilter.status) params.status = logFilter.status;
-    if (logFilter.trigger_type) params.trigger_type = logFilter.trigger_type;
-    if (logFilter.dateRange?.length === 2) {
-      params.start_time = logFilter.dateRange[0];
-      params.end_time = logFilter.dateRange[1];
-    }
-    const res = await getRecordLogList(params);
-    logItems.value = res.data?.data?.items || [];
-    logTotal.value = res.data?.data?.total || 0;
-  } catch {
-    logItems.value = [];
-    logTotal.value = 0;
-  }
-  logLoading.value = false;
+    const res = await getRecordFileList({ camera_id: logRow.camera_id, page_size: 100 });
+    filePreviewItems.value = res.data?.data?.items || [];
+  } catch {}
+  filePreviewLoading.value = false;
+}
+
+function playRecordFile(file: any) {
+  const router = useRouter();
+  router.push({ path: "/video/playback", query: { camera_id: file.camera_id } });
 }
 
 onBeforeMount(async () => {
   try {
     const res = await getCameraList({ page_size: 100 });
     cameraOptions.value = res.data?.data?.items || [];
+    const opts = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
     const si: any = searchConfig.formItems.find((i: any) => i.prop === "camera_id");
-    if (si) si.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
+    if (si) si.options = opts;
+    const li: any = logSearchConfig.formItems.find((i: any) => i.prop === "camera_id");
+    if (li) li.options = opts;
   } catch {
     cameraOptions.value = [];
   }
@@ -873,26 +999,18 @@ onBeforeUnmount(() => {
 }
 
 /* ===== Log Tab ===== */
-.log-toolbar {
-  flex-shrink: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--el-border-color-light);
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
-.log-filters {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
+.status-dot.running {
+  background: var(--el-color-success);
+  box-shadow: 0 0 6px var(--el-color-success);
 }
-.log-table-wrap {
-  flex: 1;
-  overflow: hidden;
-}
-.log-pagination {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 12px;
+.status-dot.stopped {
+  background: var(--el-text-color-placeholder);
 }
 .mono {
   font-family: "SF Mono", "Cascadia Code", monospace;

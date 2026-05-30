@@ -35,3 +35,15 @@ export function getRecordFilePlayUrl(id: number) {
 export function getRecordLogList(data?: any) {
   return request({ url: "/video/record/log/list", method: "get", params: data });
 }
+
+export function toggleRecordPlan(id: number) {
+  return request({ url: `/video/record/plan/${id}/toggle`, method: "post" });
+}
+
+export function executeRecordPlan(id: number) {
+  return request({ url: `/video/record/plan/${id}/execute`, method: "post" });
+}
+
+export function stopRecordPlan(id: number) {
+  return request({ url: `/video/record/plan/${id}/stop`, method: "post" });
+}
