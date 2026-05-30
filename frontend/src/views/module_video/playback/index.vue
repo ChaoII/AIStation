@@ -350,21 +350,26 @@
               </div>
             </div>
 
-            <div class="tl-body">
-              <div v-if="hasRecordings" class="tl-track">
-                <div
-                  v-for="r in recordings"
-                  :key="r.id"
-                  class="tl-seg"
-                  :class="[
-                    r.record_type === 'ALARM' ? 'seg-alarm' : 'seg-ok',
-                    { 'seg-active': currentRecording?.id === r.id },
-                  ]"
-                  :style="getSegmentStyle(r)"
-                  :title="`${formatDateTime(r.start_time)} — ${formatDateTime(r.end_time)}`"
-                  @click.stop="seekTo(r)"
-                />
-              </div>
+             <div class="tl-body">
+               <div v-if="hasRecordings" class="tl-track">
+                 <div
+                   v-for="r in recordings"
+                   :key="r.id"
+                   class="tl-seg"
+                   :class="[
+                     r.record_type === 'ALARM' ? 'seg-alarm' : 'seg-ok',
+                     { 'seg-active': currentRecording?.id === r.id },
+                   ]"
+                   :style="getSegmentStyle(r)"
+                   :title="`${formatDateTime(r.start_time)} — ${formatDateTime(r.end_time)}`"
+                   @click.stop="seekTo(r)"
+                 />
+                 <div
+                   v-if="currentRecording && isPlaying"
+                   class="tl-cursor"
+                   :style="getCursorStyle()"
+                 />
+               </div>
               <div v-else-if="hasSearched" class="tl-empty">
                 <svg
                   width="14"
@@ -539,6 +544,17 @@ function getSegmentStyle(r: any) {
     left: `${Math.max(0, Math.min(100, left))}%`,
     width: `${Math.max(0.5, Math.min(width, 100 - Math.max(0, left)))}%`,
   };
+}
+
+function getCursorStyle() {
+  if (!currentRecording.value) return { display: "none" };
+  const now = currentTime.value;
+  const rs = new Date(currentRecording.value.start_time).getTime();
+  const re = new Date(currentRecording.value.end_time).getTime();
+  const dur = re - rs;
+  if (dur <= 0) return { display: "none" };
+  const pct = (now / (dur / 1000)) * 100;
+  return { left: `${Math.min(100, Math.max(0, pct))}%` };
 }
 
 // Device tree data
@@ -1491,6 +1507,17 @@ onBeforeUnmount(() => {
   opacity: 1;
   box-shadow: 0 0 0 1.5px #fff;
   z-index: 3;
+}
+
+.tl-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff;
+  z-index: 4;
+  pointer-events: none;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
 }
 
 .tl-empty {
