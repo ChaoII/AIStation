@@ -82,13 +82,58 @@ class MediaServerClient:
         })
 
     async def get_record_files(self, stream_id: str, app: str = "live", period: str = "", vhost: str = "__defaultVhost__") -> list[dict]:
-        result = await self._request("/index/api/getMp4RecordFile", {
-            "vhost": vhost, "app": app, "stream": stream_id, "period": period,
-        })
-        # ZLM returns {"paths": [...], "rootPath": "..."} inside "data"
-        if isinstance(result, dict) and "paths" in result:
-            return result["paths"]
-        return result if isinstance(result, list) else []
+        """Fetch recorded MP4 files from ZLM.
+        Falls back to direct container scan when ZLM API returns hidden files."""
+        # First try: ZLM API
+        try:
+            result = await self._request("/index/api/getMp4RecordFile", {
+                "vhost": vhost, "app": app, "stream": stream_id, "period": period,
+            })
+            if isinstance(result, dict) and "paths" in result:
+                paths = result["paths"]
+                # If paths contain date directory strings, recursively fetch each
+                if paths and isinstance(paths[0], str) and not paths[0].endswith(".mp4"):
+                    all_files = []
+                    for sub in paths:
+                        sub_files = await self.get_record_files(stream_id=stream_id, app=app, period=sub)
+                        all_files.extend(sub_files)
+                    # If sub-directory scan found nothing, files might be hidden
+                    if not all_files:
+                        return await self._scan_record_files(stream_id, app)
+                    return all_files
+                if paths:
+                    return paths
+        except Exception:
+            pass
+        # Fallback: scan via docker exec
+        return await self._scan_record_files(stream_id, app)
+
+    async def _scan_record_files(self, stream_id: str, app: str = "live") -> list[dict]:
+        """Scan ZLM record directory directly for MP4 files (handles hidden files)."""
+        import subprocess
+        base_path = f"/opt/media/bin/www/record/{app}/{stream_id}"
+        try:
+            result = subprocess.run(
+                ["docker", "exec", "fastapi-zlm", "find", base_path, "-name", "*.mp4", "-type", "f"],
+                capture_output=True, text=True, timeout=10,
+            )
+            files = []
+            for line in result.stdout.strip().split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                # Extract relative path from base_path
+                rel_path = line.removeprefix(base_path + "/")
+                files.append({
+                    "file_name": rel_path,
+                    "file_size": 0,
+                    "duration": 0,
+                    "start_time": "",
+                    "time": "",
+                })
+            return files
+        except Exception:
+            return []
 
     async def get_snap(self, stream_id: str, app: str = "live", timeout_sec: int = 10) -> bytes:
         url = f"{self.base_url}/index/api/getSnap"

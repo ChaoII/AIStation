@@ -81,9 +81,23 @@ class RecordService:
 
     @classmethod
     async def _sync_recorded_files(cls, stream_id: str):
+        """Fetch recorded files from ZLM and persist to DB.
+        Handles both file-object and date-directory response formats."""
         files = await media_server.get_record_files(stream_id=stream_id)
         if not files:
             return
+        # files may be date directory strings ["2026-05-30"] or file objects
+        # If they're strings (date dirs), iterate each dir
+        if isinstance(files[0], str):
+            for date_dir in files:
+                sub_files = await media_server.get_record_files(stream_id=stream_id, period=date_dir)
+                if sub_files:
+                    await cls._persist_record_files(sub_files, stream_id)
+        else:
+            await cls._persist_record_files(files, stream_id)
+
+    @classmethod
+    async def _persist_record_files(cls, files: list, stream_id: str):
         camera_id = None
         async with async_db_session() as session:
             result = await session.execute(
@@ -99,6 +113,8 @@ class RecordService:
             return
         now = datetime.now()
         for f in files:
+            if isinstance(f, str):
+                continue  # skip date directory strings
             file_name = f.get("file_name", "")
             if not file_name:
                 continue
@@ -199,13 +215,10 @@ class RecordService:
         file_obj = await RecordFileCRUD(auth).get(id=id)
         if not file_obj:
             raise CustomException(msg="录制文件不存在")
-        # Play URL served by ZLM HTTP server at /record/{app}/{stream_id}/{file_name}
-        file_name = str(file_obj.file_path).split("/")[-1]
-        play_url = media_server.get_record_file_url(
-            stream_id=file_obj.stream_id or "",
-            file_name=file_name,
-            app="record",
-        )
+        # Play URL: served via ZLM HTTP at /record/{app}/{stream_id}/{relative_path}
+        # Vite proxy /record -> ZLM:8080 handles the rest
+        rel_path = str(file_obj.file_path)
+        play_url = f"/record/live/{file_obj.stream_id}/{rel_path}"
         return {
             "id": file_obj.id,
             "camera_id": file_obj.camera_id,
