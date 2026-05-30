@@ -125,13 +125,26 @@ class RecordService:
                         camera_id = cam
 
                 if camera_id:
+                    # Use execution log start_time for accuracy
+                    log_start = None
+                    async with async_db_session() as session:
+                        log = await session.execute(
+                            select(RecordExecutionLog).where(
+                                RecordExecutionLog.stream_id == stream_id,
+                                RecordExecutionLog.status == "COMPLETED",
+                            ).order_by(RecordExecutionLog.id.desc()).limit(1)
+                        )
+                        log_entry = log.scalar_one_or_none()
+                        if log_entry and log_entry.start_time:
+                            log_start = log_entry.start_time
+
                     record_file = RecordFileModel(
                         camera_id=camera_id,
                         stream_id=stream_id,
                         file_path=str(latest),
                         file_size=file_size,
                         duration=0,
-                        start_time=datetime.fromtimestamp(latest.stat().st_ctime),
+                        start_time=log_start or datetime.fromtimestamp(latest.stat().st_ctime),
                         end_time=datetime.now(),
                         record_type="MANUAL",
                         format="mp4",

@@ -155,15 +155,10 @@
 
           <!-- Info bar -->
           <div v-if="currentRecording" class="player-info">
-            <span class="info-cam">
-              {{ currentRecording.camera_name || `#${currentRecording.camera_id}` }}
-            </span>
-            <span class="info-sep" />
             <span class="info-time">
               {{ formatDateTime(currentRecording.start_time) }} —
               {{ formatDateTime(currentRecording.end_time) }}
             </span>
-            <span v-if="currentRecording.record_type === 'ALARM'" class="info-alarm">告警录制</span>
           </div>
 
           <!-- Controls overlay -->
