@@ -64,7 +64,8 @@ async def _check_new_segments(stream_id: str):
     info["known_segments"] = current_files
     for fname in sorted(new_files):
         fp = record_dir / fname
-        await RecordService._persist_segment(stream_id, str(fp))
+        trigger = info.get("trigger", "SCHEDULED")
+        await RecordService._persist_segment(stream_id, str(fp), trigger=trigger)
 
 
 async def _check_and_execute_plans():

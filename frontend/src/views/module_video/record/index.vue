@@ -163,12 +163,16 @@
                 align="center"
               >
                 <template #default="scope">
-                  <div style="display: flex; align-items: center; gap: 4px; justify-content: center">
+                  <div
+                    style="display: flex; align-items: center; gap: 4px; justify-content: center"
+                  >
                     <span
                       class="status-dot"
                       :class="scope.row.is_running ? 'running' : 'stopped'"
                     />
-                    <span style="font-size: 12px">{{ scope.row.is_running ? '录制中' : '已停止' }}</span>
+                    <span style="font-size: 12px">
+                      {{ scope.row.is_running ? "录制中" : "已停止" }}
+                    </span>
                   </div>
                 </template>
               </el-table-column>
@@ -418,7 +422,9 @@
               <template #empty><el-empty :image-size="80" description="暂无日志" /></template>
               <el-table-column type="index" label="序号" width="60" align="center" />
               <el-table-column label="摄像机" min-width="140">
-                <template #default="{ row }">{{ row.camera?.name || `#${row.camera_id}` }}</template>
+                <template #default="{ row }">
+                  {{ row.camera?.name || `#${row.camera_id}` }}
+                </template>
               </el-table-column>
               <el-table-column prop="stream_id" label="流ID" min-width="160">
                 <template #default="{ row }">
@@ -450,7 +456,9 @@
                 </template>
               </el-table-column>
               <el-table-column label="时长" width="90" align="center">
-                <template #default="{ row }">{{ row.duration ? `${row.duration}s` : "-" }}</template>
+                <template #default="{ row }">
+                  {{ row.duration ? `${row.duration}s` : "-" }}
+                </template>
               </el-table-column>
               <el-table-column label="文件数" width="80" align="center">
                 <template #default="{ row }">
@@ -492,8 +500,20 @@
     </template>
 
     <!-- 录制文件预览对话框 -->
-    <el-dialog v-model="filePreviewVisible" title="录制文件" width="660px" append-to-body destroy-on-close>
-      <el-table :data="filePreviewItems" border stripe v-loading="filePreviewLoading" max-height="400">
+    <el-dialog
+      v-model="filePreviewVisible"
+      title="录制文件"
+      width="660px"
+      append-to-body
+      destroy-on-close
+    >
+      <el-table
+        v-loading="filePreviewLoading"
+        :data="filePreviewItems"
+        border
+        stripe
+        max-height="400"
+      >
         <template #empty><el-empty :image-size="60" description="暂无文件" /></template>
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column label="文件大小" width="100" align="center">
@@ -501,11 +521,13 @@
         </el-table-column>
         <el-table-column label="开始时间" prop="start_time" width="170" />
         <el-table-column label="时长" width="80" align="center">
-          <template #default="{ row }">{{ row.duration ? `${row.duration}s` : '-' }}</template>
+          <template #default="{ row }">{{ row.duration ? `${row.duration}s` : "-" }}</template>
         </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" link @click="playRecordFile(row)">播放</el-button>
+            <el-button type="primary" size="small" link @click="playRecordFile(row)">
+              播放
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -841,7 +863,12 @@ const logSearchConfig = reactive<ISearchConfig>({
       label: "摄像机",
       type: "select",
       options: [],
-      attrs: { placeholder: "请选择摄像机", clearable: true, filterable: true, style: { width: "180px" } },
+      attrs: {
+        placeholder: "请选择摄像机",
+        clearable: true,
+        filterable: true,
+        style: { width: "180px" },
+      },
     },
     {
       prop: "status",
@@ -871,8 +898,11 @@ const logSearchConfig = reactive<ISearchConfig>({
       label: "时间范围",
       type: "daterange",
       attrs: {
-        rangeSeparator: "至", startPlaceholder: "开始日期", endPlaceholder: "结束日期",
-        valueFormat: "YYYY-MM-DD HH:mm:ss", style: { width: "260px" },
+        rangeSeparator: "至",
+        startPlaceholder: "开始日期",
+        endPlaceholder: "结束日期",
+        valueFormat: "YYYY-MM-DD HH:mm:ss",
+        style: { width: "260px" },
       },
     },
   ],
@@ -912,13 +942,30 @@ function triggerLabel(t: string) {
   return ({ SCHEDULED: "定时", MANUAL: "手动", ALARM: "告警" } as Record<string, string>)[t] || t;
 }
 function triggerTagType(t: string): any {
-  return ({ SCHEDULED: "success", MANUAL: "primary", ALARM: "danger" } as Record<string, string>)[t] || "";
+  return (
+    ({ SCHEDULED: "success", MANUAL: "primary", ALARM: "danger" } as Record<string, string>)[t] ||
+    ""
+  );
 }
 function statusLabel(s: string) {
-  return ({ RECORDING: "录制中", COMPLETED: "已完成", FAILED: "失败", STOPPED: "已停止" } as Record<string, string>)[s] || s;
+  return (
+    (
+      { RECORDING: "录制中", COMPLETED: "已完成", FAILED: "失败", STOPPED: "已停止" } as Record<
+        string,
+        string
+      >
+    )[s] || s
+  );
 }
 function statusTagType(s: string): any {
-  return ({ RECORDING: "warning", COMPLETED: "success", FAILED: "danger", STOPPED: "info" } as Record<string, string>)[s] || "";
+  return (
+    (
+      { RECORDING: "warning", COMPLETED: "success", FAILED: "danger", STOPPED: "info" } as Record<
+        string,
+        string
+      >
+    )[s] || ""
+  );
 }
 
 async function fetchLogs() {

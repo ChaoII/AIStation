@@ -65,7 +65,7 @@
           <el-dropdown trigger="click" @command="handleLayoutSelect">
             <button class="scheme-split-select">
               <el-icon><Download /></el-icon>
-              <span>{{ selectedLayoutName || '加载方案' }}</span>
+              <span>{{ selectedLayoutName || "加载方案" }}</span>
               <el-icon class="scheme-arrow"><ArrowDown /></el-icon>
             </button>
             <template #dropdown>
@@ -358,7 +358,11 @@
       title="保存布局方案"
       width="460px"
       append-to-body
-      @close="saveMode = 'create'; layoutName = ''; selectedOverwriteId = null"
+      @close="
+        saveMode = 'create';
+        layoutName = '';
+        selectedOverwriteId = null;
+      "
     >
       <el-form label-width="90px">
         <el-form-item label="操作方式">
@@ -369,10 +373,7 @@
         </el-form-item>
 
         <template v-if="saveMode === 'create'">
-          <el-form-item
-            label="方案名称"
-            :error="layoutNameError"
-          >
+          <el-form-item label="方案名称" :error="layoutNameError">
             <el-input
               v-model="layoutName"
               placeholder="例如：4路默认布局"
@@ -384,8 +385,17 @@
 
         <template v-if="saveMode === 'overwrite'">
           <el-form-item label="选择方案">
-            <el-select v-model="selectedOverwriteId" placeholder="选择要覆盖的方案" style="width: 100%">
-              <el-option v-for="ly in savedLayouts" :key="ly.id" :value="ly.id" :label="`${ly.name} (${ly.grid_type}路)`" />
+            <el-select
+              v-model="selectedOverwriteId"
+              placeholder="选择要覆盖的方案"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="ly in savedLayouts"
+                :key="ly.id"
+                :value="ly.id"
+                :label="`${ly.name} (${ly.grid_type}路)`"
+              />
             </el-select>
           </el-form-item>
         </template>
@@ -398,13 +408,8 @@
       </el-form>
       <template #footer>
         <el-button @click="showSaveLayout = false">取消</el-button>
-        <el-button
-          type="primary"
-          :disabled="!canSave"
-          :loading="savingLayout"
-          @click="saveLayout"
-        >
-          {{ saveMode === 'overwrite' ? '覆盖保存' : '创建保存' }}
+        <el-button type="primary" :disabled="!canSave" :loading="savingLayout" @click="saveLayout">
+          {{ saveMode === "overwrite" ? "覆盖保存" : "创建保存" }}
         </el-button>
       </template>
     </el-dialog>
@@ -536,21 +541,23 @@ const alarmFilters = [
 ];
 
 const selectedLayoutName = computed(() => {
-  if (!selectedLayoutId.value) return '';
+  if (!selectedLayoutId.value) return "";
   const layout = savedLayouts.value.find((l: any) => l.id === selectedLayoutId.value);
-  return layout ? layout.name : '';
+  return layout ? layout.name : "";
 });
 
 const boundCount = computed(() => Object.keys(cameraBindings.value).length);
 
 const layoutNameError = computed(() => {
-  if (saveMode.value !== 'create' || !layoutName.value.trim()) return '';
-  const exists = savedLayouts.value.some((l: any) => l.name === layoutName.value.trim() && l.id !== selectedOverwriteId.value);
-  return exists ? '该名称已存在' : '';
+  if (saveMode.value !== "create" || !layoutName.value.trim()) return "";
+  const exists = savedLayouts.value.some(
+    (l: any) => l.name === layoutName.value.trim() && l.id !== selectedOverwriteId.value
+  );
+  return exists ? "该名称已存在" : "";
 });
 
 const canSave = computed(() => {
-  if (saveMode.value === 'create') return !!layoutName.value.trim() && !layoutNameError.value;
+  if (saveMode.value === "create") return !!layoutName.value.trim() && !layoutNameError.value;
   return !!selectedOverwriteId.value;
 });
 
@@ -803,12 +810,12 @@ async function saveLayout() {
     if (cam?.id) windows[wid] = cam.id;
   }
   const data = {
-    name: saveMode.value === 'create' ? layoutName.value.trim() : '',
+    name: saveMode.value === "create" ? layoutName.value.trim() : "",
     grid_type: layoutType.value,
     layout_config: { windows, grid_type: layoutType.value },
   };
   try {
-    if (saveMode.value === 'overwrite' && selectedOverwriteId.value) {
+    if (saveMode.value === "overwrite" && selectedOverwriteId.value) {
       const target = savedLayouts.value.find((l: any) => l.id === selectedOverwriteId.value);
       if (target) {
         data.name = target.name;
@@ -1148,13 +1155,20 @@ watch(savedLayouts, (layouts) => {
   if (!dl) return;
   defaultLayoutApplied = true;
   selectedLayoutId.value = dl.id;
-  const uw = watch(cameras, (cams) => {
-    if (unmounted) { uw(); return; }
-    if (cams.length > 0) {
-      applyLayout(dl);
-      uw();
-    }
-  }, { immediate: true });
+  const uw = watch(
+    cameras,
+    (cams) => {
+      if (unmounted) {
+        uw();
+        return;
+      }
+      if (cams.length > 0) {
+        applyLayout(dl);
+        uw();
+      }
+    },
+    { immediate: true }
+  );
 });
 
 onBeforeUnmount(() => {

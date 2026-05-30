@@ -1,8 +1,10 @@
 import asyncio
 import os
+import re
 import signal
 import subprocess
-from datetime import datetime
+import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -66,11 +68,13 @@ class RecordService:
             "known_segments": known,
             "start_time": datetime.now(),
             "camera_id": camera_id,
+            "trigger": trigger,
         }
 
     @classmethod
     async def _stop_ffmpeg_recording(cls, stream_id: str):
         info = _running_recordings.pop(stream_id, None)
+        trigger = info.get("trigger", "MANUAL") if info else "MANUAL"
         if info:
             proc = info["proc"]
             proc.send_signal(signal.SIGTERM)
@@ -88,13 +92,30 @@ class RecordService:
                 if fsize < 1000:
                     fp.unlink(missing_ok=True)
                     continue
-                await cls._persist_segment(stream_id, str(fp))
+                await cls._persist_segment(stream_id, str(fp), trigger=trigger)
+
+    _SEGMENT_FILENAME_RE = re.compile(r"^(\d{8}_\d{6})_(\d{3})\.mp4$")
 
     @classmethod
-    async def _persist_segment(cls, stream_id: str, file_path: str):
-        """Create a RecordFileModel for a completed segment, skipping duplicates."""
+    def _parse_segment_times(cls, file_path: str) -> tuple[datetime, datetime, int] | None:
         fp = Path(file_path)
-        # Find camera_id by stream_id
+        m = cls._SEGMENT_FILENAME_RE.match(fp.name)
+        if not m:
+            return None
+        base_ts_str, seq_str = m.group(1), m.group(2)
+        try:
+            base_dt = datetime.strptime(base_ts_str, "%Y%m%d_%H%M%S")
+        except ValueError:
+            return None
+        seq = int(seq_str)
+        start = base_dt + timedelta(seconds=seq * _SEGMENT_SEC)
+        end = start + timedelta(seconds=_SEGMENT_SEC)
+        duration = _SEGMENT_SEC
+        return start, end, duration
+
+    @classmethod
+    async def _persist_segment(cls, stream_id: str, file_path: str, trigger: str = "MANUAL"):
+        fp = Path(file_path)
         camera_id = None
         async with async_db_session() as session:
             result = await session.execute(
@@ -108,7 +129,6 @@ class RecordService:
                 camera_id = cam
         if not camera_id:
             return
-        # Skip if already recorded
         async with async_db_session() as session:
             existing = await session.execute(
                 select(RecordFileModel.id).where(
@@ -119,15 +139,22 @@ class RecordService:
             if existing.scalar_one_or_none():
                 return
             fsize = fp.stat().st_size
+            parsed = cls._parse_segment_times(str(fp))
+            if parsed:
+                start_time, end_time, duration = parsed
+            else:
+                start_time = datetime.fromtimestamp(fp.stat().st_ctime)
+                end_time = datetime.now()
+                duration = 0
             record_file = RecordFileModel(
                 camera_id=camera_id,
                 stream_id=stream_id,
                 file_path=str(fp),
                 file_size=fsize,
-                duration=0,
-                start_time=datetime.fromtimestamp(fp.stat().st_ctime),
-                end_time=datetime.now(),
-                record_type="MANUAL",
+                duration=duration,
+                start_time=start_time,
+                end_time=end_time,
+                record_type=trigger,
                 format="mp4",
                 status="COMPLETED",
             )
@@ -300,17 +327,38 @@ class RecordService:
     # ── File / Playback ──
 
     @classmethod
+    def _fix_file_times(cls, item: dict) -> dict:
+        fp = Path(item.get("file_path", ""))
+        parsed = cls._parse_segment_times(str(fp))
+        if parsed:
+            start, end, dur = parsed
+            if not item.get("start_time") or item.get("duration") in (0, None):
+                item["start_time"] = start.strftime("%Y-%m-%d %H:%M:%S")
+                item["end_time"] = end.strftime("%Y-%m-%d %H:%M:%S")
+                item["duration"] = dur
+        if item.get("start_time") and item.get("end_time"):
+            st = item["start_time"]
+            et = item["end_time"]
+            if isinstance(st, str):
+                st = datetime.strptime(st, "%Y-%m-%d %H:%M:%S")
+            if isinstance(et, str):
+                et = datetime.strptime(et, "%Y-%m-%d %H:%M:%S")
+            if not item.get("duration") or item["duration"] == 0:
+                item["duration"] = max(0, int((et - st).total_seconds()))
+        return item
+
+    @classmethod
     async def get_record_files_service(cls, camera_id: int, auth: AuthSchema) -> list[dict]:
         search = {"camera_id": camera_id}
         files = await RecordFileCRUD(auth).get_list_crud(search=search, order_by=[{"start_time": "desc"}])
-        return [RecordFileOutSchema.model_validate(f).model_dump() for f in files]
+        return [cls._fix_file_times(RecordFileOutSchema.model_validate(f).model_dump()) for f in files]
 
     @classmethod
     async def get_file_list_service(
         cls, auth: AuthSchema, search: Any | None = None, order_by: list[dict[str, str]] | None = None
     ) -> list[dict]:
         files = await RecordFileCRUD(auth).get_list_crud(search=search.__dict__ if search else None, order_by=order_by)
-        return [RecordFileOutSchema.model_validate(f).model_dump() for f in files]
+        return [cls._fix_file_times(RecordFileOutSchema.model_validate(f).model_dump()) for f in files]
 
     @classmethod
     async def get_file_detail_service(cls, id: int, auth: AuthSchema) -> dict:
@@ -337,6 +385,34 @@ class RecordService:
             "file_path": file_obj.file_path,
             "play_url": play_url,
         }
+
+    @classmethod
+    async def get_file_thumbnail_service(cls, id: int, auth: AuthSchema) -> Path:
+        file_obj = await RecordFileCRUD(auth).get(id=id)
+        if not file_obj:
+            raise CustomException(msg="录制文件不存在")
+        fp = Path(str(file_obj.file_path))
+        if not fp.exists():
+            fp = RECORDINGS_DIR / file_obj.stream_id / fp.name if file_obj.stream_id else fp
+        if not fp.exists():
+            raise CustomException(msg="文件不存在")
+        thumb_dir = RECORDINGS_DIR / "thumbnails"
+        thumb_dir.mkdir(parents=True, exist_ok=True)
+        thumb_path = thumb_dir / f"{file_obj.id}.jpg"
+        if thumb_path.exists() and thumb_path.stat().st_size > 0:
+            return thumb_path
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-ss", "0.5", "-i", str(fp),
+            "-vframes", "1", "-q:v", "4",
+            "-vf", "scale=192:-1",
+            "-y", str(thumb_path),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        await proc.wait()
+        if not thumb_path.exists() or thumb_path.stat().st_size == 0:
+            raise CustomException(msg="缩略图生成失败")
+        return thumb_path
 
     @classmethod
     async def get_execution_log_list_service(
@@ -392,3 +468,22 @@ class RecordService:
             )
             await session.commit()
         return {"code": 0, "msg": "ok"}
+
+    @classmethod
+    async def fix_file_times_service(cls) -> dict:
+        fixed = 0
+        async with async_db_session() as session:
+            result = await session.execute(
+                select(RecordFileModel).where(RecordFileModel.duration.in_([0, None]) | RecordFileModel.start_time.is_(None))
+            )
+            for row in result.scalars().all():
+                fp = Path(row.file_path)
+                parsed = cls._parse_segment_times(str(fp))
+                if parsed:
+                    start, end, dur = parsed
+                    row.start_time = start
+                    row.end_time = end
+                    row.duration = dur
+                    fixed += 1
+            await session.commit()
+        return {"fixed": fixed}

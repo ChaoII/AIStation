@@ -57,7 +57,10 @@
               <el-icon><Monitor /></el-icon>
             </button>
           </el-tooltip>
-          <el-tooltip :content="props.recordingWindows?.[w.id] ? '停止录像' : '开始录像'" placement="top">
+          <el-tooltip
+            :content="props.recordingWindows?.[w.id] ? '停止录像' : '开始录像'"
+            placement="top"
+          >
             <button
               class="action-btn"
               :class="{ recording: props.recordingWindows?.[w.id] }"
@@ -103,7 +106,11 @@
           <el-icon><Microphone /></el-icon>
           {{ contextMenu.muted ? "取消静音" : "静音" }}
         </div>
-        <div class="context-item" :class="{ 'recording-text': contextMenu.recording }" @click="contextAction(contextMenu.recording ? 'stopRecord' : 'record')">
+        <div
+          class="context-item"
+          :class="{ 'recording-text': contextMenu.recording }"
+          @click="contextAction(contextMenu.recording ? 'stopRecord' : 'record')"
+        >
           {{ contextMenu.recording ? "⏹ 停止录像" : "⏺ 开始录像" }}
         </div>
         <div class="context-divider" />
@@ -281,7 +288,12 @@ function contextAction(action: string) {
       break;
     case "record":
       if (state?.camera) {
-        emit("startRecord", wid, state.camera.id, state.camera.stream_id || `camera_${state.camera.id}`);
+        emit(
+          "startRecord",
+          wid,
+          state.camera.id,
+          state.camera.stream_id || `camera_${state.camera.id}`
+        );
       }
       break;
     case "stopRecord":
@@ -515,8 +527,13 @@ onBeforeUnmount(() => {
   animation: rec-blink 1.5s ease-in-out infinite;
 }
 @keyframes rec-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 @keyframes pulse {

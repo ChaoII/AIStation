@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Body, Depends, Path, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.request import PaginationService
@@ -138,6 +138,15 @@ async def get_file_play_url_controller(
     return SuccessResponse(data=result, msg="查询成功")
 
 
+@RecordRouter.get("/file/{id}/thumbnail", summary="获取录制文件缩略图")
+async def get_file_thumbnail_controller(
+    id: int = Path(..., description="文件ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:query"])),
+) -> FileResponse:
+    thumb_path = await RecordService.get_file_thumbnail_service(id=id, auth=auth)
+    return FileResponse(thumb_path, media_type="image/jpeg")
+
+
 # ---- 录制执行日志 ----
 
 @RecordRouter.get("/log/list", summary="查询录制执行日志")
@@ -166,3 +175,11 @@ async def get_execution_log_detail_controller(
 async def on_record_mp4_webhook(request: Request) -> dict:
     data = await request.json()
     return await RecordService.handle_record_webhook(data)
+
+
+@RecordRouter.post("/file/fix-times", summary="修复录像文件时间数据")
+async def fix_file_times_controller(
+    auth: AuthSchema = Depends(AuthPermission(["module_video:record:update"])),
+) -> JSONResponse:
+    result = await RecordService.fix_file_times_service()
+    return SuccessResponse(data=result, msg=f"修复完成，共修复 {result['fixed']} 条记录")
