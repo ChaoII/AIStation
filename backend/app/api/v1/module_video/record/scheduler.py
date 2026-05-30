@@ -1,17 +1,18 @@
 import asyncio
-from datetime import datetime, time, timedelta
+from datetime import datetime
 
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_db_session
 from app.core.logger import logger
-from app.core.media_server import media_server
 from app.api.v1.module_video.camera.model import CameraModel
 from app.api.v1.module_video.record.model import RecordExecutionLog, RecordPlanModel
+from app.api.v1.module_video.record.service import RECORDINGS_DIR, RecordService, _running_recordings
 
 _WARMUP_DELAY = 15
 _CHECK_INTERVAL = 60
+_SEGMENT_DURATION = 300  # 5 minutes
 
 
 def _should_record_now(plan: RecordPlanModel) -> bool:
@@ -25,19 +26,11 @@ def _should_record_now(plan: RecordPlanModel) -> bool:
     current_minutes = now.hour * 60 + now.minute
     for slot in schedule.get("slots", []):
         if slot.get("day") == weekday:
-            start_h, start_m = divmod(slot.get("start", 0), 1)
-            end_h, end_m = divmod(slot.get("end", 24), 1)
             start_mins = int(slot["start"]) * 60 if isinstance(slot["start"], int) else slot["start"]
             end_mins = int(slot["end"]) * 60 if isinstance(slot["end"], int) else slot["end"]
             if start_mins <= current_minutes < end_mins:
                 return True
     return False
-
-
-async def _get_session() -> AsyncSession:
-    factory = async_db_session
-    async with factory() as session:
-        return session
 
 
 async def _get_active_plans(session: AsyncSession) -> list[RecordPlanModel]:
@@ -56,44 +49,22 @@ async def _get_camera(session: AsyncSession, camera_id: int) -> CameraModel | No
     return result.scalar_one_or_none()
 
 
-async def _has_running_log(session: AsyncSession, plan_id: int) -> bool:
-    result = await session.execute(
-        select(RecordExecutionLog).where(
-            RecordExecutionLog.plan_id == plan_id,
-            RecordExecutionLog.status == "RECORDING",
-        ).limit(1)
-    )
-    return result.scalar_one_or_none() is not None
-
-
-async def _create_execution_log(session: AsyncSession, plan: RecordPlanModel, camera: CameraModel):
-    log_entry = RecordExecutionLog(
-        plan_id=plan.id,
-        camera_id=plan.camera_id,
-        stream_id=camera.stream_id,
-        trigger_type="SCHEDULED",
-        status="RECORDING",
-        start_time=datetime.now(),
-    )
-    session.add(log_entry)
-    await session.commit()
-    return log_entry
-
-
-async def _complete_execution_log(session: AsyncSession, log_entry: RecordExecutionLog):
-    now = datetime.now()
-    if log_entry.start_time:
-        log_entry.duration = int((now - log_entry.start_time).total_seconds())
-    log_entry.end_time = now
-    log_entry.status = "COMPLETED"
-    await session.commit()
-
-
-async def _fail_execution_log(session: AsyncSession, log_entry: RecordExecutionLog, error: str):
-    log_entry.status = "FAILED"
-    log_entry.error_msg = error
-    log_entry.end_time = datetime.now()
-    await session.commit()
+async def _check_new_segments(stream_id: str):
+    """Detect completed FFmpeg segment files and persist them."""
+    info = _running_recordings.get(stream_id)
+    if not info:
+        return
+    record_dir = RECORDINGS_DIR / stream_id
+    if not record_dir.exists():
+        return
+    current_files = set(f.name for f in record_dir.glob("*.mp4") if f.stat().st_size > 10000)
+    new_files = current_files - info.get("known_segments", set())
+    if not new_files:
+        return
+    info["known_segments"] = current_files
+    for fname in sorted(new_files):
+        fp = record_dir / fname
+        await RecordService._persist_segment(stream_id, str(fp))
 
 
 async def _check_and_execute_plans():
@@ -104,43 +75,43 @@ async def _check_and_execute_plans():
                 camera = await _get_camera(session, plan.camera_id)
                 if not camera or not camera.stream_id:
                     continue
+                stream_id = camera.stream_id
                 should_record = _should_record_now(plan)
-                has_running = await _has_running_log(session, plan.id)
-                try:
-                    status_data = await media_server.get_record_status(stream_id=camera.stream_id)
-                    is_recording = status_data.get("status", False)
-                except Exception:
-                    is_recording = False
-                if should_record and not is_recording:
+                is_running = stream_id in _running_recordings
+
+                if should_record and not is_running:
                     try:
-                        await media_server.start_record(stream_id=camera.stream_id)
+                        await RecordService._start_ffmpeg_recording(plan.camera_id, stream_id, "SCHEDULED")
                         await _create_execution_log(session, plan, camera)
                         logger.info(f"[录制定时器] 启动录制: camera={camera.name} plan={plan.id}")
                     except Exception as e:
                         logger.error(f"[录制定时器] 启动失败: {e}")
-                        if not has_running:
-                            log_entry = await _create_execution_log(session, plan, camera)
-                            await _fail_execution_log(session, log_entry, str(e))
-                elif should_record and is_recording and not has_running:
-                    await _create_execution_log(session, plan, camera)
-                    logger.info(f"[录制定时器] 补录执行日志: camera={camera.name} plan={plan.id}")
-                elif not should_record and is_recording:
+                elif not should_record and is_running:
                     try:
-                        await media_server.stop_record(stream_id=camera.stream_id)
+                        await RecordService._stop_ffmpeg_recording(stream_id)
                         logger.info(f"[录制定时器] 停止录制: camera={camera.name} plan={plan.id}")
                     except Exception as e:
                         logger.error(f"[录制定时器] 停止失败: {e}")
-                if not should_record and has_running and not is_recording:
-                    running_logs = await session.execute(
-                        select(RecordExecutionLog).where(
-                            RecordExecutionLog.plan_id == plan.id,
-                            RecordExecutionLog.status == "RECORDING",
-                        )
-                    )
-                    for log_entry in running_logs.scalars().all():
-                        await _complete_execution_log(session, log_entry)
+
+            # Check for new segments & clean dead processes
+            for sid in list(_running_recordings.keys()):
+                await _check_new_segments(sid)
+                info = _running_recordings.get(sid)
+                if info and info["proc"].poll() is not None:
+                    # Process exited unexpectedly — clean up
+                    logger.warning(f"[录制定时器] FFmpeg 进程意外退出: {sid}")
+                    _running_recordings.pop(sid, None)
         except Exception as e:
             logger.error(f"[录制定时器] 检查计划异常: {e}")
+
+
+async def _create_execution_log(session: AsyncSession, plan: RecordPlanModel, camera: CameraModel):
+    log_entry = RecordExecutionLog(
+        plan_id=plan.id, camera_id=plan.camera_id, stream_id=camera.stream_id,
+        trigger_type="SCHEDULED", status="RECORDING", start_time=datetime.now(),
+    )
+    session.add(log_entry)
+    await session.commit()
 
 
 _record_task: asyncio.Task | None = None

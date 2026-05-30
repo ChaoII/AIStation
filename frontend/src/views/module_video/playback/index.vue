@@ -120,7 +120,6 @@
             ref="videoRef"
             :src="currentVideoUrl"
             class="player-video"
-            autoplay
             @loadedmetadata="onLoadedMetadata"
             @timeupdate="onTimeUpdate"
             @ended="onVideoEnded"
@@ -673,7 +672,6 @@ async function seekTo(r: any) {
     useFlv.value = false;
   }
   loading.value = false;
-  isPlaying.value = true;
 }
 
 async function initMpegtsPlayer(url: string) {
@@ -690,7 +688,6 @@ async function initMpegtsPlayer(url: string) {
       );
       mpegtsPlayer.attachMediaElement(video);
       mpegtsPlayer.load();
-      mpegtsPlayer.play();
       mpegtsPlayer.on(mpegts.Events.ERROR, (e: any) => console.error("mpegts error:", e));
     }
   } catch (e) {
@@ -708,8 +705,6 @@ function onLoadedMetadata() {
   if (video) {
     duration.value = video.duration;
     video.playbackRate = playbackSpeed.value;
-    video.play();
-    isPlaying.value = true;
   }
 }
 
