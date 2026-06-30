@@ -1,4 +1,3 @@
-
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.exceptions import CustomException
 from app.core.media_server import media_server
@@ -29,14 +28,7 @@ class CameraService:
         if camera.stream_id:
             result["play_urls"] = media_server.get_play_urls(camera.stream_id)
             result["stream_source"] = "EXTERNAL" if not camera.stream_id.startswith("camera_") else "SYSTEM"
-            try:
-                online = await media_server.is_media_online(camera.stream_id)
-                result["status"] = "ONLINE" if online else "OFFLINE"
-                result["stream_status"] = "PUSHING" if online else "IDLE"
-            except Exception:
-                pass
-        else:
-            result["status"] = "OFFLINE"
+            result["stream_status"] = "PUSHING" if camera.reachable else "IDLE"
         return result
 
     @classmethod
@@ -53,14 +45,7 @@ class CameraService:
             if camera.stream_id:
                 d["play_urls"] = media_server.get_play_urls(camera.stream_id)
                 d["stream_source"] = "EXTERNAL" if not camera.stream_id.startswith("camera_") else "SYSTEM"
-                try:
-                    online = await media_server.is_media_online(camera.stream_id)
-                    d["status"] = "ONLINE" if online else "OFFLINE"
-                    d["stream_status"] = "PUSHING" if online else "IDLE"
-                except Exception:
-                    pass
-            else:
-                d["status"] = "OFFLINE"
+                d["stream_status"] = "PUSHING" if camera.reachable else "IDLE"
             result.append(d)
         return result
 
@@ -95,17 +80,32 @@ class CameraService:
         camera = await CameraCRUD(auth).get_by_id_crud(id=id)
         if not camera:
             raise CustomException(msg="摄像机不存在")
+        stream_id = f"camera_{camera.id}"
+
+        if camera.stream_id == stream_id:
+            try:
+                online = await media_server.is_media_online(stream_id)
+                if online:
+                    return {"stream_id": stream_id, "play_urls": media_server.get_play_urls(stream_id)}
+            except Exception:
+                pass
+
         rtsp_url = camera.rtsp_url_main if camera.stream_type == "MAIN" else camera.rtsp_url_sub
         if not rtsp_url:
             raise CustomException(msg=f"摄像机 {camera.name} 未配置RTSP地址")
-        stream_id = f"camera_{camera.id}"
         try:
             await media_server.add_stream_proxy(url=rtsp_url, stream_id=stream_id)
         except Exception as e:
+            msg = str(e)
+            if "already exists" in msg:
+                await CameraCRUD(auth).update_crud(id=id, data={
+                    "stream_id": stream_id, "stream_status": "PUSHING"
+                })
+                return {"stream_id": stream_id, "play_urls": media_server.get_play_urls(stream_id)}
             raise CustomException(msg=f"启动推流失败: {e}")
-        await CameraCRUD(auth).update_crud(id=id, data=CameraUpdateSchema(
-            stream_id=stream_id, stream_status="PUSHING"
-        ))
+        await CameraCRUD(auth).update_crud(id=id, data={
+            "stream_id": stream_id, "stream_status": "PUSHING"
+        })
         return {"stream_id": stream_id, "play_urls": media_server.get_play_urls(stream_id)}
 
     @classmethod
@@ -118,18 +118,9 @@ class CameraService:
                 await media_server.close_stream(camera.stream_id)
             except Exception:
                 pass
-            try:
-                still_online = await media_server.is_media_online(camera.stream_id)
-                if still_online:
-                    await CameraCRUD(auth).update_crud(id=id, data=CameraUpdateSchema(
-                        stream_status="PUSHING"
-                    ))
-                    return
-            except Exception:
-                pass
-        await CameraCRUD(auth).update_crud(id=id, data=CameraUpdateSchema(
-            stream_id=None, stream_status="IDLE"
-        ))
+        await CameraCRUD(auth).update_crud(id=id, data={
+            "stream_id": None, "stream_status": "IDLE"
+        })
 
     @classmethod
     async def get_stream_urls_service(cls, id: int, auth: AuthSchema) -> dict:

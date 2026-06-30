@@ -209,6 +209,16 @@ class Settings(BaseSettings):
     ZLM_WEBRTC_PORT: int = 8000
 
     # ================================================= #
+    # ******************* AI推理引擎配置 ****************** #
+    # ================================================= #
+    INFERENCE_CALLBACK_TOKEN: str = "infer_callback_shared_secret"
+    INFERENCE_SCHEDULER_INTERVAL: int = 60
+    INFERENCE_WARMUP_DELAY: int = 15
+    INFERENCE_CONFIG_DIR: str = "/tmp/inference_configs"
+    INFERENCE_WORKER_PYTHON: str = ""  # 留空则使用 sys.executable
+    DETECTIONS_DIR: str = str(BASE_DIR / "data" / "detections")
+
+    # ================================================= #
     # ******************* 请求限制配置 ****************** #
     # ================================================= #
     REQUEST_LIMITER_REDIS_PREFIX: str = "fastapiadmin:request_limiter:"

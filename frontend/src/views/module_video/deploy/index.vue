@@ -108,13 +108,16 @@
               v-if="deployCols.find((c) => c.prop === 'status')?.show"
               key="status"
               label="状态"
-              width="90"
+              width="140"
               align="center"
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status === 'RUNNING' ? 'success' : 'info'" size="small">
                   {{ scope.row.status === "RUNNING" ? "运行中" : "已停止" }}
                 </el-tag>
+                <span v-if="scope.row._inferenceStatus" class="inference-meta">
+                  {{ scope.row._inferenceStatus.fps || scope.row._inferenceStatus.uptime_seconds ? Math.round(scope.row._inferenceStatus.uptime_seconds / 60) + 'min' : '' }}
+                </span>
               </template>
             </el-table-column>
             <el-table-column
@@ -142,6 +145,14 @@
                   @click="handleRowDelete(scope.row.id)"
                 >
                   删除
+                </el-button>
+                <el-button
+                  :type="scope.row.status === 'RUNNING' ? 'warning' : 'success'"
+                  size="small"
+                  link
+                  @click="handleToggleInference(scope.row)"
+                >
+                  {{ scope.row.status === "RUNNING" ? "停止" : "启动" }}
                 </el-button>
               </template>
             </el-table-column>
@@ -327,6 +338,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { ElMessage } from "element-plus";
 import { getCameraList } from "@/api/module_video/camera";
 import { getAlgorithmList } from "@/api/module_video/algorithm";
 import {
@@ -334,6 +346,9 @@ import {
   createAlgorithmTask,
   updateAlgorithmTask,
   deleteAlgorithmTask,
+  startInferenceTask,
+  stopInferenceTask,
+  getInferenceStatus,
 } from "@/api/module_video/deploy";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
@@ -652,12 +667,45 @@ async function loadOptions() {
   }
 }
 
+let statusTimer: ReturnType<typeof setInterval> | null = null;
+
+async function handleToggleInference(row: any) {
+  try {
+    if (row.status === "RUNNING") {
+      await stopInferenceTask(row.id);
+      ElMessage.success("推理已停止");
+    } else {
+      await startInferenceTask(row.id);
+      ElMessage.success("推理已启动");
+    }
+    refreshList();
+  } catch {
+    ElMessage.error("操作失败");
+  }
+}
+
+async function pollInferenceStatus() {
+  const tableEl = contentRef.value;
+  if (!tableEl || !tableEl.tableData) return;
+  const runningTasks = (tableEl.tableData as any[]).filter((t: any) => t.status === "RUNNING");
+  for (const task of runningTasks) {
+    try {
+      const res = await getInferenceStatus(task.id);
+      task._inferenceStatus = res.data?.data;
+    } catch {
+      // ignore polling errors
+    }
+  }
+}
+
 onBeforeMount(() => {
   loadOptions();
   document.addEventListener("mouseup", onDragEnd);
+  statusTimer = setInterval(pollInferenceStatus, 5000);
 });
 onBeforeUnmount(() => {
   document.removeEventListener("mouseup", onDragEnd);
+  if (statusTimer) clearInterval(statusTimer);
 });
 </script>
 
@@ -798,5 +846,11 @@ onBeforeUnmount(() => {
 .slider-wrap {
   display: flex;
   align-items: center;
+}
+.inference-meta {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
 }
 </style>

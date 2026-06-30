@@ -165,7 +165,7 @@
                 @dragstart.stop="onDeviceDragStart(data.camera, $event)"
                 @dragend="onDeviceDragEnd"
               >
-                <span class="device-status-dot" :class="statusClass(data.camera.status)" />
+                <span class="device-status-dot" :class="liveStatusClass(data.camera)" />
                 <span class="tree-camera-name">{{ data.camera.name }}</span>
                 <el-button
                   v-if="isCameraBound(data.camera.id)"
@@ -656,15 +656,10 @@ const filteredAlarms = computed(() => {
   return alarmList.value.filter((a: any) => a.severity === alarmActiveFilter.value);
 });
 
-function statusClass(status: string) {
-  switch (status) {
-    case "ONLINE":
-      return "status-online";
-    case "OFFLINE":
-      return "status-offline";
-    default:
-      return "status-unknown";
-  }
+function liveStatusClass(camera: any) {
+  if (camera.reachable === true) return "status-online";
+  if (camera.reachable === false) return "status-offline";
+  return "status-unknown";
 }
 
 function isCameraBound(cameraId: number) {

@@ -78,44 +78,34 @@
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
               label="状态"
-              prop="status"
+              prop="reachable"
               width="100"
               align="center"
             >
               <template #default="scope">
                 <el-tag
-                  :type="
-                    scope.row.status === 'ONLINE'
-                      ? 'success'
-                      : scope.row.status === 'ERROR'
-                        ? 'danger'
-                        : 'info'
-                  "
+                  v-if="scope.row.reachable === true"
+                  type="success"
                   size="small"
                 >
-                  <span
-                    :style="{
-                      display: 'inline-block',
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background:
-                        scope.row.status === 'ONLINE'
-                          ? '#67c23a'
-                          : scope.row.status === 'ERROR'
-                            ? '#f56c6c'
-                            : '#909399',
-                      marginRight: '4px',
-                      verticalAlign: 'middle',
-                    }"
-                  ></span>
-                  {{
-                    scope.row.status === "ONLINE"
-                      ? "在线"
-                      : scope.row.status === "ERROR"
-                        ? "异常"
-                        : "离线"
-                  }}
+                  <span class="status-dot" style="background:#67c23a" />
+                  在线
+                </el-tag>
+                <el-tag
+                  v-else-if="scope.row.reachable === false"
+                  type="danger"
+                  size="small"
+                >
+                  <span class="status-dot" style="background:#f56c6c" />
+                  离线
+                </el-tag>
+                <el-tag
+                  v-else
+                  type="info"
+                  size="small"
+                >
+                  <span class="status-dot" style="background:#909399" />
+                  未推流
                 </el-tag>
               </template>
             </el-table-column>
@@ -836,5 +826,13 @@ function deviceTypeTag(type: string) {
 .player-test-protocols {
   display: flex;
   justify-content: center;
+}
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
 }
 </style>

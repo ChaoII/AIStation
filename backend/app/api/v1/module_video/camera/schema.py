@@ -55,6 +55,7 @@ class CameraOutSchema(BaseSchema):
     stream_status: str | None = None
     stream_id: str | None = None
     stream_source: str | None = None
+    reachable: bool | None = None
     last_online_time: DateTimeStr | None = None
 
     group_id: int | None = None

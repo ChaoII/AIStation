@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path, Request
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.request import PaginationService
 from app.common.response import SuccessResponse
+from app.config.setting import settings
 from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
+from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
 from .param import AlgorithmQueryParam, AlgorithmTaskQueryParam
@@ -106,3 +108,65 @@ async def delete_task_controller(
 ) -> JSONResponse:
     await AlgorithmService.delete_task_service(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
+
+
+# ──────────────────────────────────────────────
+#  Inference control endpoints
+# ──────────────────────────────────────────────
+
+
+@AlgorithmRouter.post("/task/{id}/start", summary="启动推理任务")
+async def start_inference_controller(
+    id: int = Path(..., description="算法任务ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:update"])),
+) -> JSONResponse:
+    try:
+        from app.api.v1.module_video.inference.scheduler import start_inference
+        result = await start_inference(id)
+        return SuccessResponse(data=result, msg="启动成功")
+    except LookupError as e:
+        raise CustomException(msg=str(e), code=404)
+    except ValueError as e:
+        raise CustomException(msg=str(e), code=400)
+    except Exception as e:
+        raise CustomException(msg=f"启动推理失败: {e}")
+
+
+@AlgorithmRouter.post("/task/{id}/stop", summary="停止推理任务")
+async def stop_inference_controller(
+    id: int = Path(..., description="算法任务ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:update"])),
+) -> JSONResponse:
+    try:
+        from app.api.v1.module_video.inference.scheduler import stop_inference
+        result = await stop_inference(id)
+        return SuccessResponse(data=result, msg="停止成功")
+    except Exception as e:
+        raise CustomException(msg=f"停止推理失败: {e}")
+
+
+@AlgorithmRouter.get("/task/{id}/inference-status", summary="查询推理状态")
+async def get_inference_status_controller(
+    id: int = Path(..., description="算法任务ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:query"])),
+) -> JSONResponse:
+    try:
+        from app.api.v1.module_video.inference.scheduler import get_inference_status
+        result = await get_inference_status(id)
+        return SuccessResponse(data=result, msg="查询成功")
+    except Exception as e:
+        raise CustomException(msg=f"查询推理状态失败: {e}")
+
+
+@AlgorithmRouter.post("/detection/callback", summary="推理结果回调（内部接口）", include_in_schema=False)
+async def detection_callback_controller(
+    request: Request,
+    body: dict = Body(..., description="检测事件"),
+) -> JSONResponse:
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if token != settings.INFERENCE_CALLBACK_TOKEN:
+        raise CustomException(msg="无效的调用凭证", code=403)
+
+    from app.api.v1.module_video.inference.service import InferenceService
+    result = await InferenceService.process_detection_callback(body)
+    return SuccessResponse(data=result, msg="处理完成")

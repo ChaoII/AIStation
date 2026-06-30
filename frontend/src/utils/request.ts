@@ -58,10 +58,11 @@ httpRequest.interceptors.response.use(
     }
 
     const data = response.data;
+    const silent = response.config?.headers?._silent === "true";
 
     // 检查请求是否失败
     if (data.code !== ResultEnum.SUCCESS) {
-      ElMessage.error(data.msg);
+      if (!silent) ElMessage.error(data.msg);
       return Promise.reject(response);
     }
 
@@ -135,20 +136,22 @@ httpRequest.interceptors.response.use(
       return Promise.reject(new Error("Unauthorized"));
     }
 
+    const silent = error.response.config?.headers?._silent === "true";
+
     if (data?.code === ResultEnum.TOKEN_EXPIRED) {
-      await redirectToLogin("登录已过期，请重新登录");
+      if (!silent) await redirectToLogin("登录已过期，请重新登录");
       return Promise.reject(new Error(data.msg));
     } else if (data?.code === ResultEnum.ERROR) {
-      ElMessage.error(data.msg || "请求错误");
+      if (!silent) ElMessage.error(data.msg || "请求错误");
       return Promise.reject(new Error(data.msg || "请求错误"));
     } else if (data?.code === ResultEnum.UNAUTHORIZED) {
-      ElMessage.error(data.msg || "暂无权限");
+      if (!silent) ElMessage.error(data.msg || "暂无权限");
       return Promise.reject(new Error(data.msg || "请求错误"));
     } else if (data?.code === ResultEnum.EXCEPTION) {
-      ElMessage.error(data.msg || "服务异常");
+      if (!silent) ElMessage.error(data.msg || "服务异常");
       return Promise.reject(new Error(data.msg || "服务异常"));
     } else {
-      ElMessage.error("请求处理失败，请稍后重试");
+      if (!silent) ElMessage.error("请求处理失败，请稍后重试");
       return Promise.reject(new Error("请求处理失败"));
     }
   }

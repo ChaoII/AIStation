@@ -24,13 +24,13 @@ from app.utils.console import console_close, console_run
 from .initialize import InitializeData
 
 
-async def _ensure_algorithm_columns() -> None:
-    """Add new columns to existing algorithm tables if they don't exist."""
+async def _ensure_missing_columns() -> None:
+    """Add new columns to existing tables if they don't exist."""
     from sqlalchemy import text as sa_text
 
     from app.core.database import async_engine
 
-    new_columns = {
+    new_columns: dict[str, list[tuple[str, str]]] = {
         "video_algorithms": [
             ("model_file_config", "JSONB"),
             ("runtime_config", "JSONB"),
@@ -39,6 +39,9 @@ async def _ensure_algorithm_columns() -> None:
         "video_algorithm_tasks": [
             ("runtime_overrides", "JSONB"),
             ("params_overrides", "JSONB"),
+        ],
+        "video_cameras": [
+            ("reachable", "BOOLEAN"),
         ],
     }
     async with async_engine.begin() as conn:
@@ -49,7 +52,7 @@ async def _ensure_algorithm_columns() -> None:
                         sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
                     )
                 except Exception:
-                    pass  # column may already exist
+                    pass
 
 
 async def _ensure_deploy_menu() -> None:
@@ -193,7 +196,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     try:
         await InitializeData().init_db()
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
-        await _ensure_algorithm_columns()
+        await _ensure_missing_columns()
         await _ensure_deploy_menu()
         await _ensure_notification_params()
         await import_modules_async(
@@ -220,6 +223,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_record_scheduler())
         log.info("✅ 录制定时器已启动")
 
+        from app.api.v1.module_video.inference.scheduler import start_inference_scheduler
+        asyncio.create_task(start_inference_scheduler())
+        log.info("✅ 推理调度器已启动")
+
+        from app.api.v1.module_video.camera.health_checker import start_camera_health_checker
+        asyncio.create_task(start_camera_health_checker())
+        log.info("✅ 摄像头健康检查器已启动")
+
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
 
@@ -245,6 +256,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         from app.api.v1.module_video.record.scheduler import stop_record_scheduler
         await stop_record_scheduler()
         log.info("✅ 录制定时器已关闭")
+
+        from app.api.v1.module_video.inference.scheduler import stop_inference_scheduler
+        await stop_inference_scheduler()
+        log.info("✅ 推理调度器已关闭")
+
+        from app.api.v1.module_video.camera.health_checker import stop_camera_health_checker
+        await stop_camera_health_checker()
+        log.info("✅ 摄像头健康检查器已关闭")
         await FastAPILimiter.close()
         log.info("✅ 请求限制器已关闭")
         await import_modules_async(modules=settings.EVENT_LIST, desc="全局事件", app=app, status=False)
@@ -348,7 +367,9 @@ def register_files(app: FastAPI) -> None:
         )
      # 挂载录制文件目录 — try simpler path
     from pathlib import Path
+
     from fastapi.responses import FileResponse
+
     from app.api.v1.module_video.record.service import RECORDINGS_DIR
 
     @app.get("/recordings/{stream_id}/{file_name}")

@@ -1,6 +1,14 @@
 <template>
   <div ref="playerRef" class="live-player" :class="{ 'is-loading': loading, 'has-error': !!error }">
-    <video ref="videoRef" muted :poster="poster" autoplay playsinline class="player-video" />
+    <div class="video-wrapper">
+      <video ref="videoRef" muted :poster="poster" autoplay playsinline class="player-video" />
+      <DetectionOverlay
+        v-if="showDetection && detections.length > 0"
+        :detections="detections"
+        :width="overlayWidth"
+        :height="overlayHeight"
+      />
+    </div>
 
     <div v-if="loading && !error" class="player-overlay connecting">
       <div class="loading-spinner" />
@@ -21,7 +29,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onBeforeUnmount, watch, onMounted, nextTick } from "vue";
+import { ref, computed, onBeforeUnmount, watch, onMounted, nextTick } from "vue";
+import DetectionOverlay from "./DetectionOverlay.vue";
+
+interface BBox {
+  x: number; y: number; width: number; height: number;
+}
+interface Detection {
+  label: string; confidence: number; bbox: BBox;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -29,11 +45,15 @@ const props = withDefaults(
     streamType?: "webrtc" | "flv" | "hls";
     streamId?: string;
     poster?: string;
+    detections?: Detection[];
+    showDetection?: boolean;
   }>(),
   {
     streamUrl: "",
     streamType: "flv",
     streamId: "",
+    detections: () => [],
+    showDetection: false,
   }
 );
 
@@ -44,6 +64,8 @@ const emit = defineEmits<{
 
 const playerRef = ref<HTMLDivElement | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
+const overlayWidth = ref(640);
+const overlayHeight = ref(480);
 const loading = ref(false);
 const loadingText = ref("连接中...");
 const error = ref("");
@@ -53,6 +75,14 @@ const resolution = ref("");
 let playerInstance: any = null;
 let pc: RTCPeerConnection | null = null;
 let abortController: AbortController | null = null;
+
+function updateOverlaySize() {
+  const video = videoRef.value;
+  if (video) {
+    overlayWidth.value = video.clientWidth || video.videoWidth || 640;
+    overlayHeight.value = video.clientHeight || video.videoHeight || 480;
+  }
+}
 
 function destroyPlayer() {
   console.log("[LivePlayer] destroyPlayer enter", props.streamId);
@@ -286,6 +316,11 @@ onMounted(async () => {
   } else if (props.streamUrl) {
     play(props.streamUrl);
   }
+  updateOverlaySize();
+  const ro = new ResizeObserver(() => updateOverlaySize());
+  if (videoRef.value?.parentElement) {
+    ro.observe(videoRef.value.parentElement);
+  }
 });
 
 watch(
@@ -329,6 +364,11 @@ defineExpose({ play, destroyPlayer, switchProtocol });
   cursor: pointer;
 }
 
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
 .player-video {
   display: block;
   width: 100%;

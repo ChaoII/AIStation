@@ -1,21 +1,19 @@
 import asyncio
-import os
 import re
 import signal
 import subprocess
-import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.api.v1.module_video.camera.model import CameraModel
 from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
-from app.core.media_server import media_server
 
 from .crud import RecordExecutionLogCRUD, RecordFileCRUD, RecordPlanCRUD
 from .model import RecordExecutionLog, RecordFileModel, RecordPlanModel
@@ -47,7 +45,8 @@ class RecordService:
     # ── internal FFmpeg helpers (used by scheduler & manual) ──
 
     @classmethod
-    async def _start_ffmpeg_recording(cls, camera_id: int, stream_id: str, trigger: str = "MANUAL"):
+    async def _start_ffmpeg_recording(cls, camera_id: int, stream_id: str, trigger: str = "MANUAL",
+                                       known_segments: set[str] | None = None):
         flv_url = f"{settings.ZLM_BASE_URL}/live/{stream_id}.live.flv"
         outdir = _ensure_dir(stream_id)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,7 +61,9 @@ class RecordService:
             pattern,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-        known = set(f.name for f in outdir.glob("*.mp4") if f.stat().st_size > 10000)
+        # Pre-populate from both filesystem and caller (DB-backed) to prevent re-persist
+        fs_files = set(f.name for f in outdir.glob("*.mp4") if f.stat().st_size > 10000)
+        known = fs_files | (known_segments or set())
         _running_recordings[stream_id] = {
             "proc": proc,
             "known_segments": known,
@@ -70,6 +71,24 @@ class RecordService:
             "camera_id": camera_id,
             "trigger": trigger,
         }
+
+    @classmethod
+    async def _update_execution_log(cls, stream_id: str, status: str = "COMPLETED"):
+        """Mark all RECORDING execution logs for this stream as done."""
+        async with async_db_session() as session:
+            result = await session.execute(
+                select(RecordExecutionLog).where(
+                    RecordExecutionLog.stream_id == stream_id,
+                    RecordExecutionLog.status == "RECORDING",
+                )
+            )
+            now = datetime.now()
+            for log in result.scalars().all():
+                if log.start_time:
+                    log.duration = int((now - log.start_time).total_seconds())
+                log.end_time = now
+                log.status = status
+            await session.commit()
 
     @classmethod
     async def _stop_ffmpeg_recording(cls, stream_id: str):
@@ -83,22 +102,57 @@ class RecordService:
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.wait()
-        await cls._complete_running_logs(stream_id)
-        # Persist any remaining new segments (including final partial)
-        outdir = RECORDINGS_DIR / stream_id
-        if outdir.exists():
-            for fp in sorted(outdir.glob("*.mp4")):
-                fsize = fp.stat().st_size
-                if fsize < 1000:
-                    fp.unlink(missing_ok=True)
-                    continue
-                await cls._persist_segment(stream_id, str(fp), trigger=trigger)
+            # Persist any remaining new segments (including final partial)
+            outdir = RECORDINGS_DIR / stream_id
+            if outdir.exists():
+                for fp in sorted(outdir.glob("*.mp4")):
+                    fsize = fp.stat().st_size
+                    if fsize < 1000:
+                        fp.unlink(missing_ok=True)
+                        continue
+                    name = fp.name
+                    if name not in info.get("known_segments", set()):
+                        info["known_segments"].add(name)
+                        await cls._persist_segment(stream_id, str(fp), trigger=trigger)
+        await cls._update_execution_log(stream_id, status="COMPLETED")
 
     _SEGMENT_FILENAME_RE = re.compile(r"^(\d{8}_\d{6})_(\d{3})\.mp4$")
 
     @classmethod
+    def _probe_segment(cls, file_path: str) -> tuple[float, float] | None:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe", "-hide_banner", "-loglevel", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "csv=p=0",
+                    str(file_path),
+                ],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return None
+            duration = float(result.stdout.strip().split(",")[-1])
+        except Exception:
+            return None
+        try:
+            mtime = Path(file_path).stat().st_mtime
+        except OSError:
+            return None
+        end = datetime.fromtimestamp(mtime)
+        start = end - timedelta(seconds=duration)
+        return start, duration
+
+    @classmethod
     def _parse_segment_times(cls, file_path: str) -> tuple[datetime, datetime, int] | None:
         fp = Path(file_path)
+        # Prefer ffprobe for accurate duration, combined with file mtime for end time
+        probe = cls._probe_segment(str(fp))
+        if probe:
+            start, duration = probe
+            end = start + timedelta(seconds=duration)
+            return start, end, int(duration)
+        # Fallback: parse from filename (less accurate for multi-session)
         m = cls._SEGMENT_FILENAME_RE.match(fp.name)
         if not m:
             return None
@@ -329,6 +383,16 @@ class RecordService:
     @classmethod
     def _fix_file_times(cls, item: dict) -> dict:
         fp = Path(item.get("file_path", ""))
+        # Try ffprobe first for accurate times
+        probe = cls._probe_segment(str(fp))
+        if probe:
+            start, duration = probe
+            end = start + timedelta(seconds=duration)
+            item["start_time"] = start.strftime("%Y-%m-%d %H:%M:%S")
+            item["end_time"] = end.strftime("%Y-%m-%d %H:%M:%S")
+            item["duration"] = int(duration)
+            return item
+        # Fallback: filename parsing
         parsed = cls._parse_segment_times(str(fp))
         if parsed:
             start, end, dur = parsed
@@ -478,12 +542,25 @@ class RecordService:
             )
             for row in result.scalars().all():
                 fp = Path(row.file_path)
-                parsed = cls._parse_segment_times(str(fp))
-                if parsed:
-                    start, end, dur = parsed
+                if not fp.exists():
+                    fp = RECORDINGS_DIR / row.stream_id / fp.name if row.stream_id else fp
+                if not fp.exists():
+                    continue
+                probe = cls._probe_segment(str(fp))
+                if probe:
+                    start, duration = probe
+                    end = start + timedelta(seconds=duration)
                     row.start_time = start
                     row.end_time = end
-                    row.duration = dur
+                    row.duration = int(duration)
                     fixed += 1
+                else:
+                    parsed = cls._parse_segment_times(str(fp))
+                    if parsed:
+                        start, end, dur = parsed
+                        row.start_time = start
+                        row.end_time = end
+                        row.duration = dur
+                        fixed += 1
             await session.commit()
         return {"fixed": fixed}

@@ -58,5 +58,6 @@ class CameraModel(ModelMixin, UserMixin):
     model_name: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="型号")
     firmware: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="固件版本")
 
+    reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None, comment="实际连通性（后台检测）")
     extra: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="扩展属性(JSONB)")
     sort_order: Mapped[int] = mapped_column(Integer, default=0, comment="排序")

@@ -32,6 +32,10 @@ export function getRecordFilePlayUrl(id: number) {
   return request({ url: `/video/record/file/${id}/play-url`, method: "get" });
 }
 
+export function getRecordFileThumbnail(id: number) {
+  return request({ url: `/video/record/file/${id}/thumbnail`, method: "get", responseType: "blob" });
+}
+
 export function getRecordLogList(data?: any) {
   return request({ url: "/video/record/log/list", method: "get", params: data });
 }

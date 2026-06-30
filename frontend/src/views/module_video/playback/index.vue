@@ -254,12 +254,27 @@
             >
               <div class="seg-card-thumb">
                 <img
-                  :src="`/api/v1/record/file/${r.id}/thumbnail`"
+                  v-if="thumbnailCache[r.id]"
+                  :src="thumbnailCache[r.id]"
                   alt=""
                   class="seg-thumb-img"
                   loading="lazy"
                   @error="onThumbError($event)"
                 />
+                <div v-else class="seg-thumb-placeholder">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    opacity="0.3"
+                  >
+                    <rect x="2" y="2" width="20" height="20" rx="2" />
+                    <polygon points="10 8 16 12 10 16 10 8" />
+                  </svg>
+                </div>
               </div>
               <div class="seg-card-info">
                 <div class="seg-card-time">
@@ -281,7 +296,11 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue"
 import { Search, FolderOpened, InfoFilled } from "@element-plus/icons-vue";
 import { Icon } from "@iconify/vue";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
-import { getRecordFileList, getRecordFilePlayUrl } from "@/api/module_video/record";
+import {
+  getRecordFileList,
+  getRecordFilePlayUrl,
+  getRecordFileThumbnail,
+} from "@/api/module_video/record";
 
 const cameras = ref<any[]>([]);
 const groupList = ref<any[]>([]);
@@ -310,6 +329,7 @@ const timelineRef = ref<HTMLElement | null>(null);
 
 let mpegtsPlayer: any = null;
 let pendingSeekSec: number | null = null;
+const thumbnailCache = ref<Record<number, string>>({});
 
 const currentZoom = ref(4);
 const viewStartMs = ref(0);
@@ -613,6 +633,20 @@ function onThumbError(e: Event) {
   if (img) img.style.display = "none";
 }
 
+function loadThumbnails() {
+  for (const r of recordings.value) {
+    if (!thumbnailCache.value[r.id]) {
+      getRecordFileThumbnail(r.id)
+        .then((res: any) => {
+          const blob =
+            res.data instanceof Blob ? res.data : new Blob([res.data], { type: "image/jpeg" });
+          thumbnailCache.value[r.id] = URL.createObjectURL(blob);
+        })
+        .catch(() => {});
+    }
+  }
+}
+
 async function handleSearch() {
   if (!selectedCamera.value || !searchDate.value) return;
   loading.value = true;
@@ -645,6 +679,7 @@ async function handleSearch() {
     }
     allItems.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
     recordings.value = allItems;
+    loadThumbnails();
     if (recordings.value.length > 0) {
       await seekToRecording(recordings.value[0]);
       const firstStartMs = new Date(recordings.value[0].start_time).getTime();
@@ -687,6 +722,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroyMpegtsPlayer();
+  for (const url of Object.values(thumbnailCache.value)) {
+    URL.revokeObjectURL(url);
+  }
 });
 </script>
 
@@ -1234,6 +1272,14 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.seg-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-placeholder);
 }
 
 .seg-card-info {

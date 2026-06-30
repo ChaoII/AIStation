@@ -27,7 +27,7 @@ class NodeCreateSchema(BaseModel):
     executor: str | None = Field(default="default", max_length=64, description="任务执行器:将运行此作业的执行程序的名称",)
     start_date: str | None = Field(default=None, description="开始时间")
     end_date: str | None = Field(default=None, description="结束时间")
-    code: str | None = Field(default=None, description="节点编码")
+    code: str = Field(..., min_length=1, max_length=32, description="节点编码")
 
     @model_validator(mode="after")
     def _validate_func(self):
@@ -36,8 +36,20 @@ class NodeCreateSchema(BaseModel):
         return self
 
 
-class NodeUpdateSchema(NodeCreateSchema):
-    """节点更新模型"""
+class NodeUpdateSchema(BaseModel):
+    """节点更新模型（所有字段可选）"""
+
+    name: str | None = Field(default=None, max_length=64, description="任务名称")
+    func: str | None = Field(default=None, description="代码块")
+    args: str | None = Field(default=None, description="位置参数")
+    kwargs: str | None = Field(default=None, description="关键字参数")
+    coalesce: bool | None = Field(default=None, description="是否合并运行")
+    max_instances: int | None = Field(default=None, ge=1, description="最大实例数")
+    jobstore: str | None = Field(default=None, max_length=64, description="任务存储")
+    executor: str | None = Field(default=None, max_length=64, description="任务执行器")
+    start_date: str | None = Field(default=None, description="开始时间")
+    end_date: str | None = Field(default=None, description="结束时间")
+    code: str | None = Field(default=None, min_length=1, max_length=32, description="节点编码")
 
 
 class NodeOutSchema(NodeCreateSchema, BaseSchema, UserBySchema):
