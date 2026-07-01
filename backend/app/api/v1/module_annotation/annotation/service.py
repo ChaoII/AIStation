@@ -3,22 +3,14 @@ from sqlalchemy import select, desc
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from ..dataset.crud import image_crud
-from ..dataset.model import ImageStatus
-from .crud import AnnotationCRUD
+from ..dataset.model import AnnotationImageModel
 from .model import AnnotationRecordModel
-
-
-annotation_crud = AnnotationCRUD()
 
 
 class AnnotationService:
 
     @classmethod
     async def save_annotations(cls, task_id: int, image_id: int, annotation_data: list[dict], auth) -> dict:
-        from ..task.service import TaskService
-        from ..dataset.crud import ImageCRUD
-        img_crud = ImageCRUD(auth=auth)
         async with async_db_session.begin() as db:
             result = await db.execute(
                 select(AnnotationRecordModel)
@@ -30,32 +22,19 @@ class AnnotationService:
                 .limit(1)
             )
             existing = result.scalar_one_or_none()
+            version = existing.version + 1 if existing else 1
 
-            if existing:
-                version = existing.version + 1
-            else:
-                version = 1
+            db.add(AnnotationRecordModel(
+                task_id=task_id, image_id=image_id, annotation_data=annotation_data,
+                version=version, created_id=auth.user.id,
+            ))
 
-            record = AnnotationRecordModel(
-                task_id=task_id,
-                image_id=image_id,
-                annotation_data=annotation_data,
-                version=version,
-                created_id=auth.user.id,
-            )
-            db.add(record)
+            img = await db.get(AnnotationImageModel, image_id)
+            if img:
+                img.status = "ANNOTATED" if annotation_data else "UNANNOTATED"
+                img.annotation_count = len(annotation_data)
 
-        await img_crud.update(
-            id=image_id,
-            data={
-                "status": ImageStatus.ANNOTATED,
-                "annotation_count": len(annotation_data),
-            },
-        )
-
-        from ..task.service import TaskService
-        await TaskService.update_progress(task_id)
-
+        log.info(f"save_annotations task={task_id} image={image_id} v={version}")
         return {"version": version, "annotation_count": len(annotation_data)}
 
     @classmethod

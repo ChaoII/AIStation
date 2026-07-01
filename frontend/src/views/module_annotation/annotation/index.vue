@@ -99,6 +99,7 @@
     <!-- 底栏（固定，无需滚动） -->
     <footer class="ann-footer">
       <span class="hint">{{ toolHint }}</span>
+      <span v-if="unsaved" class="unsaved-dot" title="未保存" />
       <span class="text-xs text-gray-400 font-mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
       <span class="text-xs text-gray-400 font-mono">Z:{{ Math.round(store.zoom * 100) }}% | cw:{{ cw }}</span>
       <div class="sep" />
@@ -231,9 +232,15 @@ const toolHint = computed(() => ({ select: "点击选择标注，拖拽移动", 
 const cxColor = computed(() => clsColor(selectedClassId.value) || "#3b82f6")
 const cxStyle = computed(() => ({ background: cxColor.value + "80" }))
 
-const annotatedCount = computed(() => store.images.filter(i => i.status === "annotated").length)
-const totalCount = computed(() => store.images.length)
+const annotatedCount = ref(0)
+const totalCount = ref(0)
 const progressPct = computed(() => totalCount.value === 0 ? 0 : Math.round(annotatedCount.value / totalCount.value * 100))
+
+// ===== 更新进度 =====
+function updateProgress() {
+  annotatedCount.value = store.images.filter(i => i.status === "annotated").length
+  totalCount.value = store.images.length
+}
 
 // ===== 显示 =====
 const dw = computed(() => cw.value * store.zoom)
@@ -513,6 +520,35 @@ function removeAnn(id: string) {
   if (store.selectedAnnotationId === id) store.selectedAnnotationId = null
 }
 
+// ===== 自动保存 =====
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+const unsaved = ref(false)
+
+async function autoSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(async () => {
+    if (!store.currentImage) return
+    try {
+      await AnnotationAPI.saveAnnotations(store.currentImage.id, {
+        task_id: store.taskId, image_id: store.currentImage.id, annotation_data: store.annotations,
+      })
+      store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated"
+      store.currentImage.annotation_count = store.annotations.length
+      unsaved.value = false
+      updateProgress()
+      fetchTaskProgress()
+    } catch {}
+  }, 800)
+}
+
+// 标注变化时自动保存
+watch(() => store.annotations.map(a => ({ ...a })), (cur, old) => {
+  if (JSON.stringify(cur) !== JSON.stringify(old)) {
+    unsaved.value = true
+    autoSave()
+  }
+}, { deep: true })
+
 // ===== 图片导航 =====
 async function loadImg(imageId: number) {
   imgUrl.value = ""; store.selectedAnnotationId = null
@@ -526,10 +562,40 @@ async function loadImg(imageId: number) {
     await nextTick()
     measureLabelRects()
   } catch { imgUrl.value = "" }
+  updateProgress()
 }
-function goToImage(idx: number) { if (idx >= 0 && idx < store.images.length) loadImg(store.images[idx].id) }
+async function goToImage(idx: number) {
+  if (idx < 0 || idx >= store.images.length) return
+  // 先保存当前图片的标注
+  if (unsaved.value && store.currentImage) {
+    if (saveTimer) clearTimeout(saveTimer)
+    try {
+      await AnnotationAPI.saveAnnotations(store.currentImage.id, {
+        task_id: store.taskId, image_id: store.currentImage.id, annotation_data: store.annotations,
+      })
+      store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated"
+      store.currentImage.annotation_count = store.annotations.length
+      updateProgress()
+    } catch {}
+  }
+  unsaved.value = false
+  loadImg(store.images[idx].id)
+}
 function prevImg() { if (store.currentImageIndex > 0) goToImage(store.currentImageIndex - 1) }
 function nextImg() { if (store.currentImageIndex < store.images.length - 1) goToImage(store.currentImageIndex + 1) }
+
+// ===== 任务进度 =====
+const taskProgress = ref(0)
+async function fetchTaskProgress() {
+  if (!task.value?.id) return
+  try {
+    const r = await AnnotationAPI.getTaskProgress(task.value.id)
+    const d = r.data?.data
+    if (d) {
+      taskProgress.value = d.progress || 0
+    }
+  } catch {}
+}
 
 async function saveAnn() {
   const img = store.currentImage; if (!img) return
@@ -539,6 +605,10 @@ async function saveAnn() {
       task_id: store.taskId, image_id: img.id, annotation_data: store.annotations,
     })
     img.status = store.annotations.length > 0 ? "annotated" : "unannotated"
+    img.annotation_count = store.annotations.length
+    unsaved.value = false
+    updateProgress()
+    await fetchTaskProgress()
     ElMessage.success("保存成功")
   } finally { store.saving = false }
 }
@@ -580,6 +650,7 @@ onMounted(async () => {
     const ir = await AnnotationAPI.getImages(t.dataset_id); const imgs = ir.data?.data || []
     store.images = imgs
     if (imgs.length > 0) await loadImg(imgs[0].id)
+    await fetchTaskProgress()
   } catch (e: any) { ElMessage.error("加载失败: " + (e?.msg || e?.message || ""))
   } finally { store.loading = false }
   document.addEventListener("keydown", onKey)
@@ -646,6 +717,7 @@ onBeforeUnmount(() => {
 .flex-1 { flex:1; }
 .ann-footer { height:36px; background:#fff; border-top:1px solid #e4e7ed; display:flex; align-items:center; padding:0 10px; gap:6px; flex-shrink:0; }
 .hint { flex:1; font-size:11px; color:#909399; }
+.unsaved-dot { width:6px; height:6px; border-radius:50%; background:#e6a23c; flex-shrink:0; }
 .sep { width:1px; height:14px; background:#e4e7ed; flex-shrink:0; }
 .nav-text { font-size:11px; color:#606266; font-family:monospace; min-width:50px; text-align:center; font-variant-numeric:tabular-nums; }
 </style>
