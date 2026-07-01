@@ -33,7 +33,6 @@ from apscheduler.executors.pool import ProcessPoolExecutor, ThreadPoolExecutor
 from apscheduler.job import Job
 from apscheduler.jobstores.base import ConflictingIdError
 from apscheduler.jobstores.memory import MemoryJobStore
-from apscheduler.jobstores.redis import RedisJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -51,14 +50,7 @@ scheduler = AsyncIOScheduler()
 scheduler.configure(
     jobstores={
         "default": MemoryJobStore(),
-        "sqlalchemy": SQLAlchemyJobStore(url=settings.DB_URI, engine=engine),
-        "redis": RedisJobStore(
-            host=settings.REDIS_HOST,
-            port=int(settings.REDIS_PORT),
-            username=settings.REDIS_USER,
-            password=settings.REDIS_PASSWORD,
-            db=int(settings.REDIS_DB_NAME),
-        )
+        "sqlalchemy": SQLAlchemyJobStore(url=settings.DB_URI),
     },
     executors={
         "default": AsyncIOExecutor(),

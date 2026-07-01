@@ -19,7 +19,7 @@ SAMPLES = [
 async def seed():
     conn = await asyncpg.connect(
         host="localhost", port=5432, user="root",
-        password="ServBay.dev", database="fastapiadmin",
+        password="ServBay.dev", database="aistation",
     )
     try:
         rows = await conn.fetch(

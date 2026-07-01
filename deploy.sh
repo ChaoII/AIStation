@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 设置全局变量
-PROJECT_NAME="FastapiAdmin"
+PROJECT_NAME="AIStation"
 WORK_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 检测脚本执行位置
@@ -14,7 +14,7 @@ else
     PROJECT_PATH="${WORK_DIR}/${PROJECT_NAME}"
 fi
 
-GIT_REPO="https://gitee.com/fastapiadmin/${PROJECT_NAME}.git"
+GIT_REPO="https://github.com/ChaoII/${PROJECT_NAME}.git"
 
 # 是否有更新前端
 UPDATE_FRONTEND=false
@@ -269,9 +269,9 @@ main() {
     show_containers_logs
     
     log "🎉 部署完成！以下是访问信息：
-    📌 官网: https://service.fastapiadmin.com
-    📌 前端: https://service.fastapiadmin.com/web
-    📌 小程序: https://service.fastapiadmin.com/app
+    📌 官网: https://service.aistation.local
+    📌 前端: https://service.aistation.local/web
+    📌 小程序: https://service.aistation.local/app
     📌 登录信息: 账号 admin，密码 123456" "SUCCESS"
 }
 

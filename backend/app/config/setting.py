@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # ******************* API文档配置 ****************** #
     # ================================================= #
     DEBUG: bool = True  # 调试模式
-    TITLE: str = "🎉 FastapiAdmin 🎉 "  # 文档标题
+    TITLE: str = "🎉 AIStation 🎉 "  # 文档标题
     VERSION: str = "0.1.0"  # 版本号
     DESCRIPTION: str = (
         "该项目是一个基于python的web服务框架，基于fastapi和sqlalchemy实现。"  # 文档描述
@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     ECHO_POOL: bool | Literal["debug"] = False  # 是否显示连接池日志
     POOL_SIZE: int = 10  # 连接池大小
     MAX_OVERFLOW: int = 20  # 最大溢出连接数
-    POOL_TIMEOUT: int = 30  # 连接超时时间(秒)
+    POOL_TIMEOUT: int = 5  # 连接超时时间(秒)
     POOL_RECYCLE: int = 1800  # 连接回收时间(秒)
     POOL_USE_LIFO: bool = True  # 是否使用LIFO连接池
     POOL_PRE_PING: bool = True  # 是否开启连接预检
@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     DATABASE_PORT: int = 3306
     DATABASE_USER: str = "root"
     DATABASE_PASSWORD: str = "ServBay.dev"
-    DATABASE_NAME: str = "fastapiadmin"
+    DATABASE_NAME: str = "aistation"
 
     # ================================================= #
     # ******************** Redis配置 ******************* #
@@ -111,6 +111,15 @@ class Settings(BaseSettings):
     REDIS_DB_NAME: int = 1
     REDIS_USER: str = ""
     REDIS_PASSWORD: str = ""
+
+    # ================================================= #
+    # ************** RustFS / S3 对象存储 ************** #
+    # ================================================= #
+    RUSTFS_ENDPOINT: str = "http://127.0.0.1:9010"
+    RUSTFS_ACCESS_KEY: str = "aistation"
+    RUSTFS_SECRET_KEY: str = "aistation_secret"
+    RUSTFS_BUCKET_PREFIX: str = "aistation-annotation"
+    RUSTFS_PRESIGNED_URL_EXPIRY: int = 3600
 
     # ================================================= #
     # ******************** 验证码配置 ******************* #
@@ -221,7 +230,7 @@ class Settings(BaseSettings):
     # ================================================= #
     # ******************* 请求限制配置 ****************** #
     # ================================================= #
-    REQUEST_LIMITER_REDIS_PREFIX: str = "fastapiadmin:request_limiter:"
+    REQUEST_LIMITER_REDIS_PREFIX: str = "aistation:request_limiter:"
 
     # ================================================= #
     # ******************* 重构配置 ******************* #

@@ -409,7 +409,7 @@ class AutoLoginService:
     """免登录服务"""
 
     # 免登录Token前缀
-    AUTO_LOGIN_PREFIX = "fastapiadmin:auto_login:"
+    AUTO_LOGIN_PREFIX = "aistation:auto_login:"
     # Token有效期(秒) - 5分钟
     TOKEN_EXPIRE = 300
 

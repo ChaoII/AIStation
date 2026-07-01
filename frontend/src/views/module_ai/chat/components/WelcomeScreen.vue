@@ -4,7 +4,7 @@
       <div class="ai-logo">
         <el-icon size="64"><ChatDotRound /></el-icon>
       </div>
-      <h1>FA智能助手</h1>
+      <h1>AI智能助手</h1>
       <p class="welcome-subtitle">我是您的专属AI助手，可以帮您回答问题、处理任务和进行智能对话</p>
 
       <div class="example-prompts">
@@ -36,14 +36,14 @@ interface Emits {
 const emit = defineEmits<Emits>();
 
 const promptCards = [
-  { title: "系统介绍", body: "请介绍一下FastApiAdmin系统", prompt: "请介绍一下FastApiAdmin系统" },
+  { title: "系统介绍", body: "请介绍一下AIStation系统", prompt: "请介绍一下AIStation系统" },
   { title: "开发指导", body: "如何在系统中创建新的模块？", prompt: "如何在系统中创建新的模块？" },
   {
     title: "权限管理",
     body: "FA系统的权限管理是如何工作的？",
     prompt: "系统的权限管理是如何工作的？",
   },
-  { title: "性能优化", body: "如何优化系统的性能？", prompt: "如何优化FA系统的性能？" },
+  { title: "性能优化", body: "如何优化系统的性能？", prompt: "如何优化AIStation系统的性能？" },
 ];
 
 const handlePromptClick = (prompt: string) => {

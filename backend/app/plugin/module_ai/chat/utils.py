@@ -37,16 +37,16 @@ class AgnoFactory:
         """
 
         # 创建 Agent
-        fastapiadmin_agent = Agent(
+        aistation_agent = Agent(
             id=user_id,
-            name="fastapiadmin_agent",
+            name="aistation_agent",
             role="You are a helpful AI assistant",
             description=self.AGENT_DESCRIPTION,
             tools=[],
         )
 
         # 创建 Team
-        fastapiadmin_team = Team(
+        aistation_team = Team(
             id=dept_id,
             user_id=user_id,
             session_id=session_id,
@@ -56,7 +56,7 @@ class AgnoFactory:
                 base_url=settings.OPENAI_BASE_URL,
                 temperature=self.AGENT_TEMPERATURE,
             ),
-            members=[fastapiadmin_agent],
+            members=[aistation_agent],
             instructions=self.AGENT_INSTRUCTIONS,
             expected_output=self.AGENT_EXPECTED_OUTPUT,
             add_datetime_to_context=True,
@@ -70,4 +70,4 @@ class AgnoFactory:
             db=db,
         )
 
-        return fastapiadmin_team
+        return aistation_team

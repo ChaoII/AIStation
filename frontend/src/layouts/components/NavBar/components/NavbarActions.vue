@@ -152,7 +152,7 @@ function handleConfigClick() {
  * 项目文档
  */
 function handleDocumentClick() {
-  window.open("https://service.fastapiadmin.com", "_blank");
+  window.open("https://service.aistation.local", "_blank");
 }
 
 /**
@@ -166,7 +166,7 @@ function handleSettingsClick() {
  * Gitee 项目地址
  */
 function handleGiteeClick() {
-  window.open("https://gitee.com/fastapiadmin/FastapiAdmin");
+  window.open("https://github.com/aistation/aistation");
 }
 
 /**

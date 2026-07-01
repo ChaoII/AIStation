@@ -78,7 +78,7 @@ def setup_logging() -> None:
     global _logger_handlers
 
     # 添加上下文信息
-    _ = logger.configure(extra={"app_name": "FastapiAdmin"})
+    _ = logger.configure(extra={"app_name": "AIStation"})
     # 步骤1：移除默认处理器
     logger.remove()
 
@@ -94,8 +94,9 @@ def setup_logging() -> None:
         "<level>{message}</level>"
     )
 
-    # 步骤3：配置控制台输出
-    handler_id = logger.add(sys.stdout, format=log_format, level=settings.LOGGER_LEVEL)
+    # 步骤3：配置控制台输出（用 UTF-8 编码包装 stdout，避免 Windows GBK 报错）
+    console_sink = open(sys.stdout.fileno(), mode="w", encoding="utf-8", closefd=False)
+    handler_id = logger.add(console_sink, format=log_format, level=settings.LOGGER_LEVEL)
     _logger_handlers.append(handler_id)
 
     # 步骤4：创建日志目录

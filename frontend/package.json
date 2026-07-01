@@ -1,5 +1,5 @@
 {
-  "name": "fastapiadmin",
+  "name": "aistation",
   "description": "Vue3 + Vite + TypeScript + Element-Plus 的后台管理模板",
   "version": "2.2.0",
   "private": true,
@@ -169,12 +169,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitee.com/fastapiadmin/FastapiAdmin.git"
+    "url": "https://github.com/aistation/aistation.git"
   },
   "bugs": {
-    "url": "https://gitee.com/fastapiadmin/FastapiAdmin/issues"
+    "url": "https://github.com/aistation/aistation/issues"
   },
-  "author": "fastapiadmin <948080782@qq.com>",
+  "author": "AIStation <948080782@qq.com>",
   "license": "MIT",
-  "homepage": "https://gitee.com/fastapiadmin/FastapiAdmin"
+  "homepage": "https://github.com/aistation/aistation"
 }

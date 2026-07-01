@@ -8,7 +8,7 @@ sys.path.insert(0, _ROOT)
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ["TESTING"] = "1"
 os.environ["DATABASE_TYPE"] = "sqlite"
-os.environ["DATABASE_NAME"] = os.path.join(_ROOT, "pytest_fastapiadmin")
+os.environ["DATABASE_NAME"] = os.path.join(_ROOT, "pytest_aistation")
 
 import pytest
 from fastapi.testclient import TestClient

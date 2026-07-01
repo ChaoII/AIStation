@@ -8,9 +8,9 @@ services:
     environment:
       TZ: "Asia/Shanghai"
       MYSQL_ROOT_PASSWORD: "your_mysql_root_password"
-      MYSQL_DATABASE: "fastapiadmin"
+      MYSQL_DATABASE: "aistation"
       MYSQL_PASSWORD: "your_mysql_password"
-      MYSQL_USER: "fastapiadmin"
+      MYSQL_USER: "aistation"
       MYSQL_TZINFO_TO_SYS_TABLES: 1 # 初始化MySQL时区表，解决时差问题
     ports:
       - "3306:3306"

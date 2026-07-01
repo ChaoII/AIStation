@@ -39,6 +39,7 @@ devops/nginx/ssl
 devops/postgres/data
 devops/redis/data
 devops/zlm/data
+devops/rustfs/data
 
 # 本地配置覆盖文件（不提交到版本控制）
 backend/env/.env.dev

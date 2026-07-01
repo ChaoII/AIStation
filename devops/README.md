@@ -1,15 +1,15 @@
-# FastapiAdmin 部署文档
+# AIStation 部署文档
 
-本文档详细描述了 FastapiAdmin 项目的部署流程、环境要求、配置说明及常见问题排查方法。
+本文档详细描述了 AIStation 项目的部署流程、环境要求、配置说明及常见问题排查方法。
 
 ## 项目简介
 
-FastapiAdmin 是一个基于 FastAPI 和 Vue3 的管理系统，包含后端 API、前端界面、移动端应用和文档网站。项目采用 Docker 容器化部署，便于在不同环境中快速部署和运行。
+AIStation 是一个基于 FastAPI 和 Vue3 的管理系统，包含后端 API、前端界面、移动端应用和文档网站。项目采用 Docker 容器化部署，便于在不同环境中快速部署和运行。
 
 ## 项目结构
 
 ```sh
-FastapiAdmin/
+AIStation/
 ├── backend/      # 后端应用代码
 ├── frontend/     # 前端应用代码
 ├── devops/       # 部署配置文件
@@ -63,8 +63,8 @@ pnpm --version
 如果尚未克隆项目代码，可以使用以下命令：
 
 ```bash
-git clone https://gitee.com/fastapiadmin/fastapiadmin.git
-cd fastapiadmin
+git clone https://gitee.com/AIStation/AIStation.git
+cd AIStation
 ```
 
 ## 一键部署
@@ -174,10 +174,10 @@ chmod +x deploy.sh
 
 部署完成后，可以通过以下地址访问各服务：
 
-- **前端管理系统**：[https://service.fastapiadmin.com/web](https://service.fastapiadmin.com/web)
-- **移动端应用**：[https://service.fastapiadmin.com/app](https://service.fastapiadmin.com/app)
-- **项目文档**：[https://service.fastapiadmin.com](https://service.fastapiadmin.com)
-- **API 文档**：[https://service.fastapiadmin.com/api/v1/docs](https://service.fastapiadmin.com/api/v1/docs)
+- **前端管理系统**：[https://service.AIStation.com/web](https://service.AIStation.com/web)
+- **移动端应用**：[https://service.AIStation.com/app](https://service.AIStation.com/app)
+- **项目文档**：[https://service.AIStation.com](https://service.AIStation.com)
+- **API 文档**：[https://service.AIStation.com/api/v1/docs](https://service.AIStation.com/api/v1/docs)
 
 默认登录信息：
 

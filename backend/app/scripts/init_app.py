@@ -131,6 +131,89 @@ async def _ensure_deploy_menu() -> None:
             log.info("✅ 视频模块菜单图标已更新")
 
 
+async def _ensure_annotation_menus() -> None:
+    """Ensure the 数据标注 menu entries exist."""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "Annotation")
+            )
+            parent = existing.scalar_one_or_none()
+            if parent:
+                return
+
+            # 一级菜单
+            parent = MenuModel(
+                name="数据标注",
+                type=1,
+                icon="menu-detail",
+                order=11,
+                route_name="Annotation",
+                route_path="/annotation",
+                redirect="/annotation/dataset",
+                permission="",
+                status="0",
+                is_deleted=False,
+                title="数据标注",
+            )
+            db.add(parent)
+            await db.flush()
+
+            # 子菜单
+            children = [
+                MenuModel(name="数据集管理", type=2, icon="el-icon-FolderOpened", order=1,
+                          route_name="AnnotationDataset", route_path="/annotation/dataset",
+                          component_path="module_annotation/dataset/index",
+                          permission="annotation:dataset:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="数据集管理"),
+                MenuModel(name="标注任务", type=2, icon="el-icon-List", order=2,
+                          route_name="AnnotationTask", route_path="/annotation/task",
+                          component_path="module_annotation/task/index",
+                          permission="annotation:task:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="标注任务"),
+                MenuModel(name="工作量统计", type=2, icon="el-icon-DataAnalysis", order=3,
+                          route_name="AnnotationStats", route_path="/annotation/stats",
+                          component_path="module_annotation/stats/index",
+                          permission="annotation:stats:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="工作量统计"),
+            ]
+            for child in children:
+                db.add(child)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=child.id))
+
+            # 标注工作台（隐藏路由，不显示在菜单栏）
+            workbench = MenuModel(
+                name="标注工作台",
+                type=2,
+                icon=None,
+                order=99,
+                route_name="AnnotationWorkbench",
+                route_path="/annotation/workbench/:id",
+                component_path="module_annotation/annotation/index",
+                permission="annotation:workbench:query",
+                parent_id=parent.id,
+                status="0",
+                is_deleted=False,
+                title="标注工作台",
+                hidden=True,
+            )
+            db.add(workbench)
+            await db.flush()
+            db.add(RoleMenusModel(role_id=1, menu_id=workbench.id))
+
+            # admin 角色关联父菜单
+            db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
+
+    log.info("✅ 数据标注菜单已注册")
+
+
 NOTIFY_PARAMS = [
     ("notify_smtp_host", "SMTP服务器", ""),
     ("notify_smtp_port", "SMTP端口", "587"),
@@ -199,6 +282,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_missing_columns()
         await _ensure_deploy_menu()
         await _ensure_notification_params()
+        await _ensure_annotation_menus()
         await import_modules_async(
             modules=settings.EVENT_LIST, desc="全局事件", app=app, status=True
         )
@@ -326,6 +410,10 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(system_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
     app.include_router(monitor_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
     app.include_router(video_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
+
+    from app.api.v1.module_annotation import _register_annotation_routers, annotation_router
+    _register_annotation_routers()
+    app.include_router(annotation_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
 
     from app.plugin.module_ai.chat.ws import WS_AI
 

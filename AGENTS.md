@@ -1,4 +1,4 @@
-# FastapiAdmin — Agent Guide
+# AIStation — Agent Guide
 
 ## Quick Start
 

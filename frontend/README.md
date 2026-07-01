@@ -3,7 +3,7 @@
 ## 项目结构
 
 ```sh
-FastapiAdmin/frontend
+AIStation/frontend
 ├─ docs                 # 项目文档工程
 ├─ public               # 静态资源文件
 │  └─ docs              # 帮助文档模块

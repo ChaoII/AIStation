@@ -2,17 +2,17 @@
      <p align="center">
           <img src="backend/data/logo.png" width="150" height="150" alt="logo" /> 
      </p>
-     <h1>FastApiAdmin <img src="https://img.shields.io/badge/Version-v2.0.0-blue" alt="Version"></h1>
+     <h1>AIStation <img src="https://img.shields.io/badge/Version-v2.0.0-blue" alt="Version"></h1>
      <h3>Modern Full-Stack Rapid Development Platform</h3>
      <p>If you like this project, please give it a ⭐️ to show your support!</p>
      <p align="center">
-          <a href="https://gitee.com/fastapiadmin/FastapiAdmin.git" target="_blank">
-               <img src="https://gitee.com/fastapiadmin/FastapiAdmin/badge/star.svg?theme=dark" alt="Gitee Stars">
+          <a href="https://gitee.com/AIStation/AIStation.git" target="_blank">
+               <img src="https://gitee.com/AIStation/AIStation/badge/star.svg?theme=dark" alt="Gitee Stars">
           </a>
-          <a href="https://github.com/fastapiadmin/FastapiAdmin.git" target="_blank">
-               <img src="https://img.shields.io/github/stars/fastapiadmin/FastapiAdmin?style=social" alt="GitHub Stars">
+          <a href="https://github.com/AIStation/AIStation.git" target="_blank">
+               <img src="https://img.shields.io/github/stars/AIStation/AIStation?style=social" alt="GitHub Stars">
           </a>
-          <a href="https://gitee.com/fastapiadmin/FastapiAdmin/blob/master/LICENSE" target="_blank">
+          <a href="https://gitee.com/AIStation/AIStation/blob/master/LICENSE" target="_blank">
                <img src="https://img.shields.io/badge/License-MIT-orange" alt="License">
           </a>
           <img src="https://img.shields.io/badge/Python-≥3.10-blue"> 
@@ -30,7 +30,7 @@ English | [简体中文](./README.md)
 
 ## 📘 Project Introduction
 
-**FastApiAdmin** is a **completely open-source, highly modular, and technologically advanced modern rapid development platform** designed to help developers efficiently build high-quality enterprise-level backend and frontend systems. This project adopts a **frontend-backend separation architecture**, integrating the Python backend framework `FastAPI` and the mainstream frontend framework `Vue3` to achieve unified development across multiple terminals, providing a one-stop out-of-the-box development experience.
+**AIStation** is a **completely open-source, highly modular, and technologically advanced modern rapid development platform** designed to help developers efficiently build high-quality enterprise-level backend and frontend systems. This project adopts a **frontend-backend separation architecture**, integrating the Python backend framework `FastAPI` and the mainstream frontend framework `Vue3` to achieve unified development across multiple terminals, providing a one-stop out-of-the-box development experience.
 
 > **Design Philosophy**: With modularity and loose coupling at its core, it pursues rich functional modules, simple and easy-to-use interfaces, detailed development documentation, and convenient maintenance methods. By unifying frameworks and components, it reduces the cost of technology selection, follows development specifications and design patterns, builds a powerful code hierarchical model, and comes with comprehensive local language support. It is specifically tailored for team and enterprise development scenarios.
 
@@ -82,21 +82,21 @@ This is about **how source directories are split** (package by feature vs by lay
 
 ## 🍪 Demo Environment
 
-- 💻 Web: [https://service.fastapiadmin.com/web](https://service.fastapiadmin.com/web)
-- 📱 Mobile: [https://service.fastapiadmin.com/app](https://service.fastapiadmin.com/app)
+- 💻 Web: [https://service.AIStation.com/web](https://service.AIStation.com/web)
+- 📱 Mobile: [https://service.AIStation.com/app](https://service.AIStation.com/app)
 - 👤 Login Account: `admin` Password: `123456`
 
 ## 🔗 Source Repositories
 
 | Platform | Repository |
 |----------|------------|
-| GitHub | [FastapiAdmin Main](https://github.com/fastapiadmin/FastapiAdmin.git) \| [FastDocs Website](https://github.com/fastapiadmin/FastDocs.git) \| [FastApp Mobile](https://github.com/fastapiadmin/FastApp.git) |
-| Gitee  | [FastapiAdmin Main](https://gitee.com/fastapiadmin/FastapiAdmin.git) \| [FastDocs Website](https://gitee.com/fastapiadmin/FastDocs.git) \| [FastApp Mobile](https://gitee.com/fastapiadmin/FastApp.git) |
+| GitHub | [AIStation Main](https://github.com/AIStation/AIStation.git) \| [FastDocs Website](https://github.com/AIStation/FastDocs.git) \| [FastApp Mobile](https://github.com/AIStation/FastApp.git) |
+| Gitee  | [AIStation Main](https://gitee.com/AIStation/AIStation.git) \| [FastDocs Website](https://gitee.com/AIStation/FastDocs.git) \| [FastApp Mobile](https://gitee.com/AIStation/FastApp.git) |
 
 ## 📦 Engineering Structure Overview
 
 ```sh
-FastapiAdmin
+AIStation
 ├─ backend               # Backend project (FastAPI + Python)
 ├─ frontend              # Web frontend project (Vue3 + Element Plus)
 ├─ devops                # Deployment configurations
@@ -219,9 +219,9 @@ With **Pydantic v2** and **PostgreSQL (asyncpg)**, ORM writes expect native Pyth
 
 ```bash
 # Clone the repository to your local machine
-git clone https://gitee.com/fastapiadmin/FastapiAdmin.git
+git clone https://gitee.com/AIStation/AIStation.git
 # Or
-git clone https://github.com/fastapiadmin/FastapiAdmin.git
+git clone https://github.com/AIStation/AIStation.git
 ```
 
 > **Backend Note**: After cloning the code, you need to rename the `.env.dev.example` file in the `backend/env` directory to `.env.dev`, and rename the `.env.prod.example` file in the `backend/env` directory to `.env.prod`. Then modify the database connection information, Redis connection information, etc., according to the actual situation.
@@ -279,8 +279,8 @@ When using **`.env.dev.example` / `.env.development.example`** as-is:
 
 ```bash
 # 1. Clone the repository to server
-git clone https://gitee.com/fastapiadmin/FastapiAdmin.git
-cd FastapiAdmin
+git clone https://gitee.com/AIStation/AIStation.git
+cd AIStation
 
 # 2. Grant execution permissions and deploy
 chmod +x deploy.sh
@@ -576,12 +576,12 @@ A: Use the `./deploy.sh` script for one-click deployment to production environme
 
 ## ℹ️ Help
 
-For more details, please check the [Official Documentation](https://service.fastapiadmin.com)
+For more details, please check the [Official Documentation](https://service.AIStation.com)
 
 ## 👥 Contributors
 
-<a href="https://github.com/fastapiadmin/FastapiAdmin/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=fastapiadmin/FastapiAdmin"/>
+<a href="https://github.com/AIStation/AIStation/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=AIStation/AIStation"/>
 </a>
 
 ## 🙏 Special Thanks
@@ -609,4 +609,4 @@ Thanks to the contributions and support of the following open-source projects:
 
 If you like this project, please give it a ⭐️ Star to show your support! Thank you very much!
 
-[![Stargazers over time](https://starchart.cc/fastapiadmin/FastapiAdmin.svg?variant=adaptive)](https://starchart.cc/fastapiadmin/FastapiAdmin)
+[![Stargazers over time](https://starchart.cc/AIStation/AIStation.svg?variant=adaptive)](https://starchart.cc/AIStation/AIStation)
