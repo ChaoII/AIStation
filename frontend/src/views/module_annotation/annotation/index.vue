@@ -25,12 +25,14 @@
       <main class="ann-canvas-area" ref="canvasWrapRef">
         <div class="canvas-container" ref="canvasRef" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @wheel.prevent="onWheel" @dblclick="onDblClick" @contextmenu.prevent>
           <!-- 十字线 -->
-          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" />
-          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" />
-          <img v-if="imgUrl" ref="imgRef" :src="imgUrl" :style="imgStyle" @load="onImgLoad" @error="imgUrl = ''" />
+          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="cxStyle" />
+          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="cxStyle" />
+          <!-- 框预览（容器相对坐标） -->
+          <div ref="boxPreviewRef" class="box-preview" v-show="drawing" />
+          <img v-if="imgUrl" ref="imgRef" :src="imgUrl" :style="imgStyle" class="ann-img" draggable="false" @load="onImgLoad" @error="imgUrl = ''" />
           <svg v-if="imgUrl" class="ann-svg" :style="svgStyle" :viewBox="`0 0 ${cw} ${ch}`">
             <!-- 已有标注 -->
-            <g v-for="ann in store.annotations" :key="ann.id" @mousedown.left.stop="onAnnMouseDown($event, ann)">
+            <g v-for="ann in store.annotations" :key="ann.id" :data-ann-id="ann.id" @mousedown.left.prevent="onAnnMouseDown($event, ann)">
               <template v-if="ann.type === 'AxisAlignedBox'">
                 <rect :x="ann.x1 * cw" :y="ann.y1 * ch" :width="(ann.x2 - ann.x1) * cw" :height="(ann.y2 - ann.y1) * ch"
                   :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? 2 : 1.5"
@@ -40,16 +42,11 @@
                   <rect v-for="h in boxHandles(ann)" :key="h.key" :x="h.x - 4" :y="h.y - 4" width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5" :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke" />
                 </g>
                 <g class="ann-label">
-                  <rect :x="ann.x1 * cw" :y="ann.y1 * ch - 16" :width="labelW(getCls(ann.class_id)?.name)" height="16" :fill="clsColor(ann.class_id)" rx="2" />
-                  <text :x="ann.x1 * cw + 4" :y="ann.y1 * ch - 4" fill="#fff" font-size="10" font-weight="500">{{ getCls(ann.class_id)?.name }}</text>
+                  <rect :x="ann.x1 * cw" :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)" :width="labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)" :height="labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
+                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 6" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
               </template>
             </g>
-            <!-- 绘制中的矩形虚线预览 -->
-            <rect v-if="drawing && drawEnd" :x="Math.min(drawStart.x, drawEnd.x)" :y="Math.min(drawStart.y, drawEnd.y)"
-              :width="Math.abs(drawEnd.x - drawStart.x)" :height="Math.abs(drawEnd.y - drawStart.y)"
-              stroke="#3b82f6" fill="rgba(59,130,246,0.08)" stroke-width="1.5" stroke-dasharray="6,4"
-              vector-effect="non-scaling-stroke" />
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
           <div v-else-if="!store.currentImage" class="no-image">No image loaded</div>
@@ -103,7 +100,7 @@
     <footer class="ann-footer">
       <span class="hint">{{ toolHint }}</span>
       <span class="text-xs text-gray-400 font-mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
-      <span class="text-xs text-gray-400">{{ Math.round(store.zoom * 100) }}%</span>
+      <span class="text-xs text-gray-400 font-mono">Z:{{ Math.round(store.zoom * 100) }}% | cw:{{ cw }}</span>
       <div class="sep" />
       <el-button size="small" :disabled="!store.currentImage" circle @click="prevImg"><el-icon><ArrowLeft /></el-icon></el-button>
       <span class="nav-text">{{ store.currentImageIndex + 1 }}/{{ store.images.length }}</span>
@@ -142,6 +139,7 @@ const canvasWrapRef = ref<HTMLElement | null>(null)
 const imgRef = ref<HTMLImageElement | null>(null)
 const cxXRef = ref<HTMLElement | null>(null)
 const cxYRef = ref<HTMLElement | null>(null)
+const boxPreviewRef = ref<HTMLElement | null>(null)
 
 // State
 const imgUrl = ref("")
@@ -149,19 +147,67 @@ const cw = ref(1); const ch = ref(1)
 const cursorX = ref(0); const cursorY = ref(0)
 const showCrosshair = ref(false)
 const selectedClassId = ref(0)
-const currentTool = ref<ToolName>("box")
+const currentTool = ref<ToolName>("select")
 const taskType = ref("detection"); const task = ref<any>(null)
 const taskClasses = ref<any[]>([])
 const showClassModal = ref(false)
 const clsForm = ref({ name: "", color: "#409eff" })
 
-// Drawing state
-const drawing = ref(false)
-const drawStart = ref({ x: 0, y: 0 })
-const drawEnd = ref<{ x: number; y: number } | null>(null)
-const dragState = ref<{ active: boolean; type: string; ann: any; orig: any; startX: number; startY: number; handle: string }>({
-  active: false, type: "", ann: null, orig: null, startX: 0, startY: 0, handle: ""
+// ---- Constants (matching EasyLabelTauri) ----
+const LABEL_TAG_H = 8
+
+// ---- Drag state (single object, matching EasyLabelTauri pattern) ----
+interface DragState {
+  active: boolean
+  type: "move" | "pan" | "resize-tl" | "resize-tr" | "resize-bl" | "resize-br"
+       | "resize-l" | "resize-r" | "resize-t" | "resize-b" | ""
+  ann: any | null
+  orig: any | null     // deep-copy of annotation when drag started
+  startX: number
+  startY: number
+  handle: string
+}
+const drag = ref<DragState>({
+  active: false, type: "", ann: null, orig: null, startX: 0, startY: 0, handle: "",
 })
+
+// ---- 测量文字实际宽高 ----
+const labelTextRects = ref(new Map<string, { w: number; h: number; y: number }>())
+async function measureLabelRects() {
+  await nextTick()
+  await new Promise(r => setTimeout(r, 100))
+  const annSvg = document.querySelector(".ann-svg")
+  if (!annSvg) return
+  const texts = annSvg.querySelectorAll<SVGTextElement>(".ann-label text")
+  const map = new Map<string, { w: number; h: number; y: number }>()
+  texts.forEach(t => {
+    const annEl = t.closest<SVGGElement>("[data-ann-id]")
+    if (!annEl) return
+    const id = annEl.getAttribute("data-ann-id")
+    if (!id) return
+    const bbox = t.getBBox()
+    if (bbox.width > 0 && bbox.height > 0) {
+      map.set(id, { w: bbox.width, h: bbox.height, y: bbox.y })
+    }
+  })
+  labelTextRects.value = map
+  // 调试输出
+  if (map.size > 0) {
+    for (const [id, r] of map) {
+      const ann = store.annotations.find(a => a.id === id)
+      const clsName = ann ? (getCls(ann.class_id)?.name || '?') : '?'
+      const calcW = labelWidthForClass(ann?.class_id || 0)
+      const calcH = LABEL_TAG_H
+      console.log(`[label] "${clsName}" 测量: w=${r.w.toFixed(1)} h=${r.h.toFixed(1)} y=${r.y.toFixed(1)} | 计算: w=${calcW} h=${calcH}`)
+    }
+  }
+}
+
+// ---- Box drawing (div overlay in container-relative coords) ----
+const drawing = ref(false)
+let bx = 0  // box start X (container-relative)
+let by = 0  // box start Y (container-relative)
+let drawStartImg = { x: 0, y: 0 }  // box start in image natural pixels
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
@@ -182,49 +228,77 @@ const taskTypeLabel = computed(() => ({ detection: "检测", rotated_detection: 
 const taskTypeTag = computed(() => ({ detection: undefined, rotated_detection: "warning", segmentation: "danger", keypoint: "warning", ocr: "info", classification: "info" } as Record<string, any>)[taskType.value])
 const toolHint = computed(() => ({ select: "点击选择标注，拖拽移动", pan: "拖拽平移", zoom: "滚轮缩放", box: "拖拽创建矩形框", rotated_box: "三步旋转框", polygon: "点击创建多边形", keypoint: "放置关键点", ocr: "文本标注", classification: "选择类别" }[currentTool.value] || ""))
 
+const cxColor = computed(() => clsColor(selectedClassId.value) || "#3b82f6")
+const cxStyle = computed(() => ({ background: cxColor.value + "80" }))
+
 const annotatedCount = computed(() => store.images.filter(i => i.status === "annotated").length)
 const totalCount = computed(() => store.images.length)
 const progressPct = computed(() => totalCount.value === 0 ? 0 : Math.round(annotatedCount.value / totalCount.value * 100))
 
-// ===== 图片显示 =====
-const imgStyle = computed(() => {
-  const dw = cw.value * store.zoom; const dh = ch.value * store.zoom
-  return { width: dw + "px", height: dh + "px", transform: `translate(-50%,-50%) translate(${store.panX}px,${store.panY}px)` }
-})
-const svgStyle = computed(() => {
-  const dw = cw.value * store.zoom; const dh = ch.value * store.zoom
-  return { width: dw + "px", height: dh + "px", transform: `translate(-50%,-50%) translate(${store.panX}px,${store.panY}px)` }
-})
+// ===== 显示 =====
+const dw = computed(() => cw.value * store.zoom)
+const dh = computed(() => ch.value * store.zoom)
 
+const imgStyle = computed(() => ({
+  width: dw.value + "px", height: dh.value + "px",
+  transform: `translate(-50%,-50%) translate(${store.panX}px,${store.panY}px)`,
+}))
+const svgStyle = computed(() => ({
+  width: dw.value + "px", height: dh.value + "px",
+  transform: `translate(-50%,-50%) translate(${store.panX}px,${store.panY}px)`,
+}))
+
+// ===== 坐标：鼠标 → 图像自然像素 =====
+function mouseToImage(e: MouseEvent): { x: number; y: number } | null {
+  const c = canvasRef.value; if (!c || !cw.value || !ch.value) return null
+  const r = c.getBoundingClientRect()
+  // 图像左上角在容器中的位置
+  const imgL = r.width / 2 - dw.value / 2 + store.panX
+  const imgT = r.height / 2 - dh.value / 2 + store.panY
+  const relX = e.clientX - r.left - imgL
+  const relY = e.clientY - r.top - imgT
+  return {
+    x: (Math.max(0, Math.min(dw.value, relX)) / dw.value) * cw.value,
+    y: (Math.max(0, Math.min(dh.value, relY)) / dh.value) * ch.value,
+  }
+}
+
+// ===== 图像加载 =====
 function onImgLoad() {
   const el = imgRef.value; const c = canvasRef.value; if (!el || !c) return
   cw.value = el.naturalWidth; ch.value = el.naturalHeight
-  const r = c.getBoundingClientRect()
-  const z = Math.min(r.width / cw.value, r.height / ch.value)
-  store.setZoom(Math.min(z * 0.95, 1))
-  store.setPan(0, 0)
-}
-
-function mouseToImgPx(e: MouseEvent) {
-  const c = canvasRef.value; if (!c || !cw.value || !ch.value) return null
-  const r = c.getBoundingClientRect(); const dw = cw.value * store.zoom; const dh = ch.value * store.zoom
-  const ix = r.width / 2 - dw / 2 + store.panX; const iy = r.height / 2 - dh / 2 + store.panY
-  return { x: Math.max(0, Math.min(dw, e.clientX - r.left - ix)), y: Math.max(0, Math.min(dh, e.clientY - r.top - iy)) }
+  const tryFit = () => {
+    const r = c.getBoundingClientRect()
+    if (r.width && r.height) {
+      const z = Math.min(r.width / cw.value, r.height / ch.value)
+      store.setZoom(Math.min(z, 3))
+    }
+    store.setPan(0, 0)
+  }
+  nextTick(tryFit)
 }
 
 // ===== Crosshair =====
 function updCrosshair(e: MouseEvent) {
   const c = canvasRef.value; if (!c) return
-  const r = c.getBoundingClientRect(); const x = e.clientX - r.left; const y = e.clientY - r.top
-  if (cxXRef.value) { cxXRef.value.style.top = y + "px" }
-  if (cxYRef.value) { cxYRef.value.style.left = x + "px" }
+  const r = c.getBoundingClientRect()
+  if (cxXRef.value) cxXRef.value.style.top = (e.clientY - r.top) + "px"
+  if (cxYRef.value) cxYRef.value.style.left = (e.clientX - r.left) + "px"
 }
 
 // ===== 类别 =====
 function getCls(id: number) { return taskClasses.value.find(c => c.id === id) }
 function clsColor(id: number) { return getCls(id)?.color || "#3b82f6" }
 function clsCount(id: number) { return store.annotations.filter(a => a.class_id === id).length }
-function labelW(name: string) { return Math.max(30, ((name?.length || 0) * 8 + 16)) }
+function textPixelWidth(text: string): number {
+  let w = 0
+  for (const ch of text) { w += /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/.test(ch) ? 6 : 3 }
+  return Math.round(w)
+}
+function labelWidthForClass(classId: number): number {
+  const name = getCls(classId)?.name || ""
+  return Math.max(14, textPixelWidth(name) + 6)
+}
 function addClass() {
   if (!clsForm.value.name.trim()) return
   const id = taskClasses.value.length > 0 ? Math.max(...taskClasses.value.map(c => c.id)) + 1 : 0
@@ -241,9 +315,29 @@ function removeClass(id: number) {
 }
 async function saveClassesToTask() {
   if (!task.value?.id) return
-  try {
-    await AnnotationAPI.updateTask(task.value.id, { classes: taskClasses.value })
-  } catch {}
+  try { await AnnotationAPI.updateTask(task.value.id, { classes: taskClasses.value }) } catch {}
+}
+
+// ===== Box 预览 div =====
+function startBoxPreview(cx: number, cy: number) {
+  const el = boxPreviewRef.value; if (!el) return
+  el.style.display = "block"
+  el.style.left = cx + "px"
+  el.style.top = cy + "px"
+  el.style.width = "0px"; el.style.height = "0px"
+}
+function updateBoxPreview(cx: number, cy: number) {
+  const el = boxPreviewRef.value; if (!el) return
+  el.style.left = Math.min(bx, cx) + "px"
+  el.style.top = Math.min(by, cy) + "px"
+  el.style.width = Math.abs(cx - bx) + "px"
+  el.style.height = Math.abs(cy - by) + "px"
+}
+function removeBoxPreview() {
+  const el = boxPreviewRef.value; if (!el) return
+  el.style.display = "none"
+  el.style.left = "0px"; el.style.top = "0px"
+  el.style.width = "0px"; el.style.height = "0px"
 }
 
 // ===== 画布事件 =====
@@ -252,25 +346,40 @@ function onMouseEnter(e: MouseEvent) {
 }
 function onMouseLeave() {
   showCrosshair.value = false
+  if (drag.value.active && drag.value.ann) {
+    // restore original on leave
+    if (drag.value.orig) Object.assign(drag.value.ann, drag.value.orig)
+  }
+  drag.value = { active: false, type: "", ann: null, orig: null, startX: 0, startY: 0, handle: "" }
+  if (drawing.value) { drawing.value = false; removeBoxPreview() }
 }
+
 function onMouseDown(e: MouseEvent) {
   if (!store.currentImage) return
-  // 选择工具 → 点击标注或空白
+
+  // ---- Select: deselect on empty-space click ----
   if (currentTool.value === "select") {
-    store.selectedAnnotationId = null; return
+    store.selectedAnnotationId = null
+    return
   }
-  // 平移
+
+  // ---- Pan ----
   if (currentTool.value === "pan") {
-    dragState.value = { active: true, type: "pan", ann: null, orig: null, startX: e.clientX, startY: e.clientY, handle: "" }; return
+    drag.value = { active: true, type: "pan", ann: null, orig: null, startX: e.clientX, startY: e.clientY, handle: "" }
+    return
   }
-  // 矩形工具
+
+  // ---- Box draw ----
   if (currentTool.value === "box") {
     if (taskClasses.value.length === 0) { ElMessage.warning("请先添加类别"); return }
     if (!selectedClassId.value && taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id
-    const p = mouseToImgPx(e); if (!p) return
+    const pt = mouseToImage(e); if (!pt) return
+    const r = canvasRef.value?.getBoundingClientRect(); if (!r) return
+    bx = e.clientX - r.left
+    by = e.clientY - r.top
+    drawStartImg = { x: pt.x, y: pt.y }
+    startBoxPreview(bx, by)
     drawing.value = true
-    drawStart.value = { x: p.x / store.zoom, y: p.y / store.zoom }
-    drawEnd.value = null
     showCrosshair.value = true; updCrosshair(e)
     return
   }
@@ -278,35 +387,36 @@ function onMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   if (!store.currentImage) return
-  const p = mouseToImgPx(e)
-  if (p) { cursorX.value = Math.round(p.x / store.zoom); cursorY.value = Math.round(p.y / store.zoom) }
+  const pt = mouseToImage(e)
+  if (pt) { cursorX.value = Math.round(pt.x); cursorY.value = Math.round(pt.y) }
   if (showCrosshair.value) updCrosshair(e)
-  // 拖拽平移
-  if (dragState.value.active && dragState.value.type === "pan") {
-    const dx = e.clientX - dragState.value.startX; const dy = e.clientY - dragState.value.startY
+
+  // ---- Pan drag ----
+  if (drag.value.active && drag.value.type === "pan") {
+    const dx = e.clientX - drag.value.startX; const dy = e.clientY - drag.value.startY
     store.setPan(store.panX + dx, store.panY + dy)
-    dragState.value.startX = e.clientX; dragState.value.startY = e.clientY; return
+    drag.value.startX = e.clientX; drag.value.startY = e.clientY; return
   }
-  // 拖拽移动标注
-  if (dragState.value.active && dragState.value.type === "move" && dragState.value.ann) {
-    const c = canvasRef.value; if (!c) return; const r = c.getBoundingClientRect()
-    const dx = (e.clientX - dragState.value.startX) / (cw.value * store.zoom)
-    const dy = (e.clientY - dragState.value.startY) / (ch.value * store.zoom)
-    const o = dragState.value.orig
-    if (dragState.value.ann.type === "AxisAlignedBox") {
-      dragState.value.ann.x1 = Math.max(0, Math.min(1, o.x1 + dx))
-      dragState.value.ann.y1 = Math.max(0, Math.min(1, o.y1 + dy))
-      dragState.value.ann.x2 = Math.max(0, Math.min(1, o.x2 + dx))
-      dragState.value.ann.y2 = Math.max(0, Math.min(1, o.y2 + dy))
+
+  // ---- Move annotation ----
+  if (drag.value.active && drag.value.type === "move" && drag.value.ann) {
+    const dx = (e.clientX - drag.value.startX) / dw.value
+    const dy = (e.clientY - drag.value.startY) / dh.value
+    const o = drag.value.orig
+    if (drag.value.ann.type === "AxisAlignedBox") {
+      drag.value.ann.x1 = Math.max(0, Math.min(1, o.x1 + dx))
+      drag.value.ann.y1 = Math.max(0, Math.min(1, o.y1 + dy))
+      drag.value.ann.x2 = Math.max(0, Math.min(1, o.x2 + dx))
+      drag.value.ann.y2 = Math.max(0, Math.min(1, o.y2 + dy))
     }
     return
   }
-  // 拖拽调整大小（手柄）
-  if (dragState.value.active && dragState.value.type.startsWith("resize-") && dragState.value.ann) {
-    const c = canvasRef.value; if (!c) return
-    const dx = (e.clientX - dragState.value.startX) / (cw.value * store.zoom)
-    const dy = (e.clientY - dragState.value.startY) / (ch.value * store.zoom)
-    const o = dragState.value.orig; const ann = dragState.value.ann; const h = dragState.value.handle
+
+  // ---- Resize annotation ----
+  if (drag.value.active && drag.value.type.startsWith("resize-") && drag.value.ann) {
+    const dx = (e.clientX - drag.value.startX) / dw.value
+    const dy = (e.clientY - drag.value.startY) / dh.value
+    const o = drag.value.orig; const ann = drag.value.ann; const h = drag.value.handle
     if (ann.type === "AxisAlignedBox") {
       if (h.includes("l")) ann.x1 = Math.max(0, Math.min(o.x2 - 0.01, o.x1 + dx))
       if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx))
@@ -315,32 +425,42 @@ function onMouseMove(e: MouseEvent) {
     }
     return
   }
-  // 绘制矩形中
+
+  // ---- Box drawing preview ----
   if (drawing.value && currentTool.value === "box") {
-    const p = mouseToImgPx(e); if (!p) return
-    drawEnd.value = { x: p.x / store.zoom, y: p.y / store.zoom }
+    const r = canvasRef.value?.getBoundingClientRect(); if (!r) return
+    updateBoxPreview(e.clientX - r.left, e.clientY - r.top)
     updCrosshair(e); return
   }
 }
 
-function onMouseUp(_e: MouseEvent) {
-  // 完成矩形绘制
-  if (drawing.value && drawEnd.value) {
-    drawing.value = false; showCrosshair.value = false
-    const x1 = drawStart.value.x; const y1 = drawStart.value.y
-    const x2 = drawEnd.value.x; const y2 = drawEnd.value.y
-    const w = Math.abs(x2 - x1); const h = Math.abs(y2 - y1)
+function onMouseUp(e: MouseEvent) {
+  // ---- Finish box draw ----
+  if (drawing.value && currentTool.value === "box") {
+    drawing.value = false; removeBoxPreview()
+    const pt = mouseToImage(e); if (!pt) return
+    const w = Math.abs(pt.x - drawStartImg.x); const h = Math.abs(pt.y - drawStartImg.y)
     if (w > 5 && h > 5) {
       store.annotations.push({
         id: crypto.randomUUID(), type: "AxisAlignedBox",
         class_id: selectedClassId.value || 0,
-        x1: Math.min(x1, x2) / cw.value, y1: Math.min(y1, y2) / ch.value,
-        x2: Math.max(x1, x2) / cw.value, y2: Math.max(y1, y2) / ch.value,
+        x1: Math.min(drawStartImg.x, pt.x) / cw.value,
+        y1: Math.min(drawStartImg.y, pt.y) / ch.value,
+        x2: Math.max(drawStartImg.x, pt.x) / cw.value,
+        y2: Math.max(drawStartImg.y, pt.y) / ch.value,
       })
     }
-    drawEnd.value = null; return
+    return
   }
-  if (dragState.value.active) dragState.value.active = false
+
+  // ---- End drag ----
+  if (drag.value.active) drag.value.active = false
+}
+
+// Window-level mouseup catch (for safety when mouse leaves canvas)
+function onWindowMouseUp() {
+  if (drag.value.active) drag.value.active = false
+  if (drawing.value) { drawing.value = false; showCrosshair.value = false; removeBoxPreview() }
 }
 
 function onWheel(e: WheelEvent) {
@@ -350,35 +470,48 @@ function onWheel(e: WheelEvent) {
 
 function onDblClick(_e: MouseEvent) {}
 
-// ===== 标注选中/拖拽 =====
+// ===== 标注选中 / 拖拽 =====
 function onAnnMouseDown(e: MouseEvent, ann: any) {
-  if (currentTool.value === "select" || currentTool.value === "pan" || currentTool.value === "box") {
-    const t = (e.target as HTMLElement)
+  // .prevent prevents text selection, stopPropagation prevents container handler
+  e.stopPropagation()
+
+  if (currentTool.value === "select" || currentTool.value === "pan") {
+    const t = e.target as HTMLElement
     const handle = t.getAttribute("data-handle")
+
+    // ---- Resize handle ----
     if (handle && handle.startsWith("resize-")) {
       store.selectedAnnotationId = ann.id
-      dragState.value = { active: true, type: "resize", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+      drag.value = { active: true, type: handle as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
       return
     }
-    store.selectedAnnotationId = store.selectedAnnotationId === ann.id ? null : ann.id
-    if (store.selectedAnnotationId === ann.id) {
-      dragState.value = { active: true, type: "move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
-    }
+
+    // ---- Select annotation (always selects, does NOT toggle) ----
+    store.selectedAnnotationId = ann.id
+
+    // ---- Start move drag ----
+    drag.value = { active: true, type: "move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
   }
 }
 
+// ===== Handles =====
 function boxHandles(ann: any) {
-  const x1 = ann.x1 * cw.value; const y1 = ann.y1 * ch.value; const x2 = ann.x2 * cw.value; const y2 = ann.y2 * ch.value
+  const x1 = ann.x1 * cw.value; const y1 = ann.y1 * ch.value
+  const x2 = ann.x2 * cw.value; const y2 = ann.y2 * ch.value
+  const mx = (x1 + x2) / 2; const my = (y1 + y2) / 2
   return [
     { key: "resize-tl", x: x1, y: y1 }, { key: "resize-tr", x: x2, y: y1 },
     { key: "resize-bl", x: x1, y: y2 }, { key: "resize-br", x: x2, y: y2 },
-    { key: "resize-l", x: x1, y: (y1 + y2) / 2 }, { key: "resize-r", x: x2, y: (y1 + y2) / 2 },
-    { key: "resize-t", x: (x1 + x2) / 2, y: y1 }, { key: "resize-b", x: (x1 + x2) / 2, y: y2 },
+    { key: "resize-l", x: x1, y: my },   { key: "resize-r", x: x2, y: my },
+    { key: "resize-t", x: mx, y: y1 },   { key: "resize-b", x: mx, y: y2 },
   ]
 }
 
 // ===== 标注操作 =====
-function removeAnn(id: string) { store.annotations = store.annotations.filter(a => a.id !== id); if (store.selectedAnnotationId === id) store.selectedAnnotationId = null }
+function removeAnn(id: string) {
+  store.annotations = store.annotations.filter(a => a.id !== id)
+  if (store.selectedAnnotationId === id) store.selectedAnnotationId = null
+}
 
 // ===== 图片导航 =====
 async function loadImg(imageId: number) {
@@ -390,6 +523,8 @@ async function loadImg(imageId: number) {
     imgUrl.value = r.data?.data?.url || ""
     const ar = await AnnotationAPI.getAnnotations(store.taskId, imageId)
     store.annotations = ar.data?.data || []
+    await nextTick()
+    measureLabelRects()
   } catch { imgUrl.value = "" }
 }
 function goToImage(idx: number) { if (idx >= 0 && idx < store.images.length) loadImg(store.images[idx].id) }
@@ -413,7 +548,12 @@ function handleBack() { router.push("/annotation/task") }
 function fmtTime(t?: string) { if (!t) return ""; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}` }
 
 // ===== 键盘 =====
-const keyToolMap: Record<string, ToolName> = { "1": "select", "s": "select", "2": "box", "b": "box", "3": "rotated_box", "r": "rotated_box", "4": "polygon", "p": "polygon", "5": "keypoint", "k": "keypoint", "6": "ocr", "o": "ocr", "7": "classification", "c": "classification" }
+const keyToolMap: Record<string, ToolName> = {
+  "1": "select", "s": "select", "2": "box", "b": "box",
+  "3": "rotated_box", "r": "rotated_box", "4": "polygon", "p": "polygon",
+  "5": "keypoint", "k": "keypoint", "6": "ocr", "o": "ocr",
+  "7": "classification", "c": "classification",
+}
 function onKey(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement)?.tagName; if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
   const k = e.key.toLowerCase()
@@ -421,7 +561,7 @@ function onKey(e: KeyboardEvent) {
   if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) { removeAnn(store.selectedAnnotationId); return }
   if (k === "arrowleft" || k === "a") { prevImg(); return }
   if (k === "arrowright" || k === "d") { nextImg(); return }
-  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; return }
+  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); return }
   const t = keyToolMap[k]; if (t && displayTools.value.some(d => d.name === t)) setTool(t)
 }
 
@@ -434,8 +574,8 @@ onMounted(async () => {
     const t = dr.data?.data; if (!t) return
     task.value = t; taskType.value = t.task_type || "detection"
     taskClasses.value = t.classes || []
-    currentTool.value = (taskToolMap[t.task_type]?.[0]?.name as ToolName) || "box"
-    store.setTool(currentTool.value); store.taskId = tid
+    currentTool.value = "select"
+    store.setTool("select"); store.taskId = tid
     if (taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id
     const ir = await AnnotationAPI.getImages(t.dataset_id); const imgs = ir.data?.data || []
     store.images = imgs
@@ -443,8 +583,13 @@ onMounted(async () => {
   } catch (e: any) { ElMessage.error("加载失败: " + (e?.msg || e?.message || ""))
   } finally { store.loading = false }
   document.addEventListener("keydown", onKey)
+  window.addEventListener("mouseup", onWindowMouseUp)
+  watch(() => store.annotations.length, () => measureLabelRects())
 })
-onBeforeUnmount(() => document.removeEventListener("keydown", onKey))
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKey)
+  window.removeEventListener("mouseup", onWindowMouseUp)
+})
 </script>
 
 <style scoped>
@@ -466,7 +611,9 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKey))
 .crosshair { position:absolute; pointer-events:none; z-index:20; }
 .crosshair-x { left:0; height:1px; background:rgba(59,130,246,0.5); width:100%; }
 .crosshair-y { top:0; width:1px; background:rgba(59,130,246,0.5); height:100%; }
+.box-preview { position:absolute; pointer-events:none; z-index:15; border:2px dashed #3b82f6; background:rgba(59,130,246,0.06); }
 .ann-svg { position:absolute; top:50%; left:50%; pointer-events:none; }
+.ann-img { position:absolute; top:50%; left:50%; }
 .ann-svg rect, .ann-svg g { pointer-events:all; cursor:pointer; }
 .ann-svg .handle { cursor:pointer; pointer-events:all; }
 .ann-svg .ann-label { pointer-events:none; }
