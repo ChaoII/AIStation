@@ -46,7 +46,49 @@
                   <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 6" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
               </template>
+              <template v-if="ann.type === 'RotatedBox'">
+                <rect :x="ann.cx * cw - ann.width * cw / 2" :y="ann.cy * ch - ann.height * ch / 2"
+                  :width="ann.width * cw" :height="ann.height * ch"
+                  :stroke="clsColor(ann.class_id)"
+                  :stroke-width="store.selectedAnnotationId === ann.id ? 2 : 1.5"
+                  :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'none'"
+                  vector-effect="non-scaling-stroke"
+                  :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
+                <g class="ann-label">
+                  <rect :x="ann.cx * cw - ann.width * cw / 2" :y="ann.cy * ch - ann.height * ch / 2 - LABEL_TAG_H"
+                    :width="labelWidthForClass(ann.class_id)" :height="LABEL_TAG_H" :fill="clsColor(ann.class_id)" />
+                  <text :x="ann.cx * cw - ann.width * cw / 2 + labelWidthForClass(ann.class_id) / 2"
+                    :y="ann.cy * ch - ann.height * ch / 2 - LABEL_TAG_H / 2"
+                    fill="#ffffff" font-size="6" font-weight="500" text-anchor="middle" dominant-baseline="central"
+                    font-family="Microsoft YaHei,sans-serif">{{ getCls(ann.class_id)?.name }}</text>
+                </g>
+                <template v-if="store.selectedAnnotationId === ann.id">
+                  <rect v-for="h in ['tl','tr','bl','br']" :key="h"
+                    :x="rbHandlePos(ann, h, cw, ch).x - 4" :y="rbHandlePos(ann, h, cw, ch).y - 4"
+                    width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                    :data-handle="h" class="handle" vector-effect="non-scaling-stroke" />
+                  <rect :x="ann.cx * cw - 4" :y="ann.cy * ch - 4"
+                    width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                    data-handle="move" class="handle" vector-effect="non-scaling-stroke" />
+                  <line :x1="rbHandlePos(ann, 'tc', cw, ch).x" :y1="rbHandlePos(ann, 'tc', cw, ch).y"
+                    :x2="rbRotateHandlePos(ann, cw, ch).x" :y2="rbRotateHandlePos(ann, cw, ch).y"
+                    :stroke="clsColor(ann.class_id)" stroke-width="1" />
+                  <circle :cx="rbRotateHandlePos(ann, cw, ch).x" :cy="rbRotateHandlePos(ann, cw, ch).y"
+                    r="3" fill="#fff" :stroke="clsColor(ann.class_id)" stroke-width="1.5"
+                    data-handle="rotate" class="handle" />
+                </template>
+              </template>
             </g>
+            <!-- Rotated box 3-step preview -->
+            <template v-if="currentTool === 'rotated_box' && rbStep === 1 && rbPt1">
+              <circle :cx="rbPt1!.x" :cy="rbPt1!.y" r="4" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+            </template>
+            <template v-if="currentTool === 'rotated_box' && rbStep === 2 && rbPt1">
+              <circle :cx="rbPt1!.x" :cy="rbPt1!.y" r="4" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+              <circle v-if="rbPt2" :cx="rbPt2.x" :cy="rbPt2.y" r="4" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+              <line :x1="rbPt1!.x" :y1="rbPt1!.y" :x2="(rbPt2||rbPt1!).x" :y2="(rbPt2||rbPt1!).y"
+                :stroke="cxColor" stroke-width="2" />
+            </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
           <div v-else-if="!store.currentImage" class="no-image">No image loaded</div>
@@ -161,8 +203,10 @@ const LABEL_TAG_H = 8
 // ---- Drag state (single object, matching EasyLabelTauri pattern) ----
 interface DragState {
   active: boolean
-  type: "move" | "pan" | "resize-tl" | "resize-tr" | "resize-bl" | "resize-br"
-       | "resize-l" | "resize-r" | "resize-t" | "resize-b" | ""
+  type: "move" | "pan" | "rotate"
+       | "resize-tl" | "resize-tr" | "resize-bl" | "resize-br"
+       | "resize-l" | "resize-r" | "resize-t" | "resize-b"
+       | "tl" | "tr" | "bl" | "br" | ""
   ann: any | null
   orig: any | null     // deep-copy of annotation when drag started
   startX: number
@@ -210,6 +254,12 @@ const drawing = ref(false)
 let bx = 0  // box start X (container-relative)
 let by = 0  // box start Y (container-relative)
 let drawStartImg = { x: 0, y: 0 }  // box start in image natural pixels
+
+// ---- Rotated box drawing (3-step) ----
+const rbStep = ref(0)  // 0=idle, 1=placed p1, 2=placed p2+drag, 3=place p3
+const rbPt1 = ref<{ x: number; y: number } | null>(null)
+const rbPt2 = ref<{ x: number; y: number } | null>(null)
+const rbDragging = ref(false)
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
@@ -326,6 +376,51 @@ async function saveClassesToTask() {
   try { await AnnotationAPI.updateTask(task.value.id, { classes: taskClasses.value }) } catch {}
 }
 
+// ===== Rotated box geometry =====
+function rotatedBoxFromEdgeAndPoint(p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }): { cx: number; cy: number; width: number; height: number; angle: number } | null {
+  const vx = p2.x - p1.x; const vy = p2.y - p1.y
+  const width = Math.hypot(vx, vy)
+  if (width < 1e-6) return null
+  const mx = (p1.x + p2.x) / 2; const my = (p1.y + p2.y) / 2
+  const tx = vx / width; const ty = vy / width
+  const t = ((p3.x - p1.x) * tx + (p3.y - p1.y) * ty)
+  const footX = p1.x + t * tx; const footY = p1.y + t * ty
+  const offx = p3.x - footX; const offy = p3.y - footY
+  const height = Math.hypot(offx, offy)
+  if (height < 1e-6) return null
+  const nx = offx / height; const ny = offy / height
+  return {
+    cx: mx + (height / 2) * nx,
+    cy: my + (height / 2) * ny,
+    width, height,
+    angle: Math.atan2(vy, vx),
+  }
+}
+
+function rbHandlePos(ann: any, key: string, cw_val: number, ch_val: number) {
+  const hw = ann.width * cw_val / 2; const hh = ann.height * ch_val / 2
+  const cos = Math.cos(ann.angle); const sin = Math.sin(ann.angle)
+  const map: Record<string, [number, number]> = {
+    tl: [-hw, -hh], tr: [hw, -hh], bl: [-hw, hh], br: [hw, hh],
+    tc: [0, -hh], bc: [0, hh], ml: [-hw, 0], mr: [hw, 0],
+  }
+  const [lx, ly] = map[key] || [0, 0]
+  return {
+    x: ann.cx * cw_val + lx * cos - ly * sin,
+    y: ann.cy * ch_val + lx * sin + ly * cos,
+  }
+}
+
+function rbRotateHandlePos(ann: any, cw_val: number, ch_val: number) {
+  const hh = ann.height * ch_val / 2; const offset = 25
+  const lx = 0; const ly = -hh - offset
+  const cos = Math.cos(ann.angle); const sin = Math.sin(ann.angle)
+  return {
+    x: ann.cx * cw_val + lx * cos - ly * sin,
+    y: ann.cy * ch_val + lx * sin + ly * cos,
+  }
+}
+
 // ===== Box 预览 div =====
 function startBoxPreview(cx: number, cy: number) {
   const el = boxPreviewRef.value; if (!el) return
@@ -350,7 +445,7 @@ function removeBoxPreview() {
 
 // ===== 画布事件 =====
 function onMouseEnter(e: MouseEvent) {
-  if (currentTool.value === "box") { showCrosshair.value = true; updCrosshair(e) }
+  if (currentTool.value === "box" || currentTool.value === "rotated_box") { showCrosshair.value = true; updCrosshair(e) }
 }
 function onMouseLeave() {
   showCrosshair.value = false
@@ -391,6 +486,28 @@ function onMouseDown(e: MouseEvent) {
     showCrosshair.value = true; updCrosshair(e)
     return
   }
+
+  // ---- Rotated box draw (3-step) ----
+  if (currentTool.value === "rotated_box") {
+    if (taskClasses.value.length === 0) { ElMessage.warning("请先添加类别"); return }
+    if (!selectedClassId.value && taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id
+    const pt = mouseToImage(e); if (!pt) return
+    if (rbStep.value === 0) {
+      rbPt1.value = { x: pt.x, y: pt.y }; rbStep.value = 1
+    } else if (rbStep.value === 1) {
+      rbPt2.value = { x: pt.x, y: pt.y }; rbDragging.value = true; rbStep.value = 2
+    } else if (rbStep.value === 3) {
+      const p1 = rbPt1.value!; const p2 = rbPt2.value!
+      const geom = rotatedBoxFromEdgeAndPoint(p1, p2, pt); if (!geom) return
+      store.annotations.push({
+        id: crypto.randomUUID(), type: "RotatedBox", class_id: selectedClassId.value || 0,
+        cx: geom.cx / cw.value, cy: geom.cy / ch.value,
+        width: geom.width / cw.value, height: geom.height / ch.value, angle: geom.angle,
+      })
+      rbStep.value = 0; rbPt1.value = null; rbPt2.value = null
+    }
+    return
+  }
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -406,7 +523,7 @@ function onMouseMove(e: MouseEvent) {
     drag.value.startX = e.clientX; drag.value.startY = e.clientY; return
   }
 
-  // ---- Move annotation ----
+  // ---- Rotated box move ----
   if (drag.value.active && drag.value.type === "move" && drag.value.ann) {
     const dx = (e.clientX - drag.value.startX) / dw.value
     const dy = (e.clientY - drag.value.startY) / dh.value
@@ -416,6 +533,9 @@ function onMouseMove(e: MouseEvent) {
       drag.value.ann.y1 = Math.max(0, Math.min(1, o.y1 + dy))
       drag.value.ann.x2 = Math.max(0, Math.min(1, o.x2 + dx))
       drag.value.ann.y2 = Math.max(0, Math.min(1, o.y2 + dy))
+    } else if (drag.value.ann.type === "RotatedBox") {
+      drag.value.ann.cx = Math.max(0, Math.min(1, o.cx + dx))
+      drag.value.ann.cy = Math.max(0, Math.min(1, o.cy + dy))
     }
     return
   }
@@ -430,7 +550,36 @@ function onMouseMove(e: MouseEvent) {
       if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx))
       if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy))
       if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy))
+    } else if (ann.type === "RotatedBox") {
+      const cos = Math.cos(o.angle); const sin = Math.sin(o.angle)
+      const aspect = ch.value / cw.value
+      const fx = h.includes("l") ? 1 : h.includes("r") ? -1 : 1
+      const fy = h.includes("t") ? 1 : h.includes("b") ? -1 : 1
+      const mx = o.cx + dx; const my = o.cy + dy
+      const fix_x = o.cx + fx * o.width / 2 * cos - fy * o.height / 2 * aspect * sin
+      const fix_y = o.cy + fx * o.width / 2 / aspect * sin + fy * o.height / 2 * cos
+      const newCx = (fix_x + mx) / 2; const newCy = (fix_y + my) / 2
+      const dvx = (mx - newCx) * cw.value; const dvy = (my - newCy) * ch.value
+      const lx = dvx * cos + dvy * sin; const ly = -dvx * sin + dvy * cos
+      ann.width = Math.max(0.001, Math.abs(lx) * 2 / cw.value)
+      ann.height = Math.max(0.001, Math.abs(ly) * 2 / ch.value)
+      ann.cx = Math.max(0, Math.min(1, newCx))
+      ann.cy = Math.max(0, Math.min(1, newCy))
     }
+    return
+  }
+
+  // ---- Rotate RotatedBox ----
+  if (drag.value.active && drag.value.type === "rotate" && drag.value.ann?.type === "RotatedBox") {
+    const c = canvasRef.value; if (!c) return
+    const r = c.getBoundingClientRect()
+    const imgL = r.width / 2 - dw.value / 2 + store.panX
+    const imgT = r.height / 2 - dh.value / 2 + store.panY
+    const centerX = r.left + imgL + drag.value.ann.cx * dw.value
+    const centerY = r.top + imgT + drag.value.ann.cy * dh.value
+    const prevAngle = Math.atan2(drag.value.startY - centerY, drag.value.startX - centerX)
+    const curAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX)
+    drag.value.ann.angle = drag.value.orig.angle + (curAngle - prevAngle)
     return
   }
 
@@ -439,6 +588,17 @@ function onMouseMove(e: MouseEvent) {
     const r = canvasRef.value?.getBoundingClientRect(); if (!r) return
     updateBoxPreview(e.clientX - r.left, e.clientY - r.top)
     updCrosshair(e); return
+  }
+
+  // ---- Rotated box drawing preview ----
+  if (currentTool.value === "rotated_box") {
+    if (rbStep.value === 2 && pt) {
+      rbPt2.value = { x: pt.x, y: pt.y }
+    }
+    if (rbStep.value === 1 || rbStep.value === 3) {
+      updCrosshair(e)
+    }
+    return
   }
 }
 
@@ -457,6 +617,18 @@ function onMouseUp(e: MouseEvent) {
         x2: Math.max(drawStartImg.x, pt.x) / cw.value,
         y2: Math.max(drawStartImg.y, pt.y) / ch.value,
       })
+    }
+    return
+  }
+
+  // ---- Rotated box step ----
+  if (currentTool.value === "rotated_box" && rbStep.value === 2) {
+    if (!rbDragging.value) {
+      rbStep.value = 3
+    } else {
+      const pt = mouseToImage(e)
+      if (pt) rbPt2.value = { x: pt.x, y: pt.y }
+      rbStep.value = 3; rbDragging.value = false
     }
     return
   }
@@ -492,11 +664,28 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
     const t = e.target as HTMLElement
     const handle = t.getAttribute("data-handle")
 
-    // ---- Resize handle ----
+    // ---- Resize handle (AxisAlignedBox) ----
     if (handle && handle.startsWith("resize-")) {
       store.selectedAnnotationId = ann.id
       drag.value = { active: true, type: handle as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
       return
+    }
+
+    // ---- RotatedBox handles ----
+    if (handle) {
+      store.selectedAnnotationId = ann.id
+      if (handle === "move") {
+        drag.value = { active: true, type: "move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        return
+      }
+      if (handle === "rotate") {
+        drag.value = { active: true, type: "rotate", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        return
+      }
+      if (["tl", "tr", "bl", "br"].includes(handle)) {
+        drag.value = { active: true, type: handle as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        return
+      }
     }
 
     // ---- Select annotation (always selects, does NOT toggle) ----
@@ -532,7 +721,10 @@ const unsaved = ref(false)
 let lastSavedKey = ""  // 当前已保存的标注快照 key
 
 function annotKey(anns: any[]) {
-  return anns.map((a: any) => `${a.id}:${a.class_id}:${a.x1}:${a.y1}:${a.x2}:${a.y2}`).sort().join("|")
+  return anns.map((a: any) => {
+    if (a.type === "RotatedBox") return `${a.id}:RotatedBox:${a.class_id}:${a.cx}:${a.cy}:${a.width}:${a.height}:${a.angle}`
+    return `${a.id}:AxisAlignedBox:${a.class_id}:${a.x1}:${a.y1}:${a.x2}:${a.y2}`
+  }).sort().join("|")
 }
 
 async function autoSave() {
@@ -588,9 +780,17 @@ function restoreHistory() {
   const key = historyStack[historyIndex]
   const items = key ? key.split("|").filter(Boolean).map((s: string) => {
     const parts = s.split(":")
-    if (parts.length < 6) return null
-    return { id: parts[0], type: "AxisAlignedBox", class_id: Number(parts[1]),
-             x1: Number(parts[2]), y1: Number(parts[3]), x2: Number(parts[4]), y2: Number(parts[5]) }
+    if (parts.length < 3) return null
+    const type = parts[1]
+    if (type === "RotatedBox" && parts.length >= 8) {
+      return { id: parts[0], type: "RotatedBox", class_id: Number(parts[2]),
+               cx: Number(parts[3]), cy: Number(parts[4]), width: Number(parts[5]), height: Number(parts[6]), angle: Number(parts[7]) }
+    }
+    if (parts.length >= 6) {
+      return { id: parts[0], type: "AxisAlignedBox", class_id: Number(parts[2]),
+               x1: Number(parts[3]), y1: Number(parts[4]), x2: Number(parts[5]), y2: Number(parts[6]) }
+    }
+    return null
   }).filter(Boolean) : []
   store.annotations = items as any
   markUnsaved()
@@ -710,7 +910,7 @@ function onKey(e: KeyboardEvent) {
   if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) { removeAnn(store.selectedAnnotationId); afterEdit(); return }
   if (k === "arrowleft" || k === "a") { prevImg(); return }
   if (k === "arrowright" || k === "d") { nextImg(); return }
-  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); return }
+  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); rbStep.value = 0; rbPt1.value = null; rbPt2.value = null; return }
   const t = keyToolMap[k]; if (t && displayTools.value.some(d => d.name === t)) setTool(t)
 }
 
