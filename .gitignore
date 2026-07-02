@@ -48,3 +48,6 @@ frontend/.env.development
 frontend/.env.production
 docker-compose.yaml
 backend/data/recordings/
+backend/static/upload/
+backend/data/*.png
+backend/data/*.jpg

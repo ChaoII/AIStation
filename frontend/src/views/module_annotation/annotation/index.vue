@@ -79,6 +79,26 @@
                     data-handle="rotate" class="handle" />
                 </template>
               </template>
+              <template v-if="ann.type === 'Polygon'">
+                <path :d="polygonPath(ann)" :stroke="clsColor(ann.class_id)"
+                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                  fill-rule="evenodd" fill="rgba(0,0,0,0.06)" style="pointer-events:none" />
+                <g class="ann-label" v-for="B in [polyBBox(ann)]" :key="ann.id + '-bb'">
+                  <rect :x="B.x" :y="B.y - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
+                  <text :x="B.x + 2" :y="B.y - 2" fill="#ffffff" font-weight="500" text-anchor="start"
+                    font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.labelFontSize"
+                    dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
+                </g>
+                <template v-if="store.selectedAnnotationId === ann.id">
+                  <rect v-for="(p,i) in ann.points" :key="i"
+                    :x="p.x * cw - 3" :y="p.y * ch - 3" width="6" height="6"
+                    fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                    :data-handle="'poly-' + i" class="handle" vector-effect="non-scaling-stroke" />
+                </template>
+              </template>
             </g>
             <!-- Rotated box 3-step preview -->
             <template v-if="currentTool === 'rotated_box' && rbStep === 1 && rbPt1">
@@ -99,6 +119,12 @@
                   :transform="`rotate(${rbPreviewRect.deg} ${rbPreviewRect.cx} ${rbPreviewRect.cy})`"
                   :stroke="cxColor" stroke-width="1" stroke-dasharray="4,3" fill="rgba(59,130,246,0.06)" />
               </template>
+            </template>
+            <template v-if="currentTool === 'polygon' && polyDrawingPoints.length > 0">
+              <polyline :points="polyDrawingPoints.map(p => `${p.x * cw},${p.y * ch}`).join(' ')"
+                :stroke="cxColor" stroke-width="1.5" fill="none" />
+              <circle v-for="(p,i) in polyDrawingPoints" :key="i"
+                :cx="p.x * cw" :cy="p.y * ch" r="3" :fill="cxColor" />
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
@@ -198,6 +224,7 @@ import { ElMessage, ElBadge, ElSlider, ElSwitch } from "element-plus"
 import { ArrowLeft, ArrowRight, Delete, Pointer } from "@element-plus/icons-vue"
 import { h } from "vue"
 const DiamondIcon = { render() { return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", "stroke-width": 2 }, [h("polygon", { points: "12,3 21,12 12,21 3,12" })]) } }
+const PentagonIcon = { render() { return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", "stroke-width": 2 }, [h("polygon", { points: "12,2 22,9 18,21 6,21 2,9" })]) } }
 import { AnnotationAPI } from "@/api/module_annotation"
 import { useAnnotationStore, type ToolName } from "./store"
 import { useUserStoreHook } from "@/store"
@@ -308,6 +335,8 @@ const rbPt1 = ref<{ x: number; y: number } | null>(null)
 const rbPt2 = ref<{ x: number; y: number } | null>(null)
 const rbDragging = ref(false)
 
+const polyDrawingPoints = ref<{ x: number; y: number }[]>([])
+
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
   { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Pointer" },
@@ -317,7 +346,7 @@ const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
 const taskToolMap: Record<string, { name: ToolName; label: string; tip: string; icon: any }[]> = {
   detection: [{ name: "box", label: "矩形", tip: "拖拽创建矩形框", icon: "FullScreen" }],
   rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: DiamondIcon }],
-  segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: "EditPen" }],
+  segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: PentagonIcon }],
   keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: "Coin" }],
   ocr: [{ name: "ocr", label: "OCR", tip: "文本标注", icon: "Document" }],
   classification: [{ name: "classification", label: "分类", tip: "图像分类", icon: "Collection" }],
@@ -503,6 +532,22 @@ function rbRotateHandlePos(ann: any, cw_val: number, ch_val: number) {
   }
 }
 
+function polygonPath(ann: any): string {
+  if (!ann.points || ann.points.length === 0) return ""
+  const pts = ann.points.map((p: any) => `${p.x * cw.value},${p.y * ch.value}`).join(" L ")
+  return `M ${pts} Z`
+}
+function polyBBox(ann: any): { x: number; y: number; w: number; h: number } {
+  if (!ann.points || ann.points.length === 0) return { x: 0, y: 0, w: 0, h: 0 }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of ann.points) {
+    const px = p.x * cw.value; const py = p.y * ch.value
+    if (px < minX) minX = px; if (py < minY) minY = py
+    if (px > maxX) maxX = px; if (py > maxY) maxY = py
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
 // ===== Box 预览 div =====
 function startBoxPreview(cx: number, cy: number) {
   const el = boxPreviewRef.value; if (!el) return
@@ -588,6 +633,28 @@ function onMouseDown(e: MouseEvent) {
       })
       rbStep.value = 0; rbPt1.value = null; rbPt2.value = null
     }
+    return
+  }
+
+  // ---- Polygon draw ----
+  if (currentTool.value === "polygon") {
+    if (taskClasses.value.length === 0) { ElMessage.warning("请先添加类别"); return }
+    if (!selectedClassId.value && taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id
+    const pt = mouseToImage(e); if (!pt) return
+    if (polyDrawingPoints.value.length >= 3) {
+      const first = polyDrawingPoints.value[0]
+      const dist = Math.hypot((pt.x - first.x * cw.value), (pt.y - first.y * ch.value))
+      if (dist <= 20) {
+        store.annotations.push({
+          id: crypto.randomUUID(), type: "Polygon",
+          class_id: selectedClassId.value || 0,
+          points: polyDrawingPoints.value.map(p => ({ x: p.x, y: p.y })),
+        })
+        polyDrawingPoints.value = []
+        return
+      }
+    }
+    polyDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value })
     return
   }
 }
@@ -735,7 +802,16 @@ function onWheel(e: WheelEvent) {
   store.setZoom(Math.max(0.1, Math.min(10, store.zoom + d)))
 }
 
-function onDblClick(_e: MouseEvent) {}
+function onDblClick(_e: MouseEvent) {
+  if (currentTool.value === "polygon" && polyDrawingPoints.value.length >= 3) {
+    store.annotations.push({
+      id: crypto.randomUUID(), type: "Polygon",
+      class_id: selectedClassId.value || 0,
+      points: polyDrawingPoints.value.map(p => ({ x: p.x, y: p.y })),
+    })
+    polyDrawingPoints.value = []
+  }
+}
 
 // ===== 标注选中 / 拖拽 =====
 function onAnnMouseDown(e: MouseEvent, ann: any) {
@@ -763,7 +839,7 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
         drag.value = { active: true, type: "rotate", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
         return
       }
-      if (["tl", "tr", "bl", "br"].includes(handle)) {
+if (["tl", "tr", "bl", "br"].includes(handle)) {
         drag.value = { active: true, type: ("resize-" + handle) as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
         return
       }
@@ -802,6 +878,7 @@ let lastSavedKey = ""  // 当前已保存的标注快照 key
 function annotKey(anns: any[]) {
   return anns.map((a: any) => {
     if (a.type === "RotatedBox") return `${a.id}:RotatedBox:${a.class_id}:${a.cx}:${a.cy}:${a.width}:${a.height}:${a.angle}`
+    if (a.type === "Polygon") return `${a.id}:Polygon:${a.class_id}:${(a.points || []).map((p: any) => `${p.x},${p.y}`).join(";")}`
     return `${a.id}:AxisAlignedBox:${a.class_id}:${a.x1}:${a.y1}:${a.x2}:${a.y2}`
   }).sort().join("|")
 }
@@ -864,6 +941,13 @@ function restoreHistory() {
     if (type === "RotatedBox" && parts.length >= 8) {
       return { id: parts[0], type: "RotatedBox", class_id: Number(parts[2]),
                cx: Number(parts[3]), cy: Number(parts[4]), width: Number(parts[5]), height: Number(parts[6]), angle: Number(parts[7]) }
+    }
+    if (type === "Polygon" && parts.length >= 4) {
+      const points = parts[3].split(";").filter(Boolean).map((s: string) => {
+        const [x, y] = s.split(",").map(Number)
+        return { x, y }
+      })
+      return { id: parts[0], type: "Polygon", class_id: Number(parts[2]), points }
     }
     if (parts.length >= 6) {
       return { id: parts[0], type: "AxisAlignedBox", class_id: Number(parts[2]),
@@ -989,7 +1073,7 @@ function onKey(e: KeyboardEvent) {
   if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) { removeAnn(store.selectedAnnotationId); afterEdit(); return }
   if (k === "arrowleft" || k === "a") { prevImg(); return }
   if (k === "arrowright" || k === "d") { nextImg(); return }
-  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); rbStep.value = 0; rbPt1.value = null; rbPt2.value = null; return }
+  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); rbStep.value = 0; rbPt1.value = null; rbPt2.value = null; polyDrawingPoints.value = []; return }
   const t = keyToolMap[k]; if (t && displayTools.value.some(d => d.name === t)) setTool(t)
 }
 
