@@ -98,9 +98,20 @@ class TaskService:
                 await db.flush()
 
             # Ensure all needed menus are assigned to the role
-            needed_perms = ["annotation:dataset:query", "annotation:task:query", "annotation:task:update",
-                          "annotation:workbench:query", "annotation:dataset:create", "annotation:stats:query",
-                          "module_system:user:query", "module_system:role:query"]
+            needed_perms = [
+                # Backend API permissions
+                "annotation:dataset:query", "annotation:dataset:create", "annotation:dataset:update", "annotation:dataset:delete",
+                "annotation:task:query", "annotation:task:create", "annotation:task:update", "annotation:task:delete",
+                "annotation:workbench:query", "annotation:stats:query",
+                # Frontend button permissions
+                "module_annotation:dataset:query", "module_annotation:dataset:create", "module_annotation:dataset:update",
+                "module_annotation:dataset:delete", "module_annotation:dataset:upload",
+                "module_annotation:task:query", "module_annotation:task:create", "module_annotation:task:update",
+                "module_annotation:task:delete", "module_annotation:task:patch", "module_annotation:task:workbench",
+                "module_annotation:stats:query",
+                # System query permissions
+                "module_system:user:query", "module_system:role:query",
+            ]
             existing_menu_ids = set(
                 (await db.execute(
                     select(RoleMenusModel.menu_id).where(RoleMenusModel.role_id == role.id)

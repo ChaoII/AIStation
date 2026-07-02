@@ -214,6 +214,62 @@ async def _ensure_annotation_menus() -> None:
     log.info("✅ 数据标注菜单已注册")
 
 
+async def _ensure_annotation_button_menus() -> None:
+    """Ensure button-level permissions for annotation module (always runs)."""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            dataset_menu = await db.scalar(
+                select(MenuModel).where(MenuModel.permission == "annotation:dataset:query")
+            )
+            task_menu = await db.scalar(
+                select(MenuModel).where(MenuModel.permission == "annotation:task:query")
+            )
+            stats_menu = await db.scalar(
+                select(MenuModel).where(MenuModel.permission == "annotation:stats:query")
+            )
+            if not all([dataset_menu, task_menu, stats_menu]):
+                log.warning("Parent annotation menus not found, skipping button menus")
+                return
+
+            existing = set(
+                (await db.execute(
+                    select(MenuModel.permission).where(MenuModel.permission.like("module_annotation:%"))
+                )).scalars().all()
+            )
+
+            buttons = [
+                (dataset_menu.id, "查询数据集", 1, "module_annotation:dataset:query"),
+                (dataset_menu.id, "创建数据集", 2, "module_annotation:dataset:create"),
+                (dataset_menu.id, "编辑数据集", 3, "module_annotation:dataset:update"),
+                (dataset_menu.id, "删除数据集", 4, "module_annotation:dataset:delete"),
+                (dataset_menu.id, "上传图片", 5, "module_annotation:dataset:upload"),
+                (task_menu.id, "查询任务", 1, "module_annotation:task:query"),
+                (task_menu.id, "创建任务", 2, "module_annotation:task:create"),
+                (task_menu.id, "编辑任务", 3, "module_annotation:task:update"),
+                (task_menu.id, "删除任务", 4, "module_annotation:task:delete"),
+                (task_menu.id, "批量操作", 5, "module_annotation:task:patch"),
+                (task_menu.id, "进入标注", 6, "module_annotation:task:workbench"),
+                (stats_menu.id, "查询统计", 1, "module_annotation:stats:query"),
+            ]
+
+            for parent_id, name, order, perm in buttons:
+                if perm in existing:
+                    continue
+                menu = MenuModel(name=name, type=3, order=order, permission=perm,
+                                 parent_id=parent_id, status="0", is_deleted=False)
+                db.add(menu)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=menu.id))
+
+            log.info(f"✅ 标注按钮权限已注册 ({len(buttons)} 项)")
+
+
 NOTIFY_PARAMS = [
     ("notify_smtp_host", "SMTP服务器", ""),
     ("notify_smtp_port", "SMTP端口", "587"),
@@ -283,6 +339,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_deploy_menu()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
+        await _ensure_annotation_button_menus()
         await import_modules_async(
             modules=settings.EVENT_LIST, desc="全局事件", app=app, status=True
         )
