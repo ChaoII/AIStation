@@ -23,7 +23,7 @@
       </aside>
       <!-- 画布 -->
       <main class="ann-canvas-area" ref="canvasWrapRef">
-        <div class="canvas-container" ref="canvasRef" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @wheel.prevent="onWheel" @dblclick="onDblClick" @contextmenu.prevent>
+        <div class="canvas-container" ref="canvasRef" :style="{ cursor: toolCursor }" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @wheel.prevent="onWheel" @dblclick="onDblClick" @contextmenu.prevent>
           <!-- 十字线 -->
           <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="[cxStyle, { height: annSettings.crosshairWidth + 'px' }]" />
           <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="[cxStyle, { width: annSettings.crosshairWidth + 'px' }]" />
@@ -324,6 +324,11 @@ const displayTools = computed(() => [...baseTools, ...(taskToolMap[taskType.valu
 const taskTypeLabel = computed(() => ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" }[taskType.value] || taskType.value))
 const taskTypeTag = computed(() => ({ detection: undefined, rotated_detection: "warning", segmentation: "danger", keypoint: "warning", ocr: "info", classification: "info" } as Record<string, any>)[taskType.value])
 const toolHint = computed(() => ({ select: "点击选择标注，拖拽移动", pan: "拖拽平移", zoom: "滚轮缩放", box: "拖拽创建矩形框", rotated_box: "三步旋转框", polygon: "点击创建多边形", keypoint: "放置关键点", ocr: "文本标注", classification: "选择类别" }[currentTool.value] || ""))
+const toolCursor = computed(() => ({
+  select: "default", pan: "grab", zoom: "zoom-in",
+  box: "crosshair", rotated_box: "crosshair",
+  polygon: "crosshair", keypoint: "crosshair", ocr: "crosshair", classification: "default",
+}[currentTool.value] || "default"))
 
 const cxColor = computed(() => clsColor(selectedClassId.value) || "#3b82f6")
 const cxStyle = computed(() => ({ background: cxColor.value + "80" }))
@@ -1031,7 +1036,7 @@ onBeforeUnmount(() => {
 .tool-btn.active { background:#ecf5ff; border-color:#409eff; color:#409eff; }
 .tool-label { font-size:9px; margin-top:1px; line-height:1; }
 .ann-canvas-area { flex:1; overflow:hidden; position:relative; background:#f0f2f5; }
-.canvas-container { width:100%; height:100%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; cursor:crosshair; }
+.canvas-container { width:100%; height:100%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; }
 .crosshair { position:absolute; pointer-events:none; z-index:20; }
 .crosshair-x { left:0; height:1px; background:rgba(59,130,246,0.5); width:100%; }
 .crosshair-y { top:0; width:1px; background:rgba(59,130,246,0.5); height:100%; }
