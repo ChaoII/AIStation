@@ -26,6 +26,7 @@ class DatasetOutSchema(BaseModel):
     annotation_type: AnnotationType
     image_count: int
     annotated_count: int
+    task_count: int = 0
     status: str
     created_id: int | None
     created_time: datetime | None

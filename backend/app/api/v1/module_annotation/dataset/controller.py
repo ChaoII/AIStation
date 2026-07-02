@@ -21,12 +21,24 @@ async def get_dataset_list(
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
 ) -> JSONResponse:
     from .crud import DatasetCRUD
+    from sqlalchemy import select, func
+    from app.core.database import async_db_session
+    from ..task.model import AnnotationTaskModel
     crud = DatasetCRUD(auth=auth)
     offset = (page.page_no - 1) * page.page_size
     result = await crud.page(
         offset=offset, limit=page.page_size, order_by=page.order_by,
         search=search.get_conditions(), out_schema=DatasetOutSchema,
     )
+    # Populate task_count for each dataset
+    if result.get("items"):
+        async with async_db_session() as db:
+            for item in result["items"]:
+                cnt = await db.scalar(
+                    select(func.count(AnnotationTaskModel.id))
+                    .where(AnnotationTaskModel.dataset_id == item["id"])
+                )
+                item["task_count"] = cnt or 0
     return SuccessResponse(data=result)
 
 

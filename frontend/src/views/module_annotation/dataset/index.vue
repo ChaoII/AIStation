@@ -83,16 +83,16 @@
               </template>
             </el-table-column>
             <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'annotation_count')?.show"
-              key="annotation_count"
-              label="标注数"
-              prop="annotation_count"
+              v-if="contentCols.find((col) => col.prop === 'task_count')?.show"
+              key="task_count"
+              label="引用任务"
+              prop="task_count"
               width="90"
               align="center"
             >
               <template #default="scope">
-                <el-tag type="success" effect="plain" size="small">
-                  {{ scope.row.annotation_count ?? 0 }}
+                <el-tag type="warning" effect="plain" size="small">
+                  {{ scope.row.task_count ?? 0 }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -306,7 +306,7 @@ const contentCols = reactive<
   { prop: "name", label: "数据集名称", show: true },
   { prop: "description", label: "描述", show: true },
   { prop: "image_count", label: "图片数", show: true },
-  { prop: "annotation_count", label: "标注数", show: true },
+  { prop: "task_count", label: "引用任务", show: true },
   { prop: "status", label: "状态", show: true },
   { prop: "created_time", label: "创建时间", show: true },
   { prop: "operation", label: "操作", show: true },
