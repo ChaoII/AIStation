@@ -43,7 +43,7 @@
                 </g>
                 <g class="ann-label">
                   <rect :x="ann.x1 * cw" :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)" :width="labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)" :height="labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
-                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 6" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6">{{ getCls(ann.class_id)?.name }}</text>
+                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
               </template>
               <template v-if="ann.type === 'RotatedBox'">
@@ -55,10 +55,10 @@
                   vector-effect="non-scaling-stroke"
                   :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
                 <g class="ann-label">
-                  <rect :x="rbHandlePos(ann, 'tl', cw, ch).x" :y="rbHandlePos(ann, 'tl', cw, ch).y - LABEL_TAG_H"
+                  <rect :x="rbHandlePos(ann, 'tl', cw, ch).x" :y="rbHandlePos(ann, 'tl', cw, ch).y - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id))"
-                    :height="LABEL_TAG_H" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
-                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y - 5"
+                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
+                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y"
                     fill="#ffffff" font-size="6" font-weight="500" text-anchor="start"
                     font-family="Microsoft YaHei,sans-serif">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
