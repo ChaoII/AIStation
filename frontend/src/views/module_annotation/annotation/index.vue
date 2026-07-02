@@ -55,10 +55,10 @@
                   vector-effect="non-scaling-stroke"
                   :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
                 <g class="ann-label">
-                  <rect :x="ann.cx * cw - ann.width * cw / 2" :y="ann.cy * ch - ann.height * ch / 2 - LABEL_TAG_H"
+                  <rect :x="rbHandlePos(ann, 'tl', cw, ch).x" :y="rbHandlePos(ann, 'tl', cw, ch).y - LABEL_TAG_H"
                     :width="labelWidthForClass(ann.class_id)" :height="LABEL_TAG_H" :fill="clsColor(ann.class_id)" />
-                  <text :x="ann.cx * cw - ann.width * cw / 2 + labelWidthForClass(ann.class_id) / 2"
-                    :y="ann.cy * ch - ann.height * ch / 2 - LABEL_TAG_H / 2"
+                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + labelWidthForClass(ann.class_id) / 2"
+                    :y="rbHandlePos(ann, 'tl', cw, ch).y - LABEL_TAG_H / 2"
                     fill="#ffffff" font-size="6" font-weight="500" text-anchor="middle" dominant-baseline="central"
                     font-family="Microsoft YaHei,sans-serif">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
@@ -81,13 +81,23 @@
             </g>
             <!-- Rotated box 3-step preview -->
             <template v-if="currentTool === 'rotated_box' && rbStep === 1 && rbPt1">
-              <circle :cx="rbPt1!.x" :cy="rbPt1!.y" r="4" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+              <circle :cx="rbPt1!.x" :cy="rbPt1!.y" r="5" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+              <line v-if="cursorX && cursorY" :x1="rbPt1!.x" :y1="rbPt1!.y"
+                :x2="cursorX" :y2="cursorY" :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7" />
             </template>
-            <template v-if="currentTool === 'rotated_box' && rbStep === 2 && rbPt1">
-              <circle :cx="rbPt1!.x" :cy="rbPt1!.y" r="4" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
-              <circle v-if="rbPt2" :cx="rbPt2.x" :cy="rbPt2.y" r="4" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
-              <line :x1="rbPt1!.x" :y1="rbPt1!.y" :x2="(rbPt2||rbPt1!).x" :y2="(rbPt2||rbPt1!).y"
-                :stroke="cxColor" stroke-width="2" />
+            <template v-if="currentTool === 'rotated_box' && (rbStep === 2 || rbStep === 3) && rbPt1 && rbPt2">
+              <circle :cx="rbPt1.x" :cy="rbPt1.y" r="5" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+              <circle :cx="rbPt2.x" :cy="rbPt2.y" r="5" :fill="cxColor" stroke="#fff" stroke-width="1.5" />
+              <line :x1="rbPt1.x" :y1="rbPt1.y" :x2="rbPt2.x" :y2="rbPt2.y" :stroke="cxColor" stroke-width="2" />
+              <!-- Step 3: perpendicular guide + live rect preview -->
+              <template v-if="rbStep === 3 && cursorX && cursorY">
+                <line :x1="rbPerpFootX" :y1="rbPerpFootY" :x2="cursorX" :y2="cursorY"
+                  :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7" />
+                <rect v-if="rbPreviewRect" :x="rbPreviewRect.x" :y="rbPreviewRect.y"
+                  :width="rbPreviewRect.w" :height="rbPreviewRect.h"
+                  :transform="`rotate(${rbPreviewRect.deg} ${rbPreviewRect.cx} ${rbPreviewRect.cy})`"
+                  :stroke="cxColor" stroke-width="1" stroke-dasharray="4,3" fill="rgba(59,130,246,0.06)" />
+              </template>
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
@@ -282,6 +292,33 @@ const toolHint = computed(() => ({ select: "点击选择标注，拖拽移动", 
 
 const cxColor = computed(() => clsColor(selectedClassId.value) || "#3b82f6")
 const cxStyle = computed(() => ({ background: cxColor.value + "80" }))
+
+// ---- Rotated box step 3 preview computed ----
+const rbPerpFootX = computed(() => {
+  if (!rbPt1.value || !rbPt2.value) return 0
+  const vx = rbPt2.value.x - rbPt1.value.x; const vy = rbPt2.value.y - rbPt1.value.y
+  const w = Math.hypot(vx, vy); if (w < 1e-6) return 0
+  const t = ((cursorX.value - rbPt1.value.x) * vx + (cursorY.value - rbPt1.value.y) * vy) / (w * w)
+  return rbPt1.value.x + t * vx
+})
+const rbPerpFootY = computed(() => {
+  if (!rbPt1.value || !rbPt2.value) return 0
+  const vx = rbPt2.value.x - rbPt1.value.x; const vy = rbPt2.value.y - rbPt1.value.y
+  const w = Math.hypot(vx, vy); if (w < 1e-6) return 0
+  const t = ((cursorX.value - rbPt1.value.x) * vx + (cursorY.value - rbPt1.value.y) * vy) / (w * w)
+  return rbPt1.value.y + t * vy
+})
+const rbPreviewRect = computed(() => {
+  if (!rbPt1.value || !rbPt2.value) return null
+  const p3 = { x: cursorX.value, y: cursorY.value }
+  const geom = rotatedBoxFromEdgeAndPoint(rbPt1.value, rbPt2.value, p3)
+  if (!geom) return null
+  return {
+    cx: geom.cx, cy: geom.cy, deg: (geom.angle * 180) / Math.PI,
+    x: geom.cx - geom.width / 2, y: geom.cy - geom.height / 2,
+    w: geom.width, h: geom.height,
+  }
+})
 
 const annotatedCount = ref(0)
 const totalCount = ref(0)
@@ -657,41 +694,38 @@ function onDblClick(_e: MouseEvent) {}
 
 // ===== 标注选中 / 拖拽 =====
 function onAnnMouseDown(e: MouseEvent, ann: any) {
-  // .prevent prevents text selection, stopPropagation prevents container handler
   e.stopPropagation()
 
   if (currentTool.value === "select" || currentTool.value === "pan") {
     const t = e.target as HTMLElement
     const handle = t.getAttribute("data-handle")
 
-    // ---- Resize handle (AxisAlignedBox) ----
+    // ---- AxisAlignedBox resize/edge handle ----
     if (handle && handle.startsWith("resize-")) {
       store.selectedAnnotationId = ann.id
       drag.value = { active: true, type: handle as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
       return
     }
 
-    // ---- RotatedBox handles ----
+    // ---- RotatedBox handles (unprefixed) ----
     if (handle) {
       store.selectedAnnotationId = ann.id
       if (handle === "move") {
-        drag.value = { active: true, type: "move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        drag.value = { active: true, type: "move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
         return
       }
       if (handle === "rotate") {
-        drag.value = { active: true, type: "rotate", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        drag.value = { active: true, type: "rotate", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
         return
       }
       if (["tl", "tr", "bl", "br"].includes(handle)) {
-        drag.value = { active: true, type: handle as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        drag.value = { active: true, type: ("resize-" + handle) as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
         return
       }
     }
 
-    // ---- Select annotation (always selects, does NOT toggle) ----
+    // ---- Select & move ----
     store.selectedAnnotationId = ann.id
-
-    // ---- Start move drag ----
     drag.value = { active: true, type: "move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
   }
 }
