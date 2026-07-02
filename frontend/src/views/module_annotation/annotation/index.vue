@@ -324,9 +324,10 @@ const displayTools = computed(() => [...baseTools, ...(taskToolMap[taskType.valu
 const taskTypeLabel = computed(() => ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" }[taskType.value] || taskType.value))
 const taskTypeTag = computed(() => ({ detection: undefined, rotated_detection: "warning", segmentation: "danger", keypoint: "warning", ocr: "info", classification: "info" } as Record<string, any>)[taskType.value])
 const toolHint = computed(() => ({ select: "点击选择标注，拖拽移动", pan: "拖拽平移", zoom: "滚轮缩放", box: "拖拽创建矩形框", rotated_box: "三步旋转框", polygon: "点击创建多边形", keypoint: "放置关键点", ocr: "文本标注", classification: "选择类别" }[currentTool.value] || ""))
+const diamondCursor = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpolygon points='10,2 18,10 10,18 2,10' fill='none' stroke='%23333' stroke-width='1.5'/%3E%3C/svg%3E\") 10 10, crosshair"
 const toolCursor = computed(() => ({
   select: "default", pan: "grab", zoom: "zoom-in",
-  box: "crosshair", rotated_box: "crosshair",
+  box: "crosshair", rotated_box: diamondCursor,
   polygon: "crosshair", keypoint: "crosshair", ocr: "crosshair", classification: "default",
 }[currentTool.value] || "default"))
 
