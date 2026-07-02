@@ -15,36 +15,6 @@
     </div>
     <!-- 登录页主体 -->
     <div class="auth-view__wrapper">
-      <!-- 可选：左侧产品介绍区域，如不需要可整段删除，右侧登录表单会自动居中展示 -->
-      <section class="auth-feature">
-        <div class="auth-feature__badge">
-          <span class="auth-feature__dot" />
-          Enterprise Ready
-        </div>
-        <h1 class="auth-feature__title">企业级管理系统</h1>
-        <p class="auth-feature__subtitle">
-          提供安全、高效、可扩展的管理解决方案，助力企业数字化转型与业务增长。
-        </p>
-        <ul class="auth-feature__highlights">
-          <li>
-            <span>✓</span>
-            统一身份认证与权限管理
-          </li>
-          <li>
-            <span>✓</span>
-            支持定时任务与任务调度
-          </li>
-          <li>
-            <span>✓</span>
-            数据安全与操作审计
-          </li>
-          <li>
-            <span>✓</span>
-            灵活扩展与高可用架构
-          </li>
-        </ul>
-      </section>
-
       <!-- 登录页主体容器 -->
       <section class="auth-panel">
         <!-- 标题 -->
@@ -114,8 +84,7 @@
 </template>
 
 <script setup lang="ts">
-// import logo from "@/assets/logo.png";
-// import { defaultSettings } from "@/settings";
+
 import CommonWrapper from "@/components/CommonWrapper/index.vue";
 import ThemeSwitch from "@/components/ThemeSwitch/index.vue";
 import { useConfigStore } from "@/store";
@@ -146,32 +115,6 @@ const formComponents = {
 const loginPreset = reactive<{ username: string; password: string }>({
   username: "admin",
   password: "123456",
-});
-
-let notificationInstance: ReturnType<typeof ElNotification> | null = null;
-
-const showVoteNotification = () => {
-  notificationInstance = ElNotification({
-    title: "⭐ AIStation 完全开源 · 期待您的 Star 支持 🙏",
-    message: `项目持续迭代中，若对您有所帮助，欢迎点亮 Star 支持！
-    <br/><a href="https://github.com/aistation/aistation" target="_blank" style="color: var(--el-color-primary); text-decoration: none; font-weight: 500;">Github仓库 →</a>
-    <br/><a href="https://github.com/aistation/aistation" target="_blank" style="color: var(--el-color-warning); text-decoration: none; font-weight: 500;">Gitee仓库 →</a>`,
-    type: "success",
-    position: "bottom-left",
-    duration: 0,
-    dangerouslyUseHTMLString: true,
-  });
-};
-
-onMounted(() => {
-  setTimeout(showVoteNotification, 500);
-});
-
-onBeforeUnmount(() => {
-  if (notificationInstance) {
-    notificationInstance.close();
-    notificationInstance = null;
-  }
 });
 </script>
 
@@ -238,31 +181,16 @@ onBeforeUnmount(() => {
 /* 暗色样式交给全局主题变量 */
 
 .auth-view__wrapper {
-  display: grid;
-  flex: 1;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: clamp(1.5rem, 3vw, 3rem);
-  align-items: stretch;
-  padding: clamp(1.5rem, 2vw, 2.5rem);
-}
-
-.auth-feature {
   display: flex;
-  flex-direction: column;
+  flex: 1;
+  align-items: center;
   justify-content: center;
-  padding: clamp(1.5rem, 3vw, 3rem);
-  color: var(--el-text-color-primary);
-  animation: featureFade 0.8s ease-out;
+  padding: clamp(1.5rem, 2vw, 2.5rem);
 }
 
 @media (max-width: 768px) {
   .auth-view__wrapper {
-    display: block;
     padding: 1.25rem 0.75rem 1.75rem;
-  }
-
-  .auth-feature {
-    display: none;
   }
 
   .auth-panel {
@@ -272,75 +200,11 @@ onBeforeUnmount(() => {
   }
 }
 
-.auth-feature__badge {
-  display: inline-flex;
-  gap: 0.5rem;
-  align-items: center;
-  width: fit-content;
-  padding: 0.3rem 0.9rem;
-  font-size: 0.875rem;
-  color: var(--el-color-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  background: var(--el-color-primary-light-9);
-  border-radius: 999px;
-}
-
-.auth-feature__dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  background: var(--el-color-primary);
-  border-radius: 50%;
-  box-shadow: var(--el-box-shadow-light);
-}
-
-.auth-feature__title {
-  margin: 1.5rem 0 0.5rem;
-  font-size: clamp(2rem, 4vw, 2.75rem);
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.auth-feature__subtitle {
-  margin-bottom: 1.5rem;
-  font-size: 1rem;
-  line-height: 1.7;
-  color: var(--el-text-color-regular);
-}
-
-.auth-feature__highlights {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0;
-  margin: 0;
-  list-style: none;
-
-  li {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-start;
-    padding: 0.75rem 1rem;
-    font-weight: 500;
-    color: var(--el-text-color-primary);
-    background: var(--el-bg-color-overlay);
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 12px;
-    backdrop-filter: blur(6px);
-
-    span {
-      font-size: 0.75rem;
-      line-height: 1.6;
-      color: var(--el-color-primary);
-    }
-  }
-}
-
 .auth-panel {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   justify-content: flex-start;
-  justify-self: end;
   width: min(520px, 100%);
   padding: clamp(2rem, 3vw, 2.75rem);
   margin-inline: auto;
@@ -469,17 +333,6 @@ onBeforeUnmount(() => {
     &:hover {
       color: var(--el-color-primary);
     }
-  }
-}
-
-@keyframes featureFade {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 
