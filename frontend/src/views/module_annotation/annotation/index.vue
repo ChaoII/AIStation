@@ -56,10 +56,10 @@
                   :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
                 <g class="ann-label">
                   <rect :x="rbHandlePos(ann, 'tl', cw, ch).x" :y="rbHandlePos(ann, 'tl', cw, ch).y - LABEL_TAG_H"
-                    :width="labelWidthForClass(ann.class_id)" :height="LABEL_TAG_H" :fill="clsColor(ann.class_id)" />
-                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + labelWidthForClass(ann.class_id) / 2"
-                    :y="rbHandlePos(ann, 'tl', cw, ch).y - LABEL_TAG_H / 2"
-                    fill="#ffffff" font-size="6" font-weight="500" text-anchor="middle" dominant-baseline="central"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id))"
+                    :height="LABEL_TAG_H" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
+                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y - 5"
+                    fill="#ffffff" font-size="6" font-weight="500" text-anchor="start"
                     font-family="Microsoft YaHei,sans-serif">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
                 <template v-if="store.selectedAnnotationId === ann.id">
@@ -587,12 +587,12 @@ function onMouseMove(e: MouseEvent) {
       if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx))
       if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy))
       if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy))
-    } else if (ann.type === "RotatedBox") {
+    } else if (ann.type === "RotatedBox" && pt) {
       const cos = Math.cos(o.angle); const sin = Math.sin(o.angle)
       const aspect = ch.value / cw.value
       const fx = h.includes("l") ? 1 : h.includes("r") ? -1 : 1
       const fy = h.includes("t") ? 1 : h.includes("b") ? -1 : 1
-      const mx = o.cx + dx; const my = o.cy + dy
+      const mx = pt.x / cw.value; const my = pt.y / ch.value  // absolute mouse in normalized
       const fix_x = o.cx + fx * o.width / 2 * cos - fy * o.height / 2 * aspect * sin
       const fix_y = o.cy + fx * o.width / 2 / aspect * sin + fy * o.height / 2 * cos
       const newCx = (fix_x + mx) / 2; const newCy = (fix_y + my) / 2
