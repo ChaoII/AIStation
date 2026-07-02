@@ -126,10 +126,10 @@
 <template v-if="currentTool === 'polygon' && polyDrawingPoints.length > 0">
               <polyline :points="polyDrawingPoints.map(p => `${p.x * cw},${p.y * ch}`).join(' ')"
                 :stroke="cxColor" stroke-width="1.5" fill="none" />
-              <circle :cx="polyDrawingPoints[0].x * cw" :cy="polyDrawingPoints[0].y * ch"
-                :r="polyNearFirst ? 7 : 3" :fill="cxColor" />
-              <circle v-for="(p,i) in polyDrawingPoints.slice(1)" :key="i"
+              <circle v-for="(p,i) in polyDrawingPoints" :key="i"
                 :cx="p.x * cw" :cy="p.y * ch" r="3" :fill="cxColor" />
+              <!-- 靠近第一个点时鼠标位置显示大圆提示 -->
+              <circle v-if="polyNearFirst" :cx="cursorX" :cy="cursorY" r="8" fill="none" :stroke="cxColor" stroke-width="2" />
               <line v-if="cursorX && cursorY" :x1="polyDrawingPoints[polyDrawingPoints.length-1].x * cw"
                 :y1="polyDrawingPoints[polyDrawingPoints.length-1].y * ch"
                 :x2="cursorX" :y2="cursorY" :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6" />
