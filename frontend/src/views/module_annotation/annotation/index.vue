@@ -119,7 +119,7 @@
               <div class="setting-row"><span class="setting-label">选中框线</span><el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
               <div class="setting-row"><span class="setting-label">十字线粗细</span><el-slider v-model="annSettings.crosshairWidth" :min="0.5" :max="3" :step="0.5" size="small" style="flex:1" /></div>
               <div class="setting-row"><span class="setting-label">十字线中心圈</span><el-switch v-model="annSettings.crosshairCircle" size="small" /></div>
-              <div class="setting-row"><span class="setting-label">标签字号</span><el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" :step="1" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">标签字号</span><el-slider v-model="annSettings.labelFontSize" :min="4" :max="48" :step="1" size="small" style="flex:1" /></div>
             </div>
           </div>
           <div class="divider" />
@@ -240,6 +240,7 @@ const annSettings = ref({
   ...loadSettings(),
 })
 watch(annSettings, saveSettings, { deep: true })
+watch(() => annSettings.value.labelFontSize, () => nextTick(() => measureLabelRects()))
 
 // ---- Constants (matching EasyLabelTauri) ----
 const LABEL_TAG_H = 8
