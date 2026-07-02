@@ -148,3 +148,64 @@ Vue logs: `"Component inside <Transition> renders non-element root node that can
   </div>
 </template>
 ```
+
+## 标注标签渲染经验（标注重中之重）
+
+### 坐标系统
+- SVG `viewBox="0 0 cw ch"`，CSS大小 `dw = cw * zoom`，1 viewBox单位 = zoom CSS像素
+- 所有 `getBBox()` 返回值在 viewBox 坐标系
+
+### 文字 `<text>` 属性关键
+| 属性 | 作用 |
+|------|------|
+| `y` | 默认是 **基线**（baseline），中文基线在字符底部 |
+| `dominant-baseline="text-after-edge"` | **强制** y=文字最底部，不依赖字体基线 |
+| `text-anchor="start"` | 文字从左到右，x 是文字左边缘 |
+| `font-size="6"` | 6 viewBox单位，不用 `style="font-size:6px"`（CSS像素会和 getBBox 测量不一致） |
+| `font-family="Microsoft YaHei,sans-serif"` | 必须设置，否则默认字体影响 getBBox |
+
+### 标签布局公式（AxisAlignedBox）
+```
+框左上角 = (ann.x1*cw, ann.y1*ch)
+文字底部 = 框上 - 2 (2px间隙)
+文字y = ann.y1*ch - 2, dominant-baseline="text-after-edge"
+文字x = ann.x1*cw + 2 (框左边+2px)
+文字大小 = font-size="6"
+
+背景框:
+  左边 = ann.x1*cw (和框左边对齐)
+  底部 = ann.y1*ch (和框上边对齐)
+  宽 = getBBox文字宽 + 2 (2px边距)
+  高 = getBBox文字高 + 4 (含2px下间隙+2px上边距)
+  背景y = 框上 - 文字高 - 4
+  背景底部 = 背景y + 背景高 = 框上 ✅
+```
+
+### 标签布局公式（RotatedBox）
+```
+旋转后左上角 = rbHandlePos(ann, 'tl', cw, ch)
+文字底部 = 旋转后左上角.y - 2
+文字x = 旋转后左上角.x + 2
+文字大小 = font-size="6", dominant-baseline="text-after-edge"
+
+背景框:
+  左边 = 旋转后左上角.x
+  底部 = 旋转后左上角.y
+  宽高 / 边距 / 填充 与 AxisAlignedBox 完全一致
+```
+
+### 测量流程
+```js
+// 1. 先渲染文字（`font-size="6"` SVG属性，不要CSS像素）
+// 2. 等100ms让SVG完成布局
+// 3. getBBox() 获取实际渲染宽高
+// 4. 用测量值设置背景框宽高
+// 5. 测量值存到 labelTextRects Map，后续通过 ann.id 取用
+```
+
+### 关键陷阱
+- ❌ 不要混用 `font-size="6"`（SVG属性）和 `style="font-size:6px"`（CSS）→ getBBox 测不准
+- ❌ 不要让文字基线直接用 `y=框上` → 文字可能比框线低（字体基线问题）
+- ✅ 用 `dominant-baseline="text-after-edge"` 解决
+- ✅ 背景宽高都用 getBBox 实测值 + 固定边距，不猜
+```

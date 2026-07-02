@@ -42,8 +42,8 @@
                   <rect v-for="h in boxHandles(ann)" :key="h.key" :x="h.x - 4" :y="h.y - 4" width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5" :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke" />
                 </g>
                 <g class="ann-label">
-                  <rect :x="ann.x1 * cw" :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)" :width="labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)" :height="labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
-                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 3" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6">{{ getCls(ann.class_id)?.name }}</text>
+                  <rect :x="ann.x1 * cw" :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4" :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 2" :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
+                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 2" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
               </template>
               <template v-if="ann.type === 'RotatedBox'">
@@ -55,12 +55,12 @@
                   vector-effect="non-scaling-stroke"
                   :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
                 <g class="ann-label">
-                  <rect :x="rbHandlePos(ann, 'tl', cw, ch).x" :y="rbHandlePos(ann, 'tl', cw, ch).y - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)"
-                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id))"
-                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H)" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
-                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y - 3"
+<rect :x="rbHandlePos(ann, 'tl', cw, ch).x" :y="rbHandlePos(ann, 'tl', cw, ch).y - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 2"
+                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
+                  <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y - 2"
                     fill="#ffffff" font-size="6" font-weight="500" text-anchor="start"
-                    font-family="Microsoft YaHei,sans-serif">{{ getCls(ann.class_id)?.name }}</text>
+                    font-family="Microsoft YaHei,sans-serif" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
                 <template v-if="store.selectedAnnotationId === ann.id">
                   <rect v-for="h in ['tl','tr','bl','br']" :key="h"
