@@ -464,7 +464,7 @@ function onMouseUp(e: MouseEvent) {
   // ---- End drag ----
   if (drag.value.active) {
     if (drag.value.ann && (drag.value.type === "move" || drag.value.type.startsWith("resize-"))) {
-      markUnsaved()
+      markUnsaved(); pushHistory()
     }
     drag.value.active = false
   }
@@ -526,25 +526,32 @@ function removeAnn(id: string) {
   if (store.selectedAnnotationId === id) store.selectedAnnotationId = null
 }
 
-// ===== 自动保存 =====
+// ===== 自动保存（仅实际变更时触发）=====
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 const unsaved = ref(false)
+let lastSavedKey = ""  // 当前已保存的标注快照 key
+
+function annotKey(anns: any[]) {
+  return anns.map((a: any) => `${a.id}:${a.class_id}:${a.x1}:${a.y1}:${a.x2}:${a.y2}`).sort().join("|")
+}
 
 async function autoSave() {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(async () => {
     if (!store.currentImage) return
+    const key = annotKey(store.annotations)
+    if (key === lastSavedKey) { unsaved.value = false; return }
     try {
       await AnnotationAPI.saveAnnotations(store.currentImage.id, {
         task_id: store.taskId, image_id: store.currentImage.id, annotation_data: store.annotations,
       })
-      const now = new Date().toISOString()
+      lastSavedKey = key
       const curUser = useUserStoreHook().getBasicInfo
-      const updater = { id: (curUser as any).id || 0, name: (curUser as any).name || (curUser as any).username || "" }
+      const uname = (curUser as any).name || (curUser as any).nickname || (curUser as any).username || ""
       store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated"
       store.currentImage.annotation_count = store.annotations.length
-      store.currentImage.updated_by = updater
-      store.currentImage.updated_time = now
+      store.currentImage.updated_by = uname ? { id: (curUser as any).id || 0, name: uname } : undefined
+      store.currentImage.updated_time = uname ? new Date().toISOString() : undefined
       unsaved.value = false
       updateProgress()
       fetchTaskProgress()
@@ -552,13 +559,61 @@ async function autoSave() {
   }, 3000)
 }
 
-// 标注变化时自动保存
-watch(() => store.annotations.length, () => { unsaved.value = true; autoSave() })
-
-// 拖拽/移动/调整大小结束时触发保存
 function markUnsaved() { unsaved.value = true; autoSave() }
 
-// ===== 图片导航 =====
+// ===== 撤销/重做 (Ctrl+Z / Ctrl+Y) =====
+let historyStack: string[] = []
+let historyIndex = -1
+const MAX_HISTORY = 50
+
+function pushHistory() {
+  const key = annotKey(store.annotations)
+  if (historyIndex >= 0 && historyStack[historyIndex] === key) return
+  historyStack = historyStack.slice(0, historyIndex + 1)
+  historyStack.push(key)
+  if (historyStack.length > MAX_HISTORY) historyStack.shift()
+  historyIndex = historyStack.length - 1
+}
+function undo() {
+  if (historyIndex <= 0) return
+  historyIndex--
+  restoreHistory()
+}
+function redo() {
+  if (historyIndex >= historyStack.length - 1) return
+  historyIndex++
+  restoreHistory()
+}
+function restoreHistory() {
+  const key = historyStack[historyIndex]
+  const items = key ? key.split("|").filter(Boolean).map((s: string) => {
+    const parts = s.split(":")
+    if (parts.length < 6) return null
+    return { id: parts[0], type: "AxisAlignedBox", class_id: Number(parts[1]),
+             x1: Number(parts[2]), y1: Number(parts[3]), x2: Number(parts[4]), y2: Number(parts[5]) }
+  }).filter(Boolean) : []
+  store.annotations = items as any
+  markUnsaved()
+}
+
+// 标注变更时自动保存 + 记录历史
+watch(() => store.annotations.length, () => {
+  const key = annotKey(store.annotations)
+  if (key !== lastSavedKey) {
+    unsaved.value = true; autoSave()
+    pushHistory()
+  }
+})
+
+// 拖拽/移动结束也要保存历史（通过 onMouseUp 的 markUnsaved 已处理保存）
+// 额外在 create/delete/dragEnd 时 pushHistory
+function afterEdit() { pushHistory() }
+
+// 拖拽/移动结束时也要记录历史
+// (已有 markUnsaved 调用，但历史需要单独 push)
+// 在 onMouseUp 的回调中 pushHistory
+
+// 切图时重置 lastSavedKey
 async function loadImg(imageId: number) {
   imgUrl.value = ""; store.selectedAnnotationId = null
   const idx = store.images.findIndex(i => i.id === imageId)
@@ -568,6 +623,9 @@ async function loadImg(imageId: number) {
     imgUrl.value = r.data?.data?.url || ""
     const ar = await AnnotationAPI.getAnnotations(store.taskId, imageId)
     store.annotations = ar.data?.data || []
+    lastSavedKey = annotKey(store.annotations)
+    historyStack = [lastSavedKey]
+    historyIndex = 0
     await nextTick()
     measureLabelRects()
   } catch { imgUrl.value = "" }
@@ -641,7 +699,9 @@ function onKey(e: KeyboardEvent) {
   const tag = (e.target as HTMLElement)?.tagName; if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
   const k = e.key.toLowerCase()
   if (e.ctrlKey && k === "s") { e.preventDefault(); saveAnn(); return }
-  if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) { removeAnn(store.selectedAnnotationId); return }
+  if (e.ctrlKey && k === "z") { e.preventDefault(); undo(); return }
+  if (e.ctrlKey && k === "y") { e.preventDefault(); redo(); return }
+  if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) { removeAnn(store.selectedAnnotationId); afterEdit(); return }
   if (k === "arrowleft" || k === "a") { prevImg(); return }
   if (k === "arrowright" || k === "d") { nextImg(); return }
   if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); return }
