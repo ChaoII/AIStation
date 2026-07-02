@@ -82,7 +82,7 @@
               <template v-if="ann.type === 'Polygon'">
                 <path :d="polygonPath(ann)" :stroke="clsColor(ann.class_id)"
                   :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
-                  fill-rule="evenodd" fill="rgba(0,0,0,0.06)" style="pointer-events:none" />
+                  fill-rule="evenodd" :fill="clsColor(ann.class_id) + '20'" style="pointer-events:none" vector-effect="non-scaling-stroke" />
                 <rect v-for="B in [polyBBox(ann)]" :key="ann.id + '-bbox'" :x="B.x" :y="B.y" :width="B.w" :height="B.h"
                   :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
                   fill="transparent" style="pointer-events:all" vector-effect="non-scaling-stroke" />
@@ -123,12 +123,13 @@
                   :stroke="cxColor" stroke-width="1" stroke-dasharray="4,3" fill="rgba(59,130,246,0.06)" />
               </template>
             </template>
-            <template v-if="currentTool === 'polygon' && polyDrawingPoints.length > 0">
+<template v-if="currentTool === 'polygon' && polyDrawingPoints.length > 0">
               <polyline :points="polyDrawingPoints.map(p => `${p.x * cw},${p.y * ch}`).join(' ')"
                 :stroke="cxColor" stroke-width="1.5" fill="none" />
-              <circle v-for="(p,i) in polyDrawingPoints" :key="i"
+              <circle :cx="polyDrawingPoints[0].x * cw" :cy="polyDrawingPoints[0].y * ch"
+                :r="polyNearFirst ? 7 : 3" :fill="cxColor" />
+              <circle v-for="(p,i) in polyDrawingPoints.slice(1)" :key="i"
                 :cx="p.x * cw" :cy="p.y * ch" r="3" :fill="cxColor" />
-              <!-- Follow line from last point to cursor -->
               <line v-if="cursorX && cursorY" :x1="polyDrawingPoints[polyDrawingPoints.length-1].x * cw"
                 :y1="polyDrawingPoints[polyDrawingPoints.length-1].y * ch"
                 :x2="cursorX" :y2="cursorY" :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6" />
@@ -368,6 +369,11 @@ const toolCursor = computed(() => ({
   box: "crosshair", rotated_box: diamondCursor,
   polygon: "crosshair", keypoint: "crosshair", ocr: "crosshair", classification: "default",
 }[currentTool.value] || "default"))
+const polyNearFirst = computed(() => {
+  if (polyDrawingPoints.value.length < 3 || !cursorX.value || !cursorY.value) return false
+  const fp = polyDrawingPoints.value[0]
+  return Math.hypot(cursorX.value - fp.x * cw.value, cursorY.value - fp.y * ch.value) < 20
+})
 
 const cxColor = computed(() => clsColor(selectedClassId.value) || "#3b82f6")
 const cxStyle = computed(() => ({ background: cxColor.value + "80" }))
