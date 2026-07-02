@@ -195,7 +195,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { ElMessage, ElBadge, ElSlider, ElSwitch } from "element-plus"
-import { ArrowLeft, ArrowRight, Delete } from "@element-plus/icons-vue"
+import { ArrowLeft, ArrowRight, Delete, Pointer } from "@element-plus/icons-vue"
+import { h } from "vue"
+const DiamondIcon = { render() { return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", "stroke-width": 2 }, [h("polygon", { points: "12,3 21,12 12,21 3,12" })]) } }
 import { AnnotationAPI } from "@/api/module_annotation"
 import { useAnnotationStore, type ToolName } from "./store"
 import { useUserStoreHook } from "@/store"
@@ -308,13 +310,13 @@ const rbDragging = ref(false)
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
-  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Select" },
+  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Pointer" },
   { name: "pan", label: "平移", tip: "拖拽平移画布", icon: "Rank" },
   { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: "ZoomIn" },
 ]
 const taskToolMap: Record<string, { name: ToolName; label: string; tip: string; icon: any }[]> = {
   detection: [{ name: "box", label: "矩形", tip: "拖拽创建矩形框", icon: "FullScreen" }],
-  rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: "RefreshRight" }],
+  rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: DiamondIcon }],
   segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: "EditPen" }],
   keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: "Coin" }],
   ocr: [{ name: "ocr", label: "OCR", tip: "文本标注", icon: "Document" }],
