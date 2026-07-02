@@ -83,6 +83,9 @@
                 <path :d="polygonPath(ann)" :stroke="clsColor(ann.class_id)"
                   :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
                   fill-rule="evenodd" fill="rgba(0,0,0,0.06)" style="pointer-events:none" />
+                <rect v-for="B in [polyBBox(ann)]" :key="ann.id + '-bbox'" :x="B.x" :y="B.y" :width="B.w" :height="B.h"
+                  :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                  fill="transparent" style="pointer-events:all" vector-effect="non-scaling-stroke" />
                 <g class="ann-label" v-for="B in [polyBBox(ann)]" :key="ann.id + '-bb'">
                   <rect :x="B.x" :y="B.y - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
@@ -125,6 +128,10 @@
                 :stroke="cxColor" stroke-width="1.5" fill="none" />
               <circle v-for="(p,i) in polyDrawingPoints" :key="i"
                 :cx="p.x * cw" :cy="p.y * ch" r="3" :fill="cxColor" />
+              <!-- Follow line from last point to cursor -->
+              <line v-if="cursorX && cursorY" :x1="polyDrawingPoints[polyDrawingPoints.length-1].x * cw"
+                :y1="polyDrawingPoints[polyDrawingPoints.length-1].y * ch"
+                :x2="cursorX" :y2="cursorY" :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6" />
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
