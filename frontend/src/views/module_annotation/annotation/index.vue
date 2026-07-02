@@ -25,9 +25,9 @@
       <main class="ann-canvas-area" ref="canvasWrapRef">
         <div class="canvas-container" ref="canvasRef" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @wheel.prevent="onWheel" @dblclick="onDblClick" @contextmenu.prevent>
           <!-- 十字线 -->
-          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="[cxStyle, { height: annSettings.value.crosshairWidth + 'px' }]" />
-          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="[cxStyle, { width: annSettings.value.crosshairWidth + 'px' }]" />
-          <div ref="cxCircleRef" class="crosshair-circle" v-show="showCrosshair && annSettings.value.crosshairCircle" />
+          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="[cxStyle, { height: annSettings.crosshairWidth + 'px' }]" />
+          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="[cxStyle, { width: annSettings.crosshairWidth + 'px' }]" />
+          <div ref="cxCircleRef" class="crosshair-circle" v-show="showCrosshair && annSettings.crosshairCircle" />
           <!-- 框预览（容器相对坐标） -->
           <div ref="boxPreviewRef" class="box-preview" v-show="drawing" />
           <img v-if="imgUrl" ref="imgRef" :src="imgUrl" :style="imgStyle" class="ann-img" draggable="false" @load="onImgLoad" @error="imgUrl = ''" />
@@ -36,7 +36,7 @@
             <g v-for="ann in store.annotations" :key="ann.id" :data-ann-id="ann.id" @mousedown.left.prevent="onAnnMouseDown($event, ann)">
               <template v-if="ann.type === 'AxisAlignedBox'">
                 <rect :x="ann.x1 * cw" :y="ann.y1 * ch" :width="(ann.x2 - ann.x1) * cw" :height="(ann.y2 - ann.y1) * ch"
-                  :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.value.selStrokeWidth : annSettings.value.strokeWidth"
+                  :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
                   :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'none'"
                   vector-effect="non-scaling-stroke" />
                 <g v-if="store.selectedAnnotationId === ann.id">
@@ -44,14 +44,14 @@
                 </g>
                 <g class="ann-label">
                   <rect :x="ann.x1 * cw" :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4" :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4" :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
-                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 2" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.value.labelFontSize" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
+                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 2" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
               </template>
               <template v-if="ann.type === 'RotatedBox'">
                 <rect :x="ann.cx * cw - ann.width * cw / 2" :y="ann.cy * ch - ann.height * ch / 2"
                   :width="ann.width * cw" :height="ann.height * ch"
                   :stroke="clsColor(ann.class_id)"
-                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.value.selStrokeWidth : annSettings.value.strokeWidth"
+                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
                   :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'none'"
                   vector-effect="non-scaling-stroke"
                   :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
@@ -61,7 +61,7 @@
                     :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
                   <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y - 2"
                     fill="#ffffff" font-weight="500" text-anchor="start"
-                    font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.value.labelFontSize" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
+                    font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
                 <template v-if="store.selectedAnnotationId === ann.id">
                   <rect v-for="h in ['tl','tr','bl','br']" :key="h"
@@ -115,11 +115,11 @@
               <span class="text-xs text-gray-400">{{ showSettings ? '收起' : '展开' }}</span>
             </div>
             <div v-show="showSettings" style="display:flex;flex-direction:column;gap:4px;padding:2px 0">
-              <div class="setting-row"><span class="setting-label">框线</span><el-slider v-model="annSettings.value.strokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
-              <div class="setting-row"><span class="setting-label">选中框线</span><el-slider v-model="annSettings.value.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
-              <div class="setting-row"><span class="setting-label">十字线粗细</span><el-slider v-model="annSettings.value.crosshairWidth" :min="0.5" :max="3" :step="0.5" size="small" style="flex:1" /></div>
-              <div class="setting-row"><span class="setting-label">十字线中心圈</span><el-switch v-model="annSettings.value.crosshairCircle" size="small" /></div>
-              <div class="setting-row"><span class="setting-label">标签字号</span><el-slider v-model="annSettings.value.labelFontSize" :min="4" :max="16" :step="1" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">框线</span><el-slider v-model="annSettings.strokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">选中框线</span><el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">十字线粗细</span><el-slider v-model="annSettings.crosshairWidth" :min="0.5" :max="3" :step="0.5" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">十字线中心圈</span><el-switch v-model="annSettings.crosshairCircle" size="small" /></div>
+              <div class="setting-row"><span class="setting-label">标签字号</span><el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" :step="1" size="small" style="flex:1" /></div>
             </div>
           </div>
           <div class="divider" />
