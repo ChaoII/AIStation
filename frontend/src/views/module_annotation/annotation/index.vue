@@ -102,6 +102,21 @@
                     :data-handle="'poly-' + i" class="handle" vector-effect="non-scaling-stroke" />
                 </template>
               </template>
+              <template v-if="ann.type === 'Keypoint'">
+                <rect v-if="ann.bounding_box"
+                  :x="ann.bounding_box.cx * cw - ann.bounding_box.width * cw / 2"
+                  :y="ann.bounding_box.cy * ch - ann.bounding_box.height * ch / 2"
+                  :width="ann.bounding_box.width * cw" :height="ann.bounding_box.height * ch"
+                  :stroke="clsColor(ann.class_id)" stroke-width="1.5" fill="rgba(0,0,0,0.04)"
+                  style="pointer-events:all" vector-effect="non-scaling-stroke" />
+                <g v-for="(kp, i) in ann.keypoints" :key="i">
+                  <circle :cx="kp.x * cw" :cy="kp.y * ch" r="6" :fill="clsColor(ann.class_id)"
+                    :opacity="kp.visibility === 'Visible' ? 1 : 0.5" stroke="#fff" stroke-width="1.5" />
+                  <circle :cx="kp.x * cw + 7" :cy="kp.y * ch - 7" r="5" fill="#fff" stroke="#1a1a1a" stroke-width="1" />
+                  <text :x="kp.x * cw + 7" :y="kp.y * ch - 7" fill="#1a1a1a" font-size="6" text-anchor="middle" dominant-baseline="central">{{ i + 1 }}</text>
+                  <text :x="kp.x * cw + 12" :y="kp.y * ch - 4" fill="#606266" font-size="5">{{ kp.name }}</text>
+                </g>
+              </template>
             </g>
             <!-- Rotated box 3-step preview -->
             <template v-if="currentTool === 'rotated_box' && rbStep === 1 && rbPt1">
@@ -133,6 +148,33 @@
               <line v-if="cursorX && cursorY" :x1="polyDrawingPoints[polyDrawingPoints.length-1].x * cw"
                 :y1="polyDrawingPoints[polyDrawingPoints.length-1].y * ch"
                 :x2="cursorX" :y2="cursorY" :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6" />
+            </template>
+            <!-- Keypoint phase 1: placing corners -->
+            <template v-if="currentTool === 'keypoint' && kpPhase === 'corners'">
+              <g v-for="(cp, i) in kpCorners" :key="i">
+                <circle :cx="cp.x * cw" :cy="cp.y * ch" r="8" :fill="cxColor" :opacity="cp.visibility === 2 ? 1 : 0.5" />
+                <circle :cx="cp.x * cw + 8" :cy="cp.y * ch - 8" r="5" fill="#fff" stroke="#1a1a1a" stroke-width="1" />
+                <text :x="cp.x * cw + 8" :y="cp.y * ch - 8" fill="#1a1a1a" font-size="6" text-anchor="middle" dominant-baseline="central">{{ i + 1 }}</text>
+                <text :x="cp.x * cw + 12" :y="cp.y * ch - 4" fill="#606266" font-size="5">{{ cp.name }}</text>
+              </g>
+              <template v-if="kpCorners.length < kpNames.length && cursorX && cursorY">
+                <circle :cx="cursorX" :cy="cursorY" r="8" :fill="cxColor" opacity="0.4" stroke-dasharray="3,3" />
+                <text :x="cursorX + 12" :y="cursorY" fill="#909399" font-size="5">{{ kpNames[kpCorners.length] }}</text>
+              </template>
+            </template>
+            <!-- Keypoint phase 2: drawing box -->
+            <template v-if="currentTool === 'keypoint' && kpPhase === 'box'">
+              <g v-for="(cp, i) in kpCorners" :key="i">
+                <circle :cx="cp.x * cw" :cy="cp.y * ch" r="8" :fill="cxColor" />
+                <circle :cx="cp.x * cw + 8" :cy="cp.y * ch - 8" r="5" fill="#fff" stroke="#1a1a1a" stroke-width="1" />
+                <text :x="cp.x * cw + 8" :y="cp.y * ch - 8" fill="#1a1a1a" font-size="6" text-anchor="middle" dominant-baseline="central">{{ i + 1 }}</text>
+              </g>
+              <rect v-if="kpBoxPreview"
+                :x="Math.min(kpBoxPreview.x1, kpBoxPreview.x2) * cw"
+                :y="Math.min(kpBoxPreview.y1, kpBoxPreview.y2) * ch"
+                :width="Math.abs(kpBoxPreview.x2 - kpBoxPreview.x1) * cw"
+                :height="Math.abs(kpBoxPreview.y2 - kpBoxPreview.y1) * ch"
+                :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" fill="rgba(59,130,246,0.06)" />
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
@@ -233,6 +275,7 @@ import { ArrowLeft, ArrowRight, Delete, Pointer } from "@element-plus/icons-vue"
 import { h } from "vue"
 const DiamondIcon = { render() { return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", "stroke-width": 2 }, [h("polygon", { points: "12,3 21,12 12,21 3,12" })]) } }
 const PentagonIcon = { render() { return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", "stroke-width": 2 }, [h("polygon", { points: "12,2 22,9 18,21 6,21 2,9" })]) } }
+const CircleDotIcon = { render() { return h("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor", "stroke-width": 2 }, [h("circle", { cx: "12", cy: "12", r: "8" }), h("circle", { cx: "12", cy: "12", r: "2", fill: "currentColor" })]) } }
 import { AnnotationAPI } from "@/api/module_annotation"
 import { useAnnotationStore, type ToolName } from "./store"
 import { useUserStoreHook } from "@/store"
@@ -346,6 +389,14 @@ const rbDragging = ref(false)
 
 const polyDrawingPoints = ref<{ x: number; y: number }[]>([])
 
+// ---- Keypoint (2-phase) ----
+const kpPhase = ref<"corners" | "box" | null>(null)
+const kpCorners = ref<{ x: number; y: number; name: string; visibility: number }[]>([])
+const kpNames = ref<string[]>(["top_left", "top_right", "bottom_right", "bottom_left"])
+const kpBoxPreview = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+const pendingKpVisibility = ref(2)
+let kpBoxDragStart: { x: number; y: number } | null = null
+
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
   { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Pointer" },
@@ -356,7 +407,7 @@ const taskToolMap: Record<string, { name: ToolName; label: string; tip: string; 
   detection: [{ name: "box", label: "矩形", tip: "拖拽创建矩形框", icon: "FullScreen" }],
   rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: DiamondIcon }],
   segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: PentagonIcon }],
-  keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: "Coin" }],
+  keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: CircleDotIcon }],
   ocr: [{ name: "ocr", label: "OCR", tip: "文本标注", icon: "Document" }],
   classification: [{ name: "classification", label: "分类", tip: "图像分类", icon: "Collection" }],
 }
@@ -586,7 +637,7 @@ function removeBoxPreview() {
 
 // ===== 画布事件 =====
 function onMouseEnter(e: MouseEvent) {
-  if (currentTool.value === "box" || currentTool.value === "rotated_box") { showCrosshair.value = true; updCrosshair(e) }
+  if (currentTool.value === "box" || currentTool.value === "rotated_box" || currentTool.value === "keypoint") { showCrosshair.value = true; updCrosshair(e) }
 }
 function onMouseLeave() {
   showCrosshair.value = false
@@ -669,6 +720,32 @@ function onMouseDown(e: MouseEvent) {
       }
     }
     polyDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value })
+    return
+  }
+
+  // ---- Keypoint draw ----
+  if (currentTool.value === "keypoint") {
+    if (taskClasses.value.length === 0) { ElMessage.warning("请先添加类别"); return }
+    if (!selectedClassId.value && taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id
+    const pt = mouseToImage(e); if (!pt) return
+    const norm = { x: pt.x / cw.value, y: pt.y / ch.value }
+
+    if (kpPhase.value === null) {
+      kpNames.value = ["top_left", "top_right", "bottom_right", "bottom_left"]
+      kpPhase.value = "corners"
+      kpCorners.value = [{ x: norm.x, y: norm.y, name: kpNames.value[0], visibility: pendingKpVisibility.value }]
+    } else if (kpPhase.value === "corners") {
+      const idx = kpCorners.value.length
+      if (idx < kpNames.value.length) {
+        kpCorners.value.push({ x: norm.x, y: norm.y, name: kpNames.value[idx], visibility: pendingKpVisibility.value })
+        if (kpCorners.value.length >= kpNames.value.length) {
+          kpPhase.value = "box"
+        }
+      }
+    } else if (kpPhase.value === "box") {
+      kpBoxDragStart = { x: norm.x, y: norm.y }
+      kpBoxPreview.value = { x1: norm.x, y1: norm.y, x2: norm.x, y2: norm.y }
+    }
     return
   }
 }
@@ -781,6 +858,13 @@ function onMouseMove(e: MouseEvent) {
     }
     return
   }
+
+  // ---- Keypoint box drag preview ----
+  if (currentTool.value === "keypoint" && kpPhase.value === "box" && kpBoxDragStart && pt) {
+    const norm = { x: pt.x / cw.value, y: pt.y / ch.value }
+    kpBoxPreview.value = { x1: kpBoxDragStart.x, y1: kpBoxDragStart.y, x2: norm.x, y2: norm.y }
+    return
+  }
 }
 
 function onMouseUp(e: MouseEvent) {
@@ -811,6 +895,32 @@ function onMouseUp(e: MouseEvent) {
       if (pt) rbPt2.value = { x: pt.x, y: pt.y }
       rbStep.value = 3; rbDragging.value = false
     }
+    return
+  }
+
+  // ---- Keypoint box finish ----
+  if (currentTool.value === "keypoint" && kpPhase.value === "box" && kpBoxPreview.value) {
+    const w = Math.abs(kpBoxPreview.value.x2 - kpBoxPreview.value.x1) * cw.value
+    const h = Math.abs(kpBoxPreview.value.y2 - kpBoxPreview.value.y1) * ch.value
+    if (w > 5 && h > 5) {
+      const vis = ["Hidden", "Occluded", "Visible"]
+      store.annotations.push({
+        id: crypto.randomUUID(), type: "Keypoint",
+        class_id: selectedClassId.value || 0,
+        keypoints: kpCorners.value.map(c => ({ x: c.x, y: c.y, visibility: vis[c.visibility], name: c.name })),
+        bounding_box: {
+          cx: (kpBoxPreview.value.x1 + kpBoxPreview.value.x2) / 2,
+          cy: (kpBoxPreview.value.y1 + kpBoxPreview.value.y2) / 2,
+          width: Math.abs(kpBoxPreview.value.x2 - kpBoxPreview.value.x1),
+          height: Math.abs(kpBoxPreview.value.y2 - kpBoxPreview.value.y1),
+          angle: 0,
+        },
+      })
+    }
+    kpCorners.value = []
+    kpBoxPreview.value = null
+    kpPhase.value = null
+    kpBoxDragStart = null
     return
   }
 
@@ -920,6 +1030,7 @@ function annotKey(anns: any[]) {
   return anns.map((a: any) => {
     if (a.type === "RotatedBox") return `${a.id}:RotatedBox:${a.class_id}:${a.cx}:${a.cy}:${a.width}:${a.height}:${a.angle}`
     if (a.type === "Polygon") return `${a.id}:Polygon:${a.class_id}:${(a.points || []).map((p: any) => `${p.x},${p.y}`).join(";")}`
+    if (a.type === "Keypoint") return `${a.id}:Keypoint:${a.class_id}:${(a.keypoints || []).map((k: any) => `${k.x},${k.y},${k.visibility},${k.name}`).join(";")}:${a.bounding_box ? `${a.bounding_box.cx},${a.bounding_box.cy},${a.bounding_box.width},${a.bounding_box.height},${a.bounding_box.angle}` : '0,0,0,0,0'}`
     return `${a.id}:AxisAlignedBox:${a.class_id}:${a.x1}:${a.y1}:${a.x2}:${a.y2}`
   }).sort().join("|")
 }
@@ -989,6 +1100,14 @@ function restoreHistory() {
         return { x, y }
       })
       return { id: parts[0], type: "Polygon", class_id: Number(parts[2]), points }
+    }
+    if (type === "Keypoint" && parts.length >= 5) {
+      const kps = parts[3].split(";").filter(Boolean).map((s: string) => {
+        const [x, y, visibility, ...nameParts] = s.split(",")
+        return { x: Number(x), y: Number(y), visibility, name: nameParts.join(",") }
+      })
+      const [cx, cy, bw, bh, ba] = parts[4].split(",").map(Number)
+      return { id: parts[0], type: "Keypoint", class_id: Number(parts[2]), keypoints: kps, bounding_box: { cx, cy, width: bw, height: bh, angle: ba } }
     }
     if (parts.length >= 6) {
       return { id: parts[0], type: "AxisAlignedBox", class_id: Number(parts[2]),
@@ -1114,7 +1233,49 @@ function onKey(e: KeyboardEvent) {
   if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) { removeAnn(store.selectedAnnotationId); afterEdit(); return }
   if (k === "arrowleft" || k === "a") { prevImg(); return }
   if (k === "arrowright" || k === "d") { nextImg(); return }
-  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); rbStep.value = 0; rbPt1.value = null; rbPt2.value = null; polyDrawingPoints.value = []; return }
+  if (k === "escape") { drawing.value = false; showCrosshair.value = false; store.selectedAnnotationId = null; removeBoxPreview(); rbStep.value = 0; rbPt1.value = null; rbPt2.value = null; polyDrawingPoints.value = []; kpCorners.value = []; kpBoxPreview.value = null; kpPhase.value = null; kpBoxDragStart = null; return }
+  if (k === "0" && kpPhase.value === "corners") { pendingKpVisibility.value = 0; return }
+  if (k === "1" && kpPhase.value === "corners") { pendingKpVisibility.value = 1; return }
+  if (k === "2" && kpPhase.value === "corners") { pendingKpVisibility.value = 2; return }
+  if (k === "enter" && kpPhase.value === "box" && kpBoxPreview.value) {
+    const w = Math.abs(kpBoxPreview.value.x2 - kpBoxPreview.value.x1) * cw.value
+    const h = Math.abs(kpBoxPreview.value.y2 - kpBoxPreview.value.y1) * ch.value
+    if (w > 5 && h > 5) {
+      const vis = ["Hidden", "Occluded", "Visible"]
+      store.annotations.push({
+        id: crypto.randomUUID(), type: "Keypoint",
+        class_id: selectedClassId.value || 0,
+        keypoints: kpCorners.value.map(c => ({ x: c.x, y: c.y, visibility: vis[c.visibility], name: c.name })),
+        bounding_box: {
+          cx: (kpBoxPreview.value.x1 + kpBoxPreview.value.x2) / 2,
+          cy: (kpBoxPreview.value.y1 + kpBoxPreview.value.y2) / 2,
+          width: Math.abs(kpBoxPreview.value.x2 - kpBoxPreview.value.x1),
+          height: Math.abs(kpBoxPreview.value.y2 - kpBoxPreview.value.y1),
+          angle: 0,
+        },
+      })
+    }
+    kpCorners.value = []; kpBoxPreview.value = null; kpPhase.value = null; kpBoxDragStart = null
+    return
+  }
+  if (k === "enter" && kpPhase.value === "corners" && kpCorners.value.length >= 3) {
+    const xs = kpCorners.value.map(c => c.x); const ys = kpCorners.value.map(c => c.y)
+    const minX = Math.min(...xs); const maxX = Math.max(...xs)
+    const minY = Math.min(...ys); const maxY = Math.max(...ys)
+    const vis = ["Hidden", "Occluded", "Visible"]
+    store.annotations.push({
+      id: crypto.randomUUID(), type: "Keypoint",
+      class_id: selectedClassId.value || 0,
+      keypoints: kpCorners.value.map(c => ({ x: c.x, y: c.y, visibility: vis[c.visibility], name: c.name })),
+      bounding_box: {
+        cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+        width: maxX - minX, height: maxY - minY,
+        angle: 0,
+      },
+    })
+    kpCorners.value = []; kpBoxPreview.value = null; kpPhase.value = null; kpBoxDragStart = null
+    return
+  }
   const t = keyToolMap[k]; if (t && displayTools.value.some(d => d.name === t)) setTool(t)
 }
 
