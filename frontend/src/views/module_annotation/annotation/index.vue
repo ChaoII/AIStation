@@ -25,8 +25,8 @@
       <main class="ann-canvas-area" ref="canvasWrapRef">
         <div class="canvas-container" ref="canvasRef" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @wheel.prevent="onWheel" @dblclick="onDblClick" @contextmenu.prevent>
           <!-- 十字线 -->
-          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="{...cxStyle, height: annSettings.value.crosshairWidth + 'px'}" />
-          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="{...cxStyle, width: annSettings.value.crosshairWidth + 'px'}" />
+          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="[cxStyle, { height: annSettings.value.crosshairWidth + 'px' }]" />
+          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="[cxStyle, { width: annSettings.value.crosshairWidth + 'px' }]" />
           <div ref="cxCircleRef" class="crosshair-circle" v-show="showCrosshair && annSettings.value.crosshairCircle" />
           <!-- 框预览（容器相对坐标） -->
           <div ref="boxPreviewRef" class="box-preview" v-show="drawing" />
