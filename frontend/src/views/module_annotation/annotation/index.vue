@@ -285,15 +285,16 @@ const LABEL_TAG_H = 8
 // ---- Drag state (single object, matching EasyLabelTauri pattern) ----
 interface DragState {
   active: boolean
-  type: "move" | "pan" | "rotate"
+  type: "move" | "pan" | "rotate" | "poly-vertex"
        | "resize-tl" | "resize-tr" | "resize-bl" | "resize-br"
        | "resize-l" | "resize-r" | "resize-t" | "resize-b"
        | "tl" | "tr" | "bl" | "br" | ""
   ann: any | null
-  orig: any | null     // deep-copy of annotation when drag started
+  orig: any | null
   startX: number
   startY: number
   handle: string
+  polyVertexIndex?: number
 }
 const drag = ref<DragState>({
   active: false, type: "", ann: null, orig: null, startX: 0, startY: 0, handle: "",
@@ -698,6 +699,24 @@ function onMouseMove(e: MouseEvent) {
     } else if (drag.value.ann.type === "RotatedBox") {
       drag.value.ann.cx = Math.max(0, Math.min(1, o.cx + dx))
       drag.value.ann.cy = Math.max(0, Math.min(1, o.cy + dy))
+    } else if (drag.value.ann.type === "Polygon") {
+      drag.value.ann.points = o.points.map((p: any) => ({
+        x: Math.max(0, Math.min(1, p.x + dx)),
+        y: Math.max(0, Math.min(1, p.y + dy)),
+      }))
+    }
+    return
+  }
+
+  // ---- Polygon vertex drag ----
+  if (drag.value.active && drag.value.type === "poly-vertex" && drag.value.ann) {
+    const dx = (e.clientX - drag.value.startX) / dw.value
+    const dy = (e.clientY - drag.value.startY) / dh.value
+    const o = drag.value.orig; const idx = drag.value.polyVertexIndex!
+    if (drag.value.ann.type === "Polygon" && idx !== undefined && o.points?.[idx]) {
+      drag.value.ann.points = o.points.map((p: any, i: number) =>
+        i === idx ? { x: Math.max(0, Math.min(1, p.x + dx)), y: Math.max(0, Math.min(1, p.y + dy)) } : p
+      )
     }
     return
   }
@@ -797,7 +816,7 @@ function onMouseUp(e: MouseEvent) {
 
   // ---- End drag ----
   if (drag.value.active) {
-    if (drag.value.ann && (drag.value.type === "move" || drag.value.type.startsWith("resize-"))) {
+    if (drag.value.ann && (drag.value.type === "move" || drag.value.type.startsWith("resize-") || drag.value.type === "poly-vertex" || drag.value.type === "rotate")) {
       markUnsaved(); pushHistory()
     }
     drag.value.active = false
@@ -852,9 +871,18 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
         drag.value = { active: true, type: "rotate", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
         return
       }
-if (["tl", "tr", "bl", "br"].includes(handle)) {
+      if (["tl", "tr", "bl", "br"].includes(handle)) {
         drag.value = { active: true, type: ("resize-" + handle) as DragState["type"], ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
         return
+      }
+      // ---- Polygon vertex drag ----
+      if (handle.startsWith("poly-")) {
+        const idx = parseInt(handle.replace("poly-", ""), 10)
+        if (!isNaN(idx)) {
+          store.selectedAnnotationId = ann.id
+          drag.value = { active: true, type: "poly-vertex", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "", polyVertexIndex: idx }
+          return
+        }
       }
     }
 
