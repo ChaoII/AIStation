@@ -75,3 +75,40 @@ class TaskService:
             "progress": pct,
             "status": status.lower(),
         }
+
+    @classmethod
+    async def ensure_annotation_access(cls, user_ids: list[int]) -> None:
+        """Grant annotation menu permissions to users (task assignees)."""
+        if not user_ids:
+            return
+        from sqlalchemy import select, exists, and_
+        from app.core.database import async_db_session
+        from app.api.v1.module_system.role.model import RoleModel, RoleMenusModel
+        from app.api.v1.module_system.user.model import UserRolesModel
+        from app.api.v1.module_system.menu.model import MenuModel
+
+        async with async_db_session.begin() as db:
+            role = (await db.execute(
+                select(RoleModel).where(RoleModel.code == "ANNOTATOR")
+            )).scalar_one_or_none()
+
+            if not role:
+                role = RoleModel(name="标注员", code="ANNOTATOR", status="0", order=99, data_scope=1)
+                db.add(role)
+                await db.flush()
+                menus = await db.execute(
+                    select(MenuModel).where(MenuModel.permission.like("annotation:%"))
+                )
+                for menu in menus.scalars():
+                    db.add(RoleMenusModel(role_id=role.id, menu_id=menu.id))
+
+            for uid in user_ids:
+                has_role = await db.scalar(
+                    select(exists().where(
+                        and_(UserRolesModel.user_id == uid, UserRolesModel.role_id == role.id)
+                    ))
+                )
+                if not has_role:
+                    db.add(UserRolesModel(user_id=uid, role_id=role.id))
+
+            log.info(f"Granted ANNOTATOR role to users: {user_ids}")

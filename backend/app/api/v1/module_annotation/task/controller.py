@@ -43,6 +43,8 @@ async def create_task(
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
     task = await crud.create(data=data)
+    if data.assignees:
+        await TaskService.ensure_annotation_access(data.assignees)
     return SuccessResponse(data=task, msg="创建成功")
 
 
@@ -55,6 +57,8 @@ async def update_task(
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
     result = await crud.update(id=id, data=data)
+    if data.assignees:
+        await TaskService.ensure_annotation_access(data.assignees)
     return SuccessResponse(data=result, msg="更新成功")
 
 
