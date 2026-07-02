@@ -26,12 +26,22 @@ async def get_task_list(
         offset=offset, limit=page.page_size, order_by=page.order_by,
         search={}, out_schema=TaskOutSchema,
     )
-    # Enrich each task with per-task calculated progress
+    # Enrich each task with per-task calculated progress and assignee names
     if result.get("items"):
         async with async_db_session() as db:
+            from app.api.v1.module_system.user.model import UserModel
+            from sqlalchemy import select
             for item in result["items"]:
                 prog = await TaskService._calc_progress(db, item["id"], item["dataset_id"])
                 item["progress"] = prog["progress"]
+                # Resolve assignee IDs to display names
+                aids = item.get("assignees") or []
+                if aids:
+                    users = await db.execute(
+                        select(UserModel).where(UserModel.id.in_(aids))
+                    )
+                    name_map = {u.id: u.name for u in users.scalars()}
+                    item["assignees"] = [name_map.get(uid, f"用户{uid}") for uid in aids]
     return SuccessResponse(data=result)
 
 

@@ -3,7 +3,6 @@ from sqlalchemy import select, desc
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from ..dataset.model import AnnotationImageModel
 from .model import AnnotationRecordModel
 
 
@@ -28,11 +27,6 @@ class AnnotationService:
                 task_id=task_id, image_id=image_id, annotation_data=annotation_data,
                 version=version, created_id=auth.user.id,
             ))
-
-            img = await db.get(AnnotationImageModel, image_id)
-            if img:
-                img.status = "ANNOTATED" if annotation_data else "UNANNOTATED"
-                img.annotation_count = len(annotation_data)
 
         log.info(f"save_annotations task={task_id} image={image_id} v={version}")
         return {"version": version, "annotation_count": len(annotation_data)}

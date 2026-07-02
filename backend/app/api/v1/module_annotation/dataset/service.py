@@ -2,8 +2,7 @@ import os
 import uuid
 from pathlib import Path
 from typing import Any
-
-from sqlalchemy import select
+from sqlalchemy import select, func, desc, and_
 
 from app.core.database import async_db_session
 from app.core.logger import log
@@ -70,13 +69,57 @@ class DatasetService:
             return results
 
     @classmethod
-    async def get_images(cls, dataset_id: int, status_filter: str | None = None) -> list:
+    async def get_images(cls, dataset_id: int, task_id: int | None = None) -> list:
         async with async_db_session() as db:
             sql = select(AnnotationImageModel).where(AnnotationImageModel.dataset_id == dataset_id)
-            if status_filter:
-                sql = sql.where(AnnotationImageModel.status == status_filter)
             result = await db.execute(sql)
-            return result.scalars().all()
+            images = result.scalars().all()
+
+            if not task_id:
+                return images
+
+            # For each image, check if it has annotations for this task
+            from ..annotation.model import AnnotationRecordModel
+            from app.api.v1.module_system.user.model import UserModel
+
+            items = []
+            for img in images:
+                latest = await db.execute(
+                    select(AnnotationRecordModel)
+                    .where(and_(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.image_id == img.id,
+                    ))
+                    .order_by(desc(AnnotationRecordModel.version))
+                    .limit(1)
+                )
+                rec = latest.scalar_one_or_none()
+
+                has_data = rec and rec.annotation_data and (
+                    (isinstance(rec.annotation_data, list) and len(rec.annotation_data) > 0)
+                )
+                status = "annotated" if has_data else "unannotated"
+
+                # Get who annotated and when
+                updater_name = None
+                update_time = None
+                if rec and has_data:
+                    user = await db.get(UserModel, rec.created_id)
+                    updater_name = user.name if user else None
+                    update_time = rec.created_time
+
+                items.append({
+                    "id": img.id,
+                    "dataset_id": img.dataset_id,
+                    "filename": img.filename,
+                    "object_key": img.object_key,
+                    "width": img.width,
+                    "height": img.height,
+                    "status": status,
+                    "updated_by": {"id": rec.created_id, "name": updater_name} if rec and has_data else None,
+                    "updated_time": update_time.isoformat() if update_time else None,
+                })
+            return items
 
     @classmethod
     async def get_presigned_url(cls, image_id: int) -> str:

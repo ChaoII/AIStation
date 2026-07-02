@@ -650,7 +650,7 @@ onMounted(async () => {
     currentTool.value = "select"
     store.setTool("select"); store.taskId = tid
     if (taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id
-    const ir = await AnnotationAPI.getImages(t.dataset_id); const imgs = ir.data?.data || []
+    const ir = await AnnotationAPI.getImages(t.dataset_id, tid); const imgs = ir.data?.data || []
     store.images = imgs
     if (imgs.length > 0) await loadImg(imgs[0].id)
     await fetchTaskProgress()

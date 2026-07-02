@@ -88,9 +88,10 @@ async def upload_images(
 async def get_images(
     id: int,
     status: str | None = None,
+    task_id: int | None = None,
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
 ) -> JSONResponse:
-    images = await DatasetService.get_images(id, status)
+    images = await DatasetService.get_images(id, task_id)
     return SuccessResponse(data=images)
 
 

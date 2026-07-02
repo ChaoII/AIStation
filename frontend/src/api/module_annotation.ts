@@ -19,8 +19,8 @@ export const AnnotationAPI = {
   uploadImages(id: number, files: FormData) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/dataset/${id}/upload`, method: "post", data: files, headers: { "Content-Type": "multipart/form-data" } })
   },
-  getImages(id: number, status?: string) {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/dataset/${id}/images`, method: "get", params: { status } })
+  getImages(id: number, taskId?: number) {
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/dataset/${id}/images`, method: "get", params: { task_id: taskId } })
   },
   getPresignedUrl(imageId: number) {
     return request<ApiResponse<{ url: string }>>({ url: `${API_PATH}/anno/image/${imageId}/presigned-url`, method: "get" })
