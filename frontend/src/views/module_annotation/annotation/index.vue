@@ -130,6 +130,7 @@ import { ElMessage, ElBadge } from "element-plus"
 import { ArrowLeft, ArrowRight, Delete } from "@element-plus/icons-vue"
 import { AnnotationAPI } from "@/api/module_annotation"
 import { useAnnotationStore, type ToolName } from "./store"
+import { useUserStoreHook } from "@/store"
 
 const route = useRoute(); const router = useRouter()
 const store = useAnnotationStore()
@@ -537,8 +538,13 @@ async function autoSave() {
       await AnnotationAPI.saveAnnotations(store.currentImage.id, {
         task_id: store.taskId, image_id: store.currentImage.id, annotation_data: store.annotations,
       })
+      const now = new Date().toISOString()
+      const curUser = useUserStoreHook().getBasicInfo
+      const updater = { id: (curUser as any).id || 0, name: (curUser as any).name || (curUser as any).username || "" }
       store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated"
       store.currentImage.annotation_count = store.annotations.length
+      store.currentImage.updated_by = updater
+      store.currentImage.updated_time = now
       unsaved.value = false
       updateProgress()
       fetchTaskProgress()
@@ -607,8 +613,12 @@ async function saveAnn() {
     await AnnotationAPI.saveAnnotations(img.id, {
       task_id: store.taskId, image_id: img.id, annotation_data: store.annotations,
     })
+    const now = new Date().toISOString()
+    const curUser = useUserStoreHook().getBasicInfo
     img.status = store.annotations.length > 0 ? "annotated" : "unannotated"
     img.annotation_count = store.annotations.length
+    img.updated_by = { id: (curUser as any).id || 0, name: (curUser as any).name || (curUser as any).username || "" }
+    img.updated_time = now
     unsaved.value = false
     updateProgress()
     await fetchTaskProgress()
