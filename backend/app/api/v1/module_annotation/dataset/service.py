@@ -71,7 +71,7 @@ class DatasetService:
     @classmethod
     async def get_images(cls, dataset_id: int, task_id: int | None = None) -> list:
         async with async_db_session() as db:
-            sql = select(AnnotationImageModel).where(AnnotationImageModel.dataset_id == dataset_id).order_by(AnnotationImageModel.id)
+            sql = select(AnnotationImageModel).where(AnnotationImageModel.dataset_id == dataset_id).order_by(AnnotationImageModel.filename)
             result = await db.execute(sql)
             images = result.scalars().all()
 
