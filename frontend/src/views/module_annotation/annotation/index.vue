@@ -25,8 +25,9 @@
       <main class="ann-canvas-area" ref="canvasWrapRef">
         <div class="canvas-container" ref="canvasRef" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseenter="onMouseEnter" @mouseleave="onMouseLeave" @wheel.prevent="onWheel" @dblclick="onDblClick" @contextmenu.prevent>
           <!-- 十字线 -->
-          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="cxStyle" />
-          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="cxStyle" />
+          <div ref="cxXRef" class="crosshair crosshair-x" v-show="showCrosshair" :style="{...cxStyle, height: annSettings.value.crosshairWidth + 'px'}" />
+          <div ref="cxYRef" class="crosshair crosshair-y" v-show="showCrosshair" :style="{...cxStyle, width: annSettings.value.crosshairWidth + 'px'}" />
+          <div ref="cxCircleRef" class="crosshair-circle" v-show="showCrosshair && annSettings.value.crosshairCircle" />
           <!-- 框预览（容器相对坐标） -->
           <div ref="boxPreviewRef" class="box-preview" v-show="drawing" />
           <img v-if="imgUrl" ref="imgRef" :src="imgUrl" :style="imgStyle" class="ann-img" draggable="false" @load="onImgLoad" @error="imgUrl = ''" />
@@ -35,7 +36,7 @@
             <g v-for="ann in store.annotations" :key="ann.id" :data-ann-id="ann.id" @mousedown.left.prevent="onAnnMouseDown($event, ann)">
               <template v-if="ann.type === 'AxisAlignedBox'">
                 <rect :x="ann.x1 * cw" :y="ann.y1 * ch" :width="(ann.x2 - ann.x1) * cw" :height="(ann.y2 - ann.y1) * ch"
-                  :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? 2 : 1.5"
+                  :stroke="clsColor(ann.class_id)" :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.value.selStrokeWidth : annSettings.value.strokeWidth"
                   :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'none'"
                   vector-effect="non-scaling-stroke" />
                 <g v-if="store.selectedAnnotationId === ann.id">
@@ -43,14 +44,14 @@
                 </g>
                 <g class="ann-label">
                   <rect :x="ann.x1 * cw" :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4" :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4" :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
-                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 2" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" font-size="6" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
+                  <text :x="ann.x1 * cw + 2" :y="ann.y1 * ch - 2" fill="#ffffff" font-weight="500" text-anchor="start" font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.value.labelFontSize" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
               </template>
               <template v-if="ann.type === 'RotatedBox'">
                 <rect :x="ann.cx * cw - ann.width * cw / 2" :y="ann.cy * ch - ann.height * ch / 2"
                   :width="ann.width * cw" :height="ann.height * ch"
                   :stroke="clsColor(ann.class_id)"
-                  :stroke-width="store.selectedAnnotationId === ann.id ? 2 : 1.5"
+                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.value.selStrokeWidth : annSettings.value.strokeWidth"
                   :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'none'"
                   vector-effect="non-scaling-stroke"
                   :transform="`rotate(${ann.angle * 180 / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`" />
@@ -59,8 +60,8 @@
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
                     :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4" :fill="clsColor(ann.class_id)" :stroke="clsColor(ann.class_id)" stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1" />
                   <text :x="rbHandlePos(ann, 'tl', cw, ch).x + 2" :y="rbHandlePos(ann, 'tl', cw, ch).y - 2"
-                    fill="#ffffff" font-size="6" font-weight="500" text-anchor="start"
-                    font-family="Microsoft YaHei,sans-serif" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
+                    fill="#ffffff" font-weight="500" text-anchor="start"
+                    font-family="Microsoft YaHei,sans-serif" :font-size="annSettings.value.labelFontSize" dominant-baseline="text-after-edge">{{ getCls(ann.class_id)?.name }}</text>
                 </g>
                 <template v-if="store.selectedAnnotationId === ann.id">
                   <rect v-for="h in ['tl','tr','bl','br']" :key="h"
@@ -107,6 +108,21 @@
       <!-- 右侧面板 -->
       <aside class="ann-rightbar">
         <div class="panel">
+          <!-- 设置 -->
+          <div class="panel-section" style="flex:none;overflow:visible">
+            <div class="section-title-row" @click="showSettings = !showSettings" style="cursor:pointer">
+              <span class="section-title">设置</span>
+              <span class="text-xs text-gray-400">{{ showSettings ? '收起' : '展开' }}</span>
+            </div>
+            <div v-show="showSettings" style="display:flex;flex-direction:column;gap:4px;padding:2px 0">
+              <div class="setting-row"><span class="setting-label">框线</span><el-slider v-model="annSettings.value.strokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">选中框线</span><el-slider v-model="annSettings.value.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">十字线粗细</span><el-slider v-model="annSettings.value.crosshairWidth" :min="0.5" :max="3" :step="0.5" size="small" style="flex:1" /></div>
+              <div class="setting-row"><span class="setting-label">十字线中心圈</span><el-switch v-model="annSettings.value.crosshairCircle" size="small" /></div>
+              <div class="setting-row"><span class="setting-label">标签字号</span><el-slider v-model="annSettings.value.labelFontSize" :min="4" :max="16" :step="1" size="small" style="flex:1" /></div>
+            </div>
+          </div>
+          <div class="divider" />
           <div class="panel-section">
             <div class="section-title-row"><span class="section-title">图片列表</span><span class="count-chip">{{ store.images.length }}</span></div>
             <div class="scroll-area">
@@ -178,7 +194,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { ElMessage, ElBadge } from "element-plus"
+import { ElMessage, ElBadge, ElSlider, ElSwitch } from "element-plus"
 import { ArrowLeft, ArrowRight, Delete } from "@element-plus/icons-vue"
 import { AnnotationAPI } from "@/api/module_annotation"
 import { useAnnotationStore, type ToolName } from "./store"
@@ -193,6 +209,7 @@ const canvasWrapRef = ref<HTMLElement | null>(null)
 const imgRef = ref<HTMLImageElement | null>(null)
 const cxXRef = ref<HTMLElement | null>(null)
 const cxYRef = ref<HTMLElement | null>(null)
+const cxCircleRef = ref<HTMLElement | null>(null)
 const boxPreviewRef = ref<HTMLElement | null>(null)
 
 // State
@@ -205,7 +222,24 @@ const currentTool = ref<ToolName>("select")
 const taskType = ref("detection"); const task = ref<any>(null)
 const taskClasses = ref<any[]>([])
 const showClassModal = ref(false)
+const showSettings = ref(false)
 const clsForm = ref({ name: "", color: "#409eff" })
+
+// ---- 标注工作台设置（持久化到 localStorage）----
+const settingsKey = "annotation-workbench-settings"
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(settingsKey) || "{}") } catch { return {} }
+}
+function saveSettings() { localStorage.setItem(settingsKey, JSON.stringify(annSettings.value)) }
+const annSettings = ref({
+  strokeWidth: 1.5,
+  selStrokeWidth: 2,
+  crosshairWidth: 1,
+  crosshairCircle: false,
+  labelFontSize: 6,
+  ...loadSettings(),
+})
+watch(annSettings, saveSettings, { deep: true })
 
 // ---- Constants (matching EasyLabelTauri) ----
 const LABEL_TAG_H = 8
@@ -377,8 +411,10 @@ function onImgLoad() {
 function updCrosshair(e: MouseEvent) {
   const c = canvasRef.value; if (!c) return
   const r = c.getBoundingClientRect()
-  if (cxXRef.value) cxXRef.value.style.top = (e.clientY - r.top) + "px"
-  if (cxYRef.value) cxYRef.value.style.left = (e.clientX - r.left) + "px"
+  const x = e.clientX - r.left; const y = e.clientY - r.top
+  if (cxXRef.value) cxXRef.value.style.top = y + "px"
+  if (cxYRef.value) cxYRef.value.style.left = x + "px"
+  if (cxCircleRef.value) { cxCircleRef.value.style.left = (x - 4) + "px"; cxCircleRef.value.style.top = (y - 4) + "px" }
 }
 
 // ===== 类别 =====
@@ -998,6 +1034,7 @@ onBeforeUnmount(() => {
 .crosshair { position:absolute; pointer-events:none; z-index:20; }
 .crosshair-x { left:0; height:1px; background:rgba(59,130,246,0.5); width:100%; }
 .crosshair-y { top:0; width:1px; background:rgba(59,130,246,0.5); height:100%; }
+.crosshair-circle { position:absolute; pointer-events:none; z-index:20; width:8px; height:8px; border:1px solid rgba(59,130,246,0.5); border-radius:50%; }
 .box-preview { position:absolute; pointer-events:none; z-index:15; border:2px dashed #3b82f6; background:rgba(59,130,246,0.06); }
 .ann-svg { position:absolute; top:50%; left:50%; pointer-events:none; }
 .ann-img { position:absolute; top:50%; left:50%; }
@@ -1011,6 +1048,8 @@ onBeforeUnmount(() => {
 .section-title-row { display:flex; align-items:center; gap:4px; padding:2px 0; flex-shrink:0; }
 .section-title { font-size:11px; font-weight:600; color:#909399; text-transform:uppercase; flex:1; letter-spacing:0.03em; }
 .count-chip { font-size:10px; color:#909399; background:#f0f2f5; border:1px solid #e4e7ed; padding:0 5px; border-radius:999px; font-variant-numeric:tabular-nums; }
+.setting-row { display:flex; align-items:center; gap:8px; font-size:11px; color:#606266; }
+.setting-label { white-space:nowrap; min-width:60px; }
 .divider { height:1px; background:#e4e7ed; margin:2px 0; flex-shrink:0; }
 .scroll-area { flex:1; overflow-y:auto; min-height:0; display:flex; flex-direction:column; gap:1px; }
 .image-item { display:flex; align-items:center; gap:5px; padding:4px 6px; border-radius:4px; cursor:pointer; border-left:3px solid transparent; }
