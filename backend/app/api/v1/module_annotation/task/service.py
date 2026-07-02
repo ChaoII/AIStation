@@ -1,9 +1,10 @@
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
 from ..dataset.model import AnnotationImageModel
+from ..annotation.model import AnnotationRecordModel
 from .model import AnnotationTaskModel
 
 
@@ -16,30 +17,10 @@ class TaskService:
             if not task:
                 log.warning(f"update_progress: task {task_id} not found")
                 return
-            total = await db.scalar(
-                select(func.count(AnnotationImageModel.id))
-                .where(AnnotationImageModel.dataset_id == task.dataset_id)
-            )
-            if not total or total == 0:
-                return
-            annotated = await db.scalar(
-                select(func.count(AnnotationImageModel.id))
-                .where(
-                    AnnotationImageModel.dataset_id == task.dataset_id,
-                    AnnotationImageModel.status != "unannotated",
-                )
-            )
-            progress = int(annotated / total * 100)
-            if progress >= 100:
-                task.status = "COMPLETED"
-                task.progress = 100
-            elif progress > 0:
-                task.status = "IN_PROGRESS"
-                task.progress = progress
-            else:
-                task.status = "PENDING"
-                task.progress = 0
-            await db.commit()
+            result = await cls._calc_progress(db, task_id, task.dataset_id)
+            if result:
+                task.progress = result["progress"]
+                await db.commit()
 
     @classmethod
     async def get_task_progress(cls, task_id: int, auth) -> dict:
@@ -47,22 +28,50 @@ class TaskService:
             task = await db.get(AnnotationTaskModel, task_id)
             if not task:
                 raise ValueError("任务不存在")
-            total = await db.scalar(
-                select(func.count(AnnotationImageModel.id))
-                .where(AnnotationImageModel.dataset_id == task.dataset_id)
+            return await cls._calc_progress(db, task_id, task.dataset_id)
+
+    @classmethod
+    async def _calc_progress(cls, db, task_id: int, dataset_id: int) -> dict:
+        # Total images in dataset
+        total = await db.scalar(
+            select(func.count(AnnotationImageModel.id))
+            .where(AnnotationImageModel.dataset_id == dataset_id)
+        ) or 0
+
+        # Annotated images for THIS task only (count distinct images in annotation_record
+        # where the latest version has non-empty annotation_data)
+        if total == 0:
+            return {"total_images": 0, "annotated_images": 0, "progress": 0, "status": "pending"}
+
+        # Subquery: for each image, find the latest annotation record version for this task
+        max_v = select(
+            AnnotationRecordModel.image_id,
+            func.max(AnnotationRecordModel.version).label("max_v")
+        ).where(
+            AnnotationRecordModel.task_id == task_id
+        ).group_by(AnnotationRecordModel.image_id).subquery()
+
+        # Join to get the actual records and count those with non-empty annotation_data
+        annotated = await db.scalar(
+            select(func.count(func.distinct(AnnotationRecordModel.image_id)))
+            .select_from(AnnotationRecordModel)
+            .join(max_v, and_(
+                AnnotationRecordModel.image_id == max_v.c.image_id,
+                AnnotationRecordModel.version == max_v.c.max_v,
+            ))
+            .where(
+                AnnotationRecordModel.task_id == task_id,
+                AnnotationRecordModel.annotation_data.isnot(None),
+                func.jsonb_array_length(AnnotationRecordModel.annotation_data) > 0,
             )
-            annotated = await db.scalar(
-                select(func.count(AnnotationImageModel.id))
-                .where(
-                    AnnotationImageModel.dataset_id == task.dataset_id,
-                    AnnotationImageModel.status != "UNANNOTATED",
-                )
-            ) or 0
-            pct = int(annotated / total * 100) if total else 0
-            status = "COMPLETED" if pct >= 100 else "IN_PROGRESS" if pct > 0 else "PENDING"
-            return {
-                "total_images": total or 0,
-                "annotated_images": annotated,
-                "progress": pct,
-                "status": status.lower(),
-            }
+        ) or 0
+
+        pct = int(annotated / total * 100) if total > 0 else 0
+        status = "COMPLETED" if pct >= 100 else "IN_PROGRESS" if pct > 0 else "PENDING"
+
+        return {
+            "total_images": total,
+            "annotated_images": annotated,
+            "progress": pct,
+            "status": status.lower(),
+        }

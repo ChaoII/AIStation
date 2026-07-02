@@ -19,32 +19,19 @@ async def get_task_list(
     auth: AuthSchema = Depends(AuthPermission(["annotation:task:query"])),
 ) -> JSONResponse:
     from .crud import TaskCRUD
-    from sqlalchemy import select, func
     from app.core.database import async_db_session
-    from ..dataset.model import AnnotationImageModel
     crud = TaskCRUD(auth=auth)
     offset = (page.page_no - 1) * page.page_size
     result = await crud.page(
         offset=offset, limit=page.page_size, order_by=page.order_by,
         search={}, out_schema=TaskOutSchema,
     )
-    # Enrich each task with calculated progress
+    # Enrich each task with per-task calculated progress
     if result.get("items"):
         async with async_db_session() as db:
             for item in result["items"]:
-                total = await db.scalar(
-                    select(func.count(AnnotationImageModel.id))
-                    .where(AnnotationImageModel.dataset_id == item["dataset_id"])
-                )
-                if total and total > 0:
-                    annotated = await db.scalar(
-                        select(func.count(AnnotationImageModel.id))
-                        .where(
-                            AnnotationImageModel.dataset_id == item["dataset_id"],
-                            AnnotationImageModel.status != "UNANNOTATED",
-                        )
-                    )
-                    item["progress"] = int(annotated / total * 100) if annotated else 0
+                prog = await TaskService._calc_progress(db, item["id"], item["dataset_id"])
+                item["progress"] = prog["progress"]
     return SuccessResponse(data=result)
 
 

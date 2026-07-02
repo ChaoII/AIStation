@@ -461,7 +461,12 @@ function onMouseUp(e: MouseEvent) {
   }
 
   // ---- End drag ----
-  if (drag.value.active) drag.value.active = false
+  if (drag.value.active) {
+    if (drag.value.ann && (drag.value.type === "move" || drag.value.type.startsWith("resize-"))) {
+      markUnsaved()
+    }
+    drag.value.active = false
+  }
 }
 
 // Window-level mouseup catch (for safety when mouse leaves canvas)
@@ -538,16 +543,14 @@ async function autoSave() {
       updateProgress()
       fetchTaskProgress()
     } catch {}
-  }, 800)
+  }, 3000)
 }
 
 // 标注变化时自动保存
-watch(() => store.annotations.map(a => ({ ...a })), (cur, old) => {
-  if (JSON.stringify(cur) !== JSON.stringify(old)) {
-    unsaved.value = true
-    autoSave()
-  }
-}, { deep: true })
+watch(() => store.annotations.length, () => { unsaved.value = true; autoSave() })
+
+// 拖拽/移动/调整大小结束时触发保存
+function markUnsaved() { unsaved.value = true; autoSave() }
 
 // ===== 图片导航 =====
 async function loadImg(imageId: number) {
