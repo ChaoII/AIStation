@@ -1,4 +1,4 @@
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 
 from app.core.database import async_db_session
 from app.core.logger import log
@@ -93,14 +93,27 @@ class TaskService:
             )).scalar_one_or_none()
 
             if not role:
-                role = RoleModel(name="标注员", code="ANNOTATOR", status="0", order=99, data_scope=1)
+                role = RoleModel(name="标注员", code="ANNOTATOR", status="0", order=99, data_scope=3)
                 db.add(role)
                 await db.flush()
-                menus = await db.execute(
-                    select(MenuModel).where(MenuModel.permission.like("annotation:%"))
+
+            # Ensure all needed menus are assigned to the role
+            needed_perms = ["annotation:dataset:query", "annotation:task:query", "annotation:task:update",
+                          "annotation:workbench:query", "annotation:dataset:create", "annotation:stats:query",
+                          "module_system:user:query", "module_system:role:query"]
+            existing_menu_ids = set(
+                (await db.execute(
+                    select(RoleMenusModel.menu_id).where(RoleMenusModel.role_id == role.id)
+                )).scalars().all()
+            )
+            menus_to_add = await db.execute(
+                select(MenuModel).where(
+                    and_(MenuModel.permission.in_(needed_perms),
+                         ~MenuModel.id.in_(existing_menu_ids))
                 )
-                for menu in menus.scalars():
-                    db.add(RoleMenusModel(role_id=role.id, menu_id=menu.id))
+            )
+            for menu in menus_to_add.scalars():
+                db.add(RoleMenusModel(role_id=role.id, menu_id=menu.id))
 
             for uid in user_ids:
                 has_role = await db.scalar(
