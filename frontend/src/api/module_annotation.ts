@@ -22,8 +22,8 @@ export const AnnotationAPI = {
   getImages(id: number, taskId?: number) {
     return request<ApiResponse<any[]>>({ url: `${API_PATH}/dataset/${id}/images`, method: "get", params: { task_id: taskId } })
   },
-  getPresignedUrl(imageId: number) {
-    return request<ApiResponse<{ url: string }>>({ url: `${API_PATH}/anno/image/${imageId}/presigned-url`, method: "get" })
+  getPresignedUrl(imageId: number, taskId?: number) {
+    return request<ApiResponse<{ url: string }>>({ url: `${API_PATH}/anno/image/${imageId}/presigned-url`, method: "get", params: { task_id: taskId } })
   },
 
   // Task
@@ -55,5 +55,11 @@ export const AnnotationAPI = {
   },
   getAnnotationHistory(taskId: number, imageId: number) {
     return request<ApiResponse<any[]>>({ url: `${API_PATH}/anno/image/${imageId}/history`, method: "get", params: { task_id: taskId } })
+  },
+  lockImage(imageId: number, taskId: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/anno/image/${imageId}/lock`, method: "post", params: { task_id: taskId } })
+  },
+  unlockImage(imageId: number, taskId: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/anno/image/${imageId}/unlock`, method: "post", params: { task_id: taskId } })
   },
 }

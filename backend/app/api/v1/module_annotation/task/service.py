@@ -136,3 +136,17 @@ class TaskService:
                     db.add(UserRolesModel(user_id=uid, role_id=role.id))
 
             log.info(f"Granted ANNOTATOR role to users: {user_ids}")
+
+    @classmethod
+    async def check_workbench_access(cls, task_id: int, user_id: int, is_superuser: bool) -> bool:
+        """检查用户是否有权限访问该任务的工作台."""
+        if is_superuser:
+            return True
+        async with async_db_session() as db:
+            task = await db.get(AnnotationTaskModel, task_id)
+            if not task:
+                return False
+            if task.created_id == user_id:
+                return True
+            assignees = task.assignees or []
+            return user_id in assignees

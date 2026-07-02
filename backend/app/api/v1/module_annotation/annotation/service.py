@@ -1,16 +1,50 @@
+from datetime import datetime, timedelta
 from sqlalchemy import select, desc
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from ..dataset.model import AnnotationImageModel
 from .model import AnnotationRecordModel
 
 
 class AnnotationService:
 
+    LOCK_TIMEOUT_MINUTES = 5
+
+    @classmethod
+    async def lock_image(cls, image_id: int, user_id: int) -> dict:
+        async with async_db_session.begin() as db:
+            img = await db.get(AnnotationImageModel, image_id)
+            if not img:
+                raise ValueError("图片不存在")
+            # Auto-release stale locks
+            if img.locked_by and img.locked_at:
+                if datetime.utcnow() - img.locked_at > timedelta(minutes=cls.LOCK_TIMEOUT_MINUTES):
+                    img.locked_by = None
+                    img.locked_at = None
+            if img.locked_by and img.locked_by != user_id:
+                return {"locked": True, "locked_by": img.locked_by}
+            img.locked_by = user_id
+            img.locked_at = datetime.utcnow()
+            return {"locked": False, "locked_by": user_id}
+
+    @classmethod
+    async def unlock_image(cls, image_id: int, user_id: int) -> None:
+        async with async_db_session.begin() as db:
+            img = await db.get(AnnotationImageModel, image_id)
+            if img and img.locked_by == user_id:
+                img.locked_by = None
+                img.locked_at = None
+
     @classmethod
     async def save_annotations(cls, task_id: int, image_id: int, annotation_data: list[dict], auth) -> dict:
         async with async_db_session.begin() as db:
+            # Verify lock
+            img = await db.get(AnnotationImageModel, image_id)
+            if img and img.locked_by and img.locked_by != auth.user.id:
+                raise ValueError(f"图片已被其他用户锁定")
+
             result = await db.execute(
                 select(AnnotationRecordModel)
                 .where(

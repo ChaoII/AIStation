@@ -619,13 +619,15 @@ async function loadImg(imageId: number) {
   const idx = store.images.findIndex(i => i.id === imageId)
   if (idx >= 0) store.currentImageIndex = idx
   try {
-    const r = await AnnotationAPI.getPresignedUrl(imageId)
+    const r = await AnnotationAPI.getPresignedUrl(imageId, store.taskId)
     imgUrl.value = r.data?.data?.url || ""
     const ar = await AnnotationAPI.getAnnotations(store.taskId, imageId)
     store.annotations = ar.data?.data || []
     lastSavedKey = annotKey(store.annotations)
     historyStack = [lastSavedKey]
     historyIndex = 0
+    // Lock this image for current user
+    AnnotationAPI.lockImage(imageId, store.taskId).catch(() => {})
     await nextTick()
     measureLabelRects()
   } catch { imgUrl.value = "" }
@@ -633,6 +635,10 @@ async function loadImg(imageId: number) {
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return
+  // Unlock current image
+  if (store.currentImage) {
+    AnnotationAPI.unlockImage(store.currentImage.id, store.taskId).catch(() => {})
+  }
   // 先保存当前图片的标注
   if (unsaved.value && store.currentImage) {
     if (saveTimer) clearTimeout(saveTimer)
@@ -733,6 +739,9 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey)
   window.removeEventListener("mouseup", onWindowMouseUp)
+  if (store.currentImage) {
+    AnnotationAPI.unlockImage(store.currentImage.id, store.taskId).catch(() => {})
+  }
 })
 </script>
 

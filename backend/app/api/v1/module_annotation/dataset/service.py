@@ -116,6 +116,7 @@ class DatasetService:
                     "width": img.width,
                     "height": img.height,
                     "status": status,
+                    "locked_by": img.locked_by,
                     "updated_by": {"id": rec.created_id, "name": updater_name} if rec and has_data else None,
                     "updated_time": update_time.isoformat() if update_time else None,
                 })
