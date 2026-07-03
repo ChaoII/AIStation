@@ -410,8 +410,8 @@
                       <rect v-for="h in ocrBoxHandles(ann)" :key="h.key"
                         :x="h.x - 4" :y="h.y - 4" width="8" height="8"
                         fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
-                        :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke"
-                        @mousedown.left.stop="onAnnMouseDown($event, ann)" />
+                        class="handle" vector-effect="non-scaling-stroke"
+                        @mousedown.left.stop="startOcrRectResize($event, ann, h.edges)" />
                     </template>
                   </template>
                 </template>
@@ -1182,6 +1182,7 @@ interface DragState {
     | "resize-r"
     | "resize-t"
     | "resize-b"
+    | "resize-ocr"
     | "tl"
     | "tr"
     | "bl"
@@ -2049,26 +2050,27 @@ function onMouseMove(e: MouseEvent) {
     const o = drag.value.orig;
     const ann = drag.value.ann;
     const h = drag.value.handle;
-    if (ann.type === "AxisAlignedBox" || (ann.type === "Ocr" && ann.source === "rect")) {
-      const ox1 = ann.type === "AxisAlignedBox" ? o.x1 : Math.min(...o.points.map((p: any) => p.x));
-      const oy1 = ann.type === "AxisAlignedBox" ? o.y1 : Math.min(...o.points.map((p: any) => p.y));
-      const ox2 = ann.type === "AxisAlignedBox" ? o.x2 : Math.max(...o.points.map((p: any) => p.x));
-      const oy2 = ann.type === "AxisAlignedBox" ? o.y2 : Math.max(...o.points.map((p: any) => p.y));
+    if (ann.type === "AxisAlignedBox") {
+      if (h.includes("l")) ann.x1 = Math.max(0, Math.min(o.x2 - 0.01, o.x1 + dx));
+      if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx));
+      if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy));
+      if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy));
+    } else if (drag.value.type === "resize-ocr" && ann.type === "Ocr") {
+      const ox1 = Math.min(...o.points.map((p: any) => p.x));
+      const oy1 = Math.min(...o.points.map((p: any) => p.y));
+      const ox2 = Math.max(...o.points.map((p: any) => p.x));
+      const oy2 = Math.max(...o.points.map((p: any) => p.y));
       let nx1 = ox1, ny1 = oy1, nx2 = ox2, ny2 = oy2;
       if (h.includes("l")) nx1 = Math.max(0, Math.min(ox2 - 0.01, ox1 + dx));
       if (h.includes("r")) nx2 = Math.min(1, Math.max(ox1 + 0.01, ox2 + dx));
       if (h.includes("t")) ny1 = Math.max(0, Math.min(oy2 - 0.01, oy1 + dy));
       if (h.includes("b")) ny2 = Math.min(1, Math.max(oy1 + 0.01, oy2 + dy));
-      if (ann.type === "AxisAlignedBox") {
-        ann.x1 = nx1; ann.y1 = ny1; ann.x2 = nx2; ann.y2 = ny2;
-      } else {
-        ann.points = [
+      ann.points = [
           { x: nx1, y: ny1 },
           { x: nx2, y: ny1 },
           { x: nx2, y: ny2 },
           { x: nx1, y: ny2 },
         ];
-      }
     } else if (ann.type === "RotatedBox" && pt) {
       const cos = Math.cos(o.angle);
       const sin = Math.sin(o.angle);
@@ -2321,6 +2323,19 @@ function onDblClick(_e: MouseEvent) {
 }
 
 // ===== 标注选中 / 拖拽 =====
+function startOcrRectResize(e: MouseEvent, ann: any, edges: string) {
+  e.stopPropagation();
+  store.selectedAnnotationId = ann.id;
+  drag.value = {
+    active: true,
+    type: "resize-ocr",
+    ann,
+    orig: JSON.parse(JSON.stringify(ann)),
+    startX: e.clientX,
+    startY: e.clientY,
+    handle: edges,
+  };
+}
 function onAnnMouseDown(e: MouseEvent, ann: any) {
   e.stopPropagation();
 
@@ -2451,14 +2466,14 @@ function ocrBoxHandles(ann: any) {
   const mx = (B.minX + B.maxX) / 2;
   const my = (B.minY + B.maxY) / 2;
   return [
-    { key: "resize-tl", x: B.minX, y: B.minY },
-    { key: "resize-tr", x: B.maxX, y: B.minY },
-    { key: "resize-bl", x: B.minX, y: B.maxY },
-    { key: "resize-br", x: B.maxX, y: B.maxY },
-    { key: "resize-l", x: B.minX, y: my },
-    { key: "resize-r", x: B.maxX, y: my },
-    { key: "resize-t", x: mx, y: B.minY },
-    { key: "resize-b", x: mx, y: B.maxY },
+    { key: "resize-tl", x: B.minX, y: B.minY, edges: "l,t" },
+    { key: "resize-tr", x: B.maxX, y: B.minY, edges: "r,t" },
+    { key: "resize-bl", x: B.minX, y: B.maxY, edges: "l,b" },
+    { key: "resize-br", x: B.maxX, y: B.maxY, edges: "r,b" },
+    { key: "resize-l", x: B.minX, y: my, edges: "l" },
+    { key: "resize-r", x: B.maxX, y: my, edges: "r" },
+    { key: "resize-t", x: mx, y: B.minY, edges: "t" },
+    { key: "resize-b", x: mx, y: B.maxY, edges: "b" },
   ];
 }
 
