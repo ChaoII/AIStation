@@ -2289,9 +2289,7 @@ function onDblClick(_e: MouseEvent) {
     });
     polyDrawingPoints.value = [];
   }
-  if (currentTool.value === "ocr" && !ocrRectMode.value && ocrDrawingPoints.value.length >= 3) {
-    nextTick(() => { ocrTextInputVisible.value = true; });
-  }
+
 }
 
 // ===== 标注选中 / 拖拽 =====
