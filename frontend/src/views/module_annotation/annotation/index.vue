@@ -1935,7 +1935,7 @@ function onMouseDown(e: MouseEvent) {
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
         if (dist <= 20) {
           ocrDrawingPoints.value.push({ ...first });
-          setTimeout(() => { ocrTextInputVisible.value = true; }, 200);
+          nextTick(() => requestAnimationFrame(() => { ocrTextInputVisible.value = true; }));
           return;
         }
       }
@@ -2250,7 +2250,7 @@ function onMouseUp(e: MouseEvent) {
           { x: x2, y: y2 },
           { x: x1, y: y2 },
         ];
-        setTimeout(() => { ocrTextInputVisible.value = true; }, 200);
+        nextTick(() => requestAnimationFrame(() => { ocrTextInputVisible.value = true; }));
       }
     }
     return;
