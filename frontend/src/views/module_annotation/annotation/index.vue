@@ -801,7 +801,17 @@
                 <span class="dot-color" :style="{ background: cls.color }" />
                 <span class="flex-1 text-sm">{{ cls.name }}</span>
                 <span class="text-xs text-gray-400">{{ clsCount(cls.id) }}</span>
-                <el-button text size="small" @click.stop="removeClass(cls.id)">×</el-button>
+                <el-popconfirm
+                  title="确定删除该类别？"
+                  confirm-button-text="删除"
+                  cancel-button-text="取消"
+                  @confirm="removeClass(cls.id)"
+                  width="180"
+                >
+                  <template #reference>
+                    <el-button text size="small" @click.stop>×</el-button>
+                  </template>
+                </el-popconfirm>
               </div>
               <div v-if="taskClasses.length === 0" class="empty-hint">请添加标签类别</div>
             </div>
