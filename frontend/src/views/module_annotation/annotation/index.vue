@@ -393,14 +393,36 @@
                 </g>
               </template>
               <template v-if="ann.type === 'Ocr'">
-                <polygon
-                  :points="ann.points.map((p: any) => `${p.x * cw},${p.y * ch}`).join(' ')"
-                  :stroke="clsColor(ann.class_id)"
-                  stroke-width="1.5"
-                  fill="rgba(255,255,0,0.08)"
-                  style="pointer-events: all"
-                  vector-effect="non-scaling-stroke"
-                />
+                <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-box'">
+                  <rect
+                    :x="B.minX"
+                    :y="B.minY"
+                    :width="B.maxX - B.minX"
+                    :height="B.maxY - B.minY"
+                    :stroke="clsColor(ann.class_id)"
+                    :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                    :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
+                    style="pointer-events: all"
+                    :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
+                    vector-effect="non-scaling-stroke"
+                  />
+                  <g v-if="store.selectedAnnotationId === ann.id">
+                    <rect
+                      v-for="h in ocrBoxHandles(ann)"
+                      :key="h.key"
+                      :x="h.x - 4"
+                      :y="h.y - 4"
+                      width="8"
+                      height="8"
+                      fill="#fff"
+                      stroke="#1a1a1a"
+                      stroke-width="1.5"
+                      :data-handle="h.key"
+                      class="handle"
+                      vector-effect="non-scaling-stroke"
+                    />
+                  </g>
+                </g>
                 <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.minX"
@@ -426,22 +448,6 @@
                     {{ ann.text || getCls(ann.class_id)?.name }}
                   </text>
                 </g>
-                <template v-if="store.selectedAnnotationId === ann.id">
-                  <rect
-                    v-for="(p, i) in ann.points"
-                    :key="i"
-                    :x="p.x * cw - 3"
-                    :y="p.y * ch - 3"
-                    width="6"
-                    height="6"
-                    fill="#fff"
-                    stroke="#1a1a1a"
-                    stroke-width="1.5"
-                    :data-handle="'ocr-vertex-' + i"
-                    class="handle"
-                    vector-effect="non-scaling-stroke"
-                  />
-                </template>
               </template>
               <template v-if="ann.type === 'Classification'">
                 <text
@@ -1975,6 +1981,11 @@ function onMouseMove(e: MouseEvent) {
       drag.value.ann.y1 = Math.max(0, Math.min(1, o.y1 + dy));
       drag.value.ann.x2 = Math.max(0, Math.min(1, o.x2 + dx));
       drag.value.ann.y2 = Math.max(0, Math.min(1, o.y2 + dy));
+    } else if (drag.value.ann.type === "Ocr") {
+      drag.value.ann.points = o.points.map((p: any) => ({
+        x: Math.max(0, Math.min(1, p.x + dx)),
+        y: Math.max(0, Math.min(1, p.y + dy)),
+      }));
     } else if (drag.value.ann.type === "RotatedBox") {
       drag.value.ann.cx = Math.max(0, Math.min(1, o.cx + dx));
       drag.value.ann.cy = Math.max(0, Math.min(1, o.cy + dy));
@@ -2052,6 +2063,21 @@ function onMouseMove(e: MouseEvent) {
       if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx));
       if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy));
       if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy));
+    } else if (ann.type === "Ocr") {
+      let nx1 = Math.min(...o.points.map((p: any) => p.x));
+      let ny1 = Math.min(...o.points.map((p: any) => p.y));
+      let nx2 = Math.max(...o.points.map((p: any) => p.x));
+      let ny2 = Math.max(...o.points.map((p: any) => p.y));
+      if (h.includes("l")) nx1 = Math.max(0, Math.min(nx2 - 0.01, nx1 + dx));
+      if (h.includes("r")) nx2 = Math.min(1, Math.max(nx1 + 0.01, nx2 + dx));
+      if (h.includes("t")) ny1 = Math.max(0, Math.min(ny2 - 0.01, ny1 + dy));
+      if (h.includes("b")) ny2 = Math.min(1, Math.max(ny1 + 0.01, ny2 + dy));
+      ann.points = [
+        { x: nx1, y: ny1 },
+        { x: nx2, y: ny1 },
+        { x: nx2, y: ny2 },
+        { x: nx1, y: ny2 },
+      ];
     } else if (ann.type === "RotatedBox" && pt) {
       const cos = Math.cos(o.angle);
       const sin = Math.sin(o.angle);
@@ -2426,6 +2452,21 @@ function boxHandles(ann: any) {
     { key: "resize-r", x: x2, y: my },
     { key: "resize-t", x: mx, y: y1 },
     { key: "resize-b", x: mx, y: y2 },
+  ];
+}
+function ocrBoxHandles(ann: any) {
+  const B = ocrBBox(ann);
+  const mx = (B.minX + B.maxX) / 2;
+  const my = (B.minY + B.maxY) / 2;
+  return [
+    { key: "resize-tl", x: B.minX, y: B.minY },
+    { key: "resize-tr", x: B.maxX, y: B.minY },
+    { key: "resize-bl", x: B.minX, y: B.maxY },
+    { key: "resize-br", x: B.maxX, y: B.maxY },
+    { key: "resize-l", x: B.minX, y: my },
+    { key: "resize-r", x: B.maxX, y: my },
+    { key: "resize-t", x: mx, y: B.minY },
+    { key: "resize-b", x: mx, y: B.maxY },
   ];
 }
 
