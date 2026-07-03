@@ -659,12 +659,11 @@
               />
             </template>
             <template v-if="currentTool === 'ocr' && ocrDrawingPoints.length > 0">
-              <polygon
+              <polyline
                 :points="ocrDrawingPoints.map((p) => `${p.x * cw},${p.y * ch}`).join(' ')"
                 :stroke="cxColor"
                 stroke-width="1.5"
-                stroke-dasharray="4,3"
-                fill="rgba(59,130,246,0.06)"
+                fill="none"
               />
               <circle
                 v-for="(p, i) in ocrDrawingPoints"
@@ -684,6 +683,27 @@
               >
                 {{ i + 1 }}
               </text>
+              <!-- 靠近第一个点时鼠标位置显示大圆提示 -->
+              <circle
+                v-if="ocrNearFirst"
+                :cx="cursorX"
+                :cy="cursorY"
+                r="8"
+                fill="none"
+                :stroke="cxColor"
+                stroke-width="2"
+              />
+              <line
+                v-if="cursorX && cursorY && ocrDrawingPoints.length > 0"
+                :x1="ocrDrawingPoints[ocrDrawingPoints.length - 1].x * cw"
+                :y1="ocrDrawingPoints[ocrDrawingPoints.length - 1].y * ch"
+                :x2="cursorX"
+                :y2="cursorY"
+                :stroke="cxColor"
+                stroke-width="1.5"
+                stroke-dasharray="4,3"
+                opacity="0.6"
+              />
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
@@ -1334,6 +1354,11 @@ const polyNearFirst = computed(() => {
   const fp = polyDrawingPoints.value[0];
   return Math.hypot(cursorX.value - fp.x * cw.value, cursorY.value - fp.y * ch.value) < 20;
 });
+const ocrNearFirst = computed(() => {
+  if (ocrDrawingPoints.value.length < 3 || !cursorX.value || !cursorY.value) return false;
+  const fp = ocrDrawingPoints.value[0];
+  return Math.hypot(cursorX.value - fp.x * cw.value, cursorY.value - fp.y * ch.value) < 20;
+});
 
 const cxColor = computed(() => clsColor(selectedClassId.value) || "#3b82f6");
 const cxStyle = computed(() => ({ background: cxColor.value + "80" }));
@@ -1620,7 +1645,7 @@ function ocrBBox(ann: any) {
 }
 
 function confirmOcrText() {
-  if (ocrTextInput.value.trim() && ocrDrawingPoints.value.length === 4) {
+  if (ocrTextInput.value.trim() && ocrDrawingPoints.value.length >= 3) {
     store.annotations.push({
       id: crypto.randomUUID(),
       type: "Ocr",
@@ -1896,16 +1921,19 @@ function onMouseDown(e: MouseEvent) {
       showCrosshair.value = true;
       updCrosshair(e);
     } else {
-      if (ocrDrawingPoints.value.length >= 2) {
+      if (ocrDrawingPoints.value.length >= 3) {
         const first = ocrDrawingPoints.value[0];
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
-        if (dist < 20) {
+        if (dist <= 20) {
           ocrTextInputVisible.value = true;
           return;
         }
       }
       if (ocrDrawingPoints.value.length >= 4) return;
       ocrDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value });
+      if (ocrDrawingPoints.value.length === 4) {
+        ocrTextInputVisible.value = true;
+      }
     }
     return;
   }
@@ -2264,6 +2292,9 @@ function onDblClick(_e: MouseEvent) {
       points: polyDrawingPoints.value.map((p) => ({ x: p.x, y: p.y })),
     });
     polyDrawingPoints.value = [];
+  }
+  if (currentTool.value === "ocr" && !ocrRectMode.value && ocrDrawingPoints.value.length >= 3) {
+    ocrTextInputVisible.value = true;
   }
 }
 
