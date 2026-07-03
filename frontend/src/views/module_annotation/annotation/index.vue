@@ -1921,15 +1921,16 @@ function onMouseDown(e: MouseEvent) {
       showCrosshair.value = true;
       updCrosshair(e);
     } else {
-      if (ocrDrawingPoints.value.length >= 4) return;
-      ocrDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value });
       if (ocrDrawingPoints.value.length >= 3) {
         const first = ocrDrawingPoints.value[0];
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
         if (dist <= 20) {
-          nextTick(() => { ocrTextInputVisible.value = true; });
+          setTimeout(() => { ocrTextInputVisible.value = true; }, 200);
+          return;
         }
       }
+      if (ocrDrawingPoints.value.length >= 4) return;
+      ocrDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value });
     }
     return;
   }
@@ -2239,7 +2240,7 @@ function onMouseUp(e: MouseEvent) {
           { x: x2, y: y2 },
           { x: x1, y: y2 },
         ];
-        nextTick(() => { ocrTextInputVisible.value = true; });
+        setTimeout(() => { ocrTextInputVisible.value = true; }, 200);
       }
     }
     return;
