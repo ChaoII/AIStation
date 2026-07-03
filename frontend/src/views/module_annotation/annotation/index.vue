@@ -1927,7 +1927,7 @@ function onMouseDown(e: MouseEvent) {
         const first = ocrDrawingPoints.value[0];
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
         if (dist <= 20 || ocrDrawingPoints.value.length === 4) {
-          ocrTextInputVisible.value = true;
+          nextTick(() => { ocrTextInputVisible.value = true; });
         }
       }
     }
@@ -2239,7 +2239,7 @@ function onMouseUp(e: MouseEvent) {
           { x: x2, y: y2 },
           { x: x1, y: y2 },
         ];
-        ocrTextInputVisible.value = true;
+        nextTick(() => { ocrTextInputVisible.value = true; });
       }
     }
     return;
@@ -2290,7 +2290,7 @@ function onDblClick(_e: MouseEvent) {
     polyDrawingPoints.value = [];
   }
   if (currentTool.value === "ocr" && !ocrRectMode.value && ocrDrawingPoints.value.length >= 3) {
-    ocrTextInputVisible.value = true;
+    nextTick(() => { ocrTextInputVisible.value = true; });
   }
 }
 
