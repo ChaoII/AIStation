@@ -313,18 +313,25 @@
                 </template>
               </template>
               <template v-if="ann.type === 'Keypoint'">
-                <rect
-                  v-if="ann.bounding_box"
+                <!-- Bounding box -->
+                <rect v-if="ann.bounding_box"
                   :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2"
                   :y="ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2"
-                  :width="ann.bounding_box.width * cw"
-                  :height="ann.bounding_box.height * ch"
+                  :width="ann.bounding_box.width * cw" :height="ann.bounding_box.height * ch"
                   :stroke="clsColor(ann.class_id)"
-                  stroke-width="1.5"
-                  fill="rgba(0,0,0,0.04)"
-                  style="pointer-events: all"
-                  vector-effect="non-scaling-stroke"
-                />
+                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                  fill="rgba(0,0,0,0.04)" style="pointer-events:all" vector-effect="non-scaling-stroke" />
+                <!-- Bounding box handles when selected -->
+                <template v-if="store.selectedAnnotationId === ann.id && ann.bounding_box">
+                  <rect v-for="hkey in ['tl','tr','bl','br','tc','bc','ml','mr']" :key="hkey"
+                    :x="kpRbHandlePos(ann.bounding_box, hkey, cw, ch).x - 4"
+                    :y="kpRbHandlePos(ann.bounding_box, hkey, cw, ch).y - 4"
+                    width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                    :data-handle="hkey" class="handle" vector-effect="non-scaling-stroke" />
+                  <rect :x="ann.bounding_box.cx * cw - 4" :y="ann.bounding_box.cy * ch - 4"
+                    width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                    data-handle="move" class="handle" vector-effect="non-scaling-stroke" />
+                </template>
                 <g v-for="(kp, i) in ann.keypoints" :key="i">
                   <circle
                     :cx="kp.x * cw"
@@ -901,12 +908,21 @@
       </el-button>
     </footer>
     <!-- 添加类别弹窗 -->
-    <el-dialog v-model="showClassModal" title="添加类别" width="320px">
+    <el-dialog v-model="showClassModal" title="添加类别" width="380px">
       <el-form :model="clsForm" label-width="60px">
         <el-form-item label="名称">
           <el-input v-model="clsForm.name" placeholder="类别名称" />
         </el-form-item>
         <el-form-item label="颜色"><el-color-picker v-model="clsForm.color" /></el-form-item>
+        <template v-if="taskType === 'keypoint'">
+          <el-form-item label="关键点数">
+            <el-input-number v-model="kpCount" :min="1" :max="50" @change="syncKpForm" />
+          </el-form-item>
+          <el-form-item v-for="(_, i) in kpCount" :key="i" :label="`点${i+1}`">
+            <el-input v-model="clsForm.kpNames[i]" placeholder="名称" style="width:120px;margin-right:8px" />
+            <el-color-picker v-model="clsForm.kpColors[i]" />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="showClassModal = false">取消</el-button>
@@ -1020,7 +1036,7 @@ const task = ref<any>(null);
 const taskClasses = ref<any[]>([]);
 const showClassModal = ref(false);
 const showSettings = ref(false);
-const clsForm = ref({ name: "", color: "#409eff" });
+const clsForm = ref({ name: "", color: "#409eff", kpNames: [] as string[], kpColors: [] as string[] })
 
 // ---- 标注工作台设置（持久化到 localStorage）----
 const settingsKey = "annotation-workbench-settings";
@@ -1059,6 +1075,16 @@ interface DragState {
     | "pan"
     | "rotate"
     | "poly-vertex"
+    | "kp-vertex"
+    | "kp-move"
+    | "kp-resize-tl"
+    | "kp-resize-tr"
+    | "kp-resize-bl"
+    | "kp-resize-br"
+    | "kp-resize-tc"
+    | "kp-resize-bc"
+    | "kp-resize-ml"
+    | "kp-resize-mr"
     | "resize-tl"
     | "resize-tr"
     | "resize-bl"
@@ -1144,6 +1170,12 @@ const kpNames = ref<string[]>(["top_left", "top_right", "bottom_right", "bottom_
 const kpBoxPreview = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const pendingKpVisibility = ref(2);
 let kpBoxDragStart: { x: number; y: number } | null = null;
+const kpCount = ref(4)
+function syncKpForm() {
+  while (clsForm.value.kpNames.length < kpCount.value) { clsForm.value.kpNames.push(""); clsForm.value.kpColors.push("#409eff") }
+  clsForm.value.kpNames = clsForm.value.kpNames.slice(0, kpCount.value)
+  clsForm.value.kpColors = clsForm.value.kpColors.slice(0, kpCount.value)
+}
 
 // ---- OCR ----
 const ocrDrawingPoints = ref<{ x: number; y: number }[]>([]);
@@ -1368,8 +1400,13 @@ function labelWidthForClass(classId: number): number {
 function addClass() {
   if (!clsForm.value.name.trim()) return;
   const id = taskClasses.value.length > 0 ? Math.max(...taskClasses.value.map((c) => c.id)) + 1 : 0;
-  taskClasses.value.push({ id, name: clsForm.value.name, color: clsForm.value.color });
-  clsForm.value = { name: "", color: "#409eff" };
+  const cls: any = { id, name: clsForm.value.name, color: clsForm.value.color }
+  if (taskType.value === "keypoint" && clsForm.value.kpNames.some(n => n.trim())) {
+    cls.keypoint_names = clsForm.value.kpNames.filter(n => n.trim())
+    cls.keypoint_colors = clsForm.value.kpColors.slice(0, cls.keypoint_names.length)
+  }
+  taskClasses.value.push(cls)
+  clsForm.value = { name: "", color: "#409eff", kpNames: [], kpColors: [] };
   showClassModal.value = false;
   saveClassesToTask();
 }
@@ -1451,6 +1488,21 @@ function rbRotateHandlePos(ann: any, cw_val: number, ch_val: number) {
     x: ann.cx * cw_val + lx * cos - ly * sin,
     y: ann.cy * ch_val + lx * sin + ly * cos,
   };
+}
+
+function kpRbHandlePos(bb: any, h: string, cw: number, ch: number): { x: number; y: number } {
+  const cos = Math.cos(bb.angle); const sin = Math.sin(bb.angle)
+  const hw = (bb.width * cw) / 2; const hh = (bb.height * ch) / 2
+  let lx = 0, ly = 0
+  if (h === "tl") { lx = -hw; ly = -hh }
+  else if (h === "tc") { lx = 0; ly = -hh }
+  else if (h === "tr") { lx = hw; ly = -hh }
+  else if (h === "mr") { lx = hw; ly = 0 }
+  else if (h === "br") { lx = hw; ly = hh }
+  else if (h === "bc") { lx = 0; ly = hh }
+  else if (h === "bl") { lx = -hw; ly = hh }
+  else if (h === "ml") { lx = -hw; ly = 0 }
+  return { x: bb.cx * cw + lx * cos - ly * sin, y: bb.cy * ch + lx * sin + ly * cos }
 }
 
 function polygonPath(ann: any): string {
@@ -1712,7 +1764,12 @@ function onMouseDown(e: MouseEvent) {
     const norm = { x: pt.x / cw.value, y: pt.y / ch.value };
 
     if (kpPhase.value === null) {
-      kpNames.value = ["top_left", "top_right", "bottom_right", "bottom_left"];
+      const cls = taskClasses.value.find(c => c.id === selectedClassId.value)
+      if (cls?.keypoint_names?.length) {
+        kpNames.value = cls.keypoint_names
+      } else {
+        kpNames.value = ["top_left", "top_right", "bottom_right", "bottom_left"]
+      }
       kpPhase.value = "corners";
       kpCorners.value = [
         { x: norm.x, y: norm.y, name: kpNames.value[0], visibility: pendingKpVisibility.value },
@@ -1792,8 +1849,8 @@ function onMouseMove(e: MouseEvent) {
     return;
   }
 
-  // ---- Rotated box move ----
-  if (drag.value.active && drag.value.type === "move" && drag.value.ann) {
+  // ---- Rotated box / Keypoint move ----
+  if (drag.value.active && (drag.value.type === "move" || drag.value.type === "kp-move") && drag.value.ann) {
     const dx = (e.clientX - drag.value.startX) / dw.value;
     const dy = (e.clientY - drag.value.startY) / dh.value;
     const o = drag.value.orig;
@@ -1810,6 +1867,17 @@ function onMouseMove(e: MouseEvent) {
         x: Math.max(0, Math.min(1, p.x + dx)),
         y: Math.max(0, Math.min(1, p.y + dy)),
       }));
+    } else if (drag.value.ann.type === "Keypoint" && drag.value.type === "kp-move") {
+      const bb = drag.value.ann.bounding_box; const bbO = o.bounding_box
+      if (bb && bbO) {
+        bb.cx = Math.max(0, Math.min(1, bbO.cx + dx))
+        bb.cy = Math.max(0, Math.min(1, bbO.cy + dy))
+        drag.value.ann.keypoints = o.keypoints.map((kp: any) => {
+          const newX = Math.max(0, Math.min(1, kp.x + dx))
+          const newY = Math.max(0, Math.min(1, kp.y + dy))
+          return { ...kp, x: newX, y: newY }
+        })
+      }
     }
     return;
   }
@@ -1828,6 +1896,32 @@ function onMouseMove(e: MouseEvent) {
       );
     }
     return;
+  }
+
+  // ---- Keypoint vertex drag ----
+  if (drag.value.active && drag.value.type === "kp-vertex" && drag.value.ann?.type === "Keypoint") {
+    const dx = (e.clientX - drag.value.startX) / dw.value
+    const dy = (e.clientY - drag.value.startY) / dh.value
+    const o = drag.value.orig; const idx = drag.value.polyVertexIndex!
+    const ann = drag.value.ann
+    if (idx !== undefined && o.keypoints?.[idx]) {
+      let newX = o.keypoints[idx].x + dx
+      let newY = o.keypoints[idx].y + dy
+      const bb = ann.bounding_box
+      if (bb) {
+        const aspect = ch.value / cw.value
+        const cos = Math.cos(bb.angle); const sin = Math.sin(bb.angle)
+        const dx2 = newX - bb.cx; const dy2 = newY - bb.cy
+        const localX = Math.max(-bb.width/2, Math.min(bb.width/2, dx2 * cos + dy2 * aspect * sin))
+        const localY = Math.max(-bb.height/2, Math.min(bb.height/2, -dx2/aspect * sin + dy2 * cos))
+        newX = bb.cx + localX * cos - localY/aspect * sin
+        newY = bb.cy + localX * aspect * sin + localY * cos
+      }
+      ann.keypoints = o.keypoints.map((kp: any, i: number) =>
+        i === idx ? { ...kp, x: Math.max(0, Math.min(1, newX)), y: Math.max(0, Math.min(1, newY)) } : kp
+      )
+    }
+    return
   }
 
   // ---- Resize annotation ----
@@ -1879,6 +1973,30 @@ function onMouseMove(e: MouseEvent) {
     const curAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
     drag.value.ann.angle = drag.value.orig.angle + (curAngle - prevAngle);
     return;
+  }
+
+  // ---- Keypoint bbox resize ----
+  if (drag.value.active && drag.value.type.startsWith("kp-resize-") && drag.value.ann?.type === "Keypoint") {
+    const dx = (e.clientX - drag.value.startX) / dw.value
+    const dy = (e.clientY - drag.value.startY) / dh.value
+    const o = drag.value.orig; const ann = drag.value.ann; const h = drag.value.handle
+    const bb = ann.bounding_box; const bbO = o.bounding_box
+    if (!bb || !bbO) return
+    const aspect = ch.value / cw.value
+    const cos = Math.cos(bbO.angle); const sin = Math.sin(bbO.angle)
+    const rawW = dx * cos + dy * sin
+    const rawH = -dx * sin + dy * cos
+    const wSign = (h.includes("l") && !h.includes("r")) ? -1 : (h.includes("r") && !h.includes("l")) ? 1 : 0
+    const hSign = (h.includes("t") && !h.includes("b")) ? -1 : (h.includes("b") && !h.includes("t")) ? 1 : 0
+    bb.width = Math.max(0.001, bbO.width + wSign * rawW)
+    bb.height = Math.max(0.001, bbO.height + hSign * rawH)
+    const dcx = (bb.width - bbO.width) / 2 * cos * wSign
+    const dcy = (bb.width - bbO.width) / 2 * sin * wSign
+    const dcx2 = -(bb.height - bbO.height) / 2 * sin * hSign
+    const dcy2 = (bb.height - bbO.height) / 2 * cos * hSign
+    bb.cx = Math.max(0, Math.min(1, bbO.cx + dcx + dcx2))
+    bb.cy = Math.max(0, Math.min(1, bbO.cy + dcy + dcy2))
+    return
   }
 
   // ---- Box drawing preview ----
@@ -2018,7 +2136,10 @@ function onMouseUp(e: MouseEvent) {
       (drag.value.type === "move" ||
         drag.value.type.startsWith("resize-") ||
         drag.value.type === "poly-vertex" ||
-        drag.value.type === "rotate")
+        drag.value.type === "rotate" ||
+        drag.value.type === "kp-vertex" ||
+        drag.value.type === "kp-move" ||
+        drag.value.type.startsWith("kp-resize-"))
     ) {
       markUnsaved();
       pushHistory();
@@ -2133,6 +2254,28 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
           };
           return;
         }
+      }
+    }
+
+    // ---- Keypoint handles ----
+    if (handle) {
+      if (handle.startsWith("kp-")) {
+        const idx = parseInt(handle.replace("kp-", ""), 10)
+        if (!isNaN(idx) && ann.type === "Keypoint") {
+          store.selectedAnnotationId = ann.id
+          drag.value = { active: true, type: "kp-vertex", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "", polyVertexIndex: idx }
+          return
+        }
+      }
+      if (handle === "move" && ann.type === "Keypoint") {
+        store.selectedAnnotationId = ann.id
+        drag.value = { active: true, type: "kp-move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
+        return
+      }
+      if (["tl","tr","bl","br","tc","bc","ml","mr"].includes(handle) && ann.type === "Keypoint") {
+        store.selectedAnnotationId = ann.id
+        drag.value = { active: true, type: ("kp-resize-" + handle) as any, ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
+        return
       }
     }
 
