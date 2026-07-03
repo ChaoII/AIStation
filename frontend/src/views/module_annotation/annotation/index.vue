@@ -1661,6 +1661,7 @@ function confirmOcrText() {
     ocrDrawingPoints.value = [];
     ocrTextInput.value = "";
     ocrTextInputVisible.value = false;
+    nextTick(() => measureLabelRects());
   }
 }
 
@@ -2325,6 +2326,7 @@ function onDblClick(_e: MouseEvent) {
 // ===== 标注选中 / 拖拽 =====
 function startOcrRectResize(e: MouseEvent, ann: any, edges: string) {
   e.stopPropagation();
+  e.preventDefault();
   store.selectedAnnotationId = ann.id;
   drag.value = {
     active: true,
