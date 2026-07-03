@@ -2048,28 +2048,26 @@ function onMouseMove(e: MouseEvent) {
     const o = drag.value.orig;
     const ann = drag.value.ann;
     const h = drag.value.handle;
-    if (ann.type === "AxisAlignedBox") {
-      if (h.includes("l")) ann.x1 = Math.max(0, Math.min(o.x2 - 0.01, o.x1 + dx));
-      if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx));
-      if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy));
-      if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy));
-    } else if (ann.type === "Ocr" && ann.source === "rect") {
-      const ox1 = Math.min(...o.points.map((p: any) => p.x));
-      const oy1 = Math.min(...o.points.map((p: any) => p.y));
-      const ox2 = Math.max(...o.points.map((p: any) => p.x));
-      const oy2 = Math.max(...o.points.map((p: any) => p.y));
+    if (ann.type === "AxisAlignedBox" || (ann.type === "Ocr" && ann.source === "rect")) {
+      const ox1 = ann.type === "AxisAlignedBox" ? o.x1 : Math.min(...o.points.map((p: any) => p.x));
+      const oy1 = ann.type === "AxisAlignedBox" ? o.y1 : Math.min(...o.points.map((p: any) => p.y));
+      const ox2 = ann.type === "AxisAlignedBox" ? o.x2 : Math.max(...o.points.map((p: any) => p.x));
+      const oy2 = ann.type === "AxisAlignedBox" ? o.y2 : Math.max(...o.points.map((p: any) => p.y));
       let nx1 = ox1, ny1 = oy1, nx2 = ox2, ny2 = oy2;
       if (h.includes("l")) nx1 = Math.max(0, Math.min(ox2 - 0.01, ox1 + dx));
       if (h.includes("r")) nx2 = Math.min(1, Math.max(ox1 + 0.01, ox2 + dx));
       if (h.includes("t")) ny1 = Math.max(0, Math.min(oy2 - 0.01, oy1 + dy));
       if (h.includes("b")) ny2 = Math.min(1, Math.max(oy1 + 0.01, oy2 + dy));
-      ann.x1 = nx1; ann.y1 = ny1; ann.x2 = nx2; ann.y2 = ny2;
-      ann.points = [
-        { x: nx1, y: ny1 },
-        { x: nx2, y: ny1 },
-        { x: nx2, y: ny2 },
-        { x: nx1, y: ny2 },
-      ];
+      if (ann.type === "AxisAlignedBox") {
+        ann.x1 = nx1; ann.y1 = ny1; ann.x2 = nx2; ann.y2 = ny2;
+      } else {
+        ann.points = [
+          { x: nx1, y: ny1 },
+          { x: nx2, y: ny1 },
+          { x: nx2, y: ny2 },
+          { x: nx1, y: ny2 },
+        ];
+      }
     } else if (ann.type === "RotatedBox" && pt) {
       const cos = Math.cos(o.angle);
       const sin = Math.sin(o.angle);
