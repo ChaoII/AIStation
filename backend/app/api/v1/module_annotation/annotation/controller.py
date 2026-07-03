@@ -6,10 +6,10 @@ from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .schema import AnnotationSaveSchema
-from .service import AnnotationService
 from ..dataset.service import DatasetService
 from ..task.service import TaskService
+from .schema import AnnotationSaveSchema
+from .service import AnnotationService
 
 AnnotationRouter = APIRouter(route_class=OperationLogRoute, prefix="/anno", tags=["数据标注-标注操作"])
 

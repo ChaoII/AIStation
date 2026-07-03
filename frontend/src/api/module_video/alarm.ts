@@ -21,7 +21,11 @@ export function getAlarmRecordList(data?: any) {
 }
 
 export function getRealtimeAlarms() {
-  return request({ url: "/video/alarm/record/realtime", method: "get", headers: { _silent: "true" } });
+  return request({
+    url: "/video/alarm/record/realtime",
+    method: "get",
+    headers: { _silent: "true" },
+  });
 }
 
 export function confirmAlarm(id: number, status: string) {

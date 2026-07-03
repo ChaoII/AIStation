@@ -83,28 +83,16 @@
               align="center"
             >
               <template #default="scope">
-                <el-tag
-                  v-if="scope.row.reachable === true"
-                  type="success"
-                  size="small"
-                >
-                  <span class="status-dot" style="background:#67c23a" />
+                <el-tag v-if="scope.row.reachable === true" type="success" size="small">
+                  <span class="status-dot" style="background: #67c23a" />
                   在线
                 </el-tag>
-                <el-tag
-                  v-else-if="scope.row.reachable === false"
-                  type="danger"
-                  size="small"
-                >
-                  <span class="status-dot" style="background:#f56c6c" />
+                <el-tag v-else-if="scope.row.reachable === false" type="danger" size="small">
+                  <span class="status-dot" style="background: #f56c6c" />
                   离线
                 </el-tag>
-                <el-tag
-                  v-else
-                  type="info"
-                  size="small"
-                >
-                  <span class="status-dot" style="background:#909399" />
+                <el-tag v-else type="info" size="small">
+                  <span class="status-dot" style="background: #909399" />
                   未推流
                 </el-tag>
               </template>

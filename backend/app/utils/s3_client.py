@@ -1,5 +1,4 @@
 import io
-from datetime import timedelta
 from typing import BinaryIO
 
 import boto3

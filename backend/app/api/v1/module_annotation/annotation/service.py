@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from sqlalchemy import select, desc
+
+from sqlalchemy import desc, select
 
 from app.core.database import async_db_session
 from app.core.logger import log
@@ -43,7 +44,7 @@ class AnnotationService:
             # Verify lock
             img = await db.get(AnnotationImageModel, image_id)
             if img and img.locked_by and img.locked_by != auth.user.id:
-                raise ValueError(f"图片已被其他用户锁定")
+                raise ValueError("图片已被其他用户锁定")
 
             result = await db.execute(
                 select(AnnotationRecordModel)

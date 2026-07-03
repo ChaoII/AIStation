@@ -84,7 +84,6 @@
 </template>
 
 <script setup lang="ts">
-
 import CommonWrapper from "@/components/CommonWrapper/index.vue";
 import ThemeSwitch from "@/components/ThemeSwitch/index.vue";
 import { useConfigStore } from "@/store";

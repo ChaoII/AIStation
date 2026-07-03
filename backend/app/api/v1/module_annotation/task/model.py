@@ -1,12 +1,12 @@
-from datetime import datetime
 import enum
+from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.base_model import ModelMixin, UserMixin
 from app.api.v1.module_annotation.dataset.model import AnnotationType
+from app.core.base_model import ModelMixin, UserMixin
 
 
 class TaskStatus(str, enum.Enum):

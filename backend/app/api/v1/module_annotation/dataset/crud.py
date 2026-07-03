@@ -2,7 +2,7 @@ from typing import Any
 
 from app.core.base_crud import CRUDBase
 
-from .model import DatasetModel, AnnotationImageModel
+from .model import AnnotationImageModel, DatasetModel
 from .schema import DatasetCreateSchema, DatasetUpdateSchema
 
 

@@ -7,8 +7,8 @@ from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
-from .service import TaskService
 from .schema import TaskCreateSchema, TaskOutSchema, TaskUpdateSchema
+from .service import TaskService
 
 TaskRouter = APIRouter(route_class=OperationLogRoute, prefix="/task", tags=["数据标注-任务"])
 
@@ -18,8 +18,9 @@ async def get_task_list(
     page: PaginationQueryParam = Depends(),
     auth: AuthSchema = Depends(AuthPermission(["annotation:task:query"])),
 ) -> JSONResponse:
-    from .crud import TaskCRUD
     from app.core.database import async_db_session
+
+    from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
     offset = (page.page_no - 1) * page.page_size
     result = await crud.page(
@@ -29,8 +30,9 @@ async def get_task_list(
     # Enrich each task with per-task calculated progress and assignee names
     if result.get("items"):
         async with async_db_session() as db:
-            from app.api.v1.module_system.user.model import UserModel
             from sqlalchemy import select
+
+            from app.api.v1.module_system.user.model import UserModel
             for item in result["items"]:
                 prog = await TaskService._calc_progress(db, item["id"], item["dataset_id"])
                 item["progress"] = prog["progress"]

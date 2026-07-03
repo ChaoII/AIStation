@@ -181,8 +181,17 @@
           <el-input v-model="formData.name" placeholder="请输入数据集名称" :maxlength="100" />
         </el-form-item>
         <el-form-item label="标注类型" prop="annotation_type">
-          <el-select v-model="formData.annotation_type" placeholder="请选择标注类型" style="width:100%">
-            <el-option v-for="opt in annotationTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          <el-select
+            v-model="formData.annotation_type"
+            placeholder="请选择标注类型"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="opt in annotationTypeOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="描述" prop="description">
@@ -228,7 +237,10 @@
         list-type="picture-card"
       >
         <el-icon size="32"><Plus /></el-icon>
-        <div class="el-upload__text">拖拽文件到此处，或<em>点击选择</em></div>
+        <div class="el-upload__text">
+          拖拽文件到此处，或
+          <em>点击选择</em>
+        </div>
       </el-upload>
       <template #footer>
         <el-button @click="handleCloseUpload">取消</el-button>
@@ -367,7 +379,7 @@ const annotationTypeOptions = [
   { value: "keypoint", label: "关键点" },
   { value: "ocr", label: "OCR文本" },
   { value: "classification", label: "图像分类" },
-]
+];
 
 const formData = reactive({
   id: undefined as number | undefined,
@@ -429,9 +441,17 @@ async function handleSubmit() {
       const id = formData.id;
       try {
         if (id) {
-          await AnnotationAPI.updateDataset(id, { name: formData.name, annotation_type: formData.annotation_type, description: formData.description });
+          await AnnotationAPI.updateDataset(id, {
+            name: formData.name,
+            annotation_type: formData.annotation_type,
+            description: formData.description,
+          });
         } else {
-          await AnnotationAPI.createDataset({ name: formData.name, annotation_type: formData.annotation_type, description: formData.description });
+          await AnnotationAPI.createDataset({
+            name: formData.name,
+            annotation_type: formData.annotation_type,
+            description: formData.description,
+          });
         }
         dialogVisible.visible = false;
         await resetForm();

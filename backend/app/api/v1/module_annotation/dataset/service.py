@@ -1,15 +1,14 @@
-import os
 import uuid
 from pathlib import Path
 from typing import Any
-from sqlalchemy import select, func, desc, and_
+
+from sqlalchemy import and_, desc, func, select
 
 from app.core.database import async_db_session
-from app.core.logger import log
 from app.utils.s3_client import s3_client
 
-from .crud import DatasetCRUD, ImageCRUD
-from .model import DatasetModel, AnnotationImageModel, ImageStatus
+from .crud import DatasetCRUD
+from .model import AnnotationImageModel, DatasetModel, ImageStatus
 from .schema import DatasetCreateSchema
 
 
@@ -24,9 +23,10 @@ class DatasetService:
 
     @classmethod
     async def upload_images(cls, dataset_id: int, files: list, auth) -> list[dict]:
-        from PIL import Image
         import io
-        from sqlalchemy import func
+
+        from PIL import Image
+
         from .model import AnnotationImageModel
 
         async with async_db_session.begin() as db:
@@ -79,8 +79,9 @@ class DatasetService:
                 return images
 
             # For each image, check if it has annotations for this task
-            from ..annotation.model import AnnotationRecordModel
             from app.api.v1.module_system.user.model import UserModel
+
+            from ..annotation.model import AnnotationRecordModel
 
             items = []
             for img in images:
@@ -96,7 +97,7 @@ class DatasetService:
                 rec = latest.scalar_one_or_none()
 
                 has_data = rec and rec.annotation_data and (
-                    (isinstance(rec.annotation_data, list) and len(rec.annotation_data) > 0)
+                    isinstance(rec.annotation_data, list) and len(rec.annotation_data) > 0
                 )
                 status = "annotated" if has_data else "unannotated"
 

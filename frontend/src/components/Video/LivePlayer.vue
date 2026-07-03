@@ -33,10 +33,15 @@ import { ref, computed, onBeforeUnmount, watch, onMounted, nextTick } from "vue"
 import DetectionOverlay from "./DetectionOverlay.vue";
 
 interface BBox {
-  x: number; y: number; width: number; height: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 interface Detection {
-  label: string; confidence: number; bbox: BBox;
+  label: string;
+  confidence: number;
+  bbox: BBox;
 }
 
 const props = withDefaults(

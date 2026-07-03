@@ -1,15 +1,10 @@
-import json
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from app.api.v1.module_system.auth.schema import AuthSchema
-from app.common.response import SuccessResponse
-from app.core.dependencies import AuthPermission
 from app.core.logger import log
 from app.core.router_class import OperationLogRoute
 
 from ..dataset.crud import image_crud
-from ..dataset.model import ImageStatus
 
 CollaborationRouter = APIRouter(route_class=OperationLogRoute, prefix="/collab", tags=["数据标注-实时协作"])
 

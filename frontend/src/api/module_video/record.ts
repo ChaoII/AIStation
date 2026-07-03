@@ -33,7 +33,11 @@ export function getRecordFilePlayUrl(id: number) {
 }
 
 export function getRecordFileThumbnail(id: number) {
-  return request({ url: `/video/record/file/${id}/thumbnail`, method: "get", responseType: "blob" });
+  return request({
+    url: `/video/record/file/${id}/thumbnail`,
+    method: "get",
+    responseType: "blob",
+  });
 }
 
 export function getRecordLogList(data?: any) {

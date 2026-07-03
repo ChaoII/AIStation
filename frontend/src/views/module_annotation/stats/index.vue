@@ -65,7 +65,9 @@ const stats = reactive({
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 
   &::before {
     position: absolute;

@@ -116,7 +116,11 @@
                   {{ scope.row.status === "RUNNING" ? "运行中" : "已停止" }}
                 </el-tag>
                 <span v-if="scope.row._inferenceStatus" class="inference-meta">
-                  {{ scope.row._inferenceStatus.fps || scope.row._inferenceStatus.uptime_seconds ? Math.round(scope.row._inferenceStatus.uptime_seconds / 60) + 'min' : '' }}
+                  {{
+                    scope.row._inferenceStatus.fps || scope.row._inferenceStatus.uptime_seconds
+                      ? Math.round(scope.row._inferenceStatus.uptime_seconds / 60) + "min"
+                      : ""
+                  }}
                 </span>
               </template>
             </el-table-column>

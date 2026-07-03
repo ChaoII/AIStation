@@ -1,10 +1,10 @@
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import and_, func, select
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from ..dataset.model import AnnotationImageModel
 from ..annotation.model import AnnotationRecordModel
+from ..dataset.model import AnnotationImageModel
 from .model import AnnotationTaskModel
 
 
@@ -81,11 +81,12 @@ class TaskService:
         """Grant annotation menu permissions to users (task assignees)."""
         if not user_ids:
             return
-        from sqlalchemy import select, exists, and_
-        from app.core.database import async_db_session
-        from app.api.v1.module_system.role.model import RoleModel, RoleMenusModel
-        from app.api.v1.module_system.user.model import UserRolesModel
+        from sqlalchemy import and_, exists, select
+
         from app.api.v1.module_system.menu.model import MenuModel
+        from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+        from app.api.v1.module_system.user.model import UserRolesModel
+        from app.core.database import async_db_session
 
         async with async_db_session.begin() as db:
             role = (await db.execute(

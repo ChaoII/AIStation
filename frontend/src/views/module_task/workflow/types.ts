@@ -1,14 +1,7 @@
 import type { CSSProperties } from "vue";
 
 export type NodeType =
-  | "input"
-  | "output"
-  | "trigger"
-  | "action"
-  | "condition"
-  | "control"
-  | "integration"
-  | "custom";
+  "input" | "output" | "trigger" | "action" | "condition" | "control" | "integration" | "custom";
 
 export type EdgeType = "default" | "straight" | "step" | "smoothstep" | "bezier";
 
