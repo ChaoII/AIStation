@@ -979,7 +979,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
+import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
 import { ArrowLeft, ArrowRight, Delete, Pointer, Check } from "@element-plus/icons-vue";
 import { h } from "vue";
 const DiamondIcon = {
@@ -2346,8 +2346,14 @@ function boxHandles(ann: any) {
 
 // ===== 标注操作 =====
 function removeAnn(id: string) {
-  store.annotations = store.annotations.filter((a) => a.id !== id);
-  if (store.selectedAnnotationId === id) store.selectedAnnotationId = null;
+  ElMessageBox.confirm("确定要删除该标注吗？", "确认删除", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  }).then(() => {
+    store.annotations = store.annotations.filter((a) => a.id !== id);
+    if (store.selectedAnnotationId === id) store.selectedAnnotationId = null;
+  }).catch(() => {});
 }
 
 // ===== 自动保存（仅实际变更时触发）=====
