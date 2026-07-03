@@ -1921,18 +1921,14 @@ function onMouseDown(e: MouseEvent) {
       showCrosshair.value = true;
       updCrosshair(e);
     } else {
+      if (ocrDrawingPoints.value.length >= 4) return;
+      ocrDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value });
       if (ocrDrawingPoints.value.length >= 3) {
         const first = ocrDrawingPoints.value[0];
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
-        if (dist <= 20) {
+        if (dist <= 20 || ocrDrawingPoints.value.length === 4) {
           ocrTextInputVisible.value = true;
-          return;
         }
-      }
-      if (ocrDrawingPoints.value.length >= 4) return;
-      ocrDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value });
-      if (ocrDrawingPoints.value.length === 4) {
-        ocrTextInputVisible.value = true;
       }
     }
     return;
