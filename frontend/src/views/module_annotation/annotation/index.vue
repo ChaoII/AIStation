@@ -1646,11 +1646,20 @@ function ocrBBox(ann: any) {
 
 function confirmOcrText() {
   if (ocrTextInput.value.trim() && ocrDrawingPoints.value.length >= 3) {
+    let pts = ocrDrawingPoints.value.map((p) => ({ x: p.x, y: p.y }));
+    // 去掉闭合时重复的首点
+    if (pts.length > 3) {
+      const last = pts[pts.length - 1];
+      const first = pts[0];
+      if (Math.abs(last.x - first.x) < 0.001 && Math.abs(last.y - first.y) < 0.001) {
+        pts = pts.slice(0, -1);
+      }
+    }
     store.annotations.push({
       id: crypto.randomUUID(),
       type: "Ocr",
       class_id: selectedClassId.value || 0,
-      points: ocrDrawingPoints.value.map((p) => ({ x: p.x, y: p.y })),
+      points: pts,
       text: ocrTextInput.value.trim(),
     });
     ocrDrawingPoints.value = [];
@@ -1925,6 +1934,7 @@ function onMouseDown(e: MouseEvent) {
         const first = ocrDrawingPoints.value[0];
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
         if (dist <= 20) {
+          ocrDrawingPoints.value.push({ ...first });
           setTimeout(() => { ocrTextInputVisible.value = true; }, 200);
           return;
         }
