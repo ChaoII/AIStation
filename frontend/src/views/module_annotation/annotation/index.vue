@@ -393,31 +393,46 @@
                 </g>
               </template>
               <template v-if="ann.type === 'Ocr'">
-                <polygon
-                  :points="ann.points.map((p: any) => `${p.x * cw},${p.y * ch}`).join(' ')"
-                  :stroke="clsColor(ann.class_id)"
-                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
-                  :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
-                  style="pointer-events: all"
-                  :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
-                  vector-effect="non-scaling-stroke"
-                />
-                <g v-if="store.selectedAnnotationId === ann.id">
-                  <rect
-                    v-for="h in ocrBoxHandles(ann)"
-                    :key="h.key"
-                    :x="h.x - 4"
-                    :y="h.y - 4"
-                    width="8"
-                    height="8"
-                    fill="#fff"
-                    stroke="#1a1a1a"
-                    stroke-width="1.5"
-                    :data-handle="h.key"
-                    class="handle"
+                <!-- 矩形模式 → 和检测框一样渲染 -->
+                <template v-if="ann.source === 'rect'">
+                  <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-box'">
+                    <rect
+                      :x="B.minX" :y="B.minY"
+                      :width="B.maxX - B.minX" :height="B.maxY - B.minY"
+                      :stroke="clsColor(ann.class_id)"
+                      :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                      :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
+                      style="pointer-events: all"
+                      :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
+                      vector-effect="non-scaling-stroke"
+                    />
+                    <g v-if="store.selectedAnnotationId === ann.id">
+                      <rect v-for="h in ocrBoxHandles(ann)" :key="h.key"
+                        :x="h.x - 4" :y="h.y - 4" width="8" height="8"
+                        fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                        :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke" />
+                    </g>
+                  </g>
+                </template>
+                <!-- 四边形模式 → 和多边形一样渲染 -->
+                <template v-else>
+                  <polygon
+                    :points="ann.points.map((p: any) => `${p.x * cw},${p.y * ch}`).join(' ')"
+                    :stroke="clsColor(ann.class_id)"
+                    :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                    :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
+                    style="pointer-events: all"
+                    :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
                     vector-effect="non-scaling-stroke"
                   />
-                </g>
+                  <template v-if="store.selectedAnnotationId === ann.id">
+                    <rect v-for="(p, i) in ann.points" :key="i"
+                      :x="p.x * cw - 3" :y="p.y * ch - 3" width="6" height="6"
+                      fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
+                      :data-handle="'ocr-vertex-' + i" class="handle"
+                      vector-effect="non-scaling-stroke" />
+                  </template>
+                </template>
                 <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.minX"
@@ -426,19 +441,12 @@
                     :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
-                    stroke-width="0.5"
-                    vector-effect="non-scaling-stroke"
-                    rx="1"
+                    stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1"
                   />
                   <text
-                    :x="B.minX + 2"
-                    :y="B.minY - 2"
-                    fill="#ffffff"
-                    font-weight="500"
-                    text-anchor="start"
-                    font-family="Microsoft YaHei,sans-serif"
-                    :font-size="annSettings.labelFontSize"
-                    dominant-baseline="text-after-edge"
+                    :x="B.minX + 2" :y="B.minY - 2" fill="#ffffff" font-weight="500"
+                    text-anchor="start" font-family="Microsoft YaHei,sans-serif"
+                    :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge"
                   >
                     {{ ann.text || getCls(ann.class_id)?.name }}
                   </text>
@@ -1276,6 +1284,7 @@ const ocrDrawingPoints = ref<{ x: number; y: number }[]>([]);
 const ocrTextInput = ref("");
 const ocrTextInputVisible = ref(false);
 const ocrRectMode = ref(false);
+const ocrSource = ref<"rect" | "quad">("quad");
 let ocrBoxStart = { x: 0, y: 0 };
 
 // ---- Classification ----
@@ -1662,6 +1671,7 @@ function confirmOcrText() {
       class_id: selectedClassId.value || 0,
       points: pts,
       text: ocrTextInput.value.trim(),
+      source: ocrSource.value,
     });
     ocrDrawingPoints.value = [];
     ocrTextInput.value = "";
@@ -1921,6 +1931,7 @@ function onMouseDown(e: MouseEvent) {
     const pt = mouseToImage(e);
     if (!pt) return;
     if (ocrRectMode.value) {
+      ocrSource.value = "rect";
       const r = canvasRef.value?.getBoundingClientRect();
       if (!r) return;
       ocrBoxStart = { x: pt.x, y: pt.y };
@@ -1941,6 +1952,7 @@ function onMouseDown(e: MouseEvent) {
         }
       }
       if (ocrDrawingPoints.value.length >= 4) return;
+      if (ocrDrawingPoints.value.length === 0) ocrSource.value = "quad";
       ocrDrawingPoints.value.push({ x: pt.x / cw.value, y: pt.y / ch.value });
     }
     return;
@@ -2010,7 +2022,7 @@ function onMouseMove(e: MouseEvent) {
     const dy = (e.clientY - drag.value.startY) / dh.value;
     const o = drag.value.orig;
     const idx = drag.value.polyVertexIndex!;
-    if (drag.value.ann.type === "Polygon" && idx !== undefined && o.points?.[idx]) {
+    if ((drag.value.ann.type === "Polygon" || drag.value.ann.type === "Ocr") && idx !== undefined && o.points?.[idx]) {
       drag.value.ann.points = o.points.map((p: any, i: number) =>
         i === idx
           ? { x: Math.max(0, Math.min(1, p.x + dx)), y: Math.max(0, Math.min(1, p.y + dy)) }
@@ -2058,7 +2070,7 @@ function onMouseMove(e: MouseEvent) {
       if (h.includes("r")) ann.x2 = Math.min(1, Math.max(o.x1 + 0.01, o.x2 + dx));
       if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy));
       if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy));
-    } else if (ann.type === "Ocr") {
+    } else if (ann.type === "Ocr" && ann.source === "rect") {
       let nx1 = Math.min(...o.points.map((p: any) => p.x));
       let ny1 = Math.min(...o.points.map((p: any) => p.y));
       let nx2 = Math.max(...o.points.map((p: any) => p.x));
@@ -2397,8 +2409,9 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
         return;
       }
       // ---- Polygon vertex drag ----
-      if (handle.startsWith("poly-")) {
-        const idx = parseInt(handle.replace("poly-", ""), 10);
+      if (handle.startsWith("poly-") || handle.startsWith("ocr-vertex-")) {
+        const prefix = handle.startsWith("poly-") ? "poly-" : "ocr-vertex-";
+        const idx = parseInt(handle.replace(prefix, ""), 10);
         if (!isNaN(idx)) {
           store.selectedAnnotationId = ann.id;
           drag.value = {
