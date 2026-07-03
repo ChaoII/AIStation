@@ -363,6 +363,7 @@
                   <text :x="kp.x * cw + 12" :y="kp.y * ch - 4" fill="#606266" font-size="5">
                     {{ kp.name }}
                   </text>
+                  <rect v-if="store.selectedAnnotationId === ann.id" :x="kp.x * cw - 4" :y="kp.y * ch - 4" width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5" :data-handle="'kp-' + i" class="handle" vector-effect="non-scaling-stroke" />
                 </g>
               </template>
               <template v-if="ann.type === 'Ocr'">
