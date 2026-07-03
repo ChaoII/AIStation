@@ -410,7 +410,8 @@
                       <rect v-for="h in ocrBoxHandles(ann)" :key="h.key"
                         :x="h.x - 4" :y="h.y - 4" width="8" height="8"
                         fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
-                        :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke" />
+                        :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke"
+                        @mousedown.left.stop="onAnnMouseDown($event, ann)" />
                     </template>
                   </template>
                 </template>
