@@ -45,7 +45,12 @@
               </template>
             </el-table-column>
             <el-table-column label="任务名称" prop="name" min-width="160" show-overflow-tooltip />
-            <el-table-column label="数据集" prop="dataset_name" min-width="140" show-overflow-tooltip />
+            <el-table-column
+              label="数据集"
+              prop="dataset_name"
+              min-width="140"
+              show-overflow-tooltip
+            />
             <el-table-column label="标注类型" prop="task_type" width="120" align="center">
               <template #default="scope">
                 <el-tag :type="annotationTypeTag(scope.row.task_type)" size="small" effect="plain">
@@ -65,13 +70,35 @@
             </el-table-column>
             <el-table-column label="标注员" prop="assignees" min-width="140">
               <template #default="scope">
-                <el-tag v-for="name in (scope.row.assignees || [])" :key="name" size="small" style="margin-right:3px;margin-bottom:2px">{{ name }}</el-tag>
+                <el-tag
+                  v-for="name in scope.row.assignees || []"
+                  :key="name"
+                  size="small"
+                  style="margin-right: 3px; margin-bottom: 2px"
+                >
+                  {{ name }}
+                </el-tag>
               </template>
             </el-table-column>
             <el-table-column label="状态" prop="status" width="100" align="center">
               <template #default="scope">
-                <el-tag :type="scope.row.status === 'completed' ? 'success' : scope.row.status === 'in_progress' ? 'primary' : 'info'" size="small">
-                  {{ scope.row.status === 'completed' ? '已完成' : scope.row.status === 'in_progress' ? '进行中' : '待开始' }}
+                <el-tag
+                  :type="
+                    scope.row.status === 'completed'
+                      ? 'success'
+                      : scope.row.status === 'in_progress'
+                        ? 'primary'
+                        : 'info'
+                  "
+                  size="small"
+                >
+                  {{
+                    scope.row.status === "completed"
+                      ? "已完成"
+                      : scope.row.status === "in_progress"
+                        ? "进行中"
+                        : "待开始"
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -133,7 +160,12 @@
           <el-input v-model="formData.name" placeholder="请输入任务名称" />
         </el-form-item>
         <el-form-item label="选择数据集" prop="dataset_id">
-          <el-select v-model="formData.dataset_id" placeholder="请选择数据集" filterable style="width: 100%">
+          <el-select
+            v-model="formData.dataset_id"
+            placeholder="请选择数据集"
+            filterable
+            style="width: 100%"
+          >
             <el-option
               v-for="item in datasetOptions"
               :key="item.id"
@@ -188,7 +220,7 @@
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+
 import { AnnotationAPI } from "@/api/module_annotation";
 import UserAPI from "@/api/module_system/user";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -436,14 +468,14 @@ function annotationTypeLabel(type: string) {
 }
 
 function annotationTypeTag(type: string) {
-  const map: Record<string, string> = {
-    detection: "",
+  const map: Record<string, "warning" | "danger" | "info" | undefined> = {
+    detection: undefined,
     rotated_detection: "warning",
     segmentation: "danger",
     keypoint: "warning",
     ocr: "info",
     classification: "info",
   };
-  return map[type] || "";
+  return map[type];
 }
 </script>

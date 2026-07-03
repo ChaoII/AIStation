@@ -321,6 +321,32 @@
                   :stroke="clsColor(ann.class_id)"
                   :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
                   fill="rgba(0,0,0,0.04)" style="pointer-events:all" vector-effect="non-scaling-stroke" />
+                <!-- Label at top-left corner -->
+                <g v-if="ann.bounding_box" class="ann-label">
+                  <rect
+                    :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2"
+                    :y="ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2 - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :fill="clsColor(ann.class_id)"
+                    :stroke="clsColor(ann.class_id)"
+                    stroke-width="0.5"
+                    vector-effect="non-scaling-stroke"
+                    rx="1"
+                  />
+                  <text
+                    :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2 + 2"
+                    :y="ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2 - 2"
+                    fill="#ffffff"
+                    font-weight="500"
+                    text-anchor="start"
+                    font-family="Microsoft YaHei,sans-serif"
+                    :font-size="annSettings.labelFontSize"
+                    dominant-baseline="text-after-edge"
+                  >
+                    {{ getCls(ann.class_id)?.name }}
+                  </text>
+                </g>
                 <!-- Bounding box handles when selected -->
                 <template v-if="store.selectedAnnotationId === ann.id && ann.bounding_box">
                   <rect v-for="hkey in ['tl','tr','bl','br','tc','bc','ml','mr']" :key="hkey"
@@ -2002,6 +2028,17 @@ function onMouseMove(e: MouseEvent) {
     const dcy2 = (bb.height - bbO.height) / 2 * cos * hSign
     bb.cx = Math.max(0, Math.min(1, bbO.cx + dcx + dcx2))
     bb.cy = Math.max(0, Math.min(1, bbO.cy + dcy + dcy2))
+    // Clamp keypoints to stay inside bounding box
+    if (ann.keypoints) {
+      const minX = bb.cx - bb.width / 2
+      const maxX = bb.cx + bb.width / 2
+      const minY = bb.cy - bb.height / 2
+      const maxY = bb.cy + bb.height / 2
+      ann.keypoints.forEach((kp: any) => {
+        kp.x = Math.max(minX, Math.min(maxX, kp.x))
+        kp.y = Math.max(minY, Math.min(maxY, kp.y))
+      })
+    }
     return
   }
 

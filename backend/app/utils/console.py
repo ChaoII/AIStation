@@ -35,7 +35,6 @@ def console_run(
     返回:
     - None
     """
-
     url = f"http://{host}:{port}"
     base_url = f"{url}{settings.ROOT_PATH}"
     docs_url = base_url + settings.DOCS_URL
@@ -95,7 +94,10 @@ def console_run(
         padding=(1, 2),
     )
 
-    console.print(result)
+    try:
+        console.print(result)
+    except UnicodeEncodeError:
+        pass
 
 
 def console_close() -> None:
@@ -118,4 +120,7 @@ def console_close() -> None:
         padding=(1, 2),
     )
 
-    console.print(result)
+    try:
+        console.print(result)
+    except UnicodeEncodeError:
+        pass
