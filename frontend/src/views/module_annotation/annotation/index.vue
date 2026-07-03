@@ -337,7 +337,7 @@
                     :cx="kp.x * cw"
                     :cy="kp.y * ch"
                     r="6"
-                    :fill="clsColor(ann.class_id)"
+                    :fill="kpColorByIndex(i, ann.class_id)"
                     :opacity="kp.visibility === 'Visible' ? 1 : 0.5"
                     stroke="#fff"
                     stroke-width="1.5"
@@ -915,14 +915,15 @@
         </el-form-item>
         <el-form-item label="颜色"><el-color-picker v-model="clsForm.color" /></el-form-item>
         <template v-if="taskType === 'keypoint'">
-          <el-form-item label="关键点数">
-            <el-input-number v-model="kpCount" :min="1" :max="50" @change="syncKpForm" />
-          </el-form-item>
-          <el-form-item v-for="(_, i) in kpCount" :key="i" :label="`点${i+1}`">
-            <el-input v-model="clsForm.kpNames[i]" placeholder="名称" style="width:120px;margin-right:8px" />
-            <el-color-picker v-model="clsForm.kpColors[i]" />
-          </el-form-item>
-        </template>
+            <div style="margin-top:8px;font-size:12px;color:#909399;padding:0 0 4px">关键点列表（点击 ⊖ 删除）</div>
+            <div v-for="(_, i) in kpCount" :key="i" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+              <span style="width:24px;text-align:center;font-size:12px;color:#606266;flex-shrink:0">{{ i + 1 }}</span>
+              <el-input v-model="clsForm.kpNames[i]" placeholder="名称" size="small" style="flex:1" />
+              <el-color-picker v-model="clsForm.kpColors[i]" size="small" />
+              <el-button text size="small" type="danger" @click="removeKp(i)" style="font-size:16px;padding:0;width:20px">⊖</el-button>
+            </div>
+            <el-button size="small" text type="primary" @click="addKp" style="margin-top:4px">+ 添加关键点</el-button>
+          </template>
       </el-form>
       <template #footer>
         <el-button @click="showClassModal = false">取消</el-button>
@@ -1170,12 +1171,9 @@ const kpNames = ref<string[]>(["top_left", "top_right", "bottom_right", "bottom_
 const kpBoxPreview = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const pendingKpVisibility = ref(2);
 let kpBoxDragStart: { x: number; y: number } | null = null;
-const kpCount = ref(4)
-function syncKpForm() {
-  while (clsForm.value.kpNames.length < kpCount.value) { clsForm.value.kpNames.push(""); clsForm.value.kpColors.push("#409eff") }
-  clsForm.value.kpNames = clsForm.value.kpNames.slice(0, kpCount.value)
-  clsForm.value.kpColors = clsForm.value.kpColors.slice(0, kpCount.value)
-}
+const kpCount = ref(2)
+function addKp() { clsForm.value.kpNames.push(""); clsForm.value.kpColors.push("#409eff"); kpCount.value = clsForm.value.kpNames.length }
+function removeKp(i: number) { clsForm.value.kpNames.splice(i, 1); clsForm.value.kpColors.splice(i, 1); kpCount.value = clsForm.value.kpNames.length }
 
 // ---- OCR ----
 const ocrDrawingPoints = ref<{ x: number; y: number }[]>([]);
@@ -1503,6 +1501,13 @@ function kpRbHandlePos(bb: any, h: string, cw: number, ch: number): { x: number;
   else if (h === "bl") { lx = -hw; ly = hh }
   else if (h === "ml") { lx = -hw; ly = 0 }
   return { x: bb.cx * cw + lx * cos - ly * sin, y: bb.cy * ch + lx * sin + ly * cos }
+}
+
+const KP_COLORS = ["#FF6B6B","#FF9F43","#FECA57","#9CCC65","#26DE81","#20BF6B","#0BE881","#0FB9B1","#12CBC4","#0ABDE3","#2E86DE","#3863D4","#8854D0","#A55EEA","#D980FA","#F78FB3","#EE5A70"]
+function kpColorByIndex(index: number, classId: number): string {
+  const cls = taskClasses.value.find(c => c.id === classId)
+  if (cls?.keypoint_colors && cls.keypoint_colors.length > index) return cls.keypoint_colors[index]
+  return KP_COLORS[index % KP_COLORS.length]
 }
 
 function polygonPath(ann: any): string {
@@ -2198,6 +2203,16 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
       return;
     }
 
+    // ---- Keypoint handles (must check before generic move) ----
+    if (handle && ann.type === "Keypoint") {
+      if (handle.startsWith("kp-")) {
+        const idx = parseInt(handle.replace("kp-", ""), 10)
+        if (!isNaN(idx)) { store.selectedAnnotationId = ann.id; drag.value = { active: true, type: "kp-vertex", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "", polyVertexIndex: idx }; return }
+      }
+      if (handle === "move") { store.selectedAnnotationId = ann.id; drag.value = { active: true, type: "kp-move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }; return }
+      if (["tl","tr","bl","br","tc","bc","ml","mr"].includes(handle)) { store.selectedAnnotationId = ann.id; drag.value = { active: true, type: ("kp-resize-" + handle) as any, ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }; return }
+    }
+
     // ---- RotatedBox handles (unprefixed) ----
     if (handle) {
       store.selectedAnnotationId = ann.id;
@@ -2254,28 +2269,6 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
           };
           return;
         }
-      }
-    }
-
-    // ---- Keypoint handles ----
-    if (handle) {
-      if (handle.startsWith("kp-")) {
-        const idx = parseInt(handle.replace("kp-", ""), 10)
-        if (!isNaN(idx) && ann.type === "Keypoint") {
-          store.selectedAnnotationId = ann.id
-          drag.value = { active: true, type: "kp-vertex", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "", polyVertexIndex: idx }
-          return
-        }
-      }
-      if (handle === "move" && ann.type === "Keypoint") {
-        store.selectedAnnotationId = ann.id
-        drag.value = { active: true, type: "kp-move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }
-        return
-      }
-      if (["tl","tr","bl","br","tc","bc","ml","mr"].includes(handle) && ann.type === "Keypoint") {
-        store.selectedAnnotationId = ann.id
-        drag.value = { active: true, type: ("kp-resize-" + handle) as any, ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }
-        return
       }
     }
 
