@@ -2054,14 +2054,16 @@ function onMouseMove(e: MouseEvent) {
       if (h.includes("t")) ann.y1 = Math.max(0, Math.min(o.y2 - 0.01, o.y1 + dy));
       if (h.includes("b")) ann.y2 = Math.min(1, Math.max(o.y1 + 0.01, o.y2 + dy));
     } else if (ann.type === "Ocr" && ann.source === "rect") {
-      let nx1 = Math.min(...o.points.map((p: any) => p.x));
-      let ny1 = Math.min(...o.points.map((p: any) => p.y));
-      let nx2 = Math.max(...o.points.map((p: any) => p.x));
-      let ny2 = Math.max(...o.points.map((p: any) => p.y));
-      if (h.includes("l")) nx1 = Math.max(0, Math.min(nx2 - 0.01, nx1 + dx));
-      if (h.includes("r")) nx2 = Math.min(1, Math.max(nx1 + 0.01, nx2 + dx));
-      if (h.includes("t")) ny1 = Math.max(0, Math.min(ny2 - 0.01, ny1 + dy));
-      if (h.includes("b")) ny2 = Math.min(1, Math.max(ny1 + 0.01, ny2 + dy));
+      const ox1 = Math.min(...o.points.map((p: any) => p.x));
+      const oy1 = Math.min(...o.points.map((p: any) => p.y));
+      const ox2 = Math.max(...o.points.map((p: any) => p.x));
+      const oy2 = Math.max(...o.points.map((p: any) => p.y));
+      let nx1 = ox1, ny1 = oy1, nx2 = ox2, ny2 = oy2;
+      if (h.includes("l")) nx1 = Math.max(0, Math.min(ox2 - 0.01, ox1 + dx));
+      if (h.includes("r")) nx2 = Math.min(1, Math.max(ox1 + 0.01, ox2 + dx));
+      if (h.includes("t")) ny1 = Math.max(0, Math.min(oy2 - 0.01, oy1 + dy));
+      if (h.includes("b")) ny2 = Math.min(1, Math.max(oy1 + 0.01, oy2 + dy));
+      ann.x1 = nx1; ann.y1 = ny1; ann.x2 = nx2; ann.y2 = ny2;
       ann.points = [
         { x: nx1, y: ny1 },
         { x: nx2, y: ny1 },
@@ -2323,7 +2325,7 @@ function onDblClick(_e: MouseEvent) {
 function onAnnMouseDown(e: MouseEvent, ann: any) {
   e.stopPropagation();
 
-  if (currentTool.value === "select" || currentTool.value === "pan") {
+  if (currentTool.value === "select" || currentTool.value === "pan" || currentTool.value === "ocr") {
     const t = e.target as HTMLElement;
     const handle = t.getAttribute("data-handle");
 
