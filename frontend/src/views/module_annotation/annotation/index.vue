@@ -960,13 +960,41 @@
         <el-form-item label="名称">
           <el-input v-model="clsForm.name" placeholder="类别名称" />
         </el-form-item>
-        <el-form-item label="颜色"><el-color-picker v-model="clsForm.color" /></el-form-item>
+        <el-form-item label="颜色">
+          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            <div
+              v-for="c in PRESET_COLORS"
+              :key="c"
+              :style="{
+                width:'20px',height:'20px',borderRadius:'4px',cursor:'pointer',
+                background:c,
+                border: clsForm.color === c ? '2px solid #303133' : '2px solid transparent',
+                transform: clsForm.color === c ? 'scale(1.2)' : 'scale(1)',
+                transition:'all .15s'
+              }"
+              @click="clsForm.color = c"
+            />
+            <el-color-picker v-model="clsForm.color" size="small" style="margin-left:4px" />
+          </div>
+        </el-form-item>
         <template v-if="taskType === 'keypoint'">
             <div style="margin-top:8px;font-size:12px;color:#909399;padding:0 0 4px">关键点列表（点击 ⊖ 删除）</div>
             <div v-for="(_, i) in kpCount" :key="i" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
               <span style="width:24px;text-align:center;font-size:12px;color:#606266;flex-shrink:0">{{ i + 1 }}</span>
               <el-input v-model="clsForm.kpNames[i]" placeholder="名称" size="small" style="flex:1" />
-              <el-color-picker v-model="clsForm.kpColors[i]" size="small" />
+               <div style="display:flex;gap:2px;flex-wrap:wrap;align-items:center">
+                  <div
+                    v-for="c in PRESET_COLORS"
+                    :key="c"
+                    :style="{
+                      width:'14px',height:'14px',borderRadius:'3px',cursor:'pointer',
+                      background:c,
+                      border: clsForm.kpColors[i] === c ? '1.5px solid #303133' : '1.5px solid transparent'
+                    }"
+                    @click="clsForm.kpColors[i] = c"
+                  />
+                  <el-color-picker v-model="clsForm.kpColors[i]" size="small" style="width:24px" />
+                </div>
               <el-button text size="small" type="danger" @click="removeKp(i)" style="font-size:16px;padding:0;width:20px">⊖</el-button>
             </div>
             <el-button size="small" text type="primary" @click="addKp" style="margin-top:4px">+ 添加关键点</el-button>
@@ -1551,6 +1579,7 @@ function kpRbHandlePos(bb: any, h: string, cw: number, ch: number): { x: number;
 }
 
 const KP_COLORS = ["#FF6B6B","#FF9F43","#FECA57","#9CCC65","#26DE81","#20BF6B","#0BE881","#0FB9B1","#12CBC4","#0ABDE3","#2E86DE","#3863D4","#8854D0","#A55EEA","#D980FA","#F78FB3","#EE5A70"]
+const PRESET_COLORS = ["#FF6B6B","#FF9F43","#FECA57","#9CCC65","#26DE81","#20BF6B","#0BE881","#0FB9B1","#12CBC4","#0ABDE3","#2E86DE","#3863D4","#8854D0","#A55EEA","#D980FA","#F78FB3","#EE5A70"]
 function kpColorByIndex(index: number, classId: number): string {
   const cls = taskClasses.value.find(c => c.id === classId)
   if (cls?.keypoint_colors && cls.keypoint_colors.length > index) return cls.keypoint_colors[index]
