@@ -395,7 +395,7 @@
               <template v-if="ann.type === 'Ocr'">
                 <!-- 矩形模式 → 和检测框一样渲染 -->
                 <template v-if="ann.source === 'rect'">
-                  <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-box'">
+                  <template v-for="B in [ocrBBox(ann)]" :key="ann.id + '-box'">
                     <rect
                       :x="B.minX" :y="B.minY"
                       :width="B.maxX - B.minX" :height="B.maxY - B.minY"
@@ -406,13 +406,13 @@
                       :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
                       vector-effect="non-scaling-stroke"
                     />
-                    <g v-if="store.selectedAnnotationId === ann.id">
+                    <template v-if="store.selectedAnnotationId === ann.id">
                       <rect v-for="h in ocrBoxHandles(ann)" :key="h.key"
                         :x="h.x - 4" :y="h.y - 4" width="8" height="8"
                         fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
                         :data-handle="h.key" class="handle" vector-effect="non-scaling-stroke" />
-                    </g>
-                  </g>
+                    </template>
+                  </template>
                 </template>
                 <!-- 四边形模式 → 和多边形一样渲染 -->
                 <template v-else>
@@ -433,8 +433,8 @@
                       vector-effect="non-scaling-stroke" />
                   </template>
                 </template>
-                <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
-                  <rect
+                <template v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'">
+                  <rect class="ann-label"
                     :x="B.minX"
                     :y="B.minY - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
@@ -443,14 +443,14 @@
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1"
                   />
-                  <text
+                  <text class="ann-label"
                     :x="B.minX + 2" :y="B.minY - 2" fill="#ffffff" font-weight="500"
                     text-anchor="start" font-family="Microsoft YaHei,sans-serif"
                     :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge"
                   >
                     {{ ann.text || getCls(ann.class_id)?.name }}
                   </text>
-                </g>
+                </template>
               </template>
               <template v-if="ann.type === 'Classification'">
                 <text
@@ -668,11 +668,11 @@
               />
             </template>
             <template v-if="currentTool === 'ocr' && ocrDrawingPoints.length > 0">
-              <polyline
+              <polygon
                 :points="ocrDrawingPoints.map((p) => `${p.x * cw},${p.y * ch}`).join(' ')"
                 :stroke="cxColor"
                 stroke-width="1.5"
-                fill="none"
+                :fill="cxColor + '18'"
               />
               <circle
                 v-for="(p, i) in ocrDrawingPoints"
@@ -703,7 +703,7 @@
                 stroke-width="2"
               />
               <line
-                v-if="cursorX && cursorY && ocrDrawingPoints.length > 0"
+                v-if="cursorX && cursorY && ocrDrawingPoints.length > 0 && !ocrTextInputVisible"
                 :x1="ocrDrawingPoints[ocrDrawingPoints.length - 1].x * cw"
                 :y1="ocrDrawingPoints[ocrDrawingPoints.length - 1].y * ch"
                 :x2="cursorX"
