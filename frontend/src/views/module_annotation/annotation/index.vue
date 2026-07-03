@@ -762,7 +762,7 @@
           <div class="panel-section">
             <div class="section-title-row">
               <span class="section-title">类别</span>
-              <el-button text size="small" @click="showClassModal = true">+ 添加</el-button>
+              <el-button text size="small" @click="showClassModal = true; kpCount = 0; clsForm.kpNames = []; clsForm.kpColors = []">+ 添加</el-button>
             </div>
             <div class="scroll-area">
               <div
@@ -1172,8 +1172,8 @@ const kpNames = ref<string[]>(["top_left", "top_right", "bottom_right", "bottom_
 const kpBoxPreview = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const pendingKpVisibility = ref(2);
 let kpBoxDragStart: { x: number; y: number } | null = null;
-const kpCount = ref(2)
-function addKp() { clsForm.value.kpNames.push(""); clsForm.value.kpColors.push("#409eff"); kpCount.value = clsForm.value.kpNames.length }
+const kpCount = ref(0)
+function addKp() { clsForm.value.kpNames.push(""); clsForm.value.kpColors.push(clsForm.value.color); kpCount.value = clsForm.value.kpNames.length }
 function removeKp(i: number) { clsForm.value.kpNames.splice(i, 1); clsForm.value.kpColors.splice(i, 1); kpCount.value = clsForm.value.kpNames.length }
 
 // ---- OCR ----
@@ -2277,7 +2277,7 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
     store.selectedAnnotationId = ann.id;
     drag.value = {
       active: true,
-      type: "move",
+      type: ann.type === "Keypoint" ? "kp-move" : "move",
       ann,
       orig: JSON.parse(JSON.stringify(ann)),
       startX: e.clientX,
