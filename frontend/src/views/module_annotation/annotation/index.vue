@@ -667,52 +667,35 @@
                 fill="rgba(59,130,246,0.06)"
               />
             </template>
-            <template v-if="currentTool === 'ocr' && ocrDrawingPoints.length > 0">
-              <polygon
+            <!-- OCR 矩形模式预览 -->
+            <template v-if="currentTool === 'ocr' && ocrRectMode && ocrDrawingPoints.length === 4">
+              <template v-for="B in [{minX:Math.min(...ocrDrawingPoints.map(p=>p.x*cw)),minY:Math.min(...ocrDrawingPoints.map(p=>p.y*ch)),maxX:Math.max(...ocrDrawingPoints.map(p=>p.x*cw)),maxY:Math.max(...ocrDrawingPoints.map(p=>p.y*ch))}]">
+                <rect :x="B.minX" :y="B.minY" :width="B.maxX-B.minX" :height="B.maxY-B.minY"
+                  :stroke="cxColor" stroke-width="1.5" :fill="cxColor+'18'"
+                  vector-effect="non-scaling-stroke" />
+              </template>
+            </template>
+            <!-- OCR 四边形模式预览 -->
+            <template v-if="currentTool === 'ocr' && !ocrRectMode && ocrDrawingPoints.length > 0">
+              <!-- 未封闭时用 polyline -->
+              <polyline v-if="!ocrTextInputVisible"
                 :points="ocrDrawingPoints.map((p) => `${p.x * cw},${p.y * ch}`).join(' ')"
-                :stroke="cxColor"
-                stroke-width="1.5"
-                :fill="cxColor + '18'"
-              />
-              <circle
-                v-for="(p, i) in ocrDrawingPoints"
-                :key="i"
-                :cx="p.x * cw"
-                :cy="p.y * ch"
-                r="3"
-                :fill="cxColor"
-              />
-              <text
-                v-for="(p, i) in ocrDrawingPoints"
-                :key="'l' + i"
-                :x="p.x * cw + 8"
-                :y="p.y * ch + 4"
-                fill="#606266"
-                font-size="5"
-              >
-                {{ i + 1 }}
-              </text>
-              <!-- 靠近第一个点时鼠标位置显示大圆提示 -->
-              <circle
-                v-if="ocrNearFirst"
-                :cx="cursorX"
-                :cy="cursorY"
-                r="8"
-                fill="none"
-                :stroke="cxColor"
-                stroke-width="2"
-              />
-              <line
-                v-if="cursorX && cursorY && ocrDrawingPoints.length > 0 && !ocrTextInputVisible"
+                :stroke="cxColor" stroke-width="1.5" fill="none" />
+              <!-- 封闭后用 polygon -->
+              <polygon v-else
+                :points="ocrDrawingPoints.map((p) => `${p.x * cw},${p.y * ch}`).join(' ')"
+                :stroke="cxColor" stroke-width="1.5" :fill="cxColor+'18'" />
+              <circle v-for="(p, i) in ocrDrawingPoints" :key="i"
+                :cx="p.x * cw" :cy="p.y * ch" r="3" :fill="cxColor" />
+              <text v-for="(p, i) in ocrDrawingPoints" :key="'l' + i"
+                :x="p.x * cw + 8" :y="p.y * ch + 4" fill="#606266" font-size="5">{{ i + 1 }}</text>
+              <circle v-if="ocrNearFirst" :cx="cursorX" :cy="cursorY" r="8"
+                fill="none" :stroke="cxColor" stroke-width="2" />
+              <line v-if="cursorX && cursorY && ocrDrawingPoints.length > 0 && !ocrTextInputVisible"
                 :x1="ocrDrawingPoints[ocrDrawingPoints.length - 1].x * cw"
                 :y1="ocrDrawingPoints[ocrDrawingPoints.length - 1].y * ch"
-                :x2="cursorX"
-                :y2="cursorY"
-                :stroke="cxColor"
-                stroke-width="1.5"
-                stroke-dasharray="4,3"
-                opacity="0.6"
-              />
+                :x2="cursorX" :y2="cursorY"
+                :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6" />
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
