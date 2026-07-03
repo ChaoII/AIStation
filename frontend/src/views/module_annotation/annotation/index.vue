@@ -393,35 +393,30 @@
                 </g>
               </template>
               <template v-if="ann.type === 'Ocr'">
-                <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-box'">
+                <polygon
+                  :points="ann.points.map((p: any) => `${p.x * cw},${p.y * ch}`).join(' ')"
+                  :stroke="clsColor(ann.class_id)"
+                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
+                  :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
+                  style="pointer-events: all"
+                  :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
+                  vector-effect="non-scaling-stroke"
+                />
+                <g v-if="store.selectedAnnotationId === ann.id">
                   <rect
-                    :x="B.minX"
-                    :y="B.minY"
-                    :width="B.maxX - B.minX"
-                    :height="B.maxY - B.minY"
-                    :stroke="clsColor(ann.class_id)"
-                    :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
-                    :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
-                    style="pointer-events: all"
-                    :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
+                    v-for="h in ocrBoxHandles(ann)"
+                    :key="h.key"
+                    :x="h.x - 4"
+                    :y="h.y - 4"
+                    width="8"
+                    height="8"
+                    fill="#fff"
+                    stroke="#1a1a1a"
+                    stroke-width="1.5"
+                    :data-handle="h.key"
+                    class="handle"
                     vector-effect="non-scaling-stroke"
                   />
-                  <g v-if="store.selectedAnnotationId === ann.id">
-                    <rect
-                      v-for="h in ocrBoxHandles(ann)"
-                      :key="h.key"
-                      :x="h.x - 4"
-                      :y="h.y - 4"
-                      width="8"
-                      height="8"
-                      fill="#fff"
-                      stroke="#1a1a1a"
-                      stroke-width="1.5"
-                      :data-handle="h.key"
-                      class="handle"
-                      vector-effect="non-scaling-stroke"
-                    />
-                  </g>
                 </g>
                 <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
