@@ -867,11 +867,6 @@
                   v-for="cls in taskClasses"
                   :key="cls.id"
                   class="class-item"
-                  :class="{
-                    active: store.annotations.some(
-                      (a) => a.type === 'Classification' && (a.class_ids || []).includes(cls.id)
-                    ),
-                  }"
                   @click="toggleClassification(cls.id)"
                 >
                   <span class="dot-color" :style="{ background: cls.color }" />
