@@ -449,7 +449,7 @@
                     text-anchor="start" font-family="Microsoft YaHei,sans-serif"
                     :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge"
                   >
-                    {{ ann.text || getCls(ann.class_id)?.name }}
+                    {{ getCls(ann.class_id)?.name }}
                   </text>
                 </template>
               </template>
