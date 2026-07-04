@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query
+from typing import Dict
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -6,6 +7,30 @@ from .schema import TrainModelCreateSchema, TrainTaskCreateSchema, TrainEvalCrea
 from .service import TrainService
 
 router = APIRouter(prefix="/train", tags=["模型训练"])
+
+_ws_clients: Dict[int, list[WebSocket]] = {}
+
+
+async def broadcast_log(task_id: int, line: str):
+    for ws in _ws_clients.get(task_id, [])[:]:
+        try:
+            await ws.send_text(line)
+        except Exception:
+            _ws_clients[task_id].remove(ws)
+
+
+@router.websocket("/ws/train/logs")
+async def train_log_ws(websocket: WebSocket, task_id: int = Query(...)):
+    await websocket.accept()
+    _ws_clients.setdefault(task_id, []).append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        if task_id in _ws_clients:
+            _ws_clients[task_id].remove(websocket)
+            if not _ws_clients[task_id]:
+                del _ws_clients[task_id]
 
 
 @router.get("/model/list", summary="模型仓库列表")
