@@ -434,8 +434,8 @@
                       vector-effect="non-scaling-stroke" />
                   </template>
                 </template>
-                <template v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'">
-                  <rect class="ann-label"
+<g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
+                  <rect
                     :x="B.minX"
                     :y="B.minY - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
@@ -444,14 +444,14 @@
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1"
                   />
-                  <text class="ann-label"
+                  <text
                     :x="B.minX + 2" :y="B.minY - 2" fill="#ffffff" font-weight="500"
                     text-anchor="start" font-family="Microsoft YaHei,sans-serif"
                     :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge"
                   >
-                    {{ getCls(ann.class_id)?.name }}
+                    {{ ann.text || getCls(ann.class_id)?.name }}
                   </text>
-                </template>
+                </g>
               </template>
               <template v-if="ann.type === 'Classification'">
                 <text
