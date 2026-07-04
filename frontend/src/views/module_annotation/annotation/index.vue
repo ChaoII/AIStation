@@ -2527,7 +2527,10 @@ async function autoSave() {
       lastSavedKey = key;
       const curUser = useUserStoreHook().getBasicInfo;
       const uname =
-        (curUser as any).name || (curUser as any).nickname || (curUser as any).username || "";
+        (curUser as any).name ||
+        (curUser as any).username ||
+        (curUser as any).nickname ||
+        "未知用户";
       store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated";
       store.currentImage.annotation_count = store.annotations.length;
       store.currentImage.updated_by = uname
@@ -2753,7 +2756,7 @@ async function saveAnn() {
     img.annotation_count = store.annotations.length;
     img.updated_by = {
       id: (curUser as any).id || 0,
-      name: (curUser as any).name || (curUser as any).username || "",
+      name: (curUser as any).name || (curUser as any).username || "未知用户",
     };
     img.updated_time = now;
     unsaved.value = false;
