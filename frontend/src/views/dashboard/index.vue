@@ -1,277 +1,275 @@
 <template>
-  <div class="dashboard-container">
-    <!-- 顶部欢迎卡 -->
-    <el-card shadow="never" class="welcome-card">
-      <div class="welcome-inner">
-        <div class="welcome-left">
-          <div class="avatar-wrap">
-            <img v-if="userStore.basicInfo.avatar" class="avatar-img" :src="userStore.basicInfo.avatar + '?imageView2/1/w/80/h/80'" />
-            <el-icon v-else :size="36"><UserFilled /></el-icon>
-          </div>
-          <div class="welcome-text">
-            <div class="greeting">{{ timefix }}{{ userStore.basicInfo.name }}，{{ welcome }}</div>
-            <div class="sub-text">{{ subText }}</div>
-          </div>
-        </div>
-        <div class="welcome-stats">
-          <div class="stat-chip"><span class="chip-dot" style="background:#67c23a" />{{ stats.onlineUsers }} 在线</div>
-          <div class="stat-chip"><span class="chip-dot" style="background:#409eff" />{{ stats.totalUsers }} 用户</div>
-          <div class="stat-chip"><span class="chip-dot" style="background:#e6a23c" />{{ stats.activeJobs }} 任务</div>
+  <div class="db">
+    <!-- 顶部横幅 -->
+    <div class="db-banner">
+      <div class="banner-left">
+        <div class="avatar"><img v-if="userStore.basicInfo.avatar" :src="userStore.basicInfo.avatar + '?imageView2/1/w/80/h/80'" /><el-icon v-else :size="28"><UserFilled /></el-icon></div>
+        <div>
+          <div class="banner-greeting">{{ timefix }}{{ userStore.basicInfo.name }}，{{ welcome }}</div>
+          <div class="banner-sub">{{ subText }}</div>
         </div>
       </div>
-    </el-card>
+      <div class="banner-chips">
+        <div class="chip"><span class="chip-dot" style="background:#67c23a" />{{ stats.onlineUsers }} 在线</div>
+        <div class="chip"><span class="chip-dot" style="background:#409eff" />{{ stats.totalUsers }} 用户</div>
+        <div class="chip"><span class="chip-dot" style="background:#e6a23c" />{{ stats.taskInProgress + stats.trainRunning }} 进行中</div>
+      </div>
+    </div>
 
-    <!-- 核心指标卡片 -->
-    <el-row :gutter="16" class="mt-4">
-      <el-col :xs="12" :sm="6" v-for="card in metricCards" :key="card.label">
-        <el-card shadow="never" class="metric-card" @click="card.route && router.push(card.route)">
-          <div class="metric-inner">
-            <div class="metric-icon" :style="{ background: card.bg }">
-              <el-icon :size="22" :color="card.color"><component :is="card.icon" /></el-icon>
-            </div>
-            <div class="metric-info">
-              <div class="metric-value">{{ card.value }}</div>
-              <div class="metric-label">{{ card.label }}</div>
-            </div>
+    <!-- 核心指标 -->
+    <div class="db-cards">
+      <div v-for="c in cards" :key="c.label" class="db-card" @click="c.route && router.push(c.route)">
+        <div class="card-icon" :style="{ background: c.bg }"><el-icon :size="20" :color="c.color"><component :is="c.icon" /></el-icon></div>
+        <div class="card-body">
+          <div class="card-val">{{ c.val }}</div>
+          <div class="card-lbl">{{ c.label }}</div>
+        </div>
+        <div class="card-extra">{{ c.extra }}</div>
+      </div>
+    </div>
+
+    <!-- 图表行 -->
+    <div class="db-charts">
+      <div class="chart-card">
+        <div class="chart-hd">标注任务状态</div>
+        <ECharts :options="annoPie" height="200" />
+      </div>
+      <div class="chart-card">
+        <div class="chart-hd">训练任务状态</div>
+        <ECharts :options="trainPie" height="200" />
+      </div>
+      <div class="chart-card">
+        <div class="chart-hd">摄像头在线率</div>
+        <ECharts :options="camPie" height="200" />
+      </div>
+    </div>
+
+    <!-- 最近动态 -->
+    <div class="db-footer">
+      <div class="footer-card">
+        <div class="footer-hd"><el-icon size="14"><Edit /></el-icon> 最近标注任务</div>
+        <div class="footer-list">
+          <div v-for="t in recentAnnoTasks" :key="t.id" class="footer-row">
+            <span class="row-name">{{ t.name }}</span>
+            <el-tag :type="annoStatusTag(t.status)" size="small" effect="plain">{{ annoStatusLbl(t.status) }}</el-tag>
           </div>
-          <div class="metric-footer">
-            <span class="trend" :class="card.trend >= 0 ? 'up' : 'down'">
-              {{ card.trend >= 0 ? '↑' : '↓' }} {{ Math.abs(card.trend) }}%
-            </span>
-            <span class="metric-sub">{{ card.sub }}</span>
+          <div v-if="!recentAnnoTasks.length" class="footer-empty">暂无数据</div>
+        </div>
+      </div>
+      <div class="footer-card">
+        <div class="footer-hd"><el-icon size="14"><Aim /></el-icon> 最近训练任务</div>
+        <div class="footer-list">
+          <div v-for="t in recentTrainTasks" :key="t.id" class="footer-row">
+            <span class="row-name">{{ t.name }}</span>
+            <el-tag :type="trainStatusTag(t.status)" size="small" effect="plain">{{ trainStatusLbl(t.status) }}</el-tag>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 图表 + 列表 -->
-    <el-row :gutter="16" class="mt-4">
-      <!-- ECharts 环形图 -->
-      <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">标注任务分布</span></template>
-          <div class="chart-box"><ECharts :options="pieOptions" height="260" /></div>
-        </el-card>
-      </el-col>
-
-      <!-- ECharts 柱状图 -->
-      <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">系统资源</span></template>
-          <div class="chart-box"><ECharts :options="barOptions" height="260" /></div>
-        </el-card>
-      </el-col>
-
-      <!-- 快速入口 -->
-      <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">快速入口</span></template>
-          <div class="quick-grid">
-            <div v-for="item in quickLinks" :key="item.label" class="quick-item" @click="router.push(item.route)">
-              <div class="quick-icon" :style="{ background: item.bg }">
-                <el-icon :size="20" :color="item.color"><component :is="item.icon" /></el-icon>
-              </div>
-              <span class="quick-label">{{ item.label }}</span>
-            </div>
+          <div v-if="!recentTrainTasks.length" class="footer-empty">暂无数据</div>
+        </div>
+      </div>
+      <div class="footer-card">
+        <div class="footer-hd"><el-icon size="14"><Connection /></el-icon> 告警记录</div>
+        <div class="footer-list">
+          <div v-for="a in recentAlarms" :key="a.id" class="footer-row">
+            <span class="row-name">{{ a.name || a.alarm_type || '告警' }}</span>
+            <span class="row-time">{{ fmtTime(a.created_time) }}</span>
           </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 底部：系统信息 + 最新动态 -->
-    <el-row :gutter="16" class="mt-4">
-      <el-col :xs="24" :lg="12">
-        <el-card shadow="never">
-          <template #header><span class="card-title">系统信息</span></template>
-          <el-descriptions :column="2" size="small" border>
-            <el-descriptions-item label="服务版本">v{{ sysInfo.version }}</el-descriptions-item>
-            <el-descriptions-item label="运行环境">{{ sysInfo.environment }}</el-descriptions-item>
-            <el-descriptions-item label="Python 版本">{{ sysInfo.pythonVersion }}</el-descriptions-item>
-            <el-descriptions-item label="数据库">{{ sysInfo.database }}</el-descriptions-item>
-            <el-descriptions-item label="Redis">{{ sysInfo.redisStatus }}</el-descriptions-item>
-            <el-descriptions-item label="CPU 负载">{{ sysInfo.cpuLoad }}</el-descriptions-item>
-            <el-descriptions-item label="内存使用">{{ sysInfo.memUsage }}</el-descriptions-item>
-            <el-descriptions-item label="磁盘使用">{{ sysInfo.diskUsage }}</el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-      </el-col>
-
-      <el-col :xs="24" :lg="12">
-        <el-card shadow="never">
-          <template #header><span class="card-title">最近动态</span></template>
-          <div class="activity-list">
-            <div v-for="(act, i) in activities" :key="i" class="activity-item">
-              <div class="activity-dot" :style="{ background: act.color }" />
-              <div class="activity-content">
-                <span class="activity-text">{{ act.text }}</span>
-                <span class="activity-time">{{ act.time }}</span>
-              </div>
-            </div>
-            <div v-if="activities.length === 0" class="empty-tip">暂无动态</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+          <div v-if="!recentAlarms.length" class="footer-empty">暂无告警</div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { UserFilled, Connection, Monitor, Folder, Document, Edit, DataBoard, Aim, Collection, Setting, Bell } from "@element-plus/icons-vue";
+import { UserFilled, Folder, Edit, Aim, Camera, Connection, WarningFilled } from "@element-plus/icons-vue";
 import { useUserStoreHook } from "@/store";
 import ECharts from "@/components/ECharts/index.vue";
 import { AnnotationAPI } from "@/api/module_annotation";
 import { TrainAPI } from "@/api/module_train";
+import { getCameraList } from "@/api/module_video/camera";
+import { getAlarmRecordList } from "@/api/module_video/alarm";
 import UserAPI from "@/api/module_system/user";
 import OnlineAPI from "@/api/module_monitor/online";
-import ServerAPI from "@/api/module_monitor/server";
 
 const router = useRouter();
 const userStore = useUserStoreHook();
-
 const now = new Date();
-const hour = now.getHours();
-const timefix = hour < 6 ? "夜深了，" : hour < 9 ? "早上好，" : hour < 12 ? "上午好，" : hour < 14 ? "中午好，" : hour < 18 ? "下午好，" : "晚上好，";
-const welcome = hour < 6 ? "注意休息" : hour < 9 ? "新的一天开始了" : hour < 12 ? "加油工作" : hour < 14 ? "午休时间" : hour < 18 ? "继续努力" : "今天辛苦了";
-const subText = hour < 6 ? "夜深了，注意休息哦～" : hour < 9 ? "早晨！今天有哪些任务要完成？" : hour < 12 ? "上午好，保持高效工作！" : hour < 14 ? "午休片刻，下午继续战斗" : hour < 18 ? "下午好，坚持就是胜利" : "辛苦了，今天收获满满！";
+const h = now.getHours();
+const timefix = h < 6 ? "夜深了，" : h < 9 ? "早上好，" : h < 12 ? "上午好，" : h < 14 ? "中午好，" : h < 18 ? "下午好，" : "晚上好，";
+const welcome = h < 6 ? "注意休息" : h < 9 ? "新的一天" : h < 12 ? "保持高效" : h < 14 ? "午休时间" : h < 18 ? "继续加油" : "今天辛苦了";
+const subText = h < 6 ? "夜深了" : h < 9 ? "开启新一天的工作" : h < 12 ? "上午是黄金时间" : h < 14 ? "稍作休息" : h < 18 ? "坚持就是胜利" : "休息一下吧";
 
 const stats = reactive({
-  onlineUsers: 0, totalUsers: 0, activeJobs: 0,
+  onlineUsers: 0, totalUsers: 0,
   datasetCount: 0, taskCount: 0, annotatedCount: 0,
-  trainTaskCount: 0, cameraCount: 0,
+  taskPending: 0, taskInProgress: 0, taskCompleted: 0,
+  trainPending: 0, trainRunning: 0, trainSuccess: 0, trainFailed: 0,
+  cameraTotal: 0, cameraOnline: 0,
+  alarmCount: 0,
 });
-const sysInfo = reactive({
-  version: "0.1.0", environment: "dev", pythonVersion: "3.13",
-  database: "PostgreSQL 17", redisStatus: "已连接",
-  cpuLoad: "--", memUsage: "--", diskUsage: "--",
-});
-const activities = ref<any[]>([]);
 
-const metricCards = computed(() => [
-  { label: "数据集", value: stats.datasetCount, icon: Folder, color: "#409eff", bg: "#ecf5ff", trend: 0, sub: "标注数据集", route: "/annotation/dataset" },
-  { label: "标注任务", value: stats.taskCount, icon: Edit, color: "#67c23a", bg: "#f0f9eb", trend: 0, sub: "标注任务", route: "/annotation/task" },
-  { label: "已标注图片", value: stats.annotatedCount, icon: Collection, color: "#e6a23c", bg: "#fdf6ec", trend: 0, sub: "已完成", route: "/annotation/task" },
-  { label: "训练任务", value: stats.trainTaskCount, icon: Aim, color: "#f56c6c", bg: "#fef0f0", trend: 0, sub: "模型训练", route: "/train/task" },
+const recentAnnoTasks = ref<any[]>([]);
+const recentTrainTasks = ref<any[]>([]);
+const recentAlarms = ref<any[]>([]);
+
+const cards = computed(() => [
+  { label: "标注数据集", val: stats.datasetCount, icon: Folder, color: "#409eff", bg: "#ecf5ff", extra: `${stats.annotatedCount} 张已标注`, route: "/annotation/dataset" },
+  { label: "标注任务", val: stats.taskCount, icon: Edit, color: "#67c23a", bg: "#f0f9eb", extra: `${stats.taskCompleted} 已完成`, route: "/annotation/task" },
+  { label: "训练任务", val: stats.trainPending + stats.trainRunning + stats.trainSuccess + stats.trainFailed, icon: Aim, color: "#f56c6c", bg: "#fef0f0", extra: `${stats.trainRunning} 进行中`, route: "/train/task" },
+  { label: "摄像头", val: stats.cameraTotal, icon: Camera, color: "#e6a23c", bg: "#fdf6ec", extra: `${stats.cameraOnline} 在线`, route: "/video/camera" },
 ]);
 
-const pieOptions = computed(() => ({
-  tooltip: { trigger: "item" as const, formatter: "{b}: {c} ({d}%)" },
+const annoPie = computed(() => ({
+  tooltip: { trigger: "item" as const, formatter: "{b}: {c}" },
   series: [{
-    type: "pie", radius: ["45%", "70%"], avoidLabelOverlap: true,
+    type: "pie" as const, radius: ["50%", "70%"], center: ["50%", "50%"],
     label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
     data: [
-      { value: stats.datasetCount || 1, name: "数据集", itemStyle: { color: "#409eff" } },
-      { value: stats.taskCount || 1, name: "标注任务", itemStyle: { color: "#67c23a" } },
-      { value: stats.annotatedCount || 1, name: "已标注", itemStyle: { color: "#e6a23c" } },
-      { value: stats.trainTaskCount || 1, name: "训练任务", itemStyle: { color: "#f56c6c" } },
+      { value: stats.taskPending || 1, name: "待开始", itemStyle: { color: "#909399" } },
+      { value: stats.taskInProgress || 1, name: "进行中", itemStyle: { color: "#409eff" } },
+      { value: stats.taskCompleted || 1, name: "已完成", itemStyle: { color: "#67c23a" } },
     ],
   }],
 }));
 
-const barOptions = computed(() => {
-  const cpuVal = parseFloat(sysInfo.cpuLoad) || 0;
-  const memVal = parseFloat(sysInfo.memUsage) || 0;
-  const diskVal = parseFloat(sysInfo.diskUsage) || 0;
-  return {
-    tooltip: { trigger: "axis" as const },
-    grid: { left: "3%", right: "4%", bottom: "3%", containLabel: true },
-    xAxis: { type: "category" as const, data: ["CPU", "内存", "磁盘"] },
-    yAxis: { type: "value" as const, max: 100, axisLabel: { formatter: "{value}%" } },
-    series: [{
-      type: "bar" as const, barWidth: "40%",
-      data: [
-        { value: cpuVal, itemStyle: { color: cpuVal > 80 ? "#f56c6c" : cpuVal > 50 ? "#e6a23c" : "#67c23a" } },
-        { value: memVal, itemStyle: { color: memVal > 80 ? "#f56c6c" : memVal > 50 ? "#e6a23c" : "#67c23a" } },
-        { value: diskVal, itemStyle: { color: diskVal > 80 ? "#f56c6c" : diskVal > 50 ? "#e6a23c" : "#67c23a" } },
-      ],
-    }],
-  };
-});
+const trainPie = computed(() => ({
+  tooltip: { trigger: "item" as const, formatter: "{b}: {c}" },
+  series: [{
+    type: "pie" as const, radius: ["50%", "70%"], center: ["50%", "50%"],
+    label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
+    data: [
+      { value: stats.trainPending || 1, name: "待开始", itemStyle: { color: "#909399" } },
+      { value: stats.trainRunning || 1, name: "训练中", itemStyle: { color: "#409eff" } },
+      { value: stats.trainSuccess || 1, name: "已完成", itemStyle: { color: "#67c23a" } },
+      { value: stats.trainFailed || 1, name: "失败", itemStyle: { color: "#f56c6c" } },
+    ],
+  }],
+}));
 
-const quickLinks = [
-  { label: "数据集", icon: Folder, route: "/annotation/dataset", bg: "#ecf5ff", color: "#409eff" },
-  { label: "标注任务", icon: Edit, route: "/annotation/task", bg: "#f0f9eb", color: "#67c23a" },
-  { label: "模型训练", icon: Aim, route: "/train/task", bg: "#fef0f0", color: "#f56c6c" },
-  { label: "模型仓库", icon: DataBoard, route: "/train/repo", bg: "#fdf6ec", color: "#e6a23c" },
-  { label: "系统管理", icon: Setting, route: "/system/user", bg: "#f4f4f5", color: "#909399" },
-  { label: "公告通知", icon: Bell, route: "/system/notice", bg: "#ecf5ff", color: "#409eff" },
-];
+const camPie = computed(() => ({
+  tooltip: { trigger: "item" as const, formatter: "{b}: {c}" },
+  series: [{
+    type: "pie" as const, radius: ["50%", "70%"], center: ["50%", "50%"],
+    label: { show: true, formatter: "{b}\n{d}%", fontSize: 11 },
+    data: [
+      { value: stats.cameraOnline || 1, name: "在线", itemStyle: { color: "#67c23a" } },
+      { value: Math.max(1, (stats.cameraTotal - stats.cameraOnline)) || 1, name: "离线", itemStyle: { color: "#f56c6c" } },
+    ],
+  }],
+}));
+
+function fmtTime(t?: string) {
+  if (!t) return "";
+  const d = new Date(t);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+function annoStatusTag(s: string) {
+  return ({ pending: "info", in_progress: "primary", completed: "success" } as any)[s] || "info";
+}
+function annoStatusLbl(s: string) {
+  return ({ pending: "待开始", in_progress: "进行中", completed: "已完成" } as any)[s] || s;
+}
+function trainStatusTag(s: string) {
+  return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info";
+}
+function trainStatusLbl(s: string) {
+  return ({ pending: "待开始", running: "训练中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s;
+}
 
 onMounted(async () => {
+  const [annoR, trainR, camR, alarmR, userR, onlineR] = await Promise.allSettled([
+    AnnotationAPI.getOverview(),
+    TrainAPI.getTaskList(),
+    getCameraList({ page_no: 1, page_size: 1 }),
+    getAlarmRecordList({ page_no: 1, page_size: 5 }),
+    UserAPI.listUser({ page_no: 1, page_size: 1 }),
+    OnlineAPI.listOnline({ page_no: 1, page_size: 1 }),
+  ]);
+
+  if (annoR.status === "fulfilled") {
+    const d = annoR.value.data?.data;
+    if (d) { stats.datasetCount = d.dataset_count || 0; stats.taskCount = d.task_count || 0; stats.annotatedCount = d.annotated_image_count || 0; }
+  }
+
+  if (trainR.status === "fulfilled") {
+    const tasks = trainR.value.data?.data || [];
+    for (const t of tasks) {
+      if (t.status === "pending") stats.trainPending++;
+      else if (t.status === "running") stats.trainRunning++;
+      else if (t.status === "success") stats.trainSuccess++;
+      else if (t.status === "failed") stats.trainFailed++;
+    }
+    recentTrainTasks.value = tasks.slice(0, 5);
+  }
+
+  if (camR.status === "fulfilled") {
+    const items = camR.value.data?.data?.items || [];
+    stats.cameraTotal = camR.value.data?.data?.total || 0;
+    stats.cameraOnline = items.filter((c: any) => c.reachable === true).length;
+  }
+
+  if (alarmR.status === "fulfilled") {
+    const items = alarmR.value.data?.data?.items || [];
+    stats.alarmCount = alarmR.value.data?.data?.total || 0;
+    recentAlarms.value = items.slice(0, 5);
+  }
+
+  if (userR.status === "fulfilled") stats.totalUsers = userR.value.data?.data?.total || 0;
+  if (onlineR.status === "fulfilled") stats.onlineUsers = onlineR.value.data?.data?.total || 0;
+
+  // Fetch annotation tasks for status breakdown
   try {
-    const [annoR, userR, onlineR, serverR, trainR] = await Promise.allSettled([
-      AnnotationAPI.getOverview(),
-      UserAPI.listUser({ page_no: 1, page_size: 1 }),
-      OnlineAPI.listOnline({ page_no: 1, page_size: 1 }),
-      ServerAPI.getServer(),
-      TrainAPI.getTaskList(),
-    ]);
-
-    if (annoR.status === "fulfilled") {
-      const d = annoR.value.data?.data;
-      if (d) { stats.datasetCount = d.dataset_count || 0; stats.taskCount = d.task_count || 0; stats.annotatedCount = d.annotated_image_count || 0; }
+    const r = await AnnotationAPI.getTaskList({ page_no: 1, page_size: 100 });
+    const tasks = r.data?.data?.items || [];
+    for (const t of tasks) {
+      if (t.status === "pending") stats.taskPending++;
+      else if (t.status === "in_progress") stats.taskInProgress++;
+      else if (t.status === "completed") stats.taskCompleted++;
     }
-    if (userR.status === "fulfilled") { stats.totalUsers = userR.value.data?.data?.total || 0; }
-    if (onlineR.status === "fulfilled") { stats.onlineUsers = onlineR.value.data?.data?.total || 0; }
-    if (trainR.status === "fulfilled") { stats.trainTaskCount = (trainR.value.data?.data || []).length; }
-
-    if (serverR.status === "fulfilled") {
-      const s = serverR.value.data?.data;
-      if (s) {
-        sysInfo.cpuLoad = s.cpu?.used ?? "--";
-        sysInfo.memUsage = s.mem?.usage ?? "--";
-        sysInfo.diskUsage = s.disk?.usage ?? "--";
-        sysInfo.pythonVersion = s.system?.pythonVersion ?? "3.13";
-      }
-    }
+    recentAnnoTasks.value = tasks.slice(0, 5);
   } catch {}
 });
 </script>
 
 <style scoped>
-.dashboard-container { padding: 16px; max-width: 1400px; margin: 0 auto; }
-.welcome-card { border-radius: 12px; }
-.welcome-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.welcome-left { display: flex; align-items: center; gap: 16px; }
-.avatar-wrap { width: 56px; height: 56px; border-radius: 50%; background: var(--el-fill-color-light); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
-.avatar-img { width: 100%; height: 100%; object-fit: cover; }
-.greeting { font-size: 18px; font-weight: 700; color: var(--el-text-color-primary); }
-.sub-text { font-size: 13px; color: var(--el-text-color-secondary); margin-top: 4px; }
-.welcome-stats { display: flex; gap: 12px; flex-wrap: wrap; }
-.stat-chip { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--el-text-color-regular); background: var(--el-fill-color-light); padding: 6px 14px; border-radius: 20px; }
-.chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.db { padding: 16px 20px; }
 
-.mt-4 { margin-top: 16px; }
-.metric-card { border-radius: 10px; cursor: pointer; transition: transform .15s, box-shadow .15s; }
-.metric-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.08); }
-.metric-inner { display: flex; align-items: center; gap: 14px; }
-.metric-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.metric-info { flex: 1; min-width: 0; }
-.metric-value { font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--el-text-color-primary); }
-.metric-label { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.metric-footer { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--el-border-color-lighter); font-size: 12px; }
-.trend { font-weight: 600; }
-.trend.up { color: #67c23a; }
-.trend.down { color: #f56c6c; }
-.metric-sub { color: var(--el-text-color-secondary); }
+/* 横幅 */
+.db-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.banner-left { display: flex; align-items: center; gap: 14px; }
+.avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--el-fill-color-light); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.banner-greeting { font-size: 17px; font-weight: 700; color: var(--el-text-color-primary); }
+.banner-sub { font-size: 13px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.banner-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--el-text-color-regular); background: var(--el-fill-color-light); padding: 5px 12px; border-radius: 16px; }
+.chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 
-.chart-card { border-radius: 10px; height: 100%; }
-.chart-box { padding: 4px 0; }
-.card-title { font-size: 14px; font-weight: 600; }
+/* 核心指标 */
+.db-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+.db-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 10px; padding: 18px; display: flex; align-items: center; gap: 14px; cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.db-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); transform: translateY(-1px); }
+.card-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.card-body { flex: 1; min-width: 0; }
+.card-val { font-size: 22px; font-weight: 700; line-height: 1.2; color: var(--el-text-color-primary); }
+.card-lbl { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.card-extra { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
 
-.quick-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 4px 0; }
-.quick-item { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; padding: 12px 4px; border-radius: 8px; transition: background .15s; }
-.quick-item:hover { background: var(--el-fill-color-light); }
-.quick-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-.quick-label { font-size: 12px; color: var(--el-text-color-regular); }
+/* 图表行 */
+.db-charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+.chart-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 10px; padding: 16px; }
+.chart-hd { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 8px; }
 
-.activity-list { max-height: 300px; overflow-y: auto; }
-.activity-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-.activity-item:last-child { border-bottom: none; }
-.activity-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
-.activity-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.activity-text { font-size: 13px; color: var(--el-text-color-primary); }
-.activity-time { font-size: 12px; color: var(--el-text-color-secondary); }
-.empty-tip { text-align: center; padding: 32px 0; color: var(--el-text-color-secondary); font-size: 13px; }
+/* 底部三列 */
+.db-footer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.footer-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 10px; padding: 16px; }
+.footer-hd { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.footer-list { max-height: 260px; overflow-y: auto; }
+.footer-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); gap: 8px; }
+.footer-row:last-child { border-bottom: none; }
+.row-name { font-size: 13px; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.row-time { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
+.footer-empty { text-align: center; padding: 24px 0; color: var(--el-text-color-secondary); font-size: 13px; }
 </style>
