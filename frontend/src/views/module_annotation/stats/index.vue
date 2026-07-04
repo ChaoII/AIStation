@@ -67,7 +67,9 @@ onMounted(async () => {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 
   &::before {
     position: absolute;
@@ -85,8 +87,12 @@ onMounted(async () => {
     box-shadow: 0 8px 24px rgb(0 0 0 / 7%);
   }
 
-  &--task::before { background: var(--el-color-success); }
-  &--image::before { background: var(--el-color-warning); }
+  &--task::before {
+    background: var(--el-color-success);
+  }
+  &--image::before {
+    background: var(--el-color-warning);
+  }
 
   &__label {
     margin-bottom: 8px;
@@ -111,7 +117,11 @@ onMounted(async () => {
     color: var(--el-text-color-placeholder);
   }
 
-  &--task &__value { color: var(--el-color-success); }
-  &--image &__value { color: var(--el-color-warning); }
+  &--task &__value {
+    color: var(--el-color-success);
+  }
+  &--image &__value {
+    color: var(--el-color-warning);
+  }
 }
 </style>

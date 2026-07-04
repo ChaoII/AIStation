@@ -184,7 +184,11 @@
             <el-option label="图像分类" value="classification" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="formData.task_type === 'classification'" label="分类模式" prop="classification_mode">
+        <el-form-item
+          v-if="formData.task_type === 'classification'"
+          label="分类模式"
+          prop="classification_mode"
+        >
           <el-radio-group v-model="formData.classification_mode">
             <el-radio value="single">单标签（每张图一个类别）</el-radio>
             <el-radio value="multi">多标签（每张图多个类别）</el-radio>

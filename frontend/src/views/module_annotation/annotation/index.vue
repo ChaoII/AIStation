@@ -314,18 +314,32 @@
               </template>
               <template v-if="ann.type === 'Keypoint'">
                 <!-- Bounding box -->
-                <rect v-if="ann.bounding_box"
+                <rect
+                  v-if="ann.bounding_box"
                   :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2"
                   :y="ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2"
-                  :width="ann.bounding_box.width * cw" :height="ann.bounding_box.height * ch"
+                  :width="ann.bounding_box.width * cw"
+                  :height="ann.bounding_box.height * ch"
                   :stroke="clsColor(ann.class_id)"
-                  :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
-                  fill="rgba(0,0,0,0.04)" style="pointer-events:all" vector-effect="non-scaling-stroke" />
+                  :stroke-width="
+                    store.selectedAnnotationId === ann.id
+                      ? annSettings.selStrokeWidth
+                      : annSettings.strokeWidth
+                  "
+                  fill="rgba(0,0,0,0.04)"
+                  style="pointer-events: all"
+                  vector-effect="non-scaling-stroke"
+                />
                 <!-- Label at top-left corner -->
                 <g v-if="ann.bounding_box" class="ann-label">
                   <rect
                     :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2"
-                    :y="ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2 - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :y="
+                      ann.bounding_box.cy * ch -
+                      (ann.bounding_box.height * ch) / 2 -
+                      (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) -
+                      4
+                    "
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
                     :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
                     :fill="clsColor(ann.class_id)"
@@ -349,14 +363,32 @@
                 </g>
                 <!-- Bounding box handles when selected -->
                 <template v-if="store.selectedAnnotationId === ann.id && ann.bounding_box">
-                  <rect v-for="hkey in ['tl','tr','bl','br','tc','bc','ml','mr']" :key="hkey"
+                  <rect
+                    v-for="hkey in ['tl', 'tr', 'bl', 'br', 'tc', 'bc', 'ml', 'mr']"
+                    :key="hkey"
                     :x="kpRbHandlePos(ann.bounding_box, hkey, cw, ch).x - 4"
                     :y="kpRbHandlePos(ann.bounding_box, hkey, cw, ch).y - 4"
-                    width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
-                    :data-handle="hkey" class="handle" vector-effect="non-scaling-stroke" />
-                  <rect :x="ann.bounding_box.cx * cw - 4" :y="ann.bounding_box.cy * ch - 4"
-                    width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
-                    data-handle="move" class="handle" vector-effect="non-scaling-stroke" />
+                    width="8"
+                    height="8"
+                    fill="#fff"
+                    stroke="#1a1a1a"
+                    stroke-width="1.5"
+                    :data-handle="hkey"
+                    class="handle"
+                    vector-effect="non-scaling-stroke"
+                  />
+                  <rect
+                    :x="ann.bounding_box.cx * cw - 4"
+                    :y="ann.bounding_box.cy * ch - 4"
+                    width="8"
+                    height="8"
+                    fill="#fff"
+                    stroke="#1a1a1a"
+                    stroke-width="1.5"
+                    data-handle="move"
+                    class="handle"
+                    vector-effect="non-scaling-stroke"
+                  />
                 </template>
                 <g v-for="(kp, i) in ann.keypoints" :key="i">
                   <circle
@@ -389,7 +421,19 @@
                   <text :x="kp.x * cw + 12" :y="kp.y * ch - 4" fill="#606266" font-size="5">
                     {{ kp.name }}
                   </text>
-                  <rect v-if="store.selectedAnnotationId === ann.id" :x="kp.x * cw - 4" :y="kp.y * ch - 4" width="8" height="8" fill="#fff" stroke="#1a1a1a" stroke-width="1.5" :data-handle="'kp-' + i" class="handle" vector-effect="non-scaling-stroke" />
+                  <rect
+                    v-if="store.selectedAnnotationId === ann.id"
+                    :x="kp.x * cw - 4"
+                    :y="kp.y * ch - 4"
+                    width="8"
+                    height="8"
+                    fill="#fff"
+                    stroke="#1a1a1a"
+                    stroke-width="1.5"
+                    :data-handle="'kp-' + i"
+                    class="handle"
+                    vector-effect="non-scaling-stroke"
+                  />
                 </g>
               </template>
               <template v-if="ann.type === 'Ocr'">
@@ -397,21 +441,40 @@
                 <template v-if="ann.source === 'rect'">
                   <template v-for="B in [ocrBBox(ann)]" :key="ann.id + '-box'">
                     <rect
-                      :x="B.minX" :y="B.minY"
-                      :width="B.maxX - B.minX" :height="B.maxY - B.minY"
+                      :x="B.minX"
+                      :y="B.minY"
+                      :width="B.maxX - B.minX"
+                      :height="B.maxY - B.minY"
                       :stroke="clsColor(ann.class_id)"
-                      :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
-                      :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
+                      :stroke-width="
+                        store.selectedAnnotationId === ann.id
+                          ? annSettings.selStrokeWidth
+                          : annSettings.strokeWidth
+                      "
+                      :fill="
+                        store.selectedAnnotationId === ann.id
+                          ? clsColor(ann.class_id) + '28'
+                          : 'rgba(255,255,0,0.08)'
+                      "
                       style="pointer-events: all"
                       :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
                       vector-effect="non-scaling-stroke"
                     />
                     <template v-if="store.selectedAnnotationId === ann.id">
-                      <rect v-for="h in ocrBoxHandles(ann)" :key="h.key"
-                        :x="h.x - 4" :y="h.y - 4" width="8" height="8"
-                        fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
-                        class="handle" vector-effect="non-scaling-stroke"
-                        @mousedown.left.stop="startOcrRectResize($event, ann, h.edges)" />
+                      <rect
+                        v-for="h in ocrBoxHandles(ann)"
+                        :key="h.key"
+                        :x="h.x - 4"
+                        :y="h.y - 4"
+                        width="8"
+                        height="8"
+                        fill="#fff"
+                        stroke="#1a1a1a"
+                        stroke-width="1.5"
+                        class="handle"
+                        vector-effect="non-scaling-stroke"
+                        @mousedown.left.stop="startOcrRectResize($event, ann, h.edges)"
+                      />
                     </template>
                   </template>
                 </template>
@@ -420,21 +483,38 @@
                   <polygon
                     :points="ann.points.map((p: any) => `${p.x * cw},${p.y * ch}`).join(' ')"
                     :stroke="clsColor(ann.class_id)"
-                    :stroke-width="store.selectedAnnotationId === ann.id ? annSettings.selStrokeWidth : annSettings.strokeWidth"
-                    :fill="store.selectedAnnotationId === ann.id ? clsColor(ann.class_id) + '28' : 'rgba(255,255,0,0.08)'"
+                    :stroke-width="
+                      store.selectedAnnotationId === ann.id
+                        ? annSettings.selStrokeWidth
+                        : annSettings.strokeWidth
+                    "
+                    :fill="
+                      store.selectedAnnotationId === ann.id
+                        ? clsColor(ann.class_id) + '28'
+                        : 'rgba(255,255,0,0.08)'
+                    "
                     style="pointer-events: all"
                     :data-handle="store.selectedAnnotationId === ann.id ? 'move' : undefined"
                     vector-effect="non-scaling-stroke"
                   />
                   <template v-if="store.selectedAnnotationId === ann.id">
-                    <rect v-for="(p, i) in ann.points" :key="i"
-                      :x="p.x * cw - 3" :y="p.y * ch - 3" width="6" height="6"
-                      fill="#fff" stroke="#1a1a1a" stroke-width="1.5"
-                      :data-handle="'ocr-vertex-' + i" class="handle"
-                      vector-effect="non-scaling-stroke" />
+                    <rect
+                      v-for="(p, i) in ann.points"
+                      :key="i"
+                      :x="p.x * cw - 3"
+                      :y="p.y * ch - 3"
+                      width="6"
+                      height="6"
+                      fill="#fff"
+                      stroke="#1a1a1a"
+                      stroke-width="1.5"
+                      :data-handle="'ocr-vertex-' + i"
+                      class="handle"
+                      vector-effect="non-scaling-stroke"
+                    />
                   </template>
                 </template>
-<g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
+                <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.minX"
                     :y="B.minY - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
@@ -442,12 +522,19 @@
                     :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
-                    stroke-width="0.5" vector-effect="non-scaling-stroke" rx="1"
+                    stroke-width="0.5"
+                    vector-effect="non-scaling-stroke"
+                    rx="1"
                   />
                   <text
-                    :x="B.minX + 2" :y="B.minY - 2" fill="#ffffff" font-weight="500"
-                    text-anchor="start" font-family="Microsoft YaHei,sans-serif"
-                    :font-size="annSettings.labelFontSize" dominant-baseline="text-after-edge"
+                    :x="B.minX + 2"
+                    :y="B.minY - 2"
+                    fill="#ffffff"
+                    font-weight="500"
+                    text-anchor="start"
+                    font-family="Microsoft YaHei,sans-serif"
+                    :font-size="annSettings.labelFontSize"
+                    dominant-baseline="text-after-edge"
                   >
                     {{ ann.text || getCls(ann.class_id)?.name }}
                   </text>
@@ -670,33 +757,84 @@
             </template>
             <!-- OCR 矩形模式预览 -->
             <template v-if="currentTool === 'ocr' && ocrRectMode && ocrDrawingPoints.length === 4">
-              <template v-for="B in [{minX:Math.min(...ocrDrawingPoints.map(p=>p.x*cw)),minY:Math.min(...ocrDrawingPoints.map(p=>p.y*ch)),maxX:Math.max(...ocrDrawingPoints.map(p=>p.x*cw)),maxY:Math.max(...ocrDrawingPoints.map(p=>p.y*ch))}]">
-                <rect :x="B.minX" :y="B.minY" :width="B.maxX-B.minX" :height="B.maxY-B.minY"
-                  :stroke="cxColor" stroke-width="1.5" :fill="cxColor+'18'"
-                  vector-effect="non-scaling-stroke" />
+              <template
+                v-for="B in [
+                  {
+                    minX: Math.min(...ocrDrawingPoints.map((p) => p.x * cw)),
+                    minY: Math.min(...ocrDrawingPoints.map((p) => p.y * ch)),
+                    maxX: Math.max(...ocrDrawingPoints.map((p) => p.x * cw)),
+                    maxY: Math.max(...ocrDrawingPoints.map((p) => p.y * ch)),
+                  },
+                ]"
+              >
+                <rect
+                  :x="B.minX"
+                  :y="B.minY"
+                  :width="B.maxX - B.minX"
+                  :height="B.maxY - B.minY"
+                  :stroke="cxColor"
+                  stroke-width="1.5"
+                  :fill="cxColor + '18'"
+                  vector-effect="non-scaling-stroke"
+                />
               </template>
             </template>
             <!-- OCR 四边形模式预览 -->
             <template v-if="currentTool === 'ocr' && !ocrRectMode && ocrDrawingPoints.length > 0">
               <!-- 未封闭时用 polyline -->
-              <polyline v-if="!ocrTextInputVisible"
+              <polyline
+                v-if="!ocrTextInputVisible"
                 :points="ocrDrawingPoints.map((p) => `${p.x * cw},${p.y * ch}`).join(' ')"
-                :stroke="cxColor" stroke-width="1.5" fill="none" />
+                :stroke="cxColor"
+                stroke-width="1.5"
+                fill="none"
+              />
               <!-- 封闭后用 polygon -->
-              <polygon v-else
+              <polygon
+                v-else
                 :points="ocrDrawingPoints.map((p) => `${p.x * cw},${p.y * ch}`).join(' ')"
-                :stroke="cxColor" stroke-width="1.5" :fill="cxColor+'18'" />
-              <circle v-for="(p, i) in ocrDrawingPoints" :key="i"
-                :cx="p.x * cw" :cy="p.y * ch" r="3" :fill="cxColor" />
-              <text v-for="(p, i) in ocrDrawingPoints" :key="'l' + i"
-                :x="p.x * cw + 8" :y="p.y * ch + 4" fill="#606266" font-size="5">{{ i + 1 }}</text>
-              <circle v-if="ocrNearFirst" :cx="cursorX" :cy="cursorY" r="8"
-                fill="none" :stroke="cxColor" stroke-width="2" />
-              <line v-if="cursorX && cursorY && ocrDrawingPoints.length > 0 && !ocrTextInputVisible"
+                :stroke="cxColor"
+                stroke-width="1.5"
+                :fill="cxColor + '18'"
+              />
+              <circle
+                v-for="(p, i) in ocrDrawingPoints"
+                :key="i"
+                :cx="p.x * cw"
+                :cy="p.y * ch"
+                r="3"
+                :fill="cxColor"
+              />
+              <text
+                v-for="(p, i) in ocrDrawingPoints"
+                :key="'l' + i"
+                :x="p.x * cw + 8"
+                :y="p.y * ch + 4"
+                fill="#606266"
+                font-size="5"
+              >
+                {{ i + 1 }}
+              </text>
+              <circle
+                v-if="ocrNearFirst"
+                :cx="cursorX"
+                :cy="cursorY"
+                r="8"
+                fill="none"
+                :stroke="cxColor"
+                stroke-width="2"
+              />
+              <line
+                v-if="cursorX && cursorY && ocrDrawingPoints.length > 0 && !ocrTextInputVisible"
                 :x1="ocrDrawingPoints[ocrDrawingPoints.length - 1].x * cw"
                 :y1="ocrDrawingPoints[ocrDrawingPoints.length - 1].y * ch"
-                :x2="cursorX" :y2="cursorY"
-                :stroke="cxColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.6" />
+                :x2="cursorX"
+                :y2="cursorY"
+                :stroke="cxColor"
+                stroke-width="1.5"
+                stroke-dasharray="4,3"
+                opacity="0.6"
+              />
             </template>
           </svg>
           <div v-if="!imgUrl && store.currentImage" class="no-image">加载失败</div>
@@ -801,7 +939,18 @@
           <div class="panel-section">
             <div class="section-title-row">
               <span class="section-title">类别</span>
-              <el-button text size="small" @click="showClassModal = true; kpCount = 0; clsForm.kpNames = []; clsForm.kpColors = []">+ 添加</el-button>
+              <el-button
+                text
+                size="small"
+                @click="
+                  showClassModal = true;
+                  kpCount = 0;
+                  clsForm.kpNames = [];
+                  clsForm.kpColors = [];
+                "
+              >
+                + 添加
+              </el-button>
             </div>
             <div class="scroll-area">
               <div
@@ -818,8 +967,8 @@
                   title="确定删除该类别？"
                   confirm-button-text="删除"
                   cancel-button-text="取消"
-                  @confirm="removeClass(cls.id)"
                   width="180"
+                  @confirm="removeClass(cls.id)"
                 >
                   <template #reference>
                     <el-button text size="small" @click.stop>×</el-button>
@@ -832,7 +981,9 @@
           <div v-if="taskType === 'classification'" class="divider" />
           <div v-if="taskType === 'classification'" class="panel-section">
             <div class="section-title-row">
-              <span class="section-title">分类（{{ task?.classification_mode === 'multi' ? '多标签' : '单标签' }}）</span>
+              <span class="section-title">
+                分类（{{ task?.classification_mode === "multi" ? "多标签" : "单标签" }}）
+              </span>
             </div>
             <div class="scroll-area">
               <template v-if="taskClassificationMode === 'single'">
@@ -877,9 +1028,11 @@
                   <span class="dot-color" :style="{ background: cls.color }" />
                   <span class="flex-1 text-sm">{{ cls.name }}</span>
                   <el-icon
-                    v-if="store.annotations.some(
-                      (a) => a.type === 'Classification' && (a.class_ids || []).includes(cls.id)
-                    )"
+                    v-if="
+                      store.annotations.some(
+                        (a) => a.type === 'Classification' && (a.class_ids || []).includes(cls.id)
+                      )
+                    "
                     size="14"
                     color="#67c23a"
                   >
@@ -927,13 +1080,11 @@
                   title="确定删除该标注？"
                   confirm-button-text="删除"
                   cancel-button-text="取消"
-                  @confirm="removeAnn(ann.id)"
                   width="180"
+                  @confirm="removeAnn(ann.id)"
                 >
                   <template #reference>
-                    <el-button text size="small" type="danger" @click.stop>
-                      ×
-                    </el-button>
+                    <el-button text size="small" type="danger" @click.stop>×</el-button>
                   </template>
                 </el-popconfirm>
               </div>
@@ -977,44 +1128,82 @@
           <el-input v-model="clsForm.name" placeholder="类别名称" />
         </el-form-item>
         <el-form-item label="颜色">
-          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center">
             <div
               v-for="c in PRESET_COLORS"
               :key="c"
               :style="{
-                width:'20px',height:'20px',borderRadius:'4px',cursor:'pointer',
-                background:c,
+                width: '20px',
+                height: '20px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                background: c,
                 border: clsForm.color === c ? '2px solid #303133' : '2px solid transparent',
                 transform: clsForm.color === c ? 'scale(1.2)' : 'scale(1)',
-                transition:'all .15s'
+                transition: 'all .15s',
               }"
               @click="clsForm.color = c"
             />
-            <el-color-picker v-model="clsForm.color" size="small" style="margin-left:4px" />
+            <el-color-picker v-model="clsForm.color" size="small" style="margin-left: 4px" />
           </div>
         </el-form-item>
         <template v-if="taskType === 'keypoint'">
-            <div style="margin-top:8px;font-size:12px;color:#909399;padding:0 0 4px">关键点列表（点击 ⊖ 删除）</div>
-            <div v-for="(_, i) in kpCount" :key="i" style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-              <span style="width:24px;text-align:center;font-size:12px;color:#606266;flex-shrink:0">{{ i + 1 }}</span>
-              <el-input v-model="clsForm.kpNames[i]" placeholder="名称" size="small" style="flex:1" />
-               <div style="display:flex;gap:2px;flex-wrap:wrap;align-items:center">
-                  <div
-                    v-for="c in PRESET_COLORS"
-                    :key="c"
-                    :style="{
-                      width:'14px',height:'14px',borderRadius:'3px',cursor:'pointer',
-                      background:c,
-                      border: clsForm.kpColors[i] === c ? '1.5px solid #303133' : '1.5px solid transparent'
-                    }"
-                    @click="clsForm.kpColors[i] = c"
-                  />
-                  <el-color-picker v-model="clsForm.kpColors[i]" size="small" style="width:24px" />
-                </div>
-              <el-button text size="small" type="danger" @click="removeKp(i)" style="font-size:16px;padding:0;width:20px">⊖</el-button>
+          <div style="margin-top: 8px; font-size: 12px; color: #909399; padding: 0 0 4px">
+            关键点列表（点击 ⊖ 删除）
+          </div>
+          <div
+            v-for="(_, i) in kpCount"
+            :key="i"
+            style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px"
+          >
+            <span
+              style="
+                width: 24px;
+                text-align: center;
+                font-size: 12px;
+                color: #606266;
+                flex-shrink: 0;
+              "
+            >
+              {{ i + 1 }}
+            </span>
+            <el-input
+              v-model="clsForm.kpNames[i]"
+              placeholder="名称"
+              size="small"
+              style="flex: 1"
+            />
+            <div style="display: flex; gap: 2px; flex-wrap: wrap; align-items: center">
+              <div
+                v-for="c in PRESET_COLORS"
+                :key="c"
+                :style="{
+                  width: '14px',
+                  height: '14px',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  background: c,
+                  border:
+                    clsForm.kpColors[i] === c ? '1.5px solid #303133' : '1.5px solid transparent',
+                }"
+                @click="clsForm.kpColors[i] = c"
+              />
+              <el-color-picker v-model="clsForm.kpColors[i]" size="small" style="width: 24px" />
             </div>
-            <el-button size="small" text type="primary" @click="addKp" style="margin-top:4px">+ 添加关键点</el-button>
-          </template>
+            <el-button
+              text
+              size="small"
+              type="danger"
+              style="font-size: 16px; padding: 0; width: 20px"
+              @click="removeKp(i)"
+            >
+              ⊖
+            </el-button>
+          </div>
+          <el-button size="small" text type="primary" style="margin-top: 4px" @click="addKp">
+            + 添加关键点
+          </el-button>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="showClassModal = false">取消</el-button>
@@ -1044,7 +1233,16 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
-import { ArrowLeft, ArrowRight, Delete, Check, Pointer, Refresh, Grid, CirclePlus } from "@element-plus/icons-vue";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Delete,
+  Check,
+  Pointer,
+  Refresh,
+  Grid,
+  CirclePlus,
+} from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import { AnnotationAPI } from "@/api/module_annotation";
 import { useAnnotationStore, type ToolName } from "./store";
@@ -1077,7 +1275,12 @@ const task = ref<any>(null);
 const taskClasses = ref<any[]>([]);
 const showClassModal = ref(false);
 const showSettings = ref(false);
-const clsForm = ref({ name: "", color: "#409eff", kpNames: [] as string[], kpColors: [] as string[] })
+const clsForm = ref({
+  name: "",
+  color: "#409eff",
+  kpNames: [] as string[],
+  kpColors: [] as string[],
+});
 
 // ---- 标注工作台设置（持久化到 localStorage）----
 const settingsKey = "annotation-workbench-settings";
@@ -1212,9 +1415,17 @@ const kpNames = ref<string[]>(["top_left", "top_right", "bottom_right", "bottom_
 const kpBoxPreview = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 const pendingKpVisibility = ref(2);
 let kpBoxDragStart: { x: number; y: number } | null = null;
-const kpCount = ref(0)
-function addKp() { clsForm.value.kpNames.push(""); clsForm.value.kpColors.push(clsForm.value.color); kpCount.value = clsForm.value.kpNames.length }
-function removeKp(i: number) { clsForm.value.kpNames.splice(i, 1); clsForm.value.kpColors.splice(i, 1); kpCount.value = clsForm.value.kpNames.length }
+const kpCount = ref(0);
+function addKp() {
+  clsForm.value.kpNames.push("");
+  clsForm.value.kpColors.push(clsForm.value.color);
+  kpCount.value = clsForm.value.kpNames.length;
+}
+function removeKp(i: number) {
+  clsForm.value.kpNames.splice(i, 1);
+  clsForm.value.kpColors.splice(i, 1);
+  kpCount.value = clsForm.value.kpNames.length;
+}
 
 // ---- OCR ----
 const ocrDrawingPoints = ref<{ x: number; y: number }[]>([]);
@@ -1225,7 +1436,7 @@ const ocrSource = ref<"rect" | "quad">("quad");
 let ocrBoxStart = { x: 0, y: 0 };
 
 // ---- Classification ----
-const taskClassificationMode = computed(() => task.value?.classification_mode || "single")
+const taskClassificationMode = computed(() => task.value?.classification_mode || "single");
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
@@ -1445,12 +1656,12 @@ function labelWidthForClass(classId: number): number {
 function addClass() {
   if (!clsForm.value.name.trim()) return;
   const id = taskClasses.value.length > 0 ? Math.max(...taskClasses.value.map((c) => c.id)) + 1 : 0;
-  const cls: any = { id, name: clsForm.value.name, color: clsForm.value.color }
-  if (taskType.value === "keypoint" && clsForm.value.kpNames.some(n => n.trim())) {
-    cls.keypoint_names = clsForm.value.kpNames.filter(n => n.trim())
-    cls.keypoint_colors = clsForm.value.kpColors.slice(0, cls.keypoint_names.length)
+  const cls: any = { id, name: clsForm.value.name, color: clsForm.value.color };
+  if (taskType.value === "keypoint" && clsForm.value.kpNames.some((n) => n.trim())) {
+    cls.keypoint_names = clsForm.value.kpNames.filter((n) => n.trim());
+    cls.keypoint_colors = clsForm.value.kpColors.slice(0, cls.keypoint_names.length);
   }
-  taskClasses.value.push(cls)
+  taskClasses.value.push(cls);
   clsForm.value = { name: "", color: "#409eff", kpNames: [], kpColors: [] };
   showClassModal.value = false;
   saveClassesToTask();
@@ -1536,26 +1747,82 @@ function rbRotateHandlePos(ann: any, cw_val: number, ch_val: number) {
 }
 
 function kpRbHandlePos(bb: any, h: string, cw: number, ch: number): { x: number; y: number } {
-  const cos = Math.cos(bb.angle); const sin = Math.sin(bb.angle)
-  const hw = (bb.width * cw) / 2; const hh = (bb.height * ch) / 2
-  let lx = 0, ly = 0
-  if (h === "tl") { lx = -hw; ly = -hh }
-  else if (h === "tc") { lx = 0; ly = -hh }
-  else if (h === "tr") { lx = hw; ly = -hh }
-  else if (h === "mr") { lx = hw; ly = 0 }
-  else if (h === "br") { lx = hw; ly = hh }
-  else if (h === "bc") { lx = 0; ly = hh }
-  else if (h === "bl") { lx = -hw; ly = hh }
-  else if (h === "ml") { lx = -hw; ly = 0 }
-  return { x: bb.cx * cw + lx * cos - ly * sin, y: bb.cy * ch + lx * sin + ly * cos }
+  const cos = Math.cos(bb.angle);
+  const sin = Math.sin(bb.angle);
+  const hw = (bb.width * cw) / 2;
+  const hh = (bb.height * ch) / 2;
+  let lx = 0,
+    ly = 0;
+  if (h === "tl") {
+    lx = -hw;
+    ly = -hh;
+  } else if (h === "tc") {
+    lx = 0;
+    ly = -hh;
+  } else if (h === "tr") {
+    lx = hw;
+    ly = -hh;
+  } else if (h === "mr") {
+    lx = hw;
+    ly = 0;
+  } else if (h === "br") {
+    lx = hw;
+    ly = hh;
+  } else if (h === "bc") {
+    lx = 0;
+    ly = hh;
+  } else if (h === "bl") {
+    lx = -hw;
+    ly = hh;
+  } else if (h === "ml") {
+    lx = -hw;
+    ly = 0;
+  }
+  return { x: bb.cx * cw + lx * cos - ly * sin, y: bb.cy * ch + lx * sin + ly * cos };
 }
 
-const KP_COLORS = ["#FF6B6B","#FF9F43","#FECA57","#9CCC65","#26DE81","#20BF6B","#0BE881","#0FB9B1","#12CBC4","#0ABDE3","#2E86DE","#3863D4","#8854D0","#A55EEA","#D980FA","#F78FB3","#EE5A70"]
-const PRESET_COLORS = ["#FF6B6B","#FF9F43","#FECA57","#9CCC65","#26DE81","#20BF6B","#0BE881","#0FB9B1","#12CBC4","#0ABDE3","#2E86DE","#3863D4","#8854D0","#A55EEA","#D980FA","#F78FB3","#EE5A70"]
+const KP_COLORS = [
+  "#FF6B6B",
+  "#FF9F43",
+  "#FECA57",
+  "#9CCC65",
+  "#26DE81",
+  "#20BF6B",
+  "#0BE881",
+  "#0FB9B1",
+  "#12CBC4",
+  "#0ABDE3",
+  "#2E86DE",
+  "#3863D4",
+  "#8854D0",
+  "#A55EEA",
+  "#D980FA",
+  "#F78FB3",
+  "#EE5A70",
+];
+const PRESET_COLORS = [
+  "#FF6B6B",
+  "#FF9F43",
+  "#FECA57",
+  "#9CCC65",
+  "#26DE81",
+  "#20BF6B",
+  "#0BE881",
+  "#0FB9B1",
+  "#12CBC4",
+  "#0ABDE3",
+  "#2E86DE",
+  "#3863D4",
+  "#8854D0",
+  "#A55EEA",
+  "#D980FA",
+  "#F78FB3",
+  "#EE5A70",
+];
 function kpColorByIndex(index: number, classId: number): string {
-  const cls = taskClasses.value.find(c => c.id === classId)
-  if (cls?.keypoint_colors && cls.keypoint_colors.length > index) return cls.keypoint_colors[index]
-  return KP_COLORS[index % KP_COLORS.length]
+  const cls = taskClasses.value.find((c) => c.id === classId);
+  if (cls?.keypoint_colors && cls.keypoint_colors.length > index) return cls.keypoint_colors[index];
+  return KP_COLORS[index % KP_COLORS.length];
 }
 
 function polygonPath(ann: any): string {
@@ -1828,11 +2095,11 @@ function onMouseDown(e: MouseEvent) {
     const norm = { x: pt.x / cw.value, y: pt.y / ch.value };
 
     if (kpPhase.value === null) {
-      const cls = taskClasses.value.find(c => c.id === selectedClassId.value)
+      const cls = taskClasses.value.find((c) => c.id === selectedClassId.value);
       if (cls?.keypoint_names?.length) {
-        kpNames.value = cls.keypoint_names
+        kpNames.value = cls.keypoint_names;
       } else {
-        kpNames.value = ["top_left", "top_right", "bottom_right", "bottom_left"]
+        kpNames.value = ["top_left", "top_right", "bottom_right", "bottom_left"];
       }
       kpPhase.value = "corners";
       kpCorners.value = [
@@ -1885,7 +2152,9 @@ function onMouseDown(e: MouseEvent) {
         const dist = Math.hypot(pt.x - first.x * cw.value, pt.y - first.y * ch.value);
         if (dist <= 20) {
           ocrDrawingPoints.value.push({ ...first });
-          setTimeout(() => { ocrTextInputVisible.value = true; }, 400);
+          setTimeout(() => {
+            ocrTextInputVisible.value = true;
+          }, 400);
           return;
         }
       }
@@ -1917,7 +2186,11 @@ function onMouseMove(e: MouseEvent) {
   }
 
   // ---- Rotated box / Keypoint move ----
-  if (drag.value.active && (drag.value.type === "move" || drag.value.type === "kp-move") && drag.value.ann) {
+  if (
+    drag.value.active &&
+    (drag.value.type === "move" || drag.value.type === "kp-move") &&
+    drag.value.ann
+  ) {
     const dx = (e.clientX - drag.value.startX) / dw.value;
     const dy = (e.clientY - drag.value.startY) / dh.value;
     const o = drag.value.orig;
@@ -1940,15 +2213,16 @@ function onMouseMove(e: MouseEvent) {
         y: Math.max(0, Math.min(1, p.y + dy)),
       }));
     } else if (drag.value.ann.type === "Keypoint" && drag.value.type === "kp-move") {
-      const bb = drag.value.ann.bounding_box; const bbO = o.bounding_box
+      const bb = drag.value.ann.bounding_box;
+      const bbO = o.bounding_box;
       if (bb && bbO) {
-        bb.cx = Math.max(0, Math.min(1, bbO.cx + dx))
-        bb.cy = Math.max(0, Math.min(1, bbO.cy + dy))
+        bb.cx = Math.max(0, Math.min(1, bbO.cx + dx));
+        bb.cy = Math.max(0, Math.min(1, bbO.cy + dy));
         drag.value.ann.keypoints = o.keypoints.map((kp: any) => {
-          const newX = Math.max(0, Math.min(1, kp.x + dx))
-          const newY = Math.max(0, Math.min(1, kp.y + dy))
-          return { ...kp, x: newX, y: newY }
-        })
+          const newX = Math.max(0, Math.min(1, kp.x + dx));
+          const newY = Math.max(0, Math.min(1, kp.y + dy));
+          return { ...kp, x: newX, y: newY };
+        });
       }
     }
     return;
@@ -1960,7 +2234,11 @@ function onMouseMove(e: MouseEvent) {
     const dy = (e.clientY - drag.value.startY) / dh.value;
     const o = drag.value.orig;
     const idx = drag.value.polyVertexIndex!;
-    if ((drag.value.ann.type === "Polygon" || drag.value.ann.type === "Ocr") && idx !== undefined && o.points?.[idx]) {
+    if (
+      (drag.value.ann.type === "Polygon" || drag.value.ann.type === "Ocr") &&
+      idx !== undefined &&
+      o.points?.[idx]
+    ) {
       drag.value.ann.points = o.points.map((p: any, i: number) =>
         i === idx
           ? { x: Math.max(0, Math.min(1, p.x + dx)), y: Math.max(0, Math.min(1, p.y + dy)) }
@@ -1972,28 +2250,39 @@ function onMouseMove(e: MouseEvent) {
 
   // ---- Keypoint vertex drag ----
   if (drag.value.active && drag.value.type === "kp-vertex" && drag.value.ann?.type === "Keypoint") {
-    const dx = (e.clientX - drag.value.startX) / dw.value
-    const dy = (e.clientY - drag.value.startY) / dh.value
-    const o = drag.value.orig; const idx = drag.value.polyVertexIndex!
-    const ann = drag.value.ann
+    const dx = (e.clientX - drag.value.startX) / dw.value;
+    const dy = (e.clientY - drag.value.startY) / dh.value;
+    const o = drag.value.orig;
+    const idx = drag.value.polyVertexIndex!;
+    const ann = drag.value.ann;
     if (idx !== undefined && o.keypoints?.[idx]) {
-      let newX = o.keypoints[idx].x + dx
-      let newY = o.keypoints[idx].y + dy
-      const bb = ann.bounding_box
+      let newX = o.keypoints[idx].x + dx;
+      let newY = o.keypoints[idx].y + dy;
+      const bb = ann.bounding_box;
       if (bb) {
-        const aspect = ch.value / cw.value
-        const cos = Math.cos(bb.angle); const sin = Math.sin(bb.angle)
-        const dx2 = newX - bb.cx; const dy2 = newY - bb.cy
-        const localX = Math.max(-bb.width/2, Math.min(bb.width/2, dx2 * cos + dy2 * aspect * sin))
-        const localY = Math.max(-bb.height/2, Math.min(bb.height/2, -dx2/aspect * sin + dy2 * cos))
-        newX = bb.cx + localX * cos - localY/aspect * sin
-        newY = bb.cy + localX * aspect * sin + localY * cos
+        const aspect = ch.value / cw.value;
+        const cos = Math.cos(bb.angle);
+        const sin = Math.sin(bb.angle);
+        const dx2 = newX - bb.cx;
+        const dy2 = newY - bb.cy;
+        const localX = Math.max(
+          -bb.width / 2,
+          Math.min(bb.width / 2, dx2 * cos + dy2 * aspect * sin)
+        );
+        const localY = Math.max(
+          -bb.height / 2,
+          Math.min(bb.height / 2, (-dx2 / aspect) * sin + dy2 * cos)
+        );
+        newX = bb.cx + localX * cos - (localY / aspect) * sin;
+        newY = bb.cy + localX * aspect * sin + localY * cos;
       }
       ann.keypoints = o.keypoints.map((kp: any, i: number) =>
-        i === idx ? { ...kp, x: Math.max(0, Math.min(1, newX)), y: Math.max(0, Math.min(1, newY)) } : kp
-      )
+        i === idx
+          ? { ...kp, x: Math.max(0, Math.min(1, newX)), y: Math.max(0, Math.min(1, newY)) }
+          : kp
+      );
     }
-    return
+    return;
   }
 
   // ---- Resize annotation ----
@@ -2013,17 +2302,20 @@ function onMouseMove(e: MouseEvent) {
       const oy1 = Math.min(...o.points.map((p: any) => p.y));
       const ox2 = Math.max(...o.points.map((p: any) => p.x));
       const oy2 = Math.max(...o.points.map((p: any) => p.y));
-      let nx1 = ox1, ny1 = oy1, nx2 = ox2, ny2 = oy2;
+      let nx1 = ox1,
+        ny1 = oy1,
+        nx2 = ox2,
+        ny2 = oy2;
       if (h.includes("l")) nx1 = Math.max(0, Math.min(ox2 - 0.01, ox1 + dx));
       if (h.includes("r")) nx2 = Math.min(1, Math.max(ox1 + 0.01, ox2 + dx));
       if (h.includes("t")) ny1 = Math.max(0, Math.min(oy2 - 0.01, oy1 + dy));
       if (h.includes("b")) ny2 = Math.min(1, Math.max(oy1 + 0.01, oy2 + dy));
       ann.points = [
-          { x: nx1, y: ny1 },
-          { x: nx2, y: ny1 },
-          { x: nx2, y: ny2 },
-          { x: nx1, y: ny2 },
-        ];
+        { x: nx1, y: ny1 },
+        { x: nx2, y: ny1 },
+        { x: nx2, y: ny2 },
+        { x: nx1, y: ny2 },
+      ];
     } else if (ann.type === "RotatedBox" && pt) {
       const cos = Math.cos(o.angle);
       const sin = Math.sin(o.angle);
@@ -2064,38 +2356,48 @@ function onMouseMove(e: MouseEvent) {
   }
 
   // ---- Keypoint bbox resize ----
-  if (drag.value.active && drag.value.type.startsWith("kp-resize-") && drag.value.ann?.type === "Keypoint") {
-    const dx = (e.clientX - drag.value.startX) / dw.value
-    const dy = (e.clientY - drag.value.startY) / dh.value
-    const o = drag.value.orig; const ann = drag.value.ann; const h = drag.value.handle
-    const bb = ann.bounding_box; const bbO = o.bounding_box
-    if (!bb || !bbO) return
-    const aspect = ch.value / cw.value
-    const cos = Math.cos(bbO.angle); const sin = Math.sin(bbO.angle)
-    const rawW = dx * cos + dy * sin
-    const rawH = -dx * sin + dy * cos
-    const wSign = (h.includes("l") && !h.includes("r")) ? -1 : (h.includes("r") && !h.includes("l")) ? 1 : 0
-    const hSign = (h.includes("t") && !h.includes("b")) ? -1 : (h.includes("b") && !h.includes("t")) ? 1 : 0
-    bb.width = Math.max(0.001, bbO.width + wSign * rawW)
-    bb.height = Math.max(0.001, bbO.height + hSign * rawH)
-    const dcx = (bb.width - bbO.width) / 2 * cos * wSign
-    const dcy = (bb.width - bbO.width) / 2 * sin * wSign
-    const dcx2 = -(bb.height - bbO.height) / 2 * sin * hSign
-    const dcy2 = (bb.height - bbO.height) / 2 * cos * hSign
-    bb.cx = Math.max(0, Math.min(1, bbO.cx + dcx + dcx2))
-    bb.cy = Math.max(0, Math.min(1, bbO.cy + dcy + dcy2))
+  if (
+    drag.value.active &&
+    drag.value.type.startsWith("kp-resize-") &&
+    drag.value.ann?.type === "Keypoint"
+  ) {
+    const dx = (e.clientX - drag.value.startX) / dw.value;
+    const dy = (e.clientY - drag.value.startY) / dh.value;
+    const o = drag.value.orig;
+    const ann = drag.value.ann;
+    const h = drag.value.handle;
+    const bb = ann.bounding_box;
+    const bbO = o.bounding_box;
+    if (!bb || !bbO) return;
+    const aspect = ch.value / cw.value;
+    const cos = Math.cos(bbO.angle);
+    const sin = Math.sin(bbO.angle);
+    const rawW = dx * cos + dy * sin;
+    const rawH = -dx * sin + dy * cos;
+    const wSign =
+      h.includes("l") && !h.includes("r") ? -1 : h.includes("r") && !h.includes("l") ? 1 : 0;
+    const hSign =
+      h.includes("t") && !h.includes("b") ? -1 : h.includes("b") && !h.includes("t") ? 1 : 0;
+    bb.width = Math.max(0.001, bbO.width + wSign * rawW);
+    bb.height = Math.max(0.001, bbO.height + hSign * rawH);
+    const dcx = ((bb.width - bbO.width) / 2) * cos * wSign;
+    const dcy = ((bb.width - bbO.width) / 2) * sin * wSign;
+    const dcx2 = (-(bb.height - bbO.height) / 2) * sin * hSign;
+    const dcy2 = ((bb.height - bbO.height) / 2) * cos * hSign;
+    bb.cx = Math.max(0, Math.min(1, bbO.cx + dcx + dcx2));
+    bb.cy = Math.max(0, Math.min(1, bbO.cy + dcy + dcy2));
     // Clamp keypoints to stay inside bounding box
     if (ann.keypoints) {
-      const minX = bb.cx - bb.width / 2
-      const maxX = bb.cx + bb.width / 2
-      const minY = bb.cy - bb.height / 2
-      const maxY = bb.cy + bb.height / 2
+      const minX = bb.cx - bb.width / 2;
+      const maxX = bb.cx + bb.width / 2;
+      const minY = bb.cy - bb.height / 2;
+      const maxY = bb.cy + bb.height / 2;
       ann.keypoints.forEach((kp: any) => {
-        kp.x = Math.max(minX, Math.min(maxX, kp.x))
-        kp.y = Math.max(minY, Math.min(maxY, kp.y))
-      })
+        kp.x = Math.max(minX, Math.min(maxX, kp.x));
+        kp.y = Math.max(minY, Math.min(maxY, kp.y));
+      });
     }
-    return
+    return;
   }
 
   // ---- Box drawing preview ----
@@ -2222,7 +2524,9 @@ function onMouseUp(e: MouseEvent) {
           { x: x2, y: y2 },
           { x: x1, y: y2 },
         ];
-        setTimeout(() => { ocrTextInputVisible.value = true; }, 400);
+        setTimeout(() => {
+          ocrTextInputVisible.value = true;
+        }, 400);
       }
     }
     return;
@@ -2272,7 +2576,6 @@ function onDblClick(_e: MouseEvent) {
     });
     polyDrawingPoints.value = [];
   }
-
 }
 
 // ===== 标注选中 / 拖拽 =====
@@ -2293,7 +2596,11 @@ function startOcrRectResize(e: MouseEvent, ann: any, edges: string) {
 function onAnnMouseDown(e: MouseEvent, ann: any) {
   e.stopPropagation();
 
-  if (currentTool.value === "select" || currentTool.value === "pan" || currentTool.value === "ocr") {
+  if (
+    currentTool.value === "select" ||
+    currentTool.value === "pan" ||
+    currentTool.value === "ocr"
+  ) {
     const t = e.target as HTMLElement;
     const handle = t.getAttribute("data-handle");
 
@@ -2315,11 +2622,48 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
     // ---- Keypoint handles (must check before generic move) ----
     if (handle && ann.type === "Keypoint") {
       if (handle.startsWith("kp-")) {
-        const idx = parseInt(handle.replace("kp-", ""), 10)
-        if (!isNaN(idx)) { store.selectedAnnotationId = ann.id; drag.value = { active: true, type: "kp-vertex", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "", polyVertexIndex: idx }; return }
+        const idx = parseInt(handle.replace("kp-", ""), 10);
+        if (!isNaN(idx)) {
+          store.selectedAnnotationId = ann.id;
+          drag.value = {
+            active: true,
+            type: "kp-vertex",
+            ann,
+            orig: JSON.parse(JSON.stringify(ann)),
+            startX: e.clientX,
+            startY: e.clientY,
+            handle: "",
+            polyVertexIndex: idx,
+          };
+          return;
+        }
       }
-      if (handle === "move") { store.selectedAnnotationId = ann.id; drag.value = { active: true, type: "kp-move", ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle: "" }; return }
-      if (["tl","tr","bl","br","tc","bc","ml","mr"].includes(handle)) { store.selectedAnnotationId = ann.id; drag.value = { active: true, type: ("kp-resize-" + handle) as any, ann, orig: JSON.parse(JSON.stringify(ann)), startX: e.clientX, startY: e.clientY, handle }; return }
+      if (handle === "move") {
+        store.selectedAnnotationId = ann.id;
+        drag.value = {
+          active: true,
+          type: "kp-move",
+          ann,
+          orig: JSON.parse(JSON.stringify(ann)),
+          startX: e.clientX,
+          startY: e.clientY,
+          handle: "",
+        };
+        return;
+      }
+      if (["tl", "tr", "bl", "br", "tc", "bc", "ml", "mr"].includes(handle)) {
+        store.selectedAnnotationId = ann.id;
+        drag.value = {
+          active: true,
+          type: ("kp-resize-" + handle) as any,
+          ann,
+          orig: JSON.parse(JSON.stringify(ann)),
+          startX: e.clientX,
+          startY: e.clientY,
+          handle,
+        };
+        return;
+      }
     }
 
     // ---- RotatedBox handles (unprefixed) ----
