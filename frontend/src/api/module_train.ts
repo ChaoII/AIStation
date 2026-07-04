@@ -30,6 +30,10 @@ export const TrainAPI = {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/create`, method: "post", data });
   },
   getEvalList(modelRepoId: number) {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/eval/list`, method: "get", params: { model_repo_id: modelRepoId } });
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/eval/list`,
+      method: "get",
+      params: { model_repo_id: modelRepoId },
+    });
   },
 };
