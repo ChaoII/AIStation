@@ -1042,7 +1042,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
+import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
 import { ArrowLeft, ArrowRight, Delete, Pointer, Check } from "@element-plus/icons-vue";
 import { h } from "vue";
 const DiamondIcon = {
@@ -2487,10 +2487,9 @@ function removeAnn(id: string) {
   if (store.selectedAnnotationId === id) store.selectedAnnotationId = null;
 }
 
-// ===== 自动保存（仅实际变更时触发）=====
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
+// ===== 保存机制 =====
 const unsaved = ref(false);
-let lastSavedKey = ""; // 当前已保存的标注快照 key
+let lastSavedKey = "";
 
 function annotKey(anns: any[]) {
   return anns
@@ -2509,47 +2508,8 @@ function annotKey(anns: any[]) {
     .join("|");
 }
 
-async function autoSave() {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    if (!store.currentImage) return;
-    const key = annotKey(store.annotations);
-    if (key === lastSavedKey) {
-      unsaved.value = false;
-      return;
-    }
-    try {
-      await AnnotationAPI.saveAnnotations(store.currentImage.id, {
-        task_id: store.taskId,
-        image_id: store.currentImage.id,
-        annotation_data: store.annotations,
-      });
-      lastSavedKey = key;
-      const curUser = useUserStoreHook().getBasicInfo;
-      const uname =
-        (curUser as any).name ||
-        (curUser as any).username ||
-        (curUser as any).nickname ||
-        "";
-      const idx = store.currentImageIndex;
-      const updated = { ...store.images[idx] };
-      updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
-      updated.annotation_count = store.annotations.length;
-      updated.updated_by = uname
-        ? { id: (curUser as any).id || 0, name: uname }
-        : undefined;
-      updated.updated_time = uname ? new Date().toISOString() : undefined;
-      store.images[idx] = updated;
-      unsaved.value = false;
-      updateProgress();
-      fetchTaskProgress();
-    } catch {}
-  }, 3000);
-}
-
 function markUnsaved() {
   unsaved.value = true;
-  autoSave();
 }
 
 // ===== 撤销/重做 (Ctrl+Z / Ctrl+Y) =====
@@ -2654,14 +2614,13 @@ function restoreHistory() {
   markUnsaved();
 }
 
-// 标注变更时自动保存 + 记录历史
+// 标注变更时记录历史
 watch(
   () => store.annotations.length,
   () => {
     const key = annotKey(store.annotations);
     if (key !== lastSavedKey) {
       unsaved.value = true;
-      autoSave();
       pushHistory();
     }
   }
@@ -2703,14 +2662,13 @@ async function loadImg(imageId: number) {
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
-  // Unlock current image
-  if (store.currentImage) {
-    AnnotationAPI.unlockImage(store.currentImage.id, store.taskId).catch(() => {});
-  }
-  // 先保存当前图片的标注
   if (unsaved.value && store.currentImage) {
-    if (saveTimer) clearTimeout(saveTimer);
     try {
+      await ElMessageBox.confirm("当前图片有未保存的标注，是否保存？", "提示", {
+        confirmButtonText: "保存",
+        cancelButtonText: "不保存",
+        type: "warning",
+      });
       await AnnotationAPI.saveAnnotations(store.currentImage.id, {
         task_id: store.taskId,
         image_id: store.currentImage.id,
@@ -2722,9 +2680,15 @@ async function goToImage(idx: number) {
       updated.annotation_count = store.annotations.length;
       store.images[curIdx] = updated;
       updateProgress();
-    } catch {}
+    } catch {
+      // 用户点"不保存"或关闭弹窗，继续切图
+    }
   }
   unsaved.value = false;
+  // Unlock current image
+  if (store.currentImage) {
+    AnnotationAPI.unlockImage(store.currentImage.id, store.taskId).catch(() => {});
+  }
   loadImg(store.images[idx].id);
 }
 function prevImg() {
@@ -2782,7 +2746,25 @@ function setTool(t: ToolName) {
   currentTool.value = t;
   store.setTool(t);
 }
-function handleBack() {
+async function handleBack() {
+  if (unsaved.value) {
+    try {
+      await ElMessageBox.confirm("当前图片有未保存的标注，是否保存后退出？", "提示", {
+        confirmButtonText: "保存并退出",
+        cancelButtonText: "不保存",
+        type: "warning",
+      });
+      if (store.currentImage) {
+        await AnnotationAPI.saveAnnotations(store.currentImage.id, {
+          task_id: store.taskId,
+          image_id: store.currentImage.id,
+          annotation_data: store.annotations,
+        });
+      }
+    } catch {
+      // 用户点"不保存"，继续退出
+    }
+  }
   router.push("/annotation/task");
 }
 function fmtTime(t?: string) {
@@ -2971,14 +2953,29 @@ onMounted(async () => {
   }
   document.addEventListener("keydown", onKey);
   window.addEventListener("mouseup", onWindowMouseUp);
+  window.addEventListener("beforeunload", onBeforeUnload);
   watch(
     () => store.annotations.length,
     () => measureLabelRects()
   );
 });
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (unsaved.value) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+}
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey);
   window.removeEventListener("mouseup", onWindowMouseUp);
+  window.removeEventListener("beforeunload", onBeforeUnload);
+  if (unsaved.value && store.currentImage) {
+    AnnotationAPI.saveAnnotations(store.currentImage.id, {
+      task_id: store.taskId,
+      image_id: store.currentImage.id,
+      annotation_data: store.annotations,
+    }).catch(() => {});
+  }
   if (store.currentImage) {
     AnnotationAPI.unlockImage(store.currentImage.id, store.taskId).catch(() => {});
   }
