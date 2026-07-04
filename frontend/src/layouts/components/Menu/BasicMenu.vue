@@ -7,7 +7,7 @@
     :background-color="menuThemeProps.backgroundColor"
     :text-color="menuThemeProps.textColor"
     :active-text-color="menuThemeProps.activeTextColor"
-    :popper-effect="theme"
+    :popper-effect="popperTheme"
     :unique-opened="false"
     :collapse-transition="false"
     :mode="menuMode"
@@ -56,6 +56,12 @@ const menuRef = ref<MenuInstance | null>(null);
 
 // 获取主题
 const theme = computed(() => settingsStore.theme);
+const popperTheme = computed(() => {
+  if (theme.value === "auto") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return theme.value;
+});
 
 // 获取浅色主题下的侧边栏配色方案
 const sidebarColorScheme = computed(() => settingsStore.sidebarColorScheme);
