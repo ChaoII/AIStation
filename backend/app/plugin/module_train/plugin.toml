@@ -1,0 +1,3 @@
+name = "train"
+title = "模型训练子系统"
+tags = ["train", "paddlex", "ultralytics"]
