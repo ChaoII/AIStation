@@ -342,7 +342,7 @@ async def _ensure_train_menus() -> None:
                 existing_perm = await db.execute(
                     select(MenuModel).where(MenuModel.permission == perm_code)
                 )
-                if not existing_perm.scalar_one_or_none():
+                if existing_perm.first() is None:
                     pm = MenuModel(name=perm_name, type=3, icon=None, order=99,
                                    route_name="", route_path="", component_path="",
                                    permission=perm_code, parent_id=parent.id,
