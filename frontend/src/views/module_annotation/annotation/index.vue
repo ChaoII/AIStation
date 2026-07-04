@@ -830,7 +830,7 @@
             </div>
           </div>
           <div v-if="taskType === 'classification'" class="divider" />
-          <div v-if="taskType === 'classification'" class="panel-section">
+          <div v-if="taskType === 'classification'" class="panel-section" :key="'cls-' + store.currentImage?.id">
             <div class="section-title-row">
               <span class="section-title">分类（{{ task?.classification_mode === 'multi' ? '多标签' : '单标签' }}）</span>
             </div>
