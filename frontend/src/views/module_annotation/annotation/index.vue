@@ -1044,77 +1044,8 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
-import { ArrowLeft, ArrowRight, Delete, Check } from "@element-plus/icons-vue";
-import { h } from "vue";
+import { ArrowLeft, ArrowRight, Delete, Check, Pointer, Refresh, Grid, CirclePlus } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
-const DiamondIcon = {
-  render() {
-    return h(
-      "svg",
-      {
-        viewBox: "0 0 24 24",
-        width: 18,
-        height: 18,
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": 2,
-      },
-      [h("polygon", { points: "12,3 21,12 12,21 3,12" })]
-    );
-  },
-};
-const PentagonIcon = {
-  render() {
-    return h(
-      "svg",
-      {
-        viewBox: "0 0 24 24",
-        width: 18,
-        height: 18,
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": 2,
-      },
-      [h("polygon", { points: "12,2 22,9 18,21 6,21 2,9" })]
-    );
-  },
-};
-const CircleDotIcon = {
-  render() {
-    return h(
-      "svg",
-      {
-        viewBox: "0 0 24 24",
-        width: 18,
-        height: 18,
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": 2,
-      },
-      [
-        h("circle", { cx: "12", cy: "12", r: "8" }),
-        h("circle", { cx: "12", cy: "12", r: "2", fill: "currentColor" }),
-      ]
-    );
-  },
-};
-const CursorIcon = {
-  render() {
-    return h(
-      "svg",
-      {
-        viewBox: "0 0 24 24",
-        width: 18,
-        height: 18,
-        fill: "currentColor",
-        stroke: "none",
-      },
-      [
-        h("path", { d: "M5 3l14 9-7 2-3 7z" }),
-      ]
-    );
-  },
-};
 import { AnnotationAPI } from "@/api/module_annotation";
 import { useAnnotationStore, type ToolName } from "./store";
 import { useUserStoreHook } from "@/store";
@@ -1298,15 +1229,15 @@ const taskClassificationMode = computed(() => task.value?.classification_mode ||
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
-  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: CursorIcon },
+  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Pointer" },
   { name: "pan", label: "平移", tip: "拖拽平移画布", icon: "Rank" },
   { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: "ZoomIn" },
 ];
 const taskToolMap: Record<string, { name: ToolName; label: string; tip: string; icon: any }[]> = {
   detection: [{ name: "box", label: "矩形", tip: "拖拽创建矩形框", icon: "FullScreen" }],
-  rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: DiamondIcon }],
-  segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: PentagonIcon }],
-  keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: CircleDotIcon }],
+  rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: "Refresh" }],
+  segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: "Grid" }],
+  keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: "CirclePlus" }],
   ocr: [{ name: "ocr", label: "OCR", tip: "文本标注", icon: "Document" }],
   classification: [{ name: "classification", label: "分类", tip: "图像分类", icon: "Collection" }],
 };
