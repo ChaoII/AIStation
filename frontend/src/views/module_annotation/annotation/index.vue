@@ -831,7 +831,18 @@
           </div>
           <div v-if="taskType === 'classification'" class="divider" />
           <div v-if="taskType === 'classification'" class="panel-section">
-            <div class="section-title-row"><span class="section-title">分类</span></div>
+            <div class="section-title-row">
+              <span class="section-title">分类</span>
+              <el-switch
+                v-model="classifMode"
+                active-value="multi"
+                inactive-value="single"
+                active-text="多标签"
+                inactive-text="单标签"
+                size="small"
+                style="margin-left: auto"
+              />
+            </div>
             <div class="scroll-area">
               <template v-if="classifMode === 'single'">
                 <div
@@ -1274,6 +1285,11 @@ let ocrBoxStart = { x: 0, y: 0 };
 
 // ---- Classification ----
 const classifMode = ref<"single" | "multi">("single");
+watch(classifMode, () => {
+  store.annotations = store.annotations.filter((a) => a.type !== "Classification");
+  markUnsaved();
+  pushHistory();
+});
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
