@@ -832,19 +832,10 @@
           <div v-if="taskType === 'classification'" class="divider" />
           <div v-if="taskType === 'classification'" class="panel-section">
             <div class="section-title-row">
-              <span class="section-title">分类</span>
-              <el-switch
-                v-model="classifMode"
-                active-value="multi"
-                inactive-value="single"
-                active-text="多标签"
-                inactive-text="单标签"
-                size="small"
-                style="margin-left: auto"
-              />
+              <span class="section-title">分类（{{ task?.classification_mode === 'multi' ? '多标签' : '单标签' }}）</span>
             </div>
             <div class="scroll-area">
-              <template v-if="classifMode === 'single'">
+              <template v-if="taskClassificationMode === 'single'">
                 <div
                   v-for="cls in taskClasses"
                   :key="cls.id"
@@ -898,8 +889,8 @@
               <div v-if="taskClasses.length === 0" class="empty-hint">请添加标签类别</div>
             </div>
           </div>
-          <div class="divider" />
-          <div class="panel-section">
+          <div v-if="taskType !== 'classification'" class="divider" />
+          <div v-if="taskType !== 'classification'" class="panel-section">
             <div class="section-title-row">
               <span class="section-title">标注列表</span>
               <ElBadge :value="store.annotations.length" :max="999" />
@@ -1284,12 +1275,7 @@ const ocrSource = ref<"rect" | "quad">("quad");
 let ocrBoxStart = { x: 0, y: 0 };
 
 // ---- Classification ----
-const classifMode = ref<"single" | "multi">("single");
-watch(classifMode, () => {
-  store.annotations = store.annotations.filter((a) => a.type !== "Classification");
-  markUnsaved();
-  pushHistory();
-});
+const taskClassificationMode = computed(() => task.value?.classification_mode || "single")
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
@@ -1682,7 +1668,7 @@ function confirmOcrText() {
 }
 
 function toggleClassification(clsId: number) {
-  if (classifMode.value === "single") {
+  if (taskClassificationMode.value === "single") {
     store.annotations = store.annotations.filter((a) => a.type !== "Classification");
     store.annotations.push({
       id: crypto.randomUUID(),

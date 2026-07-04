@@ -24,6 +24,7 @@ class AnnotationTaskModel(ModelMixin, UserMixin):
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.PENDING, comment="状态")
     assignees: Mapped[list] = mapped_column(JSONB, default=list, comment="协作者ID列表")
     classes: Mapped[dict] = mapped_column(JSONB, default=dict, comment="类别定义 [{id, name, color, keypoint_names?}]")
+    classification_mode: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="分类模式: single/multi")
     progress: Mapped[int] = mapped_column(Integer, default=0, comment="完成百分比")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")
 

@@ -184,6 +184,12 @@
             <el-option label="图像分类" value="classification" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="formData.task_type === 'classification'" label="分类模式" prop="classification_mode">
+          <el-radio-group v-model="formData.classification_mode">
+            <el-radio value="single">单标签（每张图一个类别）</el-radio>
+            <el-radio value="multi">多标签（每张图多个类别）</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="标注员" prop="assignees">
           <el-select
             v-model="formData.assignees"
@@ -371,6 +377,7 @@ const formData = reactive({
   task_type: "detection",
   assignees: [] as number[],
   description: undefined as string | undefined,
+  classification_mode: undefined as string | undefined,
 });
 
 const initialFormData = {
@@ -380,6 +387,7 @@ const initialFormData = {
   task_type: "detection",
   assignees: [] as number[],
   description: undefined as string | undefined,
+  classification_mode: undefined as string | undefined,
 };
 
 const rules = reactive({
@@ -441,6 +449,7 @@ async function handleSubmit() {
             task_type: formData.task_type,
             assignees: formData.assignees,
             classes: [],
+            classification_mode: formData.classification_mode,
           });
         }
         dialogVisible.visible = false;

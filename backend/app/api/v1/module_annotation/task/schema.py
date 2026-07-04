@@ -12,12 +12,14 @@ class TaskCreateSchema(BaseModel):
     task_type: AnnotationType
     assignees: list[int] = Field(default_factory=list)
     classes: list[dict] = Field(default_factory=list)
+    classification_mode: str | None = None
 
 
 class TaskUpdateSchema(BaseModel):
     name: str | None = Field(None, max_length=128)
     assignees: list[int] | None = None
     classes: list[dict] | None = None
+    classification_mode: str | None = None
 
 
 class TaskOutSchema(BaseModel):
@@ -30,6 +32,7 @@ class TaskOutSchema(BaseModel):
     status: str
     assignees: list
     classes: Any
+    classification_mode: str | None = None
     progress: int
     created_id: int | None
     created_time: datetime | None
