@@ -11,4 +11,5 @@ def _register_annotation_routers():
     annotation_router.include_router(DatasetRouter)
     annotation_router.include_router(TaskRouter)
     annotation_router.include_router(AnnotationRouter)
-    annotation_router.include_router(CollaborationRouter)
+    from .stats.controller import StatsRouter
+    annotation_router.include_router(StatsRouter)

@@ -28,16 +28,6 @@
         </el-col>
       </el-row>
     </el-card>
-
-    <el-card shadow="hover" class="mt-4">
-      <template #header>
-        <span class="text-base font-semibold">图表分析</span>
-      </template>
-      <div class="chart-placeholder">
-        <el-icon :size="48" class="chart-placeholder__icon"><TrendCharts /></el-icon>
-        <p class="chart-placeholder__text">图表功能即将上线</p>
-      </div>
-    </el-card>
   </div>
 </template>
 
@@ -47,13 +37,25 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { reactive } from "vue";
-import { TrendCharts } from "@element-plus/icons-vue";
+import { reactive, onMounted } from "vue";
+import { AnnotationAPI } from "@/api/module_annotation";
 
 const stats = reactive({
   datasetCount: 0,
   taskCount: 0,
   annotatedImageCount: 0,
+});
+
+onMounted(async () => {
+  try {
+    const r = await AnnotationAPI.getOverview();
+    const d = r.data?.data;
+    if (d) {
+      stats.datasetCount = d.dataset_count || 0;
+      stats.taskCount = d.task_count || 0;
+      stats.annotatedImageCount = d.annotated_image_count || 0;
+    }
+  } catch {}
 });
 </script>
 
@@ -65,9 +67,7 @@ const stats = reactive({
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 
   &::before {
     position: absolute;
@@ -85,13 +85,8 @@ const stats = reactive({
     box-shadow: 0 8px 24px rgb(0 0 0 / 7%);
   }
 
-  &--task::before {
-    background: var(--el-color-success);
-  }
-
-  &--image::before {
-    background: var(--el-color-warning);
-  }
+  &--task::before { background: var(--el-color-success); }
+  &--image::before { background: var(--el-color-warning); }
 
   &__label {
     margin-bottom: 8px;
@@ -116,30 +111,7 @@ const stats = reactive({
     color: var(--el-text-color-placeholder);
   }
 
-  &--task &__value {
-    color: var(--el-color-success);
-  }
-
-  &--image &__value {
-    color: var(--el-color-warning);
-  }
-}
-
-.chart-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
-  color: var(--el-text-color-placeholder);
-
-  &__icon {
-    margin-bottom: 12px;
-  }
-
-  &__text {
-    margin: 0;
-    font-size: 14px;
-  }
+  &--task &__value { color: var(--el-color-success); }
+  &--image &__value { color: var(--el-color-warning); }
 }
 </style>

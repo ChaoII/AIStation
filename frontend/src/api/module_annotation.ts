@@ -108,4 +108,9 @@ export const AnnotationAPI = {
       headers: { _silent: "true" },
     });
   },
+
+  // Stats
+  getOverview() {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/stats/overview`, method: "get" });
+  },
 };

@@ -1044,7 +1044,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
-import { ArrowLeft, ArrowRight, Delete, Pointer, Check } from "@element-plus/icons-vue";
+import { ArrowLeft, ArrowRight, Delete, Check } from "@element-plus/icons-vue";
 import { h } from "vue";
 import { Auth } from "@/utils/auth";
 const DiamondIcon = {
@@ -1094,6 +1094,23 @@ const CircleDotIcon = {
       [
         h("circle", { cx: "12", cy: "12", r: "8" }),
         h("circle", { cx: "12", cy: "12", r: "2", fill: "currentColor" }),
+      ]
+    );
+  },
+};
+const CursorIcon = {
+  render() {
+    return h(
+      "svg",
+      {
+        viewBox: "0 0 24 24",
+        width: 18,
+        height: 18,
+        fill: "currentColor",
+        stroke: "none",
+      },
+      [
+        h("path", { d: "M5 3l14 9-7 2-3 7z" }),
       ]
     );
   },
@@ -1281,7 +1298,7 @@ const taskClassificationMode = computed(() => task.value?.classification_mode ||
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
-  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Pointer" },
+  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: CursorIcon },
   { name: "pan", label: "平移", tip: "拖拽平移画布", icon: "Rank" },
   { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: "ZoomIn" },
 ];
