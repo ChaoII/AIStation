@@ -1045,6 +1045,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
 import { ArrowLeft, ArrowRight, Delete, Pointer, Check } from "@element-plus/icons-vue";
 import { h } from "vue";
+import { Auth } from "@/utils/auth";
 const DiamondIcon = {
   render() {
     return h(
@@ -2491,6 +2492,20 @@ function removeAnn(id: string) {
 const unsaved = ref(false);
 let lastSavedKey = "";
 
+function getCurrentUserName(): string {
+  const curUser = useUserStoreHook().getBasicInfo;
+  const name = (curUser as any).name || (curUser as any).username || "";
+  if (name) return name;
+  try {
+    const token = Auth.getAccessToken();
+    if (token) {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      return payload?.sub?.name || payload?.name || payload?.username || payload?.sub || "";
+    }
+  } catch {}
+  return "";
+}
+
 function annotKey(anns: any[]) {
   return anns
     .map((a: any) => {
@@ -2724,14 +2739,14 @@ async function saveAnn() {
       annotation_data: store.annotations,
     });
     const now = new Date().toISOString();
-    const curUser = useUserStoreHook().getBasicInfo;
+    const uname = getCurrentUserName();
     const idx = store.currentImageIndex;
     const updated = { ...store.images[idx] };
     updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
     updated.annotation_count = store.annotations.length;
     updated.updated_by = {
-      id: (curUser as any).id || 0,
-      name: (curUser as any).name || (curUser as any).username || "",
+      id: 0,
+      name: uname,
     };
     updated.updated_time = now;
     store.images[idx] = updated;
