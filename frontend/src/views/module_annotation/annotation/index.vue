@@ -2530,7 +2530,7 @@ async function autoSave() {
         (curUser as any).name ||
         (curUser as any).username ||
         (curUser as any).nickname ||
-        "未知用户";
+        "";
       store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated";
       store.currentImage.annotation_count = store.annotations.length;
       store.currentImage.updated_by = uname
