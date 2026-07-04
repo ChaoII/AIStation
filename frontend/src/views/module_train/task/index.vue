@@ -86,7 +86,7 @@ function statusLabel(s: string) {
 
 onMounted(async () => {
   await loadTasks();
-  const dsRes = await import("@/api/module_annotation").then(m => m.AnnotationAPI.getDatasetList({ page_no: 1, page_size: 999 }));
+  const dsRes = await import("@/api/module_annotation").then(m => m.AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 }));
   datasets.value = dsRes.data?.data?.items || [];
 });
 

@@ -6,7 +6,7 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from .schema import TrainModelCreateSchema, TrainTaskCreateSchema, TrainEvalCreateSchema
 from .service import TrainService
 
-router = APIRouter(prefix="/train", tags=["模型训练"])
+router = APIRouter(tags=["模型训练"])
 
 _ws_clients: Dict[int, list[WebSocket]] = {}
 
