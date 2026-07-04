@@ -2695,6 +2695,8 @@ async function goToImage(idx: number) {
       const updated = { ...store.images[curIdx] };
       updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
       updated.annotation_count = store.annotations.length;
+      updated.updated_by = { id: 0, name: getCurrentUserName() };
+      updated.updated_time = new Date().toISOString();
       store.images[curIdx] = updated;
       updateProgress();
     } catch {
@@ -2777,6 +2779,14 @@ async function handleBack() {
           image_id: store.currentImage.id,
           annotation_data: store.annotations,
         });
+        const idx = store.currentImageIndex;
+        const updated = { ...store.images[idx] };
+        updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+        updated.annotation_count = store.annotations.length;
+        updated.updated_by = { id: 0, name: getCurrentUserName() };
+        updated.updated_time = new Date().toISOString();
+        store.images[idx] = updated;
+        updateProgress();
       }
     } catch {
       // 用户点"不保存"，继续退出
