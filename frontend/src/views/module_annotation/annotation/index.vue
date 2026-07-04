@@ -2531,12 +2531,15 @@ async function autoSave() {
         (curUser as any).username ||
         (curUser as any).nickname ||
         "";
-      store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated";
-      store.currentImage.annotation_count = store.annotations.length;
-      store.currentImage.updated_by = uname
+      const idx = store.currentImageIndex;
+      const updated = { ...store.images[idx] };
+      updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+      updated.annotation_count = store.annotations.length;
+      updated.updated_by = uname
         ? { id: (curUser as any).id || 0, name: uname }
         : undefined;
-      store.currentImage.updated_time = uname ? new Date().toISOString() : undefined;
+      updated.updated_time = uname ? new Date().toISOString() : undefined;
+      store.images[idx] = updated;
       unsaved.value = false;
       updateProgress();
       fetchTaskProgress();
@@ -2678,6 +2681,7 @@ function afterEdit() {
 async function loadImg(imageId: number) {
   imgUrl.value = "";
   store.selectedAnnotationId = null;
+  store.annotations = [];
   const idx = store.images.findIndex((i) => i.id === imageId);
   if (idx >= 0) store.currentImageIndex = idx;
   try {
@@ -2712,8 +2716,11 @@ async function goToImage(idx: number) {
         image_id: store.currentImage.id,
         annotation_data: store.annotations,
       });
-      store.currentImage.status = store.annotations.length > 0 ? "annotated" : "unannotated";
-      store.currentImage.annotation_count = store.annotations.length;
+      const curIdx = store.currentImageIndex;
+      const updated = { ...store.images[curIdx] };
+      updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+      updated.annotation_count = store.annotations.length;
+      store.images[curIdx] = updated;
       updateProgress();
     } catch {}
   }
@@ -2752,13 +2759,16 @@ async function saveAnn() {
     });
     const now = new Date().toISOString();
     const curUser = useUserStoreHook().getBasicInfo;
-    img.status = store.annotations.length > 0 ? "annotated" : "unannotated";
-    img.annotation_count = store.annotations.length;
-    img.updated_by = {
+    const idx = store.currentImageIndex;
+    const updated = { ...store.images[idx] };
+    updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+    updated.annotation_count = store.annotations.length;
+    updated.updated_by = {
       id: (curUser as any).id || 0,
-      name: (curUser as any).name || (curUser as any).username || "未知用户",
+      name: (curUser as any).name || (curUser as any).username || "",
     };
-    img.updated_time = now;
+    updated.updated_time = now;
+    store.images[idx] = updated;
     unsaved.value = false;
     updateProgress();
     await fetchTaskProgress();
