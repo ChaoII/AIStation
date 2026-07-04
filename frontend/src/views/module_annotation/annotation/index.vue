@@ -830,7 +830,7 @@
             </div>
           </div>
           <div v-if="taskType === 'classification'" class="divider" />
-          <div v-if="taskType === 'classification'" class="panel-section" :key="'cls-' + store.currentImage?.id">
+          <div v-if="taskType === 'classification'" class="panel-section">
             <div class="section-title-row">
               <span class="section-title">分类（{{ task?.classification_mode === 'multi' ? '多标签' : '单标签' }}）</span>
             </div>
@@ -867,18 +867,24 @@
                   v-for="cls in taskClasses"
                   :key="cls.id"
                   class="class-item"
+                  :class="{
+                    active: store.annotations.some(
+                      (a) => a.type === 'Classification' && (a.class_ids || []).includes(cls.id)
+                    ),
+                  }"
                   @click="toggleClassification(cls.id)"
                 >
                   <span class="dot-color" :style="{ background: cls.color }" />
                   <span class="flex-1 text-sm">{{ cls.name }}</span>
-                  <ElCheckbox
-                    :checked="
-                      store.annotations.some(
-                        (a) => a.type === 'Classification' && (a.class_ids || []).includes(cls.id)
-                      )
-                    "
-                    size="small"
-                  />
+                  <el-icon
+                    v-if="store.annotations.some(
+                      (a) => a.type === 'Classification' && (a.class_ids || []).includes(cls.id)
+                    )"
+                    size="14"
+                    color="#67c23a"
+                  >
+                    <Check />
+                  </el-icon>
                 </div>
               </template>
               <div v-if="taskClasses.length === 0" class="empty-hint">请添加标签类别</div>
