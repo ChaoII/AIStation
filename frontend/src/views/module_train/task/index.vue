@@ -129,9 +129,20 @@
               fixed="right"
               label="操作"
               align="center"
-              min-width="200"
+              min-width="220"
             >
               <template #default="scope">
+                <el-button
+                  v-if="scope.row.status === 'pending'"
+                  v-hasPerm="['module_train:task:update']"
+                  size="small"
+                  type="primary"
+                  link
+                  icon="VideoPlay"
+                  @click="handleStart(scope.row)"
+                >
+                  开始训练
+                </el-button>
                 <el-button
                   v-if="scope.row.status === 'running'"
                   v-hasPerm="['module_train:task:update']"
@@ -163,20 +174,31 @@
       v-model="dialogVisible.visible"
       :title="dialogVisible.title"
       append-to-body
-      width="560px"
+      width="680px"
       @close="handleCloseDialog"
     >
       <el-form
         ref="dataFormRef"
         :model="formData"
         :rules="rules"
-        label-width="100px"
+        label-width="120px"
         size="default"
       >
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="任务名称" prop="name">
               <el-input v-model="formData.name" placeholder="如: 缺陷检测v3" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="框架" prop="framework">
+              <el-radio-group
+                v-model="formData.framework"
+                @change="(v: any) => onFrameworkChange(String(v))"
+              >
+                <el-radio value="ultralytics">Ultralytics</el-radio>
+                <el-radio value="paddlex">PaddleX</el-radio>
+              </el-radio-group>
             </el-form-item>
           </el-col>
         </el-row>
@@ -190,25 +212,139 @@
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="框架" prop="framework">
-          <el-radio-group v-model="formData.framework">
-            <el-radio value="ultralytics">Ultralytics (YOLO)</el-radio>
-            <el-radio value="paddlex">PaddleX</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="超参数 (JSON)" prop="hyperparams">
-          <el-input
-            v-model="formData.hyperparams"
-            type="textarea"
-            :rows="6"
-            placeholder='{"epochs":100,"batch":16,"lr":0.01,"model":"yolo11n.pt"}'
-          />
-        </el-form-item>
+        <el-divider>超参数配置</el-divider>
+
+        <!-- Ultralytics hyperparams -->
+        <template v-if="formData.framework === 'ultralytics'">
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="模型" prop="hpModel">
+                <el-select v-model="hpForm.model" style="width: 100%">
+                  <el-option label="YOLO11n" value="yolo11n.pt" />
+                  <el-option label="YOLO11s" value="yolo11s.pt" />
+                  <el-option label="YOLO11m" value="yolo11m.pt" />
+                  <el-option label="YOLO11l" value="yolo11l.pt" />
+                  <el-option label="YOLO11x" value="yolo11x.pt" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Epochs">
+                <el-input-number v-model="hpForm.epochs" :min="1" :max="1000" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="Batch Size">
+                <el-input-number v-model="hpForm.batch" :min="1" :max="512" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Learning Rate">
+                <el-input-number
+                  v-model="hpForm.lr"
+                  :min="0.0001"
+                  :max="1"
+                  :step="0.001"
+                  :precision="4"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="Optimizer">
+                <el-select v-model="hpForm.optimizer" style="width: 100%">
+                  <el-option label="AdamW" value="AdamW" />
+                  <el-option label="SGD" value="SGD" />
+                  <el-option label="Adam" value="Adam" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Image Size">
+                <el-input-number
+                  v-model="hpForm.imgsz"
+                  :min="32"
+                  :max="4096"
+                  :step="32"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="Workers">
+                <el-input-number v-model="hpForm.workers" :min="0" :max="32" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="GPU 设备">
+                <el-input v-model="hpForm.device" placeholder="如: 0" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </template>
+
+        <!-- PaddleX hyperparams -->
+        <template v-else>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="模型" prop="hpModel">
+                <el-select v-model="hpForm.model" style="width: 100%">
+                  <el-option label="PP-YOLOE" value="PP-YOLOE" />
+                  <el-option label="PP-YOLO" value="PP-YOLO" />
+                  <el-option label="PP-PicoDet" value="PP-PicoDet" />
+                  <el-option label="RT-DETR" value="RT-DETR" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Epochs">
+                <el-input-number v-model="hpForm.epochs" :min="1" :max="1000" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="Batch Size">
+                <el-input-number v-model="hpForm.batch" :min="1" :max="512" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Learning Rate">
+                <el-input-number
+                  v-model="hpForm.lr"
+                  :min="0.0001"
+                  :max="1"
+                  :step="0.001"
+                  :precision="4"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="GPU 设备">
+                <el-input v-model="hpForm.device" placeholder="如: 0" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="预训练权重">
+                <el-switch v-model="hpForm.pretrained" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="handleCloseDialog">取消</el-button>
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
-          开始训练
+          创建任务
         </el-button>
       </template>
     </EnhancedDialog>
@@ -216,7 +352,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
@@ -333,15 +469,35 @@ const formData = reactive({
   name: undefined as string | undefined,
   dataset_id: undefined as number | undefined,
   framework: "ultralytics" as string,
-  hyperparams: "{}" as string,
 });
+
+const defaultHpUltra = () => ({
+  model: "yolo11n.pt",
+  epochs: 100,
+  batch: 16,
+  lr: 0.01,
+  optimizer: "AdamW",
+  imgsz: 640,
+  workers: 4,
+  device: "0",
+});
+
+const defaultHpPaddle = () => ({
+  model: "PP-YOLOE",
+  epochs: 100,
+  batch: 16,
+  lr: 0.01,
+  device: "0",
+  pretrained: true,
+});
+
+const hpForm = reactive<Record<string, any>>(defaultHpUltra());
 
 const initialFormData = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
   dataset_id: undefined as number | undefined,
   framework: "ultralytics" as string,
-  hyperparams: "{}" as string,
 };
 
 const rules = reactive({
@@ -375,12 +531,45 @@ function statusLabel(s: string) {
   );
 }
 
+function onFrameworkChange(fw: string) {
+  Object.keys(hpForm).forEach((k) => delete hpForm[k]);
+  if (fw === "ultralytics") {
+    Object.assign(hpForm, defaultHpUltra());
+  } else {
+    Object.assign(hpForm, defaultHpPaddle());
+  }
+}
+
+function buildHyperparams(): Record<string, any> {
+  if (formData.framework === "ultralytics") {
+    return {
+      model: hpForm.model,
+      epochs: hpForm.epochs,
+      batch: hpForm.batch,
+      lr: hpForm.lr,
+      optimizer: hpForm.optimizer,
+      imgsz: hpForm.imgsz,
+      workers: hpForm.workers,
+      device: hpForm.device,
+    };
+  }
+  return {
+    model: hpForm.model,
+    epochs: hpForm.epochs,
+    batch: hpForm.batch,
+    lr: hpForm.lr,
+    device: hpForm.device,
+    pretrained: hpForm.pretrained,
+  };
+}
+
 async function resetForm() {
   if (dataFormRef.value) {
     dataFormRef.value.resetFields();
     dataFormRef.value.clearValidate();
   }
   Object.assign(formData, initialFormData);
+  onFrameworkChange("ultralytics");
 }
 
 async function handleCloseDialog() {
@@ -393,7 +582,17 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   if (id && type === "update") {
     dialogVisible.title = "编辑训练任务";
     const res = await TrainAPI.getTaskDetail(id);
-    Object.assign(formData, res.data.data);
+    const data = res.data.data;
+    Object.assign(formData, {
+      id: data.id,
+      name: data.name,
+      dataset_id: data.dataset_id,
+      framework: data.framework,
+    });
+    onFrameworkChange(data.framework);
+    if (data.hyperparams) {
+      Object.assign(hpForm, data.hyperparams);
+    }
   } else {
     dialogVisible.title = "新建训练任务";
     formData.id = undefined;
@@ -406,26 +605,32 @@ async function handleSubmit() {
     if (valid) {
       submitLoading.value = true;
       try {
-        const hp = JSON.parse(formData.hyperparams || "{}");
         await TrainAPI.createTask({
           name: formData.name,
           dataset_id: formData.dataset_id,
           framework: formData.framework,
-          hyperparams: hp,
+          hyperparams: buildHyperparams(),
         });
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
         ElMessage.success("训练任务已创建");
       } catch (e: any) {
-        if (e instanceof SyntaxError) {
-          ElMessage.error("超参数 JSON 格式错误");
-        }
+        ElMessage.error(e?.msg || "创建失败");
       } finally {
         submitLoading.value = false;
       }
     }
   });
+}
+
+async function handleStart(row: any) {
+  try {
+    await ElMessageBox.confirm(`确定开始训练任务「${row.name}」？`, "提示", { type: "info" });
+    ElMessage.info("开始训练功能需要调度器支持");
+  } catch {
+    //
+  }
 }
 
 async function handleStop(id: number) {
@@ -438,4 +643,23 @@ async function handleStop(id: number) {
     //
   }
 }
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(() => {
+    refreshList();
+  }, 5000);
+}
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+onMounted(() => startPoll());
+onBeforeUnmount(() => stopPoll());
 </script>
