@@ -105,6 +105,7 @@ export const AnnotationAPI = {
       url: `${API_PATH}/anno/image/${imageId}/unlock`,
       method: "post",
       params: { task_id: taskId },
+      headers: { _silent: "true" },
     });
   },
 };

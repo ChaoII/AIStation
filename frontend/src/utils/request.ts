@@ -70,7 +70,8 @@ httpRequest.interceptors.response.use(
     if (
       response.config.method?.toUpperCase() !== "GET" &&
       !response.config.url?.includes("login") &&
-      !response.config.url?.includes("logout")
+      !response.config.url?.includes("logout") &&
+      !silent
     ) {
       ElMessage.success(data.msg);
     }

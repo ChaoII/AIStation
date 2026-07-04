@@ -84,4 +84,4 @@ async def unlock_image(
 ) -> JSONResponse:
     await _verify_task_access(task_id, auth)
     await AnnotationService.unlock_image(image_id, auth.user.id)
-    return SuccessResponse(msg="解锁成功")
+    return SuccessResponse()
