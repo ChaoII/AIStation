@@ -1,188 +1,154 @@
 <template>
   <div class="app-container">
-    <PageContent ref="contentRef" :content-config="contentConfig">
+    <el-card shadow="never" class="mb-4">
       <template #header>
-        <div style="display: flex; align-items: center; gap: 12px">
+        <div class="eval-header">
           <el-button text @click="router.back()">← 返回</el-button>
-          <span style="font-weight: 600">模型评估</span>
-          <span class="text-sm text-gray-400">模型ID: {{ modelRepoId }}</span>
+          <span class="text-base font-semibold">模型评估</span>
+          <el-tag v-if="modelInfo" type="primary" size="small" effect="plain">{{ modelInfo.name }}</el-tag>
+          <el-tag v-if="modelInfo" size="small" effect="plain">v{{ modelInfo.version }}</el-tag>
         </div>
       </template>
+      <div v-if="modelInfo" class="model-summary">
+        <el-row :gutter="16">
+          <el-col :span="6">
+            <div class="summary-item">
+              <span class="summary-label">框架</span>
+              <span class="summary-value">{{ modelInfo.framework === 'ultralytics' ? 'Ultralytics' : 'PaddleX' }}</span>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="summary-item">
+              <span class="summary-label">状态</span>
+              <el-tag :type="modelInfo.status === 'released' ? 'success' : 'info'" size="small">
+                {{ ({ draft: '草稿', released: '已发布', archived: '已归档' } as any)[modelInfo.status] || modelInfo.status }}
+              </el-tag>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="summary-item">
+              <span class="summary-label">最新指标</span>
+              <span class="summary-value">{{ modelInfo.metrics ? (modelInfo.metrics.mAP || '--') : '--' }}</span>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="summary-item">
+              <span class="summary-label">存储路径</span>
+              <span class="summary-value text-ellipsis" :title="modelInfo.storage_path">{{ modelInfo.storage_path || '--' }}</span>
+            </div>
+          </el-col>
+        </el-row>
+      </div>
+    </el-card>
 
-      <template #toolbar="{ toolbarRight, onToolbar, cols }">
-        <div class="data-table__toolbar--left">
-          <el-select
-            v-model="evalDatasetId"
-            placeholder="选择评估数据集"
-            filterable
-            style="width: 280px"
-          >
-            <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
-          </el-select>
-          <el-button
-            v-hasPerm="['module_train:model:query']"
-            type="primary"
-            :disabled="!evalDatasetId"
-            :loading="creating"
-            @click="handleCreateEval"
-          >
-            创建评估
-          </el-button>
-        </div>
-        <div class="data-table__toolbar--right">
-          <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
+    <el-card shadow="never">
+      <template #header>
+        <div class="eval-toolbar">
+          <span class="text-base font-semibold">评估记录</span>
+          <div class="eval-actions">
+            <el-select v-model="evalDatasetId" placeholder="选择评估数据集" filterable style="width:240px" size="small">
+              <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
+            </el-select>
+            <el-button type="primary" size="small" :disabled="!evalDatasetId" :loading="creating" @click="handleCreateEval">
+              创建评估
+            </el-button>
+          </div>
         </div>
       </template>
-
-      <template #table="{ data, loading, tableRef, pagination }">
-        <div class="data-table__content">
-          <el-table
-            :ref="tableRef as any"
-            v-loading="loading"
-            row-key="id"
-            :data="data"
-            height="100%"
-            border
-            stripe
-          >
-            <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
-            </template>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'index')?.show"
-              fixed
-              label="序号"
-              width="60"
-            >
-              <template #default="scope">
-                {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'eval_dataset_id')?.show"
-              key="eval_dataset_id"
-              label="评估数据集ID"
-              prop="eval_dataset_id"
-              width="120"
-            />
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'status')?.show"
-              key="status"
-              label="状态"
-              prop="status"
-              width="100"
-              align="center"
-            >
-              <template #default="scope">
-                <el-tag :type="statusTag(scope.row.status)" size="small">
-                  {{ statusLabel(scope.row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'metrics')?.show"
-              key="metrics"
-              label="评估指标"
-              min-width="280"
-            >
-              <template #default="scope">
-                <pre
-                  v-if="scope.row.metrics"
-                  style="margin: 0; font-size: 12px; white-space: pre-wrap"
-                  >{{ JSON.stringify(scope.row.metrics, null, 2) }}</pre>
-                <span v-else class="text-gray-400">--</span>
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-              key="created_time"
-              label="创建时间"
-              prop="created_time"
-              width="170"
-            />
-          </el-table>
-        </div>
-      </template>
-    </PageContent>
+      <el-table :data="evalList" border stripe style="width:100%" v-loading="loading">
+        <template #empty>
+          <el-empty :image-size="80" description="暂无评估记录" />
+        </template>
+        <el-table-column label="序号" type="index" width="60" align="center" />
+        <el-table-column prop="eval_dataset_id" label="评估数据集" width="120">
+          <template #default="{ row }">
+            <span>{{ datasetName(row.eval_dataset_id) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="statusTag(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="评估指标" min-width="320">
+          <template #default="{ row }">
+            <div v-if="row.metrics" class="metrics-display">
+              <el-tag v-for="(v, k) in row.metrics" :key="k" size="small" class="metric-tag">
+                {{ k }}: {{ typeof v === 'number' ? v.toFixed(4) : v }}
+              </el-tag>
+            </div>
+            <span v-else class="text-gray-400">--</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="log" label="评估日志" min-width="160">
+          <template #default="{ row }">
+            <span v-if="row.log" class="text-ellipsis log-preview" :title="row.log">{{ row.log.slice(0, 60) }}{{ row.log.length > 60 ? '...' : '' }}</span>
+            <span v-else class="text-gray-400">--</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_time" label="创建时间" width="170" />
+      </el-table>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import type { IContentConfig } from "@/components/CURD/types";
-import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
-
-interface TablePageQuery {
-  page_no: number;
-  page_size: number;
-  [key: string]: any;
-}
 
 const route = useRoute();
 const router = useRouter();
 const modelRepoId = Number(route.query.model_repo_id || 0);
 
-const contentRef = ref();
-const creating = ref(false);
-const evalDatasetId = ref<number | null>(null);
-
+const modelInfo = ref<any>(null);
+const evalList = ref<any[]>([]);
 const datasets = ref<any[]>([]);
-(async () => {
-  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-  datasets.value = dsRes.data?.data?.items || [];
-})();
+const evalDatasetId = ref<number | null>(null);
+const creating = ref(false);
+const loading = ref(false);
 
-const contentCols = reactive<
-  Array<{
-    prop?: string;
-    label?: string;
-    show?: boolean;
-  }>
->([
-  { prop: "index", label: "序号", show: true },
-  { prop: "eval_dataset_id", label: "评估数据集ID", show: true },
-  { prop: "status", label: "状态", show: true },
-  { prop: "metrics", label: "评估指标", show: true },
-  { prop: "created_time", label: "创建时间", show: true },
-]);
-
-const contentConfig = reactive<IContentConfig<TablePageQuery>>({
-  pk: "id",
-  cols: contentCols as IContentConfig["cols"],
-  hideColumnFilter: true,
-  pagination: {
-    pageSize: 10,
-    pageSizes: [10, 20, 30, 50],
-  },
-  request: { page_no: "page_no", page_size: "page_size" },
-  indexAction: async () => {
-    const res = await TrainAPI.getEvalList(modelRepoId);
-    return {
-      total: (res.data?.data || []).length,
-      list: res.data?.data || [],
-    };
-  },
-  initialFetch: modelRepoId > 0,
+const datasetMap = computed(() => {
+  const m: Record<number, string> = {};
+  for (const ds of datasets.value) m[ds.id] = ds.name;
+  return m;
 });
 
-function statusTag(s: string): "primary" | "success" | "warning" | "info" | "danger" | undefined {
-  return (
-    (
-      { pending: "info", running: "warning", success: "success", failed: "danger" } as Record<
-        string,
-        "info" | "warning" | "success" | "danger"
-      >
-    )[s] || "info"
-  );
+function datasetName(id: number) {
+  return datasetMap.value[id] || `数据集#${id}`;
+}
+
+function statusTag(s: string) {
+  return ({ pending: "info", running: "warning", success: "success", failed: "danger" } as Record<string, "info" | "warning" | "success" | "danger">)[s] || "info";
 }
 
 function statusLabel(s: string) {
   return { pending: "待开始", running: "评估中", success: "已完成", failed: "失败" }[s] || s;
 }
+
+async function loadEvalList() {
+  loading.value = true;
+  try {
+    const r = await TrainAPI.getEvalList(modelRepoId);
+    evalList.value = r.data?.data || [];
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadModelInfo() {
+  if (!modelRepoId) return;
+  const r = await TrainAPI.getModelDetail(modelRepoId);
+  modelInfo.value = r.data?.data;
+}
+
+onMounted(async () => {
+  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
+  datasets.value = dsRes.data?.data?.items || [];
+  await Promise.all([loadModelInfo(), loadEvalList()]);
+});
 
 async function handleCreateEval() {
   if (!evalDatasetId.value) return;
@@ -190,7 +156,8 @@ async function handleCreateEval() {
   try {
     await TrainAPI.createEval({ model_repo_id: modelRepoId, eval_dataset_id: evalDatasetId.value });
     ElMessage.success("评估任务已创建");
-    contentRef.value?.fetchPageData({}, true);
+    evalDatasetId.value = null;
+    await loadEvalList();
   } finally {
     creating.value = false;
   }
@@ -198,7 +165,21 @@ async function handleCreateEval() {
 </script>
 
 <style scoped>
-.text-gray-400 {
-  color: #909399;
-}
+.eval-header { display: flex; align-items: center; gap: 12px; }
+.eval-toolbar { display: flex; align-items: center; justify-content: space-between; }
+.eval-actions { display: flex; align-items: center; gap: 8px; }
+.mb-4 { margin-bottom: 16px; }
+.text-base { font-size: 14px; }
+.font-semibold { font-weight: 600; }
+.text-gray-400 { color: #909399; }
+.text-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 100%; }
+.log-preview { font-family: monospace; font-size: 12px; color: #606266; }
+
+.model-summary { padding: 4px 0; }
+.summary-item { display: flex; flex-direction: column; gap: 4px; }
+.summary-label { font-size: 12px; color: #909399; }
+.summary-value { font-size: 14px; font-weight: 500; color: #303133; }
+
+.metrics-display { display: flex; flex-wrap: wrap; gap: 4px; }
+.metric-tag { font-family: "Cascadia Code", "Fira Code", monospace; font-size: 12px; }
 </style>
