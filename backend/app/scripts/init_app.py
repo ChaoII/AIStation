@@ -270,6 +270,90 @@ async def _ensure_annotation_button_menus() -> None:
             log.info(f"✅ 标注按钮权限已注册 ({len(buttons)} 项)")
 
 
+async def _ensure_train_menus() -> None:
+    """Ensure the training module menu entries exist."""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "Train")
+            )
+            if existing.scalar_one_or_none():
+                return
+
+            parent = MenuModel(
+                name="模型训练", type=1, icon="el-icon-Aim", order=12,
+                route_name="Train", route_path="/train", redirect="/train/task",
+                permission="", status="0", is_deleted=False, title="模型训练",
+            )
+            db.add(parent)
+            await db.flush()
+
+            children = [
+                MenuModel(name="模型仓库", type=2, icon="el-icon-Box", order=1,
+                          route_name="TrainRepo", route_path="/train/repo",
+                          component_path="module_train/repo/index",
+                          permission="module_train:model:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="模型仓库"),
+                MenuModel(name="训练任务", type=2, icon="el-icon-Notebook", order=2,
+                          route_name="TrainTask", route_path="/train/task",
+                          component_path="module_train/task/index",
+                          permission="module_train:task:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="训练任务"),
+                MenuModel(name="模型评估", type=2, icon="el-icon-DataBoard", order=3,
+                          route_name="TrainEval", route_path="/train/eval",
+                          component_path="module_train/eval/index",
+                          permission="module_train:eval:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="模型评估"),
+            ]
+            for child in children:
+                db.add(child)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=child.id))
+
+            detail = MenuModel(
+                name="训练详情", type=2, icon=None, order=99,
+                route_name="TrainTaskDetail", route_path="/train/task/:id",
+                component_path="module_train/task/detail",
+                permission="module_train:task:query", parent_id=parent.id,
+                status="0", is_deleted=False, title="训练详情", hidden=True,
+            )
+            db.add(detail)
+            await db.flush()
+            db.add(RoleMenusModel(role_id=1, menu_id=detail.id))
+
+            db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
+
+            button_perms = [
+                ("module_train:model:query", "查询模型"),
+                ("module_train:model:create", "创建模型"),
+                ("module_train:task:query", "查询任务"),
+                ("module_train:task:create", "创建任务"),
+                ("module_train:task:update", "更新任务"),
+                ("module_train:eval:query", "查询评估"),
+                ("module_train:eval:create", "创建评估"),
+            ]
+            for perm_code, perm_name in button_perms:
+                existing_perm = await db.execute(
+                    select(MenuModel).where(MenuModel.permission == perm_code)
+                )
+                if not existing_perm.scalar_one_or_none():
+                    pm = MenuModel(name=perm_name, type=3, icon=None, order=99,
+                                   route_name="", route_path="", component_path="",
+                                   permission=perm_code, parent_id=parent.id,
+                                   status="0", is_deleted=False, title=perm_name)
+                    db.add(pm)
+                    await db.flush()
+                    db.add(RoleMenusModel(role_id=1, menu_id=pm.id))
+
+    log.info("✅ 训练模块菜单已注册")
+
+
 NOTIFY_PARAMS = [
     ("notify_smtp_host", "SMTP服务器", ""),
     ("notify_smtp_port", "SMTP端口", "587"),
@@ -340,6 +424,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
+        await _ensure_train_menus()
         await import_modules_async(
             modules=settings.EVENT_LIST, desc="全局事件", app=app, status=True
         )
