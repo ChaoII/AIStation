@@ -2641,6 +2641,7 @@ async function loadImg(imageId: number) {
   imgUrl.value = "";
   store.selectedAnnotationId = null;
   store.annotations = [];
+  unsaved.value = false;
   const idx = store.images.findIndex((i) => i.id === imageId);
   if (idx >= 0) store.currentImageIndex = idx;
   try {
@@ -2649,6 +2650,7 @@ async function loadImg(imageId: number) {
     const ar = await AnnotationAPI.getAnnotations(store.taskId, imageId);
     store.annotations = ar.data?.data || [];
     lastSavedKey = annotKey(store.annotations);
+    unsaved.value = false;
     historyStack = [lastSavedKey];
     historyIndex = 0;
     // Lock this image for current user
