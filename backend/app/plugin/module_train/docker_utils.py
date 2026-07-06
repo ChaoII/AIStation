@@ -1,13 +1,21 @@
 import asyncio
 import docker
 from docker.errors import DockerException, ImageNotFound
+from app.core.logger import log
 
 client = docker.from_env()
 
 
 async def pull_image(image: str) -> None:
-    """拉取 Docker 镜像（线程池包装，避免阻塞事件循环）"""
+    """拉取 Docker 镜像（如果已存在则跳过）"""
     loop = asyncio.get_event_loop()
+    try:
+        client.images.get(image)
+        log.info(f"image {image} already exists locally, skipping pull")
+        return
+    except docker.errors.ImageNotFound:
+        pass
+    log.info(f"pulling image {image}...")
     await loop.run_in_executor(None, _pull_sync, image)
 
 
