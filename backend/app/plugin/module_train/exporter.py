@@ -68,14 +68,14 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
             for ann in anns:
                 cls_id = ann.get("class_id", 0)
                 classes.add(cls_id)
-                if ann.get("type") == "AxisAlignedBox":
+                if ann.get("type") in ("AxisAlignedBox", "box"):
                     x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
                     xc = (x1 + x2) / 2
                     yc = (y1 + y2) / 2
                     w = x2 - x1
                     h = y2 - y1
                     lines.append(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
-                elif ann.get("type") == "RotatedBox":
+                elif ann.get("type") in ("RotatedBox", "rotated_box"):
                     cx, cy = ann["cx"], ann["cy"]
                     w, h = ann["width"], ann["height"]
                     lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
