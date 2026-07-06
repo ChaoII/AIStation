@@ -178,6 +178,9 @@
         <el-alert title="训练失败" type="error" :description="task.error_log.slice(0, 500)" show-icon closable />
       </el-col>
     </el-row>
+
+    <!-- 训练日志 -->
+    <el-row :gutter="16" style="margin-top: 0">
       <el-col :span="24">
         <el-card shadow="never">
           <template #header>
