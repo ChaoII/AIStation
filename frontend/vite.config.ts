@@ -47,6 +47,7 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           target: env.VITE_API_BASE_URL,
           secure: false,
           changeOrigin: true,
+          ws: true,
         },
         "/live": {
           target: "http://127.0.0.1:8080",
