@@ -126,7 +126,58 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="16" class="log-row">
+    <!-- YOLO Metrics -->
+    <el-row :gutter="12" class="metrics-row">
+      <el-col :span="4">
+        <div class="metric-mini">
+          <span class="metric-mini-value">{{ yoloMetrics.epoch }}/{{ yoloMetrics.totalEpochs }}</span>
+          <span class="metric-mini-label">Epoch</span>
+        </div>
+      </el-col>
+      <el-col :span="4">
+        <div class="metric-mini">
+          <span class="metric-mini-value">{{ yoloMetrics.boxLoss.toFixed(4) }}</span>
+          <span class="metric-mini-label">Box Loss</span>
+        </div>
+      </el-col>
+      <el-col :span="4">
+        <div class="metric-mini">
+          <span class="metric-mini-value">{{ yoloMetrics.clsLoss.toFixed(4) }}</span>
+          <span class="metric-mini-label">Cls Loss</span>
+        </div>
+      </el-col>
+      <el-col :span="3">
+        <div class="metric-mini">
+          <span class="metric-mini-value metric-green">{{ (yoloMetrics.precision * 100).toFixed(1) }}%</span>
+          <span class="metric-mini-label">Precision</span>
+        </div>
+      </el-col>
+      <el-col :span="3">
+        <div class="metric-mini">
+          <span class="metric-mini-value metric-blue">{{ (yoloMetrics.recall * 100).toFixed(1) }}%</span>
+          <span class="metric-mini-label">Recall</span>
+        </div>
+      </el-col>
+      <el-col :span="3">
+        <div class="metric-mini">
+          <span class="metric-mini-value metric-orange">{{ (yoloMetrics.map50 * 100).toFixed(1) }}%</span>
+          <span class="metric-mini-label">mAP@50</span>
+        </div>
+      </el-col>
+      <el-col :span="3">
+        <div class="metric-mini">
+          <span class="metric-mini-value metric-purple">{{ (yoloMetrics.map5095 * 100).toFixed(1) }}%</span>
+          <span class="metric-mini-label">mAP@50:95</span>
+        </div>
+      </el-col>
+    </el-row>
+
+    <!-- Error display -->
+    <el-row v-if="task?.error_log" :gutter="16" class="error-row">
+      <el-col :span="24">
+        <el-alert title="训练失败" type="error" :description="task.error_log.slice(0, 500)" show-icon closable />
+      </el-col>
+    </el-row>
       <el-col :span="24">
         <el-card shadow="never">
           <template #header>
@@ -203,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
@@ -273,17 +324,54 @@ const estimatedEta = computed(() => {
   return `${h}时${m}分`;
 });
 
+// Real-time YOLO metrics
+const yoloMetrics = reactive({
+  epoch: 0, totalEpochs: 0,
+  boxLoss: 0, clsLoss: 0, dflLoss: 0,
+  precision: 0, recall: 0, map50: 0, map5095: 0,
+  gpuMem: "",
+  progress: 0,
+});
+
+function parseYoloMetrics(line: string) {
+  // Epoch progress: "Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size"
+  // Actual data: "  1/2      0G         1.234      0.567      0.890        100       640: ..."
+  const epochMatch = line.match(/^\s*(\d+)\/(\d+)\s+([\d.]+G|[\d.]+M)?\s+([\d.]+)?\s+([\d.]+)?\s+([\d.]+)?/);
+  if (epochMatch) {
+    yoloMetrics.epoch = parseInt(epochMatch[1]);
+    yoloMetrics.totalEpochs = parseInt(epochMatch[2]);
+    yoloMetrics.gpuMem = epochMatch[3] || "";
+    if (epochMatch[4]) yoloMetrics.boxLoss = parseFloat(epochMatch[4]);
+    if (epochMatch[5]) yoloMetrics.clsLoss = parseFloat(epochMatch[5]);
+    if (epochMatch[6]) yoloMetrics.dflLoss = parseFloat(epochMatch[6]);
+    yoloMetrics.progress = Math.round(yoloMetrics.epoch / yoloMetrics.totalEpochs * 100);
+    return;
+  }
+  // Validation metrics: "Class     Images  Instances      Box(P          R      mAP50    mAP50-95)"
+  // "      all       10       100      0.812      0.745      0.789      0.534"
+  const valMatch = line.match(/^\s+all\s+\d+\s+\d+\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+  if (valMatch) {
+    yoloMetrics.precision = parseFloat(valMatch[1]);
+    yoloMetrics.recall = parseFloat(valMatch[2]);
+    yoloMetrics.map50 = parseFloat(valMatch[3]);
+    yoloMetrics.map5095 = parseFloat(valMatch[4]);
+  }
+}
+
 function connectWs(id: number) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${proto}//${location.host}/api/v1/train/ws/train/logs?task_id=${id}`);
   wsConnected.value = true;
   ws.onmessage = (e: MessageEvent) => {
-    logText.value += e.data + "\n";
-    logLineCount.value = (logText.value.match(/\n/g) || []).length;
+    const line = e.data;
+    logText.value += line + "\n";
+    logLineCount.value++;
+    // Parse YOLO metrics from log lines
+    parseYoloMetrics(line);
     if (autoScroll.value) {
-      setTimeout(() => {
+      nextTick(() => requestAnimationFrame(() => {
         if (logRef.value) logRef.value.scrollTop = logRef.value.scrollHeight;
-      }, 50);
+      }));
     }
   };
   ws.onclose = () => {
@@ -578,6 +666,16 @@ onBeforeUnmount(() => {
   word-break: break-all;
   margin: 0;
 }
+
+.metrics-row { margin-bottom: 16px; }
+.metric-mini { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 8px; text-align: center; }
+.metric-mini-value { display: block; font-size: 18px; font-weight: 700; font-family: "Cascadia Code", monospace; color: var(--el-text-color-primary); }
+.metric-mini-label { display: block; font-size: 11px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.metric-green { color: #67c23a; }
+.metric-blue { color: #409eff; }
+.metric-orange { color: #e6a23c; }
+.metric-purple { color: #9b59b6; }
+.error-row { margin-bottom: 16px; }
 
 .text-secondary {
   color: #909399;

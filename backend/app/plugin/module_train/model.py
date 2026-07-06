@@ -46,6 +46,7 @@ class TrainTask(ModelMixin, UserMixin):
     status: Mapped[TrainStatus] = mapped_column(SAEnum(TrainStatus), default=TrainStatus.PENDING, comment="状态")
     progress: Mapped[int] = mapped_column(Integer, default=0, comment="进度0-100")
     error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误日志")
+    cleanup_delay_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="训练完成后延迟N分钟删除容器,空=不自动删除")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")
 
