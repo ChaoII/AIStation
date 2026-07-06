@@ -30,9 +30,24 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
     os.makedirs(img_dir, exist_ok=True)
     os.makedirs(label_dir, exist_ok=True)
     classes = set()
+    downloaded = 0
+
+    from app.utils.s3_client import s3_client
 
     async with async_db_session() as db:
         for img in images:
+            # Download image from RustFS
+            img_path = os.path.join(img_dir, img.filename)
+            if not os.path.exists(img_path):
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+                    downloaded += 1
+                except Exception as e:
+                    log.warning(f"skip image {img.filename}: {e}")
+                    continue
+
             rec = await db.execute(
                 select(AnnotationRecordModel)
                 .where(and_(
@@ -64,6 +79,8 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
             if lines:
                 with open(label_path, "w") as f:
                     f.write("\n".join(lines))
+
+    log.info(f"exported {downloaded} images, {len(classes)} classes to {output_dir}")
 
     yaml_path = os.path.join(output_dir, "dataset.yaml")
     with open(yaml_path, "w") as f:
