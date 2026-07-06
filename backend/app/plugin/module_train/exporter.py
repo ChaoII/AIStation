@@ -1,13 +1,19 @@
 import json
 import os
-from sqlalchemy import select, desc, and_
+from sqlalchemy import select, desc
 from app.api.v1.module_annotation.dataset.model import AnnotationImageModel
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.core.database import async_db_session
 from app.core.logger import log
 
 
-async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str) -> None:
+async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str) -> str:
+    """Export dataset and return the path to dataset.yaml for the YOLO command."""
+    data_dir = output_dir  # /data mount point in container
+    img_dir = os.path.join(data_dir, "images")
+    label_dir = os.path.join(data_dir, "labels")
+    os.makedirs(img_dir, exist_ok=True)
+    os.makedirs(label_dir, exist_ok=True)
     async with async_db_session() as db:
         result = await db.execute(
             select(AnnotationImageModel).where(AnnotationImageModel.dataset_id == dataset_id)
@@ -81,9 +87,9 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
 
     yaml_path = os.path.join(output_dir, "dataset.yaml")
     with open(yaml_path, "w") as f:
-        f.write(f"path: {output_dir}\n")
-        f.write("train: images\n")
-        f.write("val: images\n")
+        f.write("path: /data\n")
+        f.write("train: .\n")
+        f.write("val: .\n")
         f.write(f"nc: {len(classes)}\n")
         f.write(f"names: {json.dumps(sorted(classes))}\n")
 
