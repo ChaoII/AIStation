@@ -85,16 +85,10 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             return None
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """
-        记录请求日志并透传响应。
+        # WebSocket 连接不走 BaseHTTPMiddleware，直接透传
+        if request.scope.get("type") == "websocket":
+            return await self.app(request.scope, None, None)
 
-        参数:
-        - request (Request): 当前请求。
-        - call_next (RequestResponseEndpoint): 下一层 ASGI 可调用对象。
-
-        返回:
-        - Response: 下游中间件/路由产生的响应。
-        """
         start_time = time.time()
 
         # 尝试提取session_id
