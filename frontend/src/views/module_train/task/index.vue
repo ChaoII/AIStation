@@ -163,6 +163,25 @@
                 >
                   详情
                 </el-button>
+                <el-popconfirm
+                  title="确定删除该任务？"
+                  confirm-button-text="删除"
+                  cancel-button-text="取消"
+                  @confirm="handleDelete(scope.row.id)"
+                  width="180"
+                >
+                  <template #reference>
+                    <el-button
+                      v-hasPerm="['module_train:task:delete']"
+                      size="small"
+                      type="danger"
+                      link
+                      icon="Delete"
+                    >
+                      删除
+                    </el-button>
+                  </template>
+                </el-popconfirm>
               </template>
             </el-table-column>
           </el-table>
@@ -642,6 +661,12 @@ async function handleStop(id: number) {
   } catch {
     //
   }
+}
+
+async function handleDelete(id: number) {
+  await TrainAPI.deleteTask([id]);
+  ElMessage.success("已删除");
+  refreshList();
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;

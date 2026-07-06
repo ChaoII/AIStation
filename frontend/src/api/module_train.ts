@@ -25,6 +25,9 @@ export const TrainAPI = {
   getTaskDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/detail`, method: "get" });
   },
+  getTaskLogs(id: number) {
+    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/task/${id}/logs`, method: "get" });
+  },
   stopTask(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/stop`, method: "post" });
   },

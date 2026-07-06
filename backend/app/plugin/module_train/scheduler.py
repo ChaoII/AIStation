@@ -110,11 +110,15 @@ async def _execute_training(task_id: int):
             )
 
         log_queue = await follow_container_logs(container.id)
-        while True:
-            line = await log_queue.get()
-            if line == "__EOF__":
-                break
-            await broadcast_log(task_id, line)
+        log_file = os.path.join(export_dir, "train.log")
+        with open(log_file, "w", encoding="utf-8") as lf:
+            while True:
+                line = await log_queue.get()
+                if line == "__EOF__":
+                    break
+                lf.write(line + "\n")
+                lf.flush()
+                await broadcast_log(task_id, line)
             # Parse YOLO progress from log lines like "Epoch 1/2 ..."
             import re
             m = re.search(r"Epoch\s+(\d+)/(\d+)", line)

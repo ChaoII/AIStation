@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, Body
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, Body, HTTPException
 from typing import Dict
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
@@ -103,6 +103,17 @@ async def export_dataset(data: DatasetExportSchema, auth: AuthSchema = Depends(A
 async def list_evals(model_repo_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"]))):
     data = await TrainService.list_evals(model_repo_id)
     return SuccessResponse(data=data)
+
+
+@router.get("/task/{task_id}/logs", summary="获取训练日志")
+async def get_task_logs(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
+    import os, tempfile
+    log_path = os.path.join(tempfile.gettempdir(), "train_output", str(task_id), "train.log")
+    if not os.path.exists(log_path):
+        return SuccessResponse(data={"logs": "", "path": log_path})
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return SuccessResponse(data={"logs": content[-500000:]})
 
 
 @router.delete("/eval/delete", summary="删除评估记录")

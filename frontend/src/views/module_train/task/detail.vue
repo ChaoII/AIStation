@@ -357,7 +357,9 @@ async function handleDelete() {
       type: "warning",
       confirmButtonText: "删除",
     });
-    ElMessage.info("删除功能需要后端支持");
+    await TrainAPI.deleteTask([task.value.id]);
+    ElMessage.success("已删除");
+    router.push("/train/task");
   } catch {
     //
   }
@@ -387,9 +389,17 @@ onMounted(async () => {
   await loadTask();
   const id = Number(route.params.id);
   if (id) {
-    connectWs(id);
     if (task.value?.status === "running") {
+      connectWs(id);
       startPoll();
+    } else {
+      // Load saved logs from API for completed/failed tasks
+      try {
+        const r = await TrainAPI.getTaskLogs(id);
+        if (r.data?.data?.logs) {
+          logText.value = r.data.data.logs;
+        }
+      } catch {}
     }
   }
 });
