@@ -646,9 +646,11 @@ async function handleSubmit() {
 async function handleStart(row: any) {
   try {
     await ElMessageBox.confirm(`确定开始训练任务「${row.name}」？`, "提示", { type: "info" });
-    ElMessage.info("开始训练功能需要调度器支持");
-  } catch {
-    //
+    await TrainAPI.startTask(row.id);
+    ElMessage.success("训练已开始");
+    refreshList();
+  } catch (e: any) {
+    if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败");
   }
 }
 

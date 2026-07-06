@@ -31,6 +31,9 @@ export const TrainAPI = {
   stopTask(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/stop`, method: "post" });
   },
+  startTask(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/start`, method: "post" });
+  },
   deleteTask(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/task/delete`, method: "delete", data: ids });
   },

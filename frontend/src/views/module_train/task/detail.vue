@@ -412,8 +412,15 @@ async function loadTask() {
 async function startPoll() {
   stopPoll();
   pollTimer = setInterval(async () => {
+    const prevStatus = task.value?.status;
     await loadTask();
-    if (task.value?.status && task.value.status !== "running") {
+    const curStatus = task.value?.status;
+    if (curStatus !== prevStatus) {
+      if (curStatus === "running" && !ws) {
+        connectWs(Number(route.params.id));
+      }
+    }
+    if (curStatus && curStatus !== "running" && curStatus !== "pending") {
       stopPoll();
     }
   }, 5000);
@@ -427,8 +434,16 @@ function stopPoll() {
 }
 
 async function handleStart() {
-  await ElMessageBox.confirm(`确定开始训练任务「${task.value?.name}」？`, "提示", { type: "info" });
-  ElMessage.info("开始训练功能需要调度器支持");
+  try {
+    await ElMessageBox.confirm(`确定开始训练任务「${task.value?.name}」？`, "提示", { type: "info" });
+    await TrainAPI.startTask(task.value.id);
+    ElMessage.success("训练已开始");
+    await loadTask();
+    connectWs(task.value.id);
+    startPoll();
+  } catch (e: any) {
+    if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败");
+  }
 }
 
 async function handleStop() {

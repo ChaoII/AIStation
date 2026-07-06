@@ -1,13 +1,12 @@
-from fastapi import APIRouter, Depends, Body, HTTPException
+from fastapi import APIRouter, Depends, Body
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.api.v1.module_system.auth.schema import AuthSchema
 from .schema import TrainModelCreateSchema, TrainTaskCreateSchema, TrainEvalCreateSchema, DatasetExportSchema
 from .service import TrainService
+from .scheduler import start_training
 
 router = APIRouter(tags=["模型训练"])
-
-from .ws import broadcast_log
 
 
 @router.get("/model/list", summary="模型仓库列表")
@@ -56,6 +55,12 @@ async def get_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["mod
 async def stop_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"]))):
     result = await TrainService.stop_task(task_id)
     return SuccessResponse(data=result, msg="训练已停止")
+
+
+@router.post("/task/{task_id}/start", summary="开始训练")
+async def start_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"]))):
+    await start_training(task_id)
+    return SuccessResponse(data={"id": task_id}, msg="训练已开始")
 
 
 @router.delete("/task/delete", summary="删除训练任务")

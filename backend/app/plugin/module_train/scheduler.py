@@ -25,25 +25,29 @@ async def start_scheduler():
 
 
 async def _scheduler_loop():
+    """调度器循环 — 不再自动启动任务，只做维护清理"""
     while True:
         try:
             async with async_db_session() as db:
-                result = await db.execute(
-                    select(TrainTask).where(TrainTask.status == TrainStatus.PENDING)
-                    .order_by(TrainTask.created_time.asc()).limit(MAX_CONCURRENT)
+                running = await db.execute(
+                    select(TrainTask).where(TrainTask.status == TrainStatus.RUNNING)
                 )
-                pending = result.scalars().all()
-
-            for task in pending:
-                asyncio.create_task(_execute_training(task.id))
-                async with async_db_session.begin() as db:
-                    await db.execute(
-                        update(TrainTask).where(TrainTask.id == task.id).values(status=TrainStatus.RUNNING)
-                    )
+                for t in running.scalars().all():
+                    if t.id not in _running_tasks and t.started_at:
+                        elapsed = (datetime.now() - t.started_at).total_seconds()
+                        if elapsed > 7200:
+                            async with async_db_session.begin() as db2:
+                                await db2.execute(
+                                    update(TrainTask).where(TrainTask.id == t.id).values(
+                                        status=TrainStatus.FAILED,
+                                        error_log="任务已超时（2小时无容器）",
+                                        finished_at=datetime.now()
+                                    )
+                                )
         except Exception as e:
             log.error(f"train scheduler error: {e}")
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(30)  # 每30秒检查一次超时
 
 
 async def _build_export_dir(task_id: int) -> str:
@@ -111,6 +115,7 @@ async def _execute_training(task_id: int):
 
         log_queue = await follow_container_logs(container.id)
         log_file = os.path.join(export_dir, "train.log")
+        import re
         with open(log_file, "w", encoding="utf-8") as lf:
             while True:
                 line = await log_queue.get()
@@ -119,17 +124,16 @@ async def _execute_training(task_id: int):
                 lf.write(line + "\n")
                 lf.flush()
                 await broadcast_log(task_id, line)
-            # Parse YOLO progress from log lines like "Epoch 1/2 ..."
-            import re
-            m = re.search(r"Epoch\s+(\d+)/(\d+)", line)
-            if m:
-                current = int(m.group(1))
-                total = int(m.group(2))
-                pct = int(current / total * 100)
-                async with async_db_session.begin() as db:
-                    await db.execute(
-                        update(TrainTask).where(TrainTask.id == task_id).values(progress=pct)
-                    )
+
+                m = re.search(r"Epoch\s+(\d+)/(\d+)", line)
+                if m:
+                    current = int(m.group(1))
+                    total = int(m.group(2))
+                    pct = int(current / total * 100)
+                    async with async_db_session.begin() as db:
+                        await db.execute(
+                            update(TrainTask).where(TrainTask.id == task_id).values(progress=pct)
+                        )
 
         await remove_container(container.id)
         container.reload()
@@ -178,7 +182,16 @@ async def _execute_training(task_id: int):
                     status=TrainStatus.FAILED, error_log=str(e), finished_at=datetime.now()
                 )
             )
-        _running_tasks.pop(task_id, None)
+
+
+async def start_training(task_id: int):
+    async with async_db_session.begin() as db:
+        await db.execute(
+            update(TrainTask).where(TrainTask.id == task_id).values(
+                status=TrainStatus.RUNNING, started_at=datetime.now()
+            )
+        )
+    asyncio.create_task(_execute_training(task_id))
 
 
 async def stop_training(task_id: int) -> None:
