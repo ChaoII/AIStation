@@ -86,7 +86,7 @@ async def _execute_training(task_id: int):
         os.makedirs(data_dir, exist_ok=True)
 
         from .exporter import export_dataset
-        await export_dataset(task.dataset_id, task.framework, data_dir)
+        await export_dataset(task.dataset_id, task.id, task.framework, data_dir)
 
         if task.framework == TrainFramework.ULTRALYTICS:
             cmd = _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir)
