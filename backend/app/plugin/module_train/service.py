@@ -113,3 +113,34 @@ class TrainService:
                 e = await db.get(TrainEval, eid)
                 if e:
                     await db.delete(e)
+
+    @classmethod
+    async def export_dataset(cls, data, auth) -> dict:
+        import os, tempfile, shutil, zipfile
+        from .exporter import export_dataset as run_export
+
+        export_dir = os.path.join(tempfile.gettempdir(), "dataset_export", str(data.dataset_id), data.format)
+        if os.path.exists(export_dir):
+            shutil.rmtree(export_dir)
+        os.makedirs(export_dir, exist_ok=True)
+
+        await run_export(data.dataset_id, data.annotation_task_id or 0, data.format, export_dir)
+
+        # Zip the export
+        zip_path = export_dir.rstrip("/") + ".zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(export_dir):
+                for fn in files:
+                    fp = os.path.join(root, fn)
+                    zf.write(fp, os.path.relpath(fp, export_dir))
+
+        # Upload to RustFS
+        rustfs_key = f"train/exports/dataset_{data.dataset_id}_{data.format}_{auth.user.id}.zip"
+        from app.utils.s3_client import s3_client
+        with open(zip_path, "rb") as f:
+            s3_client.upload_fileobj(f, rustfs_key)
+
+        download_url = s3_client.presigned_url(rustfs_key)
+        shutil.rmtree(os.path.dirname(export_dir), ignore_errors=True)
+
+        return {"download_url": download_url, "format": data.format, "dataset_id": data.dataset_id}

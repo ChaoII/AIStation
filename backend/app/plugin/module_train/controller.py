@@ -3,7 +3,7 @@ from typing import Dict
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.api.v1.module_system.auth.schema import AuthSchema
-from .schema import TrainModelCreateSchema, TrainTaskCreateSchema, TrainEvalCreateSchema
+from .schema import TrainModelCreateSchema, TrainTaskCreateSchema, TrainEvalCreateSchema, DatasetExportSchema
 from .service import TrainService
 
 router = APIRouter(tags=["模型训练"])
@@ -91,6 +91,12 @@ async def delete_task(ids: list[int] = Body(...), auth: AuthSchema = Depends(Aut
 async def create_eval(data: TrainEvalCreateSchema, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
     result = await TrainService.create_eval(data, auth)
     return SuccessResponse(data=result, msg="评估任务已创建")
+
+
+@router.post("/dataset/export", summary="导出标注数据集")
+async def export_dataset(data: DatasetExportSchema, auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"]))):
+    result = await TrainService.export_dataset(data, auth)
+    return SuccessResponse(data=result, msg="数据集导出成功")
 
 
 @router.get("/eval/list", summary="评估记录列表")

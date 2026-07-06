@@ -67,3 +67,9 @@ class TrainEvalOutSchema(BaseModel):
     status: str
     log: str | None
     created_time: datetime | None
+
+
+class DatasetExportSchema(BaseModel):
+    dataset_id: int
+    annotation_task_id: int | None = None
+    format: str = "ultralytics"
