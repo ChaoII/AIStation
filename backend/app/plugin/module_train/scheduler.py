@@ -134,10 +134,18 @@ async def _execute_training(task_id: int):
                 )
         else:
             status = TrainStatus.FAILED
+            error_msg = ""
+            try:
+                err_logs = container.logs(stdout=False, stderr=True, tail=20).decode("utf-8", errors="replace")
+                if err_logs:
+                    error_msg = err_logs.strip()
+            except Exception:
+                pass
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainTask).where(TrainTask.id == task_id).values(
-                        status=status, finished_at=datetime.now()
+                        status=status, error_log=error_msg or "training failed (unknown error)",
+                        finished_at=datetime.now()
                     )
                 )
 
