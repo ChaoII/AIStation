@@ -337,27 +337,31 @@ const yoloMetrics = reactive({
 });
 
 function parseYoloMetrics(line: string) {
-  // Epoch progress: "Epoch    GPU_mem   box_loss   cls_loss   dfl_loss  Instances       Size"
-  // Actual data: "  1/2      0G         1.234      0.567      0.890        100       640: ..."
-  const epochMatch = line.match(/^\s*(\d+)\/(\d+)\s+([\d.]+G|[\d.]+M)?\s+([\d.]+)?\s+([\d.]+)?\s+([\d.]+)?/);
-  if (epochMatch) {
+  // Epoch line: "     1/2      0G         1.234      0.567      0.890 ..."
+  const epochMatch = line.match(/\s*(\d+)\/(\d+)\s+/);
+  if (epochMatch && line.includes("G") && (line.includes("loss") || /\d+\.\d+\s+\d+\.\d+/.test(line))) {
     yoloMetrics.epoch = parseInt(epochMatch[1]);
     yoloMetrics.totalEpochs = parseInt(epochMatch[2]);
-    yoloMetrics.gpuMem = epochMatch[3] || "";
-    if (epochMatch[4]) yoloMetrics.boxLoss = parseFloat(epochMatch[4]);
-    if (epochMatch[5]) yoloMetrics.clsLoss = parseFloat(epochMatch[5]);
-    if (epochMatch[6]) yoloMetrics.dflLoss = parseFloat(epochMatch[6]);
+    // Extract GPU memory
+    const gpuMatch = line.match(/([\d.]+)(G|M)/);
+    if (gpuMatch) yoloMetrics.gpuMem = gpuMatch[0];
+    // Extract losses: look for decimal numbers after GPU column
+    const parts = line.trim().split(/\s+/);
+    const lossValues = parts.filter(p => /^\d+\.\d+$/.test(p));
+    if (lossValues.length >= 1) yoloMetrics.boxLoss = parseFloat(lossValues[0]);
+    if (lossValues.length >= 2) yoloMetrics.clsLoss = parseFloat(lossValues[1]);
+    if (lossValues.length >= 3) yoloMetrics.dflLoss = parseFloat(lossValues[2]);
     yoloMetrics.progress = Math.round(yoloMetrics.epoch / yoloMetrics.totalEpochs * 100);
     return;
   }
-  // Validation metrics: "Class     Images  Instances      Box(P          R      mAP50    mAP50-95)"
-  // "      all       10       100      0.812      0.745      0.789      0.534"
-  const valMatch = line.match(/^\s+all\s+\d+\s+\d+\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-  if (valMatch) {
-    yoloMetrics.precision = parseFloat(valMatch[1]);
-    yoloMetrics.recall = parseFloat(valMatch[2]);
-    yoloMetrics.map50 = parseFloat(valMatch[3]);
-    yoloMetrics.map5095 = parseFloat(valMatch[4]);
+  // Validation: "all  10  100  0.812  0.745  0.789  0.534"
+  if (/^\s+all\s+/.test(line)) {
+    const parts = line.trim().split(/\s+/);
+    // parts: ["all", "10", "100", "0.812", "0.745", "0.789", "0.534"]
+    if (parts.length >= 5) yoloMetrics.precision = parseFloat(parts[3]) || 0;
+    if (parts.length >= 6) yoloMetrics.recall = parseFloat(parts[4]) || 0;
+    if (parts.length >= 7) yoloMetrics.map50 = parseFloat(parts[5]) || 0;
+    if (parts.length >= 8) yoloMetrics.map5095 = parseFloat(parts[6]) || 0;
   }
 }
 
