@@ -332,11 +332,14 @@ async def _ensure_train_menus() -> None:
             button_perms = [
                 ("module_train:model:query", "查询模型"),
                 ("module_train:model:create", "创建模型"),
+                ("module_train:model:delete", "删除模型"),
                 ("module_train:task:query", "查询任务"),
                 ("module_train:task:create", "创建任务"),
                 ("module_train:task:update", "更新任务"),
+                ("module_train:task:delete", "删除任务"),
                 ("module_train:eval:query", "查询评估"),
                 ("module_train:eval:create", "创建评估"),
+                ("module_train:eval:delete", "删除评估"),
             ]
             for perm_code, perm_name in button_perms:
                 existing_perm = await db.execute(

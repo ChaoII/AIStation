@@ -12,6 +12,9 @@ export const TrainAPI = {
   createModel(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/create`, method: "post", data });
   },
+  deleteModel(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/model/delete`, method: "delete", data: ids });
+  },
 
   createTask(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/create`, method: "post", data });
@@ -25,15 +28,17 @@ export const TrainAPI = {
   stopTask(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/stop`, method: "post" });
   },
+  deleteTask(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/task/delete`, method: "delete", data: ids });
+  },
 
   createEval(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/create`, method: "post", data });
   },
   getEvalList(modelRepoId: number) {
-    return request<ApiResponse<any[]>>({
-      url: `${API_PATH}/eval/list`,
-      method: "get",
-      params: { model_repo_id: modelRepoId },
-    });
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/eval/list`, method: "get", params: { model_repo_id: modelRepoId } });
+  },
+  deleteEval(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/eval/delete`, method: "delete", data: ids });
   },
 };

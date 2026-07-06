@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, Body
 from typing import Dict
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
@@ -51,6 +51,12 @@ async def create_model(data: TrainModelCreateSchema, auth: AuthSchema = Depends(
     return SuccessResponse(data=result)
 
 
+@router.delete("/model/delete", summary="删除模型")
+async def delete_model(ids: list[int] = Body(...), auth: AuthSchema = Depends(AuthPermission(["module_train:model:delete"]))):
+    await TrainService.delete_models(ids)
+    return SuccessResponse(msg="删除成功")
+
+
 @router.post("/task/create", summary="创建训练任务")
 async def create_task(data: TrainTaskCreateSchema, auth: AuthSchema = Depends(AuthPermission(["module_train:task:create"]))):
     result = await TrainService.create_task(data, auth)
@@ -75,6 +81,12 @@ async def stop_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["mo
     return SuccessResponse(data=result, msg="训练已停止")
 
 
+@router.delete("/task/delete", summary="删除训练任务")
+async def delete_task(ids: list[int] = Body(...), auth: AuthSchema = Depends(AuthPermission(["module_train:task:delete"]))):
+    await TrainService.delete_tasks(ids)
+    return SuccessResponse(msg="删除成功")
+
+
 @router.post("/eval/create", summary="创建评估任务")
 async def create_eval(data: TrainEvalCreateSchema, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
     result = await TrainService.create_eval(data, auth)
@@ -85,3 +97,9 @@ async def create_eval(data: TrainEvalCreateSchema, auth: AuthSchema = Depends(Au
 async def list_evals(model_repo_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"]))):
     data = await TrainService.list_evals(model_repo_id)
     return SuccessResponse(data=data)
+
+
+@router.delete("/eval/delete", summary="删除评估记录")
+async def delete_eval(ids: list[int] = Body(...), auth: AuthSchema = Depends(AuthPermission(["module_train:eval:delete"]))):
+    await TrainService.delete_evals(ids)
+    return SuccessResponse(msg="删除成功")

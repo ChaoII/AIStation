@@ -6,6 +6,7 @@ class TrainModelCreateSchema(BaseModel):
     name: str = Field(max_length=128)
     framework: str
     annotation_dataset_id: int | None = None
+    export_format: str | None = None
 
 
 class TrainModelOutSchema(BaseModel):
@@ -16,6 +17,7 @@ class TrainModelOutSchema(BaseModel):
     version: str
     storage_path: str | None
     format: str | None
+    export_format: str | None
     metrics: dict | None
     status: str
     annotation_dataset_id: int | None
@@ -27,6 +29,7 @@ class TrainTaskCreateSchema(BaseModel):
     name: str = Field(max_length=128)
     framework: str
     dataset_id: int
+    annotation_task_id: int | None = None
     base_model_id: int | None = None
     hyperparams: dict = Field(default_factory=dict)
 
@@ -37,6 +40,7 @@ class TrainTaskOutSchema(BaseModel):
     name: str
     framework: str
     dataset_id: int
+    annotation_task_id: int | None
     model_repo_id: int | None
     docker_image: str
     hyperparams: dict

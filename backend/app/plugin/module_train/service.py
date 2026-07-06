@@ -35,11 +35,20 @@ class TrainService:
             m = TrainModel(
                 name=data.name, framework=data.framework,
                 version=version, annotation_dataset_id=data.annotation_dataset_id,
+                export_format=data.export_format,
                 created_id=auth.user.id,
             )
             db.add(m)
             await db.flush()
             return {"id": m.id, "version": version}
+
+    @classmethod
+    async def delete_models(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for mid in ids:
+                m = await db.get(TrainModel, mid)
+                if m:
+                    await db.delete(m)
 
     @classmethod
     async def list_tasks(cls) -> list[dict]:
@@ -59,12 +68,21 @@ class TrainService:
             image = "paddlecloud/paddlex:3.0" if data.framework == "paddlex" else "ultralytics/ultralytics:latest"
             t = TrainTask(
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
+                annotation_task_id=data.annotation_task_id,
                 base_model_id=data.base_model_id, docker_image=image,
                 hyperparams=data.hyperparams, created_id=auth.user.id,
             )
             db.add(t)
             await db.flush()
             return {"id": t.id}
+
+    @classmethod
+    async def delete_tasks(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for tid in ids:
+                t = await db.get(TrainTask, tid)
+                if t:
+                    await db.delete(t)
 
     @classmethod
     async def stop_task(cls, task_id: int) -> dict:
@@ -87,3 +105,11 @@ class TrainService:
                 select(TrainEval).where(TrainEval.model_repo_id == model_repo_id).order_by(desc(TrainEval.created_time))
             )
             return [dict(r.__dict__) for r in result.scalars().all()]
+
+    @classmethod
+    async def delete_evals(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for eid in ids:
+                e = await db.get(TrainEval, eid)
+                if e:
+                    await db.delete(e)
