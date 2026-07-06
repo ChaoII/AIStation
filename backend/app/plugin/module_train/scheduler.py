@@ -9,7 +9,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .model import TrainTask, TrainStatus, TrainFramework
-from .docker_utils import run_container, stop_container, pull_image, follow_container_logs
+from .docker_utils import run_container, stop_container, pull_image, follow_container_logs, remove_container
 from .controller import broadcast_log
 
 _running_tasks: dict[int, dict] = {}
@@ -115,7 +115,19 @@ async def _execute_training(task_id: int):
             if line == "__EOF__":
                 break
             await broadcast_log(task_id, line)
+            # Parse YOLO progress from log lines like "Epoch 1/2 ..."
+            import re
+            m = re.search(r"Epoch\s+(\d+)/(\d+)", line)
+            if m:
+                current = int(m.group(1))
+                total = int(m.group(2))
+                pct = int(current / total * 100)
+                async with async_db_session.begin() as db:
+                    await db.execute(
+                        update(TrainTask).where(TrainTask.id == task_id).values(progress=pct)
+                    )
 
+        await remove_container(container.id)
         container.reload()
         exit_code = container.attrs["State"]["ExitCode"]
 
@@ -153,6 +165,9 @@ async def _execute_training(task_id: int):
 
     except Exception as e:
         log.error(f"training task {task_id} failed: {e}")
+        entry = _running_tasks.pop(task_id, None)
+        if entry and entry.get("container_id"):
+            await remove_container(entry["container_id"])
         async with async_db_session.begin() as db:
             await db.execute(
                 update(TrainTask).where(TrainTask.id == task_id).values(

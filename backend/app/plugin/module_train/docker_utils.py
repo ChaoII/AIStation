@@ -70,3 +70,12 @@ async def follow_container_logs(container_id: str) -> asyncio.Queue:
 
     thread = loop.run_in_executor(None, _stream)
     return queue
+
+
+async def remove_container(container_id: str) -> None:
+    """移除容器"""
+    try:
+        c = client.containers.get(container_id)
+        c.remove(force=True)
+    except docker.errors.NotFound:
+        pass
