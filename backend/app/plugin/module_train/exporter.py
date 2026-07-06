@@ -50,10 +50,7 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
 
             rec = await db.execute(
                 select(AnnotationRecordModel)
-                .where(and_(
-                    AnnotationRecordModel.task_id == task_id,
-                    AnnotationRecordModel.image_id == img.id,
-                ))
+                .where(AnnotationRecordModel.image_id == img.id)
                 .order_by(desc(AnnotationRecordModel.version))
                 .limit(1)
             )
