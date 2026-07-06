@@ -10,7 +10,7 @@ from app.core.logger import log
 
 from .model import TrainTask, TrainStatus, TrainFramework
 from .docker_utils import run_container, stop_container, pull_image, follow_container_logs, remove_container
-from .controller import broadcast_log
+from .ws import broadcast_log
 
 _running_tasks: dict[int, dict] = {}
 _scheduler_task: asyncio.Task | None = None

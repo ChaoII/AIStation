@@ -574,6 +574,10 @@ def register_routers(app: FastAPI) -> None:
     from app.api.v1.module_video.alarm.ws import AlarmWSRouter
 
     app.include_router(AlarmWSRouter)
+
+    from app.plugin.module_train.ws import WS_Train
+
+    app.include_router(WS_Train)
     # 先将动态路由注册到应用，使用速率限制器
     from app.core.discover import get_dynamic_router
 
