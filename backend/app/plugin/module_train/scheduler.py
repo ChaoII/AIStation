@@ -57,8 +57,8 @@ def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str
     batch = hp.get("batch", 16)
     lr = hp.get("lr", 0.01)
     model_name = hp.get("model", "yolo11n.pt")
-    return ["yolo", "train", f"model={model_name}", f"data={data_dir}/dataset.yaml",
-            f"epochs={epochs}", f"batch={batch}", f"lr0={lr}", f"project={export_dir}", "name=exp"]
+    return ["yolo", "train", f"model={model_name}", "data=/data/dataset.yaml",
+            f"epochs={epochs}", f"batch={batch}", f"lr0={lr}", "project=/output", "name=exp"]
 
 
 def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
@@ -66,9 +66,9 @@ def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
     batch = hp.get("batch", 16)
     lr = hp.get("lr", 0.01)
     model_name = hp.get("model", "PP-YOLOE")
-    return ["paddlex", "--model", model_name, "--data", data_dir,
+    return ["paddlex", "--model", model_name, "--data", "/data",
             "--epochs", str(epochs), "--batch", str(batch), "--lr", str(lr),
-            "--output", export_dir]
+            "--output", "/output"]
 
 
 async def _execute_training(task_id: int):
@@ -95,8 +95,8 @@ async def _execute_training(task_id: int):
 
         container = await run_container(
             task.docker_image, cmd,
-            volumes={data_dir: {"bind": data_dir, "mode": "rw"},
-                     export_dir: {"bind": export_dir, "mode": "rw"}},
+            volumes={data_dir: {"bind": "/data", "mode": "rw"},
+                     export_dir: {"bind": "/output", "mode": "rw"}},
             gpu_id=task.hyperparams.get("gpu_id", "0"),
         )
 
