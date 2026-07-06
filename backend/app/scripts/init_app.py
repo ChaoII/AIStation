@@ -457,6 +457,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_camera_health_checker())
         log.info("✅ 摄像头健康检查器已启动")
 
+        from app.plugin.module_train.scheduler import start_scheduler
+        asyncio.create_task(start_scheduler())
+        log.info("✅ 训练调度器已启动")
+
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
 
