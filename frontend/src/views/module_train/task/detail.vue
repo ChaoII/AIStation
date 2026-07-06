@@ -366,8 +366,9 @@ function parseYoloMetrics(line: string) {
 }
 
 function connectWs(id: number) {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${proto}//${location.host}/api/v1/train/ws/train/logs?task_id=${id}`);
+  const baseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/^http/, "ws");
+  const wsUrl = `${baseUrl}/api/v1/train/ws/train/logs?task_id=${id}`;
+  ws = new WebSocket(wsUrl);
   wsConnected.value = true;
   ws.onmessage = (e: MessageEvent) => {
     const line = e.data;
