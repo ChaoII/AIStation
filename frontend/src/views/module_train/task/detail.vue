@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container" ref="containerRef">
+  <div class="app-container train-detail-page" ref="containerRef">
     <div class="debug-bar">
       progress={{ displayProgress }} status={{ task?.status ?? "null" }}
       metricsLog={{ metricsLog.length }} task={{ task ? "loaded" : "null" }}
@@ -489,15 +489,22 @@ onMounted(async () => {
 onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
-<style scoped lang="scss">
-.app-container {
+<style lang="scss">
+/* Non-scoped override: guaranteed to apply regardless of data-v-xxx hashing.
+   The .train-detail-page class selector ensures this only affects this page. */
+.app-container.train-detail-page {
   display: block !important;
   height: auto !important;
   overflow: visible !important;
 }
-
 .debug-bar {
-  font-size: 11px; color: #333; background: #ffeeba; padding: 2px 8px; border-radius: 4px; margin-bottom: 4px; white-space: pre; font-family: monospace;
+  background: #ffeeba !important;
+}
+</style>
+
+<style scoped lang="scss">
+.debug-bar {
+  font-size: 11px; color: #333; padding: 2px 8px; border-radius: 4px; margin-bottom: 4px; white-space: pre; font-family: monospace;
 }
 
 .detail-header {
