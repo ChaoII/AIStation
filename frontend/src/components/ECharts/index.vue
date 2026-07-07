@@ -65,14 +65,11 @@ useResizeObserver(chartRef, () => {
 watch(
   () => props.options,
   (newOptions) => {
-    if (newOptions) {
-      if (!chartInstance && chartRef.value) {
-        chartInstance = echarts.init(chartRef.value);
-      }
-      chartInstance?.setOption(newOptions, true);
+    if (chartInstance && newOptions) {
+      chartInstance.setOption(newOptions);
     }
   },
-  { deep: true, immediate: true }
+  { deep: true }
 );
 
 onMounted(() => {
