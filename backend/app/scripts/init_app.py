@@ -283,95 +283,122 @@ async def _ensure_train_menus() -> None:
             existing = await db.execute(
                 select(MenuModel).where(MenuModel.route_name == "Train")
             )
-            if existing.scalar_one_or_none():
+            parent = existing.scalar_one_or_none()
+
+            if parent is None:
+                parent = MenuModel(
+                    name="模型训练", type=1, icon="el-icon-Aim", order=12,
+                    route_name="Train", route_path="/train", redirect="/train/task",
+                    permission="", status="0", is_deleted=False, title="模型训练",
+                )
+                db.add(parent)
+                await db.flush()
+
+                # Seed all sub-menus (first run)
+                children = [
+                    MenuModel(name="模型仓库", type=2, icon="el-icon-Box", order=1,
+                              route_name="TrainRepo", route_path="/train/repo",
+                              component_path="module_train/repo/index",
+                              permission="module_train:model:query", parent_id=parent.id,
+                              status="0", is_deleted=False, title="模型仓库"),
+                    MenuModel(name="训练任务", type=2, icon="el-icon-Notebook", order=2,
+                              route_name="TrainTask", route_path="/train/task",
+                              component_path="module_train/task/index",
+                              permission="module_train:task:query", parent_id=parent.id,
+                              status="0", is_deleted=False, title="训练任务"),
+                    MenuModel(name="模型评估", type=2, icon="el-icon-DataBoard", order=3,
+                              route_name="TrainEval", route_path="/train/eval",
+                              component_path="module_train/eval/index",
+                              permission="module_train:eval:query", parent_id=parent.id,
+                              status="0", is_deleted=False, title="模型评估"),
+                    MenuModel(name="模型预测", type=2, icon="el-icon-VideoCamera", order=4,
+                              route_name="TrainPredict", route_path="/train/predict",
+                              component_path="module_train/predict/index",
+                              permission="module_train:predict:query", parent_id=parent.id,
+                              status="0", is_deleted=False, title="模型预测"),
+                ]
+                for child in children:
+                    db.add(child)
+                    await db.flush()
+                    db.add(RoleMenusModel(role_id=1, menu_id=child.id))
+
+                # Detail pages
+                for detail_data in [
+                    ("训练详情", "TrainTaskDetail", "/train/task/:id", "module_train/task/detail", "module_train:task:query"),
+                    ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
+                    ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
+                ]:
+                    dm = MenuModel(name=detail_data[0], type=2, icon=None, order=99,
+                                   route_name=detail_data[1], route_path=detail_data[2],
+                                   component_path=detail_data[3],
+                                   permission=detail_data[4], parent_id=parent.id,
+                                   status="0", is_deleted=False, title=detail_data[0], hidden=True)
+                    db.add(dm)
+                    await db.flush()
+                    db.add(RoleMenusModel(role_id=1, menu_id=dm.id))
+
+                db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
+
+                button_perms = [
+                    ("module_train:model:query", "查询模型"),
+                    ("module_train:model:create", "创建模型"),
+                    ("module_train:model:delete", "删除模型"),
+                    ("module_train:task:query", "查询任务"),
+                    ("module_train:task:create", "创建任务"),
+                    ("module_train:task:update", "更新任务"),
+                    ("module_train:task:delete", "删除任务"),
+                    ("module_train:eval:query", "查询评估"),
+                    ("module_train:eval:create", "创建评估"),
+                    ("module_train:eval:delete", "删除评估"),
+                    ("module_train:predict:query", "查询预测"),
+                    ("module_train:predict:create", "创建预测"),
+                    ("module_train:predict:delete", "删除预测"),
+                ]
+                for perm_code, perm_name in button_perms:
+                    existing_perm = await db.execute(
+                        select(MenuModel).where(MenuModel.permission == perm_code)
+                    )
+                    if existing_perm.first() is None:
+                        pm = MenuModel(name=perm_name, type=3, icon=None, order=99,
+                                       route_name="", route_path="", component_path="",
+                                       permission=perm_code, parent_id=parent.id,
+                                       status="0", is_deleted=False, title=perm_name)
+                        db.add(pm)
+                        await db.flush()
+                        db.add(RoleMenusModel(role_id=1, menu_id=pm.id))
+
+                log.info("✅ 训练模块菜单已注册")
                 return
 
-            parent = MenuModel(
-                name="模型训练", type=1, icon="el-icon-Aim", order=12,
-                route_name="Train", route_path="/train", redirect="/train/task",
-                permission="", status="0", is_deleted=False, title="模型训练",
-            )
-            db.add(parent)
-            await db.flush()
-
-            children = [
-                MenuModel(name="模型仓库", type=2, icon="el-icon-Box", order=1,
-                          route_name="TrainRepo", route_path="/train/repo",
-                          component_path="module_train/repo/index",
-                          permission="module_train:model:query", parent_id=parent.id,
-                          status="0", is_deleted=False, title="模型仓库"),
-                MenuModel(name="训练任务", type=2, icon="el-icon-Notebook", order=2,
-                          route_name="TrainTask", route_path="/train/task",
-                          component_path="module_train/task/index",
-                          permission="module_train:task:query", parent_id=parent.id,
-                          status="0", is_deleted=False, title="训练任务"),
-                MenuModel(name="模型评估", type=2, icon="el-icon-DataBoard", order=3,
-                          route_name="TrainEval", route_path="/train/eval",
-                          component_path="module_train/eval/index",
-                          permission="module_train:eval:query", parent_id=parent.id,
-                          status="0", is_deleted=False, title="模型评估"),
-                MenuModel(name="模型预测", type=2, icon="el-icon-VideoCamera", order=4,
-                          route_name="TrainPredict", route_path="/train/predict",
-                          component_path="module_train/predict/index",
-                          permission="module_train:predict:query", parent_id=parent.id,
-                          status="0", is_deleted=False, title="模型预测"),
+            # ── Parent already exists: add any missing sub-menus ──
+            missing = [
+                ("模型预测", "TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query"),
+                ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
+                ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
             ]
-            for child in children:
-                db.add(child)
+            for name, route_name, route_path, component_path, permission in missing:
+                existing_menu = await db.execute(
+                    select(MenuModel).where(MenuModel.route_name == route_name)
+                )
+                if existing_menu.scalar_one_or_none():
+                    continue
+                is_hidden = "Detail" in route_name
+                mm = MenuModel(name=name, type=2, icon=None, order=99,
+                               route_name=route_name, route_path=route_path,
+                               component_path=component_path,
+                               permission=permission, parent_id=parent.id,
+                               status="0", is_deleted=False, title=name,
+                               hidden=is_hidden)
+                db.add(mm)
                 await db.flush()
-                db.add(RoleMenusModel(role_id=1, menu_id=child.id))
+                db.add(RoleMenusModel(role_id=1, menu_id=mm.id))
 
-            detail = MenuModel(
-                name="训练详情", type=2, icon=None, order=99,
-                route_name="TrainTaskDetail", route_path="/train/task/:id",
-                component_path="module_train/task/detail",
-                permission="module_train:task:query", parent_id=parent.id,
-                status="0", is_deleted=False, title="训练详情", hidden=True,
-            )
-            db.add(detail)
-            await db.flush()
-            db.add(RoleMenusModel(role_id=1, menu_id=detail.id))
-
-            detail_eval = MenuModel(
-                name="评估详情", type=2, icon=None, order=99,
-                route_name="TrainEvalDetail", route_path="/train/eval/:id",
-                component_path="module_train/eval/detail",
-                permission="module_train:eval:query", parent_id=parent.id,
-                status="0", is_deleted=False, title="评估详情", hidden=True,
-            )
-            db.add(detail_eval)
-            await db.flush()
-            db.add(RoleMenusModel(role_id=1, menu_id=detail_eval.id))
-
-            detail_predict = MenuModel(
-                name="预测详情", type=2, icon=None, order=99,
-                route_name="TrainPredictDetail", route_path="/train/predict/:id",
-                component_path="module_train/predict/detail",
-                permission="module_train:predict:query", parent_id=parent.id,
-                status="0", is_deleted=False, title="预测详情", hidden=True,
-            )
-            db.add(detail_predict)
-            await db.flush()
-            db.add(RoleMenusModel(role_id=1, menu_id=detail_predict.id))
-
-            db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
-
-            button_perms = [
-                ("module_train:model:query", "查询模型"),
-                ("module_train:model:create", "创建模型"),
-                ("module_train:model:delete", "删除模型"),
-                ("module_train:task:query", "查询任务"),
-                ("module_train:task:create", "创建任务"),
-                ("module_train:task:update", "更新任务"),
-                ("module_train:task:delete", "删除任务"),
-                ("module_train:eval:query", "查询评估"),
-                ("module_train:eval:create", "创建评估"),
-                ("module_train:eval:delete", "删除评估"),
+            # Add missing permissions
+            for perm_code, perm_name in [
                 ("module_train:predict:query", "查询预测"),
                 ("module_train:predict:create", "创建预测"),
                 ("module_train:predict:delete", "删除预测"),
-            ]
-            for perm_code, perm_name in button_perms:
+            ]:
                 existing_perm = await db.execute(
                     select(MenuModel).where(MenuModel.permission == perm_code)
                 )
@@ -384,7 +411,7 @@ async def _ensure_train_menus() -> None:
                     await db.flush()
                     db.add(RoleMenusModel(role_id=1, menu_id=pm.id))
 
-    log.info("✅ 训练模块菜单已注册")
+            log.info("✅ 训练模块缺失菜单已补全")
 
 
 NOTIFY_PARAMS = [
