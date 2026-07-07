@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body, UploadFile, File
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.api.v1.module_system.auth.schema import AuthSchema
-from .schema import TrainModelCreateSchema, TrainTaskCreateSchema, TrainEvalCreateSchema, DatasetExportSchema
+from .schema import (
+    TrainModelCreateSchema, TrainTaskCreateSchema,
+    TrainEvalCreateSchema, TrainPredictCreateSchema, DatasetExportSchema
+)
 from .service import TrainService
 from .scheduler import start_training
+from .eval_scheduler import start_evaluation, stop_evaluation
+from .predict_executor import start_prediction, stop_prediction
 
 router = APIRouter(tags=["模型训练"])
 
@@ -75,6 +80,24 @@ async def create_eval(data: TrainEvalCreateSchema, auth: AuthSchema = Depends(Au
     return SuccessResponse(data=result, msg="评估任务已创建")
 
 
+@router.get("/eval/{eval_id}/detail", summary="评估详情")
+async def get_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"]))):
+    data = await TrainService.get_eval(eval_id)
+    return SuccessResponse(data=data)
+
+
+@router.post("/eval/{eval_id}/start", summary="开始评估")
+async def start_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
+    await start_evaluation(eval_id)
+    return SuccessResponse(data={"id": eval_id}, msg="评估已开始")
+
+
+@router.post("/eval/{eval_id}/stop", summary="停止评估")
+async def stop_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
+    await stop_evaluation(eval_id)
+    return SuccessResponse(data={"id": eval_id}, msg="评估已停止")
+
+
 @router.post("/dataset/export", summary="导出标注数据集")
 async def export_dataset(data: DatasetExportSchema, auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"]))):
     result = await TrainService.export_dataset(data, auth)
@@ -102,3 +125,45 @@ async def get_task_logs(task_id: int, auth: AuthSchema = Depends(AuthPermission(
 async def delete_eval(ids: list[int] = Body(...), auth: AuthSchema = Depends(AuthPermission(["module_train:eval:delete"]))):
     await TrainService.delete_evals(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@router.post("/predict/create", summary="创建预测任务")
+async def create_predict(data: TrainPredictCreateSchema, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
+    result = await TrainService.create_predict(data, auth)
+    return SuccessResponse(data=result, msg="预测任务已创建")
+
+
+@router.get("/predict/list", summary="预测任务列表")
+async def list_predicts(auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"]))):
+    data = await TrainService.list_predicts()
+    return SuccessResponse(data=data)
+
+
+@router.get("/predict/{predict_id}/detail", summary="预测详情")
+async def get_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"]))):
+    data = await TrainService.get_predict(predict_id)
+    return SuccessResponse(data=data)
+
+
+@router.post("/predict/{predict_id}/start", summary="开始预测")
+async def start_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
+    await start_prediction(predict_id)
+    return SuccessResponse(data={"id": predict_id}, msg="预测已开始")
+
+
+@router.post("/predict/{predict_id}/stop", summary="停止预测")
+async def stop_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
+    await stop_prediction(predict_id)
+    return SuccessResponse(data={"id": predict_id}, msg="预测已停止")
+
+
+@router.delete("/predict/delete", summary="删除预测任务")
+async def delete_predict(ids: list[int] = Body(...), auth: AuthSchema = Depends(AuthPermission(["module_train:predict:delete"]))):
+    await TrainService.delete_predicts(ids)
+    return SuccessResponse(msg="删除成功")
+
+
+@router.post("/predict/upload", summary="上传预测图片")
+async def upload_predict_images(files: list[UploadFile] = File(...), auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
+    urls = await TrainService.upload_predict_images(files, auth)
+    return SuccessResponse(data=urls, msg="上传成功")

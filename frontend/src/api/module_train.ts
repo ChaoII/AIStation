@@ -55,4 +55,38 @@ export const TrainAPI = {
       data,
     });
   },
+
+  getEvalDetail(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/detail`, method: "get" });
+  },
+  startEval(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/start`, method: "post" });
+  },
+  stopEval(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/stop`, method: "post" });
+  },
+
+  createPredict(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/predict/create`, method: "post", data });
+  },
+  getPredictList() {
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/predict/list`, method: "get" });
+  },
+  getPredictDetail(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/detail`, method: "get" });
+  },
+  startPredict(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/start`, method: "post" });
+  },
+  stopPredict(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/stop`, method: "post" });
+  },
+  deletePredict(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/predict/delete`, method: "delete", data: ids });
+  },
+  uploadPredictImages(files: File[]) {
+    const formData = new FormData();
+    files.forEach(f => formData.append("files", f));
+    return request<ApiResponse<string[]>>({ url: `${API_PATH}/predict/upload`, method: "post", data: formData, headers: { "Content-Type": "multipart/form-data" } });
+  },
 };

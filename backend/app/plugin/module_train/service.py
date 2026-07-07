@@ -1,6 +1,6 @@
 from sqlalchemy import select, desc
 from app.core.database import async_db_session
-from .model import TrainModel, TrainTask, TrainEval
+from .model import TrainModel, TrainTask, TrainEval, TrainPredict
 
 
 class TrainService:
@@ -93,7 +93,13 @@ class TrainService:
     @classmethod
     async def create_eval(cls, data, auth) -> dict:
         async with async_db_session.begin() as db:
-            e = TrainEval(model_repo_id=data.model_repo_id, eval_dataset_id=data.eval_dataset_id, created_id=auth.user.id)
+            e = TrainEval(
+                model_repo_id=data.model_repo_id,
+                model_id=data.model_id,
+                eval_dataset_id=data.eval_dataset_id,
+                hyperparams=data.hyperparams,
+                created_id=auth.user.id,
+            )
             db.add(e)
             await db.flush()
             return {"id": e.id}
@@ -113,6 +119,63 @@ class TrainService:
                 e = await db.get(TrainEval, eid)
                 if e:
                     await db.delete(e)
+
+    @classmethod
+    async def get_eval(cls, eval_id: int) -> dict | None:
+        async with async_db_session() as db:
+            e = await db.get(TrainEval, eval_id)
+            return dict(e.__dict__) if e else None
+
+    @classmethod
+    async def create_predict(cls, data, auth) -> dict:
+        async with async_db_session.begin() as db:
+            p = TrainPredict(
+                model_repo_id=data.model_repo_id,
+                model_id=data.model_id,
+                source_type=data.source_type,
+                source_dataset_id=data.source_dataset_id,
+                source_images=data.source_images,
+                hyperparams=data.hyperparams,
+                created_id=auth.user.id,
+            )
+            db.add(p)
+            await db.flush()
+            return {"id": p.id}
+
+    @classmethod
+    async def get_predict(cls, predict_id: int) -> dict | None:
+        async with async_db_session() as db:
+            p = await db.get(TrainPredict, predict_id)
+            return dict(p.__dict__) if p else None
+
+    @classmethod
+    async def list_predicts(cls) -> list[dict]:
+        async with async_db_session() as db:
+            result = await db.execute(select(TrainPredict).order_by(desc(TrainPredict.created_time)))
+            return [dict(r.__dict__) for r in result.scalars().all()]
+
+    @classmethod
+    async def delete_predicts(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for pid in ids:
+                p = await db.get(TrainPredict, pid)
+                if p:
+                    await db.delete(p)
+
+    @classmethod
+    async def upload_predict_images(cls, files: list, auth) -> list[str]:
+        import uuid
+        import tempfile, os
+        from app.utils.s3_client import s3_client
+
+        urls = []
+        for f in files:
+            content = await f.read()
+            ext = f.filename.rsplit(".", 1)[-1] if "." in f.filename else "jpg"
+            key = f"train/predict/upload/{auth.user.id}/{uuid.uuid4()}.{ext}"
+            s3_client.upload_fileobj(content, key)
+            urls.append(s3_client.presigned_url(key))
+        return urls
 
     @classmethod
     async def export_dataset(cls, data, auth) -> dict:

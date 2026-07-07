@@ -310,6 +310,11 @@ async def _ensure_train_menus() -> None:
                           component_path="module_train/eval/index",
                           permission="module_train:eval:query", parent_id=parent.id,
                           status="0", is_deleted=False, title="模型评估"),
+                MenuModel(name="模型预测", type=2, icon="el-icon-VideoCamera", order=4,
+                          route_name="TrainPredict", route_path="/train/predict",
+                          component_path="module_train/predict/index",
+                          permission="module_train:predict:query", parent_id=parent.id,
+                          status="0", is_deleted=False, title="模型预测"),
             ]
             for child in children:
                 db.add(child)
@@ -327,6 +332,28 @@ async def _ensure_train_menus() -> None:
             await db.flush()
             db.add(RoleMenusModel(role_id=1, menu_id=detail.id))
 
+            detail_eval = MenuModel(
+                name="评估详情", type=2, icon=None, order=99,
+                route_name="TrainEvalDetail", route_path="/train/eval/:id",
+                component_path="module_train/eval/detail",
+                permission="module_train:eval:query", parent_id=parent.id,
+                status="0", is_deleted=False, title="评估详情", hidden=True,
+            )
+            db.add(detail_eval)
+            await db.flush()
+            db.add(RoleMenusModel(role_id=1, menu_id=detail_eval.id))
+
+            detail_predict = MenuModel(
+                name="预测详情", type=2, icon=None, order=99,
+                route_name="TrainPredictDetail", route_path="/train/predict/:id",
+                component_path="module_train/predict/detail",
+                permission="module_train:predict:query", parent_id=parent.id,
+                status="0", is_deleted=False, title="预测详情", hidden=True,
+            )
+            db.add(detail_predict)
+            await db.flush()
+            db.add(RoleMenusModel(role_id=1, menu_id=detail_predict.id))
+
             db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
 
             button_perms = [
@@ -340,6 +367,9 @@ async def _ensure_train_menus() -> None:
                 ("module_train:eval:query", "查询评估"),
                 ("module_train:eval:create", "创建评估"),
                 ("module_train:eval:delete", "删除评估"),
+                ("module_train:predict:query", "查询预测"),
+                ("module_train:predict:create", "创建预测"),
+                ("module_train:predict:delete", "删除预测"),
             ]
             for perm_code, perm_name in button_perms:
                 existing_perm = await db.execute(
@@ -463,6 +493,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         from app.plugin.module_train.scheduler import start_scheduler
         asyncio.create_task(start_scheduler())
         log.info("✅ 训练调度器已启动")
+
+        from app.plugin.module_train.eval_scheduler import start_evaluation_scheduler
+        asyncio.create_task(start_evaluation_scheduler())
+        log.info("✅ 评估调度器已启动")
 
         try:
             from sqlalchemy import text

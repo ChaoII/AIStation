@@ -1,3 +1,14 @@
+# Task 7: WebSocket — 新增 eval/predict 日志广播
+
+## 要修改的文件
+- `backend/app/plugin/module_train/ws.py`
+
+## 要求
+在现有 `broadcast_log` / `train_log_ws` 之后，添加相同的模式用于评估和预测日志广播。
+
+具体改动：将 `ws.py` 替换为以下内容（保留现有 + 添加新的 eval/predict）：
+
+```python
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 WS_Train = APIRouter(prefix="/train", tags=["训练WebSocket"])
@@ -75,3 +86,16 @@ async def predict_log_ws(websocket: WebSocket, predict_id: int = Query(...)):
             _predict_ws_clients[predict_id].remove(websocket)
             if not _predict_ws_clients[predict_id]:
                 del _predict_ws_clients[predict_id]
+```
+
+## 现有文件
+- 文件路径：`backend/app/plugin/module_train/ws.py`
+- 现有变量名：`_ws_clients`, `broadcast_log`, `train_log_ws`（重命名为 `_train_ws_clients`）
+
+注意：重命名现有 `_ws_clients` 为 `_train_ws_clients`，因为其他文件（scheduler.py、controller.py）import `broadcast_log`（函数名不变）。变量名是模块内部私有，不影响外部。
+
+## 提交信息
+```bash
+git add backend/app/plugin/module_train/ws.py
+git commit -m "feat(train): add eval/predict WebSocket log broadcasting"
+```
