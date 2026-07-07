@@ -1,10 +1,5 @@
 <template>
-  <div class="app-container train-detail-page" ref="containerRef">
-    <div class="debug-bar">
-      progress={{ displayProgress }} status={{ task?.status ?? "null" }}
-      metricsLog={{ metricsLog.length }} task={{ task ? "loaded" : "null" }}
-      dmLog={{ displayMetricsLog.length }} best={{ displayBestMetrics ? "yes" : "no" }}
-    </div>
+  <div class="app-container train-detail-page">
     <div class="detail-header">
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
@@ -182,7 +177,6 @@ use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent
 const route = useRoute();
 const router = useRouter();
 const task = ref<any>(null);
-const containerRef = ref<HTMLElement | null>(null);
 const logText = ref("");
 const logRef = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
@@ -461,16 +455,13 @@ function handleEvaluate() { ElMessage.info("评估功能需要后端支持"); }
 function handleExport() { ElMessage.info("导出功能需要后端支持"); }
 
 onMounted(async () => {
-  console.log("[detail] mounted, route params:", route.params);
   await loadTask();
-  console.log("[detail] task loaded:", task.value?.id, task.value?.status, "progress:", task.value?.progress);
   const id = Number(route.params.id);
   if (id) {
     if (task.value?.status === "running") { connectWs(id); startPoll(); }
     else {
       try {
         const r = await TrainAPI.getTaskLogs(id);
-        console.log("[detail] logs response:", r.data?.data ? "has data" : "no data");
         if (r.data?.data?.logs) {
           const cleaned = r.data.data.logs.replace(/[\r\x1b\[[0-9;]*m]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
           logText.value = cleaned;
@@ -479,33 +470,21 @@ onMounted(async () => {
       } catch { /* */ }
     }
   }
-  await nextTick();
-  if (containerRef.value) {
-    const rect = containerRef.value.getBoundingClientRect();
-    console.log("[detail] container rect:", rect);
-  }
 });
 
 onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
 <style lang="scss">
-/* Non-scoped override: guaranteed to apply regardless of data-v-xxx hashing.
-   The .train-detail-page class selector ensures this only affects this page. */
+/* Non-scoped override to bypass potential data-v-xxx hash mismatch */
 .app-container.train-detail-page {
   display: block !important;
   height: auto !important;
   overflow: visible !important;
 }
-.debug-bar {
-  background: #ffeeba !important;
-}
 </style>
 
 <style scoped lang="scss">
-.debug-bar {
-  font-size: 11px; color: #333; padding: 2px 8px; border-radius: 4px; margin-bottom: 4px; white-space: pre; font-family: monospace;
-}
 
 .detail-header {
   display: flex; align-items: center; gap: 8px;
