@@ -476,6 +476,12 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
 <style scoped lang="scss">
+.app-container {
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+
 .detail-header {
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 16px; padding: 10px 16px;
