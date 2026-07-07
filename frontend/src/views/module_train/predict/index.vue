@@ -67,7 +67,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="createForm.sourceType === 'upload'" label="图片" required>
-          <el-upload ref="uploadRef" list-type="picture-card" :auto-upload="false" multiple :on-change="handleUploadChange">
+          <el-upload ref="uploadRef" list-type="picture-card" :auto-upload="false" multiple>
             <el-icon><Plus /></el-icon>
           </el-upload>
         </el-form-item>
@@ -111,7 +111,6 @@ const creating = ref(false);
 const models = ref<any[]>([]);
 const datasets = ref<any[]>([]);
 const allPredicts = ref<any[]>([]);
-const uploadFiles = ref<File[]>([]);
 
 const createForm = reactive({
   modelId: null as number | null,
@@ -137,10 +136,6 @@ function getModelName(modelId: number) {
 function tagType(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
 function tagLabel(s: string) { return ({ pending: "待开始", running: "预测中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
 
-function handleUploadChange(file: any) {
-  uploadFiles.value = uploadRef.value?.uploadFiles?.map((f: any) => f.raw).filter(Boolean) || [];
-}
-
 async function reloadData() {
   const r = await TrainAPI.getPredictList();
   allPredicts.value = r.data?.data || [];
@@ -149,13 +144,14 @@ async function reloadData() {
 async function handleCreate() {
   if (!createForm.modelId) { ElMessage.warning("请选择模型版本"); return; }
   if (createForm.sourceType === "dataset" && !createForm.sourceDatasetId) { ElMessage.warning("请选择数据集"); return; }
-  if (createForm.sourceType === "upload" && uploadFiles.value.length === 0) { ElMessage.warning("请上传图片"); return; }
+  const pendingFiles = uploadRef.value?.uploadFiles?.map((f: any) => f.raw).filter(Boolean) || [];
+  if (createForm.sourceType === "upload" && pendingFiles.length === 0) { ElMessage.warning("请上传图片"); return; }
 
   creating.value = true;
   try {
     let sourceImages: string[] | undefined;
     if (createForm.sourceType === "upload") {
-      const r = await TrainAPI.uploadPredictImages(uploadFiles.value);
+      const r = await TrainAPI.uploadPredictImages(pendingFiles);
       sourceImages = r.data?.data;
     }
 
@@ -173,7 +169,6 @@ async function handleCreate() {
     createForm.sourceType = "dataset";
     createForm.sourceDatasetId = null;
     createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640 };
-    uploadFiles.value = [];
     if (uploadRef.value) uploadRef.value.uploadFiles = [];
     await reloadData();
     contentRef.value?.fetchPageData({}, true);
