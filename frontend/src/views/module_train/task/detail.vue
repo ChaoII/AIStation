@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container">
+  <div class="task-detail-page">
     <div class="detail-header">
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
@@ -476,10 +476,8 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
 <style scoped lang="scss">
-.app-container {
-  display: block;
-  height: auto;
-  overflow: visible;
+.task-detail-page {
+  padding: 16px;
 }
 
 .detail-header {
