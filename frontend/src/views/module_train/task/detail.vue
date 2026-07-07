@@ -536,7 +536,7 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
 <style scoped lang="scss">
-.task-detail { padding: 16px; }
+.task-detail { padding: 16px; overflow-y: auto; }
 .detail-header {
   display: flex; align-items: center; gap: 8px;
   margin-bottom: 16px; padding: 10px 16px;
@@ -562,7 +562,7 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
   &.connected { color: #67c23a; &::before { background: #67c23a; } }
 }
 .log-line-count { font-family: "Cascadia Code", "Fira Code", monospace; }
-.log-container { height: 500px; overflow-y: auto; background: #1e1e1e; border-radius: 6px; padding: 16px; }
+.log-container { height: 500px; overflow-y: auto; background: #1e1e1e !important; border-radius: 6px; padding: 16px; min-height: 200px; }
 .log-text { font-family: "Cascadia Code", "Fira Code", monospace; font-size: 13px; line-height: 1.5; color: #d4d4d4; white-space: pre-wrap; word-break: break-all; margin: 0; }
 .metric-mini { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 8px; text-align: center; }
 .metric-val { display: block; font-size: 16px; font-weight: 700; font-family: "Cascadia Code", monospace; color: var(--el-text-color-primary); }
