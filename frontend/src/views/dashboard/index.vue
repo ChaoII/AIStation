@@ -1,97 +1,98 @@
 <template>
   <div class="db">
-    <div class="db-banner">
-      <div class="banner-left">
-        <div class="avatar"><img v-if="userStore.basicInfo.avatar" :src="userStore.basicInfo.avatar + '?imageView2/1/w/80/h/80'" /><el-icon v-else :size="28"><UserFilled /></el-icon></div>
-        <div>
-          <div class="banner-greeting">{{ timefix }}{{ userStore.basicInfo.name }}，{{ welcome }}</div>
-          <div class="banner-sub">{{ subText }}</div>
+    <!-- ═══ Pulse Bar — signature element ═══ -->
+    <div class="pulse-bar">
+      <div class="pulse-item" v-for="p in pulses" :key="p.label">
+        <span class="pulse-dot" :style="{ background: p.color }" />
+        <span class="pulse-label">{{ p.label }}</span>
+        <span class="pulse-value" :style="{ color: p.color }">{{ p.text }}</span>
+        <span v-if="p.pct != null" class="pulse-track">
+          <span class="pulse-fill" :style="{ width: p.pct + '%', background: p.color }" />
+        </span>
+      </div>
+      <div class="pulse-greeting">
+        <span class="pulse-user">{{ timefix }}{{ userStore.basicInfo.name }}</span>
+        <span class="pulse-sub">{{ welcome }}</span>
+      </div>
+    </div>
+
+    <!-- ═══ Metric Cards ═══ -->
+    <div class="mc-grid">
+      <div v-for="c in cards" :key="c.label" class="mc-card" @click="c.route && router.push(c.route)">
+        <div class="mc-icon" :style="{ background: c.bg }">
+          <el-icon :size="18" :color="c.color"><component :is="c.icon" /></el-icon>
         </div>
-      </div>
-      <div class="banner-chips">
-        <div class="chip"><span class="chip-dot" style="background:#67c23a" />{{ stats.onlineUsers }} 在线</div>
-        <div class="chip"><span class="chip-dot" style="background:#409eff" />{{ stats.totalUsers }} 用户</div>
-        <div class="chip"><span class="chip-dot" style="background:#e6a23c" />{{ stats.cameraOnline }}/{{ stats.cameraTotal }} 摄像头</div>
-        <div class="chip"><span class="chip-dot" style="background:#f56c6c" />{{ stats.alarmCount }} 告警</div>
-      </div>
-    </div>
-
-    <!-- 指标卡片 -->
-    <div class="db-cards">
-      <div v-for="c in cards" :key="c.label" class="db-card" @click="c.route && router.push(c.route)">
-        <div class="card-icon" :style="{ background: c.bg }"><el-icon :size="20" :color="c.color"><component :is="c.icon" /></el-icon></div>
-        <div class="card-body"><div class="card-val">{{ c.val }}</div><div class="card-lbl">{{ c.label }}</div></div>
-        <div class="card-extra">{{ c.extra }}</div>
+        <div class="mc-body">
+          <span class="mc-val">{{ c.val }}</span>
+          <span class="mc-lbl">{{ c.label }}</span>
+        </div>
+        <span class="mc-extra">{{ c.extra }}</span>
       </div>
     </div>
 
-    <!-- 第一行图表：4个环形图 -->
-    <div class="db-charts">
+    <!-- ═══ Chart Row 1: 4 pies ═══ -->
+    <div class="chart-row">
       <div class="chart-card">
         <div class="chart-hd"><span>标注任务类型</span><span class="chart-note">{{ stats.taskTypeTotal }} 个任务</span></div>
-        <ECharts :options="taskTypePie" height="200" />
+        <ECharts :options="taskTypePie" height="180" />
       </div>
       <div class="chart-card">
         <div class="chart-hd"><span>标注任务状态</span><span class="chart-note">{{ stats.taskTotal }} 个任务</span></div>
-        <ECharts :options="taskStatusPie" height="200" />
+        <ECharts :options="taskStatusPie" height="180" />
       </div>
       <div class="chart-card">
         <div class="chart-hd"><span>训练任务状态</span><span class="chart-note">{{ stats.trainTotal }} 个任务</span></div>
-        <ECharts :options="trainStatusPie" height="200" />
+        <ECharts :options="trainStatusPie" height="180" />
       </div>
       <div class="chart-card">
         <div class="chart-hd"><span>训练框架</span><span class="chart-note">{{ stats.trainTotal }} 个任务</span></div>
-        <ECharts :options="trainFrameworkPie" height="200" />
+        <ECharts :options="trainFrameworkPie" height="180" />
       </div>
     </div>
 
-    <!-- 第二行图表：3个柱状图 -->
-    <div class="db-charts">
-      <div class="chart-card chart-card-wide">
+    <!-- ═══ Chart Row 2: bars ═══ -->
+    <div class="chart-row chart-row--wide">
+      <div class="chart-card">
         <div class="chart-hd"><span>各数据集图片数</span><span class="chart-note">{{ stats.datasetCount }} 个数据集</span></div>
-        <ECharts :options="datasetBar" height="220" />
+        <ECharts :options="datasetBar" height="200" />
       </div>
-      <div class="chart-card chart-card-wide">
+      <div class="chart-card">
         <div class="chart-hd"><span>各类型标注任务数</span><span class="chart-note">{{ stats.taskTypeTotal }} 个任务</span></div>
-        <ECharts :options="taskTypeBar" height="220" />
-      </div>
-      <div class="chart-card chart-card-wide">
-        <div class="chart-hd"><span>摄像头在线状态</span><span class="chart-note">{{ stats.cameraTotal }} 个摄像头</span></div>
-        <ECharts :options="camPie" height="220" />
+        <ECharts :options="taskTypeBar" height="200" />
       </div>
     </div>
 
-    <!-- 底部三列 -->
-    <div class="db-footer">
-      <div class="footer-card">
-        <div class="footer-hd"><el-icon size="14"><Edit /></el-icon> 最近标注任务</div>
-        <div class="footer-list">
-          <div v-for="t in recentAnno" :key="t.id" class="footer-row">
-            <span class="row-name">{{ t.name }}</span>
-            <span class="row-type">{{ typeLbl(t.task_type) }}</span>
-            <el-tag :type="sTag(t.status)" size="small" effect="plain">{{ sLbl(t.status) }}</el-tag>
+    <!-- ═══ Bottom: 3-column footer ═══ -->
+    <div class="ft-grid">
+      <div class="ft-card">
+        <div class="ft-hd"><el-icon size="13"><Edit /></el-icon> 最近标注任务</div>
+        <div class="ft-list">
+          <div v-for="t in recentAnno" :key="t.id" class="ft-row">
+            <span class="ft-name">{{ t.name }}</span>
+            <span class="ft-type">{{ typeLbl(t.task_type) }}</span>
+            <el-tag :type="sTag(t.status)" size="small" effect="plain" class="ft-tag">{{ sLbl(t.status) }}</el-tag>
           </div>
-          <div v-if="!recentAnno.length" class="footer-empty">暂无数据</div>
+          <div v-if="!recentAnno.length" class="ft-empty">暂无数据</div>
         </div>
       </div>
-      <div class="footer-card">
-        <div class="footer-hd"><el-icon size="14"><Aim /></el-icon> 最近训练任务</div>
-        <div class="footer-list">
-          <div v-for="t in recentTrain" :key="t.id" class="footer-row">
-            <span class="row-name">{{ t.name }}</span>
-            <el-tag :type="trainTag(t.status)" size="small" effect="plain">{{ trainLbl(t.status) }}</el-tag>
+      <div class="ft-card">
+        <div class="ft-hd"><el-icon size="13"><Aim /></el-icon> 最近训练任务</div>
+        <div class="ft-list">
+          <div v-for="t in recentTrain" :key="t.id" class="ft-row">
+            <span class="ft-name">{{ t.name }}</span>
+            <el-tag :type="trainTag(t.status)" size="small" effect="plain" class="ft-tag">{{ trainLbl(t.status) }}</el-tag>
           </div>
-          <div v-if="!recentTrain.length" class="footer-empty">暂无数据</div>
+          <div v-if="!recentTrain.length" class="ft-empty">暂无数据</div>
         </div>
       </div>
-      <div class="footer-card">
-        <div class="footer-hd"><el-icon size="14"><WarningFilled /></el-icon> 最近告警</div>
-        <div class="footer-list">
-          <div v-for="a in recentAlarm" :key="a.id" class="footer-row">
-            <span class="row-name">{{ a.alarm_type || '告警' }}</span>
-            <span class="row-time">{{ fmt(a.created_time) }}</span>
+      <div class="ft-card">
+        <div class="ft-hd"><el-icon size="13"><WarningFilled /></el-icon> 最近告警</div>
+        <div class="ft-list">
+          <div v-for="a in recentAlarm" :key="a.id" class="ft-row">
+            <span class="ft-name">{{ a.alarm_type || '告警' }}</span>
+            <span class="ft-time">{{ fmt(a.created_time) }}</span>
           </div>
-          <div v-if="!recentAlarm.length" class="footer-empty">暂无告警</div>
+          <div v-if="!recentAlarm.length" class="ft-empty">暂无告警</div>
         </div>
       </div>
     </div>
@@ -101,7 +102,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { UserFilled, Folder, Edit, Aim, Camera, WarningFilled, DataBoard, SetUp } from "@element-plus/icons-vue";
+import { UserFilled, Folder, Edit, Aim, Camera, WarningFilled } from "@element-plus/icons-vue";
 import { useUserStoreHook } from "@/store";
 import ECharts from "@/components/ECharts/index.vue";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -110,13 +111,15 @@ import { getCameraList } from "@/api/module_video/camera";
 import { getAlarmRecordList } from "@/api/module_video/alarm";
 import UserAPI from "@/api/module_system/user";
 import OnlineAPI from "@/api/module_monitor/online";
+import ServerAPI from "@/api/module_monitor/server";
 
 const router = useRouter();
 const userStore = useUserStoreHook();
 const now = new Date(); const h = now.getHours();
 const timefix = h < 6 ? "夜深了，" : h < 9 ? "早上好，" : h < 12 ? "上午好，" : h < 14 ? "中午好，" : h < 18 ? "下午好，" : "晚上好，";
 const welcome = ["注意休息","新的一天","保持高效","午休时间","继续加油","今天辛苦了"][Math.min(5, Math.floor(h / 4))];
-const subText = ["夜深了","开启新一天","上午黄金时间","稍作休息","坚持就是胜利","休息一下吧"][Math.min(5, Math.floor(h / 4))];
+
+const serverInfo = ref<any>({});
 
 const stats = reactive({
   onlineUsers: 0, totalUsers: 0,
@@ -132,14 +135,32 @@ const recentAnno = ref<any[]>([]);
 const recentTrain = ref<any[]>([]);
 const recentAlarm = ref<any[]>([]);
 
-const cards = computed(() => [
-  { label: "数据集", val: stats.datasetCount, icon: Folder, color: "#409eff", bg: "#ecf5ff", extra: `${stats.annotatedCount} 张已标注`, route: "/annotation/dataset" },
-  { label: "标注任务", val: stats.taskTotal, icon: Edit, color: "#67c23a", bg: "#f0f9eb", extra: `${stats.taskCompleted} 已完成`, route: "/annotation/task" },
-  { label: "训练任务", val: stats.trainTotal, icon: Aim, color: "#f56c6c", bg: "#fef0f0", extra: `${stats.trainRunning} 训练中`, route: "/train/task" },
-  { label: "摄像头", val: stats.cameraTotal, icon: Camera, color: "#e6a23c", bg: "#fdf6ec", extra: `${stats.cameraOnline} 在线`, route: "/video/camera" },
-  { label: "告警记录", val: stats.alarmCount, icon: WarningFilled, color: "#f56c6c", bg: "#fef0f0", extra: "最近7天", route: "/video/alarm" },
-  { label: "在线用户", val: stats.onlineUsers, icon: UserFilled, color: "#409eff", bg: "#ecf5ff", extra: `共 ${stats.totalUsers} 用户`, route: "/system/user" },
+const PULSE_COLORS = ["#00b894", "#6c5ce7", "#fdcb6e", "#74b9ff", "#ff7675", "#a29bfe"];
+
+const pulses = computed(() => [
+  { label: "CPU", text: (serverInfo.value?.cpu?.used ?? "—") + "%", pct: serverInfo.value?.cpu?.used ?? null, color: PULSE_COLORS[0] },
+  { label: "内存", text: (serverInfo.value?.mem?.usage ?? "—") + "%", pct: serverInfo.value?.mem?.usage ?? null, color: PULSE_COLORS[1] },
+  { label: "磁盘", text: serverInfo.value?.disks?.[0] ? (serverInfo.value.disks[0].usage_percent ?? "—") + "%" : "—", pct: serverInfo.value?.disks?.[0]?.usage_percent ?? null, color: PULSE_COLORS[2] },
+  { label: "用户", text: String(stats.onlineUsers), pct: stats.totalUsers ? Math.round(stats.onlineUsers / stats.totalUsers * 100) : 0, color: PULSE_COLORS[3] },
+  { label: "任务", text: String(stats.trainRunning), pct: stats.trainTotal ? Math.round(stats.trainRunning / stats.trainTotal * 100) : 0, color: PULSE_COLORS[4] },
+  { label: "告警", text: String(stats.alarmCount), pct: null, color: PULSE_COLORS[5] },
 ]);
+
+const cards = computed(() => [
+  { label: "数据集", val: stats.datasetCount, icon: Folder, color: "#0984e3", bg: "#e8f4fd", extra: `${stats.annotatedCount} 张已标注`, route: "/annotation/dataset" },
+  { label: "标注任务", val: stats.taskTotal, icon: Edit, color: "#00b894", bg: "#e6faf5", extra: `${stats.taskCompleted} 已完成`, route: "/annotation/task" },
+  { label: "训练任务", val: stats.trainTotal, icon: Aim, color: "#6c5ce7", bg: "#efeaff", extra: `${stats.trainRunning} 训练中`, route: "/train/task" },
+  { label: "摄像头", val: stats.cameraTotal, icon: Camera, color: "#fdcb6e", bg: "#fef9e7", extra: `${stats.cameraOnline} 在线`, route: "/video/camera" },
+  { label: "告警记录", val: stats.alarmCount, icon: WarningFilled, color: "#ff7675", bg: "#ffeeed", extra: "最近 7 天", route: "/video/alarm" },
+  { label: "在线用户", val: stats.onlineUsers, icon: UserFilled, color: "#74b9ff", bg: "#eef6ff", extra: `共 ${stats.totalUsers} 用户`, route: "/system/user" },
+]);
+
+function typeLbl(t: string) { return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t; }
+function sTag(s: string) { return ({ pending: "info", in_progress: "primary", completed: "success" } as any)[s] || "info"; }
+function sLbl(s: string) { return ({ pending: "待开始", in_progress: "进行中", completed: "已完成" } as any)[s] || s; }
+function trainTag(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
+function trainLbl(s: string) { return ({ pending: "待开始", running: "训练中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
+function fmt(t?: string) { if (!t) return ""; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
 
 const taskTypePie = computed(() => ({
   tooltip: { trigger: "item" as const, formatter: "{b}: {c} ({d}%)" },
@@ -147,8 +168,8 @@ const taskTypePie = computed(() => ({
     label: { show: true, formatter: "{b}\n{d}%", fontSize: 10 },
     data: Object.entries(taskTypeCount).map(([k, v]) => ({
       name: typeLbl(k), value: v,
-      itemStyle: { color: ({ detection: "#409eff", rotated_detection: "#67c23a", segmentation: "#e6a23c", keypoint: "#f56c6c", ocr: "#9b59b6", classification: "#1abc9c" } as any)[k] || "#95a5a6" },
-    })).concat(stats.taskTypeTotal === 0 ? [{ name: "暂无", value: 1, itemStyle: { color: "#eee" } }] : []),
+      itemStyle: { color: ({ detection: "#0984e3", rotated_detection: "#00b894", segmentation: "#fdcb6e", keypoint: "#ff7675", ocr: "#6c5ce7", classification: "#74b9ff" } as any)[k] || "#95a5a6" },
+    })).concat(stats.taskTypeTotal === 0 ? [{ name: "暂无", value: 1, itemStyle: { color: "#dfe6e9" } }] : []),
   }],
 }));
 
@@ -157,9 +178,9 @@ const taskStatusPie = computed(() => ({
   series: [{ type: "pie" as const, radius: ["45%", "68%"], center: ["50%", "50%"],
     label: { show: true, formatter: "{b}\n{d}%", fontSize: 10 },
     data: [
-      { value: stats.taskPending || 1, name: "待开始", itemStyle: { color: "#909399" } },
-      { value: stats.taskInProgress || 1, name: "进行中", itemStyle: { color: "#409eff" } },
-      { value: stats.taskCompleted || 1, name: "已完成", itemStyle: { color: "#67c23a" } },
+      { value: stats.taskPending || 1, name: "待开始", itemStyle: { color: "#b2bec3" } },
+      { value: stats.taskInProgress || 1, name: "进行中", itemStyle: { color: "#0984e3" } },
+      { value: stats.taskCompleted || 1, name: "已完成", itemStyle: { color: "#00b894" } },
     ],
   }],
 }));
@@ -169,10 +190,10 @@ const trainStatusPie = computed(() => ({
   series: [{ type: "pie" as const, radius: ["45%", "68%"], center: ["50%", "50%"],
     label: { show: true, formatter: "{b}\n{d}%", fontSize: 10 },
     data: [
-      { value: stats.trainPending || 1, name: "待开始", itemStyle: { color: "#909399" } },
-      { value: stats.trainRunning || 1, name: "训练中", itemStyle: { color: "#409eff" } },
-      { value: stats.trainSuccess || 1, name: "已完成", itemStyle: { color: "#67c23a" } },
-      { value: stats.trainFailed || 1, name: "失败", itemStyle: { color: "#f56c6c" } },
+      { value: stats.trainPending || 1, name: "待开始", itemStyle: { color: "#b2bec3" } },
+      { value: stats.trainRunning || 1, name: "训练中", itemStyle: { color: "#0984e3" } },
+      { value: stats.trainSuccess || 1, name: "已完成", itemStyle: { color: "#00b894" } },
+      { value: stats.trainFailed || 1, name: "失败", itemStyle: { color: "#ff7675" } },
     ],
   }],
 }));
@@ -182,51 +203,31 @@ const trainFrameworkPie = computed(() => ({
   series: [{ type: "pie" as const, radius: ["45%", "68%"], center: ["50%", "50%"],
     label: { show: true, formatter: "{b}\n{d}%", fontSize: 10 },
     data: [
-      { value: stats.trainUltralytics || 1, name: "Ultralytics", itemStyle: { color: "#409eff" } },
-      { value: stats.trainPaddleX || 1, name: "PaddleX", itemStyle: { color: "#67c23a" } },
+      { value: stats.trainUltralytics || 1, name: "Ultralytics", itemStyle: { color: "#0984e3" } },
+      { value: stats.trainPaddleX || 1, name: "PaddleX", itemStyle: { color: "#00b894" } },
     ],
   }],
 }));
 
 const datasetBar = computed(() => ({
   tooltip: { trigger: "axis" as const, axisPointer: { type: "shadow" as const } },
-  grid: { left: "8%", right: "4%", bottom: "8%", top: "4%", containLabel: true },
+  grid: { left: "8%", right: "4%", bottom: "12%", top: "4%", containLabel: true },
   xAxis: { type: "category" as const, data: datasetImageCounts.value.map(d => d.name), axisLabel: { rotate: 30, fontSize: 10, interval: 0 } },
   yAxis: { type: "value" as const, name: "图片数" },
-  series: [{ type: "bar" as const, barWidth: "50%", itemStyle: { color: "#409eff", borderRadius: [4, 4, 0, 0] }, data: datasetImageCounts.value.map(d => d.count) }],
+  series: [{ type: "bar" as const, barWidth: "50%", itemStyle: { color: "#0984e3", borderRadius: [4, 4, 0, 0] }, data: datasetImageCounts.value.map(d => d.count) }],
 }));
 
 const taskTypeBar = computed(() => ({
   tooltip: { trigger: "axis" as const, axisPointer: { type: "shadow" as const } },
-  grid: { left: "8%", right: "4%", bottom: "8%", top: "4%", containLabel: true },
+  grid: { left: "8%", right: "4%", bottom: "12%", top: "4%", containLabel: true },
   xAxis: { type: "category" as const, data: Object.keys(taskTypeCount).length ? Object.keys(taskTypeCount).map(k => typeLbl(k)) : ["暂无"], axisLabel: { rotate: 20, fontSize: 10 } },
   yAxis: { type: "value" as const, name: "任务数" },
-  series: [{ type: "bar" as const, barWidth: "50%", itemStyle: { color: "#67c23a", borderRadius: [4, 4, 0, 0] }, data: Object.keys(taskTypeCount).length ? Object.values(taskTypeCount) : [0] }],
+  series: [{ type: "bar" as const, barWidth: "50%", itemStyle: { color: "#00b894", borderRadius: [4, 4, 0, 0] }, data: Object.keys(taskTypeCount).length ? Object.values(taskTypeCount) : [0] }],
 }));
-
-const camPie = computed(() => ({
-  tooltip: { trigger: "item" as const, formatter: "{b}: {c} ({d}%)" },
-  series: [{
-    type: "pie" as const, radius: ["45%", "68%"], center: ["50%", "50%"],
-    label: { show: true, formatter: "{b}\n{d}%", fontSize: 12 },
-    data: [
-      { value: stats.cameraOnline || 1, name: "在线", itemStyle: { color: "#67c23a" } },
-      { value: Math.max(1, stats.cameraTotal - stats.cameraOnline) || 1, name: "离线", itemStyle: { color: "#f56c6c" } },
-    ],
-  }],
-}));
-
-function typeLbl(t: string) {
-  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t;
-}
-function sTag(s: string) { return ({ pending: "info", in_progress: "primary", completed: "success" } as any)[s] || "info"; }
-function sLbl(s: string) { return ({ pending: "待开始", in_progress: "进行中", completed: "已完成" } as any)[s] || s; }
-function trainTag(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
-function trainLbl(s: string) { return ({ pending: "待开始", running: "训练中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
-function fmt(t?: string) { if (!t) return ""; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
 
 onMounted(async () => {
-  const [annoR, trainR, camR, alarmR, userR, onlineR] = await Promise.allSettled([
+  const [serverR, annoR, trainR, camR, alarmR, userR, onlineR] = await Promise.allSettled([
+    ServerAPI.getServer(),
     AnnotationAPI.getOverview(),
     TrainAPI.getTaskList(),
     getCameraList({ page_no: 1, page_size: 100 }),
@@ -234,6 +235,8 @@ onMounted(async () => {
     UserAPI.listUser({ page_no: 1, page_size: 1 }),
     OnlineAPI.listOnline({ page_no: 1, page_size: 1 }),
   ]);
+
+  if (serverR.status === "fulfilled") serverInfo.value = serverR.value.data?.data || {};
 
   if (annoR.status === "fulfilled") {
     const d = annoR.value.data?.data;
@@ -269,7 +272,6 @@ onMounted(async () => {
   if (userR.status === "fulfilled") stats.totalUsers = userR.value.data?.data?.total || 0;
   if (onlineR.status === "fulfilled") stats.onlineUsers = onlineR.value.data?.data?.total || 0;
 
-  // 获取标注任务列表（类型分布 + 状态）
   try {
     const r = await AnnotationAPI.getTaskList({ page_no: 1, page_size: 100 });
     const tasks = r.data?.data?.items || [];
@@ -285,7 +287,6 @@ onMounted(async () => {
     recentAnno.value = tasks.slice(0, 5).reverse();
   } catch {}
 
-  // 获取数据集列表（各数据集图片数）
   try {
     const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
     const items = r.data?.data?.items || [];
@@ -295,41 +296,60 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.db { padding: 16px 20px; }
+.db { padding: 12px 20px; }
 
-.db-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
-.banner-left { display: flex; align-items: center; gap: 14px; }
-.avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--el-fill-color-light); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
-.avatar img { width: 100%; height: 100%; object-fit: cover; }
-.banner-greeting { font-size: 17px; font-weight: 700; color: var(--el-text-color-primary); }
-.banner-sub { font-size: 13px; color: var(--el-text-color-secondary); margin-top: 2px; }
-.banner-chips { display: flex; gap: 8px; flex-wrap: wrap; }
-.chip { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--el-text-color-regular); background: var(--el-fill-color-light); padding: 5px 12px; border-radius: 16px; }
-.chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+/* ── Pulse Bar ── */
+.pulse-bar {
+  display: flex; align-items: center; gap: 16px;
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 12px;
+  padding: 14px 20px; margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.pulse-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pulse-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.pulse-label { font-size: 11px; color: #636e72; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.pulse-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 36px; }
+.pulse-track { width: 48px; height: 4px; background: #eee; border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+.pulse-fill { height: 100%; border-radius: 2px; transition: width .6s ease; }
+.pulse-greeting { margin-left: auto; text-align: right; flex-shrink: 0; }
+.pulse-user { font-size: 13px; font-weight: 600; color: #2d3436; display: block; }
+.pulse-sub { font-size: 11px; color: #636e72; }
 
-.db-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
-.db-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 10px; padding: 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: box-shadow .15s, transform .15s; }
-.db-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); transform: translateY(-1px); }
-.card-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.card-body { flex: 1; min-width: 0; }
-.card-val { font-size: 20px; font-weight: 700; line-height: 1.2; color: var(--el-text-color-primary); }
-.card-lbl { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 1px; }
-.card-extra { font-size: 11px; color: var(--el-text-color-secondary); white-space: nowrap; }
+/* ── Metric Cards ── */
+.mc-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+.mc-card {
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
+  padding: 14px 12px; display: flex; align-items: center; gap: 10px;
+  cursor: pointer; transition: box-shadow .15s, transform .15s;
+}
+.mc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); transform: translateY(-2px); }
+.mc-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mc-val { font-size: 18px; font-weight: 700; line-height: 1.2; color: #2d3436; font-variant-numeric: tabular-nums; }
+.mc-lbl { font-size: 11px; color: #636e72; margin-top: 1px; text-transform: uppercase; letter-spacing: .04em; }
+.mc-extra { font-size: 10px; color: #b2bec3; white-space: nowrap; }
 
-.db-charts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-.db-charts:has(.chart-card-wide) { grid-template-columns: repeat(3, 1fr); }
-.chart-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 10px; padding: 14px; }
-.chart-hd { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
-.chart-note { font-size: 11px; font-weight: 400; color: var(--el-text-color-secondary); }
+/* ── Chart Row ── */
+.chart-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.chart-row--wide { grid-template-columns: repeat(2, 1fr); }
+.chart-card {
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 14px;
+  transition: box-shadow .15s;
+}
+.chart-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+.chart-hd { font-size: 12px; font-weight: 600; color: #2d3436; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.chart-note { font-size: 10px; font-weight: 400; color: #b2bec3; }
 
-.db-footer { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.footer-card { background: var(--el-bg-color); border: 1px solid var(--el-border-color-lighter); border-radius: 10px; padding: 14px; }
-.footer-hd { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
-.footer-list { max-height: 260px; overflow-y: auto; }
-.footer-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-.footer-row:last-child { border-bottom: none; }
-.row-name { font-size: 13px; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.row-type { font-size: 11px; color: var(--el-text-color-secondary); white-space: nowrap; }
-.row-time { font-size: 12px; color: var(--el-text-color-secondary); white-space: nowrap; }
-.footer-empty { text-align: center; padding: 24px 0; color: var(--el-text-color-secondary); font-size: 13px; }
+/* ── Footer ── */
+.ft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.ft-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 14px; }
+.ft-hd { font-size: 12px; font-weight: 600; color: #2d3436; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.ft-list { max-height: 240px; overflow-y: auto; }
+.ft-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f2f6; }
+.ft-row:last-child { border-bottom: none; }
+.ft-name { font-size: 12px; color: #2d3436; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ft-type { font-size: 10px; color: #636e72; white-space: nowrap; }
+.ft-tag { flex-shrink: 0; }
+.ft-time { font-size: 11px; color: #b2bec3; white-space: nowrap; }
+.ft-empty { text-align: center; padding: 20px 0; color: #b2bec3; font-size: 12px; }
 </style>
