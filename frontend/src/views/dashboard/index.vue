@@ -18,7 +18,7 @@
 
     <!-- ═══ Metric Cards ═══ -->
     <div class="mc-grid">
-      <div v-for="c in cards" :key="c.label" class="mc-card" @click="c.route && router.push(c.route)">
+      <div v-for="c in cards" :key="c.label" class="mc-card" :style="{ background: c.cardBg }" @click="c.route && router.push(c.route)">
         <div class="mc-icon" :style="{ background: c.bg }">
           <el-icon :size="18" :color="c.color"><component :is="c.icon" /></el-icon>
         </div>
@@ -148,12 +148,12 @@ const pulses = computed(() => [
 ]);
 
 const cards = computed(() => [
-  { label: "数据集", val: stats.datasetCount, icon: Folder, color: "#0984e3", bg: "#e8f4fd", extra: `${stats.annotatedCount} 张已标注`, route: "/annotation/dataset" },
-  { label: "标注任务", val: stats.taskTotal, icon: Edit, color: "#00b894", bg: "#e6faf5", extra: `${stats.taskCompleted} 已完成`, route: "/annotation/task" },
-  { label: "训练任务", val: stats.trainTotal, icon: Aim, color: "#6c5ce7", bg: "#efeaff", extra: `${stats.trainRunning} 训练中`, route: "/train/task" },
-  { label: "摄像头", val: stats.cameraTotal, icon: Camera, color: "#fdcb6e", bg: "#fef9e7", extra: `${stats.cameraOnline} 在线`, route: "/video/camera" },
-  { label: "告警记录", val: stats.alarmCount, icon: WarningFilled, color: "#ff7675", bg: "#ffeeed", extra: "最近 7 天", route: "/video/alarm" },
-  { label: "在线用户", val: stats.onlineUsers, icon: UserFilled, color: "#74b9ff", bg: "#eef6ff", extra: `共 ${stats.totalUsers} 用户`, route: "/system/user" },
+  { label: "数据集", val: stats.datasetCount, icon: Folder, color: "#0984e3", bg: "#e8f4fd", cardBg: "#f0f9ff", extra: `${stats.annotatedCount} 张已标注`, route: "/annotation/dataset" },
+  { label: "标注任务", val: stats.taskTotal, icon: Edit, color: "#00b894", bg: "#e6faf5", cardBg: "#f0fdf9", extra: `${stats.taskCompleted} 已完成`, route: "/annotation/task" },
+  { label: "训练任务", val: stats.trainTotal, icon: Aim, color: "#6c5ce7", bg: "#efeaff", cardBg: "#f5f3ff", extra: `${stats.trainRunning} 训练中`, route: "/train/task" },
+  { label: "摄像头", val: stats.cameraTotal, icon: Camera, color: "#fdcb6e", bg: "#fef9e7", cardBg: "#fffdf0", extra: `${stats.cameraOnline} 在线`, route: "/video/camera" },
+  { label: "告警记录", val: stats.alarmCount, icon: WarningFilled, color: "#ff7675", bg: "#ffeeed", cardBg: "#fff5f5", extra: "最近 7 天", route: "/video/alarm" },
+  { label: "在线用户", val: stats.onlineUsers, icon: UserFilled, color: "#74b9ff", bg: "#eef6ff", cardBg: "#f0f7ff", extra: `共 ${stats.totalUsers} 用户`, route: "/system/user" },
 ]);
 
 function typeLbl(t: string) { return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t; }
