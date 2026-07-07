@@ -127,6 +127,8 @@ onMounted(async () => {
   ]);
   models.value = mRes.data?.data || [];
   datasets.value = dsRes.data?.data?.items || [];
+  await reloadData();
+  contentRef.value?.fetchPageData({}, true);
 });
 
 function getModelName(modelId: number) {
