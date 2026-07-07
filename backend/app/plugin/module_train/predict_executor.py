@@ -69,14 +69,14 @@ async def _execute_prediction(predict_id: int):
                         os.remove(os.path.join(root, f))
         else:
             await broadcast_predict_log(predict_id, "[predict] downloading uploaded images...")
-            for img_url in (pred.source_images or []):
+            for img_key in (pred.source_images or []):
                 try:
-                    data = s3_client.download_fileobj(img_url)
-                    filename = img_url.rsplit("/", 1)[-1].split("?")[0]
+                    data = s3_client.download_fileobj(img_key)
+                    filename = img_key.rsplit("/", 1)[-1]
                     with open(os.path.join(source_dir, filename), "wb") as f:
                         f.write(data.read())
                 except Exception as e:
-                    log.warning(f"skip image {img_url}: {e}")
+                    log.warning(f"skip image {img_key}: {e}")
 
         # Download model
         async with async_db_session() as db:

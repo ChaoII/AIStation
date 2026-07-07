@@ -169,14 +169,14 @@ class TrainService:
         import os
         from app.utils.s3_client import s3_client
 
-        urls = []
+        keys = []
         for f in files:
             content = await f.read()
             ext = f.filename.rsplit(".", 1)[-1] if "." in f.filename else "jpg"
             key = f"train/predict/upload/{auth.user.id}/{uuid.uuid4()}.{ext}"
             s3_client.upload_fileobj(io.BytesIO(content), key)
-            urls.append(s3_client.presigned_url(key))
-        return urls
+            keys.append(key)
+        return keys
 
     @classmethod
     async def export_dataset(cls, data, auth) -> dict:
