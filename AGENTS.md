@@ -209,3 +209,45 @@ Vue logs: `"Component inside <Transition> renders non-element root node that can
 - ✅ 用 `dominant-baseline="text-after-edge"` 解决
 - ✅ 背景宽高都用 getBBox 实测值 + 固定边距，不猜
 ```
+
+## 调试记忆：Vue scoped CSS + el-card flex shrink 导致内容不可见
+
+### 问题现象
+页面渲染后，部分 `<el-card>` 内部内容完全不可见，但 Vue 模板正常渲染、数据正确加载。
+
+### 根因链
+1. **全局 `.app-container`** 有 `display: flex; flex-direction: column; height: 100%; overflow: auto`
+2. **`el-card`** 自带 `overflow: hidden` → 在 flex 容器中触发 CSS 规范：`overflow != visible` 时 `min-height` 被设为 `0`（而非默认的 `auto`）
+3. 当 flex 容器有**确定高度**（`height: 100%` 继承自父级）且子项总高度超出时，flex 算法收缩所有 `flex-shrink: 1` 的子项
+4. `el-card` 因 `min-height: 0` 可被收缩到**近零高度**，其内部内容被 `overflow: hidden` 裁剪，表现为"不见了"
+
+### 调试方法（当怀疑 scoped CSS 未生效时）
+1. 在模板顶部添加可见的调试元素（如 `<div class="debug-bar">{{ state }}</div>`）
+2. 在 scoped 和非 scoped 中分别设置不同样式（如 `background: #ffeeba`）
+3. 若 scoped 样式未生效但非 scoped 生效 → 判定 scoped CSS 的 `data-v-xxx` hash 不匹配
+
+### 修复方案
+**不要依赖 scoped CSS 覆盖全局 `.app-container` 的 flex 布局**。改用**非 scoped `<style>` 块** + 唯一类选择器：
+
+```vue
+<style lang="scss">
+.app-container.train-detail-page {
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+</style>
+```
+
+并在根元素上同时使用两个 class：`<div class="app-container train-detail-page">`
+
+### 已知限制
+- `data-v-xxx` hash 可能在 keep-alive 缓存 + Vite HMR 场景下不同步，原因尚不完全明确
+- 非 scoped 样式是已知可靠的回避方案
+- flex 容器中只要同时满足：确定高度 + `overflow != visible` + `flex-shrink: 1`，就存在收缩风险
+
+### 相关文件
+- `frontend/src/views/module_train/task/detail.vue` — 问题页面，非 scoped 修复入口
+- `frontend/src/styles/index.scss` — 全局 `.app-container` 定义
+- `frontend/src/layouts/components/AppMain/index.vue` — 父容器 `.app-main`
+```
