@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { UserFilled, Folder, Edit, Aim, Camera, WarningFilled } from "@element-plus/icons-vue";
 import { useUserStoreHook } from "@/store";
@@ -140,7 +140,7 @@ const PULSE_COLORS = ["#00b894", "#6c5ce7", "#fdcb6e", "#74b9ff", "#ff7675", "#a
 const pulses = computed(() => [
   { label: "CPU", text: (serverInfo.value?.cpu?.used ?? "—") + "%", pct: serverInfo.value?.cpu?.used ?? null, color: PULSE_COLORS[0] },
   { label: "内存", text: (serverInfo.value?.mem?.usage ?? "—") + "%", pct: serverInfo.value?.mem?.usage ?? null, color: PULSE_COLORS[1] },
-  { label: "磁盘", text: serverInfo.value?.disks?.[0] ? (serverInfo.value.disks[0].usage_percent ?? "—") + "%" : "—", pct: serverInfo.value?.disks?.[0]?.usage_percent ?? null, color: PULSE_COLORS[2] },
+  { label: "磁盘", text: serverInfo.value?.disks?.[0] ? (serverInfo.value.disks[0].usage ?? serverInfo.value.disks[0].usage_percent ?? "—") + "%" : "—", pct: serverInfo.value?.disks?.[0]?.usage ?? serverInfo.value?.disks?.[0]?.usage_percent ?? null, color: PULSE_COLORS[2] },
   { label: "用户", text: String(stats.onlineUsers), pct: stats.totalUsers ? Math.round(stats.onlineUsers / stats.totalUsers * 100) : 0, color: PULSE_COLORS[3] },
   { label: "任务", text: String(stats.trainRunning), pct: stats.trainTotal ? Math.round(stats.trainRunning / stats.trainTotal * 100) : 0, color: PULSE_COLORS[4] },
   { label: "告警", text: String(stats.alarmCount), pct: null, color: PULSE_COLORS[5] },
@@ -226,6 +226,12 @@ const taskTypeBar = computed(() => ({
 }));
 
 onMounted(async () => {
+  // Wait for ECharts to initialize first
+  await new Promise(r => setTimeout(r, 300));
+  loadAllData();
+});
+
+async function loadAllData() {
   const [serverR, annoR, trainR, camR, alarmR, userR, onlineR] = await Promise.allSettled([
     ServerAPI.getServer(),
     AnnotationAPI.getOverview(),
@@ -290,9 +296,12 @@ onMounted(async () => {
   try {
     const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
     const items = r.data?.data?.items || [];
-    datasetImageCounts.value = items.map((d: any) => ({ name: d.name || `数据集#${d.id}`, count: d.image_count || d.annotated_count || 0 }));
+    datasetImageCounts.value = items.map((d: any) => ({ name: d.name || `#${d.id}`, count: d.image_count || d.annotated_count || 0 }));
   } catch {}
-});
+  // Force ECharts to re-render after all data loads
+  await nextTick();
+  window.dispatchEvent(new Event("resize"));
+}
 </script>
 
 <style scoped>
@@ -300,56 +309,62 @@ onMounted(async () => {
 
 /* ── Pulse Bar ── */
 .pulse-bar {
-  display: flex; align-items: center; gap: 16px;
-  background: #fff; border: 1px solid #e8e8e8; border-radius: 12px;
-  padding: 14px 20px; margin-bottom: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  display: flex; align-items: center; gap: 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0; border-radius: 14px;
+  padding: 16px 24px; margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.03);
 }
 .pulse-item { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.pulse-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.pulse-label { font-size: 11px; color: #636e72; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
-.pulse-value { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 36px; }
-.pulse-track { width: 48px; height: 4px; background: #eee; border-radius: 2px; overflow: hidden; flex-shrink: 0; }
-.pulse-fill { height: 100%; border-radius: 2px; transition: width .6s ease; }
-.pulse-greeting { margin-left: auto; text-align: right; flex-shrink: 0; }
-.pulse-user { font-size: 13px; font-weight: 600; color: #2d3436; display: block; }
-.pulse-sub { font-size: 11px; color: #636e72; }
+.pulse-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px rgba(0,0,0,.04); }
+.pulse-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+.pulse-value { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 36px; }
+.pulse-track { width: 52px; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+.pulse-fill { height: 100%; border-radius: 2px; transition: width .8s cubic-bezier(.4,0,.2,1); }
+.pulse-greeting { margin-left: auto; text-align: right; flex-shrink: 0; border-left: 1px solid #e2e8f0; padding-left: 20px; }
+.pulse-user { font-size: 13px; font-weight: 700; color: #1e293b; display: block; letter-spacing: -.01em; }
+.pulse-sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
 
 /* ── Metric Cards ── */
-.mc-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+.mc-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
 .mc-card {
-  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
-  padding: 14px 12px; display: flex; align-items: center; gap: 10px;
-  cursor: pointer; transition: box-shadow .15s, transform .15s;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  padding: 16px 14px; display: flex; align-items: center; gap: 12px;
+  cursor: pointer; transition: all .2s ease; position: relative; overflow: hidden;
 }
-.mc-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.06); transform: translateY(-2px); }
-.mc-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.mc-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: transparent; transition: background .2s ease;
+}
+.mc-card:hover { box-shadow: 0 6px 16px rgba(0,0,0,.07); transform: translateY(-2px); border-color: #cbd5e1; }
+.mc-card:hover::before { background: var(--el-color-primary-light-3); }
+.mc-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .mc-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.mc-val { font-size: 18px; font-weight: 700; line-height: 1.2; color: #2d3436; font-variant-numeric: tabular-nums; }
-.mc-lbl { font-size: 11px; color: #636e72; margin-top: 1px; text-transform: uppercase; letter-spacing: .04em; }
-.mc-extra { font-size: 10px; color: #b2bec3; white-space: nowrap; }
+.mc-val { font-size: 20px; font-weight: 800; line-height: 1.15; color: #0f172a; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.mc-lbl { font-size: 10px; color: #94a3b8; margin-top: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+.mc-extra { font-size: 10px; color: #cbd5e1; white-space: nowrap; }
 
 /* ── Chart Row ── */
 .chart-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
 .chart-row--wide { grid-template-columns: repeat(2, 1fr); }
 .chart-card {
-  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 14px;
-  transition: box-shadow .15s;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px;
+  transition: all .2s ease;
 }
-.chart-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.04); }
-.chart-hd { font-size: 12px; font-weight: 600; color: #2d3436; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
-.chart-note { font-size: 10px; font-weight: 400; color: #b2bec3; }
+.chart-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.05); }
+.chart-hd { font-size: 12px; font-weight: 700; color: #1e293b; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+.chart-note { font-size: 10px; font-weight: 400; color: #94a3b8; }
 
 /* ── Footer ── */
 .ft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.ft-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 14px; }
-.ft-hd { font-size: 12px; font-weight: 600; color: #2d3436; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-.ft-list { max-height: 240px; overflow-y: auto; }
-.ft-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f2f6; }
+.ft-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
+.ft-hd { font-size: 12px; font-weight: 700; color: #1e293b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+.ft-list { max-height: 220px; overflow-y: auto; }
+.ft-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
 .ft-row:last-child { border-bottom: none; }
-.ft-name { font-size: 12px; color: #2d3436; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-.ft-type { font-size: 10px; color: #636e72; white-space: nowrap; }
+.ft-name { font-size: 12px; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; font-weight: 500; }
+.ft-type { font-size: 10px; color: #94a3b8; white-space: nowrap; }
 .ft-tag { flex-shrink: 0; }
-.ft-time { font-size: 11px; color: #b2bec3; white-space: nowrap; }
-.ft-empty { text-align: center; padding: 20px 0; color: #b2bec3; font-size: 12px; }
+.ft-time { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+.ft-empty { text-align: center; padding: 20px 0; color: #94a3b8; font-size: 12px; }
 </style>
