@@ -564,6 +564,50 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         except Exception as e:
             log.warning(f"train migration warning: {e}")
 
+        # Ensure missing sub-menus exist (direct SQL, doesn't rely on menu seed)
+        try:
+            from sqlalchemy import text as sa_text
+            from app.core.database import async_db_session as db_session
+            import uuid as _uuid
+            async with db_session.begin() as db:
+                row = await db.execute(sa_text("SELECT id FROM sys_menu WHERE route_name = 'Train' LIMIT 1"))
+                parent_row = row.fetchone()
+                if parent_row:
+                    pid = parent_row[0]
+                    for rn, rp, cp, perm, is_hidden in [
+                        ("TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query", False),
+                        ("TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query", True),
+                        ("TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query", True),
+                    ]:
+                        exists = await db.execute(sa_text(f"SELECT 1 FROM sys_menu WHERE route_name = '{rn}'"))
+                        if exists.fetchone() is None:
+                            title = {"TrainPredict": "模型预测", "TrainEvalDetail": "评估详情", "TrainPredictDetail": "预测详情"}[rn]
+                            uid = str(_uuid.uuid4())
+                            await db.execute(sa_text(f"""
+                                INSERT INTO sys_menu (uuid, name, type, "order", route_name, route_path, component_path, permission, parent_id, status, is_deleted, title, hidden, created_time)
+                                VALUES ('{uid}', '{title}', 2, 99, '{rn}', '{rp}', '{cp}', '{perm}', {pid}, '0', FALSE, '{title}', {str(is_hidden).upper()}, NOW())
+                            """))
+                            mid_row = await db.execute(sa_text(f"SELECT id FROM sys_menu WHERE route_name = '{rn}'"))
+                            mid = mid_row.fetchone()
+                            if mid:
+                                await db.execute(sa_text(f"INSERT INTO sys_role_menus (role_id, menu_id) VALUES (1, {mid[0]})"))
+                    # Add missing permissions
+                    for pc, pn in [("module_train:predict:query", "查询预测"), ("module_train:predict:create", "创建预测"), ("module_train:predict:delete", "删除预测")]:
+                        exists = await db.execute(sa_text(f"SELECT 1 FROM sys_menu WHERE permission = '{pc}'"))
+                        if exists.fetchone() is None:
+                            uid = str(_uuid.uuid4())
+                            await db.execute(sa_text(f"""
+                                INSERT INTO sys_menu (uuid, name, type, "order", route_name, route_path, component_path, permission, parent_id, status, is_deleted, title, hidden, created_time)
+                                VALUES ('{uid}', '{pn}', 3, 99, '', '', '', '{pc}', {pid}, '0', FALSE, '{pn}', FALSE, NOW())
+                            """))
+                            mid_row = await db.execute(sa_text(f"SELECT id FROM sys_menu WHERE permission = '{pc}'"))
+                            mid = mid_row.fetchone()
+                            if mid:
+                                await db.execute(sa_text(f"INSERT INTO sys_role_menus (role_id, menu_id) VALUES (1, {mid[0]})"))
+                    log.info("✅ 训练模块缺失菜单已通过SQL补全")
+        except Exception as e:
+            log.warning(f"train menu sql migration warning: {e}")
+
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
 
