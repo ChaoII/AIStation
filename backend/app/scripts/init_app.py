@@ -464,6 +464,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_scheduler())
         log.info("✅ 训练调度器已启动")
 
+        try:
+            from sqlalchemy import text
+            from app.core.database import async_db_session
+            async with async_db_session.begin() as db:
+                for col in ["metrics_log", "best_metrics", "last_metrics"]:
+                    await db.execute(text(f"ALTER TABLE train_tasks ADD COLUMN IF NOT EXISTS {col} JSONB"))
+        except Exception:
+            pass
+
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
 

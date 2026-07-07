@@ -25,7 +25,7 @@ async def start_scheduler():
 
 
 async def _scheduler_loop():
-    """调度器循环 — 不再自动启动任务，只做维护清理"""
+    """维护循环：清理孤儿任务"""
     while True:
         try:
             async with async_db_session() as db:
@@ -35,19 +35,18 @@ async def _scheduler_loop():
                 for t in running.scalars().all():
                     if t.id not in _running_tasks and t.started_at:
                         elapsed = (datetime.now() - t.started_at).total_seconds()
-                        if elapsed > 7200:
+                        if elapsed > 1800:
                             async with async_db_session.begin() as db2:
                                 await db2.execute(
                                     update(TrainTask).where(TrainTask.id == t.id).values(
                                         status=TrainStatus.FAILED,
-                                        error_log="任务已超时（2小时无容器）",
+                                        error_log="训练会话已断开（后端重启或容器丢失）",
                                         finished_at=datetime.now()
                                     )
                                 )
         except Exception as e:
             log.error(f"train scheduler error: {e}")
-
-        await asyncio.sleep(30)  # 每30秒检查一次超时
+        await asyncio.sleep(30)
 
 
 async def _build_export_dir(task_id: int) -> str:
@@ -76,6 +75,7 @@ def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
 
 
 async def _execute_training(task_id: int):
+    container_id = None
     try:
         async with async_db_session() as db:
             task = await db.get(TrainTask, task_id)
@@ -103,8 +103,8 @@ async def _execute_training(task_id: int):
                      export_dir: {"bind": "/output", "mode": "rw"}},
             gpu_id=task.hyperparams.get("gpu_id", "0"),
         )
-
-        _running_tasks[task_id] = {"container_id": container.id, "cancel": False}
+        container_id = container.id
+        _running_tasks[task_id] = {"container_id": container_id, "cancel": False}
 
         async with async_db_session.begin() as db:
             await db.execute(
@@ -113,9 +113,41 @@ async def _execute_training(task_id: int):
                 )
             )
 
-        log_queue = await follow_container_logs(container.id)
+        log_queue = await follow_container_logs(container_id)
         log_file = os.path.join(export_dir, "train.log")
         import re
+
+        def _parse_epoch(line: str) -> dict | None:
+            m = re.search(r"^\s*(\d+)/(\d+)\s+", line)
+            if m:
+                parts = line.strip().split()
+                met = {"epoch": int(m.group(1)), "total_epochs": int(m.group(2))}
+                for i, p in enumerate(parts):
+                    if re.match(r"^[\d.]+[GM]$", p):
+                        if i + 1 < len(parts):
+                            try: met["box_loss"] = float(parts[i + 1])
+                            except ValueError: pass
+                        if i + 2 < len(parts):
+                            try: met["cls_loss"] = float(parts[i + 2])
+                            except ValueError: pass
+                        if i + 3 < len(parts):
+                            try: met["dfl_loss"] = float(parts[i + 3])
+                            except ValueError: pass
+                        break
+                return met
+            if re.match(r"^\s+all\s+", line):
+                parts = line.strip().split()
+                if len(parts) >= 7:
+                    return {"epoch": -1,
+                            "precision": float(parts[3]) if parts[3] else 0,
+                            "recall": float(parts[4]) if parts[4] else 0,
+                            "map50": float(parts[5]) if parts[5] else 0,
+                            "map5095": float(parts[6]) if parts[6] else 0}
+            return None
+
+        metrics_log: list[dict] = []
+        cur_epoch: dict | None = None
+
         with open(log_file, "w", encoding="utf-8") as lf:
             while True:
                 line = await log_queue.get()
@@ -125,63 +157,89 @@ async def _execute_training(task_id: int):
                 lf.flush()
                 await broadcast_log(task_id, line)
 
-                m = re.search(r"Epoch\s+(\d+)/(\d+)", line)
-                if m:
-                    current = int(m.group(1))
-                    total = int(m.group(2))
-                    pct = int(current / total * 100)
-                    async with async_db_session.begin() as db:
-                        await db.execute(
-                            update(TrainTask).where(TrainTask.id == task_id).values(progress=pct)
-                        )
+                parsed = _parse_epoch(line)
+                if parsed:
+                    if parsed.get("epoch") == -1:
+                        if cur_epoch is not None:
+                            cur_epoch.update(parsed)
+                    else:
+                        if cur_epoch is not None and cur_epoch.get("epoch", 0) > 0:
+                            metrics_log.append(dict(cur_epoch))
+                        cur_epoch = parsed
+                        pct = int(parsed["epoch"] / parsed.get("total_epochs", 100) * 100)
+                        try:
+                            async with async_db_session.begin() as db:
+                                await db.execute(
+                                    update(TrainTask).where(TrainTask.id == task_id).values(progress=pct)
+                                )
+                        except Exception as e:
+                            log.error(f"progress update failed: {e}")
 
-        await remove_container(container.id)
-        container.reload()
-        exit_code = container.attrs["State"]["ExitCode"]
+        if cur_epoch is not None and cur_epoch.get("epoch", 0) > 0:
+            metrics_log.append(dict(cur_epoch))
+
+        best_metrics = None
+        last_metrics = None
+        if metrics_log:
+            last_metrics = metrics_log[-1]
+            valid = [m for m in metrics_log if m.get("map50") is not None]
+            best_metrics = max(valid, key=lambda m: m["map50"]) if valid else last_metrics
+
+        loop = asyncio.get_event_loop()
+        exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
 
         if _running_tasks.get(task_id, {}).get("cancel"):
-            status = TrainStatus.CANCELLED
+            await remove_container(container_id)
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(TrainTask).where(TrainTask.id == task_id).values(
+                        status=TrainStatus.CANCELLED, finished_at=datetime.now()
+                    )
+                )
         elif exit_code == 0:
-            status = TrainStatus.SUCCESS
+            await remove_container(container_id)
             from .exporter import export_model
             model_info = await export_model(task_id, task.framework, export_dir)
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainTask).where(TrainTask.id == task_id).values(
-                        model_repo_id=model_info.get("repo_id"), status=status,
-                        progress=100, finished_at=datetime.now()
+                        model_repo_id=model_info.get("repo_id"), status=TrainStatus.SUCCESS,
+                        progress=100, finished_at=datetime.now(),
+                        metrics_log=metrics_log or None,
+                        best_metrics=best_metrics, last_metrics=last_metrics,
                     )
                 )
         else:
-            status = TrainStatus.FAILED
             error_msg = ""
             try:
-                err_logs = container.logs(stdout=False, stderr=True, tail=20).decode("utf-8", errors="replace")
+                err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
                 if err_logs:
                     error_msg = err_logs.strip()
             except Exception:
                 pass
+            await remove_container(container_id)
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainTask).where(TrainTask.id == task_id).values(
-                        status=status, error_log=error_msg or "training failed (unknown error)",
-                        finished_at=datetime.now()
+                        status=TrainStatus.FAILED, error_log=error_msg or "training failed",
+                        finished_at=datetime.now(),
+                        metrics_log=metrics_log or None,
+                        best_metrics=best_metrics, last_metrics=last_metrics,
                     )
                 )
 
-        _running_tasks.pop(task_id, None)
-
     except Exception as e:
         log.error(f"training task {task_id} failed: {e}")
-        entry = _running_tasks.pop(task_id, None)
-        if entry and entry.get("container_id"):
-            await remove_container(entry["container_id"])
         async with async_db_session.begin() as db:
             await db.execute(
                 update(TrainTask).where(TrainTask.id == task_id).values(
                     status=TrainStatus.FAILED, error_log=str(e), finished_at=datetime.now()
                 )
             )
+    finally:
+        _running_tasks.pop(task_id, None)
+        if container_id:
+            await remove_container(container_id)
 
 
 async def start_training(task_id: int):
