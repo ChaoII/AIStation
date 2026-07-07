@@ -74,7 +74,7 @@ watch(
 
 onMounted(() => {
   nextTick(() => {
-    // Chart is already initialized by watcher with immediate:true
+    initChart();
     setTimeout(() => chartInstance?.resize(), 200);
   });
 });
