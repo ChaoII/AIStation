@@ -65,15 +65,21 @@ useResizeObserver(chartRef, () => {
 watch(
   () => props.options,
   (newOptions) => {
-    if (chartInstance && newOptions) {
-      chartInstance.setOption(newOptions);
+    if (newOptions) {
+      if (!chartInstance && chartRef.value) {
+        chartInstance = echarts.init(chartRef.value);
+      }
+      chartInstance?.setOption(newOptions, true);
     }
   },
-  { deep: true }
+  { deep: true, immediate: true }
 );
 
 onMounted(() => {
-  nextTick(() => initChart());
+  nextTick(() => {
+    // Chart is already initialized by watcher with immediate:true
+    setTimeout(() => chartInstance?.resize(), 200);
+  });
 });
 
 onBeforeUnmount(() => {

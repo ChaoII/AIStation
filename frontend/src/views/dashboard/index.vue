@@ -300,17 +300,18 @@ async function loadAllData() {
   } catch {}
   // Force ECharts to re-render after all data loads
   await nextTick();
+  document.querySelectorAll(".chart-card canvas").forEach((c: any) => c?.parentElement?.__vue__?.resize?.());
   window.dispatchEvent(new Event("resize"));
 }
 </script>
 
 <style scoped>
-.db { padding: 12px 20px; }
+.db { padding: 12px 20px; background: #f1f5f9; min-height: 100vh; }
 
 /* ── Pulse Bar ── */
 .pulse-bar {
   display: flex; align-items: center; gap: 20px;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
   border: 1px solid #e2e8f0; border-radius: 14px;
   padding: 16px 24px; margin-bottom: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,.03);
