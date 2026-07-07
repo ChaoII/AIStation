@@ -31,7 +31,7 @@
     </div>
 
     <!-- ═══ Chart Row 1: 4 pies ═══ -->
-    <div class="chart-row">
+    <div v-if="dataLoaded" class="chart-row">
       <div class="chart-card">
         <div class="chart-hd"><span>标注任务类型</span><span class="chart-note">{{ stats.taskTypeTotal }} 个任务</span></div>
         <ECharts :options="taskTypePie" height="180" />
@@ -51,7 +51,7 @@
     </div>
 
     <!-- ═══ Chart Row 2: bars ═══ -->
-    <div class="chart-row chart-row--wide">
+    <div v-if="dataLoaded" class="chart-row chart-row--wide">
       <div class="chart-card">
         <div class="chart-hd"><span>各数据集图片数</span><span class="chart-note">{{ stats.datasetCount }} 个数据集</span></div>
         <ECharts :options="datasetBar" height="200" />
@@ -120,6 +120,7 @@ const timefix = h < 6 ? "夜深了，" : h < 9 ? "早上好，" : h < 12 ? "上�
 const welcome = ["注意休息","新的一天","保持高效","午休时间","继续加油","今天辛苦了"][Math.min(5, Math.floor(h / 4))];
 
 const serverInfo = ref<any>({});
+const dataLoaded = ref(false);
 
 const stats = reactive({
   onlineUsers: 0, totalUsers: 0,
@@ -300,7 +301,8 @@ async function loadAllData() {
   } catch {}
   // Force ECharts to re-render after all data loads
   await nextTick();
-  document.querySelectorAll(".chart-card canvas").forEach((c: any) => c?.parentElement?.__vue__?.resize?.());
+  dataLoaded.value = true;
+  await nextTick();
   window.dispatchEvent(new Event("resize"));
 }
 </script>
