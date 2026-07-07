@@ -504,8 +504,38 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
             async with async_db_session.begin() as db:
                 for col in ["metrics_log", "best_metrics", "last_metrics"]:
                     await db.execute(text(f"ALTER TABLE train_tasks ADD COLUMN IF NOT EXISTS {col} JSONB"))
-        except Exception:
-            pass
+                # TrainEval new columns
+                for col, typ in [("model_id", "INTEGER"), ("framework", "VARCHAR(16)"), ("hyperparams", "JSONB"), ("started_at", "TIMESTAMP"), ("finished_at", "TIMESTAMP")]:
+                    await db.execute(text(f"ALTER TABLE train_evals ADD COLUMN IF NOT EXISTS {col} {typ}"))
+                # Create train_predicts table if not exists
+                await db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS train_predicts (
+                        id SERIAL PRIMARY KEY,
+                        uuid VARCHAR(36),
+                        status VARCHAR(16) DEFAULT 'pending',
+                        created_time TIMESTAMP DEFAULT NOW(),
+                        updated_time TIMESTAMP,
+                        is_deleted BOOLEAN DEFAULT FALSE,
+                        deleted_time TIMESTAMP,
+                        created_id INTEGER,
+                        updated_id INTEGER,
+                        deleted_id INTEGER,
+                        model_repo_id INTEGER NOT NULL,
+                        model_id INTEGER NOT NULL,
+                        framework VARCHAR(16) DEFAULT 'ultralytics',
+                        source_type VARCHAR(16) NOT NULL,
+                        source_dataset_id INTEGER,
+                        source_images JSONB,
+                        result_images JSONB,
+                        result_zip_path VARCHAR(512),
+                        hyperparams JSONB,
+                        started_at TIMESTAMP,
+                        finished_at TIMESTAMP,
+                        log TEXT
+                    )
+                """))
+        except Exception as e:
+            log.warning(f"train migration warning: {e}")
 
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
