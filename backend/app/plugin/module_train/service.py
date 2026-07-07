@@ -165,7 +165,8 @@ class TrainService:
     @classmethod
     async def upload_predict_images(cls, files: list, auth) -> list[str]:
         import uuid
-        import tempfile, os
+        import io
+        import os
         from app.utils.s3_client import s3_client
 
         urls = []
@@ -173,7 +174,7 @@ class TrainService:
             content = await f.read()
             ext = f.filename.rsplit(".", 1)[-1] if "." in f.filename else "jpg"
             key = f"train/predict/upload/{auth.user.id}/{uuid.uuid4()}.{ext}"
-            s3_client.upload_fileobj(content, key)
+            s3_client.upload_fileobj(io.BytesIO(content), key)
             urls.append(s3_client.presigned_url(key))
         return urls
 
