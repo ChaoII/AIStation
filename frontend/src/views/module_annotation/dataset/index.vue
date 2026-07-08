@@ -687,11 +687,12 @@ async function handleExportSubmit() {
   cursor: pointer; overflow: hidden;
   background: #f5f7fa; border: 1.5px solid #e4e7ed;
   transition: border-color .15s;
+  width: 130px;
 }
 .task-badge:hover { filter: brightness(.96); }
 .task-badge-name {
   position: relative; z-index: 1; font-weight: 600;
-  max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .task-badge-pct {
   position: relative; z-index: 1; font-size: 10px; opacity: .6;
