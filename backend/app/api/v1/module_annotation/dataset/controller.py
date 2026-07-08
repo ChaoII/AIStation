@@ -104,3 +104,19 @@ async def get_presigned_url(
 ) -> JSONResponse:
     url = await DatasetService.get_presigned_url(image_id)
     return SuccessResponse(data={"url": url})
+
+
+@DatasetRouter.post("/import/x-anylabeling", summary="导入 x-anylabeling 格式标注")
+async def import_x_anylabeling(
+    dataset_id: int,
+    file: UploadFile = File(...),
+    auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:create"])),
+) -> JSONResponse:
+    from .x_anylabeling_importer import import_x_anylabeling_zip
+    result = await import_x_anylabeling_zip(file.file, dataset_id, auth.user.id)
+    if result.get("error"):
+        return SuccessResponse(data=result, msg=result["error"])
+    return SuccessResponse(
+        data=result,
+        msg=f"导入完成：{result['imported']} 张图片，{result['total_annotations']} 个标注"
+    )

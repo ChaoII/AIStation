@@ -16,6 +16,9 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
+        <el-button size="small" type="warning" plain @click="importDialogVisible = true" style="margin-left:8px">
+          x-anylabeling 导入
+        </el-button>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
@@ -249,6 +252,27 @@
         </el-button>
       </template>
     </EnhancedDialog>
+
+    <!-- x-anylabeling Import Dialog -->
+    <el-dialog v-model="importDialogVisible" title="导入 x-anylabeling 标注" width="500px">
+      <el-form label-width="100px">
+        <el-form-item label="目标数据集" required>
+          <el-select v-model="importDatasetId" filterable placeholder="选择数据集" style="width:100%">
+            <el-option v-for="ds in datasetOptions" :key="ds.id" :label="ds.name" :value="ds.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="ZIP 文件" required>
+          <el-upload ref="importUploadRef" :auto-upload="false" accept=".zip" :limit="1" :on-change="onImportFileChange">
+            <el-button size="small" type="primary">选择 ZIP 文件</el-button>
+            <template #tip><div style="font-size:12px;color:#909399;margin-top:4px">包含图片和同名 .json 标注文件的 ZIP 压缩包</div></template>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="warning" :loading="importing" @click="handleImportSubmit">导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -513,6 +537,45 @@ async function handleUploadSubmit() {
     uploadLoading.value = false;
   }
 }
+
+// ── x-anylabeling Import ──
+const importDialogVisible = ref(false);
+const importDatasetId = ref<number | undefined>(undefined);
+const importing = ref(false);
+const importUploadRef = ref<any>(null);
+const importFile = ref<File | null>(null);
+const datasetOptions = ref<any[]>([]);
+
+function onImportFileChange(_file: any, fileList: any[]) {
+  importFile.value = fileList.length > 0 ? fileList[0].raw : null;
+}
+
+async function handleImportSubmit() {
+  if (!importDatasetId.value) { ElMessage.warning("请选择目标数据集"); return; }
+  if (!importFile.value) { ElMessage.warning("请选择 ZIP 文件"); return; }
+  importing.value = true;
+  try {
+    const r = await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
+    ElMessage.success(r.data?.msg || "导入完成");
+    importDialogVisible.value = false;
+    importFile.value = null;
+    importDatasetId.value = undefined;
+    if (importUploadRef.value) importUploadRef.value.uploadFiles = [];
+    refreshList();
+  } catch {
+    //
+  } finally {
+    importing.value = false;
+  }
+}
+
+// Load dataset options for import dialog
+(async () => {
+  try {
+    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
+    datasetOptions.value = r.data?.data?.items || [];
+  } catch {}
+})();
 </script>
 
 <style scoped>

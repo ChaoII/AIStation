@@ -109,6 +109,19 @@ export const AnnotationAPI = {
     });
   },
 
+  importXAnyLabeling(datasetId: number, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/import/x-anylabeling`,
+      method: "post",
+      params: { dataset_id: datasetId },
+      data: formData,
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 120000,
+    });
+  },
+
   // Stats
   getOverview() {
     return request<ApiResponse<any>>({ url: `${API_PATH}/stats/overview`, method: "get" });
