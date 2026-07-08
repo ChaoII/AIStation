@@ -16,7 +16,7 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
-        <el-button size="small" type="primary" @click="importDialogVisible = true" style="margin-left:4px;height:28px;align-self:center">
+        <el-button type="primary" @click="importDialogVisible = true">
           X-AnyLabeling 导入
         </el-button>
         <div class="data-table__toolbar--right">
