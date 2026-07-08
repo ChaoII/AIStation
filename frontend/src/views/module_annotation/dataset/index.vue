@@ -9,16 +9,18 @@
 
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
-        <CrudToolbarLeft
-          :remove-ids="removeIds"
-          :perm-create="['module_annotation:dataset:create']"
-          :perm-delete="['module_annotation:dataset:delete']"
-          @add="handleOpenDialog('create')"
-          @delete="onToolbar('delete')"
-        />
-        <el-button size="small" type="primary" @click="importDialogVisible = true" style="margin-left:8px">
-          X-AnyLabeling 导入
-        </el-button>
+        <div class="data-table__toolbar--left">
+          <CrudToolbarLeft
+            :remove-ids="removeIds"
+            :perm-create="['module_annotation:dataset:create']"
+            :perm-delete="['module_annotation:dataset:delete']"
+            @add="handleOpenDialog('create')"
+            @delete="onToolbar('delete')"
+          />
+          <el-button size="small" type="primary" @click="importDialogVisible = true">
+            X-AnyLabeling 导入
+          </el-button>
+        </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
