@@ -271,7 +271,7 @@
       <el-form label-width="120px">
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="标注任务" required>
-          <el-select v-model="exportTaskId" placeholder="请选择标注任务" filterable style="width:100%" @change="onExportTaskChange">
+          <el-select v-model="exportTaskId" placeholder="请选择标注任务" filterable style="width:100%">
             <el-option v-for="t in exportRowTasks" :key="t.id" :value="t.id" :label="`${t.name}（${taskTypeLabel(t.task_type)}）`" />
           </el-select>
         </el-form-item>
@@ -606,15 +606,6 @@ const trainRatio = ref(80);
 const isYoloOrPaddleFormat = computed(() => {
   return exportFormat.value.startsWith("yolo-") || exportFormat.value.startsWith("paddle-");
 });
-  "yolo-detection": ["detection"],
-  "yolo-rotated_detection": ["rotated_detection"],
-  "yolo-segmentation": ["segmentation"],
-  "yolo-keypoint": ["keypoint"],
-  "yolo-cls": ["classification"],
-  "paddle-mlcls": ["classification"],
-  "paddle-ocr": ["ocr"],
-  "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification"],
-};
 
 const exportFormatOptions = [
   { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
@@ -627,19 +618,6 @@ const exportFormatOptions = [
   { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
 ];
 
-const filteredExportFormats = computed(() => {
-  const task = exportRowTasks.value.find((t: any) => t.id === exportTaskId.value);
-  if (!task) return exportFormatOptions;
-  return exportFormatOptions.filter(opt => FORMAT_TASK_MAP[opt.value]?.includes(task.task_type));
-});
-
-function onExportTaskChange() {
-  const avail = filteredExportFormats.value;
-  if (avail.length > 0 && !avail.find(o => o.value === exportFormat.value)) {
-    exportFormat.value = avail[0].value;
-  }
-}
-
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
@@ -649,7 +627,6 @@ function handleOpenExport(row: any) {
   ocrExportRec.value = true;
   trainRatio.value = 80;
   exportFormat.value = "x-anylabeling";
-  onExportTaskChange();
   exportDialogVisible.value = true;
 }
 
