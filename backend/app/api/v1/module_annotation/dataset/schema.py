@@ -22,7 +22,6 @@ class DatasetOutSchema(BaseModel):
     image_count: int
     annotated_count: int
     task_count: int = 0
-    tasks: list[dict] = []
     status: str
     created_id: int | None
     created_time: datetime | None
