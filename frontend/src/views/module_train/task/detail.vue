@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container train-detail-page">
+  <div class="train-detail-page">
     <div class="detail-header">
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
@@ -476,11 +476,11 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
 <style lang="scss">
-/* Non-scoped override to bypass potential data-v-xxx hash mismatch */
-.app-container.train-detail-page {
-  display: block !important;
-  height: auto !important;
-  overflow: visible !important;
+.train-detail-page {
+  display: block;
+  height: auto;
+  overflow: visible;
+  padding: 16px;
 }
 
 .detail-header {
