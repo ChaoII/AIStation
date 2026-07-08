@@ -477,23 +477,20 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 
 <style lang="scss">
 .train-detail-page {
-  display: block;
-  height: auto;
-  overflow: visible;
-  padding: 16px;
+  display: block; height: auto; overflow: visible; padding: 16px;
 }
 
 .detail-header {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 16px; padding: 10px 16px;
-  background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; padding: 14px 20px;
+  background: #fff; border-radius: 8px; border: 1px solid #e8e8e8;
 }
-.task-name { font-size: 15px; font-weight: 600; margin-right: 4px; color: #303133; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.progress-text { font-size: 13px; font-weight: 500; color: #e6a23c; margin-left: 4px; }
-.card-title { font-weight: 600; font-size: 14px; color: #303133; }
+.task-name { font-size: 15px; font-weight: 600; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress-text { font-size: 13px; font-weight: 600; color: #e6a23c; margin-left: 4px; }
+.card-title { font-weight: 600; font-size: 14px; color: #1a1a1a; }
 
 .info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.info-card { height: 100%; }
+.info-card { height: 100%; border: 1px solid #e8e8e8; border-radius: 8px; }
 .docker-tag { font-family: "Cascadia Code","Fira Code",monospace; font-size: 12px; background: #f5f7fa; padding: 2px 6px; border-radius: 3px; }
 
 .hp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -501,36 +498,37 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .hp-label { color: #909399; font-size: 13px; }
 .hp-value { color: #303133; font-size: 13px; font-weight: 500; }
 
-.section-card { margin-bottom: 16px; }
+.section-card { margin-bottom: 16px; border: 1px solid #e8e8e8; border-radius: 8px; }
 .action-buttons { display: flex; gap: 10px; }
 .progress-eta { margin-top: 8px; font-size: 13px; color: #909399; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .metric-item {
-  background: #fff; border: 1px solid #ebeef5; border-radius: 8px;
-  padding: 16px 12px; text-align: center;
-  &:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+  padding: 18px 12px; text-align: center;
+  &:hover { box-shadow: 0 2px 10px rgba(0,0,0,.06); }
 }
-.metric-val { display: block; font-size: 18px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #303133; }
-.metric-lbl { display: block; font-size: 12px; color: #909399; margin-top: 4px; }
-.metric-green { color: #67c23a; }
+.metric-val { display: block; font-size: 20px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #1a1a1a; }
+.metric-lbl { display: block; font-size: 12px; color: #909399; margin-top: 4px; letter-spacing: .02em; }
+.metric-green { color: #52c41a; }
 .metric-blue { color: #409eff; }
-.metric-orange { color: #e6a23c; }
+.metric-orange { color: #fa8c16; }
 .metric-purple { color: #9b59b6; }
 
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.chart-card { border: 1px solid #e8e8e8; border-radius: 8px; }
 .chart-empty { height: 280px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 14px; }
 
 .log-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .log-controls { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #909399; }
 .log-status { display: inline-flex; align-items: center; gap: 4px; color: #909399;
   &::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #909399; }
-  &.connected { color: #67c23a; &::before { background: #67c23a; } }
+  &.connected { color: #52c41a; &::before { background: #52c41a; } }
 }
 .log-line-count { font-family: "Cascadia Code","Fira Code",monospace; }
 .log-container {
-  height: 500px; min-height: 200px; overflow-y: auto;
-  background: #1e1e1e; border-radius: 6px; padding: 16px;
+  height: 500px !important; min-height: 200px !important; overflow-y: auto !important;
+  background: #1e1e1e !important; border-radius: 8px !important; padding: 16px !important;
 }
 .log-text {
   font-family: "Cascadia Code","Fira Code",monospace;
