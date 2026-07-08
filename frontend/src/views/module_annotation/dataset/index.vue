@@ -271,13 +271,13 @@
       <el-form label-width="120px">
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="标注任务" required>
-          <el-select v-model="exportTaskId" placeholder="请选择标注任务" filterable style="width:100%">
+          <el-select v-model="exportTaskId" placeholder="请选择标注任务" filterable style="width:100%" @change="onTaskChange">
             <el-option v-for="t in exportRowTasks" :key="t.id" :value="t.id" :label="`${t.name}（${taskTypeLabel(t.task_type)}）`" />
           </el-select>
         </el-form-item>
         <el-form-item label="导出格式" required>
           <el-select v-model="exportFormat" style="width:100%">
-            <el-option v-for="opt in exportFormatOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+            <el-option v-for="opt in filteredExportFormats" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
           <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px">
             <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
@@ -607,6 +607,30 @@ const isYoloOrPaddleFormat = computed(() => {
   return exportFormat.value.startsWith("yolo-") || exportFormat.value.startsWith("paddle-");
 });
 
+const FORMAT_TASK_MAP: Record<string, string[]> = {
+  "yolo-detection": ["detection"],
+  "yolo-rotated_detection": ["rotated_detection"],
+  "yolo-segmentation": ["segmentation"],
+  "yolo-keypoint": ["keypoint"],
+  "yolo-cls": ["classification"],
+  "paddle-mlcls": ["classification"],
+  "paddle-ocr": ["ocr"],
+  "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification"],
+};
+
+const filteredExportFormats = computed(() => {
+  const task = exportRowTasks.value.find((t: any) => t.id === exportTaskId.value);
+  if (!task) return exportFormatOptions;
+  return exportFormatOptions.filter(opt => FORMAT_TASK_MAP[opt.value]?.includes(task.task_type));
+});
+
+function onTaskChange() {
+  const avail = filteredExportFormats.value;
+  if (avail.length > 0 && !avail.find(o => o.value === exportFormat.value)) {
+    exportFormat.value = avail[0].value;
+  }
+}
+
 const exportFormatOptions = [
   { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
   { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）" },
@@ -627,6 +651,7 @@ function handleOpenExport(row: any) {
   ocrExportRec.value = true;
   trainRatio.value = 80;
   exportFormat.value = "x-anylabeling";
+  onTaskChange();
   exportDialogVisible.value = true;
 }
 
@@ -645,14 +670,20 @@ async function handleExportSubmit() {
     });
     const url = r.data?.data?.download_url;
     if (url) {
-      window.open(url, "_blank");
-      ElMessage.success("导出成功，正在下载...");
+      const w = window.open(url, "_blank");
+      if (!w) {
+        // Popup blocked — offer direct navigation
+        ElMessage.success("导出成功");
+        ElMessage.info({ message: "浏览器可能拦截了下载窗口，请允许弹出窗口或手动复制链接下载", duration: 6000 });
+      } else {
+        ElMessage.success("导出成功，正在下载...");
+      }
     } else {
-      ElMessage.warning("导出完成但未获取到下载链接");
+      ElMessage.warning("导出完成但未获取到下载链接，请查看后端日志");
     }
     exportDialogVisible.value = false;
-  } catch {
-    //
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.data?.msg || e?.message || "导出失败");
   } finally {
     exporting.value = false;
   }
