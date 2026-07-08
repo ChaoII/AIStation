@@ -16,8 +16,8 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
-        <el-button size="small" type="warning" plain @click="importDialogVisible = true" style="margin-left:8px">
-          x-anylabeling 导入
+        <el-button size="small" type="primary" @click="importDialogVisible = true" style="margin-left:8px">
+          X-AnyLabeling 导入
         </el-button>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
