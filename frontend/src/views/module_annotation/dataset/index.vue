@@ -140,6 +140,15 @@
                   上传
                 </el-button>
                 <el-button
+                  type="warning"
+                  size="small"
+                  link
+                  icon="Download"
+                  @click="handleOpenExport(scope.row)"
+                >
+                  导出
+                </el-button>
+                <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
                   type="primary"
                   size="small"
@@ -257,6 +266,26 @@
       <template #footer>
         <el-button @click="importDialogVisible = false">取消</el-button>
         <el-button type="warning" :loading="importing" @click="handleImportSubmit">导入</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Export Dialog -->
+    <el-dialog v-model="exportDialogVisible" title="导出数据集" width="450px">
+      <el-form label-width="100px">
+        <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
+        <el-form-item label="导出格式" required>
+          <el-select v-model="exportFormat" style="width:100%">
+            <el-option value="ultralytics" label="YOLO（图片 + .txt 标注）" />
+            <el-option value="x-anylabeling" label="x-anylabeling（图片 + .json 标注）" />
+          </el-select>
+        </el-form-item>
+        <el-alert type="info" :closable="false" show-icon>
+          <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
+        </el-alert>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="warning" :loading="exporting" @click="handleExportSubmit">导出并下载</el-button>
       </template>
     </el-dialog>
   </div>
@@ -549,6 +578,44 @@ async function handleImportSubmit() {
     datasetOptions.value = r.data?.data?.items || [];
   } catch {}
 })();
+
+// ── Export ──
+const exportDialogVisible = ref(false);
+const exportDatasetId = ref<number | null>(null);
+const exportDatasetName = ref("");
+const exportFormat = ref("ultralytics");
+const exporting = ref(false);
+
+function handleOpenExport(row: any) {
+  exportDatasetId.value = row.id;
+  exportDatasetName.value = row.name;
+  exportFormat.value = "ultralytics";
+  exportDialogVisible.value = true;
+}
+
+async function handleExportSubmit() {
+  if (!exportDatasetId.value) return;
+  exporting.value = true;
+  try {
+    const { TrainAPI } = await import("@/api/module_train");
+    const r = await TrainAPI.exportDataset({
+      dataset_id: exportDatasetId.value,
+      format: exportFormat.value,
+    });
+    const url = r.data?.data?.download_url;
+    if (url) {
+      window.open(url, "_blank");
+      ElMessage.success("导出成功，正在下载...");
+    } else {
+      ElMessage.warning("导出完成但未获取到下载链接");
+    }
+    exportDialogVisible.value = false;
+  } catch {
+    //
+  } finally {
+    exporting.value = false;
+  }
+}
 </script>
 
 <style scoped>
