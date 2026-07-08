@@ -1,5 +1,8 @@
 <template>
   <div class="train-detail-page">
+    <div class="debug-bar" style="background:#ffeeba;padding:4px 12px;font:12px monospace;color:#333;margin-bottom:8px;border-radius:4px">
+      DEBUG | task={{ task ? 'loaded' : 'null' }} | status={{ task?.status }} | progress={{ displayProgress }} | metricsLog={{ metricsLog.length }} | dmLog={{ displayMetricsLog.length }}
+    </div>
     <div class="detail-header">
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
@@ -455,13 +458,16 @@ function handleEvaluate() { ElMessage.info("评估功能需要后端支持"); }
 function handleExport() { ElMessage.info("导出功能需要后端支持"); }
 
 onMounted(async () => {
+  console.log("[detail] mounted, route params:", route.params);
   await loadTask();
+  console.log("[detail] task loaded:", task.value?.id, task.value?.status, "progress:", task.value?.progress);
   const id = Number(route.params.id);
   if (id) {
     if (task.value?.status === "running") { connectWs(id); startPoll(); }
     else {
       try {
         const r = await TrainAPI.getTaskLogs(id);
+        console.log("[detail] logs response:", r.data?.data ? "has data" : "no data");
         if (r.data?.data?.logs) {
           const cleaned = r.data.data.logs.replace(/[\r\x1b\[[0-9;]*m]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
           logText.value = cleaned;
@@ -470,6 +476,22 @@ onMounted(async () => {
       } catch { /* */ }
     }
   }
+  // Check rendered state
+  await nextTick();
+  const root = document.querySelector('.train-detail-page');
+  console.log("[detail] root element:", root ? 'found' : 'missing');
+  if (root) {
+    const style = getComputedStyle(root);
+    console.log("[detail] root display:", style.display, "height:", style.height, "overflow:", style.overflow);
+  }
+  const logEl = document.querySelector('.log-container');
+  console.log("[detail] log-container:", logEl ? 'found' : 'missing');
+  if (logEl) {
+    const ls = getComputedStyle(logEl);
+    console.log("[detail] log-container styles:", "height:", ls.height, "overflow-y:", ls.overflowY, "background:", ls.background);
+  }
+  const metricEl = document.querySelector('.metric-grid');
+  console.log("[detail] metric-grid:", metricEl ? 'found' : 'missing');
 });
 
 onBeforeUnmount(() => { ws?.close(); stopPoll(); });
@@ -503,11 +525,8 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .progress-eta { margin-top: 8px; font-size: 13px; color: #909399; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.metric-item {
-  background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
-  padding: 18px 12px; text-align: center;
-  &:hover { box-shadow: 0 2px 10px rgba(0,0,0,.06); }
-}
+.metric-item { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 18px 12px; text-align: center; }
+.metric-item:hover { box-shadow: 0 2px 10px rgba(0,0,0,.06); }
 .metric-val { display: block; font-size: 20px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #1a1a1a; }
 .metric-lbl { display: block; font-size: 12px; color: #909399; margin-top: 4px; letter-spacing: .02em; }
 .metric-green { color: #52c41a; }
@@ -521,22 +540,33 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 
 .log-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .log-controls { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #909399; }
-.log-status { display: inline-flex; align-items: center; gap: 4px; color: #909399;
-  &::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #909399; }
-  &.connected { color: #52c41a; &::before { background: #52c41a; } }
-}
+.log-status { display: inline-flex; align-items: center; gap: 4px; color: #909399; }
+.log-status::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #909399; }
+.log-status.connected { color: #52c41a; }
+.log-status.connected::before { background: #52c41a; }
+
 .log-line-count { font-family: "Cascadia Code","Fira Code",monospace; }
-.log-container {
-  height: 500px !important; min-height: 200px !important; overflow-y: auto !important;
-  background: #1e1e1e !important; border-radius: 8px !important; padding: 16px !important;
-}
-.log-text {
-  font-family: "Cascadia Code","Fira Code",monospace;
-  font-size: 13px; line-height: 1.5; color: #d4d4d4;
-  white-space: pre-wrap; word-break: break-all; margin: 0;
-}
 .pulse-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e6a23c; animation: pulse-anim 1.2s ease-in-out infinite; margin-right: 6px; vertical-align: middle; }
 @keyframes pulse-anim { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.3); } }
 .text-muted { color: #c0c4cc; }
 .mono { font-family: "Cascadia Code","Fira Code",monospace; }
+</style>
+<style>
+.log-container {
+  height: 500px !important;
+  min-height: 200px !important;
+  overflow-y: auto !important;
+  background: #1e1e1e !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+}
+.log-text {
+  font-family: "Cascadia Code","Fira Code",monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
 </style>
