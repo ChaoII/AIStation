@@ -96,12 +96,15 @@
                   <div
                     v-for="t in scope.row.tasks" :key="t.id"
                     class="task-badge"
+                    :style="{
+                      borderColor: taskTagColor(t.task_type),
+                      color: taskTagColor(t.task_type),
+                    }"
                     @click="router.push(`/annotation/task?task_id=${t.id}`)"
                   >
-                    <span class="task-badge-dot" :style="{ background: taskTagColor(t.task_type) }" />
                     <span class="task-badge-name">{{ t.name }}</span>
                     <span class="task-badge-pct">{{ t.progress ?? 0 }}%</span>
-                    <span class="task-badge-fill" :style="{ width: (t.progress ?? 0) + '%' }" />
+                    <span class="task-badge-fill" :style="{ width: (t.progress ?? 0) + '%', background: taskTagColor(t.task_type) + '22' }" />
                   </div>
                 </div>
                 <span v-else style="color:var(--el-text-color-secondary);font-size:12px">—</span>
@@ -680,27 +683,23 @@ async function handleExportSubmit() {
 }
 .task-badge {
   position: relative; display: inline-flex; align-items: center; gap: 4px;
-  padding: 0 8px 0 4px; border-radius: 4px; font-size: 12px; line-height: 22px;
+  padding: 0 8px; border-radius: 4px; font-size: 12px; line-height: 22px;
   cursor: pointer; overflow: hidden;
-  background: #f5f7fa; color: #303133; border: 1px solid #e4e7ed;
+  background: #f5f7fa; border: 1.5px solid #e4e7ed;
   transition: border-color .15s;
 }
-.task-badge:hover { border-color: #c0c4cc; }
-.task-badge-dot {
-  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  position: relative; z-index: 1;
-}
+.task-badge:hover { filter: brightness(.96); }
 .task-badge-name {
-  position: relative; z-index: 1; font-weight: 500;
+  position: relative; z-index: 1; font-weight: 600;
   max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .task-badge-pct {
-  position: relative; z-index: 1; font-size: 10px; color: #909399;
+  position: relative; z-index: 1; font-size: 10px; opacity: .6;
   font-variant-numeric: tabular-nums; min-width: 28px; text-align: right;
 }
 .task-badge-fill {
   position: absolute; top: 0; left: 0; bottom: 0;
-  background: #e1f3d8; border-radius: 3px; transition: width .4s ease;
+  border-radius: 3px; transition: width .5s ease;
   pointer-events: none;
 }
 </style>
