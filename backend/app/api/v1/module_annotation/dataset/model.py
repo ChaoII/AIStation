@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import ModelMixin, UserMixin
@@ -26,9 +26,6 @@ class DatasetModel(ModelMixin, UserMixin):
 
     name: Mapped[str] = mapped_column(String(128), comment="数据集名称")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")
-    annotation_type: Mapped[AnnotationType] = mapped_column(
-        Enum(AnnotationType), comment="标注类型"
-    )
     bucket_name: Mapped[str] = mapped_column(String(64), default="aistation-annotation-dev", comment="RustFS bucket 名")
     image_count: Mapped[int] = mapped_column(Integer, default=0, comment="图片总数")
     annotated_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注图片数")

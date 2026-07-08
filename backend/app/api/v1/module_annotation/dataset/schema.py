@@ -2,13 +2,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .model import AnnotationType
-
 
 class DatasetCreateSchema(BaseModel):
     name: str = Field(max_length=128)
     description: str | None = None
-    annotation_type: AnnotationType
 
 
 class DatasetUpdateSchema(BaseModel):
@@ -22,7 +19,6 @@ class DatasetOutSchema(BaseModel):
     id: int
     name: str
     description: str | None
-    annotation_type: AnnotationType
     image_count: int
     annotated_count: int
     task_count: int = 0

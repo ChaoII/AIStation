@@ -183,20 +183,6 @@
         <el-form-item label="数据集名称" prop="name">
           <el-input v-model="formData.name" placeholder="请输入数据集名称" :maxlength="100" />
         </el-form-item>
-        <el-form-item label="标注类型" prop="annotation_type">
-          <el-select
-            v-model="formData.annotation_type"
-            placeholder="请选择标注类型"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="opt in annotationTypeOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
         <el-form-item label="描述" prop="description">
           <el-input
             v-model="formData.description"
@@ -396,19 +382,9 @@ const dialogVisible = reactive({
   type: "create" as "create" | "update",
 });
 
-const annotationTypeOptions = [
-  { value: "detection", label: "目标检测" },
-  { value: "rotated_detection", label: "旋转框检测" },
-  { value: "segmentation", label: "分割" },
-  { value: "keypoint", label: "关键点" },
-  { value: "ocr", label: "OCR文本" },
-  { value: "classification", label: "图像分类" },
-];
-
 const formData = reactive({
   id: undefined as number | undefined,
   name: "",
-  annotation_type: "detection",
   status: true,
   description: "",
 });
@@ -416,7 +392,6 @@ const formData = reactive({
 const initialFormData = {
   id: undefined as number | undefined,
   name: "",
-  annotation_type: "detection",
   status: true,
   description: "",
 };
@@ -467,13 +442,11 @@ async function handleSubmit() {
         if (id) {
           await AnnotationAPI.updateDataset(id, {
             name: formData.name,
-            annotation_type: formData.annotation_type,
             description: formData.description,
           });
         } else {
           await AnnotationAPI.createDataset({
             name: formData.name,
-            annotation_type: formData.annotation_type,
             description: formData.description,
           });
         }

@@ -54,6 +54,13 @@ async def _ensure_missing_columns() -> None:
                 except Exception:
                     pass
 
+    # Drop unused columns
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(sa_text("ALTER TABLE annotation_dataset DROP COLUMN IF EXISTS annotation_type"))
+    except Exception:
+        pass
+
 
 async def _ensure_deploy_menu() -> None:
     """Ensure the 智能布控 menu entry exists in the database."""
