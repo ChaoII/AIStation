@@ -81,14 +81,46 @@
     <el-card shadow="never" class="section-card">
       <template #header><span class="card-title">训练指标</span></template>
       <div class="metric-grid">
-        <div class="metric-item"><span class="metric-val">{{ displayMetrics.epoch }}</span><span class="metric-lbl">Epoch</span></div>
-        <div class="metric-item"><span class="metric-val">{{ displayMetrics.boxLoss }}</span><span class="metric-lbl">Box Loss</span></div>
-        <div class="metric-item"><span class="metric-val">{{ displayMetrics.clsLoss }}</span><span class="metric-lbl">Cls Loss</span></div>
-        <div class="metric-item"><span class="metric-val">{{ displayMetrics.dflLoss }}</span><span class="metric-lbl">Dfl Loss</span></div>
-        <div class="metric-item"><span class="metric-val metric-green">{{ displayMetrics.precision }}</span><span class="metric-lbl">Precision</span></div>
-        <div class="metric-item"><span class="metric-val metric-blue">{{ displayMetrics.recall }}</span><span class="metric-lbl">Recall</span></div>
-        <div class="metric-item"><span class="metric-val metric-orange">{{ displayMetrics.map50 }}</span><span class="metric-lbl">mAP@50</span></div>
-        <div class="metric-item"><span class="metric-val metric-purple">{{ displayMetrics.map5095 }}</span><span class="metric-lbl">mAP@50:95</span></div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#909399;margin-bottom:4px"><Clock /></el-icon>
+          <span class="metric-val">{{ displayMetrics.epoch }}</span>
+          <span class="metric-lbl">Epoch</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#f56c6c;margin-bottom:4px"><TrendCharts /></el-icon>
+          <span class="metric-val">{{ displayMetrics.boxLoss }}</span>
+          <span class="metric-lbl">Box Loss</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#e6a23c;margin-bottom:4px"><DataBoard /></el-icon>
+          <span class="metric-val">{{ displayMetrics.clsLoss }}</span>
+          <span class="metric-lbl">Cls Loss</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#409eff;margin-bottom:4px"><DataAnalysis /></el-icon>
+          <span class="metric-val">{{ displayMetrics.dflLoss }}</span>
+          <span class="metric-lbl">Dfl Loss</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#52c41a;margin-bottom:4px"><Aim /></el-icon>
+          <span class="metric-val" style="color:#52c41a">{{ displayMetrics.precision }}</span>
+          <span class="metric-lbl">Precision</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#409eff;margin-bottom:4px"><Search /></el-icon>
+          <span class="metric-val" style="color:#409eff">{{ displayMetrics.recall }}</span>
+          <span class="metric-lbl">Recall</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#fa8c16;margin-bottom:4px"><StarFilled /></el-icon>
+          <span class="metric-val" style="color:#fa8c16">{{ displayMetrics.map50 }}</span>
+          <span class="metric-lbl">mAP@50</span>
+        </div>
+        <div class="metric-item">
+          <el-icon :size="22" style="color:#9b59b6;margin-bottom:4px"><TrophyBase /></el-icon>
+          <span class="metric-val" style="color:#9b59b6">{{ displayMetrics.map5095 }}</span>
+          <span class="metric-lbl">mAP@50:95</span>
+        </div>
       </div>
     </el-card>
 
@@ -161,7 +193,7 @@
 import { ref, computed, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ArrowLeft } from "@element-plus/icons-vue";
+import { ArrowLeft, Clock, TrendCharts, DataBoard, DataAnalysis, Aim, Search, StarFilled, TrophyBase } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
@@ -495,14 +527,14 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .progress-eta { margin-top: 8px; font-size: 13px; color: #909399; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.metric-item { background: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 18px 12px; text-align: center; }
-.metric-item:hover { box-shadow: 0 2px 10px rgba(0,0,0,.06); }
-.metric-val { display: block; font-size: 20px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #1a1a1a; }
-.metric-lbl { display: block; font-size: 12px; color: #909399; margin-top: 4px; letter-spacing: .02em; }
-.metric-green { color: #52c41a; }
-.metric-blue { color: #409eff; }
-.metric-orange { color: #fa8c16; }
-.metric-purple { color: #9b59b6; }
+.metric-item {
+  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
+  padding: 16px 12px; text-align: center; transition: all .2s;
+  display: flex; flex-direction: column; align-items: center;
+}
+.metric-item:hover { box-shadow: 0 4px 14px rgba(0,0,0,.06); transform: translateY(-2px); border-color: #d0d0d0; }
+.metric-val { display: block; font-size: 20px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #1a1a1a; line-height: 1.3; }
+.metric-lbl { display: block; font-size: 11px; color: #909399; margin-top: 4px; letter-spacing: .02em; }
 
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .chart-card { border: 1px solid #e8e8e8; border-radius: 8px; }
