@@ -89,7 +89,7 @@
               v-if="contentCols.find((col) => col.prop === 'tasks')?.show"
               key="tasks"
               label="关联标注任务"
-              min-width="200"
+              min-width="320"
             >
               <template #default="scope">
                 <div v-if="scope.row.tasks?.length" style="display:flex;flex-wrap:wrap;gap:4px">
