@@ -633,10 +633,12 @@ const exportFormatOptions = computed(() => {
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
-  exportFormat.value = "yolo-detection";
   exportRowTasks.value = row.tasks || [];
   ocrExportDet.value = true;
   ocrExportRec.value = true;
+  // Default to first available option
+  const firstAvail = exportFormatOptions.value.find(o => !o.disabled);
+  exportFormat.value = firstAvail?.value || "x-anylabeling";
   exportDialogVisible.value = true;
 }
 
