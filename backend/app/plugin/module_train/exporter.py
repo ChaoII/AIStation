@@ -24,15 +24,24 @@ async def export_dataset(dataset_id: int, task_id: int, framework: str, output_d
         log.warning(f"export_dataset: dataset {dataset_id} has no images")
         return
 
+    # Determine task_type from annotation task (affects YOLO label format)
+    task_type = "detection"
+    if annotation_task_id:
+        from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+        async with async_db_session() as db:
+            ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
+            if ann_task:
+                task_type = ann_task.task_type
+
     if framework == "ultralytics":
-        await _export_yolo(dataset_id, task_id, images, output_dir, annotation_task_id)
+        await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
     else:
         _export_paddlex(images, output_dir)
 
 
-async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
+async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None) -> None:
     img_dir = os.path.join(output_dir, "images")
     label_dir = os.path.join(output_dir, "labels")
     os.makedirs(img_dir, exist_ok=True)
@@ -69,20 +78,25 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
             for ann in anns:
                 cls_id = ann.get("class_id", 0)
                 classes.add(cls_id)
-                if ann.get("type") in ("AxisAlignedBox", "box"):
+                ann_type = ann.get("type", "")
+
+                if ann_type in ("AxisAlignedBox", "box"):
                     if "x1" in ann:
                         x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
+                    else:
+                        xc_a, yc_a, w_a, h_a = ann["x"], ann["y"], ann["width"], ann["height"]
+                        x1, y1, x2, y2 = xc_a - w_a/2, yc_a - h_a/2, xc_a + w_a/2, yc_a + h_a/2
+
+                    if task_type == "rotated_detection":
+                        lines.append(f"{cls_id} {x1:.6f} {y1:.6f} {x2:.6f} {y1:.6f} {x2:.6f} {y2:.6f} {x1:.6f} {y2:.6f}")
+                    else:
                         xc = (x1 + x2) / 2
                         yc = (y1 + y2) / 2
                         w = x2 - x1
                         h = y2 - y1
-                    else:
-                        xc = ann["x"]
-                        yc = ann["y"]
-                        w = ann["width"]
-                        h = ann["height"]
-                    lines.append(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
-                elif ann.get("type") in ("RotatedBox", "rotated_box"):
+                        lines.append(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
+
+                elif ann_type in ("RotatedBox", "rotated_box"):
                     cx, cy = ann["cx"], ann["cy"]
                     w, h = ann["width"], ann["height"]
                     lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
