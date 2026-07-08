@@ -360,6 +360,10 @@
           </el-row>
         </template>
       </el-form>
+      <div v-if="dialogVisible.type === 'create'" class="docker-preview">
+        <el-divider>Docker 命令预览</el-divider>
+        <pre class="docker-cmd">{{ dockerCmdPreview || '请选择框架和参数' }}</pre>
+      </div>
       <template #footer>
         <el-button @click="handleCloseDialog">取消</el-button>
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">
@@ -371,7 +375,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
@@ -511,6 +515,15 @@ const defaultHpPaddle = () => ({
 });
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
+
+const dockerCmdPreview = computed(() => {
+  if (formData.framework === "ultralytics") {
+    return `docker run --gpus all \\\n  -v /host/data:/data \\\n  -v /host/output:/output \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
+  } else if (formData.framework === "paddlex") {
+    return `docker run --gpus all \\\n  -v /host/data:/data \\\n  -v /host/output:/output \\\n  paddlecloud/paddlex:3.0 \\\n  paddlex \\\n    --model ${hpForm.model} \\\n    --data /data \\\n    --epochs ${hpForm.epochs} \\\n    --batch ${hpForm.batch} \\\n    --lr ${hpForm.lr} \\\n    --output /output`;
+  }
+  return "";
+});
 
 const initialFormData = {
   id: undefined as number | undefined,
@@ -690,3 +703,12 @@ function stopPoll() {
 // onMounted(() => startPoll());
 // onBeforeUnmount(() => stopPoll());
 </script>
+
+<style scoped>
+.docker-preview { padding: 0 20px; }
+.docker-cmd {
+  background: #1e1e1e; color: #d4d4d4; padding: 12px 16px; border-radius: 6px;
+  font-size: 12px; line-height: 1.6; font-family: "Cascadia Code","Fira Code",monospace;
+  white-space: pre-wrap; overflow-x: auto; margin: 0;
+}
+</style>
