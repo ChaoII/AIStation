@@ -120,7 +120,7 @@
             >
               <template #default="scope">
                 <el-tag :type="scope.row.status ? 'success' : 'danger'" size="small">
-                  {{ scope.row.status ? "启用" : "停用" }}
+                  {{ scope.row.status === "0" || scope.row.status === true ? "启用" : "停用" }}
                 </el-tag>
               </template>
             </el-table-column>
