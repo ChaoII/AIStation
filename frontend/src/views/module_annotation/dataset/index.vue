@@ -278,14 +278,16 @@
     </el-dialog>
 
     <!-- Export Dialog -->
-    <el-dialog v-model="exportDialogVisible" title="导出数据集" width="450px">
-      <el-form label-width="100px">
+    <el-dialog v-model="exportDialogVisible" title="导出数据集" width="500px">
+      <el-form label-width="120px">
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="导出格式" required>
-          <el-select v-model="exportFormat" style="width:100%">
-            <el-option value="ultralytics" label="YOLO（图片 + .txt 标注）" />
-            <el-option value="x-anylabeling" label="x-anylabeling（图片 + .json 标注）" />
-          </el-select>
+          <el-radio-group v-model="exportFormat">
+            <el-radio v-for="opt in exportFormatOptions" :key="opt.value" :value="opt.value" style="margin-bottom:6px">
+              {{ opt.label }}
+            </el-radio>
+          </el-radio-group>
+          <div v-if="!exportFormatOptions.length" style="font-size:12px;color:#909399;margin-top:4px">该数据集暂无关联的标注任务，仅支持 x-anylabeling 格式</div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -598,13 +600,36 @@ async function handleImportSubmit() {
 const exportDialogVisible = ref(false);
 const exportDatasetId = ref<number | null>(null);
 const exportDatasetName = ref("");
-const exportFormat = ref("ultralytics");
+const exportFormat = ref("x-anylabeling");
+const exportAnnotationTaskId = ref<number | undefined>(undefined);
 const exporting = ref(false);
+const exportFormatOptions = ref<{ value: string; label: string; taskId?: number }[]>([]);
+
+const FORMAT_LABELS: Record<string, string> = {
+  detection: "YOLO HBB（水平矩形框）",
+  rotated_detection: "YOLO OBB（旋转矩形框）",
+  segmentation: "YOLO Seg（分割）",
+  keypoint: "YOLO Pose（关键点）",
+  classification: "YOLO CLS（分类）",
+};
 
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
-  exportFormat.value = "ultralytics";
+  exportFormat.value = "x-anylabeling";
+  exportAnnotationTaskId.value = undefined;
+  // Build format options from associated tasks
+  const opts: { value: string; label: string; taskId?: number }[] = [];
+  const seen = new Set<string>();
+  for (const t of row.tasks || []) {
+    const type = t.task_type;
+    if (!seen.has(type)) {
+      seen.add(type);
+      opts.push({ value: `yolo-${type}`, label: FORMAT_LABELS[type] || `YOLO ${type}`, taskId: t.id });
+    }
+  }
+  opts.push({ value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）" });
+  exportFormatOptions.value = opts;
   exportDialogVisible.value = true;
 }
 
@@ -613,9 +638,12 @@ async function handleExportSubmit() {
   exporting.value = true;
   try {
     const { TrainAPI } = await import("@/api/module_train");
+    // Find annotation_task_id from format option
+    const opt = exportFormatOptions.value.find(o => o.value === exportFormat.value);
     const r = await TrainAPI.exportDataset({
       dataset_id: exportDatasetId.value,
       format: exportFormat.value,
+      annotation_task_id: opt?.taskId,
     });
     const url = r.data?.data?.download_url;
     if (url) {

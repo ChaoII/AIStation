@@ -33,7 +33,9 @@ async def export_dataset(dataset_id: int, task_id: int, framework: str, output_d
             if ann_task:
                 task_type = ann_task.task_type
 
-    if framework == "ultralytics":
+    if framework == "ultralytics" or framework.startswith("yolo-"):
+        if framework.startswith("yolo-"):
+            task_type = framework.replace("yolo-", "")
         await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
