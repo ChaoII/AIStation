@@ -482,9 +482,6 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
   height: auto !important;
   overflow: visible !important;
 }
-</style>
-
-<style scoped lang="scss">
 
 .detail-header {
   display: flex; align-items: center; gap: 8px;
@@ -511,7 +508,7 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .metric-item {
   background: #fff; border: 1px solid #ebeef5; border-radius: 8px;
-  padding: 16px 12px; text-align: center; transition: box-shadow .2s;
+  padding: 16px 12px; text-align: center;
   &:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 }
 .metric-val { display: block; font-size: 18px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #303133; }
@@ -522,7 +519,6 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .metric-purple { color: #9b59b6; }
 
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.chart-card { }
 .chart-empty { height: 280px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 14px; }
 
 .log-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
