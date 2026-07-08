@@ -670,14 +670,20 @@ async function handleExportSubmit() {
     });
     const url = r.data?.data?.download_url;
     if (url) {
-      const w = window.open(url, "_blank");
-      if (!w) {
-        // Popup blocked — offer direct navigation
-        ElMessage.success("导出成功");
-        ElMessage.info({ message: "浏览器可能拦截了下载窗口，请允许弹出窗口或手动复制链接下载", duration: 6000 });
-      } else {
-        ElMessage.success("导出成功，正在下载...");
-      }
+      // Download via blob to bypass popup blockers and handle CORS
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`下载失败 (${resp.status})`);
+      const blob = await resp.blob();
+      const filename = `dataset_${exportDatasetId.value}_${exportFormat.value}.zip`;
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objUrl);
+      ElMessage.success("导出成功");
     } else {
       ElMessage.warning("导出完成但未获取到下载链接，请查看后端日志");
     }
