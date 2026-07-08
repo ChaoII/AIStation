@@ -267,7 +267,7 @@
     </el-dialog>
 
     <!-- Export Dialog -->
-    <el-dialog v-model="exportDialogVisible" title="导出数据集" width="500px">
+    <el-dialog v-model="exportDialogVisible" title="导出数据集" width="500px" :close-on-click-modal="!exporting" :close-on-press-escape="!exporting" :show-close="!exporting">
       <el-form label-width="120px">
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="标注任务" required>
@@ -289,8 +289,8 @@
         </el-alert>
       </el-form>
       <template #footer>
-        <el-button @click="exportDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="exporting" @click="handleExportSubmit">导出并下载</el-button>
+        <el-button @click="exportDialogVisible = false" :disabled="exporting">取消</el-button>
+        <el-button type="warning" :loading="exporting" @click="handleExportSubmit">{{ exporting ? "导出中..." : "导出并下载" }}</el-button>
       </template>
     </el-dialog>
   </div>

@@ -48,11 +48,12 @@ export const TrainAPI = {
     return request<ApiResponse>({ url: `${API_PATH}/eval/delete`, method: "delete", data: ids });
   },
 
-  exportDataset(data: { dataset_id: number; annotation_task_id?: number; format: string }) {
+  exportDataset(data: { dataset_id: number; annotation_task_id?: number; format: string; ocr_rec?: boolean }) {
     return request<ApiResponse<{ download_url: string; format: string; dataset_id: number }>>({
       url: `${API_PATH}/dataset/export`,
       method: "post",
       data,
+      timeout: 300000,
     });
   },
 
