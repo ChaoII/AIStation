@@ -188,7 +188,7 @@ class TrainService:
             shutil.rmtree(export_dir)
         os.makedirs(export_dir, exist_ok=True)
 
-        await run_export(data.dataset_id, data.annotation_task_id or 0, data.format, export_dir)
+        await run_export(data.dataset_id, data.annotation_task_id or 0, data.format, export_dir, annotation_task_id=data.annotation_task_id)
 
         # Zip the export
         zip_path = export_dir.rstrip("/") + ".zip"

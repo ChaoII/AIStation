@@ -7,9 +7,9 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 
-async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str) -> str:
+async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None) -> str:
     """Export dataset and return the path to dataset.yaml for the YOLO command."""
-    data_dir = output_dir  # /data mount point in container
+    data_dir = output_dir
     img_dir = os.path.join(data_dir, "images")
     label_dir = os.path.join(data_dir, "labels")
     os.makedirs(img_dir, exist_ok=True)
@@ -25,12 +25,12 @@ async def export_dataset(dataset_id: int, task_id: int, framework: str, output_d
         return
 
     if framework == "ultralytics":
-        await _export_yolo(dataset_id, task_id, images, output_dir)
+        await _export_yolo(dataset_id, task_id, images, output_dir, annotation_task_id)
     else:
         _export_paddlex(images, output_dir)
 
 
-async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str) -> None:
+async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
     img_dir = os.path.join(output_dir, "images")
     label_dir = os.path.join(output_dir, "labels")
     os.makedirs(img_dir, exist_ok=True)
@@ -54,12 +54,11 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
                     log.warning(f"skip image {img.filename}: {e}")
                     continue
 
-            rec = await db.execute(
-                select(AnnotationRecordModel)
-                .where(AnnotationRecordModel.image_id == img.id)
-                .order_by(desc(AnnotationRecordModel.version))
-                .limit(1)
-            )
+            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+            if annotation_task_id:
+                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+            rec = await db.execute(query)
             record = rec.scalar_one_or_none()
             anns = record.annotation_data if record and record.annotation_data else []
 
