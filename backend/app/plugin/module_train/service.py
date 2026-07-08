@@ -225,4 +225,16 @@ class TrainService:
         download_url = s3_client.presigned_url(rustfs_key)
         shutil.rmtree(os.path.dirname(export_dir), ignore_errors=True)
 
+        # Schedule cleanup after presigned URL expires
+        import asyncio
+        from app.config.setting import settings
+        expiry_secs = settings.RUSTFS_PRESIGNED_URL_EXPIRY
+        async def _delayed_cleanup():
+            await asyncio.sleep(expiry_secs + 60)
+            try:
+                s3_client.delete_object(rustfs_key)
+            except Exception:
+                pass
+        asyncio.create_task(_delayed_cleanup())
+
         return {"download_url": download_url, "format": data.format, "dataset_id": data.dataset_id}
