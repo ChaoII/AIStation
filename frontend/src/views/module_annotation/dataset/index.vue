@@ -619,6 +619,10 @@ const exportFormatOptions = computed(() => {
     { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）", disabled: !taskTypes.has("rotated_detection") },
     { value: "yolo-segmentation", label: "YOLO Seg（分割）", disabled: !taskTypes.has("segmentation") },
     { value: "yolo-keypoint", label: "YOLO Pose（关键点）", disabled: !taskTypes.has("keypoint") },
+    { value: "yolo-cls", label: "YOLO CLS（单标签分类）", disabled: !taskTypes.has("classification") },
+    { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）", disabled: !taskTypes.has("classification") },
+    { value: "paddle-ocr-det", label: "PaddleOCR 仅检测", disabled: !taskTypes.has("ocr") },
+    { value: "paddle-ocr-det-rec", label: "PaddleOCR 检测+识别", disabled: !taskTypes.has("ocr") },
     { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）", disabled: false },
   ];
 });
