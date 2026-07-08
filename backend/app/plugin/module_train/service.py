@@ -208,13 +208,19 @@ class TrainService:
 
         await run_export(data.dataset_id, data.annotation_task_id or 0, data.format, export_dir, annotation_task_id=data.annotation_task_id, ocr_rec=data.ocr_rec, train_ratio=data.train_ratio)
 
-        # Zip the export
-        zip_path = export_dir.rstrip("/") + ".zip"
+        # Zip with top-level directory matching zip name
+        zip_name = f"dataset_{data.dataset_id}_{data.format}"
+        zip_dir = os.path.join(os.path.dirname(export_dir), zip_name)
+        if os.path.exists(zip_dir):
+            shutil.rmtree(zip_dir)
+        shutil.move(export_dir, zip_dir)
+        zip_path = zip_dir + ".zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(export_dir):
+            for root, _, files in os.walk(zip_dir):
                 for fn in files:
                     fp = os.path.join(root, fn)
-                    zf.write(fp, os.path.relpath(fp, export_dir))
+                    zf.write(fp, os.path.relpath(fp, os.path.dirname(zip_dir)))
+        shutil.rmtree(zip_dir, ignore_errors=True)
 
         # Upload to RustFS
         rustfs_key = f"train/exports/dataset_{data.dataset_id}_{data.format}_{auth.user.id}.zip"

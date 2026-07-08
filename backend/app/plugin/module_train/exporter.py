@@ -119,7 +119,6 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
             log.info(f"yolo {split_name}: {saved} images, {len(classes)} classes")
 
     # Generate dataset.yaml
-    base_name = os.path.basename(output_dir.rstrip("/"))
     sorted_classes = sorted(classes)
     names_dict = {}
     for cid in sorted_classes:
@@ -127,84 +126,12 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
 
     yaml_path = os.path.join(output_dir, "dataset.yaml")
     with open(yaml_path, "w") as f:
-        f.write(f"path: ./{base_name}\n")
+        f.write("path: .\n")
         f.write("train: images/train\n")
         f.write("val: images/val\n")
         f.write(f"nc: {len(sorted_classes)}\n")
         f.write(f"names: {json.dumps(names_dict, ensure_ascii=False)}\n")
     img_dir = os.path.join(output_dir, "images")
-    label_dir = os.path.join(output_dir, "labels")
-    os.makedirs(img_dir, exist_ok=True)
-    os.makedirs(label_dir, exist_ok=True)
-    classes = set()
-    downloaded = 0
-
-    from app.utils.s3_client import s3_client
-
-    async with async_db_session() as db:
-        for img in images:
-            # Download image from RustFS
-            img_path = os.path.join(img_dir, img.filename)
-            if not os.path.exists(img_path):
-                try:
-                    data = s3_client.download_fileobj(img.object_key)
-                    with open(img_path, "wb") as f:
-                        f.write(data.read())
-                    downloaded += 1
-                except Exception as e:
-                    log.warning(f"skip image {img.filename}: {e}")
-                    continue
-
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-
-            label_path = os.path.join(label_dir, img.filename.rsplit(".", 1)[0] + ".txt")
-            lines = []
-            for ann in anns:
-                cls_id = ann.get("class_id", 0)
-                classes.add(cls_id)
-                ann_type = ann.get("type", "")
-
-                if ann_type in ("AxisAlignedBox", "box"):
-                    if "x1" in ann:
-                        x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
-                    else:
-                        xc_a, yc_a, w_a, h_a = ann["x"], ann["y"], ann["width"], ann["height"]
-                        x1, y1, x2, y2 = xc_a - w_a/2, yc_a - h_a/2, xc_a + w_a/2, yc_a + h_a/2
-
-                    if task_type == "rotated_detection":
-                        lines.append(f"{cls_id} {x1:.6f} {y1:.6f} {x2:.6f} {y1:.6f} {x2:.6f} {y2:.6f} {x1:.6f} {y2:.6f}")
-                    else:
-                        xc = (x1 + x2) / 2
-                        yc = (y1 + y2) / 2
-                        w = x2 - x1
-                        h = y2 - y1
-                        lines.append(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}")
-
-                elif ann_type in ("RotatedBox", "rotated_box"):
-                    cx, cy = ann["cx"], ann["cy"]
-                    w, h = ann["width"], ann["height"]
-                    lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
-            if lines:
-                with open(label_path, "w") as f:
-                    f.write("\n".join(lines))
-
-    log.info(f"exported {downloaded} images, {len(classes)} classes to {output_dir}")
-
-    yaml_path = os.path.join(output_dir, "dataset.yaml")
-    with open(yaml_path, "w") as f:
-        f.write("path: /data\n")
-        f.write("train: .\n")
-        f.write("val: .\n")
-        f.write(f"nc: {len(classes)}\n")
-        f.write(f"names: {json.dumps(sorted(classes))}\n")
-
-
 def _export_paddlex(images: list, output_dir: str) -> None:
     img_dir = os.path.join(output_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
