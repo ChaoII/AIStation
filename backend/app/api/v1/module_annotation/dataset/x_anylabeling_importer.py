@@ -180,6 +180,14 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
             ds.image_count = (ds.image_count or 0) + imported_count
             ds.annotated_count = (ds.annotated_count or 0) + imported_count
 
+    # Update task progress after transaction commits
+    if task_id:
+        from app.api.v1.module_annotation.task.service import AnnotationTaskService
+        try:
+            await AnnotationTaskService.update_progress(task_id)
+        except Exception as e:
+            log.warning(f"update_progress failed: {e}")
+
     return {
         "imported": imported_count,
         "total_images": len(image_files),
