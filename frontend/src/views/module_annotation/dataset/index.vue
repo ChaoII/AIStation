@@ -287,7 +287,6 @@
               {{ opt.label }}
             </el-radio>
           </el-radio-group>
-          <div v-if="!exportFormatOptions.length" style="font-size:12px;color:#909399;margin-top:4px">该数据集暂无关联的标注任务，仅支持 x-anylabeling 格式</div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -600,36 +599,22 @@ async function handleImportSubmit() {
 const exportDialogVisible = ref(false);
 const exportDatasetId = ref<number | null>(null);
 const exportDatasetName = ref("");
-const exportFormat = ref("x-anylabeling");
-const exportAnnotationTaskId = ref<number | undefined>(undefined);
+const exportFormat = ref("yolo-detection");
 const exporting = ref(false);
-const exportFormatOptions = ref<{ value: string; label: string; taskId?: number }[]>([]);
-
-const FORMAT_LABELS: Record<string, string> = {
-  detection: "YOLO HBB（水平矩形框）",
-  rotated_detection: "YOLO OBB（旋转矩形框）",
-  segmentation: "YOLO Seg（分割）",
-  keypoint: "YOLO Pose（关键点）",
-  classification: "YOLO CLS（分类）",
-};
+const exportRowTasks = ref<any[]>([]);
+const exportFormatOptions = ref<{ value: string; label: string }[]>([
+  { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
+  { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）" },
+  { value: "yolo-segmentation", label: "YOLO Seg（分割）" },
+  { value: "yolo-keypoint", label: "YOLO Pose（关键点）" },
+  { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）" },
+]);
 
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
-  exportFormat.value = "x-anylabeling";
-  exportAnnotationTaskId.value = undefined;
-  // Build format options from associated tasks
-  const opts: { value: string; label: string; taskId?: number }[] = [];
-  const seen = new Set<string>();
-  for (const t of row.tasks || []) {
-    const type = t.task_type;
-    if (!seen.has(type)) {
-      seen.add(type);
-      opts.push({ value: `yolo-${type}`, label: FORMAT_LABELS[type] || `YOLO ${type}`, taskId: t.id });
-    }
-  }
-  opts.push({ value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）" });
-  exportFormatOptions.value = opts;
+  exportFormat.value = "yolo-detection";
+  exportRowTasks.value = row.tasks || [];
   exportDialogVisible.value = true;
 }
 
@@ -638,12 +623,12 @@ async function handleExportSubmit() {
   exporting.value = true;
   try {
     const { TrainAPI } = await import("@/api/module_train");
-    // Find annotation_task_id from format option
-    const opt = exportFormatOptions.value.find(o => o.value === exportFormat.value);
+    const formatTaskType = exportFormat.value.startsWith("yolo-") ? exportFormat.value.replace("yolo-", "") : null;
+    const matchingTask = exportRowTasks.value.find((t: any) => t.task_type === formatTaskType);
     const r = await TrainAPI.exportDataset({
       dataset_id: exportDatasetId.value,
       format: exportFormat.value,
-      annotation_task_id: opt?.taskId,
+      annotation_task_id: matchingTask?.id,
     });
     const url = r.data?.data?.download_url;
     if (url) {
