@@ -48,6 +48,11 @@ async def get_dataset_list(
                         prog = await TaskService._calc_progress(db, t.id, t.dataset_id)
                         t.progress = prog["progress"]
                         t.status = prog["status"]
+                        # Cache to DB
+                        try:
+                            await TaskService.update_progress(t.id)
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                     item["tasks"].append({

@@ -270,20 +270,19 @@
     <el-dialog v-model="exportDialogVisible" title="导出数据集" width="500px">
       <el-form label-width="120px">
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
+        <el-form-item label="标注任务" required>
+          <el-select v-model="exportTaskId" placeholder="请选择标注任务" filterable style="width:100%" @change="onExportTaskChange">
+            <el-option v-for="t in exportRowTasks" :key="t.id" :value="t.id" :label="`${t.name}（${taskTypeLabel(t.task_type)}）`" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="导出格式" required>
           <el-select v-model="exportFormat" style="width:100%">
-            <el-option v-for="opt in exportFormatOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
+            <el-option v-for="opt in filteredExportFormats" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
           <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px">
             <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
             <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
           </div>
-        </el-form-item>
-        <el-form-item label="标注任务">
-          <el-select v-model="exportTaskId" placeholder="不选则导出全部标注" clearable filterable style="width:100%">
-            <el-option v-for="t in exportRowTasks" :key="t.id" :value="t.id" :label="t.name" />
-          </el-select>
-          <div style="font-size:11px;color:#909399;margin-top:4px">仅导出该任务的标注数据，不选则导出数据集下所有标注</div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -318,6 +317,9 @@ function taskTagType(t: string) {
 }
 function taskTagColor(t: string) {
   return ({ detection: "#409eff", rotated_detection: "#e6a23c", segmentation: "#67c23a", keypoint: "#f56c6c", ocr: "#909399", classification: "#b37feb" } as any)[t] || "#909399";
+}
+function taskTypeLabel(t: string) {
+  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t;
 }
 
 defineOptions({
@@ -596,7 +598,18 @@ const exportTaskId = ref<number | undefined>(undefined);
 const ocrExportDet = ref(true);
 const ocrExportRec = ref(true);
 
-const exportFormatOptions = ref([
+const FORMAT_TASK_MAP: Record<string, string[]> = {
+  "yolo-detection": ["detection"],
+  "yolo-rotated_detection": ["rotated_detection"],
+  "yolo-segmentation": ["segmentation"],
+  "yolo-keypoint": ["keypoint"],
+  "yolo-cls": ["classification"],
+  "paddle-mlcls": ["classification"],
+  "paddle-ocr": ["ocr"],
+  "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification"],
+};
+
+const exportFormatOptions = [
   { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
   { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）" },
   { value: "yolo-segmentation", label: "YOLO Seg（分割）" },
@@ -605,21 +618,36 @@ const exportFormatOptions = ref([
   { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）" },
   { value: "paddle-ocr", label: "PaddleOCR" },
   { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
-]);
+];
+
+const filteredExportFormats = computed(() => {
+  const task = exportRowTasks.value.find((t: any) => t.id === exportTaskId.value);
+  if (!task) return exportFormatOptions;
+  return exportFormatOptions.filter(opt => FORMAT_TASK_MAP[opt.value]?.includes(task.task_type));
+});
+
+function onExportTaskChange() {
+  const avail = filteredExportFormats.value;
+  if (avail.length > 0 && !avail.find(o => o.value === exportFormat.value)) {
+    exportFormat.value = avail[0].value;
+  }
+}
 
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
   exportRowTasks.value = row.tasks || [];
-  exportTaskId.value = undefined;
+  exportTaskId.value = exportRowTasks.value.length > 0 ? exportRowTasks.value[0].id : undefined;
   ocrExportDet.value = true;
   ocrExportRec.value = true;
   exportFormat.value = "x-anylabeling";
+  onExportTaskChange();
   exportDialogVisible.value = true;
 }
 
 async function handleExportSubmit() {
   if (!exportDatasetId.value) return;
+  if (!exportTaskId.value) { ElMessage.warning("请选择标注任务"); return; }
   exporting.value = true;
   try {
     const { TrainAPI } = await import("@/api/module_train");

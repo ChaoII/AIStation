@@ -186,11 +186,20 @@ class TrainService:
         # If annotation_task_id is set, check the task is completed
         if data.annotation_task_id:
             from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+            from app.api.v1.module_annotation.task.service import TaskService
             from app.core.database import async_db_session
             async with async_db_session() as db:
                 ann_task = await db.get(AnnotationTaskModel, data.annotation_task_id)
-                if ann_task and ann_task.status != "completed":
-                    raise Exception(f"标注任务「{ann_task.name}」尚未完成（状态: {ann_task.status}），请先完成标注再导出")
+                if not ann_task:
+                    raise Exception("标注任务不存在")
+                # Recalculate actual progress before checking
+                try:
+                    prog = await TaskService._calc_progress(db, ann_task.id, ann_task.dataset_id)
+                except Exception:
+                    prog = {"status": "pending"}
+                status = prog.get("status", "pending")
+                if status != "completed":
+                    raise Exception(f"标注任务「{ann_task.name}」尚未完成，请先完成标注再导出")
 
         export_dir = os.path.join(tempfile.gettempdir(), "dataset_export", str(data.dataset_id), data.format)
         if os.path.exists(export_dir):

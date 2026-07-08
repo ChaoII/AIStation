@@ -20,7 +20,7 @@ class TaskService:
             result = await cls._calc_progress(db, task_id, task.dataset_id)
             if result:
                 task.progress = result["progress"]
-                await db.commit()
+                task.status = result["status"]
 
     @classmethod
     async def get_task_progress(cls, task_id: int, auth) -> dict:

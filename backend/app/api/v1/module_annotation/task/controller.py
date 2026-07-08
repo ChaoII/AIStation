@@ -37,6 +37,11 @@ async def get_task_list(
                 prog = await TaskService._calc_progress(db, item["id"], item["dataset_id"])
                 item["progress"] = prog["progress"]
                 item["status"] = prog["status"]
+                # Cache to DB
+                try:
+                    await TaskService.update_progress(item["id"])
+                except Exception:
+                    pass
                 # Resolve assignee IDs to display names
                 aids = item.get("assignees") or []
                 if aids:
