@@ -89,27 +89,26 @@
               v-if="contentCols.find((col) => col.prop === 'tasks')?.show"
               key="tasks"
               label="关联标注任务"
-              min-width="260"
+              min-width="200"
             >
               <template #default="scope">
-                <div v-if="scope.row.tasks?.length" style="display:flex;flex-direction:column;gap:4px">
+                <div v-if="scope.row.tasks?.length" style="display:flex;flex-wrap:wrap;gap:4px">
                   <div
                     v-for="t in scope.row.tasks" :key="t.id"
-                    style="display:flex;align-items:center;gap:6px;cursor:pointer"
+                    style="position:relative;display:inline-flex;align-items:center;gap:4px;
+                           padding:2px 8px 2px 6px;border-radius:4px;font-size:12px;line-height:1.6;
+                           cursor:pointer;overflow:hidden;
+                           background:var(--el-color-info-light-9);color:var(--el-text-color-primary)"
                     @click="router.push(`/annotation/task?task_id=${t.id}`)"
                   >
-                    <el-tag :type="taskTagType(t.task_type)" size="small" effect="plain" style="flex-shrink:0;cursor:pointer">
-                      {{ t.name }}
-                    </el-tag>
-                    <el-progress
-                      :percentage="t.progress ?? 0"
-                      :stroke-width="8"
-                      :status="t.status === 'completed' ? 'success' : t.status === 'in_progress' ? '' : 'exception'"
-                      style="flex:1;min-width:80px"
-                    />
-                    <span style="font-size:11px;color:#909399;white-space:nowrap;min-width:30px;text-align:right">
-                      {{ t.progress ?? 0 }}%
-                    </span>
+                    <!-- progress fill background -->
+                    <span :style="{position:'absolute',top:0,left:0,bottom:0,width:(t.progress??0)+'%',background:'var(--el-color-success-light-7)',borderRadius:4,transition:'width .3s',pointerEvents:'none'}" />
+                    <!-- task type dot -->
+                    <span :style="{width:6,height:6,borderRadius:'50%',flexShrink:0,position:'relative',background:taskTagColor(t.task_type)}" />
+                    <!-- name -->
+                    <span style="position:relative;font-weight:500;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis">{{ t.name }}</span>
+                    <!-- progress % -->
+                    <span style="position:relative;font-size:10px;color:var(--el-text-color-secondary);min-width:24px;text-align:right">{{ t.progress ?? 0 }}%</span>
                   </div>
                 </div>
                 <span v-else style="color:var(--el-text-color-secondary);font-size:12px">—</span>
@@ -336,6 +335,9 @@ const router = useRouter();
 
 function taskTagType(t: string) {
   return ({ detection: "primary", rotated_detection: "warning", segmentation: "success", keypoint: "danger", ocr: "info", classification: "" } as any)[t] || "";
+}
+function taskTagColor(t: string) {
+  return ({ detection: "#409eff", rotated_detection: "#e6a23c", segmentation: "#67c23a", keypoint: "#f56c6c", ocr: "#909399", classification: "#b37feb" } as any)[t] || "#909399";
 }
 
 defineOptions({
