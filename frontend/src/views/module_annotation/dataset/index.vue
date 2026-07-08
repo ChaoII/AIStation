@@ -626,7 +626,7 @@ const exportFormatOptions = computed(() => {
     { value: "yolo-cls", label: "YOLO CLS（单标签分类）", disabled: !taskTypes.has("classification") },
     { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）", disabled: !taskTypes.has("classification") },
     { value: "paddle-ocr", label: "PaddleOCR", disabled: !taskTypes.has("ocr") },
-    { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）", disabled: false },
+    { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）", disabled: false },
   ];
 });
 
