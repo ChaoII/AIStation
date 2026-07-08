@@ -7,7 +7,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 
-async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None) -> str:
+async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, ocr_rec: bool = True) -> str:
     """Export dataset and return the path to dataset.yaml for the YOLO command."""
     data_dir = output_dir
     img_dir = os.path.join(data_dir, "images")
@@ -42,8 +42,8 @@ async def export_dataset(dataset_id: int, task_id: int, framework: str, output_d
             await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id)
     elif framework == "paddle-mlcls":
         await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id)
-    elif framework.startswith("paddle-ocr"):
-        export_rec = framework == "paddle-ocr-det-rec"
+    elif framework == "paddle-ocr" or framework.startswith("paddle-ocr-"):
+        export_rec = ocr_rec if framework == "paddle-ocr" else (framework == "paddle-ocr-det-rec" or framework == "paddle-ocr-rec")
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, export_rec, annotation_task_id)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
@@ -233,27 +233,23 @@ async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, outp
 
 async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list, output_dir: str, export_rec: bool = True, annotation_task_id: int | None = None) -> None:
     """Export OCR to PaddleOCR format.
-    - det: polygon points per image in det_gt.txt
-    - rec (optional): cropped text region images + rec_gt.txt
+    - det: det/dataset/  detection ground truth (det_gt.txt)
+    - rec: rec/dataset/  cropped text regions (perspective transform) + rec_gt.txt
     """
     from app.utils.s3_client import s3_client
-    from PIL import Image
 
-    img_dir = os.path.join(output_dir, "images")
-    det_dir = os.path.join(output_dir, "det")
-    rec_dir = os.path.join(output_dir, "rec") if export_rec else None
-    os.makedirs(img_dir, exist_ok=True)
+    det_dir = os.path.join(output_dir, "det", "dataset")
+    rec_dir = os.path.join(output_dir, "rec", "dataset") if export_rec else None
     os.makedirs(det_dir, exist_ok=True)
     if rec_dir:
-        os.makedirs(rec_dir, exist_ok=True)
+        os.makedirs(os.path.join(rec_dir, "images"), exist_ok=True)
 
     det_lines = []
     rec_lines = []
-    rec_counter = 0
 
     async with async_db_session() as db:
-        for img in images:
-            img_path = os.path.join(img_dir, img.filename)
+        for img_idx, img in enumerate(images):
+            img_path = os.path.join(output_dir, img.filename)
             try:
                 if not os.path.exists(img_path):
                     data = s3_client.download_fileobj(img.object_key)
@@ -261,6 +257,12 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list, output
                         f.write(data.read())
             except Exception:
                 continue
+
+            # Copy image to det/dataset/
+            det_img_path = os.path.join(det_dir, img.filename)
+            if os.path.exists(img_path) and not os.path.exists(det_img_path):
+                import shutil
+                shutil.copy2(img_path, det_img_path)
 
             query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
             if annotation_task_id:
@@ -273,35 +275,63 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list, output
             polygons = []
             for ann in anns:
                 ann_type = ann.get("type", "")
-                if ann_type in ("ocr", "Ocr", "polygon", "Polygon"):
-                    pts = ann.get("points", [])
-                    if not pts and "x1" in ann:
-                        pts = [[ann["x1"], ann["y1"]], [ann["x2"], ann["y1"]], [ann["x2"], ann["y2"]], [ann["x1"], ann["y2"]]]
-                    if pts:
-                        flat = [[p["x"], p["y"]] if isinstance(p, dict) else p for p in pts]
-                        polygons.append({"points": flat, "text": ann.get("text", "") or ""})
+                if ann_type not in ("ocr", "Ocr", "polygon", "Polygon"):
+                    continue
+                pts = ann.get("points", [])
+                if not pts and "x1" in ann:
+                    pts = [[ann["x1"], ann["y1"]], [ann["x2"], ann["y1"]], [ann["x2"], ann["y2"]], [ann["x1"], ann["y2"]]]
+                if pts:
+                    flat = [[p["x"], p["y"]] if isinstance(p, dict) else p for p in pts]
+                    polygons.append({"points": flat, "text": ann.get("text", "") or ""})
 
             if polygons:
-                det_entry = {"transcription": "", "points": polygons[0]["points"]}
-                det_lines.append(f"{img.filename}\t{json.dumps([det_entry], ensure_ascii=False)}")
+                entries = [{"transcription": p["text"], "points": p["points"]} for p in polygons]
+                det_lines.append(f"{img.filename}\t{json.dumps(entries, ensure_ascii=False)}")
 
             if rec_dir and polygons:
                 try:
-                    pil_img = Image.open(img_path)
-                    for poly in polygons:
+                    import cv2
+                    import numpy as np
+                    pil_img = cv2.imread(img_path)
+                    if pil_img is None:
+                        continue
+                    h, w = pil_img.shape[:2]
+                    for pi, poly in enumerate(polygons):
+                        pts = np.array(poly["points"], dtype=np.float32)
+                        if len(pts) < 4:
+                            continue
+                        # Perspective transform to get a straight text region
+                        rect = cv2.minAreaRect(pts)
+                        box = cv2.boxPoints(rect)
+                        box = np.array(box, dtype=np.float32)
+                        width = int(rect[1][0])
+                        height = int(rect[1][1])
+                        if width < 1 or height < 1:
+                            continue
+                        dst_pts = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
+                        M = cv2.getPerspectiveTransform(box, dst_pts)
+                        warped = cv2.warpPerspective(pil_img, M, (width, height))
+                        rec_name = f"{os.path.splitext(img.filename)[0]}_{pi}.jpg"
+                        cv2.imwrite(os.path.join(rec_dir, "images", rec_name), warped)
+                        rec_lines.append(f"images/{rec_name}\t{poly['text']}")
+                except ImportError:
+                    # Fallback to simple crop if OpenCV not available
+                    for pi, poly in enumerate(polygons):
                         pts = poly["points"]
-                        if len(pts) >= 4:
-                            xs = [p[0] for p in pts]
-                            ys = [p[1] for p in pts]
-                            x1, y1, x2, y2 = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
-                            crop = pil_img.crop((x1, y1, x2, y2))
-                            if crop.size[0] > 0 and crop.size[1] > 0:
-                                rec_name = f"{os.path.splitext(img.filename)[0]}_{rec_counter}.jpg"
-                                crop.save(os.path.join(rec_dir, rec_name))
-                                rec_counter += 1
-                                rec_lines.append(f"rec/{rec_name}\t{poly['text']}")
-                except Exception:
-                    pass
+                        xs = [p[0] for p in pts]
+                        ys = [p[1] for p in pts]
+                        x1, y1, x2, y2 = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
+                        if x2 - x1 < 1 or y2 - y1 < 1:
+                            continue
+                        rec_name = f"{os.path.splitext(img.filename)[0]}_{pi}.jpg"
+                        try:
+                            from PIL import Image
+                            pil = Image.open(img_path)
+                            crop = pil.crop((x1, y1, x2, y2))
+                            crop.save(os.path.join(rec_dir, "images", rec_name))
+                        except Exception:
+                            continue
+                        rec_lines.append(f"images/{rec_name}\t{poly['text']}")
 
     with open(os.path.join(det_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(det_lines))
@@ -310,7 +340,7 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list, output
         with open(os.path.join(rec_dir, "rec_gt.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(rec_lines))
 
-    log.info(f"paddle-ocr: exported {len(det_lines)} det, {len(rec_lines)} rec to {output_dir}")
+    log.info(f"paddle-ocr: {len(det_lines)} det, {len(rec_lines)} rec → {output_dir}")
 
 
 async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:

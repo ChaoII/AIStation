@@ -110,3 +110,4 @@ class DatasetExportSchema(BaseModel):
     dataset_id: int
     annotation_task_id: int | None = None
     format: str = "ultralytics"
+    ocr_rec: bool = True

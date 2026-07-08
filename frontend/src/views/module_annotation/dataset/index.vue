@@ -295,6 +295,10 @@
               </el-tooltip>
             </el-radio>
           </el-radio-group>
+          <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px;padding-left:24px">
+            <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
+            <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
+          </div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -611,6 +615,8 @@ const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");
 const exporting = ref(false);
 const exportRowTasks = ref<any[]>([]);
+const ocrExportDet = ref(true);
+const ocrExportRec = ref(true);
 
 const exportFormatOptions = computed(() => {
   const taskTypes = new Set(exportRowTasks.value.map((t: any) => t.task_type));
@@ -621,8 +627,7 @@ const exportFormatOptions = computed(() => {
     { value: "yolo-keypoint", label: "YOLO Pose（关键点）", disabled: !taskTypes.has("keypoint") },
     { value: "yolo-cls", label: "YOLO CLS（单标签分类）", disabled: !taskTypes.has("classification") },
     { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）", disabled: !taskTypes.has("classification") },
-    { value: "paddle-ocr-det", label: "PaddleOCR 仅检测", disabled: !taskTypes.has("ocr") },
-    { value: "paddle-ocr-det-rec", label: "PaddleOCR 检测+识别", disabled: !taskTypes.has("ocr") },
+    { value: "paddle-ocr", label: "PaddleOCR", disabled: !taskTypes.has("ocr") },
     { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）", disabled: false },
   ];
 });
@@ -632,6 +637,8 @@ function handleOpenExport(row: any) {
   exportDatasetName.value = row.name;
   exportFormat.value = "yolo-detection";
   exportRowTasks.value = row.tasks || [];
+  ocrExportDet.value = true;
+  ocrExportRec.value = true;
   exportDialogVisible.value = true;
 }
 
@@ -646,6 +653,7 @@ async function handleExportSubmit() {
       dataset_id: exportDatasetId.value,
       format: exportFormat.value,
       annotation_task_id: matchingTask?.id,
+      ocr_rec: exportFormat.value === "paddle-ocr" ? ocrExportRec.value : undefined,
     });
     const url = r.data?.data?.download_url;
     if (url) {
