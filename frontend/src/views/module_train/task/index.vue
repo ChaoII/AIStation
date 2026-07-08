@@ -221,16 +221,22 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="选择数据集" prop="dataset_id">
-          <el-select
-            v-model="formData.dataset_id"
-            filterable
-            style="width: 100%"
-            placeholder="请选择标注数据集"
-          >
-            <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
-          </el-select>
-        </el-form-item>
+          <el-form-item label="选择数据集" prop="dataset_id">
+            <el-select
+              v-model="formData.dataset_id"
+              filterable
+              style="width: 100%"
+              placeholder="请选择标注数据集"
+              @change="onDatasetChange"
+            >
+              <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="标注任务" prop="annotation_task_id">
+            <el-select v-model="formData.annotation_task_id" filterable style="width:100%" placeholder="选择标注任务（可选）" @change="onAnnoTaskChange">
+              <el-option v-for="t in annoTasks" :key="t.id" :label="`${t.name}（${annoTaskTypeLabel(t.task_type)}）`" :value="t.id" />
+            </el-select>
+          </el-form-item>
         <el-divider>超参数配置</el-divider>
 
         <!-- Ultralytics hyperparams -->
@@ -239,11 +245,9 @@
             <el-col :span="12">
               <el-form-item label="模型" prop="hpModel">
                 <el-select v-model="hpForm.model" style="width: 100%">
-                  <el-option label="YOLO11n" value="yolo11n.pt" />
-                  <el-option label="YOLO11s" value="yolo11s.pt" />
-                  <el-option label="YOLO11m" value="yolo11m.pt" />
-                  <el-option label="YOLO11l" value="yolo11l.pt" />
-                  <el-option label="YOLO11x" value="yolo11x.pt" />
+                  <el-option-group v-for="g in [...new Set(modelOptions.map(o => o.group))]" :key="g" :label="g">
+                    <el-option v-for="opt in modelOptions.filter(o => o.group === g)" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  </el-option-group>
                 </el-select>
               </el-form-item>
             </el-col>
@@ -398,10 +402,64 @@ const submitLoading = ref(false);
 const dataFormRef = ref();
 
 const datasets = ref<any[]>([]);
+const annoTasks = ref<any[]>([]);
+
+const MODEL_FAMILIES = [
+  { label: "YOLOv8", prefix: "yolov8", sizes: ["n", "s", "m", "l", "x"] },
+  { label: "YOLO11", prefix: "yolo11", sizes: ["n", "s", "m", "l", "x"] },
+  { label: "YOLO26", prefix: "yolo26", sizes: ["n", "s", "m", "l", "x"] },
+];
+
+function annoTaskTypeLabel(t: string) {
+  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t;
+}
+
+const modelOptions = computed(() => {
+  const activeTask = annoTasks.value.find((t: any) => t.id === formData.annotation_task_id);
+  const taskType = activeTask?.task_type || "detection";
+  const isObb = taskType === "rotated_detection";
+  const opts: { label: string; value: string; group: string }[] = [];
+  for (const fam of MODEL_FAMILIES) {
+    const gLabel = fam.label;
+    for (const sz of fam.sizes) {
+      const base = `${fam.prefix}${sz}`;
+      opts.push({ label: `${fam.label}${sz.toUpperCase()}`, value: `${base}.pt`, group: gLabel });
+      if (isObb) {
+        opts.push({ label: `${fam.label}${sz.toUpperCase()}-OBB`, value: `${base}-obb.pt`, group: `${gLabel} OBB` });
+      }
+    }
+  }
+  return opts;
+});
+
+function groupLabel(label: string) {
+  return label;
+}
+
 (async () => {
   const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
   datasets.value = dsRes.data?.data?.items || [];
 })();
+
+async function onDatasetChange(datasetId: number) {
+  formData.annotation_task_id = undefined;
+  annoTasks.value = [];
+  if (!datasetId) return;
+  try {
+    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
+    const ds = r.data?.data?.items?.find((d: any) => d.id === datasetId);
+    annoTasks.value = ds?.tasks || [];
+  } catch {}
+}
+
+function onAnnoTaskChange(taskId: number) {
+  const task = annoTasks.value.find((t: any) => t.id === taskId);
+  if (task?.task_type === "rotated_detection") {
+    // Default to first OBB model
+    const obbOpt = modelOptions.value.find(o => o.value.includes("-obb"));
+    if (obbOpt) hpForm.model = obbOpt.value;
+  }
+}
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_train:task",
@@ -491,6 +549,7 @@ const formData = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
   dataset_id: undefined as number | undefined,
+  annotation_task_id: undefined as number | undefined,
   framework: "ultralytics" as string,
 });
 
@@ -641,6 +700,7 @@ async function handleSubmit() {
           name: formData.name,
           dataset_id: formData.dataset_id,
           framework: formData.framework,
+          annotation_task_id: formData.annotation_task_id,
           hyperparams: buildHyperparams(),
         });
         dialogVisible.visible = false;

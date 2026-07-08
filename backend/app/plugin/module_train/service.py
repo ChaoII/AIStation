@@ -181,7 +181,7 @@ class TrainService:
     @classmethod
     async def export_dataset(cls, data, auth) -> dict:
         import os, tempfile, shutil, zipfile
-        from .exporter import export_dataset as run_export
+        from .exporter import export_dataset_for_download as run_export
 
         # If annotation_task_id is set, check the task is completed
         if data.annotation_task_id:

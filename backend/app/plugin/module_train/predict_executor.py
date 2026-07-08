@@ -60,8 +60,8 @@ async def _execute_prediction(predict_id: int):
         from app.utils.s3_client import s3_client
         if pred.source_type == "dataset":
             await broadcast_predict_log(predict_id, "[predict] exporting dataset images...")
-            from .exporter import export_dataset
-            await export_dataset(pred.source_dataset_id, predict_id, "ultralytics", source_dir)
+            from .exporter import prepare_training_data_for_task
+            await prepare_training_data_for_task(pred.source_dataset_id, predict_id, "ultralytics", source_dir)
             # Remove label files and yaml, keep only images
             for root, _, files in os.walk(source_dir):
                 for f in files:

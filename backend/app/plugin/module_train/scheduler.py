@@ -55,11 +55,15 @@ async def _build_export_dir(task_id: int) -> str:
     return export_dir
 
 
-def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
+def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection") -> list[str]:
     epochs = hp.get("epochs", 100)
     batch = hp.get("batch", 16)
     lr = hp.get("lr", 0.01)
     model_name = hp.get("model", "yolo11n.pt")
+    # Auto-select OBB model for rotated_detection tasks
+    if task_type == "rotated_detection" and "-obb" not in model_name:
+        base = model_name.replace(".pt", "")
+        model_name = f"{base}-obb.pt"
     return ["yolo", "train", f"model={model_name}", "data=/data/dataset.yaml",
             f"epochs={epochs}", f"batch={batch}", f"lr0={lr}", "project=/output", "name=exp"]
 
@@ -89,11 +93,19 @@ async def _execute_training(task_id: int):
         data_dir = os.path.join(export_dir, "data")
         os.makedirs(data_dir, exist_ok=True)
 
-        from .exporter import export_dataset
-        await export_dataset(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id)
+        from .exporter import prepare_training_data_for_task
+        await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id)
 
         if task.framework == TrainFramework.ULTRALYTICS:
-            cmd = _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir)
+            # Determine task_type for model selection (OBB models need -obb suffix)
+            task_type = "detection"
+            if task.annotation_task_id:
+                from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+                async with async_db_session() as db:
+                    ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
+                    if ann_task:
+                        task_type = ann_task.task_type
+            cmd = _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type)
         else:
             cmd = _build_paddlex_cmd(task.hyperparams, data_dir, export_dir)
 

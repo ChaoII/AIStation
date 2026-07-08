@@ -86,9 +86,9 @@ async def _execute_evaluation(eval_id: int):
         os.makedirs(model_dir, exist_ok=True)
 
         # Export evaluation dataset
-        from .exporter import export_dataset
+        from .exporter import prepare_training_data_for_task
         await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
-        await export_dataset(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
+        await prepare_training_data_for_task(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
 
         # Download model file from RustFS
         async with async_db_session() as db:
