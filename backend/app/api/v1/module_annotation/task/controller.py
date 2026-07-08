@@ -115,10 +115,12 @@ async def get_task_detail(
     if result:
         from app.core.database import async_db_session
         async with async_db_session() as db:
-            prog = await TaskService._calc_progress(db, result["id"], result["dataset_id"])
-            result["progress"] = prog["progress"]
-            result["status"] = prog["status"]
+            prog = await TaskService._calc_progress(db, result.id, result.dataset_id)
+            d = {c.name: getattr(result, c.name) for c in result.__table__.columns}
+            d["progress"] = prog["progress"]
+            d["status"] = prog["status"]
             from app.api.v1.module_annotation.dataset.model import DatasetModel
-            ds = await db.get(DatasetModel, result["dataset_id"])
-            result["dataset_name"] = ds.name if ds else f"数据集#{result['dataset_id']}"
-    return SuccessResponse(data=result)
+            ds = await db.get(DatasetModel, result.dataset_id)
+            d["dataset_name"] = ds.name if ds else f"数据集#{result.dataset_id}"
+        return SuccessResponse(data=d)
+    return SuccessResponse(data=None)
