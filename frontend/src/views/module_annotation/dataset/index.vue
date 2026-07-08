@@ -10,9 +10,14 @@
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
         <div class="data-table__toolbar--left">
-          <el-button type="success" icon="plus" @click="handleOpenDialog('create')">新增</el-button>
-          <el-button type="danger" icon="delete" :disabled="removeIds.length === 0" @click="onToolbar('delete')">批量删除</el-button>
-          <el-button type="primary" @click="importDialogVisible = true">X-AnyLabeling 导入</el-button>
+          <CrudToolbarLeft
+            :remove-ids="removeIds"
+            :perm-create="['module_annotation:dataset:create']"
+            :perm-delete="['module_annotation:dataset:delete']"
+            @add="handleOpenDialog('create')"
+            @delete="onToolbar('delete')"
+          />
+          <el-button type="primary" @click="importDialogVisible = true" style="margin-left:4px">X-AnyLabeling 导入</el-button>
         </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -267,20 +272,18 @@
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="导出格式" required>
           <el-select v-model="exportFormat" style="width:100%">
-            <el-option
-              v-for="opt in exportFormatOptions" :key="opt.value"
-              :value="opt.value"
-              :label="opt.label"
-              :disabled="opt.disabled"
-            >
-              <span>{{ opt.label }}</span>
-              <el-tag v-if="opt.disabled" type="warning" size="small" style="margin-left:6px">无匹配任务</el-tag>
-            </el-option>
+            <el-option v-for="opt in exportFormatOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
           <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px">
             <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
             <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
           </div>
+        </el-form-item>
+        <el-form-item label="标注任务">
+          <el-select v-model="exportTaskId" placeholder="不选则导出全部标注" clearable filterable style="width:100%">
+            <el-option v-for="t in exportRowTasks" :key="t.id" :value="t.id" :label="t.name" />
+          </el-select>
+          <div style="font-size:11px;color:#909399;margin-top:4px">仅导出该任务的标注数据，不选则导出数据集下所有标注</div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -299,6 +302,7 @@ import { ref, reactive, computed } from "vue";
 import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
+import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -588,32 +592,29 @@ const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");
 const exporting = ref(false);
 const exportRowTasks = ref<any[]>([]);
+const exportTaskId = ref<number | undefined>(undefined);
 const ocrExportDet = ref(true);
 const ocrExportRec = ref(true);
 
-const exportFormatOptions = computed(() => {
-  const taskTypes = new Set(exportRowTasks.value.map((t: any) => t.task_type));
-  return [
-    { value: "yolo-detection", label: "YOLO HBB（水平矩形框）", disabled: !taskTypes.has("detection") },
-    { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）", disabled: !taskTypes.has("rotated_detection") },
-    { value: "yolo-segmentation", label: "YOLO Seg（分割）", disabled: !taskTypes.has("segmentation") },
-    { value: "yolo-keypoint", label: "YOLO Pose（关键点）", disabled: !taskTypes.has("keypoint") },
-    { value: "yolo-cls", label: "YOLO CLS（单标签分类）", disabled: !taskTypes.has("classification") },
-    { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）", disabled: !taskTypes.has("classification") },
-    { value: "paddle-ocr", label: "PaddleOCR", disabled: !taskTypes.has("ocr") },
-    { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）", disabled: false },
-  ];
-});
+const exportFormatOptions = ref([
+  { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
+  { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）" },
+  { value: "yolo-segmentation", label: "YOLO Seg（分割）" },
+  { value: "yolo-keypoint", label: "YOLO Pose（关键点）" },
+  { value: "yolo-cls", label: "YOLO CLS（单标签分类）" },
+  { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）" },
+  { value: "paddle-ocr", label: "PaddleOCR" },
+  { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
+]);
 
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
   exportRowTasks.value = row.tasks || [];
+  exportTaskId.value = undefined;
   ocrExportDet.value = true;
   ocrExportRec.value = true;
-  // Default to first available option
-  const firstAvail = exportFormatOptions.value.find(o => !o.disabled);
-  exportFormat.value = firstAvail?.value || "x-anylabeling";
+  exportFormat.value = "x-anylabeling";
   exportDialogVisible.value = true;
 }
 
@@ -622,12 +623,10 @@ async function handleExportSubmit() {
   exporting.value = true;
   try {
     const { TrainAPI } = await import("@/api/module_train");
-    const formatTaskType = exportFormat.value.startsWith("yolo-") ? exportFormat.value.replace("yolo-", "") : null;
-    const matchingTask = exportRowTasks.value.find((t: any) => t.task_type === formatTaskType);
     const r = await TrainAPI.exportDataset({
       dataset_id: exportDatasetId.value,
       format: exportFormat.value,
-      annotation_task_id: matchingTask?.id,
+      annotation_task_id: exportTaskId.value,
       ocr_rec: exportFormat.value === "paddle-ocr" ? ocrExportRec.value : undefined,
     });
     const url = r.data?.data?.download_url;
