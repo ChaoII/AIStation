@@ -183,6 +183,15 @@ class TrainService:
         import os, tempfile, shutil, zipfile
         from .exporter import export_dataset as run_export
 
+        # If annotation_task_id is set, check the task is completed
+        if data.annotation_task_id:
+            from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+            from app.core.database import async_db_session
+            async with async_db_session() as db:
+                ann_task = await db.get(AnnotationTaskModel, data.annotation_task_id)
+                if ann_task and ann_task.status != "completed":
+                    raise Exception(f"标注任务「{ann_task.name}」尚未完成（状态: {ann_task.status}），请先完成标注再导出")
+
         export_dir = os.path.join(tempfile.gettempdir(), "dataset_export", str(data.dataset_id), data.format)
         if os.path.exists(export_dir):
             shutil.rmtree(export_dir)

@@ -89,20 +89,28 @@
               v-if="contentCols.find((col) => col.prop === 'tasks')?.show"
               key="tasks"
               label="关联标注任务"
-              min-width="220"
+              min-width="260"
             >
               <template #default="scope">
-                <div v-if="scope.row.tasks?.length" style="display:flex;flex-wrap:wrap;gap:4px">
-                  <el-tag
+                <div v-if="scope.row.tasks?.length" style="display:flex;flex-direction:column;gap:4px">
+                  <div
                     v-for="t in scope.row.tasks" :key="t.id"
-                    :type="taskTagType(t.task_type)"
-                    size="small"
-                    effect="plain"
-                    style="cursor:pointer"
+                    style="display:flex;align-items:center;gap:6px;cursor:pointer"
                     @click="router.push(`/annotation/task?task_id=${t.id}`)"
                   >
-                    {{ t.name }}
-                  </el-tag>
+                    <el-tag :type="taskTagType(t.task_type)" size="small" effect="plain" style="flex-shrink:0;cursor:pointer">
+                      {{ t.name }}
+                    </el-tag>
+                    <el-progress
+                      :percentage="t.progress ?? 0"
+                      :stroke-width="8"
+                      :status="t.status === 'completed' ? 'success' : t.status === 'in_progress' ? '' : 'exception'"
+                      style="flex:1;min-width:80px"
+                    />
+                    <span style="font-size:11px;color:#909399;white-space:nowrap;min-width:30px;text-align:right">
+                      {{ t.progress ?? 0 }}%
+                    </span>
+                  </div>
                 </div>
                 <span v-else style="color:var(--el-text-color-secondary);font-size:12px">—</span>
               </template>

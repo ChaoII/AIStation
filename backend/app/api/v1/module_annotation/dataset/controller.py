@@ -42,7 +42,7 @@ async def get_dataset_list(
                 task_rows = tasks_result.scalars().all()
                 item["task_count"] = len(task_rows)
                 item["tasks"] = [
-                    {"id": t.id, "name": t.name, "task_type": t.task_type, "status": t.status}
+                    {"id": t.id, "name": t.name, "task_type": t.task_type, "status": t.status, "progress": t.progress}
                     for t in task_rows
                 ]
     return SuccessResponse(data=result)

@@ -104,8 +104,12 @@ async def stop_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["mo
 
 @router.post("/dataset/export", summary="导出标注数据集")
 async def export_dataset(data: DatasetExportSchema, auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"]))):
-    result = await TrainService.export_dataset(data, auth)
-    return SuccessResponse(data=result, msg="数据集导出成功")
+    try:
+        result = await TrainService.export_dataset(data, auth)
+        return SuccessResponse(data=result, msg="数据集导出成功")
+    except Exception as e:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg=str(e))
 
 
 @router.get("/eval/list", summary="评估记录列表")
