@@ -36,6 +36,7 @@ async def get_task_list(
             for item in result["items"]:
                 prog = await TaskService._calc_progress(db, item["id"], item["dataset_id"])
                 item["progress"] = prog["progress"]
+                item["status"] = prog["status"]
                 # Resolve assignee IDs to display names
                 aids = item.get("assignees") or []
                 if aids:
@@ -102,4 +103,10 @@ async def get_task_detail(
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
     result = await crud.get(id=id)
+    if result:
+        from app.core.database import async_db_session
+        async with async_db_session() as db:
+            prog = await TaskService._calc_progress(db, result["id"], result["dataset_id"])
+            result["progress"] = prog["progress"]
+            result["status"] = prog["status"]
     return SuccessResponse(data=result)
