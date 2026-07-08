@@ -43,9 +43,9 @@ async def get_dataset_list(
                 item["task_count"] = len(task_rows)
                 item["tasks"] = []
                 for t in task_rows:
-                    from app.api.v1.module_annotation.task.service import AnnotationTaskService
+                    from app.api.v1.module_annotation.task.service import TaskService
                     try:
-                        prog = await AnnotationTaskService._calc_progress(db, t.id, t.dataset_id)
+                        prog = await TaskService._calc_progress(db, t.id, t.dataset_id)
                         t.progress = prog["progress"]
                         t.status = prog["status"]
                     except Exception:

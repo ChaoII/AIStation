@@ -45,6 +45,10 @@ async def get_task_list(
                     )
                     name_map = {u.id: u.name for u in users.scalars()}
                     item["assignees"] = [name_map.get(uid, f"用户{uid}") for uid in aids]
+                # Populate dataset name
+                from app.api.v1.module_annotation.dataset.model import DatasetModel
+                ds = await db.get(DatasetModel, item["dataset_id"])
+                item["dataset_name"] = ds.name if ds else f"数据集#{item['dataset_id']}"
     return SuccessResponse(data=result)
 
 
@@ -109,4 +113,7 @@ async def get_task_detail(
             prog = await TaskService._calc_progress(db, result["id"], result["dataset_id"])
             result["progress"] = prog["progress"]
             result["status"] = prog["status"]
+            from app.api.v1.module_annotation.dataset.model import DatasetModel
+            ds = await db.get(DatasetModel, result["dataset_id"])
+            result["dataset_name"] = ds.name if ds else f"数据集#{result['dataset_id']}"
     return SuccessResponse(data=result)
