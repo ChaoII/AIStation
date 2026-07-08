@@ -287,9 +287,6 @@
               {{ opt.label }}
             </el-radio>
           </el-radio-group>
-          <div v-if="exportWarning" style="font-size:12px;color:#e6a23c;margin-top:6px">
-            ⚠ {{ exportWarning }}
-          </div>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -304,7 +301,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from "vue";
+import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
@@ -605,7 +602,6 @@ const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");
 const exporting = ref(false);
 const exportRowTasks = ref<any[]>([]);
-const exportWarning = ref("");
 
 const exportFormatOptions = ref<{ value: string; label: string }[]>([
   { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
@@ -615,20 +611,11 @@ const exportFormatOptions = ref<{ value: string; label: string }[]>([
   { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）" },
 ]);
 
-function updateExportWarning() {
-  const formatTaskType = exportFormat.value.startsWith("yolo-") ? exportFormat.value.replace("yolo-", "") : null;
-  const hasMatch = !formatTaskType || exportRowTasks.value.some((t: any) => t.task_type === formatTaskType);
-  exportWarning.value = hasMatch ? "" : "该数据集没有此类型的标注任务，将导出全部标注（格式可能不匹配）";
-}
-
-watch(exportFormat, updateExportWarning);
-
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
   exportDatasetName.value = row.name;
   exportFormat.value = "yolo-detection";
   exportRowTasks.value = row.tasks || [];
-  updateExportWarning();
   exportDialogVisible.value = true;
 }
 
