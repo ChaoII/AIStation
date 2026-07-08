@@ -21,7 +21,7 @@ class AnnotationTaskModel(ModelMixin, UserMixin):
     dataset_id: Mapped[int] = mapped_column(ForeignKey("annotation_dataset.id"), comment="数据集ID")
     name: Mapped[str] = mapped_column(String(128), comment="任务名称")
     task_type: Mapped[AnnotationType] = mapped_column(Enum(AnnotationType), comment="标注类型")
-    status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus, create_constraint=False), default=TaskStatus.PENDING, comment="状态")
+    status: Mapped[str] = mapped_column(String(16), default="pending", comment="状态")
     assignees: Mapped[list] = mapped_column(JSONB, default=list, comment="协作者ID列表")
     classes: Mapped[dict] = mapped_column(JSONB, default=dict, comment="类别定义 [{id, name, color, keypoint_names?}]")
     classification_mode: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="分类模式: single/multi")
