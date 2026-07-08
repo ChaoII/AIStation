@@ -10,14 +10,18 @@
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
         <div class="data-table__toolbar--left">
-          <CrudToolbarLeft
-            :remove-ids="removeIds"
-            :perm-create="['module_annotation:dataset:create']"
-            :perm-delete="['module_annotation:dataset:delete']"
-            @add="handleOpenDialog('create')"
-            @delete="onToolbar('delete')"
-          />
-          <el-button size="small" type="primary" @click="importDialogVisible = true">
+          <el-button
+            v-hasPerm="['module_annotation:dataset:create']"
+            type="success" size="small" icon="plus"
+            @click="handleOpenDialog('create')"
+          >新增</el-button>
+          <el-button
+            v-hasPerm="['module_annotation:dataset:delete']"
+            type="danger" size="small" icon="delete"
+            :disabled="removeIds.length === 0"
+            @click="onToolbar('delete')"
+          >批量删除</el-button>
+          <el-button type="primary" size="small" @click="importDialogVisible = true">
             X-AnyLabeling 导入
           </el-button>
         </div>
@@ -306,7 +310,6 @@ import { ref, reactive, computed } from "vue";
 import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
-import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
