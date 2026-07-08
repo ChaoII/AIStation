@@ -282,20 +282,18 @@
       <el-form label-width="120px">
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="导出格式" required>
-          <el-radio-group v-model="exportFormat">
-            <el-radio
+          <el-select v-model="exportFormat" style="width:100%">
+            <el-option
               v-for="opt in exportFormatOptions" :key="opt.value"
               :value="opt.value"
+              :label="opt.label"
               :disabled="opt.disabled"
-              style="margin-bottom:6px"
             >
-              {{ opt.label }}
-              <el-tooltip v-if="opt.disabled" content="该数据集没有此类型的标注任务，将导出全部标注" placement="right">
-                <el-icon style="color:#e6a23c;margin-left:2px;vertical-align:-2px"><WarningFilled /></el-icon>
-              </el-tooltip>
-            </el-radio>
-          </el-radio-group>
-          <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px;padding-left:24px">
+              <span>{{ opt.label }}</span>
+              <el-tag v-if="opt.disabled" type="warning" size="small" style="margin-left:6px">无匹配任务</el-tag>
+            </el-option>
+          </el-select>
+          <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px">
             <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
             <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
           </div>
