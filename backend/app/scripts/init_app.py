@@ -54,10 +54,22 @@ async def _ensure_missing_columns() -> None:
                 except Exception:
                     pass
 
-    # Drop unused columns
+    # Drop unused columns + ensure re-added columns
     try:
         async with async_engine.begin() as conn:
             await conn.execute(sa_text("ALTER TABLE annotation_dataset DROP COLUMN IF EXISTS annotation_type"))
+            # Re-add annotation_task columns (type first, then column)
+            await conn.execute(sa_text("CREATE TYPE IF NOT EXISTS taskstatus AS ENUM ('pending', 'in_progress', 'completed')"))
+    except Exception:
+        pass
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(sa_text("ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS status taskstatus DEFAULT 'pending'"))
+    except Exception:
+        pass
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(sa_text("ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0"))
     except Exception:
         pass
 
