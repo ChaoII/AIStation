@@ -504,11 +504,8 @@ onMounted(async () => {
 onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
 
-<style lang="scss">
-.train-detail-page {
-  display: block; height: auto; overflow: visible; padding: 16px;
-}
-
+<style>
+.train-detail-page { display: block; height: auto; overflow: visible; padding: 16px; }
 .detail-header {
   display: flex; align-items: center; gap: 12px;
   margin-bottom: 16px; padding: 12px 20px;
@@ -517,49 +514,33 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .task-name { font-size: 16px; font-weight: 700; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .01em; }
 .progress-text { font-size: 14px; font-weight: 700; color: #52c41a; margin-left: 4px; background: #f6ffed; padding: 4px 12px; border-radius: 6px; border: 1px solid #b7eb8f; }
 .card-title { font-weight: 600; font-size: 14px; color: #1a1a1a; }
-
 .info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .info-card { height: 100%; border: 1px solid #e8e8e8; border-radius: 8px; }
 .docker-tag { font-family: "Cascadia Code","Fira Code",monospace; font-size: 12px; background: #f5f7fa; padding: 2px 6px; border-radius: 3px; }
-
 .section-card { margin-bottom: 16px; border: 1px solid #e8e8e8; border-radius: 8px; }
 .action-buttons { display: flex; gap: 10px; }
 .progress-eta { margin-top: 8px; font-size: 13px; color: #909399; }
-
 .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .chart-card { border: 1px solid #e8e8e8; border-radius: 8px; }
 .chart-empty { height: 280px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 14px; }
-
 .log-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .log-controls { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #909399; }
 .log-status { display: inline-flex; align-items: center; gap: 4px; color: #909399; }
 .log-status::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #909399; }
 .log-status.connected { color: #52c41a; }
 .log-status.connected::before { background: #52c41a; }
-
 .log-line-count { font-family: "Cascadia Code","Fira Code",monospace; }
 .pulse-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e6a23c; animation: pulse-anim 1.2s ease-in-out infinite; margin-right: 6px; vertical-align: middle; }
 @keyframes pulse-anim { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.3); } }
 .text-muted { color: #c0c4cc; }
 .mono { font-family: "Cascadia Code","Fira Code",monospace; }
-</style>
-<style>
 .log-container {
-  height: 500px !important;
-  min-height: 200px !important;
-  overflow-y: auto !important;
-  background: #1e1e1e !important;
-  border-radius: 8px !important;
-  padding: 16px !important;
+  height: 500px !important; min-height: 200px !important; overflow-y: auto !important;
+  background: #1e1e1e !important; border-radius: 8px !important; padding: 16px !important;
 }
 .log-text {
-  font-family: "Cascadia Code","Fira Code",monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #d4d4d4;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin: 0;
+  font-family: "Cascadia Code","Fira Code",monospace; font-size: 13px; line-height: 1.5;
+  color: #d4d4d4; white-space: pre-wrap; word-break: break-all; margin: 0;
 }
 .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .metric-item {
