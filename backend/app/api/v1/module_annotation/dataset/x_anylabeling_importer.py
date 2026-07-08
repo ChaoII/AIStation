@@ -28,8 +28,9 @@ from sqlalchemy import select, func
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.dataset.model import (
-    DatasetModel, AnnotationImageModel, ImageStatus,
+    DatasetModel, AnnotationImageModel, ImageStatus, AnnotationType,
 )
+from app.api.v1.module_annotation.task.model import AnnotationTaskModel, TaskStatus
 from app.core.database import async_db_session
 from app.core.logger import log
 from app.utils.s3_client import s3_client
@@ -87,7 +88,27 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
     imported_count = 0
     total_annotations = 0
 
+    # Determine annotation type from labels (heuristic: if class_mapping has entries, use detection)
+    task_type = AnnotationType.DETECTION
+
     async with async_db_session.begin() as db:
+        # Create an annotation task for the imported data
+        ds = await db.get(DatasetModel, dataset_id)
+        task_name = f"[导入] {ds.name if ds else 'dataset_' + str(dataset_id)} - x-anylabeling"
+        ann_task = AnnotationTaskModel(
+            dataset_id=dataset_id,
+            name=task_name,
+            task_type=task_type,
+            status=TaskStatus.COMPLETED,
+            classes=[{"id": cid, "name": label} for label, cid in sorted(class_mapping.items(), key=lambda x: x[1])],
+            progress=100,
+            completed_at=now,
+            created_id=user_id,
+        )
+        db.add(ann_task)
+        await db.flush()
+        task_id = ann_task.id
+
         for stem, img_path in image_files.items():
             # Upload image to RustFS
             ext = os.path.splitext(img_path)[1]
@@ -141,6 +162,7 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
             if annotations:
                 total_annotations += len(annotations)
                 ann_rec = AnnotationRecordModel(
+                    task_id=task_id,
                     image_id=img_rec.id,
                     annotation_data=annotations,
                     version=1,
@@ -163,6 +185,8 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
         "total_images": len(image_files),
         "total_annotations": total_annotations,
         "class_mapping": class_mapping,
+        "task_id": task_id,
+        "task_name": task_name,
     }
 
 
