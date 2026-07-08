@@ -7,13 +7,10 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 
-async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, ocr_rec: bool = True) -> str:
+async def export_dataset(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, ocr_rec: bool = True, train_ratio: float = 0.8) -> str:
     """Export dataset and return the path to dataset.yaml for the YOLO command."""
     data_dir = output_dir
-    img_dir = os.path.join(data_dir, "images")
-    label_dir = os.path.join(data_dir, "labels")
-    os.makedirs(img_dir, exist_ok=True)
-    os.makedirs(label_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
     async with async_db_session() as db:
         result = await db.execute(
             select(AnnotationImageModel).where(AnnotationImageModel.dataset_id == dataset_id)
@@ -26,20 +23,24 @@ async def export_dataset(dataset_id: int, task_id: int, framework: str, output_d
 
     # Determine task_type from annotation task (affects YOLO label format)
     task_type = "detection"
+    class_names: dict[int, str] = {}
     if annotation_task_id:
         from app.api.v1.module_annotation.task.model import AnnotationTaskModel
         async with async_db_session() as db:
             ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
             if ann_task:
                 task_type = ann_task.task_type
+                if ann_task.classes:
+                    for c in (ann_task.classes if isinstance(ann_task.classes, list) else []):
+                        class_names[c["id"]] = c.get("name", f"class_{c['id']}")
 
     if framework == "ultralytics" or framework.startswith("yolo-"):
         if framework.startswith("yolo-"):
             task_type = framework.replace("yolo-", "")
         if task_type == "cls":
-            await _export_yolo_cls(dataset_id, task_id, images, output_dir, annotation_task_id)
+            await _export_yolo_cls(dataset_id, task_id, images, output_dir, annotation_task_id, train_ratio=train_ratio, class_names=class_names)
         else:
-            await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id)
+            await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names)
     elif framework == "paddle-mlcls":
         await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id)
     elif framework == "paddle-ocr" or framework.startswith("paddle-ocr-"):
@@ -51,7 +52,86 @@ async def export_dataset(dataset_id: int, task_id: int, framework: str, output_d
         _export_paddlex(images, output_dir)
 
 
-async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None) -> None:
+async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None) -> None:
+    """Export to YOLO format with train/val split."""
+    import random, shutil
+    random.shuffle(images)
+    split_idx = max(1, int(len(images) * train_ratio))
+    train_imgs = images[:split_idx]
+    val_imgs = images[split_idx:]
+
+    for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
+        img_split = os.path.join(output_dir, "images", split_name)
+        label_split = os.path.join(output_dir, "labels", split_name)
+        os.makedirs(img_split, exist_ok=True)
+        os.makedirs(label_split, exist_ok=True)
+
+        from app.utils.s3_client import s3_client
+        classes: set[int] = set()
+        saved = 0
+
+        async with async_db_session() as db:
+            for img in split_imgs:
+                # Download image
+                img_path = os.path.join(img_split, img.filename)
+                if not os.path.exists(img_path):
+                    try:
+                        data = s3_client.download_fileobj(img.object_key)
+                        with open(img_path, "wb") as f:
+                            f.write(data.read())
+                        saved += 1
+                    except Exception as e:
+                        log.warning(f"skip {img.filename}: {e}")
+                        continue
+
+                query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+                if annotation_task_id:
+                    query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+                query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+                rec = await db.execute(query)
+                record = rec.scalar_one_or_none()
+                anns = record.annotation_data if record and record.annotation_data else []
+
+                label_path = os.path.join(label_split, img.filename.rsplit(".", 1)[0] + ".txt")
+                lines = []
+                for ann in anns:
+                    cls_id = ann.get("class_id", 0)
+                    classes.add(cls_id)
+                    ann_type = ann.get("type", "")
+                    if ann_type in ("AxisAlignedBox", "box"):
+                        if "x1" in ann:
+                            x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
+                        else:
+                            xc_a, yc_a, w_a, h_a = ann["x"], ann["y"], ann["width"], ann["height"]
+                            x1, y1, x2, y2 = xc_a - w_a/2, yc_a - h_a/2, xc_a + w_a/2, yc_a + h_a/2
+                        if task_type == "rotated_detection":
+                            lines.append(f"{cls_id} {x1:.6f} {y1:.6f} {x2:.6f} {y1:.6f} {x2:.6f} {y2:.6f} {x1:.6f} {y2:.6f}")
+                        else:
+                            lines.append(f"{cls_id} {(x1+x2)/2:.6f} {(y1+y2)/2:.6f} {x2-x1:.6f} {y2-y1:.6f}")
+                    elif ann_type in ("RotatedBox", "rotated_box"):
+                        cx, cy = ann["cx"], ann["cy"]
+                        w, h = ann["width"], ann["height"]
+                        lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+                if lines:
+                    with open(label_path, "w") as f:
+                        f.write("\n".join(lines))
+
+            log.info(f"yolo {split_name}: {saved} images, {len(classes)} classes")
+
+    # Generate dataset.yaml
+    base_name = os.path.basename(output_dir.rstrip("/"))
+    sorted_classes = sorted(classes)
+    names_dict = {}
+    for cid in sorted_classes:
+        names_dict[str(cid)] = class_names.get(cid, str(cid)) if class_names else str(cid)
+
+    yaml_path = os.path.join(output_dir, "dataset.yaml")
+    with open(yaml_path, "w") as f:
+        f.write(f"path: ./{base_name}\n")
+        f.write("train: images/train\n")
+        f.write("val: images/val\n")
+        f.write(f"nc: {len(sorted_classes)}\n")
+        f.write(f"names: {json.dumps(names_dict, ensure_ascii=False)}\n")
     img_dir = os.path.join(output_dir, "images")
     label_dir = os.path.join(output_dir, "labels")
     os.makedirs(img_dir, exist_ok=True)
@@ -131,63 +211,61 @@ def _export_paddlex(images: list, output_dir: str) -> None:
     log.info(f"PaddleX export to {output_dir} — {len(images)} images")
 
 
-async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
-    """Export single-label classification to YOLO CLS format (class-name folder structure)."""
+async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None) -> None:
+    """Export single-label classification to YOLO CLS format with train/val split."""
+    import random
     from app.utils.s3_client import s3_client
+    from collections import defaultdict
 
-    # First pass: collect class_id → label mapping from task
-    class_names: dict[int, str] = {}
-    if annotation_task_id:
+    # Get class mapping
+    task_cn: dict[int, str] = class_names or {}
+    if not task_cn and annotation_task_id:
         from app.api.v1.module_annotation.task.model import AnnotationTaskModel
         async with async_db_session() as db:
             ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
             if ann_task and ann_task.classes:
-                for c in ann_task.classes:
-                    class_names[c["id"]] = c.get("name", f"class_{c['id']}")
+                for c in (ann_task.classes if isinstance(ann_task.classes, list) else []):
+                    task_cn[c["id"]] = c.get("name", f"class_{c['id']}")
 
-    # Second pass: sort images into class folders
-    from collections import defaultdict
-    class_images: dict[int, list[str]] = defaultdict(list)
-
+    # Collect per image class_id
+    img_class: dict[int, int] = {}
     async with async_db_session() as db:
         for img in images:
-            img_path = os.path.join(output_dir, "images", img.filename)
-            try:
-                if not os.path.exists(img_path):
-                    data = s3_client.download_fileobj(img.object_key)
-                    with open(img_path, "wb") as f:
-                        f.write(data.read())
-            except Exception:
-                continue
-
             query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
             if annotation_task_id:
                 query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
             query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
             rec = await db.execute(query)
             record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-
-            for ann in anns:
+            for ann in (record.annotation_data if record and record.annotation_data else []):
                 cid = ann.get("class_id")
                 if cid is not None:
-                    class_images[cid].append(img.filename)
+                    img_class[img.id] = cid
                     break
 
-    # Create class folders and copy/symlink images
-    train_dir = os.path.join(output_dir, "train")
-    for cid, filenames in class_images.items():
-        cls_name = class_names.get(cid, f"class_{cid}")
-        cls_dir = os.path.join(train_dir, cls_name)
-        os.makedirs(cls_dir, exist_ok=True)
-        for fn in filenames:
-            src = os.path.join(output_dir, "images", fn)
-            dst = os.path.join(cls_dir, fn)
-            if os.path.exists(src) and not os.path.exists(dst):
-                import shutil
-                shutil.copy2(src, dst)
+    # Group by class
+    class_imgs: dict[int, list] = defaultdict(list)
+    for img in images:
+        if img.id in img_class:
+            class_imgs[img_class[img.id]].append(img)
 
-    log.info(f"yolo-cls: exported {sum(len(v) for v in class_images.values())} images, {len(class_images)} classes to {output_dir}")
+    # Split per class
+    for cid, imgs in class_imgs.items():
+        random.shuffle(imgs)
+        split = max(0, int(len(imgs) * train_ratio))
+        for split_name, sub in [("train", imgs[:split]), ("val", imgs[split:])]:
+            cls_name = task_cn.get(cid, f"class_{cid}")
+            dst_dir = os.path.join(output_dir, split_name, cls_name)
+            os.makedirs(dst_dir, exist_ok=True)
+            for img in sub:
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(os.path.join(dst_dir, img.filename), "wb") as f:
+                        f.write(data.read())
+                except Exception:
+                    continue
+
+    log.info(f"yolo-cls: exported to {output_dir}")
 
 
 async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:

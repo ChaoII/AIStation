@@ -277,12 +277,16 @@
         </el-form-item>
         <el-form-item label="导出格式" required>
           <el-select v-model="exportFormat" style="width:100%">
-            <el-option v-for="opt in filteredExportFormats" :key="opt.value" :value="opt.value" :label="opt.label" />
+            <el-option v-for="opt in exportFormatOptions" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
           <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px">
             <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
             <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
           </div>
+        </el-form-item>
+        <el-form-item v-if="isYoloOrPaddleFormat" label="训练集比例">
+          <el-slider v-model="trainRatio" :min="50" :max="95" :step="5" show-input style="width:200px" />
+          <span style="margin-left:8px;font-size:12px;color:#909399">剩余 {{ 100 - trainRatio }}% 为验证集</span>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
@@ -597,8 +601,11 @@ const exportRowTasks = ref<any[]>([]);
 const exportTaskId = ref<number | undefined>(undefined);
 const ocrExportDet = ref(true);
 const ocrExportRec = ref(true);
+const trainRatio = ref(80);
 
-const FORMAT_TASK_MAP: Record<string, string[]> = {
+const isYoloOrPaddleFormat = computed(() => {
+  return exportFormat.value.startsWith("yolo-") || exportFormat.value.startsWith("paddle-");
+});
   "yolo-detection": ["detection"],
   "yolo-rotated_detection": ["rotated_detection"],
   "yolo-segmentation": ["segmentation"],
@@ -640,6 +647,7 @@ function handleOpenExport(row: any) {
   exportTaskId.value = exportRowTasks.value.length > 0 ? exportRowTasks.value[0].id : undefined;
   ocrExportDet.value = true;
   ocrExportRec.value = true;
+  trainRatio.value = 80;
   exportFormat.value = "x-anylabeling";
   onExportTaskChange();
   exportDialogVisible.value = true;
@@ -656,6 +664,7 @@ async function handleExportSubmit() {
       format: exportFormat.value,
       annotation_task_id: exportTaskId.value,
       ocr_rec: exportFormat.value === "paddle-ocr" ? ocrExportRec.value : undefined,
+      train_ratio: isYoloOrPaddleFormat.value ? trainRatio.value / 100 : undefined,
     });
     const url = r.data?.data?.download_url;
     if (url) {

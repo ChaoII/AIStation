@@ -111,3 +111,4 @@ class DatasetExportSchema(BaseModel):
     annotation_task_id: int | None = None
     format: str = "ultralytics"
     ocr_rec: bool = True
+    train_ratio: float = 0.8

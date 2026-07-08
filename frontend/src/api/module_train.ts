@@ -48,7 +48,7 @@ export const TrainAPI = {
     return request<ApiResponse>({ url: `${API_PATH}/eval/delete`, method: "delete", data: ids });
   },
 
-  exportDataset(data: { dataset_id: number; annotation_task_id?: number; format: string; ocr_rec?: boolean }) {
+  exportDataset(data: { dataset_id: number; annotation_task_id?: number; format: string; ocr_rec?: boolean; train_ratio?: number }) {
     return request<ApiResponse<{ download_url: string; format: string; dataset_id: number }>>({
       url: `${API_PATH}/dataset/export`,
       method: "post",
