@@ -687,6 +687,6 @@ function stopPoll() {
   }
 }
 
-onMounted(() => startPoll());
-onBeforeUnmount(() => stopPoll());
+// onMounted(() => startPoll());
+// onBeforeUnmount(() => stopPoll());
 </script>
