@@ -43,14 +43,13 @@ async def get_dataset_list(
                 item["task_count"] = len(task_rows)
                 item["tasks"] = []
                 for t in task_rows:
-                    # Recalculate progress for non-pending tasks
-                    if t.status != "pending":
-                        from app.api.v1.module_annotation.task.service import AnnotationTaskService
-                        try:
-                            prog = await AnnotationTaskService._calc_progress(db, t.id, t.dataset_id)
-                            t.progress = prog["progress"]
-                        except Exception:
-                            pass
+                    from app.api.v1.module_annotation.task.service import AnnotationTaskService
+                    try:
+                        prog = await AnnotationTaskService._calc_progress(db, t.id, t.dataset_id)
+                        t.progress = prog["progress"]
+                        t.status = prog["status"]
+                    except Exception:
+                        pass
                     item["tasks"].append({
                         "id": t.id, "name": t.name, "task_type": t.task_type,
                         "status": t.status, "progress": t.progress,
