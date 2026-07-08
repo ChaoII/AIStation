@@ -1,8 +1,5 @@
 <template>
   <div class="train-detail-page">
-    <div class="debug-bar" style="background:#ffeeba;padding:4px 12px;font:12px monospace;color:#333;margin-bottom:8px;border-radius:4px">
-      DEBUG | task={{ task ? 'loaded' : 'null' }} | status={{ task?.status }} | progress={{ displayProgress }} | metricsLog={{ metricsLog.length }} | dmLog={{ displayMetricsLog.length }}
-    </div>
     <div class="detail-header">
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
@@ -32,17 +29,14 @@
       </el-card>
       <el-card shadow="never" class="info-card">
         <template #header><span class="card-title">超参数</span></template>
-        <div v-if="task?.hyperparams" class="hp-grid">
-          <div v-for="(val, key) in task.hyperparams" :key="String(key)" class="hp-item">
-            <span class="hp-label">{{ key }}</span>
-            <span class="hp-value">
-              <template v-if="typeof val === 'boolean'">
-                <el-tag :type="val ? 'success' : 'info'" size="small">{{ val ? "是" : "否" }}</el-tag>
-              </template>
-              <template v-else>{{ val }}</template>
-            </span>
-          </div>
-        </div>
+        <el-descriptions v-if="task?.hyperparams" :column="1" size="small" border>
+          <el-descriptions-item v-for="(val, key) in task.hyperparams" :key="String(key)" :label="String(key)">
+            <template v-if="typeof val === 'boolean'">
+              <el-tag :type="val ? 'success' : 'info'" size="small">{{ val ? "是" : "否" }}</el-tag>
+            </template>
+            <template v-else>{{ val }}</template>
+          </el-descriptions-item>
+        </el-descriptions>
         <el-empty v-else :image-size="40" description="无超参数" />
       </el-card>
     </div>
@@ -164,7 +158,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
@@ -458,16 +452,13 @@ function handleEvaluate() { ElMessage.info("评估功能需要后端支持"); }
 function handleExport() { ElMessage.info("导出功能需要后端支持"); }
 
 onMounted(async () => {
-  console.log("[detail] mounted, route params:", route.params);
   await loadTask();
-  console.log("[detail] task loaded:", task.value?.id, task.value?.status, "progress:", task.value?.progress);
   const id = Number(route.params.id);
   if (id) {
     if (task.value?.status === "running") { connectWs(id); startPoll(); }
     else {
       try {
         const r = await TrainAPI.getTaskLogs(id);
-        console.log("[detail] logs response:", r.data?.data ? "has data" : "no data");
         if (r.data?.data?.logs) {
           const cleaned = r.data.data.logs.replace(/[\r\x1b\[[0-9;]*m]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
           logText.value = cleaned;
@@ -476,22 +467,6 @@ onMounted(async () => {
       } catch { /* */ }
     }
   }
-  // Check rendered state
-  await nextTick();
-  const root = document.querySelector('.train-detail-page');
-  console.log("[detail] root element:", root ? 'found' : 'missing');
-  if (root) {
-    const style = getComputedStyle(root);
-    console.log("[detail] root display:", style.display, "height:", style.height, "overflow:", style.overflow);
-  }
-  const logEl = document.querySelector('.log-container');
-  console.log("[detail] log-container:", logEl ? 'found' : 'missing');
-  if (logEl) {
-    const ls = getComputedStyle(logEl);
-    console.log("[detail] log-container styles:", "height:", ls.height, "overflow-y:", ls.overflowY, "background:", ls.background);
-  }
-  const metricEl = document.querySelector('.metric-grid');
-  console.log("[detail] metric-grid:", metricEl ? 'found' : 'missing');
 });
 
 onBeforeUnmount(() => { ws?.close(); stopPoll(); });
@@ -514,11 +489,6 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 .info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .info-card { height: 100%; border: 1px solid #e8e8e8; border-radius: 8px; }
 .docker-tag { font-family: "Cascadia Code","Fira Code",monospace; font-size: 12px; background: #f5f7fa; padding: 2px 6px; border-radius: 3px; }
-
-.hp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.hp-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f2f3f5; }
-.hp-label { color: #909399; font-size: 13px; }
-.hp-value { color: #303133; font-size: 13px; font-weight: 500; }
 
 .section-card { margin-bottom: 16px; border: 1px solid #e8e8e8; border-radius: 8px; }
 .action-buttons { display: flex; gap: 10px; }
