@@ -283,8 +283,16 @@
         <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
         <el-form-item label="导出格式" required>
           <el-radio-group v-model="exportFormat">
-            <el-radio v-for="opt in exportFormatOptions" :key="opt.value" :value="opt.value" style="margin-bottom:6px">
+            <el-radio
+              v-for="opt in exportFormatOptions" :key="opt.value"
+              :value="opt.value"
+              :disabled="opt.disabled"
+              style="margin-bottom:6px"
+            >
               {{ opt.label }}
+              <el-tooltip v-if="opt.disabled" content="该数据集没有此类型的标注任务，将导出全部标注" placement="right">
+                <el-icon style="color:#e6a23c;margin-left:2px;vertical-align:-2px"><WarningFilled /></el-icon>
+              </el-tooltip>
             </el-radio>
           </el-radio-group>
         </el-form-item>
@@ -301,7 +309,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, computed } from "vue";
 import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
@@ -312,6 +320,7 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage } from "element-plus";
+import { WarningFilled } from "@element-plus/icons-vue";
 
 const router = useRouter();
 
@@ -603,13 +612,16 @@ const exportFormat = ref("yolo-detection");
 const exporting = ref(false);
 const exportRowTasks = ref<any[]>([]);
 
-const exportFormatOptions = ref<{ value: string; label: string }[]>([
-  { value: "yolo-detection", label: "YOLO HBB（水平矩形框）" },
-  { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）" },
-  { value: "yolo-segmentation", label: "YOLO Seg（分割）" },
-  { value: "yolo-keypoint", label: "YOLO Pose（关键点）" },
-  { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）" },
-]);
+const exportFormatOptions = computed(() => {
+  const taskTypes = new Set(exportRowTasks.value.map((t: any) => t.task_type));
+  return [
+    { value: "yolo-detection", label: "YOLO HBB（水平矩形框）", disabled: !taskTypes.has("detection") },
+    { value: "yolo-rotated_detection", label: "YOLO OBB（旋转矩形框）", disabled: !taskTypes.has("rotated_detection") },
+    { value: "yolo-segmentation", label: "YOLO Seg（分割）", disabled: !taskTypes.has("segmentation") },
+    { value: "yolo-keypoint", label: "YOLO Pose（关键点）", disabled: !taskTypes.has("keypoint") },
+    { value: "x-anylabeling", label: "x-anylabeling（通用 JSON 格式）", disabled: false },
+  ];
+});
 
 function handleOpenExport(row: any) {
   exportDatasetId.value = row.id;
