@@ -111,20 +111,6 @@
               </template>
             </el-table-column>
             <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'status')?.show"
-              key="status"
-              label="状态"
-              prop="status"
-              width="80"
-              align="center"
-            >
-              <template #default="scope">
-                <el-tag :type="scope.row.status ? 'success' : 'danger'" size="small">
-                  {{ scope.row.status === "0" || scope.row.status === true ? "启用" : "停用" }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
               label="创建时间"
@@ -365,16 +351,6 @@ const searchConfig = reactive<ISearchConfig>({
       type: "input",
       attrs: { placeholder: "请输入数据集名称", clearable: true },
     },
-    {
-      prop: "status",
-      label: "状态",
-      type: "select",
-      options: [
-        { label: "启用", value: "true" },
-        { label: "停用", value: "false" },
-      ],
-      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
-    },
   ],
 });
 
@@ -391,7 +367,6 @@ const contentCols = reactive<
   { prop: "description", label: "描述", show: true },
   { prop: "image_count", label: "图片数", show: true },
   { prop: "tasks", label: "关联标注任务", show: true },
-  { prop: "status", label: "状态", show: true },
   { prop: "created_time", label: "创建时间", show: true },
   { prop: "operation", label: "操作", show: true },
 ]);
