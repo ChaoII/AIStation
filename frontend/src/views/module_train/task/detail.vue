@@ -510,12 +510,12 @@ onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 }
 
 .detail-header {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 16px; padding: 14px 20px;
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px; padding: 12px 20px;
   background: #fff; border-radius: 8px; border: 1px solid #e8e8e8;
 }
-.task-name { font-size: 15px; font-weight: 600; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.progress-text { font-size: 13px; font-weight: 600; color: #e6a23c; margin-left: 4px; }
+.task-name { font-size: 16px; font-weight: 700; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .01em; }
+.progress-text { font-size: 14px; font-weight: 700; color: #52c41a; margin-left: 4px; background: #f6ffed; padding: 4px 12px; border-radius: 6px; border: 1px solid #b7eb8f; }
 .card-title { font-weight: 600; font-size: 14px; color: #1a1a1a; }
 
 .info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
