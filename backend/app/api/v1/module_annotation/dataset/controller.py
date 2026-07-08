@@ -32,15 +32,19 @@ async def get_dataset_list(
         offset=offset, limit=page.page_size, order_by=page.order_by,
         search=search.get_conditions(), out_schema=DatasetOutSchema,
     )
-    # Populate task_count for each dataset
+    # Populate task_count and task list for each dataset
     if result.get("items"):
         async with async_db_session() as db:
             for item in result["items"]:
-                cnt = await db.scalar(
-                    select(func.count(AnnotationTaskModel.id))
-                    .where(AnnotationTaskModel.dataset_id == item["id"])
+                tasks_result = await db.execute(
+                    select(AnnotationTaskModel).where(AnnotationTaskModel.dataset_id == item["id"])
                 )
-                item["task_count"] = cnt or 0
+                task_rows = tasks_result.scalars().all()
+                item["task_count"] = len(task_rows)
+                item["tasks"] = [
+                    {"id": t.id, "name": t.name, "task_type": t.task_type, "status": t.status}
+                    for t in task_rows
+                ]
     return SuccessResponse(data=result)
 
 

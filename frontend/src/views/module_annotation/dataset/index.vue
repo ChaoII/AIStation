@@ -86,17 +86,25 @@
               </template>
             </el-table-column>
             <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'task_count')?.show"
-              key="task_count"
-              label="引用任务"
-              prop="task_count"
-              width="90"
-              align="center"
+              v-if="contentCols.find((col) => col.prop === 'tasks')?.show"
+              key="tasks"
+              label="关联标注任务"
+              min-width="220"
             >
               <template #default="scope">
-                <el-tag type="warning" effect="plain" size="small">
-                  {{ scope.row.task_count ?? 0 }}
-                </el-tag>
+                <div v-if="scope.row.tasks?.length" style="display:flex;flex-wrap:wrap;gap:4px">
+                  <el-tag
+                    v-for="t in scope.row.tasks" :key="t.id"
+                    :type="taskTagType(t.task_type)"
+                    size="small"
+                    effect="plain"
+                    style="cursor:pointer"
+                    @click="router.push(`/annotation/task?task_id=${t.id}`)"
+                  >
+                    {{ t.name }}
+                  </el-tag>
+                </div>
+                <span v-else style="color:var(--el-text-color-secondary);font-size:12px">—</span>
               </template>
             </el-table-column>
             <el-table-column
@@ -293,6 +301,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from "vue";
+import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
@@ -302,6 +311,13 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage } from "element-plus";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+
+function taskTagType(t: string) {
+  return ({ detection: "primary", rotated_detection: "warning", segmentation: "success", keypoint: "danger", ocr: "info", classification: "" } as any)[t] || "";
+}
 
 defineOptions({
   name: "Dataset",
@@ -357,7 +373,7 @@ const contentCols = reactive<
   { prop: "name", label: "数据集名称", show: true },
   { prop: "description", label: "描述", show: true },
   { prop: "image_count", label: "图片数", show: true },
-  { prop: "task_count", label: "引用任务", show: true },
+  { prop: "tasks", label: "关联标注任务", show: true },
   { prop: "status", label: "状态", show: true },
   { prop: "created_time", label: "创建时间", show: true },
   { prop: "operation", label: "操作", show: true },
