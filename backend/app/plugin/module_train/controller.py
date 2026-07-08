@@ -64,8 +64,12 @@ async def stop_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["mo
 
 @router.post("/task/{task_id}/start", summary="开始训练")
 async def start_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"]))):
-    await start_training(task_id)
-    return SuccessResponse(data={"id": task_id}, msg="训练已开始")
+    try:
+        await start_training(task_id)
+        return SuccessResponse(data={"id": task_id}, msg="训练已开始")
+    except Exception as e:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg=str(e))
 
 
 @router.delete("/task/delete", summary="删除训练任务")

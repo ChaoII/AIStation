@@ -244,6 +244,20 @@ async def _execute_training(task_id: int):
 
 async def start_training(task_id: int):
     async with async_db_session.begin() as db:
+        task = await db.get(TrainTask, task_id)
+        if not task:
+            raise Exception(f"训练任务 {task_id} 不存在")
+
+        # If annotation_task_id is set, verify the annotation task is completed
+        if task.annotation_task_id:
+            from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+            ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
+            if ann_task and ann_task.status != "completed":
+                raise Exception(
+                    f"标注任务「{ann_task.name}」尚未完成（状态: {ann_task.status}），"
+                    "请先完成标注再开始训练"
+                )
+
         await db.execute(
             update(TrainTask).where(TrainTask.id == task_id).values(
                 status=TrainStatus.RUNNING, started_at=datetime.now()
