@@ -311,7 +311,6 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage } from "element-plus";
-import { useRouter } from "vue-router";
 
 const router = useRouter();
 
