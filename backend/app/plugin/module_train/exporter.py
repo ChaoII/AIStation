@@ -1,8 +1,10 @@
 import json
 import os
-from sqlalchemy import select, desc
-from app.api.v1.module_annotation.dataset.model import AnnotationImageModel
+
+from sqlalchemy import desc, select
+
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
+from app.api.v1.module_annotation.dataset.model import AnnotationImageModel
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -73,6 +75,7 @@ async def _export_core(
 async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False) -> None:
     """Export to YOLO format with train/val split. for_training controls YAML path."""
     import random
+
     from app.utils.s3_client import s3_client
 
     random.shuffle(images)
@@ -120,6 +123,8 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
     _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_classes, class_names or {})
     log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_classes)} → {output_dir}")
     img_dir = os.path.join(output_dir, "images")
+
+
 def _export_paddlex(images: list, output_dir: str) -> None:
     img_dir = os.path.join(output_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
@@ -137,11 +142,11 @@ def _format_yolo_lines(anns: list, task_type: str) -> list[str]:
                 x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
             else:
                 xc_a, yc_a, w_a, h_a = ann["x"], ann["y"], ann["width"], ann["height"]
-                x1, y1, x2, y2 = xc_a - w_a/2, yc_a - h_a/2, xc_a + w_a/2, yc_a + h_a/2
+                x1, y1, x2, y2 = xc_a - w_a / 2, yc_a - h_a / 2, xc_a + w_a / 2, yc_a + h_a / 2
             if task_type == "rotated_detection":
                 lines.append(f"{cls_id} {x1:.6f} {y1:.6f} {x2:.6f} {y1:.6f} {x2:.6f} {y2:.6f} {x1:.6f} {y2:.6f}")
             else:
-                lines.append(f"{cls_id} {(x1+x2)/2:.6f} {(y1+y2)/2:.6f} {x2-x1:.6f} {y2-y1:.6f}")
+                lines.append(f"{cls_id} {(x1 + x2) / 2:.6f} {(y1 + y2) / 2:.6f} {x2 - x1:.6f} {y2 - y1:.6f}")
         elif ann_type in ("RotatedBox", "rotated_box"):
             cx, cy = ann["cx"], ann["cy"]
             w, h = ann["width"], ann["height"]
@@ -166,8 +171,9 @@ def _write_yaml(path: str, base_path: str, sorted_classes: list, class_names: di
 async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False) -> None:
     """Export single-label classification to YOLO CLS format with train/val split."""
     import random
-    from app.utils.s3_client import s3_client
     from collections import defaultdict
+
+    from app.utils.s3_client import s3_client
 
     # Get class mapping
     task_cn: dict[int, str] = class_names or {}
@@ -413,7 +419,7 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
                         x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
                     else:
                         xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
-                        x1, y1, x2, y2 = xc - w/2, yc - h/2, xc + w/2, yc + h/2
+                        x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
                     shapes.append({
                         "label": label,
                         "points": [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],

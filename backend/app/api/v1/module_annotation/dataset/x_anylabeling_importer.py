@@ -24,11 +24,14 @@ import tempfile
 import zipfile
 from datetime import datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.dataset.model import (
-    DatasetModel, AnnotationImageModel, ImageStatus, AnnotationType,
+    AnnotationImageModel,
+    AnnotationType,
+    DatasetModel,
+    ImageStatus,
 )
 from app.api.v1.module_annotation.task.model import AnnotationTaskModel, TaskStatus
 from app.core.database import async_db_session
@@ -72,7 +75,7 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
     all_labels: set[str] = set()
     for stem, jp in json_files.items():
         try:
-            with open(jp, "r", encoding="utf-8") as f:
+            with open(jp, encoding="utf-8") as f:
                 data = json.load(f)
             for shape in data.get("shapes", []):
                 label = shape.get("label", "").strip()
@@ -122,7 +125,7 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
             img_width = 0
             if stem in json_files:
                 try:
-                    with open(json_files[stem], "r", encoding="utf-8") as f:
+                    with open(json_files[stem], encoding="utf-8") as f:
                         meta = json.load(f)
                     img_height = meta.get("imageHeight", 0) or 0
                     img_width = meta.get("imageWidth", 0) or 0
@@ -149,7 +152,7 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
             annotations = []
             if stem in json_files:
                 try:
-                    with open(json_files[stem], "r", encoding="utf-8") as f:
+                    with open(json_files[stem], encoding="utf-8") as f:
                         data = json.load(f)
                     for shape in data.get("shapes", []):
                         ann = _shape_to_annotation(shape, class_mapping, img_width, img_height)

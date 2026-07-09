@@ -1,6 +1,7 @@
 import asyncio
+
 import docker
-from docker.errors import DockerException, ImageNotFound
+
 from app.core.logger import log
 
 client = docker.from_env()

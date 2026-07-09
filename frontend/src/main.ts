@@ -9,6 +9,7 @@ import "element-plus/dist/index.css";
 // 暗黑模式自定义变量
 import "@/styles/dark/css-vars.css";
 import "@/styles/index.scss";
+import "@/styles/train-detail.css";
 
 import "uno.css";
 

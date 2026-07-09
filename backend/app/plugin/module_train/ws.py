@@ -1,9 +1,10 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 WS_Train = APIRouter(prefix="/train", tags=["训练WebSocket"])
 
 # Train logs
 _train_ws_clients: dict[int, list[WebSocket]] = {}
+
 
 async def broadcast_log(task_id: int, line: str):
     for ws in _train_ws_clients.get(task_id, [])[:]:
@@ -30,6 +31,7 @@ async def train_log_ws(websocket: WebSocket, task_id: int = Query(...)):
 # Eval logs
 _eval_ws_clients: dict[int, list[WebSocket]] = {}
 
+
 async def broadcast_eval_log(eval_id: int, line: str):
     for ws in _eval_ws_clients.get(eval_id, [])[:]:
         try:
@@ -54,6 +56,7 @@ async def eval_log_ws(websocket: WebSocket, eval_id: int = Query(...)):
 
 # Predict logs
 _predict_ws_clients: dict[int, list[WebSocket]] = {}
+
 
 async def broadcast_predict_log(predict_id: int, line: str):
     for ws in _predict_ws_clients.get(predict_id, [])[:]:

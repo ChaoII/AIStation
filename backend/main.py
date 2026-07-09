@@ -158,5 +158,36 @@ def upgrade(
     typer.echo("所有迁移已应用。")
 
 
+@aistation_cli.command(
+    name="download-models",
+    help="预下载所有 Ultralytics 模型权重文件到缓存目录，避免训练时从 GitHub 实时下载",
+)
+def download_models() -> None:
+    import os
+
+    from app.plugin.module_train.scheduler import MODELS_CACHE_DIR, _ensure_model_file
+
+    MODELS = [
+        "yolov8n.pt", "yolov8s.pt", "yolov8m.pt", "yolov8l.pt", "yolov8x.pt",
+        "yolov8n-obb.pt", "yolov8s-obb.pt", "yolov8m-obb.pt", "yolov8l-obb.pt", "yolov8x-obb.pt",
+        "yolo11n.pt", "yolo11s.pt", "yolo11m.pt", "yolo11l.pt", "yolo11x.pt",
+        "yolo11n-obb.pt", "yolo11s-obb.pt", "yolo11m-obb.pt", "yolo11l-obb.pt", "yolo11x-obb.pt",
+        "yolo26n.pt", "yolo26s.pt", "yolo26m.pt", "yolo26l.pt", "yolo26x.pt",
+    ]
+
+    typer.echo(f"模型缓存目录: {MODELS_CACHE_DIR}")
+    os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
+
+    for name in MODELS:
+        dst = os.path.join(MODELS_CACHE_DIR, name)
+        if os.path.isfile(dst) and os.path.getsize(dst) > 5000000:
+            typer.echo(f"  ✓ {name} 已存在 ({os.path.getsize(dst)} bytes)")
+            continue
+        typer.echo(f"  ↓ 下载 {name} ...")
+        _ensure_model_file(name)
+
+    typer.echo("所有模型下载完成。")
+
+
 if __name__ == "__main__":
     aistation_cli()

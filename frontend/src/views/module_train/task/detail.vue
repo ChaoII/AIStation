@@ -21,6 +21,9 @@
           <el-descriptions-item label="数据集 ID">{{ task?.dataset_id }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ task?.created_time }}</el-descriptions-item>
           <el-descriptions-item label="Docker 镜像"><code class="docker-tag">{{ task?.docker_image }}</code></el-descriptions-item>
+          <el-descriptions-item label="Docker 命令">
+            <pre style="margin:0;font-size:11px;line-height:1.4;background:#f5f7fa;padding:6px 8px;border-radius:4px;white-space:pre-wrap;word-break:break-all;max-width:500px">{{ dockerCmd || "—" }}</pre>
+          </el-descriptions-item>
           <el-descriptions-item label="创建者 ID">{{ task?.created_id }}</el-descriptions-item>
           <el-descriptions-item label="开始时间">{{ task?.started_at || "—" }}</el-descriptions-item>
           <el-descriptions-item label="结束时间">{{ task?.finished_at || "—" }}</el-descriptions-item>
@@ -56,6 +59,7 @@
           <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
           <el-button size="default" @click="handleEvaluate">评估模型</el-button>
           <el-button size="default" @click="handleExport">导出模型</el-button>
+          <el-button size="default" @click="handleRetrain">重新训练</el-button>
           <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
         </template>
         <template v-else-if="task?.status === 'failed'">
@@ -211,6 +215,7 @@ const logRef = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
 const wsConnected = ref(false);
 const logLineCount = ref(0);
+const submitting = ref(false);
 let ws: WebSocket | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -225,6 +230,23 @@ const durationText = computed(() => {
   if (diff < 60) return `${diff}秒`;
   if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`;
   return `${Math.floor(diff / 3600)}时${Math.floor((diff % 3600) / 60)}分`;
+});
+
+const tempDir = ref("${TEMP_DIR}");
+TrainAPI.getTempDir().then(res => { if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir; }).catch(() => {});
+
+const dockerCmd = computed(() => {
+  if (!task.value?.id) return "";
+  const dataDir = `${tempDir.value}/train_output/${task.value.id}`;
+  const cacheDir = `${tempDir.value}/train_output/.models_cache`;
+  const hp = task.value?.hyperparams || {};
+  if (task.value?.framework === "ultralytics") {
+    return `docker run --gpus all \\\n  -v ${dataDir}/data:/data \\\n  -v ${dataDir}:/output \\\n  -v ${cacheDir}:/models \\\n  ${task.value.docker_image} \\\n  yolo train \\\n    model=/models/${hp.model || ""} \\\n    data=/data/dataset.yaml \\\n    epochs=${hp.epochs || 100} \\\n    batch=${hp.batch || 16} \\\n    ...`;
+  }
+  if (task.value?.framework === "paddlex") {
+    return `docker run --gpus all \\\n  -v ${dataDir}/data:/data \\\n  -v ${dataDir}:/output \\\n  ${task.value.docker_image} \\\n  paddlex \\\n    --model ${hp.model || ""} \\\n    --data /data \\\n    --epochs ${hp.epochs || 100} \\\n    --batch ${hp.batch || 16} \\\n    ...`;
+  }
+  return "";
 });
 
 const displayProgress = computed(() => {
@@ -445,6 +467,8 @@ async function startPoll() {
 function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
 async function handleStart() {
+  if (submitting.value) return;
+  submitting.value = true;
   try {
     await ElMessageBox.confirm(`确定开始训练任务「${task.value?.name}」？`, "提示", { type: "info" });
     await TrainAPI.startTask(task.value.id);
@@ -453,29 +477,54 @@ async function handleStart() {
     connectWs(task.value.id);
     startPoll();
   } catch (e: any) { if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败"); }
+  finally { submitting.value = false; }
 }
 
 async function handleStop() {
+  if (submitting.value) return;
+  submitting.value = true;
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(task.value.id);
     ElMessage.success("训练已停止");
     await loadTask();
   } catch { /* */ }
+  finally { submitting.value = false; }
 }
 
 function handleEditParams() { ElMessage.info("超参数编辑请返回列表页"); router.push("/train/task"); }
 
 async function handleDelete() {
+  if (submitting.value) return;
+  submitting.value = true;
   try {
     await ElMessageBox.confirm(`确定删除任务「${task.value?.name}」？`, "提示", { type: "warning", confirmButtonText: "删除" });
     await TrainAPI.deleteTask([task.value.id]);
     ElMessage.success("已删除");
     router.push("/train/task");
   } catch { /* */ }
+  finally { submitting.value = false; }
 }
 
-function handleRetrain() { ElMessage.info("重新训练功能需要调度器支持"); }
+async function handleRetrain() {
+  if (submitting.value) return;
+  submitting.value = true;
+  if (!task.value) { submitting.value = false; return; }
+  try {
+    await ElMessageBox.confirm(`重新训练任务「${task.value.name}」？将清除之前的训练结果。`, "重新训练", { type: "warning", confirmButtonText: "确定重新训练" });
+    stopPoll();
+    if (ws) { ws.close(); ws = null; }
+    clearLogs();
+    liveMetricsLog.value = [];
+    Object.assign(yoloMetrics, { epoch: 0, totalEpochs: 0, boxLoss: 0, clsLoss: 0, dflLoss: 0, precision: 0, recall: 0, map50: 0, map5095: 0, gpuMem: "", progress: 0 });
+    await TrainAPI.startTask(task.value.id);
+    ElMessage.success("训练已重新开始");
+    await loadTask();
+    connectWs(task.value.id);
+    startPoll();
+  } catch { /* */ }
+  finally { submitting.value = false; }
+}
 
 function handleViewModel() { if (task.value?.model_repo_id) router.push(`/train/repo?model_id=${task.value.model_repo_id}`); else ElMessage.warning("暂无关联模型"); }
 
@@ -487,68 +536,17 @@ onMounted(async () => {
   await loadTask();
   const id = Number(route.params.id);
   if (id) {
+    try {
+      const r = await TrainAPI.getTaskLogs(id);
+      if (r.data?.data?.logs) {
+        const cleaned = r.data.data.logs.replace(/[\r\x1b\[[0-9;]*m]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+        logText.value = cleaned;
+        if (!task.value?.metrics_log) parseLogForMetrics(cleaned);
+      }
+    } catch { /* */ }
     if (task.value?.status === "running") { connectWs(id); startPoll(); }
-    else {
-      try {
-        const r = await TrainAPI.getTaskLogs(id);
-        if (r.data?.data?.logs) {
-          const cleaned = r.data.data.logs.replace(/[\r\x1b\[[0-9;]*m]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-          logText.value = cleaned;
-          if (!task.value?.metrics_log) parseLogForMetrics(cleaned);
-        }
-      } catch { /* */ }
-    }
   }
 });
 
 onBeforeUnmount(() => { ws?.close(); stopPoll(); });
 </script>
-
-<style>
-.train-detail-page { display: block; height: auto; overflow: visible; padding: 16px; }
-.detail-header {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 16px; padding: 12px 20px;
-  background: #fff; border-radius: 8px; border: 1px solid #e8e8e8;
-}
-.task-name { font-size: 16px; font-weight: 700; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .01em; }
-.progress-text { font-size: 14px; font-weight: 700; color: #52c41a; margin-left: 4px; background: #f6ffed; padding: 4px 12px; border-radius: 6px; border: 1px solid #b7eb8f; }
-.card-title { font-weight: 600; font-size: 14px; color: #1a1a1a; }
-.info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.info-card { height: 100%; border: 1px solid #e8e8e8; border-radius: 8px; }
-.docker-tag { font-family: "Cascadia Code","Fira Code",monospace; font-size: 12px; background: #f5f7fa; padding: 2px 6px; border-radius: 3px; }
-.section-card { margin-bottom: 16px; border: 1px solid #e8e8e8; border-radius: 8px; }
-.action-buttons { display: flex; gap: 10px; }
-.progress-eta { margin-top: 8px; font-size: 13px; color: #909399; }
-.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.chart-card { border: 1px solid #e8e8e8; border-radius: 8px; }
-.chart-empty { height: 280px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 14px; }
-.log-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-.log-controls { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #909399; }
-.log-status { display: inline-flex; align-items: center; gap: 4px; color: #909399; }
-.log-status::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #909399; }
-.log-status.connected { color: #52c41a; }
-.log-status.connected::before { background: #52c41a; }
-.log-line-count { font-family: "Cascadia Code","Fira Code",monospace; }
-.pulse-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e6a23c; animation: pulse-anim 1.2s ease-in-out infinite; margin-right: 6px; vertical-align: middle; }
-@keyframes pulse-anim { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .5; transform: scale(1.3); } }
-.text-muted { color: #c0c4cc; }
-.mono { font-family: "Cascadia Code","Fira Code",monospace; }
-.log-container {
-  height: 500px !important; min-height: 200px !important; overflow-y: auto !important;
-  background: #1e1e1e !important; border-radius: 8px !important; padding: 16px !important;
-}
-.log-text {
-  font-family: "Cascadia Code","Fira Code",monospace; font-size: 13px; line-height: 1.5;
-  color: #d4d4d4; white-space: pre-wrap; word-break: break-all; margin: 0;
-}
-.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.metric-item {
-  background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
-  padding: 16px 12px; text-align: center; transition: all .2s;
-  display: flex; flex-direction: column; align-items: center;
-}
-.metric-item:hover { box-shadow: 0 4px 14px rgba(0,0,0,.06); transform: translateY(-2px); border-color: #d0d0d0; }
-.metric-val { display: block; font-size: 20px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #1a1a1a; line-height: 1.3; }
-.metric-lbl { display: block; font-size: 11px; color: #909399; margin-top: 4px; letter-spacing: .02em; }
-</style>

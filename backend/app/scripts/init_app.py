@@ -536,6 +536,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
 
         try:
             from sqlalchemy import text
+
             from app.core.database import async_db_session
             async with async_db_session.begin() as db:
                 for col in ["metrics_log", "best_metrics", "last_metrics"]:
@@ -575,9 +576,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
 
         # Ensure missing sub-menus exist (direct SQL, doesn't rely on menu seed)
         try:
-            from sqlalchemy import text as sa_text
-            from app.core.database import async_db_session as db_session
             import uuid as _uuid
+
+            from sqlalchemy import text as sa_text
+
+            from app.core.database import async_db_session as db_session
             async with db_session.begin() as db:
                 row = await db.execute(sa_text("SELECT id FROM sys_menu WHERE route_name = 'Train' LIMIT 1"))
                 parent_row = row.fetchone()

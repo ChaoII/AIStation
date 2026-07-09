@@ -1,8 +1,11 @@
 import enum
 from datetime import datetime
-from sqlalchemy import String, Integer, Text, DateTime, Enum as SAEnum
+
+from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.core.base_model import ModelMixin, UserMixin
 
 

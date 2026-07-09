@@ -90,4 +90,8 @@ export const TrainAPI = {
     files.forEach(f => formData.append("files", f));
     return request<ApiResponse<string[]>>({ url: `${API_PATH}/predict/upload`, method: "post", data: formData, headers: { "Content-Type": "multipart/form-data" } });
   },
+
+  getTempDir() {
+    return request<ApiResponse<{ tempdir: string }>>({ url: `${API_PATH}/system/tempdir`, method: "get" });
+  },
 };

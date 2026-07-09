@@ -584,11 +584,18 @@ const defaultHpPaddle = () => ({
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
 
+const tempDir = ref("${TEMP_DIR}");
+TrainAPI.getTempDir().then(res => { if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir; }).catch(() => {});
+
 const dockerCmdPreview = computed(() => {
+  const taskId = "{task_id}";
+  const dataMount = `${tempDir.value}/train_output/${taskId}/data`;
+  const outputMount = `${tempDir.value}/train_output/${taskId}`;
+  const cacheMount = `${tempDir.value}/train_output/.models_cache`;
   if (formData.framework === "ultralytics") {
-    return `docker run --gpus all \\\n  -v /host/data:/data \\\n  -v /host/output:/output \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
+    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
   } else if (formData.framework === "paddlex") {
-    return `docker run --gpus all \\\n  -v /host/data:/data \\\n  -v /host/output:/output \\\n  paddlecloud/paddlex:3.0 \\\n  paddlex \\\n    --model ${hpForm.model} \\\n    --data /data \\\n    --epochs ${hpForm.epochs} \\\n    --batch ${hpForm.batch} \\\n    --lr ${hpForm.lr} \\\n    --output /output`;
+    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  paddlecloud/paddlex:3.0 \\\n  paddlex \\\n    --model ${hpForm.model} \\\n    --data /data \\\n    --epochs ${hpForm.epochs} \\\n    --batch ${hpForm.batch} \\\n    --lr ${hpForm.lr} \\\n    --output /output`;
   }
   return "";
 });
@@ -758,8 +765,20 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function startPoll() {
   stopPoll();
-  pollTimer = setInterval(() => {
-    refreshList();
+  pollTimer = setInterval(async () => {
+    if (!contentRef.value?.pageData) return;
+    try {
+      const res = await TrainAPI.getTaskList();
+      const fresh = res?.data?.data || [];
+      const old = contentRef.value.pageData as any[];
+      for (const f of fresh) {
+        const o = old.find((x: any) => x.id === f.id);
+        if (o) {
+          o.progress = f.progress;
+          o.status = f.status;
+        }
+      }
+    } catch { /* ignore poll errors */ }
   }, 5000);
 }
 
@@ -770,8 +789,8 @@ function stopPoll() {
   }
 }
 
-// onMounted(() => startPoll());
-// onBeforeUnmount(() => stopPoll());
+onMounted(() => startPoll());
+onBeforeUnmount(() => stopPoll());
 </script>
 
 <style scoped>

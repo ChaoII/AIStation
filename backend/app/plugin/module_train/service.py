@@ -1,6 +1,69 @@
-from sqlalchemy import select, desc
+import os
+import re
+import sys
+import tempfile
+
+from sqlalchemy import desc, select
+
 from app.core.database import async_db_session
-from .model import TrainModel, TrainTask, TrainEval, TrainPredict
+
+from .model import TrainEval, TrainModel, TrainPredict, TrainTask
+
+_EPOCH_RE = re.compile(r"^\s*(\d+)/(\d+)\s+")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text).replace("\r", "")
+
+
+def _calc_progress_from_log(task_id: int) -> int | None:
+    log_path = os.path.join(tempfile.gettempdir(), "train_output", str(task_id), "train.log")
+    print(f"[train-progress-log] path={log_path} exists={os.path.isfile(log_path)}", file=sys.stderr, flush=True)
+    if not os.path.isfile(log_path):
+        return None
+    try:
+        with open(log_path, "rb") as f:
+            size = f.seek(0, 2)
+            print(f"[train-progress-log] size={size}", file=sys.stderr, flush=True)
+            if size == 0:
+                return None
+            tail_size = min(size, 16384)
+            f.seek(-tail_size, 2)
+            chunk = f.read(tail_size).decode("utf-8", errors="replace")
+        epoch = total = 0
+        for line in chunk.splitlines():
+            clean = _strip_ansi(line)
+            m = _EPOCH_RE.search(clean)
+            if m:
+                e = int(m.group(1))
+                t = int(m.group(2))
+                if e > epoch:
+                    epoch, total = e, t
+        print(f"[train-progress-log] result epoch={epoch} total={total}", file=sys.stderr, flush=True)
+        if total > 0:
+            return int(epoch / total * 100)
+    except Exception as e:
+        print(f"[train-progress-log] exception: {e}", file=sys.stderr, flush=True)
+    return None
+
+
+def _model_to_dict(row) -> dict:
+    cols = {c.name: getattr(row, c.name) for c in row.__table__.columns}
+    for k in ("_sa_instance_state",):
+        cols.pop(k, None)
+    return cols
+
+
+def _enrich_task(row) -> dict:
+    d = _model_to_dict(row)
+    print(f"[train-progress] task_id={d.get('id')} status={d.get('status')} status_repr={repr(d.get('status'))}", file=sys.stderr, flush=True)
+    if d.get("status") == "running":
+        live = _calc_progress_from_log(d.get("id", 0))
+        if live is not None:
+            print(f"[train-progress] live progress={live}", file=sys.stderr, flush=True)
+            d["progress"] = live
+    return d
 
 
 class TrainService:
@@ -54,13 +117,13 @@ class TrainService:
     async def list_tasks(cls) -> list[dict]:
         async with async_db_session() as db:
             result = await db.execute(select(TrainTask).order_by(desc(TrainTask.created_time)))
-            return [dict(r.__dict__) for r in result.scalars().all()]
+            return [_enrich_task(r) for r in result.scalars().all()]
 
     @classmethod
     async def get_task(cls, task_id: int) -> dict | None:
         async with async_db_session() as db:
             t = await db.get(TrainTask, task_id)
-            return dict(t.__dict__) if t else None
+            return _enrich_task(t) if t else None
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
@@ -164,9 +227,9 @@ class TrainService:
 
     @classmethod
     async def upload_predict_images(cls, files: list, auth) -> list[str]:
-        import uuid
         import io
-        import os
+        import uuid
+
         from app.utils.s3_client import s3_client
 
         keys = []
@@ -180,7 +243,11 @@ class TrainService:
 
     @classmethod
     async def export_dataset(cls, data, auth) -> dict:
-        import os, tempfile, shutil, zipfile
+        import os
+        import shutil
+        import tempfile
+        import zipfile
+
         from .exporter import export_dataset_for_download as run_export
 
         # If annotation_task_id is set, check the task is completed
@@ -233,8 +300,10 @@ class TrainService:
 
         # Schedule cleanup after presigned URL expires
         import asyncio
+
         from app.config.setting import settings
         expiry_secs = settings.RUSTFS_PRESIGNED_URL_EXPIRY
+
         async def _delayed_cleanup():
             await asyncio.sleep(expiry_secs + 60)
             try:

@@ -3,18 +3,60 @@ import os
 import tempfile
 from datetime import datetime
 
+import requests
 from sqlalchemy import select, update
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .model import TrainTask, TrainStatus, TrainFramework
-from .docker_utils import run_container, stop_container, pull_image, follow_container_logs, remove_container
+from .docker_utils import (
+    follow_container_logs,
+    pull_image,
+    remove_container,
+    run_container,
+    stop_container,
+)
+from .model import TrainFramework, TrainStatus, TrainTask
 from .ws import broadcast_log
 
 _running_tasks: dict[int, dict] = {}
 _scheduler_task: asyncio.Task | None = None
 MAX_CONCURRENT = 1
+
+MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "train_output", ".models_cache").replace("\\", "/")
+_MODEL_DOWNLOAD_BASE = "https://github.com/ultralytics/assets/releases/latest/download"
+_MODEL_MIRROR = os.environ.get("MODEL_MIRROR", "")  # e.g. https://ghproxy.com/
+
+
+def _ensure_model_file(model_name: str) -> str:
+    name = model_name if model_name.endswith(".pt") else f"{model_name}.pt"
+    dst = os.path.join(MODELS_CACHE_DIR, name)
+    if os.path.isfile(dst) and os.path.getsize(dst) > 5000000:
+        return dst
+    os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
+    url = f"{_MODEL_DOWNLOAD_BASE}/{name}"
+    if _MODEL_MIRROR:
+        url = _MODEL_MIRROR.rstrip("/") + "/" + url
+    tmp = dst + ".part"
+    log.info(f"downloading model {name} ...")
+    try:
+        r = requests.get(url, stream=True, timeout=(10, 120))
+        r.raise_for_status()
+        total = int(r.headers.get("content-length", 0))
+        downloaded = 0
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+                downloaded += len(chunk)
+        if downloaded < 5000000:
+            raise Exception(f"download too small: {downloaded} bytes")
+        os.replace(tmp, dst)
+        log.info(f"model {name} downloaded ({downloaded} bytes)")
+    except Exception as e:
+        log.error(f"failed to download model {name}: {e}")
+        if os.path.isfile(tmp):
+            os.remove(tmp)
+    return dst
 
 
 async def start_scheduler():
@@ -64,7 +106,7 @@ def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: 
     if task_type == "rotated_detection" and "-obb" not in model_name:
         base = model_name.replace(".pt", "")
         model_name = f"{base}-obb.pt"
-    return ["yolo", "train", f"model={model_name}", "data=/data/dataset.yaml",
+    return ["yolo", "train", f"model=/models/{model_name}", "data=/data/dataset.yaml",
             f"epochs={epochs}", f"batch={batch}", f"lr0={lr}", "project=/output", "name=exp"]
 
 
@@ -110,10 +152,18 @@ async def _execute_training(task_id: int):
         else:
             cmd = _build_paddlex_cmd(task.hyperparams, data_dir, export_dir)
 
+        # Pre-download model weights so container doesn't fetch from internet
+        if task.framework == TrainFramework.ULTRALYTICS:
+            model_arg = next((a for a in cmd if a.startswith("model=")), "model=yolo11n.pt")
+            model_name = model_arg.split("=", 1)[1].lstrip("/models/")
+            _ensure_model_file(model_name)
+
+        os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
         container = await run_container(
             task.docker_image, cmd,
             volumes={data_dir: {"bind": "/data", "mode": "rw"},
-                     export_dir: {"bind": "/output", "mode": "rw"}},
+                     export_dir: {"bind": "/output", "mode": "rw"},
+                     MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}},
             gpu_id=task.hyperparams.get("gpu_id", "0"),
         )
         container_id = container.id
@@ -261,19 +311,27 @@ async def start_training(task_id: int):
         if not task:
             raise Exception(f"训练任务 {task_id} 不存在")
 
-        # If annotation_task_id is set, verify the annotation task is completed
+        # If annotation_task_id is set, verify the annotation task is completed (live check)
         if task.annotation_task_id:
             from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+            from app.api.v1.module_annotation.task.service import TaskService
             ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
-            if ann_task and ann_task.status != "completed":
-                raise Exception(
-                    f"标注任务「{ann_task.name}」尚未完成（状态: {ann_task.status}），"
-                    "请先完成标注再开始训练"
-                )
+            if ann_task:
+                try:
+                    prog = await TaskService._calc_progress(db, ann_task.id, ann_task.dataset_id)
+                except Exception:
+                    prog = {"status": "pending"}
+                if prog.get("status") != "completed":
+                    raise Exception(
+                        f"标注任务「{ann_task.name}」尚未完成"
+                    )
 
         await db.execute(
             update(TrainTask).where(TrainTask.id == task_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now()
+                status=TrainStatus.RUNNING, started_at=datetime.now(),
+                progress=0, error_log=None,
+                metrics_log=None, best_metrics=None, last_metrics=None,
+                finished_at=None,
             )
         )
     asyncio.create_task(_execute_training(task_id))
@@ -284,3 +342,10 @@ async def stop_training(task_id: int) -> None:
     if entry:
         entry["cancel"] = True
         await stop_container(entry["container_id"])
+    # Always update DB status, even if _running_tasks entry is gone
+    async with async_db_session.begin() as db:
+        await db.execute(
+            update(TrainTask).where(TrainTask.id == task_id, TrainTask.status == TrainStatus.RUNNING).values(
+                status=TrainStatus.CANCELLED, finished_at=datetime.now()
+            )
+        )

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
-from app.core.dependencies import AuthPermission
 from app.common.response import SuccessResponse
+from app.core.dependencies import AuthPermission
 
 from .service import StatsService
 

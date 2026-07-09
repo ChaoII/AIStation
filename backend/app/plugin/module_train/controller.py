@@ -1,17 +1,30 @@
-from fastapi import APIRouter, Depends, Body, UploadFile, File
+import os
+import tempfile
+
+from fastapi import APIRouter, Body, Depends, File, UploadFile
+
+from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
-from app.api.v1.module_system.auth.schema import AuthSchema
-from .schema import (
-    TrainModelCreateSchema, TrainTaskCreateSchema,
-    TrainEvalCreateSchema, TrainPredictCreateSchema, DatasetExportSchema
-)
-from .service import TrainService
-from .scheduler import start_training
+
 from .eval_scheduler import start_evaluation, stop_evaluation
 from .predict_executor import start_prediction, stop_prediction
+from .scheduler import start_training
+from .schema import (
+    DatasetExportSchema,
+    TrainEvalCreateSchema,
+    TrainModelCreateSchema,
+    TrainPredictCreateSchema,
+    TrainTaskCreateSchema,
+)
+from .service import TrainService
 
 router = APIRouter(tags=["模型训练"])
+
+
+@router.get("/system/tempdir", summary="系统临时目录路径", include_in_schema=False)
+async def get_tempdir():
+    return SuccessResponse(data={"tempdir": tempfile.gettempdir().replace("\\", "/")})
 
 
 @router.get("/model/list", summary="模型仓库列表")
@@ -120,11 +133,11 @@ async def list_evals(model_repo_id: int, auth: AuthSchema = Depends(AuthPermissi
 
 @router.get("/task/{task_id}/logs", summary="获取训练日志")
 async def get_task_logs(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
-    import os, tempfile
+    import tempfile
     log_path = os.path.join(tempfile.gettempdir(), "train_output", str(task_id), "train.log")
     if not os.path.exists(log_path):
         return SuccessResponse(data={"logs": "", "path": log_path})
-    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+    with open(log_path, encoding="utf-8", errors="replace") as f:
         content = f.read()
     return SuccessResponse(data={"logs": content[-500000:]})
 

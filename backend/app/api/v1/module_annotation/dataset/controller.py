@@ -20,7 +20,7 @@ async def get_dataset_list(
     search: DatasetQueryParam = Depends(),
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
 ) -> JSONResponse:
-    from sqlalchemy import func, select
+    from sqlalchemy import select
 
     from app.core.database import async_db_session
 

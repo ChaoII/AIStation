@@ -9,8 +9,8 @@ from sqlalchemy import select, update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .model import TrainEval, TrainStatus, TrainModel
-from .docker_utils import pull_image, run_container, follow_container_logs, remove_container
+from .docker_utils import follow_container_logs, pull_image, remove_container, run_container
+from .model import TrainEval, TrainModel, TrainStatus
 from .ws import broadcast_eval_log
 
 _eval_running: dict[int, dict] = {}
