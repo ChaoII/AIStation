@@ -71,22 +71,25 @@ async def _export_core(
 
 
 async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False) -> None:
-    """Export to YOLO format. for_training=True: no split, YAML path=/data."""
-    import random, shutil
-
+    """Export to YOLO format with train/val split. for_training controls YAML path."""
+    import random
     from app.utils.s3_client import s3_client
+
+    random.shuffle(images)
+    split_idx = max(1, int(len(images) * train_ratio))
+    train_imgs = images[:split_idx]
+    val_imgs = images[split_idx:]
     classes: set[int] = set()
 
-    if for_training:
-        # Training: all images in one directory, no split
-        img_dir = os.path.join(output_dir, "images")
-        label_dir = os.path.join(output_dir, "labels")
-        os.makedirs(img_dir, exist_ok=True)
-        os.makedirs(label_dir, exist_ok=True)
+    for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
+        img_split = os.path.join(output_dir, "images", split_name)
+        label_split = os.path.join(output_dir, "labels", split_name)
+        os.makedirs(img_split, exist_ok=True)
+        os.makedirs(label_split, exist_ok=True)
 
         async with async_db_session() as db:
-            for img in images:
-                img_path = os.path.join(img_dir, img.filename)
+            for img in split_imgs:
+                img_path = os.path.join(img_split, img.filename)
                 if not os.path.exists(img_path):
                     try:
                         data = s3_client.download_fileobj(img.object_key)
@@ -104,7 +107,7 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
                 record = rec.scalar_one_or_none()
                 anns = record.annotation_data if record and record.annotation_data else []
 
-                label_path = os.path.join(label_dir, img.filename.rsplit(".", 1)[0] + ".txt")
+                label_path = os.path.join(label_split, img.filename.rsplit(".", 1)[0] + ".txt")
                 lines = _format_yolo_lines(anns, task_type)
                 if lines:
                     with open(label_path, "w") as f:
@@ -112,63 +115,10 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
                     for ann in anns:
                         classes.add(ann.get("class_id", 0))
 
-        # YAML for training (Docker path)
-        sorted_classes = sorted(classes)
-        _write_yaml(os.path.join(output_dir, "dataset.yaml"), "/data", sorted_classes, class_names or {})
-
-    else:
-        # Download: train/val split
-        random.shuffle(images)
-        split_idx = max(1, int(len(images) * train_ratio))
-        train_imgs = images[:split_idx]
-        val_imgs = images[split_idx:]
-
-        for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
-            img_split = os.path.join(output_dir, "images", split_name)
-            label_split = os.path.join(output_dir, "labels", split_name)
-            os.makedirs(img_split, exist_ok=True)
-            os.makedirs(label_split, exist_ok=True)
-            saved = 0
-
-            async with async_db_session() as db:
-                for img in split_imgs:
-                    img_path = os.path.join(img_split, img.filename)
-                    if not os.path.exists(img_path):
-                        try:
-                            data = s3_client.download_fileobj(img.object_key)
-                            with open(img_path, "wb") as f:
-                                f.write(data.read())
-                            saved += 1
-                        except Exception as e:
-                            log.warning(f"skip {img.filename}: {e}")
-                            continue
-
-                    query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-                    if annotation_task_id:
-                        query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-                    query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-                    rec = await db.execute(query)
-                    record = rec.scalar_one_or_none()
-                    anns = record.annotation_data if record and record.annotation_data else []
-
-                    label_path = os.path.join(label_split, img.filename.rsplit(".", 1)[0] + ".txt")
-                    lines = _format_yolo_lines(anns, task_type)
-                    if lines:
-                        with open(label_path, "w") as f:
-                            f.write("\n".join(lines))
-                        for ann in anns:
-                            classes.add(ann.get("class_id", 0))
-
-                log.info(f"yolo {split_name}: {saved} images")
-
-        # YAML for download (relative path)
-        sorted_classes = sorted(classes)
-        names_dict = {str(cid): class_names.get(cid, str(cid)) if class_names else str(cid) for cid in sorted_classes}
-        yaml_path = os.path.join(output_dir, "dataset.yaml")
-        with open(yaml_path, "w") as f:
-            f.write("path: .\ntrain: images/train\nval: images/val\n")
-            f.write(f"nc: {len(sorted_classes)}\n")
-            f.write(f"names: {json.dumps(names_dict, ensure_ascii=False)}\n")
+    base_path = "/data" if for_training else "."
+    sorted_classes = sorted(classes)
+    _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_classes, class_names or {})
+    log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_classes)} → {output_dir}")
     img_dir = os.path.join(output_dir, "images")
 def _export_paddlex(images: list, output_dir: str) -> None:
     img_dir = os.path.join(output_dir, "images")
@@ -204,8 +154,8 @@ def _write_yaml(path: str, base_path: str, sorted_classes: list, class_names: di
     names_dict = {str(c): class_names.get(c, str(c)) for c in sorted_classes}
     with open(path, "w") as f:
         f.write(f"path: {base_path}\n")
-        f.write("train: .\n" if base_path == "/data" else "train: images/train\n")
-        f.write("val: .\n" if base_path == "/data" else "val: images/val\n")
+        f.write("train: images/train\n")
+        f.write("val: images/val\n")
         f.write(f"nc: {len(sorted_classes)}\n")
         if any(k != v for k, v in names_dict.items()):
             f.write(f"names: {json.dumps(names_dict, ensure_ascii=False)}\n")
