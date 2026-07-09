@@ -49,6 +49,8 @@ class InitializeData:
             # 确保所有模块的模型在 create_all 前被导入
             from app.api.v1.module_video.alarm.model import AlarmRecordModel
             _ = AlarmRecordModel
+            from app.api.v1.module_annotation.dataset.export_model import DatasetExportModel
+            _ = DatasetExportModel
             # 使用引擎创建所有表
             # await drop_tables()
             await create_tables()

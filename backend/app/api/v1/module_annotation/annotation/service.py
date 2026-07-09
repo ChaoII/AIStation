@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select, update
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from ..dataset.model import AnnotationImageModel
+from ..dataset.model import AnnotationImageModel, DatasetModel
 from .model import AnnotationRecordModel
 
 
@@ -62,6 +62,26 @@ class AnnotationService:
                 task_id=task_id, image_id=image_id, annotation_data=annotation_data,
                 version=version, created_id=auth.user.id,
             ))
+
+            # Update image status and annotation count
+            if img:
+                img.status = "annotated" if annotation_data else "unannotated"
+                img.annotation_count = len(annotation_data)
+
+            # Recalculate dataset annotated_count
+            if img:
+                subq = select(AnnotationImageModel.id).where(
+                    AnnotationImageModel.dataset_id == img.dataset_id
+                )
+                annotated = await db.scalar(
+                    select(func.count(func.distinct(AnnotationRecordModel.image_id)))
+                    .where(AnnotationRecordModel.image_id.in_(subq))
+                )
+                await db.execute(
+                    update(DatasetModel)
+                    .where(DatasetModel.id == img.dataset_id)
+                    .values(annotated_count=annotated or 0)
+                )
 
         log.info(f"save_annotations task={task_id} image={image_id} v={version}")
         return {"version": version, "annotation_count": len(annotation_data)}

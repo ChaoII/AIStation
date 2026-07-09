@@ -126,4 +126,12 @@ export const AnnotationAPI = {
   getOverview() {
     return request<ApiResponse<any>>({ url: `${API_PATH}/stats/overview`, method: "get" });
   },
+  getDatasetStats(datasetId: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/stats/dataset/${datasetId}`, method: "get" });
+  },
+
+  // Export history
+  getExportHistory(datasetId: number) {
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/dataset/export/history/${datasetId}`, method: "get" });
+  },
 };
