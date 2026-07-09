@@ -289,7 +289,10 @@ class AuthPermission:
 
         # 权限验证 - 满足任一权限即可
         if not any(perm in user_permissions for perm in self.permissions):
-            log.error(f"用户缺少任何所需的权限: {self.permissions}")
+            log.warning(
+                f"权限拒绝 user={auth.user.id} name={auth.user.name} "
+                f"required={self.permissions} actual={sorted(user_permissions)}"
+            )
             raise CustomException(msg="无权限操作", code=10403, status_code=403)
 
         return auth
