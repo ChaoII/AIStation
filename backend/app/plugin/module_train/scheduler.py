@@ -28,6 +28,19 @@ _MODEL_DOWNLOAD_BASE = "https://github.com/ultralytics/assets/releases/latest/do
 _MODEL_MIRROR = os.environ.get("MODEL_MIRROR", "")  # e.g. https://ghproxy.com/
 
 
+def _send_notify(user_id: int, title: str, content: str | None, type_: str, module: str, module_id: int | None):
+    """Fire-and-forget notification; non-blocking on best-effort basis."""
+    try:
+        from app.api.v1.module_system.notification.service import NotificationService
+        import asyncio
+        asyncio.ensure_future(NotificationService.create_notification(
+            user_id=user_id, title=title, content=content,
+            type=type_, module=module, module_id=module_id,
+        ))
+    except Exception:
+        pass
+
+
 def _ensure_model_file(model_name: str) -> str:
     name = model_name if model_name.endswith(".pt") else f"{model_name}.pt"
     dst = os.path.join(MODELS_CACHE_DIR, name)
@@ -272,6 +285,8 @@ async def _execute_training(task_id: int):
                         best_metrics=best_metrics, last_metrics=last_metrics,
                     )
                 )
+            if hasattr(task, "created_id") and task.created_id:
+                _send_notify(task.created_id, f"训练完成: {task.name}", f"任务已成功完成，模型已保存", "training_complete", "train", task_id)
         else:
             error_msg = ""
             try:
@@ -290,6 +305,8 @@ async def _execute_training(task_id: int):
                         best_metrics=best_metrics, last_metrics=last_metrics,
                     )
                 )
+            if hasattr(task, "created_id") and task.created_id:
+                _send_notify(task.created_id, f"训练失败: {task.name}", error_msg or "训练异常退出", "training_failed", "train", task_id)
 
     except Exception as e:
         log.error(f"training task {task_id} failed: {e}")

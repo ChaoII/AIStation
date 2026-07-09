@@ -14,6 +14,9 @@ from .role.controller import RoleRouter
 from .tenant.controller import TenantRouter
 from .user.controller import UserRouter
 
+from .notification.controller import NotificationRouter
+from .notification.ws import NotificationWSRouter
+
 system_router = APIRouter(prefix="/system")
 
 system_router.include_router(AuthRouter)
@@ -22,6 +25,7 @@ system_router.include_router(DictRouter)
 system_router.include_router(LogRouter)
 system_router.include_router(MenuRouter)
 system_router.include_router(NoticeRouter)
+system_router.include_router(NotificationRouter)
 system_router.include_router(ParamsRouter)
 system_router.include_router(PositionRouter)
 system_router.include_router(RoleRouter)

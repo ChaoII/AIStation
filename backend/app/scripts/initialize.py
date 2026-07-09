@@ -51,6 +51,8 @@ class InitializeData:
             _ = AlarmRecordModel
             from app.api.v1.module_annotation.dataset.export_model import DatasetExportModel
             _ = DatasetExportModel
+            from app.api.v1.module_system.notification.model import UserNotificationModel
+            _ = UserNotificationModel
             # 使用引擎创建所有表
             # await drop_tables()
             await create_tables()
