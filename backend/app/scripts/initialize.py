@@ -53,6 +53,8 @@ class InitializeData:
             _ = DatasetExportModel
             from app.api.v1.module_system.notification.model import UserNotificationModel
             _ = UserNotificationModel
+            from app.plugin.module_train.schedule_model import TrainScheduleModel
+            _ = TrainScheduleModel
             # 使用引擎创建所有表
             # await drop_tables()
             await create_tables()

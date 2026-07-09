@@ -80,9 +80,46 @@ async def start_scheduler():
 
 
 async def _scheduler_loop():
-    """维护循环：清理孤儿任务"""
+    """维护循环：清理孤儿任务 + 触发定时训练"""
     while True:
         try:
+            # Check for due training schedules
+            try:
+                from .schedule_service import ScheduleService
+                from .schedule_model import TrainScheduleModel
+                due = await ScheduleService.get_due_schedules()
+                for s in due:
+                    try:
+                        from .service import TrainService
+                        # Create a mock auth object - schedules run as superuser
+                        class _ScheduleAuth:
+                            class user:
+                                id = s.created_id or 1
+                        hp = s.hyperparams or {}
+                        task_data = type("data", (), {
+                            "name": f"[定时] {s.name}",
+                            "dataset_id": s.dataset_id,
+                            "annotation_task_id": s.annotation_task_id,
+                            "framework": s.framework,
+                            "hyperparams": hp,
+                        })()
+                        result = await TrainService.create_task(task_data, _ScheduleAuth())
+                        new_id = result.get("id")
+                        if new_id:
+                            await start_training(new_id)
+                        async with async_db_session.begin() as db:
+                            await db.execute(
+                                update(TrainScheduleModel).where(TrainScheduleModel.id == s.id).values(
+                                    last_run_at=datetime.now(), last_task_id=new_id
+                                )
+                            )
+                        log.info(f"scheduled training triggered: schedule={s.id} task={new_id}")
+                    except Exception as e:
+                        log.error(f"scheduled training failed for schedule {s.id}: {e}")
+            except Exception as e:
+                log.error(f"schedule check error: {e}")
+
+            # Orphan task cleanup
             async with async_db_session() as db:
                 running = await db.execute(
                     select(TrainTask).where(TrainTask.status == TrainStatus.RUNNING)

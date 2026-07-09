@@ -94,4 +94,18 @@ export const TrainAPI = {
   getTempDir() {
     return request<ApiResponse<{ tempdir: string }>>({ url: `${API_PATH}/system/tempdir`, method: "get" });
   },
+
+  // Schedules
+  getScheduleList() {
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/schedule/list`, method: "get" });
+  },
+  createSchedule(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/create`, method: "post", data });
+  },
+  updateSchedule(id: number, data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/update/${id}`, method: "put", data });
+  },
+  deleteSchedule(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/schedule/delete`, method: "delete", data: ids });
+  },
 };

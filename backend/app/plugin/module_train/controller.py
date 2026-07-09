@@ -15,6 +15,8 @@ from .schema import (
     TrainEvalCreateSchema,
     TrainModelCreateSchema,
     TrainPredictCreateSchema,
+    TrainScheduleCreateSchema,
+    TrainScheduleUpdateSchema,
     TrainTaskCreateSchema,
 )
 from .service import TrainService
@@ -188,3 +190,44 @@ async def delete_predict(ids: list[int] = Body(...), auth: AuthSchema = Depends(
 async def upload_predict_images(files: list[UploadFile] = File(...), auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
     urls = await TrainService.upload_predict_images(files, auth)
     return SuccessResponse(data=urls, msg="上传成功")
+
+
+@router.post("/schedule/create", summary="创建定时训练计划")
+async def create_schedule(
+    data: TrainScheduleCreateSchema = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:create"])),
+):
+    from .schedule_service import ScheduleService
+    result = await ScheduleService.create_schedule(data, auth)
+    return SuccessResponse(data=result, msg="创建成功")
+
+
+@router.get("/schedule/list", summary="定时训练计划列表")
+async def list_schedules(auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
+    from .schedule_service import ScheduleService
+    data = await ScheduleService.list_schedules()
+    return SuccessResponse(data=data)
+
+
+@router.put("/schedule/update/{schedule_id}", summary="更新定时训练计划")
+async def update_schedule(
+    schedule_id: int,
+    data: TrainScheduleUpdateSchema = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"])),
+):
+    from .schedule_service import ScheduleService
+    result = await ScheduleService.update_schedule(schedule_id, data)
+    if result:
+        return SuccessResponse(data=result, msg="更新成功")
+    from app.common.response import ErrorResponse
+    return ErrorResponse(msg="计划不存在")
+
+
+@router.delete("/schedule/delete", summary="删除定时训练计划")
+async def delete_schedule(
+    ids: list[int] = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:delete"])),
+):
+    from .schedule_service import ScheduleService
+    await ScheduleService.delete_schedules(ids)
+    return SuccessResponse(msg="删除成功")

@@ -113,3 +113,22 @@ class DatasetExportSchema(BaseModel):
     format: str = "ultralytics"
     ocr_rec: bool = True
     train_ratio: float = 0.8
+
+
+class TrainScheduleCreateSchema(BaseModel):
+    name: str = Field(max_length=128)
+    dataset_id: int
+    annotation_task_id: int | None = None
+    framework: str = "ultralytics"
+    hyperparams: dict = {}
+    cron_expr: str
+
+
+class TrainScheduleUpdateSchema(BaseModel):
+    name: str | None = None
+    dataset_id: int | None = None
+    annotation_task_id: int | None = None
+    framework: str | None = None
+    hyperparams: dict | None = None
+    cron_expr: str | None = None
+    enabled: bool | None = None
