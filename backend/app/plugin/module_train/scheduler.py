@@ -94,7 +94,8 @@ async def _execute_training(task_id: int):
         os.makedirs(data_dir, exist_ok=True)
 
         from .exporter import prepare_training_data_for_task
-        await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id)
+        data_train_ratio = task.hyperparams.get("train_ratio", 0.8)
+        await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id, train_ratio=data_train_ratio)
 
         if task.framework == TrainFramework.ULTRALYTICS:
             # Determine task_type for model selection (OBB models need -obb suffix)

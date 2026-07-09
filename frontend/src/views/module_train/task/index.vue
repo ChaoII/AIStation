@@ -362,6 +362,14 @@
               </el-form-item>
             </el-col>
           </el-row>
+          <el-row :gutter="20">
+            <el-col :span="24">
+              <el-form-item label="训练集占比">
+                <el-slider v-model="hpForm.trainRatio" :min="50" :max="95" :step="5" show-input style="width:300px" />
+                <span style="margin-left:12px;font-size:12px;color:#909399">验证集 {{ 100 - (hpForm.trainRatio || 80) }}%</span>
+              </el-form-item>
+            </el-col>
+          </el-row>
         </template>
       </el-form>
       <div v-if="dialogVisible.type === 'create'" class="docker-preview">
@@ -562,6 +570,7 @@ const defaultHpUltra = () => ({
   imgsz: 640,
   workers: 4,
   device: "0",
+  trainRatio: 80,
 });
 
 const defaultHpPaddle = () => ({
@@ -642,6 +651,7 @@ function buildHyperparams(): Record<string, any> {
       imgsz: hpForm.imgsz,
       workers: hpForm.workers,
       device: hpForm.device,
+      train_ratio: (hpForm.trainRatio || 80) / 100,
     };
   }
   return {

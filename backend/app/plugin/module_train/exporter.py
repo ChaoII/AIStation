@@ -7,9 +7,9 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 
-async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None) -> str:
-    """Export dataset for training — no train/val split, YAML path=/data for Docker mount."""
-    return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, for_training=True)
+async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8) -> str:
+    """Export dataset for training — unified with download, just different YAML path."""
+    return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True)
 
 
 async def export_dataset_for_download(
