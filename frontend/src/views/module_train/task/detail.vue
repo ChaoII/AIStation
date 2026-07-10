@@ -191,6 +191,8 @@
       </div>
     </el-card>
   </div>
+
+  <ModelExportDialog v-model:visible="exportDialogVisible" :model-id="task.value?.model_repo_id || 0" :model-name="task.value?.name" @done="loadTask" />
 </template>
 
 <script setup lang="ts">
@@ -530,7 +532,12 @@ function handleViewModel() { if (task.value?.model_repo_id) router.push(`/train/
 
 function handleEvaluate() { ElMessage.info("评估功能需要后端支持"); }
 
-function handleExport() { ElMessage.info("导出功能需要后端支持"); }
+const exportDialogVisible = ref(false);
+
+function handleExport() {
+  if (!task.value?.model_repo_id) { ElMessage.warning("暂无关联模型，请先完成训练"); return; }
+  exportDialogVisible.value = true;
+}
 
 onMounted(async () => {
   await loadTask();

@@ -496,6 +496,7 @@ async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
         model_rec = TrainModel(
             name=task.name, framework=task.framework,
             version=f"v{next_ver}", storage_path=storage_path,
+            format="pytorch",  # Original format is PyTorch
             annotation_dataset_id=task.dataset_id, created_id=task.created_id,
         )
         db.add(model_rec)

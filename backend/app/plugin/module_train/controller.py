@@ -6,12 +6,15 @@ from fastapi import APIRouter, Body, Depends, File, UploadFile
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
+from app.utils.s3_client import s3_client
 
 from .eval_scheduler import start_evaluation, stop_evaluation
 from .predict_executor import start_prediction, stop_prediction
 from .scheduler import start_training
 from .schema import (
     DatasetExportSchema,
+    ModelExportSchema,
+    ModelUpdateSchema,
     TrainEvalCreateSchema,
     TrainModelCreateSchema,
     TrainPredictCreateSchema,
@@ -231,3 +234,57 @@ async def delete_schedule(
     from .schedule_service import ScheduleService
     await ScheduleService.delete_schedules(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@router.post("/model/{model_id}/export", summary="导出模型（格式转换）")
+async def export_model(
+    model_id: int,
+    data: ModelExportSchema = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .export_service import export_model_to_format
+    from .service import TrainService
+
+    model = await TrainService.get_model(model_id)
+    if not model:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg="模型不存在")
+
+    result = await export_model_to_format(
+        model_id=model_id,
+        storage_path=model.get("storage_path", ""),
+        export_params=data.model_dump(),
+        model_name=model.get("name", ""),
+        created_id=auth.user.id,
+        dataset_id=model.get("annotation_dataset_id"),
+    )
+    return SuccessResponse(data=result)
+
+
+@router.get("/model/{model_id}/download", summary="下载模型文件")
+async def download_model(
+    model_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .service import TrainService
+    model = await TrainService.get_model(model_id)
+    if not model or not model.get("storage_path"):
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg="模型或文件不存在")
+
+    url = s3_client.presigned_url(model["storage_path"])
+    return SuccessResponse(data={"download_url": url, "format": model.get("format", "pytorch")})
+
+
+@router.put("/model/update/{model_id}", summary="更新模型信息")
+async def update_model(
+    model_id: int,
+    data: ModelUpdateSchema = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
+):
+    from .service import TrainService
+    result = await TrainService.update_model(model_id, data.model_dump(exclude_none=True))
+    if result:
+        return SuccessResponse(data=result, msg="更新成功")
+    from app.common.response import ErrorResponse
+    return ErrorResponse(msg="模型不存在")

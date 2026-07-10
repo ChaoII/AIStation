@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.core.dependencies import get_current_user_ws
 
-NotificationWSRouter = APIRouter(tags=["通知WebSocket"])
+NotificationWSRouter = APIRouter(prefix="/system/ws", tags=["通知WebSocket"])
 
 _notification_ws_clients: dict[int, list[WebSocket]] = {}
 

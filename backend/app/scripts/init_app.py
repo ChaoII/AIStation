@@ -737,7 +737,7 @@ def register_routers(app: FastAPI) -> None:
 
     from app.api.v1.module_system.notification.ws import NotificationWSRouter
 
-    app.include_router(NotificationWSRouter, prefix=f"{ROOT_PATH}/system")
+    app.include_router(NotificationWSRouter)
     # 先将动态路由注册到应用，使用速率限制器
     from app.core.discover import get_dynamic_router
 

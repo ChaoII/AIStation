@@ -82,6 +82,17 @@ class TrainService:
             return dict(m.__dict__) if m else None
 
     @classmethod
+    async def update_model(cls, model_id: int, data: dict) -> dict | None:
+        async with async_db_session.begin() as db:
+            m = await db.get(TrainModel, model_id)
+            if not m:
+                return None
+            for key, val in data.items():
+                if hasattr(m, key) and val is not None:
+                    setattr(m, key, val)
+            return {"id": m.id}
+
+    @classmethod
     async def create_model(cls, data, auth) -> dict:
         async with async_db_session.begin() as db:
             existing = await db.execute(

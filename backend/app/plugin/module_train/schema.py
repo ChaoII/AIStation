@@ -132,3 +132,27 @@ class TrainScheduleUpdateSchema(BaseModel):
     hyperparams: dict | None = None
     cron_expr: str | None = None
     enabled: bool | None = None
+
+
+class ModelExportSchema(BaseModel):
+    format: str = "onnx"
+    imgsz: int = 640
+    batch: int = 1
+    device: str = "cpu"
+    quantize: int | str | None = None
+    simplify: bool = True
+    opset: int | None = None
+    workspace: float | None = None
+    nms: bool = False
+    end2end: bool | None = None
+    dynamic: bool = False
+    optimize: bool = False
+    keras: bool = False
+    data: str | None = None
+    fraction: float = 1.0
+
+
+class ModelUpdateSchema(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None  # draft / released / archived

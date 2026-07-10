@@ -108,4 +108,20 @@ export const TrainAPI = {
   deleteSchedule(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/schedule/delete`, method: "delete", data: ids });
   },
+
+  // Model export
+  exportModel(modelId: number, data: any) {
+    return request<ApiResponse<{ download_url: string; format: string; file_size: number; file_name: string }>>({
+      url: `${API_PATH}/model/${modelId}/export`,
+      method: "post",
+      data,
+      timeout: 600000,
+    });
+  },
+  downloadModel(modelId: number) {
+    return request<ApiResponse<{ download_url: string; format: string }>>({ url: `${API_PATH}/model/${modelId}/download`, method: "get" });
+  },
+  updateModel(modelId: number, data: any) {
+    return request<ApiResponse>({ url: `${API_PATH}/model/update/${modelId}`, method: "put", data });
+  },
 };
