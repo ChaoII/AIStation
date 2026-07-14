@@ -52,7 +52,7 @@ backend/static/upload/
 backend/data/*.png
 backend/data/*.jpg
 
-# Root-level temp scripts and logs
+# Root-level temp scripts, logs, and stray files
 *.log
 *.err
 *.tmp
@@ -60,9 +60,4 @@ check_*.py
 fix_*.py
 clean_*.py
 restore_*.py
-
-# Frontend/backend runtime logs
-backend/*.log
-backend/*.err
-frontend/*.log
-frontend/*.err
+test_*.js
