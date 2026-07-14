@@ -25,6 +25,10 @@
   box-sizing: border-box;
 }
 
+.dashboard-page .el-card {
+  min-width: 0;
+}
+
 /* ── 顶部问候 ── */
 
 /* ── 指标卡片区 ── */
@@ -104,15 +108,22 @@
 .dash-charts {
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 .dash-charts + .dash-charts {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .dash-charts > * {
   min-width: 0;
   overflow: hidden;
+}
+
+.dash-charts .el-card {
+  min-width: 0;
+}
+.dash-charts .el-card__body {
+  padding: 12px 10px;
 }
 
 .dash-chart-header {
