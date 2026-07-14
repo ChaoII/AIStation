@@ -51,3 +51,11 @@ backend/data/recordings/
 backend/static/upload/
 backend/data/*.png
 backend/data/*.jpg
+
+# Root-level temp scripts and logs
+*.log
+*.err
+check_*.py
+fix_*.py
+clean_*.py
+restore_*.py

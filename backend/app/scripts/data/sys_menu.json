@@ -2,7 +2,7 @@
   {
     "name": "仪表盘",
     "type": 1,
-    "icon": "client",
+    "icon": "el-icon-User",
     "order": 1,
     "permission": "",
     "route_name": "Dashboard",
@@ -42,7 +42,7 @@
   {
     "name": "系统管理",
     "type": 1,
-    "icon": "system",
+    "icon": "el-icon-Setting",
     "order": 2,
     "permission": null,
     "route_name": "System",
@@ -61,7 +61,7 @@
       {
         "name": "菜单管理",
         "type": 2,
-        "icon": "menu",
+        "icon": "el-icon-Menu",
         "order": 1,
         "permission": "module_system:menu:query",
         "route_name": "Menu",
@@ -196,7 +196,7 @@
       {
         "name": "部门管理",
         "type": 2,
-        "icon": "tree",
+        "icon": "el-icon-FolderOpened",
         "order": 2,
         "permission": "module_system:dept:query",
         "route_name": "Dept",
@@ -485,7 +485,7 @@
       {
         "name": "角色管理",
         "type": 2,
-        "icon": "role",
+        "icon": "el-icon-Avatar",
         "order": 4,
         "permission": "module_system:role:query",
         "route_name": "Role",
@@ -947,7 +947,7 @@
       {
         "name": "公告管理",
         "type": 2,
-        "icon": "bell",
+        "icon": "el-icon-Bell",
         "order": 7,
         "permission": "module_system:notice:query",
         "route_name": "Notice",
@@ -1101,7 +1101,7 @@
       {
         "name": "参数管理",
         "type": 2,
-        "icon": "setting",
+        "icon": "el-icon-Setting",
         "order": 8,
         "permission": "module_system:param:query",
         "route_name": "Params",
@@ -1255,7 +1255,7 @@
       {
         "name": "字典管理",
         "type": 2,
-        "icon": "dict",
+        "icon": "el-icon-Notebook",
         "order": 9,
         "permission": "module_system:dict_type:query",
         "route_name": "Dict",
@@ -1679,7 +1679,7 @@
   {
     "name": "监控管理",
     "type": 1,
-    "icon": "monitor",
+    "icon": "el-icon-Monitor",
     "order": 3,
     "permission": null,
     "route_name": "Monitor",
@@ -1972,7 +1972,7 @@
   {
     "name": "接口管理",
     "type": 1,
-    "icon": "document",
+    "icon": "el-icon-Document",
     "order": 4,
     "permission": null,
     "route_name": "Common",
@@ -1991,7 +1991,7 @@
       {
         "name": "Swagger文档",
         "type": 4,
-        "icon": "api",
+        "icon": "el-icon-Connection",
         "order": 1,
         "permission": "module_common:docs:query",
         "route_name": "Docs",
@@ -2050,7 +2050,7 @@
   {
     "name": "代码管理",
     "type": 1,
-    "icon": "code",
+    "icon": "el-icon-EditPenPen",
     "order": 5,
     "permission": null,
     "route_name": "Generator",
@@ -2069,7 +2069,7 @@
       {
         "name": "代码生成",
         "type": 2,
-        "icon": "code",
+        "icon": "el-icon-EditPenPen",
         "order": 1,
         "permission": "module_generator:gencode:query",
         "route_name": "GenCode",
@@ -3218,7 +3218,7 @@
   {
     "name": "案例管理",
     "type": 1,
-    "icon": "menu",
+    "icon": "el-icon-Menu",
     "order": 9,
     "permission": null,
     "route_name": "Example",
@@ -3237,7 +3237,7 @@
       {
         "name": "示例管理",
         "type": 2,
-        "icon": "menu",
+        "icon": "el-icon-Menu",
         "order": 1,
         "permission": "module_example:demo:query",
         "route_name": "Demo",
@@ -3429,7 +3429,7 @@
       {
         "name": "二级目录",
         "type": 1,
-        "icon": "menu",
+        "icon": "el-icon-Menu",
         "order": 2,
         "permission": null,
         "route_name": "DemoDir",
@@ -3448,7 +3448,7 @@
           {
             "name": "三级菜单",
             "type": 2,
-            "icon": "menu",
+            "icon": "el-icon-Menu",
             "order": 1,
             "permission": "module_example:demo01:query",
             "route_name": "Demo01",

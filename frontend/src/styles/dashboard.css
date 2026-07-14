@@ -1,0 +1,237 @@
+/* ============================================================
+   Dashboard — 首页全局样式 v2（清爽专业版）
+   - 统一的 EP 变量体系
+   - 减少视觉噪音，加大留白
+   - 卡片无彩色顶条，靠图标底色区分
+   ============================================================ */
+
+/* ── 页壳 ── */
+.dashboard-page {
+  --dash-gap: 10px;
+  --dash-radius: 12px;
+  --dash-padding: 20px;
+
+  padding: var(--dash-padding);
+  background: var(--el-bg-color-page);
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--dash-gap);
+}
+
+.dashboard-page,
+.dashboard-page * {
+  box-sizing: border-box;
+}
+
+/* ── 顶部问候 ── */
+
+/* ── 指标卡片区 ── */
+.dash-metrics {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+/* metrics card wrapper padding */
+
+}
+
+.dash-metrics-card {
+  :deep(.el-card__body) {
+    padding: 12px 14px;
+  }
+}
+.dash-metric-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 10px;
+  background: transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  overflow: hidden;
+}
+.dash-metric-card:hover {
+  background: var(--el-fill-color-light);
+}
+.dash-metric-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--dash-icon-bg, var(--el-color-primary-light-9));
+  color: var(--dash-icon-color, var(--el-color-primary));
+  font-size: 20px;
+}
+.dash-metric-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dash-metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--el-text-color-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.dash-metric-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
+}
+.dash-metric-extra {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+  white-space: nowrap;
+}
+
+/* ── 系统状态条 ── */
+
+}
+
+/* ── 图表区（精简为 3 个核心图表） ── */
+.dash-charts {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.dash-charts + .dash-charts {
+  grid-template-columns: 1fr 1fr;
+}
+
+.dash-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dash-chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.dash-chart-note {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  font-weight: 400;
+}
+
+/* ── 底部信息区 ── */
+.dash-footer {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.dash-footer-head {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dash-footer-head .el-icon {
+  color: var(--el-color-primary);
+  font-size: 16px;
+}
+.dash-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.dash-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--el-fill-color-light);
+  transition: background 0.15s ease;
+}
+.dash-list-item:last-child {
+  border-bottom: none;
+}
+.dash-list-item:hover {
+  background: var(--el-fill-color-light);
+  margin: 0 -6px;
+  padding-left: 6px;
+  padding-right: 6px;
+  border-radius: 4px;
+}
+.dash-list-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-list-badge {
+  flex-shrink: 0;
+}
+.dash-list-meta {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.dash-empty {
+  text-align: center;
+  padding: 20px 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+/* ── 响应式 ── */
+@media (width <= 1400px) {
+  .dash-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (width <= 1100px) {
+  .dash-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .dash-charts {
+    grid-template-columns: 1fr;
+  }
+  .dash-charts + .dash-charts {
+    grid-template-columns: 1fr;
+  }
+}
+@media (width <= 768px) {
+  .dash-metrics {
+    grid-template-columns: 1fr;
+  }
+  .dash-footer {
+    grid-template-columns: 1fr;
+  }
+  
+}
+
+/* ── 滚动条 ── */
+.dash-list::-webkit-scrollbar {
+  width: 4px;
+}
+.dash-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dash-list::-webkit-scrollbar-thumb {
+  background: var(--el-border-color-lighter);
+  border-radius: 2px;
+}
+.dash-list::-webkit-scrollbar-thumb:hover {
+  background: var(--el-text-color-disabled);
+}
+

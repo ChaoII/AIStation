@@ -10,7 +10,7 @@
 -->
 
 <template>
-  <div ref="chartRef" :style="{ width, height }"></div>
+  <div ref="chartRef" :style="chartStyle"></div>
 </template>
 
 <script setup lang="ts">
@@ -23,6 +23,7 @@ import { GridComponent, TooltipComponent, LegendComponent } from "echarts/compon
 // 引入 Canvas 渲染器，注意引入 CanvasRenderer 或者 SVGRenderer 是必须的一步
 import { CanvasRenderer } from "echarts/renderers";
 
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useResizeObserver } from "@vueuse/core";
 
 // 按需注册组件
@@ -45,6 +46,16 @@ const props = defineProps<{
 
 const chartRef = ref<HTMLDivElement | null>(null);
 let chartInstance: echarts.ECharts | null = null;
+
+const chartStyle = computed(() => {
+  const h = props.height || "260px";
+  const w = props.width || "100%";
+  return {
+    width: /^\d+$/.test(w) ? `${w}px` : w,
+    height: /^\d+$/.test(h) ? `${h}px` : h,
+    minHeight: /^\d+$/.test(h) ? `${h}px` : h,
+  };
+});
 
 // 初始化图表
 const initChart = () => {
@@ -75,7 +86,8 @@ watch(
 onMounted(() => {
   nextTick(() => {
     initChart();
-    setTimeout(() => chartInstance?.resize(), 200);
+    setTimeout(() => chartInstance?.resize(), 100);
+    setTimeout(() => chartInstance?.resize(), 400);
   });
 });
 

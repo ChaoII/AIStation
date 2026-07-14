@@ -10,6 +10,7 @@ import "element-plus/dist/index.css";
 import "@/styles/dark/css-vars.css";
 import "@/styles/index.scss";
 import "@/styles/train-detail.css";
+import "@/styles/dashboard.css";
 
 import "uno.css";
 

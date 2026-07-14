@@ -161,7 +161,7 @@ async def _ensure_annotation_menus() -> None:
             parent = MenuModel(
                 name="数据标注",
                 type=1,
-                icon="menu-document",
+                icon="el-icon-EditPen",
                 order=11,
                 route_name="Annotation",
                 route_path="/annotation",
