@@ -9,7 +9,7 @@
 .dashboard-page {
   --dash-gap: 10px;
   --dash-radius: 12px;
-  --dash-padding: 20px;
+  --dash-padding: 16px;
 
   padding: var(--dash-padding);
   background: var(--el-bg-color-page);
@@ -109,6 +109,10 @@
 }
 .dash-charts + .dash-charts {
   grid-template-columns: 1fr 1fr;
+}
+.dash-charts > * {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dash-chart-header {

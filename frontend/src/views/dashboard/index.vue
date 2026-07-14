@@ -25,9 +25,9 @@
       </div>
     </el-card>
 
-    <!-- ═══ 图表区（精简为 3 个核心） ═══ -->
-    <div v-if="dataLoaded" class="dash-charts">
-      <el-card shadow="hover">
+    <!-- ═══ 图表区（始终渲染，数据加载中显示骨架屏） ═══ -->
+    <div class="dash-charts">
+      <el-card shadow="hover" v-loading="!dataLoaded" element-loading-text="加载中...">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">标注任务状态</span>
@@ -36,7 +36,7 @@
         </template>
         <ECharts :options="taskStatusPie" height="280" />
       </el-card>
-      <el-card shadow="hover">
+      <el-card shadow="hover" v-loading="!dataLoaded" element-loading-text="加载中...">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">训练任务状态</span>
@@ -47,8 +47,8 @@
       </el-card>
     </div>
 
-    <div v-if="dataLoaded" class="dash-charts">
-      <el-card shadow="hover">
+    <div class="dash-charts">
+      <el-card shadow="hover" v-loading="!dataLoaded" element-loading-text="加载中...">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">各数据集图片数</span>
@@ -57,7 +57,7 @@
         </template>
         <ECharts :options="datasetBar" height="240" />
       </el-card>
-      <el-card shadow="hover">
+      <el-card shadow="hover" v-loading="!dataLoaded" element-loading-text="加载中...">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">标注任务类型分布</span>
