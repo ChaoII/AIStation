@@ -25,7 +25,7 @@
       </div>
     </el-card>
 
-    <!-- ═══ 图表区（始终渲染，加载中显示骨架屏） ═══ -->
+    <!-- ═══ 图表区（始终渲染，加载中显示轻量占位） ═══ -->
     <div class="dash-charts">
       <el-card shadow="hover">
         <template #header>
@@ -34,8 +34,10 @@
             <span class="dash-chart-note">{{ stats.taskTotal }} 个任务</span>
           </div>
         </template>
-        <el-skeleton v-if="!dataLoaded" :rows="5" animated />
-        <ECharts v-else :options="taskStatusPie" height="280" />
+        <div class="dash-chart-wrapper">
+          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+          <ECharts v-if="dataLoaded" :options="taskStatusPie" height="260" />
+        </div>
       </el-card>
       <el-card shadow="hover">
         <template #header>
@@ -44,8 +46,10 @@
             <span class="dash-chart-note">{{ stats.trainTotal }} 个任务</span>
           </div>
         </template>
-        <el-skeleton v-if="!dataLoaded" :rows="5" animated />
-        <ECharts v-else :options="trainStatusPie" height="280" />
+        <div class="dash-chart-wrapper">
+          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+          <ECharts v-if="dataLoaded" :options="trainStatusPie" height="260" />
+        </div>
       </el-card>
     </div>
 
@@ -57,8 +61,10 @@
             <span class="dash-chart-note">{{ stats.datasetCount }} 个数据集</span>
           </div>
         </template>
-        <el-skeleton v-if="!dataLoaded" :rows="5" animated />
-        <ECharts v-else :options="datasetBar" height="240" />
+        <div class="dash-chart-wrapper">
+          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+          <ECharts v-if="dataLoaded" :options="datasetBar" height="220" />
+        </div>
       </el-card>
       <el-card shadow="hover">
         <template #header>
@@ -67,8 +73,10 @@
             <span class="dash-chart-note">{{ stats.taskTypeTotal }} 种类型</span>
           </div>
         </template>
-        <el-skeleton v-if="!dataLoaded" :rows="5" animated />
-        <ECharts v-else :options="taskTypeBar" height="240" />
+        <div class="dash-chart-wrapper">
+          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+          <ECharts v-if="dataLoaded" :options="taskTypeBar" height="220" />
+        </div>
       </el-card>
     </div>
 
