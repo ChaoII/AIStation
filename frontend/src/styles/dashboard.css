@@ -117,7 +117,8 @@
   gap: 10px;
 }
 .dash-charts > * {
-  flex: 0 0 calc(50% - 5px);
+  flex: 1 1 0;
+  max-width: 50%;
   min-width: 0;
   overflow: hidden;
 }

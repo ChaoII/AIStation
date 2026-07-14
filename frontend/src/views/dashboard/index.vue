@@ -236,8 +236,8 @@ async function loadAllData() {
   const [serverR, annoR, trainR, camR, alarmR, userR, onlineR] = await Promise.allSettled([
     ServerAPI.getServer(),
     AnnotationAPI.getOverview(),
-    TrainAPI.getTaskList(),
-    getCameraList({ page_no: 1, page_size: 100 }),
+    TrainAPI.getTaskList({ page_no: 1, page_size: 50 }),
+    getCameraList({ page_no: 1, page_size: 50 }),
     getAlarmRecordList({ page_no: 1, page_size: 5 }),
     UserAPI.listUser({ page_no: 1, page_size: 1 }),
     OnlineAPI.listOnline({ page_no: 1, page_size: 1 }),
