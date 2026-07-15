@@ -259,7 +259,6 @@ async function handleExport() {
     exportError.value = "";
     exporting.value = false;
     result.value = r.data?.data;
-    ElMessage.success("模型导出完成");
     emit("done");
   } catch (e: any) {
     const msg = e?.response?.data?.msg || e?.msg || "导出失败，未知错误";

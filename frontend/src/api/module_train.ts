@@ -132,7 +132,6 @@ export const TrainAPI = {
       method: "post",
       data,
       timeout: 1800000,
-      headers: { _silent: "true" },
     });
   },
   downloadModel(modelId: number) {

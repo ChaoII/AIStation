@@ -291,6 +291,7 @@ async def export_model(
 
     model = await TrainService.get_model(model_id)
     if not model:
+        print(f"[export] model_id={model_id} not found in DB", flush=True)
         from app.common.response import ErrorResponse
         return ErrorResponse(msg="模型不存在")
 
@@ -303,7 +304,7 @@ async def export_model(
             created_id=auth.user.id,
             dataset_id=model.get("annotation_dataset_id"),
         )
-        return SuccessResponse(data=result)
+        return SuccessResponse(data=result, msg="模型导出成功")
     except Exception as e:
         from app.common.response import ErrorResponse
         return ErrorResponse(msg=f"导出失败: {e}")
