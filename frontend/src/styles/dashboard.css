@@ -220,15 +220,12 @@
   .dash-metrics {
     grid-template-columns: repeat(2, 1fr);
   }
-  .dash-charts {
-    grid-template-columns: 1fr;
-  }
-  .dash-charts + .dash-charts {
-    grid-template-columns: 1fr;
-  }
 }
 @media (width <= 768px) {
   .dash-metrics {
+    grid-template-columns: 1fr;
+  }
+  .dash-charts {
     grid-template-columns: 1fr;
   }
   .dash-footer {
