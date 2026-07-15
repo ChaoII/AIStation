@@ -42,7 +42,7 @@ EXPORT_EXT = {
 
 def _build_export_cmd(params: dict) -> list[str]:
     """Build yolo export CLI command from user params"""
-    cmd = ["yolo", "export", "model=/weights/best.pt"]
+    cmd = ["yolo", "export", "model=/weights/best.pt", "project=/output", "name=export"]
 
     for key, val in params.items():
         if key == "format":
