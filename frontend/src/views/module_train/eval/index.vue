@@ -10,10 +10,7 @@
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, cols }">
         <div class="data-table__toolbar--left">
-          <el-select v-model="evalDatasetId" placeholder="选择评估数据集" filterable style="width:220px" size="small" clearable>
-            <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
-          </el-select>
-          <el-button type="primary" size="small" @click="createDialogVisible = true">创建评估</el-button>
+          <el-button type="primary" size="small" @click="handleOpenCreateDialog">创建评估</el-button>
         </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -109,7 +106,6 @@ const modelRepoId = Number(route.query.model_repo_id || 0);
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const creating = ref(false);
-const evalDatasetId = ref<number | null>(null);
 const datasets = ref<any[]>([]);
 
 const createDialogVisible = ref(false);
@@ -133,6 +129,15 @@ const createForm = reactive({
 onMounted(() => {
   refreshList();
 });
+
+function handleOpenCreateDialog() {
+  // 预填当前模型版本
+  const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
+  createForm.modelId = curModel?.id || null;
+  createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
+  createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 };
+  createDialogVisible.value = true;
+}
 
 function tagType(s: string): "info" | "warning" | "success" | "danger" | undefined {
   return ({ pending: "info", running: "warning", success: "success", failed: "danger" } as Record<string, any>)[s];
