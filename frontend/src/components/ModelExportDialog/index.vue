@@ -192,7 +192,7 @@ async function handleExport() {
   try {
     const payload: Record<string, any> = {};
     for (const [k, v] of Object.entries(form)) {
-      if (v !== null && v !== undefined) payload[k] = v;
+      if (v !== null && v !== undefined && v !== "") payload[k] = v;
     }
 
     statusText.value = "容器启动中...";

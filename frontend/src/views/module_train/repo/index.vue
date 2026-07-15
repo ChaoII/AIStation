@@ -167,6 +167,15 @@
                   v-hasPerm="['module_train:model:query']"
                   size="small"
                   link
+                  icon="Download"
+                  @click="handleExport(scope.row)"
+                >
+                  导出
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_train:model:query']"
+                  size="small"
+                  link
                   type="success"
                   icon="Upload"
                   @click="handleDeploy()"
@@ -233,6 +242,13 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <ModelExportDialog
+      v-model:visible="exportDialogVisible"
+      :model-id="exportModelId"
+      :model-name="exportModelName"
+      @done="refreshList"
+    />
   </div>
 </template>
 
@@ -244,6 +260,7 @@ import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
+import ModelExportDialog from "@/components/ModelExportDialog/index.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
@@ -350,6 +367,10 @@ const dialogVisible = reactive({
   type: "create" as "create" | "update",
 });
 
+const exportDialogVisible = ref(false);
+const exportModelId = ref(0);
+const exportModelName = ref("");
+
 const formData = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
@@ -447,6 +468,12 @@ function handleEval(row: any) {
 
 function handleDeploy() {
   ElMessage.info("部署功能即将上线");
+}
+
+function handleExport(row: any) {
+  exportModelId.value = row.id;
+  exportModelName.value = row.name;
+  exportDialogVisible.value = true;
 }
 </script>
 
