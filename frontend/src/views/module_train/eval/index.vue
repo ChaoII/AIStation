@@ -49,11 +49,12 @@
               </template>
             </el-table-column>
             <el-table-column prop="created_time" label="创建时间" width="170" />
-            <el-table-column label="操作" width="200" fixed="right">
+            <el-table-column label="操作" width="280" fixed="right">
               <template #default="{ row }">
                 <el-button text size="small" type="primary" @click="router.push(`/train/eval/${row.id}`)">详情</el-button>
                 <el-button v-if="row.status === 'pending'" text size="small" type="success" @click="handleStartEval(row.id)">开始</el-button>
                 <el-button v-if="row.status === 'running'" text size="small" type="danger" @click="handleStopEval(row.id)">停止</el-button>
+                <el-button text size="small" type="warning" @click="handleReEval(row)">重新评估</el-button>
                 <el-popconfirm title="确定删除？" @confirm="handleDeleteEval([row.id])">
                   <template #reference><el-button text size="small" type="danger">删除</el-button></template>
                 </el-popconfirm>
@@ -224,5 +225,17 @@ async function handleDeleteEval(ids: number[]) {
   await TrainAPI.deleteEval(ids);
   ElMessage.success("已删除");
   refreshList();
+}
+
+function handleReEval(row: any) {
+  createForm.modelId = row.model_id || null;
+  createForm.evalDatasetId = row.eval_dataset_id || null;
+  createForm.hyperparams = {
+    imgsz: row.hyperparams?.imgsz || 640,
+    batch: row.hyperparams?.batch || 16,
+    conf: row.hyperparams?.conf ?? 0.001,
+    iou: row.hyperparams?.iou ?? 0.6,
+  };
+  createDialogVisible.value = true;
 }
 </script>
