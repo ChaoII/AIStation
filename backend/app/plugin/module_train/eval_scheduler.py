@@ -93,13 +93,27 @@ async def _execute_evaluation(eval_id: int):
         # Download model file from RustFS
         async with async_db_session() as db:
             model_rec = await db.get(TrainModel, eval_rec.model_id or eval_rec.model_repo_id)
-            if not model_rec or not model_rec.storage_path:
+            if not model_rec:
+                raise Exception("model not found")
+            # 如果 storage_path 被旧代码覆盖成了导出产物，回溯原始 .pt
+            storage_path = model_rec.storage_path
+            if not storage_path:
                 raise Exception("model not found or no storage_path")
+            if "/export/" in storage_path:
+                from .model import TrainTask
+                from sqlalchemy import desc, select
+                task = (await db.execute(
+                    select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
+                    .order_by(desc(TrainTask.id)).limit(1)
+                )).scalar_one_or_none()
+                if task:
+                    storage_path = f"train/models/task_{task.id}/best.pt"
+                    log.info(f"eval: storage_path 是导出产物, 回溯到 {storage_path}")
 
-        await broadcast_eval_log(eval_id, f"[eval] downloading model {model_rec.storage_path}...")
+        await broadcast_eval_log(eval_id, f"[eval] downloading model {storage_path}...")
         from app.utils.s3_client import s3_client
-        model_data = s3_client.download_fileobj(model_rec.storage_path)
-        model_filename = model_rec.storage_path.rsplit("/", 1)[-1]
+        model_data = s3_client.download_fileobj(storage_path)
+        model_filename = storage_path.rsplit("/", 1)[-1]
         model_local_path = os.path.join(model_dir, model_filename)
         with open(model_local_path, "wb") as f:
             f.write(model_data.read())

@@ -80,12 +80,25 @@ async def _execute_prediction(predict_id: int):
         # Download model
         async with async_db_session() as db:
             model_rec = await db.get(TrainModel, pred.model_id)
-            if not model_rec or not model_rec.storage_path:
+            if not model_rec:
+                raise Exception("model not found")
+            storage_path = model_rec.storage_path
+            if not storage_path:
                 raise Exception("model not found or no storage_path")
+            if "/export/" in storage_path:
+                from .model import TrainTask
+                from sqlalchemy import desc, select
+                task = (await db.execute(
+                    select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
+                    .order_by(desc(TrainTask.id)).limit(1)
+                )).scalar_one_or_none()
+                if task:
+                    storage_path = f"train/models/task_{task.id}/best.pt"
+                    log.info(f"predict: storage_path 是导出产物, 回溯到 {storage_path}")
 
-        await broadcast_predict_log(predict_id, f"[predict] downloading model {model_rec.storage_path}...")
-        model_data = s3_client.download_fileobj(model_rec.storage_path)
-        model_filename = model_rec.storage_path.rsplit("/", 1)[-1]
+        await broadcast_predict_log(predict_id, f"[predict] downloading model {storage_path}...")
+        model_data = s3_client.download_fileobj(storage_path)
+        model_filename = storage_path.rsplit("/", 1)[-1]
         model_local_path = os.path.join(model_dir, model_filename)
         with open(model_local_path, "wb") as f:
             f.write(model_data.read())
