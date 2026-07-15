@@ -97,16 +97,19 @@ async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> tu
     return await loop.run_in_executor(None, _sync)
 
 
-def _find_exported_file(output_dir: str, export_format: str) -> str | None:
-    """Find the exported file in output directory"""
+def _find_exported_file(output_dir: str, weights_dir: str, export_format: str) -> str | None:
+    """Find the exported file in output or weights directory"""
     ext = EXPORT_EXT.get(export_format, "")
-    for root, _, files in os.walk(output_dir):
-        for f in files:
-            if ext and f.endswith(ext):
-                return os.path.join(root, f)
-            if not ext and export_format in root:
-                # For directory formats like openvino, saved_model
-                return root
+    search_dirs = [output_dir, weights_dir]
+    for search_dir in search_dirs:
+        if not os.path.isdir(search_dir):
+            continue
+        for root, _, files in os.walk(search_dir):
+            for f in files:
+                if ext and f.endswith(ext):
+                    return os.path.join(root, f)
+                if not ext and export_format in root:
+                    return root
     return None
 
 
@@ -164,9 +167,17 @@ async def export_model_to_format(
             raise Exception(f"容器退出码 {exit_code}\n最后日志:\n{log_tail}")
 
         # 3. Find exported file
-        exported = _find_exported_file(output_dir, export_format)
+        exported = _find_exported_file(output_dir, weights_dir, export_format)
         if not exported:
-            raise Exception(f"exported file not found for format {export_format}")
+            dir_listing = []
+            for d in [output_dir, weights_dir]:
+                if os.path.isdir(d):
+                    for root, _, files in os.walk(d):
+                        dir_listing.append(f"  {root}: {files}")
+            raise Exception(
+                f"exported file not found for format {export_format}\n"
+                f"searched dirs:\n" + "\n".join(dir_listing)
+            )
 
         # 4. Upload to RustFS
         rustfs_key = f"train/models/model_{model_id}/export/best{EXPORT_EXT.get(export_format, '')}"
