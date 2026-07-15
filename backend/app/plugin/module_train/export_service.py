@@ -75,7 +75,7 @@ async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> in
             remove=True,
             stderr=True,
         )
-        result = container.wait(timeout=600)
+        result = container.wait(timeout=1800)
         return result["StatusCode"]
 
     return await loop.run_in_executor(None, _sync)

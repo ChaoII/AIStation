@@ -131,7 +131,7 @@ export const TrainAPI = {
       url: `${API_PATH}/model/${modelId}/export`,
       method: "post",
       data,
-      timeout: 600000,
+      timeout: 1800000,
     });
   },
   downloadModel(modelId: number) {

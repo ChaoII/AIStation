@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="visible" title="导出模型" width="600px" :close-on-click-modal="false">
+  <el-dialog v-model="visible" title="导出模型" width="600px" :close-on-click-modal="false" :closeable="!exporting">
     <template v-if="!exporting && !result">
       <el-tabs v-model="activeTab">
         <el-tab-pane label="基本" name="basic">
