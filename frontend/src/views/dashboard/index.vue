@@ -2,27 +2,27 @@
   <div class="dashboard-page">
     <!-- ═══ 指标卡片 ═══ -->
     <el-card shadow="hover" class="dash-metrics-card">
-      <div class="dash-metrics">
-        <div
-          v-for="c in cards"
-          :key="c.label"
-          class="dash-metric-card"
-          :style="{
-            '--dash-icon-bg': c.bg,
-            '--dash-icon-color': c.color,
-          }"
-          @click="c.route && router.push(c.route)"
-        >
-          <div class="dash-metric-icon">
-            <el-icon :size="20"><component :is="c.icon" /></el-icon>
+      <el-row :gutter="8">
+        <el-col v-for="c in cards" :key="c.label" :xs="24" :sm="12" :md="8" :lg="4">
+          <div
+            class="dash-metric-card"
+            :style="{
+              '--dash-icon-bg': c.bg,
+              '--dash-icon-color': c.color,
+            }"
+            @click="c.route && router.push(c.route)"
+          >
+            <div class="dash-metric-icon">
+              <el-icon :size="20"><component :is="c.icon" /></el-icon>
+            </div>
+            <div class="dash-metric-body">
+              <span class="dash-metric-value">{{ c.val }}</span>
+              <span class="dash-metric-label">{{ c.label }}</span>
+              <span class="dash-metric-extra">{{ c.extra }}</span>
+            </div>
           </div>
-          <div class="dash-metric-body">
-            <span class="dash-metric-value">{{ c.val }}</span>
-            <span class="dash-metric-label">{{ c.label }}</span>
-            <span class="dash-metric-extra">{{ c.extra }}</span>
-          </div>
-        </div>
-      </div>
+        </el-col>
+      </el-row>
     </el-card>
 
     <!-- ═══ 图表区（始终保持渲染，加载中仅显示轻量占位） ═══ -->
@@ -89,57 +89,68 @@
     </el-row>
 
     <!-- ═══ 底部最近动态 ═══ -->
-    <div class="dash-footer">
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-footer-head">
-            <el-icon size="16"><Edit /></el-icon>
-            最近标注任务
+    <el-row :gutter="10">
+      <el-col :xs="24" :md="8">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-footer-head">
+              <el-icon size="16"><Edit /></el-icon>
+              最近标注任务
+            </div>
+          </template>
+          <div class="dash-list">
+            <div v-for="t in recentAnno" :key="t.id" class="dash-list-item">
+              <span class="dash-list-name">{{ t.name }}</span>
+              <el-tag :type="sTag(t.status)" size="small" effect="plain" class="dash-list-badge">
+                {{ sLbl(t.status) }}
+              </el-tag>
+            </div>
+            <div v-if="!recentAnno.length" class="dash-empty">暂无数据</div>
           </div>
-        </template>
-        <div class="dash-list">
-          <div v-for="t in recentAnno" :key="t.id" class="dash-list-item">
-            <span class="dash-list-name">{{ t.name }}</span>
-            <el-tag :type="sTag(t.status)" size="small" effect="plain" class="dash-list-badge">
-              {{ sLbl(t.status) }}
-            </el-tag>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :md="8">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-footer-head">
+              <el-icon size="16"><Aim /></el-icon>
+              最近训练任务
+            </div>
+          </template>
+          <div class="dash-list">
+            <div v-for="t in recentTrain" :key="t.id" class="dash-list-item">
+              <span class="dash-list-name">{{ t.name }}</span>
+              <el-tag
+                :type="trainTag(t.status)"
+                size="small"
+                effect="plain"
+                class="dash-list-badge"
+              >
+                {{ trainLbl(t.status) }}
+              </el-tag>
+            </div>
+            <div v-if="!recentTrain.length" class="dash-empty">暂无数据</div>
           </div>
-          <div v-if="!recentAnno.length" class="dash-empty">暂无数据</div>
-        </div>
-      </el-card>
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-footer-head">
-            <el-icon size="16"><Aim /></el-icon>
-            最近训练任务
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :md="8">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-footer-head">
+              <el-icon size="16"><WarningFilled /></el-icon>
+              最近告警
+            </div>
+          </template>
+          <div class="dash-list">
+            <div v-for="a in recentAlarm" :key="a.id" class="dash-list-item">
+              <span class="dash-list-name">{{ a.alarm_type || "告警" }}</span>
+              <span class="dash-list-meta">{{ fmt(a.created_time) }}</span>
+            </div>
+            <div v-if="!recentAlarm.length" class="dash-empty">暂无告警</div>
           </div>
-        </template>
-        <div class="dash-list">
-          <div v-for="t in recentTrain" :key="t.id" class="dash-list-item">
-            <span class="dash-list-name">{{ t.name }}</span>
-            <el-tag :type="trainTag(t.status)" size="small" effect="plain" class="dash-list-badge">
-              {{ trainLbl(t.status) }}
-            </el-tag>
-          </div>
-          <div v-if="!recentTrain.length" class="dash-empty">暂无数据</div>
-        </div>
-      </el-card>
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-footer-head">
-            <el-icon size="16"><WarningFilled /></el-icon>
-            最近告警
-          </div>
-        </template>
-        <div class="dash-list">
-          <div v-for="a in recentAlarm" :key="a.id" class="dash-list-item">
-            <span class="dash-list-name">{{ a.alarm_type || "告警" }}</span>
-            <span class="dash-list-meta">{{ fmt(a.created_time) }}</span>
-          </div>
-          <div v-if="!recentAlarm.length" class="dash-empty">暂无告警</div>
-        </div>
-      </el-card>
-    </div>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -441,21 +452,21 @@ async function loadAllData() {
       taskTypeCount[tt] = (taskTypeCount[tt] || 0) + 1;
     }
     stats.taskTypeTotal = Object.keys(taskTypeCount).length;
-      recentAnno.value = tasks.slice(0, 5).reverse();
-    } catch {
-      // 忽略错误
-    }
+    recentAnno.value = tasks.slice(0, 5).reverse();
+  } catch {
+    // 忽略错误
+  }
 
-    try {
-      const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-      const items = r.data?.data?.items || [];
-      datasetImageCounts.value = items.map((d: any) => ({
-        name: d.name || `#${d.id}`,
-        count: d.image_count || d.annotated_count || 0,
-      }));
-    } catch {
-      // 忽略错误
-    }
+  try {
+    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
+    const items = r.data?.data?.items || [];
+    datasetImageCounts.value = items.map((d: any) => ({
+      name: d.name || `#${d.id}`,
+      count: d.image_count || d.annotated_count || 0,
+    }));
+  } catch {
+    // 忽略错误
+  }
 
   await nextTick();
   dataLoaded.value = true;

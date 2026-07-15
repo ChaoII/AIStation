@@ -7,13 +7,11 @@
 .task-name { font-size: 16px; font-weight: 700; color: #1a1a1a; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .01em; }
 .progress-text { font-size: 14px; font-weight: 700; color: #52c41a; margin-left: 4px; background: #f6ffed; padding: 4px 12px; border-radius: 6px; border: 1px solid #b7eb8f; }
 .card-title { font-weight: 600; font-size: 14px; color: #1a1a1a; }
-.info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .info-card { height: 100%; border: 1px solid #e8e8e8; border-radius: 8px; }
 .docker-tag { font-family: "Cascadia Code","Fira Code",monospace; font-size: 12px; background: #f5f7fa; padding: 2px 6px; border-radius: 3px; }
 .section-card { margin-bottom: 16px; border: 1px solid #e8e8e8; border-radius: 8px; }
 .action-buttons { display: flex; gap: 10px; }
 .progress-eta { margin-top: 8px; font-size: 13px; color: #909399; }
-.chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 .chart-card { border: 1px solid #e8e8e8; border-radius: 8px; }
 .chart-empty { height: 280px; display: flex; align-items: center; justify-content: center; color: #c0c4cc; font-size: 14px; }
 .log-header { display: flex; align-items: center; justify-content: space-between; width: 100%; }
@@ -35,7 +33,6 @@
   font-family: "Cascadia Code","Fira Code",monospace; font-size: 13px; line-height: 1.5;
   color: #d4d4d4; white-space: pre-wrap; word-break: break-all; margin: 0;
 }
-.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .metric-item {
   background: #fff; border: 1px solid #e8e8e8; border-radius: 10px;
   padding: 16px 12px; text-align: center; transition: all .2s;

@@ -32,16 +32,6 @@
 /* ── 顶部问候 ── */
 
 /* ── 指标卡片区 ── */
-.dash-metrics {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 8px;
-}
-
-/* metrics card wrapper padding */
-
-}
-
 .dash-metrics-card {
   :deep(.el-card__body) {
     padding: 12px 14px;
@@ -104,13 +94,7 @@
 
 }
 
-/* ── 图表区（grid 两列布局，更稳定） ── */
-.dash-charts {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
+/* ── 图表区（轻量占位 + 动画，布局已移交 el-row/el-col） ── */
 .dash-chart-wrapper {
   width: 100%;
   min-height: 220px;
@@ -145,12 +129,7 @@
   font-weight: 400;
 }
 
-/* ── 底部信息区 ── */
-.dash-footer {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
+/* ── 底部信息区（布局已移交 el-row/el-col） ── */
 .dash-footer-head {
   font-size: 14px;
   font-weight: 600;
@@ -208,30 +187,6 @@
   padding: 20px 0;
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-
-/* ── 响应式 ── */
-@media (width <= 1400px) {
-  .dash-metrics {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-@media (width <= 1100px) {
-  .dash-metrics {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (width <= 768px) {
-  .dash-metrics {
-    grid-template-columns: 1fr;
-  }
-  .dash-charts {
-    grid-template-columns: 1fr;
-  }
-  .dash-footer {
-    grid-template-columns: 1fr;
-  }
-  
 }
 
 /* ── 滚动条 ── */
