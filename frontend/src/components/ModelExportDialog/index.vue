@@ -129,9 +129,6 @@
       <el-button @click="visible = false">取消</el-button>
       <el-button type="primary" @click="handleExport" :loading="exporting">开始导出</el-button>
     </template>
-    <template #footer v-if="result">
-      <el-button type="primary" @click="visible = false">关闭</el-button>
-    </template>
   </el-dialog>
 </template>
 

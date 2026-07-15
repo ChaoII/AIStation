@@ -91,8 +91,8 @@
               min-width="140"
             >
               <template #default="scope">
-                <span v-if="scope.row.metrics && scope.row.metrics.mAP">
-                  {{ scope.row.metrics.mAP }}
+                <span v-if="scope.row.metrics && (scope.row.metrics.map50 || scope.row.metrics.mAP)">
+                  {{ scope.row.metrics.mAP || scope.row.metrics.map50?.toFixed(4) }}
                 </span>
                 <span v-else class="text-gray-400">--</span>
               </template>
@@ -236,6 +236,13 @@
             placeholder="模型描述（可选）"
           />
         </el-form-item>
+        <el-form-item v-if="dialogVisible.type === 'update'" label="状态" prop="status">
+          <el-select v-model="formData.status" style="width: 100%">
+            <el-option label="草稿" value="draft" />
+            <el-option label="已发布" value="released" />
+            <el-option label="已归档" value="archived" />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="handleCloseDialog">取消</el-button>
@@ -377,6 +384,7 @@ const formData = reactive({
   framework: "ultralytics" as string,
   dataset_id: undefined as number | undefined,
   description: undefined as string | undefined,
+  status: undefined as string | undefined,
 });
 
 const initialFormData = {
@@ -385,6 +393,7 @@ const initialFormData = {
   framework: "ultralytics" as string,
   dataset_id: undefined as number | undefined,
   description: undefined as string | undefined,
+  status: undefined as string | undefined,
 };
 
 const rules = reactive({
