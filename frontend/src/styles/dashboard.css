@@ -116,11 +116,11 @@
   flex-wrap: wrap !important;
   gap: 10px;
 }
-.dash-charts > * {
-  flex: 0 0 50% !important;
-  max-width: 50% !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
+.dash-chart-item {
+  flex: 0 0 50%;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dash-charts .el-card {
