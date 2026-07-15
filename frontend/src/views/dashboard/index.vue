@@ -26,58 +26,66 @@
     </el-card>
 
     <!-- ═══ 图表区（始终保持渲染，加载中仅显示轻量占位） ═══ -->
-    <div class="dash-charts">
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">标注任务状态</span>
-            <span class="dash-chart-note">{{ stats.taskTotal }} 个任务</span>
+    <div class="dash-charts" style="display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 12px !important; width: 100% !important;">
+      <div style="grid-column: span 1 !important; min-width: 0 !important; box-sizing: border-box !important; width: 100% !important;">
+        <el-card shadow="hover" style="width: 100% !important; min-width: 0 !important;">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">标注任务状态</span>
+              <span class="dash-chart-note">{{ stats.taskTotal }} 个任务</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="taskStatusPie" height="260" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="taskStatusPie" height="260" />
-        </div>
-      </el-card>
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">训练任务状态</span>
-            <span class="dash-chart-note">{{ stats.trainTotal }} 个任务</span>
+        </el-card>
+      </div>
+      <div style="grid-column: span 1 !important; min-width: 0 !important; box-sizing: border-box !important; width: 100% !important;">
+        <el-card shadow="hover" style="width: 100% !important; min-width: 0 !important;">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">训练任务状态</span>
+              <span class="dash-chart-note">{{ stats.trainTotal }} 个任务</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="trainStatusPie" height="260" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="trainStatusPie" height="260" />
-        </div>
-      </el-card>
+        </el-card>
+      </div>
     </div>
 
-    <div class="dash-charts">
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">各数据集图片数</span>
-            <span class="dash-chart-note">{{ stats.datasetCount }} 个数据集</span>
+    <div class="dash-charts" style="display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 12px !important; width: 100% !important;">
+      <div style="grid-column: span 1 !important; min-width: 0 !important; box-sizing: border-box !important; width: 100% !important;">
+        <el-card shadow="hover" style="width: 100% !important; min-width: 0 !important;">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">各数据集图片数</span>
+              <span class="dash-chart-note">{{ stats.datasetCount }} 个数据集</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="datasetBar" height="220" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="datasetBar" height="220" />
-        </div>
-      </el-card>
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">标注任务类型分布</span>
-            <span class="dash-chart-note">{{ stats.taskTypeTotal }} 种类型</span>
+        </el-card>
+      </div>
+      <div style="grid-column: span 1 !important; min-width: 0 !important; box-sizing: border-box !important; width: 100% !important;">
+        <el-card shadow="hover" style="width: 100% !important; min-width: 0 !important;">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">标注任务类型分布</span>
+              <span class="dash-chart-note">{{ stats.taskTypeTotal }} 种类型</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="taskTypeBar" height="220" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="taskTypeBar" height="220" />
-        </div>
-      </el-card>
+        </el-card>
+      </div>
     </div>
 
     <!-- ═══ 底部最近动态 ═══ -->
