@@ -114,11 +114,14 @@
     </template>
 
     <template v-else-if="result">
-      <div style="text-align:center;padding:20px 0">
+      <div style="text-align:center;padding:24px 0 16px">
         <el-icon :size="48" color="#67c23a"><CircleCheckFilled /></el-icon>
-        <p style="margin:12px 0 8px;font-size:16px;font-weight:600">导出完成</p>
+        <p style="margin:12px 0 4px;font-size:16px;font-weight:600">导出完成</p>
         <p style="color:#909399;font-size:13px">格式: {{ result.format }} | 大小: {{ formatSize(result.file_size) }}</p>
-        <el-button type="primary" style="margin-top:16px" @click="handleDownload">下载文件</el-button>
+        <div style="margin-top:16px;display:flex;justify-content:center;gap:12px">
+          <el-button type="primary" @click="handleDownload"><el-icon><Download /></el-icon> 下载文件</el-button>
+          <el-button @click="visible = false">关闭</el-button>
+        </div>
       </div>
     </template>
 
@@ -135,7 +138,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { CircleCheckFilled, CircleCloseFilled } from "@element-plus/icons-vue";
+import { CircleCheckFilled, CircleCloseFilled, Download } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
 
 const props = defineProps<{ modelId: number; modelName?: string }>();
@@ -248,6 +251,7 @@ async function handleExport() {
     statusText.value = "容器启动中...";
     const r = await TrainAPI.exportModel(props.modelId, payload);
     exportError.value = "";
+    exporting.value = false;
     result.value = r.data?.data;
     ElMessage.success("模型导出完成");
     emit("done");
