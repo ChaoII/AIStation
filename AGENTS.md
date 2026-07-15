@@ -299,9 +299,9 @@ Dashboard `index.vue` 图表区使用自定义 CSS Grid (`display: grid; grid-te
 
 | 文件 | 风险点 | 当前状态 |
 |------|--------|----------|
-| `frontend/src/styles/train-detail.css` | `.info-cards`、`.chart-row`、`.metric-grid` 使用 CSS Grid | 页面已知有 scoped CSS 问题，但不影响此文件（全局引入） |
+| `frontend/src/styles/train-detail.css` | ~~`.info-cards`、`.chart-row`、`.metric-grid` 使用 CSS Grid~~ | **已修复** — grid 规则已删除，布局移交 el-row/el-col |
 | `frontend/src/views/dashboard/workplace.vue` | 多个 `display: flex/grid` + `@media (width <= ...)` | 使用 scoped 样式，风险较低但已有非标准媒体查询语法 |
-| `frontend/src/styles/dashboard.css` | `.dash-metrics`、`.dash-footer` 依然使用 CSS Grid | 当前未出问题，但重蹈覆辙风险高，建议逐步迁移到 el-row/el-col |
+| `frontend/src/styles/dashboard.css` | ~~`.dash-metrics`、`.dash-footer`、`.dash-charts` 使用 CSS Grid~~ | **已修复** — 全部迁移到 el-row/el-col，只保留视觉装饰类 |
 
 ### 媒体查询语法警告
 项目内多处使用非标准语法 `@media (width <= Xpx)`，这在部分浏览器/场景下可能表现不一致。建议统一改用标准写法：
