@@ -171,7 +171,19 @@ async def export_model_to_format(
     try:
         # 1. Download .pt from RustFS
         pt_path = os.path.join(weights_dir, "best.pt")
-        buf = s3_client.download_fileobj(original_storage_path)
+        try:
+            buf = s3_client.download_fileobj(original_storage_path)
+        except Exception as e:
+            if existing_format and "404" in str(e):
+                dl_url = s3_client.presigned_url(storage_path)
+                log.info(f"原始 .pt 不存在(404)，返回已有导出产物: {storage_path}")
+                return {
+                    "download_url": dl_url,
+                    "format": existing_format,
+                    "file_size": 0,
+                    "file_name": f"model_{model_id}_export.{existing_format}",
+                }
+            raise
         with open(pt_path, "wb") as f:
             f.write(buf.read())
         file_size = os.path.getsize(pt_path)
