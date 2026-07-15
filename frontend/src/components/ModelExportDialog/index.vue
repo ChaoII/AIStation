@@ -213,22 +213,31 @@ function hasParam(name: string): boolean {
 
 const workDir = computed(() => `${tempDir.value}/model_export/${props.modelId}`);
 const dockerCmd = computed(() => {
-  const parts = [
-    "docker", "run",
-    `-v ${workDir.value}/weights:/weights`,
-    `-v ${workDir.value}/output:/output`,
-    "ultralytics/ultralytics:latest",
-  ];
-  const cmdParts = ["yolo", "export", "model=/weights/best.pt"];
+  const cmdArgs: string[] = [];
   for (const [k, v] of Object.entries(form)) {
     if (v === null || v === undefined || v === "") continue;
-    if (k === "format") { cmdParts.push(`format=${v}`); continue; }
+    if (k === "format") { cmdArgs.push(`format=${v}`); continue; }
     if (!hasParam(k)) continue;
-    if (v === true) cmdParts.push(`${k}=true`);
+    if (v === true) cmdArgs.push(`${k}=true`);
     else if (v === false) continue;
-    else cmdParts.push(`${k}=${v}`);
+    else cmdArgs.push(`${k}=${v}`);
   }
-  return [...parts, ...cmdParts].join(" \\\n  ");
+  const yoloCmd = ["yolo", "export", "model=/weights/best.pt", ...cmdArgs].join(" \\\n  ");
+  return [
+    "# 导出流程（后端自动执行，无需手动运行）：",
+    "#",
+    "# 1. 从 RustFS 下载原始模型 (.pt)：",
+    `#    ${workDir.value}/weights/best.pt`,
+    "#",
+    "# 2. 运行 Docker 容器进行格式转换：",
+    `docker run \\`,
+    `  -v ${workDir.value}/weights:/weights:rw \\`,
+    `  -v ${workDir.value}/output:/output:rw \\`,
+    `  ultralytics/ultralytics:latest \\`,
+    `  ${yoloCmd}`,
+    "#",
+    "# 3. 转换完成后将结果上传回 RustFS，并返回下载链接",
+  ].join("\n");
 });
 
 function formatSize(bytes: number) {
