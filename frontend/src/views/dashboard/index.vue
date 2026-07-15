@@ -27,7 +27,7 @@
 
     <!-- ═══ 图表区（始终渲染，加载中显示轻量占位） ═══ -->
     <div class="dash-charts">
-      <el-card shadow="hover">
+      <el-card shadow="hover" style="flex: 0 0 50%; max-width: 50%; min-width: 0;">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">标注任务状态</span>
@@ -39,7 +39,7 @@
           <ECharts v-if="dataLoaded" :options="taskStatusPie" height="260" />
         </div>
       </el-card>
-      <el-card shadow="hover">
+      <el-card shadow="hover" style="flex: 0 0 50%; max-width: 50%; min-width: 0;">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">训练任务状态</span>
@@ -54,7 +54,7 @@
     </div>
 
     <div class="dash-charts">
-      <el-card shadow="hover">
+      <el-card shadow="hover" style="flex: 0 0 50%; max-width: 50%; min-width: 0;">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">各数据集图片数</span>
@@ -66,7 +66,7 @@
           <ECharts v-if="dataLoaded" :options="datasetBar" height="220" />
         </div>
       </el-card>
-      <el-card shadow="hover">
+      <el-card shadow="hover" style="flex: 0 0 50%; max-width: 50%; min-width: 0;">
         <template #header>
           <div class="dash-chart-header">
             <span class="dash-chart-title">标注任务类型分布</span>
