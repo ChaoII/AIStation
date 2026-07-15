@@ -150,7 +150,7 @@ async def export_model_to_format(
         exit_code, log_path = await _run_export_container(
             image, cmd,
             volumes={
-                weights_dir: {"bind": "/weights", "mode": "ro"},
+                weights_dir: {"bind": "/weights", "mode": "rw"},
                 output_dir: {"bind": "/output", "mode": "rw"},
             },
         )
