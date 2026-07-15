@@ -250,4 +250,66 @@ Vue logs: `"Component inside <Transition> renders non-element root node that can
 - `frontend/src/views/module_train/task/detail.vue` — 问题页面，非 scoped 修复入口
 - `frontend/src/styles/index.scss` — 全局 `.app-container` 定义
 - `frontend/src/layouts/components/AppMain/index.vue` — 父容器 `.app-main`
+
+---
+
+## 调试记忆：Dashboard 图表布局被全局样式覆盖（CSS Grid 失效）
+
+### 问题现象
+Dashboard `index.vue` 图表区使用自定义 CSS Grid (`display: grid; grid-template-columns: 1fr 1fr`)，但始终渲染为单列，无法两列并排。el-card 不随 grid 父容器分流。
+
+### 排查过程（踩坑记录）
+1. 确认模板通过简单的 `<div class="dash-charts">` 包裹 el-card
+2. 确认 `.dash-charts { display: grid; grid-template-columns: 1fr 1fr; }` 已写入全局 `dashboard.css`
+3. 确认 `main.ts` 已正确 `import "@/styles/dashboard.css"`
+4. 确认无 scoped style 覆盖
+5. 在 `dashboard.css` 加 `!important` 仍无效
+6. 在 `dashboard.css` 的 `.dash-charts` 加红色背景 → 确认 CSS 文件已加载
+7. 仍单列 → CSS 中 `display: grid` 和 `grid-template-columns` 被更深层规则覆盖
+8. 在 `.dash-charts` 上加内联 `style="display: grid !important; grid-template-columns: 1fr 1fr !important;"` → 终于生效，确认并排
+9. 但 `!important` 会让手机端无法自适应单列 → 不可持续
+10. 最终改用 **Element Plus 原生 `el-row` / `el-col`** 立即解决：`<el-col :xs="24" :sm="24" :md="12" :lg="12">`
+
+### 根因分析
+- **未完全确认的根因**：项目存在复杂的 CSS 层叠（Element Plus 全局样式、UnoCSS、scss 变量、其他全局 CSS），自写的 `display: grid` 被某条全局规则覆盖
+- `@media (width <= 1100px)` 曾把 `.dash-charts` 改成 `1fr`，是一次直接触发因素
+- **核心教训**：在这个项目中，**自定义 CSS Grid/Flex 布局在主布局级不稳定**，容易被全局样式或响应式断点意外覆盖
+
+### 修复方案（ definitive fix ）
+```html
+<el-row :gutter="12">
+  <el-col :xs="24" :sm="24" :md="12" :lg="12">...</el-col>
+  <el-col :xs="24" :sm="24" :md="12" :lg="12">...</el-col>
+</el-row>
+```
+
+### 预防措施（以后不要再踩）
+1. **优先使用 Element Plus 栅格 (`el-row` / `el-col`)**：这是项目已深度集成的响应式布局方案，不会被全局 CSS 覆盖
+2. **谨慎使用自定义 CSS Grid**：仅在 Element Plus 栅格无法满足的极端场景使用，且必须加 `!important` 兜底
+3. **媒体查询断点统一用 `max-width`**：避免使用 `@media (width <= Xpx)` 这种非常规语法，减少意外覆盖风险
+4. **调试 CSS 时先加视觉标记**：如 `background: red !important`，确认"规则是否被加载"比确认"规则内容"更重要
+5. **如果 3 次以上 CSS patch 都失效 → 立即换架构**：不要继续在 CSS 层加 `!important` 叠加，应切换到框架原生组件
+
+### 相关文件
+- `frontend/src/views/dashboard/index.vue` — 问题页面，已改为 el-row/el-col
+- `frontend/src/styles/dashboard.css` — 原自定义 CSS Grid 定义地
+
+### 同类风险文件（其他可能存在相似布局覆盖问题的位置）
+这些文件使用了自定义 CSS Grid/Flex，若出现布局异常，优先考虑改用 el-row/el-col：
+
+| 文件 | 风险点 | 当前状态 |
+|------|--------|----------|
+| `frontend/src/styles/train-detail.css` | `.info-cards`、`.chart-row`、`.metric-grid` 使用 CSS Grid | 页面已知有 scoped CSS 问题，但不影响此文件（全局引入） |
+| `frontend/src/views/dashboard/workplace.vue` | 多个 `display: flex/grid` + `@media (width <= ...)` | 使用 scoped 样式，风险较低但已有非标准媒体查询语法 |
+| `frontend/src/styles/dashboard.css` | `.dash-metrics`、`.dash-footer` 依然使用 CSS Grid | 当前未出问题，但重蹈覆辙风险高，建议逐步迁移到 el-row/el-col |
+
+### 媒体查询语法警告
+项目内多处使用非标准语法 `@media (width <= Xpx)`，这在部分浏览器/场景下可能表现不一致。建议统一改用标准写法：
+```css
+/* ❌ 非常规，可能在某些场景失效 */
+@media (width <= 1100px) { ... }
+
+/* ✅ 标准写法，兼容性最好 */
+@media (max-width: 1100px) { ... }
+```
 ```
