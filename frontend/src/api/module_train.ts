@@ -3,8 +3,12 @@ import request from "@/utils/request";
 const API_PATH = "/train";
 
 export const TrainAPI = {
-  getModelList() {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/model/list`, method: "get" });
+  getModelList(params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/model/list`,
+      method: "get",
+      params,
+    });
   },
   getModelDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/detail/${id}`, method: "get" });
