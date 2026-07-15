@@ -209,7 +209,6 @@ async def export_model_to_format(
                 .where(TrainModel.id == model_id)
                 .values(
                     format=export_format,
-                    storage_path=rustfs_key,
                     updated_time=datetime.now(),
                 )
             )
