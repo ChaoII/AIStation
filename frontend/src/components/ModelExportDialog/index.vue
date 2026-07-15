@@ -1,6 +1,14 @@
 <template>
   <el-dialog v-model="visible" title="导出模型" width="600px" :close-on-click-modal="false" :closeable="!exporting">
     <template v-if="!exporting && !result">
+      <div style="margin-bottom:12px">
+        <el-button size="small" type="info" plain @click="showCmdPreview = !showCmdPreview">
+          {{ showCmdPreview ? "隐藏" : "查看" }} Docker 命令
+        </el-button>
+      </div>
+      <div v-if="showCmdPreview" style="margin-bottom:16px">
+        <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;border-radius:6px;font-size:12px;line-height:1.6;font-family:'Cascadia Code','Fira Code',monospace;white-space:pre-wrap;word-break:break-all">{{ dockerCmd }}</pre>
+      </div>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="基本" name="basic">
           <el-form label-width="120px" size="small">
@@ -134,6 +142,12 @@ const props = defineProps<{ modelId: number; modelName?: string }>();
 const emit = defineEmits<{ (e: "done"): void }>();
 
 const visible = defineModel<boolean>("visible", { default: false });
+const showCmdPreview = ref(false);
+const tempDir = ref("/tmp");
+
+TrainAPI.getTempDir()
+  .then(res => { if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir; })
+  .catch(() => {});
 const activeTab = ref("basic");
 const exporting = ref(false);
 const exportError = ref("");
@@ -193,6 +207,26 @@ const formatParams: Record<string, string[]> = {
 function hasParam(name: string): boolean {
   return formatParams[form.format]?.includes(name) ?? false;
 }
+
+const workDir = computed(() => `${tempDir.value}/model_export/${props.modelId}`);
+const dockerCmd = computed(() => {
+  const parts = [
+    "docker", "run",
+    `-v ${workDir.value}/weights:/weights`,
+    `-v ${workDir.value}/output:/output`,
+    "ultralytics/ultralytics:latest",
+  ];
+  const cmdParts = ["yolo", "export", "model=/weights/best.pt"];
+  for (const [k, v] of Object.entries(form)) {
+    if (v === null || v === undefined || v === "") continue;
+    if (k === "format") { cmdParts.push(`format=${v}`); continue; }
+    if (!hasParam(k)) continue;
+    if (v === true) cmdParts.push(`${k}=true`);
+    else if (v === false) continue;
+    else cmdParts.push(`${k}=${v}`);
+  }
+  return [...parts, ...cmdParts].join(" \\\n  ");
+});
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return bytes + " B";
