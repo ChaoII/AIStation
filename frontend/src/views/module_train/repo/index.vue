@@ -12,7 +12,9 @@
         <CrudToolbarLeft
           :remove-ids="removeIds"
           :perm-create="['module_train:model:create']"
+          :perm-delete="['module_train:model:delete']"
           @add="handleOpenDialog('create')"
+          @delete="onToolbar('delete')"
         />
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -125,13 +127,23 @@
             >
               <template #default="scope">
                 <el-button
-                  v-hasPerm="['module_train:model:create']"
+                  v-hasPerm="['module_train:model:update']"
                   size="small"
                   link
                   icon="edit"
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
                   编辑
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_train:model:delete']"
+                  size="small"
+                  link
+                  icon="delete"
+                  type="danger"
+                  @click="handleRowDelete(scope.row.id)"
+                >
+                  删除
                 </el-button>
                 <el-button
                   v-hasPerm="['module_train:model:query']"
@@ -206,6 +218,14 @@
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="描述" prop="description">
+          <el-input
+            v-model="formData.description"
+            type="textarea"
+            :rows="3"
+            placeholder="模型描述（可选）"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -301,12 +321,26 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     pageSizes: [10, 20, 30, 50],
   },
   request: { page_no: "page_no", page_size: "page_size" },
-  indexAction: async () => {
-    const res = await TrainAPI.getModelList();
+  indexAction: async (params) => {
+    const res = await TrainAPI.getModelList(params);
+    const items = res.data?.data?.items || [];
     return {
-      total: (res.data?.data || []).length,
-      list: res.data?.data || [],
+      total: res.data?.data?.total ?? items.length,
+      list: items,
     };
+  },
+  deleteAction: async (ids) => {
+    await TrainAPI.deleteModel(
+      ids
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => !Number.isNaN(n))
+    );
+  },
+  deleteConfirm: {
+    title: "警告",
+    message: "确认删除所选模型? 删除后无法恢复。",
+    type: "warning",
   },
 });
 
@@ -321,6 +355,7 @@ const formData = reactive({
   name: undefined as string | undefined,
   framework: "ultralytics" as string,
   dataset_id: undefined as number | undefined,
+  description: undefined as string | undefined,
 });
 
 const initialFormData = {
@@ -328,6 +363,7 @@ const initialFormData = {
   name: undefined as string | undefined,
   framework: "ultralytics" as string,
   dataset_id: undefined as number | undefined,
+  description: undefined as string | undefined,
 };
 
 const rules = reactive({
@@ -380,7 +416,7 @@ async function handleSubmit() {
       const id = formData.id;
       try {
         if (id) {
-          // update not exposed via API currently
+          await TrainAPI.updateModel(id, formData);
           ElMessage.success("模型已更新");
         } else {
           await TrainAPI.createModel(formData);
@@ -395,6 +431,10 @@ async function handleSubmit() {
       }
     }
   });
+}
+
+function handleRowDelete(id: number) {
+  contentRef.value?.handleDelete(id);
 }
 
 function handleTrain(row: any) {

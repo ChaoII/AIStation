@@ -3,7 +3,8 @@ import re
 import sys
 import tempfile
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_db_session
 
@@ -69,17 +70,30 @@ def _enrich_task(row) -> dict:
 class TrainService:
 
     @classmethod
-    async def list_models(cls) -> list[dict]:
+    async def list_models(cls, params: dict | None = None) -> tuple[list[dict], int]:
+        page_no = max(1, int((params or {}).get("page_no", 1)))
+        page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
+        name = (params or {}).get("name")
+        framework = (params or {}).get("framework")
+
         async with async_db_session() as db:
-            result = await db.execute(select(TrainModel).order_by(desc(TrainModel.created_time)))
+            stmt = select(TrainModel)
+            if name:
+                stmt = stmt.where(TrainModel.name.ilike(f"%{name}%"))
+            if framework:
+                stmt = stmt.where(TrainModel.framework == framework)
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+            stmt = stmt.order_by(desc(TrainModel.created_time)).limit(page_size).offset((page_no - 1) * page_size)
+            result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [dict(r.__dict__) for r in rows]
+            return [_model_to_dict(r) for r in rows], total
 
     @classmethod
     async def get_model(cls, model_id: int) -> dict | None:
         async with async_db_session() as db:
             m = await db.get(TrainModel, model_id)
-            return dict(m.__dict__) if m else None
+            return _model_to_dict(m) if m else None
 
     @classmethod
     async def update_model(cls, model_id: int, data: dict) -> dict | None:
@@ -105,16 +119,22 @@ class TrainService:
                     next_ver = int(last.version.replace("v", "")) + 1
                 except ValueError:
                     next_ver = 1
-            version = f"v{next_ver}"
-            m = TrainModel(
-                name=data.name, framework=data.framework,
-                version=version, annotation_dataset_id=data.annotation_dataset_id,
-                export_format=data.export_format,
-                created_id=auth.user.id,
-            )
-            db.add(m)
-            await db.flush()
-            return {"id": m.id, "version": version}
+            for _ in range(3):
+                version = f"v{next_ver}"
+                m = TrainModel(
+                    name=data.name, framework=data.framework,
+                    version=version, annotation_dataset_id=data.annotation_dataset_id,
+                    export_format=data.export_format, description=data.description,
+                    created_id=auth.user.id,
+                )
+                db.add(m)
+                try:
+                    await db.flush()
+                    return {"id": m.id, "version": version}
+                except IntegrityError:
+                    await db.rollback()
+                    next_ver += 1
+            raise Exception("版本冲突，请重试")
 
     @classmethod
     async def delete_models(cls, ids: list[int]) -> None:

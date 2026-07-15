@@ -8,6 +8,7 @@ class TrainModelCreateSchema(BaseModel):
     framework: str
     annotation_dataset_id: int | None = None
     export_format: str | None = None
+    description: str | None = None
 
 
 class TrainModelOutSchema(BaseModel):

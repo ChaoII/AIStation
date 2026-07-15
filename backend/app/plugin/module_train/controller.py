@@ -1,7 +1,7 @@
 import os
 import tempfile
 
-from fastapi import APIRouter, Body, Depends, File, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
@@ -33,9 +33,20 @@ async def get_tempdir():
 
 
 @router.get("/model/list", summary="模型仓库列表")
-async def list_models(auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
-    data = await TrainService.list_models()
-    return SuccessResponse(data=data)
+async def list_models(
+    name: str | None = Query(None),
+    framework: str | None = Query(None),
+    page_no: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    data, total = await TrainService.list_models({
+        "name": name,
+        "framework": framework,
+        "page_no": page_no,
+        "page_size": page_size,
+    })
+    return SuccessResponse(data={"items": data, "total": total})
 
 
 @router.get("/model/detail/{model_id}", summary="模型详情")
