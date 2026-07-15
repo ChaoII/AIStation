@@ -216,12 +216,24 @@ class TrainService:
             return {"id": e.id}
 
     @classmethod
-    async def list_evals(cls, model_repo_id: int) -> list[dict]:
+    async def list_evals(cls, params: dict | None = None) -> tuple[list[dict], int]:
+        page_no = max(1, int((params or {}).get("page_no", 1)))
+        page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
+        model_repo_id = (params or {}).get("model_repo_id")
+        status = (params or {}).get("status")
+
         async with async_db_session() as db:
-            result = await db.execute(
-                select(TrainEval).where(TrainEval.model_repo_id == model_repo_id).order_by(desc(TrainEval.created_time))
-            )
-            return [dict(r.__dict__) for r in result.scalars().all()]
+            stmt = select(TrainEval)
+            if model_repo_id:
+                stmt = stmt.where(TrainEval.model_repo_id == int(model_repo_id))
+            if status:
+                stmt = stmt.where(TrainEval.status == status)
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+            stmt = stmt.order_by(desc(TrainEval.created_time)).limit(page_size).offset((page_no - 1) * page_size)
+            result = await db.execute(stmt)
+            rows = result.scalars().all()
+            return [dict(r.__dict__) for r in rows], total
 
     @classmethod
     async def delete_evals(cls, ids: list[int]) -> None:
@@ -260,10 +272,21 @@ class TrainService:
             return dict(p.__dict__) if p else None
 
     @classmethod
-    async def list_predicts(cls) -> list[dict]:
+    async def list_predicts(cls, params: dict | None = None) -> tuple[list[dict], int]:
+        page_no = max(1, int((params or {}).get("page_no", 1)))
+        page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
+        status = (params or {}).get("status")
+
         async with async_db_session() as db:
-            result = await db.execute(select(TrainPredict).order_by(desc(TrainPredict.created_time)))
-            return [dict(r.__dict__) for r in result.scalars().all()]
+            stmt = select(TrainPredict)
+            if status:
+                stmt = stmt.where(TrainPredict.status == status)
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+            stmt = stmt.order_by(desc(TrainPredict.created_time)).limit(page_size).offset((page_no - 1) * page_size)
+            result = await db.execute(stmt)
+            rows = result.scalars().all()
+            return [dict(r.__dict__) for r in rows], total
 
     @classmethod
     async def delete_predicts(cls, ids: list[int]) -> None:

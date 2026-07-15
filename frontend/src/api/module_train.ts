@@ -49,8 +49,12 @@ export const TrainAPI = {
   createEval(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/create`, method: "post", data });
   },
-  getEvalList(modelRepoId: number) {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/eval/list`, method: "get", params: { model_repo_id: modelRepoId } });
+  getEvalList(modelRepoId: number, params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/eval/list`,
+      method: "get",
+      params: { ...params, model_repo_id: modelRepoId },
+    });
   },
   deleteEval(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/eval/delete`, method: "delete", data: ids });
@@ -78,8 +82,12 @@ export const TrainAPI = {
   createPredict(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/create`, method: "post", data });
   },
-  getPredictList() {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/predict/list`, method: "get" });
+  getPredictList(params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/predict/list`,
+      method: "get",
+      params,
+    });
   },
   getPredictDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/detail`, method: "get" });

@@ -155,9 +155,20 @@ async def export_dataset(data: DatasetExportSchema, auth: AuthSchema = Depends(A
 
 
 @router.get("/eval/list", summary="评估记录列表")
-async def list_evals(model_repo_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"]))):
-    data = await TrainService.list_evals(model_repo_id)
-    return SuccessResponse(data=data)
+async def list_evals(
+    model_repo_id: int,
+    status: str | None = Query(None),
+    page_no: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"])),
+):
+    data, total = await TrainService.list_evals({
+        "model_repo_id": model_repo_id,
+        "status": status,
+        "page_no": page_no,
+        "page_size": page_size,
+    })
+    return SuccessResponse(data={"items": data, "total": total})
 
 
 @router.get("/task/{task_id}/logs", summary="获取训练日志")
@@ -184,9 +195,18 @@ async def create_predict(data: TrainPredictCreateSchema, auth: AuthSchema = Depe
 
 
 @router.get("/predict/list", summary="预测任务列表")
-async def list_predicts(auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"]))):
-    data = await TrainService.list_predicts()
-    return SuccessResponse(data=data)
+async def list_predicts(
+    status: str | None = Query(None),
+    page_no: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"])),
+):
+    data, total = await TrainService.list_predicts({
+        "status": status,
+        "page_no": page_no,
+        "page_size": page_size,
+    })
+    return SuccessResponse(data={"items": data, "total": total})
 
 
 @router.get("/predict/{predict_id}/detail", summary="预测详情")

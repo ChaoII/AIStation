@@ -1,5 +1,12 @@
 <template>
   <div class="app-container">
+    <PageSearch
+      ref="searchRef"
+      :search-config="searchConfig"
+      @query-click="handleQueryClick"
+      @reset-click="handleResetClick"
+    />
+
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, cols }">
         <div class="data-table__toolbar--left">
@@ -86,7 +93,9 @@
 import { ref, reactive, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import type { IContentConfig } from "@/components/CURD/types";
+import { useCrudList } from "@/components/CURD/useCrudList";
+import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
+import PageSearch from "@/components/CURD/PageSearch.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -97,7 +106,7 @@ const route = useRoute();
 const router = useRouter();
 const modelRepoId = Number(route.query.model_repo_id || 0);
 
-const contentRef = ref();
+const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const creating = ref(false);
 const evalDatasetId = ref<number | null>(null);
 const datasets = ref<any[]>([]);
@@ -117,20 +126,11 @@ const createForm = reactive({
 
 (async () => {
   const r = await TrainAPI.getModelList();
-  modelVersions.value = r.data?.data || [];
+  modelVersions.value = r.data?.data?.items || [];
 })();
 
-const allEvals = ref<any[]>([]);
-
-async function reloadEvalData() {
-  if (!modelRepoId) return;
-  const r = await TrainAPI.getEvalList(modelRepoId);
-  allEvals.value = r.data?.data || [];
-}
-
-onMounted(async () => {
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
+onMounted(() => {
+  refreshList();
 });
 
 function tagType(s: string): "info" | "warning" | "success" | "danger" | undefined {
@@ -139,6 +139,27 @@ function tagType(s: string): "info" | "warning" | "success" | "danger" | undefin
 function tagLabel(s: string) {
   return ({ pending: "待开始", running: "评估中", success: "已完成", failed: "失败" } as any)[s] || s;
 }
+
+const searchConfig = reactive<ISearchConfig>({
+  permPrefix: "module_train:eval",
+  colon: true,
+  isExpandable: false,
+  form: { labelWidth: "auto" },
+  formItems: [
+    {
+      prop: "status",
+      label: "状态",
+      type: "select",
+      options: [
+        { label: "待开始", value: "pending" },
+        { label: "评估中", value: "running" },
+        { label: "已完成", value: "success" },
+        { label: "失败", value: "failed" },
+      ],
+      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+    },
+  ],
+});
 
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   pk: "id",
@@ -153,14 +174,13 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   pagination: { pageSize: 10, pageSizes: [10, 20, 30, 50] },
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
-    await reloadEvalData();
-    const data = allEvals.value;
+    const r = await TrainAPI.getEvalList(modelRepoId, params);
+    const items = r.data?.data?.items || [];
     return {
-      total: data.length,
-      list: data.slice((params.page_no - 1) * params.page_size, params.page_no * params.page_size),
+      total: r.data?.data?.total ?? items.length,
+      list: items,
     };
   },
-  initialFetch: false,
   defaultToolbar: ["refresh", "filter"],
 });
 
@@ -182,8 +202,7 @@ async function handleCreateEval() {
     createForm.modelId = null;
     createForm.evalDatasetId = null;
     createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 };
-    await reloadEvalData();
-    contentRef.value?.fetchPageData({}, true);
+    refreshList();
   } finally {
     creating.value = false;
   }
@@ -192,21 +211,18 @@ async function handleCreateEval() {
 async function handleStartEval(id: number) {
   await TrainAPI.startEval(id);
   ElMessage.success("评估已开始");
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 }
 
 async function handleStopEval(id: number) {
   await TrainAPI.stopEval(id);
   ElMessage.success("评估已停止");
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 }
 
 async function handleDeleteEval(ids: number[]) {
   await TrainAPI.deleteEval(ids);
   ElMessage.success("已删除");
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 }
 </script>

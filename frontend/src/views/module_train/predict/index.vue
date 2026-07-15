@@ -90,10 +90,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
-import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
+import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import { useCrudList } from "@/components/CURD/useCrudList";
+import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
+import PageSearch from "@/components/CURD/PageSearch.vue";
 import { Plus } from "@element-plus/icons-vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
@@ -102,15 +104,13 @@ import { AnnotationAPI } from "@/api/module_annotation";
 interface TablePageQuery { page_no: number; page_size: number; [key: string]: any }
 
 const router = useRouter();
-const searchRef = ref();
-const contentRef = ref();
+const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const uploadRef = ref<any>(null);
 
 const showCreateDialog = ref(false);
 const creating = ref(false);
 const models = ref<any[]>([]);
 const datasets = ref<any[]>([]);
-const allPredicts = ref<any[]>([]);
 const pendingFiles = ref<File[]>([]);
 
 const createForm = reactive({
@@ -125,10 +125,9 @@ onMounted(async () => {
     TrainAPI.getModelList(),
     AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 }),
   ]);
-  models.value = mRes.data?.data || [];
+  models.value = mRes.data?.data?.items || [];
   datasets.value = dsRes.data?.data?.items || [];
-  await reloadData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 });
 
 function getModelName(modelId: number) {
@@ -138,11 +137,6 @@ function getModelName(modelId: number) {
 
 function tagType(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
 function tagLabel(s: string) { return ({ pending: "待开始", running: "预测中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
-
-async function reloadData() {
-  const r = await TrainAPI.getPredictList();
-  allPredicts.value = r.data?.data || [];
-}
 
 function onUploadChange(_file: any, fileList: any[]) {
   pendingFiles.value = fileList.map(f => f.raw).filter(Boolean);
@@ -177,8 +171,7 @@ async function handleCreate() {
     createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640 };
     pendingFiles.value = [];
     if (uploadRef.value) uploadRef.value.uploadFiles = [];
-    await reloadData();
-    contentRef.value?.fetchPageData({}, true);
+    refreshList();
   } finally {
     creating.value = false;
   }
@@ -187,15 +180,13 @@ async function handleCreate() {
 async function handleStart(id: number) {
   await TrainAPI.startPredict(id);
   ElMessage.success("预测已开始");
-  await reloadData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 }
 
 async function handleStop(id: number) {
   await TrainAPI.stopPredict(id);
   ElMessage.success("预测已停止");
-  await reloadData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 }
 
 function downloadZip(url: string) {
@@ -205,8 +196,7 @@ function downloadZip(url: string) {
 async function handleDelete(ids: number[]) {
   await TrainAPI.deletePredict(ids);
   ElMessage.success("已删除");
-  await reloadData();
-  contentRef.value?.fetchPageData({}, true);
+  refreshList();
 }
 
 const searchConfig = reactive<ISearchConfig>({
@@ -214,7 +204,19 @@ const searchConfig = reactive<ISearchConfig>({
   isExpandable: false,
   form: { labelWidth: "auto" },
   formItems: [
-    { prop: "name", label: "任务名称", type: "input", attrs: { placeholder: "请输入", clearable: true } },
+    {
+      prop: "status",
+      label: "状态",
+      type: "select",
+      options: [
+        { label: "待开始", value: "pending" },
+        { label: "预测中", value: "running" },
+        { label: "已完成", value: "success" },
+        { label: "失败", value: "failed" },
+        { label: "已取消", value: "cancelled" },
+      ],
+      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+    },
   ],
 });
 
@@ -231,18 +233,16 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   pagination: { pageSize: 10, pageSizes: [10, 20, 30, 50] },
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
-    await reloadData();
-    const data = allPredicts.value;
-    return { total: data.length, list: data.slice((params.page_no - 1) * params.page_size, params.page_no * params.page_size) };
+    const r = await TrainAPI.getPredictList(params);
+    const items = r.data?.data?.items || [];
+    return {
+      total: r.data?.data?.total ?? items.length,
+      list: items,
+    };
   },
-  initialFetch: false,
   defaultToolbar: ["refresh", "filter"],
 });
 
-function handleQueryClick() {
-  contentRef.value?.fetchPageData({}, true);
-}
-function handleResetClick() {
-  contentRef.value?.fetchPageData({}, true);
-}
+
+
 </script>
