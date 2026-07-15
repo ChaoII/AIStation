@@ -159,6 +159,7 @@ async def export_model_to_format(
                 "file_name": f"model_{model_id}_export.{existing_format}",
             }
 
+    export_format = export_params.get("format", "onnx")
     image = "ultralytics/ultralytics:latest"
     log_path = ""
 
