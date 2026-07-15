@@ -130,6 +130,35 @@ async def export_model_to_format(
 
     if not storage_path:
         raise Exception("该模型未存储训练产物文件（best.pt），无法导出。请确认训练已完成且模型已正常保存。")
+
+    # 检查是否是已有导出产物而非原始 .pt 文件
+    original_storage_path = storage_path
+    if "/export/" in storage_path:
+        fmt = os.path.splitext(storage_path)[1].lstrip(".") or "onnx"
+        # 如果请求的格式和已有产物一致，直接返回下载 URL
+        if fmt == export_params.get("format", "onnx"):
+            log.info(f"storage_path 已有该格式导出结果, 直接返回下载链接")
+            dl_url = s3_client.presigned_url(storage_path)
+            return {
+                "download_url": dl_url,
+                "format": fmt,
+                "file_size": 0,
+                "file_name": f"model_{model_id}_export.{fmt}",
+            }
+        # 否则尝试从训练产出路径找回原始 .pt
+        model_id_num = model_id
+        from .model import TrainTask
+        from app.core.database import async_db_session
+        from sqlalchemy import desc, select
+        async with async_db_session() as db:
+            task = (await db.execute(
+                select(TrainTask).where(TrainTask.model_repo_id == model_id)
+                .order_by(desc(TrainTask.id)).limit(1)
+            )).scalar_one_or_none()
+        if task:
+            original_storage_path = f"train/models/task_{task.id}/best.pt"
+            log.info(f"回溯原始训练产出路径: {original_storage_path}")
+
     image = "ultralytics/ultralytics:latest"
     log_path = ""
 
@@ -142,11 +171,11 @@ async def export_model_to_format(
     try:
         # 1. Download .pt from RustFS
         pt_path = os.path.join(weights_dir, "best.pt")
-        buf = s3_client.download_fileobj(storage_path)
+        buf = s3_client.download_fileobj(original_storage_path)
         with open(pt_path, "wb") as f:
             f.write(buf.read())
         file_size = os.path.getsize(pt_path)
-        log.info(f"downloaded {storage_path} to {pt_path} ({file_size} bytes)")
+        log.info(f"downloaded {original_storage_path} to {pt_path} ({file_size} bytes)")
         if file_size == 0:
             raise Exception(f"从 RustFS 下载的文件为空 (storage_path={storage_path})")
         # 检查文件头是否为有效的 PyTorch pickle 格式（前两个字节通常为 0x80 0x02-0x05）
@@ -155,9 +184,9 @@ async def export_model_to_format(
         if not header.startswith(b"\x80"):
             raise Exception(
                 f"RustFS 返回的文件不是有效的 PyTorch 模型文件\n"
-                f"storage_path={storage_path}, 文件大小={file_size} bytes\n"
+                f"storage_path={original_storage_path}, 文件大小={file_size} bytes\n"
                 f"前 8 字节 hex: {header.hex()}\n"
-                f"说明: 模型文件可能损坏、被覆盖或 RustFS 返回了错误页"
+                f"说明: 该文件可能是导出产物(.onnx等)而非原始训练的 .pt 文件"
             )
 
         # 2. Build and run export command
