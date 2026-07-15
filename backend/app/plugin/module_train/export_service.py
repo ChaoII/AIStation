@@ -131,22 +131,12 @@ async def export_model_to_format(
     if not storage_path:
         raise Exception("该模型未存储训练产物文件（best.pt），无法导出。请确认训练已完成且模型已正常保存。")
 
-    # 检查是否是已有导出产物而非原始 .pt 文件
+    # 每次导出都重新执行，除非原始 .pt 确实无法找回
     original_storage_path = storage_path
+    existing_format = None
     if "/export/" in storage_path:
-        fmt = os.path.splitext(storage_path)[1].lstrip(".") or "onnx"
-        # 如果请求的格式和已有产物一致，直接返回下载 URL
-        if fmt == export_params.get("format", "onnx"):
-            log.info(f"storage_path 已有该格式导出结果, 直接返回下载链接")
-            dl_url = s3_client.presigned_url(storage_path)
-            return {
-                "download_url": dl_url,
-                "format": fmt,
-                "file_size": 0,
-                "file_name": f"model_{model_id}_export.{fmt}",
-            }
-        # 否则尝试从训练产出路径找回原始 .pt
-        model_id_num = model_id
+        existing_format = os.path.splitext(storage_path)[1].lstrip(".") or "onnx"
+        # 尝试从训练任务找回原始 .pt
         from .model import TrainTask
         from app.core.database import async_db_session
         from sqlalchemy import desc, select
@@ -157,7 +147,17 @@ async def export_model_to_format(
             )).scalar_one_or_none()
         if task:
             original_storage_path = f"train/models/task_{task.id}/best.pt"
-            log.info(f"回溯原始训练产出路径: {original_storage_path}")
+            log.info(f"storage_path 是导出产物，回溯原始路径: {original_storage_path}")
+        else:
+            # 找不到原始任务，直接返回已有导出产物
+            dl_url = s3_client.presigned_url(storage_path)
+            log.info(f"原始训练记录丢失，返回已有导出产物: {storage_path}")
+            return {
+                "download_url": dl_url,
+                "format": existing_format,
+                "file_size": 0,
+                "file_name": f"model_{model_id}_export.{existing_format}",
+            }
 
     image = "ultralytics/ultralytics:latest"
     log_path = ""
@@ -182,11 +182,21 @@ async def export_model_to_format(
         with open(pt_path, "rb") as f:
             header = f.read(8)
         if not header.startswith(b"\x80"):
+            if existing_format:
+                # 回溯的 .pt 路径无效，但有旧导出产物，提供下载
+                dl_url = s3_client.presigned_url(storage_path)
+                log.info(f"原始 .pt 不存在，返回已有导出产物: {storage_path}")
+                return {
+                    "download_url": dl_url,
+                    "format": existing_format,
+                    "file_size": 0,
+                    "file_name": f"model_{model_id}_export.{existing_format}",
+                }
             raise Exception(
                 f"RustFS 返回的文件不是有效的 PyTorch 模型文件\n"
                 f"storage_path={original_storage_path}, 文件大小={file_size} bytes\n"
                 f"前 8 字节 hex: {header.hex()}\n"
-                f"说明: 该文件可能是导出产物(.onnx等)而非原始训练的 .pt 文件"
+                f"说明: 该模型训练产物丢失或损坏，请重新训练"
             )
 
         # 2. Build and run export command
