@@ -61,22 +61,36 @@ def _build_export_cmd(params: dict) -> list[str]:
     return cmd
 
 
-async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> int:
-    """Run a container and wait for it to finish, return exit code"""
+async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> tuple[int, str]:
+    """Run a container, capture logs to file, return (exit_code, log_path)"""
     import docker
     client = docker.from_env()
     loop = asyncio.get_event_loop()
+
+    log_dir = os.path.join(tempfile.gettempdir(), "model_export_logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, f"export_{os.getpid()}_{id(volumes)}.log")
 
     def _sync():
         container = client.containers.run(
             image, cmd,
             volumes=volumes,
             detach=True,
-            remove=True,
+            remove=False,
             stderr=True,
         )
+        # Stream logs to file in background
+        log_file = open(log_path, "w", encoding="utf-8", errors="replace")
+        try:
+            for line in container.logs(stream=True, follow=True):
+                log_file.write(line.decode("utf-8", errors="replace"))
+                log_file.flush()
+        finally:
+            log_file.close()
+
         result = container.wait(timeout=1800)
-        return result["StatusCode"]
+        container.remove()
+        return result["StatusCode"], log_path
 
     return await loop.run_in_executor(None, _sync)
 
@@ -111,6 +125,7 @@ async def export_model_to_format(
 
     export_format = export_params.get("format", "onnx")
     image = "ultralytics/ultralytics:latest"
+    log_path = ""
 
     work_dir = os.path.join(tempfile.gettempdir(), "model_export", str(model_id))
     weights_dir = os.path.join(work_dir, "weights")
@@ -130,13 +145,21 @@ async def export_model_to_format(
         cmd = _build_export_cmd(export_params)
         log.info(f"export cmd: {' '.join(cmd)}")
 
-        await _run_export_container(
+        exit_code, log_path = await _run_export_container(
             image, cmd,
             volumes={
                 weights_dir: {"bind": "/weights", "mode": "ro"},
                 output_dir: {"bind": "/output", "mode": "rw"},
             },
         )
+
+        if exit_code != 0:
+            log_tail = ""
+            if os.path.isfile(log_path):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as lf:
+                    lines = lf.readlines()
+                    log_tail = "".join(lines[-200:]).strip()
+            raise Exception(f"容器退出码 {exit_code}\n最后日志:\n{log_tail}")
 
         # 3. Find exported file
         exported = _find_exported_file(output_dir, export_format)
@@ -197,3 +220,5 @@ async def export_model_to_format(
     finally:
         import shutil
         shutil.rmtree(work_dir, ignore_errors=True)
+        if os.path.isfile(log_path):
+            os.remove(log_path)

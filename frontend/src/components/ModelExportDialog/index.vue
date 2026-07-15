@@ -92,11 +92,16 @@
     </template>
 
     <template v-else-if="exportError">
-      <div style="text-align:center;padding:40px 0">
-        <el-icon :size="48" color="#f56c6c"><CircleCloseFilled /></el-icon>
-        <p style="margin:12px 0 8px;font-size:16px;font-weight:600">导出失败</p>
-        <p style="color:#909399;font-size:13px;max-width:400px;margin:0 auto;word-break:break-word">{{ exportError }}</p>
-        <el-button type="primary" style="margin-top:16px" @click="handleRetry">重新导出</el-button>
+      <div style="padding:20px 0">
+        <div style="text-align:center;margin-bottom:16px">
+          <el-icon :size="48" color="#f56c6c"><CircleCloseFilled /></el-icon>
+          <p style="margin:12px 0 8px;font-size:16px;font-weight:600">导出失败</p>
+        </div>
+        <el-divider>Docker 日志（最后 200 行）</el-divider>
+        <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;border-radius:6px;font-size:12px;line-height:1.6;max-height:300px;overflow-y:auto;margin:0 20px 16px;font-family:'Cascadia Code','Fira Code',monospace;white-space:pre-wrap;word-break:break-all">{{ exportLog }}</pre>
+        <div style="text-align:center">
+          <el-button type="primary" @click="handleRetry">重新导出</el-button>
+        </div>
       </div>
     </template>
 
@@ -132,6 +137,7 @@ const visible = defineModel<boolean>("visible", { default: false });
 const activeTab = ref("basic");
 const exporting = ref(false);
 const exportError = ref("");
+const exportLog = ref("");
 const result = ref<any>(null);
 
 const formats = [
@@ -213,7 +219,9 @@ async function handleExport() {
     emit("done");
   } catch (e: any) {
     const msg = e?.response?.data?.msg || e?.msg || "导出失败，未知错误";
-    exportError.value = msg;
+    exportError.value = msg.split("\n最后日志:")[0].trim();
+    exportLog.value = (msg.split("\n最后日志:")[1] || "").trim();
+    if (!exportLog.value) exportLog.value = msg;
     exporting.value = false;
   }
 }
@@ -228,6 +236,6 @@ function handleRetry() {
 }
 
 watch(() => visible.value, (v) => {
-  if (!v) { result.value = null; exporting.value = false; exportError.value = ""; }
+  if (!v) { result.value = null; exporting.value = false; exportError.value = ""; exportLog.value = ""; }
 });
 </script>
