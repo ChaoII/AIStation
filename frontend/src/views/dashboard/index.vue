@@ -26,59 +26,67 @@
     </el-card>
 
     <!-- ═══ 图表区（始终保持渲染，加载中仅显示轻量占位） ═══ -->
-    <div class="dash-charts">
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">标注任务状态</span>
-            <span class="dash-chart-note">{{ stats.taskTotal }} 个任务</span>
+    <el-row :gutter="12">
+      <el-col :xs="24" :sm="24" :md="12" :lg="12">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">标注任务状态</span>
+              <span class="dash-chart-note">{{ stats.taskTotal }} 个任务</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="taskStatusPie" height="260" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="taskStatusPie" height="260" />
-        </div>
-      </el-card>
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">训练任务状态</span>
-            <span class="dash-chart-note">{{ stats.trainTotal }} 个任务</span>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :sm="24" :md="12" :lg="12">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">训练任务状态</span>
+              <span class="dash-chart-note">{{ stats.trainTotal }} 个任务</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="trainStatusPie" height="260" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="trainStatusPie" height="260" />
-        </div>
-      </el-card>
-    </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
-    <div class="dash-charts">
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">各数据集图片数</span>
-            <span class="dash-chart-note">{{ stats.datasetCount }} 个数据集</span>
+    <el-row :gutter="12">
+      <el-col :xs="24" :sm="24" :md="12" :lg="12">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">各数据集图片数</span>
+              <span class="dash-chart-note">{{ stats.datasetCount }} 个数据集</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="datasetBar" height="220" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="datasetBar" height="220" />
-        </div>
-      </el-card>
-      <el-card shadow="hover">
-        <template #header>
-          <div class="dash-chart-header">
-            <span class="dash-chart-title">标注任务类型分布</span>
-            <span class="dash-chart-note">{{ stats.taskTypeTotal }} 种类型</span>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :sm="24" :md="12" :lg="12">
+        <el-card shadow="hover">
+          <template #header>
+            <div class="dash-chart-header">
+              <span class="dash-chart-title">标注任务类型分布</span>
+              <span class="dash-chart-note">{{ stats.taskTypeTotal }} 种类型</span>
+            </div>
+          </template>
+          <div class="dash-chart-wrapper">
+            <div v-if="!dataLoaded" class="dash-chart-placeholder" />
+            <ECharts v-if="dataLoaded" :options="taskTypeBar" height="220" />
           </div>
-        </template>
-        <div class="dash-chart-wrapper">
-          <div v-if="!dataLoaded" class="dash-chart-placeholder" />
-          <ECharts v-if="dataLoaded" :options="taskTypeBar" height="220" />
-        </div>
-      </el-card>
-    </div>
+        </el-card>
+      </el-col>
+    </el-row>
 
     <!-- ═══ 底部最近动态 ═══ -->
     <div class="dash-footer">
