@@ -107,10 +107,9 @@
 /* ── 图表区（grid 两列布局，更稳定） ── */
 .dash-charts {
   width: 100%;
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
-  background: red !important;
 }
 .dash-chart-wrapper {
   width: 100%;
