@@ -193,7 +193,7 @@ async def export_model_to_format(
         # 检查文件头是否为有效的 PyTorch pickle 格式（前两个字节通常为 0x80 0x02-0x05）
         with open(pt_path, "rb") as f:
             header = f.read(8)
-        if not header.startswith(b"\x80"):
+        if not header.startswith(b"\x80") and not header.startswith(b"PK\x03\x04"):
             if existing_format:
                 # 回溯的 .pt 路径无效，但有旧导出产物，提供下载
                 dl_url = s3_client.presigned_url(storage_path)
