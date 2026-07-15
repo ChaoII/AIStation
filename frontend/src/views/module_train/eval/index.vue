@@ -54,7 +54,7 @@
                 <el-button text size="small" type="primary" @click="router.push(`/train/eval/${row.id}`)">详情</el-button>
                 <el-button v-if="row.status === 'pending'" text size="small" type="success" @click="handleStartEval(row.id)">开始</el-button>
                 <el-button v-if="row.status === 'running'" text size="small" type="danger" @click="handleStopEval(row.id)">停止</el-button>
-                <el-button text size="small" type="warning" @click="handleReEval(row)">重新评估</el-button>
+                <el-button v-if="row.status === 'success' || row.status === 'failed'" text size="small" type="warning" @click="handleReEval(row)">重新评估</el-button>
                 <el-popconfirm title="确定删除？" @confirm="handleDeleteEval([row.id])">
                   <template #reference><el-button text size="small" type="danger">删除</el-button></template>
                 </el-popconfirm>
