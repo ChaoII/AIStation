@@ -1,6 +1,7 @@
 <template>
-  <div class="train-detail-page">
-    <div class="detail-header">
+  <div>
+    <div class="train-detail-page">
+      <div class="detail-header">
       <el-button text size="small" @click="router.back()">
         <el-icon><ArrowLeft /></el-icon>
       </el-button>
@@ -302,6 +303,7 @@
     :model-name="task.value?.name"
     @done="loadTask"
   />
+  </div>
 </template>
 
 <script setup lang="ts">
