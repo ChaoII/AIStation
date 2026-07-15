@@ -91,6 +91,15 @@
       </div>
     </template>
 
+    <template v-else-if="exportError">
+      <div style="text-align:center;padding:40px 0">
+        <el-icon :size="48" color="#f56c6c"><CircleCloseFilled /></el-icon>
+        <p style="margin:12px 0 8px;font-size:16px;font-weight:600">导出失败</p>
+        <p style="color:#909399;font-size:13px;max-width:400px;margin:0 auto;word-break:break-word">{{ exportError }}</p>
+        <el-button type="primary" style="margin-top:16px" @click="handleRetry">重新导出</el-button>
+      </div>
+    </template>
+
     <template v-else-if="result">
       <div style="text-align:center;padding:20px 0">
         <el-icon :size="48" color="#67c23a"><CircleCheckFilled /></el-icon>
@@ -113,7 +122,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
-import { CircleCheckFilled } from "@element-plus/icons-vue";
+import { CircleCheckFilled, CircleCloseFilled } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
 
 const props = defineProps<{ modelId: number; modelName?: string }>();
@@ -122,6 +131,7 @@ const emit = defineEmits<{ (e: "done"): void }>();
 const visible = defineModel<boolean>("visible", { default: false });
 const activeTab = ref("basic");
 const exporting = ref(false);
+const exportError = ref("");
 const result = ref<any>(null);
 
 const formats = [
@@ -197,20 +207,27 @@ async function handleExport() {
 
     statusText.value = "容器启动中...";
     const r = await TrainAPI.exportModel(props.modelId, payload);
+    exportError.value = "";
     result.value = r.data?.data;
     ElMessage.success("模型导出完成");
     emit("done");
   } catch (e: any) {
-    ElMessage.error(e?.msg || "导出失败");
+    const msg = e?.response?.data?.msg || e?.msg || "导出失败，未知错误";
+    exportError.value = msg;
     exporting.value = false;
   }
 }
 
 function handleDownload() {
-  if (result.value?.download_url) window.open(result.value.download_url, "_blank");
+  if (result.value?.download_url) window.open(result.value?.download_url, "_blank");
+}
+
+function handleRetry() {
+  exportError.value = "";
+  handleExport();
 }
 
 watch(() => visible.value, (v) => {
-  if (!v) { result.value = null; exporting.value = false; }
+  if (!v) { result.value = null; exporting.value = false; exportError.value = ""; }
 });
 </script>

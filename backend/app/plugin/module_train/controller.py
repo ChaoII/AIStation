@@ -294,15 +294,19 @@ async def export_model(
         from app.common.response import ErrorResponse
         return ErrorResponse(msg="模型不存在")
 
-    result = await export_model_to_format(
-        model_id=model_id,
-        storage_path=model.get("storage_path", ""),
-        export_params=data.model_dump(),
-        model_name=model.get("name", ""),
-        created_id=auth.user.id,
-        dataset_id=model.get("annotation_dataset_id"),
-    )
-    return SuccessResponse(data=result)
+    try:
+        result = await export_model_to_format(
+            model_id=model_id,
+            storage_path=model.get("storage_path", ""),
+            export_params=data.model_dump(),
+            model_name=model.get("name", ""),
+            created_id=auth.user.id,
+            dataset_id=model.get("annotation_dataset_id"),
+        )
+        return SuccessResponse(data=result)
+    except Exception as e:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg=f"导出失败: {e}")
 
 
 @router.get("/model/{model_id}/download", summary="下载模型文件")
