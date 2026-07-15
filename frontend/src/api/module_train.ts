@@ -23,8 +23,12 @@ export const TrainAPI = {
   createTask(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/create`, method: "post", data });
   },
-  getTaskList() {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/task/list`, method: "get" });
+  getTaskList(params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/task/list`,
+      method: "get",
+      params,
+    });
   },
   getTaskDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/detail`, method: "get" });

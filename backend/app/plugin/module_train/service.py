@@ -145,10 +145,27 @@ class TrainService:
                     await db.delete(m)
 
     @classmethod
-    async def list_tasks(cls) -> list[dict]:
+    async def list_tasks(cls, params: dict | None = None) -> tuple[list[dict], int]:
+        page_no = max(1, int((params or {}).get("page_no", 1)))
+        page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
+        name = (params or {}).get("name")
+        framework = (params or {}).get("framework")
+        status = (params or {}).get("status")
+
         async with async_db_session() as db:
-            result = await db.execute(select(TrainTask).order_by(desc(TrainTask.created_time)))
-            return [_enrich_task(r) for r in result.scalars().all()]
+            stmt = select(TrainTask)
+            if name:
+                stmt = stmt.where(TrainTask.name.ilike(f"%{name}%"))
+            if framework:
+                stmt = stmt.where(TrainTask.framework == framework)
+            if status:
+                stmt = stmt.where(TrainTask.status == status)
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+            stmt = stmt.order_by(desc(TrainTask.created_time)).limit(page_size).offset((page_no - 1) * page_size)
+            result = await db.execute(stmt)
+            rows = result.scalars().all()
+            return [_enrich_task(r) for r in rows], total
 
     @classmethod
     async def get_task(cls, task_id: int) -> dict | None:

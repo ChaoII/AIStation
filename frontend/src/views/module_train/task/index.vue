@@ -538,11 +538,12 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     pageSizes: [10, 20, 30, 50],
   },
   request: { page_no: "page_no", page_size: "page_size" },
-  indexAction: async () => {
-    const res = await TrainAPI.getTaskList();
+  indexAction: async (params) => {
+    const res = await TrainAPI.getTaskList(params);
+    const items = res.data?.data?.items || [];
     return {
-      total: (res.data?.data || []).length,
-      list: res.data?.data || [],
+      total: res.data?.data?.total ?? items.length,
+      list: items,
     };
   },
 });
@@ -768,8 +769,9 @@ function startPoll() {
   pollTimer = setInterval(async () => {
     if (!contentRef.value?.pageData) return;
     try {
-      const res = await TrainAPI.getTaskList();
-      const fresh = res?.data?.data || [];
+      const params = (contentRef.value as any).queryParams || {};
+      const res = await TrainAPI.getTaskList(params);
+      const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
       const old = contentRef.value.pageData as any[];
       for (const f of fresh) {
         const o = old.find((x: any) => x.id === f.id);

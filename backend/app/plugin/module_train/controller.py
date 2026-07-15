@@ -74,9 +74,22 @@ async def create_task(data: TrainTaskCreateSchema, auth: AuthSchema = Depends(Au
 
 
 @router.get("/task/list", summary="训练任务列表")
-async def list_tasks(auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
-    data = await TrainService.list_tasks()
-    return SuccessResponse(data=data)
+async def list_tasks(
+    name: str | None = Query(None),
+    framework: str | None = Query(None),
+    status: str | None = Query(None),
+    page_no: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    data, total = await TrainService.list_tasks({
+        "name": name,
+        "framework": framework,
+        "status": status,
+        "page_no": page_no,
+        "page_size": page_size,
+    })
+    return SuccessResponse(data={"items": data, "total": total})
 
 
 @router.get("/task/{task_id}/detail", summary="训练任务详情")
