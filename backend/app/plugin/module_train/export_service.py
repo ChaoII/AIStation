@@ -145,7 +145,20 @@ async def export_model_to_format(
         buf = s3_client.download_fileobj(storage_path)
         with open(pt_path, "wb") as f:
             f.write(buf.read())
-        log.info(f"downloaded {storage_path} to {pt_path} ({os.path.getsize(pt_path)} bytes)")
+        file_size = os.path.getsize(pt_path)
+        log.info(f"downloaded {storage_path} to {pt_path} ({file_size} bytes)")
+        if file_size == 0:
+            raise Exception(f"从 RustFS 下载的文件为空 (storage_path={storage_path})")
+        # 检查文件头是否为有效的 PyTorch pickle 格式（前两个字节通常为 0x80 0x02-0x05）
+        with open(pt_path, "rb") as f:
+            header = f.read(8)
+        if not header.startswith(b"\x80"):
+            raise Exception(
+                f"RustFS 返回的文件不是有效的 PyTorch 模型文件\n"
+                f"storage_path={storage_path}, 文件大小={file_size} bytes\n"
+                f"前 8 字节 hex: {header.hex()}\n"
+                f"说明: 模型文件可能损坏、被覆盖或 RustFS 返回了错误页"
+            )
 
         # 2. Build and run export command
         cmd = _build_export_cmd(export_params)
