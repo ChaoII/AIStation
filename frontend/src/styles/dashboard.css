@@ -107,20 +107,20 @@
 /* ── 图表区（精简为 3 个核心图表） ── */
 .dash-charts {
   width: 100%;
-  display: flex;
-  flex-wrap: wrap;
+  display: flex !important;
+  flex-wrap: wrap !important;
   gap: 10px;
 }
 .dash-charts + .dash-charts {
-  display: flex;
-  flex-wrap: wrap;
+  display: flex !important;
+  flex-wrap: wrap !important;
   gap: 10px;
 }
 .dash-charts > * {
-  flex: 1 1 0;
-  max-width: 50%;
-  min-width: 0;
-  overflow: hidden;
+  flex: 0 0 50% !important;
+  max-width: 50% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
 }
 
 .dash-charts .el-card {
