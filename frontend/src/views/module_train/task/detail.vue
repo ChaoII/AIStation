@@ -794,7 +794,16 @@ function handleExport() {
     ElMessage.warning("暂无关联模型，请先完成训练");
     return;
   }
-  exportDialogVisible.value = true;
+  // 先验证模型是否存在
+  TrainAPI.getModelDetail(task.value.model_repo_id).then(res => {
+    if (res.data?.data) {
+      exportDialogVisible.value = true;
+    } else {
+      ElMessage.error("关联模型已不存在，请重新训练");
+    }
+  }).catch(() => {
+    ElMessage.error("关联模型已不存在，请重新训练");
+  });
 }
 
 onMounted(async () => {
