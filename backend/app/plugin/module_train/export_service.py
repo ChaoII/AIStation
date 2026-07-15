@@ -115,7 +115,7 @@ def _find_exported_file(output_dir: str, weights_dir: str, export_format: str) -
 
 async def export_model_to_format(
     model_id: int,
-    storage_path: str,
+    storage_path: str | None,
     export_params: dict,
     model_name: str,
     created_id: int,
@@ -128,7 +128,8 @@ async def export_model_to_format(
     """
     from .model import TrainModel
 
-    export_format = export_params.get("format", "onnx")
+    if not storage_path:
+        raise Exception("该模型未存储训练产物文件（best.pt），无法导出。请确认训练已完成且模型已正常保存。")
     image = "ultralytics/ultralytics:latest"
     log_path = ""
 

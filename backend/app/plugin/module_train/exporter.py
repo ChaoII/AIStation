@@ -458,15 +458,19 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
 async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
     from .model import TrainModel, TrainTask
 
-    # 1. 优先从 YOLO 标准输出目录找 best.pt
+    # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
     best_path = None
-    candidates = [
-        os.path.join(export_dir, "exp", "weights", "best.pt"),
-        os.path.join(export_dir, "runs", "train", "exp", "weights", "best.pt"),
-    ]
-    for p in candidates:
-        if os.path.isfile(p):
-            best_path = p
+    extensions = [".pt"] if framework == "ultralytics" else [".pdparams"]
+    for ext in extensions:
+        candidates = [
+            os.path.join(export_dir, "exp", "weights", f"best{ext}"),
+            os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                best_path = p
+                break
+        if best_path:
             break
     # 2. 降级：递归搜索，但排除 .models_cache 目录
     if not best_path:
@@ -482,7 +486,7 @@ async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
             if best_path:
                 break
 
-    storage_path = ""
+    storage_path = None
     if best_path:
         rustfs_path = f"train/models/task_{task_id}/{os.path.basename(best_path)}"
         try:
