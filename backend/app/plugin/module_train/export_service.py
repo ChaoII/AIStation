@@ -88,9 +88,11 @@ async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> tu
         finally:
             log_file.close()
 
-        result = container.wait(timeout=1800)
-        container.remove()
-        return result["StatusCode"], log_path
+        try:
+            result = container.wait(timeout=1800)
+            return result["StatusCode"], log_path
+        finally:
+            container.remove()
 
     return await loop.run_in_executor(None, _sync)
 
