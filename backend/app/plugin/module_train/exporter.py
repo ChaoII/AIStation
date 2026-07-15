@@ -458,13 +458,29 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
 async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
     from .model import TrainModel, TrainTask
 
+    # 1. 优先从 YOLO 标准输出目录找 best.pt
     best_path = None
-    for root, _, files in os.walk(export_dir):
-        for f in files:
-            if framework == "ultralytics" and f.endswith(".pt"):
-                best_path = os.path.join(root, f)
-            elif framework == "paddlex" and f.endswith(".pdparams"):
-                best_path = os.path.join(root, f)
+    candidates = [
+        os.path.join(export_dir, "exp", "weights", "best.pt"),
+        os.path.join(export_dir, "runs", "train", "exp", "weights", "best.pt"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            best_path = p
+            break
+    # 2. 降级：递归搜索，但排除 .models_cache 目录
+    if not best_path:
+        for root, dirs, files in os.walk(export_dir):
+            dirs[:] = [d for d in dirs if d != ".models_cache"]
+            for f in files:
+                if framework == "ultralytics" and f == "best.pt":
+                    best_path = os.path.join(root, f)
+                    break
+                elif framework == "paddlex" and f == "best.pdparams":
+                    best_path = os.path.join(root, f)
+                    break
+            if best_path:
+                break
 
     storage_path = ""
     if best_path:
@@ -475,7 +491,8 @@ async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
                 s3_client.upload_fileobj(f, rustfs_path)
             storage_path = rustfs_path
         except Exception as e:
-            log.error(f"upload model failed: {e}")
+            log.error(f"upload model to RustFS failed: {e}")
+            raise Exception(f"训练完成但模型文件上传失败: {e}")
 
     async with async_db_session.begin() as db:
         task = await db.get(TrainTask, task_id)
