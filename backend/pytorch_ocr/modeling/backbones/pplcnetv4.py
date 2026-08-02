@@ -164,9 +164,11 @@ def _same_asymmetric_pads(kernel_size):
         kh = kw = kernel_size
     else:
         kh, kw = kernel_size
-    right = kw - 1 - (kw - 1) // 2
-    bottom = kh - 1 - (kh - 1) // 2
-    return 0, right, 0, bottom
+    left = (kw - 1) // 2
+    right = kw - 1 - left
+    top = (kh - 1) // 2
+    bottom = kh - 1 - top
+    return left, right, top, bottom
 
 
 class _SamePadConv2d(nn.Module):

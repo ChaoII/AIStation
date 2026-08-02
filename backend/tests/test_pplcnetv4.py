@@ -1,7 +1,12 @@
 """PPLCNetV4 骨干网络形状测试。"""
 import torch
+import torch.nn.functional as F
 
-from pytorch_ocr.modeling.backbones.pplcnetv4 import PPLCNetV4, StemBlock
+from pytorch_ocr.modeling.backbones.pplcnetv4 import (
+    PPLCNetV4,
+    StemBlock,
+    _same_asymmetric_pads,
+)
 
 
 def test_pplcnetv4_tiny_forward_shapes():
@@ -66,3 +71,26 @@ def test_pplcnetv4_tiny_rep_equivalence():
     assert len(before) == len(after) == 4
     for b, a in zip(before, after, strict=True):
         assert torch.max(torch.abs(b - a)) < 1e-4
+
+
+def test_same_asymmetric_pads_matches_native():
+    """``_same_asymmetric_pads`` 填充后的卷积输出形状必须与原生 ``"same"`` 一致。"""
+    x = torch.randn(2, 8, 16, 16)
+    for k in (1, 2, 3, 4, 5):
+        for kh, kw in ((k, k), (k, 3), (3, k)):
+            pads = _same_asymmetric_pads((kh, kw))
+            assert len(pads) == 4
+            # 左+右 = kw-1, 上+下 = kh-1
+            assert pads[0] + pads[1] == kw - 1
+            assert pads[2] + pads[3] == kh - 1
+            assert pads[0] == (kw - 1) // 2 and pads[2] == (kh - 1) // 2
+            w = torch.randn(8, 8, kh, kw)
+            y_native = F.conv2d(x, w, padding="same")
+            y_pad = F.conv2d(F.pad(x, pads), w)
+            assert tuple(y_native.shape) == tuple(y_pad.shape), (kh, kw, pads)
+    # 显式断言关键核的填充值
+    assert _same_asymmetric_pads(1) == (0, 0, 0, 0)
+    assert _same_asymmetric_pads(2) == (0, 1, 0, 1)
+    assert _same_asymmetric_pads(3) == (1, 1, 1, 1)
+    assert _same_asymmetric_pads(4) == (1, 2, 1, 2)
+    assert _same_asymmetric_pads(5) == (2, 2, 2, 2)
