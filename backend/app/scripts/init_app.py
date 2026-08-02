@@ -540,6 +540,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_evaluation_scheduler())
         log.info("✅ 评估调度器已启动")
 
+        from app.plugin.module_train.predict_executor import start_prediction_scheduler
+        asyncio.create_task(start_prediction_scheduler())
+        log.info("✅ 预测调度器已启动")
+
         try:
             from sqlalchemy import text
 
