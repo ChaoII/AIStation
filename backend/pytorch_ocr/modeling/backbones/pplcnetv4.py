@@ -154,6 +154,88 @@ NET_CONFIG_REC = {
 # ---------------------------------------------------------------------------
 
 
+def _same_asymmetric_pads(kernel_size):
+    """返回 PyTorch ``padding="same"`` 的每维填充量 ``(left, right, top, bottom)``。
+
+    PyTorch 原生 ``"same"`` 对偶数核采用**非对称**填充（右/下各多补 1）；
+    ``F.pad(x, (left, right, top, bottom))`` 即按该顺序取值。
+    """
+    if isinstance(kernel_size, int):
+        kh = kw = kernel_size
+    else:
+        kh, kw = kernel_size
+    right = kw - 1 - (kw - 1) // 2
+    bottom = kh - 1 - (kh - 1) // 2
+    return 0, right, 0, bottom
+
+
+class _SamePadConv2d(nn.Module):
+    """等价于 ``nn.Conv2d(padding="same")`` 的包装：显式非对称 ``F.pad`` + 零填充卷积。
+
+    仅用于**偶数核** ``"same"`` 卷积的 ``rep()``/``fuse()`` 融合结果，以复现
+    PyTorch 原生 ``"same"`` 的右/下非对称填充。``nn.Conv2d`` 会把 2 元组
+    padding ``(left, total - left)`` 解释成**每维对称**填充，无法表达非对称。
+    """
+
+    def __init__(self, conv, pads):
+        super().__init__()
+        self.conv = conv
+        self.pads = tuple(pads)
+
+    def forward(self, x):
+        return self.conv(F.pad(x, self.pads))
+
+
+def _build_fused_conv(weight, bias, kernel_size, stride, groups, padding, dilation=1):
+    """构建 BN 融合后的单个卷积。
+
+    - 数值 padding / 奇数核 ``"same"``（对称）：返回 ``nn.Conv2d``。
+    - 偶数核 ``"same"``（非对称）：返回 ``_SamePadConv2d``（``F.pad`` + 零填充）。
+    """
+    if isinstance(padding, str):
+        if padding.lower() == "valid":
+            padding = 0
+        else:  # "same"
+            pads = _same_asymmetric_pads(kernel_size)
+            left, right, top, bottom = pads
+            if left == right and top == bottom:  # 奇数核对称
+                return nn.Conv2d(
+                    weight.shape[1] * groups,
+                    weight.shape[0],
+                    weight.shape[2:],
+                    stride=stride,
+                    padding=(top, left),
+                    dilation=dilation,
+                    groups=groups,
+                )
+            conv = nn.Conv2d(
+                weight.shape[1] * groups,
+                weight.shape[0],
+                weight.shape[2:],
+                stride=stride,
+                padding=0,
+                dilation=dilation,
+                groups=groups,
+            )
+            return _SamePadConv2d(conv, pads)
+    return nn.Conv2d(
+        weight.shape[1] * groups,
+        weight.shape[0],
+        weight.shape[2:],
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        groups=groups,
+    )
+
+
+def _copy_fused_params(m, weight, bias):
+    """将融合权重/偏置写入卷积（自动解包 ``_SamePadConv2d``）。"""
+    conv = m.conv if isinstance(m, _SamePadConv2d) else m
+    conv.weight.data.copy_(weight)
+    conv.bias.data.copy_(bias)
+
+
 class Conv2D_BN(nn.Sequential):
     """Conv2D + BatchNorm2d（bias=False）。推理时可用 fuse() 融合。"""
 
@@ -187,27 +269,19 @@ class Conv2D_BN(nn.Sequential):
 
     @torch.no_grad()
     def fuse(self):
-        """将 Conv2D 与 BN 融合为单个 Conv2D（bias=True）。"""
+        """将 Conv2D 与 BN 融合为单个 Conv2D（bias=True）。
+
+        偶数核 ``"same"`` 的填充是非对称的（右/下），此处返回
+        ``_SamePadConv2d`` 包装以保证融合前后数学等价。
+        """
         conv, bn = self.conv, self.bn
         scale = bn.weight / torch.sqrt(bn.running_var + bn.eps)
         w = conv.weight * scale[:, None, None, None]
         b = bn.bias - bn.running_mean * scale
-        if isinstance(conv.padding, str):
-            total = conv.kernel_size[0] - 1
-            left = total // 2
-            padding = (left, total - left)
-        else:
-            padding = conv.padding
-        m = nn.Conv2d(
-            w.shape[1] * conv.groups,
-            w.shape[0],
-            w.shape[2:],
-            stride=conv.stride,
-            padding=padding,
-            groups=conv.groups,
+        m = _build_fused_conv(
+            w, b, conv.kernel_size, conv.stride, conv.groups, conv.padding, conv.dilation
         )
-        m.weight.data.copy_(w)
-        m.bias.data.copy_(b)
+        _copy_fused_params(m, w, b)
         return m
 
 
@@ -244,30 +318,22 @@ class ConvBNAct(nn.Module):
 
     @torch.no_grad()
     def rep(self):
-        """将 Conv2d 与 BN 融合为单个 Conv2d（bias=True）。"""
+        """将 Conv2d 与 BN 融合为单个 Conv2d（bias=True）。
+
+        偶数核 ``"same"`` 的填充是非对称的（右/下），此处用
+        ``_SamePadConv2d`` 包装以保证 rep() 前后数学等价。
+        """
         if self.is_repped:
             return
         conv, bn = self.conv, self.bn
         scale = bn.weight / torch.sqrt(bn.running_var + bn.eps)
         fused_w = conv.weight * scale[:, None, None, None]
         fused_b = bn.bias - bn.running_mean * scale
-        if isinstance(conv.padding, str):
-            total = conv.kernel_size[0] - 1
-            left = total // 2
-            padding = (left, total - left)
-        else:
-            padding = conv.padding
-        m = nn.Conv2d(
-            conv.in_channels,
-            conv.out_channels,
-            conv.kernel_size,
-            stride=conv.stride,
-            padding=padding,
-            dilation=conv.dilation,
-            groups=conv.groups,
+        m = _build_fused_conv(
+            fused_w, fused_b, conv.kernel_size, conv.stride, conv.groups, conv.padding,
+            conv.dilation,
         )
-        m.weight.data.copy_(fused_w)
-        m.bias.data.copy_(fused_b)
+        _copy_fused_params(m, fused_w, fused_b)
         self.conv = m
         del self.bn
         self.is_repped = True

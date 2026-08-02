@@ -228,6 +228,8 @@ def build_det_model(
     fpn = RepLKFPN(
         in_channels=backbone.out_channels,
         out_channels=fpn_out_channels,
+        shortcut=True,
+        dilated_kernel_size=5,  # 对齐 det 配置 tiny_det.yml
     )
     head = DBHead(in_channels=fpn_out_channels, k=k)
     model = nn.Module()

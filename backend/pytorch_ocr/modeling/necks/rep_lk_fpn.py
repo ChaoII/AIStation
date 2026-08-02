@@ -243,7 +243,7 @@ class RepLKFPN(nn.Module):
     """
 
     def __init__(
-        self, in_channels, out_channels, shortcut=True, dilated_kernel_size=7, **kwargs
+        self, in_channels, out_channels, shortcut=True, dilated_kernel_size=5, **kwargs
     ):
         super().__init__()
         self.out_channels = out_channels

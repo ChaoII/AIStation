@@ -165,3 +165,11 @@ def test_convert_interface_returns_state_dict():
     result = model.load_state_dict(state, strict=False)
     assert result.missing_keys == []
     assert result.unexpected_keys == []
+
+
+def test_build_det_model_neck_dilated_kernel_size_is_5():
+    """build_det_model 的 neck 必须使用 dilated_kernel_size=5（对齐 tiny_det.yml）。"""
+    model = build_det_model("tiny")
+    for blk in model.neck.inp_conv_dw:
+        assert blk.kernel_size == 5
+        assert len(blk.dilates) == 2

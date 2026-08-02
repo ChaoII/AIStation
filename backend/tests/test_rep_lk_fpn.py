@@ -26,3 +26,13 @@ def test_rep_lk_fpn_forward_shapes():
     out = fpn(feats)
     assert isinstance(out, torch.Tensor)
     assert out.shape == (1, 64, 160, 160)
+
+
+def test_rep_lk_fpn_default_dilated_kernel_size_is_5():
+    """默认 dilated_kernel_size=5（对齐 det 配置）：每级 2 个膨胀分支。"""
+    fpn = RepLKFPN(in_channels=[32, 48, 64, 160], out_channels=64)
+    assert len(fpn.inp_conv_dw) == 4
+    for blk in fpn.inp_conv_dw:
+        assert blk.kernel_size == 5
+        assert blk.kernel_sizes == [3, 3]
+        assert blk.dilates == [1, 2]
