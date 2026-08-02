@@ -182,19 +182,8 @@ def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: 
     return cmd
 
 
-def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
-    # TODO(paddlex): verify CLI flags against paddlecloud/paddlex:3.0 — the following command shapes are best-effort
-    epochs = hp.get("epochs", 100)
-    batch = hp.get("batch", 16)
-    lr = hp.get("lr", 0.01)
-    model_name = hp.get("model", "PP-YOLOE")
-    return ["paddlex", "--train", "--model", model_name, "--data", "/data",
-            "--epochs", str(epochs), "--batch", str(batch), "--lr", str(lr),
-            "--output", "/output"]
-
-
 async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
-    """按框架构建训练命令（复用原 _build_ultralytics_cmd/_build_paddlex_cmd）。"""
+    """按框架构建训练命令。"""
     if task.framework == TrainFramework.ULTRALYTICS:
         task_type = "detection"
         if task.annotation_task_id:
@@ -204,7 +193,7 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
                 if ann_task:
                     task_type = ann_task.task_type
         return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type)
-    return _build_paddlex_cmd(task.hyperparams, data_dir, export_dir)
+    raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
 def _parse_epoch(line: str) -> dict | None:

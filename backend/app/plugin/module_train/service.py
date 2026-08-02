@@ -314,8 +314,10 @@ class TrainService:
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
+        if data.framework == "paddlex":
+            raise Exception("PaddleX 已下线，请使用 ultralytics 框架")
         async with async_db_session.begin() as db:
-            image = "paddlecloud/paddlex:3.0" if data.framework == "paddlex" else "ultralytics/ultralytics:latest"
+            image = "ultralytics/ultralytics:latest"
             t = TrainTask(
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
                 annotation_task_id=data.annotation_task_id,

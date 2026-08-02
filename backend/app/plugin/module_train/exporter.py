@@ -75,7 +75,7 @@ async def _export_core(
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
     else:
-        await _export_paddlex(dataset_id, task_id, images, output_dir, annotation_task_id, train_ratio=train_ratio, class_names=class_names)
+        raise ValueError(f"不支持的导出框架: {framework}")
 
     log.info(f"export {framework} to {output_dir}")
 
@@ -130,107 +130,6 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
     sorted_classes = sorted(classes)
     _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_classes, class_names or {})
     log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_classes)} → {output_dir}")
-
-
-async def _export_paddlex(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None) -> None:
-    """导出 PaddleX 检测格式：images/ + annotations/ (XML) + train/val 划分 + labels.txt。
-
-    PaddleX 3.0 期望目录结构：
-      {output}/images/{img}
-      {output}/annotations/{img}.xml
-      {output}/train.txt / val.txt
-    """
-    import random
-    import xml.etree.ElementTree as ET
-
-    from app.utils.s3_client import s3_client
-
-    # Resolve class name mapping when not already provided by _export_core
-    if not class_names and annotation_task_id:
-        from app.api.v1.module_annotation.task.model import AnnotationTaskModel
-        async with async_db_session() as db:
-            ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
-            if ann_task and ann_task.classes:
-                class_names = {
-                    c["id"]: c.get("name", f"class_{c['id']}")
-                    for c in (ann_task.classes if isinstance(ann_task.classes, list) else [])
-                }
-    class_names = class_names or {}
-
-    random.shuffle(images)
-    split_idx = max(1, int(len(images) * train_ratio))
-    img_dir = os.path.join(output_dir, "images")
-    ann_dir = os.path.join(output_dir, "annotations")
-    os.makedirs(img_dir, exist_ok=True)
-    os.makedirs(ann_dir, exist_ok=True)
-
-    train_lines: list[str] = []
-    val_lines: list[str] = []
-    classes: set[str] = set()
-
-    async with async_db_session() as db:
-        for idx, img in enumerate(images):
-            img_path = os.path.join(img_dir, img.filename)
-            if not os.path.exists(img_path):
-                try:
-                    data = s3_client.download_fileobj(img.object_key)
-                    with open(img_path, "wb") as f:
-                        f.write(data.read())
-                except Exception as e:
-                    log.warning(f"skip image {img.filename}: {e}")
-                    continue
-
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-
-            # 构造 PaddleX XML
-            root = ET.Element("annotation")
-            ET.SubElement(root, "filename").text = img.filename
-            size = ET.SubElement(root, "size")
-            ET.SubElement(size, "width").text = str(img.width or 0)
-            ET.SubElement(size, "height").text = str(img.height or 0)
-            for ann in anns:
-                if ann.get("type") not in ("AxisAlignedBox", "box"):
-                    continue
-                if "x1" in ann:
-                    x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
-                else:
-                    xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
-                    x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
-                cls_id = ann.get("class_id", 0)
-                cls_name = class_names.get(cls_id, f"class_{cls_id}")
-                obj = ET.SubElement(root, "object")
-                ET.SubElement(obj, "name").text = cls_name
-                ET.SubElement(obj, "difficult").text = "0"
-                bbox = ET.SubElement(obj, "bndbox")
-                ET.SubElement(bbox, "xmin").text = f"{int(x1 * (img.width or 1))}"
-                ET.SubElement(bbox, "ymin").text = f"{int(y1 * (img.height or 1))}"
-                ET.SubElement(bbox, "xmax").text = f"{int(x2 * (img.width or 1))}"
-                ET.SubElement(bbox, "ymax").text = f"{int(y2 * (img.height or 1))}"
-                classes.add(cls_name)
-
-            xml_path = os.path.join(ann_dir, os.path.splitext(img.filename)[0] + ".xml")
-            tree = ET.ElementTree(root)
-            tree.write(xml_path, encoding="utf-8", xml_declaration=True)
-
-            rel = f"images/{img.filename}\tannotations/{os.path.splitext(img.filename)[0]}.xml"
-            if idx < split_idx:
-                train_lines.append(rel)
-            else:
-                val_lines.append(rel)
-
-    with open(os.path.join(output_dir, "train.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(train_lines))
-    with open(os.path.join(output_dir, "val.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(val_lines))
-    with open(os.path.join(output_dir, "labels.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(sorted(classes)))
-    log.info(f"paddlex: train={len(train_lines)} val={len(val_lines)} classes={sorted(classes)}")
 
 
 def _format_yolo_lines(anns: list, task_type: str) -> list[str]:
