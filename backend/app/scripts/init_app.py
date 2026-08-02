@@ -548,6 +548,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_deploy_recovery())
         log.info("✅ 部署孤儿回收已启动")
 
+        from app.plugin.module_train.cleanup import cleanup_loop
+        asyncio.create_task(cleanup_loop())
+        log.info("✅ 临时训练产物目录清理已启动")
+
         try:
             from sqlalchemy import text
 

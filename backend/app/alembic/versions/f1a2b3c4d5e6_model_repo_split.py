@@ -9,6 +9,7 @@ import uuid
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "f1a2b3c4d5e6"
 down_revision: str | None = "e5f6a7b8c9d0"
@@ -30,7 +31,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("uuid", sa.String(36), nullable=True),
         sa.Column("name", sa.String(128), nullable=False),
-        sa.Column("framework", sa.Enum(name="trainframework"), nullable=False),
+        sa.Column("framework", postgresql.ENUM("PADDLEX", "ULTRALYTICS", name="trainframework", create_type=False), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("latest_version_id", sa.Integer(), nullable=True),
         sa.Column("annotation_dataset_id", sa.Integer(), nullable=True),
