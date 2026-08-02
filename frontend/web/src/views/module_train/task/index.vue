@@ -128,7 +128,30 @@
                 <ElInput v-model="hpForm.device" placeholder="如: 0" />
               </ElFormItem>
             </ElCol>
+            <ElCol v-if="isClassificationTask" :span="12">
+              <ElFormItem label="多标签分类">
+                <ElSwitch v-model="hpForm.multi_label" />
+              </ElFormItem>
+            </ElCol>
           </ElRow>
+          <ElCollapse class="hp-advanced-collapse">
+            <ElCollapseItem title="高级参数" name="advanced">
+              <ElRow :gutter="16">
+                <ElCol :span="12"><ElFormItem label="LR Factor (lrf)"><ElInputNumber v-model="hpForm.lrf" :min="0" :max="1" :step="0.001" :precision="4" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Momentum"><ElInputNumber v-model="hpForm.momentum" :min="0" :max="1" :step="0.001" :precision="3" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Weight Decay"><ElInputNumber v-model="hpForm.weight_decay" :min="0" :max="1" :step="0.0001" :precision="4" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Patience"><ElInputNumber v-model="hpForm.patience" :min="0" :max="1000" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Seed"><ElInputNumber v-model="hpForm.seed" :min="0" :max="999999" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="HSV-Hue"><ElInputNumber v-model="hpForm.hsv_h" :min="0" :max="1" :step="0.01" :precision="3" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="HSV-Saturation"><ElInputNumber v-model="hpForm.hsv_s" :min="0" :max="1" :step="0.01" :precision="3" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="HSV-Value"><ElInputNumber v-model="hpForm.hsv_v" :min="0" :max="1" :step="0.01" :precision="3" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Flip LR"><ElInputNumber v-model="hpForm.fliplr" :min="0" :max="1" :step="0.1" :precision="1" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Flip UD"><ElInputNumber v-model="hpForm.flipud" :min="0" :max="1" :step="0.1" :precision="1" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="Mosaic"><ElInputNumber v-model="hpForm.mosaic" :min="0" :max="1" :step="0.1" :precision="1" style="width:100%" /></ElFormItem></ElCol>
+                <ElCol :span="12"><ElFormItem label="MixUp"><ElInputNumber v-model="hpForm.mixup" :min="0" :max="1" :step="0.1" :precision="1" style="width:100%" /></ElFormItem></ElCol>
+              </ElRow>
+            </ElCollapseItem>
+          </ElCollapse>
           <ElDivider content-position="left">Docker 命令预览</ElDivider>
           <pre class="docker-cmd-pre">{{ dockerCmdPreview }}</pre>
         </template>
@@ -196,6 +219,11 @@ const modelOptions = computed(() => {
   return opts;
 });
 const modelGroups = computed(() => [...new Set(modelOptions.value.map(o => o.group))]);
+
+const isClassificationTask = computed(() => {
+  const activeTask = annoTasks.value.find((t: any) => t.id === formData.value.annotation_task_id);
+  return activeTask?.task_type === "classification" || activeTask?.task_type === "cls";
+});
 
 async function onDatasetChange(datasetId: number) {
   formData.value.annotation_task_id = undefined;
@@ -370,20 +398,26 @@ const initialFormData: TrainTaskForm = {
   id: undefined, name: undefined, framework: "ultralytics", dataset_id: undefined, annotation_task_id: undefined,
 };
 
-const hpForm = reactive<Record<string, any>>({ model: "yolo11n.pt", epochs: 100, batch: 16, lr: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80 });
+const hpForm = reactive<Record<string, any>>({
+  model: "yolo11n.pt", epochs: 100, batch: 16, lr0: 0.01, optimizer: "AdamW",
+  imgsz: 640, workers: 4, device: "0", trainRatio: 80,
+  lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, patience: 100, seed: 0,
+  hsv_h: 0.015, hsv_s: 0.7, hsv_v: 0.4, fliplr: 0.5, flipud: 0.0, mosaic: 1.0, mixup: 0.0,
+  multi_label: false,
+});
 
 function onFrameworkChange(fw: string | number | boolean | undefined) {
   const val = String(fw);
   Object.keys(hpForm).forEach(k => delete hpForm[k]);
-  if (val === "ultralytics") Object.assign(hpForm, { model: "yolo11n.pt", epochs: 100, batch: 16, lr: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80 });
+  if (val === "ultralytics") Object.assign(hpForm, { model: "yolo11n.pt", epochs: 100, batch: 16, lr0: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, patience: 100, seed: 0, hsv_h: 0.015, hsv_s: 0.7, hsv_v: 0.4, fliplr: 0.5, flipud: 0.0, mosaic: 1.0, mixup: 0.0, multi_label: false });
   else Object.assign(hpForm, { model: "PP-YOLOE", epochs: 100, batch: 16, lr: 0.01, device: "0", pretrained: true });
 }
 
 function buildHyperparams(): Record<string, any> {
   if (formData.value.framework === "ultralytics") {
-    return { model: hpForm.model, epochs: hpForm.epochs, batch: hpForm.batch, lr: hpForm.lr, optimizer: hpForm.optimizer, imgsz: hpForm.imgsz, workers: hpForm.workers, device: hpForm.device, train_ratio: (hpForm.trainRatio || 80) / 100 };
+    return { ...hpForm, lr0: hpForm.lr0 ?? 0.01, train_ratio: (hpForm.trainRatio || 80) / 100 };
   }
-  return { model: hpForm.model, epochs: hpForm.epochs, batch: hpForm.batch, lr: hpForm.lr, device: hpForm.device, pretrained: hpForm.pretrained };
+  return { model: hpForm.model, epochs: hpForm.epochs, batch: hpForm.batch, device: hpForm.device };
 }
 
 const tempDir = ref("${TEMP_DIR}");
@@ -394,7 +428,7 @@ const dockerCmdPreview = computed(() => {
   const outputMount = `${tempDir.value}/train_output/{task_id}`;
   const cacheMount = `${tempDir.value}/train_output/.models_cache`;
   if (formData.value.framework === "ultralytics") {
-    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
+    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr0} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
   }
   return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  paddlecloud/paddlex:3.0 \\\n  paddlex \\\n    --model ${hpForm.model} \\\n    --data /data \\\n    --epochs ${hpForm.epochs} \\\n    --batch ${hpForm.batch} \\\n    --lr ${hpForm.lr} \\\n    --output /output`;
 });
