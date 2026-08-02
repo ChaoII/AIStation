@@ -204,7 +204,7 @@ def _compute_best(metrics_log: list[dict]) -> dict | None:
     """从每轮指标中选出 map50 最优的一轮；无有效轮次时退回最后一轮。"""
     if not metrics_log:
         return None
-    valid = [m for m in metrics_log if m.get("epoch", -1) > 0 and m.get("map50") is not None]
+    valid = [m for m in metrics_log if m and m.get("map50") is not None]
     return max(valid, key=lambda m: m["map50"]) if valid else metrics_log[-1]
 
 
@@ -251,7 +251,9 @@ class TrainExecutor(TaskExecutor):
                 gpu_id=task.hyperparams.get("gpu_id", "0"),
             )
             container_id = container.id
-            cls._registry[task_id] = {"container_id": container_id, "cancel": False}
+            entry = cls._registry.get(task_id) or {}
+            entry.update({"container_id": container_id})
+            cls._registry[task_id] = entry
 
             metrics_log = await cls.follow_logs(
                 container_id,
@@ -259,6 +261,16 @@ class TrainExecutor(TaskExecutor):
                 lambda line: broadcast_log(task_id, line),
                 _parse_epoch,
             )
+
+            # Merge trailing "all" summary (epoch == -1) into last real epoch to restore old metrics shape
+            if metrics_log and metrics_log[-1].get("epoch") == -1:
+                summary = metrics_log.pop()
+                for m in metrics_log[::-1]:
+                    if m.get("epoch", -1) > 0:
+                        for k, v in summary.items():
+                            if k != "epoch":
+                                m[k] = v
+                        break
             exit_code = await cls._get_exit_code(container)
 
             if cls._registry.get(task_id, {}).get("cancel"):

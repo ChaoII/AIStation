@@ -41,6 +41,7 @@ class TaskExecutor(ABC):
 
     @classmethod
     async def run(cls, task_id: int) -> None:
+        cls._registry[task_id] = {"queued": True}
         sem = cls._get_semaphore()
         async with sem:
             await cls._execute_with_state(task_id)
@@ -48,6 +49,10 @@ class TaskExecutor(ABC):
     @classmethod
     async def _execute_with_state(cls, task_id: int):
         try:
+            # If cancelled while queued, don't execute
+            if cls._registry.get(task_id, {}).get("cancel"):
+                await cls._mark_status(task_id, "cancelled", finished_at=datetime.now())
+                return
             await cls._mark_status(task_id, "running", started_at=datetime.now())
             await cls._execute(task_id)
         except Exception as e:
@@ -70,9 +75,10 @@ class TaskExecutor(ABC):
     @classmethod
     async def stop(cls, task_id: int) -> None:
         entry = cls._registry.get(task_id)
-        if entry and entry.get("container_id"):
+        if entry:
             entry["cancel"] = True
-            await stop_container(entry["container_id"])
+            if entry.get("container_id"):
+                await stop_container(entry["container_id"])
         async with async_db_session.begin() as db:
             await db.execute(
                 update(cls.model_class)

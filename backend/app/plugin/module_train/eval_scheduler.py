@@ -120,7 +120,9 @@ class EvalExecutor(TaskExecutor):
                 gpu_id=device,
             )
             container_id = container.id
-            cls._registry[eval_id] = {"container_id": container_id, "cancel": False}
+            entry = cls._registry.get(eval_id) or {}
+            entry.update({"container_id": container_id})
+            cls._registry[eval_id] = entry
 
             metrics: dict = {}
 

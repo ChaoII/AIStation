@@ -141,7 +141,9 @@ class PredictExecutor(TaskExecutor):
                 gpu_id=device,
             )
             container_id = container.id
-            cls._registry[predict_id] = {"container_id": container_id, "cancel": False}
+            entry = cls._registry.get(predict_id) or {}
+            entry.update({"container_id": container_id})
+            cls._registry[predict_id] = entry
 
             await cls.follow_logs(
                 container_id,
