@@ -44,12 +44,14 @@ async def _export_core(
     # Determine task_type and class names
     task_type = "detection"
     class_names: dict[int, str] = {}
+    classification_mode: str | None = None
     if annotation_task_id:
         from app.api.v1.module_annotation.task.model import AnnotationTaskModel
         async with async_db_session() as db:
             ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
             if ann_task:
                 task_type = ann_task.task_type
+                classification_mode = ann_task.classification_mode
                 if ann_task.classes:
                     for c in (ann_task.classes if isinstance(ann_task.classes, list) else []):
                         class_names[c["id"]] = c.get("name", f"class_{c['id']}")
@@ -58,7 +60,11 @@ async def _export_core(
         if framework.startswith("yolo-"):
             task_type = framework.replace("yolo-", "")
         if task_type == "cls":
-            await _export_yolo_cls(dataset_id, task_id, images, output_dir, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training)
+            await _export_yolo_cls(
+                dataset_id, task_id, images, output_dir, annotation_task_id,
+                train_ratio=train_ratio, class_names=class_names, for_training=for_training,
+                multi_label=(classification_mode == "multi"),
+            )
         else:
             await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training)
     elif framework == "paddle-mlcls":
@@ -264,14 +270,16 @@ def _write_yaml(path: str, base_path: str, sorted_classes: list, class_names: di
             f.write(f"names: {json.dumps(sorted_classes)}\n")
 
 
-async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False) -> None:
-    """Export single-label classification to YOLO CLS format with train/val split."""
+async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, multi_label: bool = False) -> None:
+    """Export classification to YOLO CLS format with train/val split.
+
+    single_label: train/<cls>/<img>.jpg (目录结构)
+    multi_label:  train/<img>.jpg + train/labels/<img>.txt (每行一个 class id)
+    """
     import random
-    from collections import defaultdict
 
     from app.utils.s3_client import s3_client
 
-    # Get class mapping
     task_cn: dict[int, str] = class_names or {}
     if not task_cn and annotation_task_id:
         from app.api.v1.module_annotation.task.model import AnnotationTaskModel
@@ -281,8 +289,8 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                 for c in (ann_task.classes if isinstance(ann_task.classes, list) else []):
                     task_cn[c["id"]] = c.get("name", f"class_{c['id']}")
 
-    # Collect per image class_id
-    img_class: dict[int, int] = {}
+    # Collect per-image labels: {img_id: [class_id, ...]} (multi) or {img_id: class_id} (single)
+    img_labels: dict[int, list[int]] = {}
     async with async_db_session() as db:
         for img in images:
             query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
@@ -291,19 +299,45 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
             query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
             rec = await db.execute(query)
             record = rec.scalar_one_or_none()
+            ids: list[int] = []
             for ann in (record.annotation_data if record and record.annotation_data else []):
                 cid = ann.get("class_id")
                 if cid is not None:
-                    img_class[img.id] = cid
-                    break
+                    ids.append(cid)
+            if ids:
+                img_labels[img.id] = ids
 
-    # Group by class
-    class_imgs: dict[int, list] = defaultdict(list)
+    if multi_label:
+        # Multi-label: flat train/val dirs + labels/*.txt (one class id per line)
+        random.shuffle(images)
+        split_idx = max(1, int(len(images) * train_ratio)) if images else 0
+        for split_name, sub in [("train", images[:split_idx]), ("val", images[split_idx:])]:
+            img_dir = os.path.join(output_dir, split_name)
+            lbl_dir = os.path.join(output_dir, split_name, "labels")
+            os.makedirs(img_dir, exist_ok=True)
+            os.makedirs(lbl_dir, exist_ok=True)
+            for img in sub:
+                ids = img_labels.get(img.id, [])
+                if not ids:
+                    continue
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(os.path.join(img_dir, img.filename), "wb") as f:
+                        f.write(data.read())
+                except Exception:
+                    continue
+                stem = os.path.splitext(img.filename)[0]
+                with open(os.path.join(lbl_dir, stem + ".txt"), "w") as f:
+                    f.write("\n".join(str(cid) for cid in sorted(set(ids))))
+        log.info(f"yolo-cls (multi): exported to {output_dir}")
+        return
+
+    # Single-label: existing directory structure
+    class_imgs: dict[int, list] = {}
     for img in images:
-        if img.id in img_class:
-            class_imgs[img_class[img.id]].append(img)
-
-    # Split per class
+        ids = img_labels.get(img.id, [])
+        if ids:
+            class_imgs.setdefault(ids[0], []).append(img)
     for cid, imgs in class_imgs.items():
         random.shuffle(imgs)
         split = max(0, int(len(imgs) * train_ratio))
@@ -318,7 +352,6 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                         f.write(data.read())
                 except Exception:
                     continue
-
     log.info(f"yolo-cls: exported to {output_dir}")
 
 
