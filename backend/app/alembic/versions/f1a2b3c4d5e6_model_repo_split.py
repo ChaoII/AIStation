@@ -5,6 +5,8 @@ Revises: e5f6a7b8c9d0
 Create Date: 2026-08-02
 
 """
+import uuid
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -55,10 +57,10 @@ def upgrade() -> None:
         if name not in repos:
             result = conn.execute(
                 sa.text(
-                    "INSERT INTO train_model_repos (name, framework, status, created_time, updated_time) "
-                    "VALUES (:name, :framework, 'draft', NOW(), NOW()) RETURNING id"
+                    "INSERT INTO train_model_repos (uuid, name, framework, status, created_time, updated_time) "
+                    "VALUES (:uuid, :name, :framework, 'draft', NOW(), NOW()) RETURNING id"
                 ),
-                {"name": name, "framework": framework},
+                {"uuid": str(uuid.uuid4()), "name": name, "framework": framework},
             )
             repo_id = result.scalar()
             repos[name] = repo_id
