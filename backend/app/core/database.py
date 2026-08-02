@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from redis import exceptions
 from redis.asyncio import Redis
 from sqlalchemy import Engine, create_engine
-from sqlalchemy.dialects.sqlite.base import SQLiteTypeCompiler
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -15,11 +14,6 @@ from app.config.setting import settings
 from app.core.base_model import MappedBase
 from app.core.exceptions import CustomException
 from app.core.logger import log
-
-# SQLite 兼容：postgresql.JSONB 在 SQLite 上无法编译 DDL，
-# 注册 visit_JSONB 使其渲染为 SQLite JSON(TEXT)，从而支持 SQLite 建表与读写。
-if not hasattr(SQLiteTypeCompiler, "visit_JSONB"):
-    SQLiteTypeCompiler.visit_JSONB = SQLiteTypeCompiler.visit_JSON
 
 
 def create_engine_and_session(
