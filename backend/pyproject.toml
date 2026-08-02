@@ -49,6 +49,7 @@ dependencies = [
     "user-agents==2.2.0",                       # 获取用户UA
     "uvicorn==0.30.6",                          # uvicorn web 框架
     "websockets>=15.0.1,<16.0",                 # websocket（prefect>=3.5 需 >=15.0.1；与部署 requirements.txt 一致）
+    "torch>=2.13.0",
 ]
 
 [dependency-groups]
