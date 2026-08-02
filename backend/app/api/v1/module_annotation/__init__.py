@@ -5,8 +5,8 @@ annotation_router = APIRouter(prefix="/annotation")
 
 def _register_annotation_routers():
     from .annotation.controller import AnnotationRouter
-    from .dataset.clean.controller import CleanRouter
     from .collaboration.controller import CollaborationRouter
+    from .dataset.clean.controller import CleanRouter
     from .dataset.controller import DatasetRouter
     from .dataset.export_controller import ExportRouter
     from .task.controller import TaskRouter

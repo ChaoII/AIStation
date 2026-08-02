@@ -82,12 +82,12 @@ class LoginService:
                 key=login_form.captcha_key,
                 captcha=login_form.captcha,
             )
-        log.info(f"[登录耗时] 验证码校验: {round((time.time()-_t)*1000,1)}ms"); _t2 = time.time()
+        log.info(f"[登录耗时] 验证码校验: {round((time.time() - _t) * 1000, 1)}ms"); _t2 = time.time()
 
         # 用户认证
         auth = AuthSchema(db=db)
         user = await UserCRUD(auth).get_by_username_crud(username=login_form.username)
-        log.info(f"[登录耗时] 数据库查询用户: {round((time.time()-_t2)*1000,1)}ms"); _t3 = time.time()
+        log.info(f"[登录耗时] 数据库查询用户: {round((time.time() - _t2) * 1000, 1)}ms"); _t3 = time.time()
 
         if not user:
             raise CustomException(msg="用户不存在")
@@ -96,14 +96,14 @@ class LoginService:
             plain_password=login_form.password, password_hash=user.password
         ):
             raise CustomException(msg="账号或密码错误")
-        log.info(f"[登录耗时] Bcrypt密码校验: {round((time.time()-_t3)*1000,1)}ms"); _t4 = time.time()
+        log.info(f"[登录耗时] Bcrypt密码校验: {round((time.time() - _t3) * 1000, 1)}ms"); _t4 = time.time()
 
         if user.status == "1":
             raise CustomException(msg="用户已被停用")
 
         # 更新最后登录时间
         user = await UserCRUD(auth).update_last_login_crud(id=user.id)
-        log.info(f"[登录耗时] 更新登录时间: {round((time.time()-_t4)*1000,1)}ms"); _t5 = time.time()
+        log.info(f"[登录耗时] 更新登录时间: {round((time.time() - _t4) * 1000, 1)}ms"); _t5 = time.time()
         if not user:
             raise CustomException(msg="用户不存在")
         if not login_form.login_type:
@@ -116,9 +116,9 @@ class LoginService:
             user=user,
             login_type=login_form.login_type,
         )
-        log.info(f"[登录耗时] 生成Token(含IP归属+Redis写入+上线记录): {round((time.time()-_t5)*1000,1)}ms")
+        log.info(f"[登录耗时] 生成Token(含IP归属+Redis写入+上线记录): {round((time.time() - _t5) * 1000, 1)}ms")
 
-        log.info(f"[登录耗时] ✓ 登录总耗时: {round((time.time()-_t)*1000,1)}ms")
+        log.info(f"[登录耗时] ✓ 登录总耗时: {round((time.time() - _t) * 1000, 1)}ms")
 
         return token
 

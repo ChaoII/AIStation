@@ -11,11 +11,20 @@ from app.common.response import ErrorResponse, SuccessResponse
 from app.config.setting import settings
 from app.core.dependencies import db_getter, get_current_user, redis_getter
 from app.core.exceptions import CustomException
-from app.core.redis_crud import RedisCURD
 from app.core.logger import log
+from app.core.redis_crud import RedisCURD
 from app.core.router_class import OperationLogRoute
 from app.core.security import CustomOAuth2PasswordRequestForm
 
+from .oauth_service import (
+    STATE_PREFIX,
+    _callback_url,
+    build_authorize_url,
+    complete_oauth_login,
+    oauth_service_error_redirect,
+    oauth_service_frontend_redirect_from_token,
+    save_oauth_state,
+)
 from .schema import (
     AutoLoginTokenSchema,
     AutoLoginUserSchema,
@@ -23,15 +32,6 @@ from .schema import (
     JWTOutSchema,
     LogoutPayloadSchema,
     RefreshTokenPayloadSchema,
-)
-from .oauth_service import (
-    STATE_PREFIX,
-    build_authorize_url,
-    complete_oauth_login,
-    oauth_service_error_redirect,
-    oauth_service_frontend_redirect_from_token,
-    save_oauth_state,
-    _callback_url,
 )
 from .service import AutoLoginService, CaptchaService, LoginService
 

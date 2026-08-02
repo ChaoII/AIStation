@@ -8,14 +8,13 @@ from .dict.controller import DictRouter
 from .log.controller import LogRouter
 from .menu.controller import MenuRouter
 from .notice.controller import NoticeRouter
+from .notification.controller import NotificationRouter
+from .notification.ws import NotificationWSRouter as NotificationWSRouter
 from .params.controller import ParamsRouter
 from .position.controller import PositionRouter
 from .role.controller import RoleRouter
 from .tenant.controller import TenantRouter
 from .user.controller import UserRouter
-
-from .notification.controller import NotificationRouter
-from .notification.ws import NotificationWSRouter as NotificationWSRouter
 
 system_router = APIRouter(prefix="/system")
 
