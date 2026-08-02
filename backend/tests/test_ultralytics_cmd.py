@@ -60,3 +60,21 @@ def test_build_cmd_classification_multi_label():
     hp = {"model": "yolo11n-cls.pt", "multi_label": True}
     cmd = _build_ultralytics_cmd(hp, "/data", "/output", "cls")
     assert "multi_label=True" in " ".join(cmd)
+
+
+def test_build_cmd_cls_suffix():
+    hp = {"model": "yolo11n.pt"}
+    cmd = _build_ultralytics_cmd(hp, "/data", "/output", "cls")
+    assert "model=/models/yolo11n-cls.pt" in " ".join(cmd)
+
+
+def test_build_cmd_cls_suffix_classification():
+    hp = {"model": "yolo11s.pt"}
+    cmd = _build_ultralytics_cmd(hp, "/data", "/output", "classification")
+    assert "model=/models/yolo11s-cls.pt" in " ".join(cmd)
+
+
+def test_build_cmd_cls_preserved():
+    hp = {"model": "yolo11n-cls.pt"}
+    cmd = _build_ultralytics_cmd(hp, "/data", "/output", "cls")
+    assert "model=/models/yolo11n-cls.pt" in " ".join(cmd)

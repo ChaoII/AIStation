@@ -162,6 +162,10 @@ def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: 
     if task_type == "rotated_detection" and "-obb" not in model_name:
         base = model_name.replace(".pt", "")
         model_name = f"{base}-obb.pt"
+    # Auto-select CLS model for classification tasks
+    if task_type in ("cls", "classification") and "-cls" not in model_name:
+        base = model_name.replace(".pt", "")
+        model_name = f"{base}-cls.pt"
     cmd = ["yolo", "train", f"model=/models/{model_name}", "data=/data/dataset.yaml",
            "project=/output", "name=exp"]
     for key, (flag, _default, validator) in _ULTRALYTICS_HP.items():

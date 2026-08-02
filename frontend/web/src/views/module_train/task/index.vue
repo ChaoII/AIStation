@@ -207,12 +207,14 @@ const modelOptions = computed(() => {
   const activeTask = annoTasks.value.find((t: any) => t.id === formData.value.annotation_task_id);
   const taskType = activeTask?.task_type || "detection";
   const isObb = taskType === "rotated_detection";
+  const isCls = taskType === "classification" || taskType === "cls";
   const opts: { label: string; value: string; group: string }[] = [];
   for (const fam of MODEL_FAMILIES) {
     for (const sz of fam.sizes) {
       const base = `${fam.prefix}${sz}`;
-      opts.push({ label: `${fam.label}${sz.toUpperCase()}`, value: `${base}.pt`, group: fam.label });
+      if (!isCls) opts.push({ label: `${fam.label}${sz.toUpperCase()}`, value: `${base}.pt`, group: fam.label });
       if (isObb) opts.push({ label: `${fam.label}${sz.toUpperCase()}-OBB`, value: `${base}-obb.pt`, group: `${fam.label} OBB` });
+      if (isCls) opts.push({ label: `${fam.label}${sz.toUpperCase()}-CLS`, value: `${base}-cls.pt`, group: `${fam.label} CLS` });
     }
   }
   return opts;
