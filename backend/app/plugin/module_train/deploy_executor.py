@@ -4,6 +4,7 @@ import socket
 import tempfile
 from datetime import datetime
 
+import docker
 import httpx
 from sqlalchemy import select, update
 
@@ -11,7 +12,13 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .docker_utils import client as docker_client
-from .docker_utils import follow_container_logs, pull_image, remove_container, run_container
+from .docker_utils import (
+    follow_container_logs,
+    get_container_error_tail,
+    pull_image,
+    remove_container,
+    run_container,
+)
 from .model import TrainDeploy, TrainModel
 
 _deploy_running: dict[int, dict] = {}
@@ -159,8 +166,22 @@ def _find_available_port(
     raise Exception(f"no available port found in range {start}-{end}")
 
 
+def _is_port_conflict_error(exc: Exception) -> bool:
+    """判断 Docker APIError 是否为端口被占（TOCTOU 竞态重试的依据）。"""
+    msg = str(exc).lower()
+    return any(k in msg for k in (
+        "port is already allocated",
+        "port already allocated",
+        "address already in use",
+    ))
+
+
 async def _container_exists(container_id: str | None) -> bool:
-    """判断容器是否仍存在于 Docker 中。"""
+    """判断容器是否仍存在于 Docker 中。
+
+    NotFound（容器确实不存在）返回 False；其余异常（daemon 不可达等）视为
+    "无法证明容器不存在"，返回 True，避免恢复逻辑把 daemon 故障误判为容器丢失。
+    """
     if not container_id:
         return False
 
@@ -168,8 +189,10 @@ async def _container_exists(container_id: str | None) -> bool:
         try:
             docker_client.containers.get(container_id)
             return True
-        except Exception:
+        except docker.errors.NotFound:
             return False
+        except Exception:
+            return True
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _sync)
@@ -209,6 +232,8 @@ async def recover_orphan_deploys() -> None:
             select(TrainDeploy).where(TrainDeploy.status.in_(("running", "deploying")))
         )).scalars().all()
     for d in rows:
+        # 仅当容器被确认不存在（NotFound）才回收；daemon 不可达时 _container_exists 返回
+        # True（"无法证明缺失"），跳过以免误杀在途部署。
         if await _container_exists(d.container_id):
             continue
         async with async_db_session.begin() as db:
@@ -290,19 +315,33 @@ async def _execute_deployment(deploy_id: int):
                     update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(host_port=host_port)
                 )
 
-        ports = {f"{8000}/tcp": host_port}
+        # TOCTOU 兜底：DB 预留与容器实际绑定之间存在竞态窗口，两个并发部署可能选到同一端口。
+        # run_container 抛出端口冲突 APIError 时，换新端口（排除当前端口）重试一次。
+        async def _launch(port: int):
+            return await run_container(
+                DOCKER_IMAGE,
+                ["python3", "/server/server.py"],
+                volumes={
+                    model_dir: {"bind": "/model", "mode": "ro"},
+                    server_dir: {"bind": "/server", "mode": "ro"},
+                },
+                ports={f"{8000}/tcp": port},
+                gpu_id=deploy.device if deploy.device != "cpu" else None,
+                entrypoint="",
+            )
 
-        container = await run_container(
-            DOCKER_IMAGE,
-            ["python3", "/server/server.py"],
-            volumes={
-                model_dir: {"bind": "/model", "mode": "ro"},
-                server_dir: {"bind": "/server", "mode": "ro"},
-            },
-            ports=ports,
-            gpu_id=deploy.device if deploy.device != "cpu" else None,
-            entrypoint="",
-        )
+        try:
+            container = await _launch(host_port)
+        except docker.errors.APIError as e:
+            if not _is_port_conflict_error(e):
+                raise
+            log.warning(f"deploy {deploy_id} port {host_port} conflict, retrying with a fresh port")
+            host_port = _find_available_port(excluded={host_port})
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(host_port=host_port)
+                )
+            container = await _launch(host_port)
         container_id = container.id
         _deploy_running[deploy_id] = {"container_id": container_id, "cancel": False}
 
@@ -346,13 +385,7 @@ async def _execute_deployment(deploy_id: int):
         if _deploy_running.get(deploy_id, {}).get("cancel"):
             pass  # already handled by stop_deployment
         elif exit_code != 0:
-            error_msg = ""
-            try:
-                err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                if err_logs:
-                    error_msg = err_logs.strip()
-            except Exception:
-                pass
+            error_msg = (await get_container_error_tail(container_id)).strip()
             await remove_container(container_id)
             async with async_db_session.begin() as db:
                 await db.execute(

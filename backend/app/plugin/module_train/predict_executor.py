@@ -9,7 +9,7 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import pull_image, remove_container, run_container
+from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainFramework, TrainModel, TrainPredict, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_predict_log
@@ -97,7 +97,8 @@ class PredictExecutor(TaskExecutor):
 
             # Download model（统一解析：/export/ 导出产物自动回溯原始 best.pt）
             from .service import TrainService
-            storage_path = await TrainService._resolve_model_storage(pred.model_id or pred.model_repo_id)
+            # model_id 是版本行 id（model_repo_id 是仓库 id），不可用仓库 id 冒充版本 id
+            storage_path = await TrainService._resolve_model_storage(pred.model_id)
 
             await broadcast_predict_log(predict_id, f"[predict] downloading model {storage_path}...")
             model_data = s3_client.download_fileobj(storage_path)
@@ -114,6 +115,7 @@ class PredictExecutor(TaskExecutor):
             device = hp.get("device", "0")
 
             if framework == TrainFramework.PADDLEX:
+                # TODO(paddlex): verify CLI flags against paddlecloud/paddlex:3.0 — the following command shapes are best-effort
                 cmd = [
                     "paddlex", "--predict",
                     f"--model=/model/{model_filename}",
@@ -206,13 +208,7 @@ class PredictExecutor(TaskExecutor):
                                        finished_at=datetime.now(),
                                        progress=100)
             else:
-                error_msg = ""
-                try:
-                    err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                    if err_logs:
-                        error_msg = err_logs.strip()
-                except Exception:
-                    pass
+                error_msg = (await get_container_error_tail(container_id)).strip()
                 await remove_container(container_id)
                 await cls._mark_status(predict_id, TrainStatus.FAILED,
                                        log=error_msg or "predict failed",

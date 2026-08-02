@@ -69,7 +69,7 @@ async def follow_container_logs(container_id: str) -> asyncio.Queue:
             loop.call_soon_threadsafe(queue.put_nowait, line.decode("utf-8", errors="replace").rstrip("\n"))
         loop.call_soon_threadsafe(queue.put_nowait, "__EOF__")
 
-    thread = loop.run_in_executor(None, _stream)
+    loop.run_in_executor(None, _stream)
     return queue
 
 
@@ -80,3 +80,20 @@ async def remove_container(container_id: str) -> None:
         c.remove(force=True)
     except docker.errors.NotFound:
         pass
+
+
+async def get_container_error_tail(container_id: str, tail: int = 50) -> str:
+    """在 executor 中同步读取容器 stderr 末尾日志（避免阻塞事件循环）。
+
+    任何异常（容器已删除 / daemon 不可达等）返回空串，与调用方原 try/except 行为一致。
+    """
+    loop = asyncio.get_event_loop()
+
+    def _sync() -> str:
+        try:
+            c = client.containers.get(container_id)
+            return c.logs(stdout=False, stderr=True, tail=tail).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
+    return await loop.run_in_executor(None, _sync)

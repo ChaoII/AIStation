@@ -57,7 +57,7 @@ class TrainTaskOutSchema(BaseModel):
 
 class TrainEvalCreateSchema(BaseModel):
     model_repo_id: int
-    model_id: int | None = None
+    model_id: int
     eval_dataset_id: int
     hyperparams: dict = Field(default_factory=dict)
 

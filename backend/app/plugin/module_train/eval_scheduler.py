@@ -9,7 +9,7 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import pull_image, remove_container, run_container
+from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
@@ -77,7 +77,8 @@ class EvalExecutor(TaskExecutor):
 
             # Download model file from RustFS（统一解析：/export/ 导出产物自动回溯原始 best.pt）
             from .service import TrainService
-            storage_path = await TrainService._resolve_model_storage(eval_rec.model_id or eval_rec.model_repo_id)
+            # model_id 是版本行 id（model_repo_id 是仓库 id），不可用仓库 id 冒充版本 id
+            storage_path = await TrainService._resolve_model_storage(eval_rec.model_id)
 
             await broadcast_eval_log(eval_id, f"[eval] downloading model {storage_path}...")
             from app.utils.s3_client import s3_client
@@ -96,6 +97,7 @@ class EvalExecutor(TaskExecutor):
             device = hp.get("device", "0")
 
             if framework == TrainFramework.PADDLEX:
+                # TODO(paddlex): verify CLI flags against paddlecloud/paddlex:3.0 — the following command shapes are best-effort
                 cmd = [
                     "paddlex", "--eval",
                     f"--model=/model/{model_filename}",
@@ -129,7 +131,11 @@ class EvalExecutor(TaskExecutor):
             metrics: dict = {}
 
             def _parse_val_metrics(line: str) -> dict | None:
-                """解析 YOLO val 输出：all 汇总行与 per-class 行（累积到 metrics）。"""
+                """解析 YOLO val 输出：all 汇总行与 per-class 行（累积到 metrics）。
+
+                TODO(paddlex): PaddleX eval 输出与 YOLO val 格式不同，此解析器仅适用于 YOLO；
+                PaddleX 评估的 metrics 会保持为空，直到新增 PaddleX 解析器。
+                """
                 if re.match(r"^\s+all\s+", line):
                     parts = line.strip().split()
                     if len(parts) >= 7:
@@ -162,11 +168,7 @@ class EvalExecutor(TaskExecutor):
             )
             exit_code = await cls._get_exit_code(container)
 
-            current_metrics = metrics or {}
-            await cls._mark_status(eval_id, TrainStatus.RUNNING,
-                                   last_metrics=current_metrics or None,
-                                   best_metrics=current_metrics or None,
-                                   metrics_log=[current_metrics] if current_metrics else None)
+            current_metrics = metrics or None
 
             if cls._registry.get(eval_id, {}).get("cancel"):
                 await remove_container(container_id)
@@ -174,17 +176,14 @@ class EvalExecutor(TaskExecutor):
             elif exit_code == 0:
                 await remove_container(container_id)
                 await cls._mark_status(eval_id, TrainStatus.SUCCESS,
-                                       metrics=metrics or None,
+                                       metrics=current_metrics,
+                                       metrics_log=[current_metrics] if current_metrics else None,
+                                       best_metrics=current_metrics,
+                                       last_metrics=current_metrics,
                                        finished_at=datetime.now(),
                                        progress=100)
             else:
-                error_msg = ""
-                try:
-                    err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                    if err_logs:
-                        error_msg = err_logs.strip()
-                except Exception:
-                    pass
+                error_msg = (await get_container_error_tail(container_id)).strip()
                 await remove_container(container_id)
                 await cls._mark_status(eval_id, TrainStatus.FAILED,
                                        log=error_msg or "eval failed",

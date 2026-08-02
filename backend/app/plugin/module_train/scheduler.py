@@ -10,7 +10,7 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import pull_image, remove_container, run_container
+from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainFramework, TrainStatus, TrainTask
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
@@ -141,6 +141,7 @@ def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: 
 
 
 def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
+    # TODO(paddlex): verify CLI flags against paddlecloud/paddlex:3.0 — the following command shapes are best-effort
     epochs = hp.get("epochs", 100)
     batch = hp.get("batch", 16)
     lr = hp.get("lr", 0.01)
@@ -301,13 +302,7 @@ class TrainExecutor(TaskExecutor):
                     _send_notify(task.created_id, f"训练完成: {task.name}",
                                  "任务已成功完成，模型已保存", "training_complete", "train", task_id)
             else:
-                error_msg = ""
-                try:
-                    err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                    if err_logs:
-                        error_msg = err_logs.strip()
-                except Exception:
-                    pass
+                error_msg = (await get_container_error_tail(container_id)).strip()
                 await remove_container(container_id)
                 await cls._mark_status(task_id, TrainStatus.FAILED,
                                        error_log=error_msg or "training failed",
