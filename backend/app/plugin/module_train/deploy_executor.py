@@ -120,30 +120,37 @@ def _is_host_port_used(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) == 0
 
 
-def _docker_published_host_ports() -> set[int]:
+async def _docker_published_host_ports() -> set[int]:
     """收集 Docker 所有容器（含已停止）已发布的宿主机端口，避免端口竞态。"""
-    used: set[int] = set()
-    try:
-        for c in docker_client.containers.list(all=True):
-            bindings = (c.attrs or {}).get("HostConfig", {}).get("PortBindings") or {}
-            for _, host_bindings in bindings.items():
-                for b in host_bindings:
-                    try:
-                        used.add(int(b["HostPort"]))
-                    except (KeyError, TypeError, ValueError):
-                        continue
-    except Exception as e:
-        log.debug(f"cannot list docker published ports: {e}")
-    return used
+    def _sync() -> set[int]:
+        used: set[int] = set()
+        try:
+            for c in docker_client.containers.list(all=True):
+                bindings = (c.attrs or {}).get("HostConfig", {}).get("PortBindings") or {}
+                for _, host_bindings in bindings.items():
+                    for b in host_bindings:
+                        try:
+                            used.add(int(b["HostPort"]))
+                        except (KeyError, TypeError, ValueError):
+                            continue
+        except Exception as e:
+            log.debug(f"cannot list docker published ports: {e}")
+        return used
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync)
 
 
-def _find_available_port(start: int = 9001, end: int = 9999, excluded: set[int] | None = None) -> int:
+def _find_available_port(
+    start: int = 9001, end: int = 9999, excluded: set[int] | None = None,
+    docker_used: set[int] = frozenset(),
+) -> int:
     """在 [start, end] 内寻找可用端口。
 
     同时排除：调用方传入的已预留端口、Docker 已发布端口、以及本机 socket 已占用端口。
     """
     used = set(excluded or ())
-    used |= _docker_published_host_ports()
+    used |= set(docker_used)
     for port in range(start, end + 1):
         if port in used:
             continue
@@ -152,15 +159,20 @@ def _find_available_port(start: int = 9001, end: int = 9999, excluded: set[int] 
     raise Exception(f"no available port found in range {start}-{end}")
 
 
-def _container_exists(container_id: str | None) -> bool:
+async def _container_exists(container_id: str | None) -> bool:
     """判断容器是否仍存在于 Docker 中。"""
     if not container_id:
         return False
-    try:
-        docker_client.containers.get(container_id)
-        return True
-    except Exception:
-        return False
+
+    def _sync() -> bool:
+        try:
+            docker_client.containers.get(container_id)
+            return True
+        except Exception:
+            return False
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _sync)
 
 
 async def _wait_server_healthy(container, host_port: int, timeout: int = 60, interval: float = 2.0) -> str:
@@ -197,7 +209,7 @@ async def recover_orphan_deploys() -> None:
             select(TrainDeploy).where(TrainDeploy.status.in_(("running", "deploying")))
         )).scalars().all()
     for d in rows:
-        if _container_exists(d.container_id):
+        if await _container_exists(d.container_id):
             continue
         async with async_db_session.begin() as db:
             await db.execute(
@@ -271,7 +283,8 @@ async def _execute_deployment(deploy_id: int):
                     select(TrainDeploy.host_port).where(TrainDeploy.host_port > 0)
                 )).scalars().all()
             reserved = set(rows)
-            host_port = _find_available_port(excluded=reserved)
+            docker_used = await _docker_published_host_ports()
+            host_port = _find_available_port(excluded=reserved, docker_used=docker_used)
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(host_port=host_port)

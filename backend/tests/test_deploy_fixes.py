@@ -4,6 +4,7 @@
 健康探活与孤儿回收依赖真实容器/守护进程，通过 code review 验证。
 """
 
+import asyncio
 import socket
 
 from app.plugin.module_train.deploy_executor import (
@@ -29,7 +30,7 @@ def test_find_available_port_returns_in_range():
 
 
 def test_find_available_port_excludes_reserved():
-    docker_used = _docker_published_host_ports()
+    docker_used = asyncio.run(_docker_published_host_ports())
     cands = [p for p in range(9300, 9309)
              if not _is_host_port_used(p) and p not in docker_used]
     assert len(cands) >= 3
@@ -50,5 +51,5 @@ def test_is_host_port_used_detects_bound_socket():
 
 def test_docker_published_host_ports_returns_set():
     # 无 Docker 守护进程时应返回空集合而非抛异常
-    ports = _docker_published_host_ports()
+    ports = asyncio.run(_docker_published_host_ports())
     assert isinstance(ports, set)
