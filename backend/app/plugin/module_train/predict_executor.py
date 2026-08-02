@@ -10,7 +10,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .docker_utils import pull_image, remove_container, run_container
-from .model import TrainModel, TrainPredict, TrainStatus
+from .model import TrainPredict, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_predict_log
 
@@ -84,25 +84,9 @@ class PredictExecutor(TaskExecutor):
                     except Exception as e:
                         log.warning(f"skip image {img_key}: {e}")
 
-            # Download model
-            async with async_db_session() as db:
-                model_rec = await db.get(TrainModel, pred.model_id)
-                if not model_rec:
-                    raise Exception("model not found")
-                storage_path = model_rec.storage_path
-                if not storage_path:
-                    raise Exception("model not found or no storage_path")
-                if "/export/" in storage_path:
-                    from sqlalchemy import desc, select
-
-                    from .model import TrainTask
-                    task = (await db.execute(
-                        select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
-                        .order_by(desc(TrainTask.id)).limit(1)
-                    )).scalar_one_or_none()
-                    if task:
-                        storage_path = f"train/models/task_{task.id}/best.pt"
-                        log.info(f"predict: storage_path 是导出产物, 回溯到 {storage_path}")
+            # Download model（统一解析：/export/ 导出产物自动回溯原始 best.pt）
+            from .service import TrainService
+            storage_path = await TrainService._resolve_model_storage(pred.model_id or pred.model_repo_id)
 
             await broadcast_predict_log(predict_id, f"[predict] downloading model {storage_path}...")
             model_data = s3_client.download_fileobj(storage_path)

@@ -13,6 +13,17 @@ from .model import TrainDeploy, TrainEval, TrainModel, TrainModelRepo, TrainPred
 _EPOCH_RE = re.compile(r"^\s*(\d+)/(\d+)\s+")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERSION_DIGITS = re.compile(r"[^0-9]")
+_EXPORT_DIR = "/export/"
+
+
+def _backtrack_export_path(storage_path: str, task_id: int | None) -> str:
+    """若 storage_path 是导出产物(/export/)且有对应训练任务，则回溯到原始 best.pt。
+
+    否则原样返回（不含 /export/ 的普通训练产物，或找不到回溯任务的导出产物）。
+    """
+    if _EXPORT_DIR in storage_path and task_id:
+        return f"train/models/task_{task_id}/best.pt"
+    return storage_path
 
 
 def _strip_ansi(text: str) -> str:
@@ -101,6 +112,28 @@ class TrainService:
         """'vv1'/'v1'/'1'/None -> 1；'v12' -> 12。纯数字，消除 vv bug。"""
         digits = _VERSION_DIGITS.sub("", raw or "")
         return int(digits) if digits else 1
+
+    @classmethod
+    async def _resolve_model_storage(cls, version_id: int) -> str:
+        """解析版本行真实模型文件路径。处理 /export/ 覆盖回溯问题。
+
+        返回 RustFS key（best.pt）。若 storage_path 是导出产物(/export/)则回溯原始训练产物。
+        """
+        async with async_db_session() as db:
+            ver = await db.get(TrainModel, version_id)
+            if not ver or not ver.storage_path:
+                raise Exception("模型版本不存在或无存储文件")
+            task_id = None
+            if _EXPORT_DIR in ver.storage_path:
+                task = (await db.execute(
+                    select(TrainTask).where(TrainTask.model_repo_id == ver.id)
+                    .order_by(desc(TrainTask.id)).limit(1)
+                )).scalar_one_or_none()
+                task_id = task.id if task else None
+            resolved = _backtrack_export_path(ver.storage_path, task_id)
+            if resolved != ver.storage_path:
+                log.info(f"model {version_id}: storage_path 是导出产物, 回溯到 {resolved}")
+            return resolved
 
     @classmethod
     async def create_model_repo(cls, data, auth) -> dict:

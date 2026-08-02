@@ -10,7 +10,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .docker_utils import pull_image, remove_container, run_container
-from .model import TrainEval, TrainModel, TrainStatus
+from .model import TrainEval, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
 
@@ -64,26 +64,9 @@ class EvalExecutor(TaskExecutor):
             await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
             await prepare_training_data_for_task(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
 
-            # Download model file from RustFS
-            async with async_db_session() as db:
-                model_rec = await db.get(TrainModel, eval_rec.model_id or eval_rec.model_repo_id)
-                if not model_rec:
-                    raise Exception("model not found")
-                # 如果 storage_path 被旧代码覆盖成了导出产物，回溯原始 .pt
-                storage_path = model_rec.storage_path
-                if not storage_path:
-                    raise Exception("model not found or no storage_path")
-                if "/export/" in storage_path:
-                    from sqlalchemy import desc, select
-
-                    from .model import TrainTask
-                    task = (await db.execute(
-                        select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
-                        .order_by(desc(TrainTask.id)).limit(1)
-                    )).scalar_one_or_none()
-                    if task:
-                        storage_path = f"train/models/task_{task.id}/best.pt"
-                        log.info(f"eval: storage_path 是导出产物, 回溯到 {storage_path}")
+            # Download model file from RustFS（统一解析：/export/ 导出产物自动回溯原始 best.pt）
+            from .service import TrainService
+            storage_path = await TrainService._resolve_model_storage(eval_rec.model_id or eval_rec.model_repo_id)
 
             await broadcast_eval_log(eval_id, f"[eval] downloading model {storage_path}...")
             from app.utils.s3_client import s3_client
