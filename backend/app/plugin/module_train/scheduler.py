@@ -201,11 +201,20 @@ def _parse_epoch(line: str) -> dict | None:
 
 
 def _compute_best(metrics_log: list[dict]) -> dict | None:
-    """从每轮指标中选出 map50 最优的一轮；无有效轮次时退回最后一轮。"""
+    """从每轮指标中选出 map50 最优的一轮；无 map50 时取含最多数值字段的一轮，再退最后一轮。"""
     if not metrics_log:
         return None
     valid = [m for m in metrics_log if m and m.get("map50") is not None]
-    return max(valid, key=lambda m: m["map50"]) if valid else metrics_log[-1]
+    if valid:
+        return max(valid, key=lambda m: m["map50"])
+    # 兜底：若全无 map50，取含最多数值字段的一轮
+    ranked = sorted(
+        metrics_log,
+        key=lambda m: sum(1 for k in ("precision", "recall", "map50", "map5095") if m and m.get(k) is not None),
+        reverse=True,
+    )
+    best = ranked[0] if ranked else None
+    return best if best else metrics_log[-1]
 
 
 class TrainExecutor(TaskExecutor):
@@ -279,13 +288,15 @@ class TrainExecutor(TaskExecutor):
             elif exit_code == 0:
                 await remove_container(container_id)
                 from .exporter import export_model
-                model_info = await export_model(task_id, task.framework, export_dir)
+                best_metrics = _compute_best(metrics_log)
+                last_metrics = metrics_log[-1] if metrics_log else None
+                model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
                 await cls._mark_status(task_id, TrainStatus.SUCCESS,
                                        model_repo_id=model_info.get("repo_id"),
                                        progress=100, finished_at=datetime.now(),
                                        metrics_log=metrics_log or None,
-                                       best_metrics=_compute_best(metrics_log),
-                                       last_metrics=metrics_log[-1] if metrics_log else None)
+                                       best_metrics=best_metrics,
+                                       last_metrics=last_metrics)
                 if getattr(task, "created_id", None):
                     _send_notify(task.created_id, f"训练完成: {task.name}",
                                  "任务已成功完成，模型已保存", "training_complete", "train", task_id)

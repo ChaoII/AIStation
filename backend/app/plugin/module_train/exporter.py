@@ -124,7 +124,6 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
     sorted_classes = sorted(classes)
     _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_classes, class_names or {})
     log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_classes)} → {output_dir}")
-    img_dir = os.path.join(output_dir, "images")
 
 
 async def _export_paddlex(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None) -> None:
@@ -381,7 +380,7 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list, output
     rec_lines = []
 
     async with async_db_session() as db:
-        for img_idx, img in enumerate(images):
+        for img in images:
             img_path = os.path.join(output_dir, img.filename)
             try:
                 if not os.path.exists(img_path):
@@ -552,7 +551,7 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
     log.info(f"exported {downloaded} images to x-anylabeling format in {output_dir}")
 
 
-async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
+async def export_model(task_id: int, framework: str, export_dir: str, best_metrics: dict | None = None) -> dict:
     from .model import TrainModel, TrainTask
 
     # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
@@ -630,7 +629,7 @@ async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
             version=f"v{next_ver}", storage_path=storage_path,
             format="pytorch",  # Original format is PyTorch
             annotation_dataset_id=task.dataset_id, created_id=task.created_id,
-            metrics=task.best_metrics,
+            metrics=best_metrics if best_metrics is not None else task.best_metrics,
         )
         db.add(model_rec)
         await db.flush()
