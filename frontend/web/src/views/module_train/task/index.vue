@@ -74,7 +74,6 @@
         <template #framework>
           <ElRadioGroup v-model="formData.framework" @change="onFrameworkChange">
             <ElRadio value="ultralytics">Ultralytics</ElRadio>
-            <ElRadio value="paddlex">PaddleX</ElRadio>
           </ElRadioGroup>
         </template>
         <template #hyperparams>
@@ -406,18 +405,13 @@ const hpForm = reactive<Record<string, any>>({
   multi_label: false,
 });
 
-function onFrameworkChange(fw: string | number | boolean | undefined) {
-  const val = String(fw);
+function onFrameworkChange() {
   Object.keys(hpForm).forEach(k => delete hpForm[k]);
-  if (val === "ultralytics") Object.assign(hpForm, { model: "yolo11n.pt", epochs: 100, batch: 16, lr0: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, patience: 100, seed: 0, hsv_h: 0.015, hsv_s: 0.7, hsv_v: 0.4, fliplr: 0.5, flipud: 0.0, mosaic: 1.0, mixup: 0.0, multi_label: false });
-  else Object.assign(hpForm, { model: "PP-YOLOE", epochs: 100, batch: 16, lr: 0.01, device: "0", pretrained: true });
+  Object.assign(hpForm, { model: "yolo11n.pt", epochs: 100, batch: 16, lr0: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, patience: 100, seed: 0, hsv_h: 0.015, hsv_s: 0.7, hsv_v: 0.4, fliplr: 0.5, flipud: 0.0, mosaic: 1.0, mixup: 0.0, multi_label: false });
 }
 
 function buildHyperparams(): Record<string, any> {
-  if (formData.value.framework === "ultralytics") {
-    return { ...hpForm, lr0: hpForm.lr0 ?? 0.01, train_ratio: (hpForm.trainRatio || 80) / 100 };
-  }
-  return { model: hpForm.model, epochs: hpForm.epochs, batch: hpForm.batch, device: hpForm.device };
+  return { ...hpForm, lr0: hpForm.lr0 ?? 0.01, train_ratio: (hpForm.trainRatio || 80) / 100 };
 }
 
 const tempDir = ref("${TEMP_DIR}");
@@ -427,10 +421,7 @@ const dockerCmdPreview = computed(() => {
   const dataMount = `${tempDir.value}/train_output/{task_id}/data`;
   const outputMount = `${tempDir.value}/train_output/{task_id}`;
   const cacheMount = `${tempDir.value}/train_output/.models_cache`;
-  if (formData.value.framework === "ultralytics") {
-    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr0} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
-  }
-  return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  paddlecloud/paddlex:3.0 \\\n  paddlex \\\n    --model ${hpForm.model} \\\n    --data /data \\\n    --epochs ${hpForm.epochs} \\\n    --batch ${hpForm.batch} \\\n    --lr ${hpForm.lr} \\\n    --output /output`;
+  return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr0} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
 });
 
 const rules = reactive({
