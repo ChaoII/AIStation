@@ -1,27 +1,21 @@
 import asyncio
 import os
+import re
 import tempfile
 from datetime import datetime
 
 import requests
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import (
-    follow_container_logs,
-    pull_image,
-    remove_container,
-    run_container,
-    stop_container,
-)
+from .docker_utils import pull_image, remove_container, run_container
 from .model import TrainFramework, TrainStatus, TrainTask
+from .task_executor import TaskExecutor
 from .ws import broadcast_log
 
-_running_tasks: dict[int, dict] = {}
 _scheduler_task: asyncio.Task | None = None
-MAX_CONCURRENT = 1
 
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "train_output", ".models_cache").replace("\\", "/")
 _MODEL_DOWNLOAD_BASE = "https://github.com/ultralytics/assets/releases/latest/download"
@@ -56,7 +50,6 @@ def _ensure_model_file(model_name: str) -> str:
     try:
         r = requests.get(url, stream=True, timeout=(10, 120))
         r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
         downloaded = 0
         with open(tmp, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
@@ -81,7 +74,7 @@ async def start_scheduler():
 
 
 async def _scheduler_loop():
-    """维护循环：清理孤儿任务 + 触发定时训练"""
+    """维护循环：触发定时训练 + 周期孤儿恢复（交由 TrainExecutor.recover_orphans）。"""
     while True:
         try:
             # Check for due training schedules
@@ -121,23 +114,8 @@ async def _scheduler_loop():
             except Exception as e:
                 log.error(f"schedule check error: {e}")
 
-            # Orphan task cleanup
-            async with async_db_session() as db:
-                running = await db.execute(
-                    select(TrainTask).where(TrainTask.status == TrainStatus.RUNNING)
-                )
-                for t in running.scalars().all():
-                    if t.id not in _running_tasks and t.started_at:
-                        elapsed = (datetime.now() - t.started_at).total_seconds()
-                        if elapsed > 1800:
-                            async with async_db_session.begin() as db2:
-                                await db2.execute(
-                                    update(TrainTask).where(TrainTask.id == t.id).values(
-                                        status=TrainStatus.FAILED,
-                                        error_log="训练会话已断开（后端重启或容器丢失）",
-                                        finished_at=datetime.now()
-                                    )
-                                )
+            # Periodic orphan recovery (base executor owns registry/DB state)
+            await TrainExecutor.recover_orphans()
         except Exception as e:
             log.error(f"train scheduler error: {e}")
         await asyncio.sleep(30)
@@ -172,193 +150,159 @@ def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
             "--output", "/output"]
 
 
-async def _execute_training(task_id: int):
-    container_id = None
-    try:
-        async with async_db_session() as db:
-            task = await db.get(TrainTask, task_id)
-            if not task:
-                return
+async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
+    """按框架构建训练命令（复用原 _build_ultralytics_cmd/_build_paddlex_cmd）。"""
+    if task.framework == TrainFramework.ULTRALYTICS:
+        task_type = "detection"
+        if task.annotation_task_id:
+            from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+            async with async_db_session() as db:
+                ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
+                if ann_task:
+                    task_type = ann_task.task_type
+        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type)
+    return _build_paddlex_cmd(task.hyperparams, data_dir, export_dir)
 
-        await broadcast_log(task_id, f"[scheduler] pulling image {task.docker_image}...")
-        await pull_image(task.docker_image)
 
-        export_dir = await _build_export_dir(task_id)
-        data_dir = os.path.join(export_dir, "data")
-        os.makedirs(data_dir, exist_ok=True)
+def _parse_epoch(line: str) -> dict | None:
+    """解析 YOLO 训练输出行：epoch 行或最终 all 汇总行。"""
+    m = re.search(r"^\s*(\d+)/(\d+)\s+", line)
+    if m:
+        parts = line.strip().split()
+        met = {"epoch": int(m.group(1)), "total_epochs": int(m.group(2))}
+        for i, p in enumerate(parts):
+            if re.match(r"^[\d.]+[GM]$", p):
+                if i + 1 < len(parts):
+                    try:
+                        met["box_loss"] = float(parts[i + 1])
+                    except ValueError:
+                        pass
+                if i + 2 < len(parts):
+                    try:
+                        met["cls_loss"] = float(parts[i + 2])
+                    except ValueError:
+                        pass
+                if i + 3 < len(parts):
+                    try:
+                        met["dfl_loss"] = float(parts[i + 3])
+                    except ValueError:
+                        pass
+                break
+        return met
+    if re.match(r"^\s+all\s+", line):
+        parts = line.strip().split()
+        if len(parts) >= 7:
+            return {"epoch": -1,
+                    "precision": float(parts[3]) if parts[3] else 0,
+                    "recall": float(parts[4]) if parts[4] else 0,
+                    "map50": float(parts[5]) if parts[5] else 0,
+                    "map5095": float(parts[6]) if parts[6] else 0}
+    return None
 
-        from .exporter import prepare_training_data_for_task
-        data_train_ratio = task.hyperparams.get("train_ratio", 0.8)
-        await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id, train_ratio=data_train_ratio)
 
-        if task.framework == TrainFramework.ULTRALYTICS:
-            # Determine task_type for model selection (OBB models need -obb suffix)
-            task_type = "detection"
-            if task.annotation_task_id:
-                from app.api.v1.module_annotation.task.model import AnnotationTaskModel
-                async with async_db_session() as db:
-                    ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
-                    if ann_task:
-                        task_type = ann_task.task_type
-            cmd = _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type)
-        else:
-            cmd = _build_paddlex_cmd(task.hyperparams, data_dir, export_dir)
+def _compute_best(metrics_log: list[dict]) -> dict | None:
+    """从每轮指标中选出 map50 最优的一轮；无有效轮次时退回最后一轮。"""
+    if not metrics_log:
+        return None
+    valid = [m for m in metrics_log if m.get("epoch", -1) > 0 and m.get("map50") is not None]
+    return max(valid, key=lambda m: m["map50"]) if valid else metrics_log[-1]
 
-        # Pre-download model weights so container doesn't fetch from internet
-        if task.framework == TrainFramework.ULTRALYTICS:
-            model_arg = next((a for a in cmd if a.startswith("model=")), "model=yolo11n.pt")
-            model_name = model_arg.split("=", 1)[1].lstrip("/models/")
-            _ensure_model_file(model_name)
 
-        os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
-        container = await run_container(
-            task.docker_image, cmd,
-            volumes={data_dir: {"bind": "/data", "mode": "rw"},
-                     export_dir: {"bind": "/output", "mode": "rw"},
-                     MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}},
-            gpu_id=task.hyperparams.get("gpu_id", "0"),
-        )
-        container_id = container.id
-        _running_tasks[task_id] = {"container_id": container_id, "cancel": False}
+class TrainExecutor(TaskExecutor):
+    name = "train"
+    status_enum = TrainStatus
+    model_class = TrainTask
+    _concurrency = 1
 
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainTask).where(TrainTask.id == task_id).values(
-                    status=TrainStatus.RUNNING, started_at=datetime.now()
-                )
+    @classmethod
+    async def _execute(cls, task_id: int):
+        container_id = None
+        try:
+            async with async_db_session() as db:
+                task = await db.get(TrainTask, task_id)
+                if not task:
+                    return
+
+            await broadcast_log(task_id, f"[scheduler] pulling image {task.docker_image}...")
+            await pull_image(task.docker_image)
+
+            export_dir = await _build_export_dir(task_id)
+            data_dir = os.path.join(export_dir, "data")
+            os.makedirs(data_dir, exist_ok=True)
+
+            from .exporter import prepare_training_data_for_task
+            data_train_ratio = task.hyperparams.get("train_ratio", 0.8)
+            await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id, train_ratio=data_train_ratio)
+
+            cmd = await _build_cmd(task, data_dir, export_dir)
+
+            # Pre-download model weights so container doesn't fetch from internet
+            if task.framework == TrainFramework.ULTRALYTICS:
+                model_arg = next((a for a in cmd if a.startswith("model=")), "model=yolo11n.pt")
+                model_name = model_arg.split("=", 1)[1].removeprefix("/models/")
+                _ensure_model_file(model_name)
+
+            os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
+            container = await run_container(
+                task.docker_image, cmd,
+                volumes={data_dir: {"bind": "/data", "mode": "rw"},
+                         export_dir: {"bind": "/output", "mode": "rw"},
+                         MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}},
+                gpu_id=task.hyperparams.get("gpu_id", "0"),
             )
+            container_id = container.id
+            cls._registry[task_id] = {"container_id": container_id, "cancel": False}
 
-        log_queue = await follow_container_logs(container_id)
-        log_file = os.path.join(export_dir, "train.log")
-        import re
-
-        def _parse_epoch(line: str) -> dict | None:
-            m = re.search(r"^\s*(\d+)/(\d+)\s+", line)
-            if m:
-                parts = line.strip().split()
-                met = {"epoch": int(m.group(1)), "total_epochs": int(m.group(2))}
-                for i, p in enumerate(parts):
-                    if re.match(r"^[\d.]+[GM]$", p):
-                        if i + 1 < len(parts):
-                            try: met["box_loss"] = float(parts[i + 1])
-                            except ValueError: pass
-                        if i + 2 < len(parts):
-                            try: met["cls_loss"] = float(parts[i + 2])
-                            except ValueError: pass
-                        if i + 3 < len(parts):
-                            try: met["dfl_loss"] = float(parts[i + 3])
-                            except ValueError: pass
-                        break
-                return met
-            if re.match(r"^\s+all\s+", line):
-                parts = line.strip().split()
-                if len(parts) >= 7:
-                    return {"epoch": -1,
-                            "precision": float(parts[3]) if parts[3] else 0,
-                            "recall": float(parts[4]) if parts[4] else 0,
-                            "map50": float(parts[5]) if parts[5] else 0,
-                            "map5095": float(parts[6]) if parts[6] else 0}
-            return None
-
-        metrics_log: list[dict] = []
-        cur_epoch: dict | None = None
-
-        with open(log_file, "w", encoding="utf-8") as lf:
-            while True:
-                line = await log_queue.get()
-                if line == "__EOF__":
-                    break
-                lf.write(line + "\n")
-                lf.flush()
-                await broadcast_log(task_id, line)
-
-                parsed = _parse_epoch(line)
-                if parsed:
-                    if parsed.get("epoch") == -1:
-                        if cur_epoch is not None:
-                            cur_epoch.update(parsed)
-                    else:
-                        if cur_epoch is not None and cur_epoch.get("epoch", 0) > 0:
-                            metrics_log.append(dict(cur_epoch))
-                        cur_epoch = parsed
-                        pct = int(parsed["epoch"] / parsed.get("total_epochs", 100) * 100)
-                        try:
-                            async with async_db_session.begin() as db:
-                                await db.execute(
-                                    update(TrainTask).where(TrainTask.id == task_id).values(progress=pct)
-                                )
-                        except Exception as e:
-                            log.error(f"progress update failed: {e}")
-
-        if cur_epoch is not None and cur_epoch.get("epoch", 0) > 0:
-            metrics_log.append(dict(cur_epoch))
-
-        best_metrics = None
-        last_metrics = None
-        if metrics_log:
-            last_metrics = metrics_log[-1]
-            valid = [m for m in metrics_log if m.get("map50") is not None]
-            best_metrics = max(valid, key=lambda m: m["map50"]) if valid else last_metrics
-
-        loop = asyncio.get_event_loop()
-        exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
-
-        if _running_tasks.get(task_id, {}).get("cancel"):
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainTask).where(TrainTask.id == task_id).values(
-                        status=TrainStatus.CANCELLED, finished_at=datetime.now()
-                    )
-                )
-        elif exit_code == 0:
-            await remove_container(container_id)
-            from .exporter import export_model
-            model_info = await export_model(task_id, task.framework, export_dir)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainTask).where(TrainTask.id == task_id).values(
-                        model_repo_id=model_info.get("repo_id"), status=TrainStatus.SUCCESS,
-                        progress=100, finished_at=datetime.now(),
-                        metrics_log=metrics_log or None,
-                        best_metrics=best_metrics, last_metrics=last_metrics,
-                    )
-                )
-            if hasattr(task, "created_id") and task.created_id:
-                _send_notify(task.created_id, f"训练完成: {task.name}", "任务已成功完成，模型已保存", "training_complete", "train", task_id)
-        else:
-            error_msg = ""
-            try:
-                err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                if err_logs:
-                    error_msg = err_logs.strip()
-            except Exception:
-                pass
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainTask).where(TrainTask.id == task_id).values(
-                        status=TrainStatus.FAILED, error_log=error_msg or "training failed",
-                        finished_at=datetime.now(),
-                        metrics_log=metrics_log or None,
-                        best_metrics=best_metrics, last_metrics=last_metrics,
-                    )
-                )
-            if hasattr(task, "created_id") and task.created_id:
-                _send_notify(task.created_id, f"训练失败: {task.name}", error_msg or "训练异常退出", "training_failed", "train", task_id)
-
-    except Exception as e:
-        log.error(f"training task {task_id} failed: {e}")
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainTask).where(TrainTask.id == task_id).values(
-                    status=TrainStatus.FAILED, error_log=str(e), finished_at=datetime.now()
-                )
+            metrics_log = await cls.follow_logs(
+                container_id,
+                os.path.join(export_dir, "train.log"),
+                lambda line: broadcast_log(task_id, line),
+                _parse_epoch,
             )
-    finally:
-        _running_tasks.pop(task_id, None)
-        if container_id:
-            await remove_container(container_id)
+            exit_code = await cls._get_exit_code(container)
+
+            if cls._registry.get(task_id, {}).get("cancel"):
+                await remove_container(container_id)
+                await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
+            elif exit_code == 0:
+                await remove_container(container_id)
+                from .exporter import export_model
+                model_info = await export_model(task_id, task.framework, export_dir)
+                await cls._mark_status(task_id, TrainStatus.SUCCESS,
+                                       model_repo_id=model_info.get("repo_id"),
+                                       progress=100, finished_at=datetime.now(),
+                                       metrics_log=metrics_log or None,
+                                       best_metrics=_compute_best(metrics_log),
+                                       last_metrics=metrics_log[-1] if metrics_log else None)
+                if getattr(task, "created_id", None):
+                    _send_notify(task.created_id, f"训练完成: {task.name}",
+                                 "任务已成功完成，模型已保存", "training_complete", "train", task_id)
+            else:
+                error_msg = ""
+                try:
+                    err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
+                    if err_logs:
+                        error_msg = err_logs.strip()
+                except Exception:
+                    pass
+                await remove_container(container_id)
+                await cls._mark_status(task_id, TrainStatus.FAILED,
+                                       error_log=error_msg or "training failed",
+                                       finished_at=datetime.now(),
+                                       metrics_log=metrics_log or None,
+                                       best_metrics=_compute_best(metrics_log),
+                                       last_metrics=metrics_log[-1] if metrics_log else None)
+                if getattr(task, "created_id", None):
+                    _send_notify(task.created_id, f"训练失败: {task.name}",
+                                 error_msg or "训练异常退出", "training_failed", "train", task_id)
+        except Exception as e:
+            log.error(f"training task {task_id} failed: {e}")
+            await cls._mark_status(task_id, TrainStatus.FAILED,
+                                   error_log=str(e), finished_at=datetime.now())
+        finally:
+            cls._registry.pop(task_id, None)
+            if container_id:
+                await remove_container(container_id)
 
 
 async def start_training(task_id: int):
@@ -390,18 +334,8 @@ async def start_training(task_id: int):
                 finished_at=None,
             )
         )
-    asyncio.create_task(_execute_training(task_id))
+    asyncio.create_task(TrainExecutor.run(task_id))
 
 
 async def stop_training(task_id: int) -> None:
-    entry = _running_tasks.get(task_id)
-    if entry:
-        entry["cancel"] = True
-        await stop_container(entry["container_id"])
-    # Always update DB status, even if _running_tasks entry is gone
-    async with async_db_session.begin() as db:
-        await db.execute(
-            update(TrainTask).where(TrainTask.id == task_id, TrainTask.status == TrainStatus.RUNNING).values(
-                status=TrainStatus.CANCELLED, finished_at=datetime.now()
-            )
-        )
+    await TrainExecutor.stop(task_id)
