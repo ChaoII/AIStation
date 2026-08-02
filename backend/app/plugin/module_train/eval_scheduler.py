@@ -4,50 +4,21 @@ import re
 import tempfile
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import follow_container_logs, pull_image, remove_container, run_container
+from .docker_utils import pull_image, remove_container, run_container
 from .model import TrainEval, TrainModel, TrainStatus
+from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
-
-_eval_running: dict[int, dict] = {}
-_eval_scheduler_task: asyncio.Task | None = None
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 
 
 async def start_evaluation_scheduler():
-    global _eval_scheduler_task
-    if _eval_scheduler_task is None or _eval_scheduler_task.done():
-        _eval_scheduler_task = asyncio.create_task(_eval_scheduler_loop())
-        log.info("eval scheduler started")
-
-
-async def _eval_scheduler_loop():
-    while True:
-        try:
-            async with async_db_session() as db:
-                running = await db.execute(
-                    select(TrainEval).where(TrainEval.status == TrainStatus.RUNNING)
-                )
-                for e in running.scalars().all():
-                    if e.id not in _eval_running and e.started_at:
-                        elapsed = (datetime.now() - e.started_at).total_seconds()
-                        if elapsed > 1800:
-                            async with async_db_session.begin() as db2:
-                                await db2.execute(
-                                    update(TrainEval).where(TrainEval.id == e.id).values(
-                                        status=TrainStatus.FAILED,
-                                        log="评估会话已断开（后端重启或容器丢失）",
-                                        finished_at=datetime.now()
-                                    )
-                                )
-        except Exception as e:
-            log.error(f"eval scheduler error: {e}")
-        await asyncio.sleep(30)
+    await EvalExecutor.start_recovery_loop()
 
 
 async def start_evaluation(eval_id: int):
@@ -57,194 +28,169 @@ async def start_evaluation(eval_id: int):
                 status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
             )
         )
-    asyncio.create_task(_execute_evaluation(eval_id))
+    asyncio.create_task(EvalExecutor.run(eval_id))
 
 
 async def stop_evaluation(eval_id: int):
-    entry = _eval_running.get(eval_id)
-    if entry:
-        entry["cancel"] = True
-        from .docker_utils import stop_container
-        await stop_container(entry["container_id"])
+    await EvalExecutor.stop(eval_id)
 
 
-async def _execute_evaluation(eval_id: int):
-    container_id = None
-    try:
-        async with async_db_session() as db:
-            eval_rec = await db.get(TrainEval, eval_id)
-            if not eval_rec:
-                return
+class EvalExecutor(TaskExecutor):
+    name = "eval"
+    status_enum = TrainStatus
+    model_class = TrainEval
+    _concurrency = 1
 
-        await broadcast_eval_log(eval_id, f"[eval] pulling image {DOCKER_IMAGE}...")
-        await pull_image(DOCKER_IMAGE)
+    @classmethod
+    async def _execute(cls, eval_id: int):
+        container_id = None
+        try:
+            async with async_db_session() as db:
+                eval_rec = await db.get(TrainEval, eval_id)
+                if not eval_rec:
+                    return
 
-        export_dir = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id))
-        data_dir = os.path.join(export_dir, "data")
-        model_dir = os.path.join(export_dir, "model")
-        os.makedirs(data_dir, exist_ok=True)
-        os.makedirs(model_dir, exist_ok=True)
+            await broadcast_eval_log(eval_id, f"[eval] pulling image {DOCKER_IMAGE}...")
+            await pull_image(DOCKER_IMAGE)
 
-        # Export evaluation dataset
-        from .exporter import prepare_training_data_for_task
-        await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
-        await prepare_training_data_for_task(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
+            export_dir = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id))
+            data_dir = os.path.join(export_dir, "data")
+            model_dir = os.path.join(export_dir, "model")
+            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(model_dir, exist_ok=True)
 
-        # Download model file from RustFS
-        async with async_db_session() as db:
-            model_rec = await db.get(TrainModel, eval_rec.model_id or eval_rec.model_repo_id)
-            if not model_rec:
-                raise Exception("model not found")
-            # 如果 storage_path 被旧代码覆盖成了导出产物，回溯原始 .pt
-            storage_path = model_rec.storage_path
-            if not storage_path:
-                raise Exception("model not found or no storage_path")
-            if "/export/" in storage_path:
-                from sqlalchemy import desc, select
+            # Export evaluation dataset
+            from .exporter import prepare_training_data_for_task
+            await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
+            await prepare_training_data_for_task(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
 
-                from .model import TrainTask
-                task = (await db.execute(
-                    select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
-                    .order_by(desc(TrainTask.id)).limit(1)
-                )).scalar_one_or_none()
-                if task:
-                    storage_path = f"train/models/task_{task.id}/best.pt"
-                    log.info(f"eval: storage_path 是导出产物, 回溯到 {storage_path}")
+            # Download model file from RustFS
+            async with async_db_session() as db:
+                model_rec = await db.get(TrainModel, eval_rec.model_id or eval_rec.model_repo_id)
+                if not model_rec:
+                    raise Exception("model not found")
+                # 如果 storage_path 被旧代码覆盖成了导出产物，回溯原始 .pt
+                storage_path = model_rec.storage_path
+                if not storage_path:
+                    raise Exception("model not found or no storage_path")
+                if "/export/" in storage_path:
+                    from sqlalchemy import desc, select
 
-        await broadcast_eval_log(eval_id, f"[eval] downloading model {storage_path}...")
-        from app.utils.s3_client import s3_client
-        model_data = s3_client.download_fileobj(storage_path)
-        model_filename = storage_path.rsplit("/", 1)[-1]
-        model_local_path = os.path.join(model_dir, model_filename)
-        with open(model_local_path, "wb") as f:
-            f.write(model_data.read())
+                    from .model import TrainTask
+                    task = (await db.execute(
+                        select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
+                        .order_by(desc(TrainTask.id)).limit(1)
+                    )).scalar_one_or_none()
+                    if task:
+                        storage_path = f"train/models/task_{task.id}/best.pt"
+                        log.info(f"eval: storage_path 是导出产物, 回溯到 {storage_path}")
 
-        # Build command
-        hp = eval_rec.hyperparams or {}
-        imgsz = hp.get("imgsz", 640)
-        batch = hp.get("batch", 16)
-        conf = hp.get("conf", 0.001)
-        iou = hp.get("iou", 0.6)
-        device = hp.get("device", "0")
+            await broadcast_eval_log(eval_id, f"[eval] downloading model {storage_path}...")
+            from app.utils.s3_client import s3_client
+            model_data = s3_client.download_fileobj(storage_path)
+            model_filename = storage_path.rsplit("/", 1)[-1]
+            model_local_path = os.path.join(model_dir, model_filename)
+            with open(model_local_path, "wb") as f:
+                f.write(model_data.read())
 
-        cmd = [
-            "yolo", "val",
-            f"model=/model/{model_filename}",
-            "data=/data/dataset.yaml",
-            f"imgsz={imgsz}",
-            f"batch={batch}",
-            f"conf={conf}",
-            f"iou={iou}",
-        ]
+            # Build command
+            hp = eval_rec.hyperparams or {}
+            imgsz = hp.get("imgsz", 640)
+            batch = hp.get("batch", 16)
+            conf = hp.get("conf", 0.001)
+            iou = hp.get("iou", 0.6)
+            device = hp.get("device", "0")
 
-        container = await run_container(
-            DOCKER_IMAGE, cmd,
-            volumes={
-                data_dir: {"bind": "/data", "mode": "rw"},
-                model_dir: {"bind": "/model", "mode": "ro"},
-            },
-            gpu_id=device,
-        )
-        container_id = container.id
-        _eval_running[eval_id] = {"container_id": container_id, "cancel": False}
+            cmd = [
+                "yolo", "val",
+                f"model=/model/{model_filename}",
+                "data=/data/dataset.yaml",
+                f"imgsz={imgsz}",
+                f"batch={batch}",
+                f"conf={conf}",
+                f"iou={iou}",
+            ]
 
-        log_queue = await follow_container_logs(container_id)
-        log_file = os.path.join(export_dir, "eval.log")
+            container = await run_container(
+                DOCKER_IMAGE, cmd,
+                volumes={
+                    data_dir: {"bind": "/data", "mode": "rw"},
+                    model_dir: {"bind": "/model", "mode": "ro"},
+                },
+                gpu_id=device,
+            )
+            container_id = container.id
+            cls._registry[eval_id] = {"container_id": container_id, "cancel": False}
 
-        metrics: dict = {}
-        with open(log_file, "w", encoding="utf-8") as lf:
-            while True:
-                line = await log_queue.get()
-                if line == "__EOF__":
-                    break
-                lf.write(line + "\n")
-                lf.flush()
-                await broadcast_eval_log(eval_id, line)
+            metrics: dict = {}
 
-                # Parse YOLO val metrics: "all" line
+            def _parse_val_metrics(line: str) -> dict | None:
+                """解析 YOLO val 输出：all 汇总行与 per-class 行（累积到 metrics）。"""
                 if re.match(r"^\s+all\s+", line):
                     parts = line.strip().split()
                     if len(parts) >= 7:
-                        metrics = {
+                        metrics.update({
                             "precision": float(parts[3]) if parts[3] else 0,
                             "recall": float(parts[4]) if parts[4] else 0,
                             "map50": float(parts[5]) if parts[5] else 0,
                             "map5095": float(parts[6]) if parts[6] else 0,
-                        }
-
-                # Parse per-class metrics
+                        })
+                        return dict(metrics)
                 m = re.match(r"^\s+(\d+)\s+", line)
                 if m:
                     parts = line.strip().split()
                     if len(parts) >= 7:
                         cls_id = int(parts[0])
-                        if "classes" not in metrics:
-                            metrics["classes"] = {}
-                        metrics["classes"][str(cls_id)] = {
+                        metrics.setdefault("classes", {})[str(cls_id)] = {
                             "precision": float(parts[3]) if parts[3] else 0,
                             "recall": float(parts[4]) if parts[4] else 0,
                             "map50": float(parts[5]) if parts[5] else 0,
                             "map5095": float(parts[6]) if parts[6] else 0,
                         }
+                        return dict(metrics)
+                return None
 
-        loop = asyncio.get_event_loop()
-        exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
-
-        current_metrics = metrics or {}
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainEval).where(TrainEval.id == eval_id).values(
-                    last_metrics=current_metrics or None,
-                    best_metrics=current_metrics or None,
-                    metrics_log=[current_metrics] if current_metrics else None,
-                )
+            await cls.follow_logs(
+                container_id,
+                os.path.join(export_dir, "eval.log"),
+                lambda line: broadcast_eval_log(eval_id, line),
+                _parse_val_metrics,
             )
+            exit_code = await cls._get_exit_code(container)
 
-        if _eval_running.get(eval_id, {}).get("cancel"):
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.CANCELLED, finished_at=datetime.now(), progress=100
-                    )
-                )
-        elif exit_code == 0:
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.SUCCESS,
-                        metrics=metrics or None,
-                        finished_at=datetime.now(),
-                        progress=100,
-                    )
-                )
-        else:
-            error_msg = ""
-            try:
-                err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                if err_logs:
-                    error_msg = err_logs.strip()
-            except Exception:
-                pass
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.FAILED, log=error_msg or "eval failed",
-                        error_log=error_msg or "eval failed", finished_at=datetime.now(), progress=100
-                    )
-                )
+            current_metrics = metrics or {}
+            await cls._mark_status(eval_id, TrainStatus.RUNNING,
+                                   last_metrics=current_metrics or None,
+                                   best_metrics=current_metrics or None,
+                                   metrics_log=[current_metrics] if current_metrics else None)
 
-    except Exception as e:
-        log.error(f"eval task {eval_id} failed: {e}")
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainEval).where(TrainEval.id == eval_id).values(
-                    status=TrainStatus.FAILED, log=str(e), finished_at=datetime.now()
-                )
-            )
-    finally:
-        _eval_running.pop(eval_id, None)
-        if container_id:
-            await remove_container(container_id)
+            if cls._registry.get(eval_id, {}).get("cancel"):
+                await remove_container(container_id)
+                await cls._mark_status(eval_id, TrainStatus.CANCELLED, finished_at=datetime.now(), progress=100)
+            elif exit_code == 0:
+                await remove_container(container_id)
+                await cls._mark_status(eval_id, TrainStatus.SUCCESS,
+                                       metrics=metrics or None,
+                                       finished_at=datetime.now(),
+                                       progress=100)
+            else:
+                error_msg = ""
+                try:
+                    err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
+                    if err_logs:
+                        error_msg = err_logs.strip()
+                except Exception:
+                    pass
+                await remove_container(container_id)
+                await cls._mark_status(eval_id, TrainStatus.FAILED,
+                                       log=error_msg or "eval failed",
+                                       error_log=error_msg or "eval failed",
+                                       finished_at=datetime.now(), progress=100)
+
+        except Exception as e:
+            log.error(f"eval task {eval_id} failed: {e}")
+            await cls._mark_status(eval_id, TrainStatus.FAILED, log=str(e), finished_at=datetime.now())
+        finally:
+            cls._registry.pop(eval_id, None)
+            if container_id:
+                await remove_container(container_id)
