@@ -25,8 +25,10 @@
         <template #left>
           <FaTableHeaderLeft
             :remove-ids="selectedIds"
+            :perm-create="['module_train:model:create']"
             :perm-delete="['module_train:model:delete']"
             :delete-loading="batchDeleting"
+            @add="openCreateDialog"
             @delete="handleBatchDelete"
           />
         </template>
@@ -65,6 +67,27 @@
     </ElDrawer>
 
     <ModelExportDialog ref="exportDialogRef" :model-id="exportModelId" :model-name="exportModelName" @done="refreshData" />
+
+    <ElDialog v-model="createDialogVisible" title="新建模型仓库" width="500px">
+      <ElForm label-width="120px">
+        <ElFormItem label="模型名称" required>
+          <ElInput v-model="createForm.name" placeholder="如: 钢板缺陷检测" />
+        </ElFormItem>
+        <ElFormItem label="框架" required>
+          <ElSelect v-model="createForm.framework" style="width:100%" placeholder="选择训练框架">
+            <ElOption label="Ultralytics" value="ultralytics" />
+            <ElOption label="PaddleX" value="paddlex" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem label="描述">
+          <ElInput v-model="createForm.description" type="textarea" :rows="2" placeholder="可选" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="createDialogVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="creatingRepo" @click="handleCreateRepo">创建</ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
@@ -227,16 +250,10 @@ const searchItems = computed<SearchFormItem[]>(() => [
 const faTableRef = ref<{ elTableRef?: { clearSelection: () => void } } | null>(null);
 const { selectedIds, batchDeleting, onTableSelectionChange } = useTableSelection<TrainModelRepoTable>();
 
-async function collectVersionIds(repoId: number): Promise<number[]> {
-  const r = await TrainAPI.listModelVersions(repoId);
-  return (r.data?.data || []).map(v => v.id).filter((id): id is number => !!id);
-}
-
 async function deleteRepoRow(repo: TrainModelRepoTable) {
   try {
     await confirmDelete();
-    const ids = await collectVersionIds(repo.id!);
-    if (ids.length) await TrainAPI.deleteModel(ids);
+    await TrainAPI.deleteModelRepos([repo.id!]);
     delete versionCache[repo.id!];
     ElMessage.success("删除成功");
     faTableRef.value?.elTableRef?.clearSelection();
@@ -252,12 +269,8 @@ async function handleBatchDelete() {
   try {
     await confirmBatchDelete(ids.length);
     batchDeleting.value = true;
-    const all: number[] = [];
-    for (const repoId of ids) {
-      all.push(...(await collectVersionIds(repoId)));
-      delete versionCache[repoId];
-    }
-    if (all.length) await TrainAPI.deleteModel(all);
+    await TrainAPI.deleteModelRepos(ids);
+    ids.forEach(repoId => delete versionCache[repoId]);
     ElMessage.success("删除成功");
     faTableRef.value?.elTableRef?.clearSelection();
     await refreshRemove();
@@ -265,6 +278,38 @@ async function handleBatchDelete() {
     // cancel
   } finally {
     batchDeleting.value = false;
+  }
+}
+
+// ── 新建 ──
+const createDialogVisible = ref(false);
+const creatingRepo = ref(false);
+const createForm = reactive({ name: "", framework: "", description: "" });
+
+function openCreateDialog() {
+  createForm.name = "";
+  createForm.framework = "";
+  createForm.description = "";
+  createDialogVisible.value = true;
+}
+
+async function handleCreateRepo() {
+  if (!createForm.name.trim()) { ElMessage.warning("请输入模型名称"); return; }
+  if (!createForm.framework) { ElMessage.warning("请选择框架"); return; }
+  creatingRepo.value = true;
+  try {
+    await TrainAPI.createModelRepo({
+      name: createForm.name.trim(),
+      framework: createForm.framework,
+      description: createForm.description || undefined,
+    });
+    ElMessage.success("创建成功");
+    createDialogVisible.value = false;
+    await refreshData();
+  } catch {
+    // error toast handled globally
+  } finally {
+    creatingRepo.value = false;
   }
 }
 

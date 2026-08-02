@@ -72,6 +72,24 @@ async def list_model_repos(
     })
 
 
+@router.post("/model/repos", summary="创建模型仓库（含首个版本）")
+async def create_repo(
+    data: TrainModelCreateSchema = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:create"])),
+):
+    result = await TrainService.create_model_repo(data, auth)
+    return SuccessResponse(data=result, msg="创建成功")
+
+
+@router.delete("/model/repos", summary="删除模型仓库（级联删除版本）")
+async def delete_repos(
+    ids: list[int] = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:delete"])),
+):
+    await TrainService.delete_model_repos(ids)
+    return SuccessResponse(msg="删除成功")
+
+
 @router.get("/model/{repo_id}/versions", summary="模型版本列表")
 async def list_model_versions(repo_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
     data = await TrainService.list_model_versions(repo_id)

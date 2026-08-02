@@ -171,6 +171,21 @@ class TrainService:
             return {"id": existing.id, "version_id": ver_row.id, "version": version}
 
     @classmethod
+    async def delete_model_repos(cls, ids: list[int]) -> None:
+        """删除仓库及其下所有版本行。"""
+        async with async_db_session.begin() as db:
+            for rid in ids:
+                repo = await db.get(TrainModelRepo, rid)
+                if not repo:
+                    continue
+                versions = (await db.execute(
+                    select(TrainModel).where(TrainModel.repo_id == rid)
+                )).scalars().all()
+                for v in versions:
+                    await db.delete(v)
+                await db.delete(repo)
+
+    @classmethod
     async def list_model_repos(cls, params: dict | None = None) -> tuple[list[dict], int]:
         page_no = max(1, int((params or {}).get("page_no", 1)))
         page_size = max(1, min(100, int((params or {}).get("page_size", 20))))

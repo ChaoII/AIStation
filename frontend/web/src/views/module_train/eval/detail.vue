@@ -299,7 +299,7 @@ async function handleReEval() {
 }
 
 function handleViewModel() {
-  if (evalData.value?.model_repo_id) router.push(`/train/repo?model_id=${evalData.value.model_repo_id}`);
+  if (evalData.value?.model_repo_id) router.push(`/train/repo?repo_id=${evalData.value.model_repo_id}`);
   else ElMessage.warning("暂无关联模型");
 }
 

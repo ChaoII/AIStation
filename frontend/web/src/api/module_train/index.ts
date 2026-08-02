@@ -155,6 +155,12 @@ export const TrainAPI = {
       params: query,
     });
   },
+  createModelRepo(body: { name: string; framework: string; description?: string; annotation_dataset_id?: number }) {
+    return request<ApiResponse>({ url: `${API_PATH}/model/repos`, method: "post", data: body });
+  },
+  deleteModelRepos(body: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/model/repos`, method: "delete", data: body });
+  },
   listModelVersions(repoId: number) {
     return request<ApiResponse<TrainModelVersionTable[]>>({
       url: `${API_PATH}/model/${repoId}/versions`,
