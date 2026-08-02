@@ -127,17 +127,59 @@ async def _build_export_dir(task_id: int) -> str:
     return export_dir
 
 
+# hp dict key → (yolo CLI flag, 默认值, 校验lambda)。仅当 key 在 hp 且值非 None 时拼入命令。
+_ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
+    "model":        ("model", "yolo11n.pt", None),
+    "epochs":       ("epochs", 100, lambda v: 1 <= int(v) <= 1000),
+    "batch":        ("batch", 16, lambda v: 1 <= int(v) <= 512),
+    "imgsz":        ("imgsz", 640, lambda v: 32 <= int(v) <= 4096),
+    "lr0":          ("lr0", 0.01, lambda v: float(v) > 0),
+    "lrf":          ("lrf", 0.01, lambda v: 0 <= float(v) <= 1),
+    "momentum":     ("momentum", 0.937, lambda v: 0 <= float(v) <= 1),
+    "weight_decay": ("weight_decay", 0.0005, lambda v: float(v) >= 0),
+    "optimizer":    ("optimizer", "AdamW", lambda v: v in ("AdamW", "SGD", "Adam", "Adamax", "NAdam")),
+    "patience":     ("patience", 100, lambda v: int(v) >= 0),
+    "workers":      ("workers", 8, lambda v: 0 <= int(v) <= 32),
+    "device":       ("device", "0", None),
+    "seed":         ("seed", 0, None),
+    "hsv_h":        ("hsv_h", 0.015, lambda v: 0 <= float(v) <= 1),
+    "hsv_s":        ("hsv_s", 0.7, lambda v: 0 <= float(v) <= 1),
+    "hsv_v":        ("hsv_v", 0.4, lambda v: 0 <= float(v) <= 1),
+    "fliplr":       ("fliplr", 0.5, lambda v: 0 <= float(v) <= 1),
+    "flipud":       ("flipud", 0.0, lambda v: 0 <= float(v) <= 1),
+    "mosaic":       ("mosaic", 1.0, lambda v: 0 <= float(v) <= 1),
+    "mixup":        ("mixup", 0.0, lambda v: 0 <= float(v) <= 1),
+    "multi_label":  ("multi_label", False, None),
+}
+
+
 def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection") -> list[str]:
-    epochs = hp.get("epochs", 100)
-    batch = hp.get("batch", 16)
-    lr = hp.get("lr", 0.01)
-    model_name = hp.get("model", "yolo11n.pt")
+    model_name = hp.get("model") or "yolo11n.pt"
     # Auto-select OBB model for rotated_detection tasks
     if task_type == "rotated_detection" and "-obb" not in model_name:
         base = model_name.replace(".pt", "")
         model_name = f"{base}-obb.pt"
-    return ["yolo", "train", f"model=/models/{model_name}", "data=/data/dataset.yaml",
-            f"epochs={epochs}", f"batch={batch}", f"lr0={lr}", "project=/output", "name=exp"]
+    cmd = ["yolo", "train", f"model=/models/{model_name}", "data=/data/dataset.yaml",
+           "project=/output", "name=exp"]
+    for key, (flag, _default, validator) in _ULTRALYTICS_HP.items():
+        if key == "model":
+            continue
+        if key not in hp or hp[key] is None:
+            continue
+        val = hp[key]
+        if validator is not None:
+            try:
+                if not validator(val):
+                    log.warning(f"[yolo] skipping invalid hyperparam {key}={val}")
+                    continue
+            except (TypeError, ValueError):
+                log.warning(f"[yolo] skipping invalid hyperparam {key}={val}")
+                continue
+        if isinstance(val, bool):
+            cmd.append(f"{flag}={str(val)}")
+        else:
+            cmd.append(f"{flag}={val}")
+    return cmd
 
 
 def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
