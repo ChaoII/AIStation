@@ -1,5 +1,6 @@
 from .backbones.pplcnetv4 import PPLCNetV4
+from .heads.det_db_head import DBHead
+from .losses.db_loss import DBLoss
 from .necks.rep_lk_fpn import RepLKFPN
 
-# DBHead 在后续任务（Task 3）中实现后再加入。
-__all__ = ["PPLCNetV4", "RepLKFPN"]
+__all__ = ["PPLCNetV4", "RepLKFPN", "DBHead", "DBLoss"]
