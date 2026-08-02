@@ -6,7 +6,6 @@ Create Date: 2026-07-15 12:00:00.000000
 """
 from collections.abc import Sequence
 
-import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -21,7 +20,7 @@ def upgrade() -> None:
         """
         CREATE UNIQUE INDEX uq_train_models_name_version
         ON train_models (name, version)
-        WHERE is_deleted = 0
+        WHERE CAST(is_deleted AS INTEGER) = 0
         """
     )
 

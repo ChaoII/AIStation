@@ -8,52 +8,199 @@
     />
 
     <PageContent ref="contentRef" :content-config="contentConfig">
-      <template #toolbar="{ toolbarRight, onToolbar, cols }">
-        <div class="data-table__toolbar--left">
-          <el-button type="primary" size="small" @click="handleOpenCreateDialog">创建评估</el-button>
-        </div>
+      <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
+        <CrudToolbarLeft
+          :remove-ids="removeIds"
+          :perm-create="['module_train:eval:create']"
+          @add="handleOpenCreateDialog"
+        />
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
 
-      <template #table="{ data, loading, tableRef, pagination }">
+      <template #table="{ data, loading, tableRef, onSelectionChange, pagination }">
         <div class="data-table__content">
-          <el-table :ref="tableRef as any" v-loading="loading" row-key="id" :data="data" border stripe>
+          <el-table
+            :ref="tableRef as any"
+            v-loading="loading"
+            row-key="id"
+            :data="data"
+            height="100%"
+            border
+            stripe
+            @selection-change="onSelectionChange"
+          >
             <template #empty>
               <el-empty :image-size="80" description="暂无评估记录" />
             </template>
-            <el-table-column type="selection" width="55" align="center" />
-            <el-table-column fixed label="序号" width="60">
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'selection')?.show"
+              type="selection"
+              width="55"
+              align="center"
+            />
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'index')?.show"
+              fixed
+              label="序号"
+              width="60"
+            >
               <template #default="scope">
                 {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="评估数据集" prop="eval_dataset_id" width="120" />
-            <el-table-column label="状态" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="tagType(row.status)" size="small" effect="plain">{{ tagLabel(row.status) }}</el-tag>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'model_version')?.show"
+              key="model_version"
+              label="模型版本"
+              prop="model_version"
+              min-width="160"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                {{ getModelName(scope.row.model_id) }}
               </template>
             </el-table-column>
-            <el-table-column label="评估指标" min-width="300">
-              <template #default="{ row }">
-                <div v-if="row.metrics" style="display:flex;flex-wrap:wrap;gap:4px">
-                  <el-tag v-for="(v, k) in row.metrics" :key="k" size="small" style="font-family:monospace;font-size:12px">
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'framework')?.show"
+              key="framework"
+              label="框架"
+              prop="framework"
+              width="100"
+            >
+              <template #default="scope">
+                <el-tag
+                  :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
+                  size="small"
+                >
+                  {{ scope.row.framework === "ultralytics" ? "YOLO" : "PaddleX" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'eval_dataset_id')?.show"
+              key="eval_dataset_id"
+              label="评估数据集ID"
+              prop="eval_dataset_id"
+              width="110"
+            />
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'status')?.show"
+              key="status"
+              label="状态"
+              prop="status"
+              width="110"
+              align="center"
+            >
+              <template #default="scope">
+                <el-tag :type="statusTag(scope.row.status)" size="small">
+                  {{ statusLabel(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'progress')?.show"
+              key="progress"
+              label="进度"
+              prop="progress"
+              width="180"
+            >
+              <template #default="scope">
+                <el-progress
+                  :percentage="scope.row.progress || 0"
+                  :stroke-width="14"
+                  :text-inside="true"
+                  :status="
+                    scope.row.status === 'failed'
+                      ? 'exception'
+                      : scope.row.status === 'success'
+                        ? 'success'
+                        : undefined
+                  "
+                />
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'metrics')?.show"
+              key="metrics"
+              label="评估指标"
+              prop="metrics"
+              min-width="280"
+            >
+              <template #default="scope">
+                <div v-if="scope.row.metrics" style="display:flex;flex-wrap:wrap;gap:4px">
+                  <el-tag v-for="(v, k) in scope.row.metrics" :key="k" size="small" style="font-family:monospace;font-size:12px">
                     {{ k }}: {{ typeof v === 'number' ? v.toFixed(4) : v }}
                   </el-tag>
                 </div>
                 <span v-else style="color:var(--el-text-color-secondary)">--</span>
               </template>
             </el-table-column>
-            <el-table-column prop="created_time" label="创建时间" width="170" />
-            <el-table-column label="操作" width="280" fixed="right">
-              <template #default="{ row }">
-                <el-button text size="small" type="primary" @click="router.push(`/train/eval/${row.id}`)">详情</el-button>
-                <el-button v-if="row.status === 'pending'" text size="small" type="success" @click="handleStartEval(row.id)">开始</el-button>
-                <el-button v-if="row.status === 'running'" text size="small" type="danger" @click="handleStopEval(row.id)">停止</el-button>
-                <el-button v-if="row.status === 'success' || row.status === 'failed'" text size="small" type="warning" @click="handleReEval(row)">重新评估</el-button>
-                <el-popconfirm title="确定删除？" @confirm="handleDeleteEval([row.id])">
-                  <template #reference><el-button text size="small" type="danger">删除</el-button></template>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
+              key="created_time"
+              label="创建时间"
+              prop="created_time"
+              min-width="170"
+            />
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'operation')?.show"
+              fixed="right"
+              label="操作"
+              align="center"
+              min-width="240"
+            >
+              <template #default="scope">
+                <el-button
+                  v-if="scope.row.status === 'pending'"
+                  v-hasPerm="['module_train:eval:create']"
+                  size="small"
+                  type="primary"
+                  link
+                  icon="VideoPlay"
+                  @click="handleStartEval(scope.row.id)"
+                >
+                  开始评估
+                </el-button>
+                <el-button
+                  v-if="scope.row.status === 'running'"
+                  v-hasPerm="['module_train:eval:create']"
+                  size="small"
+                  type="danger"
+                  link
+                  icon="VideoPause"
+                  @click="handleStopEval(scope.row.id)"
+                >
+                  停止
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_train:eval:query']"
+                  size="small"
+                  link
+                  icon="Search"
+                  @click="router.push('/train/eval/' + scope.row.id)"
+                >
+                  详情
+                </el-button>
+                <el-popconfirm
+                  title="确定删除该评估？"
+                  confirm-button-text="删除"
+                  cancel-button-text="取消"
+                  @confirm="handleDeleteEval([scope.row.id])"
+                  width="180"
+                >
+                  <template #reference>
+                    <el-button
+                      v-hasPerm="['module_train:eval:delete']"
+                      size="small"
+                      type="danger"
+                      link
+                      icon="Delete"
+                    >
+                      删除
+                    </el-button>
+                  </template>
                 </el-popconfirm>
               </template>
             </el-table-column>
@@ -78,6 +225,7 @@
         <el-form-item label="batch"><el-input-number v-model="createForm.hyperparams.batch" :min="1" :max="128" /></el-form-item>
         <el-form-item label="conf"><el-input-number v-model="createForm.hyperparams.conf" :min="0.001" :max="1" :step="0.01" /></el-form-item>
         <el-form-item label="iou"><el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" /></el-form-item>
+        <el-form-item label="GPU 设备"><el-input v-model="createForm.hyperparams.device" placeholder="如: 0" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
@@ -88,12 +236,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
+import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -113,7 +262,7 @@ const modelVersions = ref<any[]>([]);
 const createForm = reactive({
   modelId: null as number | null,
   evalDatasetId: null as number | null,
-  hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 },
+  hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" },
 });
 
 (async () => {
@@ -126,32 +275,41 @@ const createForm = reactive({
   modelVersions.value = r.data?.data?.items || [];
 })();
 
-onMounted(() => {
-  refreshList();
-});
-
-function handleOpenCreateDialog() {
-  // 预填当前模型版本
-  const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
-  createForm.modelId = curModel?.id || null;
-  createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
-  createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 };
-  createDialogVisible.value = true;
+function getModelName(modelId: number) {
+  const m = modelVersions.value.find((x: any) => x.id === modelId);
+  return m ? `${m.name} v${m.version}` : `#${modelId}`;
 }
 
-function tagType(s: string): "info" | "warning" | "success" | "danger" | undefined {
-  return ({ pending: "info", running: "warning", success: "success", failed: "danger" } as Record<string, any>)[s];
+function statusTag(s: string): "primary" | "success" | "warning" | "info" | "danger" | undefined {
+  return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info";
 }
-function tagLabel(s: string) {
-  return ({ pending: "待开始", running: "评估中", success: "已完成", failed: "失败" } as any)[s] || s;
+function statusLabel(s: string) {
+  return ({ pending: "待开始", running: "评估中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s;
 }
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_train:eval",
   colon: true,
-  isExpandable: false,
+  isExpandable: true,
+  showNumber: 3,
   form: { labelWidth: "auto" },
   formItems: [
+    {
+      prop: "name",
+      label: "模型名称",
+      type: "input",
+      attrs: { placeholder: "请输入模型名称", clearable: true },
+    },
+    {
+      prop: "framework",
+      label: "框架",
+      type: "select",
+      options: [
+        { label: "Ultralytics", value: "ultralytics" },
+        { label: "PaddleX", value: "paddlex" },
+      ],
+      attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
+    },
     {
       prop: "status",
       label: "状态",
@@ -161,34 +319,61 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "评估中", value: "running" },
         { label: "已完成", value: "success" },
         { label: "失败", value: "failed" },
+        { label: "已取消", value: "cancelled" },
       ],
       attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
     },
   ],
 });
 
+const contentCols = reactive<
+  Array<{
+    prop?: string;
+    label?: string;
+    show?: boolean;
+  }>
+>([
+  { prop: "selection", label: "选择框", show: true },
+  { prop: "index", label: "序号", show: true },
+  { prop: "model_version", label: "模型版本", show: true },
+  { prop: "framework", label: "框架", show: true },
+  { prop: "eval_dataset_id", label: "评估数据集ID", show: true },
+  { prop: "status", label: "状态", show: true },
+  { prop: "progress", label: "进度", show: true },
+  { prop: "metrics", label: "评估指标", show: true },
+  { prop: "created_time", label: "创建时间", show: true },
+  { prop: "operation", label: "操作", show: true },
+]);
+
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
+  permPrefix: "module_train:eval",
   pk: "id",
-  cols: [
-    { prop: "selection", label: "选择框", show: true },
-    { prop: "index", label: "序号", show: true },
-    { prop: "eval_dataset_id", label: "评估数据集", show: true },
-    { prop: "status", label: "状态", show: true },
-    { prop: "metrics", label: "评估指标", show: true },
-    { prop: "created_time", label: "创建时间", show: true },
-  ],
-  pagination: { pageSize: 10, pageSizes: [10, 20, 30, 50] },
+  cols: contentCols as IContentConfig["cols"],
+  hideColumnFilter: false,
+  toolbar: [],
+  defaultToolbar: ["refresh", "filter"],
+  pagination: {
+    pageSize: 10,
+    pageSizes: [10, 20, 30, 50],
+  },
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
-    const r = await TrainAPI.getEvalList(modelRepoId, params);
+    const r = await TrainAPI.getEvalList(params);
     const items = r.data?.data?.items || [];
     return {
       total: r.data?.data?.total ?? items.length,
       list: items,
     };
   },
-  defaultToolbar: ["refresh", "filter"],
 });
+
+function handleOpenCreateDialog() {
+  const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
+  createForm.modelId = curModel?.id || null;
+  createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
+  createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" };
+  createDialogVisible.value = true;
+}
 
 async function handleCreateEval() {
   if (!createForm.modelId || !createForm.evalDatasetId) {
@@ -207,7 +392,7 @@ async function handleCreateEval() {
     createDialogVisible.value = false;
     createForm.modelId = null;
     createForm.evalDatasetId = null;
-    createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 };
+    createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" };
     refreshList();
   } finally {
     creating.value = false;
@@ -215,15 +400,25 @@ async function handleCreateEval() {
 }
 
 async function handleStartEval(id: number) {
-  await TrainAPI.startEval(id);
-  ElMessage.success("评估已开始");
-  refreshList();
+  try {
+    await ElMessageBox.confirm("确定开始评估？", "提示", { type: "info" });
+    await TrainAPI.startEval(id);
+    ElMessage.success("评估已开始");
+    refreshList();
+  } catch (e: any) {
+    if (e !== "cancel") ElMessage.error(e?.msg || "开始评估失败");
+  }
 }
 
 async function handleStopEval(id: number) {
-  await TrainAPI.stopEval(id);
-  ElMessage.success("评估已停止");
-  refreshList();
+  try {
+    await ElMessageBox.confirm("确定停止该评估？", "提示", { type: "warning" });
+    await TrainAPI.stopEval(id);
+    ElMessage.success("评估已停止");
+    refreshList();
+  } catch {
+    //
+  }
 }
 
 async function handleDeleteEval(ids: number[]) {
@@ -232,15 +427,36 @@ async function handleDeleteEval(ids: number[]) {
   refreshList();
 }
 
-function handleReEval(row: any) {
-  createForm.modelId = row.model_id || null;
-  createForm.evalDatasetId = row.eval_dataset_id || null;
-  createForm.hyperparams = {
-    imgsz: row.hyperparams?.imgsz || 640,
-    batch: row.hyperparams?.batch || 16,
-    conf: row.hyperparams?.conf ?? 0.001,
-    iou: row.hyperparams?.iou ?? 0.6,
-  };
-  createDialogVisible.value = true;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(async () => {
+    if (!contentRef.value?.pageData) return;
+    try {
+      const params = (contentRef.value as any).queryParams || {};
+      const res = await TrainAPI.getEvalList(params);
+      const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
+      const old = contentRef.value.pageData as any[];
+      for (const f of fresh) {
+        const o = old.find((x: any) => x.id === f.id);
+        if (o) {
+          o.progress = f.progress;
+          o.status = f.status;
+          o.metrics = f.metrics;
+        }
+      }
+    } catch { /* ignore poll errors */ }
+  }, 5000);
 }
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+onMounted(() => startPoll());
+onBeforeUnmount(() => stopPoll());
 </script>

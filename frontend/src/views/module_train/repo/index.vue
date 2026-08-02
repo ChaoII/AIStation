@@ -178,7 +178,7 @@
                   link
                   type="success"
                   icon="Upload"
-                  @click="handleDeploy()"
+                  @click="handleDeploy(scope.row)"
                 >
                   部署
                 </el-button>
@@ -475,8 +475,25 @@ function handleEval(row: any) {
   router.push(`/train/eval?model_repo_id=${row.id}`);
 }
 
-function handleDeploy() {
-  ElMessage.info("部署功能即将上线");
+function handleDeploy(row: any) {
+  // Create a deploy record, show API Key, then navigate to deploy page
+  TrainAPI.createDeploy({
+    model_id: row.id,
+    name: `${row.name} v${row.version}`,
+    device: "0",
+    hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640 },
+  }).then(r => {
+    const d = r.data?.data;
+    if (d?.api_key) {
+      ElMessage.success("部署已创建");
+      // Show API Key in a brief alert, then navigate
+      ElMessage.success(`API Key: ${d.api_key}（已复制到剪贴板）`);
+      navigator.clipboard.writeText(d.api_key).catch(() => {});
+    }
+    router.push("/train/deploy");
+  }).catch(e => {
+    ElMessage.error(e?.msg || "创建部署失败");
+  });
 }
 
 function handleExport(row: any) {

@@ -2,43 +2,198 @@
   <div class="app-container">
     <PageSearch ref="searchRef" :search-config="searchConfig" @query-click="handleQueryClick" @reset-click="handleResetClick" />
     <PageContent ref="contentRef" :content-config="contentConfig">
-      <template #toolbar="{ toolbarRight, onToolbar, cols }">
-        <div class="data-table__toolbar--left">
-          <el-button type="primary" size="small" v-hasPerm="'module_train:predict:create'" @click="showCreateDialog = true">创建预测</el-button>
-        </div>
+      <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
+        <CrudToolbarLeft
+          :remove-ids="removeIds"
+          :perm-create="['module_train:predict:create']"
+          @add="showCreateDialog = true"
+        />
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
 
-      <template #table="{ data, loading, tableRef, pagination }">
+      <template #table="{ data, loading, tableRef, onSelectionChange, pagination }">
         <div class="data-table__content">
-          <el-table :ref="tableRef as any" v-loading="loading" row-key="id" :data="data" border stripe>
-            <template #empty><el-empty :image-size="80" description="暂无预测任务" /></template>
-            <el-table-column type="selection" width="55" align="center" />
-            <el-table-column label="序号" width="60">
-              <template #default="scope">{{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}</template>
-            </el-table-column>
-            <el-table-column label="模型版本" min-width="150">
-              <template #default="{ row }">{{ getModelName(row.model_id) }}</template>
-            </el-table-column>
-            <el-table-column label="图片来源" width="120">
-              <template #default="{ row }">{{ row.source_type === 'dataset' ? '数据集' : '上传图片' }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="tagType(row.status)" size="small" effect="plain">{{ tagLabel(row.status) }}</el-tag>
+          <el-table
+            :ref="tableRef as any"
+            v-loading="loading"
+            row-key="id"
+            :data="data"
+            height="100%"
+            border
+            stripe
+            @selection-change="onSelectionChange"
+          >
+            <template #empty>
+              <el-empty :image-size="80" description="暂无预测任务" />
+            </template>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'selection')?.show"
+              type="selection"
+              width="55"
+              align="center"
+            />
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'index')?.show"
+              fixed
+              label="序号"
+              width="60"
+            >
+              <template #default="scope">
+                {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column label="创建时间" prop="created_time" width="170" />
-            <el-table-column label="操作" width="240" fixed="right">
-              <template #default="{ row }">
-                <el-button text size="small" type="primary" @click="router.push(`/train/predict/${row.id}`)">详情</el-button>
-                <el-button v-if="row.status === 'pending'" text size="small" type="success" @click="handleStart(row.id)">开始</el-button>
-                <el-button v-if="row.status === 'running'" text size="small" type="danger" @click="handleStop(row.id)">停止</el-button>
-                <el-button v-if="row.result_zip_path" text size="small" type="primary" @click="downloadZip(row.result_zip_path)">下载</el-button>
-                <el-popconfirm title="确定删除？" @confirm="handleDelete([row.id])">
-                  <template #reference><el-button text size="small" type="danger">删除</el-button></template>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'model_version')?.show"
+              key="model_version"
+              label="模型版本"
+              prop="model_version"
+              min-width="150"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                {{ getModelName(scope.row.model_id) }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'framework')?.show"
+              key="framework"
+              label="框架"
+              prop="framework"
+              width="100"
+            >
+              <template #default="scope">
+                <el-tag
+                  :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
+                  size="small"
+                >
+                  {{ scope.row.framework === "ultralytics" ? "YOLO" : "PaddleX" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'source_type')?.show"
+              key="source_type"
+              label="图片来源"
+              prop="source_type"
+              width="120"
+            >
+              <template #default="scope">
+                {{ scope.row.source_type === 'dataset' ? '数据集' : '上传图片' }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'status')?.show"
+              key="status"
+              label="状态"
+              prop="status"
+              width="110"
+              align="center"
+            >
+              <template #default="scope">
+                <el-tag :type="statusTag(scope.row.status)" size="small">
+                  {{ statusLabel(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'progress')?.show"
+              key="progress"
+              label="进度"
+              prop="progress"
+              width="180"
+            >
+              <template #default="scope">
+                <el-progress
+                  :percentage="scope.row.progress || 0"
+                  :stroke-width="14"
+                  :text-inside="true"
+                  :status="
+                    scope.row.status === 'failed'
+                      ? 'exception'
+                      : scope.row.status === 'success'
+                        ? 'success'
+                        : undefined
+                  "
+                />
+              </template>
+            </el-table-column>
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
+              key="created_time"
+              label="创建时间"
+              prop="created_time"
+              min-width="170"
+            />
+            <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'operation')?.show"
+              fixed="right"
+              label="操作"
+              align="center"
+              min-width="240"
+            >
+              <template #default="scope">
+                <el-button
+                  v-if="scope.row.status === 'pending'"
+                  v-hasPerm="['module_train:predict:create']"
+                  size="small"
+                  type="primary"
+                  link
+                  icon="VideoPlay"
+                  @click="handleStart(scope.row.id)"
+                >
+                  开始预测
+                </el-button>
+                <el-button
+                  v-if="scope.row.status === 'running'"
+                  v-hasPerm="['module_train:predict:create']"
+                  size="small"
+                  type="danger"
+                  link
+                  icon="VideoPause"
+                  @click="handleStop(scope.row.id)"
+                >
+                  停止
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_train:predict:query']"
+                  size="small"
+                  link
+                  icon="Search"
+                  @click="router.push('/train/predict/' + scope.row.id)"
+                >
+                  详情
+                </el-button>
+                <el-button
+                  v-if="scope.row.result_zip_path"
+                  v-hasPerm="['module_train:predict:query']"
+                  size="small"
+                  link
+                  type="primary"
+                  icon="Download"
+                  @click="downloadZip(scope.row.result_zip_path)"
+                >
+                  下载
+                </el-button>
+                <el-popconfirm
+                  title="确定删除该预测？"
+                  confirm-button-text="删除"
+                  cancel-button-text="取消"
+                  @confirm="handleDelete([scope.row.id])"
+                  width="180"
+                >
+                  <template #reference>
+                    <el-button
+                      v-hasPerm="['module_train:predict:delete']"
+                      size="small"
+                      type="danger"
+                      link
+                      icon="Delete"
+                    >
+                      删除
+                    </el-button>
+                  </template>
                 </el-popconfirm>
               </template>
             </el-table-column>
@@ -90,13 +245,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import { Plus } from "@element-plus/icons-vue";
+import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -117,7 +273,7 @@ const createForm = reactive({
   modelId: null as number | null,
   sourceType: "dataset",
   sourceDatasetId: null as number | null,
-  hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640 },
+  hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640, device: "0" },
 });
 
 onMounted(async () => {
@@ -135,8 +291,8 @@ function getModelName(modelId: number) {
   return m ? `${m.name} v${m.version}` : `#${modelId}`;
 }
 
-function tagType(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
-function tagLabel(s: string) { return ({ pending: "待开始", running: "预测中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
+function statusTag(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
+function statusLabel(s: string) { return ({ pending: "待开始", running: "预测中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
 
 function onUploadChange(_file: any, fileList: any[]) {
   pendingFiles.value = fileList.map(f => f.raw).filter(Boolean);
@@ -168,7 +324,7 @@ async function handleCreate() {
     createForm.modelId = null;
     createForm.sourceType = "dataset";
     createForm.sourceDatasetId = null;
-    createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640 };
+    createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640, device: "0" };
     pendingFiles.value = [];
     if (uploadRef.value) uploadRef.value.uploadFiles = [];
     refreshList();
@@ -200,10 +356,28 @@ async function handleDelete(ids: number[]) {
 }
 
 const searchConfig = reactive<ISearchConfig>({
+  permPrefix: "module_train:predict",
   colon: true,
-  isExpandable: false,
+  isExpandable: true,
+  showNumber: 3,
   form: { labelWidth: "auto" },
   formItems: [
+    {
+      prop: "name",
+      label: "模型名称",
+      type: "input",
+      attrs: { placeholder: "请输入模型名称", clearable: true },
+    },
+    {
+      prop: "framework",
+      label: "框架",
+      type: "select",
+      options: [
+        { label: "Ultralytics", value: "ultralytics" },
+        { label: "PaddleX", value: "paddlex" },
+      ],
+      attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
+    },
     {
       prop: "status",
       label: "状态",
@@ -220,17 +394,35 @@ const searchConfig = reactive<ISearchConfig>({
   ],
 });
 
+const contentCols = reactive<
+  Array<{
+    prop?: string;
+    label?: string;
+    show?: boolean;
+  }>
+>([
+  { prop: "selection", label: "选择框", show: true },
+  { prop: "index", label: "序号", show: true },
+  { prop: "model_version", label: "模型版本", show: true },
+  { prop: "framework", label: "框架", show: true },
+  { prop: "source_type", label: "图片来源", show: true },
+  { prop: "status", label: "状态", show: true },
+  { prop: "progress", label: "进度", show: true },
+  { prop: "created_time", label: "创建时间", show: true },
+  { prop: "operation", label: "操作", show: true },
+]);
+
 const contentConfig = reactive<IContentConfig<TablePageQuery>>({
+  permPrefix: "module_train:predict",
   pk: "id",
-  cols: [
-    { prop: "selection", label: "选择框", show: true },
-    { prop: "index", label: "序号", show: true },
-    { prop: "model_id", label: "模型版本", show: true },
-    { prop: "source_type", label: "图片来源", show: true },
-    { prop: "status", label: "状态", show: true },
-    { prop: "created_time", label: "创建时间", show: true },
-  ],
-  pagination: { pageSize: 10, pageSizes: [10, 20, 30, 50] },
+  cols: contentCols as IContentConfig["cols"],
+  hideColumnFilter: false,
+  toolbar: [],
+  defaultToolbar: ["refresh", "filter"],
+  pagination: {
+    pageSize: 10,
+    pageSizes: [10, 20, 30, 50],
+  },
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
     const r = await TrainAPI.getPredictList(params);
@@ -240,9 +432,37 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
       list: items,
     };
   },
-  defaultToolbar: ["refresh", "filter"],
 });
 
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(async () => {
+    if (!contentRef.value?.pageData) return;
+    try {
+      const params = (contentRef.value as any).queryParams || {};
+      const res = await TrainAPI.getPredictList(params);
+      const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
+      const old = contentRef.value.pageData as any[];
+      for (const f of fresh) {
+        const o = old.find((x: any) => x.id === f.id);
+        if (o) {
+          o.progress = f.progress;
+          o.status = f.status;
+        }
+      }
+    } catch { /* ignore poll errors */ }
+  }, 5000);
+}
 
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+onMounted(() => startPoll());
+onBeforeUnmount(() => stopPoll());
 </script>

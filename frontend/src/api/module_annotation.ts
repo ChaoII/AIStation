@@ -32,11 +32,12 @@ export const AnnotationAPI = {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
-  getImages(id: number, taskId?: number) {
-    return request<ApiResponse<any[]>>({
+  getImages(id: number, taskId?: number, pageNo?: number, pageSize?: number) {
+    return request<ApiResponse<{ items: any[]; total: number; page: number }>>({
       url: `${API_PATH}/dataset/${id}/images`,
       method: "get",
-      params: { task_id: taskId },
+      params: { task_id: taskId, page_no: pageNo, page_size: pageSize },
+      timeout: 60000,
     });
   },
   getPresignedUrl(imageId: number, taskId?: number) {

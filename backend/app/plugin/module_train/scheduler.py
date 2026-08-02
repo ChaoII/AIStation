@@ -31,8 +31,9 @@ _MODEL_MIRROR = os.environ.get("MODEL_MIRROR", "")  # e.g. https://ghproxy.com/
 def _send_notify(user_id: int, title: str, content: str | None, type_: str, module: str, module_id: int | None):
     """Fire-and-forget notification; non-blocking on best-effort basis."""
     try:
-        from app.api.v1.module_system.notification.service import NotificationService
         import asyncio
+
+        from app.api.v1.module_system.notification.service import NotificationService
         asyncio.ensure_future(NotificationService.create_notification(
             user_id=user_id, title=title, content=content,
             type=type_, module=module, module_id=module_id,
@@ -85,13 +86,14 @@ async def _scheduler_loop():
         try:
             # Check for due training schedules
             try:
-                from .schedule_service import ScheduleService
                 from .schedule_model import TrainScheduleModel
+                from .schedule_service import ScheduleService
                 due = await ScheduleService.get_due_schedules()
                 for s in due:
                     try:
                         from .service import TrainService
                         # Create a mock auth object - schedules run as superuser
+
                         class _ScheduleAuth:
                             class user:
                                 id = s.created_id or 1
@@ -323,7 +325,7 @@ async def _execute_training(task_id: int):
                     )
                 )
             if hasattr(task, "created_id") and task.created_id:
-                _send_notify(task.created_id, f"训练完成: {task.name}", f"任务已成功完成，模型已保存", "training_complete", "train", task_id)
+                _send_notify(task.created_id, f"训练完成: {task.name}", "任务已成功完成，模型已保存", "training_complete", "train", task_id)
         else:
             error_msg = ""
             try:

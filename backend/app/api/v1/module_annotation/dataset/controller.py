@@ -109,9 +109,11 @@ async def get_images(
     id: int,
     status: str | None = None,
     task_id: int | None = None,
+    page_no: int = 1,
+    page_size: int = 100,
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
 ) -> JSONResponse:
-    images = await DatasetService.get_images(id, task_id)
+    images = await DatasetService.get_images(id, task_id, page_no, page_size)
     return SuccessResponse(data=images)
 
 

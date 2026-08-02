@@ -412,8 +412,9 @@ async function loadAllData() {
   }
 
   if (trainR.status === "fulfilled") {
-    const tasks = trainR.value.data?.data || [];
-    stats.trainTotal = tasks.length;
+    const tasksData = trainR.value.data?.data || {};
+    const tasks = tasksData.items || [];
+    stats.trainTotal = tasksData.total ?? tasks.length;
     for (const t of tasks) {
       if (t.status === "pending") stats.trainPending++;
       else if (t.status === "running") stats.trainRunning++;

@@ -49,11 +49,11 @@ export const TrainAPI = {
   createEval(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/create`, method: "post", data });
   },
-  getEvalList(modelRepoId: number, params?: Record<string, any>) {
+  getEvalList(params?: Record<string, any>) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
       url: `${API_PATH}/eval/list`,
       method: "get",
-      params: { ...params, model_repo_id: modelRepoId },
+      params,
     });
   },
   deleteEval(ids: number[]) {
@@ -71,6 +71,9 @@ export const TrainAPI = {
 
   getEvalDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/detail`, method: "get" });
+  },
+  getEvalLogs(id: number) {
+    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/eval/${id}/logs`, method: "get" });
   },
   startEval(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/start`, method: "post" });
@@ -91,6 +94,9 @@ export const TrainAPI = {
   },
   getPredictDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/detail`, method: "get" });
+  },
+  getPredictLogs(id: number) {
+    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/predict/${id}/logs`, method: "get" });
   },
   startPredict(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/start`, method: "post" });
@@ -139,5 +145,35 @@ export const TrainAPI = {
   },
   updateModel(modelId: number, data: any) {
     return request<ApiResponse>({ url: `${API_PATH}/model/update/${modelId}`, method: "put", data });
+  },
+
+  // Deploy
+  createDeploy(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/create`, method: "post", data });
+  },
+  startDeploy(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/start`, method: "post" });
+  },
+  stopDeploy(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/stop`, method: "post" });
+  },
+  renewDeployKey(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/renew-key`, method: "put" });
+  },
+  getDeployList(params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/deploy/list`,
+      method: "get",
+      params,
+    });
+  },
+  getDeployDetail(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/detail`, method: "get" });
+  },
+  getDeployLogs(id: number) {
+    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/deploy/${id}/logs`, method: "get" });
+  },
+  deleteDeploy(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/deploy/delete`, method: "delete", data: ids });
   },
 };

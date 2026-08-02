@@ -78,13 +78,13 @@
             @load="onImgLoad"
             @error="imgUrl = ''"
           />
-          <svg v-if="imgUrl" class="ann-svg" :style="svgStyle" :viewBox="`0 0 ${cw} ${ch}`">
+          <svg v-if="imageLoaded" class="ann-svg" :style="svgStyle" :viewBox="`0 0 ${cw} ${ch}`">
             <!-- 已有标注 -->
             <g
               v-for="ann in store.annotations"
               :key="ann.id"
               :data-ann-id="ann.id"
-              @mousedown.left.prevent="onAnnMouseDown($event, ann)"
+              @mousedown.left.stop.prevent="onAnnMouseDown($event, ann)"
             >
               <template v-if="ann.type === 'AxisAlignedBox'">
                 <rect
@@ -912,11 +912,20 @@
           <div class="panel-section">
             <div class="section-title-row">
               <span class="section-title">图片列表</span>
-              <span class="count-chip">{{ store.images.length }}</span>
+              <span v-if="imagesLoading" class="loading-chip">加载中...</span>
+              <span v-else class="count-chip">{{ store.images.length }}</span>
+            </div>
+            <div class="filter-row">
+              <el-radio-group v-model="imageFilter" size="small" @change="scrollToTop">
+                <el-radio-button value="all">全部</el-radio-button>
+                <el-radio-button value="annotated">已标注</el-radio-button>
+                <el-radio-button value="unannotated">未标注</el-radio-button>
+              </el-radio-group>
             </div>
             <div class="scroll-area">
               <div
                 v-for="(img, idx) in store.images"
+                v-show="imageFilter === 'all' || (imageFilter === 'annotated') === (img.status === 'annotated')"
                 :key="img.id"
                 class="image-item"
                 :class="{ active: idx === store.currentImageIndex }"
@@ -1263,6 +1272,9 @@ const boxPreviewRef = ref<HTMLElement | null>(null);
 
 // State
 const imgUrl = ref("");
+const imageLoaded = ref(false);
+const imageFilter = ref("all");
+const imagesLoading = ref(false);
 const cw = ref(1);
 const ch = ref(1);
 const cursorX = ref(0);
@@ -1606,6 +1618,7 @@ function onImgLoad() {
   if (!el || !c) return;
   cw.value = el.naturalWidth;
   ch.value = el.naturalHeight;
+  imageLoaded.value = true;
   const tryFit = () => {
     const r = c.getBoundingClientRect();
     if (r.width && r.height) {
@@ -2947,6 +2960,7 @@ function afterEdit() {
 // 切图时重置 lastSavedKey
 async function loadImg(imageId: number) {
   imgUrl.value = "";
+  imageLoaded.value = false;
   store.selectedAnnotationId = null;
   store.annotations = [];
   unsaved.value = false;
@@ -2986,7 +3000,7 @@ async function goToImage(idx: number) {
       });
       const curIdx = store.currentImageIndex;
       const updated = { ...store.images[curIdx] };
-      updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+      updated.status = "annotated";
       updated.annotation_count = store.annotations.length;
       updated.updated_by = { id: 0, name: getCurrentUserName() };
       updated.updated_time = new Date().toISOString();
@@ -3008,6 +3022,10 @@ function prevImg() {
 }
 function nextImg() {
   if (store.currentImageIndex < store.images.length - 1) goToImage(store.currentImageIndex + 1);
+}
+function scrollToTop() {
+  const el = document.querySelector(".ann-sidebar .scroll-area");
+  if (el) el.scrollTop = 0;
 }
 
 // ===== 任务进度 =====
@@ -3037,7 +3055,7 @@ async function saveAnn() {
     const uname = getCurrentUserName();
     const idx = store.currentImageIndex;
     const updated = { ...store.images[idx] };
-    updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+    updated.status = "annotated";
     updated.annotation_count = store.annotations.length;
     updated.updated_by = {
       id: 0,
@@ -3074,7 +3092,7 @@ async function handleBack() {
         });
         const idx = store.currentImageIndex;
         const updated = { ...store.images[idx] };
-        updated.status = store.annotations.length > 0 ? "annotated" : "unannotated";
+      updated.status = "annotated";
         updated.annotation_count = store.annotations.length;
         updated.updated_by = { id: 0, name: getCurrentUserName() };
         updated.updated_time = new Date().toISOString();
@@ -3261,11 +3279,36 @@ onMounted(async () => {
     store.setTool("select");
     store.taskId = tid;
     if (taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id;
-    const ir = await AnnotationAPI.getImages(t.dataset_id, tid);
-    const imgs = ir.data?.data || [];
-    store.images = imgs;
-    if (imgs.length > 0) await loadImg(imgs[0].id);
-    await fetchTaskProgress();
+    // Load first page of images + load remaining in background
+    imagesLoading.value = true;
+    const pageSize = 50;
+    AnnotationAPI.getImages(t.dataset_id, tid, 1, pageSize).then(r => {
+      const data = r.data?.data;
+      if (!data) { imagesLoading.value = false; return; }
+      const imgs = data.items || [];
+      store.images = imgs;
+      const total = data.total || 0;
+      if (imgs.length > 0 && !store.currentImage) loadImg(imgs[0].id);
+      fetchTaskProgress();
+      // Load remaining pages in background
+      const totalPages = Math.ceil(total / pageSize);
+      if (totalPages > 1) {
+        const promises = [];
+        for (let p = 2; p <= totalPages; p++) {
+          promises.push(
+            AnnotationAPI.getImages(t.dataset_id, tid, p, pageSize).then(r2 => {
+              const more = r2.data?.data?.items || [];
+              if (more.length > 0) store.images.push(...more);
+            }).catch(() => {})
+          );
+        }
+        Promise.all(promises).finally(() => { imagesLoading.value = false; });
+      } else {
+        imagesLoading.value = false;
+      }
+    }).catch(() => {
+      imagesLoading.value = false;
+    });
   } catch (e: any) {
     ElMessage.error("加载失败: " + (e?.msg || e?.message || ""));
   } finally {
@@ -3506,6 +3549,23 @@ onBeforeUnmount(() => {
   flex: 1;
   letter-spacing: 0.03em;
 }
+.filter-row {
+  padding: 4px 0;
+  flex-shrink: 0;
+}
+.filter-row .el-radio-group {
+  display: flex;
+  width: 100%;
+}
+.filter-row .el-radio-button {
+  flex: 1;
+}
+.filter-row .el-radio-button__inner {
+  font-size: 11px;
+  padding: 4px 8px;
+  width: 100%;
+  justify-content: center;
+}
 .count-chip {
   font-size: 10px;
   color: #909399;
@@ -3514,6 +3574,15 @@ onBeforeUnmount(() => {
   padding: 0 5px;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
+}
+.loading-chip {
+  font-size: 10px;
+  color: #409eff;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 .setting-row {
   display: flex;

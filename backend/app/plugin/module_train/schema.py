@@ -72,7 +72,12 @@ class TrainEvalOutSchema(BaseModel):
     hyperparams: dict | None
     metrics: dict | None
     status: str
+    progress: int
     log: str | None
+    error_log: str | None
+    metrics_log: list | None
+    best_metrics: dict | None
+    last_metrics: dict | None
     started_at: datetime | None
     finished_at: datetime | None
     created_id: int | None
@@ -101,6 +106,7 @@ class TrainPredictOutSchema(BaseModel):
     result_zip_path: str | None
     hyperparams: dict | None
     status: str
+    progress: int
     started_at: datetime | None
     finished_at: datetime | None
     log: str | None
@@ -157,3 +163,34 @@ class ModelUpdateSchema(BaseModel):
     name: str | None = None
     description: str | None = None
     status: str | None = None  # draft / released / archived
+
+
+class TrainDeployCreateSchema(BaseModel):
+    model_id: int
+    name: str | None = None
+    device: str = "0"
+    host_port: int | None = None
+    hyperparams: dict = Field(default_factory=lambda: {"conf": 0.25, "iou": 0.45, "imgsz": 640})
+
+
+class TrainDeployOutSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    model_id: int
+    model_name: str
+    model_version: str
+    framework: str
+    device: str
+    host_port: int
+    container_id: str | None
+    status: str
+    api_url: str | None
+    api_key: str
+    docker_image: str
+    hyperparams: dict | None
+    error_log: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_time: datetime | None
+    created_id: int | None

@@ -15,7 +15,7 @@ from .tenant.controller import TenantRouter
 from .user.controller import UserRouter
 
 from .notification.controller import NotificationRouter
-from .notification.ws import NotificationWSRouter
+from .notification.ws import NotificationWSRouter as NotificationWSRouter
 
 system_router = APIRouter(prefix="/system")
 

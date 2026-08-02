@@ -21,6 +21,7 @@ JSON structure:
 import json
 import os
 import tempfile
+import uuid
 import zipfile
 from datetime import datetime
 
@@ -118,7 +119,6 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
             object_key = f"annotations/dataset_{dataset_id}/{stem}{ext}"
             with open(img_path, "rb") as f:
                 s3_client.upload_fileobj(f, object_key)
-            img_url = s3_client.presigned_url(object_key)
 
             # Determine image dimensions from JSON sidecar if available
             img_height = 0
@@ -139,7 +139,6 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
                 dataset_id=dataset_id,
                 filename=f"{stem}{ext}",
                 object_key=object_key,
-                url=img_url,
                 status=ImageStatus.ANNOTATED,
                 width=img_width,
                 height=img_height,
@@ -169,6 +168,7 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
                     image_id=img_rec.id,
                     annotation_data=annotations,
                     version=1,
+                    created_id=user_id,
                 )
                 db.add(ann_rec)
 
@@ -219,25 +219,39 @@ def _shape_to_annotation(shape: dict, class_mapping: dict, img_w: int, img_h: in
         x1, x2 = min(xs), max(xs)
         y1, y2 = min(ys), max(ys)
         return {
+            "id": uuid.uuid4().hex,
             "type": "AxisAlignedBox",
             "class_id": class_id,
             "label": label,
-            "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+            "x1": x1 / img_w if img_w else 0,
+            "y1": y1 / img_h if img_h else 0,
+            "x2": x2 / img_w if img_w else 0,
+            "y2": y2 / img_h if img_h else 0,
         }
     elif shape_type == "polygon" and len(points) >= 3:
         return {
-            "type": "polygon",
+            "id": uuid.uuid4().hex,
+            "type": "Polygon",
             "class_id": class_id,
             "label": label,
-            "points": points,
+            "points": [
+                {"x": p[0] / img_w if img_w else 0, "y": p[1] / img_h if img_h else 0}
+                for p in points
+            ],
         }
     elif shape_type == "point" and len(points) >= 1:
+        x = points[0][0] / img_w if img_w else 0
+        y = points[0][1] / img_h if img_h else 0
+        size = min(1.0 / img_w if img_w else 0.01, 0.01)
         return {
-            "type": "point",
+            "id": uuid.uuid4().hex,
+            "type": "AxisAlignedBox",
             "class_id": class_id,
             "label": label,
-            "x": points[0][0],
-            "y": points[0][1],
+            "x1": max(0, x - size),
+            "y1": max(0, y - size),
+            "x2": min(1, x + size),
+            "y2": min(1, y + size),
         }
     return None
 

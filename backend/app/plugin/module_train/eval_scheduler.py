@@ -54,7 +54,7 @@ async def start_evaluation(eval_id: int):
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainEval).where(TrainEval.id == eval_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now()
+                status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
             )
         )
     asyncio.create_task(_execute_evaluation(eval_id))
@@ -100,8 +100,9 @@ async def _execute_evaluation(eval_id: int):
             if not storage_path:
                 raise Exception("model not found or no storage_path")
             if "/export/" in storage_path:
-                from .model import TrainTask
                 from sqlalchemy import desc, select
+
+                from .model import TrainTask
                 task = (await db.execute(
                     select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
                     .order_by(desc(TrainTask.id)).limit(1)
@@ -189,12 +190,22 @@ async def _execute_evaluation(eval_id: int):
         loop = asyncio.get_event_loop()
         exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
 
+        current_metrics = metrics or {}
+        async with async_db_session.begin() as db:
+            await db.execute(
+                update(TrainEval).where(TrainEval.id == eval_id).values(
+                    last_metrics=current_metrics or None,
+                    best_metrics=current_metrics or None,
+                    metrics_log=[current_metrics] if current_metrics else None,
+                )
+            )
+
         if _eval_running.get(eval_id, {}).get("cancel"):
             await remove_container(container_id)
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.CANCELLED, finished_at=datetime.now()
+                        status=TrainStatus.CANCELLED, finished_at=datetime.now(), progress=100
                     )
                 )
         elif exit_code == 0:
@@ -205,6 +216,7 @@ async def _execute_evaluation(eval_id: int):
                         status=TrainStatus.SUCCESS,
                         metrics=metrics or None,
                         finished_at=datetime.now(),
+                        progress=100,
                     )
                 )
         else:
@@ -220,7 +232,7 @@ async def _execute_evaluation(eval_id: int):
                 await db.execute(
                     update(TrainEval).where(TrainEval.id == eval_id).values(
                         status=TrainStatus.FAILED, log=error_msg or "eval failed",
-                        finished_at=datetime.now(),
+                        error_log=error_msg or "eval failed", finished_at=datetime.now(), progress=100
                     )
                 )
 

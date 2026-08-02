@@ -137,9 +137,11 @@ async def export_model_to_format(
     if "/export/" in storage_path:
         existing_format = os.path.splitext(storage_path)[1].lstrip(".") or "onnx"
         # 尝试从训练任务找回原始 .pt
-        from .model import TrainTask
-        from app.core.database import async_db_session
         from sqlalchemy import desc, select
+
+        from app.core.database import async_db_session
+
+        from .model import TrainTask
         async with async_db_session() as db:
             task = (await db.execute(
                 select(TrainTask).where(TrainTask.model_repo_id == model_id)
@@ -227,7 +229,7 @@ async def export_model_to_format(
         if exit_code != 0:
             log_tail = ""
             if os.path.isfile(log_path):
-                with open(log_path, "r", encoding="utf-8", errors="replace") as lf:
+                with open(log_path, encoding="utf-8", errors="replace") as lf:
                     lines = lf.readlines()
                     log_tail = "".join(lines[-200:]).strip()
             raise Exception(f"容器退出码 {exit_code}\n最后日志:\n{log_tail}")

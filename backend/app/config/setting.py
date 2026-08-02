@@ -130,9 +130,26 @@ class Settings(BaseSettings):
     CAPTCHA_FONT_PATH: str = "static/assets/font/Arial.ttf"  # 字体路径
 
     # ================================================= #
+    # ***************** 第三方 OAuth 登录配置 ********* #
+    # ================================================= #
+    # 自动注册用户时的默认角色 ID 列表（需与角色表中的角色一致）
+    OAUTH_DEFAULT_ROLE_IDS: list[int] = [2]
+    # 回调异常时返回前端地址（需与前端实际 /login 一致，需协商端口）
+    OAUTH_FRONTEND_FALLBACK: str = "http://127.0.0.1:5173/login"
+    OAUTH_GITHUB_CLIENT_ID: str = ""
+    OAUTH_GITHUB_CLIENT_SECRET: str = ""
+    OAUTH_GITEE_CLIENT_ID: str = ""
+    OAUTH_GITEE_CLIENT_SECRET: str = ""
+    OAUTH_WECHAT_OPEN_APP_ID: str = ""
+    OAUTH_WECHAT_OPEN_APP_SECRET: str = ""
+    OAUTH_QQ_APP_ID: str = ""
+    OAUTH_QQ_APP_SECRET: str = ""
+
+    # ================================================= #
     # ******************* 外部 HTTP（httpx）******************* #
     # ================================================= #
     HTTPX_DEFAULT_TIMEOUT: float = 10.0  # 对外请求默认超时（秒），见 app/common/httpx_defaults.py
+    IP_LOCATION_ENABLE: bool = True  # 是否启用 IP 归属地查询（登录时避免发外部 HTTP 请求）
 
     # ================================================= #
     # ********************* 日志配置 ******************* #
@@ -231,6 +248,17 @@ class Settings(BaseSettings):
     # ******************* 请求限制配置 ****************** #
     # ================================================= #
     REQUEST_LIMITER_REDIS_PREFIX: str = "aistation:request_limiter:"
+
+    # 接口限流默认值（每 seconds 秒内最多 times 次请求）
+    REQUEST_RATE_LIMIT_TIMES: int = 5
+    REQUEST_RATE_LIMIT_SECONDS: int = 10
+
+    # 按模块覆盖限流参数：{"module": {"times": N, "seconds": M}}
+    # 标注工作台会一次性加载图片列表+预签名URL+标注数据，合法请求较多，默认放宽
+    RATE_LIMIT_OVERRIDES: dict[str, dict] = {
+        "annotation": {"times": 60, "seconds": 10},
+        "train": {"times": 30, "seconds": 10},
+    }
 
     # ================================================= #
     # ******************* 重构配置 ******************* #

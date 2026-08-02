@@ -66,9 +66,14 @@ class TrainEval(ModelMixin, UserMixin):
     hyperparams: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="评估参数")
     metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="评估指标")
     status: Mapped[TrainStatus] = mapped_column(SAEnum(TrainStatus), default=TrainStatus.PENDING, comment="状态")
+    progress: Mapped[int] = mapped_column(Integer, default=0, comment="进度0-100")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")
     log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="评估日志")
+    error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误日志")
+    metrics_log: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None, comment="每轮评估指标")
+    best_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None, comment="最优指标")
+    last_metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None, comment="最终指标")
 
 
 class TrainPredict(ModelMixin, UserMixin):
@@ -83,6 +88,28 @@ class TrainPredict(ModelMixin, UserMixin):
     result_zip_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="结果ZIP在RustFS的路径")
     hyperparams: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="预测参数")
     status: Mapped[TrainStatus] = mapped_column(SAEnum(TrainStatus), default=TrainStatus.PENDING, comment="状态")
+    progress: Mapped[int] = mapped_column(Integer, default=0, comment="进度0-100")
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")
     log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="预测日志")
+    error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误日志")
+
+
+class TrainDeploy(ModelMixin, UserMixin):
+    __tablename__ = "train_deploys"
+    name: Mapped[str] = mapped_column(String(128), comment="部署名称")
+    model_id: Mapped[int] = mapped_column(Integer, comment="模型ID")
+    model_name: Mapped[str] = mapped_column(String(128), comment="模型名称")
+    model_version: Mapped[str] = mapped_column(String(32), comment="模型版本")
+    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.ULTRALYTICS, comment="框架")
+    device: Mapped[str] = mapped_column(String(16), default="0", comment="GPU设备ID或cpu")
+    host_port: Mapped[int] = mapped_column(Integer, comment="宿主机端口")
+    container_id: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="Docker容器ID")
+    status: Mapped[str] = mapped_column(String(16), default="pending", comment="deploying/running/stopped/failed")
+    api_url: Mapped[str | None] = mapped_column(String(256), nullable=True, comment="API地址")
+    api_key: Mapped[str] = mapped_column(String(64), comment="API密钥")
+    docker_image: Mapped[str] = mapped_column(String(256), default="ultralytics/ultralytics:latest", comment="Docker镜像")
+    hyperparams: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="推理参数")
+    error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误日志")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="开始时间")
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="完成时间")

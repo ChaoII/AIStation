@@ -325,6 +325,11 @@ async def _ensure_train_menus() -> None:
                               component_path="module_train/predict/index",
                               permission="module_train:predict:query", parent_id=parent.id,
                               status="0", is_deleted=False, title="模型预测"),
+                    MenuModel(name="模型部署", type=2, icon="el-icon-Upload", order=5,
+                              route_name="TrainDeploy", route_path="/train/deploy",
+                              component_path="module_train/deploy/index",
+                              permission="module_train:model:query", parent_id=parent.id,
+                              status="0", is_deleted=False, title="模型部署"),
                 ]
                 for child in children:
                     db.add(child)
@@ -382,6 +387,7 @@ async def _ensure_train_menus() -> None:
             # ── Parent already exists: add any missing sub-menus ──
             missing = [
                 ("模型预测", "TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query"),
+                ("模型部署", "TrainDeploy", "/train/deploy", "module_train/deploy/index", "module_train:model:query"),
                 ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
                 ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
             ]
@@ -693,6 +699,22 @@ def register_exceptions(app: FastAPI) -> None:
     handle_exception(app)
 
 
+def _rate_limit(module: str = "default"):
+    """按模块读取限流参数，生成 RateLimiter 依赖（支持 settings 动态配置）。
+
+    参数:
+    - module (str): 模块名，对应 settings.RATE_LIMIT_OVERRIDES 的 key。
+
+    返回:
+    - Depends(RateLimiter): 对应模块的限流依赖。
+    """
+    from app.config.setting import settings
+    ov = settings.RATE_LIMIT_OVERRIDES.get(module, {})
+    times = ov.get("times", settings.REQUEST_RATE_LIMIT_TIMES)
+    seconds = ov.get("seconds", settings.REQUEST_RATE_LIMIT_SECONDS)
+    return Depends(RateLimiter(times=times, seconds=seconds))
+
+
 def register_routers(app: FastAPI) -> None:
     """
     注册根路由。
@@ -710,15 +732,15 @@ def register_routers(app: FastAPI) -> None:
     from app.api.v1.module_video import _register_video_routers, video_router
 
     _register_video_routers()
-    app.include_router(common_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
-    app.include_router(application_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
-    app.include_router(system_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
-    app.include_router(monitor_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
-    app.include_router(video_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
+    app.include_router(common_router, dependencies=[_rate_limit("common")])
+    app.include_router(application_router, dependencies=[_rate_limit("application")])
+    app.include_router(system_router, dependencies=[_rate_limit("system")])
+    app.include_router(monitor_router, dependencies=[_rate_limit("monitor")])
+    app.include_router(video_router, dependencies=[_rate_limit("video")])
 
     from app.api.v1.module_annotation import _register_annotation_routers, annotation_router
     _register_annotation_routers()
-    app.include_router(annotation_router, dependencies=[Depends(RateLimiter(times=5, seconds=10))])
+    app.include_router(annotation_router, dependencies=[_rate_limit("annotation")])
 
     from app.plugin.module_ai.chat.ws import WS_AI
 
@@ -741,10 +763,10 @@ def register_routers(app: FastAPI) -> None:
     # 先将动态路由注册到应用，使用速率限制器
     from app.core.discover import get_dynamic_router
 
-    # 获取动态路由实例
+    # 获取动态路由实例（train 等插件模块）
     app.include_router(
         router=get_dynamic_router(),
-        dependencies=[Depends(RateLimiter(times=5, seconds=10))],
+        dependencies=[_rate_limit("train")],
     )
 
 

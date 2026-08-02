@@ -1,14 +1,14 @@
 import os
 import re
-import sys
 import tempfile
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import async_db_session
+from app.core.logger import log
 
-from .model import TrainEval, TrainModel, TrainPredict, TrainTask
+from .model import TrainDeploy, TrainEval, TrainModel, TrainPredict, TrainTask
 
 _EPOCH_RE = re.compile(r"^\s*(\d+)/(\d+)\s+")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
@@ -20,13 +20,11 @@ def _strip_ansi(text: str) -> str:
 
 def _calc_progress_from_log(task_id: int) -> int | None:
     log_path = os.path.join(tempfile.gettempdir(), "train_output", str(task_id), "train.log")
-    print(f"[train-progress-log] path={log_path} exists={os.path.isfile(log_path)}", file=sys.stderr, flush=True)
     if not os.path.isfile(log_path):
         return None
     try:
         with open(log_path, "rb") as f:
             size = f.seek(0, 2)
-            print(f"[train-progress-log] size={size}", file=sys.stderr, flush=True)
             if size == 0:
                 return None
             tail_size = min(size, 16384)
@@ -41,16 +39,20 @@ def _calc_progress_from_log(task_id: int) -> int | None:
                 t = int(m.group(2))
                 if e > epoch:
                     epoch, total = e, t
-        print(f"[train-progress-log] result epoch={epoch} total={total}", file=sys.stderr, flush=True)
         if total > 0:
             return int(epoch / total * 100)
     except Exception as e:
-        print(f"[train-progress-log] exception: {e}", file=sys.stderr, flush=True)
+        log.warning(f"[train-progress-log] exception: {e}")
     return None
 
 
 def _model_to_dict(row) -> dict:
-    cols = {c.name: getattr(row, c.name) for c in row.__table__.columns}
+    cols = {}
+    for c in row.__table__.columns:
+        try:
+            cols[c.name] = getattr(row, c.name)
+        except Exception:
+            pass
     for k in ("_sa_instance_state",):
         cols.pop(k, None)
     return cols
@@ -58,11 +60,9 @@ def _model_to_dict(row) -> dict:
 
 def _enrich_task(row) -> dict:
     d = _model_to_dict(row)
-    print(f"[train-progress] task_id={d.get('id')} status={d.get('status')} status_repr={repr(d.get('status'))}", file=sys.stderr, flush=True)
     if d.get("status") == "running":
         live = _calc_progress_from_log(d.get("id", 0))
         if live is not None:
-            print(f"[train-progress] live progress={live}", file=sys.stderr, flush=True)
             d["progress"] = live
     return d
 
@@ -220,12 +220,25 @@ class TrainService:
         page_no = max(1, int((params or {}).get("page_no", 1)))
         page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
         model_repo_id = (params or {}).get("model_repo_id")
+        name = (params or {}).get("name")
+        framework = (params or {}).get("framework")
         status = (params or {}).get("status")
 
         async with async_db_session() as db:
             stmt = select(TrainEval)
             if model_repo_id:
                 stmt = stmt.where(TrainEval.model_repo_id == int(model_repo_id))
+            if name:
+                from .model import TrainModel as TM
+                matched_model_ids = (
+                    await db.execute(select(TM.id).where(TM.name.ilike(f"%{name}%")))
+                ).scalars().all()
+                if matched_model_ids:
+                    stmt = stmt.where(TrainEval.model_id.in_(matched_model_ids))
+                else:
+                    stmt = stmt.where(TrainEval.model_id == -1)
+            if framework:
+                stmt = stmt.where(TrainEval.framework == framework)
             if status:
                 stmt = stmt.where(TrainEval.status == status)
             count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -233,7 +246,7 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainEval.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [dict(r.__dict__) for r in rows], total
+            return [_model_to_dict(r) for r in rows], total
 
     @classmethod
     async def delete_evals(cls, ids: list[int]) -> None:
@@ -245,9 +258,23 @@ class TrainService:
 
     @classmethod
     async def get_eval(cls, eval_id: int) -> dict | None:
+        import os
+        import tempfile
+
         async with async_db_session() as db:
             e = await db.get(TrainEval, eval_id)
-            return dict(e.__dict__) if e else None
+            if not e:
+                return None
+            data = _model_to_dict(e)
+
+            log_path = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id), "eval.log")
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, encoding="utf-8", errors="replace") as f:
+                        data["log"] = f.read()[-500000:]
+                except Exception:
+                    pass
+            return data
 
     @classmethod
     async def create_predict(cls, data, auth) -> dict:
@@ -267,26 +294,50 @@ class TrainService:
 
     @classmethod
     async def get_predict(cls, predict_id: int) -> dict | None:
+        import os
+        import tempfile
+
         async with async_db_session() as db:
             p = await db.get(TrainPredict, predict_id)
-            return dict(p.__dict__) if p else None
+            if not p:
+                return None
+            data = _model_to_dict(p)
+
+            log_path = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id), "predict.log")
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, encoding="utf-8", errors="replace") as f:
+                        data["log"] = f.read()[-500000:]
+                except Exception:
+                    pass
+            return data
 
     @classmethod
     async def list_predicts(cls, params: dict | None = None) -> tuple[list[dict], int]:
         page_no = max(1, int((params or {}).get("page_no", 1)))
         page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
         status = (params or {}).get("status")
+        name = (params or {}).get("name")
 
         async with async_db_session() as db:
             stmt = select(TrainPredict)
             if status:
                 stmt = stmt.where(TrainPredict.status == status)
+            if name:
+                from .model import TrainModel as TM
+                matched_model_ids = (
+                    await db.execute(select(TM.id).where(TM.name.ilike(f"%{name}%")))
+                ).scalars().all()
+                if matched_model_ids:
+                    stmt = stmt.where(TrainPredict.model_id.in_(matched_model_ids))
+                else:
+                    stmt = stmt.where(TrainPredict.model_id == -1)
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await db.execute(count_stmt)).scalar() or 0
             stmt = stmt.order_by(desc(TrainPredict.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [dict(r.__dict__) for r in rows], total
+            return [_model_to_dict(r) for r in rows], total
 
     @classmethod
     async def delete_predicts(cls, ids: list[int]) -> None:
@@ -384,3 +435,77 @@ class TrainService:
         asyncio.create_task(_delayed_cleanup())
 
         return {"download_url": download_url, "format": data.format, "dataset_id": data.dataset_id}
+
+    @classmethod
+    async def create_deploy(cls, data, auth) -> dict:
+        import uuid
+        async with async_db_session.begin() as db:
+            model_rec = await db.get(TrainModel, data.model_id)
+            if not model_rec:
+                raise Exception("模型不存在")
+            d = TrainDeploy(
+                name=data.name or f"{model_rec.name} v{model_rec.version}",
+                model_id=data.model_id,
+                model_name=model_rec.name,
+                model_version=model_rec.version,
+                framework=model_rec.framework,
+                device=data.device,
+                host_port=data.host_port or 0,
+                api_key=uuid.uuid4().hex,
+                hyperparams=data.hyperparams,
+                created_id=auth.user.id,
+            )
+            db.add(d)
+            await db.flush()
+            return TrainService._deploy_to_dict(d)
+
+    @classmethod
+    def _deploy_to_dict(cls, row) -> dict:
+        return {c.name: getattr(row, c.name) for c in row.__table__.columns if hasattr(row, c.name)}
+
+    @classmethod
+    async def list_deploys(cls, params: dict | None = None) -> tuple[list[dict], int]:
+        page_no = max(1, int((params or {}).get("page_no", 1)))
+        page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
+        status = (params or {}).get("status")
+        name = (params or {}).get("name")
+
+        async with async_db_session() as db:
+            stmt = select(TrainDeploy).order_by(desc(TrainDeploy.created_time))
+            if status:
+                stmt = stmt.where(TrainDeploy.status == status)
+            if name:
+                stmt = stmt.where(TrainDeploy.name.ilike(f"%{name}%"))
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+            stmt = stmt.limit(page_size).offset((page_no - 1) * page_size)
+            result = await db.execute(stmt)
+            return [_model_to_dict(r) for r in result.scalars().all()], total
+
+    @classmethod
+    async def get_deploy(cls, deploy_id: int) -> dict | None:
+        async with async_db_session() as db:
+            d = await db.get(TrainDeploy, deploy_id)
+            return _model_to_dict(d) if d else None
+
+    @classmethod
+    async def delete_deploys(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for did in ids:
+                d = await db.get(TrainDeploy, did)
+                if d:
+                    if d.container_id:
+                        from .deploy_executor import stop_deployment
+                        await stop_deployment(d.id)
+                    await db.delete(d)
+
+    @classmethod
+    async def renew_deploy_key(cls, deploy_id: int) -> dict | None:
+        import uuid
+        async with async_db_session.begin() as db:
+            d = await db.get(TrainDeploy, deploy_id)
+            if not d:
+                return None
+            new_key = uuid.uuid4().hex
+            d.api_key = new_key
+            return {"api_key": new_key, "id": d.id}

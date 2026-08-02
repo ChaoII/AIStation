@@ -22,7 +22,7 @@ async def start_prediction(predict_id: int):
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now()
+                status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
             )
         )
     asyncio.create_task(_execute_prediction(predict_id))
@@ -86,8 +86,9 @@ async def _execute_prediction(predict_id: int):
             if not storage_path:
                 raise Exception("model not found or no storage_path")
             if "/export/" in storage_path:
-                from .model import TrainTask
                 from sqlalchemy import desc, select
+
+                from .model import TrainTask
                 task = (await db.execute(
                     select(TrainTask).where(TrainTask.model_repo_id == model_rec.id)
                     .order_by(desc(TrainTask.id)).limit(1)
@@ -158,7 +159,7 @@ async def _execute_prediction(predict_id: int):
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                        status=TrainStatus.CANCELLED, finished_at=datetime.now()
+                        status=TrainStatus.CANCELLED, finished_at=datetime.now(), progress=100
                     )
                 )
         elif exit_code == 0:
@@ -194,6 +195,7 @@ async def _execute_prediction(predict_id: int):
                         result_images=result_images or None,
                         result_zip_path=result_zip_path,
                         finished_at=datetime.now(),
+                        progress=100,
                     )
                 )
         else:
@@ -209,7 +211,7 @@ async def _execute_prediction(predict_id: int):
                 await db.execute(
                     update(TrainPredict).where(TrainPredict.id == predict_id).values(
                         status=TrainStatus.FAILED, log=error_msg or "predict failed",
-                        finished_at=datetime.now(),
+                        finished_at=datetime.now(), progress=100
                     )
                 )
 

@@ -15,6 +15,7 @@ from .schema import (
     DatasetExportSchema,
     ModelExportSchema,
     ModelUpdateSchema,
+    TrainDeployCreateSchema,
     TrainEvalCreateSchema,
     TrainModelCreateSchema,
     TrainPredictCreateSchema,
@@ -46,7 +47,11 @@ async def list_models(
         "page_no": page_no,
         "page_size": page_size,
     })
-    return SuccessResponse(data={"items": data, "total": total})
+    return SuccessResponse(data={
+        "items": data, "total": total,
+        "page_no": page_no, "page_size": page_size,
+        "has_next": page_no * page_size < total,
+    })
 
 
 @router.get("/model/detail/{model_id}", summary="模型详情")
@@ -89,7 +94,11 @@ async def list_tasks(
         "page_no": page_no,
         "page_size": page_size,
     })
-    return SuccessResponse(data={"items": data, "total": total})
+    return SuccessResponse(data={
+        "items": data, "total": total,
+        "page_no": page_no, "page_size": page_size,
+        "has_next": page_no * page_size < total,
+    })
 
 
 @router.get("/task/{task_id}/detail", summary="训练任务详情")
@@ -132,6 +141,19 @@ async def get_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["mod
     return SuccessResponse(data=data)
 
 
+@router.get("/eval/{eval_id}/logs", summary="获取评估日志")
+async def get_eval_logs(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"]))):
+    import tempfile
+    log_path = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id), "eval.log")
+    if not os.path.exists(log_path):
+        eval_rec = await TrainService.get_eval(eval_id)
+        log_content = eval_rec.get("log", "") if eval_rec else ""
+        return SuccessResponse(data={"logs": log_content, "path": log_path})
+    with open(log_path, encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return SuccessResponse(data={"logs": content[-500000:]})
+
+
 @router.post("/eval/{eval_id}/start", summary="开始评估")
 async def start_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
     await start_evaluation(eval_id)
@@ -156,7 +178,9 @@ async def export_dataset(data: DatasetExportSchema, auth: AuthSchema = Depends(A
 
 @router.get("/eval/list", summary="评估记录列表")
 async def list_evals(
-    model_repo_id: int,
+    model_repo_id: int | None = Query(None),
+    name: str | None = Query(None),
+    framework: str | None = Query(None),
     status: str | None = Query(None),
     page_no: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -164,11 +188,17 @@ async def list_evals(
 ):
     data, total = await TrainService.list_evals({
         "model_repo_id": model_repo_id,
+        "name": name,
+        "framework": framework,
         "status": status,
         "page_no": page_no,
         "page_size": page_size,
     })
-    return SuccessResponse(data={"items": data, "total": total})
+    return SuccessResponse(data={
+        "items": data, "total": total,
+        "page_no": page_no, "page_size": page_size,
+        "has_next": page_no * page_size < total,
+    })
 
 
 @router.get("/task/{task_id}/logs", summary="获取训练日志")
@@ -196,23 +226,42 @@ async def create_predict(data: TrainPredictCreateSchema, auth: AuthSchema = Depe
 
 @router.get("/predict/list", summary="预测任务列表")
 async def list_predicts(
+    model_repo_id: int | None = Query(None),
     status: str | None = Query(None),
     page_no: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"])),
 ):
     data, total = await TrainService.list_predicts({
+        "model_repo_id": model_repo_id,
         "status": status,
         "page_no": page_no,
         "page_size": page_size,
     })
-    return SuccessResponse(data={"items": data, "total": total})
+    return SuccessResponse(data={
+        "items": data, "total": total,
+        "page_no": page_no, "page_size": page_size,
+        "has_next": page_no * page_size < total,
+    })
 
 
 @router.get("/predict/{predict_id}/detail", summary="预测详情")
 async def get_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"]))):
     data = await TrainService.get_predict(predict_id)
     return SuccessResponse(data=data)
+
+
+@router.get("/predict/{predict_id}/logs", summary="获取预测日志")
+async def get_predict_logs(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"]))):
+    import tempfile
+    log_path = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id), "predict.log")
+    if not os.path.exists(log_path):
+        pred_rec = await TrainService.get_predict(predict_id)
+        log_content = pred_rec.get("log", "") if pred_rec else ""
+        return SuccessResponse(data={"logs": log_content, "path": log_path})
+    with open(log_path, encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return SuccessResponse(data={"logs": content[-500000:]})
 
 
 @router.post("/predict/{predict_id}/start", summary="开始预测")
@@ -337,3 +386,105 @@ async def update_model(
         return SuccessResponse(data=result, msg="更新成功")
     from app.common.response import ErrorResponse
     return ErrorResponse(msg="模型不存在")
+
+
+@router.post("/deploy/create", summary="创建模型部署")
+async def create_deploy(
+    data: TrainDeployCreateSchema = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .service import TrainService
+    result = await TrainService.create_deploy(data, auth)
+    return SuccessResponse(data=result, msg="部署已创建")
+
+
+@router.post("/deploy/{deploy_id}/start", summary="启动部署")
+async def start_deploy(
+    deploy_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .deploy_executor import start_deployment
+    await start_deployment(deploy_id)
+    return SuccessResponse(data={"id": deploy_id}, msg="部署已启动")
+
+
+@router.post("/deploy/{deploy_id}/stop", summary="停止部署")
+async def stop_deploy(
+    deploy_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .deploy_executor import stop_deployment
+    await stop_deployment(deploy_id)
+    return SuccessResponse(data={"id": deploy_id}, msg="部署已停止")
+
+
+@router.put("/deploy/{deploy_id}/renew-key", summary="重新生成API Key")
+async def renew_deploy_key(
+    deploy_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .service import TrainService
+    result = await TrainService.renew_deploy_key(deploy_id)
+    if not result:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg="部署不存在")
+    return SuccessResponse(data=result, msg="API Key 已重新生成")
+
+
+@router.get("/deploy/list", summary="部署列表")
+async def list_deploys(
+    status: str | None = Query(None),
+    name: str | None = Query(None),
+    page_no: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .service import TrainService
+    data, total = await TrainService.list_deploys({
+        "status": status,
+        "name": name,
+        "page_no": page_no,
+        "page_size": page_size,
+    })
+    return SuccessResponse(data={
+        "items": data, "total": total,
+        "page_no": page_no, "page_size": page_size,
+        "has_next": page_no * page_size < total,
+    })
+
+
+@router.get("/deploy/{deploy_id}/detail", summary="部署详情")
+async def get_deploy(
+    deploy_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    from .service import TrainService
+    data = await TrainService.get_deploy(deploy_id)
+    if not data:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg="部署不存在")
+    return SuccessResponse(data=data)
+
+
+@router.get("/deploy/{deploy_id}/logs", summary="获取部署日志")
+async def get_deploy_logs(
+    deploy_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    import tempfile
+    log_path = os.path.join(tempfile.gettempdir(), "deploy_output", str(deploy_id), "deploy.log")
+    if not os.path.exists(log_path):
+        return SuccessResponse(data={"logs": ""})
+    with open(log_path, encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return SuccessResponse(data={"logs": content[-500000:]})
+
+
+@router.delete("/deploy/delete", summary="删除部署")
+async def delete_deploy(
+    ids: list[int] = Body(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:delete"])),
+):
+    from .service import TrainService
+    await TrainService.delete_deploys(ids)
+    return SuccessResponse(msg="删除成功")
