@@ -10,7 +10,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .docker_utils import pull_image, remove_container, run_container
-from .model import TrainEval, TrainStatus
+from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
 
@@ -59,10 +59,17 @@ class EvalExecutor(TaskExecutor):
             os.makedirs(data_dir, exist_ok=True)
             os.makedirs(model_dir, exist_ok=True)
 
+            # 有效框架：create_eval 未持久化 framework 时，从模型版本推断
+            framework = eval_rec.framework or TrainFramework.ULTRALYTICS
+            async with async_db_session() as db:
+                model_row = await db.get(TrainModel, eval_rec.model_id)
+                if model_row and model_row.framework:
+                    framework = model_row.framework
+
             # Export evaluation dataset
             from .exporter import prepare_training_data_for_task
             await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
-            await prepare_training_data_for_task(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
+            await prepare_training_data_for_task(eval_rec.eval_dataset_id, eval_id, framework.value, data_dir)
 
             # Download model file from RustFS（统一解析：/export/ 导出产物自动回溯原始 best.pt）
             from .service import TrainService
@@ -76,7 +83,7 @@ class EvalExecutor(TaskExecutor):
             with open(model_local_path, "wb") as f:
                 f.write(model_data.read())
 
-            # Build command
+            # Build command by framework
             hp = eval_rec.hyperparams or {}
             imgsz = hp.get("imgsz", 640)
             batch = hp.get("batch", 16)
@@ -84,18 +91,28 @@ class EvalExecutor(TaskExecutor):
             iou = hp.get("iou", 0.6)
             device = hp.get("device", "0")
 
-            cmd = [
-                "yolo", "val",
-                f"model=/model/{model_filename}",
-                "data=/data/dataset.yaml",
-                f"imgsz={imgsz}",
-                f"batch={batch}",
-                f"conf={conf}",
-                f"iou={iou}",
-            ]
+            if framework == TrainFramework.PADDLEX:
+                docker_image = "paddlecloud/paddlex:3.0"
+                cmd = [
+                    "paddlex", "--eval",
+                    f"--model=/model/{model_filename}",
+                    "--data", "/data",
+                    "--device", str(device),
+                ]
+            else:
+                docker_image = DOCKER_IMAGE
+                cmd = [
+                    "yolo", "val",
+                    f"model=/model/{model_filename}",
+                    "data=/data/dataset.yaml",
+                    f"imgsz={imgsz}",
+                    f"batch={batch}",
+                    f"conf={conf}",
+                    f"iou={iou}",
+                ]
 
             container = await run_container(
-                DOCKER_IMAGE, cmd,
+                docker_image, cmd,
                 volumes={
                     data_dir: {"bind": "/data", "mode": "rw"},
                     model_dir: {"bind": "/model", "mode": "ro"},

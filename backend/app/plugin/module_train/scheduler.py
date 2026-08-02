@@ -145,7 +145,7 @@ def _build_paddlex_cmd(hp: dict, data_dir: str, export_dir: str) -> list[str]:
     batch = hp.get("batch", 16)
     lr = hp.get("lr", 0.01)
     model_name = hp.get("model", "PP-YOLOE")
-    return ["paddlex", "--model", model_name, "--data", "/data",
+    return ["paddlex", "--train", "--model", model_name, "--data", "/data",
             "--epochs", str(epochs), "--batch", str(batch), "--lr", str(lr),
             "--output", "/output"]
 
