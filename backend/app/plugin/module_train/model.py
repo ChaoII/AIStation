@@ -22,8 +22,20 @@ class TrainFramework(str, enum.Enum):
     ULTRALYTICS = "ultralytics"
 
 
+class TrainModelRepo(ModelMixin, UserMixin):
+    """模型仓库：以模型名称聚合的一组版本。"""
+    __tablename__ = "train_model_repos"
+    name: Mapped[str] = mapped_column(String(128), unique=True, comment="模型名称（仓库唯一）")
+    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), comment="训练框架")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")
+    latest_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="最新版本ID")
+    annotation_dataset_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="来源数据集ID")
+    status: Mapped[str] = mapped_column(String(16), default="draft", comment="draft/released/archived")
+
+
 class TrainModel(ModelMixin, UserMixin):
     __tablename__ = "train_models"
+    repo_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="所属仓库ID")
     name: Mapped[str] = mapped_column(String(128), comment="模型名称")
     framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), comment="训练框架")
     version: Mapped[str] = mapped_column(String(32), comment="语义版本号")
