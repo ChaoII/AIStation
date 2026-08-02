@@ -50,21 +50,25 @@ class EvalExecutor(TaskExecutor):
                 if not eval_rec:
                     return
 
-            await broadcast_eval_log(eval_id, f"[eval] pulling image {DOCKER_IMAGE}...")
-            await pull_image(DOCKER_IMAGE)
-
-            export_dir = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id))
-            data_dir = os.path.join(export_dir, "data")
-            model_dir = os.path.join(export_dir, "model")
-            os.makedirs(data_dir, exist_ok=True)
-            os.makedirs(model_dir, exist_ok=True)
-
             # 有效框架：create_eval 未持久化 framework 时，从模型版本推断
             framework = eval_rec.framework or TrainFramework.ULTRALYTICS
             async with async_db_session() as db:
                 model_row = await db.get(TrainModel, eval_rec.model_id)
                 if model_row and model_row.framework:
                     framework = model_row.framework
+
+            # 先解析框架再拉取对应镜像，确保 paddlex 镜像也会被拉取
+            docker_image = (
+                "paddlecloud/paddlex:3.0" if framework == TrainFramework.PADDLEX else DOCKER_IMAGE
+            )
+            await broadcast_eval_log(eval_id, f"[eval] pulling image {docker_image}...")
+            await pull_image(docker_image)
+
+            export_dir = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id))
+            data_dir = os.path.join(export_dir, "data")
+            model_dir = os.path.join(export_dir, "model")
+            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(model_dir, exist_ok=True)
 
             # Export evaluation dataset
             from .exporter import prepare_training_data_for_task
@@ -92,7 +96,6 @@ class EvalExecutor(TaskExecutor):
             device = hp.get("device", "0")
 
             if framework == TrainFramework.PADDLEX:
-                docker_image = "paddlecloud/paddlex:3.0"
                 cmd = [
                     "paddlex", "--eval",
                     f"--model=/model/{model_filename}",
@@ -100,7 +103,6 @@ class EvalExecutor(TaskExecutor):
                     "--device", str(device),
                 ]
             else:
-                docker_image = DOCKER_IMAGE
                 cmd = [
                     "yolo", "val",
                     f"model=/model/{model_filename}",

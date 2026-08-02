@@ -51,8 +51,19 @@ class PredictExecutor(TaskExecutor):
                 if not pred:
                     return
 
-            await broadcast_predict_log(predict_id, f"[predict] pulling image {DOCKER_IMAGE}...")
-            await pull_image(DOCKER_IMAGE)
+            # 有效框架：create_predict 未持久化 framework 时，从模型版本推断
+            framework = pred.framework or TrainFramework.ULTRALYTICS
+            async with async_db_session() as db:
+                model_row = await db.get(TrainModel, pred.model_id)
+                if model_row and model_row.framework:
+                    framework = model_row.framework
+
+            # 先解析框架再拉取对应镜像，确保 paddlex 镜像也会被拉取
+            docker_image = (
+                "paddlecloud/paddlex:3.0" if framework == TrainFramework.PADDLEX else DOCKER_IMAGE
+            )
+            await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
+            await pull_image(docker_image)
 
             export_dir = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id))
             source_dir = os.path.join(export_dir, "source")
@@ -61,13 +72,6 @@ class PredictExecutor(TaskExecutor):
             os.makedirs(source_dir, exist_ok=True)
             os.makedirs(output_dir, exist_ok=True)
             os.makedirs(model_dir, exist_ok=True)
-
-            # 有效框架：create_predict 未持久化 framework 时，从模型版本推断
-            framework = pred.framework or TrainFramework.ULTRALYTICS
-            async with async_db_session() as db:
-                model_row = await db.get(TrainModel, pred.model_id)
-                if model_row and model_row.framework:
-                    framework = model_row.framework
 
             # Prepare source images
             from app.utils.s3_client import s3_client
@@ -110,7 +114,6 @@ class PredictExecutor(TaskExecutor):
             device = hp.get("device", "0")
 
             if framework == TrainFramework.PADDLEX:
-                docker_image = "paddlecloud/paddlex:3.0"
                 cmd = [
                     "paddlex", "--predict",
                     f"--model=/model/{model_filename}",
@@ -119,7 +122,6 @@ class PredictExecutor(TaskExecutor):
                     "--device", str(device),
                 ]
             else:
-                docker_image = DOCKER_IMAGE
                 cmd = [
                     "yolo", "predict",
                     f"model=/model/{model_filename}",
