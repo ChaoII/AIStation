@@ -100,7 +100,7 @@
             </ElCol>
             <ElCol :span="12">
               <ElFormItem label="Learning Rate">
-                <ElInputNumber v-model="hpForm.lr" :min="0.0001" :max="1" :step="0.001" :precision="4" style="width:100%" />
+                <ElInputNumber v-model="hpForm.lr0" :min="0.0001" :max="1" :step="0.001" :precision="4" style="width:100%" />
               </ElFormItem>
             </ElCol>
             <ElCol :span="12">
@@ -411,7 +411,9 @@ function onFrameworkChange() {
 }
 
 function buildHyperparams(): Record<string, any> {
-  return { ...hpForm, lr0: hpForm.lr0 ?? 0.01, train_ratio: (hpForm.trainRatio || 80) / 100 };
+  const hp: Record<string, any> = { ...hpForm, lr0: hpForm.lr0 ?? 0.01, train_ratio: (hpForm.trainRatio || 80) / 100 };
+  if (!isClassificationTask.value) delete hp.multi_label;
+  return hp;
 }
 
 const tempDir = ref("${TEMP_DIR}");

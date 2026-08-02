@@ -59,7 +59,7 @@ async def _export_core(
     if framework == "ultralytics" or framework.startswith("yolo-"):
         if framework.startswith("yolo-"):
             task_type = framework.replace("yolo-", "")
-        if task_type == "cls":
+        if task_type in ("cls", "classification"):
             await _export_yolo_cls(
                 dataset_id, task_id, images, output_dir, annotation_task_id,
                 train_ratio=train_ratio, class_names=class_names, for_training=for_training,
@@ -169,6 +169,19 @@ def _write_yaml(path: str, base_path: str, sorted_classes: list, class_names: di
             f.write(f"names: {json.dumps(sorted_classes)}\n")
 
 
+def _write_yolo_cls_yaml(output_dir: str, for_training: bool) -> None:
+    """Write minimal dataset.yaml for classification.
+
+    YOLO cls reads class names from the directory structure (single-label) or
+    per-image label files (multi-label), so only path/train/val are required.
+    """
+    base_path = "/data" if for_training else "."
+    with open(os.path.join(output_dir, "dataset.yaml"), "w") as f:
+        f.write(f"path: {base_path}\n")
+        f.write("train: train\n")
+        f.write("val: val\n")
+
+
 async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, multi_label: bool = False) -> None:
     """Export classification to YOLO CLS format with train/val split.
 
@@ -228,6 +241,7 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                 stem = os.path.splitext(img.filename)[0]
                 with open(os.path.join(lbl_dir, stem + ".txt"), "w") as f:
                     f.write("\n".join(str(cid) for cid in sorted(set(ids))))
+        _write_yolo_cls_yaml(output_dir, for_training)
         log.info(f"yolo-cls (multi): exported to {output_dir}")
         return
 
@@ -251,6 +265,7 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                         f.write(data.read())
                 except Exception:
                     continue
+    _write_yolo_cls_yaml(output_dir, for_training)
     log.info(f"yolo-cls: exported to {output_dir}")
 
 

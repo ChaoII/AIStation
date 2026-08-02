@@ -153,7 +153,10 @@ _ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
 }
 
 
-def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection") -> list[str]:
+def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None) -> list[str]:
+    hp = dict(hp)
+    if force_multi_label is not None:
+        hp["multi_label"] = force_multi_label
     model_name = hp.get("model") or "yolo11n.pt"
     # Auto-select OBB model for rotated_detection tasks
     if task_type == "rotated_detection" and "-obb" not in model_name:
@@ -186,13 +189,18 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
     """按框架构建训练命令。"""
     if task.framework == TrainFramework.ULTRALYTICS:
         task_type = "detection"
+        force_multi_label = None
         if task.annotation_task_id:
             from app.api.v1.module_annotation.task.model import AnnotationTaskModel
             async with async_db_session() as db:
                 ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
                 if ann_task:
                     task_type = ann_task.task_type
-        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type)
+                    # The data export is authoritative on classification_mode; keep the CLI flag
+                    # in sync so a "multi" task always trains with multi_label=True.
+                    if task_type in ("cls", "classification") and ann_task.classification_mode == "multi":
+                        force_multi_label = True
+        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label)
     raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
