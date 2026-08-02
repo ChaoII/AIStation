@@ -1,13 +1,16 @@
 import asyncio
 import os
+import socket
 import tempfile
 from datetime import datetime
 
-from sqlalchemy import update
+import httpx
+from sqlalchemy import select, update
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .docker_utils import client as docker_client
 from .docker_utils import follow_container_logs, pull_image, remove_container, run_container
 from .model import TrainDeploy, TrainModel
 
@@ -85,6 +88,9 @@ if __name__ == "__main__":
 
 async def start_deployment(deploy_id: int):
     async with async_db_session.begin() as db:
+        row = await db.get(TrainDeploy, deploy_id)
+        if not row or row.status in ("deploying", "running"):
+            return
         await db.execute(
             update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
                 status="deploying", started_at=datetime.now()
@@ -95,9 +101,11 @@ async def start_deployment(deploy_id: int):
 
 async def stop_deployment(deploy_id: int):
     entry = _deploy_running.get(deploy_id)
-    if entry and entry.get("container_id"):
-        from .docker_utils import stop_container
-        await stop_container(entry["container_id"])
+    if entry:
+        entry["cancel"] = True
+        if entry.get("container_id"):
+            from .docker_utils import stop_container
+            await stop_container(entry["container_id"])
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
@@ -106,13 +114,106 @@ async def stop_deployment(deploy_id: int):
         )
 
 
-def _find_available_port(start: int = 9001, end: int = 9999) -> int:
-    import socket
+def _is_host_port_used(port: int) -> bool:
+    """探测宿主机端口是否已被占用（127.0.0.1）。"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _docker_published_host_ports() -> set[int]:
+    """收集 Docker 所有容器（含已停止）已发布的宿主机端口，避免端口竞态。"""
+    used: set[int] = set()
+    try:
+        for c in docker_client.containers.list(all=True):
+            bindings = (c.attrs or {}).get("HostConfig", {}).get("PortBindings") or {}
+            for _, host_bindings in bindings.items():
+                for b in host_bindings:
+                    try:
+                        used.add(int(b["HostPort"]))
+                    except (KeyError, TypeError, ValueError):
+                        continue
+    except Exception as e:
+        log.debug(f"cannot list docker published ports: {e}")
+    return used
+
+
+def _find_available_port(start: int = 9001, end: int = 9999, excluded: set[int] | None = None) -> int:
+    """在 [start, end] 内寻找可用端口。
+
+    同时排除：调用方传入的已预留端口、Docker 已发布端口、以及本机 socket 已占用端口。
+    """
+    used = set(excluded or ())
+    used |= _docker_published_host_ports()
     for port in range(start, end + 1):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("127.0.0.1", port)) != 0:
-                return port
-    raise Exception("no available port found in range 9001-9999")
+        if port in used:
+            continue
+        if not _is_host_port_used(port):
+            return port
+    raise Exception(f"no available port found in range {start}-{end}")
+
+
+def _container_exists(container_id: str | None) -> bool:
+    """判断容器是否仍存在于 Docker 中。"""
+    if not container_id:
+        return False
+    try:
+        docker_client.containers.get(container_id)
+        return True
+    except Exception:
+        return False
+
+
+async def _wait_server_healthy(container, host_port: int, timeout: int = 60, interval: float = 2.0) -> str:
+    """轮询推理服务 /health 直至就绪。返回空串表示健康，否则返回失败原因。"""
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        while True:
+            try:
+                status = await loop.run_in_executor(None, lambda: container.status)
+                if status in ("exited", "dead"):
+                    return f"container exited with status {status} before health check passed"
+            except Exception as e:
+                return f"container status check failed: {e}"
+            try:
+                resp = await client.get(f"http://127.0.0.1:{host_port}/health")
+                if resp.status_code == 200:
+                    return ""
+            except Exception:
+                pass
+            if loop.time() >= deadline:
+                return "deploy health check timeout"
+            await asyncio.sleep(interval)
+
+
+async def recover_orphan_deploys() -> None:
+    """回收孤儿部署：running/deploying 但容器不存在的部署 → 标记 failed。
+
+    后端重启后，在途部署的容器丢失或从未存在（部署中崩溃），状态会永久卡在
+    running/deploying，需要一次性回收。
+    """
+    async with async_db_session() as db:
+        rows = (await db.execute(
+            select(TrainDeploy).where(TrainDeploy.status.in_(("running", "deploying")))
+        )).scalars().all()
+    for d in rows:
+        if _container_exists(d.container_id):
+            continue
+        async with async_db_session.begin() as db:
+            await db.execute(
+                update(TrainDeploy).where(TrainDeploy.id == d.id).values(
+                    status="failed", error_log="deploy 会话已断开（容器丢失）",
+                    finished_at=datetime.now(), container_id=None
+                )
+            )
+        log.info(f"deploy {d.id} marked failed: container lost or session disconnected")
+
+
+async def start_deploy_recovery() -> None:
+    try:
+        await recover_orphan_deploys()
+    except Exception as e:
+        log.error(f"deploy orphan recovery failed: {e}")
 
 
 async def _execute_deployment(deploy_id: int):
@@ -162,9 +263,15 @@ async def _execute_deployment(deploy_id: int):
         with open(server_path, "w", encoding="utf-8") as f:
             f.write(server_script)
 
-        # Determine port
-        host_port = deploy.host_port or _find_available_port()
-        if not deploy.host_port:
+        # Determine port（自动选端口时同时排除 DB 已预留 + Docker 已发布 + socket 已占用）
+        host_port = deploy.host_port
+        if not host_port:
+            async with async_db_session() as db:
+                rows = (await db.execute(
+                    select(TrainDeploy.host_port).where(TrainDeploy.host_port > 0)
+                )).scalars().all()
+            reserved = set(rows)
+            host_port = _find_available_port(excluded=reserved)
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(host_port=host_port)
@@ -193,6 +300,22 @@ async def _execute_deployment(deploy_id: int):
                     status="running"
                 )
             )
+
+        # 健康探活：等待推理服务就绪（最多 60s）；异常则标记 failed 并清理
+        probe_error = await _wait_server_healthy(container, host_port)
+        if probe_error:
+            log.error(f"deploy {deploy_id} health probe failed: {probe_error}")
+            await remove_container(container_id)
+            if not _deploy_running.get(deploy_id, {}).get("cancel"):
+                async with async_db_session.begin() as db:
+                    await db.execute(
+                        update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
+                            status="failed", error_log=probe_error,
+                            finished_at=datetime.now(), container_id=None
+                        )
+                    )
+            return
+        log.info(f"deploy {deploy_id} healthy at http://127.0.0.1:{host_port}/health")
 
         log_queue = await follow_container_logs(container_id)
         log_file = os.path.join(export_dir, "deploy.log")

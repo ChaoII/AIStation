@@ -544,6 +544,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_prediction_scheduler())
         log.info("✅ 预测调度器已启动")
 
+        from app.plugin.module_train.deploy_executor import start_deploy_recovery
+        asyncio.create_task(start_deploy_recovery())
+        log.info("✅ 部署孤儿回收已启动")
+
         try:
             from sqlalchemy import text
 
@@ -792,7 +796,7 @@ def register_files(app: FastAPI) -> None:
             app=StaticFiles(directory=settings.STATIC_ROOT),
             name=settings.STATIC_DIR,
         )
-     # 挂载录制文件目录 — try simpler path
+    # 挂载录制文件目录 — try simpler path
     from pathlib import Path
 
     from fastapi.responses import FileResponse
