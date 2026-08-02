@@ -166,7 +166,7 @@
     <ElCard v-if="task?.status === 'success' && task?.model_repo_id" shadow="never" class="section-card">
       <template #header><span class="card-title">模型输出</span></template>
       <ElDescriptions :column="2" size="small" border>
-        <ElDescriptionsItem label="模型仓库 ID"><ElTag size="small">{{ task.model_repo_id }}</ElTag></ElDescriptionsItem>
+        <ElDescriptionsItem label="模型版本 ID"><ElTag size="small">{{ task.model_repo_id }}</ElTag></ElDescriptionsItem>
       </ElDescriptions>
       <div style="margin-top: 12px">
         <ElButton type="primary" size="default" @click="handleViewModel">查看模型</ElButton>
@@ -461,13 +461,32 @@ async function handleRetrain() {
     /* */
   } finally { submitting.value = false; }
 }
-function handleViewModel() {
-  if (task.value?.model_repo_id) router.push(`/train/repo?model_id=${task.value.model_repo_id}`);
-  else ElMessage.warning("暂无关联模型");
+async function handleViewModel() {
+  if (task.value?.model_repo_id) {
+    try {
+      const resp = await TrainAPI.detailModelRepoOfVersion(task.value.model_repo_id);
+      const repo = resp.data?.data;
+      if (repo?.repo_id) router.push(`/train/repo?repo_id=${repo.repo_id}`);
+      else router.push("/train/repo");
+    } catch {
+      router.push("/train/repo");
+    }
+  } else {
+    ElMessage.warning("暂无关联模型");
+  }
 }
-function handleEvaluate() {
-  if (task.value?.model_repo_id) router.push(`/train/eval?model_repo_id=${task.value.model_repo_id}`);
-  else ElMessage.warning("暂无关联模型，请先完成训练");
+async function handleEvaluate() {
+  if (task.value?.model_repo_id) {
+    try {
+      const resp = await TrainAPI.detailModelRepoOfVersion(task.value.model_repo_id);
+      const repo = resp.data?.data;
+      router.push(`/train/eval?model_repo_id=${repo?.repo_id ?? ""}`);
+    } catch {
+      router.push(`/train/eval?model_repo_id=${task.value.model_repo_id}`);
+    }
+  } else {
+    ElMessage.warning("暂无关联模型，请先完成训练");
+  }
 }
 
 onMounted(async () => {

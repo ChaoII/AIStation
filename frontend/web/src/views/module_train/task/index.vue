@@ -139,7 +139,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, h, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElProgress, ElTag } from "element-plus";
 import { useTable } from "@/hooks/core/useTable";
 import { useCrudDialog } from "@/hooks/core/useCrudDialog";
@@ -159,8 +159,11 @@ import { AnnotationAPI } from "@/api/module_annotation";
 
 defineOptions({ name: "TrainTask", inheritAttrs: false });
 
+const route = useRoute();
 const router = useRouter();
 const { hasAuth } = useAuth();
+let routeBaseModelId = Number(route.query.base_model_id || 0);
+const routeFramework = String(route.query.framework || "");
 
 const datasets = ref<any[]>([]);
 const annoTasks = ref<any[]>([]);
@@ -411,10 +414,22 @@ const { submitLoading, handleCloseDialog, handleOpenDialog, handleSubmit } = use
   dataFormRef,
   formRenderKey: formRenderKey,
   createApi: async (form) => {
-    await TrainAPI.createTask({ ...form, hyperparams: buildHyperparams() });
+    await TrainAPI.createTask({
+      ...form,
+      hyperparams: buildHyperparams(),
+      base_model_id: routeBaseModelId || undefined,
+    });
   },
   titles: { create: "新建训练任务" },
-  onCreateSuccess: async () => { await refreshCreate(); },
+  onCreateSuccess: async () => { routeBaseModelId = 0; await refreshCreate(); },
+});
+
+onMounted(() => {
+  if (routeBaseModelId) {
+    const extra: Record<string, unknown> = {};
+    if (routeFramework && ["ultralytics", "paddlex"].includes(routeFramework)) extra.framework = routeFramework;
+    handleOpenDialog("create", undefined, extra);
+  }
 });
 
 const formItems = computed<FormItem[]>(() => [

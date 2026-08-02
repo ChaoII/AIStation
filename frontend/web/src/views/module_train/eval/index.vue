@@ -76,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, h } from "vue";
+import { ref, reactive, computed, h, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElTag, ElProgress } from "element-plus";
 import { useTable } from "@/hooks/core/useTable";
@@ -92,7 +92,7 @@ import type { SearchFormItem } from "@/components/forms/fa-search-bar/index.vue"
 import type { FormItem } from "@/components/forms/fa-form/index.vue";
 import FaSearchBar from "@/components/forms/fa-search-bar/index.vue";
 import FaForm from "@/components/forms/fa-form/index.vue";
-import { TrainAPI, type TrainEvalTable, type TrainEvalForm, type TablePageQuery } from "@/api/module_train";
+import { TrainAPI, type TrainEvalTable, type TrainEvalForm, type TablePageQuery, type TrainModelRepoTable, type TrainModelVersionTable } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
 defineOptions({ name: "TrainEval", inheritAttrs: false });
@@ -101,19 +101,53 @@ const route = useRoute();
 const router = useRouter();
 const { hasAuth } = useAuth();
 const modelRepoId = Number(route.query.model_repo_id || 0);
+const modelVersionId = Number(route.query.model_id || 0);
+let presetVersionId = modelVersionId || 0;
 
 const datasets = ref<any[]>([]);
-const modelVersions = ref<any[]>([]);
+const modelRepos = ref<TrainModelRepoTable[]>([]);
+const versionOptions = ref<TrainModelVersionTable[]>([]);
+const versionLookup = reactive<Record<number, { name?: string; version?: string }>>({});
 AnnotationAPI.listDataset({ page_no: 1, page_size: 100 })
   .then(r => { datasets.value = r.data?.data?.items || []; })
   .catch(() => {});
-TrainAPI.listModel({ page_no: 1, page_size: 100 })
-  .then(r => { modelVersions.value = r.data?.data?.items || []; })
+TrainAPI.listModelRepos({ page_no: 1, page_size: 100 })
+  .then(r => { modelRepos.value = r.data?.data?.items || []; })
   .catch(() => {});
 
 function getModelName(modelId?: number) {
-  const m = modelVersions.value.find((x: any) => x.id === modelId);
-  return m ? `${m.name} v${m.version}` : `#${modelId}`;
+  const v = versionLookup[modelId || 0];
+  if (!v) return `#${modelId}`;
+  return v.name ? `${v.name} v${v.version}` : `v${v.version}`;
+}
+
+async function loadVersionsForRepo(repoId: number) {
+  versionOptions.value = [];
+  formData.value.model_id = undefined;
+  if (!repoId) return;
+  try {
+    const r = await TrainAPI.listModelVersions(repoId);
+    versionOptions.value = r.data?.data || [];
+    versionOptions.value.forEach(v => { if (v.id) versionLookup[v.id] = { name: v.name, version: v.version }; });
+    if (presetVersionId && versionOptions.value.some(v => v.id === presetVersionId)) {
+      formData.value.model_id = presetVersionId;
+      presetVersionId = 0;
+    }
+  } catch {
+    /* */
+  }
+}
+
+function buildVersionLookup(rows: TrainEvalTable[]) {
+  const repoIds = new Set<number>();
+  rows.forEach(r => { if (r.model_repo_id) repoIds.add(r.model_repo_id); });
+  repoIds.forEach(repoId => {
+    TrainAPI.listModelVersions(repoId)
+      .then(r => {
+        (r.data?.data || []).forEach(v => { if (v.id) versionLookup[v.id] = { name: v.name, version: v.version }; });
+      })
+      .catch(() => {});
+  });
 }
 
 function statusTag(s?: string) {
@@ -277,18 +311,27 @@ async function handleBatchDelete() {
 const { dialogVisible } = useCrudDialog();
 const formData = ref<TrainEvalForm>({
   model_repo_id: modelRepoId || undefined,
-  model_id: undefined,
+  model_id: modelVersionId || undefined,
   eval_dataset_id: undefined,
   hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" },
 });
 const initialFormData: TrainEvalForm = {
   model_repo_id: modelRepoId || undefined,
-  model_id: undefined,
+  model_id: modelVersionId || undefined,
   eval_dataset_id: undefined,
   hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" },
 };
 
+watch(
+  () => formData.value.model_repo_id,
+  (repoId) => {
+    loadVersionsForRepo(repoId || 0);
+  },
+  { immediate: true }
+);
+
 const rules = reactive({
+  model_repo_id: [{ required: true, message: "请选择模型仓库", trigger: "change" }],
   model_id: [{ required: true, message: "请选择模型版本", trigger: "change" }],
   eval_dataset_id: [{ required: true, message: "请选择评估数据集", trigger: "change" }],
 });
@@ -303,7 +346,7 @@ const { submitLoading, handleCloseDialog, handleOpenDialog, handleSubmit } = use
   dataFormRef,
   formRenderKey: formRenderKey,
   createApi: async (form) => {
-    await TrainAPI.createEval({ ...form, model_repo_id: modelRepoId || form.model_repo_id });
+    await TrainAPI.createEval({ ...form });
   },
   titles: { create: "创建评估" },
   onCreateSuccess: async () => { await refreshCreate(); },
@@ -311,11 +354,18 @@ const { submitLoading, handleCloseDialog, handleOpenDialog, handleSubmit } = use
 
 const formItems = computed<FormItem[]>(() => [
   {
+    label: "模型仓库",
+    key: "model_repo_id",
+    type: "select",
+    span: 24,
+    props: { placeholder: "请选择模型仓库", filterable: true, options: modelRepos.value.map(r => ({ label: r.name, value: r.id })) },
+  },
+  {
     label: "模型版本",
     key: "model_id",
     type: "select",
     span: 24,
-    props: { placeholder: "请选择模型版本", filterable: true, options: modelVersions.value.map(m => ({ label: `${m.name} v${m.version}`, value: m.id })) },
+    props: { placeholder: "请选择模型版本", filterable: true, clearable: true, options: versionOptions.value.map(v => ({ label: `${v.name} v${v.version}`, value: v.id })) },
   },
   {
     label: "评估数据集",
@@ -362,6 +412,7 @@ const { columns, columnChecks, data, loading, pagination, searchParams, getData,
       },
     ],
   },
+  hooks: { onSuccess: (rows) => buildVersionLookup(rows as TrainEvalTable[]) },
 });
 
 function handleSearch(params: { name?: string; framework?: string; status?: string }) {

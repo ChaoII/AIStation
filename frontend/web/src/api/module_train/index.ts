@@ -14,6 +14,28 @@ export interface TrainModelTable extends BaseType {
   annotation_dataset_id?: number;
 }
 
+export interface TrainModelRepoTable extends BaseType {
+  name?: string;
+  framework?: string;
+  description?: string;
+  latest_version_id?: number;
+  version_count?: number;
+  annotation_dataset_id?: number;
+}
+
+export interface TrainModelVersionTable extends BaseType {
+  repo_id?: number;
+  name?: string;
+  framework?: string;
+  version?: string;
+  description?: string;
+  storage_path?: string;
+  format?: string;
+  export_format?: string;
+  metrics?: Record<string, unknown> | null;
+  annotation_dataset_id?: number;
+}
+
 export interface TrainModelForm extends BaseFormType {
   name?: string;
   framework?: string;
@@ -49,6 +71,7 @@ export interface TrainTaskForm extends BaseFormType {
   framework?: string;
   dataset_id?: number;
   annotation_task_id?: number;
+  base_model_id?: number;
   hyperparams?: Record<string, unknown>;
 }
 
@@ -123,6 +146,31 @@ export const TrainAPI = {
       url: `${API_PATH}/model/list`,
       method: "get",
       params: query,
+    });
+  },
+  listModelRepos(query?: TablePageQuery) {
+    return request<ApiResponse<PageResult<TrainModelRepoTable>>>({
+      url: `${API_PATH}/model/repos`,
+      method: "get",
+      params: query,
+    });
+  },
+  listModelVersions(repoId: number) {
+    return request<ApiResponse<TrainModelVersionTable[]>>({
+      url: `${API_PATH}/model/${repoId}/versions`,
+      method: "get",
+    });
+  },
+  detailModelRepoOfVersion(versionId: number) {
+    return request<ApiResponse<{ repo_id: number; repo_name: string }>>({
+      url: `${API_PATH}/model/version/${versionId}/repo`,
+      method: "get",
+    });
+  },
+  downloadModel(modelId: number) {
+    return request<ApiResponse<{ download_url: string; format: string }>>({
+      url: `${API_PATH}/model/${modelId}/download`,
+      method: "get",
     });
   },
   detailModel(query: number) {

@@ -10,7 +10,6 @@
       :show-expand="true"
       :show-reset="true"
       :show-search="true"
-      :disabled-search="false"
       :default-expanded="false"
       @search="handleSearch"
       @reset="onResetSearch"
@@ -26,10 +25,8 @@
         <template #left>
           <FaTableHeaderLeft
             :remove-ids="selectedIds"
-            :perm-create="['module_train:model:create']"
             :perm-delete="['module_train:model:delete']"
             :delete-loading="batchDeleting"
-            @add="handleOpenDialog('create')"
             @delete="handleBatchDelete"
           />
         </template>
@@ -47,58 +44,35 @@
       />
     </ElCard>
 
-    <FaDialog
-      v-model="dialogVisible.visible"
-      :title="dialogVisible.title"
-      width="560px"
-      :form-mode="dialogVisible.type"
-      :confirm-loading="submitLoading"
-      @cancel="handleCloseDialog"
-      @confirm="handleSubmit"
-    >
-      <FaForm
-        :key="formRenderKey"
-        scrollbar
-        max-height="75vh"
-        ref="dataFormRef"
-        v-model="formData"
-        :items="formItems"
-        :rules="rules"
-        label-suffix=":"
-        :label-width="120"
-        label-position="right"
-        :span="24"
-        :gutter="16"
-        :show-reset="false"
-        :show-submit="false"
-      >
-        <template #framework>
-          <ElRadioGroup v-model="formData.framework">
-            <ElRadio value="ultralytics">Ultralytics</ElRadio>
-            <ElRadio value="paddlex">PaddleX</ElRadio>
-          </ElRadioGroup>
-        </template>
-        <template #status>
-          <ElSelect v-model="formData.status" style="width: 100%">
-            <ElOption label="草稿" value="draft" />
-            <ElOption label="已发布" value="released" />
-            <ElOption label="已归档" value="archived" />
-          </ElSelect>
-        </template>
-      </FaForm>
-    </FaDialog>
+    <ElDrawer v-model="versionsDrawer.visible" :title="`${versionsDrawer.repoName} · 版本列表`" size="600px">
+      <ElTable v-loading="versionsLoading" :data="versionItems" border stripe>
+        <ElTableColumn prop="version" label="版本" width="80" />
+        <ElTableColumn label="mAP50" width="100" align="center">
+          <template #default="{ row }">{{ row.metrics?.map50 != null ? Number(row.metrics.map50).toFixed(3) : "-" }}</template>
+        </ElTableColumn>
+        <ElTableColumn prop="format" label="格式" width="110" align="center" />
+        <ElTableColumn prop="created_time" label="创建时间" min-width="150" show-overflow-tooltip />
+        <ElTableColumn label="操作" width="240" fixed="right">
+          <template #default="{ row }">
+            <ElButton link type="primary" size="small" @click="goEval(versionsDrawer.repoId, row)">评估</ElButton>
+            <ElButton link type="success" size="small" @click="goPredict(versionsDrawer.repoId, row)">推理</ElButton>
+            <ElButton link type="warning" size="small" @click="openExport(row)">导出</ElButton>
+            <ElButton link type="info" size="small" @click="downloadVersion(row)">下载</ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+      <ElEmpty v-if="!versionsLoading && versionItems.length === 0" :image-size="60" description="该仓库暂无版本" />
+    </ElDrawer>
 
     <ModelExportDialog ref="exportDialogRef" :model-id="exportModelId" :model-name="exportModelName" @done="refreshData" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, h } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, computed, h, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElTag } from "element-plus";
 import { useTable } from "@/hooks/core/useTable";
-import { useCrudDialog } from "@/hooks/core/useCrudDialog";
-import { useCrudForm } from "@/hooks/core/useCrudForm";
 import { useTableSelection } from "@/hooks/core/useTableSelection";
 import { useAuth } from "@/hooks/core/useAuth";
 import { confirmDelete, confirmBatchDelete } from "@/hooks/core/useConfirm";
@@ -106,91 +80,112 @@ import { cleanEmptyArrayParams } from "@/utils/query";
 import { renderTableOperationCell, type TableOperationAction } from "@utils";
 import type { ColumnOption } from "@/types/component";
 import type { SearchFormItem } from "@/components/forms/fa-search-bar/index.vue";
-import type { FormItem } from "@/components/forms/fa-form/index.vue";
 import FaSearchBar from "@/components/forms/fa-search-bar/index.vue";
-import FaForm from "@/components/forms/fa-form/index.vue";
 import ModelExportDialog from "@/components/model-export-dialog/index.vue";
-import { TrainAPI, type TrainModelTable, type TrainModelForm, type TablePageQuery } from "@/api/module_train";
-import { AnnotationAPI } from "@/api/module_annotation";
+import { TrainAPI, type TrainModelRepoTable, type TrainModelVersionTable, type TablePageQuery } from "@/api/module_train";
 
 defineOptions({ name: "TrainModelRepo", inheritAttrs: false });
 
+const route = useRoute();
 const router = useRouter();
 const { hasAuth } = useAuth();
-
-const datasets = ref<any[]>([]);
-AnnotationAPI.listDataset({ page_no: 1, page_size: 100 })
-  .then(r => { datasets.value = r.data?.data?.items || []; })
-  .catch(() => {});
 
 function frameworkTag(fw?: string) {
   return h(ElTag, { type: fw === "ultralytics" ? "success" : "primary" }, () =>
     fw === "ultralytics" ? "YOLO" : "PaddleX"
   );
 }
-function statusTag(s?: string) {
-  const map: Record<string, { type: "info" | "success" | "warning"; text: string }> = {
-    draft: { type: "info", text: "草稿" },
-    released: { type: "success", text: "已发布" },
-    archived: { type: "warning", text: "已归档" },
-  };
-  const c = map[s || ""] || { type: "info" as const, text: s || "—" };
-  return h(ElTag, { type: c.type }, () => c.text);
-}
-function metricsCell(row: TrainModelTable) {
-  const m = row.metrics as any;
-  if (!m) return h("span", { style: "color:var(--el-text-color-placeholder)" }, "—");
-  const map50 = m.map50 ?? m.mAP;
-  if (map50 == null) return h("span", { style: "color:var(--el-text-color-placeholder)" }, "—");
-  return h("span", { style: "font-family:monospace;font-size:12px" }, `mAP@50 ${(Number(map50) * 100).toFixed(1)}%`);
+
+// ── 版本抽屉 / 版本缓存 ──
+const versionsDrawer = reactive({ visible: false, repoId: 0, repoName: "" });
+const versionItems = ref<TrainModelVersionTable[]>([]);
+const versionsLoading = ref(false);
+const versionCache = reactive<Record<number, TrainModelVersionTable[]>>({});
+const loadingRepoIds = new Set<number>();
+
+async function openVersionsDrawer(repo: TrainModelRepoTable) {
+  versionsDrawer.repoId = repo.id!;
+  versionsDrawer.repoName = repo.name || `仓库 #${repo.id}`;
+  versionsDrawer.visible = true;
+  versionsLoading.value = true;
+  versionItems.value = [];
+  try {
+    const r = await TrainAPI.listModelVersions(repo.id!);
+    versionItems.value = r.data?.data || [];
+    versionCache[repo.id!] = versionItems.value;
+  } catch {
+    versionItems.value = [];
+  } finally {
+    versionsLoading.value = false;
+  }
 }
 
-function buildRowActions(
-  row: TrainModelTable,
-  ctx: { onEdit: (id: number) => void; onDelete: (id: number) => void }
-): TableOperationAction[] {
+async function preloadRepoVersions(repo: TrainModelRepoTable) {
+  const repoId = repo.id;
+  if (!repoId || versionCache[repoId] || loadingRepoIds.has(repoId)) return;
+  loadingRepoIds.add(repoId);
+  try {
+    const r = await TrainAPI.listModelVersions(repoId);
+    versionCache[repoId] = r.data?.data || [];
+  } catch {
+    /* */
+  } finally {
+    loadingRepoIds.delete(repoId);
+  }
+}
+
+function versionCountCell(row: TrainModelRepoTable) {
+  const count = row.version_count ?? 0;
+  return h("span", { style: "color:var(--el-color-primary);cursor:pointer", onClick: () => openVersionsDrawer(row) }, `${count} 个版本`);
+}
+function latestVersionCell(row: TrainModelRepoTable) {
+  const versions = versionCache[row.id!];
+  if (!versions?.length) return h("span", { style: "color:var(--el-text-color-placeholder)" }, "—");
+  return h("span", { style: "font-family:monospace;font-size:12px" }, versions[0].version);
+}
+
+// ── 跳转 ──
+function goEval(repoId: number, version?: TrainModelVersionTable) {
+  const q = [`model_repo_id=${repoId}`];
+  if (version?.id) q.push(`model_id=${version.id}`);
+  router.push(`/train/eval?${q.join("&")}`);
+}
+function goPredict(repoId: number, version?: TrainModelVersionTable) {
+  const q = [`model_repo_id=${repoId}`];
+  if (version?.id) q.push(`model_id=${version.id}`);
+  router.push(`/train/predict?${q.join("&")}`);
+}
+function goTrain(row: TrainModelRepoTable) {
+  router.push(`/train/task?base_model_id=${row.latest_version_id ?? ""}&framework=${row.framework}`);
+}
+
+// ── 行操作 ──
+function buildRowActions(row: TrainModelRepoTable): TableOperationAction[] {
   const all: TableOperationAction[] = [
     {
+      key: "versions",
+      label: "查看版本",
+      artType: "view",
+      icon: "ri:folder-open-line",
+      perm: "module_train:model:query",
+      run: () => openVersionsDrawer(row),
+    },
+    {
       key: "train",
-      label: "训练",
+      label: "去训练",
       artType: "view",
       icon: "ri:play-circle-line",
       iconColor: "var(--el-color-primary)",
       perm: "module_train:task:create",
-      run: () => router.push(`/train/task/create?model_id=${row.id}&framework=${row.framework}`),
+      run: () => goTrain(row),
     },
     {
       key: "eval",
-      label: "评估",
+      label: "去评估",
       artType: "view",
       icon: "ri:bar-chart-box-line",
       perm: "module_train:eval:create",
-      run: () => router.push(`/train/eval?model_repo_id=${row.id}`),
-    },
-    {
-      key: "export",
-      label: "导出",
-      artType: "view",
-      icon: "ri:download-2-line",
-      perm: "module_train:model:query",
-      run: () => openExport(row),
-    },
-    {
-      key: "deploy",
-      label: "部署",
-      artType: "view",
-      icon: "ri:rocket-2-line",
-      iconColor: "var(--el-color-success)",
-      perm: "module_train:model:query",
-      run: () => handleDeploy(row),
-    },
-    {
-      key: "edit",
-      label: "编辑",
-      artType: "edit",
-      icon: "ri:edit-2-line",
-      perm: "module_train:model:update",
-      run: () => ctx.onEdit(row.id!),
+      run: () => goEval(row.id!),
     },
     {
       key: "delete",
@@ -198,12 +193,13 @@ function buildRowActions(
       artType: "delete",
       icon: "ri:delete-bin-4-line",
       perm: "module_train:model:delete",
-      run: () => ctx.onDelete(row.id!),
+      run: () => deleteRepoRow(row),
     },
   ];
   return all.filter(a => (a.perm == null ? true : hasAuth(a.perm)));
 }
 
+// ── 搜索 ──
 const searchForm = ref<{ name?: string; framework?: string }>({ name: undefined, framework: undefined });
 const showSearchBar = ref(true);
 const searchBarRef = ref<InstanceType<typeof FaSearchBar> | null>(null);
@@ -227,13 +223,21 @@ const searchItems = computed<SearchFormItem[]>(() => [
   },
 ]);
 
+// ── 删除 ──
 const faTableRef = ref<{ elTableRef?: { clearSelection: () => void } } | null>(null);
-const { selectedRows, selectedIds, batchDeleting, onTableSelectionChange } = useTableSelection<TrainModelTable>();
+const { selectedIds, batchDeleting, onTableSelectionChange } = useTableSelection<TrainModelRepoTable>();
 
-async function deleteModelRow(id: number) {
+async function collectVersionIds(repoId: number): Promise<number[]> {
+  const r = await TrainAPI.listModelVersions(repoId);
+  return (r.data?.data || []).map(v => v.id).filter((id): id is number => !!id);
+}
+
+async function deleteRepoRow(repo: TrainModelRepoTable) {
   try {
     await confirmDelete();
-    await TrainAPI.deleteModel([id]);
+    const ids = await collectVersionIds(repo.id!);
+    if (ids.length) await TrainAPI.deleteModel(ids);
+    delete versionCache[repo.id!];
     ElMessage.success("删除成功");
     faTableRef.value?.elTableRef?.clearSelection();
     await refreshRemove();
@@ -248,7 +252,12 @@ async function handleBatchDelete() {
   try {
     await confirmBatchDelete(ids.length);
     batchDeleting.value = true;
-    await TrainAPI.deleteModel(ids);
+    const all: number[] = [];
+    for (const repoId of ids) {
+      all.push(...(await collectVersionIds(repoId)));
+      delete versionCache[repoId];
+    }
+    if (all.length) await TrainAPI.deleteModel(all);
     ElMessage.success("删除成功");
     faTableRef.value?.elTableRef?.clearSelection();
     await refreshRemove();
@@ -259,112 +268,27 @@ async function handleBatchDelete() {
   }
 }
 
-const { dialogVisible } = useCrudDialog();
-const formData = ref<TrainModelForm>({
-  id: undefined,
-  name: undefined,
-  framework: "ultralytics",
-  annotation_dataset_id: undefined,
-  description: undefined,
-  status: "draft",
-});
-const initialFormData: TrainModelForm = {
-  id: undefined,
-  name: undefined,
-  framework: "ultralytics",
-  annotation_dataset_id: undefined,
-  description: undefined,
-  status: "draft",
-};
-
-const rules = reactive({
-  name: [{ required: true, message: "请输入模型名称", trigger: "blur" }],
-  framework: [{ required: true, message: "请选择框架", trigger: "change" }],
-});
-
-const dataFormRef = ref<InstanceType<typeof FaForm> | null>(null);
-const formRenderKey = ref(0);
-
-const { submitLoading, handleCloseDialog, handleOpenDialog, handleSubmit } = useCrudForm<TrainModelForm>({
-  formData,
-  initialFormData,
-  dialogVisible,
-  dataFormRef,
-  formRenderKey: formRenderKey,
-  detailApi: TrainAPI.detailModel,
-  createApi: TrainAPI.createModel,
-  updateApi: TrainAPI.updateModel,
-  titles: { create: "新建模型", update: "编辑模型", detail: "模型详情" },
-  onCreateSuccess: async () => { await refreshCreate(); },
-  onUpdateSuccess: async () => { await refreshUpdate(); },
-});
-
-const formItems = computed<FormItem[]>(() => [
-  { label: "模型名称", key: "name", type: "input", span: 24, props: { placeholder: "请输入模型名称" } },
-  {
-    label: "框架",
-    key: "framework",
-    type: "radio",
-    span: 24,
-    props: { options: [
-      { label: "Ultralytics", value: "ultralytics" },
-      { label: "PaddleX", value: "paddlex" },
-    ] },
-  },
-  {
-    label: "来源数据集",
-    key: "annotation_dataset_id",
-    type: "select",
-    span: 24,
-    props: { placeholder: "请选择数据集", filterable: true, clearable: true, options: datasets.value.map(d => ({ label: d.name, value: d.id })) },
-  },
-  {
-    label: "状态",
-    key: "status",
-    type: "select",
-    span: 24,
-    props: { placeholder: "请选择状态", options: [
-      { label: "草稿", value: "draft" },
-      { label: "已发布", value: "released" },
-      { label: "已归档", value: "archived" },
-    ] },
-  },
-  {
-    label: "描述",
-    key: "description",
-    type: "input",
-    span: 24,
-    props: { type: "textarea", rows: 3, placeholder: "请输入描述" },
-  },
-]);
-
-const opCtx = {
-  onEdit: (id: number) => void handleOpenDialog("update", id),
-  onDelete: deleteModelRow,
-};
-
-const { columns, columnChecks, data, loading, pagination, searchParams, getData, replaceSearchParams, resetSearchParams, handleSizeChange, handleCurrentChange, refreshData, refreshCreate, refreshUpdate, refreshRemove } = useTable({
+// ── 表格 ──
+const { columns, columnChecks, data, loading, pagination, getData, replaceSearchParams, resetSearchParams, handleSizeChange, handleCurrentChange, refreshData, refreshRemove } = useTable({
   core: {
-    apiFn: TrainAPI.listModel,
+    apiFn: TrainAPI.listModelRepos,
     apiParams: { page_no: 1, page_size: 10 },
-    columnsFactory: (): ColumnOption<TrainModelTable>[] => [
+    columnsFactory: (): ColumnOption<TrainModelRepoTable>[] => [
       { type: "selection", width: 48, fixed: "left" },
       { type: "globalIndex", width: 56, label: "序号" },
-      { prop: "name", label: "模型名称", minWidth: 140, showOverflowTooltip: true },
-      { prop: "framework", label: "框架", width: 100, formatter: (row: TrainModelTable) => frameworkTag(row.framework) },
-      { prop: "version", label: "版本", width: 80, showOverflowTooltip: true },
-      { prop: "map50", label: "mAP50", width: 90, align: "center", formatter: (row: any) => (row.metrics?.map50 != null ? Number(row.metrics.map50).toFixed(3) : "-") },
-      { prop: "metrics", label: "最新指标", minWidth: 120, formatter: (row: TrainModelTable) => metricsCell(row) },
-      { prop: "status", label: "状态", width: 100, formatter: (row: TrainModelTable) => statusTag(row.status) },
+      { prop: "name", label: "模型名称", minWidth: 160, showOverflowTooltip: true },
+      { prop: "framework", label: "框架", width: 100, formatter: (row: TrainModelRepoTable) => frameworkTag(row.framework) },
+      { prop: "version_count", label: "版本数", width: 110, align: "center", formatter: (row: TrainModelRepoTable) => versionCountCell(row) },
+      { prop: "latest_version", label: "最新版本", width: 100, align: "center", formatter: (row: TrainModelRepoTable) => latestVersionCell(row) },
       { prop: "created_time", label: "创建时间", width: 168, showOverflowTooltip: true },
       {
         prop: "operation",
         label: "操作",
-        width: 260,
+        width: 280,
         fixed: "right",
         align: "right",
-        formatter: (row: TrainModelTable) =>
-          renderTableOperationCell(buildRowActions(row, opCtx), {
+        formatter: (row: TrainModelRepoTable) =>
+          renderTableOperationCell(buildRowActions(row), {
             wrapperClass: "inline-flex flex-wrap items-center justify-end gap-1",
           }),
       },
@@ -372,32 +296,24 @@ const { columns, columnChecks, data, loading, pagination, searchParams, getData,
   },
 });
 
-const exportDialogRef = ref<InstanceType<typeof ModelExportDialog> | null>(null);
-const exportModelId = ref(0);
-const exportModelName = ref("");
-function openExport(row: TrainModelTable) {
-  exportModelId.value = row.id!;
-  exportModelName.value = row.name || "";
-  exportDialogRef.value?.open();
-}
-
-function handleDeploy(row: TrainModelTable) {
-  TrainAPI.createDeploy({
-    model_id: row.id,
-    name: `${row.name} v${row.version}`,
-    device: "0",
-    hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640 },
-  }).then(r => {
-    const d = r.data?.data;
-    if (d?.api_key) {
-      ElMessage.success("部署已创建");
-      navigator.clipboard.writeText(d.api_key).catch(() => {});
+// 列表加载后：预取当前页仓库的版本（供"最新版本"列），并处理 ?repo_id= 自动打开抽屉
+let pendingRepoId = Number(route.query.repo_id || 0);
+watch(
+  data,
+  (rows) => {
+    const list = rows as TrainModelRepoTable[];
+    if (list.length && pendingRepoId) {
+      const repo = list.find(r => r.id === pendingRepoId);
+      if (repo) openVersionsDrawer(repo);
+      else openVersionsDrawer({ id: pendingRepoId, name: `仓库 #${pendingRepoId}` } as TrainModelRepoTable);
+      pendingRepoId = 0;
     }
-    router.push("/train/deploy");
-  }).catch(e => {
-    ElMessage.error(e?.msg || "创建部署失败");
-  });
-}
+    list.forEach(repo => {
+      if (repo.id && (repo.version_count ?? 0) > 0) preloadRepoVersions(repo);
+    });
+  },
+  { immediate: true }
+);
 
 function handleSearch(params: { name?: string; framework?: string }) {
   replaceSearchParams(cleanEmptyArrayParams({ ...params }));
@@ -406,5 +322,27 @@ function handleSearch(params: { name?: string; framework?: string }) {
 function onResetSearch() {
   searchForm.value = { name: undefined, framework: undefined };
   void resetSearchParams();
+}
+
+// ── 版本操作（抽屉内） ──
+const exportDialogRef = ref<InstanceType<typeof ModelExportDialog> | null>(null);
+const exportModelId = ref(0);
+const exportModelName = ref("");
+function openExport(row: TrainModelVersionTable) {
+  exportModelId.value = row.id!;
+  exportModelName.value = row.name ? `${row.name} v${row.version}` : `v${row.version}`;
+  exportDialogRef.value?.open();
+}
+
+async function downloadVersion(row: TrainModelVersionTable) {
+  if (!row.id) return;
+  try {
+    const r = await TrainAPI.downloadModel(row.id);
+    const url = r.data?.data?.download_url;
+    if (url) window.open(url, "_blank");
+    else ElMessage.warning("该版本暂无模型文件");
+  } catch {
+    ElMessage.error("下载失败");
+  }
 }
 </script>

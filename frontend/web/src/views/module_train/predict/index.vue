@@ -48,9 +48,14 @@
 
     <ElDialog v-model="showCreateDialog" title="创建预测任务" width="600px" :close-on-click-modal="false">
       <ElForm label-width="100px">
+        <ElFormItem label="模型仓库" required>
+          <ElSelect v-model="createForm.modelRepoId" filterable style="width:100%" placeholder="选择模型仓库" @change="onRepoChange">
+            <ElOption v-for="r in repos" :key="r.id" :label="r.name" :value="r.id!" />
+          </ElSelect>
+        </ElFormItem>
         <ElFormItem label="模型版本" required>
-          <ElSelect v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本">
-            <ElOption v-for="m in models" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
+          <ElSelect v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" :disabled="!createForm.modelRepoId">
+            <ElOption v-for="v in versionOptions" :key="v.id" :label="`${v.name} v${v.version}`" :value="v.id!" />
           </ElSelect>
         </ElFormItem>
         <ElFormItem label="图片来源">
@@ -88,8 +93,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, h } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, computed, h, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElTag, ElProgress } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import { useTable } from "@/hooks/core/useTable";
@@ -101,38 +106,70 @@ import { renderTableOperationCell, type TableOperationAction } from "@utils";
 import type { ColumnOption } from "@/types/component";
 import type { SearchFormItem } from "@/components/forms/fa-search-bar/index.vue";
 import FaSearchBar from "@/components/forms/fa-search-bar/index.vue";
-import { TrainAPI, type TrainPredictTable, type TablePageQuery } from "@/api/module_train";
+import { TrainAPI, type TrainPredictTable, type TablePageQuery, type TrainModelRepoTable, type TrainModelVersionTable } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
 defineOptions({ name: "TrainPredict", inheritAttrs: false });
 
+const route = useRoute();
 const router = useRouter();
 const { hasAuth } = useAuth();
+const qRepoId = Number(route.query.model_repo_id || 0);
+const qVersionId = Number(route.query.model_id || 0);
 
 const showCreateDialog = ref(false);
 const creating = ref(false);
-const models = ref<any[]>([]);
+const repos = ref<TrainModelRepoTable[]>([]);
+const versionOptions = ref<TrainModelVersionTable[]>([]);
+const versionLookup = reactive<Record<number, { name?: string; version?: string }>>({});
 const datasets = ref<any[]>([]);
 const pendingFiles = ref<File[]>([]);
 const uploadRef = ref<any>(null);
 
 const createForm = reactive({
+  modelRepoId: null as number | null,
   modelId: null as number | null,
   sourceType: "dataset",
   sourceDatasetId: null as number | null,
   hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640, device: "0" },
 });
 
-Promise.all([TrainAPI.listModel({ page_no: 1, page_size: 100 }), AnnotationAPI.listDataset({ page_no: 1, page_size: 100 })])
+Promise.all([TrainAPI.listModelRepos({ page_no: 1, page_size: 100 }), AnnotationAPI.listDataset({ page_no: 1, page_size: 100 })])
   .then(([mRes, dsRes]) => {
-    models.value = mRes.data?.data?.items || [];
+    repos.value = mRes.data?.data?.items || [];
     datasets.value = dsRes.data?.data?.items || [];
   })
   .catch(() => {});
 
+async function onRepoChange(repoId: number | null) {
+  versionOptions.value = [];
+  createForm.modelId = null;
+  if (!repoId) return;
+  try {
+    const r = await TrainAPI.listModelVersions(repoId);
+    versionOptions.value = r.data?.data || [];
+    versionOptions.value.forEach(v => { if (v.id) versionLookup[v.id] = { name: v.name, version: v.version }; });
+  } catch {
+    /* */
+  }
+}
+
 function getModelName(modelId?: number) {
-  const m = models.value.find((x: any) => x.id === modelId);
-  return m ? `${m.name} v${m.version}` : `#${modelId}`;
+  const v = versionLookup[modelId || 0];
+  if (!v) return `#${modelId}`;
+  return v.name ? `${v.name} v${v.version}` : `v${v.version}`;
+}
+
+function buildVersionLookup(rows: TrainPredictTable[]) {
+  const repoIds = new Set<number>();
+  rows.forEach(r => { if (r.model_repo_id) repoIds.add(r.model_repo_id); });
+  repoIds.forEach(repoId => {
+    TrainAPI.listModelVersions(repoId)
+      .then(r => {
+        (r.data?.data || []).forEach(v => { if (v.id) versionLookup[v.id] = { name: v.name, version: v.version }; });
+      })
+      .catch(() => {});
+  });
 }
 
 function statusTag(s?: string) {
@@ -160,6 +197,7 @@ function onUploadChange(_file: any, fileList: any[]) {
 }
 
 async function handleCreate() {
+  if (!createForm.modelRepoId) { ElMessage.warning("请选择模型仓库"); return; }
   if (!createForm.modelId) { ElMessage.warning("请选择模型版本"); return; }
   if (createForm.sourceType === "dataset" && !createForm.sourceDatasetId) { ElMessage.warning("请选择数据集"); return; }
   if (createForm.sourceType === "upload" && pendingFiles.value.length === 0) { ElMessage.warning("请上传图片"); return; }
@@ -173,8 +211,8 @@ async function handleCreate() {
       sourceImages = r.data?.data;
     }
     await TrainAPI.createPredict({
+      model_repo_id: createForm.modelRepoId ?? undefined,
       model_id: createForm.modelId ?? undefined,
-      model_repo_id: models.value.find((m: any) => m.id === createForm.modelId)?.id || 0,
       source_type: createForm.sourceType,
       source_dataset_id: createForm.sourceDatasetId ?? undefined,
       source_images: sourceImages,
@@ -182,10 +220,12 @@ async function handleCreate() {
     });
     ElMessage.success("预测任务已创建");
     showCreateDialog.value = false;
+    createForm.modelRepoId = null;
     createForm.modelId = null;
     createForm.sourceType = "dataset";
     createForm.sourceDatasetId = null;
     createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640, device: "0" };
+    versionOptions.value = [];
     pendingFiles.value = [];
     if (uploadRef.value) uploadRef.value.uploadFiles = [];
     await refreshData();
@@ -193,6 +233,15 @@ async function handleCreate() {
     creating.value = false;
   }
 }
+
+onMounted(async () => {
+  if (qRepoId) {
+    createForm.modelRepoId = qRepoId;
+    await onRepoChange(qRepoId);
+    if (qVersionId && versionOptions.value.some(v => v.id === qVersionId)) createForm.modelId = qVersionId;
+    showCreateDialog.value = true;
+  }
+});
 
 function buildRowActions(
   row: TrainPredictTable,
@@ -356,6 +405,7 @@ const { columns, columnChecks, data, loading, pagination, searchParams, getData,
       },
     ],
   },
+  hooks: { onSuccess: (rows) => buildVersionLookup(rows as TrainPredictTable[]) },
 });
 
 function handleSearch(params: { name?: string; framework?: string; status?: string }) {
