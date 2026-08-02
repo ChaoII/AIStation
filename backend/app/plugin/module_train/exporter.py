@@ -8,6 +8,8 @@ from app.api.v1.module_annotation.dataset.model import AnnotationImageModel
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .model import TrainModelRepo
+
 
 async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8) -> str:
     """Export dataset for training — unified with download, just different YAML path."""
@@ -508,13 +510,19 @@ async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
         last = existing.scalar_one_or_none()
         next_ver = 1
         if last and last.version:
-            try:
-                next_ver = int(last.version.replace("v", "")) + 1
-            except ValueError:
-                next_ver = 1
+            from .service import TrainService
+            next_ver = TrainService._parse_version(last.version) + 1
+
+        repo = (await db.execute(
+            select(TrainModelRepo).where(TrainModelRepo.name == task.name)
+        )).scalar_one_or_none()
+        if not repo:
+            repo = TrainModelRepo(name=task.name, framework=task.framework, created_id=task.created_id)
+            db.add(repo)
+            await db.flush()
 
         model_rec = TrainModel(
-            name=task.name, framework=task.framework,
+            repo_id=repo.id, name=task.name, framework=task.framework,
             version=f"v{next_ver}", storage_path=storage_path,
             format="pytorch",  # Original format is PyTorch
             annotation_dataset_id=task.dataset_id, created_id=task.created_id,
@@ -522,6 +530,7 @@ async def export_model(task_id: int, framework: str, export_dir: str) -> dict:
         )
         db.add(model_rec)
         await db.flush()
+        repo.latest_version_id = model_rec.id
         task.model_repo_id = model_rec.id
 
     return {"repo_id": model_rec.id, "storage_path": storage_path}

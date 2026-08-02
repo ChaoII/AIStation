@@ -54,6 +54,39 @@ async def list_models(
     })
 
 
+@router.get("/model/repos", summary="模型仓库列表")
+async def list_model_repos(
+    name: str | None = Query(None),
+    framework: str | None = Query(None),
+    page_no: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+):
+    data, total = await TrainService.list_model_repos({
+        "name": name, "framework": framework, "page_no": page_no, "page_size": page_size,
+    })
+    return SuccessResponse(data={
+        "items": data, "total": total,
+        "page_no": page_no, "page_size": page_size,
+        "has_next": page_no * page_size < total,
+    })
+
+
+@router.get("/model/{repo_id}/versions", summary="模型版本列表")
+async def list_model_versions(repo_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
+    data = await TrainService.list_model_versions(repo_id)
+    return SuccessResponse(data=data)
+
+
+@router.get("/model/version/{version_id}/repo", summary="版本所属仓库")
+async def get_version_repo(version_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
+    data = await TrainService.get_version_repo(version_id)
+    if not data:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg="模型版本不存在")
+    return SuccessResponse(data=data)
+
+
 @router.get("/model/detail/{model_id}", summary="模型详情")
 async def get_model(model_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
     data = await TrainService.get_model(model_id)

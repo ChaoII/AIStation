@@ -8,10 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .model import TrainDeploy, TrainEval, TrainModel, TrainPredict, TrainTask
+from .model import TrainDeploy, TrainEval, TrainModel, TrainModelRepo, TrainPredict, TrainTask
 
 _EPOCH_RE = re.compile(r"^\s*(\d+)/(\d+)\s+")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+_VERSION_DIGITS = re.compile(r"[^0-9]")
 
 
 def _strip_ansi(text: str) -> str:
@@ -94,6 +95,96 @@ class TrainService:
         async with async_db_session() as db:
             m = await db.get(TrainModel, model_id)
             return _model_to_dict(m) if m else None
+
+    @classmethod
+    def _parse_version(cls, raw: str | None) -> int:
+        """'vv1'/'v1'/'1'/None -> 1；'v12' -> 12。纯数字，消除 vv bug。"""
+        digits = _VERSION_DIGITS.sub("", raw or "")
+        return int(digits) if digits else 1
+
+    @classmethod
+    async def create_model_repo(cls, data, auth) -> dict:
+        """创建仓库+首个版本，或按 name 追加新版本。返回 {id: repo_id, version_id, version}。"""
+        async with async_db_session.begin() as db:
+            existing = (await db.execute(
+                select(TrainModelRepo).where(TrainModelRepo.name == data.name)
+            )).scalar_one_or_none()
+            if not existing:
+                existing = TrainModelRepo(
+                    name=data.name, framework=data.framework,
+                    description=getattr(data, "description", None),
+                    annotation_dataset_id=getattr(data, "annotation_dataset_id", None),
+                    created_id=auth.user.id,
+                )
+                db.add(existing)
+                await db.flush()
+
+            last_ver = (await db.execute(
+                select(TrainModel).where(TrainModel.repo_id == existing.id)
+                .order_by(desc(TrainModel.id)).limit(1)
+            )).scalar_one_or_none()
+            version = f"v{cls._parse_version(last_ver.version) + 1 if last_ver else 1}"
+
+            ver_row = TrainModel(
+                repo_id=existing.id, name=data.name, framework=data.framework,
+                version=version, annotation_dataset_id=getattr(data, "annotation_dataset_id", None),
+                export_format=getattr(data, "export_format", None),
+                description=getattr(data, "description", None),
+                created_id=auth.user.id,
+            )
+            db.add(ver_row)
+            await db.flush()
+            existing.latest_version_id = ver_row.id
+            return {"id": existing.id, "version_id": ver_row.id, "version": version}
+
+    @classmethod
+    async def list_model_repos(cls, params: dict | None = None) -> tuple[list[dict], int]:
+        page_no = max(1, int((params or {}).get("page_no", 1)))
+        page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
+        name = (params or {}).get("name")
+        framework = (params or {}).get("framework")
+        async with async_db_session() as db:
+            stmt = select(TrainModelRepo)
+            if name:
+                stmt = stmt.where(TrainModelRepo.name.ilike(f"%{name}%"))
+            if framework:
+                stmt = stmt.where(TrainModelRepo.framework == framework)
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total = (await db.execute(count_stmt)).scalar() or 0
+            rows = (await db.execute(
+                stmt.order_by(desc(TrainModelRepo.created_time))
+                .limit(page_size).offset((page_no - 1) * page_size)
+            )).scalars().all()
+            result = []
+            for r in rows:
+                d = _model_to_dict(r)
+                vcount = (await db.execute(
+                    select(func.count()).select_from(TrainModel).where(
+                        TrainModel.repo_id == r.id, TrainModel.is_deleted == False  # noqa: E712
+                    )
+                )).scalar() or 0
+                d["version_count"] = vcount
+                result.append(d)
+            return result, total
+
+    @classmethod
+    async def list_model_versions(cls, repo_id: int) -> list[dict]:
+        async with async_db_session() as db:
+            rows = (await db.execute(
+                select(TrainModel).where(TrainModel.repo_id == repo_id)
+                .order_by(desc(TrainModel.created_time))
+            )).scalars().all()
+            return [_model_to_dict(r) for r in rows]
+
+    @classmethod
+    async def get_version_repo(cls, version_id: int) -> dict | None:
+        """按版本 id 反查所属仓库（前端跳转用）。"""
+        async with async_db_session() as db:
+            ver = await db.get(TrainModel, version_id)
+            if not ver or not ver.repo_id:
+                return None
+            repo = await db.get(TrainModelRepo, ver.repo_id)
+            return {"repo_id": ver.repo_id, "repo_name": repo.name if repo else ver.name}
 
     @classmethod
     async def update_model(cls, model_id: int, data: dict) -> dict | None:
