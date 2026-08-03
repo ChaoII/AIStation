@@ -1,4 +1,4 @@
-"""OCR det 训练执行器：复用 TaskExecutor，跑 aistation-ocr 容器。"""
+"""OCR 训练执行器：复用 TaskExecutor，跑 aistation-ocr 容器 train-det/train-rec。"""
 import os
 import tempfile
 from datetime import datetime
@@ -13,8 +13,14 @@ from .task_executor import TaskExecutor
 from .ws import broadcast_log
 
 
-class OCRDetExecutor(TaskExecutor):
-    name = "ocr_det"
+class OCRTrainExecutor(TaskExecutor):
+    """OCR det/rec 训练共用执行器。
+
+    子命令 train-det / train-rec 由 _build_cmd 按 task.framework 分支，数据导出同样
+    由 prepare_training_data_for_task 按 framework 走 _export_core 的 det/rec 分支，
+    故 det 与 rec 执行流程完全一致，仅 name 不同。
+    """
+    name = "ocr_train"
     status_enum = TrainStatus
     model_class = TrainTask
     _concurrency = 1
@@ -29,7 +35,7 @@ class OCRDetExecutor(TaskExecutor):
                 if not task:
                     return
 
-            await broadcast_log(task_id, f"[ocr] pulling image {cls.DOCKER_IMAGE}...")
+            await broadcast_log(task_id, f"[{cls.name}] pulling image {cls.DOCKER_IMAGE}...")
             await pull_image(cls.DOCKER_IMAGE)
 
             export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
@@ -87,7 +93,7 @@ class OCRDetExecutor(TaskExecutor):
                                        error_log="ocr training failed",
                                        finished_at=datetime.now())
         except Exception as e:
-            log.error(f"ocr task {task_id} failed: {e}")
+            log.error(f"[{cls.name}] task {task_id} failed: {e}")
             cancelled = cls._registry.get(task_id, {}).get("cancel", False)
             await cls._mark_status(
                 task_id,
@@ -98,3 +104,7 @@ class OCRDetExecutor(TaskExecutor):
             cls._registry.pop(task_id, None)
             if container_id:
                 await remove_container(container_id)
+
+
+class OCRDetExecutor(OCRTrainExecutor):
+    name = "ocr_det"

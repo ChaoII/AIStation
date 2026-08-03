@@ -219,6 +219,19 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
             "--lr", str(hp.get("lr", 0.001)),
             "--model-size", str(hp.get("model_size", "tiny")),
         ]
+    if task.framework == TrainFramework.PYTORCH_OCR_REC:
+        hp = task.hyperparams or {}
+        # 同 det：ENTRYPOINT 已是 `python -m pytorch_ocr.cli`，只传子命令参数
+        return [
+            "train-rec",
+            "--data", "/data",
+            "--output", "/output",
+            "--device", str(hp.get("device", "0")),
+            "--epochs", str(hp.get("epochs", 100)),
+            "--batch", str(hp.get("batch", 128)),
+            "--lr", str(hp.get("lr", 0.001)),
+            "--model-size", str(hp.get("model_size", "tiny")),
+        ]
     raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
@@ -409,7 +422,10 @@ async def start_training(task_id: int):
                 finished_at=None,
             )
         )
-    if task.framework == TrainFramework.PYTORCH_OCR_DET:
+    if task.framework == TrainFramework.PYTORCH_OCR_REC:
+        from .ocr_rec_executor import OCRRecExecutor
+        asyncio.create_task(OCRRecExecutor.run(task_id))
+    elif task.framework == TrainFramework.PYTORCH_OCR_DET:
         from .ocr_executor import OCRDetExecutor
         asyncio.create_task(OCRDetExecutor.run(task_id))
     else:
@@ -418,9 +434,12 @@ async def start_training(task_id: int):
 
 async def stop_training(task_id: int) -> None:
     from .ocr_executor import OCRDetExecutor
+    from .ocr_rec_executor import OCRRecExecutor
     async with async_db_session() as db:
         task = await db.get(TrainTask, task_id)
-    if task and task.framework == TrainFramework.PYTORCH_OCR_DET:
+    if task and task.framework == TrainFramework.PYTORCH_OCR_REC:
+        await OCRRecExecutor.stop(task_id)
+    elif task and task.framework == TrainFramework.PYTORCH_OCR_DET:
         await OCRDetExecutor.stop(task_id)
     else:
         await TrainExecutor.stop(task_id)

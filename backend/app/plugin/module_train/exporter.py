@@ -76,6 +76,8 @@ async def _export_core(
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
     elif framework == "pytorch-ocr-det":
         await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id)
+    elif framework == "pytorch-ocr-rec":
+        await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id, export_rec=True)
     else:
         raise ValueError(f"不支持的导出框架: {framework}")
 
@@ -500,18 +502,58 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
     log.info(f"exported {downloaded} images to x-anylabeling format in {output_dir}")
 
 
-async def _export_pytorch_ocr(dataset_id: int, task_id: int, images: list,
-                              output_dir: str, annotation_task_id: int | None = None) -> None:
-    """导出 PyTorch OCR det 格式：images/ + det_gt.txt。
+def _crop_text_region(img_path: str, quad: list, img_w: int = 1, img_h: int = 1):
+    """透视矫正裁剪文本区域（复用 paddle-ocr 的裁剪逻辑）。
 
-    det_gt.txt 每行: "image_name\\t[[[x1,y1],[x2,y2],[x3,y3],[x4,y4]],...]"
-    （像素坐标，与 DetDataset._parse_polys 匹配）
+    quad 为像素坐标 4 角点。返回 BGR numpy 数组（可直接 cv2.imwrite），失败返回 None。
+    """
+    try:
+        import cv2
+        import numpy as np
+        src = cv2.imread(img_path)
+        if src is None:
+            return None
+        pts = np.array(quad, dtype=np.float32)
+        if len(pts) < 4:
+            return None
+        rect = cv2.minAreaRect(pts)
+        box = np.array(cv2.boxPoints(rect), dtype=np.float32)
+        width, height = int(rect[1][0]), int(rect[1][1])
+        if width < 1 or height < 1:
+            return None
+        dst_pts = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
+        M = cv2.getPerspectiveTransform(box, dst_pts)
+        return cv2.warpPerspective(src, M, (width, height))
+    except ImportError:
+        # Fallback to simple axis-aligned crop if OpenCV not available
+        try:
+            import numpy as np
+            from PIL import Image
+            xs = [p[0] for p in quad]
+            ys = [p[1] for p in quad]
+            x1, y1, x2, y2 = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
+            if x2 - x1 < 1 or y2 - y1 < 1:
+                return None
+            pil = Image.open(img_path).convert("RGB").crop((x1, y1, x2, y2))
+            return np.array(pil)[:, :, ::-1]  # RGB → BGR
+        except Exception:
+            return None
+
+
+async def _export_pytorch_ocr(dataset_id: int, task_id: int, images: list,
+                              output_dir: str, annotation_task_id: int | None = None,
+                              export_rec: bool = False) -> None:
+    """导出 PyTorch OCR 数据。
+
+    det: images/ + det_gt.txt（四边形像素坐标）
+    rec: images/ + train_list.txt（image_path\\tlabel，文本行透视矫正裁剪图）
     """
     from app.utils.s3_client import s3_client
 
     img_dir = os.path.join(output_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
     det_lines = []
+    rec_lines = []
 
     async with async_db_session() as db:
         for img in images:
@@ -533,6 +575,7 @@ async def _export_pytorch_ocr(dataset_id: int, task_id: int, images: list,
             anns = record.annotation_data if record and record.annotation_data else []
 
             quads = []
+            texts = []
             w = img.width or 1
             h = img.height or 1
             for ann in anns:
@@ -546,12 +589,28 @@ async def _export_pytorch_ocr(dataset_id: int, task_id: int, images: list,
                         if isinstance(p, dict) else [float(p[0] * w), float(p[1] * h)]
                         for p in pts[:4]]
                 quads.append(quad)
-            if quads:
+                texts.append(ann.get("text", "") or "")
+            if quads and not export_rec:
                 det_lines.append(f"{img.filename}\t{json.dumps(quads)}")
+            if export_rec:
+                import cv2
+                for i, (quad, text) in enumerate(zip(quads, texts, strict=False)):
+                    if not text.strip():
+                        continue
+                    crop_name = f"{os.path.splitext(img.filename)[0]}_{i}.jpg"
+                    crop = _crop_text_region(img_path, quad, w, h)
+                    if crop is not None:
+                        cv2.imwrite(os.path.join(img_dir, crop_name), crop)
+                        # RecDataset 以 data_dir 为根读取，裁剪图在 images/ 下，需带前缀
+                        rec_lines.append(f"images/{crop_name}\t{text}")
 
-    with open(os.path.join(output_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(det_lines))
-    log.info(f"pytorch-ocr: exported {len(det_lines)} labeled images to {output_dir}")
+    if not export_rec:
+        with open(os.path.join(output_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(det_lines))
+    else:
+        with open(os.path.join(output_dir, "train_list.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(rec_lines))
+    log.info(f"pytorch-ocr: exported {len(det_lines)} det, {len(rec_lines)} rec to {output_dir}")
 
 
 async def export_model(task_id: int, framework: str, export_dir: str, best_metrics: dict | None = None) -> dict:
@@ -559,13 +618,13 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
 
     # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
     best_path = None
-    extensions = [".pt"] if framework in ("ultralytics", "pytorch-ocr-det") else [".pdparams"]
+    extensions = [".pt"] if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") else [".pdparams"]
     for ext in extensions:
         candidates = [
             os.path.join(export_dir, "exp", "weights", f"best{ext}"),
             os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
         ]
-        if framework == "pytorch-ocr-det":
+        if framework in ("pytorch-ocr-det", "pytorch-ocr-rec"):
             candidates.insert(0, os.path.join(export_dir, f"best{ext}"))
         if framework == "paddlex":
             # PaddleX 输出路径变体（output/best_model/exp/best_model 等）
@@ -587,7 +646,7 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
         for root, dirs, files in os.walk(export_dir):
             dirs[:] = [d for d in dirs if d != ".models_cache"]
             for f in files:
-                if framework in ("ultralytics", "pytorch-ocr-det") and f == "best.pt":
+                if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") and f == "best.pt":
                     best_path = os.path.join(root, f)
                     break
                 elif framework == "paddlex" and f == "best.pdparams":

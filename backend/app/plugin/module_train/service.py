@@ -319,7 +319,7 @@ class TrainService:
             raise ValueError("PaddleX 已下线，请使用 ultralytics 框架")
         async with async_db_session.begin() as db:
             image = ("aistation-ocr:latest"
-                     if data.framework == TrainFramework.PYTORCH_OCR_DET
+                     if data.framework in (TrainFramework.PYTORCH_OCR_DET, TrainFramework.PYTORCH_OCR_REC)
                      else "ultralytics/ultralytics:latest")
             t = TrainTask(
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
