@@ -11,7 +11,7 @@ def build_parser():
     train_det = sub.add_parser("train-det", help="训练 det 检测模型")
     train_det.add_argument("--data", required=True, help="数据集目录(含 images/ + det_gt.txt)")
     train_det.add_argument("--output", default="/output", help="输出目录")
-    train_det.add_argument("--device", default="0", help="GPU 设备(cuda:0 / cpu)")
+    train_det.add_argument("--device", default="0", help="GPU 设备 (0 / cpu)")
     train_det.add_argument("--epochs", type=int, default=100)
     train_det.add_argument("--batch", type=int, default=8)
     train_det.add_argument("--lr", type=float, default=0.001)
@@ -28,6 +28,16 @@ def build_parser():
     eval_det.add_argument("--device", default="0")
     eval_det.add_argument("--config", default="")
     return parser
+
+
+def _normalize_device(raw: str) -> str:
+    """'0'->'cuda:0', 'cuda:0'->'cuda:0', 'cpu'->'cpu'."""
+    raw = (raw or "0").strip()
+    if raw == "cpu":
+        return "cpu"
+    if ":" in raw:
+        return raw
+    return f"cuda:{raw}"
 
 
 def _build_config(args) -> dict:
@@ -48,7 +58,7 @@ def _build_config(args) -> dict:
 
 def cmd_train_det(args):
     from .trainer.det_trainer import DetTrainer
-    device = "cpu" if args.device == "cpu" else f"cuda:{args.device}"
+    device = _normalize_device(args.device)
     cfg = _build_config(args)
     cfg["model_size"] = args.model_size
     cfg["image_shape"] = tuple(cfg.get("image_shape", (640, 640)))
@@ -62,7 +72,7 @@ def cmd_train_det(args):
 
 def cmd_eval_det(args):
     from .trainer.det_trainer import DetTrainer
-    device = "cpu" if args.device == "cpu" else f"cuda:{args.device}"
+    device = _normalize_device(args.device)
     cfg = _build_config(args)
     trainer = DetTrainer(cfg, device=device)
     # 加载模型
