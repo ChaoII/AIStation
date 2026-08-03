@@ -19,11 +19,18 @@ from .docker_utils import (
     remove_container,
     run_container,
 )
-from .model import TrainDeploy, TrainModel
+from .model import TrainDeploy, TrainFramework, TrainModel
 
 _deploy_running: dict[int, dict] = {}
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
+OCR_IMAGE = "aistation-ocr:latest"
+OCR_FRAMEWORKS = (TrainFramework.PYTORCH_OCR_DET, TrainFramework.PYTORCH_OCR_REC)
+
+
+def _is_ocr_framework(framework: TrainFramework) -> bool:
+    """判断部署框架是否需要 OCR server（det/rec 双模型推理）。"""
+    return framework in OCR_FRAMEWORKS
 
 
 def _generate_server_script(api_key: str, device: str) -> str:
@@ -85,6 +92,80 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
         "detections": detections,
         "image_width": int(results.orig_shape[1]) if results.orig_shape else 0,
         "image_height": int(results.orig_shape[0]) if results.orig_shape else 0,
+        "inference_time_ms": elapsed,
+    }}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+'''
+
+
+def _generate_ocr_server_script(api_key: str, device: str) -> str:
+    """生成 OCR 推理服务脚本：加载 det+rec `.pt`，/predict 返回 [{text, confidence, box}]。
+
+    运行在 aistation-ocr 镜像中（WORKDIR=/workspace，含 pytorch_ocr 包），
+    通过 sys.path.insert 引入 pytorch_ocr.inference.ocr_pipeline.OCRPipeline。
+    rec.pt 可选：未挂载时 rec_state 传 None（骨架阶段允许 det 单模型）。
+    """
+    device_arg = device if device != "cpu" else "cpu"
+    return f'''#!/usr/bin/env python3
+"""Auto-generated OCR inference server for AIStation model deployment (det + rec)."""
+import os, sys, json, time, asyncio, subprocess
+
+# Ensure dependencies
+subprocess.run([sys.executable, "-m", "pip", "install", "-q",
+                "fastapi", "uvicorn", "python-multipart"], check=True)
+
+import numpy as np
+import cv2
+from fastapi import FastAPI, File, UploadFile, HTTPException, Security
+from fastapi.security import APIKeyHeader
+import uvicorn
+
+import torch
+import sys as _sys
+sys.path.insert(0, "/workspace")
+from pytorch_ocr.inference.ocr_pipeline import OCRPipeline
+
+MODEL_PATH = "/model/det.pt"
+REC_MODEL_PATH = "/model/rec.pt"
+API_KEY = "{api_key}"
+HOST = "0.0.0.0"
+PORT = 8000
+
+print(f"[deploy] loading OCR models...", flush=True)
+det_state = torch.load(MODEL_PATH, map_location="cpu")
+rec_state = torch.load(REC_MODEL_PATH, map_location="cpu") if os.path.exists(REC_MODEL_PATH) else None
+pipe = OCRPipeline(
+    det_state=det_state,
+    rec_state=rec_state,
+    config={{"device": "{device_arg}"}},
+)
+print(f"[deploy] OCR models loaded", flush=True)
+
+app = FastAPI(title="AIStation OCR Inference")
+
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+@app.get("/health")
+async def health():
+    return {{"status": "ok", "model": "ocr"}}
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+    start = time.time()
+    contents = await file.read()
+    img_array = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(status_code=400, detail="Invalid image")
+    detections = pipe(img)
+    elapsed = round((time.time() - start) * 1000, 1)
+    return {{
+        "success": True,
+        "detections": detections,
         "inference_time_ms": elapsed,
     }}
 
@@ -272,7 +353,10 @@ async def _execute_deployment(deploy_id: int):
                     )
                 return
 
-        await pull_image(DOCKER_IMAGE)
+        is_ocr = _is_ocr_framework(deploy.framework)
+        image = OCR_IMAGE if is_ocr else DOCKER_IMAGE
+
+        await pull_image(image)
 
         export_dir = os.path.join(tempfile.gettempdir(), "deploy_output", str(deploy_id))
         model_dir = os.path.join(export_dir, "model")
@@ -288,14 +372,30 @@ async def _execute_deployment(deploy_id: int):
         with open(model_local_path, "wb") as f:
             f.write(model_data.read())
 
-        # Ensure file is named best.pt inside model mount
-        best_pt_path = os.path.join(model_dir, "best.pt")
-        if model_local_path != best_pt_path:
-            import shutil
-            shutil.copy2(model_local_path, best_pt_path)
+        if is_ocr:
+            # OCR：det 训练产物统一命名 det.pt；rec 模型按 hyperparams.rec_model_path 下载为 rec.pt
+            det_pt_path = os.path.join(model_dir, "det.pt")
+            if model_local_path != det_pt_path:
+                import shutil
+                shutil.copy2(model_local_path, det_pt_path)
+            rec_model_path = (deploy.hyperparams or {}).get("rec_model_path")
+            if rec_model_path:
+                rec_data = s3_client.download_fileobj(rec_model_path)
+                rec_local_path = os.path.join(model_dir, "rec.pt")
+                with open(rec_local_path, "wb") as f:
+                    f.write(rec_data.read())
+        else:
+            # Ensure file is named best.pt inside model mount
+            best_pt_path = os.path.join(model_dir, "best.pt")
+            if model_local_path != best_pt_path:
+                import shutil
+                shutil.copy2(model_local_path, best_pt_path)
 
         # Write inference server script
-        server_script = _generate_server_script(deploy.api_key, deploy.device)
+        if is_ocr:
+            server_script = _generate_ocr_server_script(deploy.api_key, deploy.device)
+        else:
+            server_script = _generate_server_script(deploy.api_key, deploy.device)
         server_path = os.path.join(server_dir, "server.py")
         with open(server_path, "w", encoding="utf-8") as f:
             f.write(server_script)
@@ -319,7 +419,7 @@ async def _execute_deployment(deploy_id: int):
         # run_container 抛出端口冲突 APIError 时，换新端口（排除当前端口）重试一次。
         async def _launch(port: int):
             return await run_container(
-                DOCKER_IMAGE,
+                image,
                 ["python3", "/server/server.py"],
                 volumes={
                     model_dir: {"bind": "/model", "mode": "ro"},
