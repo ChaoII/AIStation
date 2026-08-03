@@ -24,7 +24,15 @@ def _pull_sync(image: str) -> None:
     client.images.pull(image)
 
 
-def _run_container(image: str, cmd: list[str], volumes: dict, gpu_id: str, env: dict) -> docker.models.containers.Container:
+def _run_container(
+    image: str,
+    cmd: list[str],
+    volumes: dict,
+    gpu_id: str,
+    env: dict,
+    ports: dict | None = None,
+    entrypoint: str | None = None,
+) -> docker.models.containers.Container:
     device_requests = []
     if gpu_id:
         device_requests = [docker.types.DeviceRequest(device_ids=[gpu_id], capabilities=[["gpu"]])]
@@ -32,6 +40,8 @@ def _run_container(image: str, cmd: list[str], volumes: dict, gpu_id: str, env: 
         image, cmd,
         volumes=volumes,
         environment=env,
+        ports=ports,
+        entrypoint=entrypoint,
         device_requests=device_requests,
         detach=True,
         remove=False,
@@ -39,9 +49,19 @@ def _run_container(image: str, cmd: list[str], volumes: dict, gpu_id: str, env: 
     )
 
 
-async def run_container(image: str, cmd: list[str], volumes: dict, gpu_id: str = "0", env: dict | None = None) -> docker.models.containers.Container:
+async def run_container(
+    image: str,
+    cmd: list[str],
+    volumes: dict,
+    gpu_id: str = "0",
+    env: dict | None = None,
+    ports: dict | None = None,
+    entrypoint: str | None = None,
+) -> docker.models.containers.Container:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _run_container, image, cmd, volumes, gpu_id, env or {})
+    return await loop.run_in_executor(
+        None, _run_container, image, cmd, volumes, gpu_id, env or {}, ports, entrypoint
+    )
 
 
 def _stop_container(container_id: str) -> None:

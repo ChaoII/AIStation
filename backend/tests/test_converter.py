@@ -9,6 +9,8 @@ Paddle 权重在 .pdparams 中按层创建顺序排列，与自研模型注册�
 - 转换结果可 strict=False 加载进自研模型，且无 missing/unexpected keys
 - 数值 round-trip、形状校验告警、未知 key 忽略
 """
+import re
+
 import numpy as np
 import pytest
 import torch
@@ -309,6 +311,155 @@ def test_convert_ppocr_v6_rec_head_missing_raises():
             bn_idx += 1
     with pytest.raises(ValueError, match="head"):
         convert_ppocr_v6_rec(paddle_state, "tiny")
+
+
+def test_convert_ppocr_v6_rec_semantic_head_maps():
+    """语义名 + 结构变换：官方 PaddleX .pdparams 的 head 可完整映射。
+
+    官方 PP-OCRv6 rec 使用 GTC head（融合 Linear QKV / mlp.fc1/fc2 /
+    索引 decoder.N / before_gtc 输入投影），与自研 conv-based NRTR 结构不同。
+    本测试用自研模型反转生成 GTC 语义命名的合成 state_dict，验证
+    convert_ppocr_v6_rec 走语义映射路径并数值 round-trip（strict 加载零缺失）。
+    """
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import (
+        build_rec_model,
+        convert_ppocr_v6_rec,
+    )
+
+    ctc_out, nrtr_out = 6906, 6910
+    model = build_rec_model(
+        "tiny", ctc_out_channels=ctc_out, nrtr_out_channels=nrtr_out
+    )
+    torch_sd = {k: v.detach().numpy() for k, v in model.state_dict().items()}
+
+    # 反转 map_semantic_rec_name：torch 路径 → GTC 语义 Paddle 路径
+    # （仅覆盖 head 部分；backbone 语义名两框架一致，仅 BN 统计量后缀不同）
+    head_entries = {k: v for k, v in torch_sd.items() if k.startswith("head.")}
+    paddle = {}
+    decoder_layer_re = re.compile(
+        r"^head\.nrtr_head\.transformer\.decoder\.layers\.(\d+)\.(.+)$"
+    )
+
+    def torch_to_paddle_general(t_path, value):
+        """通用反转：先尝试 map 目标查找，再回退到 GTC 结构直接拼接。"""
+        if t_path.startswith("head.nrtr_head.linear.weight"):
+            return "head.before_gtc.1.fc.weight", value.T
+        if t_path == "head.nrtr_head.transformer.embedding.embedding.weight":
+            return "head.gtc_head.embedding.embedding.weight", value
+        if t_path == "head.nrtr_head.transformer.tgt_word_prj.weight":
+            return "head.gtc_head.tgt_word_prj.weight", value.T
+        m = decoder_layer_re.match(t_path)
+        if m:
+            lidx, sub = m.group(1), m.group(2)
+            base = f"head.gtc_head.decoder.{lidx}."
+            # self_attn conv1/2/3 → 融合 qkv
+            m2 = re.match(r"self_attn\.conv([123])\.(weight|bias)$", sub)
+            if m2:
+                cidx = int(m2.group(1)) - 1
+                kind = m2.group(2)
+                return (f"{base}self_attn.qkv.{kind}", value, cidx, 3)
+            m2 = re.match(r"self_attn\.out_proj\.(weight|bias)$", sub)
+            if m2:
+                kind = m2.group(1)
+                if kind == "weight":
+                    return f"{base}self_attn.out_proj.weight", value.T
+                return f"{base}self_attn.out_proj.bias", value
+            m2 = re.match(r"multihead_attn\.conv([123])\.(weight|bias)$", sub)
+            if m2:
+                cidx = int(m2.group(1)) - 1
+                kind = m2.group(2)
+                if cidx == 0:
+                    if kind == "weight":
+                        return f"{base}cross_attn.q.weight", value[:, :, 0, 0].T
+                    return f"{base}cross_attn.q.bias", value
+                # kv: conv2=k, conv3=v
+                return (f"{base}cross_attn.kv.{kind}", value, cidx - 1, 2)
+            m2 = re.match(r"multihead_attn\.out_proj\.(weight|bias)$", sub)
+            if m2:
+                kind = m2.group(1)
+                if kind == "weight":
+                    return f"{base}cross_attn.out_proj.weight", value.T
+                return f"{base}cross_attn.out_proj.bias", value
+            m2 = re.match(r"conv([12])\.(weight|bias)$", sub)
+            if m2:
+                fcidx = int(m2.group(1))
+                kind = m2.group(2)
+                if kind == "weight":
+                    return f"{base}mlp.fc{fcidx}.weight", value[:, :, 0, 0].T
+                return f"{base}mlp.fc{fcidx}.bias", value
+            m2 = re.match(r"norm([123])\.(weight|bias)$", sub)
+            if m2:
+                return f"{base}norm{m2.group(1)}.{m2.group(2)}", value
+        if t_path.startswith("head.ctc_head.guide_layer."):
+            idx = t_path.split(".")[-2]
+            kind = t_path.rsplit(".", 1)[-1]
+            if kind == "running_mean":
+                kind = "_mean"
+            elif kind == "running_var":
+                kind = "_variance"
+            return f"head.ctc_head.guide_layer.{idx}.{kind}", value
+        m = re.match(r"head\.ctc_head\.(fc1|fc2)\.(weight|bias)$", t_path)
+        if m:
+            name, kind = m.group(1), m.group(2)
+            if kind == "weight":
+                return f"head.ctc_head.{name}.weight", value.T
+            return f"head.ctc_head.{name}.bias", value
+        raise AssertionError(f"unmapped head param: {t_path}")
+
+    split_targets = {}
+    for t_path, value in head_entries.items():
+        if t_path.endswith("num_batches_tracked"):
+            continue
+        res = torch_to_paddle_general(t_path, value)
+        if isinstance(res, tuple) and len(res) == 4:
+            p_name, value, cidx, n = res
+            split_targets.setdefault(p_name, []).append((cidx, n, value))
+        else:
+            p_name, value = res
+            if p_name in paddle:
+                raise AssertionError(f"duplicate paddle key: {p_name}")
+            paddle[p_name] = value
+
+    # 合并 split 目标（qkv/kv）
+    for p_name, parts in split_targets.items():
+        # parts: [(cidx, n, np.array)]
+        # weight: Paddle Linear [in, out]; bias: [out]
+        first_val = parts[0][2]
+        n = parts[0][1]
+        if first_val.ndim == 1:
+            merged = np.concatenate([p[2] for p in sorted(parts)], axis=0)
+        else:
+            merged = np.concatenate([p[2] for p in sorted(parts)], axis=1)
+        if p_name in paddle:
+            raise AssertionError(f"duplicate paddle key: {p_name}")
+        paddle[p_name] = merged
+
+    # backbone 语义名两框架一致，仅 BN 统计量后缀不同（num_batches_tracked 跳过）
+    for t_path, value in torch_sd.items():
+        if not t_path.startswith("backbone."):
+            continue
+        if t_path.endswith("num_batches_tracked"):
+            continue
+        if t_path.endswith(".running_mean"):
+            p_name = t_path.replace(".running_mean", "._mean")
+        elif t_path.endswith(".running_var"):
+            p_name = t_path.replace(".running_var", "._variance")
+        else:
+            p_name = t_path
+        if p_name in paddle:
+            raise AssertionError(f"duplicate paddle key: {p_name}")
+        paddle[p_name] = value
+
+    state = convert_ppocr_v6_rec(paddle, "tiny")
+    result = model.load_state_dict(state, strict=True)
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []
+    # 数值 round-trip（非 num_batches_tracked 参数）
+    for path, tensor in torch_sd.items():
+        if path.endswith("num_batches_tracked"):
+            continue
+        assert path in state, f"missing {path}"
+        assert np.allclose(state[path].numpy(), tensor), f"value changed: {path}"
 
 
 def test_convert_ppocr_v6_rec_empty_raises():

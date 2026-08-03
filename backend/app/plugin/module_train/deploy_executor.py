@@ -353,6 +353,19 @@ async def _execute_deployment(deploy_id: int):
                     )
                 return
 
+        if deploy.framework == TrainFramework.PYTORCH_OCR_REC:
+            # 双模型（det + rec）关联尚未实现：rec 权重需先有 det 模型才能组成完整 OCR 链路，
+            # 单独部署 rec 模型会产出语义错误（det.pt 被加载进 det 网络）。暂不支持。
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
+                        status="failed",
+                        error_log="rec 部署需要 det+rec 双模型关联，暂不支持",
+                        finished_at=datetime.now(),
+                    )
+                )
+            return
+
         is_ocr = _is_ocr_framework(deploy.framework)
         image = OCR_IMAGE if is_ocr else DOCKER_IMAGE
 
