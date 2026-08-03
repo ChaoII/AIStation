@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+FROM pytorch/pytorch:2.13.0-cuda13.2-cudnn9-runtime
 
 # 系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
