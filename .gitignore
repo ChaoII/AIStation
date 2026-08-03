@@ -61,3 +61,8 @@ fix_*.py
 clean_*.py
 restore_*.py
 test_*.js
+
+# pytorch-ocr 独立库
+pytorch-ocr/.venv
+pytorch-ocr/.pytest_cache
+pytorch-ocr/*.egg-info
