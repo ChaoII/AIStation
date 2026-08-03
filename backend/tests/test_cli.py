@@ -13,6 +13,14 @@ def test_build_parser_has_subcommands():
     assert "eval-det" in actions
 
 
+def test_build_parser_has_rec_subcommands():
+    parser = build_parser()
+    sub = parser._subparsers
+    actions = list(sub._group_actions[0].choices.keys())
+    assert "train-rec" in actions
+    assert "eval-rec" in actions
+
+
 def test_normalize_device():
     from pytorch_ocr.cli import _normalize_device
     assert _normalize_device("0") == "cuda:0"
