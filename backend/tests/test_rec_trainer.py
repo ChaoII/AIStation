@@ -108,3 +108,93 @@ def test_rec_trainer_smoke_train_produces_best_pt():
         )
         assert best_path == os.path.join(output_dir, "best.pt")
         assert os.path.isfile(best_path)
+
+
+# ---------------------------------------------------------------------------
+# eval（字符级准确率）
+# ---------------------------------------------------------------------------
+
+
+def test_rec_trainer_backbone_out_channels_derived():
+    """backbone_out_channels 缺省时按 model_size 推导（tiny=160/small=384/medium=768）。"""
+    for size, expected in (("tiny", 160), ("small", 384), ("medium", 768)):
+        config = {"model_size": size, "num_classes": 6906}
+        trainer = RecTrainer(config, device="cpu")
+        assert trainer.head.ctc_head.guide_layer[0].in_channels == expected
+        assert trainer.backbone.out_channels == expected
+
+
+def test_compute_rec_metrics_perfect():
+    from pytorch_ocr.trainer.rec_trainer import compute_rec_metrics
+    m = compute_rec_metrics(["abc", "你好"], ["abc", "你好"])
+    assert m["char_acc"] == 1.0
+    assert m["full_acc"] == 1.0
+    assert m["total_chars"] == 5
+    assert m["total_strings"] == 2
+
+
+def test_compute_rec_metrics_partial():
+    from pytorch_ocr.trainer.rec_trainer import compute_rec_metrics
+    # "abcd" vs "abxy": 2/4 字符正确；"xx" vs "ab": 0/2；整句 0/2 正确
+    m = compute_rec_metrics(["abcd", "xx"], ["abxy", "ab"])
+    assert m["char_acc"] == pytest.approx(2 / 6)
+    assert m["full_acc"] == 0.0
+    assert m["total_chars"] == 6
+
+
+def test_rec_trainer_eval_deterministic_char_acc():
+    """eval 端到端：伪造 ctc 头固定输出 'a'，标签全为 'a' → char_acc=full_acc=1.0。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = os.path.join(tmp, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        dict_path = os.path.join(tmp, "dict.txt")
+        with open(dict_path, "w", encoding="utf-8") as f:
+            f.write("a\n")
+        for i in range(2):
+            img = np.random.randint(0, 255, (48, 320, 3), dtype=np.uint8)
+            Image.fromarray(img).save(os.path.join(data_dir, f"img_{i}.jpg"))
+        with open(os.path.join(data_dir, "train_list.txt"), "w", encoding="utf-8") as f:
+            f.writelines([f"img_{i}.jpg\ta\n" for i in range(2)])
+
+        config = {
+            "model_size": "tiny",
+            "num_classes": 3,
+            "image_shape": (48, 320),
+            "max_text_length": 5,
+            "dict_path": dict_path,
+        }
+        trainer = RecTrainer(config, device="cpu")
+
+        class FakeHead(torch.nn.Module):
+            def forward(self, x):
+                logits = torch.full((1, 40, 3), -100.0)
+                logits[..., 0] = 0.0  # 'a'
+                return {"ctc": logits, "nrtr": logits}
+
+        trainer.net["head"] = FakeHead()
+        trainer.head = FakeHead()
+        result = trainer.eval(data_dir=data_dir)
+        assert result["char_acc"] == 1.0
+        assert result["full_acc"] == 1.0
+        assert result["total_strings"] == 2
+
+
+def test_rec_trainer_eval_returns_metrics_dict():
+    """eval 返回真实指标 dict（键齐全、值域合法），不再返回 {}。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = os.path.join(tmp, "data")
+        _write_synthetic_data(data_dir)
+        config = {
+            "model_size": "tiny",
+            "num_classes": 6906,
+            "image_shape": (48, 320),
+            "max_text_length": 25,
+            "nrtr_dim": 384,
+        }
+        trainer = RecTrainer(config, device="cpu")
+        result = trainer.eval(data_dir=data_dir)
+        assert "char_acc" in result
+        assert "full_acc" in result
+        assert 0.0 <= result["char_acc"] <= 1.0
+        assert 0.0 <= result["full_acc"] <= 1.0
+        assert result["total_strings"] == 3

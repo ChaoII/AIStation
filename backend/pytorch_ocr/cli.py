@@ -70,12 +70,15 @@ def _normalize_device(raw: str) -> str:
 
 def _build_config(args, *, rec: bool = False) -> dict:
     if rec:
+        from .modeling.backbones.pplcnetv4 import rec_backbone_out_channels
         cfg = {
             "model_size": getattr(args, "model_size", "tiny"),
             "num_classes": 6906,
             "max_text_length": 25,
             "nrtr_dim": 384,
-            "backbone_out_channels": 160,
+            "backbone_out_channels": rec_backbone_out_channels(
+                getattr(args, "model_size", "tiny")
+            ),
             "image_shape": (48, 320),
         }
     else:

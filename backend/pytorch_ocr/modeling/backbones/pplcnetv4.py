@@ -149,6 +149,23 @@ NET_CONFIG_REC = {
 }
 
 
+def rec_backbone_out_channels(model_size: str) -> int:
+    """rec 模式骨干输出通道数：tiny=160, small=384, medium=768。
+
+    取最后一个非空 stage 的输出通道（与 ``PPLCNetV4(det=False)`` 一致），
+    供 RecTrainer / OCRPipeline / rec 转换器在构造 MultiHead 前推导。
+    """
+    assert model_size in NET_CONFIG_REC, (
+        f"rec model_size must be one of {list(NET_CONFIG_REC)} "
+        f"but got '{model_size}'"
+    )
+    cfg = NET_CONFIG_REC[model_size]
+    for sname in reversed(["blocks2", "blocks3", "blocks4", "blocks5", "blocks6"]):
+        if cfg.get(sname):
+            return cfg[sname][-1][2]
+    raise ValueError(f"rec config for '{model_size}' has no blocks")
+
+
 # ---------------------------------------------------------------------------
 # 基础构建块
 # ---------------------------------------------------------------------------
@@ -597,10 +614,7 @@ class PPLCNetV4(nn.Module):
             self.blocks4 = make_stage("blocks4")
             self.blocks5 = make_stage("blocks5")
             self.blocks6 = make_stage("blocks6")
-            for sname in reversed(["blocks2", "blocks3", "blocks4", "blocks5", "blocks6"]):
-                if cfg.get(sname):
-                    self.out_channels = cfg[sname][-1][2]
-                    break
+            self.out_channels = rec_backbone_out_channels(model_size)
 
     def forward(self, x):
         if self.det:

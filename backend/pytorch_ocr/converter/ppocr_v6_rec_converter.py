@@ -34,7 +34,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from ..modeling.backbones.pplcnetv4 import PPLCNetV4
+from ..modeling.backbones.pplcnetv4 import PPLCNetV4, rec_backbone_out_channels
 from ..modeling.heads.rec_multi_head import MultiHead
 from .ppocr_v6_det_converter import (
     ConversionReport,
@@ -76,7 +76,7 @@ _DECODER_LAYER_RE = re.compile(r"^head\.gtc_head\.decoder\.(\d+)\.(.+)$")
 def build_rec_model(
     model_size: str = "tiny",
     out_channels: int = 6906,
-    backbone_out_channels: int = 160,
+    backbone_out_channels: int | None = None,
     max_text_length: int = 25,
     nrtr_dim: int = 384,
     ctc_out_channels: int | None = None,
@@ -86,12 +86,16 @@ def build_rec_model(
 
     参数路径前缀固定为 ``backbone.*`` / ``head.*``，与转换结果保持一致。
     ``out_channels`` 默认 6906（官方 ppocrv6_tiny_dict.txt 词表 + blank）。
+    ``backbone_out_channels`` 缺省时按 ``model_size`` 推导（tiny=160 /
+    small=384 / medium=768），不再硬编码 160。
 
     官方 PP-OCRv6 双头词表大小不同（CTCHead=dict 大小，NRTRHead=dict+4 特殊
     token）。转换官方权重时用 ``ctc_out_channels`` / ``nrtr_out_channels``
     单独指定（默认 None → 共用 ``out_channels``）。
     """
     backbone = PPLCNetV4(model_size=model_size, det=False)
+    if backbone_out_channels is None:
+        backbone_out_channels = rec_backbone_out_channels(model_size)
     head = MultiHead(
         in_channels=backbone_out_channels,
         out_channels=out_channels,
@@ -363,11 +367,33 @@ def _guess_out_channels(paddle_state: dict) -> tuple[int | None, int | None]:
     return ctc_out, nrtr_out
 
 
+def guess_torch_out_channels(state: dict, default: int = 6906) -> tuple[int, int]:
+    """从转换后的 torch state_dict 形状猜测 ctc / nrtr 词表大小。
+
+    用于 verify_conversion / OCRPipeline 加载官方或用户训练的 rec 权重时
+    构造 MultiHead 的正确输出通道（官方双头 6906/6910，用户训练 6906/6906）。
+    """
+    ctc_out: int | None = None
+    nrtr_out: int | None = None
+    for key in ("head.ctc_head.fc2.weight", "head.ctc_head.fc.weight"):
+        if key in state:
+            ctc_out = int(state[key].shape[0])
+            break
+    for key in (
+        "head.nrtr_head.transformer.tgt_word_prj.weight",
+        "head.nrtr_head.transformer.embedding.embedding.weight",
+    ):
+        if key in state:
+            nrtr_out = int(state[key].shape[0])
+            break
+    return ctc_out or default, nrtr_out or default
+
+
 def convert_ppocr_v6_rec(
     paddle_state: dict,
     model_size: str = "tiny",
     out_channels: int = 6906,
-    backbone_out_channels: int = 160,
+    backbone_out_channels: int | None = None,
     max_text_length: int = 25,
     nrtr_dim: int = 384,
 ) -> dict:

@@ -473,6 +473,34 @@ def test_convert_ppocr_v6_rec_empty_raises():
         convert_ppocr_v6_rec({}, "tiny")
 
 
+def test_guess_torch_out_channels_split_vocab():
+    """从 torch state_dict 形状推断 ctc/nrtr 词表（官方 6906/6910 与共用 6906/6906）。"""
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import (
+        build_rec_model,
+        guess_torch_out_channels,
+    )
+
+    model = build_rec_model("tiny", ctc_out_channels=6906, nrtr_out_channels=6910)
+    assert guess_torch_out_channels(model.state_dict()) == (6906, 6910)
+
+    model2 = build_rec_model("tiny")
+    assert guess_torch_out_channels(model2.state_dict()) == (6906, 6906)
+
+    assert guess_torch_out_channels({}) == (6906, 6906)
+
+
+def test_build_rec_model_derives_backbone_out_channels():
+    """backbone_out_channels 缺省时按 model_size 推导（tiny=160/small=384/medium=768）。"""
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import build_rec_model
+    from pytorch_ocr.modeling.backbones.pplcnetv4 import rec_backbone_out_channels
+
+    for size in ("tiny", "small", "medium"):
+        model = build_rec_model(model_size=size)
+        assert model.backbone.out_channels == rec_backbone_out_channels(size)
+        assert model.head.ctc_head.guide_layer[0].in_channels == \
+            rec_backbone_out_channels(size)
+
+
 def test_verify_conversion_supports_rec():
     """verify_conversion.py 必须支持 --rec 模式（rec 权重逐层输出对比）。"""
     import inspect

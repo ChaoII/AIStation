@@ -51,3 +51,15 @@ def test_normalize_device():
     assert _normalize_device("cuda:0") == "cuda:0"
     assert _normalize_device("cpu") == "cpu"
     assert _normalize_device("") == "cuda:0"
+
+
+def test_build_config_rec_derives_backbone_out_channels():
+    """rec 配置的 backbone_out_channels 按 model_size 推导（不再硬编码 160）。"""
+    from argparse import Namespace
+
+    from pytorch_ocr.cli import _build_config
+    from pytorch_ocr.modeling.backbones.pplcnetv4 import rec_backbone_out_channels
+
+    for size in ("tiny", "small", "medium"):
+        cfg = _build_config(Namespace(model_size=size, config=""), rec=True)
+        assert cfg["backbone_out_channels"] == rec_backbone_out_channels(size)

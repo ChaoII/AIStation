@@ -36,3 +36,41 @@ def test_ocr_pipeline_smoke_synthetic_image():
         assert "text" in item
         assert "confidence" in item
         assert "box" in item
+
+
+def test_ocr_pipeline_loads_split_vocab_rec_weights():
+    """OCRPipeline 从 rec 权重推断双头词表（官方 6906/6910）并正确加载。
+
+    官方 PP-OCRv6 rec 权重 NRTR 头词表 = dict+4 特殊 token（6910），
+    MultiHead 必须按权重形状构造，否则加载时报 shape mismatch。
+    """
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import build_rec_model
+    from pytorch_ocr.inference.ocr_pipeline import OCRPipeline, _infer_rec_out_channels
+
+    model = build_rec_model("tiny", ctc_out_channels=6906, nrtr_out_channels=6910)
+    rec_state = model.state_dict()
+
+    assert _infer_rec_out_channels(rec_state, {"num_classes": 6906}) == (6906, 6910)
+
+    pipe = OCRPipeline(rec_state=rec_state, config={"model_size": "tiny"})
+    assert pipe.rec_head.ctc_head.out_channels == 6906
+    assert pipe.rec_head.nrtr_head.out_channels == 6910
+    result = pipe.rec_net.load_state_dict(rec_state, strict=True)
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []
+
+
+def test_ocr_pipeline_loads_shared_vocab_rec_weights():
+    """用户训练产物两头顶共用词表（6906/6906），OCRPipeline 亦能正确加载。"""
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import build_rec_model
+    from pytorch_ocr.inference.ocr_pipeline import OCRPipeline, _infer_rec_out_channels
+
+    model = build_rec_model("tiny")
+    rec_state = model.state_dict()
+
+    assert _infer_rec_out_channels(rec_state, {"num_classes": 6906}) == (6906, 6906)
+
+    pipe = OCRPipeline(rec_state=rec_state, config={"model_size": "tiny"})
+    result = pipe.rec_net.load_state_dict(rec_state, strict=True)
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []

@@ -1,6 +1,8 @@
 """det 训练器：DB loss + Hmean 评估 + best.pt 保存。自研实现。"""
 import os
 
+import cv2
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
@@ -10,6 +12,68 @@ from ..modeling.heads.det_db_head import DBHead
 from ..modeling.losses.db_loss import DBLoss
 from ..modeling.necks.rep_lk_fpn import RepLKFPN
 from ..postprocess.db_postprocess import DBPostProcess
+
+_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+_DET_IOU_THRESH = 0.5
+
+
+def polygon_iou(pred, gt):
+    """四边形 IoU（cv2.intersectConvexConvex 求交集面积）。
+
+    ``pred``/``gt`` 为 4×2 点序列（list/ndarray），返回 [0, 1] 的 IoU。
+    ``intersectConvexConvex`` 第一返回值即交集面积，无交集时为 0。
+    """
+    p = np.asarray(pred, dtype=np.float32).reshape(-1, 2)
+    g = np.asarray(gt, dtype=np.float32).reshape(-1, 2)
+    area_p = abs(cv2.contourArea(p))
+    area_g = abs(cv2.contourArea(g))
+    ret, _pts = cv2.intersectConvexConvex(p, g)
+    inter = float(ret) if ret > 0 else 0.0
+    union = area_p + area_g - inter
+    return inter / union if union > 0 else 0.0
+
+
+def compute_det_metrics(pred_boxes, gt_boxes, iou_thresh=_DET_IOU_THRESH):
+    """det 评估指标：逐图预测框 vs GT 四边形做 IoU 匹配（一个 GT 只匹配一次）。
+
+    ``pred_boxes``/``gt_boxes``: 逐图四边形列表（list[list[4×2]]）。
+    返回 ``{hmean, precision, recall, tp, fp, fn}``。
+    """
+    tp = 0
+    fp = 0
+    fn = 0
+    for preds, gts in zip(pred_boxes, gt_boxes, strict=False):
+        matched = set()
+        for p in preds:
+            best_iou = 0.0
+            best_idx = -1
+            for j, g in enumerate(gts):
+                if j in matched:
+                    continue
+                iou = polygon_iou(p, g)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_idx = j
+            if best_iou >= iou_thresh and best_idx >= 0:
+                tp += 1
+                matched.add(best_idx)
+            else:
+                fp += 1
+        fn += len(gts) - len(matched)
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    hmean = (2 * precision * recall / (precision + recall)
+             if (precision + recall) else 0.0)
+    return {
+        "hmean": hmean,
+        "precision": precision,
+        "recall": recall,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+    }
 
 
 class DetTrainer:
@@ -91,7 +155,42 @@ class DetTrainer:
         return os.path.join(output_dir, "best.pt")
 
     def eval(self, data_dir, output_dir="./output"):
-        """Hmean 评估。plan 3 完善真实指标；此处提供接口骨架。"""
+        """Hmean 评估：跑 det 前向 → DBPostProcess → 与 GT 四边形 IoU 匹配。
+
+        GT 从 ``data_dir/det_gt.txt`` 读取（DetDataset 解析格式），预测框由
+        DBPostProcess 缩放回原图坐标系。返回 ``{hmean, precision, recall, ...}``。
+        """
         self.net.eval()
-        # 简化：加载 best.pt 后跑前向（评估逻辑在 plan 3 完善）
-        return {}
+        image_shape = tuple(self.config.get("image_shape", (640, 640)))
+        dataset = DetDataset(
+            gt_dir=os.path.join(data_dir, "images"),
+            label_path=os.path.join(data_dir, "det_gt.txt"),
+            image_shape=image_shape,
+        )
+        if len(dataset) == 0:
+            return {"hmean": 0.0, "precision": 0.0, "recall": 0.0,
+                    "tp": 0, "fp": 0, "fn": 0, "num_images": 0}
+        pred_boxes = []
+        gt_boxes = []
+        with torch.no_grad():
+            for img_name, polys in dataset.items:
+                img = cv2.imread(os.path.join(data_dir, "images", img_name),
+                                 cv2.IMREAD_COLOR)
+                if img is None:
+                    continue
+                h, w = img.shape[:2]
+                input_img = cv2.resize(img, image_shape)
+                input_img = (input_img.astype(np.float32) / 255.0 - _MEAN) / _STD
+                input_t = torch.from_numpy(input_img).permute(2, 0, 1)
+                input_t = input_t.unsqueeze(0).float().to(self.device)
+                feats = self.backbone(input_t)
+                fused = self.fpn(feats)
+                if isinstance(fused, dict):
+                    fused = fused["fuse"]
+                maps = self.head(fused)["maps"]
+                boxes = self.postprocess(maps.cpu(), [[h, w]])
+                pred_boxes.append(boxes[0] if boxes else [])
+                gt_boxes.append([p.tolist() for p in polys])
+        metrics = compute_det_metrics(pred_boxes, gt_boxes)
+        metrics["num_images"] = len(gt_boxes)
+        return metrics

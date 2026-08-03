@@ -23,6 +23,31 @@ def test_multi_head_constructs():
     assert head.nrtr_head is not None
 
 
+def test_multi_head_split_out_channels():
+    """MultiHead 支持 ctc/nrtr 分开指定词表（官方 PP-OCRv6 双头 6906/6910）。"""
+    head = MultiHead(
+        in_channels=160,
+        out_channels=6906,
+        max_text_length=25,
+        nrtr_dim=384,
+        ctc_out_channels=6906,
+        nrtr_out_channels=6910,
+    )
+    assert head.ctc_head.out_channels == 6906
+    assert head.nrtr_head.out_channels == 6910
+    assert head.nrtr_head.transformer.out_channels == 6910
+    assert head.nrtr_head.transformer.tgt_word_prj.weight.shape[0] == 6910
+    assert head.nrtr_head.transformer.embedding.embedding.weight.shape[0] == 6910
+
+
+def test_multi_head_out_channels_default_to_shared():
+    """未显式指定时 ctc/nrtr 共用 out_channels（用户训练产物 6906/6906）。"""
+    head = MultiHead(in_channels=160, out_channels=6906, max_text_length=25)
+    assert head.ctc_head.out_channels == 6906
+    assert head.nrtr_head.out_channels == 6906
+    assert head.nrtr_head.transformer.out_channels == 6906
+
+
 def test_nrtr_head_forward_eval_logits():
     """NRTRHead 推理（贪心解码）输出 logits [B, max_text_length, num_classes]。"""
     head = NRTRHead(in_channels=80, out_channels=100, nrtr_dim=384, max_text_length=25)

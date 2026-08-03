@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import torch
 
-from ..modeling.backbones.pplcnetv4 import PPLCNetV4
+from ..modeling.backbones.pplcnetv4 import PPLCNetV4, rec_backbone_out_channels
 from ..modeling.heads.det_db_head import DBHead
 from ..modeling.heads.rec_multi_head import MultiHead
 from ..modeling.necks.rep_lk_fpn import RepLKFPN
@@ -20,6 +20,29 @@ def _preprocess(image, size):
     img = cv2.resize(img, (size[1], size[0]))
     img = (img.astype(np.float32) / 255.0 - _MEAN) / _STD
     return torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
+
+
+def _infer_rec_out_channels(rec_state, config):
+    """从 rec 权重 state_dict 形状推断 CTC/NRTR 词表大小。
+
+    官方 PP-OCRv6 双头词表不同（CTC=dict 大小 6906，NRTR=dict+4 特殊 token
+    6910）；用户训练产物两头顶为同词表（6906/6906）。config 显式指定优先，
+    否则按权重形状推导，缺省回退到 ``num_classes``。
+    """
+    ctc = config.get("ctc_out_channels")
+    nrtr = config.get("nrtr_out_channels")
+    if rec_state:
+        for key in ("head.ctc_head.fc2.weight", "head.ctc_head.fc.weight"):
+            if key in rec_state and ctc is None:
+                ctc = int(rec_state[key].shape[0])
+        for key in (
+            "head.nrtr_head.transformer.tgt_word_prj.weight",
+            "head.nrtr_head.transformer.embedding.embedding.weight",
+        ):
+            if key in rec_state and nrtr is None:
+                nrtr = int(rec_state[key].shape[0])
+    default = config.get("num_classes", 6906)
+    return ctc or default, nrtr or default
 
 
 class OCRPipeline:
@@ -53,12 +76,16 @@ class OCRPipeline:
             unclip_ratio=self.config.get("unclip_ratio", 1.4))
 
         # rec 网络
-        backbone_out = self.config.get("backbone_out_channels", 160)
+        backbone_out = (self.config.get("backbone_out_channels")
+                        or rec_backbone_out_channels(size))
+        ctc_out, nrtr_out = _infer_rec_out_channels(rec_state, self.config)
         self.rec_backbone = PPLCNetV4(model_size=size, det=False)
         self.rec_head = MultiHead(
             in_channels=backbone_out, out_channels=out_channels,
             max_text_length=max_text_length,
-            nrtr_dim=self.config.get("nrtr_dim", 384))
+            nrtr_dim=self.config.get("nrtr_dim", 384),
+            ctc_out_channels=ctc_out,
+            nrtr_out_channels=nrtr_out)
         self.rec_net = torch.nn.ModuleDict(
             {"backbone": self.rec_backbone, "head": self.rec_head})
         if rec_state is not None:

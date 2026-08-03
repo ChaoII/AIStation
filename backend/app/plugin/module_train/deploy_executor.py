@@ -369,6 +369,21 @@ async def _execute_deployment(deploy_id: int):
         is_ocr = _is_ocr_framework(deploy.framework)
         image = OCR_IMAGE if is_ocr else DOCKER_IMAGE
 
+        if is_ocr:
+            # OCR 部署必须有显式的 rec 模型：仅挂载 det.pt 时推理管线会用随机
+            # rec 头，产出垃圾文本。rec_model_path 缺失 → 拒绝部署。
+            rec_model_path = (deploy.hyperparams or {}).get("rec_model_path")
+            if not rec_model_path:
+                async with async_db_session.begin() as db:
+                    await db.execute(
+                        update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
+                            status="failed",
+                            error_log="OCR 部署需要提供 rec_model_path",
+                            finished_at=datetime.now(),
+                        )
+                    )
+                return
+
         await pull_image(image)
 
         export_dir = os.path.join(tempfile.gettempdir(), "deploy_output", str(deploy_id))
@@ -391,12 +406,10 @@ async def _execute_deployment(deploy_id: int):
             if model_local_path != det_pt_path:
                 import shutil
                 shutil.copy2(model_local_path, det_pt_path)
-            rec_model_path = (deploy.hyperparams or {}).get("rec_model_path")
-            if rec_model_path:
-                rec_data = s3_client.download_fileobj(rec_model_path)
-                rec_local_path = os.path.join(model_dir, "rec.pt")
-                with open(rec_local_path, "wb") as f:
-                    f.write(rec_data.read())
+            rec_data = s3_client.download_fileobj(rec_model_path)
+            rec_local_path = os.path.join(model_dir, "rec.pt")
+            with open(rec_local_path, "wb") as f:
+                f.write(rec_data.read())
         else:
             # Ensure file is named best.pt inside model mount
             best_pt_path = os.path.join(model_dir, "best.pt")

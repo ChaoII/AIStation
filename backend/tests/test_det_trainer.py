@@ -81,3 +81,99 @@ def test_det_trainer_smoke_train_produces_best_pt():
         )
         assert best_path == os.path.join(output_dir, "best.pt")
         assert os.path.isfile(best_path)
+
+
+# ---------------------------------------------------------------------------
+# eval（Hmean）
+# ---------------------------------------------------------------------------
+
+
+def test_polygon_iou_overlap():
+    from pytorch_ocr.trainer.det_trainer import polygon_iou
+    a = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    b = [[5, 0], [15, 0], [15, 10], [5, 10]]  # 重叠 5x10=50
+    iou = polygon_iou(a, b)
+    assert 0.3 < iou < 0.4  # 50 / (100+100-50)
+
+
+def test_polygon_iou_no_overlap():
+    from pytorch_ocr.trainer.det_trainer import polygon_iou
+    a = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    b = [[20, 20], [30, 20], [30, 30], [20, 30]]
+    assert polygon_iou(a, b) == 0.0
+
+
+def test_compute_det_metrics_perfect():
+    from pytorch_ocr.trainer.det_trainer import compute_det_metrics
+    gt = [[[[0, 0], [10, 0], [10, 10], [0, 10]]]]
+    pred = [[[[0, 0], [10, 0], [10, 10], [0, 10]]]]
+    m = compute_det_metrics(pred, gt)
+    assert m["tp"] == 1 and m["fp"] == 0 and m["fn"] == 0
+    assert m["precision"] == 1.0
+    assert m["recall"] == 1.0
+    assert m["hmean"] == 1.0
+
+
+def test_compute_det_metrics_miss_and_false_positive():
+    from pytorch_ocr.trainer.det_trainer import compute_det_metrics
+    gt = [[[[0, 0], [10, 0], [10, 10], [0, 10]]]]
+    # 一个远离 GT 的误检（FP）+ 一个漏检（FN）
+    pred = [[[[50, 50], [60, 50], [60, 60], [50, 60]]]]
+    m = compute_det_metrics(pred, gt)
+    assert m["tp"] == 0 and m["fp"] == 1 and m["fn"] == 1
+    assert m["precision"] == 0.0
+    assert m["recall"] == 0.0
+    assert m["hmean"] == 0.0
+
+
+def test_det_trainer_eval_deterministic_hmean():
+    """eval 端到端：伪造概率图全亮 → 检出整幅图 → 与全幅 GT 匹配 → Hmean=1.0。"""
+    import torch
+    from PIL import Image
+
+    from pytorch_ocr.trainer.det_trainer import DetTrainer
+
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = os.path.join(tmp, "data")
+        images_dir = os.path.join(data_dir, "images")
+        os.makedirs(images_dir, exist_ok=True)
+        for i in range(2):
+            img = np.zeros((64, 64, 3), dtype=np.uint8)
+            img[10:40, 10:50] = 200
+            Image.fromarray(img).save(os.path.join(images_dir, f"img_{i}.jpg"))
+        poly = "[[0,0],[64,0],[64,64],[0,64]]"
+        with open(os.path.join(data_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
+            f.writelines([f"img_{i}.jpg\t{poly}\n" for i in range(2)])
+
+        config = {
+            "model_size": "tiny",
+            "out_channels": 16,
+            "image_shape": (64, 64),
+        }
+        trainer = DetTrainer(config, device="cpu")
+
+        class FakeBackbone(torch.nn.Module):
+            def forward(self, x):
+                return x
+
+        class FakeFPN(torch.nn.Module):
+            def forward(self, feats):
+                return {"fuse": feats}
+
+        class FakeHead(torch.nn.Module):
+            def forward(self, fused):
+                m = np.ones((1, 1, 64, 64), dtype=np.float32)
+                return {"maps": torch.from_numpy(m)}
+
+        trainer.backbone = FakeBackbone()
+        trainer.fpn = FakeFPN()
+        trainer.head = FakeHead()
+
+        result = trainer.eval(data_dir=data_dir)
+        assert result["hmean"] == 1.0
+        assert result["precision"] == 1.0
+        assert result["recall"] == 1.0
+        assert result["tp"] == 2
+        assert result["fp"] == 0
+        assert result["fn"] == 0
+        assert result["num_images"] == 2

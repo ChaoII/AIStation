@@ -61,10 +61,20 @@ def _verify_det(args) -> None:
 
 
 def _verify_rec(args) -> None:
-    from pytorch_ocr.converter.ppocr_v6_rec_converter import build_rec_model
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import (
+        build_rec_model,
+        guess_torch_out_channels,
+    )
 
-    model = build_rec_model(model_size=args.model_size)
     state = torch.load(args.pytorch, map_location="cpu")
+    # 官方双头词表不同（CTC=dict 6906，NRTR=dict+4 6910）；按权重形状推断，
+    # 避免以单一 out_channels 构造导致 shape 不匹配而加载失败。
+    ctc_out, nrtr_out = guess_torch_out_channels(state)
+    model = build_rec_model(
+        model_size=args.model_size,
+        ctc_out_channels=ctc_out,
+        nrtr_out_channels=nrtr_out,
+    )
     result = model.load_state_dict(state, strict=False)
     if result.missing_keys:
         print(f"[warn] missing keys: {result.missing_keys}")
