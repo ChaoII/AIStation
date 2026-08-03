@@ -352,11 +352,13 @@ def test_convert_ppocr_v6_rec_semantic_head_maps():
         if m:
             lidx, sub = m.group(1), m.group(2)
             base = f"head.gtc_head.decoder.{lidx}."
-            # self_attn conv1/2/3 → 融合 qkv
+            # self_attn conv1/2/3 → 融合 qkv（weight 需转成 Paddle Linear [in, out]）
             m2 = re.match(r"self_attn\.conv([123])\.(weight|bias)$", sub)
             if m2:
                 cidx = int(m2.group(1)) - 1
                 kind = m2.group(2)
+                if kind == "weight":
+                    value = value[:, :, 0, 0].T
                 return (f"{base}self_attn.qkv.{kind}", value, cidx, 3)
             m2 = re.match(r"self_attn\.out_proj\.(weight|bias)$", sub)
             if m2:
@@ -372,7 +374,9 @@ def test_convert_ppocr_v6_rec_semantic_head_maps():
                     if kind == "weight":
                         return f"{base}cross_attn.q.weight", value[:, :, 0, 0].T
                     return f"{base}cross_attn.q.bias", value
-                # kv: conv2=k, conv3=v
+                # kv: conv2=k, conv3=v（weight 需转成 Paddle Linear [in, out]）
+                if kind == "weight":
+                    value = value[:, :, 0, 0].T
                 return (f"{base}cross_attn.kv.{kind}", value, cidx - 1, 2)
             m2 = re.match(r"multihead_attn\.out_proj\.(weight|bias)$", sub)
             if m2:
