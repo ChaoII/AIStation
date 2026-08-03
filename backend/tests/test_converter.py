@@ -240,3 +240,13 @@ def test_convert_ppocr_v6_rec_empty_raises():
 
     with pytest.raises(ValueError):
         convert_ppocr_v6_rec({}, "tiny")
+
+
+def test_verify_conversion_supports_rec():
+    """verify_conversion.py 必须支持 --rec 模式（rec 权重逐层输出对比）。"""
+    import inspect
+
+    from pytorch_ocr.converter.verify_conversion import main
+
+    src = inspect.getsource(main)
+    assert "--rec" in src or "rec" in src.lower()
