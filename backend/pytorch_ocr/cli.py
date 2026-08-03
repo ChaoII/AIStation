@@ -47,6 +47,14 @@ def build_parser():
     eval_rec.add_argument("--output", default="/output")
     eval_rec.add_argument("--device", default="0")
     eval_rec.add_argument("--config", default="")
+
+    predict = sub.add_parser("predict", help="OCR 推理")
+    predict.add_argument("--image", required=True, help="输入图片路径")
+    predict.add_argument("--det-model", required=True, help="det best.pt")
+    predict.add_argument("--rec-model", required=True, help="rec best.pt")
+    predict.add_argument("--output", default="/output/result.json")
+    predict.add_argument("--device", default="0")
+    predict.add_argument("--config", default="")
     return parser
 
 
@@ -137,6 +145,27 @@ def cmd_eval_rec(args):
     print(f"[cli] eval result: {json.dumps(result)}", flush=True)
 
 
+def cmd_predict(args):
+    import cv2
+    import torch
+
+    from .inference.ocr_pipeline import OCRPipeline
+
+    # OCR 推理需要 det + rec 两套配置键
+    cfg = _build_config(args, rec=True)
+    cfg.update(_build_config(args))
+    det_state = torch.load(args.det_model, map_location="cpu")
+    rec_state = torch.load(args.rec_model, map_location="cpu")
+    pipe = OCRPipeline(det_state=det_state, rec_state=rec_state, config=cfg)
+    img = cv2.imread(args.image)
+    if img is None:
+        raise ValueError(f"无法读取图片: {args.image}")
+    result = pipe(img)
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False)
+    print(f"[cli] OCR result: {len(result)} detections -> {args.output}", flush=True)
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -148,6 +177,8 @@ def main():
         cmd_train_rec(args)
     elif args.command == "eval-rec":
         cmd_eval_rec(args)
+    elif args.command == "predict":
+        cmd_predict(args)
 
 
 if __name__ == "__main__":

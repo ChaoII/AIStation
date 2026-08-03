@@ -21,6 +21,30 @@ def test_build_parser_has_rec_subcommands():
     assert "eval-rec" in actions
 
 
+def test_build_parser_has_predict():
+    parser = build_parser()
+    sub = parser._subparsers
+    actions = list(sub._group_actions[0].choices.keys())
+    assert "predict" in actions
+
+
+def test_predict_parser_has_required_args():
+    from pytorch_ocr.cli import build_parser
+    parser = build_parser()
+    args = parser.parse_args([
+        "predict",
+        "--image", "/input/img.jpg",
+        "--det-model", "/model/det.pt",
+        "--rec-model", "/model/rec.pt",
+    ])
+    assert args.command == "predict"
+    assert args.image == "/input/img.jpg"
+    assert args.det_model == "/model/det.pt"
+    assert args.rec_model == "/model/rec.pt"
+    assert args.output == "/output/result.json"
+    assert args.device == "0"
+
+
 def test_normalize_device():
     from pytorch_ocr.cli import _normalize_device
     assert _normalize_device("0") == "cuda:0"
