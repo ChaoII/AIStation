@@ -74,12 +74,22 @@
         <template #framework>
           <ElRadioGroup v-model="formData.framework" @change="onFrameworkChange">
             <ElRadio value="ultralytics">Ultralytics</ElRadio>
+            <ElRadio value="pytorch-ocr-det">PyTorch OCR (det)</ElRadio>
           </ElRadioGroup>
         </template>
         <template #hyperparams>
           <ElDivider content-position="left">超参数配置</ElDivider>
           <ElRow :gutter="16">
-            <ElCol :span="12">
+            <ElCol v-if="formData.framework === 'pytorch-ocr-det'" :span="12">
+              <ElFormItem label="模型大小">
+                <ElSelect v-model="hpForm.model_size" style="width:100%">
+                  <ElOption label="tiny" value="tiny" />
+                  <ElOption label="small" value="small" />
+                  <ElOption label="medium" value="medium" />
+                </ElSelect>
+              </ElFormItem>
+            </ElCol>
+            <ElCol v-else :span="12">
               <ElFormItem label="模型">
                 <ElSelect v-model="hpForm.model" style="width:100%">
                   <ElOptionGroup v-for="g in modelGroups" :key="g" :label="g">
@@ -100,10 +110,19 @@
             </ElCol>
             <ElCol :span="12">
               <ElFormItem label="Learning Rate">
-                <ElInputNumber v-model="hpForm.lr0" :min="0.0001" :max="1" :step="0.001" :precision="4" style="width:100%" />
+                <ElInputNumber
+                  v-if="formData.framework === 'pytorch-ocr-det'"
+                  v-model="hpForm.lr"
+                  :min="0.0001" :max="1" :step="0.001" :precision="4" style="width:100%"
+                />
+                <ElInputNumber
+                  v-else
+                  v-model="hpForm.lr0"
+                  :min="0.0001" :max="1" :step="0.001" :precision="4" style="width:100%"
+                />
               </ElFormItem>
             </ElCol>
-            <ElCol :span="12">
+            <ElCol v-if="formData.framework !== 'pytorch-ocr-det'" :span="12">
               <ElFormItem label="Optimizer">
                 <ElSelect v-model="hpForm.optimizer" style="width:100%">
                   <ElOption label="AdamW" value="AdamW" />
@@ -112,12 +131,12 @@
                 </ElSelect>
               </ElFormItem>
             </ElCol>
-            <ElCol :span="12">
+            <ElCol v-if="formData.framework !== 'pytorch-ocr-det'" :span="12">
               <ElFormItem label="Image Size">
                 <ElInputNumber v-model="hpForm.imgsz" :min="32" :max="4096" :step="32" style="width:100%" />
               </ElFormItem>
             </ElCol>
-            <ElCol :span="12">
+            <ElCol v-if="formData.framework !== 'pytorch-ocr-det'" :span="12">
               <ElFormItem label="Workers">
                 <ElInputNumber v-model="hpForm.workers" :min="0" :max="32" style="width:100%" />
               </ElFormItem>
@@ -127,13 +146,13 @@
                 <ElInput v-model="hpForm.device" placeholder="如: 0" />
               </ElFormItem>
             </ElCol>
-            <ElCol v-if="isClassificationTask" :span="12">
+            <ElCol v-if="isClassificationTask && formData.framework !== 'pytorch-ocr-det'" :span="12">
               <ElFormItem label="多标签分类">
                 <ElSwitch v-model="hpForm.multi_label" />
               </ElFormItem>
             </ElCol>
           </ElRow>
-          <ElCollapse class="hp-advanced-collapse">
+          <ElCollapse v-if="formData.framework !== 'pytorch-ocr-det'" class="hp-advanced-collapse">
             <ElCollapseItem title="高级参数" name="advanced">
               <ElRow :gutter="16">
                 <ElCol :span="12"><ElFormItem label="LR Factor (lrf)"><ElInputNumber v-model="hpForm.lrf" :min="0" :max="1" :step="0.001" :precision="4" style="width:100%" /></ElFormItem></ElCol>
@@ -320,7 +339,7 @@ const searchItems = computed<SearchFormItem[]>(() => [
     type: "select",
     props: { placeholder: "请选择框架", clearable: true, options: [
       { label: "Ultralytics", value: "ultralytics" },
-      { label: "PaddleX", value: "paddlex" },
+      { label: "PyTorch OCR (det)", value: "pytorch-ocr-det" },
     ] },
     span: 6,
   },
@@ -407,12 +426,20 @@ const hpForm = reactive<Record<string, any>>({
   multi_label: false,
 });
 
-function onFrameworkChange() {
+function onFrameworkChange(fw?: string | number | boolean | undefined) {
+  const val = String(fw ?? formData.value.framework ?? "");
   Object.keys(hpForm).forEach(k => delete hpForm[k]);
-  Object.assign(hpForm, { model: "yolo11n.pt", epochs: 100, batch: 16, lr0: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, patience: 100, seed: 0, hsv_h: 0.015, hsv_s: 0.7, hsv_v: 0.4, fliplr: 0.5, flipud: 0.0, mosaic: 1.0, mixup: 0.0, multi_label: false });
+  if (val === "pytorch-ocr-det") {
+    Object.assign(hpForm, { model_size: "tiny", epochs: 100, batch: 8, lr: 0.001, device: "0" });
+  } else {
+    Object.assign(hpForm, { model: "yolo11n.pt", epochs: 100, batch: 16, lr0: 0.01, optimizer: "AdamW", imgsz: 640, workers: 4, device: "0", trainRatio: 80, lrf: 0.01, momentum: 0.937, weight_decay: 0.0005, patience: 100, seed: 0, hsv_h: 0.015, hsv_s: 0.7, hsv_v: 0.4, fliplr: 0.5, flipud: 0.0, mosaic: 1.0, mixup: 0.0, multi_label: false });
+  }
 }
 
 function buildHyperparams(): Record<string, any> {
+  if (formData.value.framework === "pytorch-ocr-det") {
+    return { model_size: hpForm.model_size || "tiny", epochs: hpForm.epochs, batch: hpForm.batch, lr: hpForm.lr, device: hpForm.device };
+  }
   const hp: Record<string, any> = { ...hpForm, lr0: hpForm.lr0 ?? 0.01, train_ratio: (hpForm.trainRatio || 80) / 100 };
   if (!isClassificationTask.value) delete hp.multi_label;
   return hp;
@@ -425,6 +452,9 @@ const dockerCmdPreview = computed(() => {
   const dataMount = `${tempDir.value}/train_output/{task_id}/data`;
   const outputMount = `${tempDir.value}/train_output/{task_id}`;
   const cacheMount = `${tempDir.value}/train_output/.models_cache`;
+  if (formData.value.framework === "pytorch-ocr-det") {
+    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  aistation-ocr:latest \\\n  train-det \\\n    --data /data \\\n    --output /output \\\n    --device ${hpForm.device ?? "0"} \\\n    --epochs ${hpForm.epochs ?? 100} \\\n    --batch ${hpForm.batch ?? 8} \\\n    --lr ${hpForm.lr ?? 0.001} \\\n    --model-size ${hpForm.model_size ?? "tiny"}`;
+  }
   return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr0} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
 });
 
@@ -456,8 +486,9 @@ const { submitLoading, handleCloseDialog, handleOpenDialog, handleSubmit } = use
 onMounted(() => {
   if (routeBaseModelId) {
     const extra: Record<string, unknown> = {};
-    if (routeFramework && ["ultralytics", "paddlex"].includes(routeFramework)) extra.framework = routeFramework;
+    if (routeFramework && ["ultralytics", "pytorch-ocr-det"].includes(routeFramework)) extra.framework = routeFramework;
     handleOpenDialog("create", undefined, extra);
+    if (routeFramework && ["ultralytics", "pytorch-ocr-det"].includes(routeFramework)) onFrameworkChange();
   }
 });
 
@@ -499,7 +530,7 @@ const { columns, columnChecks, data, loading, pagination, searchParams, getData,
         prop: "framework",
         label: "框架",
         width: 100,
-        formatter: (row: TrainTaskTable) => h(ElTag, { type: row.framework === "ultralytics" ? "success" : "primary" }, () => row.framework === "ultralytics" ? "YOLO" : "PaddleX"),
+        formatter: (row: TrainTaskTable) => h(ElTag, { type: row.framework === "ultralytics" ? "success" : "primary" }, () => row.framework === "ultralytics" ? "YOLO" : row.framework === "pytorch-ocr-det" ? "OCR" : "PaddleX"),
       },
       { prop: "dataset_id", label: "数据集ID", width: 90 },
       { prop: "status", label: "状态", width: 100, formatter: (row: TrainTaskTable) => statusTag(row.status) },
