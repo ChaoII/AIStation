@@ -205,6 +205,20 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
                     if task_type in ("cls", "classification") and ann_task.classification_mode == "multi":
                         force_multi_label = True
         return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label)
+    if task.framework == TrainFramework.PYTORCH_OCR_DET:
+        hp = task.hyperparams or {}
+        # aistation-ocr 镜像 ENTRYPOINT 已是 `python -m pytorch_ocr.cli`，
+        # Docker 合并 ENTRYPOINT+CMD，故此处只传子命令参数
+        return [
+            "train-det",
+            "--data", "/data",
+            "--output", "/output",
+            "--device", str(hp.get("device", "0")),
+            "--epochs", str(hp.get("epochs", 100)),
+            "--batch", str(hp.get("batch", 8)),
+            "--lr", str(hp.get("lr", 0.001)),
+            "--model-size", str(hp.get("model_size", "tiny")),
+        ]
     raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
@@ -395,8 +409,18 @@ async def start_training(task_id: int):
                 finished_at=None,
             )
         )
-    asyncio.create_task(TrainExecutor.run(task_id))
+    if task.framework == TrainFramework.PYTORCH_OCR_DET:
+        from .ocr_executor import OCRDetExecutor
+        asyncio.create_task(OCRDetExecutor.run(task_id))
+    else:
+        asyncio.create_task(TrainExecutor.run(task_id))
 
 
 async def stop_training(task_id: int) -> None:
-    await TrainExecutor.stop(task_id)
+    from .ocr_executor import OCRDetExecutor
+    async with async_db_session() as db:
+        task = await db.get(TrainTask, task_id)
+    if task and task.framework == TrainFramework.PYTORCH_OCR_DET:
+        await OCRDetExecutor.stop(task_id)
+    else:
+        await TrainExecutor.stop(task_id)

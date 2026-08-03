@@ -536,6 +536,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_scheduler())
         log.info("✅ 训练调度器已启动")
 
+        from app.plugin.module_train.ocr_executor import OCRDetExecutor
+        asyncio.create_task(OCRDetExecutor.start_recovery_loop())
+        log.info("✅ OCR 训练调度器已启动")
+
         from app.plugin.module_train.eval_scheduler import start_evaluation_scheduler
         asyncio.create_task(start_evaluation_scheduler())
         log.info("✅ 评估调度器已启动")

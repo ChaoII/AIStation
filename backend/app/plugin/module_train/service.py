@@ -314,10 +314,13 @@ class TrainService:
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
-        if data.framework == "paddlex":
+        from .model import TrainFramework
+        if data.framework == TrainFramework.PADDLEX:
             raise ValueError("PaddleX 已下线，请使用 ultralytics 框架")
         async with async_db_session.begin() as db:
-            image = "ultralytics/ultralytics:latest"
+            image = ("aistation-ocr:latest"
+                     if data.framework == TrainFramework.PYTORCH_OCR_DET
+                     else "ultralytics/ultralytics:latest")
             t = TrainTask(
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
                 annotation_task_id=data.annotation_task_id,

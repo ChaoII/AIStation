@@ -74,6 +74,8 @@ async def _export_core(
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, export_rec, annotation_task_id)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
+    elif framework == "pytorch-ocr-det":
+        await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id)
     else:
         raise ValueError(f"不支持的导出框架: {framework}")
 
@@ -498,17 +500,73 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
     log.info(f"exported {downloaded} images to x-anylabeling format in {output_dir}")
 
 
+async def _export_pytorch_ocr(dataset_id: int, task_id: int, images: list,
+                              output_dir: str, annotation_task_id: int | None = None) -> None:
+    """导出 PyTorch OCR det 格式：images/ + det_gt.txt。
+
+    det_gt.txt 每行: "image_name\\t[[[x1,y1],[x2,y2],[x3,y3],[x4,y4]],...]"
+    （像素坐标，与 DetDataset._parse_polys 匹配）
+    """
+    from app.utils.s3_client import s3_client
+
+    img_dir = os.path.join(output_dir, "images")
+    os.makedirs(img_dir, exist_ok=True)
+    det_lines = []
+
+    async with async_db_session() as db:
+        for img in images:
+            img_path = os.path.join(img_dir, img.filename)
+            try:
+                if not os.path.exists(img_path):
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+            except Exception:
+                continue
+
+            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+            if annotation_task_id:
+                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+            rec = await db.execute(query)
+            record = rec.scalar_one_or_none()
+            anns = record.annotation_data if record and record.annotation_data else []
+
+            quads = []
+            w = img.width or 1
+            h = img.height or 1
+            for ann in anns:
+                if ann.get("type") not in ("polygon", "Polygon", "ocr", "Ocr"):
+                    continue
+                pts = ann.get("points", [])
+                if len(pts) < 4:
+                    continue
+                # 转像素坐标四角点
+                quad = [[float(p["x"] * w), float(p["y"] * h)]
+                        if isinstance(p, dict) else [float(p[0] * w), float(p[1] * h)]
+                        for p in pts[:4]]
+                quads.append(quad)
+            if quads:
+                det_lines.append(f"{img.filename}\t{json.dumps(quads)}")
+
+    with open(os.path.join(output_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(det_lines))
+    log.info(f"pytorch-ocr: exported {len(det_lines)} labeled images to {output_dir}")
+
+
 async def export_model(task_id: int, framework: str, export_dir: str, best_metrics: dict | None = None) -> dict:
     from .model import TrainModel, TrainTask
 
     # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
     best_path = None
-    extensions = [".pt"] if framework == "ultralytics" else [".pdparams"]
+    extensions = [".pt"] if framework in ("ultralytics", "pytorch-ocr-det") else [".pdparams"]
     for ext in extensions:
         candidates = [
             os.path.join(export_dir, "exp", "weights", f"best{ext}"),
             os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
         ]
+        if framework == "pytorch-ocr-det":
+            candidates.insert(0, os.path.join(export_dir, f"best{ext}"))
         if framework == "paddlex":
             # PaddleX 输出路径变体（output/best_model/exp/best_model 等）
             candidates = [
@@ -529,7 +587,7 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
         for root, dirs, files in os.walk(export_dir):
             dirs[:] = [d for d in dirs if d != ".models_cache"]
             for f in files:
-                if framework == "ultralytics" and f == "best.pt":
+                if framework in ("ultralytics", "pytorch-ocr-det") and f == "best.pt":
                     best_path = os.path.join(root, f)
                     break
                 elif framework == "paddlex" and f == "best.pdparams":
