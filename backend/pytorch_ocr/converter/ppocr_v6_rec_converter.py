@@ -78,4 +78,13 @@ def convert_ppocr_v6_rec(
         logger.warning("weight converter (rec): %s", warning)
     if report.matched == 0:
         raise ValueError("no parameters mapped — check Paddle param name format")
+    # 守卫：head 层必须完整映射，否则报错（位置对应法无法表达 head 内 linear/embedding/layer_norm 交错）
+    head_params = [k for k in model.state_dict() if k.startswith("head.")]
+    missing_head = [k for k in head_params if k not in state]
+    if missing_head:
+        raise ValueError(
+            f"rec head 权重未完整映射: {len(missing_head)}/{len(head_params)} missing "
+            f"(e.g. {missing_head[:5]}). 位置对应法仅覆盖 conv/bn，head 需 name-based 映射 "
+            f"(plan 3b)。"
+        )
     return state

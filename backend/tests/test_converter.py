@@ -176,20 +176,21 @@ def test_build_det_model_neck_dilated_kernel_size_is_5():
 
 
 def test_convert_ppocr_v6_rec_exists():
-    """rec 转换器：位置对应法可完整映射 backbone（conv/bn）参数。
+    """rec 转换器底层位置对应法可完整映射 backbone（conv/bn）参数。
 
     rec 模型 = PPLCNetV4(det=False) + MultiHead(CTC + NRTR)。head 内
     Linear/Embedding/LayerNorm/Conv1d 的 Paddle 命名映射留待 plan 3b 真实权重验证。
+    ``convert_ppocr_v6_rec`` 现带 head 完整性守卫（head 无法完整映射时抛错，
+    见 test_convert_ppocr_v6_rec_head_missing_raises），此处直接测底层
+    ``convert_with_report`` 确认 backbone 位置对应仍可靠。
     """
-    from pytorch_ocr.converter.ppocr_v6_rec_converter import (
-        build_rec_model,
-        convert_ppocr_v6_rec,
-    )
+    from pytorch_ocr.converter.ppocr_v6_det_converter import convert_with_report
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import build_rec_model
 
     model = build_rec_model("tiny")
     original = {k: v.detach().clone() for k, v in model.state_dict().items()}
     paddle = synthetic_paddle_state(model)
-    result = convert_ppocr_v6_rec(paddle, "tiny")
+    result, _report = convert_with_report(paddle, model)
     assert isinstance(result, dict)
     assert "backbone.conv1.0.conv.weight" in result
     # 数值 round-trip
@@ -200,6 +201,38 @@ def test_convert_ppocr_v6_rec_exists():
     # 位置对应：backbone 全部参数映射完整，无缺失
     loaded = model.load_state_dict(result, strict=False)
     assert all(not k.startswith("backbone.") for k in loaded.missing_keys)
+
+
+def test_convert_ppocr_v6_rec_head_missing_raises():
+    """守卫：head 层无法完整映射时必须抛错，不能静默产出垃圾权重。
+
+    真实 Paddle rec head 参数命名（linear_N/embedding_N/layer_norm_N/
+    conv1d_N/batch_norm1d_N）与 det 的 conv2d_N/batch_norm_N 不同，
+    位置对应法无法覆盖 → head 映射不完整 → 必须 raise。
+    """
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import (
+        build_rec_model,
+        convert_ppocr_v6_rec,
+    )
+
+    model = build_rec_model("tiny")
+    sd = model.state_dict()
+    # 模拟真实 Paddle 命名：backbone 的 conv/bn 用 Paddle 名，head 参数全部缺席
+    # （真实 Paddle 会用 linear_N/embedding_N/layer_norm_N 等，无法被位置对应法解析）
+    paddle_state = {}
+    conv_idx = 0
+    bn_idx = 0
+    for k, v in sd.items():
+        if k.startswith("head."):
+            continue
+        if "conv" in k and "weight" in k:
+            paddle_state[f"conv2d_{conv_idx}.w_0"] = v.numpy()
+            conv_idx += 1
+        elif "bn" in k:
+            paddle_state[f"batch_norm_{bn_idx}.w_0"] = v.numpy()
+            bn_idx += 1
+    with pytest.raises(ValueError, match="head"):
+        convert_ppocr_v6_rec(paddle_state, "tiny")
 
 
 def test_convert_ppocr_v6_rec_empty_raises():
