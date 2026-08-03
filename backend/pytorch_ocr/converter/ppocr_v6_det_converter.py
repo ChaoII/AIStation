@@ -112,6 +112,61 @@ def map_param_name(paddle_name: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# 语义名映射（官方 PaddleX .pdparams 使用语义命名，如
+# ``backbone.stem.stem1.conv.weight`` / ``head.binarize.conv1.weight``；
+# 自研模型 backbone/neck 与 Paddle 语义名一致，仅 DBHead 用索引命名）
+# ---------------------------------------------------------------------------
+
+# Paddle BN 统计量名 → PyTorch BN 统计量名
+_SEMANTIC_SUFFIX_MAP = {
+    "weight": "weight",
+    "bias": "bias",
+    "_mean": "running_mean",
+    "_variance": "running_var",
+}
+
+# DBHead：Paddle 语义子层名 → 自研 nn.Sequential 索引（conv1→0, conv_bn1→1,
+# conv2→3, conv_bn2→4, conv3→6；间隔为 relu 激活，无参数）
+_HEAD_SUB_MAP = {
+    "conv1": "0",
+    "conv_bn1": "1",
+    "conv2": "3",
+    "conv_bn2": "4",
+    "conv3": "6",
+}
+
+
+def _rename_semantic(paddle_name: str) -> str:
+    """语义名重命名：``_mean``/``_variance`` → ``running_mean``/``running_var``。
+
+    仅处理尾部统计量后缀，backbone/neck 其余部分两框架命名完全一致。
+    """
+    for pad_suffix, torch_suffix in _SEMANTIC_SUFFIX_MAP.items():
+        if paddle_name.endswith("." + pad_suffix):
+            return paddle_name[: -len(pad_suffix)] + torch_suffix
+    return paddle_name
+
+
+def map_semantic_name(paddle_name: str) -> str | None:
+    """将语义 Paddle 参数名映射为自研模型 PyTorch 参数名。
+
+    - ``head.<sub>.<conv1|conv_bn1|...>.<suffix>`` → ``head.<sub>.<idx>.<suffix>``
+    - 其余语义名直接映射（backbone/neck 命名一致，仅替换 BN 统计量后缀）。
+    - ``head.aux_*``（辅助深度监督头，自研模型不实现）返回 None。
+    返回 None 表示无对应 torch 参数。
+    """
+    if paddle_name.startswith("head.aux_"):
+        return None
+    parts = paddle_name.split(".")
+    if len(parts) >= 4 and parts[0] == "head" and parts[2] in _HEAD_SUB_MAP:
+        head_sub = parts[1]  # binarize / thresh
+        idx = _HEAD_SUB_MAP[parts[2]]
+        torch_suffix = _SEMANTIC_SUFFIX_MAP.get(parts[3], parts[3])
+        return f"head.{head_sub}.{idx}.{torch_suffix}"
+    return _rename_semantic(paddle_name)
+
+
+# ---------------------------------------------------------------------------
 # 有序参数收集
 # ---------------------------------------------------------------------------
 
@@ -216,6 +271,76 @@ def convert_with_report(paddle_state: dict, model: nn.Module) -> tuple[dict, Con
     return state, report
 
 
+def convert_by_name(paddle_state: dict, model: nn.Module) -> tuple[dict, ConversionReport]:
+    """语义名直接映射转换：官方 PaddleX .pdparams → PyTorch state_dict。
+
+    官方权重（PaddleX 3.0）使用语义命名（``backbone.stem.stem1.conv.weight``、
+    ``head.binarize.conv1.weight``），与自研模型 backbone/neck 命名一致，
+    仅 DBHead 子层名不同（见 ``map_semantic_name``）。逐名做「kind + shape」
+    双重校验，剩余无对应项进入 warning。
+
+    ``paddle_state``: {paddle_param_name: np.ndarray}
+    ``model``: 自研 det 模型。
+    返回 ``(torch_state_dict, ConversionReport)``。
+    """
+    torch_sd = model.state_dict()
+    state: dict = {}
+    report = ConversionReport()
+    used_paddle = set()
+
+    for t_path, tensor in torch_sd.items():
+        if t_path.endswith("num_batches_tracked"):
+            continue
+        kind = t_path.rsplit(".", 1)[-1]
+        shape = tuple(tensor.shape)
+        # 先直接匹配（backbone/neck 语义名一致），再走语义映射
+        p_key = None
+        if t_path in paddle_state:
+            p_key = t_path
+        else:
+            for p_name in paddle_state:
+                mapped = map_semantic_name(p_name)
+                if mapped == t_path:
+                    p_key = p_name
+                    break
+        if p_key is None:
+            report.warnings.append(f"no paddle counterpart for torch param: {t_path}")
+            report.skipped += 1
+            continue
+        p_shape = tuple(np.asarray(paddle_state[p_key]).shape)
+        p_kind = p_key.rsplit(".", 1)[-1]
+        if p_kind in ("_mean", "_variance"):
+            p_kind = "running_mean" if p_kind == "_mean" else "running_var"
+        if p_kind != kind:
+            report.warnings.append(
+                f"kind mismatch: paddle {p_key} ({p_kind}) vs torch {t_path} ({kind})"
+            )
+            report.skipped += 1
+            continue
+        if p_shape != shape:
+            report.warnings.append(
+                f"shape mismatch: paddle {p_key} {p_shape} vs torch {t_path} {shape}"
+            )
+            report.skipped += 1
+            continue
+        arr = np.asarray(paddle_state[p_key], dtype=np.float32)
+        state[t_path] = torch.from_numpy(arr).clone()
+        report.path_to_paddle[t_path] = p_key
+        report.matched += 1
+        used_paddle.add(p_key)
+
+    for p_name in paddle_state:
+        if p_name not in used_paddle and not p_name.startswith("head.aux_"):
+            report.warnings.append(f"unused paddle param: {p_name}")
+
+    # Paddle 无 num_batches_tracked，统一初始化为 0
+    for path in torch_sd:
+        if path.endswith("num_batches_tracked"):
+            state[path] = torch.tensor(0, dtype=torch.long)
+
+    return state, report
+
+
 def build_det_model(
     model_size: str = "tiny", fpn_out_channels: int = 64, k: int = 50
 ) -> nn.Module:
@@ -248,9 +373,14 @@ def convert_ppocr_v6_det(
     ``paddle_state``: {paddle_param_name: np.ndarray}（Paddle .pdparams 内容）
     返回 ``{pytorch_param_name: torch.Tensor}``，可 ``strict=False`` 加载进
     ``build_det_model(model_size)`` 构造的模型。
+
+    优先使用语义名直接映射（官方 PaddleX .pdparams）；若匹配数为 0（说明输入
+    是旧式 ``conv2d_N.w_0`` 命名），回退到位置对应法。
     """
     model = build_det_model(model_size, fpn_out_channels=fpn_out_channels, k=k)
-    state, report = convert_with_report(paddle_state, model)
+    state, report = convert_by_name(paddle_state, model)
+    if report.matched == 0:
+        state, report = convert_with_report(paddle_state, model)
     for warning in report.warnings:
         logger.warning("weight converter: %s", warning)
     if report.matched == 0:

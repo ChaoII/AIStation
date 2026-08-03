@@ -19,7 +19,7 @@ import torch.nn as nn
 
 from ..modeling.backbones.pplcnetv4 import PPLCNetV4
 from ..modeling.heads.rec_multi_head import MultiHead
-from .ppocr_v6_det_converter import ConversionReport, convert_with_report
+from .ppocr_v6_det_converter import ConversionReport, convert_by_name, convert_with_report
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,10 @@ def convert_ppocr_v6_rec(
         max_text_length=max_text_length,
         nrtr_dim=nrtr_dim,
     )
-    state, report = convert_with_report(paddle_state, model)
+    # 优先语义名直接映射（官方 PaddleX .pdparams）；旧式 conv2d_N.w_0 命名回退位置对应法
+    state, report = convert_by_name(paddle_state, model)
+    if report.matched == 0:
+        state, report = convert_with_report(paddle_state, model)
     for warning in report.warnings:
         logger.warning("weight converter (rec): %s", warning)
     if report.matched == 0:

@@ -5,9 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 依赖
+# Python 依赖（Ubuntu 24.04 基础镜像带 EXTERNALLY-MANAGED 标记，需 --break-system-packages）
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
 # 打包 pytorch_ocr 包
 WORKDIR /workspace

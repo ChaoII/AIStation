@@ -19,6 +19,7 @@ from pytorch_ocr.converter.ppocr_v6_det_converter import (
     convert_ppocr_v6_det,
     convert_with_report,
     map_param_name,
+    map_semantic_name,
     parse_paddle_name,
 )
 
@@ -53,6 +54,81 @@ def synthetic_paddle_state(model):
             out[f"{key}._mean"] = module.running_mean.detach().numpy()
             out[f"{key}._variance"] = module.running_var.detach().numpy()
     return out
+
+
+def test_map_semantic_name():
+    """官方 PaddleX .pdparams 的语义名 → 自研模型参数名。
+
+    官方权重（PaddleX 3.0）使用语义命名，backbone/neck 两框架命名一致，
+    仅 DBHead 子层名不同（conv1→0, conv_bn1→1, conv2→3, conv_bn2→4, conv3→6）。
+    """
+    # backbone/neck 语义名直接映射（BN 统计量后缀替换）
+    assert map_semantic_name("backbone.stem.stem1.conv.weight") == (
+        "backbone.stem.stem1.conv.weight"
+    )
+    assert map_semantic_name("backbone.stem.stem1.bn._mean") == (
+        "backbone.stem.stem1.bn.running_mean"
+    )
+    assert map_semantic_name("backbone.stem.stem1.bn._variance") == (
+        "backbone.stem.stem1.bn.running_var"
+    )
+    # DBHead 语义子层名 → 索引
+    assert map_semantic_name("head.binarize.conv1.weight") == "head.binarize.0.weight"
+    assert map_semantic_name("head.binarize.conv_bn1._mean") == (
+        "head.binarize.1.running_mean"
+    )
+    assert map_semantic_name("head.binarize.conv2.weight") == "head.binarize.3.weight"
+    assert map_semantic_name("head.thresh.conv_bn2.bias") == "head.thresh.4.bias"
+    assert map_semantic_name("head.thresh.conv3.bias") == "head.thresh.6.bias"
+    # 辅助深度监督头（自研模型不实现）→ None
+    assert map_semantic_name("head.aux_binarize_p2.conv1.weight") is None
+    assert map_semantic_name("head.aux_thresh_p3.conv2.weight") is None
+
+
+def test_convert_by_name_roundtrip():
+    """语义名直接映射：官方 PaddleX .pdparams 格式可完整转换。
+
+    用自研模型参数值生成语义命名的伪 Paddle state_dict（与 PaddleX 3.0 一致），
+    验证 convert_ppocr_v6_det 走语义映射路径并数值 round-trip。
+    """
+    model = build_det_model("tiny")
+    original = {k: v.detach().clone() for k, v in model.state_dict().items()}
+    paddle = {}
+    for path, tensor in original.items():
+        if path.endswith("num_batches_tracked"):
+            continue
+        pad = map_semantic_name(path)
+        # map_semantic_name 是 Paddle→torch；反向：把 torch 语义名加回 Paddle 后缀
+        if ".running_mean" in path:
+            pad = path.replace(".running_mean", "._mean")
+        elif ".running_var" in path:
+            pad = path.replace(".running_var", "._variance")
+        else:
+            pad = path
+        if path.startswith("head."):
+            parts = path.split(".")
+            idx = parts[2]
+            sub_map = {v: k for k, v in {
+                "conv1": "0", "conv_bn1": "1", "conv2": "3",
+                "conv_bn2": "4", "conv3": "6",
+            }.items()}
+            sem = sub_map[idx]
+            pad = f"head.{parts[1]}.{sem}.{parts[3]}"
+            if pad.endswith("running_mean"):
+                pad = pad.replace("running_mean", "_mean")
+            elif pad.endswith("running_var"):
+                pad = pad.replace("running_var", "_variance")
+        paddle[pad] = tensor.numpy()
+
+    state = convert_ppocr_v6_det(paddle, "tiny")
+    result = model.load_state_dict(state, strict=False)
+    assert result.missing_keys == []
+    assert result.unexpected_keys == []
+    for path, tensor in original.items():
+        if path.endswith("num_batches_tracked"):
+            continue
+        assert path in state, f"missing {path}"
+        assert torch.equal(state[path], tensor), f"value changed: {path}"
 
 
 def test_map_param_name_basic():
