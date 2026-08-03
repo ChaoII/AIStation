@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+_MEAN = np.array([0.5, 0.5, 0.5], dtype=np.float32)
+_STD = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 
 _DEFAULT_DICT_PATH = os.path.join(
     os.path.dirname(__file__), "..", "utils", "dict", "ppocrv6_tiny_dict.txt"
@@ -15,9 +15,13 @@ _DEFAULT_DICT_PATH = os.path.join(
 
 
 class CharacterDict:
-    """字符集 <-> 索引映射。"""
+    """字符集 <-> 索引映射。
 
-    def __init__(self, dict_path: str, use_space_char: bool = True):
+    索引 0 保留给 CTC blank（对齐官方 PP-OCRv6 ``ctc_blank_idx=0``），
+    真实字符从索引 1 开始（``char_to_idx`` 存储 ``i + 1``）。
+    """
+
+    def __init__(self, dict_path: str, use_space_char: bool = True, blank_idx: int = 0):
         self.characters = []
         with open(dict_path, encoding="utf-8") as f:
             for line in f:
@@ -26,10 +30,10 @@ class CharacterDict:
                     self.characters.append(line)
         if use_space_char:
             self.characters.append(" ")
-        self.char_to_idx = {c: i for i, c in enumerate(self.characters)}
-        self.idx_to_char = dict(enumerate(self.characters))
-        # blank 索引 = len(characters)（CTC blank）
-        self.blank = len(self.characters)
+        # 字符索引 +1（保留索引 0 给 blank），对齐官方 PP-OCRv6 (ctc_blank_idx=0)
+        self.char_to_idx = {c: i + 1 for i, c in enumerate(self.characters)}
+        self.idx_to_char = {i + 1: c for i, c in enumerate(self.characters)}
+        self.blank = blank_idx  # 0
 
     @property
     def num_classes(self):

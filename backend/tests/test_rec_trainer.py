@@ -33,14 +33,14 @@ def test_ctc_decode_dedup_and_blank():
         with open(dict_path, "w", encoding="utf-8") as f:
             f.write("a\nb\nc\nd\n")
         decode = CTCLabelDecode(dict_path=dict_path)
-        # characters = [a, b, c, d, ' ']，blank = 5
+        # characters = [a, b, c, d, ' ']，blank = 0（索引 0 保留给 blank）
         logits = torch.zeros(1, 6, 6)
-        logits[0, 0, 0] = 2.0  # a
-        logits[0, 1, 0] = 2.0  # a（连续重复，应去重）
-        logits[0, 2, 5] = 2.0  # blank（应跳过）
-        logits[0, 3, 1] = 2.0  # b
-        logits[0, 4, 2] = 2.0  # c
-        logits[0, 5, 3] = 2.0  # d
+        logits[0, 0, 1] = 2.0  # a
+        logits[0, 1, 1] = 2.0  # a（连续重复，应去重）
+        logits[0, 2, 0] = 2.0  # blank（应跳过）
+        logits[0, 3, 2] = 2.0  # b
+        logits[0, 4, 3] = 2.0  # c
+        logits[0, 5, 4] = 2.0  # d
         assert decode(logits) == ["abcd"]
 
 
@@ -168,7 +168,7 @@ def test_rec_trainer_eval_deterministic_char_acc():
         class FakeHead(torch.nn.Module):
             def forward(self, x):
                 logits = torch.full((1, 40, 3), -100.0)
-                logits[..., 0] = 0.0  # 'a'
+                logits[..., 1] = 0.0  # 'a'（索引 1，索引 0 是 blank）
                 return {"ctc": logits, "nrtr": logits}
 
         trainer.net["head"] = FakeHead()

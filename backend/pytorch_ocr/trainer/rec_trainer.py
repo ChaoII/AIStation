@@ -53,7 +53,7 @@ class RecTrainer:
             max_text_length=max_text_length,
             nrtr_dim=config.get("nrtr_dim", 384),
         )
-        self.loss_fn = MultiLoss(blank=num_classes - 1)
+        self.loss_fn = MultiLoss(blank=0)
         self.net = torch.nn.ModuleDict({"backbone": self.backbone, "head": self.head})
         self.net.to(self.device)
 

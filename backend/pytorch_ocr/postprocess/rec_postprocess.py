@@ -14,10 +14,12 @@ _DEFAULT_DICT_PATH = os.path.join(
 class CTCLabelDecode:
     """CTC 贪心解码：argmax → 去重（blank 忽略）。"""
 
-    def __init__(self, dict_path=None, use_space_char=True):
+    def __init__(self, dict_path=None, use_space_char=True, blank_idx=0):
         if dict_path is None:
             dict_path = _DEFAULT_DICT_PATH
-        self.char_dict = CharacterDict(dict_path, use_space_char=use_space_char)
+        self.char_dict = CharacterDict(
+            dict_path, use_space_char=use_space_char, blank_idx=blank_idx
+        )
 
     def __call__(self, logits):
         """logits: [B, W, C]（softmax 后）→ [str, ...]。"""

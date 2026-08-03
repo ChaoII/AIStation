@@ -67,7 +67,14 @@ class OCRPipeline:
         self.det_net = torch.nn.ModuleDict(
             {"backbone": self.det_backbone, "fpn": self.det_fpn, "head": self.det_head})
         if det_state is not None:
-            self.det_net.load_state_dict(det_state, strict=False)
+            # 兼容转换器命名（neck.*）与旧版命名（fpn.*）
+            remapped = {}
+            for k, v in det_state.items():
+                if k.startswith("neck."):
+                    remapped["fpn." + k[len("neck."):]] = v
+                else:
+                    remapped[k] = v
+            self.det_net.load_state_dict(remapped, strict=False)
         self.det_net.eval()
         self.det_postprocess = DBPostProcess(
             thresh=self.config.get("thresh", 0.2),
@@ -135,31 +142,47 @@ class OCRPipeline:
         return results
 
     def _crop_box(self, image, quad):
-        """四边形透视矫正裁剪为矩形。"""
+        """四边形透视矫正裁剪为矩形。
+
+        用质心极角排序得到顺时针四边形，再旋转保证 0-1 边为顶部长边，
+        避免 ``minAreaRect`` 对水平框返回转置宽高（angle=-90 的怪癖）。
+        """
         h, w = image.shape[:2]
         quad = np.clip(quad, 0, [w, h])
         src = np.array(quad, dtype=np.float32)
-        rect = cv2.minAreaRect(src)
-        box = cv2.boxPoints(rect)
-        box = np.array(box, dtype=np.float32)
-        width = int(rect[1][0])
-        height = int(rect[1][1])
+        center = src.mean(axis=0)
+        angles = np.arctan2(src[:, 1] - center[1], src[:, 0] - center[0])
+        src = src[np.argsort(angles)]
+        e01 = float(np.linalg.norm(src[0] - src[1]))
+        e12 = float(np.linalg.norm(src[1] - src[2]))
+        if e12 > e01:
+            src = np.roll(src, 1, axis=0)  # 使长边成为 0-1
+        if src[0, 1] + src[1, 1] > src[2, 1] + src[3, 1]:
+            src = np.roll(src, 2, axis=0)  # 使 0-1 为上边
+        width = int(round(float(np.linalg.norm(src[0] - src[1]))))
+        height = int(round(float(np.linalg.norm(src[1] - src[2]))))
         if width < 2 or height < 2:
             return None
         dst = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1],
                         [0, height - 1]], dtype=np.float32)
-        M = cv2.getPerspectiveTransform(box, dst)
+        M = cv2.getPerspectiveTransform(src, dst)
         return cv2.warpPerspective(image, M, (width, height))
 
     def _recognize(self, cropped):
-        """识别单行文字。返回 (text, confidence)。"""
+        """识别单行文字。返回 (text, confidence)。
+
+        官方 PP-OCRv6 rec 输入用 [-1,1] 归一化（mean=std=0.5），与 det 的
+        ImageNet 归一化不同，这里单独处理。
+        """
         # 缩放到 rec 输入高度 48，宽度按比例（最小 8 最大 320）
         h, w = cropped.shape[:2]
         target_h = 48
         target_w = max(8, min(320, int(w * target_h / max(h, 1))))
         img = cv2.resize(cropped, (target_w, target_h))
-        img = _preprocess(img, (target_h, target_w))
-        feats = self.rec_backbone(img.to(self.device))
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        x = ((rgb.astype(np.float32) / 255.0 - 0.5) / 0.5)
+        x = torch.from_numpy(x).permute(2, 0, 1).unsqueeze(0).float()
+        feats = self.rec_backbone(x.to(self.device))
         preds = self.rec_head(feats)  # eval: dict {ctc, nrtr}
         ctc_probs = preds["ctc"]  # [1, W, C] (softmax)
         text = self.rec_decode(ctc_probs)[0]

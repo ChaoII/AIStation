@@ -17,12 +17,14 @@ def test_character_dict_loads():
     cd = CharacterDict(_DICT_PATH, use_space_char=True)
     assert len(cd.characters) > 1000
     assert cd.characters[-1] == " "
-    assert cd.blank == len(cd.characters)
+    assert cd.blank == 0
     assert cd.num_classes == len(cd.characters) + 1
-    assert cd.char_to_idx["一"] >= 0
+    assert cd.char_to_idx["一"] >= 1
     assert cd.idx_to_char[cd.char_to_idx["一"]] == "一"
     encoded = cd.encode("你好一")
+    assert all(i >= 1 for i in encoded)
     assert [cd.idx_to_char[i] for i in encoded] == ["你", "好", "一"]
+    assert 0 not in cd.idx_to_char
 
 
 def test_character_dict_skips_unknown():

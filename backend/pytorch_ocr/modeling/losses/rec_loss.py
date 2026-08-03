@@ -1,20 +1,21 @@
 """rec 损失：CTCLoss + NRTRLoss 组合（对齐 PaddleOCR MultiLoss）。自研实现。
 
 契约（与 RecDataset / MultiHead 对齐）：
-- num_classes = 6906，CTC blank = 6905（字符集最后索引）。
-- ``label_ctc``: list[int]（真实字符索引，trim 到 max_text_length）。
-- ``label_gtc``: LongTensor (max_text_length,) 张量，pad token = 0。
-- ``length``: 每样本真实长度，用于区分 NRTR 的 pad 位置与真实字符 '!'（索引 0）。
+- num_classes = 6906，CTC blank = 0（索引 0 保留给 blank，对齐官方
+  PP-OCRv6 ``ctc_blank_idx=0``）。
+- ``label_ctc``: list[int]（真实字符索引 1..N，trim 到 max_text_length）。
+- ``label_gtc``: LongTensor (max_text_length,) 张量，pad token = 0（blank）。
+- ``length``: 每样本真实长度，用于区分 NRTR 的 pad（0 = blank）与真实字符。
 
-NRTR pad 处理：pad 位置与真实字符 '!' 的索引都是 0，因此不能 ``ignore_index=0``
-（会吞掉真实 '!'）。这里按 ``length`` 将真正的 pad 位置显式置为 ``-100``，
-并用 ``ignore_index=-100`` 计算交叉熵。
+NRTR pad 处理：真实字符索引为 1..N，pad token 0 即 blank（非真实字符），
+按 ``length`` 将真正的 pad 位置显式置为 ``-100``，用 ``ignore_index=-100``
+计算交叉熵。
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-_CTC_BLANK = 6905  # num_classes - 1
+_CTC_BLANK = 0  # 官方 PP-OCRv6 ctc_blank_idx=0
 _IGNORE_INDEX = -100
 
 
@@ -52,14 +53,14 @@ class CTCLoss(nn.Module):
 
 
 class NRTRLoss(nn.Module):
-    """NRTR 交叉熵损失：按 length 掩码 pad 位置，保留真实 '!'（索引 0）。"""
+    """NRTR 交叉熵损失：按 length 掩码 pad 位置（0 = blank，非真实字符）。"""
 
     def forward(self, predicts, batch):
         # predicts: [B, T, C]
         targets = batch["label_gtc"].long().clone()
         lengths = batch.get("length")
         if lengths is not None:
-            # 只有 t >= length[i] 的位置是 pad；真实 '!'（idx 0）参与损失
+            # 只有 t >= length[i] 的位置是 pad；真实字符索引为 1..N
             for i in range(targets.shape[0]):
                 targets[i, int(lengths[i]):] = _IGNORE_INDEX
         else:
