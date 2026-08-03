@@ -173,3 +173,37 @@ def test_build_det_model_neck_dilated_kernel_size_is_5():
     for blk in model.neck.inp_conv_dw:
         assert blk.kernel_size == 5
         assert len(blk.dilates) == 2
+
+
+def test_convert_ppocr_v6_rec_exists():
+    """rec 转换器：位置对应法可完整映射 backbone（conv/bn）参数。
+
+    rec 模型 = PPLCNetV4(det=False) + MultiHead(CTC + NRTR)。head 内
+    Linear/Embedding/LayerNorm/Conv1d 的 Paddle 命名映射留待 plan 3b 真实权重验证。
+    """
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import (
+        build_rec_model,
+        convert_ppocr_v6_rec,
+    )
+
+    model = build_rec_model("tiny")
+    original = {k: v.detach().clone() for k, v in model.state_dict().items()}
+    paddle = synthetic_paddle_state(model)
+    result = convert_ppocr_v6_rec(paddle, "tiny")
+    assert isinstance(result, dict)
+    assert "backbone.conv1.0.conv.weight" in result
+    # 数值 round-trip
+    assert torch.equal(
+        result["backbone.conv1.0.conv.weight"],
+        original["backbone.conv1.0.conv.weight"],
+    )
+    # 位置对应：backbone 全部参数映射完整，无缺失
+    loaded = model.load_state_dict(result, strict=False)
+    assert all(not k.startswith("backbone.") for k in loaded.missing_keys)
+
+
+def test_convert_ppocr_v6_rec_empty_raises():
+    from pytorch_ocr.converter.ppocr_v6_rec_converter import convert_ppocr_v6_rec
+
+    with pytest.raises(ValueError):
+        convert_ppocr_v6_rec({}, "tiny")
