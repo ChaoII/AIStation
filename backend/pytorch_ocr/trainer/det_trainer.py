@@ -57,6 +57,8 @@ class DetTrainer:
         dataset = DetDataset(gt_dir=os.path.join(data_dir, "images"),
                              label_path=os.path.join(data_dir, "det_gt.txt"),
                              image_shape=tuple(self.config.get("image_shape", (640, 640))))
+        if len(dataset) == 0:
+            raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             num_workers=workers)
         optimizer = torch.optim.Adam(self.net.parameters(), lr=lr, betas=(0.9, 0.999))

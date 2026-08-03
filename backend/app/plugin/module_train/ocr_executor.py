@@ -48,7 +48,7 @@ class OCRDetExecutor(TaskExecutor):
                 cls.DOCKER_IMAGE, cmd,
                 volumes={data_dir: {"bind": "/data", "mode": "rw"},
                          export_dir: {"bind": "/output", "mode": "rw"}},
-                gpu_id=task.hyperparams.get("gpu_id", "0"),
+                gpu_id=task.hyperparams.get("device") or task.hyperparams.get("gpu_id") or "0",
             )
             container_id = container.id
             entry = cls._registry.get(task_id) or {}
@@ -88,8 +88,12 @@ class OCRDetExecutor(TaskExecutor):
                                        finished_at=datetime.now())
         except Exception as e:
             log.error(f"ocr task {task_id} failed: {e}")
-            await cls._mark_status(task_id, TrainStatus.FAILED,
-                                   error_log=str(e), finished_at=datetime.now())
+            cancelled = cls._registry.get(task_id, {}).get("cancel", False)
+            await cls._mark_status(
+                task_id,
+                TrainStatus.CANCELLED if cancelled else TrainStatus.FAILED,
+                error_log=str(e), finished_at=datetime.now(),
+            )
         finally:
             cls._registry.pop(task_id, None)
             if container_id:

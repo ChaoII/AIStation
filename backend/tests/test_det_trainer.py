@@ -4,6 +4,7 @@ import os
 import tempfile
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from pytorch_ocr.trainer.det_trainer import DetTrainer
@@ -34,6 +35,28 @@ def _write_synthetic_data(data_dir, num_images=3, size=64):
         lines.append(f"img_{i}.jpg\t{poly}\n")
     with open(os.path.join(data_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
         f.writelines(lines)
+
+
+def test_det_trainer_empty_dataset_raises():
+    """空 det_gt.txt（无有效标注）时 train() 应抛出 ValueError。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        data_dir = os.path.join(tmp, "data")
+        os.makedirs(os.path.join(data_dir, "images"), exist_ok=True)
+        with open(os.path.join(data_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
+            f.write("")
+        config = {
+            "model_size": "tiny",
+            "out_channels": 16,
+            "image_shape": (64, 64),
+        }
+        trainer = DetTrainer(config, device="cpu")
+        with pytest.raises(ValueError, match="数据集为空"):
+            trainer.train(
+                data_dir,
+                num_epochs=1,
+                output_dir=os.path.join(tmp, "output"),
+                workers=0,
+            )
 
 
 def test_det_trainer_smoke_train_produces_best_pt():
