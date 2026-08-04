@@ -112,14 +112,28 @@ class DetTrainer:
             r = self.net.load_state_dict(remap, strict=False)
             print(f"[det] loaded pretrained {self.config['pretrained']} "
                   f"(missing={len(r.missing_keys)}, unexpected={len(r.unexpected_keys)})", flush=True)
+        # 冻结策略：微调时冻结 backbone+fpn，只训练 head，保留预训练检测能力
+        # （官方 PP-OCRv6 det 微调也冻结主干，避免 BN 梯度爆炸 + 灾难性遗忘）
+        if self.config.get("freeze_backbone", False) and self.config.get("pretrained"):
+            for name, p in self.net.named_parameters():
+                if name.startswith("head."):
+                    p.requires_grad = True
+                else:
+                    p.requires_grad = False
+            self.frozen = True
+            print("[det] freeze backbone+fpn, only head trainable", flush=True)
+        else:
+            self.frozen = False
 
     def _train_step(self, batch):
         img, shrink_map, shrink_mask, thresh_map, thresh_mask = [
             b.to(self.device) for b in batch
         ]
         feats = self.backbone(img)
-        fused = self.fpn(feats)  # train: dict {fuse, aux_*}
-        maps = self.head(fused["fuse"])["maps"]  # (N,3,H,W)
+        fused = self.fpn(feats)  # train: dict {fuse, aux_*}; eval: tensor
+        if isinstance(fused, dict):
+            fused = fused["fuse"]
+        maps = self.head(fused)["maps"]  # (N,3,H,W)
         gt = {
             "shrink_map": shrink_map,
             "shrink_mask": shrink_mask,
@@ -138,19 +152,29 @@ class DetTrainer:
             raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             num_workers=workers)
-        optimizer = torch.optim.Adam(self.net.parameters(), lr=lr, betas=(0.9, 0.999))
+        optimizer = torch.optim.Adam(
+            [p for p in self.net.parameters() if p.requires_grad],
+            lr=lr, betas=(0.9, 0.999))
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                                T_max=num_epochs)
         os.makedirs(output_dir, exist_ok=True)
         best_loss = float("inf")
         for epoch in range(1, num_epochs + 1):
-            self.net.train()
+            if self.frozen:
+                # 冻结时：backbone+fpn 保持 eval（BN running stats 不变），head 训练
+                self.net.eval()
+                self.head.train()
+            else:
+                self.net.train()
             total_loss = 0.0
             n_batches = 0
             for batch in loader:
                 optimizer.zero_grad()
                 loss = self._train_step(batch)
                 loss.backward()
+                # 梯度裁剪：防 DBLoss 在文字像素极少时梯度爆炸
+                # （官方 PaddleOCR 训练对 det 使用 grad_clip，默认 max_norm=2.0）
+                torch.nn.utils.clip_grad_norm_(self.net.parameters(), 2.0)
                 optimizer.step()
                 total_loss += loss.item()
                 n_batches += 1

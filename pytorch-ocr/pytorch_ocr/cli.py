@@ -22,6 +22,8 @@ def build_parser():
                            choices=["tiny", "small", "medium"])
     train_det.add_argument("--pretrained", default="",
                            help="预训练权重路径(官方转换的 .pt)，用于微调；容器内需挂载权重")
+    train_det.add_argument("--freeze-backbone", action="store_true",
+                           help="微调时冻结 backbone+fpn，只训练 head（防 BN 梯度爆炸/灾难性遗忘）")
 
     eval_det = sub.add_parser("eval-det", help="评估 det 模型")
     eval_det.add_argument("--data", required=True)
@@ -109,6 +111,8 @@ def cmd_train_det(args):
     cfg["image_shape"] = tuple(cfg.get("image_shape", (640, 640)))
     if args.pretrained:
         cfg["pretrained"] = args.pretrained
+    if getattr(args, "freeze_backbone", False):
+        cfg["freeze_backbone"] = True
     trainer = DetTrainer(cfg, device=device)
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,
