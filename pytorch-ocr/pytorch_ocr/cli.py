@@ -20,6 +20,9 @@ def build_parser():
     train_det.add_argument("--config", default="", help="JSON 配置文件路径(可选)")
     train_det.add_argument("--model-size", default="tiny",
                            choices=["tiny", "small", "medium"])
+    train_det.add_argument("--neck", default="rep_lk_fpn",
+                           choices=["rep_lk_fpn", "rep_lk_pan"],
+                           help="det neck：rep_lk_fpn（tiny/small）或 rep_lk_pan（medium）")
     train_det.add_argument("--pretrained", default="",
                            help="预训练权重路径(官方转换的 .pt)，用于微调；容器内需挂载权重")
     train_det.add_argument("--freeze-backbone", action="store_true",
@@ -90,6 +93,7 @@ def _build_config(args, *, rec: bool = False) -> dict:
     else:
         cfg = {
             "model_size": getattr(args, "model_size", "tiny"),
+            "neck": getattr(args, "neck", "rep_lk_fpn"),
             "out_channels": 64,
             "dilated_kernel_size": 5,
             "k": 50,
@@ -108,6 +112,7 @@ def cmd_train_det(args):
     device = _normalize_device(args.device)
     cfg = _build_config(args)
     cfg["model_size"] = args.model_size
+    cfg["neck"] = args.neck
     cfg["image_shape"] = tuple(cfg.get("image_shape", (640, 640)))
     if args.pretrained:
         cfg["pretrained"] = args.pretrained

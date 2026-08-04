@@ -11,6 +11,7 @@ from ..modeling.backbones.pplcnetv4 import PPLCNetV4
 from ..modeling.heads.det_db_head import DBHead
 from ..modeling.losses.db_loss import DBLoss
 from ..modeling.necks.rep_lk_fpn import RepLKFPN
+from ..modeling.necks.rep_lk_pan import RepLKPAN
 from ..postprocess.db_postprocess import DBPostProcess
 
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -84,9 +85,15 @@ class DetTrainer:
         out_channels = config.get("out_channels", 64)
         aux_in = config.get("aux_in_channels", 0)
         self.backbone = PPLCNetV4(model_size=size, det=True)
-        self.fpn = RepLKFPN(in_channels=self.backbone.feat_channels,
-                            out_channels=out_channels,
-                            dilated_kernel_size=config.get("dilated_kernel_size", 5))
+        neck_name = config.get("neck", "rep_lk_fpn")
+        if neck_name == "rep_lk_pan":
+            self.fpn = RepLKPAN(in_channels=self.backbone.feat_channels,
+                                out_channels=out_channels,
+                                intracl=config.get("intracl", False))
+        else:
+            self.fpn = RepLKFPN(in_channels=self.backbone.feat_channels,
+                                out_channels=out_channels,
+                                dilated_kernel_size=config.get("dilated_kernel_size", 5))
         self.head = DBHead(in_channels=out_channels,
                            k=config.get("k", 50),
                            aux_in_channels=aux_in)
