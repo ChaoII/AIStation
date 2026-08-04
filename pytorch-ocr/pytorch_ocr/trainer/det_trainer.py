@@ -232,7 +232,14 @@ class DetTrainer:
                 if img is None:
                     continue
                 h, w = img.shape[:2]
-                input_img = cv2.resize(img, image_shape)
+                # 官方 DetResizeForTest：limit_side_len=736（min），round 到 32 倍数
+                limit = self.config.get("eval_limit_side_len", 736)
+                ratio = 1.0
+                if min(h, w) < limit:
+                    ratio = float(limit) / min(h, w)
+                rh = max(int(round(h * ratio / 32) * 32), 32)
+                rw = max(int(round(w * ratio / 32) * 32), 32)
+                input_img = cv2.resize(img, (rw, rh))
                 input_img = (input_img.astype(np.float32) / 255.0 - _MEAN) / _STD
                 input_t = torch.from_numpy(input_img).permute(2, 0, 1)
                 input_t = input_t.unsqueeze(0).float().to(self.device)
@@ -241,8 +248,16 @@ class DetTrainer:
                 if isinstance(fused, dict):
                     fused = fused["fuse"]
                 maps = self.head(fused)["maps"]
-                boxes = self.postprocess(maps.cpu(), [[h, w]])
-                pred_boxes.append(boxes[0] if boxes else [])
+                # postprocess 用 resize 后尺寸，框映射回原图由 compute_det_metrics 处理
+                boxes = self.postprocess(maps.cpu(), [[rh, rw]])
+                # 预测框在 resize 图坐标，映射回原图坐标以便与 GT IoU 匹配
+                box_list = []
+                for box in boxes[0] if boxes else []:
+                    box = np.asarray(box, dtype=np.float32).reshape(-1, 2)
+                    box[:, 0] = box[:, 0] * w / rw
+                    box[:, 1] = box[:, 1] * h / rh
+                    box_list.append(box)
+                pred_boxes.append(box_list)
                 gt_boxes.append([p.tolist() for p in polys])
         metrics = compute_det_metrics(pred_boxes, gt_boxes)
         metrics["num_images"] = len(gt_boxes)
