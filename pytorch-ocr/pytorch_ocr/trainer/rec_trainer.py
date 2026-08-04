@@ -47,11 +47,14 @@ class RecTrainer:
         self.backbone = PPLCNetV4(model_size=size, det=False)
         # rec 骨干输出通道（tiny=160 / small=384 / medium=768），按 model_size 推导
         backbone_out = config.get("backbone_out_channels") or rec_backbone_out_channels(size)
+        # NRTR 默认维度：official medium=512，其余 384；config 显式指定优先
+        nrtr_dim = config.get("nrtr_dim") or {"medium": 512}.get(size, 384)
         self.head = MultiHead(
             in_channels=backbone_out,
             out_channels=num_classes,
             max_text_length=max_text_length,
-            nrtr_dim=config.get("nrtr_dim", 384),
+            nrtr_dim=nrtr_dim,
+            head_list=config.get("head_list") or config.get("rec_head"),
         )
         self.loss_fn = MultiLoss(blank=0)
         self.net = torch.nn.ModuleDict({"backbone": self.backbone, "head": self.head})

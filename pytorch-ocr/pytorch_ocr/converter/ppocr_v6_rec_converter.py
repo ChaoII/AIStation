@@ -35,7 +35,7 @@ import torch
 import torch.nn as nn
 
 from ..modeling.backbones.pplcnetv4 import PPLCNetV4, rec_backbone_out_channels
-from ..modeling.heads.rec_multi_head import MultiHead
+from ..modeling.heads.rec_multi_head import MultiHead, build_default_head_list
 from .ppocr_v6_det_converter import (
     ConversionReport,
     _rename_semantic,
@@ -78,9 +78,11 @@ def build_rec_model(
     out_channels: int = 6906,
     backbone_out_channels: int | None = None,
     max_text_length: int = 25,
-    nrtr_dim: int = 384,
+    nrtr_dim: int | None = None,
     ctc_out_channels: int | None = None,
     nrtr_out_channels: int | None = None,
+    head_list: list | None = None,
+    neck: str = "reshape",
 ) -> nn.Module:
     """构建自研 PP-OCRv6 rec 模型（PPLCNetV4(rec) + MultiHead）。
 
@@ -92,10 +94,21 @@ def build_rec_model(
     官方 PP-OCRv6 双头词表大小不同（CTCHead=dict 大小，NRTRHead=dict+4 特殊
     token）。转换官方权重时用 ``ctc_out_channels`` / ``nrtr_out_channels``
     单独指定（默认 None → 共用 ``out_channels``）。
+
+    ``head_list`` / ``neck``：CTCHead Neck 类型。``neck="lightsvtr"`` 时按
+    model_size 官方预设（small dims=120/medium dims=192）构建 lightsvtr
+    head_list；显式传 ``head_list`` 优先。缺省 ``reshape`` 保持 tiny 行为。
     """
     backbone = PPLCNetV4(model_size=model_size, det=False)
     if backbone_out_channels is None:
         backbone_out_channels = rec_backbone_out_channels(model_size)
+    if nrtr_dim is None:
+        # NRTR 默认维度：official medium=512，其余 384
+        nrtr_dim = {"medium": 512}.get(model_size, 384)
+    if head_list is None and neck == "lightsvtr":
+        head_list = build_default_head_list(
+            model_size, nrtr_dim=nrtr_dim, max_text_length=max_text_length
+        )
     head = MultiHead(
         in_channels=backbone_out_channels,
         out_channels=out_channels,
@@ -103,6 +116,7 @@ def build_rec_model(
         nrtr_dim=nrtr_dim,
         ctc_out_channels=ctc_out_channels,
         nrtr_out_channels=nrtr_out_channels,
+        head_list=head_list,
     )
     model = nn.Module()
     model.backbone = backbone
@@ -130,12 +144,72 @@ def _ctc_head_mapping(paddle_name: str) -> list[tuple[str, str]]:
         idx, kind = m.group(1), m.group(2)
         torch_kind = _PARAM_MAP.get(kind, kind)
         return [(f"head.ctc_head.guide_layer.{idx}.{torch_kind}", "direct")]
+    # fc: lightsvtr neck 之后无 mid_channels，Linear 直出（Paddle fc -> 自研 ctc_head）
+    m = re.match(r"^fc\.(weight|bias)$", rest)
+    if m:
+        kind = m.group(1)
+        transform = "t" if kind == "weight" else "direct"
+        return [(f"head.ctc_head.{kind}", transform)]
     # fc1/fc2: Paddle Linear [in, out] → PyTorch Linear [out, in]
     m = re.match(r"^(fc1|fc2)\.(weight|bias)$", rest)
     if m:
         name, kind = m.group(1), m.group(2)
         transform = "t" if kind == "weight" else "direct"
         return [(f"head.ctc_head.{name}.{kind}", transform)]
+    return []
+
+
+def _lightsvtr_neck_mapping(paddle_name: str) -> list[tuple[str, str]]:
+    """官方 ``EncoderWithLightSVTR`` 语义名 → 自研 ``head.ctc_neck`` 路径。
+
+    官方 MultiHead 中 neck 为 ``ctc_encoder.encoder``（SequenceEncoder 内
+    EncoderWithLightSVTR），参数路径前缀 ``head.ctc_encoder.encoder.*``。
+    自研 neck 在 ``head.ctc_neck.*``，结构/子模块名逐层一致。
+    """
+    prefix = "head.ctc_encoder.encoder."
+    if not paddle_name.startswith(prefix):
+        return []
+    rest = paddle_name[len(prefix):]
+    # conv_reduce / skip_conv：ConvBNLayer（conv + norm + act）
+    m = re.match(r"^(conv_reduce|skip_conv)\.conv\.(weight|bias)$", rest)
+    if m:
+        name, kind = m.group(1), m.group(2)
+        return [(f"head.ctc_neck.{name}.conv.{kind}", "direct")]
+    m = re.match(r"^(conv_reduce|skip_conv)\.norm\.(weight|bias|_mean|_variance)$", rest)
+    if m:
+        name, kind = m.group(1), m.group(2)
+        torch_kind = _PARAM_MAP.get(kind, kind)
+        return [(f"head.ctc_neck.{name}.norm.{torch_kind}", "direct")]
+    # local_conv：Sequential（0=DWConv, 1=BN）
+    m = re.match(r"^local_conv\.0\.(weight|bias)$", rest)
+    if m:
+        kind = m.group(1)
+        return [(f"head.ctc_neck.local_conv.0.{kind}", "direct")]
+    m = re.match(r"^local_conv\.1\.(weight|bias|_mean|_variance)$", rest)
+    if m:
+        kind = m.group(1)
+        torch_kind = _PARAM_MAP.get(kind, kind)
+        return [(f"head.ctc_neck.local_conv.1.{torch_kind}", "direct")]
+    # svtr_block：Block（norm1/mixer/norm2/mlp 与官方 SVTRNet Block 同名）
+    m = re.match(r"^svtr_block\.(\d+)\.norm([12])\.(weight|bias)$", rest)
+    if m:
+        idx, norm, kind = m.group(1), m.group(2), m.group(3)
+        return [(f"head.ctc_neck.svtr_block.{idx}.norm{norm}.{kind}", "direct")]
+    m = re.match(r"^svtr_block\.(\d+)\.mixer\.(qkv|proj)\.(weight|bias)$", rest)
+    if m:
+        idx, sub, kind = m.group(1), m.group(2), m.group(3)
+        transform = "t" if kind == "weight" else "direct"
+        return [(f"head.ctc_neck.svtr_block.{idx}.mixer.{sub}.{kind}", transform)]
+    m = re.match(r"^svtr_block\.(\d+)\.mlp\.fc([12])\.(weight|bias)$", rest)
+    if m:
+        idx, fc, kind = m.group(1), m.group(2), m.group(3)
+        transform = "t" if kind == "weight" else "direct"
+        return [(f"head.ctc_neck.svtr_block.{idx}.mlp.fc{fc}.{kind}", transform)]
+    # 末尾 LayerNorm
+    m = re.match(r"^norm\.(weight|bias)$", rest)
+    if m:
+        kind = m.group(1)
+        return [(f"head.ctc_neck.norm.{kind}", "direct")]
     return []
 
 
@@ -209,6 +283,8 @@ def map_semantic_rec_name(paddle_name: str) -> list[tuple[str, str]] | None:
         return [(_rename_semantic(paddle_name), "direct")]
     if paddle_name.startswith("head.ctc_head."):
         return _ctc_head_mapping(paddle_name)
+    if paddle_name.startswith("head.ctc_encoder.encoder."):
+        return _lightsvtr_neck_mapping(paddle_name)
     if paddle_name == "head.before_gtc.1.fc.weight":
         return [("head.nrtr_head.linear.weight", "t")]
     if paddle_name == "head.gtc_head.embedding.embedding.weight":
@@ -362,6 +438,9 @@ def _guess_out_channels(paddle_state: dict) -> tuple[int | None, int | None]:
         if key == "head.ctc_head.fc2.weight" and arr.ndim == 2:
             # Paddle Linear [in, out] → out = shape[1]
             ctc_out = int(arr.shape[1])
+        elif key == "head.ctc_head.fc.weight" and arr.ndim == 2:
+            # lightsvtr：无 mid_channels，CTCHead 只有 fc
+            ctc_out = int(arr.shape[1])
         elif key == "head.gtc_head.embedding.embedding.weight" and arr.ndim == 2:
             nrtr_out = int(arr.shape[0])
     return ctc_out, nrtr_out
@@ -375,7 +454,8 @@ def guess_torch_out_channels(state: dict, default: int = 6906) -> tuple[int, int
     """
     ctc_out: int | None = None
     nrtr_out: int | None = None
-    for key in ("head.ctc_head.fc2.weight", "head.ctc_head.fc.weight"):
+    for key in ("head.ctc_head.fc2.weight", "head.ctc_head.fc.weight",
+                "head.ctc_head.weight"):
         if key in state:
             ctc_out = int(state[key].shape[0])
             break
@@ -395,7 +475,9 @@ def convert_ppocr_v6_rec(
     out_channels: int = 6906,
     backbone_out_channels: int | None = None,
     max_text_length: int = 25,
-    nrtr_dim: int = 384,
+    nrtr_dim: int | None = None,
+    head_list: list | None = None,
+    neck: str = "reshape",
 ) -> dict:
     """转换 Paddle state dict 为 PyTorch state dict。
 
@@ -405,6 +487,10 @@ def convert_ppocr_v6_rec(
 
     优先语义名 + 结构变换（官方 PaddleX .pdparams）；若匹配数为 0（说明输入
     是旧式 ``conv2d_N.w_0`` 命名），回退到位置对应法（backbone 部分）。
+
+    ``head_list`` / ``neck``：CTCHead Neck 类型，透传给 ``build_rec_model``。
+    small/medium 官方权重为 lightsvtr neck，传 ``neck="lightsvtr"``（按
+    model_size 预设）或显式 ``head_list``。
     """
     ctc_out, nrtr_out = _guess_out_channels(paddle_state)
     ctc_out = ctc_out or out_channels
@@ -417,6 +503,8 @@ def convert_ppocr_v6_rec(
         nrtr_dim=nrtr_dim,
         ctc_out_channels=ctc_out,
         nrtr_out_channels=nrtr_out,
+        head_list=head_list,
+        neck=neck,
     )
     state, report = convert_rec_by_name(paddle_state, model)
     if report.matched == 0:

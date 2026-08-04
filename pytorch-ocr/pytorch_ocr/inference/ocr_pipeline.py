@@ -1,11 +1,16 @@
 """OCR 推理管线：det 检测 → rec 识别 → 聚合。自研实现。"""
+import re
+
 import cv2
 import numpy as np
 import torch
 
 from ..modeling.backbones.pplcnetv4 import PPLCNetV4, rec_backbone_out_channels
 from ..modeling.heads.det_db_head import DBHead
-from ..modeling.heads.rec_multi_head import MultiHead
+from ..modeling.heads.rec_multi_head import (
+    MultiHead,
+    build_default_head_list,
+)
 from ..modeling.necks.rep_lk_fpn import RepLKFPN
 from ..postprocess.db_postprocess import DBPostProcess
 from ..postprocess.rec_postprocess import CTCLabelDecode
@@ -45,7 +50,8 @@ def _infer_rec_out_channels(rec_state, config):
     ctc = config.get("ctc_out_channels")
     nrtr = config.get("nrtr_out_channels")
     if rec_state:
-        for key in ("head.ctc_head.fc2.weight", "head.ctc_head.fc.weight"):
+        for key in ("head.ctc_head.fc2.weight", "head.ctc_head.fc.weight",
+                    "head.ctc_head.weight"):
             if key in rec_state and ctc is None:
                 ctc = int(rec_state[key].shape[0])
         for key in (
@@ -56,6 +62,46 @@ def _infer_rec_out_channels(rec_state, config):
                 nrtr = int(rec_state[key].shape[0])
     default = config.get("num_classes", 6906)
     return ctc or default, nrtr or default
+
+
+def _infer_rec_head_list(rec_state, config, max_text_length=25):
+    """从 rec 权重推断 lightsvtr neck 结构（官方/训练产物 small/medium）。
+
+    rec_state 含 ``head.ctc_neck.*`` 参数即判定为 lightsvtr neck，按权重形状
+    反推 dims/depth/mlp_ratio/local_kernel/nrtr_dim。返回 head_list 或 None。
+    """
+    if not rec_state or not any(k.startswith("head.ctc_neck.") for k in rec_state):
+        return None
+    conv_key = "head.ctc_neck.conv_reduce.conv.weight"
+    if conv_key not in rec_state:
+        return None
+    dims = int(rec_state[conv_key].shape[0])
+    norm_keys = [
+        k for k in rec_state
+        if re.match(r"head\.ctc_neck\.svtr_block\.\d+\.norm1\.weight", k)
+    ]
+    depth = len(norm_keys)
+    mlp_ratio = 4.0
+    fc1 = "head.ctc_neck.svtr_block.0.mlp.fc1.weight"
+    if fc1 in rec_state:
+        mlp_ratio = int(rec_state[fc1].shape[0]) / dims
+    local_kernel = 7
+    dw = "head.ctc_neck.local_conv.0.weight"
+    if dw in rec_state:
+        local_kernel = int(rec_state[dw].shape[-1])
+    nrtr_dim = config.get("nrtr_dim")
+    lin_key = "head.nrtr_head.linear.weight"
+    if nrtr_dim is None and lin_key in rec_state:
+        # Linear(in_channels, nrtr_dim, bias=False) → weight [nrtr_dim, in_channels]
+        nrtr_dim = int(rec_state[lin_key].shape[0])
+    nrtr_dim = nrtr_dim or 384
+    return [
+        {"CTCHead": {"Neck": {"name": "lightsvtr", "dims": int(dims), "depth": depth,
+                              "mlp_ratio": float(mlp_ratio),
+                              "local_kernel": int(local_kernel)}}},
+        {"NRTRHead": {"nrtr_dim": int(nrtr_dim),
+                      "max_text_length": max_text_length}},
+    ]
 
 
 class OCRPipeline:
@@ -108,13 +154,23 @@ class OCRPipeline:
         backbone_out = (self.config.get("backbone_out_channels")
                         or rec_backbone_out_channels(rec_size))
         ctc_out, nrtr_out = _infer_rec_out_channels(rec_state, self.config)
+        rec_head_list = (
+            self.config.get("rec_head") or self.config.get("head_list")
+            or _infer_rec_head_list(rec_state, self.config, max_text_length)
+        )
+        # 无权重且 small/medium：按官方 lightsvtr 预设构建（fresh 模型）
+        if rec_head_list is None and rec_state is None and rec_size in ("small", "medium"):
+            rec_head_list = build_default_head_list(
+                rec_size, max_text_length=max_text_length
+            )
         self.rec_backbone = PPLCNetV4(model_size=rec_size, det=False)
         self.rec_head = MultiHead(
             in_channels=backbone_out, out_channels=out_channels,
             max_text_length=max_text_length,
             nrtr_dim=self.config.get("nrtr_dim", 384),
             ctc_out_channels=ctc_out,
-            nrtr_out_channels=nrtr_out)
+            nrtr_out_channels=nrtr_out,
+            head_list=rec_head_list)
         self.rec_net = torch.nn.ModuleDict(
             {"backbone": self.rec_backbone, "head": self.rec_head})
         if rec_state is not None:
