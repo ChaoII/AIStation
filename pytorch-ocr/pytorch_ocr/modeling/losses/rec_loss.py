@@ -33,8 +33,9 @@ class CTCLoss(nn.Module):
         self.use_focal_loss = use_focal_loss
 
     def forward(self, predicts, batch):
-        # predicts: [B, W, C] logits -> [W, B, C] for CTCLoss
-        pred = predicts.permute(1, 0, 2)
+        # predicts: [B, W, C] logits -> log_softmax -> [W, B, C] for CTCLoss
+        # F.ctc_loss 期望输入是 log-probs，因此必须显式 log_softmax（不能传 raw logits）
+        pred = F.log_softmax(predicts, dim=-1).permute(1, 0, 2)
         label_ctc = batch["label_ctc"]
         lengths = batch.get("length")
         batch_size, max_len = pred.shape[1], pred.shape[0]

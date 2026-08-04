@@ -73,3 +73,19 @@ def test_nrtr_loss_masks_pad_by_length():
     expected_all = F.cross_entropy(logits.reshape(-1, 3), gt4.reshape(-1))
     assert torch.isclose(l4, expected_all)
     assert l1.item() < l4.item()
+
+def test_ctc_loss_is_positive():
+    """CTCLoss 输入 logits 必须为正（F.ctc_loss 期望 log-probs，需显式 log_softmax）。
+
+    回归测试：修复前传入 raw logits 导致 double-log，loss 为负值（-4.9 等），
+    修复后应为正。
+    """
+    ctc = CTCLoss()
+    torch.manual_seed(0)
+    pred = torch.randn(2, 20, NUM_CLASSES) * 3.0
+    targets = {
+        "label_ctc": [torch.tensor([1, 2, 3]), torch.tensor([4, 5])],
+        "length": torch.tensor([3, 2]),
+    }
+    val = ctc(pred, targets)
+    assert val.item() > 0, "CTCLoss 应为正，但得到 %.4f（疑似 double-log bug）" % val.item()
