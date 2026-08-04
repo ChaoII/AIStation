@@ -156,6 +156,13 @@ def map_semantic_name(paddle_name: str) -> str | None:
     返回 None 表示无对应 torch 参数。
     """
     if paddle_name.startswith("head.aux_"):
+        # head.aux_binarize_p4.conv1.weight -> head.aux_binarize_p4.0.weight
+        parts = paddle_name.split(".")
+        # parts: [head, aux_binarize_p4, conv1, weight]
+        if len(parts) >= 4 and parts[2] in _HEAD_SUB_MAP:
+            idx = _HEAD_SUB_MAP[parts[2]]
+            torch_suffix = _SEMANTIC_SUFFIX_MAP.get(parts[3], parts[3])
+            return f"head.{parts[1]}.{idx}.{torch_suffix}"
         return None
     parts = paddle_name.split(".")
     if len(parts) >= 4 and parts[0] == "head" and parts[2] in _HEAD_SUB_MAP:
@@ -342,21 +349,41 @@ def convert_by_name(paddle_state: dict, model: nn.Module) -> tuple[dict, Convers
 
 
 def build_det_model(
-    model_size: str = "tiny", fpn_out_channels: int = 64, k: int = 50
+    model_size: str = "tiny", fpn_out_channels: int = 64, k: int = 50,
+    neck: str = "rep_lk_fpn", dilated_kernel_size: int = 5, intracl: bool = False,
+    aux_in_channels: int = 0,
 ) -> nn.Module:
-    """构建自研 PP-OCRv6 det 模型（PPLCNetV4 + RepLKFPN + DBHead）。
+    """构建自研 PP-OCRv6 det 模型（PPLCNetV4 + neck + DBHead）。
 
     参数路径前缀固定为 ``backbone.*`` / ``neck.*`` / ``head.*``，
     与转换结果保持一致。
+
+    规格默认值（对齐 PP-OCRv6 config）：
+      tiny:   neck=rep_lk_fpn, out=64,  dilated=5,  aux=64
+      small:  neck=rep_lk_fpn, out=96,  dilated=7,  aux=96
+      medium: neck=rep_lk_pan, out=256, intracl=True, aux=256
     """
+    if fpn_out_channels is None:
+        fpn_out_channels = {"tiny": 64, "small": 96, "medium": 256}[model_size]
     backbone = PPLCNetV4(model_size=model_size, det=True)
-    fpn = RepLKFPN(
-        in_channels=backbone.out_channels,
-        out_channels=fpn_out_channels,
-        shortcut=True,
-        dilated_kernel_size=5,  # 对齐 det 配置 tiny_det.yml
-    )
-    head = DBHead(in_channels=fpn_out_channels, k=k)
+    in_channels = list(backbone.out_channels) if isinstance(backbone.out_channels, (list, tuple)) else backbone.feat_channels
+    if neck == "rep_lk_pan":
+        from ..modeling.necks.rep_lk_pan import RepLKPAN
+        fpn = RepLKPAN(
+            in_channels=in_channels,
+            out_channels=fpn_out_channels,
+            intracl=intracl,
+        )
+    else:
+        if dilated_kernel_size is None:
+            dilated_kernel_size = {"tiny": 5, "small": 7, "medium": 5}[model_size]
+        fpn = RepLKFPN(
+            in_channels=in_channels,
+            out_channels=fpn_out_channels,
+            shortcut=True,
+            dilated_kernel_size=dilated_kernel_size,
+        )
+    head = DBHead(in_channels=fpn_out_channels, k=k, aux_in_channels=aux_in_channels)
     model = nn.Module()
     model.backbone = backbone
     model.neck = fpn
@@ -366,7 +393,9 @@ def build_det_model(
 
 
 def convert_ppocr_v6_det(
-    paddle_state: dict, model_size: str = "tiny", fpn_out_channels: int = 64, k: int = 50
+    paddle_state: dict, model_size: str = "tiny", fpn_out_channels: int = None,
+    k: int = 50, neck: str = None, dilated_kernel_size: int = None,
+    intracl: bool = None, aux_in_channels: int = None,
 ) -> dict:
     """转换 Paddle state dict 为 PyTorch state dict。
 
@@ -377,7 +406,18 @@ def convert_ppocr_v6_det(
     优先使用语义名直接映射（官方 PaddleX .pdparams）；若匹配数为 0（说明输入
     是旧式 ``conv2d_N.w_0`` 命名），回退到位置对应法。
     """
-    model = build_det_model(model_size, fpn_out_channels=fpn_out_channels, k=k)
+    if neck is None:
+        neck = "rep_lk_pan" if model_size == "medium" else "rep_lk_fpn"
+    if intracl is None:
+        intracl = model_size == "medium"
+    if aux_in_channels is None:
+        aux_in_channels = {"tiny": 64, "small": 96, "medium": 256}[model_size]
+    if fpn_out_channels is None:
+        fpn_out_channels = {"tiny": 64, "small": 96, "medium": 256}[model_size]
+    model = build_det_model(
+        model_size, fpn_out_channels=fpn_out_channels, k=k, neck=neck,
+        dilated_kernel_size=dilated_kernel_size, intracl=intracl,
+        aux_in_channels=aux_in_channels)
     state, report = convert_by_name(paddle_state, model)
     if report.matched == 0:
         state, report = convert_with_report(paddle_state, model)

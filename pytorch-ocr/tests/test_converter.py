@@ -82,9 +82,10 @@ def test_map_semantic_name():
     assert map_semantic_name("head.binarize.conv2.weight") == "head.binarize.3.weight"
     assert map_semantic_name("head.thresh.conv_bn2.bias") == "head.thresh.4.bias"
     assert map_semantic_name("head.thresh.conv3.bias") == "head.thresh.6.bias"
-    # 辅助深度监督头（自研模型不实现）→ None
-    assert map_semantic_name("head.aux_binarize_p2.conv1.weight") is None
-    assert map_semantic_name("head.aux_thresh_p3.conv2.weight") is None
+    # 多尺度辅助监督头 → 自研 DBHead aux 子层索引（conv1→0, conv_bn1→1, ...）
+    assert map_semantic_name("head.aux_binarize_p2.conv1.weight") == "head.aux_binarize_p2.0.weight"
+    assert map_semantic_name("head.aux_thresh_p3.conv2.weight") == "head.aux_thresh_p3.3.weight"
+    assert map_semantic_name("head.aux_binarize_p4.conv3.bias") == "head.aux_binarize_p4.6.bias"
 
 
 def test_convert_by_name_roundtrip():
@@ -122,7 +123,7 @@ def test_convert_by_name_roundtrip():
                 pad = pad.replace("running_var", "_variance")
         paddle[pad] = tensor.numpy()
 
-    state = convert_ppocr_v6_det(paddle, "tiny")
+    state = convert_ppocr_v6_det(paddle, "tiny", aux_in_channels=0)
     result = model.load_state_dict(state, strict=False)
     assert result.missing_keys == []
     assert result.unexpected_keys == []
@@ -238,7 +239,7 @@ def test_convert_empty_raises():
 def test_convert_interface_returns_state_dict():
     model = build_det_model("tiny")
     paddle = synthetic_paddle_state(model)
-    state = convert_ppocr_v6_det(paddle, "tiny")
+    state = convert_ppocr_v6_det(paddle, "tiny", aux_in_channels=0)
     assert isinstance(state, dict)
     result = model.load_state_dict(state, strict=False)
     assert result.missing_keys == []
