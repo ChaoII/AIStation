@@ -158,6 +158,15 @@ class DetTrainer:
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                                T_max=num_epochs)
         os.makedirs(output_dir, exist_ok=True)
+        # EMA：对齐官方 PP-OCRv6 det 的 use_ema（ema_decay=0.9998），
+        # 平滑权重抑制小数据集梯度噪声，防止权重被个别 batch 破坏
+        ema_decay = self.config.get("ema_decay", 0.9998)
+        use_ema = ema_decay > 0 and not self.frozen
+        ema_state = None
+        if use_ema:
+            ema_state = {
+                k: v.detach().clone() for k, v in self.net.state_dict().items()
+            }
         best_loss = float("inf")
         for epoch in range(1, num_epochs + 1):
             if self.frozen:
@@ -174,8 +183,14 @@ class DetTrainer:
                 loss.backward()
                 # 梯度裁剪：防 DBLoss 在文字像素极少时梯度爆炸
                 # （官方 PaddleOCR 训练对 det 使用 grad_clip，默认 max_norm=2.0）
-                torch.nn.utils.clip_grad_norm_(self.net.parameters(), 2.0)
+                torch.nn.utils.clip_grad_norm_(
+                    [p for p in self.net.parameters() if p.requires_grad], 2.0)
                 optimizer.step()
+                if use_ema:
+                    with torch.no_grad():
+                        for k, v in self.net.state_dict().items():
+                            if k in ema_state and v.dtype.is_floating_point:
+                                ema_state[k].mul_(ema_decay).add_(v, alpha=1 - ema_decay)
                 total_loss += loss.item()
                 n_batches += 1
                 print(f"epoch {epoch} batch {n_batches} loss {loss.item():.4f}",
@@ -184,10 +199,11 @@ class DetTrainer:
             avg = total_loss / max(n_batches, 1)
             print(f"epoch {epoch} avg_loss {avg:.4f} "
                   f"lr {scheduler.get_last_lr()[0]:.6f}", flush=True)
-            # 保存 best.pt（按 loss 简单判断；真实评估用 Hmean 在 plan 3）
+            # 保存 best.pt（用 EMA 权重，评估质量更高）
+            save_state = ema_state if use_ema else self.net.state_dict()
             if avg < best_loss:
                 best_loss = avg
-                torch.save(self.net.state_dict(), os.path.join(output_dir, "best.pt"))
+                torch.save(save_state, os.path.join(output_dir, "best.pt"))
         print("training done", flush=True)
         return os.path.join(output_dir, "best.pt")
 

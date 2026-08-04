@@ -64,19 +64,21 @@ class DBLoss(nn.Module):
 
     def forward(self, pred, gt):
         # pred: (N, 3, H, W) = [shrink, thresh, binary]
+        # 对齐官方 DBLoss：
+        #   shrink (ch0) -> DiceFocalLoss(Dice + MaskedFocal, mask 内)
+        #   thresh (ch1) -> MaskL1
+        #   binary (ch2) -> DiceFocalLoss(Dice + MaskedFocal, mask 内)
         shrink_pred = pred[:, 0:1]
         thresh_pred = pred[:, 1:2]
         binary_pred = pred[:, 2:3]
+        shrink_mask = gt["shrink_mask"]
+        shrink_target = gt["shrink_map"]
 
-        binary_loss = self._binary_loss(binary_pred, gt)
+        shrink_loss = self._binary_loss(shrink_pred, gt)
         thresh_mask = gt["threshold_mask"]
         thresh_target = gt["threshold_map"]
         thresh_loss = F.smooth_l1_loss(
             thresh_pred * thresh_mask, thresh_target * thresh_mask, reduction="mean"
         )
-        # prob loss（shrink 通道）也在 mask 内平均，避免被背景稀释（对齐官方 DiceFocalLoss）
-        shrink_mask = gt["shrink_mask"]
-        prob_loss = (F.binary_cross_entropy(
-            shrink_pred, gt["shrink_map"], reduction="none"
-        ) * shrink_mask).sum() / (shrink_mask.sum() + 1e-6)
-        return self.alpha * binary_loss + self.beta * thresh_loss + prob_loss
+        binary_loss = self._binary_loss(binary_pred, gt)
+        return self.alpha * shrink_loss + self.beta * thresh_loss + binary_loss
