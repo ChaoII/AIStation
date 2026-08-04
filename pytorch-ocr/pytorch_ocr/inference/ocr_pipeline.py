@@ -103,11 +103,12 @@ class OCRPipeline:
             max_candidates=self.config.get("max_candidates", 3000),
             unclip_ratio=self.config.get("unclip_ratio", 1.4))
 
-        # rec 网络
+        # rec 网络（det 与 rec 的 model_size 独立；rec 默认 tiny，det 由 config 指定）
+        rec_size = self.config.get("rec_model_size", "tiny")
         backbone_out = (self.config.get("backbone_out_channels")
-                        or rec_backbone_out_channels(size))
+                        or rec_backbone_out_channels(rec_size))
         ctc_out, nrtr_out = _infer_rec_out_channels(rec_state, self.config)
-        self.rec_backbone = PPLCNetV4(model_size=size, det=False)
+        self.rec_backbone = PPLCNetV4(model_size=rec_size, det=False)
         self.rec_head = MultiHead(
             in_channels=backbone_out, out_channels=out_channels,
             max_text_length=max_text_length,
