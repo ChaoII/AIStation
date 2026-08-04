@@ -67,11 +67,6 @@ async def _export_core(
             )
         else:
             await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training)
-    elif framework == "paddle-mlcls":
-        await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id)
-    elif framework == "paddle-ocr" or framework.startswith("paddle-ocr-"):
-        export_rec = ocr_rec if framework == "paddle-ocr" else (framework == "paddle-ocr-det-rec" or framework == "paddle-ocr-rec")
-        await _export_paddle_ocr(dataset_id, task_id, images, output_dir, export_rec, annotation_task_id)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
     elif framework == "pytorch-ocr-det":
@@ -271,159 +266,6 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                     continue
     _write_yolo_cls_yaml(output_dir, for_training)
     log.info(f"yolo-cls: exported to {output_dir}")
-
-
-async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
-    """Export multi-label classification to Paddle MLCLS format (txt with class_ids per image)."""
-    img_dir = os.path.join(output_dir, "images")
-    os.makedirs(img_dir, exist_ok=True)
-    lines = []
-    from app.utils.s3_client import s3_client
-
-    async with async_db_session() as db:
-        for img in images:
-            img_path = os.path.join(img_dir, img.filename)
-            try:
-                if not os.path.exists(img_path):
-                    data = s3_client.download_fileobj(img.object_key)
-                    with open(img_path, "wb") as f:
-                        f.write(data.read())
-            except Exception:
-                continue
-
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-
-            class_ids = []
-            for ann in anns:
-                cid = ann.get("class_id")
-                if cid is not None:
-                    class_ids.append(str(cid))
-            if class_ids:
-                lines.append(f"{img.filename} {' '.join(class_ids)}")
-
-    label_file = os.path.join(img_dir, "train_list.txt")
-    with open(label_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-
-    log.info(f"paddle-mlcls: exported {len(lines)} labeled images to {output_dir}")
-
-
-async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list, output_dir: str, export_rec: bool = True, annotation_task_id: int | None = None) -> None:
-    """Export OCR to PaddleOCR format.
-    - det: det/dataset/  detection ground truth (det_gt.txt)
-    - rec: rec/dataset/  cropped text regions (perspective transform) + rec_gt.txt
-    """
-    from app.utils.s3_client import s3_client
-
-    det_dir = os.path.join(output_dir, "det", "dataset")
-    rec_dir = os.path.join(output_dir, "rec", "dataset") if export_rec else None
-    os.makedirs(det_dir, exist_ok=True)
-    if rec_dir:
-        os.makedirs(os.path.join(rec_dir, "images"), exist_ok=True)
-
-    det_lines = []
-    rec_lines = []
-
-    async with async_db_session() as db:
-        for img in images:
-            img_path = os.path.join(output_dir, img.filename)
-            try:
-                if not os.path.exists(img_path):
-                    data = s3_client.download_fileobj(img.object_key)
-                    with open(img_path, "wb") as f:
-                        f.write(data.read())
-            except Exception:
-                continue
-
-            # Copy image to det/dataset/
-            det_img_path = os.path.join(det_dir, img.filename)
-            if os.path.exists(img_path) and not os.path.exists(det_img_path):
-                import shutil
-                shutil.copy2(img_path, det_img_path)
-
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-
-            polygons = []
-            for ann in anns:
-                ann_type = ann.get("type", "")
-                if ann_type not in ("ocr", "Ocr", "polygon", "Polygon"):
-                    continue
-                pts = ann.get("points", [])
-                if not pts and "x1" in ann:
-                    pts = [[ann["x1"], ann["y1"]], [ann["x2"], ann["y1"]], [ann["x2"], ann["y2"]], [ann["x1"], ann["y2"]]]
-                if pts:
-                    flat = [[p["x"], p["y"]] if isinstance(p, dict) else p for p in pts]
-                    polygons.append({"points": flat, "text": ann.get("text", "") or ""})
-
-            if polygons:
-                entries = [{"transcription": p["text"], "points": p["points"]} for p in polygons]
-                det_lines.append(f"{img.filename}\t{json.dumps(entries, ensure_ascii=False)}")
-
-            if rec_dir and polygons:
-                try:
-                    import cv2
-                    import numpy as np
-                    pil_img = cv2.imread(img_path)
-                    if pil_img is None:
-                        continue
-                    h, w = pil_img.shape[:2]
-                    for pi, poly in enumerate(polygons):
-                        pts = np.array(poly["points"], dtype=np.float32)
-                        if len(pts) < 4:
-                            continue
-                        # Perspective transform to get a straight text region
-                        rect = cv2.minAreaRect(pts)
-                        box = cv2.boxPoints(rect)
-                        box = np.array(box, dtype=np.float32)
-                        width = int(rect[1][0])
-                        height = int(rect[1][1])
-                        if width < 1 or height < 1:
-                            continue
-                        dst_pts = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
-                        M = cv2.getPerspectiveTransform(box, dst_pts)
-                        warped = cv2.warpPerspective(pil_img, M, (width, height))
-                        rec_name = f"{os.path.splitext(img.filename)[0]}_{pi}.jpg"
-                        cv2.imwrite(os.path.join(rec_dir, "images", rec_name), warped)
-                        rec_lines.append(f"images/{rec_name}\t{poly['text']}")
-                except ImportError:
-                    # Fallback to simple crop if OpenCV not available
-                    for pi, poly in enumerate(polygons):
-                        pts = poly["points"]
-                        xs = [p[0] for p in pts]
-                        ys = [p[1] for p in pts]
-                        x1, y1, x2, y2 = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
-                        if x2 - x1 < 1 or y2 - y1 < 1:
-                            continue
-                        rec_name = f"{os.path.splitext(img.filename)[0]}_{pi}.jpg"
-                        try:
-                            from PIL import Image
-                            pil = Image.open(img_path)
-                            crop = pil.crop((x1, y1, x2, y2))
-                            crop.save(os.path.join(rec_dir, "images", rec_name))
-                        except Exception:
-                            continue
-                        rec_lines.append(f"images/{rec_name}\t{poly['text']}")
-
-    with open(os.path.join(det_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
-        f.write("\n".join(det_lines))
-
-    if rec_lines:
-        with open(os.path.join(rec_dir, "rec_gt.txt"), "w", encoding="utf-8") as f:
-            f.write("\n".join(rec_lines))
-
-    log.info(f"paddle-ocr: {len(det_lines)} det, {len(rec_lines)} rec → {output_dir}")
 
 
 async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
@@ -626,15 +468,6 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
         ]
         if framework in ("pytorch-ocr-det", "pytorch-ocr-rec"):
             candidates.insert(0, os.path.join(export_dir, f"best{ext}"))
-        if framework == "paddlex":
-            # PaddleX 输出路径变体（output/best_model/exp/best_model 等）
-            candidates = [
-                os.path.join(export_dir, "output", "best_model", "model.pdparams"),
-                os.path.join(export_dir, "best_model", "model.pdparams"),
-                os.path.join(export_dir, "exp", "best_model", "model.pdparams"),
-                os.path.join(export_dir, "output", "exp", "best_model", "model.pdparams"),
-                *candidates,
-            ]
         for p in candidates:
             if os.path.isfile(p):
                 best_path = p
@@ -647,9 +480,6 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
             dirs[:] = [d for d in dirs if d != ".models_cache"]
             for f in files:
                 if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") and f == "best.pt":
-                    best_path = os.path.join(root, f)
-                    break
-                elif framework == "paddlex" and f == "best.pdparams":
                     best_path = os.path.join(root, f)
                     break
             if best_path:

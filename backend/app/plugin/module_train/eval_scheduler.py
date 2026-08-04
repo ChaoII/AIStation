@@ -57,10 +57,7 @@ class EvalExecutor(TaskExecutor):
                 if model_row and model_row.framework:
                     framework = model_row.framework
 
-            # 先解析框架再拉取对应镜像，确保 paddlex 镜像也会被拉取
-            docker_image = (
-                "paddlecloud/paddlex:3.0" if framework == TrainFramework.PADDLEX else DOCKER_IMAGE
-            )
+            docker_image = DOCKER_IMAGE
             await broadcast_eval_log(eval_id, f"[eval] pulling image {docker_image}...")
             await pull_image(docker_image)
 
@@ -96,24 +93,15 @@ class EvalExecutor(TaskExecutor):
             iou = hp.get("iou", 0.6)
             device = hp.get("device", "0")
 
-            if framework == TrainFramework.PADDLEX:
-                # TODO(paddlex): verify CLI flags against paddlecloud/paddlex:3.0 — the following command shapes are best-effort
-                cmd = [
-                    "paddlex", "--eval",
-                    f"--model=/model/{model_filename}",
-                    "--data", "/data",
-                    "--device", str(device),
-                ]
-            else:
-                cmd = [
-                    "yolo", "val",
-                    f"model=/model/{model_filename}",
-                    "data=/data/dataset.yaml",
-                    f"imgsz={imgsz}",
-                    f"batch={batch}",
-                    f"conf={conf}",
-                    f"iou={iou}",
-                ]
+            cmd = [
+                "yolo", "val",
+                f"model=/model/{model_filename}",
+                "data=/data/dataset.yaml",
+                f"imgsz={imgsz}",
+                f"batch={batch}",
+                f"conf={conf}",
+                f"iou={iou}",
+            ]
 
             container = await run_container(
                 docker_image, cmd,
@@ -131,11 +119,7 @@ class EvalExecutor(TaskExecutor):
             metrics: dict = {}
 
             def _parse_val_metrics(line: str) -> dict | None:
-                """解析 YOLO val 输出：all 汇总行与 per-class 行（累积到 metrics）。
-
-                TODO(paddlex): PaddleX eval 输出与 YOLO val 格式不同，此解析器仅适用于 YOLO；
-                PaddleX 评估的 metrics 会保持为空，直到新增 PaddleX 解析器。
-                """
+                """解析 YOLO val 输出：all 汇总行与 per-class 行（累积到 metrics）。"""
                 if re.match(r"^\s+all\s+", line):
                     parts = line.strip().split()
                     if len(parts) >= 7:

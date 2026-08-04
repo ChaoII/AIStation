@@ -13,7 +13,7 @@ def test_is_ocr_framework():
     assert _is_ocr_framework(TrainFramework.PYTORCH_OCR_DET) is True
     assert _is_ocr_framework(TrainFramework.PYTORCH_OCR_REC) is True
     assert _is_ocr_framework(TrainFramework.ULTRALYTICS) is False
-    assert _is_ocr_framework(TrainFramework.PADDLEX) is False
+    assert not hasattr(TrainFramework, "PADDLEX")
 
 
 def test_generate_ocr_server_script():

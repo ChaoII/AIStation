@@ -58,10 +58,7 @@ class PredictExecutor(TaskExecutor):
                 if model_row and model_row.framework:
                     framework = model_row.framework
 
-            # 先解析框架再拉取对应镜像，确保 paddlex 镜像也会被拉取
-            docker_image = (
-                "paddlecloud/paddlex:3.0" if framework == TrainFramework.PADDLEX else DOCKER_IMAGE
-            )
+            docker_image = DOCKER_IMAGE
             await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
             await pull_image(docker_image)
 
@@ -114,28 +111,18 @@ class PredictExecutor(TaskExecutor):
             imgsz = hp.get("imgsz", 640)
             device = hp.get("device", "0")
 
-            if framework == TrainFramework.PADDLEX:
-                # TODO(paddlex): verify CLI flags against paddlecloud/paddlex:3.0 — the following command shapes are best-effort
-                cmd = [
-                    "paddlex", "--predict",
-                    f"--model=/model/{model_filename}",
-                    "--source", "/data",
-                    "--save_dir", "/output",
-                    "--device", str(device),
-                ]
-            else:
-                cmd = [
-                    "yolo", "predict",
-                    f"model=/model/{model_filename}",
-                    "source=/data",
-                    f"imgsz={imgsz}",
-                    f"conf={conf}",
-                    f"iou={iou}",
-                    "save_txt=True",
-                    "save_conf=True",
-                    "project=/output",
-                    "name=exp",
-                ]
+            cmd = [
+                "yolo", "predict",
+                f"model=/model/{model_filename}",
+                "source=/data",
+                f"imgsz={imgsz}",
+                f"conf={conf}",
+                f"iou={iou}",
+                "save_txt=True",
+                "save_conf=True",
+                "project=/output",
+                "name=exp",
+            ]
 
             container = await run_container(
                 docker_image, cmd,
@@ -168,21 +155,11 @@ class PredictExecutor(TaskExecutor):
                 await remove_container(container_id)
 
                 # Collect result images from output dir
-                if framework == TrainFramework.PADDLEX:
-                    # PaddleX 无固定 exp 子目录，递归扫描输出目录
-                    results_base = output_dir
-                    result_files = [
-                        os.path.join(r, f)
-                        for r, _, files in os.walk(results_base)
-                        for f in sorted(files)
-                        if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
-                    ]
-                else:
-                    results_base = os.path.join(output_dir, "exp")
-                    result_files = [
-                        os.path.join(results_base, f) for f in sorted(os.listdir(results_base))
-                        if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
-                    ] if os.path.isdir(results_base) else []
+                results_base = os.path.join(output_dir, "exp")
+                result_files = [
+                    os.path.join(results_base, f) for f in sorted(os.listdir(results_base))
+                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                ] if os.path.isdir(results_base) else []
 
                 if result_files:
                     for img_path in result_files:
