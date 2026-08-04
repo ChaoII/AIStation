@@ -99,6 +99,19 @@ class DetTrainer:
             "backbone": self.backbone, "fpn": self.fpn, "head": self.head,
         })
         self.net.to(self.device)
+        # 预训练权重微调（官方转换的 .pt）
+        if self.config.get("pretrained"):
+            state = torch.load(self.config["pretrained"], map_location="cpu")
+            # 兼容 neck.* -> fpn.* 前缀
+            remap = {}
+            for k, v in state.items():
+                if k.startswith("neck."):
+                    remap["fpn." + k[len("neck."):]] = v
+                else:
+                    remap[k] = v
+            r = self.net.load_state_dict(remap, strict=False)
+            print(f"[det] loaded pretrained {self.config['pretrained']} "
+                  f"(missing={len(r.missing_keys)}, unexpected={len(r.unexpected_keys)})", flush=True)
 
     def _train_step(self, batch):
         img, shrink_map, shrink_mask, thresh_map, thresh_mask = [

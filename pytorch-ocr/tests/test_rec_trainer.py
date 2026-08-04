@@ -198,3 +198,22 @@ def test_rec_trainer_eval_returns_metrics_dict():
         assert 0.0 <= result["char_acc"] <= 1.0
         assert 0.0 <= result["full_acc"] <= 1.0
         assert result["total_strings"] == 3
+
+def test_rec_trainer_loads_pretrained():
+    """RecTrainer 支持加载预训练权重（跳过 shape 不匹配层）。"""
+    import tempfile, os
+    from pytorch_ocr.trainer.rec_trainer import RecTrainer
+
+    t = RecTrainer({"model_size": "tiny", "num_classes": 6906, "max_text_length": 25,
+                    "nrtr_dim": 384, "backbone_out_channels": 160}, device="cpu")
+    cur = t.net.state_dict()
+    with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+        torch.save(cur, f.name)
+        tmp = f.name
+    try:
+        t2 = RecTrainer({"model_size": "tiny", "num_classes": 6906, "max_text_length": 25,
+                         "nrtr_dim": 384, "backbone_out_channels": 160,
+                         "pretrained": tmp}, device="cpu")
+        assert t2.net.state_dict()["head.ctc_head.fc2.weight"].equal(cur["head.ctc_head.fc2.weight"])
+    finally:
+        os.remove(tmp)

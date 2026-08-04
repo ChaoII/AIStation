@@ -56,6 +56,22 @@ class RecTrainer:
         self.loss_fn = MultiLoss(blank=0)
         self.net = torch.nn.ModuleDict({"backbone": self.backbone, "head": self.head})
         self.net.to(self.device)
+        # 预训练权重微调（官方转换的 .pt，strict=False 允许 vocab 差异层重新初始化）
+        if self.config.get("pretrained"):
+            state = torch.load(self.config["pretrained"], map_location="cpu")
+            # 过滤 shape 不匹配的层（如官方 NRTR vocab 6910 vs 训练 6906），保留匹配的
+            cur = self.net.state_dict()
+            compatible = {}
+            skipped = 0
+            for k, v in state.items():
+                if k in cur and cur[k].shape == v.shape:
+                    compatible[k] = v
+                else:
+                    skipped += 1
+            r = self.net.load_state_dict(compatible, strict=False)
+            print(f"[rec] loaded pretrained {self.config['pretrained']} "
+                  f"(matched={len(compatible)}, skipped={skipped}, "
+                  f"unexpected={len(r.unexpected_keys)})", flush=True)
 
     def _train_step(self, batch):
         img, label_ctc, label_gtc, length = [

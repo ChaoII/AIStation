@@ -5,6 +5,7 @@ import tempfile
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from pytorch_ocr.trainer.det_trainer import DetTrainer
@@ -177,3 +178,27 @@ def test_det_trainer_eval_deterministic_hmean():
         assert result["fp"] == 0
         assert result["fn"] == 0
         assert result["num_images"] == 2
+
+def test_det_trainer_loads_pretrained():
+    """DetTrainer 支持加载预训练权重（neck.* -> fpn.* 兼容）。"""
+    import tempfile, os
+    import numpy as np
+    from pytorch_ocr.trainer.det_trainer import DetTrainer
+
+    # 构造一个与 DetTrainer 结构匹配的合成 state dict
+    t = DetTrainer({"model_size": "tiny"}, device="cpu")
+    cur = t.net.state_dict()
+    # 把 fpn.* 重命名为 neck.* 模拟官方权重
+    fake = {}
+    for k, v in cur.items():
+        k2 = ("neck." + k[len("fpn."):]) if k.startswith("fpn.") else k
+        fake[k2] = v.clone()
+    with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+        torch.save(fake, f.name)
+        tmp = f.name
+    try:
+        t2 = DetTrainer({"model_size": "tiny", "pretrained": tmp}, device="cpu")
+        # 预训练后权重应已被加载（非初始值）
+        assert t2.net.state_dict()["head.binarize.0.weight"].equal(cur["head.binarize.0.weight"])
+    finally:
+        os.remove(tmp)

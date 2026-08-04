@@ -20,6 +20,8 @@ def build_parser():
     train_det.add_argument("--config", default="", help="JSON 配置文件路径(可选)")
     train_det.add_argument("--model-size", default="tiny",
                            choices=["tiny", "small", "medium"])
+    train_det.add_argument("--pretrained", default="",
+                           help="预训练权重路径(官方转换的 .pt)，用于微调；容器内需挂载权重")
 
     eval_det = sub.add_parser("eval-det", help="评估 det 模型")
     eval_det.add_argument("--data", required=True)
@@ -40,6 +42,8 @@ def build_parser():
     train_rec.add_argument("--config", default="", help="JSON 配置文件路径(可选)")
     train_rec.add_argument("--model-size", default="tiny",
                            choices=["tiny", "small", "medium"])
+    train_rec.add_argument("--pretrained", default="",
+                           help="预训练权重路径(官方转换的 .pt)，用于微调；容器内需挂载权重")
 
     eval_rec = sub.add_parser("eval-rec", help="评估 rec 模型")
     eval_rec.add_argument("--data", required=True)
@@ -103,6 +107,8 @@ def cmd_train_det(args):
     cfg = _build_config(args)
     cfg["model_size"] = args.model_size
     cfg["image_shape"] = tuple(cfg.get("image_shape", (640, 640)))
+    if args.pretrained:
+        cfg["pretrained"] = args.pretrained
     trainer = DetTrainer(cfg, device=device)
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,
@@ -129,6 +135,8 @@ def cmd_train_rec(args):
     cfg = _build_config(args, rec=True)
     cfg["model_size"] = args.model_size
     cfg["image_shape"] = tuple(cfg.get("image_shape", (48, 320)))
+    if args.pretrained:
+        cfg["pretrained"] = args.pretrained
     trainer = RecTrainer(cfg, device=device)
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,
