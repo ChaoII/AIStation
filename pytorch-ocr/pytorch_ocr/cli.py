@@ -122,9 +122,16 @@ def cmd_eval_det(args):
     device = _normalize_device(args.device)
     cfg = _build_config(args)
     trainer = DetTrainer(cfg, device=device)
-    # 加载模型
+    # 加载模型（兼容官方转换权重的 neck.* -> fpn.* 前缀）
     import torch
-    trainer.net.load_state_dict(torch.load(args.model, map_location="cpu"))
+    state = torch.load(args.model, map_location="cpu")
+    remap = {}
+    for k, v in state.items():
+        if k.startswith("neck."):
+            remap["fpn." + k[len("neck."):]] = v
+        else:
+            remap[k] = v
+    trainer.net.load_state_dict(remap, strict=False)
     result = trainer.eval(data_dir=args.data, output_dir=args.output)
     print(f"[cli] eval result: {json.dumps(result)}", flush=True)
 

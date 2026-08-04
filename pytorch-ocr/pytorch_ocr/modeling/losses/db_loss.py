@@ -5,22 +5,30 @@ import torch.nn.functional as F
 
 
 def _dice_loss(pred, target, mask):
-    """Dice loss，忽略 mask=0 区域。"""
-    pred = pred * mask
-    target = target * mask
+    """Dice loss，仅在 mask=1（文字区域）计算（对齐官方 DiceLoss）。
+
+    官方: intersection = sum(pred * gt * mask);
+          union = sum(pred * mask) + sum(gt * mask)
+    注意这里 pred/target 不带 mask 相乘进入求和（官方只对 mask 区域统计，
+    而非先乘 mask 再全图求和——后者会把 mask 外 pred 也计入 union，语义错误）。
+    """
     smooth = 1e-5
-    intersect = torch.sum(pred * target)
-    union = torch.sum(pred) + torch.sum(target)
-    return 1 - (2 * intersect + smooth) / (union + smooth)
+    intersect = torch.sum(pred * target * mask)
+    union = torch.sum(pred * mask) + torch.sum(target * mask) + smooth
+    return 1 - (2 * intersect + smooth) / union
 
 
-def _focal_loss(pred, target, alpha=0.25, gamma=2.5):
-    """二分类 Focal loss。"""
+def _focal_loss(pred, target, mask, alpha=0.25, gamma=2.5):
+    """二分类 Focal loss，仅在 mask=1（文字区域）平均（对齐官方 MaskedFocalLoss）。
+
+    官方: (weight * loss * mask).sum() / mask.sum()
+    全图平均会被大量背景像素稀释（本项目文字仅占 ~2%），导致模型学不到文字。
+    """
     eps = 1e-6
     pt = torch.where(target > 0.5, pred, 1 - pred).clamp(eps, 1 - eps)
     weight = alpha * (1 - pt).pow(gamma)
     loss = F.binary_cross_entropy(pred, target, reduction="none")
-    return (weight * loss).mean()
+    return (weight * loss * mask).sum() / (mask.sum() + eps)
 
 
 class DBLoss(nn.Module):
@@ -49,7 +57,8 @@ class DBLoss(nn.Module):
             mask = gt["shrink_mask"]
             target = gt["shrink_map"]
             dice = _dice_loss(pred, target, mask)
-            focal = _focal_loss(pred, target, self.focal_alpha, self.focal_gamma)
+            focal = _focal_loss(pred, target, mask,
+                                self.focal_alpha, self.focal_gamma)
             return 0.5 * dice + 0.5 * focal
         return F.binary_cross_entropy(pred, gt["shrink_map"], reduction="mean")
 
@@ -65,5 +74,9 @@ class DBLoss(nn.Module):
         thresh_loss = F.smooth_l1_loss(
             thresh_pred * thresh_mask, thresh_target * thresh_mask, reduction="mean"
         )
-        prob_loss = F.binary_cross_entropy(shrink_pred, gt["shrink_map"], reduction="mean")
+        # prob loss（shrink 通道）也在 mask 内平均，避免被背景稀释（对齐官方 DiceFocalLoss）
+        shrink_mask = gt["shrink_mask"]
+        prob_loss = (F.binary_cross_entropy(
+            shrink_pred, gt["shrink_map"], reduction="none"
+        ) * shrink_mask).sum() / (shrink_mask.sum() + 1e-6)
         return self.alpha * binary_loss + self.beta * thresh_loss + prob_loss
