@@ -81,14 +81,20 @@ class DetTrainer:
         self.config = config
         self.device = device if torch.cuda.is_available() or device == "cpu" else "cpu"
         size = config.get("model_size", "tiny")
+        out_channels = config.get("out_channels", 64)
+        aux_in = config.get("aux_in_channels", 0)
         self.backbone = PPLCNetV4(model_size=size, det=True)
         self.fpn = RepLKFPN(in_channels=self.backbone.feat_channels,
-                            out_channels=config.get("out_channels", 64),
+                            out_channels=out_channels,
                             dilated_kernel_size=config.get("dilated_kernel_size", 5))
-        self.head = DBHead(in_channels=config.get("out_channels", 64),
-                           k=config.get("k", 50))
+        self.head = DBHead(in_channels=out_channels,
+                           k=config.get("k", 50),
+                           aux_in_channels=aux_in)
         self.loss_fn = DBLoss(alpha=config.get("alpha", 5),
-                              beta=config.get("beta", 10))
+                              beta=config.get("beta", 10),
+                              aux_weight_p4=config.get("aux_weight_p4", 0.0),
+                              aux_weight_p3=config.get("aux_weight_p3", 0.0),
+                              aux_weight_p2=config.get("aux_weight_p2", 0.0))
         self.postprocess = DBPostProcess(
             thresh=config.get("thresh", 0.2),
             box_thresh=config.get("box_thresh", 0.45),
@@ -131,16 +137,18 @@ class DetTrainer:
         ]
         feats = self.backbone(img)
         fused = self.fpn(feats)  # train: dict {fuse, aux_*}; eval: tensor
-        if isinstance(fused, dict):
-            fused = fused["fuse"]
-        maps = self.head(fused)["maps"]  # (N,3,H,W)
+        maps = self.head(fused)  # dict {maps, aux_maps_p4/p3/p2} 或 (N,3,H,W)
+        if isinstance(maps, dict):
+            preds = maps
+        else:
+            preds = {"maps": maps}
         gt = {
             "shrink_map": shrink_map,
             "shrink_mask": shrink_mask,
             "threshold_map": thresh_map,
             "threshold_mask": thresh_mask,
         }
-        loss = self.loss_fn(maps, gt)
+        loss = self.loss_fn(preds, gt)
         return loss
 
     def train(self, data_dir, num_epochs=100, batch_size=8, output_dir="./output",

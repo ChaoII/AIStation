@@ -44,6 +44,9 @@ class DBLoss(nn.Module):
         main_loss_type="DiceFocalLoss",
         focal_alpha=0.25,
         focal_gamma=2.5,
+        aux_weight_p4=0.0,
+        aux_weight_p3=0.0,
+        aux_weight_p2=0.0,
     ):
         super().__init__()
         self.alpha = alpha
@@ -51,6 +54,7 @@ class DBLoss(nn.Module):
         self.main_loss_type = main_loss_type
         self.focal_alpha = focal_alpha
         self.focal_gamma = focal_gamma
+        self.aux_weight = {"p4": aux_weight_p4, "p3": aux_weight_p3, "p2": aux_weight_p2}
 
     def _binary_loss(self, pred, gt):
         if self.main_loss_type == "DiceFocalLoss":
@@ -63,6 +67,12 @@ class DBLoss(nn.Module):
         return F.binary_cross_entropy(pred, gt["shrink_map"], reduction="mean")
 
     def forward(self, pred, gt):
+        # pred: dict {maps, aux_maps_*}（训练，head 完整输出）或 (N,3,H,W) tensor
+        if isinstance(pred, dict):
+            aux_maps = {k: v for k, v in pred.items() if k.startswith("aux_maps_")}
+            pred = pred["maps"]
+        else:
+            aux_maps = {}
         # pred: (N, 3, H, W) = [shrink, thresh, binary]
         # 对齐官方 DBLoss：
         #   shrink (ch0) -> DiceFocalLoss(Dice + MaskedFocal, mask 内)
@@ -81,4 +91,22 @@ class DBLoss(nn.Module):
             thresh_pred * thresh_mask, thresh_target * thresh_mask, reduction="mean"
         )
         binary_loss = self._binary_loss(binary_pred, gt)
-        return self.alpha * shrink_loss + self.beta * thresh_loss + binary_loss
+        loss = self.alpha * shrink_loss + self.beta * thresh_loss + binary_loss
+
+        # 多尺度辅助损失（aux_maps_p4/p3/p2），对齐官方 aux_weight 加权
+        for level in ("p4", "p3", "p2"):
+            w = self.aux_weight.get(level, 0.0)
+            key = f"aux_maps_{level}"
+            if w <= 0 or key not in aux_maps:
+                continue
+            aux = aux_maps[key]
+            aux_shrink = aux[:, 0:1]
+            aux_thresh = aux[:, 1:2]
+            aux_binary = aux[:, 2:3]
+            l_shrink = self.alpha * self._binary_loss(aux_shrink, gt)
+            l_thresh = self.beta * F.smooth_l1_loss(
+                aux_thresh * thresh_mask, thresh_target * thresh_mask,
+                reduction="mean")
+            l_binary = self._binary_loss(aux_binary, gt)
+            loss = loss + w * (l_shrink + l_thresh + l_binary)
+        return loss
