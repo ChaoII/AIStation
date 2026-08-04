@@ -71,10 +71,18 @@ class OCRPipeline:
 
         # det 网络
         self.det_backbone = PPLCNetV4(model_size=size, det=True)
-        self.det_fpn = RepLKFPN(
-            in_channels=self.det_backbone.feat_channels,
-            out_channels=out_channels_fpn,
-            dilated_kernel_size=self.config.get("dilated_kernel_size", 5))
+        neck = self.config.get("neck", "rep_lk_fpn")
+        if neck == "rep_lk_pan":
+            from ..modeling.necks.rep_lk_pan import RepLKPAN
+            self.det_fpn = RepLKPAN(
+                in_channels=self.det_backbone.feat_channels,
+                out_channels=out_channels_fpn,
+                intracl=self.config.get("intracl", False))
+        else:
+            self.det_fpn = RepLKFPN(
+                in_channels=self.det_backbone.feat_channels,
+                out_channels=out_channels_fpn,
+                dilated_kernel_size=self.config.get("dilated_kernel_size", 5))
         self.det_head = DBHead(in_channels=out_channels_fpn,
                                k=self.config.get("k", 50))
         self.det_net = torch.nn.ModuleDict(
