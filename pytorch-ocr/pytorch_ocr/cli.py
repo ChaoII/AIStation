@@ -163,9 +163,14 @@ def cmd_train_rec(args):
     if getattr(args, "dict", ""):
         cfg["dict_path"] = args.dict
     rh = getattr(args, "rec_head", "auto")
-    if rh != "auto":
-        from .modeling.heads.rec_multi_head import build_default_head_list
-        # 显式指定 reshape / lightsvtr：按 model_size 构造 head_list
+    from .modeling.heads.rec_multi_head import build_default_head_list
+    if rh == "auto":
+        # 按 model_size 自动选择 neck（tiny=reshape, small/medium=lightsvtr）
+        cfg["head_list"] = build_default_head_list(
+            cfg["model_size"], nrtr_dim=cfg.get("nrtr_dim", 384),
+            max_text_length=cfg.get("max_text_length", 25))
+    else:
+        # 显式指定 reshape / lightsvtr
         cfg["head_list"] = build_default_head_list(
             cfg["model_size"], nrtr_dim=cfg.get("nrtr_dim", 384),
             max_text_length=cfg.get("max_text_length", 25))
