@@ -99,6 +99,8 @@ class RecTrainer:
     def train(self, data_dir, num_epochs=100, batch_size=128, output_dir="./output",
               workers=0, lr=0.001, label_path=None):
         label_path = label_path or os.path.join(data_dir, "train_list.txt")
+        if not os.path.isabs(label_path):
+            label_path = os.path.join(data_dir, label_path)
         dataset = RecDataset(
             data_dir=data_dir,
             label_path=label_path,
@@ -150,6 +152,8 @@ class RecTrainer:
         """
         self.net.eval()
         image_shape = tuple(self.config.get("image_shape", (48, 320)))
+        if label_path and not os.path.isabs(label_path):
+            label_path = os.path.join(data_dir, label_path)
         if label_path:
             pass
         else:
