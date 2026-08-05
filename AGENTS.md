@@ -312,4 +312,46 @@ Dashboard `index.vue` 图表区使用自定义 CSS Grid (`display: grid; grid-te
 /* ✅ 标准写法，兼容性最好 */
 @media (max-width: 1100px) { ... }
 ```
+
+---
+
+## OCR 模型规格（pytorch-ocr）
+
+### PP-OCRv6 det 规格（configs/det/PP-OCRv6/*.yml）
+
+| 规格 | Backbone | Neck | out | dilated | Head aux | EMA | box_thresh |
+|------|----------|------|-----|---------|----------|-----|-----------|
+| tiny | PPLCNetV4 tiny | RepLKFPN | 64 | 5 | aux_in 64 | 0.9998 | 0.4 |
+| small | PPLCNetV4 small | RepLKFPN | 96 | 7 | aux_in 96 | 0.9997 | 0.45 |
+| medium | PPLCNetV4 medium | **RepLKPAN** | 256 | - | aux_in 256 | 0.9996 | 0.45 |
+
+- DBLoss: `main_loss_type=DiceFocalLoss`, alpha=5, beta=10, focal_alpha=0.25, focal_gamma=2.5, aux_weight p4/p3/p2 = 0.2/0.3/0.4
+- CLI: `train-det --model-size {tiny,small,medium} --neck {rep_lk_fpn,rep_lk_pan} --pretrained <det_converted.pt> [--freeze-backbone]`
+
+### PP-OCRv6 rec 规格（configs/rec/PP-OCRv6/*.yml）
+
+| 规格 | Backbone | CTCHead neck | dims | mlp_ratio | NRTR dim | dict |
+|------|----------|-------------|------|-----------|----------|------|
+| tiny | PPLCNetV4 tiny | reshape (use_guide+mid80) | - | - | 384 | ppocrv6_tiny_dict (6904) |
+| small | PPLCNetV4 small | **lightsvtr** | 120 | 2.0 | 384 | ppocrv6_dict (18707) |
+| medium | PPLCNetV4 medium | **lightsvtr** | 192 | 4.0 | **512** | ppocrv6_dict (18707) |
+
+- CTC 词表 = dict + space + blank（tiny: 6904+1+1=6906；small/medium: 18707+1+1≈18710）
+- NRTR 词表 = CTC 词表 + 4 特殊 token（tiny 6910, small/medium 18714）——转换加载时这 2 层 shape 不匹配会被跳过（可接受，NRTR 是辅助头）
+- CLI: `train-rec --model-size {tiny,small,medium} --dict <dict.txt> --pretrained <rec_converted.pt>`
+
+### 权重转换
+
+- det: `convert_ppocr_v6_det(paddle_state, model_size, fpn_out_channels, neck, dilated_kernel_size, intracl, aux_in_channels)` → 官方 .pdparams 语义名映射
+- rec: `convert_ppocr_v6_rec(paddle_state, model_size, out_channels, neck)` → lightsvtr 需 `neck="lightsvtr"`
+- 官方权重 URL: `https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/PP-OCRv6_{size}_{det|rec}_pretrained.pdparams`
+- 注意 det/rec 权重文件名需区分（如 `PP-OCRv6_small_det_converted.pt` / `PP-OCRv6_small_rec_converted.pt`），避免覆盖
+
+### 训练要点（对照官方 PaddleOCR 发现）
+
+- **DBLoss shrink 通道必须用 DiceFocalLoss（Dice + mask 内 Focal）**，纯 BCE 在文字占 2% 时梯度被背景稀释 → 模型全零崩溃
+- **EMA**（ema_decay 0.9996-0.9998）抑制小数据集梯度噪声（BN bias 梯度可到 1212 量级）
+- **eval 用官方 DetResizeForTest**（limit_side_len=736 min + round 32 → 实际近原尺寸），640×640 会低估 hmean 0.13-0.17
+- 微调小数据集 det 时 **freeze-backbone**（BN 梯度爆炸会摧毁预训练权重）
+- PP-OCRv5 det 用 PPLCNetV3+RSEFPN+DiceLoss，与 v6 架构不同，无法直接对比数字
 ```
