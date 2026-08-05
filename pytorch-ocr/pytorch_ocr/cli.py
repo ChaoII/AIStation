@@ -49,6 +49,10 @@ def build_parser():
                            choices=["tiny", "small", "medium"])
     train_rec.add_argument("--pretrained", default="",
                            help="预训练权重路径(官方转换的 .pt)，用于微调；容器内需挂载权重")
+    train_rec.add_argument("--dict", default="",
+                           help="字符集文件(每行一字符)，默认内置 ppocrv6_tiny_dict(6904)")
+    train_rec.add_argument("--rec-head", default="auto",
+                           help="CTCHead neck: auto(tiny=reshape/small+medium=lightsvtr) / reshape / lightsvtr")
 
     eval_rec = sub.add_parser("eval-rec", help="评估 rec 模型")
     eval_rec.add_argument("--data", required=True)
@@ -56,6 +60,9 @@ def build_parser():
     eval_rec.add_argument("--output", default="/output")
     eval_rec.add_argument("--device", default="0")
     eval_rec.add_argument("--config", default="")
+    eval_rec.add_argument("--dict", default="", help="字符集文件(每行一字符)")
+    eval_rec.add_argument("--model-size", default="tiny",
+                          choices=["tiny", "small", "medium"])
 
     predict = sub.add_parser("predict", help="OCR 推理")
     predict.add_argument("--image", required=True, help="输入图片路径")
@@ -153,6 +160,22 @@ def cmd_train_rec(args):
     cfg["image_shape"] = tuple(cfg.get("image_shape", (48, 320)))
     if args.pretrained:
         cfg["pretrained"] = args.pretrained
+    if getattr(args, "dict", ""):
+        cfg["dict_path"] = args.dict
+    rh = getattr(args, "rec_head", "auto")
+    if rh != "auto":
+        from .modeling.heads.rec_multi_head import build_default_head_list
+        # 显式指定 reshape / lightsvtr：按 model_size 构造 head_list
+        cfg["head_list"] = build_default_head_list(
+            cfg["model_size"], nrtr_dim=cfg.get("nrtr_dim", 384),
+            max_text_length=cfg.get("max_text_length", 25))
+        if rh == "lightsvtr":
+            from .modeling.heads.rec_multi_head import _LIGHTSVTR_PRESET, _NRTR_DIM_PRESET
+            cfg["head_list"] = [
+                {"CTCHead": {"Neck": {"name": "lightsvtr", **_LIGHTSVTR_PRESET[cfg["model_size"]]}}},
+                {"NRTRHead": {"nrtr_dim": _NRTR_DIM_PRESET.get(cfg["model_size"], 384),
+                              "max_text_length": cfg.get("max_text_length", 25)}},
+            ]
     trainer = RecTrainer(cfg, device=device)
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,
@@ -165,6 +188,9 @@ def cmd_eval_rec(args):
     from .trainer.rec_trainer import RecTrainer
     device = _normalize_device(args.device)
     cfg = _build_config(args, rec=True)
+    if getattr(args, "dict", ""):
+        cfg["dict_path"] = args.dict
+    cfg["model_size"] = getattr(args, "model_size", "tiny")
     trainer = RecTrainer(cfg, device=device)
     import torch
     trainer.net.load_state_dict(torch.load(args.model, map_location="cpu"))

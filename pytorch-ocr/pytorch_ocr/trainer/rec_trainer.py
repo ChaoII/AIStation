@@ -42,8 +42,14 @@ class RecTrainer:
         self.config = config
         self.device = device if torch.cuda.is_available() or device == "cpu" else "cpu"
         size = config.get("model_size", "tiny")
-        num_classes = config.get("num_classes", 100)
         max_text_length = config.get("max_text_length", 25)
+        # num_classes 优先从 dict_path 推导（官方 ppocrv6_dict.txt -> 18710），
+        # 其次显式 config，最后默认 6906
+        num_classes = config.get("num_classes", 6906)
+        if config.get("dict_path"):
+            from ..data.rec_dataset import CharacterDict
+            num_classes = CharacterDict(config["dict_path"]).num_classes
+            config["num_classes"] = num_classes
         self.backbone = PPLCNetV4(model_size=size, det=False)
         # rec 骨干输出通道（tiny=160 / small=384 / medium=768），按 model_size 推导
         backbone_out = config.get("backbone_out_channels") or rec_backbone_out_channels(size)
