@@ -99,9 +99,9 @@ class DetTrainer:
                            aux_in_channels=aux_in)
         self.loss_fn = DBLoss(alpha=config.get("alpha", 5),
                               beta=config.get("beta", 10),
-                              aux_weight_p4=config.get("aux_weight_p4", 0.0),
-                              aux_weight_p3=config.get("aux_weight_p3", 0.0),
-                              aux_weight_p2=config.get("aux_weight_p2", 0.0))
+                              aux_weight_p4=config.get("aux_weight_p4", 0.2),
+                              aux_weight_p3=config.get("aux_weight_p3", 0.3),
+                              aux_weight_p2=config.get("aux_weight_p2", 0.4))
         self.postprocess = DBPostProcess(
             thresh=config.get("thresh", 0.2),
             box_thresh=config.get("box_thresh", 0.45),
@@ -162,7 +162,8 @@ class DetTrainer:
               workers=4, lr=0.001):
         dataset = DetDataset(gt_dir=os.path.join(data_dir, "images"),
                              label_path=os.path.join(data_dir, "det_gt.txt"),
-                             image_shape=tuple(self.config.get("image_shape", (640, 640))))
+                             image_shape=tuple(self.config.get("image_shape", (640, 640))),
+                             use_aug=self.config.get("use_aug", True))
         if len(dataset) == 0:
             raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,

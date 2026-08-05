@@ -21,14 +21,20 @@ def _dice_loss(pred, target, mask):
 def _focal_loss(pred, target, mask, alpha=0.25, gamma=2.5):
     """二分类 Focal loss，仅在 mask=1（文字区域）平均（对齐官方 MaskedFocalLoss）。
 
-    官方: (weight * loss * mask).sum() / mask.sum()
-    全图平均会被大量背景像素稀释（本项目文字仅占 ~2%），导致模型学不到文字。
+    官方: (loss * mask).sum() / mask.sum()
+    数值稳定性关键：pred 是 sigmoid 概率，须先转回 logit，用
+    ``binary_cross_entropy_with_logits``（log-sum-exp 稳定）计算，
+    避免对概率直接 BCE 时 ``-1/pred`` 在 pred→0 梯度爆炸。
     """
     eps = 1e-6
-    pt = torch.where(target > 0.5, pred, 1 - pred).clamp(eps, 1 - eps)
-    weight = alpha * (1 - pt).pow(gamma)
-    loss = F.binary_cross_entropy(pred, target, reduction="none")
-    return (weight * loss * mask).sum() / (mask.sum() + eps)
+    pred = pred.clamp(eps, 1 - eps)
+    logit = torch.log(pred / (1 - pred))
+    p = torch.sigmoid(logit)
+    ce = F.binary_cross_entropy_with_logits(logit, target, reduction="none")
+    p_t = p * target + (1 - p) * (1 - target)
+    alpha_t = alpha * target + (1 - alpha) * (1 - target)
+    loss = alpha_t * (1 - p_t).pow(gamma) * ce
+    return (loss * mask).sum() / (mask.sum() + eps)
 
 
 class DBLoss(nn.Module):
@@ -63,7 +69,8 @@ class DBLoss(nn.Module):
             dice = _dice_loss(pred, target, mask)
             focal = _focal_loss(pred, target, mask,
                                 self.focal_alpha, self.focal_gamma)
-            return 0.5 * dice + 0.5 * focal
+            # 对齐官方 DiceFocalLoss：dice_weight=1.0, focal_weight=1.0
+            return dice + focal
         return F.binary_cross_entropy(pred, gt["shrink_map"], reduction="mean")
 
     def forward(self, pred, gt):
