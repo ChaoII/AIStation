@@ -27,6 +27,11 @@ def build_parser():
                            help="预训练权重路径(官方转换的 .pt)，用于微调；容器内需挂载权重")
     train_det.add_argument("--freeze-backbone", action="store_true",
                            help="微调时冻结 backbone+fpn，只训练 head（防 BN 梯度爆炸/灾难性遗忘）")
+    train_det.add_argument("--loss", default="dice_focal",
+                           choices=["dice_focal", "dice"],
+                           help="DBLoss 主损失：dice_focal(v6默认) / dice(v5默认, 对齐官方 PP-OCRv5)")
+    train_det.add_argument("--warmup", type=int, default=2,
+                           help="warmup epoch 数（官方默认 2，微调保留预训练）")
 
     eval_det = sub.add_parser("eval-det", help="评估 det 模型")
     eval_det.add_argument("--data", required=True)
@@ -129,6 +134,10 @@ def cmd_train_det(args):
         cfg["pretrained"] = args.pretrained
     if getattr(args, "freeze_backbone", False):
         cfg["freeze_backbone"] = True
+    if getattr(args, "loss", "dice_focal") == "dice":
+        cfg["main_loss_type"] = "DiceLoss"
+    if getattr(args, "warmup", 2) >= 0:
+        cfg["warmup_epochs"] = args.warmup
     trainer = DetTrainer(cfg, device=device)
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,

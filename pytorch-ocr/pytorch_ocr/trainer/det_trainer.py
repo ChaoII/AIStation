@@ -99,6 +99,7 @@ class DetTrainer:
                            aux_in_channels=aux_in)
         self.loss_fn = DBLoss(alpha=config.get("alpha", 5),
                               beta=config.get("beta", 10),
+                              main_loss_type=config.get("main_loss_type", "DiceFocalLoss"),
                               aux_weight_p4=config.get("aux_weight_p4", 0.2),
                               aux_weight_p3=config.get("aux_weight_p3", 0.3),
                               aux_weight_p2=config.get("aux_weight_p2", 0.4))
@@ -171,8 +172,20 @@ class DetTrainer:
         optimizer = torch.optim.Adam(
             [p for p in self.net.parameters() if p.requires_grad],
             lr=lr, betas=(0.9, 0.999))
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                               T_max=num_epochs)
+        # warmup（官方 warmup_epoch=2）：前 warmup_epochs 个 epoch 线性升温
+        warmup_epochs = self.config.get("warmup_epochs", 0)
+        if warmup_epochs > 0 and num_epochs > warmup_epochs:
+            warmup_steps = warmup_epochs * max(len(loader), 1)
+            from torch.optim.lr_scheduler import LinearLR, SequentialLR
+            scheduler = SequentialLR(
+                optimizer,
+                [LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_steps),
+                 torch.optim.lr_scheduler.CosineAnnealingLR(
+                     optimizer, T_max=num_epochs - warmup_epochs)],
+                milestones=[warmup_steps])
+        else:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                                   T_max=num_epochs)
         os.makedirs(output_dir, exist_ok=True)
         # EMA：对齐官方 PP-OCRv6 det 的 use_ema（ema_decay=0.9998），
         # 平滑权重抑制小数据集梯度噪声，防止权重被个别 batch 破坏
@@ -248,11 +261,17 @@ class DetTrainer:
                 if img is None:
                     continue
                 h, w = img.shape[:2]
-                # 官方 DetResizeForTest：limit_side_len=736（min），round 到 32 倍数
-                limit = self.config.get("eval_limit_side_len", 736)
-                ratio = 1.0
-                if min(h, w) < limit:
-                    ratio = float(limit) / min(h, w)
+                # 官方 DetResizeForTest：
+                #   eval_resize_type=resize_long → 长边缩到 eval_resize_long（v5 默认 960）
+                #   否则 limit_side_len=736（min）保持近原尺寸（v6）
+                if self.config.get("eval_resize_type") == "resize_long":
+                    limit = self.config.get("eval_resize_long", 960)
+                    ratio = float(limit) / max(h, w)
+                else:
+                    limit = self.config.get("eval_limit_side_len", 736)
+                    ratio = 1.0
+                    if min(h, w) < limit:
+                        ratio = float(limit) / min(h, w)
                 rh = max(int(round(h * ratio / 32) * 32), 32)
                 rw = max(int(round(w * ratio / 32) * 32), 32)
                 input_img = cv2.resize(img, (rw, rh))

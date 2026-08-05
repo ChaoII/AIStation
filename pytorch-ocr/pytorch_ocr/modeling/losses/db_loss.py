@@ -63,9 +63,13 @@ class DBLoss(nn.Module):
         self.aux_weight = {"p4": aux_weight_p4, "p3": aux_weight_p3, "p2": aux_weight_p2}
 
     def _binary_loss(self, pred, gt):
+        mask = gt["shrink_mask"]
+        target = gt["shrink_map"]
+        if self.main_loss_type == "DiceLoss":
+            # 官方 PP-OCRv5 det：shrink/binary 均用纯 DiceLoss
+            # （balance_loss + OHEM 对 DiceLoss 标量无增益，官方实际等效纯 Dice）
+            return _dice_loss(pred, target, mask)
         if self.main_loss_type == "DiceFocalLoss":
-            mask = gt["shrink_mask"]
-            target = gt["shrink_map"]
             dice = _dice_loss(pred, target, mask)
             focal = _focal_loss(pred, target, mask,
                                 self.focal_alpha, self.focal_gamma)
