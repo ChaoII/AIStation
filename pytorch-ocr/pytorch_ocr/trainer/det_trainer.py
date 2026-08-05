@@ -266,17 +266,12 @@ class DetTrainer:
                 if img is None:
                     continue
                 h, w = img.shape[:2]
-                # 官方 DetResizeForTest：
-                #   eval_resize_type=resize_long → 长边缩到 eval_resize_long（v5 默认 960）
-                #   否则 limit_side_len=736（min）保持近原尺寸（v6）
-                if self.config.get("eval_resize_type") == "resize_long":
-                    limit = self.config.get("eval_resize_long", 960)
-                    ratio = float(limit) / max(h, w)
-                else:
-                    limit = self.config.get("eval_limit_side_len", 736)
-                    ratio = 1.0
-                    if min(h, w) < limit:
-                        ratio = float(limit) / min(h, w)
+                # 官方 PP-OCRv6 DetResizeForTest（默认 limit_side_len=736, limit_type=min，
+                # round 到 32 倍数）：min 边 <736 才放大，否则保持近原尺寸
+                limit = self.config.get("eval_limit_side_len", 736)
+                ratio = 1.0
+                if min(h, w) < limit:
+                    ratio = float(limit) / min(h, w)
                 rh = max(int(round(h * ratio / 32) * 32), 32)
                 rw = max(int(round(w * ratio / 32) * 32), 32)
                 input_img = cv2.resize(img, (rw, rh))
