@@ -1,5 +1,6 @@
 """det 训练数据集：读取 det_gt.txt，返回模型输入与 GT。自研实现。"""
 import json
+import os
 import random
 
 import cv2
@@ -7,35 +8,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+from .augment import ColorJitter, CopyPaste, IaaAugment, RandomPerspective
 from .transforms import MakeBorderMap, MakeShrinkMap
 
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-
-
-def _color_jitter(img, brightness=0.4, contrast=0.4, saturation=0.7, hue=0.1):
-    """对齐官方 ColorJitter：HSV 空间扰动，保持文字与背景对比。"""
-    import colorsys
-
-    h, w, _ = img.shape
-    img = img.astype(np.float32)
-
-    # 亮度/对比度（HSV 的 V 通道）
-    if random.random() < 0.5:
-        img_hsv = cv2.cvtColor(img.astype(np.uint8), cv2.COLOR_RGB2HSV)
-        gain = 1.0 + random.uniform(-brightness, brightness)
-        img_hsv[:, :, 2] = np.clip(img_hsv[:, :, 2] * gain, 0, 255)
-        img = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2RGB).astype(np.float32)
-    if random.random() < 0.5:
-        gain = 1.0 + random.uniform(-contrast, contrast)
-        mean_v = img.mean(axis=(0, 1), keepdims=True)
-        img = (img - mean_v) * gain + mean_v
-    if random.random() < 0.5:
-        img_hsv = cv2.cvtColor(np.clip(img, 0, 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
-        sat = 1.0 + random.uniform(-saturation, saturation)
-        img_hsv[:, :, 1] = np.clip(img_hsv[:, :, 1] * sat, 0, 255)
-        img = cv2.cvtColor(img_hsv, cv2.COLOR_HSV2RGB).astype(np.float32)
-    return np.clip(img, 0, 255).astype(np.uint8)
 
 
 def _is_poly_in_rect(poly, x, y, w, h):
@@ -52,6 +29,8 @@ class DetDataset(Dataset):
     def __init__(
         self, gt_dir, label_path, image_shape=(640, 640), is_train=True, shrink_ratio=0.4,
         use_aug=True, max_tries=20,
+        use_iaa=True, use_color_jitter=True, use_perspective=False,
+        copy_paste=False, ext_data_dir=None, augmenter_args=None,
     ):
         self.gt_dir = gt_dir
         self.image_shape = image_shape
@@ -60,7 +39,39 @@ class DetDataset(Dataset):
         self.max_tries = max_tries
         self.shrink_map_fn = MakeShrinkMap(shrink_ratio)
         self.border_map_fn = MakeBorderMap(shrink_ratio)
+        # 增强配置：对齐官方 PP-OCRv6 det 训练增强顺序
+        self.use_iaa = use_iaa
+        self.use_color_jitter = use_color_jitter
+        self.use_perspective = use_perspective
+        self.color_jitter = ColorJitter()
+        self.iaa = IaaAugment(augmenter_args=augmenter_args)
+        self.perspective = RandomPerspective()
+        self.copy_paste_op = CopyPaste()
+        self.ext_data_dir = ext_data_dir
+        # copy_paste 需要外部数据集，缺失时优雅跳过
+        self.copy_paste = bool(copy_paste and ext_data_dir)
+        self.ext_items = self._load_ext(ext_data_dir) if self.copy_paste else []
         self._load_labels(label_path)
+
+    def _load_ext(self, ext_data_dir):
+        """懒加载外部数据集标注（与 det_gt.txt 同格式），供 CopyPaste 使用。"""
+        label_path = os.path.join(ext_data_dir, "det_gt.txt")
+        if not os.path.isfile(label_path):
+            return []
+        items = []
+        with open(label_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) < 2:
+                    continue
+                polys, texts, tags = self._parse_label(parts[1])
+                if not polys:
+                    continue
+                items.append((parts[0], polys, texts, tags))
+        return items
 
     def _load_labels(self, label_path):
         self.items = []
@@ -74,35 +85,54 @@ class DetDataset(Dataset):
                 if len(parts) < 2:
                     continue
                 img_name = parts[0]
-                # 解析四边形：[[[x1,y1],...], ...] 或单四边形 [[x1,y1],...]
-                polys = self._parse_polys(parts[1])
+                polys, texts, tags = self._parse_label(parts[1])
                 if not polys:
                     continue
-                self.items.append((img_name, polys))
+                self.items.append((img_name, polys, texts, tags))
 
-    def _parse_polys(self, s):
+    def _parse_label(self, s):
+        """解析标注为 (polys, texts, ignore_tags)。
+
+        兼容两种格式：
+        - 纯四边形：``[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]`` 或 ``[[[...],...],...]``
+        - PaddleOCR 字典格式：``[{"transcription": ..., "points": [...], "ignore": 0}]``
+        """
         try:
             data = json.loads(s)
         except json.JSONDecodeError:
-            return []
-        if data and isinstance(data[0][0], (int, float)):
+            return [], [], []
+        if not data:
+            return [], [], []
+        if isinstance(data[0], dict):
+            polys, texts, tags = [], [], []
+            for item in data:
+                pts = np.array([[p[0], p[1]] for p in item["points"]], dtype=np.float32)
+                polys.append(pts)
+                texts.append(item.get("transcription", ""))
+                tags.append(bool(item.get("ignore", 0)))
+            return polys, texts, tags
+        if isinstance(data[0][0], (int, float)):
             # 单四边形：[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
             data = [data]
-        polys = []
+        polys, texts, tags = [], [], []
         for quad in data:
             pts = np.array([[p[0], p[1]] for p in quad], dtype=np.float32)
             polys.append(pts)
-        return polys
+            texts.append("")
+            tags.append(False)
+        return polys, texts, tags
 
     def __len__(self):
         return len(self.items)
 
-    def _random_crop(self, img, polys):
+    def _random_crop(self, data):
         """官方 RandomCrop：在原分辨率图上随机裁 640×640 区域，poly 平移。
 
         不强制等比缩放——文字保持原始大小（对齐官方训练分布）。裁剪区含至少
-        一个有效文字框；图小于 640 时 pad。
+        一个有效文字框；图小于 640 时 pad。同步过滤 polys/texts/ignore_tags。
         """
+        img = data["image"]
+        polys = data["polys"]
         size_h, size_w = self.image_shape
         h, w = img.shape[:2]
         crop_x = crop_y = 0
@@ -123,22 +153,57 @@ class DetDataset(Dataset):
                 break
         img = img[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
         polys = [p - np.array([crop_x, crop_y]) for p in polys]
-        # padding 到 640×640
+        # padding 到 size_h×size_w
         pad_img = np.zeros((size_h, size_w, 3), dtype=np.uint8)
         pad_img[:crop_h, :crop_w] = img
-        polys = [p for p in polys
-                 if not _is_poly_outside_rect(p, 0, 0, size_w, size_h)]
-        return pad_img, polys
+        new_polys, new_tags, new_texts = [], [], []
+        for p, tag, text in zip(polys, data["ignore_tags"], data["texts"], strict=False):
+            if not _is_poly_outside_rect(p, 0, 0, size_w, size_h):
+                new_polys.append(p)
+                new_tags.append(tag)
+                new_texts.append(text)
+        data["image"] = pad_img
+        data["polys"] = new_polys
+        data["ignore_tags"] = new_tags
+        data["texts"] = new_texts
+        return data
 
     def __getitem__(self, idx):
-        img_name, polys = self.items[idx]
+        img_name, polys, texts, ignore_tags = self.items[idx]
         img = cv2.imread(f"{self.gt_dir}/{img_name}", cv2.IMREAD_COLOR)
         if img is None:
             return self[(idx + 1) % len(self.items)]
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         if self.use_aug:
-            img = _color_jitter(img)
-            img, polys = self._random_crop(img, polys)
+            data = {
+                "image": img,
+                "polys": polys,
+                "ignore_tags": ignore_tags,
+                "texts": texts,
+            }
+            # 官方顺序：CopyPaste → ColorJitter → IaaAugment → RandomPerspective → RandomCrop
+            if self.copy_paste and self.ext_items:
+                ext_name, ext_polys, ext_texts, ext_tags = random.choice(self.ext_items)
+                ext_img = cv2.imread(os.path.join(self.ext_data_dir, "images", ext_name),
+                                     cv2.IMREAD_COLOR)
+                if ext_img is not None:
+                    ext_img = cv2.cvtColor(ext_img, cv2.COLOR_BGR2RGB)
+                    ext_data = {
+                        "image": ext_img,
+                        "polys": ext_polys,
+                        "texts": ext_texts,
+                        "ignore_tags": ext_tags,
+                    }
+                    data = self.copy_paste_op(data, ext_data=ext_data)
+            if self.use_color_jitter:
+                data = self.color_jitter(data)
+            if self.use_iaa:
+                data = self.iaa(data)
+            if self.use_perspective:
+                data = self.perspective(data)
+            data = self._random_crop(data)
+            img = data["image"]
+            polys = data["polys"]
         h, w = img.shape[:2]
         # 归一化多边形到 [0,1]
         norm_polys = [p / np.array([w, h]) for p in polys if len(p) >= 3]

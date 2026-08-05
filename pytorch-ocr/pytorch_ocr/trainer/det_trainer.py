@@ -164,7 +164,12 @@ class DetTrainer:
         dataset = DetDataset(gt_dir=os.path.join(data_dir, "images"),
                              label_path=os.path.join(data_dir, "det_gt.txt"),
                              image_shape=tuple(self.config.get("image_shape", (640, 640))),
-                             use_aug=self.config.get("use_aug", True))
+                             use_aug=self.config.get("use_aug", True),
+                             use_iaa=self.config.get("use_iaa", True),
+                             use_color_jitter=self.config.get("use_color_jitter", True),
+                             use_perspective=self.config.get("use_perspective", False),
+                             copy_paste=self.config.get("copy_paste", False),
+                             ext_data_dir=self.config.get("ext_data_dir"))
         if len(dataset) == 0:
             raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
@@ -255,7 +260,7 @@ class DetTrainer:
         pred_boxes = []
         gt_boxes = []
         with torch.no_grad():
-            for img_name, polys in dataset.items:
+            for img_name, polys, *_ in dataset.items:
                 img = cv2.imread(os.path.join(data_dir, "images", img_name),
                                  cv2.IMREAD_COLOR)
                 if img is None:

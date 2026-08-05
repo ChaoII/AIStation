@@ -32,6 +32,16 @@ def build_parser():
                            help="DBLoss 主损失：dice_focal(v6默认) / dice(v5默认, 对齐官方 PP-OCRv5)")
     train_det.add_argument("--warmup", type=int, default=2,
                            help="warmup epoch 数（官方默认 2，微调保留预训练）")
+    train_det.add_argument("--no-iaa", action="store_true",
+                           help="禁用 IaaAugment（翻转/仿射/缩放）")
+    train_det.add_argument("--no-color-jitter", action="store_true",
+                           help="禁用 ColorJitter")
+    train_det.add_argument("--perspective", action="store_true",
+                           help="启用 RandomPerspective（medium 默认启用）")
+    train_det.add_argument("--copy-paste", action="store_true",
+                           help="启用 CopyPaste 增强（需 --ext-data）")
+    train_det.add_argument("--ext-data", default="",
+                           help="外部数据目录(含 images/ + det_gt.txt)，用于 CopyPaste")
 
     eval_det = sub.add_parser("eval-det", help="评估 det 模型")
     eval_det.add_argument("--data", required=True)
@@ -138,6 +148,15 @@ def cmd_train_det(args):
         cfg["main_loss_type"] = "DiceLoss"
     if getattr(args, "warmup", 2) >= 0:
         cfg["warmup_epochs"] = args.warmup
+    # det 增强开关（对齐官方 PP-OCRv6 det 训练增强管线）
+    cfg["use_iaa"] = not getattr(args, "no_iaa", False)
+    cfg["use_color_jitter"] = not getattr(args, "no_color_jitter", False)
+    # medium 官方默认带 RandomPerspective，tiny/small 默认不带；--perspective 强制开启
+    cfg["use_perspective"] = (args.model_size == "medium"
+                              or getattr(args, "perspective", False))
+    cfg["copy_paste"] = getattr(args, "copy_paste", False)
+    if getattr(args, "ext_data", ""):
+        cfg["ext_data_dir"] = args.ext_data
     trainer = DetTrainer(cfg, device=device)
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,
