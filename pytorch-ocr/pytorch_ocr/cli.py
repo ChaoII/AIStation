@@ -91,7 +91,7 @@ def _build_config(args, *, rec: bool = False) -> dict:
             "model_size": getattr(args, "model_size", "tiny"),
             "num_classes": 6906,
             "max_text_length": 25,
-            "nrtr_dim": 384,
+            "nrtr_dim": {"medium": 512}.get(getattr(args, "model_size", "tiny"), 384),
             "backbone_out_channels": rec_backbone_out_channels(
                 getattr(args, "model_size", "tiny")
             ),
@@ -196,6 +196,10 @@ def cmd_eval_rec(args):
     if getattr(args, "dict", ""):
         cfg["dict_path"] = args.dict
     cfg["model_size"] = getattr(args, "model_size", "tiny")
+    from .modeling.heads.rec_multi_head import build_default_head_list
+    cfg["head_list"] = build_default_head_list(
+        cfg["model_size"], nrtr_dim=cfg.get("nrtr_dim", 384),
+        max_text_length=cfg.get("max_text_length", 25))
     trainer = RecTrainer(cfg, device=device)
     import torch
     trainer.net.load_state_dict(torch.load(args.model, map_location="cpu"))
