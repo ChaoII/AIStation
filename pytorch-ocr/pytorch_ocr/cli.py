@@ -53,6 +53,8 @@ def build_parser():
                            help="字符集文件(每行一字符)，默认内置 ppocrv6_tiny_dict(6904)")
     train_rec.add_argument("--rec-head", default="auto",
                            help="CTCHead neck: auto(tiny=reshape/small+medium=lightsvtr) / reshape / lightsvtr")
+    train_rec.add_argument("--label", default="",
+                           help="标签文件名(默认 train_list.txt；PaddleX 数据集用 train.txt)")
 
     eval_rec = sub.add_parser("eval-rec", help="评估 rec 模型")
     eval_rec.add_argument("--data", required=True)
@@ -63,6 +65,8 @@ def build_parser():
     eval_rec.add_argument("--dict", default="", help="字符集文件(每行一字符)")
     eval_rec.add_argument("--model-size", default="tiny",
                           choices=["tiny", "small", "medium"])
+    eval_rec.add_argument("--label", default="",
+                          help="标签文件名(默认 eval_list.txt -> train_list.txt)")
 
     predict = sub.add_parser("predict", help="OCR 推理")
     predict.add_argument("--image", required=True, help="输入图片路径")
@@ -182,9 +186,11 @@ def cmd_train_rec(args):
                               "max_text_length": cfg.get("max_text_length", 25)}},
             ]
     trainer = RecTrainer(cfg, device=device)
+    label_p = getattr(args, "label", "") or None
     best_path = trainer.train(
         data_dir=args.data, num_epochs=args.epochs, batch_size=args.batch,
         output_dir=args.output, workers=args.workers, lr=args.lr,
+        label_path=label_p,
     )
     print(f"[cli] best model saved: {best_path}", flush=True)
 
@@ -203,7 +209,8 @@ def cmd_eval_rec(args):
     trainer = RecTrainer(cfg, device=device)
     import torch
     trainer.net.load_state_dict(torch.load(args.model, map_location="cpu"))
-    result = trainer.eval(data_dir=args.data, output_dir=args.output)
+    label_p = getattr(args, "label", "") or None
+    result = trainer.eval(data_dir=args.data, output_dir=args.output, label_path=label_p)
     print(f"[cli] eval result: {json.dumps(result)}", flush=True)
 
 

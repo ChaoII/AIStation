@@ -97,15 +97,17 @@ class RecTrainer:
         return loss
 
     def train(self, data_dir, num_epochs=100, batch_size=128, output_dir="./output",
-              workers=0, lr=0.001):
+              workers=0, lr=0.001, label_path=None):
+        label_path = label_path or os.path.join(data_dir, "train_list.txt")
         dataset = RecDataset(
             data_dir=data_dir,
-            label_path=os.path.join(data_dir, "train_list.txt"),
+            label_path=label_path,
             image_shape=tuple(self.config.get("image_shape", (48, 320))),
+            dict_path=self.config.get("dict_path"),
             max_text_length=self.config.get("max_text_length", 25),
         )
         if len(dataset) == 0:
-            raise ValueError("train_list.txt 无有效数据，数据集为空")
+            raise ValueError(f"{label_path} 无有效数据，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             num_workers=workers, collate_fn=self._collate)
         optimizer = torch.optim.Adam(self.net.parameters(), lr=lr, betas=(0.9, 0.999))
@@ -141,16 +143,19 @@ class RecTrainer:
         lengths = torch.tensor([b[3] for b in batch], dtype=torch.long)
         return images, label_ctc, label_gtc, lengths
 
-    def eval(self, data_dir, output_dir="./output"):
+    def eval(self, data_dir, output_dir="./output", label_path=None):
         """评估：字符级准确率 + 整句准确率（用 CTCHead 解码结果对比 GT 标签）。
 
         标签文件优先用 ``eval_list.txt``，不存在则回退到 ``train_list.txt``。
         """
         self.net.eval()
         image_shape = tuple(self.config.get("image_shape", (48, 320)))
-        label_path = os.path.join(data_dir, "eval_list.txt")
-        if not os.path.isfile(label_path):
-            label_path = os.path.join(data_dir, "train_list.txt")
+        if label_path:
+            pass
+        else:
+            label_path = os.path.join(data_dir, "eval_list.txt")
+            if not os.path.isfile(label_path):
+                label_path = os.path.join(data_dir, "train_list.txt")
         dict_path = self.config.get("dict_path")
         dataset = RecDataset(
             data_dir=data_dir,
