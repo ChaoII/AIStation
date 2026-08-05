@@ -98,28 +98,16 @@ class DetDataset(Dataset):
         return len(self.items)
 
     def _random_crop(self, img, polys):
-        """官方 RandomCrop 简化版：等比缩放（最长边 ≤640）+ 随机裁剪 640×640 + padding。
+        """官方 RandomCrop：在原分辨率图上随机裁 640×640 区域，poly 平移。
 
-        在缩放后的图上随机裁 640×640，尽量包含至少一个文字框；裁剪不足时 padding。
-        返回 (img, polys) 均已在 640×640 输入坐标系。
+        不强制等比缩放——文字保持原始大小（对齐官方训练分布）。裁剪区含至少
+        一个有效文字框；图小于 640 时 pad。
         """
         size_h, size_w = self.image_shape
         h, w = img.shape[:2]
-        # 等比缩放：最长边到 size，保持比例
-        max_side = max(h, w)
-        scale = size_w / max_side if max_side > size_w else 1.0
-        if scale < 1.0:
-            new_h, new_w = max(1, int(h * scale)), max(1, int(w * scale))
-            img = cv2.resize(img, (new_w, new_h))
-            polys = [p * scale for p in polys]
-            h, w = new_h, new_w
-
-        # 尝试随机裁剪，包含至少一个有效文字框
         crop_x = crop_y = 0
         crop_w, crop_h = min(w, size_w), min(h, size_h)
-        found = False
-        if w <= size_w and h <= size_h:
-            found = True  # 图比 target 小，无需裁剪
+        found = (w <= size_w and h <= size_h)
         for _ in range(self.max_tries):
             if w > size_w:
                 crop_x = random.randint(0, w - size_w)
@@ -133,10 +121,9 @@ class DetDataset(Dataset):
                     break
             if found:
                 break
-        # 裁剪
         img = img[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
         polys = [p - np.array([crop_x, crop_y]) for p in polys]
-        # padding 到 640×640（等比）
+        # padding 到 640×640
         pad_img = np.zeros((size_h, size_w, 3), dtype=np.uint8)
         pad_img[:crop_h, :crop_w] = img
         polys = [p for p in polys
