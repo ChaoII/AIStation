@@ -264,6 +264,9 @@ class DetTrainer:
                     if cur_hmean > best_hmean:
                         best_hmean = cur_hmean
                         torch.save(cand_state, os.path.join(output_dir, "best.pt"))
+                    elif not os.path.isfile(os.path.join(output_dir, "best.pt")):
+                        # 首个 eval 无 best 时兜底保存（防空 best.pt）
+                        torch.save(cand_state, os.path.join(output_dir, "best.pt"))
                 finally:
                     self.net.load_state_dict(saved)
             else:
