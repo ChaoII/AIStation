@@ -178,20 +178,23 @@ class DetTrainer:
             [p for p in self.net.parameters() if p.requires_grad],
             lr=lr, betas=(0.9, 0.999),
             weight_decay=self.config.get("l2_weight_decay", 1e-5))
-        # warmup（官方 warmup_epoch=2）：前 warmup_epochs 个 epoch 线性升温
+        # 官方 PaddleOCR：lr_scheduler 每 batch step，Cosine 全程按总 step 数。
+        # T_max = num_epochs * steps_per_epoch；warmup_epochs 前线性升温（也按 step）。
+        steps_per_epoch = max(len(loader), 1)
+        total_steps = num_epochs * steps_per_epoch
         warmup_epochs = self.config.get("warmup_epochs", 0)
-        if warmup_epochs > 0 and num_epochs > warmup_epochs:
-            warmup_steps = warmup_epochs * max(len(loader), 1)
+        if warmup_epochs > 0:
+            warmup_steps = warmup_epochs * steps_per_epoch
             from torch.optim.lr_scheduler import LinearLR, SequentialLR
             scheduler = SequentialLR(
                 optimizer,
                 [LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_steps),
                  torch.optim.lr_scheduler.CosineAnnealingLR(
-                     optimizer, T_max=num_epochs - warmup_epochs)],
+                     optimizer, T_max=max(total_steps - warmup_steps, 1))],
                 milestones=[warmup_steps])
         else:
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                                   T_max=num_epochs)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=total_steps)
         os.makedirs(output_dir, exist_ok=True)
         # EMA：对齐官方 PP-OCRv6 det（ModelEMA，threshold decay + bias correction）
         from ..trainer.ema import ModelEMA
@@ -222,14 +225,14 @@ class DetTrainer:
                 optimizer.step()
                 if use_ema:
                     ema.update(self.net)
+                scheduler.step()
                 total_loss += loss.item()
                 n_batches += 1
                 print(f"epoch {epoch} batch {n_batches} loss {loss.item():.4f}",
                       flush=True)
-            scheduler.step()
             avg = total_loss / max(n_batches, 1)
             print(f"epoch {epoch} avg_loss {avg:.4f} "
-                  f"lr {scheduler.get_last_lr()[0]:.6f}", flush=True)
+                  f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
             # 保存 best.pt（用 bias-corrected EMA 权重，对齐官方 eval/save 逻辑）
             save_state = ema.apply() if use_ema else self.net.state_dict()
             if avg < best_loss:
