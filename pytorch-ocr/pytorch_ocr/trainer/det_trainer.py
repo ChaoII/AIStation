@@ -196,14 +196,21 @@ class DetTrainer:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=total_steps)
         os.makedirs(output_dir, exist_ok=True)
-        # EMA：对齐官方 PP-OCRv6 det（ModelEMA，threshold decay + bias correction）
-        from ..trainer.ema import ModelEMA
+        # EMA：ema_type="simple"（clone 初始化 + 固定 decay）或 "official"
+        # （官方 ModelEMA：zeros + threshold decay + bias correction）
         ema_decay = self.config.get("ema_decay", 0.9998)
         use_ema = ema_decay > 0 and not self.frozen
         ema = None
+        ema_simple = None
         if use_ema:
-            ema = ModelEMA(self.net, decay=ema_decay,
-                           ema_decay_type=self.config.get("ema_decay_type", "threshold"))
+            if self.config.get("ema_type", "simple") == "official":
+                from ..trainer.ema import ModelEMA
+                ema = ModelEMA(self.net, decay=ema_decay,
+                               ema_decay_type=self.config.get("ema_decay_type", "threshold"))
+            else:
+                ema_simple = {
+                    k: v.detach().clone() for k, v in self.net.state_dict().items()
+                }
         best_loss = float("inf")
         for epoch in range(1, num_epochs + 1):
             if self.frozen:
@@ -224,7 +231,13 @@ class DetTrainer:
                     [p for p in self.net.parameters() if p.requires_grad], 2.0)
                 optimizer.step()
                 if use_ema:
-                    ema.update(self.net)
+                    if ema is not None:
+                        ema.update(self.net)
+                    elif ema_simple is not None:
+                        with torch.no_grad():
+                            for k, v in self.net.state_dict().items():
+                                if k in ema_simple and v.dtype.is_floating_point:
+                                    ema_simple[k].mul_(ema_decay).add_(v, alpha=1 - ema_decay)
                 scheduler.step()
                 total_loss += loss.item()
                 n_batches += 1
@@ -233,8 +246,11 @@ class DetTrainer:
             avg = total_loss / max(n_batches, 1)
             print(f"epoch {epoch} avg_loss {avg:.4f} "
                   f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
-            # 保存 best.pt（用 bias-corrected EMA 权重，对齐官方 eval/save 逻辑）
-            save_state = ema.apply() if use_ema else self.net.state_dict()
+            # 保存 best.pt（EMA 权重，官方用 EMA 做 eval/save）
+            if use_ema:
+                save_state = ema.apply() if ema is not None else ema_simple
+            else:
+                save_state = self.net.state_dict()
             if avg < best_loss:
                 best_loss = avg
                 torch.save(save_state, os.path.join(output_dir, "best.pt"))
