@@ -168,15 +168,16 @@ class DetTrainer:
                              use_iaa=self.config.get("use_iaa", True),
                              use_color_jitter=self.config.get("use_color_jitter", True),
                              use_perspective=self.config.get("use_perspective", False),
-                             copy_paste=self.config.get("copy_paste", False),
-                             ext_data_dir=self.config.get("ext_data_dir"))
+                              copy_paste=self.config.get("copy_paste", False),
+                              ext_data_dir=self.config.get("ext_data_dir") or data_dir)
         if len(dataset) == 0:
             raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             num_workers=workers)
         optimizer = torch.optim.Adam(
             [p for p in self.net.parameters() if p.requires_grad],
-            lr=lr, betas=(0.9, 0.999))
+            lr=lr, betas=(0.9, 0.999),
+            weight_decay=self.config.get("l2_weight_decay", 1e-5))
         # warmup（官方 warmup_epoch=2）：前 warmup_epochs 个 epoch 线性升温
         warmup_epochs = self.config.get("warmup_epochs", 0)
         if warmup_epochs > 0 and num_epochs > warmup_epochs:
