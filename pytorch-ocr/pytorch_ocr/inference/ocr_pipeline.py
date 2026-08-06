@@ -20,24 +20,15 @@ _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 def _preprocess(image, size):
-    """BGR→RGB→等比缩放+padding→normalize→CHW。
+    """BGR→RGB→直接拉伸 resize→normalize→CHW。
 
-    对齐官方 DetResizeForTest 的 letterbox：最长边缩放到 size，短边等比，
-    不足处 padding 0。避免直接拉伸导致文字变形（训练增强同样用等比）。
+    对齐官方 DetResizeForTest（resize_image_type0）：直接 cv2.resize 拉伸到
+    (rw, rh)，不做 letterbox/pad。训练与推理都无 pad，输入分布一致。
     """
     img = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    h, w = img.shape[:2]
-    th, tw = size
-    scale = min(tw / w, th / h)
-    if scale < 1.0:
-        new_w, new_h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
-        img = cv2.resize(img, (new_w, new_h))
-    else:
-        new_w, new_h = w, h
-    pad = np.zeros((th, tw, 3), dtype=np.uint8)
-    pad[:new_h, :new_w] = img
-    pad = (pad.astype(np.float32) / 255.0 - _MEAN) / _STD
-    return torch.from_numpy(pad).permute(2, 0, 1).unsqueeze(0).float()
+    img = cv2.resize(img, (size[1], size[0]))
+    img = (img.astype(np.float32) / 255.0 - _MEAN) / _STD
+    return torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
 
 
 def _infer_rec_out_channels(rec_state, config):
@@ -192,18 +183,22 @@ class OCRPipeline:
         缩放因子得到原图坐标（padding 区域无真实内容，不产生框）。
         """
         image_h, image_w = image.shape[:2]
-        det_input = _preprocess(image, (640, 640))
-        # 等比缩放后的实际图像尺寸（padding 前），用于正确映射坐标
-        scale = min(640.0 / image_w, 640.0 / image_h)
-        new_w, new_h = max(1, int(round(image_w * scale))), max(1, int(round(image_h * scale)))
+        # 官方 DetResizeForTest：limit_side_len=736（min），round 到 32 倍数，直接拉伸
+        limit = self.config.get("eval_limit_side_len", 736)
+        ratio = 1.0
+        if min(image_h, image_w) < limit:
+            ratio = float(limit) / min(image_h, image_w)
+        rh = max(int(round(image_h * ratio / 32) * 32), 32)
+        rw = max(int(round(image_w * ratio / 32) * 32), 32)
+        det_input = _preprocess(image, (rh, rw))
         feats = self.det_backbone(det_input.to(self.device))
         fused = self.det_fpn(feats)
         if isinstance(fused, dict):
             fused = fused["fuse"]
-        det_out = self.det_head(fused)  # {"maps": (1,1,640,640)}
+        det_out = self.det_head(fused)  # {"maps": (1,1,rh,rw)}
         maps = det_out["maps"]
-        # dest_size 与 maps 同尺寸（640×640），返回 640 坐标系框
-        boxes = self.det_postprocess(maps.cpu(), [[640, 640]])
+        # postprocess 用 resize 后尺寸，返回 resize 坐标系框
+        boxes = self.det_postprocess(maps.cpu(), [[rh, rw]])
 
         # 放大回原图坐标系
         results = []
@@ -211,8 +206,8 @@ class OCRPipeline:
             if len(box) != 4:
                 continue
             box = np.array(box, dtype=np.float32)
-            box[:, 0] = box[:, 0] * image_w / new_w
-            box[:, 1] = box[:, 1] * image_h / new_h
+            box[:, 0] = box[:, 0] * image_w / rw
+            box[:, 1] = box[:, 1] * image_h / rh
             quad = np.array(box, dtype=np.float32)
             # 透视矫正裁剪
             cropped = self._crop_box(image, quad)
