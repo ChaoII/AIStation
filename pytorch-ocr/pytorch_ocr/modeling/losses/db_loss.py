@@ -5,26 +5,33 @@ import torch.nn.functional as F
 
 
 def _dice_loss(pred, target, mask):
-    """Dice loss，仅在 mask=1（文字区域）计算（对齐官方 DiceLoss）。
+    """Dice loss，对齐官方 DiceLoss（det_basic_loss.py）。
 
     官方: intersection = sum(pred * gt * mask);
-          union = sum(pred * mask) + sum(gt * mask)
-    注意这里 pred/target 不带 mask 相乘进入求和（官方只对 mask 区域统计，
-    而非先乘 mask 再全图求和——后者会把 mask 外 pred 也计入 union，语义错误）。
+          union = sum(pred * mask) + sum(gt * mask) + eps
+          loss = 1 - 2.0 * intersection / union
     """
-    smooth = 1e-5
+    eps = 1e-6
     intersect = torch.sum(pred * target * mask)
-    union = torch.sum(pred * mask) + torch.sum(target * mask) + smooth
-    return 1 - (2 * intersect + smooth) / union
+    union = torch.sum(pred * mask) + torch.sum(target * mask) + eps
+    return 1 - 2.0 * intersect / union
+
+
+def _mask_l1_loss(pred, target, mask):
+    """MaskL1Loss（对齐官方 det_basic_loss.py）：mask 内平均 L1。
+
+    loss = (abs(pred - gt) * mask).sum() / (mask.sum() + eps)
+    """
+    eps = 1e-6
+    return (torch.abs(pred - target) * mask).sum() / (mask.sum() + eps)
 
 
 def _focal_loss(pred, target, mask, alpha=0.25, gamma=2.5):
-    """二分类 Focal loss，仅在 mask=1（文字区域）平均（对齐官方 MaskedFocalLoss）。
+    """二分类 Focal loss，对齐官方 MaskedFocalLoss。
 
-    官方: (loss * mask).sum() / mask.sum()
-    数值稳定性关键：pred 是 sigmoid 概率，须先转回 logit，用
-    ``binary_cross_entropy_with_logits``（log-sum-exp 稳定）计算，
-    避免对概率直接 BCE 时 ``-1/pred`` 在 pred→0 梯度爆炸。
+    官方: pred=clip(pred,eps,1-eps); logit=log(pred/(1-pred));
+          loss = sigmoid_focal_loss(logit, gt, alpha, gamma)  # -alpha_t*(1-p_t)^gamma*log(p_t)
+          return (loss * mask).sum() / (mask.sum() + eps)
     """
     eps = 1e-6
     pred = pred.clamp(eps, 1 - eps)
@@ -98,9 +105,8 @@ class DBLoss(nn.Module):
         shrink_loss = self._binary_loss(shrink_pred, gt)
         thresh_mask = gt["threshold_mask"]
         thresh_target = gt["threshold_map"]
-        thresh_loss = F.smooth_l1_loss(
-            thresh_pred * thresh_mask, thresh_target * thresh_mask, reduction="mean"
-        )
+        # MaskL1（官方 det_basic_loss.py）：mask 内平均 L1
+        thresh_loss = _mask_l1_loss(thresh_pred, thresh_target, thresh_mask)
         binary_loss = self._binary_loss(binary_pred, gt)
         loss = self.alpha * shrink_loss + self.beta * thresh_loss + binary_loss
 
@@ -115,9 +121,8 @@ class DBLoss(nn.Module):
             aux_thresh = aux[:, 1:2]
             aux_binary = aux[:, 2:3]
             l_shrink = self.alpha * self._binary_loss(aux_shrink, gt)
-            l_thresh = self.beta * F.smooth_l1_loss(
-                aux_thresh * thresh_mask, thresh_target * thresh_mask,
-                reduction="mean")
+            l_thresh = self.beta * _mask_l1_loss(
+                aux_thresh, thresh_target, thresh_mask)
             l_binary = self._binary_loss(aux_binary, gt)
             loss = loss + w * (l_shrink + l_thresh + l_binary)
         return loss
