@@ -113,7 +113,22 @@ class RecTrainer:
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
                             num_workers=workers, collate_fn=self._collate)
         optimizer = torch.optim.Adam(self.net.parameters(), lr=lr, betas=(0.9, 0.999))
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+        # 官方 PaddleOCR：lr_scheduler 每 batch step，Cosine 全程按总 step 数
+        steps_per_epoch = max(len(loader), 1)
+        total_steps = num_epochs * steps_per_epoch
+        warmup_epochs = self.config.get("warmup_epochs", 5)
+        if warmup_epochs > 0:
+            warmup_steps = warmup_epochs * steps_per_epoch
+            from torch.optim.lr_scheduler import LinearLR, SequentialLR
+            scheduler = SequentialLR(
+                optimizer,
+                [LinearLR(optimizer, start_factor=1e-3, total_iters=warmup_steps),
+                 torch.optim.lr_scheduler.CosineAnnealingLR(
+                     optimizer, T_max=max(total_steps - warmup_steps, 1))],
+                milestones=[warmup_steps])
+        else:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=total_steps)
         os.makedirs(output_dir, exist_ok=True)
         best_loss = float("inf")
         for epoch in range(1, num_epochs + 1):
@@ -125,12 +140,12 @@ class RecTrainer:
                 loss = self._train_step(batch)
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
                 total += loss.item()
                 n += 1
-            scheduler.step()
             avg = total / max(n, 1)
             print(f"epoch {epoch} avg_loss {avg:.4f} "
-                  f"lr {scheduler.get_last_lr()[0]:.6f}", flush=True)
+                  f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
             if avg < best_loss:
                 best_loss = avg
                 torch.save(self.net.state_dict(), os.path.join(output_dir, "best.pt"))
