@@ -212,6 +212,7 @@ class DetTrainer:
                     k: v.detach().clone() for k, v in self.net.state_dict().items()
                 }
         best_loss = float("inf")
+        best_hmean = 0.0
         for epoch in range(1, num_epochs + 1):
             if self.frozen:
                 # 冻结时：backbone+fpn 保持 eval（BN running stats 不变），head 训练
@@ -246,14 +247,30 @@ class DetTrainer:
             avg = total_loss / max(n_batches, 1)
             print(f"epoch {epoch} avg_loss {avg:.4f} "
                   f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
-            # 保存 best.pt（EMA 权重，官方用 EMA 做 eval/save）
+            # 官方 PaddleOCR：用 EMA 权重做 eval，按 eval hmean 选 best（而非 train loss）。
+            # 每 eval_interval epoch 跑一次 eval，控制开销。
+            eval_interval = self.config.get("eval_interval", 5)
             if use_ema:
-                save_state = ema.apply() if ema is not None else ema_simple
+                cand_state = ema.apply() if ema is not None else ema_simple
             else:
-                save_state = self.net.state_dict()
-            if avg < best_loss:
-                best_loss = avg
-                torch.save(save_state, os.path.join(output_dir, "best.pt"))
+                cand_state = self.net.state_dict()
+            if epoch % eval_interval == 0 or epoch == num_epochs:
+                saved = self.net.state_dict()
+                self.net.load_state_dict(cand_state)
+                try:
+                    m = self.eval(data_dir=data_dir, output_dir=output_dir)
+                    cur_hmean = m.get("hmean", 0.0)
+                    print(f"epoch {epoch} eval hmean {cur_hmean:.4f}", flush=True)
+                    if cur_hmean > best_hmean:
+                        best_hmean = cur_hmean
+                        torch.save(cand_state, os.path.join(output_dir, "best.pt"))
+                finally:
+                    self.net.load_state_dict(saved)
+            else:
+                # 无 eval 时按 loss 兜底保存（防早期无 best）
+                if avg < best_loss:
+                    best_loss = avg
+                    torch.save(cand_state, os.path.join(output_dir, "best.pt"))
         print("training done", flush=True)
         return os.path.join(output_dir, "best.pt")
 
