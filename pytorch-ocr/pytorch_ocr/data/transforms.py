@@ -31,27 +31,35 @@ def _expand_poly(poly, ratio):
 
 
 class MakeShrinkMap:
-    """生成 shrink_map（文字区域收缩后的二值图）与 shrink_mask。"""
+    """生成 shrink_map（文字区域收缩后的二值图）与 shrink_mask。
+
+    对齐官方 PaddleOCR make_shrink_map.py：
+    - mask 初始全 1（有效区域），只对 ignore / 过小文字置 0。
+    - 注意：官方 mask 是"有效区域"（默认全图），不是"文字区域"。
+    """
 
     def __init__(self, shrink_ratio=0.4, min_text_size=8):
         self.shrink_ratio = shrink_ratio
         self.min_text_size = min_text_size
 
-    def __call__(self, img, polys):
+    def __call__(self, img, polys, ignore_tags=None):
         h, w = img.shape[:2]
         shrink_map = np.zeros((h, w), dtype=np.float32)
-        mask = np.zeros((h, w), dtype=np.uint8)
-        for poly in polys:
+        mask = np.ones((h, w), dtype=np.float32)
+        if ignore_tags is None:
+            ignore_tags = [False] * len(polys)
+        for poly, ignore in zip(polys, ignore_tags):
             pts = (poly * np.array([w, h])).astype(np.int32)
             height = pts[:, 1].max() - pts[:, 1].min()
             width = pts[:, 0].max() - pts[:, 0].min()
-            if min(height, width) < self.min_text_size:
+            if ignore or min(height, width) < self.min_text_size:
+                cv2.fillPoly(mask, [pts.astype(np.int32)], 0)
                 continue
             shrunk = _shrink_poly(pts, self.shrink_ratio)
             if shrunk is None or cv2.contourArea(shrunk) < 1:
+                cv2.fillPoly(mask, [pts.astype(np.int32)], 0)
                 continue
             cv2.fillPoly(shrink_map, [shrunk.astype(np.int32)], 1.0)
-            cv2.fillPoly(mask, [pts], 1)
         return shrink_map, mask
 
 

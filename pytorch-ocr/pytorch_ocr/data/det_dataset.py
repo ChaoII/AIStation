@@ -270,8 +270,10 @@ class DetDataset(Dataset):
             polys = data["polys"]
         h, w = img.shape[:2]
         # 归一化多边形到 [0,1]
+        cur_tags = data.get("ignore_tags", ignore_tags) if self.use_aug else ignore_tags
         norm_polys = [p / np.array([w, h]) for p in polys if len(p) >= 3]
-        shrink_map, shrink_mask = self.shrink_map_fn(img, norm_polys)
+        norm_tags = [t for p, t in zip(polys, cur_tags) if len(p) >= 3]
+        shrink_map, shrink_mask = self.shrink_map_fn(img, norm_polys, ignore_tags=norm_tags)
         thresh_map, thresh_mask = self.border_map_fn(img, norm_polys)
         # 无增强时直接 resize 到 image_shape；有增强时已经 640×640
         if tuple(img.shape[:2]) != tuple(self.image_shape):
