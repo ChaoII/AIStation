@@ -25,6 +25,79 @@ def _is_poly_outside_rect(poly, x, y, w, h):
                 or poly[:, 1].max() < y or poly[:, 1].min() > y + h)
 
 
+def _split_regions(axis):
+    regions = []
+    min_axis = 0
+    for i in range(1, axis.shape[0]):
+        if axis[i] != axis[i - 1] + 1:
+            region = axis[min_axis:i]
+            min_axis = i
+            regions.append(region)
+    return regions
+
+
+def _random_select(axis, max_size):
+    xx = np.random.choice(axis, size=2)
+    xmin = np.min(xx)
+    xmax = np.max(xx)
+    xmin = np.clip(xmin, 0, max_size - 1)
+    xmax = np.clip(xmax, 0, max_size - 1)
+    return xmin, xmax
+
+
+def _region_wise_random_select(regions, max_size):
+    selected_index = list(np.random.choice(len(regions), 2))
+    selected_values = []
+    for index in selected_index:
+        axis = regions[index]
+        xx = int(np.random.choice(axis))
+        selected_values.append(xx)
+    xmin = min(selected_values)
+    xmax = max(selected_values)
+    return xmin, xmax
+
+
+def _crop_area(im, text_polys, min_crop_side_ratio, max_tries):
+    """官方 crop_area：基于文字空白区随机选裁剪区域，避免切到文字。"""
+    h, w, _ = im.shape
+    h_array = np.zeros(h, dtype=np.int32)
+    w_array = np.zeros(w, dtype=np.int32)
+    for points in text_polys:
+        points = np.round(points, decimals=0).astype(np.int32)
+        minx = np.min(points[:, 0])
+        maxx = np.max(points[:, 0])
+        w_array[minx:maxx] = 1
+        miny = np.min(points[:, 1])
+        maxy = np.max(points[:, 1])
+        h_array[miny:maxy] = 1
+    h_axis = np.where(h_array == 0)[0]
+    w_axis = np.where(w_array == 0)[0]
+    if len(h_axis) == 0 or len(w_axis) == 0:
+        return 0, 0, w, h
+    h_regions = _split_regions(h_axis)
+    w_regions = _split_regions(w_axis)
+    for _ in range(max_tries):
+        if len(w_regions) > 1:
+            xmin, xmax = _region_wise_random_select(w_regions, w)
+        else:
+            xmin, xmax = _random_select(w_axis, w)
+        if len(h_regions) > 1:
+            ymin, ymax = _region_wise_random_select(h_regions, h)
+        else:
+            ymin, ymax = _random_select(h_axis, h)
+        if (xmax - xmin < min_crop_side_ratio * w
+                or ymax - ymin < min_crop_side_ratio * h):
+            continue
+        num_poly_in_rect = 0
+        for poly in text_polys:
+            if not _is_poly_outside_rect(poly, xmin, ymin, xmax - xmin, ymax - ymin):
+                num_poly_in_rect += 1
+                break
+        if num_poly_in_rect > 0:
+            return xmin, ymin, xmax - xmin, ymax - ymin
+    return 0, 0, w, h
+
+
 class DetDataset(Dataset):
     def __init__(
         self, gt_dir, label_path, image_shape=(640, 640), is_train=True, shrink_ratio=0.4,
@@ -126,40 +199,31 @@ class DetDataset(Dataset):
         return len(self.items)
 
     def _random_crop(self, data):
-        """官方 RandomCrop：在原分辨率图上随机裁 640×640 区域，poly 平移。
+        """官方 EastRandomCropData：基于文字空白区随机选裁剪区域，缩放+pad 到 size。
 
-        不强制等比缩放——文字保持原始大小（对齐官方训练分布）。裁剪区含至少
-        一个有效文字框；图小于 640 时 pad。同步过滤 polys/texts/ignore_tags。
+        对齐官方：crop_area() 选区域（避免切文字，区域大小随机）→
+        scale=min(size_w/crop_w, size_h/crop_h) 缩放 → keep_ratio pad。
+        同步变换 polys/texts/ignore_tags。
         """
         img = data["image"]
         polys = data["polys"]
         size_h, size_w = self.image_shape
         h, w = img.shape[:2]
-        crop_x = crop_y = 0
-        crop_w, crop_h = min(w, size_w), min(h, size_h)
-        found = (w <= size_w and h <= size_h)
-        for _ in range(self.max_tries):
-            if w > size_w:
-                crop_x = random.randint(0, w - size_w)
-                crop_w = size_w
-            if h > size_h:
-                crop_y = random.randint(0, h - size_h)
-                crop_h = size_h
-            for poly in polys:
-                if _is_poly_in_rect(poly, crop_x, crop_y, crop_w, crop_h):
-                    found = True
-                    break
-            if found:
-                break
-        img = img[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
-        polys = [p - np.array([crop_x, crop_y]) for p in polys]
-        # padding 到 size_h×size_w
+        all_care = [p for p, tag in zip(polys, data["ignore_tags"]) if not tag]
+        crop_x, crop_y, crop_w, crop_h = _crop_area(
+            img, all_care, 0.1, self.max_tries)
+        scale = min(size_w / max(crop_w, 1), size_h / max(crop_h, 1))
+        new_h = int(crop_h * scale)
+        new_w = int(crop_w * scale)
+        cropped = img[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+        resized = cv2.resize(cropped, (new_w, new_h))
         pad_img = np.zeros((size_h, size_w, 3), dtype=np.uint8)
-        pad_img[:crop_h, :crop_w] = img
+        pad_img[:new_h, :new_w] = resized
         new_polys, new_tags, new_texts = [], [], []
         for p, tag, text in zip(polys, data["ignore_tags"], data["texts"], strict=False):
-            if not _is_poly_outside_rect(p, 0, 0, size_w, size_h):
-                new_polys.append(p)
+            p2 = (p - np.array([crop_x, crop_y])) * scale
+            if not _is_poly_outside_rect(p2, 0, 0, size_w, size_h):
+                new_polys.append(p2)
                 new_tags.append(tag)
                 new_texts.append(text)
         data["image"] = pad_img
