@@ -122,6 +122,7 @@ class PaddleXOCRExecutor(TaskExecutor):
                 cls.DOCKER_IMAGE, cmd,
                 volumes=volumes,
                 gpu_id=task.hyperparams.get("device") or task.hyperparams.get("gpu_id") or "0",
+                shm_size="4g",
             )
             container_id = container.id
             entry = cls._registry.get(task_id) or {}

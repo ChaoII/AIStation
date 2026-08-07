@@ -32,21 +32,19 @@ def _run_container(
     env: dict,
     ports: dict | None = None,
     entrypoint: str | None = None,
+    shm_size: str | None = None,
 ) -> docker.models.containers.Container:
     device_requests = []
     if gpu_id:
         device_requests = [docker.types.DeviceRequest(device_ids=[gpu_id], capabilities=[["gpu"]])]
-    return client.containers.run(
-        image, cmd,
-        volumes=volumes,
-        environment=env,
-        ports=ports,
-        entrypoint=entrypoint,
-        device_requests=device_requests,
-        detach=True,
-        remove=False,
-        stderr=True,
+    kwargs = dict(
+        image=image, command=cmd, volumes=volumes, environment=env, ports=ports,
+        entrypoint=entrypoint, device_requests=device_requests,
+        detach=True, remove=False, stderr=True,
     )
+    if shm_size:
+        kwargs["shm_size"] = shm_size
+    return client.containers.run(**kwargs)
 
 
 async def run_container(
@@ -57,10 +55,11 @@ async def run_container(
     env: dict | None = None,
     ports: dict | None = None,
     entrypoint: str | None = None,
+    shm_size: str | None = None,
 ) -> docker.models.containers.Container:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
-        None, _run_container, image, cmd, volumes, gpu_id, env or {}, ports, entrypoint
+        None, _run_container, image, cmd, volumes, gpu_id, env or {}, ports, entrypoint, shm_size
     )
 
 

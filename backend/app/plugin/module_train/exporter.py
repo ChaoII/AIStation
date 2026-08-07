@@ -465,11 +465,13 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
     # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
     best_path = None
     if framework == "paddlex":
-        # PaddleX OCR train.py 保存 best_accuracy.pdparams 到 save_model_dir(=/output/det 或 /output/rec)
+        # PaddleX OCR train.py 保存 best_accuracy/latest .pdparams 到 save_model_dir(=/output/det 或 /output/rec)
         candidates = [
             os.path.join(export_dir, "det", "best_accuracy.pdparams"),
             os.path.join(export_dir, "rec", "best_accuracy.pdparams"),
             os.path.join(export_dir, "best_accuracy.pdparams"),
+            os.path.join(export_dir, "det", "latest.pdparams"),
+            os.path.join(export_dir, "rec", "latest.pdparams"),
             os.path.join(export_dir, "det", "best_model", "model.pdparams"),
             os.path.join(export_dir, "rec", "best_model", "model.pdparams"),
         ]
@@ -618,7 +620,7 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
         lines = []
         for fname, entries, _rec in rows:
             if entries:
-                lines.append(f"{fname}\t{json.dumps(entries, ensure_ascii=False)}")
+                lines.append(f"images/{fname}\t{json.dumps(entries, ensure_ascii=False)}")
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 

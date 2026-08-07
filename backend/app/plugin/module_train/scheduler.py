@@ -246,11 +246,11 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
         f"Global.epoch_num={epochs}",
         f"Global.save_model_dir={out_dir}",
         f"Train.dataset.data_dir={data_dir_in}",
-        f'Train.dataset.label_file_list=["{data_dir_in}/train.txt"]',
+        f"'Train.dataset.label_file_list=[\"{data_dir_in}/train.txt\"]'",
         f"Train.loader.batch_size_per_card={batch}",
         f"Train.loader.num_workers=2",
         f"Eval.dataset.data_dir={data_dir_in}",
-        f'Eval.dataset.label_file_list=["{data_dir_in}/val.txt"]',
+        f"'Eval.dataset.label_file_list=[\"{data_dir_in}/val.txt\"]'",
         f"Eval.loader.num_workers=0",
     ]
     if lr > 0:
@@ -258,10 +258,12 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     if pretrained:
         opts.append(f"Global.pretrained_model={pretrained}")
     if mode == "rec":
-        # rec 用数据集自带 dict.txt
-        opts.append(f"Global.character_dict_path={data_dir_in}/../dict.txt")
+        # rec 用官方默认词表 ppocrv6_dict.txt（与官方预训练权重匹配），无需自定义 dict.txt
+        pass
+    # 官方 -o 用 nargs='+'，多个 key=value 必须跟在同一个 -o 后（空格分隔），
+    # 否则 argparse 只保留最后一个 opt。
     inner = " ".join(
-        [f"python tools/train.py -c {config_path}"] + [f"-o {o}" for o in opts]
+        [f"python tools/train.py -c {config_path} -o"] + opts
     )
     return ["bash", "-c", f"cd {_PADDLEX_OCR_DIR} && {inner}"]
 
