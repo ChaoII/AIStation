@@ -184,10 +184,12 @@ class IaaAugment:
     """IaaAugment（Fliplr / Affine / Resize）：keypoints 方式变换 polys。"""
 
     def __init__(self, augmenter_args=None):
+        # 对齐官方 PP-OCRv6 det config：Fliplr p0.5, Affine rotate[-45,45] fit_output,
+        # Resize size[0.1,2]
         default = [
             {"type": "Fliplr", "args": {"p": 0.5}},
-            {"type": "Affine", "args": {"rotate": [-10, 10]}},
-            {"type": "Resize", "args": {"size": [0.5, 3]}},
+            {"type": "Affine", "args": {"p": 0.5, "rotate": [-45, 45], "fit_output": True}},
+            {"type": "Resize", "args": {"size": [0.1, 2]}},
         ]
         self.augmenter_args = augmenter_args if augmenter_args else default
         self.augmenter = AugmenterBuilder().build(self.augmenter_args)
