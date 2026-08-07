@@ -11,7 +11,7 @@
         size="small"
         effect="plain"
       >
-        {{ task?.framework === "ultralytics" ? "Ultralytics" : "PaddleX" }}
+        {{ frameworkLabel(task?.framework) }}
       </el-tag>
       <el-tag
         :type="statusTag(task?.status || '') as any"
@@ -367,6 +367,17 @@ function statusLabel(s: string) {
       } as any
     )[s] || s
   );
+}
+
+function frameworkLabel(fw?: string) {
+  return (
+    {
+      ultralytics: "Ultralytics",
+      paddlex: "PaddleX",
+      "pytorch-ocr-det": "PyTorch-OCR Det",
+      "pytorch-ocr-rec": "PyTorch-OCR Rec",
+    } as any
+  )[fw || ""] || fw || "—";
 }
 
 const durationText = computed(() => {

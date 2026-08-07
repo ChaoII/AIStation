@@ -72,7 +72,7 @@
                   :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
                   size="small"
                 >
-                  {{ scope.row.framework === "ultralytics" ? "Ultralytics" : "PaddleX" }}
+                  {{ frameworkLabel(scope.row.framework) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -411,6 +411,17 @@ function statusTag(s: string): "primary" | "success" | "warning" | "info" | "dan
 
 function statusLabel(s: string) {
   return { draft: "草稿", released: "已发布", archived: "已归档" }[s] || s;
+}
+
+function frameworkLabel(fw?: string) {
+  return (
+    {
+      ultralytics: "Ultralytics",
+      paddlex: "PaddleX",
+      "pytorch-ocr-det": "PyTorch-OCR Det",
+      "pytorch-ocr-rec": "PyTorch-OCR Rec",
+    } as any
+  )[fw || ""] || fw || "—";
 }
 
 async function resetForm() {
