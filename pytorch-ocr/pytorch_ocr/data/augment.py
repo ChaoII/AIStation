@@ -366,3 +366,240 @@ class CopyPaste:
         data["texts"] = src_texts
         data["ignore_tags"] = src_tags
         return data
+
+
+# ---------------------------------------------------------------------------
+# 官方 PP-OCRv6 RandomCrop（configs/det/PP-OCRv6/*.yml 使用）
+# ---------------------------------------------------------------------------
+def _is_poly_in_rect(poly, x, y, w, h):
+    poly = np.array(poly)
+    if poly[:, 0].min() < x or poly[:, 0].max() > x + w:
+        return False
+    if poly[:, 1].min() < y or poly[:, 1].max() > y + h:
+        return False
+    return True
+
+
+def _is_poly_outside_rect(poly, x, y, w, h):
+    poly = np.array(poly)
+    if poly[:, 0].max() < x or poly[:, 0].min() > x + w:
+        return True
+    if poly[:, 1].max() < y or poly[:, 1].min() > y + h:
+        return True
+    return False
+
+
+def _get_min_rotated_rect_side(poly):
+    poly = np.array(poly).astype(np.float32)
+    if len(poly) < 3:
+        return 0
+    rect = cv2.minAreaRect(poly)
+    width, height = rect[1]
+    return min(width, height)
+
+
+def _get_min_quad_side(quad):
+    if len(quad) != 4:
+        return 0
+    quad = np.array(quad)
+    sides = []
+    for i in range(4):
+        side = np.linalg.norm(quad[i] - quad[(i + 1) % 4])
+        sides.append(side)
+    return min(sides) if sides else 0
+
+
+def _clip_poly_to_rect(poly, x, y, w, h):
+    from shapely.geometry import Polygon, box as shapely_box
+
+    try:
+        poly_shape = Polygon(poly)
+        crop_rect = shapely_box(x, y, x + w, y + h)
+        clipped = poly_shape.intersection(crop_rect)
+        if clipped.is_empty:
+            return None
+        if clipped.geom_type == "Polygon":
+            coords = list(clipped.exterior.coords[:-1])
+        elif clipped.geom_type == "MultiPolygon":
+            largest = max(clipped.geoms, key=lambda p: p.area)
+            coords = list(largest.exterior.coords[:-1])
+        elif clipped.geom_type == "GeometryCollection":
+            polygons = [g for g in clipped.geoms if g.geom_type == "Polygon"]
+            if not polygons:
+                return None
+            largest = max(polygons, key=lambda p: p.area)
+            coords = list(largest.exterior.coords[:-1])
+        else:
+            return None
+        if len(coords) <= 3:
+            return None
+        coords = np.array(coords)
+        if len(coords) == 4:
+            return coords
+        if len(coords) > 4:
+            poly_cv = coords.reshape(-1, 1, 2).astype(np.float32)
+            peri = cv2.arcLength(poly_cv, True)
+            if peri < 1e-6:
+                return None
+            lo, hi = 0.0, 0.5
+            best = None
+            for _ in range(50):
+                mid = (lo + hi) / 2
+                approx = cv2.approxPolyDP(poly_cv, mid * peri, True)
+                if len(approx) <= 4:
+                    best = approx
+                    hi = mid
+                else:
+                    lo = mid
+            if best is not None and len(best) >= 3:
+                return best.reshape(-1, 2)
+            return None
+        return coords
+    except Exception:
+        return None
+
+
+class RandomCropV6:
+    """官方 PP-OCRv6 det RandomCrop（random_crop_data.py RandomCrop）。
+
+    crop 区域大小随机（min_ratio 到 size*3），须包含至少一个完整/可裁剪文字框，
+    poly 按 char_height 校验；只缩小不放大（crop 区<=size 时 scale=1.0 + 随机 pad）。
+    """
+
+    def __init__(self, size=(640, 640), max_tries=50, min_crop_side_ratio=0.1,
+                 keep_ratio=True):
+        self.size = size
+        self.max_tries = max_tries
+        self.min_crop_side_ratio = min_crop_side_ratio
+        self.keep_ratio = keep_ratio
+
+    def __call__(self, data):
+        img = data["image"]
+        text_polys = data["polys"]
+        ignore_tags = data["ignore_tags"]
+        texts = data["texts"]
+        care_indices = [i for i, tag in enumerate(ignore_tags) if not tag]
+        all_care_polys = [text_polys[i] for i in care_indices]
+        h, w = img.shape[:2]
+        size_h, size_w = self.size
+
+        if len(all_care_polys) == 0:
+            crop_x, crop_y, crop_w, crop_h = 0, 0, w, h
+            valid_care_data = []
+        else:
+            char_heights = np.array(
+                [_get_min_rotated_rect_side(p) for p in all_care_polys])
+            valid_care_data = []
+            for _ in range(self.max_tries):
+                crop_w_min = min(int(w * self.min_crop_side_ratio), size_w)
+                crop_w_max = int(size_w * 3)
+                crop_w = (w if crop_w_min >= crop_w_max
+                          else min(random.randint(crop_w_min, crop_w_max), w))
+                crop_h_min = min(int(h * self.min_crop_side_ratio), size_h)
+                crop_h_max = int(size_h * 3)
+                crop_h = (h if crop_h_min >= crop_h_max
+                          else min(random.randint(crop_h_min, crop_h_max), h))
+                crop_x = 0 if crop_w >= w else random.randint(0, w - crop_w)
+                crop_y = 0 if crop_h >= h else random.randint(0, h - crop_h)
+                valid_care_data = []
+                for care_idx, (poly, char_height) in enumerate(
+                        zip(all_care_polys, char_heights)):
+                    if _is_poly_outside_rect(poly, crop_x, crop_y, crop_w, crop_h):
+                        continue
+                    if _is_poly_in_rect(poly, crop_x, crop_y, crop_w, crop_h):
+                        valid_care_data.append((care_idx, None))
+                        continue
+                    clipped_poly = _clip_poly_to_rect(
+                        poly, crop_x, crop_y, crop_w, crop_h)
+                    if clipped_poly is None:
+                        continue
+                    clipped_area = cv2.contourArea(clipped_poly.astype(np.float32))
+                    if clipped_area < 80:
+                        continue
+                    clipped_char_height = _get_min_rotated_rect_side(clipped_poly)
+                    if clipped_char_height < char_height * 0.35:
+                        continue
+                    if len(clipped_poly) == 4:
+                        min_side = _get_min_quad_side(clipped_poly)
+                        if min_side < char_height * 0.35:
+                            continue
+                    valid_care_data.append((care_idx, clipped_poly))
+                if len(valid_care_data) >= 1:
+                    break
+            else:
+                crop_x, crop_y, crop_w, crop_h = 0, 0, w, h
+                valid_care_data = [(i, None) for i in range(len(all_care_polys))]
+
+        need_resize = crop_w > size_w or crop_h > size_h
+        if need_resize:
+            scale_w = size_w / crop_w
+            scale_h = size_h / crop_h
+            scale = min(scale_w, scale_h)
+            h_resized = int(crop_h * scale)
+            w_resized = int(crop_w * scale)
+        else:
+            scale = 1.0
+            h_resized = crop_h
+            w_resized = crop_w
+
+        if self.keep_ratio:
+            pad_h = size_h - h_resized
+            pad_w = size_w - w_resized
+            pad_top = random.randint(0, pad_h) if pad_h > 0 else 0
+            pad_left = random.randint(0, pad_w) if pad_w > 0 else 0
+            cropped_img = img[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+            if need_resize:
+                resized_img = cv2.resize(cropped_img, (w_resized, h_resized))
+            else:
+                resized_img = cropped_img
+            padimg = np.zeros((size_h, size_w, img.shape[2]), img.dtype)
+            padimg[pad_top:pad_top + h_resized, pad_left:pad_left + w_resized] = resized_img
+            img = padimg
+        else:
+            img = cv2.resize(
+                img[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w],
+                tuple(self.size))
+            pad_left = 0
+            pad_top = 0
+
+        valid_care_indices_set = {care_idx for care_idx, _ in valid_care_data}
+        care_idx_to_clipped = {
+            care_idx: clipped for care_idx, clipped in valid_care_data}
+
+        text_polys_crop = []
+        ignore_tags_crop = []
+        texts_crop = []
+        for all_idx, (poly, text, tag) in enumerate(
+                zip(text_polys, texts, ignore_tags)):
+            if tag:
+                if not _is_poly_outside_rect(poly, crop_x, crop_y, crop_w, crop_h):
+                    adjusted_poly = (poly - (crop_x, crop_y)) * scale + (pad_left, pad_top)
+                    adjusted_poly[:, 0] = np.clip(adjusted_poly[:, 0], 0, size_w)
+                    adjusted_poly[:, 1] = np.clip(adjusted_poly[:, 1], 0, size_h)
+                    text_polys_crop.append(adjusted_poly.tolist())
+                    ignore_tags_crop.append(tag)
+                    texts_crop.append(text)
+            else:
+                try:
+                    care_idx = care_indices.index(all_idx)
+                except ValueError:
+                    continue
+                if care_idx not in valid_care_indices_set:
+                    continue
+                clipped_poly = care_idx_to_clipped[care_idx]
+                if clipped_poly is None:
+                    adjusted_poly = (poly - (crop_x, crop_y)) * scale + (pad_left, pad_top)
+                else:
+                    adjusted_poly = (clipped_poly - (crop_x, crop_y)) * scale + (pad_left, pad_top)
+                text_polys_crop.append(adjusted_poly.tolist())
+                ignore_tags_crop.append(tag)
+                texts_crop.append(text)
+
+        data["image"] = img
+        if text_polys_crop:
+            data["polys"] = [np.array(p, dtype=np.float32) for p in text_polys_crop]
+        else:
+            data["polys"] = []
+        data["ignore_tags"] = ignore_tags_crop
+        data["texts"] = texts_crop
+        return data

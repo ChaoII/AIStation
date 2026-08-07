@@ -8,7 +8,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .augment import ColorJitter, CopyPaste, IaaAugment, RandomPerspective
+from .augment import (ColorJitter, CopyPaste, IaaAugment, RandomCropV6,
+                      RandomPerspective)
 from .transforms import MakeBorderMap, MakeShrinkMap
 
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -120,6 +121,7 @@ class DetDataset(Dataset):
         self.color_jitter = ColorJitter()
         self.iaa = IaaAugment(augmenter_args=augmenter_args)
         self.perspective = RandomPerspective()
+        self.random_crop = RandomCropV6(size=self.image_shape, max_tries=self.max_tries)
         self.copy_paste_op = CopyPaste()
         self.ext_data_dir = ext_data_dir
         # copy_paste 需要外部数据集，缺失时优雅跳过
@@ -266,7 +268,7 @@ class DetDataset(Dataset):
                 data = self.iaa(data)
             if self.use_perspective:
                 data = self.perspective(data)
-            data = self._random_crop(data)
+            data = self.random_crop(data)
             img = data["image"]
             polys = data["polys"]
         h, w = img.shape[:2]
