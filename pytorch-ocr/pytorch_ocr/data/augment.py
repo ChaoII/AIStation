@@ -11,9 +11,35 @@ import albumentations as A
 import cv2
 import numpy as np
 from albumentations.core.transforms_interface import DualTransform
+from PIL import Image
 
 
 def _order_points(pts):
+    """质心极角排序（顺时针）。"""
+    center = pts.mean(axis=0)
+    angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+    return pts[np.argsort(angles)]
+
+
+def _rotate_bbox(img, text_polys, angle, scale=1):
+    """官方 rotate_bbox：旋转图像与四边形（copy_paste.py）。"""
+    w = img.shape[1]
+    h = img.shape[0]
+    rangle = np.deg2rad(angle)
+    nw = abs(np.sin(rangle) * h) + abs(np.cos(rangle) * w)
+    nh = abs(np.cos(rangle) * h) + abs(np.sin(rangle) * w)
+    rot_mat = cv2.getRotationMatrix2D((nw * 0.5, nh * 0.5), angle, scale)
+    rot_move = np.dot(rot_mat, np.array([(nw - w) * 0.5, (nh - h) * 0.5, 0]))
+    rot_mat[0, 2] += rot_move[0]
+    rot_mat[1, 2] += rot_move[1]
+    rot_text_polys = []
+    for bbox in text_polys:
+        pts = []
+        for i in range(len(bbox)):
+            p = np.dot(rot_mat, np.array([bbox[i, 0], bbox[i, 1], 1]))
+            pts.append(p)
+        rot_text_polys.append(pts)
+    return np.array(rot_text_polys, dtype=np.float32)
     """按 左上/右上/右下/左下 排序四个顶点。"""
     s = pts.sum(axis=1)
     d = np.diff(pts, axis=1).ravel()
@@ -346,21 +372,35 @@ class CopyPaste:
             return data
         n_paste = max(1, int(self.objects_paste_ratio * len(candidates)))
         random.shuffle(candidates)
+        # 官方对齐：随机旋转 0-360° + RGBA alpha 混合
+        src_rgba = np.array(Image.fromarray(src_img).convert("RGBA"))
         for poly, text in candidates[:n_paste]:
             crop = get_rotate_crop_image(ext_image, poly)
-            ch, cw = crop.shape[:2]
-            place = self._find_place(src_img, src_polys, cw, ch)
+            box_img_pil = Image.fromarray(crop).convert("RGBA")
+            angle = np.random.randint(0, 360)
+            box = np.array([[[0, 0], [crop.shape[1], 0],
+                             [crop.shape[1], crop.shape[0]], [0, crop.shape[0]]]])
+            rot_box = _rotate_bbox(crop, box, angle)[0]
+            box_img_pil = box_img_pil.rotate(angle, expand=1)
+            cw, ch = box_img_pil.width, box_img_pil.height
+            if src_rgba.shape[1] - cw < 0 or src_rgba.shape[0] - ch < 0:
+                continue
+            place = self._find_place(src_rgba, src_polys, cw, ch)
             if place is None:
                 continue
             x, y = place
-            src_img[y:y + ch, x:x + cw] = crop
-            box = np.array(
-                [[x, y], [x + cw, y], [x + cw, y + ch], [x, y + ch]], dtype=np.float32
-            )
-            src_polys.append(box)
+            box_img_arr = np.array(box_img_pil)
+            alpha = box_img_arr[:, :, 3:4].astype(np.float32) / 255.0
+            region = src_rgba[y:y + ch, x:x + cw].astype(np.float32)
+            blended = box_img_arr[:, :, :3].astype(np.float32) * alpha + region[:, :, :3] * (1 - alpha)
+            src_rgba[y:y + ch, x:x + cw, :3] = blended.astype(np.uint8)
+            src_rgba[y:y + ch, x:x + cw, 3] = 255
+            box = rot_box + np.array([x, y])
+            src_polys.append(box.astype(np.float32))
             src_texts.append(text)
             src_tags.append(False)
 
+        src_img = np.array(Image.fromarray(src_rgba).convert("RGB"))
         data["image"] = src_img
         data["polys"] = src_polys
         data["texts"] = src_texts
