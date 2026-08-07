@@ -35,7 +35,7 @@ def test_build_paddlex_det_cmd():
 
 
 def test_build_paddlex_rec_cmd():
-    """rec 训练命令：config 路径 + 数据目录 + dict.txt。"""
+    """rec 训练命令：config 路径 + 数据目录 + 官方词表（不覆盖 character_dict_path）。"""
     hp = {"mode": "rec", "model_size": "medium", "epochs": 50, "batch": 64,
           "lr": 0.0005, "device": "0", "pretrained": False}
     cmd = _build_paddlex_ocr_cmd(hp, "/data", "/output", mode="rec")
@@ -43,7 +43,6 @@ def test_build_paddlex_rec_cmd():
     assert "PP-OCRv6_medium_rec.yml" in joined
     assert "configs/rec/PP-OCRv6/" in joined
     assert "/data/rec/dataset" in joined
-    assert "character_dict_path" in joined
     assert "Global.pretrained_model=" not in joined
 
 
