@@ -228,6 +228,7 @@ class DetTrainer:
                 }
         best_loss = float("inf")
         best_hmean = 0.0
+        global_step = 0
         for epoch in range(1, num_epochs + 1):
             dataset.current_epoch = epoch
             if hasattr(dataset, "_epoch_holder"):
@@ -261,20 +262,24 @@ class DetTrainer:
             avg = total_loss / max(n_batches, 1)
             print(f"epoch {epoch} avg_loss {avg:.4f} "
                   f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
-            # 官方 PaddleOCR：用 EMA 权重做 eval，按 eval hmean 选 best（而非 train loss）。
-            # 每 eval_interval epoch 跑一次 eval，控制开销。
-            eval_interval = self.config.get("eval_interval", 5)
+            # 官方 PaddleOCR：global_step 每 batch 递增，eval 每 eval_batch_step step 一次，
+            # 用 EMA 权重在独立 val 数据上 eval，按 hmean 选 best（对齐 program.py）。
+            global_step += n_batches
             if use_ema:
                 cand_state = ema.apply() if ema is not None else ema_simple
             else:
                 cand_state = self.net.state_dict()
-            if epoch % eval_interval == 0 or epoch == num_epochs:
+            eval_batch_step = self.config.get("eval_batch_step", 100)
+            eval_data = self.config.get("val_data_dir") or data_dir
+            if global_step % eval_batch_step == 0 or epoch == num_epochs:
                 saved = self.net.state_dict()
                 self.net.load_state_dict(cand_state)
+                self.net.eval()
                 try:
-                    m = self.eval(data_dir=data_dir, output_dir=output_dir)
+                    m = self.eval(data_dir=eval_data, output_dir=output_dir)
                     cur_hmean = m.get("hmean", 0.0)
-                    print(f"epoch {epoch} eval hmean {cur_hmean:.4f}", flush=True)
+                    print(f"epoch {epoch} step {global_step} eval hmean {cur_hmean:.4f}",
+                          flush=True)
                     if cur_hmean > best_hmean:
                         best_hmean = cur_hmean
                         torch.save(cand_state, os.path.join(output_dir, "best.pt"))
@@ -283,6 +288,7 @@ class DetTrainer:
                         torch.save(cand_state, os.path.join(output_dir, "best.pt"))
                 finally:
                     self.net.load_state_dict(saved)
+                    self.net.train() if not self.frozen else (self.net.eval(), self.head.train())
             else:
                 # 无 eval 时按 loss 兜底保存（防早期无 best）
                 if avg < best_loss:
