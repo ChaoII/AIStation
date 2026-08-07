@@ -231,7 +231,6 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     epochs = int(hp.get("epochs", 100))
     batch = int(hp.get("batch", 8))
     lr = float(hp.get("lr", 0.0005))
-    device = str(hp.get("device", "0"))
     use_pretrained = bool(hp.get("pretrained", False))
     config_name = f"PP-OCRv6_{size}_{mode}.yml"
     config_path = (
@@ -248,10 +247,10 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
         f"Train.dataset.data_dir={data_dir_in}",
         f"'Train.dataset.label_file_list=[\"{data_dir_in}/train.txt\"]'",
         f"Train.loader.batch_size_per_card={batch}",
-        f"Train.loader.num_workers=2",
+        "Train.loader.num_workers=2",
         f"Eval.dataset.data_dir={data_dir_in}",
         f"'Eval.dataset.label_file_list=[\"{data_dir_in}/val.txt\"]'",
-        f"Eval.loader.num_workers=0",
+        "Eval.loader.num_workers=0",
     ]
     if lr > 0:
         opts.append(f"Optimizer.lr.learning_rate={lr}")

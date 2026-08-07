@@ -25,12 +25,18 @@ _deploy_running: dict[int, dict] = {}
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 OCR_IMAGE = "aistation-ocr:latest"
+PADDLEX_IMAGE = "paddlex:latest"
 OCR_FRAMEWORKS = (TrainFramework.PYTORCH_OCR_DET, TrainFramework.PYTORCH_OCR_REC)
 
 
 def _is_ocr_framework(framework: TrainFramework) -> bool:
-    """判断部署框架是否需要 OCR server（det/rec 双模型推理）。"""
+    """判断部署框架是否需要 pytorch OCR server（det/rec 双模型推理）。"""
     return framework in OCR_FRAMEWORKS
+
+
+def _is_paddlex_framework(framework: TrainFramework) -> bool:
+    """PaddleX 框架（PP-OCRv6 det/rec 训练产物 .pdparams 部署）。"""
+    return framework == TrainFramework.PADDLEX
 
 
 def _generate_server_script(api_key: str, device: str) -> str:
@@ -172,6 +178,146 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
 if __name__ == "__main__":
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")
 '''
+
+
+def _generate_paddlex_server_script(api_key: str, device: str) -> str:
+    """生成 PaddleX OCR 推理服务脚本（PP-OCRv6 det + rec，.pdparams 权重）。
+
+    运行在 paddlex:latest 镜像（内置 PaddleOCR），加载 /model/det.pdparams +
+    /model/rec.pdparams，/predict 返回 [{text, confidence, box}]。
+    """
+    device_arg = device if device != "cpu" else "cpu"
+    return r'''#!/usr/bin/env python3
+"""Auto-generated PaddleX OCR inference server (PP-OCRv6 det + rec)."""
+import os, sys, json, time, io
+
+_POCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
+sys.path.insert(0, _POCR_DIR)
+sys.path.insert(0, os.path.join(_POCR_DIR, ".."))
+os.chdir(_POCR_DIR)
+os.environ["FLAGS_allocator_strategy"] = "auto_growth"
+
+import numpy as np
+import cv2
+import paddle
+from fastapi import FastAPI, File, UploadFile, HTTPException, Security
+from fastapi.security import APIKeyHeader
+import uvicorn
+
+from ppocr.data import create_operators, transform
+from ppocr.modeling.architectures import build_model
+from ppocr.postprocess import build_post_process
+from ppocr.utils.save_load import load_model
+import tools.program as program
+
+API_KEY = "__API_KEY__"
+HOST = "0.0.0.0"
+PORT = 8000
+DEVICE = "__DEVICE__"
+
+
+def _load_pipeline(cfg_name, weights_path):
+    """构建 PP-OCRv6 推理管线（det 或 rec）。"""
+    sys.argv = ["infer", "-c", cfg_name, "-o",
+                "Global.pretrained_model=" + weights_path,
+                "Global.use_gpu=" + str(DEVICE != "cpu")]
+    config, _device, logger, _vdl = program.preprocess(is_train=False)
+    post_process_class = build_post_process(config["PostProcess"], config["Global"])
+    # rec MultiHead 需要 out_channels_list（从字符集算输出通道，对齐官方 tools/eval.py）
+    if config["Architecture"].get("Head", {}).get("name") == "MultiHead":
+        char_num = len(getattr(post_process_class, "character"))
+        out_channels_list = {
+            "CTCLabelDecode": char_num,
+            "SARLabelDecode": char_num + 2,
+            "NRTRLabelDecode": char_num + 3,
+        }
+        config["Architecture"]["Head"]["out_channels_list"] = out_channels_list
+    model = build_model(config["Architecture"])
+    load_model(config, model)
+    model.eval()
+    transforms = []
+    for op in config["Eval"]["dataset"]["transforms"]:
+        op_name = list(op)[0]
+        if "Label" in op_name:
+            continue
+        elif op_name == "KeepKeys":
+            op[op_name]["keep_keys"] = ["image", "shape"]
+        transforms.append(op)
+    ops = create_operators(transforms, config["Global"])
+    return model, post_process_class, ops
+
+
+DET_CFG = "configs/det/PP-OCRv6/PP-OCRv6_small_det.yml"
+REC_CFG = "configs/rec/PP-OCRv6/PP-OCRv6_small_rec.yml"
+DET_PATH = "/model/det.pdparams"
+REC_PATH = "/model/rec.pdparams"
+
+print("[deploy] loading PaddleX det model...", flush=True)
+det_model, det_post, det_ops = _load_pipeline(DET_CFG, DET_PATH)
+rec_model, rec_post, rec_ops = None, None, None
+if os.path.exists(REC_PATH):
+    print("[deploy] loading PaddleX rec model...", flush=True)
+    rec_model, rec_post, rec_ops = _load_pipeline(REC_CFG, REC_PATH)
+print("[deploy] PaddleX OCR models loaded", flush=True)
+
+
+def _det_boxes(img):
+    data = {"image": cv2.imencode(".jpg", img)[1].tobytes()}
+    batch = transform(data, det_ops)
+    images = np.expand_dims(batch[0], axis=0)
+    shape_list = np.expand_dims(batch[1], axis=0)
+    preds = det_model(paddle.to_tensor(images))
+    res = det_post(preds, shape_list)
+    # PP-OCRv6 DetPostProcess 输出 res[0]["points"] = list[ndarray(N,2)]
+    boxes = res[0]["points"]
+    return [np.array(b, dtype=np.float32) for b in boxes]
+
+
+def _rec_text(crop):
+    if rec_model is None:
+        return "", 0.0
+    data = {"image": cv2.imencode(".jpg", crop)[1].tobytes()}
+    batch = transform(data, rec_ops)
+    images = np.expand_dims(batch[0], axis=0)
+    preds = rec_model(paddle.to_tensor(images))
+    res = rec_post(preds)
+    return res[0]["text"], res[0]["score"]
+
+
+app = FastAPI(title="AIStation PaddleX OCR Inference")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "model": "paddlex-ocr"}
+
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_header)):
+    if api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+    start = time.time()
+    contents = await file.read()
+    img_array = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+    if img is None:
+        raise HTTPException(status_code=400, detail="Invalid image")
+    detections = []
+    boxes = _det_boxes(img)
+    for box in boxes:
+        text, conf = _rec_text(img)
+        detections.append({
+            "text": text, "confidence": float(conf),
+            "box": box.astype(float).tolist(),
+        })
+    elapsed = round((time.time() - start) * 1000, 1)
+    return {"success": True, "detections": detections, "inference_time_ms": elapsed}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+'''.replace("__API_KEY__", repr(api_key)).replace("__DEVICE__", repr(device_arg))
 
 
 async def start_deployment(deploy_id: int):
@@ -367,11 +513,12 @@ async def _execute_deployment(deploy_id: int):
             return
 
         is_ocr = _is_ocr_framework(deploy.framework)
-        image = OCR_IMAGE if is_ocr else DOCKER_IMAGE
+        is_paddlex = _is_paddlex_framework(deploy.framework)
+        image = PADDLEX_IMAGE if is_paddlex else (OCR_IMAGE if is_ocr else DOCKER_IMAGE)
 
-        if is_ocr:
-            # OCR 部署必须有显式的 rec 模型：仅挂载 det.pt 时推理管线会用随机
-            # rec 头，产出垃圾文本。rec_model_path 缺失 → 拒绝部署。
+        if is_ocr or is_paddlex:
+            # OCR/PaddleX 部署必须有显式的 rec 模型：仅挂载 det 权重时推理管线会产出垃圾文本。
+            # rec_model_path 缺失 → 拒绝部署。
             rec_model_path = (deploy.hyperparams or {}).get("rec_model_path")
             if not rec_model_path:
                 async with async_db_session.begin() as db:
@@ -410,6 +557,16 @@ async def _execute_deployment(deploy_id: int):
             rec_local_path = os.path.join(model_dir, "rec.pt")
             with open(rec_local_path, "wb") as f:
                 f.write(rec_data.read())
+        elif is_paddlex:
+            # PaddleX：det 产物统一命名 det.pdparams；rec 为 rec.pdparams
+            det_pd_path = os.path.join(model_dir, "det.pdparams")
+            if model_local_path != det_pd_path:
+                import shutil
+                shutil.copy2(model_local_path, det_pd_path)
+            rec_data = s3_client.download_fileobj(rec_model_path)
+            rec_local_path = os.path.join(model_dir, "rec.pdparams")
+            with open(rec_local_path, "wb") as f:
+                f.write(rec_data.read())
         else:
             # Ensure file is named best.pt inside model mount
             best_pt_path = os.path.join(model_dir, "best.pt")
@@ -418,7 +575,9 @@ async def _execute_deployment(deploy_id: int):
                 shutil.copy2(model_local_path, best_pt_path)
 
         # Write inference server script
-        if is_ocr:
+        if is_paddlex:
+            server_script = _generate_paddlex_server_script(deploy.api_key, deploy.device)
+        elif is_ocr:
             server_script = _generate_ocr_server_script(deploy.api_key, deploy.device)
         else:
             server_script = _generate_server_script(deploy.api_key, deploy.device)
@@ -454,6 +613,7 @@ async def _execute_deployment(deploy_id: int):
                 ports={f"{8000}/tcp": port},
                 gpu_id=deploy.device if deploy.device != "cpu" else None,
                 entrypoint="",
+                shm_size="4g" if is_paddlex else None,
             )
 
         try:
