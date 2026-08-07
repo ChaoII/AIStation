@@ -59,8 +59,6 @@ class PredictExecutor(TaskExecutor):
                     framework = model_row.framework
 
             docker_image = DOCKER_IMAGE
-            await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
-            await pull_image(docker_image)
 
             export_dir = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id))
             source_dir = os.path.join(export_dir, "source")
@@ -111,19 +109,42 @@ class PredictExecutor(TaskExecutor):
             imgsz = hp.get("imgsz", 640)
             device = hp.get("device", "0")
 
-            cmd = [
-                "yolo", "predict",
-                f"model=/model/{model_filename}",
-                "source=/data",
-                f"imgsz={imgsz}",
-                f"conf={conf}",
-                f"iou={iou}",
-                "save_txt=True",
-                "save_conf=True",
-                "project=/output",
-                "name=exp",
-            ]
+            if framework == TrainFramework.PADDLEX:
+                # PaddleX OCR 推理：infer_det / infer_rec（用训练产物 .pdparams）
+                mode = str(hp.get("mode", "det")).lower()
+                if mode == "rec":
+                    cfg = "configs/rec/PP-OCRv6/PP-OCRv6_{}_rec.yml".format(hp.get("model_size", "tiny"))
+                    infer = "tools/infer_rec.py"
+                else:
+                    cfg = "configs/det/PP-OCRv6/PP-OCRv6_{}_det.yml".format(hp.get("model_size", "tiny"))
+                    infer = "tools/infer_det.py"
+                docker_image = "paddlex:latest"
+                inner = (
+                    f"cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && "
+                    f"python {infer} -c {cfg} "
+                    f"-o Global.infer_img=/data "
+                    f"-o Global.pretrained_model=/model/{model_filename} "
+                    f"-o Global.save_res_path=/output/results.txt "
+                    f"-o Global.use_gpu=true "
+                    f"-o Global.output_dir=/output"
+                )
+                cmd = ["bash", "-c", inner]
+            else:
+                cmd = [
+                    "yolo", "predict",
+                    f"model=/model/{model_filename}",
+                    "source=/data",
+                    f"imgsz={imgsz}",
+                    f"conf={conf}",
+                    f"iou={iou}",
+                    "save_txt=True",
+                    "save_conf=True",
+                    "project=/output",
+                    "name=exp",
+                ]
 
+            await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
+            await pull_image(docker_image)
             container = await run_container(
                 docker_image, cmd,
                 volumes={
@@ -132,6 +153,7 @@ class PredictExecutor(TaskExecutor):
                     output_dir: {"bind": "/output", "mode": "rw"},
                 },
                 gpu_id=device,
+                shm_size="4g" if framework == TrainFramework.PADDLEX else None,
             )
             container_id = container.id
             entry = cls._registry.get(predict_id) or {}
@@ -155,11 +177,21 @@ class PredictExecutor(TaskExecutor):
                 await remove_container(container_id)
 
                 # Collect result images from output dir
-                results_base = os.path.join(output_dir, "exp")
-                result_files = [
-                    os.path.join(results_base, f) for f in sorted(os.listdir(results_base))
-                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
-                ] if os.path.isdir(results_base) else []
+                if framework == TrainFramework.PADDLEX:
+                    # infer_det/infer_rec 输出 det_results/*.jpg（或直接 output/）
+                    result_files = []
+                    for base in (os.path.join(output_dir, "det_results"), output_dir):
+                        if os.path.isdir(base):
+                            result_files.extend(
+                                os.path.join(base, f) for f in sorted(os.listdir(base))
+                                if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                            )
+                else:
+                    results_base = os.path.join(output_dir, "exp")
+                    result_files = [
+                        os.path.join(results_base, f) for f in sorted(os.listdir(results_base))
+                        if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                    ] if os.path.isdir(results_base) else []
 
                 if result_files:
                     for img_path in result_files:
