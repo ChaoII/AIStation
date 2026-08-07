@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 用清华镜像装轻量依赖（基础镜像已含 torch，不重复下载）
 RUN pip install --no-cache-dir --break-system-packages \
     -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    opencv-python-headless>=5.0.0.93 pyclipper>=1.4.0 pillow>=10.0.0
+    opencv-python-headless>=5.0.0.93 pyclipper>=1.4.0 pillow>=10.0.0 \
+    albumentations>=1.4.0 shapely>=2.0.0
 
 # 安装独立 OCR 库（--no-deps 避免重复拉 torch）
 WORKDIR /workspace
