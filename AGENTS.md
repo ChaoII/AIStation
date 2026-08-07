@@ -354,4 +354,40 @@ Dashboard `index.vue` 图表区使用自定义 CSS Grid (`display: grid; grid-te
 - **eval 用官方 DetResizeForTest**（limit_side_len=736 min + round 32 → 实际近原尺寸），640×640 会低估 hmean 0.13-0.17
 - 微调小数据集 det 时 **freeze-backbone**（BN 梯度爆炸会摧毁预训练权重）
 - PP-OCRv5 det 用 PPLCNetV3+RSEFPN+DiceLoss，与 v6 架构不同，无法直接对比数字
+
+### pytorch-ocr 训练对齐经验（2026-08 深入排查）
+
+**结论**：逐行对照官方 PaddleOCR config + train.py 做了 15 轮对齐，pytorch det 训练从 0.79 提升到 **0.82**（v18 配置），但无法达到 PaddleX 训练的 0.93。剩余差距是 Paddle 框架级数值行为，代码层面无法完全复现。
+
+**v18 最佳 det 训练配置**（`cfg_small_v6_full.json`）：
+- `lr=0.001`（官方 small，不是 0.0005！medium 才是 0.0005）
+- `ema_decay=0.9997`（small；tiny 0.9998，medium 0.9996）
+- `RandomCropV6`（官方 v6 用 RandomCrop，不是 EastRandomCropData！v5 才用 EastRandomCropData）
+- `IaaAugment`: Affine rotate[-45,45] fit_output, Resize[0.1,2]
+- `use_color_jitter=false`（官方 small 无 ColorJitter）
+- 移除 grad clip（官方 train.py 无 clip）
+- eval 用直接拉伸 DetResizeForTest（非 letterbox！之前 letterbox 导致 eval 低估 0.13）
+- shrink_ratio 动态 0.4+0.2*epoch/total_epoch（total_epoch 用官方 500 或 100 均可，100 略好）
+
+**关键坑**：
+1. **推理 `_preprocess` 必须直接拉伸**（官方 DetResizeForTest），letterbox 会让同一权重 eval 从 0.935 掉到 0.847
+2. **MakeShrinkMap mask 是全图**（有效区域，只排除 ignore），不是文字区域！之前当文字区域导致 loss 计算范围错误
+3. **DBLoss thresh 用 MaskL1**（mask 内平均），不是 smooth_l1——修后 DBLoss 与官方逐位一致
+4. **官方 small det lr=0.001**，medium=0.0005，rec 都是 0.0005
+5. **官方 eval 每 N step 用 val 数据**，但本项目 val 15 张与 train 重叠，全图 eval 选 best 反而更好
+
+**权重转换已验证逐位一致**（backbone 118/118），**前向 maps 一致**（mean 0.0161 vs 0.0164）。DBLoss 逐位一致（loss 18.969619 完全相同）。数据流统计对齐（shrink>0.5, mask>0, thresh_mask>0）。
+
+**PaddleX 官方训练方法**（本机 `paddlex:latest` 镜像，内置 PaddleOCR 插件）：
+```
+docker run --gpus all -w /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR \
+  -v <det_dataset>:/data/det -v <weights>:/weights -v <out>:/output \
+  paddlex:latest python tools/train.py \
+  -c configs/det/PP-OCRv6/PP-OCRv6_small_det.yml \
+  -o Global.epoch_num=100 Global.save_model_dir=/output/det \
+     Global.pretrained_model=/weights/PP-OCRv6_small_det_pretrained.pdparams \
+     Train.dataset.data_dir=/data/det 'Train.dataset.label_file_list=["/data/det/train.txt"]' \
+     Train.loader.batch_size_per_card=8 Eval.dataset.data_dir=/data/det 'Eval.dataset.label_file_list=["/data/det/val.txt"]'
+```
+PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec small 训练 acc **0.9975**。这是 pytorch-ocr 训练无法企及的。
 ```
