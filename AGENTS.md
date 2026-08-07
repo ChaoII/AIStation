@@ -391,3 +391,40 @@ docker run --gpus all -w /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR
 ```
 PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec small 训练 acc **0.9975**。这是 pytorch-ocr 训练无法企及的。
 ```
+
+## PaddleX 训练框架（已恢复，2026-08）
+
+### 架构
+
+- `TrainFramework.PADDLEX = "paddlex"`（PG enum `trainframework` 一直含 PADDLEX，无需迁移）
+- 镜像 `paddlex:latest`（内置 PaddleOCR，`/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR`）
+- det/rec 区分：`hyperparams.mode`（"det"/"rec"），模型规格 `hyperparams.model_size`（tiny/small/medium）
+- 训练命令：`_build_paddlex_ocr_cmd`（scheduler.py）→ `bash -c "cd ... && python tools/train.py -c configs/{det,rec}/PP-OCRv6/PP-OCRv6_{size}_{mode}.yml -o <单个 -o + 空格分隔 opts>"`
+- 执行器：`PaddleXOCRDet/RecExecutor`（paddlex_executor.py），det/rec 用 mode 派发
+- 数据导出：`_export_paddle_ocr`（exporter.py）→ `<out>/{det,rec}/dataset/{train,val}.txt + images/`（PaddleX JSON `[{"transcription","points"}]`，label 带 `images/` 前缀）
+- 产物：`<out>/{det,rec}/{best_accuracy,latest}.pdparams` + `config.yml`（export_model 支持查找）
+- eval：容器内脚本 `_PADDLEX_EVAL_SCRIPT`（eval_scheduler.py）加载 .pdparams 跑 `program.eval` → `EVAL_METRIC_JSON {precision,recall,hmean}`
+- predict：`infer_det.py`/`infer_rec.py`（`Global.pretrained_model=.pdparams`）
+- deploy：`_generate_paddlex_server_script`（deploy_executor.py）FastAPI det+rec，需 rec_model_path
+
+### 关键坑
+
+1. **PaddleOCR `-o` 用 `nargs='+'`，多个 `-o` 时 argparse 只保留最后一个**！必须单个 `-o` + 所有 key=value 空格分隔。label_file_list 用单引号包裹（bash -c 内）。
+2. **DataLoader 需要大 /dev/shm**：`run_container` 加 `shm_size="4g"`（PaddleOCR num_workers>0 时 BUS error）。
+3. **eval loader 默认 batch_size_per_card=1**（det 图 shape 不同无法 batch），不要覆盖成 >1。
+4. **rec MultiHead 需要 `out_channels_list`**（从 character_dict 算 char_num），build_model 前注入（对齐 tools/eval.py）。det 不需要。
+5. **rec 用官方默认词表** `ppocr/utils/dict/ppocrv6_dict.txt`（与官方预训练权重匹配），不要覆盖 character_dict_path。
+6. `program.preprocess(is_train=False)` 的 `sys.argv` 需含 `-c` + `-o`；容器内脚本要先 `os.chdir(PaddleOCR目录)` + sys.path 加 PaddleOCR。
+7. 预训练权重 URL：`https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/PP-OCRv6_{size}_{det|rec}_pretrained.pdparams`（executor 下载到 pretrained_host）。
+
+### 验证结果（真实容器）
+
+- det small 从头 3ep：loss 14.8→13.5，`save model`，`best metric hmean: 0`（ep 太少）
+- det small pretrained 1ep：`load pretrain successful`，loss 4.35（权重生效）
+- rec tiny 从头 2ep：acc 指标正常记录
+- eval det（15 val 图）：hmean **0.795**，precision 0.695，recall 0.928
+- deploy server：det 模型加载 + 单图 75 框 + rec 模型加载
+
+### 测试
+
+`backend/tests/test_paddlex_removal.py` 已改为 PaddleX 支持测试（枚举/权重规格/cmd 构建），64 测试全通过。
