@@ -181,7 +181,9 @@ class DetTrainer:
                              use_perspective=self.config.get("use_perspective", False),
                              copy_paste=self.config.get("copy_paste", False),
                              ext_data_dir=self.config.get("ext_data_dir") or data_dir,
-                             total_epoch=num_epochs)
+                             # 官方 total_epoch=500（shrink_ratio 0.4+0.2*epoch/500 缓变），
+                             # 即使只训练 100 轮也按官方曲线
+                             total_epoch=self.config.get("total_epoch", 500))
         if len(dataset) == 0:
             raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
