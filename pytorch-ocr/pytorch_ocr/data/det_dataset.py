@@ -103,15 +103,16 @@ class DetDataset(Dataset):
         self, gt_dir, label_path, image_shape=(640, 640), is_train=True, shrink_ratio=0.4,
         use_aug=True, max_tries=20,
         use_iaa=True, use_color_jitter=True, use_perspective=False,
-        copy_paste=False, ext_data_dir=None, augmenter_args=None,
+        copy_paste=False, ext_data_dir=None, augmenter_args=None, total_epoch=0,
     ):
         self.gt_dir = gt_dir
         self.image_shape = image_shape
         self.is_train = is_train
         self.use_aug = use_aug and is_train
         self.max_tries = max_tries
-        self.shrink_map_fn = MakeShrinkMap(shrink_ratio)
-        self.border_map_fn = MakeBorderMap(shrink_ratio)
+        self.total_epoch = total_epoch
+        self.shrink_map_fn = MakeShrinkMap(shrink_ratio, total_epoch=total_epoch)
+        self.border_map_fn = MakeBorderMap(shrink_ratio, total_epoch=total_epoch)
         # 增强配置：对齐官方 PP-OCRv6 det 训练增强顺序
         self.use_iaa = use_iaa
         self.use_color_jitter = use_color_jitter
@@ -273,8 +274,9 @@ class DetDataset(Dataset):
         cur_tags = data.get("ignore_tags", ignore_tags) if self.use_aug else ignore_tags
         norm_polys = [p / np.array([w, h]) for p in polys if len(p) >= 3]
         norm_tags = [t for p, t in zip(polys, cur_tags) if len(p) >= 3]
-        shrink_map, shrink_mask = self.shrink_map_fn(img, norm_polys, ignore_tags=norm_tags)
-        thresh_map, thresh_mask = self.border_map_fn(img, norm_polys)
+        epoch = getattr(self, "current_epoch", 1)
+        shrink_map, shrink_mask = self.shrink_map_fn(img, norm_polys, ignore_tags=norm_tags, epoch=epoch)
+        thresh_map, thresh_mask = self.border_map_fn(img, norm_polys, epoch=epoch)
         # 无增强时直接 resize 到 image_shape；有增强时已经 640×640
         if tuple(img.shape[:2]) != tuple(self.image_shape):
             img = cv2.resize(img, self.image_shape)

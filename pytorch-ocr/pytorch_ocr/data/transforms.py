@@ -38,12 +38,17 @@ class MakeShrinkMap:
     - 注意：官方 mask 是"有效区域"（默认全图），不是"文字区域"。
     """
 
-    def __init__(self, shrink_ratio=0.4, min_text_size=8):
+    def __init__(self, shrink_ratio=0.4, min_text_size=8, total_epoch=0):
         self.shrink_ratio = shrink_ratio
         self.min_text_size = min_text_size
+        self.total_epoch = total_epoch
 
-    def __call__(self, img, polys, ignore_tags=None):
+    def __call__(self, img, polys, ignore_tags=None, epoch=None):
         h, w = img.shape[:2]
+        # 官方动态 shrink_ratio：0.4 + 0.2 * epoch / total_epoch
+        shrink_ratio = self.shrink_ratio
+        if epoch is not None and self.total_epoch > 0:
+            shrink_ratio = self.shrink_ratio + 0.2 * epoch / float(self.total_epoch)
         shrink_map = np.zeros((h, w), dtype=np.float32)
         mask = np.ones((h, w), dtype=np.float32)
         if ignore_tags is None:
@@ -55,7 +60,7 @@ class MakeShrinkMap:
             if ignore or min(height, width) < self.min_text_size:
                 cv2.fillPoly(mask, [pts.astype(np.int32)], 0)
                 continue
-            shrunk = _shrink_poly(pts, self.shrink_ratio)
+            shrunk = _shrink_poly(pts, shrink_ratio)
             if shrunk is None or cv2.contourArea(shrunk) < 1:
                 cv2.fillPoly(mask, [pts.astype(np.int32)], 0)
                 continue
@@ -71,22 +76,29 @@ class MakeBorderMap:
     或更深内部），再线性缩放到 [thresh_min, thresh_max]。
     """
 
-    def __init__(self, shrink_ratio=0.4, thresh_min=0.3, thresh_max=0.7):
+    def __init__(self, shrink_ratio=0.4, thresh_min=0.3, thresh_max=0.7, total_epoch=0):
         self.shrink_ratio = shrink_ratio
         self.thresh_min = thresh_min
         self.thresh_max = thresh_max
+        self.total_epoch = total_epoch
 
-    def __call__(self, img, polys):
+    def __call__(self, img, polys, epoch=None):
         h, w = img.shape[:2]
+        # 官方动态 shrink_ratio
+        shrink_ratio = self.shrink_ratio
+        if epoch is not None and self.total_epoch > 0:
+            shrink_ratio = self.shrink_ratio + 0.2 * epoch / float(self.total_epoch)
         canvas = np.zeros((h, w), dtype=np.float32)
         mask = np.zeros((h, w), dtype=np.float32)
         for poly in polys:
             polygon = (poly * np.array([w, h])).astype(np.float32)
-            self._draw_border_map(polygon, canvas, mask)
+            self._draw_border_map(polygon, canvas, mask, shrink_ratio)
         canvas = canvas * (self.thresh_max - self.thresh_min) + self.thresh_min
         return canvas, mask
 
-    def _draw_border_map(self, polygon, canvas, mask):
+    def _draw_border_map(self, polygon, canvas, mask, shrink_ratio=None):
+        if shrink_ratio is None:
+            shrink_ratio = self.shrink_ratio
         if np.isnan(polygon).any():
             return
         area = cv2.contourArea(polygon)
@@ -95,7 +107,7 @@ class MakeBorderMap:
         perimeter = cv2.arcLength(polygon, True)
         if perimeter <= 0:
             return
-        distance = area * (1 - np.power(self.shrink_ratio, 2)) / perimeter
+        distance = area * (1 - np.power(shrink_ratio, 2)) / perimeter
         pco = pyclipper.PyclipperOffset()
         pco.AddPath(polygon, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
         padded_polygon = pco.Execute(distance)

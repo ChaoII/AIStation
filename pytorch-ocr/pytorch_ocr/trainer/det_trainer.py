@@ -159,6 +159,17 @@ class DetTrainer:
         loss = self.loss_fn(preds, gt)
         return loss
 
+    def _make_worker_init(self, dataset):
+        """DataLoader worker 初始化：同步当前 epoch 到 worker 的 dataset 副本。"""
+        import torch.multiprocessing as mp
+        self._epoch_holder = mp.Value("i", 1)
+        dataset._epoch_holder = self._epoch_holder
+
+        def worker_init(worker_id):
+            pass  # epoch 通过 _epoch_holder 读取（共享内存）
+
+        return worker_init
+
     def train(self, data_dir, num_epochs=100, batch_size=8, output_dir="./output",
               workers=4, lr=0.001):
         dataset = DetDataset(gt_dir=os.path.join(data_dir, "images"),
@@ -168,12 +179,14 @@ class DetTrainer:
                              use_iaa=self.config.get("use_iaa", True),
                              use_color_jitter=self.config.get("use_color_jitter", True),
                              use_perspective=self.config.get("use_perspective", False),
-                              copy_paste=self.config.get("copy_paste", False),
-                              ext_data_dir=self.config.get("ext_data_dir") or data_dir)
+                             copy_paste=self.config.get("copy_paste", False),
+                             ext_data_dir=self.config.get("ext_data_dir") or data_dir,
+                             total_epoch=num_epochs)
         if len(dataset) == 0:
             raise ValueError("det_gt.txt 无有效标注，数据集为空")
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True,
-                            num_workers=workers)
+                            num_workers=workers,
+                            worker_init_fn=self._make_worker_init(dataset))
         optimizer = torch.optim.Adam(
             [p for p in self.net.parameters() if p.requires_grad],
             lr=lr, betas=(0.9, 0.999),
@@ -214,6 +227,9 @@ class DetTrainer:
         best_loss = float("inf")
         best_hmean = 0.0
         for epoch in range(1, num_epochs + 1):
+            dataset.current_epoch = epoch
+            if hasattr(dataset, "_epoch_holder"):
+                dataset._epoch_holder.value = epoch
             if self.frozen:
                 # 冻结时：backbone+fpn 保持 eval（BN running stats 不变），head 训练
                 self.net.eval()
