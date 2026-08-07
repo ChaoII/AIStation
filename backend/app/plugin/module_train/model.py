@@ -19,6 +19,7 @@ class TrainStatus(str, enum.Enum):
 
 class TrainFramework(str, enum.Enum):
     ULTRALYTICS = "ultralytics"
+    PADDLEX = "paddlex"
     PYTORCH_OCR_DET = "pytorch-ocr-det"
     PYTORCH_OCR_REC = "pytorch-ocr-rec"
 

@@ -189,6 +189,83 @@ def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: 
     return cmd
 
 
+# PaddleX OCR (PP-OCRv6 det/rec) 超参白名单：key -> (flag, default, validator)
+# 对齐 ultralytics 的 _ULTRALYTICS_HP 结构。
+_PADDLEX_OCR_HP: dict[str, tuple[str, object, object | None]] = {
+    "model_size": ("model-size", "tiny", lambda v: v in ("tiny", "small", "medium")),
+    "epochs":     ("epochs", 100, lambda v: 1 <= int(v) <= 1000),
+    "batch":      ("batch", 8, lambda v: 1 <= int(v) <= 128),
+    "lr":         ("lr", 0.0005, lambda v: float(v) > 0),
+    "device":     ("device", "0", None),
+    "pretrained": ("pretrained", True, None),  # 是否使用官方预训练权重微调
+    "freeze_backbone": ("freeze-backbone", False, None),  # det 微调冻结主干
+}
+
+_PADDLEX_OCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
+_PADDLEX_WEIGHTS = {
+    "det": {
+        "tiny": "/weights/PP-OCRv6_tiny_det_pretrained.pdparams",
+        "small": "/weights/PP-OCRv6_small_det_pretrained.pdparams",
+        "medium": "/weights/PP-OCRv6_medium_det_pretrained.pdparams",
+    },
+    "rec": {
+        "tiny": "/weights/PP-OCRv6_tiny_rec_pretrained.pdparams",
+        "small": "/weights/PP-OCRv6_small_rec_pretrained.pdparams",
+        "medium": "/weights/PP-OCRv6_medium_rec_pretrained.pdparams",
+    },
+}
+
+
+def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str = "det") -> list[str]:
+    """构建 PaddleX OCR 训练命令（PP-OCRv6 det/rec，tiny/small/medium）。
+
+    数据布局（exporter 生成）：
+      det: /data/det/   (dataset/ 子目录含 train.txt + images)
+      rec: /data/rec/   (dataset/ 子目录含 train.txt + images)
+    输出到 /output/det 或 /output/rec。
+    """
+    hp = dict(hp)
+    size = hp.get("model_size") or "tiny"
+    if size not in _PADDLEX_WEIGHTS[mode]:
+        size = "tiny"
+    epochs = int(hp.get("epochs", 100))
+    batch = int(hp.get("batch", 8))
+    lr = float(hp.get("lr", 0.0005))
+    device = str(hp.get("device", "0"))
+    use_pretrained = bool(hp.get("pretrained", False))
+    config_name = f"PP-OCRv6_{size}_{mode}.yml"
+    config_path = (
+        f"configs/det/PP-OCRv6/{config_name}"
+        if mode == "det" else f"configs/rec/PP-OCRv6/{config_name}"
+    )
+    data_dir_in = f"/data/{mode}/dataset"
+    out_dir = f"/output/{mode}"
+    pretrained = f"/pretrained/{mode}.pdparams" if use_pretrained else ""
+
+    opts = [
+        f"Global.epoch_num={epochs}",
+        f"Global.save_model_dir={out_dir}",
+        f"Train.dataset.data_dir={data_dir_in}",
+        f'Train.dataset.label_file_list=["{data_dir_in}/train.txt"]',
+        f"Train.loader.batch_size_per_card={batch}",
+        f"Train.loader.num_workers=2",
+        f"Eval.dataset.data_dir={data_dir_in}",
+        f'Eval.dataset.label_file_list=["{data_dir_in}/val.txt"]',
+        f"Eval.loader.num_workers=0",
+    ]
+    if lr > 0:
+        opts.append(f"Optimizer.lr.learning_rate={lr}")
+    if pretrained:
+        opts.append(f"Global.pretrained_model={pretrained}")
+    if mode == "rec":
+        # rec 用数据集自带 dict.txt
+        opts.append(f"Global.character_dict_path={data_dir_in}/../dict.txt")
+    inner = " ".join(
+        [f"python tools/train.py -c {config_path}"] + [f"-o {o}" for o in opts]
+    )
+    return ["bash", "-c", f"cd {_PADDLEX_OCR_DIR} && {inner}"]
+
+
 async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
     """按框架构建训练命令。"""
     if task.framework == TrainFramework.ULTRALYTICS:
@@ -205,6 +282,15 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
                     if task_type in ("cls", "classification") and ann_task.classification_mode == "multi":
                         force_multi_label = True
         return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label)
+    if task.framework == TrainFramework.PADDLEX:
+        # PaddleX OCR：按任务类型 det/rec 走 PP-OCRv6 训练
+        # hyperparams 里用 mode 区分（前端传入 det/rec 或由任务名推断）
+        hp = task.hyperparams or {}
+        mode = str(hp.get("mode", "det")).lower()
+        if mode not in ("det", "rec"):
+            # 从框架/模型名兜底推断
+            mode = "det"
+        return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode)
     if task.framework == TrainFramework.PYTORCH_OCR_DET:
         hp = task.hyperparams or {}
         # aistation-ocr 镜像 ENTRYPOINT 已是 `python -m pytorch_ocr.cli`，
@@ -422,7 +508,13 @@ async def start_training(task_id: int):
                 finished_at=None,
             )
         )
-    if task.framework == TrainFramework.PYTORCH_OCR_REC:
+    if task.framework == TrainFramework.PADDLEX:
+        from .paddlex_executor import PaddleXOCRDetExecutor, PaddleXOCRRecExecutor
+        hp = task.hyperparams or {}
+        mode = str(hp.get("mode", "det")).lower()
+        exec_cls = PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
+        asyncio.create_task(exec_cls.run(task_id))
+    elif task.framework == TrainFramework.PYTORCH_OCR_REC:
         from .ocr_rec_executor import OCRRecExecutor
         asyncio.create_task(OCRRecExecutor.run(task_id))
     elif task.framework == TrainFramework.PYTORCH_OCR_DET:

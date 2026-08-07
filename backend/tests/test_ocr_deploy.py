@@ -13,7 +13,9 @@ def test_is_ocr_framework():
     assert _is_ocr_framework(TrainFramework.PYTORCH_OCR_DET) is True
     assert _is_ocr_framework(TrainFramework.PYTORCH_OCR_REC) is True
     assert _is_ocr_framework(TrainFramework.ULTRALYTICS) is False
-    assert not hasattr(TrainFramework, "PADDLEX")
+    # PaddleX 框架已恢复（PP-OCRv6 det/rec 训练）；部署暂走 PaddleX 推理，不属 pytorch OCR framework
+    assert TrainFramework.PADDLEX == "paddlex"
+    assert _is_ocr_framework(TrainFramework.PADDLEX) is False
 
 
 def test_generate_ocr_server_script():

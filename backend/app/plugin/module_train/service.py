@@ -316,7 +316,9 @@ class TrainService:
     async def create_task(cls, data, auth) -> dict:
         from .model import TrainFramework
         async with async_db_session.begin() as db:
-            image = ("aistation-ocr:latest"
+            image = ("paddlex:latest"
+                     if data.framework == TrainFramework.PADDLEX
+                     else "aistation-ocr:latest"
                      if data.framework in (TrainFramework.PYTORCH_OCR_DET, TrainFramework.PYTORCH_OCR_REC)
                      else "ultralytics/ultralytics:latest")
             t = TrainTask(

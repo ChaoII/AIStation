@@ -11,9 +11,9 @@ from app.core.logger import log
 from .model import TrainModelRepo
 
 
-async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8) -> str:
+async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, ocr_rec: bool = False) -> str:
     """Export dataset for training — unified with download, just different YAML path."""
-    return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True)
+    return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec)
 
 
 async def export_dataset_for_download(
@@ -73,6 +73,10 @@ async def _export_core(
         await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id)
     elif framework == "pytorch-ocr-rec":
         await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id, export_rec=True)
+    elif framework == "paddlex":
+        # PaddleX OCR：ocr_rec 区分 det(false) / rec(true)
+        await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
+                                 export_rec=ocr_rec)
     else:
         raise ValueError(f"不支持的导出框架: {framework}")
 
@@ -460,25 +464,42 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
 
     # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
     best_path = None
-    extensions = [".pt"] if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") else [".pdparams"]
-    for ext in extensions:
+    if framework == "paddlex":
+        # PaddleX OCR train.py 保存 best_accuracy.pdparams 到 save_model_dir(=/output/det 或 /output/rec)
         candidates = [
-            os.path.join(export_dir, "exp", "weights", f"best{ext}"),
-            os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
+            os.path.join(export_dir, "det", "best_accuracy.pdparams"),
+            os.path.join(export_dir, "rec", "best_accuracy.pdparams"),
+            os.path.join(export_dir, "best_accuracy.pdparams"),
+            os.path.join(export_dir, "det", "best_model", "model.pdparams"),
+            os.path.join(export_dir, "rec", "best_model", "model.pdparams"),
         ]
-        if framework in ("pytorch-ocr-det", "pytorch-ocr-rec"):
-            candidates.insert(0, os.path.join(export_dir, f"best{ext}"))
         for p in candidates:
             if os.path.isfile(p):
                 best_path = p
                 break
-        if best_path:
-            break
+    else:
+        extensions = [".pt"] if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") else [".pdparams"]
+        for ext in extensions:
+            candidates = [
+                os.path.join(export_dir, "exp", "weights", f"best{ext}"),
+                os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
+            ]
+            if framework in ("pytorch-ocr-det", "pytorch-ocr-rec"):
+                candidates.insert(0, os.path.join(export_dir, f"best{ext}"))
+            for p in candidates:
+                if os.path.isfile(p):
+                    best_path = p
+                    break
+            if best_path:
+                break
     # 2. 降级：递归搜索，但排除 .models_cache 目录
     if not best_path:
         for root, dirs, files in os.walk(export_dir):
             dirs[:] = [d for d in dirs if d != ".models_cache"]
             for f in files:
+                if framework == "paddlex" and f.endswith(".pdparams"):
+                    best_path = os.path.join(root, f)
+                    break
                 if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") and f == "best.pt":
                     best_path = os.path.join(root, f)
                     break
@@ -531,3 +552,115 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
         task.model_repo_id = model_rec.id
 
     return {"repo_id": model_rec.id, "storage_path": storage_path}
+
+
+async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
+                             output_dir: str, annotation_task_id: int | None = None,
+                             export_rec: bool = False) -> None:
+    """导出 PaddleX OCR（PP-OCRv6）数据格式。
+
+    det:  <output>/det/dataset/  (train.txt + val.txt + images/)  PaddleX JSON 标注
+    rec:  <output>/rec/dataset/  (train.txt + val.txt + images/ + dict.txt)
+    """
+    import random
+
+    from app.utils.s3_client import s3_client
+
+    mode = "rec" if export_rec else "det"
+    dataset_dir = os.path.join(output_dir, mode, "dataset")
+    img_dir = os.path.join(dataset_dir, "images")
+    os.makedirs(img_dir, exist_ok=True)
+
+    # 收集所有图像 + 标注（train/val 切分）
+    records = []  # (img_name, det_json_lines, rec_entries)
+    async with async_db_session() as db:
+        for img in images:
+            img_path = os.path.join(img_dir, img.filename)
+            try:
+                if not os.path.exists(img_path):
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+            except Exception:
+                continue
+
+            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+            if annotation_task_id:
+                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+            rec = await db.execute(query)
+            record = rec.scalar_one_or_none()
+            anns = record.annotation_data if record and record.annotation_data else []
+
+            entries = []
+            rec_entries = []
+            w = img.width or 1
+            h = img.height or 1
+            for ann in anns:
+                if ann.get("type") not in ("polygon", "Polygon", "ocr", "Ocr"):
+                    continue
+                pts = ann.get("points", [])
+                if len(pts) < 4:
+                    continue
+                points = [[float(p["x"] * w), float(p["y"] * h)]
+                          if isinstance(p, dict) else [float(p[0] * w), float(p[1] * h)]
+                          for p in pts[:4]]
+                text = ann.get("text", "") or ""
+                entries.append({"transcription": text, "points": points})
+                rec_entries.append((points, text))
+            records.append((img.filename, entries, rec_entries))
+
+    random.shuffle(records)
+    split_idx = max(1, int(len(records) * 0.8)) if len(records) > 1 else len(records)
+    train_set, val_set = records[:split_idx], records[split_idx:]
+
+    def write_label(path, rows):
+        lines = []
+        for fname, entries, _rec in rows:
+            if entries:
+                lines.append(f"{fname}\t{json.dumps(entries, ensure_ascii=False)}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+    if not export_rec:
+        write_label(os.path.join(dataset_dir, "train.txt"), train_set)
+        write_label(os.path.join(dataset_dir, "val.txt"), val_set)
+        log.info(f"paddlex det: exported {len(train_set)} train / {len(val_set)} val to {dataset_dir}")
+    else:
+        # rec：透视矫正裁剪文字区域
+        import cv2
+        rec_train, rec_val = [], []
+        for fname, _entries, rec_entries in train_set:
+            for i, (quad, text) in enumerate(rec_entries):
+                if not text.strip():
+                    continue
+                crop_name = f"{os.path.splitext(fname)[0]}_{i}.jpg"
+                crop = _crop_text_region(os.path.join(img_dir, fname), quad, 1, 1)
+                if crop is not None:
+                    cv2.imwrite(os.path.join(img_dir, crop_name), crop)
+                    rec_train.append(f"images/{crop_name}\t{text}")
+        for fname, _entries, rec_entries in val_set:
+            for i, (quad, text) in enumerate(rec_entries):
+                if not text.strip():
+                    continue
+                crop_name = f"{os.path.splitext(fname)[0]}_{i}.jpg"
+                crop = _crop_text_region(os.path.join(img_dir, fname), quad, 1, 1)
+                if crop is not None:
+                    cv2.imwrite(os.path.join(img_dir, crop_name), crop)
+                    rec_val.append(f"images/{crop_name}\t{text}")
+        with open(os.path.join(dataset_dir, "train.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(rec_train))
+        with open(os.path.join(dataset_dir, "val.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(rec_val))
+        # dict.txt：从所有 rec 文本提取字符集
+        chars = []
+        seen = set()
+        for _fname, _e, rec_entries in records:
+            for _quad, text in rec_entries:
+                for ch in text:
+                    if ch not in seen:
+                        seen.add(ch)
+                        chars.append(ch)
+        with open(os.path.join(dataset_dir, "..", "dict.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(chars))
+        log.info(f"paddlex rec: exported {len(rec_train)} train / {len(rec_val)} val to {dataset_dir}")
