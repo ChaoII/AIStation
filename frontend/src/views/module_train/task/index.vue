@@ -312,53 +312,69 @@
           </el-row>
         </template>
 
-        <!-- PaddleX hyperparams -->
+        <!-- PaddleX OCR hyperparams (PP-OCRv6 det/rec, tiny/small/medium) -->
         <template v-else>
           <el-row :gutter="20">
             <el-col :span="12">
-              <el-form-item label="模型" prop="hpModel">
-                <el-select v-model="hpForm.model" style="width: 100%">
-                  <el-option label="PP-YOLOE" value="PP-YOLOE" />
-                  <el-option label="PP-YOLO" value="PP-YOLO" />
-                  <el-option label="PP-PicoDet" value="PP-PicoDet" />
-                  <el-option label="RT-DETR" value="RT-DETR" />
+              <el-form-item label="任务类型">
+                <el-select v-model="hpForm.mode" style="width: 100%">
+                  <el-option label="文本检测 (det)" value="det" />
+                  <el-option label="文本识别 (rec)" value="rec" />
                 </el-select>
               </el-form-item>
             </el-col>
+            <el-col :span="12">
+              <el-form-item label="模型规格">
+                <el-select v-model="hpForm.model_size" style="width: 100%">
+                  <el-option label="tiny（轻量）" value="tiny" />
+                  <el-option label="small（推荐）" value="small" />
+                  <el-option label="medium（高精度）" value="medium" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="Epochs">
                 <el-input-number v-model="hpForm.epochs" :min="1" :max="1000" style="width: 100%" />
               </el-form-item>
             </el-col>
-          </el-row>
-          <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="Batch Size">
-                <el-input-number v-model="hpForm.batch" :min="1" :max="512" style="width: 100%" />
+                <el-input-number v-model="hpForm.batch" :min="1" :max="128" style="width: 100%" />
               </el-form-item>
             </el-col>
+          </el-row>
+          <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="Learning Rate">
                 <el-input-number
                   v-model="hpForm.lr"
-                  :min="0.0001"
+                  :min="0.00001"
                   :max="1"
-                  :step="0.001"
-                  :precision="4"
+                  :step="0.0001"
+                  :precision="5"
                   style="width: 100%"
                 />
               </el-form-item>
             </el-col>
-          </el-row>
-          <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="GPU 设备">
                 <el-input v-model="hpForm.device" placeholder="如: 0" />
               </el-form-item>
             </el-col>
+          </el-row>
+          <el-row :gutter="20">
             <el-col :span="12">
               <el-form-item label="预训练权重">
                 <el-switch v-model="hpForm.pretrained" />
+                <span style="margin-left:8px;font-size:12px;color:#909399">使用官方权重微调</span>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12" v-if="hpForm.mode === 'det'">
+              <el-form-item label="冻结主干">
+                <el-switch v-model="hpForm.freeze_backbone" />
+                <span style="margin-left:8px;font-size:12px;color:#909399">det 微调冻结 backbone</span>
               </el-form-item>
             </el-col>
           </el-row>
@@ -575,12 +591,14 @@ const defaultHpUltra = () => ({
 });
 
 const defaultHpPaddle = () => ({
-  model: "PP-YOLOE",
+  mode: "det",
+  model_size: "tiny",
   epochs: 100,
-  batch: 16,
-  lr: 0.01,
+  batch: 8,
+  lr: 0.0005,
   device: "0",
   pretrained: true,
+  freeze_backbone: false,
 });
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
@@ -596,7 +614,8 @@ const dockerCmdPreview = computed(() => {
   if (formData.framework === "ultralytics") {
     return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
   } else if (formData.framework === "paddlex") {
-    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  paddlecloud/paddlex:3.0 \\\n  paddlex \\\n    --model ${hpForm.model} \\\n    --data /data \\\n    --epochs ${hpForm.epochs} \\\n    --batch ${hpForm.batch} \\\n    --lr ${hpForm.lr} \\\n    --output /output`;
+    const cfg = hpForm.mode === "rec" ? `PP-OCRv6_${hpForm.model_size}_rec.yml` : `PP-OCRv6_${hpForm.model_size}_det.yml`;
+    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${outputMount}/pretrained:/pretrained \\\n  paddlex:latest \\\n  bash -c \"cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && \\\n    python tools/train.py -c configs/${hpForm.mode === "rec" ? "rec" : "det"}/PP-OCRv6/${cfg} \\\n      -o Global.epoch_num=${hpForm.epochs} \\\n      -o Train.dataset.data_dir=/data/${hpForm.mode}/dataset \\\n      -o Train.loader.batch_size_per_card=${hpForm.batch} \\\n      -o Optimizer.lr.learning_rate=${hpForm.lr} \\\n      -o Global.save_model_dir=/output/${hpForm.mode} \\\n      ${hpForm.pretrained ? `-o Global.pretrained_model=/pretrained/${hpForm.mode}.pdparams` : ""}\"`;
   }
   return "";
 });
@@ -663,12 +682,15 @@ function buildHyperparams(): Record<string, any> {
     };
   }
   return {
-    model: hpForm.model,
+    mode: hpForm.mode,
+    model_size: hpForm.model_size,
     epochs: hpForm.epochs,
     batch: hpForm.batch,
     lr: hpForm.lr,
     device: hpForm.device,
     pretrained: hpForm.pretrained,
+    freeze_backbone: hpForm.freeze_backbone,
+    train_ratio: (hpForm.trainRatio || 80) / 100,
   };
 }
 
