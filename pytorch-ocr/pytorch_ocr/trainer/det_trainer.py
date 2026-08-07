@@ -226,10 +226,6 @@ class DetTrainer:
                 optimizer.zero_grad()
                 loss = self._train_step(batch)
                 loss.backward()
-                # 梯度裁剪：防 DBLoss 在文字像素极少时梯度爆炸
-                # （官方 PaddleOCR 训练对 det 使用 grad_clip，默认 max_norm=2.0）
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in self.net.parameters() if p.requires_grad], 2.0)
                 optimizer.step()
                 if use_ema:
                     if ema is not None:
