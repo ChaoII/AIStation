@@ -323,6 +323,19 @@
                     class="handle"
                     vector-effect="non-scaling-stroke"
                   />
+                  <!-- 边缘插入点 -->
+                  <circle
+                    v-for="(p, i) in ann.points"
+                    :key="'ins-' + i"
+                    :cx="((p.x + ann.points[(i + 1) % ann.points.length].x) / 2) * cw"
+                    :cy="((p.y + ann.points[(i + 1) % ann.points.length].y) / 2) * ch"
+                    r="3.5"
+                    fill="#67c23a"
+                    stroke="#fff"
+                    stroke-width="1"
+                    :data-handle="'poly-ins-' + i"
+                    class="handle"
+                  />
                 </template>
               </template>
               <template v-if="ann.type === 'Keypoint'">
@@ -2824,12 +2837,39 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
         };
         return;
       }
-      // ---- Polygon vertex drag ----
+      // ---- Polygon vertex drag / delete (Alt+点击删除顶点) ----
+      if (handle.startsWith("poly-ins-")) {
+        const idx = parseInt(handle.replace("poly-ins-", ""), 10);
+        if (!isNaN(idx) && ann.points) {
+          store.selectedAnnotationId = ann.id;
+          const a = ann.points[idx];
+          const b = ann.points[(idx + 1) % ann.points.length];
+          const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          ann.points.splice(idx + 1, 0, mid);
+          markUnsaved();
+          pushHistory();
+          nextTick(() => measureLabelRects());
+          return;
+        }
+      }
       if (handle.startsWith("poly-") || handle.startsWith("ocr-vertex-")) {
         const prefix = handle.startsWith("poly-") ? "poly-" : "ocr-vertex-";
         const idx = parseInt(handle.replace(prefix, ""), 10);
         if (!isNaN(idx)) {
           store.selectedAnnotationId = ann.id;
+          if (e.altKey) {
+            const pts = ann.points || [];
+            const min = ann.type === "Ocr" ? 4 : 3;
+            if (pts.length > min) {
+              ann.points = pts.filter((_p: any, i: number) => i !== idx);
+              markUnsaved();
+              pushHistory();
+              nextTick(() => measureLabelRects());
+            } else {
+              ElMessage.warning(`至少保留 ${min} 个顶点`);
+            }
+            return;
+          }
           drag.value = {
             active: true,
             type: "poly-vertex",
@@ -3286,6 +3326,8 @@ const shortcutList = [
   { keys: "Ctrl+Z / Ctrl+Y", desc: "撤销 / 重做" },
   { keys: "Ctrl+C / Ctrl+V", desc: "复制 / 粘贴选中标注" },
   { keys: "Delete / Backspace", desc: "删除选中标注" },
+  { keys: "Alt+点击顶点", desc: "删除多边形/OCR 顶点" },
+  { keys: "点击绿色圆点", desc: "在多边形边上插入顶点" },
   { keys: "←→ / a d", desc: "上一张 / 下一张（select 工具下）" },
   { keys: "Esc", desc: "取消进行中的绘制" },
   { keys: "t（OCR 工具）", desc: "切换矩形/四边形" },
