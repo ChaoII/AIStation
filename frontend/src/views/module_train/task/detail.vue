@@ -374,8 +374,6 @@ function frameworkLabel(fw?: string) {
     {
       ultralytics: "Ultralytics",
       paddlex: "PaddleX",
-      "pytorch-ocr-det": "PyTorch-OCR Det",
-      "pytorch-ocr-rec": "PyTorch-OCR Rec",
     } as any
   )[fw || ""] || fw || "—";
 }
@@ -455,10 +453,10 @@ const liveLastMetrics = computed(() =>
   liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null
 );
 const metricsLog = computed<any[]>(() => task.value?.metrics_log || []);
-// OCR 类框架（PaddleX / pytorch-ocr）：指标为 HMean(检测)/Acc(识别)，非 mAP
+// OCR 类框架（PaddleX）：指标为 HMean(检测)/Acc(识别)，非 mAP
 const isOcrFramework = computed(() => {
   const fw = task.value?.framework;
-  return fw === "paddlex" || fw === "pytorch-ocr-det" || fw === "pytorch-ocr-rec";
+  return fw === "paddlex";
 });
 const bestMetrics = computed<any>(() => task.value?.best_metrics || null);
 const lastMetrics = computed<any>(() => task.value?.last_metrics || null);
@@ -579,7 +577,7 @@ function pushLiveMetrics() {
   }
 }
 function parseYoloMetrics(line: string) {
-  // PaddleX / pytorch-ocr: `epoch: [1/100], ... hmean/acc`
+  // PaddleX: `epoch: [1/100], ... hmean/acc`
   const pe = line.match(/epoch:\s*\[(\d+)\/(\d+)\]/);
   if (pe) {
     yoloMetrics.epoch = parseInt(pe[1]);
@@ -592,7 +590,7 @@ function parseYoloMetrics(line: string) {
     pushLiveMetrics();
     return;
   }
-  // pytorch-ocr det / rec eval 行
+  // PaddleX det / rec eval 行
   const eh = line.match(/eval hmean\s+([\d.]+)/);
   if (eh) {
     yoloMetrics.map50 = parseFloat(eh[1]);

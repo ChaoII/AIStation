@@ -10,7 +10,7 @@ from app.core.logger import log
 
 from .model import TrainDeploy, TrainEval, TrainModel, TrainModelRepo, TrainPredict, TrainTask
 
-# ultralytics: `1/100 0.983G ...`；PaddleX / pytorch-ocr: `epoch: [1/100], ...`
+# ultralytics: `1/100 0.983G ...`；PaddleX: `epoch: [1/100], ...`
 _EPOCH_RE = re.compile(r"(?:^\s*(\d+)/(\d+)\s+|epoch:\s*\[(\d+)/(\d+)\])")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERSION_DIGITS = re.compile(r"[^0-9]")
@@ -321,8 +321,6 @@ class TrainService:
         async with async_db_session.begin() as db:
             image = ("paddlex:latest"
                      if data.framework == TrainFramework.PADDLEX
-                     else "aistation-ocr:latest"
-                     if data.framework in (TrainFramework.PYTORCH_OCR_DET, TrainFramework.PYTORCH_OCR_REC)
                      else "ultralytics/ultralytics:latest")
             t = TrainTask(
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,

@@ -76,10 +76,6 @@ async def _export_core(
     elif framework == "paddle-mlcls":
         await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id,
                                    class_names=class_names)
-    elif framework == "pytorch-ocr-det":
-        await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id)
-    elif framework == "pytorch-ocr-rec":
-        await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id, export_rec=True)
     elif framework == "paddlex":
         # PaddleX OCR：ocr_rec 区分 det(false) / rec(true)
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
@@ -427,79 +423,6 @@ def _crop_text_region(img_path: str, quad: list, img_w: int = 1, img_h: int = 1)
             return None
 
 
-async def _export_pytorch_ocr(dataset_id: int, task_id: int, images: list,
-                              output_dir: str, annotation_task_id: int | None = None,
-                              export_rec: bool = False) -> None:
-    """导出 PyTorch OCR 数据。
-
-    det: images/ + det_gt.txt（四边形像素坐标）
-    rec: images/ + train_list.txt（image_path\\tlabel，文本行透视矫正裁剪图）
-    """
-    from app.utils.s3_client import s3_client
-
-    img_dir = os.path.join(output_dir, "images")
-    os.makedirs(img_dir, exist_ok=True)
-    det_lines = []
-    rec_lines = []
-
-    async with async_db_session() as db:
-        for img in images:
-            img_path = os.path.join(img_dir, img.filename)
-            try:
-                if not os.path.exists(img_path):
-                    data = s3_client.download_fileobj(img.object_key)
-                    with open(img_path, "wb") as f:
-                        f.write(data.read())
-            except Exception:
-                continue
-
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-
-            quads = []
-            texts = []
-            w = img.width or 1
-            h = img.height or 1
-            for ann in anns:
-                if ann.get("type") not in ("polygon", "Polygon", "ocr", "Ocr"):
-                    continue
-                pts = ann.get("points", [])
-                if len(pts) < 4:
-                    continue
-                # 转像素坐标四角点
-                quad = [[float(p["x"] * w), float(p["y"] * h)]
-                        if isinstance(p, dict) else [float(p[0] * w), float(p[1] * h)]
-                        for p in pts[:4]]
-                quads.append(quad)
-                texts.append(ann.get("text", "") or "")
-            if quads and not export_rec:
-                det_lines.append(f"{img.filename}\t{json.dumps(quads)}")
-            if export_rec:
-                import cv2
-                for i, (quad, text) in enumerate(zip(quads, texts, strict=False)):
-                    if not text.strip():
-                        continue
-                    crop_name = f"{os.path.splitext(img.filename)[0]}_{i}.jpg"
-                    crop = _crop_text_region(img_path, quad, w, h)
-                    if crop is not None:
-                        cv2.imwrite(os.path.join(img_dir, crop_name), crop)
-                        # RecDataset 以 data_dir 为根读取，裁剪图在 images/ 下，需带前缀
-                        rec_lines.append(f"images/{crop_name}\t{text}")
-
-    if not export_rec:
-        with open(os.path.join(output_dir, "det_gt.txt"), "w", encoding="utf-8") as f:
-            f.write("\n".join(det_lines))
-    else:
-        with open(os.path.join(output_dir, "train_list.txt"), "w", encoding="utf-8") as f:
-            f.write("\n".join(rec_lines))
-    log.info(f"pytorch-ocr: exported {len(det_lines)} det, {len(rec_lines)} rec to {output_dir}")
-
-
 async def export_model(task_id: int, framework: str, export_dir: str, best_metrics: dict | None = None) -> dict:
     from .model import TrainModel, TrainTask
 
@@ -521,14 +444,12 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
                 best_path = p
                 break
     else:
-        extensions = [".pt"] if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") else [".pdparams"]
+        extensions = [".pt"] if framework == "ultralytics" else [".pdparams"]
         for ext in extensions:
             candidates = [
                 os.path.join(export_dir, "exp", "weights", f"best{ext}"),
                 os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
             ]
-            if framework in ("pytorch-ocr-det", "pytorch-ocr-rec"):
-                candidates.insert(0, os.path.join(export_dir, f"best{ext}"))
             for p in candidates:
                 if os.path.isfile(p):
                     best_path = p
@@ -543,7 +464,7 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
                 if framework == "paddlex" and f.endswith(".pdparams"):
                     best_path = os.path.join(root, f)
                     break
-                if framework in ("ultralytics", "pytorch-ocr-det", "pytorch-ocr-rec") and f == "best.pt":
+                if framework == "ultralytics" and f == "best.pt":
                     best_path = os.path.join(root, f)
                     break
             if best_path:

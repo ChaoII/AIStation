@@ -299,9 +299,9 @@ function onDeployModelChange(modelId: number | null) {
   selectedDeployFramework.value = m?.framework || "";
   createForm.recModelId = null;
 }
-// OCR（paddlex/pytorch-ocr-det）需要 det+rec 双模型
-const needsRecModel = computed(() => ["paddlex", "pytorch-ocr-det"].includes(selectedDeployFramework.value));
-const recModels = computed(() => models.value.filter((m: any) => ["paddlex", "pytorch-ocr-rec"].includes(m.framework)));
+// OCR（paddlex）需要 det+rec 双模型
+const needsRecModel = computed(() => ["paddlex"].includes(selectedDeployFramework.value));
+const recModels = computed(() => models.value.filter((m: any) => m.framework === "paddlex"));
 
 function statusTag(s: string) {
   return ({ pending: "info", deploying: "warning", running: "success", stopped: "info", failed: "danger" } as any)[s] || "info";

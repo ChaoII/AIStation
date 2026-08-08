@@ -24,14 +24,7 @@ from .model import TrainDeploy, TrainFramework, TrainModel
 _deploy_running: dict[int, dict] = {}
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
-OCR_IMAGE = "aistation-ocr:latest"
 PADDLEX_IMAGE = "paddlex:latest"
-OCR_FRAMEWORKS = (TrainFramework.PYTORCH_OCR_DET, TrainFramework.PYTORCH_OCR_REC)
-
-
-def _is_ocr_framework(framework: TrainFramework) -> bool:
-    """判断部署框架是否需要 pytorch OCR server（det/rec 双模型推理）。"""
-    return framework in OCR_FRAMEWORKS
 
 
 def _is_paddlex_framework(framework: TrainFramework) -> bool:
@@ -106,80 +99,6 @@ if __name__ == "__main__":
 '''
 
 
-def _generate_ocr_server_script(api_key: str, device: str) -> str:
-    """生成 OCR 推理服务脚本：加载 det+rec `.pt`，/predict 返回 [{text, confidence, box}]。
-
-    运行在 aistation-ocr 镜像中（WORKDIR=/workspace，含 pytorch_ocr 包），
-    通过 sys.path.insert 引入 pytorch_ocr.inference.ocr_pipeline.OCRPipeline。
-    rec.pt 可选：未挂载时 rec_state 传 None（骨架阶段允许 det 单模型）。
-    """
-    device_arg = device if device != "cpu" else "cpu"
-    return f'''#!/usr/bin/env python3
-"""Auto-generated OCR inference server for AIStation model deployment (det + rec)."""
-import os, sys, json, time, asyncio, subprocess
-
-# Ensure dependencies
-subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                "fastapi", "uvicorn", "python-multipart"], check=True)
-
-import numpy as np
-import cv2
-from fastapi import FastAPI, File, UploadFile, HTTPException, Security
-from fastapi.security import APIKeyHeader
-import uvicorn
-
-import torch
-import sys as _sys
-sys.path.insert(0, "/workspace")
-from pytorch_ocr.inference.ocr_pipeline import OCRPipeline
-
-MODEL_PATH = "/model/det.pt"
-REC_MODEL_PATH = "/model/rec.pt"
-API_KEY = "{api_key}"
-HOST = "0.0.0.0"
-PORT = 8000
-
-print(f"[deploy] loading OCR models...", flush=True)
-det_state = torch.load(MODEL_PATH, map_location="cpu")
-rec_state = torch.load(REC_MODEL_PATH, map_location="cpu") if os.path.exists(REC_MODEL_PATH) else None
-pipe = OCRPipeline(
-    det_state=det_state,
-    rec_state=rec_state,
-    config={{"device": "{device_arg}"}},
-)
-print(f"[deploy] OCR models loaded", flush=True)
-
-app = FastAPI(title="AIStation OCR Inference")
-
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-@app.get("/health")
-async def health():
-    return {{"status": "ok", "model": "ocr"}}
-
-@app.post("/predict")
-async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_header)):
-    if api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-    start = time.time()
-    contents = await file.read()
-    img_array = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image")
-    detections = pipe(img)
-    elapsed = round((time.time() - start) * 1000, 1)
-    return {{
-        "success": True,
-        "detections": detections,
-        "inference_time_ms": elapsed,
-    }}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
-'''
-
-
 def _generate_paddlex_server_script(api_key: str, device: str) -> str:
     """生成 PaddleX OCR 推理服务脚本（PP-OCRv6 det + rec，.pdparams 权重）。
 
@@ -210,10 +129,10 @@ from ppocr.postprocess import build_post_process
 from ppocr.utils.save_load import load_model
 import tools.program as program
 
-API_KEY = "__API_KEY__"
+API_KEY = __API_KEY__
 HOST = "0.0.0.0"
 PORT = 8000
-DEVICE = "__DEVICE__"
+DEVICE = __DEVICE__
 
 
 def _load_pipeline(cfg_name, weights_path):
@@ -499,26 +418,11 @@ async def _execute_deployment(deploy_id: int):
                     )
                 return
 
-        if deploy.framework == TrainFramework.PYTORCH_OCR_REC:
-            # 双模型（det + rec）关联尚未实现：rec 权重需先有 det 模型才能组成完整 OCR 链路，
-            # 单独部署 rec 模型会产出语义错误（det.pt 被加载进 det 网络）。暂不支持。
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                        status="failed",
-                        error_log="rec 部署需要 det+rec 双模型关联，暂不支持",
-                        finished_at=datetime.now(),
-                    )
-                )
-            return
-
-        is_ocr = _is_ocr_framework(deploy.framework)
         is_paddlex = _is_paddlex_framework(deploy.framework)
-        image = PADDLEX_IMAGE if is_paddlex else (OCR_IMAGE if is_ocr else DOCKER_IMAGE)
+        image = PADDLEX_IMAGE if is_paddlex else DOCKER_IMAGE
 
-        if is_ocr or is_paddlex:
-            # OCR/PaddleX 部署必须有显式的 rec 模型：仅挂载 det 权重时推理管线会产出垃圾文本。
-            # rec_model_path 缺失 → 拒绝部署。
+        if is_paddlex:
+            # PaddleX 部署必须有显式的 rec 模型：仅挂载 det 权重时推理管线会产出垃圾文本。
             rec_model_path = (deploy.hyperparams or {}).get("rec_model_path")
             if not rec_model_path:
                 async with async_db_session.begin() as db:
@@ -547,17 +451,7 @@ async def _execute_deployment(deploy_id: int):
         with open(model_local_path, "wb") as f:
             f.write(model_data.read())
 
-        if is_ocr:
-            # OCR：det 训练产物统一命名 det.pt；rec 模型按 hyperparams.rec_model_path 下载为 rec.pt
-            det_pt_path = os.path.join(model_dir, "det.pt")
-            if model_local_path != det_pt_path:
-                import shutil
-                shutil.copy2(model_local_path, det_pt_path)
-            rec_data = s3_client.download_fileobj(rec_model_path)
-            rec_local_path = os.path.join(model_dir, "rec.pt")
-            with open(rec_local_path, "wb") as f:
-                f.write(rec_data.read())
-        elif is_paddlex:
+        if is_paddlex:
             # PaddleX：det 产物统一命名 det.pdparams；rec 为 rec.pdparams
             det_pd_path = os.path.join(model_dir, "det.pdparams")
             if model_local_path != det_pd_path:
@@ -577,8 +471,6 @@ async def _execute_deployment(deploy_id: int):
         # Write inference server script
         if is_paddlex:
             server_script = _generate_paddlex_server_script(deploy.api_key, deploy.device)
-        elif is_ocr:
-            server_script = _generate_ocr_server_script(deploy.api_key, deploy.device)
         else:
             server_script = _generate_server_script(deploy.api_key, deploy.device)
         server_path = os.path.join(server_dir, "server.py")

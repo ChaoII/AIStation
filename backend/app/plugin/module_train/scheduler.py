@@ -294,33 +294,6 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
             # 从框架/模型名兜底推断
             mode = "det"
         return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode)
-    if task.framework == TrainFramework.PYTORCH_OCR_DET:
-        hp = task.hyperparams or {}
-        # aistation-ocr 镜像 ENTRYPOINT 已是 `python -m pytorch_ocr.cli`，
-        # Docker 合并 ENTRYPOINT+CMD，故此处只传子命令参数
-        return [
-            "train-det",
-            "--data", "/data",
-            "--output", "/output",
-            "--device", str(hp.get("device", "0")),
-            "--epochs", str(hp.get("epochs", 100)),
-            "--batch", str(hp.get("batch", 8)),
-            "--lr", str(hp.get("lr", 0.001)),
-            "--model-size", str(hp.get("model_size", "tiny")),
-        ]
-    if task.framework == TrainFramework.PYTORCH_OCR_REC:
-        hp = task.hyperparams or {}
-        # 同 det：ENTRYPOINT 已是 `python -m pytorch_ocr.cli`，只传子命令参数
-        return [
-            "train-rec",
-            "--data", "/data",
-            "--output", "/output",
-            "--device", str(hp.get("device", "0")),
-            "--epochs", str(hp.get("epochs", 100)),
-            "--batch", str(hp.get("batch", 128)),
-            "--lr", str(hp.get("lr", 0.001)),
-            "--model-size", str(hp.get("model_size", "tiny")),
-        ]
     raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
@@ -517,24 +490,18 @@ async def start_training(task_id: int):
         mode = str(hp.get("mode", "det")).lower()
         exec_cls = PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
         asyncio.create_task(exec_cls.run(task_id))
-    elif task.framework == TrainFramework.PYTORCH_OCR_REC:
-        from .ocr_rec_executor import OCRRecExecutor
-        asyncio.create_task(OCRRecExecutor.run(task_id))
-    elif task.framework == TrainFramework.PYTORCH_OCR_DET:
-        from .ocr_executor import OCRDetExecutor
-        asyncio.create_task(OCRDetExecutor.run(task_id))
     else:
         asyncio.create_task(TrainExecutor.run(task_id))
 
 
 async def stop_training(task_id: int) -> None:
-    from .ocr_executor import OCRDetExecutor
-    from .ocr_rec_executor import OCRRecExecutor
+    from .paddlex_executor import PaddleXOCRDetExecutor, PaddleXOCRRecExecutor
     async with async_db_session() as db:
         task = await db.get(TrainTask, task_id)
-    if task and task.framework == TrainFramework.PYTORCH_OCR_REC:
-        await OCRRecExecutor.stop(task_id)
-    elif task and task.framework == TrainFramework.PYTORCH_OCR_DET:
-        await OCRDetExecutor.stop(task_id)
+    if task and task.framework == TrainFramework.PADDLEX:
+        hp = task.hyperparams or {}
+        mode = str(hp.get("mode", "det")).lower()
+        exec_cls = PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
+        await exec_cls.stop(task_id)
     else:
         await TrainExecutor.stop(task_id)

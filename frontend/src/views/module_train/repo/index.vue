@@ -437,8 +437,6 @@ function frameworkLabel(fw?: string) {
       {
         ultralytics: "Ultralytics",
         paddlex: "PaddleX",
-        "pytorch-ocr-det": "PyTorch-OCR Det",
-        "pytorch-ocr-rec": "PyTorch-OCR Rec",
       } as any
     )[fw || ""] ||
     fw ||
