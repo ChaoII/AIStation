@@ -1,6 +1,11 @@
 <template>
   <div class="app-container">
-    <PageSearch ref="searchRef" :search-config="searchConfig" @query-click="handleQueryClick" @reset-click="handleResetClick" />
+    <PageSearch
+      ref="searchRef"
+      :search-config="searchConfig"
+      @query-click="handleQueryClick"
+      @reset-click="handleResetClick"
+    />
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
         <CrudToolbarLeft
@@ -80,7 +85,7 @@
               width="120"
             >
               <template #default="scope">
-                {{ scope.row.source_type === 'dataset' ? '数据集' : '上传图片' }}
+                {{ scope.row.source_type === "dataset" ? "数据集" : "上传图片" }}
               </template>
             </el-table-column>
             <el-table-column
@@ -180,8 +185,8 @@
                   title="确定删除该预测？"
                   confirm-button-text="删除"
                   cancel-button-text="取消"
-                  @confirm="handleDelete([scope.row.id])"
                   width="180"
+                  @confirm="handleDelete([scope.row.id])"
                 >
                   <template #reference>
                     <el-button
@@ -203,22 +208,38 @@
     </PageContent>
 
     <!-- Create Dialog -->
-    <el-dialog v-model="showCreateDialog" title="创建预测任务" width="600px" :close-on-click-modal="false">
+    <el-dialog
+      v-model="showCreateDialog"
+      title="创建预测任务"
+      width="600px"
+      :close-on-click-modal="false"
+    >
       <el-form label-width="100px">
         <el-form-item label="模型版本" required>
-          <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" @change="onPredictModelChange">
-            <el-option v-for="m in models" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
+          <el-select
+            v-model="createForm.modelId"
+            filterable
+            style="width: 100%"
+            placeholder="选择模型版本"
+            @change="onPredictModelChange"
+          >
+            <el-option
+              v-for="m in models"
+              :key="m.id"
+              :label="`${m.name} v${m.version}`"
+              :value="m.id"
+            />
           </el-select>
         </el-form-item>
         <template v-if="selectedModelFramework === 'paddlex'">
           <el-form-item label="任务类型">
-            <el-select v-model="createForm.hyperparams.mode" style="width:100%">
+            <el-select v-model="createForm.hyperparams.mode" style="width: 100%">
               <el-option label="文本检测 (det)" value="det" />
               <el-option label="文本识别 (rec)" value="rec" />
             </el-select>
           </el-form-item>
           <el-form-item label="模型规格">
-            <el-select v-model="createForm.hyperparams.model_size" style="width:100%">
+            <el-select v-model="createForm.hyperparams.model_size" style="width: 100%">
               <el-option label="tiny（轻量）" value="tiny" />
               <el-option label="small（推荐）" value="small" />
               <el-option label="medium（高精度）" value="medium" />
@@ -232,17 +253,33 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item v-if="createForm.sourceType === 'dataset'" label="数据集" required>
-          <el-select v-model="createForm.sourceDatasetId" filterable style="width:100%" placeholder="选择数据集">
+          <el-select
+            v-model="createForm.sourceDatasetId"
+            filterable
+            style="width: 100%"
+            placeholder="选择数据集"
+          >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="createForm.sourceType === 'upload'" label="图片" required>
-          <el-upload ref="uploadRef" list-type="picture-card" :auto-upload="false" multiple @change="onUploadChange">
+          <el-upload
+            ref="uploadRef"
+            list-type="picture-card"
+            :auto-upload="false"
+            multiple
+            @change="onUploadChange"
+          >
             <el-icon><Plus /></el-icon>
           </el-upload>
         </el-form-item>
         <el-form-item label="conf">
-          <el-input-number v-model="createForm.hyperparams.conf" :min="0.01" :max="1" :step="0.05" />
+          <el-input-number
+            v-model="createForm.hyperparams.conf"
+            :min="0.01"
+            :max="1"
+            :step="0.05"
+          />
         </el-form-item>
         <el-form-item label="iou">
           <el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" />
@@ -272,7 +309,11 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
-interface TablePageQuery { page_no: number; page_size: number; [key: string]: any }
+interface TablePageQuery {
+  page_no: number;
+  page_size: number;
+  [key: string]: any;
+}
 
 const router = useRouter();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
@@ -311,17 +352,50 @@ function getModelName(modelId: number) {
   return m ? `${m.name} v${m.version}` : `#${modelId}`;
 }
 
-function statusTag(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info"; }
-function statusLabel(s: string) { return ({ pending: "待开始", running: "预测中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s; }
+function statusTag(s: string) {
+  return (
+    (
+      {
+        pending: "info",
+        running: "warning",
+        success: "success",
+        failed: "danger",
+        cancelled: "info",
+      } as any
+    )[s] || "info"
+  );
+}
+function statusLabel(s: string) {
+  return (
+    (
+      {
+        pending: "待开始",
+        running: "预测中",
+        success: "已完成",
+        failed: "失败",
+        cancelled: "已取消",
+      } as any
+    )[s] || s
+  );
+}
 
 function onUploadChange(_file: any, fileList: any[]) {
-  pendingFiles.value = fileList.map(f => f.raw).filter(Boolean);
+  pendingFiles.value = fileList.map((f) => f.raw).filter(Boolean);
 }
 
 async function handleCreate() {
-  if (!createForm.modelId) { ElMessage.warning("请选择模型版本"); return; }
-  if (createForm.sourceType === "dataset" && !createForm.sourceDatasetId) { ElMessage.warning("请选择数据集"); return; }
-  if (createForm.sourceType === "upload" && pendingFiles.value.length === 0) { ElMessage.warning("请上传图片"); return; }
+  if (!createForm.modelId) {
+    ElMessage.warning("请选择模型版本");
+    return;
+  }
+  if (createForm.sourceType === "dataset" && !createForm.sourceDatasetId) {
+    ElMessage.warning("请选择数据集");
+    return;
+  }
+  if (createForm.sourceType === "upload" && pendingFiles.value.length === 0) {
+    ElMessage.warning("请上传图片");
+    return;
+  }
 
   creating.value = true;
   try {
@@ -344,7 +418,14 @@ async function handleCreate() {
     createForm.modelId = null;
     createForm.sourceType = "dataset";
     createForm.sourceDatasetId = null;
-    createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640, device: "0", mode: "det", model_size: "tiny" };
+    createForm.hyperparams = {
+      conf: 0.25,
+      iou: 0.45,
+      imgsz: 640,
+      device: "0",
+      mode: "det",
+      model_size: "tiny",
+    };
     selectedModelFramework.value = "";
     pendingFiles.value = [];
     if (uploadRef.value) uploadRef.value.uploadFiles = [];
@@ -473,7 +554,9 @@ function startPoll() {
           o.status = f.status;
         }
       }
-    } catch { /* ignore poll errors */ }
+    } catch {
+      /* ignore poll errors */
+    }
   }, 5000);
 }
 

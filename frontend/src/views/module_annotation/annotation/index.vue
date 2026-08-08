@@ -925,7 +925,10 @@
             <div class="scroll-area">
               <div
                 v-for="(img, idx) in store.images"
-                v-show="imageFilter === 'all' || (imageFilter === 'annotated') === (img.status === 'annotated')"
+                v-show="
+                  imageFilter === 'all' ||
+                  (imageFilter === 'annotated') === (img.status === 'annotated')
+                "
                 :key="img.id"
                 class="image-item"
                 :class="{ active: idx === store.currentImageIndex }"
@@ -2558,7 +2561,8 @@ function onMouseUp(e: MouseEvent) {
         drag.value.type.startsWith("kp-resize-"))
     ) {
       // 纯点击选择（move 但几乎无位移）不应标记未保存，避免每次点选都产生冗余版本
-      const isClick = drag.value.type === "move" &&
+      const isClick =
+        drag.value.type === "move" &&
         Math.abs((e.clientX || 0) - drag.value.startX) < 3 &&
         Math.abs((e.clientY || 0) - drag.value.startY) < 3;
       if (!isClick) {
@@ -3310,33 +3314,42 @@ onMounted(async () => {
     // Load first page of images + load remaining in background
     imagesLoading.value = true;
     const pageSize = 50;
-    AnnotationAPI.getImages(t.dataset_id, tid, 1, pageSize).then(r => {
-      const data = r.data?.data;
-      if (!data) { imagesLoading.value = false; return; }
-      const imgs = data.items || [];
-      store.images = imgs;
-      const total = data.total || 0;
-      if (imgs.length > 0 && !store.currentImage) loadImg(imgs[0].id);
-      fetchTaskProgress();
-      // Load remaining pages in background
-      const totalPages = Math.ceil(total / pageSize);
-      if (totalPages > 1) {
-        const promises = [];
-        for (let p = 2; p <= totalPages; p++) {
-          promises.push(
-            AnnotationAPI.getImages(t.dataset_id, tid, p, pageSize).then(r2 => {
-              const more = r2.data?.data?.items || [];
-              if (more.length > 0) store.images.push(...more);
-            }).catch(() => {})
-          );
+    AnnotationAPI.getImages(t.dataset_id, tid, 1, pageSize)
+      .then((r) => {
+        const data = r.data?.data;
+        if (!data) {
+          imagesLoading.value = false;
+          return;
         }
-        Promise.all(promises).finally(() => { imagesLoading.value = false; });
-      } else {
+        const imgs = data.items || [];
+        store.images = imgs;
+        const total = data.total || 0;
+        if (imgs.length > 0 && !store.currentImage) loadImg(imgs[0].id);
+        fetchTaskProgress();
+        // Load remaining pages in background
+        const totalPages = Math.ceil(total / pageSize);
+        if (totalPages > 1) {
+          const promises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            promises.push(
+              AnnotationAPI.getImages(t.dataset_id, tid, p, pageSize)
+                .then((r2) => {
+                  const more = r2.data?.data?.items || [];
+                  if (more.length > 0) store.images.push(...more);
+                })
+                .catch(() => {})
+            );
+          }
+          Promise.all(promises).finally(() => {
+            imagesLoading.value = false;
+          });
+        } else {
+          imagesLoading.value = false;
+        }
+      })
+      .catch(() => {
         imagesLoading.value = false;
-      }
-    }).catch(() => {
-      imagesLoading.value = false;
-    });
+      });
   } catch (e: any) {
     ElMessage.error("加载失败: " + (e?.msg || e?.message || ""));
   } finally {
@@ -3609,8 +3622,13 @@ onBeforeUnmount(() => {
   animation: pulse 1.5s infinite;
 }
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 .setting-row {
   display: flex;

@@ -91,7 +91,9 @@
               min-width="140"
             >
               <template #default="scope">
-                <span v-if="scope.row.metrics && (scope.row.metrics.map50 || scope.row.metrics.mAP)">
+                <span
+                  v-if="scope.row.metrics && (scope.row.metrics.map50 || scope.row.metrics.mAP)"
+                >
                   {{ scope.row.metrics.mAP || scope.row.metrics.map50?.toFixed(4) }}
                 </span>
                 <span v-else class="text-gray-400">--</span>
@@ -415,13 +417,17 @@ function statusLabel(s: string) {
 
 function frameworkLabel(fw?: string) {
   return (
-    {
-      ultralytics: "Ultralytics",
-      paddlex: "PaddleX",
-      "pytorch-ocr-det": "PyTorch-OCR Det",
-      "pytorch-ocr-rec": "PyTorch-OCR Rec",
-    } as any
-  )[fw || ""] || fw || "—";
+    (
+      {
+        ultralytics: "Ultralytics",
+        paddlex: "PaddleX",
+        "pytorch-ocr-det": "PyTorch-OCR Det",
+        "pytorch-ocr-rec": "PyTorch-OCR Rec",
+      } as any
+    )[fw || ""] ||
+    fw ||
+    "—"
+  );
 }
 
 async function resetForm() {
@@ -493,18 +499,20 @@ function handleDeploy(row: any) {
     name: `${row.name} v${row.version}`,
     device: "0",
     hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640 },
-  }).then(r => {
-    const d = r.data?.data;
-    if (d?.api_key) {
-      ElMessage.success("部署已创建");
-      // Show API Key in a brief alert, then navigate
-      ElMessage.success(`API Key: ${d.api_key}（已复制到剪贴板）`);
-      navigator.clipboard.writeText(d.api_key).catch(() => {});
-    }
-    router.push("/train/deploy");
-  }).catch(e => {
-    ElMessage.error(e?.msg || "创建部署失败");
-  });
+  })
+    .then((r) => {
+      const d = r.data?.data;
+      if (d?.api_key) {
+        ElMessage.success("部署已创建");
+        // Show API Key in a brief alert, then navigate
+        ElMessage.success(`API Key: ${d.api_key}（已复制到剪贴板）`);
+        navigator.clipboard.writeText(d.api_key).catch(() => {});
+      }
+      router.push("/train/deploy");
+    })
+    .catch((e) => {
+      ElMessage.error(e?.msg || "创建部署失败");
+    });
 }
 
 function handleExport(row: any) {

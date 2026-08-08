@@ -129,12 +129,17 @@
               min-width="280"
             >
               <template #default="scope">
-                <div v-if="scope.row.metrics" style="display:flex;flex-wrap:wrap;gap:4px">
-                  <el-tag v-for="(v, k) in scope.row.metrics" :key="k" size="small" style="font-family:monospace;font-size:12px">
-                    {{ k }}: {{ typeof v === 'number' ? v.toFixed(4) : v }}
+                <div v-if="scope.row.metrics" style="display: flex; flex-wrap: wrap; gap: 4px">
+                  <el-tag
+                    v-for="(v, k) in scope.row.metrics"
+                    :key="k"
+                    size="small"
+                    style="font-family: monospace; font-size: 12px"
+                  >
+                    {{ k }}: {{ typeof v === "number" ? v.toFixed(4) : v }}
                   </el-tag>
                 </div>
-                <span v-else style="color:var(--el-text-color-secondary)">--</span>
+                <span v-else style="color: var(--el-text-color-secondary)">--</span>
               </template>
             </el-table-column>
             <el-table-column
@@ -187,8 +192,8 @@
                   title="确定删除该评估？"
                   confirm-button-text="删除"
                   cancel-button-text="取消"
-                  @confirm="handleDeleteEval([scope.row.id])"
                   width="180"
+                  @confirm="handleDeleteEval([scope.row.id])"
                 >
                   <template #reference>
                     <el-button
@@ -212,19 +217,29 @@
     <el-dialog v-model="createDialogVisible" title="创建评估" width="500px">
       <el-form label-width="100px">
         <el-form-item label="模型版本">
-          <el-select v-model="createForm.modelId" filterable style="width:100%" @change="onEvalModelChange">
-            <el-option v-for="m in modelVersions" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
+          <el-select
+            v-model="createForm.modelId"
+            filterable
+            style="width: 100%"
+            @change="onEvalModelChange"
+          >
+            <el-option
+              v-for="m in modelVersions"
+              :key="m.id"
+              :label="`${m.name} v${m.version}`"
+              :value="m.id"
+            />
           </el-select>
         </el-form-item>
         <template v-if="selectedModelFramework === 'paddlex'">
           <el-form-item label="任务类型">
-            <el-select v-model="createForm.hyperparams.mode" style="width:100%">
+            <el-select v-model="createForm.hyperparams.mode" style="width: 100%">
               <el-option label="文本检测 (det)" value="det" />
               <el-option label="文本识别 (rec)" value="rec" />
             </el-select>
           </el-form-item>
           <el-form-item label="模型规格">
-            <el-select v-model="createForm.hyperparams.model_size" style="width:100%">
+            <el-select v-model="createForm.hyperparams.model_size" style="width: 100%">
               <el-option label="tiny（轻量）" value="tiny" />
               <el-option label="small（推荐）" value="small" />
               <el-option label="medium（高精度）" value="medium" />
@@ -232,15 +247,30 @@
           </el-form-item>
         </template>
         <el-form-item label="评估数据集">
-          <el-select v-model="createForm.evalDatasetId" filterable style="width:100%">
+          <el-select v-model="createForm.evalDatasetId" filterable style="width: 100%">
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="imgsz"><el-input-number v-model="createForm.hyperparams.imgsz" :min="32" :step="32" /></el-form-item>
-        <el-form-item label="batch"><el-input-number v-model="createForm.hyperparams.batch" :min="1" :max="128" /></el-form-item>
-        <el-form-item label="conf"><el-input-number v-model="createForm.hyperparams.conf" :min="0.001" :max="1" :step="0.01" /></el-form-item>
-        <el-form-item label="iou"><el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" /></el-form-item>
-        <el-form-item label="GPU 设备"><el-input v-model="createForm.hyperparams.device" placeholder="如: 0" /></el-form-item>
+        <el-form-item label="imgsz">
+          <el-input-number v-model="createForm.hyperparams.imgsz" :min="32" :step="32" />
+        </el-form-item>
+        <el-form-item label="batch">
+          <el-input-number v-model="createForm.hyperparams.batch" :min="1" :max="128" />
+        </el-form-item>
+        <el-form-item label="conf">
+          <el-input-number
+            v-model="createForm.hyperparams.conf"
+            :min="0.001"
+            :max="1"
+            :step="0.01"
+          />
+        </el-form-item>
+        <el-form-item label="iou">
+          <el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" />
+        </el-form-item>
+        <el-form-item label="GPU 设备">
+          <el-input v-model="createForm.hyperparams.device" placeholder="如: 0" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
@@ -262,7 +292,11 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
-interface TablePageQuery { page_no: number; page_size: number; [key: string]: any }
+interface TablePageQuery {
+  page_no: number;
+  page_size: number;
+  [key: string]: any;
+}
 
 const route = useRoute();
 const router = useRouter();
@@ -282,7 +316,15 @@ function onEvalModelChange(modelId: number | null) {
 const createForm = reactive({
   modelId: null as number | null,
   evalDatasetId: null as number | null,
-  hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0", mode: "det", model_size: "tiny" },
+  hyperparams: {
+    imgsz: 640,
+    batch: 16,
+    conf: 0.001,
+    iou: 0.6,
+    device: "0",
+    mode: "det",
+    model_size: "tiny",
+  },
 });
 
 (async () => {
@@ -301,10 +343,30 @@ function getModelName(modelId: number) {
 }
 
 function statusTag(s: string): "primary" | "success" | "warning" | "info" | "danger" | undefined {
-  return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info";
+  return (
+    (
+      {
+        pending: "info",
+        running: "warning",
+        success: "success",
+        failed: "danger",
+        cancelled: "info",
+      } as any
+    )[s] || "info"
+  );
 }
 function statusLabel(s: string) {
-  return ({ pending: "待开始", running: "评估中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s;
+  return (
+    (
+      {
+        pending: "待开始",
+        running: "评估中",
+        success: "已完成",
+        failed: "失败",
+        cancelled: "已取消",
+      } as any
+    )[s] || s
+  );
 }
 
 const searchConfig = reactive<ISearchConfig>({
@@ -391,7 +453,15 @@ function handleOpenCreateDialog() {
   const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
   createForm.modelId = curModel?.id || null;
   createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
-  createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0", mode: "det", model_size: "tiny" };
+  createForm.hyperparams = {
+    imgsz: 640,
+    batch: 16,
+    conf: 0.001,
+    iou: 0.6,
+    device: "0",
+    mode: "det",
+    model_size: "tiny",
+  };
   selectedModelFramework.value = curModel?.framework || "";
   createDialogVisible.value = true;
 }
@@ -413,7 +483,15 @@ async function handleCreateEval() {
     createDialogVisible.value = false;
     createForm.modelId = null;
     createForm.evalDatasetId = null;
-    createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0", mode: "det", model_size: "tiny" };
+    createForm.hyperparams = {
+      imgsz: 640,
+      batch: 16,
+      conf: 0.001,
+      iou: 0.6,
+      device: "0",
+      mode: "det",
+      model_size: "tiny",
+    };
     refreshList();
   } finally {
     creating.value = false;
@@ -467,7 +545,9 @@ function startPoll() {
           o.metrics = f.metrics;
         }
       }
-    } catch { /* ignore poll errors */ }
+    } catch {
+      /* ignore poll errors */
+    }
   }, 5000);
 }
 

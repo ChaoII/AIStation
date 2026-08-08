@@ -167,8 +167,8 @@
                   title="确定删除该任务？"
                   confirm-button-text="删除"
                   cancel-button-text="取消"
-                  @confirm="handleDelete(scope.row.id)"
                   width="180"
+                  @confirm="handleDelete(scope.row.id)"
                 >
                   <template #reference>
                     <el-button
@@ -221,22 +221,33 @@
             </el-form-item>
           </el-col>
         </el-row>
-          <el-form-item label="选择数据集" prop="dataset_id">
-            <el-select
-              v-model="formData.dataset_id"
-              filterable
-              style="width: 100%"
-              placeholder="请选择标注数据集"
-              @change="onDatasetChange"
-            >
-              <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="标注任务" prop="annotation_task_id">
-            <el-select v-model="formData.annotation_task_id" filterable style="width:100%" placeholder="选择标注任务（可选）" @change="onAnnoTaskChange">
-              <el-option v-for="t in annoTasks" :key="t.id" :label="`${t.name}（${annoTaskTypeLabel(t.task_type)}）`" :value="t.id" />
-            </el-select>
-          </el-form-item>
+        <el-form-item label="选择数据集" prop="dataset_id">
+          <el-select
+            v-model="formData.dataset_id"
+            filterable
+            style="width: 100%"
+            placeholder="请选择标注数据集"
+            @change="onDatasetChange"
+          >
+            <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标注任务" prop="annotation_task_id">
+          <el-select
+            v-model="formData.annotation_task_id"
+            filterable
+            style="width: 100%"
+            placeholder="选择标注任务（可选）"
+            @change="onAnnoTaskChange"
+          >
+            <el-option
+              v-for="t in annoTasks"
+              :key="t.id"
+              :label="`${t.name}（${annoTaskTypeLabel(t.task_type)}）`"
+              :value="t.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-divider>超参数配置</el-divider>
 
         <!-- Ultralytics hyperparams -->
@@ -245,8 +256,17 @@
             <el-col :span="12">
               <el-form-item label="模型" prop="hpModel">
                 <el-select v-model="hpForm.model" style="width: 100%">
-                  <el-option-group v-for="g in [...new Set(modelOptions.map(o => o.group))]" :key="g" :label="g">
-                    <el-option v-for="opt in modelOptions.filter(o => o.group === g)" :key="opt.value" :label="opt.label" :value="opt.value" />
+                  <el-option-group
+                    v-for="g in [...new Set(modelOptions.map((o) => o.group))]"
+                    :key="g"
+                    :label="g"
+                  >
+                    <el-option
+                      v-for="opt in modelOptions.filter((o) => o.group === g)"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
                   </el-option-group>
                 </el-select>
               </el-form-item>
@@ -368,15 +388,26 @@
             <el-col :span="24">
               <el-form-item label="预训练权重">
                 <el-switch v-model="hpForm.pretrained" />
-                <span style="margin-left:8px;font-size:12px;color:#909399">使用官方权重微调</span>
+                <span style="margin-left: 8px; font-size: 12px; color: #909399">
+                  使用官方权重微调
+                </span>
               </el-form-item>
             </el-col>
           </el-row>
           <el-row :gutter="20">
             <el-col :span="24">
               <el-form-item label="训练集占比">
-                <el-slider v-model="hpForm.trainRatio" :min="50" :max="95" :step="5" show-input style="width:300px" />
-                <span style="margin-left:12px;font-size:12px;color:#909399">验证集 {{ 100 - (hpForm.trainRatio || 80) }}%</span>
+                <el-slider
+                  v-model="hpForm.trainRatio"
+                  :min="50"
+                  :max="95"
+                  :step="5"
+                  show-input
+                  style="width: 300px"
+                />
+                <span style="margin-left: 12px; font-size: 12px; color: #909399">
+                  验证集 {{ 100 - (hpForm.trainRatio || 80) }}%
+                </span>
               </el-form-item>
             </el-col>
           </el-row>
@@ -384,7 +415,7 @@
       </el-form>
       <div v-if="dialogVisible.type === 'create'" class="docker-preview">
         <el-divider>Docker 命令预览</el-divider>
-        <pre class="docker-cmd">{{ dockerCmdPreview || '请选择框架和参数' }}</pre>
+        <pre class="docker-cmd">{{ dockerCmdPreview || "请选择框架和参数" }}</pre>
       </div>
       <template #footer>
         <el-button @click="handleCloseDialog">取消</el-button>
@@ -430,7 +461,18 @@ const MODEL_FAMILIES = [
 ];
 
 function annoTaskTypeLabel(t: string) {
-  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t;
+  return (
+    (
+      {
+        detection: "检测",
+        rotated_detection: "旋转框",
+        segmentation: "分割",
+        keypoint: "关键点",
+        ocr: "OCR",
+        classification: "分类",
+      } as any
+    )[t] || t
+  );
 }
 
 const modelOptions = computed(() => {
@@ -444,7 +486,11 @@ const modelOptions = computed(() => {
       const base = `${fam.prefix}${sz}`;
       opts.push({ label: `${fam.label}${sz.toUpperCase()}`, value: `${base}.pt`, group: gLabel });
       if (isObb) {
-        opts.push({ label: `${fam.label}${sz.toUpperCase()}-OBB`, value: `${base}-obb.pt`, group: `${gLabel} OBB` });
+        opts.push({
+          label: `${fam.label}${sz.toUpperCase()}-OBB`,
+          value: `${base}-obb.pt`,
+          group: `${gLabel} OBB`,
+        });
       }
     }
   }
@@ -475,7 +521,7 @@ function onAnnoTaskChange(taskId: number) {
   const task = annoTasks.value.find((t: any) => t.id === taskId);
   if (task?.task_type === "rotated_detection") {
     // Default to first OBB model
-    const obbOpt = modelOptions.value.find(o => o.value.includes("-obb"));
+    const obbOpt = modelOptions.value.find((o) => o.value.includes("-obb"));
     if (obbOpt) hpForm.model = obbOpt.value;
   }
 }
@@ -599,7 +645,11 @@ const defaultHpPaddle = () => ({
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
 
 const tempDir = ref("${TEMP_DIR}");
-TrainAPI.getTempDir().then(res => { if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir; }).catch(() => {});
+TrainAPI.getTempDir()
+  .then((res) => {
+    if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir;
+  })
+  .catch(() => {});
 
 const dockerCmdPreview = computed(() => {
   const taskId = "{task_id}";
@@ -609,7 +659,10 @@ const dockerCmdPreview = computed(() => {
   if (formData.framework === "ultralytics") {
     return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
   } else if (formData.framework === "paddlex") {
-    const cfg = hpForm.mode === "rec" ? `PP-OCRv6_${hpForm.model_size}_rec.yml` : `PP-OCRv6_${hpForm.model_size}_det.yml`;
+    const cfg =
+      hpForm.mode === "rec"
+        ? `PP-OCRv6_${hpForm.model_size}_rec.yml`
+        : `PP-OCRv6_${hpForm.model_size}_det.yml`;
     return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${outputMount}/pretrained:/pretrained \\\n  paddlex:latest \\\n  bash -c \"cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && \\\n    python tools/train.py -c configs/${hpForm.mode === "rec" ? "rec" : "det"}/PP-OCRv6/${cfg} \\\n      -o Global.epoch_num=${hpForm.epochs} \\\n      -o Train.dataset.data_dir=/data/${hpForm.mode}/dataset \\\n      -o Train.loader.batch_size_per_card=${hpForm.batch} \\\n      -o Optimizer.lr.learning_rate=${hpForm.lr} \\\n      -o Global.save_model_dir=/output/${hpForm.mode} \\\n      ${hpForm.pretrained ? `-o Global.pretrained_model=/pretrained/${hpForm.mode}.pdparams` : ""}\"`;
   }
   return "";
@@ -799,7 +852,9 @@ function startPoll() {
           o.status = f.status;
         }
       }
-    } catch { /* ignore poll errors */ }
+    } catch {
+      /* ignore poll errors */
+    }
   }, 5000);
 }
 
@@ -827,10 +882,19 @@ onBeforeUnmount(() => stopPoll());
 </script>
 
 <style scoped>
-.docker-preview { padding: 0 20px; }
+.docker-preview {
+  padding: 0 20px;
+}
 .docker-cmd {
-  background: #1e1e1e; color: #d4d4d4; padding: 12px 16px; border-radius: 6px;
-  font-size: 12px; line-height: 1.6; font-family: "Cascadia Code","Fira Code",monospace;
-  white-space: pre-wrap; overflow-x: auto; margin: 0;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  margin: 0;
 }
 </style>
