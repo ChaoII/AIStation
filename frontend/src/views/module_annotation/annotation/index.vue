@@ -1115,7 +1115,7 @@
         Z:{{ Math.round(store.zoom * 100) }}% | cw:{{ cw }}
       </span>
       <div class="sep" />
-      <el-button size="small" :disabled="!store.currentImage" circle @click="prevImg">
+      <el-button size="small" :disabled="!store.hasPrev" circle @click="prevImg">
         <el-icon><ArrowLeft /></el-icon>
       </el-button>
       <span class="nav-text">{{ store.currentImageIndex + 1 }}/{{ store.images.length }}</span>
@@ -1684,7 +1684,15 @@ function addClass() {
 }
 function removeClass(id: number) {
   taskClasses.value = taskClasses.value.filter((c) => c.id !== id);
-  store.annotations = store.annotations.filter((a) => a.class_id !== id);
+  // 同时清理单标签(class_id)和多标签(class_ids)引用
+  store.annotations.forEach((a: any) => {
+    if (a.class_id === id) a.class_id = -1;
+    if (Array.isArray(a.class_ids)) {
+      a.class_ids = a.class_ids.filter((c: number) => c !== id);
+      if (a.class_ids.length === 0) delete a.class_ids;
+    }
+  });
+  store.annotations = store.annotations.filter((a: any) => a.class_id !== -1 && !(a.type === "Classification" && !a.class_ids?.length));
   if (selectedClassId.value === id) selectedClassId.value = taskClasses.value[0]?.id ?? 0;
   saveClassesToTask();
 }
@@ -1976,11 +1984,7 @@ function onMouseEnter(e: MouseEvent) {
 }
 function onMouseLeave() {
   showCrosshair.value = false;
-  if (drag.value.active && drag.value.ann) {
-    // restore original on leave
-    if (drag.value.orig) Object.assign(drag.value.ann, drag.value.orig);
-  }
-  drag.value = { active: false, type: "", ann: null, orig: null, startX: 0, startY: 0, handle: "" };
+  // 拖拽中离开画布：不取消（window mousemove/mouseup 继续处理），避免拖到边界丢失
   if (drawing.value) {
     drawing.value = false;
     removeBoxPreview();
@@ -2599,12 +2603,17 @@ function onWheel(e: WheelEvent) {
 
 function onDblClick(_e: MouseEvent) {
   if (currentTool.value === "polygon" && polyDrawingPoints.value.length >= 3) {
-    store.annotations.push({
-      id: crypto.randomUUID(),
-      type: "Polygon",
-      class_id: selectedClassId.value || 0,
-      points: polyDrawingPoints.value.map((p) => ({ x: p.x, y: p.y })),
-    });
+    // dblclick 的第二下 click 已通过 mousedown 添加了一个顶点，弹出后再闭合
+    const pts = [...polyDrawingPoints.value];
+    pts.pop();
+    if (pts.length >= 3) {
+      store.annotations.push({
+        id: crypto.randomUUID(),
+        type: "Polygon",
+        class_id: selectedClassId.value || 0,
+        points: pts.map((p) => ({ x: p.x, y: p.y })),
+      });
+    }
     polyDrawingPoints.value = [];
   }
 }
@@ -2994,7 +3003,9 @@ function afterEdit() {
 // 在 onMouseUp 的回调中 pushHistory
 
 // 切图时重置 lastSavedKey
+let loadImgToken = 0;
 async function loadImg(imageId: number) {
+  const myToken = ++loadImgToken;
   imgUrl.value = "";
   imageLoaded.value = false;
   store.selectedAnnotationId = null;
@@ -3004,8 +3015,10 @@ async function loadImg(imageId: number) {
   if (idx >= 0) store.currentImageIndex = idx;
   try {
     const r = await AnnotationAPI.getPresignedUrl(imageId, store.taskId);
+    if (myToken !== loadImgToken) return; // 已被更新的切图请求取代
     imgUrl.value = r.data?.data?.url || "";
     const ar = await AnnotationAPI.getAnnotations(store.taskId, imageId);
+    if (myToken !== loadImgToken) return;
     store.annotations = ar.data?.data || [];
     lastSavedKey = annotKey(store.annotations);
     unsaved.value = false;
@@ -3014,11 +3027,11 @@ async function loadImg(imageId: number) {
     // Lock this image for current user
     AnnotationAPI.lockImage(imageId, store.taskId).catch(() => {});
     await nextTick();
-    measureLabelRects();
+    if (myToken === loadImgToken) measureLabelRects();
   } catch {
-    imgUrl.value = "";
+    if (myToken === loadImgToken) imgUrl.value = "";
   }
-  updateProgress();
+  if (myToken === loadImgToken) updateProgress();
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
@@ -3124,6 +3137,17 @@ async function saveAnn() {
 function setTool(t: ToolName) {
   currentTool.value = t;
   store.setTool(t);
+  // 工具切换时清理残留状态（十字光标、进行中的绘制/拖拽）
+  showCrosshair.value = false;
+  drawing.value = false;
+  removeBoxPreview();
+  drag.value = { active: false, type: "", ann: null, orig: null, startX: 0, startY: 0, handle: "" };
+  polyDrawingPoints.value = [];
+  kpCorners.value = [];
+  kpPhase.value = null;
+  kpBoxPreview.value = null;
+  ocrDrawingPoints.value = [];
+  ocrTextInputVisible.value = false;
 }
 async function handleBack() {
   if (unsaved.value && store.currentImage) {
@@ -3352,21 +3376,24 @@ onMounted(async () => {
         const total = data.total || 0;
         if (imgs.length > 0 && !store.currentImage) loadImg(imgs[0].id);
         fetchTaskProgress();
-        // Load remaining pages in background
+        // Load remaining pages in background（按页序拼接，避免乱序）
         const totalPages = Math.ceil(total / pageSize);
         if (totalPages > 1) {
+          const pages: Record<number, any[]> = {};
           const promises = [];
           for (let p = 2; p <= totalPages; p++) {
             promises.push(
               AnnotationAPI.getImages(t.dataset_id, tid, p, pageSize)
                 .then((r2) => {
-                  const more = r2.data?.data?.items || [];
-                  if (more.length > 0) store.images.push(...more);
+                  pages[p] = r2.data?.data?.items || [];
                 })
                 .catch(() => {})
             );
           }
           Promise.all(promises).finally(() => {
+            for (let p = 2; p <= totalPages; p++) {
+              if (pages[p]?.length) store.images.push(...pages[p]);
+            }
             imagesLoading.value = false;
           });
         } else {
@@ -3383,6 +3410,7 @@ onMounted(async () => {
   }
   document.addEventListener("keydown", onKey);
   window.addEventListener("mouseup", onWindowMouseUp);
+  window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("beforeunload", onBeforeUnload);
   watch(
     () => store.annotations.length,
@@ -3398,6 +3426,7 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey);
   window.removeEventListener("mouseup", onWindowMouseUp);
+  window.removeEventListener("mousemove", onMouseMove);
   window.removeEventListener("beforeunload", onBeforeUnload);
   if (unsaved.value && store.currentImage) {
     AnnotationAPI.saveAnnotations(store.currentImage.id, {
