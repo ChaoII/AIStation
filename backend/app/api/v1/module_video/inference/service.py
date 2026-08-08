@@ -85,29 +85,30 @@ class InferenceService:
             # Async notification
             if rule:
                 try:
-                    from app.api.v1.module_system.auth.schema import AuthSchema
-                    from app.utils.notification import dispatch_notification
+                    # dispatch_notification 只读 auth.db；提供真实会话而非构造 AuthSchema(db=None)
+                    from types import SimpleNamespace
 
-                    auth = AuthSchema(user=None, permissions=None, db=None)
-                    alarm_dict = {
-                        "id": alarm_id,
-                        "camera_id": camera_id,
-                        "alarm_type": algorithm_type,
-                        "severity": severity,
-                        "alarm_time": datetime.now().isoformat(),
-                        "description": alarm_data["description"],
-                        "snapshot_path": saved_snapshot_path,
-                        "camera": {"name": ""},
-                        "rule_id": rule.id,
-                    }
-                    rule_dict = {
-                        "id": rule.id,
-                        "name": rule.name,
-                        "severity": rule.severity,
-                        "notify_channels": rule.notify_channels,
-                    }
-                    import asyncio
-                    asyncio.ensure_future(dispatch_notification(auth, alarm_dict, rule_dict))
+                    from app.utils.notification import dispatch_notification
+                    async with async_db_session() as notify_db:
+                        auth_like = SimpleNamespace(db=notify_db)
+                        alarm_dict = {
+                            "id": alarm_id,
+                            "camera_id": camera_id,
+                            "alarm_type": algorithm_type,
+                            "severity": severity,
+                            "alarm_time": datetime.now().isoformat(),
+                            "description": alarm_data["description"],
+                            "snapshot_path": saved_snapshot_path,
+                            "camera": {"name": ""},
+                            "rule_id": rule.id,
+                        }
+                        rule_dict = {
+                            "id": rule.id,
+                            "name": rule.name,
+                            "severity": rule.severity,
+                            "notify_channels": rule.notify_channels,
+                        }
+                        await dispatch_notification(auth_like, alarm_dict, rule_dict)
                 except Exception as e:
                     log.warning(f"通知分发失败: {e}")
 

@@ -18,10 +18,16 @@ def create_model(algorithm_type: str, model_path: str, runtime_config: dict | No
     if not info:
         raise ValueError(f"Unknown algorithm type: {algorithm_type}")
 
-    mod = importlib.import_module(info["module"])
-    model_cls = getattr(mod, info["class_name"])
+    try:
+        mod = importlib.import_module(info["module"])
+        model_cls = getattr(mod, info["class_name"])
 
-    from modeldeploy import RuntimeOption
+        from modeldeploy import RuntimeOption
+    except ImportError as e:
+        raise ImportError(
+            f"智能分析推理库 modeldeploy(FastDeploy) 未安装或不可用: {e}。"
+            f"请在部署环境安装 FastDeploy 推理库并放入模型文件后重试。"
+        ) from e
 
     rt = runtime_config or {}
     option = RuntimeOption()

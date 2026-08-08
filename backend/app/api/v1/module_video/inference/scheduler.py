@@ -69,7 +69,7 @@ def _build_task_config(task: AlgorithmTaskModel, camera: CameraModel, algorithm)
         "sensitivity": task.sensitivity or 50,
         "callback_url": (
             f"http://127.0.0.1:{settings.SERVER_PORT}"
-            f"{settings.ROOT_PATH}/algorithm/detection/callback"
+            f"{settings.ROOT_PATH}/video/algorithm/detection/callback"
         ),
         "callback_token": settings.INFERENCE_CALLBACK_TOKEN,
         "fps_target": 5,
@@ -112,6 +112,22 @@ async def start_inference(task_id: int) -> dict:
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
+
+    # 持续排空 stderr，避免管道缓冲填满导致 worker 阻塞
+    async def _drain_stderr(p: asyncio.subprocess.Process):
+        try:
+            while True:
+                line = await p.stderr.readline()
+                if not line:
+                    break
+                try:
+                    logger.info(f"[推理Worker {task_id}] {line.decode('utf-8', errors='replace').rstrip()}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    asyncio.create_task(_drain_stderr(proc))
 
     _running_inferences[task_id] = {
         "proc": proc,

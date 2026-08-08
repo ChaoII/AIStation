@@ -31,7 +31,7 @@
         <div v-if="camId && camerasMap[camId]" class="bs-player-wrap">
           <LivePlayer
             :ref="(el: any) => setPlayerRef(`w${idx + 1}`, el)"
-            :stream="'rtmp://localhost/live/' + camerasMap[camId].push_token"
+            :stream-id="String(camId)"
             :poster="camerasMap[camId].screenshot || ''"
             :name="camerasMap[camId].name"
           />
@@ -49,7 +49,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getLayoutList, getLayoutDetail } from "@/api/module_video/layout";
 import { getCameraList } from "@/api/module_video/camera";
-import LivePlayer from "@/components/LivePlayer/index.vue";
+import LivePlayer from "@/components/Video/LivePlayer.vue";
 
 const route = useRoute();
 const router = useRouter();

@@ -558,6 +558,7 @@ const activeTab = ref("plan");
 // ===== Plan CRUD =====
 const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const router = useRouter();
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
@@ -919,7 +920,8 @@ const logContentConfig = reactive<IContentConfig<any>>({
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
     const p: any = { ...params };
-    const sf = logSearchRef.value?.searchData;
+    // PageSearch 暴露 getQueryParams（非 searchData）
+    const sf = logSearchRef.value?.getQueryParams?.() || {};
     if (sf?.camera_id) p.camera_id = sf.camera_id;
     if (sf?.status) p.status = sf.status;
     if (sf?.trigger_type) p.trigger_type = sf.trigger_type;
@@ -935,7 +937,8 @@ const logContentConfig = reactive<IContentConfig<any>>({
 });
 
 function resetLogFilter() {
-  logSearchRef.value?.resetSearch();
+  // PageContent 暴露 handleRefresh（非 PageSearch 的 resetSearch）
+  logContentRef.value?.handleRefresh();
 }
 
 function triggerLabel(t: string) {
@@ -968,8 +971,9 @@ function statusTagType(s: string): any {
   );
 }
 
-async function fetchLogs() {
-  logContentRef.value?.handleQuery();
+async function fetchLogs(payload?: any) {
+  // PageContent 暴露 fetchPageData（非 handleQuery）；传入搜索 payload
+  logContentRef.value?.fetchPageData(payload || {});
 }
 
 // File preview
@@ -989,7 +993,6 @@ async function showLogFiles(logRow: any) {
 }
 
 function playRecordFile(file: any) {
-  const router = useRouter();
   router.push({ path: "/video/playback", query: { camera_id: file.camera_id } });
 }
 

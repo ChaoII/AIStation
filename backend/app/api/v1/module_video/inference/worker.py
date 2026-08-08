@@ -21,6 +21,11 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# worker 作为独立子进程运行，需把 backend 根加入 sys.path 以导入 app 包
+_BACKEND_ROOT = Path(__file__).resolve().parents[4]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
 
 def load_config(path: str) -> dict:
     with open(path) as f:
@@ -37,7 +42,7 @@ def stderr_json(**kwargs):
 
 def create_model(config: dict):
     """Initialize ModelDeploy model from config."""
-    from inference.registry import create_model as _create_model
+    from app.api.v1.module_video.inference.registry import create_model as _create_model
 
     model = _create_model(
         algorithm_type=config["algorithm_type"],
@@ -77,11 +82,20 @@ def draw_detections(frame, detections, color_map):
 
 
 def apply_roi(frame, region):
-    """Apply ROI mask. region is a list of [x, y] normalized coordinates."""
+    """Apply ROI mask. region is a list of [x, y] normalized coordinates, or a dict."""
     import cv2
     import numpy as np
     if not region:
         return frame
+    # detect_region 存为 JSONB dict 时可能为 {points: [[x,y]...]} 或 {x1,y1,x2,y2}
+    if isinstance(region, dict):
+        if isinstance(region.get("points"), list) and region["points"]:
+            region = region["points"]
+        elif "x1" in region and "x2" in region:
+            region = [[region["x1"], region["y1"]], [region["x2"], region["y1"]],
+                      [region["x2"], region["y2"]], [region["x1"], region["y2"]]]
+        else:
+            return frame
     h, w = frame.shape[:2]
     pts = np.array([[[int(x * w), int(y * h)] for x, y in region]], dtype=np.int32)
     mask = np.zeros((h, w), dtype=np.uint8)
@@ -106,7 +120,9 @@ def main():
     fps_target = config.get("fps_target", 5)
     alarm_interval = config.get("alarm_interval", 30)
     snapshot_dir = config.get("snapshot_dir", "data/detections")
-    conf_threshold = config.get("preset_params", {}).get("conf_threshold", 0.5)
+    _pp = config.get("preset_params", {}) or {}
+    # seed 用 confidence，部分配置用 conf_threshold——兼容两者
+    conf_threshold = _pp.get("conf_threshold", _pp.get("confidence", 0.5))
     detect_region = config.get("detect_region")
 
     stderr_json(type="init", task=task_id, algorithm=algorithm_type, stream=stream_url)

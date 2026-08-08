@@ -255,7 +255,7 @@ async function fetchGroupData(params?: any) {
   rawList.value = flattenTree(tree);
   const query = params?.name;
   if (query) {
-    rawList.value = rawList.value.filter((item: any) => item.label?.includes(query));
+    rawList.value = rawList.value.filter((item: any) => item.name?.includes(query));
   }
   return {
     total: rawList.value.length,
@@ -265,9 +265,11 @@ async function fetchGroupData(params?: any) {
 
 function flattenTree(nodes: any[], result: any[] = []): any[] {
   for (const node of nodes) {
-    result.push(node);
-    if (node.children && node.children.length > 0) {
-      flattenTree(node.children, result);
+    // 剥离 children，避免 el-table tree-props 嵌套渲染导致行重复
+    const { children, ...rest } = node;
+    result.push({ ...rest, _childCount: children?.length || 0 });
+    if (children && children.length > 0) {
+      flattenTree(children, result);
     }
   }
   return result;

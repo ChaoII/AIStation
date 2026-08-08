@@ -335,7 +335,7 @@ function handleRowDelete(id: number) {
 async function fetchCameras() {
   try {
     const res = await getCameraList({ page_size: 100 });
-    cameras.value = res.data?.items || [];
+    cameras.value = res.data?.data?.items || [];
   } catch {
     //
   }

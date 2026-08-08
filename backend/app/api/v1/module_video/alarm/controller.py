@@ -9,6 +9,7 @@ from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission, get_current_user
 from app.core.router_class import OperationLogRoute
 
+from .param import AlarmRuleQueryParam
 from .schema import AlarmRecordConfirmSchema, AlarmRuleCreateSchema, AlarmRuleUpdateSchema
 from .service import AlarmService
 
@@ -18,9 +19,10 @@ AlarmRouter = APIRouter(route_class=OperationLogRoute, prefix="/alarm", tags=["�
 @AlarmRouter.get("/rule/list", summary="查询告警规则列表")
 async def get_rule_list_controller(
     page: PaginationQueryParam = Depends(),
+    search: AlarmRuleQueryParam = Depends(),
     auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:query"])),
 ) -> JSONResponse:
-    result_list = await AlarmService.get_rule_list_service(auth=auth)
+    result_list = await AlarmService.get_rule_list_service(auth=auth, search=search)
     result = await PaginationService.paginate(data_list=result_list, page_no=page.page_no, page_size=page.page_size)
     return SuccessResponse(data=result, msg="查询成功")
 
@@ -28,7 +30,7 @@ async def get_rule_list_controller(
 @AlarmRouter.post("/rule/create", summary="创建告警规则")
 async def create_rule_controller(
     data: AlarmRuleCreateSchema,
-    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:create"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm_rule:create"])),
 ) -> JSONResponse:
     result = await AlarmService.create_rule_service(data=data, auth=auth)
     return SuccessResponse(data=result, msg="创建成功")
@@ -38,7 +40,7 @@ async def create_rule_controller(
 async def update_rule_controller(
     data: AlarmRuleUpdateSchema,
     id: int = Path(..., description="规则ID"),
-    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:update"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm_rule:update"])),
 ) -> JSONResponse:
     result = await AlarmService.update_rule_service(id=id, data=data, auth=auth)
     return SuccessResponse(data=result, msg="修改成功")
@@ -47,7 +49,7 @@ async def update_rule_controller(
 @AlarmRouter.delete("/rule/delete", summary="删除告警规则")
 async def delete_rule_controller(
     ids: list[int] = Body(..., description="ID列表"),
-    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:delete"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm_rule:delete"])),
 ) -> JSONResponse:
     await AlarmService.delete_rule_service(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
@@ -97,7 +99,7 @@ async def test_notification_controller(
 async def confirm_alarm_controller(
     data: AlarmRecordConfirmSchema,
     id: int = Path(..., description="告警记录ID"),
-    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:update"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:alarm:confirm"])),
 ) -> JSONResponse:
     result = await AlarmService.confirm_alarm_service(id=id, data=data, auth=auth)
     return SuccessResponse(data=result, msg="操作成功")

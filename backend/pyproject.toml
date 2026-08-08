@@ -27,6 +27,8 @@ dependencies = [
     "jinja2==3.1.6",                            # 模板引擎
     "loguru==0.7.3",                            # 日志
     "openai==2.28.0",
+    "opencv-python-headless>=4.9.0",            # 视频智能分析 worker 视频帧处理
+    "onnxruntime>=1.17.0",                       # 智能分析推理引擎
     "openpyxl==3.1.5",                          # Excel
     "pandas==2.2.3",                            # 数据处理
     "passlib==1.7.4",                           # 密码加密

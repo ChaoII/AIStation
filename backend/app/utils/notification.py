@@ -25,8 +25,9 @@ TEMPLATE_VAR_RE = re.compile(r"\{\{(\w+)\}\}")
 def get_ws_manager():
     global _ws_manager
     if _ws_manager is None:
-        from app.api.v1.module_video.alarm.ws import AlarmWSManager
-        _ws_manager = AlarmWSManager()
+        # 复用 alarm/ws.py 的模块级单例，否则新建实例收不到已注册的 socket
+        from app.api.v1.module_video.alarm.ws import alarm_manager
+        _ws_manager = alarm_manager
     return _ws_manager
 
 

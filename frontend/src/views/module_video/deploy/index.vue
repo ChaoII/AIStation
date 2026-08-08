@@ -690,8 +690,9 @@ async function handleToggleInference(row: any) {
 
 async function pollInferenceStatus() {
   const tableEl = contentRef.value;
-  if (!tableEl || !tableEl.tableData) return;
-  const runningTasks = (tableEl.tableData as any[]).filter((t: any) => t.status === "RUNNING");
+  // PageContent 暴露 pageData（非 tableData）
+  if (!tableEl || !tableEl.pageData) return;
+  const runningTasks = (tableEl.pageData as any[]).filter((t: any) => t.status === "RUNNING");
   for (const task of runningTasks) {
     try {
       const res = await getInferenceStatus(task.id);

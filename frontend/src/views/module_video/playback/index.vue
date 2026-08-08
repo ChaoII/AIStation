@@ -293,6 +293,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { useRoute } from "vue-router";
 import { Search, FolderOpened, InfoFilled } from "@element-plus/icons-vue";
 import { Icon } from "@iconify/vue";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
@@ -304,6 +305,7 @@ import {
 
 const cameras = ref<any[]>([]);
 const groupList = ref<any[]>([]);
+const route = useRoute();
 const selectedCamera = ref<number | null>(null);
 const devicePanelOpen = ref(true);
 const segmentsPanelOpen = ref(true);
@@ -711,6 +713,12 @@ onMounted(() => {
   getCameraList({ page_size: 100 })
     .then((r) => {
       cameras.value = r.data?.data?.items || [];
+      // 从回放入口（record/live 页）进入：读 camera_id 自动选中并搜索
+      const camId = Number(route.query.camera_id || 0);
+      if (camId && cameras.value.some((c: any) => c.id === camId)) {
+        selectedCamera.value = camId;
+        nextTick(() => handleSearch());
+      }
     })
     .catch(() => {});
   getCameraGroupList()

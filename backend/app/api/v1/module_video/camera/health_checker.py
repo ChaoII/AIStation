@@ -72,10 +72,14 @@ async def _run_health_check():
                     logger.warning(f"[健康检查] camera={cam.id} error: {res}")
                     continue
                 cam_id, reachable = res
+                values = {"reachable": reachable}
+                if reachable is not None:
+                    # 同步在线状态（前端按 status === "ONLINE" 判断）
+                    values["status"] = "ONLINE" if reachable else "OFFLINE"
                 await session.execute(
                     sa_update(CameraModel)
                     .where(CameraModel.id == cam_id)
-                    .values(reachable=reachable)
+                    .values(**values)
                 )
 
         logger.debug(f"[健康检查] 完成: {len(cameras)} 个摄像头")

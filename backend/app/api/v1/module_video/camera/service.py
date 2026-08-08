@@ -99,12 +99,12 @@ class CameraService:
             msg = str(e)
             if "already exists" in msg:
                 await CameraCRUD(auth).update_crud(id=id, data={
-                    "stream_id": stream_id, "stream_status": "PUSHING"
+                    "stream_id": stream_id, "stream_status": "PUSHING", "status": "ONLINE"
                 })
                 return {"stream_id": stream_id, "play_urls": media_server.get_play_urls(stream_id)}
             raise CustomException(msg=f"启动推流失败: {e}")
         await CameraCRUD(auth).update_crud(id=id, data={
-            "stream_id": stream_id, "stream_status": "PUSHING"
+            "stream_id": stream_id, "stream_status": "PUSHING", "status": "ONLINE"
         })
         return {"stream_id": stream_id, "play_urls": media_server.get_play_urls(stream_id)}
 
@@ -119,7 +119,7 @@ class CameraService:
             except Exception:
                 pass
         await CameraCRUD(auth).update_crud(id=id, data={
-            "stream_id": None, "stream_status": "IDLE"
+            "stream_id": None, "stream_status": "IDLE", "status": "OFFLINE"
         })
 
     @classmethod
