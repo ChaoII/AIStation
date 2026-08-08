@@ -140,6 +140,7 @@ async def update_task(
         result = await TrainService.update_task(task_id, data)
         return SuccessResponse(data=result, msg="训练任务已更新")
     except ValueError as e:
+        from app.common.response import ErrorResponse
         return ErrorResponse(msg=str(e))
 
 
