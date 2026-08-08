@@ -1165,7 +1165,20 @@
       >
         保存
       </el-button>
+      <div class="sep" />
+      <el-button size="small" circle @click="showShortcutHelp">
+        <el-icon><QuestionFilled /></el-icon>
+      </el-button>
     </footer>
+    <!-- 快捷键帮助弹窗 -->
+    <el-dialog v-model="showHelpModal" title="快捷键" width="420px">
+      <div class="shortcut-grid">
+        <div v-for="s in shortcutList" :key="s.keys" class="shortcut-row">
+          <span class="shortcut-keys">{{ s.keys }}</span>
+          <span class="shortcut-desc">{{ s.desc }}</span>
+        </div>
+      </div>
+    </el-dialog>
     <!-- 添加类别弹窗 -->
     <el-dialog v-model="showClassModal" title="添加类别" width="380px">
       <el-form :model="clsForm" label-width="60px">
@@ -1289,6 +1302,7 @@ import {
   RefreshRight,
   Grid,
   CirclePlus,
+  QuestionFilled,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -2892,6 +2906,37 @@ function deleteSelected() {
   }
 }
 
+// ===== 复制 / 粘贴标注 =====
+let annClipboard: any = null;
+function copySelected() {
+  const ann = store.annotations.find((a) => a.id === store.selectedAnnotationId);
+  if (ann) {
+    annClipboard = JSON.parse(JSON.stringify(ann));
+    ElMessage.success("已复制标注");
+  }
+}
+function pasteCopied() {
+  if (!annClipboard) {
+    ElMessage.info("剪贴板为空，先 Ctrl+C 复制标注");
+    return;
+  }
+  const copy = JSON.parse(JSON.stringify(annClipboard));
+  copy.id = crypto.randomUUID();
+  // 轻微偏移，避免完全重叠
+  if (copy.x1 !== undefined) {
+    const dw = 0.01;
+    copy.x1 += dw; copy.x2 += dw; copy.y1 += 0.01; copy.y2 += 0.01;
+  } else if (copy.cx !== undefined) {
+    copy.cx += 0.01; copy.cy += 0.01;
+  } else if (copy.points) {
+    copy.points = copy.points.map((p: any) => ({ x: p.x + 0.01, y: p.y + 0.01 }));
+  }
+  store.annotations.push(copy);
+  store.selectedAnnotationId = copy.id;
+  markUnsaved();
+  pushHistory();
+}
+
 // ===== 保存机制 =====
 const unsaved = ref(false);
 let lastSavedKey = "";
@@ -3232,6 +3277,24 @@ function setTool(t: ToolName) {
   ocrRectMode.value = false;
   ocrBoxStart = { x: 0, y: 0 };
 }
+
+// ===== 快捷键帮助 =====
+const showHelpModal = ref(false);
+const shortcutList = [
+  { keys: "1-7 / s b r p k o c", desc: "切换标注工具" },
+  { keys: "Ctrl+S", desc: "保存当前图" },
+  { keys: "Ctrl+Z / Ctrl+Y", desc: "撤销 / 重做" },
+  { keys: "Ctrl+C / Ctrl+V", desc: "复制 / 粘贴选中标注" },
+  { keys: "Delete / Backspace", desc: "删除选中标注" },
+  { keys: "←→ / a d", desc: "上一张 / 下一张（select 工具下）" },
+  { keys: "Esc", desc: "取消进行中的绘制" },
+  { keys: "t（OCR 工具）", desc: "切换矩形/四边形" },
+  { keys: "0 / 1 / 2（关键点）", desc: "隐藏 / 遮挡 / 可见" },
+  { keys: "滚轮 / 缩放工具", desc: "缩放（Alt+点击缩小）" },
+];
+function showShortcutHelp() {
+  showHelpModal.value = true;
+}
 async function handleBack() {
   if (unsaved.value && store.currentImage) {
     try {
@@ -3310,6 +3373,16 @@ function onKey(e: KeyboardEvent) {
   if (e.ctrlKey && k === "y") {
     e.preventDefault();
     redo();
+    return;
+  }
+  if (e.ctrlKey && k === "c" && store.selectedAnnotationId) {
+    e.preventDefault();
+    copySelected();
+    return;
+  }
+  if (e.ctrlKey && k === "v") {
+    e.preventDefault();
+    pasteCopied();
     return;
   }
   if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) {
@@ -3940,5 +4013,31 @@ onBeforeUnmount(() => {
   min-width: 50px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.shortcut-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.shortcut-keys {
+  min-width: 170px;
+  font-family: monospace;
+  font-size: 12px;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-align: center;
+}
+.shortcut-desc {
+  font-size: 13px;
+  color: #303133;
 }
 </style>
