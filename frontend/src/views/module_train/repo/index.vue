@@ -479,7 +479,7 @@ function handleRowDelete(id: number) {
 }
 
 function handleTrain(row: any) {
-  router.push(`/train/task/create?model_id=${row.id}&framework=${row.framework}`);
+  router.push(`/train/task?model_id=${row.id}&framework=${row.framework}`);
 }
 
 function handleEval(row: any) {

@@ -206,10 +206,25 @@
     <el-dialog v-model="showCreateDialog" title="创建预测任务" width="600px" :close-on-click-modal="false">
       <el-form label-width="100px">
         <el-form-item label="模型版本" required>
-          <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本">
+          <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" @change="onPredictModelChange">
             <el-option v-for="m in models" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
           </el-select>
         </el-form-item>
+        <template v-if="selectedModelFramework === 'paddlex'">
+          <el-form-item label="任务类型">
+            <el-select v-model="createForm.hyperparams.mode" style="width:100%">
+              <el-option label="文本检测 (det)" value="det" />
+              <el-option label="文本识别 (rec)" value="rec" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="模型规格">
+            <el-select v-model="createForm.hyperparams.model_size" style="width:100%">
+              <el-option label="tiny（轻量）" value="tiny" />
+              <el-option label="small（推荐）" value="small" />
+              <el-option label="medium（高精度）" value="medium" />
+            </el-select>
+          </el-form-item>
+        </template>
         <el-form-item label="图片来源">
           <el-radio-group v-model="createForm.sourceType">
             <el-radio value="dataset">从数据集</el-radio>
@@ -269,11 +284,16 @@ const models = ref<any[]>([]);
 const datasets = ref<any[]>([]);
 const pendingFiles = ref<File[]>([]);
 
+const selectedModelFramework = ref<string>("");
+function onPredictModelChange(modelId: number | null) {
+  const m = models.value.find((x: any) => x.id === modelId);
+  selectedModelFramework.value = m?.framework || "";
+}
 const createForm = reactive({
   modelId: null as number | null,
   sourceType: "dataset",
   sourceDatasetId: null as number | null,
-  hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640, device: "0" },
+  hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640, device: "0", mode: "det", model_size: "tiny" },
 });
 
 onMounted(async () => {
@@ -324,7 +344,8 @@ async function handleCreate() {
     createForm.modelId = null;
     createForm.sourceType = "dataset";
     createForm.sourceDatasetId = null;
-    createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640, device: "0" };
+    createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640, device: "0", mode: "det", model_size: "tiny" };
+    selectedModelFramework.value = "";
     pendingFiles.value = [];
     if (uploadRef.value) uploadRef.value.uploadFiles = [];
     refreshList();

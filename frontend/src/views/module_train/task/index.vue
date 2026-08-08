@@ -365,16 +365,10 @@
             </el-col>
           </el-row>
           <el-row :gutter="20">
-            <el-col :span="12">
+            <el-col :span="24">
               <el-form-item label="预训练权重">
                 <el-switch v-model="hpForm.pretrained" />
                 <span style="margin-left:8px;font-size:12px;color:#909399">使用官方权重微调</span>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12" v-if="hpForm.mode === 'det'">
-              <el-form-item label="冻结主干">
-                <el-switch v-model="hpForm.freeze_backbone" />
-                <span style="margin-left:8px;font-size:12px;color:#909399">det 微调冻结 backbone</span>
               </el-form-item>
             </el-col>
           </el-row>
@@ -404,7 +398,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -420,6 +414,7 @@ interface TablePageQuery {
 }
 
 const router = useRouter();
+const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
 const submitLoading = ref(false);
@@ -575,6 +570,7 @@ const formData = reactive({
   name: undefined as string | undefined,
   dataset_id: undefined as number | undefined,
   annotation_task_id: undefined as number | undefined,
+  base_model_id: undefined as number | undefined,
   framework: "ultralytics" as string,
 });
 
@@ -598,7 +594,6 @@ const defaultHpPaddle = () => ({
   lr: 0.0005,
   device: "0",
   pretrained: true,
-  freeze_backbone: false,
 });
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
@@ -624,6 +619,8 @@ const initialFormData = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
   dataset_id: undefined as number | undefined,
+  annotation_task_id: undefined as number | undefined,
+  base_model_id: undefined as number | undefined,
   framework: "ultralytics" as string,
 };
 
@@ -673,7 +670,7 @@ function buildHyperparams(): Record<string, any> {
       model: hpForm.model,
       epochs: hpForm.epochs,
       batch: hpForm.batch,
-      lr: hpForm.lr,
+      lr0: hpForm.lr,
       optimizer: hpForm.optimizer,
       imgsz: hpForm.imgsz,
       workers: hpForm.workers,
@@ -689,7 +686,6 @@ function buildHyperparams(): Record<string, any> {
     lr: hpForm.lr,
     device: hpForm.device,
     pretrained: hpForm.pretrained,
-    freeze_backbone: hpForm.freeze_backbone,
     train_ratio: (hpForm.trainRatio || 80) / 100,
   };
 }
@@ -741,6 +737,7 @@ async function handleSubmit() {
           dataset_id: formData.dataset_id,
           framework: formData.framework,
           annotation_task_id: formData.annotation_task_id,
+          base_model_id: formData.base_model_id,
           hyperparams: buildHyperparams(),
         });
         dialogVisible.visible = false;
@@ -813,7 +810,19 @@ function stopPoll() {
   }
 }
 
-onMounted(() => startPoll());
+onMounted(() => {
+  startPoll();
+  // 从模型仓库"训练"按钮进入：自动打开创建对话框并预填框架
+  const fw = route.query.framework as string | undefined;
+  const modelId = route.query.model_id;
+  if (fw && (fw === "ultralytics" || fw === "paddlex")) {
+    onFrameworkChange(fw);
+    formData.framework = fw;
+    if (modelId) formData.base_model_id = Number(modelId);
+    dialogVisible.title = "新建训练任务";
+    dialogVisible.visible = true;
+  }
+});
 onBeforeUnmount(() => stopPoll());
 </script>
 

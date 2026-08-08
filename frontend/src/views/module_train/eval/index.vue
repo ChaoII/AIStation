@@ -212,10 +212,25 @@
     <el-dialog v-model="createDialogVisible" title="创建评估" width="500px">
       <el-form label-width="100px">
         <el-form-item label="模型版本">
-          <el-select v-model="createForm.modelId" filterable style="width:100%">
+          <el-select v-model="createForm.modelId" filterable style="width:100%" @change="onEvalModelChange">
             <el-option v-for="m in modelVersions" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
           </el-select>
         </el-form-item>
+        <template v-if="selectedModelFramework === 'paddlex'">
+          <el-form-item label="任务类型">
+            <el-select v-model="createForm.hyperparams.mode" style="width:100%">
+              <el-option label="文本检测 (det)" value="det" />
+              <el-option label="文本识别 (rec)" value="rec" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="模型规格">
+            <el-select v-model="createForm.hyperparams.model_size" style="width:100%">
+              <el-option label="tiny（轻量）" value="tiny" />
+              <el-option label="small（推荐）" value="small" />
+              <el-option label="medium（高精度）" value="medium" />
+            </el-select>
+          </el-form-item>
+        </template>
         <el-form-item label="评估数据集">
           <el-select v-model="createForm.evalDatasetId" filterable style="width:100%">
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
@@ -259,10 +274,15 @@ const datasets = ref<any[]>([]);
 
 const createDialogVisible = ref(false);
 const modelVersions = ref<any[]>([]);
+const selectedModelFramework = ref<string>("");
+function onEvalModelChange(modelId: number | null) {
+  const m = modelVersions.value.find((x: any) => x.id === modelId);
+  selectedModelFramework.value = m?.framework || "";
+}
 const createForm = reactive({
   modelId: null as number | null,
   evalDatasetId: null as number | null,
-  hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" },
+  hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0", mode: "det", model_size: "tiny" },
 });
 
 (async () => {
@@ -371,7 +391,8 @@ function handleOpenCreateDialog() {
   const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
   createForm.modelId = curModel?.id || null;
   createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
-  createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" };
+  createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0", mode: "det", model_size: "tiny" };
+  selectedModelFramework.value = curModel?.framework || "";
   createDialogVisible.value = true;
 }
 
@@ -392,7 +413,7 @@ async function handleCreateEval() {
     createDialogVisible.value = false;
     createForm.modelId = null;
     createForm.evalDatasetId = null;
-    createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0" };
+    createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6, device: "0", mode: "det", model_size: "tiny" };
     refreshList();
   } finally {
     creating.value = false;

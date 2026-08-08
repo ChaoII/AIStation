@@ -155,6 +155,9 @@ _ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
 
 def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None) -> list[str]:
     hp = dict(hp)
+    # 兼容旧任务：前端曾发 `lr`，但白名单 key 是 `lr0`（否则 lr 被静默丢弃）
+    if "lr" in hp and "lr0" not in hp:
+        hp["lr0"] = hp.pop("lr")
     if force_multi_label is not None:
         hp["multi_label"] = force_multi_label
     model_name = hp.get("model") or "yolo11n.pt"
@@ -198,7 +201,6 @@ _PADDLEX_OCR_HP: dict[str, tuple[str, object, object | None]] = {
     "lr":         ("lr", 0.0005, lambda v: float(v) > 0),
     "device":     ("device", "0", None),
     "pretrained": ("pretrained", True, None),  # 是否使用官方预训练权重微调
-    "freeze_backbone": ("freeze-backbone", False, None),  # det 微调冻结主干
 }
 
 _PADDLEX_OCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"

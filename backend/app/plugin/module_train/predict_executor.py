@@ -179,6 +179,7 @@ class PredictExecutor(TaskExecutor):
                 # Collect result images from output dir
                 if framework == TrainFramework.PADDLEX:
                     # infer_det/infer_rec 输出 det_results/*.jpg（或直接 output/）
+                    results_base = output_dir
                     result_files = []
                     for base in (os.path.join(output_dir, "det_results"), output_dir):
                         if os.path.isdir(base):

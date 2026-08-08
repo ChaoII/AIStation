@@ -77,9 +77,11 @@ class PaddleXOCRExecutor(TaskExecutor):
             os.makedirs(data_dir, exist_ok=True)
 
             from .exporter import prepare_training_data_for_task
+            hp = task.hyperparams or {}
             await prepare_training_data_for_task(
                 task.dataset_id, task.id, task.framework, data_dir,
                 annotation_task_id=task.annotation_task_id,
+                train_ratio=float(hp.get("train_ratio", 0.8)),
                 ocr_rec=(mode == "rec"),
             )
 

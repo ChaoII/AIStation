@@ -76,7 +76,7 @@ async def _export_core(
     elif framework == "paddlex":
         # PaddleX OCR：ocr_rec 区分 det(false) / rec(true)
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
-                                 export_rec=ocr_rec)
+                                 export_rec=ocr_rec, train_ratio=train_ratio)
     else:
         raise ValueError(f"不支持的导出框架: {framework}")
 
@@ -558,7 +558,7 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
 
 async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
                              output_dir: str, annotation_task_id: int | None = None,
-                             export_rec: bool = False) -> None:
+                             export_rec: bool = False, train_ratio: float = 0.8) -> None:
     """导出 PaddleX OCR（PP-OCRv6）数据格式。
 
     det:  <output>/det/dataset/  (train.txt + val.txt + images/)  PaddleX JSON 标注
@@ -613,7 +613,7 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
             records.append((img.filename, entries, rec_entries))
 
     random.shuffle(records)
-    split_idx = max(1, int(len(records) * 0.8)) if len(records) > 1 else len(records)
+    split_idx = max(1, int(len(records) * train_ratio)) if len(records) > 1 else len(records)
     train_set, val_set = records[:split_idx], records[split_idx:]
 
     def write_label(path, rows):
