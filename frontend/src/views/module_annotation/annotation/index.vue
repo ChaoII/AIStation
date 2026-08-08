@@ -1875,7 +1875,8 @@ function ocrBBox(ann: any) {
 }
 
 function confirmOcrText() {
-  if (ocrTextInput.value.trim() && ocrDrawingPoints.value.length >= 3) {
+  // 导出/训练要求 OCR 多边形 ≥4 点（四边形），3 点会被静默丢弃
+  if (ocrTextInput.value.trim() && ocrDrawingPoints.value.length >= 4) {
     let pts = ocrDrawingPoints.value.map((p) => ({ x: p.x, y: p.y }));
     // 去掉闭合时重复的首点
     if (pts.length > 3) {
@@ -1988,6 +1989,13 @@ function onMouseLeave() {
 
 function onMouseDown(e: MouseEvent) {
   if (!store.currentImage) return;
+
+  // ---- Zoom: 点击放大，Alt+点击缩小 ----
+  if (currentTool.value === "zoom") {
+    const factor = e.altKey ? 0.8 : 1.25;
+    store.setZoom(store.zoom * factor);
+    return;
+  }
 
   // ---- Select: deselect on empty-space click ----
   if (currentTool.value === "select") {
@@ -2617,11 +2625,14 @@ function startOcrRectResize(e: MouseEvent, ann: any, edges: string) {
   };
 }
 function onAnnMouseDown(e: MouseEvent, ann: any) {
+  // pan 模式：不拦截事件，交给 canvas 平移（否则点标注会误移动）
+  if (currentTool.value === "pan") {
+    return;
+  }
   e.stopPropagation();
 
   if (
     currentTool.value === "select" ||
-    currentTool.value === "pan" ||
     currentTool.value === "ocr"
   ) {
     const t = e.target as HTMLElement;
@@ -2831,8 +2842,10 @@ function annotKey(anns: any[]) {
         return `${a.id}:Polygon:${a.class_id}:${(a.points || []).map((p: any) => `${p.x},${p.y}`).join(";")}`;
       if (a.type === "Keypoint")
         return `${a.id}:Keypoint:${a.class_id}:${(a.keypoints || []).map((k: any) => `${k.x},${k.y},${k.visibility},${k.name}`).join(";")}:${a.bounding_box ? `${a.bounding_box.cx},${a.bounding_box.cy},${a.bounding_box.width},${a.bounding_box.height},${a.bounding_box.angle}` : "0,0,0,0,0"}`;
+      if (a.type === "Classification")
+        return `${a.id}:Classification:${a.class_id}:${(a.class_ids || []).join(",")}`;
       if (a.type === "Ocr")
-        return `${a.id}:Ocr:${a.class_id}:${(a.points || []).map((p: any) => `${p.x},${p.y}`).join(";")}:${a.text || ""}`;
+        return `${a.id}:Ocr:${a.class_id}:${(a.points || []).map((p: any) => `${p.x},${p.y}`).join(";")}:${encodeURIComponent(a.text || "")}:${a.source || ""}`;
       return `${a.id}:AxisAlignedBox:${a.class_id}:${a.x1}:${a.y1}:${a.x2}:${a.y2}`;
     })
     .sort()
@@ -2915,7 +2928,19 @@ function restoreHistory() {
               bounding_box: { cx, cy, width: bw, height: bh, angle: ba },
             };
           }
-          if (type === "Ocr" && parts.length >= 5) {
+          if (type === "Classification" && parts.length >= 4) {
+            const classIds = parts[3]
+              .split(",")
+              .filter(Boolean)
+              .map(Number);
+            return {
+              id: parts[0],
+              type: "Classification",
+              class_id: Number(parts[2]),
+              class_ids: classIds,
+            };
+          }
+          if (type === "Ocr" && parts.length >= 6) {
             const points = parts[3]
               .split(";")
               .filter(Boolean)
@@ -2923,8 +2948,9 @@ function restoreHistory() {
                 const [x, y] = s.split(",").map(Number);
                 return { x, y };
               });
-            const text = parts.slice(4).join(":");
-            return { id: parts[0], type: "Ocr", class_id: Number(parts[2]), points, text };
+            const text = decodeURIComponent(parts[4] || "");
+            const source = parts[5] || "";
+            return { id: parts[0], type: "Ocr", class_id: Number(parts[2]), points, text, source };
           }
           if (parts.length >= 6) {
             return {
@@ -3044,7 +3070,7 @@ function nextImg() {
   if (store.currentImageIndex < store.images.length - 1) goToImage(store.currentImageIndex + 1);
 }
 function scrollToTop() {
-  const el = document.querySelector(".ann-sidebar .scroll-area");
+  const el = document.querySelector(".ann-rightbar .scroll-area");
   if (el) el.scrollTop = 0;
 }
 
