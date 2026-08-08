@@ -1074,6 +1074,26 @@
               <span class="section-title">标注列表</span>
               <ElBadge :value="store.annotations.length" :max="999" />
             </div>
+            <!-- 选中标注编辑区：改类别 / 编辑OCR文本 -->
+            <div v-if="selectedAnn" class="selected-ann-edit panel-section-inner">
+              <el-select
+                v-model="selectedAnn.class_id"
+                size="small"
+                placeholder="更改类别"
+                style="width: 100%; margin-bottom: 6px"
+                @change="onAnnClassChange"
+              >
+                <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
+              </el-select>
+              <el-input
+                v-if="selectedAnn.type === 'Ocr'"
+                v-model="selectedAnn.text"
+                size="small"
+                placeholder="编辑OCR文本"
+                @change="onAnnEdit"
+              />
+              <el-button size="small" type="danger" text @click="deleteSelected">删除选中</el-button>
+            </div>
             <div class="scroll-area">
               <div
                 v-for="ann in store.annotations"
@@ -1657,6 +1677,19 @@ function getCls(id: number) {
 }
 function clsColor(id: number) {
   return getCls(id)?.color || "#3b82f6";
+}
+const selectedAnn = computed(() =>
+  store.selectedAnnotationId ? store.annotations.find((a) => a.id === store.selectedAnnotationId) || null : null
+);
+function onAnnClassChange() {
+  markUnsaved();
+  pushHistory();
+  nextTick(() => measureLabelRects());
+}
+function onAnnEdit() {
+  markUnsaved();
+  pushHistory();
+  nextTick(() => measureLabelRects());
 }
 function clsCount(id: number) {
   return store.annotations.filter((a) => a.class_id === id).length;
@@ -3691,6 +3724,17 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+.selected-ann-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  margin: 4px 0;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  background: #fafafa;
+  flex-shrink: 0;
 }
 .section-title-row {
   display: flex;
