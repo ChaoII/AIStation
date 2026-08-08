@@ -347,11 +347,18 @@ class TrainService:
 
     @classmethod
     async def create_eval(cls, data, auth) -> dict:
+        from .model import TrainFramework
         async with async_db_session.begin() as db:
+            # 从模型版本推断 framework 并持久化（否则列表/筛选永远显示 ultralytics）
+            framework = TrainFramework.ULTRALYTICS
+            model_row = await db.get(TrainModel, data.model_id) if data.model_id else None
+            if model_row and model_row.framework:
+                framework = model_row.framework
             e = TrainEval(
                 model_repo_id=data.model_repo_id,
                 model_id=data.model_id,
                 eval_dataset_id=data.eval_dataset_id,
+                framework=framework,
                 hyperparams=data.hyperparams,
                 created_id=auth.user.id,
             )
@@ -422,10 +429,16 @@ class TrainService:
 
     @classmethod
     async def create_predict(cls, data, auth) -> dict:
+        from .model import TrainFramework
         async with async_db_session.begin() as db:
+            framework = TrainFramework.ULTRALYTICS
+            model_row = await db.get(TrainModel, data.model_id) if data.model_id else None
+            if model_row and model_row.framework:
+                framework = model_row.framework
             p = TrainPredict(
                 model_repo_id=data.model_repo_id,
                 model_id=data.model_id,
+                framework=framework,
                 source_type=data.source_type,
                 source_dataset_id=data.source_dataset_id,
                 source_images=data.source_images,

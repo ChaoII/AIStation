@@ -403,6 +403,7 @@ async def export_model(
             model_name=model.get("name", ""),
             created_id=auth.user.id,
             dataset_id=model.get("annotation_dataset_id"),
+            framework=model.get("framework"),
         )
         return SuccessResponse(data=result, msg="模型导出成功")
     except Exception as e:

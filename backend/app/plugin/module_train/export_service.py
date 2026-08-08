@@ -120,6 +120,7 @@ async def export_model_to_format(
     model_name: str,
     created_id: int,
     dataset_id: int | None,
+    framework: str | None = None,
 ) -> dict:
     """Export a trained model to the specified format
 
@@ -130,6 +131,13 @@ async def export_model_to_format(
 
     if not storage_path:
         raise Exception("该模型未存储训练产物文件（best.pt），无法导出。请确认训练已完成且模型已正常保存。")
+
+    # 非 ultralytics 框架（PaddleX/pytorch-ocr 产物是 .pdparams/.pt，无法用 yolo export 转格式）
+    if framework and framework not in ("ultralytics", "yolo", None):
+        raise Exception(
+            f"「{framework}」框架暂不支持 ONNX/TensorRT 等格式转换导出，"
+            "仅支持下载原始权重文件。请使用模型下载功能获取 .pdparams 权重。"
+        )
 
     # 每次导出都重新执行，除非原始 .pt 确实无法找回
     original_storage_path = storage_path

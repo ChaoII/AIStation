@@ -489,7 +489,7 @@ function handleTrain(row: any) {
 }
 
 function handleEval(row: any) {
-  router.push(`/train/eval?model_repo_id=${row.id}`);
+  router.push(`/train/eval?model_id=${row.id}`);
 }
 
 function handleDeploy(row: any) {

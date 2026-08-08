@@ -38,6 +38,39 @@ class PaddleXOCRExecutor(TaskExecutor):
         mode = str(hp.get("mode", "det")).lower()
         return mode if mode in ("det", "rec") else "det"
 
+    @classmethod
+    async def recover_orphans(cls) -> None:
+        """只回收 PADDLEX 训练任务（避免与其他执行器重复处理）。
+
+        det/rec 执行器共享检查：任一 PaddleXOCR* 的 registry 中有该任务即视为存活。
+        """
+        async with async_db_session() as db:
+            from sqlalchemy import select, update
+
+            rows = (await db.execute(select(TrainTask).where(
+                TrainTask.status == TrainStatus.RUNNING
+            ))).scalars().all()
+            all_registries = {}
+            for sub in cls.__mro__:
+                reg = getattr(sub, "_registry", None)
+                if isinstance(reg, dict):
+                    all_registries.update(reg)
+            for r in rows:
+                fw = str(getattr(r, "framework", "") or "").lower()
+                if fw != "paddlex":
+                    continue
+                if r.id in all_registries:
+                    continue
+                if r.started_at and (datetime.now() - r.started_at).total_seconds() > cls._orphan_timeout_sec:
+                    async with async_db_session.begin() as db2:
+                        await db2.execute(
+                            update(TrainTask).where(TrainTask.id == r.id).values(
+                                status=TrainStatus.FAILED,
+                                error_log="任务会话已断开（后端重启或容器丢失）",
+                                finished_at=datetime.now(),
+                            )
+                        )
+
     @staticmethod
     def _parse_epoch(line: str) -> dict | None:
         """解析 PaddleOCR 训练日志：epoch: [n/total] ... / best metric。"""

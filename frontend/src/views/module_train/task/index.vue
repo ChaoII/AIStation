@@ -841,7 +841,7 @@ function startPoll() {
   pollTimer = setInterval(async () => {
     if (!contentRef.value?.pageData) return;
     try {
-      const params = (contentRef.value as any).queryParams || {};
+      const params = { page_no: 1, page_size: 200 };
       const res = await TrainAPI.getTaskList(params);
       const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
       const old = contentRef.value.pageData as any[];

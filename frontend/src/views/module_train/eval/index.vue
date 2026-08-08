@@ -300,7 +300,8 @@ interface TablePageQuery {
 
 const route = useRoute();
 const router = useRouter();
-const modelRepoId = Number(route.query.model_repo_id || 0);
+// 从 repo 页"评估"进入时携带 model_id（版本行 id）；兼容旧的 model_repo_id 参数
+const modelRepoId = Number(route.query.model_id || route.query.model_repo_id || 0);
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const creating = ref(false);
@@ -533,7 +534,7 @@ function startPoll() {
   pollTimer = setInterval(async () => {
     if (!contentRef.value?.pageData) return;
     try {
-      const params = (contentRef.value as any).queryParams || {};
+      const params = { page_no: 1, page_size: 200 };
       const res = await TrainAPI.getEvalList(params);
       const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
       const old = contentRef.value.pageData as any[];

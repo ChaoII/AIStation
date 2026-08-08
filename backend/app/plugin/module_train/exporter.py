@@ -69,6 +69,13 @@ async def _export_core(
             await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
+    elif framework == "paddle-ocr":
+        # 数据集下载导出 PaddleOCR 格式（det/rec 由 ocr_rec 控制）
+        await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
+                                 export_rec=ocr_rec, train_ratio=train_ratio)
+    elif framework == "paddle-mlcls":
+        await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id,
+                                   class_names=class_names)
     elif framework == "pytorch-ocr-det":
         await _export_pytorch_ocr(dataset_id, task_id, images, output_dir, annotation_task_id)
     elif framework == "pytorch-ocr-rec":
@@ -155,6 +162,29 @@ def _format_yolo_lines(anns: list, task_type: str) -> list[str]:
             cx, cy = ann["cx"], ann["cy"]
             w, h = ann["width"], ann["height"]
             lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+        elif ann_type in ("Polygon", "polygon") and task_type in ("segmentation", "seg"):
+            # YOLO Seg: cls_id x1 y1 x2 y2 ... (归一化多边形顶点)
+            pts = []
+            for p in ann.get("points", []):
+                px = p.get("x") if isinstance(p, dict) else p[0]
+                py = p.get("y") if isinstance(p, dict) else p[1]
+                pts.append(f"{px:.6f} {py:.6f}")
+            if len(pts) >= 3:
+                lines.append(f"{cls_id} {' '.join(pts)}")
+        elif ann_type in ("Keypoint", "keypoint") and task_type in ("keypoint", "pose"):
+            # YOLO Pose: cls_id cx cy w h kpx kpy kpv ...（bbox + 关键点，visibility 0/1/2）
+            bb = ann.get("bounding_box", {})
+            cx, cy = bb.get("cx", 0), bb.get("cy", 0)
+            w, h = bb.get("width", 0), bb.get("height", 0)
+            parts = [f"{cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"]
+            vis_map = {"Visible": 2, "Occluded": 1, "Hidden": 0}
+            for kp in ann.get("keypoints", []):
+                kx = kp.get("x", 0)
+                ky = kp.get("y", 0)
+                kv = vis_map.get(kp.get("visibility", ""), 0)
+                parts.append(f"{kx:.6f} {ky:.6f} {kv}")
+            if len(parts) > 4:
+                lines.append(f"{cls_id} {' '.join(parts)}")
     return lines
 
 
@@ -666,3 +696,55 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
         with open(os.path.join(dataset_dir, "..", "dict.txt"), "w", encoding="utf-8") as f:
             f.write("\n".join(chars))
         log.info(f"paddlex rec: exported {len(rec_train)} train / {len(rec_val)} val to {dataset_dir}")
+
+
+async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, output_dir: str,
+                               annotation_task_id: int | None = None,
+                               class_names: dict | None = None) -> None:
+    """导出多标签分类到 Paddle MLCLS 格式（train_list.txt：每行 image_path + 多个 class_id）。"""
+    import random
+
+    from app.utils.s3_client import s3_client
+
+    img_dir = os.path.join(output_dir, "images")
+    os.makedirs(img_dir, exist_ok=True)
+    lines = []
+
+    async with async_db_session() as db:
+        for img in images:
+            img_path = os.path.join(img_dir, img.filename)
+            try:
+                if not os.path.exists(img_path):
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+            except Exception:
+                continue
+
+            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+            if annotation_task_id:
+                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+            rec = await db.execute(query)
+            record = rec.scalar_one_or_none()
+            anns = record.annotation_data if record and record.annotation_data else []
+
+            class_ids = []
+            for ann in anns:
+                cid = ann.get("class_id")
+                if cid is None and ann.get("class_ids"):
+                    class_ids.extend(str(c) for c in ann["class_ids"])
+                elif cid is not None:
+                    class_ids.append(str(cid))
+            if class_ids:
+                # 去重保持顺序
+                seen = set()
+                uniq = [c for c in class_ids if not (c in seen or seen.add(c))]
+                lines.append(f"{img.filename} {' '.join(uniq)}")
+
+    random.shuffle(lines)
+    label_file = os.path.join(img_dir, "train_list.txt")
+    with open(label_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    log.info(f"paddle-mlcls: exported {len(lines)} labeled images to {output_dir}")

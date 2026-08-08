@@ -214,8 +214,13 @@
     <el-dialog v-model="showCreateDialog" title="新建部署" width="500px">
       <el-form label-width="120px">
         <el-form-item label="选择模型" required>
-          <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本">
+          <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" @change="onDeployModelChange">
             <el-option v-for="m in models" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="needsRecModel" label="识别模型" required>
+          <el-select v-model="createForm.recModelId" filterable style="width:100%" placeholder="选择识别(rec)模型版本">
+            <el-option v-for="m in recModels" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="部署名称">
@@ -281,11 +286,22 @@ const keyInfo = reactive({ apiKey: "", apiUrl: "" });
 
 const createForm = reactive({
   modelId: null as number | null,
+  recModelId: null as number | null,
   name: "",
   device: "0",
   hostPort: null as number | null,
   hyperparams: { conf: 0.25, iou: 0.45, imgsz: 640 },
 });
+
+const selectedDeployFramework = ref("");
+function onDeployModelChange(modelId: number | null) {
+  const m = models.value.find((x: any) => x.id === modelId);
+  selectedDeployFramework.value = m?.framework || "";
+  createForm.recModelId = null;
+}
+// OCR（paddlex/pytorch-ocr-det）需要 det+rec 双模型
+const needsRecModel = computed(() => ["paddlex", "pytorch-ocr-det"].includes(selectedDeployFramework.value));
+const recModels = computed(() => models.value.filter((m: any) => ["paddlex", "pytorch-ocr-rec"].includes(m.framework)));
 
 function statusTag(s: string) {
   return ({ pending: "info", deploying: "warning", running: "success", stopped: "info", failed: "danger" } as any)[s] || "info";
@@ -360,14 +376,22 @@ onMounted(async () => {
 
 async function handleCreate() {
   if (!createForm.modelId) { ElMessage.warning("请选择模型"); return; }
+  if (needsRecModel.value && !createForm.recModelId) {
+    ElMessage.warning("OCR 部署需要选择识别(rec)模型"); return;
+  }
   creating.value = true;
   try {
+    const hp: Record<string, any> = { ...createForm.hyperparams };
+    if (needsRecModel.value && createForm.recModelId) {
+      const rec = models.value.find((m: any) => m.id === createForm.recModelId);
+      if (rec?.storage_path) hp.rec_model_path = rec.storage_path;
+    }
     const r = await TrainAPI.createDeploy({
       model_id: createForm.modelId,
       name: createForm.name || undefined,
       device: createForm.device || "0",
       host_port: createForm.hostPort || undefined,
-      hyperparams: createForm.hyperparams,
+      hyperparams: hp,
     });
     const d = r.data?.data;
     keyInfo.apiKey = d?.api_key || "";
@@ -375,6 +399,7 @@ async function handleCreate() {
     showCreateDialog.value = false;
     showKeyDialog.value = true;
     createForm.modelId = null;
+    createForm.recModelId = null;
     createForm.name = "";
     createForm.device = "0";
     createForm.hostPort = null;

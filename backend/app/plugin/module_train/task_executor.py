@@ -125,6 +125,10 @@ class TaskExecutor(ABC):
             for r in rows:
                 if r.id in cls._registry:
                     continue
+                # PaddleX 任务由 PaddleXOCR*Executor 各自的 registry 管理，其他执行器跳过
+                framework = getattr(r, "framework", None)
+                if framework is not None and str(framework).lower() == "paddlex" and cls.__name__ != "PaddleXOCRExecutor":
+                    continue
                 if r.started_at and (datetime.now() - r.started_at).total_seconds() > cls._orphan_timeout_sec:
                     async with async_db_session.begin() as db2:
                         await db2.execute(

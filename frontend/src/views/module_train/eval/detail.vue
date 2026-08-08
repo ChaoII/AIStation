@@ -256,7 +256,7 @@ function connectWs(evalId: number) {
   ws = new WebSocket(`${baseUrl}/api/v1/train/ws/eval/logs?eval_id=${evalId}`);
   wsConnected.value = true;
   ws.onmessage = (e: MessageEvent) => {
-    const line = e.data.replace(/[\r\x1b\[[0-9;]*m]/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+    const line = e.data.replace(/\r/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
     logText.value += line + "\n";
     logLineCount.value++;
     if (autoScroll.value)
