@@ -661,11 +661,19 @@ async function handleExportSubmit() {
   exporting.value = true;
   try {
     const { TrainAPI } = await import("@/api/module_train");
+    let ocrRec: boolean | undefined;
+    if (exportFormat.value === "paddle-ocr") {
+      if (!ocrExportDet.value && !ocrExportRec.value) {
+        ElMessage.warning("请至少选择一种 OCR 导出（det/rec）");
+        return;
+      }
+      ocrRec = ocrExportRec.value; // det-only → false；rec 参与（rec-only 或 both）→ true
+    }
     const r = await TrainAPI.exportDataset({
       dataset_id: exportDatasetId.value,
       format: exportFormat.value,
       annotation_task_id: exportTaskId.value,
-      ocr_rec: exportFormat.value === "paddle-ocr" ? ocrExportRec.value : undefined,
+      ocr_rec: ocrRec,
       train_ratio: isYoloOrPaddleFormat.value ? trainRatio.value / 100 : undefined,
     });
     const url = r.data?.data?.download_url;
