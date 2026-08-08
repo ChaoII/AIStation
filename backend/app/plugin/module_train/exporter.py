@@ -161,7 +161,11 @@ def _format_yolo_lines(anns: list, task_type: str) -> list[str]:
         elif ann_type in ("RotatedBox", "rotated_box"):
             cx, cy = ann["cx"], ann["cy"]
             w, h = ann["width"], ann["height"]
-            lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}")
+            ang = ann.get("angle", 0)
+            # 画布 angle 为弧度；YOLO OBB 需要度
+            if isinstance(ang, (int, float)) and abs(ang) > 3.0:
+                ang = ang * 180 / 3.14159265
+            lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {float(ang or 0):.6f}")
         elif ann_type in ("Polygon", "polygon") and task_type in ("segmentation", "seg"):
             # YOLO Seg: cls_id x1 y1 x2 y2 ... (归一化多边形顶点)
             pts = []
@@ -247,9 +251,16 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
             ids: list[int] = []
             for ann in (record.annotation_data if record and record.annotation_data else []):
                 cid = ann.get("class_id")
-                if cid is not None:
+                if cid is not None and cid != -1:
                     ids.append(cid)
+                if isinstance(ann.get("class_ids"), list):
+                    for c in ann["class_ids"]:
+                        if c is not None and c != -1:
+                            ids.append(c)
             if ids:
+                # 去重保持顺序
+                seen = set()
+                ids = [c for c in ids if not (c in seen or seen.add(c))]
                 img_labels[img.id] = ids
 
     if multi_label:
@@ -350,7 +361,7 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
                         "shape_type": "rectangle",
                         "flags": {},
                     })
-                elif ann.get("type") == "polygon":
+                elif ann.get("type") in ("Polygon", "polygon"):
                     pts = ann.get("points", [])
                     if len(pts) >= 3:
                         shapes.append({
@@ -732,10 +743,12 @@ async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, outp
             class_ids = []
             for ann in anns:
                 cid = ann.get("class_id")
-                if cid is None and ann.get("class_ids"):
-                    class_ids.extend(str(c) for c in ann["class_ids"])
-                elif cid is not None:
+                if cid is not None and cid != -1:
                     class_ids.append(str(cid))
+                if isinstance(ann.get("class_ids"), list):
+                    for c in ann["class_ids"]:
+                        if c is not None and c != -1:
+                            class_ids.append(str(c))
             if class_ids:
                 # 去重保持顺序
                 seen = set()

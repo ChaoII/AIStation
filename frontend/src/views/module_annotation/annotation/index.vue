@@ -1410,18 +1410,6 @@ async function measureLabelRects() {
     }
   });
   labelTextRects.value = map;
-  // 调试输出
-  if (map.size > 0) {
-    for (const [id, r] of map) {
-      const ann = store.annotations.find((a) => a.id === id);
-      const clsName = ann ? getCls(ann.class_id)?.name || "?" : "?";
-      const calcW = labelWidthForClass(ann?.class_id || 0);
-      const calcH = LABEL_TAG_H;
-      console.log(
-        `[label] "${clsName}" 测量: w=${r.w.toFixed(1)} h=${r.h.toFixed(1)} y=${r.y.toFixed(1)} | 计算: w=${calcW} h=${calcH}`
-      );
-    }
-  }
 }
 
 // ---- Box drawing (div overlay in container-relative coords) ----
@@ -1908,6 +1896,10 @@ function confirmOcrText() {
       if (Math.abs(last.x - first.x) < 0.001 && Math.abs(last.y - first.y) < 0.001) {
         pts = pts.slice(0, -1);
       }
+    }
+    if (pts.length < 4) {
+      ElMessage.warning("OCR 标注至少需要 4 个角点（四边形），请补充角点");
+      return;
     }
     store.annotations.push({
       id: crypto.randomUUID(),
@@ -2602,8 +2594,30 @@ function onMouseUp(e: MouseEvent) {
 }
 
 // Window-level mouseup catch (for safety when mouse leaves canvas)
-function onWindowMouseUp() {
-  if (drag.value.active) drag.value.active = false;
+function onWindowMouseUp(e: MouseEvent) {
+  if (drag.value.active) {
+    // 鼠标在画布外释放：补记 unsaved/history（与 canvas onMouseUp 一致）
+    if (
+      drag.value.ann &&
+      (drag.value.type === "move" ||
+        drag.value.type.startsWith("resize-") ||
+        drag.value.type === "poly-vertex" ||
+        drag.value.type === "rotate" ||
+        drag.value.type === "kp-vertex" ||
+        drag.value.type === "kp-move" ||
+        drag.value.type.startsWith("kp-resize-"))
+    ) {
+      const isClick =
+        drag.value.type === "move" &&
+        Math.abs((e.clientX || 0) - drag.value.startX) < 3 &&
+        Math.abs((e.clientY || 0) - drag.value.startY) < 3;
+      if (!isClick) {
+        markUnsaved();
+        pushHistory();
+      }
+    }
+    drag.value.active = false;
+  }
   if (drawing.value) {
     drawing.value = false;
     showCrosshair.value = false;
@@ -3046,7 +3060,14 @@ async function loadImg(imageId: number) {
     historyStack = [lastSavedKey];
     historyIndex = 0;
     // Lock this image for current user
-    AnnotationAPI.lockImage(imageId, store.taskId).catch(() => {});
+    AnnotationAPI.lockImage(imageId, store.taskId)
+      .then((lr: any) => {
+        const d = lr?.data?.data;
+        if (d?.locked) {
+          ElMessage.warning(`该图片已被 ${d.locked_by || "其他用户"} 锁定，你的修改可能无法保存`);
+        }
+      })
+      .catch(() => {});
     await nextTick();
     if (myToken === loadImgToken) measureLabelRects();
   } catch {
@@ -3169,6 +3190,14 @@ function setTool(t: ToolName) {
   kpBoxPreview.value = null;
   ocrDrawingPoints.value = [];
   ocrTextInputVisible.value = false;
+  // rotated_box / keypoint / OCR 进行中状态
+  rbStep.value = 0;
+  rbPt1.value = null;
+  rbPt2.value = null;
+  rbDragging.value = false;
+  kpBoxDragStart = null;
+  ocrRectMode.value = false;
+  ocrBoxStart = { x: 0, y: 0 };
 }
 async function handleBack() {
   if (unsaved.value && store.currentImage) {
@@ -3251,15 +3280,17 @@ function onKey(e: KeyboardEvent) {
     return;
   }
   if ((k === "delete" || k === "backspace") && store.selectedAnnotationId) {
+    e.preventDefault();
     removeAnn(store.selectedAnnotationId);
     afterEdit();
     return;
   }
-  if (k === "arrowleft" || k === "a") {
+  // a/d 切图仅在 select 工具且无进行中绘制时生效（避免绘制多边形/OCR 时误切图）
+  if ((k === "arrowleft" || k === "a") && currentTool.value === "select" && !drawing.value) {
     prevImg();
     return;
   }
-  if (k === "arrowright" || k === "d") {
+  if ((k === "arrowright" || k === "d") && currentTool.value === "select" && !drawing.value) {
     nextImg();
     return;
   }
