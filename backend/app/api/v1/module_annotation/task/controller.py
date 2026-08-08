@@ -15,6 +15,9 @@ TaskRouter = APIRouter(route_class=OperationLogRoute, prefix="/task", tags=["数
 
 @TaskRouter.get("/list", summary="查询任务列表")
 async def get_task_list(
+    name: str | None = None,
+    annotation_type: str | None = None,
+    status: str | None = None,
     page: PaginationQueryParam = Depends(),
     auth: AuthSchema = Depends(AuthPermission(["annotation:task:query"])),
 ) -> JSONResponse:
@@ -23,9 +26,16 @@ async def get_task_list(
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
     offset = (page.page_no - 1) * page.page_size
+    search: dict = {}
+    if name:
+        search["name"] = ("like", name)
+    if annotation_type:
+        search["task_type"] = annotation_type
+    if status:
+        search["status"] = status
     result = await crud.page(
         offset=offset, limit=page.page_size, order_by=page.order_by,
-        search={}, out_schema=TaskOutSchema,
+        search=search, out_schema=TaskOutSchema,
     )
     # Enrich each task with per-task calculated progress and assignee names
     if result.get("items"):

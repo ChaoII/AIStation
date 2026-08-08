@@ -288,11 +288,12 @@ const searchConfig = reactive<ISearchConfig>({
       label: "标注类型",
       type: "select",
       options: [
-        { label: "矩形框", value: "bbox" },
-        { label: "多边形", value: "polygon" },
+        { label: "目标检测", value: "detection" },
+        { label: "旋转框检测", value: "rotated_detection" },
+        { label: "多边形分割", value: "segmentation" },
         { label: "关键点", value: "keypoint" },
+        { label: "OCR文本", value: "ocr" },
         { label: "分类", value: "classification" },
-        { label: "语义分割", value: "segmentation" },
       ],
       attrs: { placeholder: "请选择标注类型", clearable: true, style: { width: "167.5px" } },
     },
@@ -301,8 +302,8 @@ const searchConfig = reactive<ISearchConfig>({
       label: "状态",
       type: "select",
       options: [
-        { label: "进行中", value: "0" },
-        { label: "已完成", value: "1" },
+        { label: "进行中", value: "in_progress" },
+        { label: "已完成", value: "completed" },
       ],
       attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
     },
@@ -417,8 +418,8 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id && type === "update") {
     dialogVisible.title = "编辑任务";
-    const res = await AnnotationAPI.getTaskList({ id, page_no: 1, page_size: 1 });
-    const item = res.data.data?.items?.[0];
+    const res = await AnnotationAPI.getTaskDetail(id);
+    const item = res.data.data;
     if (item) {
       formData.id = item.id;
       formData.name = item.name;
@@ -426,6 +427,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.task_type = item.task_type;
       formData.assignees = item.assignees || [];
       formData.description = item.description;
+      formData.classification_mode = item.classification_mode;
     }
   } else {
     dialogVisible.title = "新增任务";
@@ -445,6 +447,7 @@ async function handleSubmit() {
             name: formData.name,
             task_type: formData.task_type,
             assignees: formData.assignees,
+            classification_mode: formData.classification_mode,
           });
         } else {
           await AnnotationAPI.createTask({
@@ -459,8 +462,8 @@ async function handleSubmit() {
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
-      } catch {
-        //
+      } catch (e: any) {
+        ElMessage.error(e?.response?.data?.msg || e?.msg || "保存失败");
       } finally {
         submitLoading.value = false;
       }
