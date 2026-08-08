@@ -31,6 +31,19 @@
             <el-icon :size="18"><component :is="t.icon" /></el-icon>
             <span class="tool-label">{{ t.label }}</span>
           </div>
+          <div class="tool-sep" />
+          <div class="tool-btn" title="撤销 (Ctrl+Z)" @click="undo">
+            <el-icon :size="18"><RefreshLeft /></el-icon>
+            <span class="tool-label">撤销</span>
+          </div>
+          <div class="tool-btn" title="重做 (Ctrl+Y)" @click="redo">
+            <el-icon :size="18"><RefreshRight /></el-icon>
+            <span class="tool-label">重做</span>
+          </div>
+          <div class="tool-btn danger" title="删除选中标注 (Delete)" @click="deleteSelected">
+            <el-icon :size="18"><Delete /></el-icon>
+            <span class="tool-label">删除</span>
+          </div>
         </div>
       </aside>
       <!-- 画布 -->
@@ -1252,6 +1265,8 @@ import {
   Check,
   Pointer,
   Refresh,
+  RefreshLeft,
+  RefreshRight,
   Grid,
   CirclePlus,
 } from "@element-plus/icons-vue";
@@ -2823,6 +2838,12 @@ function removeAnn(id: string) {
   store.annotations = store.annotations.filter((a) => a.id !== id);
   if (store.selectedAnnotationId === id) store.selectedAnnotationId = null;
 }
+function deleteSelected() {
+  if (store.selectedAnnotationId) {
+    removeAnn(store.selectedAnnotationId);
+    afterEdit();
+  }
+}
 
 // ===== 保存机制 =====
 const unsaved = ref(false);
@@ -3524,6 +3545,16 @@ onBeforeUnmount(() => {
   background: #ecf5ff;
   border-color: #409eff;
   color: #409eff;
+}
+.tool-btn.danger:hover {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+.tool-sep {
+  width: 28px;
+  height: 1px;
+  margin: 4px 0;
+  background: #e4e7ed;
 }
 .tool-label {
   font-size: 9px;
