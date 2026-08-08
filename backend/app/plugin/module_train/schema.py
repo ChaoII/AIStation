@@ -36,6 +36,11 @@ class TrainTaskCreateSchema(BaseModel):
     hyperparams: dict = Field(default_factory=dict)
 
 
+class TrainTaskUpdateSchema(BaseModel):
+    name: str | None = Field(default=None, max_length=128)
+    hyperparams: dict | None = None
+
+
 class TrainTaskOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

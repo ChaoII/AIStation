@@ -722,8 +722,7 @@ async function handleStop() {
 }
 
 function handleEditParams() {
-  ElMessage.info("超参数编辑请返回列表页");
-  router.push("/train/task");
+  router.push(`/train/task?edit_id=${task.value?.id}`);
 }
 
 async function handleDelete() {

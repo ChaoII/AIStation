@@ -299,7 +299,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
@@ -436,15 +436,25 @@ async function handleCreate() {
 }
 
 async function handleStart(id: number) {
-  await TrainAPI.startPredict(id);
-  ElMessage.success("预测已开始");
-  refreshList();
+  try {
+    await ElMessageBox.confirm("确定开始预测？", "提示", { type: "info" });
+    await TrainAPI.startPredict(id);
+    ElMessage.success("预测已开始");
+    refreshList();
+  } catch (e: any) {
+    if (e !== "cancel" && e !== "close") ElMessage.error(e?.msg || "启动失败");
+  }
 }
 
 async function handleStop(id: number) {
-  await TrainAPI.stopPredict(id);
-  ElMessage.success("预测已停止");
-  refreshList();
+  try {
+    await ElMessageBox.confirm("确定停止预测？", "提示", { type: "warning" });
+    await TrainAPI.stopPredict(id);
+    ElMessage.success("预测已停止");
+    refreshList();
+  } catch (e: any) {
+    if (e !== "cancel" && e !== "close") ElMessage.error(e?.msg || "停止失败");
+  }
 }
 
 function downloadZip(url: string) {

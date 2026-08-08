@@ -398,6 +398,13 @@ async function handleCreate() {
     keyInfo.apiUrl = d?.api_url || "";
     showCreateDialog.value = false;
     showKeyDialog.value = true;
+    // 自动启动部署（否则需手动点"部署"）
+    if (d?.id) {
+      TrainAPI.startDeploy(d.id)
+        .then(() => { keyInfo.apiUrl = keyInfo.apiUrl || `http://127.0.0.1:${d.host_port || ""}`; })
+        .catch(() => {})
+        .finally(() => refreshList());
+    }
     createForm.modelId = null;
     createForm.recModelId = null;
     createForm.name = "";
@@ -410,13 +417,7 @@ async function handleCreate() {
 
 function onKeyDialogClose() {
   showKeyDialog.value = false;
-  // If the deploy has no api_url yet, start it
-  const latest = (contentRef.value as any)?.pageData?.[0];
-  if (latest && (latest.status === "pending" || latest.status === "deploying")) {
-    router.push("/train/deploy");
-  } else {
-    router.push("/train/deploy");
-  }
+  router.push("/train/deploy");
 }
 
 async function handleDeploy(row: any) {

@@ -340,6 +340,21 @@ class TrainService:
                     await db.delete(t)
 
     @classmethod
+    async def update_task(cls, task_id: int, data) -> dict:
+        from .model import TrainStatus
+        async with async_db_session.begin() as db:
+            t = await db.get(TrainTask, task_id)
+            if not t:
+                raise ValueError("训练任务不存在")
+            if t.status != TrainStatus.PENDING:
+                raise ValueError("仅待开始状态的任务可编辑参数")
+            if data.name is not None:
+                t.name = data.name
+            if data.hyperparams is not None:
+                t.hyperparams = data.hyperparams
+            return {"id": t.id}
+
+    @classmethod
     async def stop_task(cls, task_id: int) -> dict:
         from .scheduler import stop_training
         await stop_training(task_id)
@@ -475,11 +490,19 @@ class TrainService:
         page_size = max(1, min(100, int((params or {}).get("page_size", 20))))
         status = (params or {}).get("status")
         name = (params or {}).get("name")
+        framework = (params or {}).get("framework")
 
         async with async_db_session() as db:
             stmt = select(TrainPredict)
             if status:
                 stmt = stmt.where(TrainPredict.status == status)
+            if framework:
+                from .model import TrainFramework as _TF
+                try:
+                    fw_enum = _TF(framework)
+                    stmt = stmt.where(TrainPredict.framework == fw_enum)
+                except ValueError:
+                    stmt = stmt.where(TrainPredict.framework == framework)
             if name:
                 from .model import TrainModel as TM
                 matched_model_ids = (

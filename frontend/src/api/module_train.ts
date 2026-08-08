@@ -23,6 +23,9 @@ export const TrainAPI = {
   createTask(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/create`, method: "post", data });
   },
+  updateTask(taskId: number, data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/task/${taskId}/update`, method: "put", data });
+  },
   getTaskList(params?: Record<string, any>) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
       url: `${API_PATH}/task/list`,

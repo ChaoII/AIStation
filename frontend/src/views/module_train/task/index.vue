@@ -785,20 +785,28 @@ async function handleSubmit() {
     if (valid) {
       submitLoading.value = true;
       try {
-        await TrainAPI.createTask({
-          name: formData.name,
-          dataset_id: formData.dataset_id,
-          framework: formData.framework,
-          annotation_task_id: formData.annotation_task_id,
-          base_model_id: formData.base_model_id,
-          hyperparams: buildHyperparams(),
-        });
+        if (formData.id) {
+          await TrainAPI.updateTask(formData.id, {
+            name: formData.name,
+            hyperparams: buildHyperparams(),
+          });
+          ElMessage.success("训练任务已更新");
+        } else {
+          await TrainAPI.createTask({
+            name: formData.name,
+            dataset_id: formData.dataset_id,
+            framework: formData.framework,
+            annotation_task_id: formData.annotation_task_id,
+            base_model_id: formData.base_model_id,
+            hyperparams: buildHyperparams(),
+          });
+          ElMessage.success("训练任务已创建");
+        }
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
-        ElMessage.success("训练任务已创建");
       } catch (e: any) {
-        ElMessage.error(e?.msg || "创建失败");
+        ElMessage.error(e?.msg || e?.response?.data?.msg || "保存失败");
       } finally {
         submitLoading.value = false;
       }
@@ -867,6 +875,12 @@ function stopPoll() {
 
 onMounted(() => {
   startPoll();
+  // 从任务详情"编辑参数"进入：自动打开编辑对话框
+  const editId = Number(route.query.edit_id || 0);
+  if (editId) {
+    handleOpenDialog("update", editId);
+    return;
+  }
   // 从模型仓库"训练"按钮进入：自动打开创建对话框并预填框架
   const fw = route.query.framework as string | undefined;
   const modelId = route.query.model_id;

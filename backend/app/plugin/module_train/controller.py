@@ -22,6 +22,7 @@ from .schema import (
     TrainScheduleCreateSchema,
     TrainScheduleUpdateSchema,
     TrainTaskCreateSchema,
+    TrainTaskUpdateSchema,
 )
 from .service import TrainService
 
@@ -129,6 +130,19 @@ async def create_task(data: TrainTaskCreateSchema, auth: AuthSchema = Depends(Au
     return SuccessResponse(data=result, msg="训练任务已创建")
 
 
+@router.put("/task/{task_id}/update", summary="编辑训练任务（仅待开始）")
+async def update_task(
+    task_id: int,
+    data: TrainTaskUpdateSchema,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"])),
+):
+    try:
+        result = await TrainService.update_task(task_id, data)
+        return SuccessResponse(data=result, msg="训练任务已更新")
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+
+
 @router.get("/task/list", summary="训练任务列表")
 async def list_tasks(
     name: str | None = Query(None),
@@ -207,8 +221,12 @@ async def get_eval_logs(eval_id: int, auth: AuthSchema = Depends(AuthPermission(
 
 @router.post("/eval/{eval_id}/start", summary="开始评估")
 async def start_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:create"]))):
-    await start_evaluation(eval_id)
-    return SuccessResponse(data={"id": eval_id}, msg="评估已开始")
+    try:
+        await start_evaluation(eval_id)
+        return SuccessResponse(data={"id": eval_id}, msg="评估已开始")
+    except Exception as e:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg=str(e))
 
 
 @router.post("/eval/{eval_id}/stop", summary="停止评估")
@@ -278,6 +296,7 @@ async def create_predict(data: TrainPredictCreateSchema, auth: AuthSchema = Depe
 @router.get("/predict/list", summary="预测任务列表")
 async def list_predicts(
     model_repo_id: int | None = Query(None),
+    framework: str | None = Query(None),
     status: str | None = Query(None),
     page_no: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -285,6 +304,7 @@ async def list_predicts(
 ):
     data, total = await TrainService.list_predicts({
         "model_repo_id": model_repo_id,
+        "framework": framework,
         "status": status,
         "page_no": page_no,
         "page_size": page_size,
@@ -317,8 +337,12 @@ async def get_predict_logs(predict_id: int, auth: AuthSchema = Depends(AuthPermi
 
 @router.post("/predict/{predict_id}/start", summary="开始预测")
 async def start_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:create"]))):
-    await start_prediction(predict_id)
-    return SuccessResponse(data={"id": predict_id}, msg="预测已开始")
+    try:
+        await start_prediction(predict_id)
+        return SuccessResponse(data={"id": predict_id}, msg="预测已开始")
+    except Exception as e:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg=str(e))
 
 
 @router.post("/predict/{predict_id}/stop", summary="停止预测")
@@ -455,9 +479,13 @@ async def start_deploy(
     deploy_id: int,
     auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
 ):
-    from .deploy_executor import start_deployment
-    await start_deployment(deploy_id)
-    return SuccessResponse(data={"id": deploy_id}, msg="部署已启动")
+    try:
+        from .deploy_executor import start_deployment
+        await start_deployment(deploy_id)
+        return SuccessResponse(data={"id": deploy_id}, msg="部署已启动")
+    except Exception as e:
+        from app.common.response import ErrorResponse
+        return ErrorResponse(msg=str(e))
 
 
 @router.post("/deploy/{deploy_id}/stop", summary="停止部署")
