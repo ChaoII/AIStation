@@ -217,6 +217,8 @@
               >
                 <el-radio value="ultralytics">Ultralytics</el-radio>
                 <el-radio value="paddlex">PaddleX</el-radio>
+                <el-radio value="pytorch-ocr-det">PyTorch-OCR 检测</el-radio>
+                <el-radio value="pytorch-ocr-rec">PyTorch-OCR 识别</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -714,6 +716,9 @@ function onFrameworkChange(fw: string) {
     Object.assign(hpForm, defaultHpUltra());
   } else {
     Object.assign(hpForm, defaultHpPaddle());
+    // pytorch-ocr 的 det/rec 由 framework 决定，mode 供表单展示
+    if (fw === "pytorch-ocr-det") hpForm.mode = "det";
+    if (fw === "pytorch-ocr-rec") hpForm.mode = "rec";
   }
 }
 
@@ -884,7 +889,7 @@ onMounted(() => {
   // 从模型仓库"训练"按钮进入：自动打开创建对话框并预填框架
   const fw = route.query.framework as string | undefined;
   const modelId = route.query.model_id;
-  if (fw && (fw === "ultralytics" || fw === "paddlex")) {
+  if (fw && ["ultralytics", "paddlex", "pytorch-ocr-det", "pytorch-ocr-rec"].includes(fw)) {
     onFrameworkChange(fw);
     formData.framework = fw;
     if (modelId) formData.base_model_id = Number(modelId);
