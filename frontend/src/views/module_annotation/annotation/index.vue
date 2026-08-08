@@ -2557,8 +2557,14 @@ function onMouseUp(e: MouseEvent) {
         drag.value.type === "kp-move" ||
         drag.value.type.startsWith("kp-resize-"))
     ) {
-      markUnsaved();
-      pushHistory();
+      // 纯点击选择（move 但几乎无位移）不应标记未保存，避免每次点选都产生冗余版本
+      const isClick = drag.value.type === "move" &&
+        Math.abs((e.clientX || 0) - drag.value.startX) < 3 &&
+        Math.abs((e.clientY || 0) - drag.value.startY) < 3;
+      if (!isClick) {
+        markUnsaved();
+        pushHistory();
+      }
     }
     drag.value.active = false;
   }
@@ -2986,16 +2992,17 @@ async function loadImg(imageId: number) {
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
-  if (unsaved.value && store.currentImage) {
+  const curImage = store.currentImage;
+  if (unsaved.value && curImage) {
     try {
       await ElMessageBox.confirm("当前图片有未保存的标注，是否保存？", "提示", {
         confirmButtonText: "保存",
         cancelButtonText: "不保存",
         type: "warning",
       });
-      await AnnotationAPI.saveAnnotations(store.currentImage.id, {
+      await AnnotationAPI.saveAnnotations(curImage.id, {
         task_id: store.taskId,
-        image_id: store.currentImage.id,
+        image_id: curImage.id,
         annotation_data: store.annotations,
       });
       const curIdx = store.currentImageIndex;
@@ -3005,9 +3012,18 @@ async function goToImage(idx: number) {
       updated.updated_by = { id: 0, name: getCurrentUserName() };
       updated.updated_time = new Date().toISOString();
       store.images[curIdx] = updated;
+      lastSavedKey = annotKey(store.annotations);
+      unsaved.value = false;
       updateProgress();
-    } catch {
-      // 用户点"不保存"或关闭弹窗，继续切图
+    } catch (e: any) {
+      const isCancel = e === "cancel" || e === "close";
+      if (isCancel) {
+        // 用户点"不保存"或关闭弹窗，不保存直接切图
+      } else {
+        // 保存失败（锁定冲突/网络）：提示并留在当前图，不静默丢弃标注
+        ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败，请重试");
+        return;
+      }
     }
   }
   unsaved.value = false;
@@ -3063,10 +3079,13 @@ async function saveAnn() {
     };
     updated.updated_time = now;
     store.images[idx] = updated;
+    lastSavedKey = annotKey(store.annotations);
     unsaved.value = false;
     updateProgress();
     await fetchTaskProgress();
     ElMessage.success("保存成功");
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败");
   } finally {
     store.saving = false;
   }
@@ -3077,32 +3096,41 @@ function setTool(t: ToolName) {
   store.setTool(t);
 }
 async function handleBack() {
-  if (unsaved.value) {
+  if (unsaved.value && store.currentImage) {
     try {
       await ElMessageBox.confirm("当前图片有未保存的标注，是否保存后退出？", "提示", {
         confirmButtonText: "保存并退出",
         cancelButtonText: "不保存",
         type: "warning",
       });
-      if (store.currentImage) {
-        await AnnotationAPI.saveAnnotations(store.currentImage.id, {
-          task_id: store.taskId,
-          image_id: store.currentImage.id,
-          annotation_data: store.annotations,
-        });
-        const idx = store.currentImageIndex;
-        const updated = { ...store.images[idx] };
-      updated.status = "annotated";
-        updated.annotation_count = store.annotations.length;
-        updated.updated_by = { id: 0, name: getCurrentUserName() };
-        updated.updated_time = new Date().toISOString();
-        store.images[idx] = updated;
-        updateProgress();
-      }
     } catch {
-      // 用户点"不保存"，继续退出
+      // 用户点"不保存"：放弃本次标注，继续退出
+      unsaved.value = false;
+      router.push("/annotation/task");
+      return;
+    }
+    try {
+      await AnnotationAPI.saveAnnotations(store.currentImage.id, {
+        task_id: store.taskId,
+        image_id: store.currentImage.id,
+        annotation_data: store.annotations,
+      });
+      const idx = store.currentImageIndex;
+      const updated = { ...store.images[idx] };
+      updated.status = "annotated";
+      updated.annotation_count = store.annotations.length;
+      updated.updated_by = { id: 0, name: getCurrentUserName() };
+      updated.updated_time = new Date().toISOString();
+      store.images[idx] = updated;
+      updateProgress();
+    } catch (e: any) {
+      // 保存失败：提示并留在当前页，不静默丢弃
+      ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败，请重试");
+      return;
     }
   }
+  // 无论保存与否都清除 unsaved，防止 onBeforeUnmount 再次静默保存（产生冗余版本）
+  unsaved.value = false;
   router.push("/annotation/task");
 }
 function fmtTime(t?: string) {
