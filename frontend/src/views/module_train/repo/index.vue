@@ -262,8 +262,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, onMounted } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -280,7 +280,23 @@ interface TablePageQuery {
 }
 
 const router = useRouter();
+const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+
+// 从任务详情"查看模型"进入：定位到对应模型仓库
+onMounted(() => {
+  const q = route.query.model_id || route.query.model_repo_id;
+  if (q) {
+    const id = Number(q);
+    if (id) {
+      setTimeout(() => {
+        const rows = (contentRef.value as any)?.pageData || [];
+        const hit = rows.find((r: any) => r.id === id || r.repo_id === id || r.id === id);
+        ElMessage.info(hit ? `已定位到模型 ${hit.name || `#${id}`}` : `模型 #${id} 不在当前页`);
+      }, 600);
+    }
+  }
+});
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
@@ -462,11 +478,17 @@ async function handleSubmit() {
       submitLoading.value = true;
       const id = formData.id;
       try {
+        const payload = {
+          name: formData.name,
+          framework: formData.framework,
+          annotation_dataset_id: formData.dataset_id,
+          description: formData.description,
+        };
         if (id) {
-          await TrainAPI.updateModel(id, formData);
+          await TrainAPI.updateModel(id, payload);
           ElMessage.success("模型已更新");
         } else {
-          await TrainAPI.createModel(formData);
+          await TrainAPI.createModel(payload);
         }
         dialogVisible.visible = false;
         await resetForm();

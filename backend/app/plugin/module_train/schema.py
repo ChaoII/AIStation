@@ -163,6 +163,7 @@ class ModelUpdateSchema(BaseModel):
     name: str | None = None
     description: str | None = None
     status: str | None = None  # draft / released / archived
+    annotation_dataset_id: int | None = None
 
 
 class TrainDeployCreateSchema(BaseModel):
