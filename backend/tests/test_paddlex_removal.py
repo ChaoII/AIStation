@@ -60,3 +60,14 @@ def test_build_cmd_paddlex_branch():
     assert "tools/train.py" in joined
     assert "PP-OCRv6_tiny_det.yml" in joined
     assert "paddlex" in joined.lower() or "PaddleOCR" in joined
+
+
+def test_ultralytics_lr_not_dropped():
+    """前端发 lr（旧）或 lr0（新）都应进训练命令（B2 回归）。"""
+    from app.plugin.module_train.scheduler import _build_ultralytics_cmd
+    cmd_new = _build_ultralytics_cmd({"lr0": 0.001}, "/data", "/out")
+    assert "lr0=0.001" in " ".join(cmd_new)
+    cmd_old = _build_ultralytics_cmd({"lr": 0.001}, "/data", "/out")
+    assert "lr0=0.001" in " ".join(cmd_old)
+    cmd_missing = _build_ultralytics_cmd({}, "/data", "/out")
+    assert "lr0" not in " ".join(cmd_missing)
