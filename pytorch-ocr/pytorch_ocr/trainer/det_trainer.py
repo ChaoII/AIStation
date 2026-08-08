@@ -260,7 +260,8 @@ class DetTrainer:
                 print(f"epoch {epoch} batch {n_batches} loss {loss.item():.4f}",
                       flush=True)
             avg = total_loss / max(n_batches, 1)
-            print(f"epoch {epoch} avg_loss {avg:.4f} "
+            # 打印格式与 PaddleX 对齐（epoch: [n/total]），供后端 _calc_progress_from_log 解析进度
+            print(f"epoch: [{epoch}/{num_epochs}] avg_loss {avg:.4f} "
                   f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
             # 官方 PaddleOCR：global_step 每 batch 递增，eval 每 eval_batch_step step 一次，
             # 用 EMA 权重在独立 val 数据上 eval，按 hmean 选 best（对齐 program.py）。

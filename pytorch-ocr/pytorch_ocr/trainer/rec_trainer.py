@@ -144,11 +144,18 @@ class RecTrainer:
                 total += loss.item()
                 n += 1
             avg = total / max(n, 1)
-            print(f"epoch {epoch} avg_loss {avg:.4f} "
+            print(f"epoch: [{epoch}/{num_epochs}] avg_loss {avg:.4f} "
                   f"lr {optimizer.param_groups[0]['lr']:.6f}", flush=True)
             if avg < best_loss:
                 best_loss = avg
                 torch.save(self.net.state_dict(), os.path.join(output_dir, "best.pt"))
+        # 训练结束打印一次 eval 指标（后端解析 acc）
+        try:
+            m = self.eval(data_dir, output_dir)
+            print(f"eval char_acc {m.get('char_acc', 0):.4f} full_acc {m.get('full_acc', 0):.4f}",
+                  flush=True)
+        except Exception:
+            pass
         print("training done", flush=True)
         return os.path.join(output_dir, "best.pt")
 

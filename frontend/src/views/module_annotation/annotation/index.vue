@@ -3157,6 +3157,13 @@ function afterEdit() {
 
 // 切图时重置 lastSavedKey
 let loadImgToken = 0;
+let lockRenewTimer: number | null = null;
+function clearLockRenewal() {
+  if (lockRenewTimer !== null) {
+    window.clearInterval(lockRenewTimer);
+    lockRenewTimer = null;
+  }
+}
 async function loadImg(imageId: number) {
   const myToken = ++loadImgToken;
   imgUrl.value = "";
@@ -3184,6 +3191,11 @@ async function loadImg(imageId: number) {
         if (d?.locked) {
           ElMessage.warning(`该图片已被 ${d.locked_by || "其他用户"} 锁定，你的修改可能无法保存`);
         }
+        // 定期续期（后端 5 分钟过期），避免长标注丢锁
+        clearLockRenewal();
+        lockRenewTimer = window.setInterval(() => {
+          AnnotationAPI.lockImage(imageId, store.taskId).catch(() => {});
+        }, 180000);
       })
       .catch(() => {});
     await nextTick();
@@ -3231,6 +3243,7 @@ async function goToImage(idx: number) {
   }
   unsaved.value = false;
   // Unlock current image
+  clearLockRenewal();
   if (store.currentImage) {
     AnnotationAPI.unlockImage(store.currentImage.id, store.taskId).catch(() => {});
   }
@@ -3628,6 +3641,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", onWindowMouseUp);
   window.removeEventListener("mousemove", onMouseMove);
   window.removeEventListener("beforeunload", onBeforeUnload);
+  clearLockRenewal();
   if (unsaved.value && store.currentImage) {
     AnnotationAPI.saveAnnotations(store.currentImage.id, {
       task_id: store.taskId,

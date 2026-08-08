@@ -101,6 +101,7 @@ class DatasetService:
                     AnnotationRecordModel.task_id == task_id,
                     AnnotationRecordModel.image_id.in_(img_ids),
                 ))
+                .order_by(AnnotationRecordModel.version.desc())
             )
             rec_rows = recs.fetchall()
 

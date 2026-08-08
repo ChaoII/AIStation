@@ -167,7 +167,7 @@
           <div class="metric-item">
             <el-icon :size="22" style="color: #52c41a; margin-bottom: 4px"><Aim /></el-icon>
             <span class="metric-val" style="color: #52c41a">{{ displayMetrics.precision }}</span>
-            <span class="metric-lbl">Precision</span>
+            <span class="metric-lbl">{{ isOcrFramework ? "Acc / Precision" : "Precision" }}</span>
           </div>
         </el-col>
         <el-col :xs="24" :sm="12" :md="6">
@@ -181,7 +181,7 @@
           <div class="metric-item">
             <el-icon :size="22" style="color: #fa8c16; margin-bottom: 4px"><StarFilled /></el-icon>
             <span class="metric-val" style="color: #fa8c16">{{ displayMetrics.map50 }}</span>
-            <span class="metric-lbl">mAP@50</span>
+            <span class="metric-lbl">{{ isOcrFramework ? "HMean" : "mAP@50" }}</span>
           </div>
         </el-col>
         <el-col :xs="24" :sm="12" :md="6">
@@ -455,6 +455,11 @@ const liveLastMetrics = computed(() =>
   liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null
 );
 const metricsLog = computed<any[]>(() => task.value?.metrics_log || []);
+// OCR 类框架（PaddleX / pytorch-ocr）：指标为 HMean(检测)/Acc(识别)，非 mAP
+const isOcrFramework = computed(() => {
+  const fw = task.value?.framework;
+  return fw === "paddlex" || fw === "pytorch-ocr-det" || fw === "pytorch-ocr-rec";
+});
 const bestMetrics = computed<any>(() => task.value?.best_metrics || null);
 const lastMetrics = computed<any>(() => task.value?.last_metrics || null);
 const displayMetricsLog = computed<any[]>(() =>
@@ -558,7 +563,48 @@ const compareTableData = computed(() => [
   },
 ]);
 
+function pushLiveMetrics() {
+  if (yoloMetrics.epoch > 0) {
+    liveMetricsLog.value.push({
+      epoch: yoloMetrics.epoch,
+      total_epochs: yoloMetrics.totalEpochs,
+      box_loss: yoloMetrics.boxLoss,
+      cls_loss: yoloMetrics.clsLoss,
+      dfl_loss: yoloMetrics.dflLoss,
+      precision: yoloMetrics.precision,
+      recall: yoloMetrics.recall,
+      map50: yoloMetrics.map50,
+      map5095: yoloMetrics.map5095,
+    });
+  }
+}
 function parseYoloMetrics(line: string) {
+  // PaddleX / pytorch-ocr: `epoch: [1/100], ... hmean/acc`
+  const pe = line.match(/epoch:\s*\[(\d+)\/(\d+)\]/);
+  if (pe) {
+    yoloMetrics.epoch = parseInt(pe[1]);
+    yoloMetrics.totalEpochs = parseInt(pe[2]);
+    yoloMetrics.progress = Math.round((yoloMetrics.epoch / yoloMetrics.totalEpochs) * 100);
+    const hm = line.match(/hmean:\s*([\d.]+)/);
+    if (hm) yoloMetrics.map50 = parseFloat(hm[1]);
+    const ca = line.match(/acc:\s*([\d.]+)/);
+    if (ca) yoloMetrics.precision = parseFloat(ca[1]);
+    pushLiveMetrics();
+    return;
+  }
+  // pytorch-ocr det / rec eval 行
+  const eh = line.match(/eval hmean\s+([\d.]+)/);
+  if (eh) {
+    yoloMetrics.map50 = parseFloat(eh[1]);
+    pushLiveMetrics();
+    return;
+  }
+  const ec = line.match(/eval char_acc\s+([\d.]+)/);
+  if (ec) {
+    yoloMetrics.precision = parseFloat(ec[1]);
+    pushLiveMetrics();
+    return;
+  }
   const m = line.match(/\s*(\d+)\/(\d+)\s+/);
   if (m && line.includes("G") && (line.includes("loss") || /\d+\.\d+\s+\d+\.\d+/.test(line))) {
     yoloMetrics.epoch = parseInt(m[1]);
@@ -579,19 +625,7 @@ function parseYoloMetrics(line: string) {
     if (parts.length >= 6) yoloMetrics.recall = parseFloat(parts[4]) || 0;
     if (parts.length >= 7) yoloMetrics.map50 = parseFloat(parts[5]) || 0;
     if (parts.length >= 7) yoloMetrics.map5095 = parseFloat(parts[6]) || 0;
-    if (yoloMetrics.epoch > 0) {
-      liveMetricsLog.value.push({
-        epoch: yoloMetrics.epoch,
-        total_epochs: yoloMetrics.totalEpochs,
-        box_loss: yoloMetrics.boxLoss,
-        cls_loss: yoloMetrics.clsLoss,
-        dfl_loss: yoloMetrics.dflLoss,
-        precision: yoloMetrics.precision,
-        recall: yoloMetrics.recall,
-        map50: yoloMetrics.map50,
-        map5095: yoloMetrics.map5095,
-      });
-    }
+    pushLiveMetrics();
   }
 }
 

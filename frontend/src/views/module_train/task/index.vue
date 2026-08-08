@@ -70,7 +70,7 @@
                   :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
                   size="small"
                 >
-                  {{ scope.row.framework === "ultralytics" ? "YOLO" : "PaddleX" }}
+                  {{ frameworkLabel(scope.row.framework) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -708,6 +708,17 @@ function statusLabel(s: string) {
       cancelled: "已取消",
     }[s] || s
   );
+}
+
+function frameworkLabel(fw?: string) {
+  return (
+    {
+      ultralytics: "Ultralytics",
+      paddlex: "PaddleX",
+      "pytorch-ocr-det": "PyTorch-OCR Det",
+      "pytorch-ocr-rec": "PyTorch-OCR Rec",
+    } as any
+  )[fw || ""] || fw || "—";
 }
 
 function onFrameworkChange(fw: string) {

@@ -1,5 +1,6 @@
 """OCR 训练执行器：复用 TaskExecutor，跑 aistation-ocr 容器 train-det/train-rec。"""
 import os
+import re
 import tempfile
 from datetime import datetime
 
@@ -25,6 +26,20 @@ class OCRTrainExecutor(TaskExecutor):
     model_class = TrainTask
     _concurrency = 1
     DOCKER_IMAGE = "aistation-ocr:latest"
+
+    @staticmethod
+    def _parse_epoch(line: str) -> dict | None:
+        """解析 pytorch-ocr 训练日志：epoch: [n/total] 进度 + eval hmean/char_acc。"""
+        m = re.search(r"epoch:\s*\[(\d+)/(\d+)\]", line)
+        if m:
+            return {"epoch": int(m.group(1)), "total": int(m.group(2))}
+        hm = re.search(r"eval hmean\s+([\d.]+)", line)
+        if hm:
+            return {"hmean": float(hm.group(1)), "best": True}
+        ca = re.search(r"eval char_acc\s+([\d.]+)", line)
+        if ca:
+            return {"char_acc": float(ca.group(1)), "best": True}
+        return None
 
     @classmethod
     async def _execute(cls, task_id: int):
@@ -61,10 +76,11 @@ class OCRTrainExecutor(TaskExecutor):
             entry.update({"container_id": container_id})
             cls._registry[task_id] = entry
 
-            await cls.follow_logs(
+            metrics_log = await cls.follow_logs(
                 container_id,
                 os.path.join(export_dir, "train.log"),
                 lambda line: broadcast_log(task_id, line),
+                parse_fn=cls._parse_epoch,
             )
             exit_code = await cls._get_exit_code(container)
 
@@ -78,9 +94,13 @@ class OCRTrainExecutor(TaskExecutor):
                 if os.path.exists(best_path):
                     from .exporter import export_model
                     model_info = await export_model(task_id, task.framework, export_dir)
+                    best = next((m for m in metrics_log if m.get("best")), None) or None
                     await cls._mark_status(
                         task_id, TrainStatus.SUCCESS,
                         model_repo_id=model_info.get("repo_id"),
+                        metrics_log=metrics_log or None,
+                        best_metrics=best,
+                        last_metrics=best,
                         progress=100, finished_at=datetime.now(),
                     )
                 else:

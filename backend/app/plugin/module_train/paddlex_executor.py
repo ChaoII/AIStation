@@ -90,6 +90,9 @@ class PaddleXOCRExecutor(TaskExecutor):
         bm = re.search(r"best metric,.*hmean:\s*([\d.]+)", line)
         if bm:
             return {"hmean": float(bm.group(1)), "best": True}
+        ba = re.search(r"best metric,.*acc:\s*([\d.]+)", line)
+        if ba:
+            return {"acc": float(ba.group(1)), "best": True}
         return None
 
     @classmethod
@@ -164,7 +167,7 @@ class PaddleXOCRExecutor(TaskExecutor):
             entry.update({"container_id": container_id})
             cls._registry[task_id] = entry
 
-            await cls.follow_logs(
+            metrics_log = await cls.follow_logs(
                 container_id,
                 os.path.join(export_dir, "train.log"),
                 lambda line: broadcast_log(task_id, line),
@@ -180,9 +183,23 @@ class PaddleXOCRExecutor(TaskExecutor):
                 from .exporter import export_model
                 model_info = await export_model(task_id, task.framework, export_dir)
                 if model_info.get("storage_path"):
+                    # 从 metrics_log 提取 best（hmean/acc）与最新指标
+                    best = {}
+                    latest = {}
+                    epoch_records = [m for m in metrics_log if m.get("epoch") and not m.get("best")]
+                    if epoch_records:
+                        latest = epoch_records[-1]
+                    best_records = [m for m in metrics_log if m.get("best")]
+                    if best_records:
+                        best = best_records[-1]
+                    else:
+                        best = latest
                     await cls._mark_status(
                         task_id, TrainStatus.SUCCESS,
                         model_repo_id=model_info.get("repo_id"),
+                        metrics_log=metrics_log or None,
+                        best_metrics=best or None,
+                        last_metrics=latest or None,
                         progress=100, finished_at=datetime.now(),
                     )
                 else:

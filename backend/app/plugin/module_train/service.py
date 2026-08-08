@@ -10,7 +10,8 @@ from app.core.logger import log
 
 from .model import TrainDeploy, TrainEval, TrainModel, TrainModelRepo, TrainPredict, TrainTask
 
-_EPOCH_RE = re.compile(r"^\s*(\d+)/(\d+)\s+")
+# ultralytics: `1/100 0.983G ...`；PaddleX / pytorch-ocr: `epoch: [1/100], ...`
+_EPOCH_RE = re.compile(r"(?:^\s*(\d+)/(\d+)\s+|epoch:\s*\[(\d+)/(\d+)\])")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERSION_DIGITS = re.compile(r"[^0-9]")
 _EXPORT_DIR = "/export/"
@@ -47,8 +48,10 @@ def _calc_progress_from_log(task_id: int) -> int | None:
             clean = _strip_ansi(line)
             m = _EPOCH_RE.search(clean)
             if m:
-                e = int(m.group(1))
-                t = int(m.group(2))
+                if m.group(1) and m.group(2):
+                    e, t = int(m.group(1)), int(m.group(2))
+                else:
+                    e, t = int(m.group(3)), int(m.group(4))
                 if e > epoch:
                     epoch, total = e, t
         if total > 0:
