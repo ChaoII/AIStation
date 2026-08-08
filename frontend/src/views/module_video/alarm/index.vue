@@ -1101,12 +1101,12 @@ async function handleConfirm(id: number, status: string) {
   }
 }
 
-function severityTag(severity: string) {
+function severityTag(severity: string): any {
   const map: Record<string, string> = { CRITICAL: "danger", WARNING: "warning", INFO: "info" };
   return map[(severity || "").toUpperCase()] || "info";
 }
 
-function statusTag(status: string) {
+function statusTag(status: string): any {
   const map: Record<string, string> = {
     PENDING: "danger",
     CONFIRMED: "success",
@@ -1135,7 +1135,7 @@ async function loadCameraOptions() {
     ]);
     cameraOptions.value = camRes.data?.data?.items || [];
     algorithmTaskOptions.value = taskRes.data?.data?.items || [];
-    const searchItem: any = recordSearchConfig.formItems.find((i: any) => i.prop === "camera_id");
+    const searchItem: any = (recordSearchConfig.formItems || []).find((i: any) => i.prop === "camera_id");
     if (searchItem) {
       searchItem.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
     }

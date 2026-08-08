@@ -578,7 +578,7 @@ async function handleSubmit() {
       const id = formData.id;
       try {
         if (id) {
-          await updateCamera(id, { id, ...formData });
+          await updateCamera(id, formData);
         } else {
           await createCamera(formData);
         }
@@ -686,7 +686,7 @@ function deviceTypeLabel(type: string) {
   return map[type] || type;
 }
 
-function deviceTypeTag(type: string) {
+function deviceTypeTag(type: string): any {
   const map: Record<string, string> = {
     IP_CAMERA: "",
     GB28181: "success",

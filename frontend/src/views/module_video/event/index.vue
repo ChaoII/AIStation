@@ -417,7 +417,7 @@ async function handleSubmit() {
       }
     }
     if (id) {
-      await updateEvent(id, { id, ...formData });
+      await updateEvent(id, formData);
     } else {
       await createEvent(formData);
     }
@@ -443,7 +443,7 @@ function eventLabel(type: string) {
   return map[type] || type;
 }
 
-function eventTag(type: string) {
+function eventTag(type: string): any {
   const map: Record<string, string> = {
     ALARM: "danger",
     MOTION: "warning",
@@ -465,7 +465,7 @@ function actionLabel(type: string) {
   return map[type] || type;
 }
 
-function actionTag(type: string) {
+function actionTag(type: string): any {
   const map: Record<string, string> = {
     RECORD: "primary",
     ALERT: "danger",

@@ -189,7 +189,7 @@
                     :loading="scope.row._toggling"
                     size="small"
                     @click.stop
-                    @change="(v: boolean) => togglePlan(scope.row, v)"
+                    @change="(v: string | number | boolean) => togglePlan(scope.row, v === true)"
                   />
                 </template>
               </el-table-column>
@@ -1001,9 +1001,9 @@ onBeforeMount(async () => {
     const res = await getCameraList({ page_size: 100 });
     cameraOptions.value = res.data?.data?.items || [];
     const opts = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
-    const si: any = searchConfig.formItems.find((i: any) => i.prop === "camera_id");
+    const si: any = (searchConfig.formItems || []).find((i: any) => i.prop === "camera_id");
     if (si) si.options = opts;
-    const li: any = logSearchConfig.formItems.find((i: any) => i.prop === "camera_id");
+    const li: any = (logSearchConfig.formItems || []).find((i: any) => i.prop === "camera_id");
     if (li) li.options = opts;
   } catch {
     cameraOptions.value = [];

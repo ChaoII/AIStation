@@ -29,6 +29,7 @@ export type ISearchComponent =
   | "switch"
   | "rate"
   | "slider"
+  | "daterange"
   /** 在 customComponents 中注册的自定义搜索控件类型 */
   | "user-table-select";
 export type IComponentType = DateComponent | InputComponent | OtherComponent;
