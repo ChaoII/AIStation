@@ -1,248 +1,99 @@
-# Task 5: Eval Scheduler — 评估任务调度器
+### Task 5: 修正版本号 bug + eval/predict model_id 语义
 
-## 要创建的文件
-- `backend/app/plugin/module_train/eval_scheduler.py`（新建）
+**Files:**
+- Modify: `backend/app/plugin/module_train/controller.py`
+- Modify: `backend/app/plugin/module_train/service.py`
+- Modify: `backend/app/plugin/module_train/eval_scheduler.py`
+- Modify: `backend/app/plugin/module_train/predict_executor.py`
+- Test: `backend/tests/test_version_and_model_refs.py`（新建）
 
-## 要求
-创建与 `scheduler.py` 模式一致但针对 `yolo val` 的评估调度器。完全参考以下代码实现。
+**Interfaces:**
+- Consumes: `TrainService._parse_version`, `TrainModelRepo`（Task 3 产物）
+- Produces: `TrainEval`/`TrainPredict` 的 `model_id` 恒为版本行 id；`model_repo_id` 恒为仓库 id；`_resolve_model_storage(version_id)` 统一模型文件解析
 
-文件完整内容如下。遵循 `scheduler.py` 的现有模式（`pull_image` → `run_container` → `follow_container_logs` → parse metrics → `remove_container`）。
+- [ ] **Step 1: 写失败测试 — 模型文件路径回溯统一**
+
+`backend/tests/test_version_and_model_refs.py`:
 
 ```python
-import asyncio
-import os
-import re
-import tempfile
-from datetime import datetime
-
-from sqlalchemy import select, update
-
-from app.core.database import async_db_session
-from app.core.logger import log
-
-from .model import TrainEval, TrainStatus, TrainModel
-from .docker_utils import pull_image, run_container, follow_container_logs, remove_container
-from .ws import broadcast_eval_log
-
-_eval_running: dict[int, dict] = {}
-_eval_scheduler_task: asyncio.Task | None = None
-
-DOCKER_IMAGE = "ultralytics/ultralytics:latest"
+"""版本号与模型引用语义测试。"""
 
 
-async def start_evaluation_scheduler():
-    global _eval_scheduler_task
-    if _eval_scheduler_task is None or _eval_scheduler_task.done():
-        _eval_scheduler_task = asyncio.create_task(_eval_scheduler_loop())
-        log.info("eval scheduler started")
-
-
-async def _eval_scheduler_loop():
-    while True:
-        try:
-            async with async_db_session() as db:
-                running = await db.execute(
-                    select(TrainEval).where(TrainEval.status == TrainStatus.RUNNING)
-                )
-                for e in running.scalars().all():
-                    if e.id not in _eval_running and e.started_at:
-                        elapsed = (datetime.now() - e.started_at).total_seconds()
-                        if elapsed > 1800:
-                            async with async_db_session.begin() as db2:
-                                await db2.execute(
-                                    update(TrainEval).where(TrainEval.id == e.id).values(
-                                        status=TrainStatus.FAILED,
-                                        log="评估会话已断开（后端重启或容器丢失）",
-                                        finished_at=datetime.now()
-                                    )
-                                )
-        except Exception as e:
-            log.error(f"eval scheduler error: {e}")
-        await asyncio.sleep(30)
-
-
-async def start_evaluation(eval_id: int):
-    async with async_db_session.begin() as db:
-        await db.execute(
-            update(TrainEval).where(TrainEval.id == eval_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now()
-            )
-        )
-    asyncio.create_task(_execute_evaluation(eval_id))
-
-
-async def stop_evaluation(eval_id: int):
-    entry = _eval_running.get(eval_id)
-    if entry:
-        entry["cancel"] = True
-        from .docker_utils import stop_container
-        await stop_container(entry["container_id"])
-
-
-async def _execute_evaluation(eval_id: int):
-    container_id = None
-    try:
-        async with async_db_session() as db:
-            eval_rec = await db.get(TrainEval, eval_id)
-            if not eval_rec:
-                return
-
-        await broadcast_eval_log(eval_id, f"[eval] pulling image {DOCKER_IMAGE}...")
-        await pull_image(DOCKER_IMAGE)
-
-        export_dir = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id))
-        data_dir = os.path.join(export_dir, "data")
-        model_dir = os.path.join(export_dir, "model")
-        os.makedirs(data_dir, exist_ok=True)
-        os.makedirs(model_dir, exist_ok=True)
-
-        # Export evaluation dataset
-        from .exporter import export_dataset
-        await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
-        await export_dataset(eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir)
-
-        # Download model file from RustFS
-        async with async_db_session() as db:
-            model_rec = await db.get(TrainModel, eval_rec.model_id or eval_rec.model_repo_id)
-            if not model_rec or not model_rec.storage_path:
-                raise Exception("model not found or no storage_path")
-
-        await broadcast_eval_log(eval_id, f"[eval] downloading model {model_rec.storage_path}...")
-        from app.utils.s3_client import s3_client
-        model_data = s3_client.download_fileobj(model_rec.storage_path)
-        model_filename = model_rec.storage_path.rsplit("/", 1)[-1]
-        model_local_path = os.path.join(model_dir, model_filename)
-        with open(model_local_path, "wb") as f:
-            f.write(model_data.read())
-
-        # Build command
-        hp = eval_rec.hyperparams or {}
-        imgsz = hp.get("imgsz", 640)
-        batch = hp.get("batch", 16)
-        conf = hp.get("conf", 0.001)
-        iou = hp.get("iou", 0.6)
-        device = hp.get("device", "0")
-
-        cmd = [
-            "yolo", "val",
-            f"model=/model/{model_filename}",
-            "data=/data/dataset.yaml",
-            f"imgsz={imgsz}",
-            f"batch={batch}",
-            f"conf={conf}",
-            f"iou={iou}",
-        ]
-
-        container = await run_container(
-            DOCKER_IMAGE, cmd,
-            volumes={
-                data_dir: {"bind": "/data", "mode": "rw"},
-                model_dir: {"bind": "/model", "mode": "ro"},
-            },
-            gpu_id=device,
-        )
-        container_id = container.id
-        _eval_running[eval_id] = {"container_id": container_id, "cancel": False}
-
-        log_queue = await follow_container_logs(container_id)
-        log_file = os.path.join(export_dir, "eval.log")
-
-        metrics: dict = {}
-        with open(log_file, "w", encoding="utf-8") as lf:
-            while True:
-                line = await log_queue.get()
-                if line == "__EOF__":
-                    break
-                lf.write(line + "\n")
-                lf.flush()
-                await broadcast_eval_log(eval_id, line)
-
-                # Parse YOLO val metrics: "all" line
-                if re.match(r"^\s+all\s+", line):
-                    parts = line.strip().split()
-                    if len(parts) >= 7:
-                        metrics = {
-                            "precision": float(parts[3]) if parts[3] else 0,
-                            "recall": float(parts[4]) if parts[4] else 0,
-                            "map50": float(parts[5]) if parts[5] else 0,
-                            "map5095": float(parts[6]) if parts[6] else 0,
-                        }
-
-                # Parse per-class metrics
-                m = re.match(r"^\s+(\d+)\s+", line)
-                if m:
-                    parts = line.strip().split()
-                    if len(parts) >= 7:
-                        cls_id = int(parts[0])
-                        if "classes" not in metrics:
-                            metrics["classes"] = {}
-                        metrics["classes"][str(cls_id)] = {
-                            "precision": float(parts[3]) if parts[3] else 0,
-                            "recall": float(parts[4]) if parts[4] else 0,
-                            "map50": float(parts[5]) if parts[5] else 0,
-                            "map5095": float(parts[6]) if parts[6] else 0,
-                        }
-
-        loop = asyncio.get_event_loop()
-        exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
-
-        if _eval_running.get(eval_id, {}).get("cancel"):
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.CANCELLED, finished_at=datetime.now()
-                    )
-                )
-        elif exit_code == 0:
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.SUCCESS,
-                        metrics=metrics or None,
-                        finished_at=datetime.now(),
-                    )
-                )
-        else:
-            error_msg = ""
-            try:
-                err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                if err_logs:
-                    error_msg = err_logs.strip()
-            except Exception:
-                pass
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainEval).where(TrainEval.id == eval_id).values(
-                        status=TrainStatus.FAILED, log=error_msg or "eval failed",
-                        finished_at=datetime.now(),
-                    )
-                )
-
-    except Exception as e:
-        log.error(f"eval task {eval_id} failed: {e}")
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainEval).where(TrainEval.id == eval_id).values(
-                    status=TrainStatus.FAILED, log=str(e), finished_at=datetime.now()
-                )
-            )
-    finally:
-        _eval_running.pop(eval_id, None)
-        if container_id:
-            await remove_container(container_id)
+def test_parse_version_removes_all_non_digits():
+    from app.plugin.module_train.service import TrainService
+    assert TrainService._parse_version("vv1") == 1
+    assert TrainService._parse_version("v1") == 1
+    assert TrainService._parse_version("v12") == 12
+    assert TrainService._parse_version("") == 1
+    assert TrainService._parse_version(None) == 1
 ```
 
-## 前置条件
-- `TrainEval`（Task 1 已增强）包含字段：`id`, `model_repo_id`, `model_id`, `eval_dataset_id`, `hyperparams`, `metrics`, `status`, `started_at`, `finished_at`, `log`
-- `TrainModel` 已有（第 22-33 行），包含 `storage_path`
-- `broadcast_eval_log` 定义在 `ws.py`（Task 7 将创建）
-- 其他模块：`docker_utils.py`, `async_db_session`, `log` 均已存在
+- [ ] **Step 2: 运行确认失败**
 
-## 提交信息
+Run: `cd backend && uv run pytest tests/test_version_and_model_refs.py -v`
+Expected: FAIL（`_parse_version` 不存在，因为是 classmethod 且当前实现是 `int(last.version.replace("v",""))`）
+
+- [ ] **Step 3: 统一模型文件解析 — 新增 service 方法**
+
+在 `service.py` 添加：
+
+```python
+@classmethod
+async def _resolve_model_storage(cls, version_id: int) -> str:
+    """解析版本行真实模型文件路径。处理 /export/ 覆盖回溯问题。
+
+    返回 RustFS key（best.pt）。若 storage_path 是导出产物(/export/)则回溯原始训练产物。
+    """
+    async with async_db_session() as db:
+        ver = await db.get(TrainModel, version_id)
+        if not ver or not ver.storage_path:
+            raise Exception("模型版本不存在或无存储文件")
+        storage_path = ver.storage_path
+        if "/export/" in storage_path:
+            from .model import TrainTask
+            task = (await db.execute(
+                select(TrainTask).where(TrainTask.model_repo_id == ver.id)
+                .order_by(desc(TrainTask.id)).limit(1)
+            )).scalar_one_or_none()
+            if task:
+                storage_path = f"train/models/task_{task.id}/best.pt"
+        return storage_path
+```
+
+- [ ] **Step 4: eval/predict 改用统一解析**
+
+`eval_scheduler.py` 中替换 `db.get(TrainModel, eval_rec.model_id or eval_rec.model_repo_id)` 与回溯逻辑：
+
+```python
+        from .service import TrainService
+        storage_path = await TrainService._resolve_model_storage(eval_rec.model_id)
+```
+
+`predict_executor.py` 中对应替换：
+
+```python
+        from .service import TrainService
+        storage_path = await TrainService._resolve_model_storage(pred.model_id)
+```
+
+- [ ] **Step 5: 前端 eval/predict 创建表单修正 model_id 来源**
+
+`frontend/web/src/views/module_train/eval/index.vue` 与 `predict/index.vue`：`model_id` 改为选中的**版本行 id**（从 repo 的 `listModelVersions` 获取），`model_repo_id` 为仓库 id。`repo/index.vue` 的"去评估/去推理"跳转带 `model_repo_id=<repo_id>`，详情页再用 repo_id 拉版本列表供选择。
+
+> 具体前端改动在 Task 8 详细展开；此处仅保证后端字段语义正确。
+
+- [ ] **Step 6: 运行测试**
+
+Run: `cd backend && uv run pytest tests/test_version_and_model_refs.py -v`
+Expected: PASS
+
+- [ ] **Step 7: 提交**
+
 ```bash
-git add backend/app/plugin/module_train/eval_scheduler.py
-git commit -m "feat(train): add eval scheduler for running yolo val in Docker"
+git add backend/app/plugin/module_train/service.py backend/app/plugin/module_train/eval_scheduler.py backend/app/plugin/module_train/predict_executor.py backend/tests/test_version_and_model_refs.py
+git commit -m "fix(train): unify version parse and model storage resolution"
 ```
+
+---
+
+

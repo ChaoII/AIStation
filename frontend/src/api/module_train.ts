@@ -152,12 +152,6 @@ export const TrainAPI = {
       timeout: 1800000,
     });
   },
-  downloadModel(modelId: number) {
-    return request<ApiResponse<{ download_url: string; format: string }>>({
-      url: `${API_PATH}/model/${modelId}/download`,
-      method: "get",
-    });
-  },
   updateModel(modelId: number, data: any) {
     return request<ApiResponse>({
       url: `${API_PATH}/model/update/${modelId}`,

@@ -126,12 +126,4 @@ export const AnnotationAPI = {
       method: "get",
     });
   },
-
-  // Export history
-  getExportHistory(datasetId: number) {
-    return request<ApiResponse<any[]>>({
-      url: `${API_PATH}/dataset/export/history/${datasetId}`,
-      method: "get",
-    });
-  },
 };

@@ -1,238 +1,187 @@
-# Task 6: Predict Executor — 预测任务执行器
+### Task 6: 打通 paddlex 执行链路（训练→评估→预测→部署）
 
-## 要创建的文件
-- `backend/app/plugin/module_train/predict_executor.py`（新建）
+**Files:**
+- Modify: `backend/app/plugin/module_train/scheduler.py`（TrainExecutor._execute）
+- Modify: `backend/app/plugin/module_train/eval_scheduler.py`（EvalExecutor._execute）
+- Modify: `backend/app/plugin/module_train/predict_executor.py`（PredictExecutor._execute）
+- Modify: `backend/app/plugin/module_train/exporter.py`（`_export_paddlex` 真正导出数据）
+- Test: `backend/tests/test_paddlex_export.py`（新建）
 
-## 要求
-创建执行 `yolo predict` 的预测执行器，模式与 `eval_scheduler.py` 一致。
+**Interfaces:**
+- Consumes: `TrainFramework.PADDLEX`, `_export_paddlex` 现有占位
+- Produces: `_export_paddlex(dataset_id, task_id, images, output_dir, annotation_task_id)` 完整实现；paddlex 的 eval/predict 命令构造
 
-文件完整内容如下：
+- [ ] **Step 1: 写失败测试 — paddlex 导出生成 PaddleX 数据**
+
+`backend/tests/test_paddlex_export.py`:
 
 ```python
-import asyncio
-import os
-import tempfile
-import shutil
-import zipfile
-from datetime import datetime
-
-from sqlalchemy import update
-
-from app.core.database import async_db_session
-from app.core.logger import log
-
-from .model import TrainPredict, TrainStatus, TrainModel
-from .docker_utils import pull_image, run_container, follow_container_logs, remove_container
-from .ws import broadcast_predict_log
-
-_predict_running: dict[int, dict] = {}
-
-DOCKER_IMAGE = "ultralytics/ultralytics:latest"
+"""PaddleX 数据集导出测试（验证不再空实现）。"""
 
 
-async def start_prediction(predict_id: int):
-    async with async_db_session.begin() as db:
-        await db.execute(
-            update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now()
-            )
-        )
-    asyncio.create_task(_execute_prediction(predict_id))
+def test_export_paddlex_is_implemented():
+    import inspect
+    from app.plugin.module_train.exporter import _export_paddlex
+    src = inspect.getsource(_export_paddlex)
+    # 原实现只有 mkdir + log；修复后应有 label 或 yaml 生成
+    assert "yaml" in src.lower() or "label" in src.lower() or "json" in src.lower()
+```
 
+- [ ] **Step 2: 运行确认失败**
 
-async def stop_prediction(predict_id: int):
-    entry = _predict_running.get(predict_id)
-    if entry:
-        entry["cancel"] = True
-        from .docker_utils import stop_container
-        await stop_container(entry["container_id"])
+Run: `cd backend && uv run pytest tests/test_paddlex_export.py -v`
+Expected: FAIL（当前 `_export_paddlex` 只有 mkdir + log）
 
+- [ ] **Step 3: 实现 `_export_paddlex` 完整导出**
 
-async def _execute_prediction(predict_id: int):
-    container_id = None
-    try:
-        async with async_db_session() as db:
-            pred = await db.get(TrainPredict, predict_id)
-            if not pred:
-                return
+在 `exporter.py` 中替换 `_export_paddlex`：
 
-        await broadcast_predict_log(predict_id, f"[predict] pulling image {DOCKER_IMAGE}...")
-        await pull_image(DOCKER_IMAGE)
+```python
+async def _export_paddlex(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
+    """导出 PaddleX 检测格式：images/ + annotations/ (XML) + train/val 划分 + PaddleX 目录规范。
 
-        export_dir = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id))
-        source_dir = os.path.join(export_dir, "source")
-        output_dir = os.path.join(export_dir, "output")
-        model_dir = os.path.join(export_dir, "model")
-        os.makedirs(source_dir, exist_ok=True)
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(model_dir, exist_ok=True)
+    PaddleX 3.0 期望目录结构：
+      {output}/images/{img}
+      {output}/annotations/{img}.xml
+      {output}/train.txt / val.txt
+    """
+    import random
+    import xml.etree.ElementTree as ET
 
-        # Prepare source images
-        from app.utils.s3_client import s3_client
-        if pred.source_type == "dataset":
-            await broadcast_predict_log(predict_id, "[predict] exporting dataset images...")
-            from .exporter import export_dataset
-            await export_dataset(pred.source_dataset_id, predict_id, "ultralytics", source_dir)
-            # Remove label files and yaml, keep only images
-            for root, _, files in os.walk(source_dir):
-                for f in files:
-                    if f.endswith(".txt") or f == "dataset.yaml":
-                        os.remove(os.path.join(root, f))
-        else:
-            await broadcast_predict_log(predict_id, "[predict] downloading uploaded images...")
-            for img_url in (pred.source_images or []):
+    from app.utils.s3_client import s3_client
+
+    random.shuffle(images)
+    split_idx = max(1, int(len(images) * 0.8))
+    img_dir = os.path.join(output_dir, "images")
+    ann_dir = os.path.join(output_dir, "annotations")
+    os.makedirs(img_dir, exist_ok=True)
+    os.makedirs(ann_dir, exist_ok=True)
+
+    train_lines: list[str] = []
+    val_lines: list[str] = []
+    classes: set[str] = set()
+
+    async with async_db_session() as db:
+        for idx, img in enumerate(images):
+            img_path = os.path.join(img_dir, img.filename)
+            if not os.path.exists(img_path):
                 try:
-                    data = s3_client.download_fileobj(img_url)
-                    filename = img_url.rsplit("/", 1)[-1].split("?")[0]
-                    with open(os.path.join(source_dir, filename), "wb") as f:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
                         f.write(data.read())
                 except Exception as e:
-                    log.warning(f"skip image {img_url}: {e}")
+                    log.warning(f"skip image {img.filename}: {e}")
+                    continue
 
-        # Download model
-        async with async_db_session() as db:
-            model_rec = await db.get(TrainModel, pred.model_id)
-            if not model_rec or not model_rec.storage_path:
-                raise Exception("model not found or no storage_path")
+            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+            if annotation_task_id:
+                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+            rec = await db.execute(query)
+            record = rec.scalar_one_or_none()
+            anns = record.annotation_data if record and record.annotation_data else []
 
-        await broadcast_predict_log(predict_id, f"[predict] downloading model {model_rec.storage_path}...")
-        model_data = s3_client.download_fileobj(model_rec.storage_path)
-        model_filename = model_rec.storage_path.rsplit("/", 1)[-1]
-        model_local_path = os.path.join(model_dir, model_filename)
-        with open(model_local_path, "wb") as f:
-            f.write(model_data.read())
+            # 构造 PaddleX XML
+            root = ET.Element("annotation")
+            ET.SubElement(root, "filename").text = img.filename
+            size = ET.SubElement(root, "size")
+            ET.SubElement(size, "width").text = str(img.width or 0)
+            ET.SubElement(size, "height").text = str(img.height or 0)
+            for ann in anns:
+                if ann.get("type") not in ("AxisAlignedBox", "box"):
+                    continue
+                if "x1" in ann:
+                    x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
+                else:
+                    xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
+                    x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
+                obj = ET.SubElement(root, "object")
+                ET.SubElement(obj, "name").text = f"class_{ann.get('class_id', 0)}"
+                ET.SubElement(obj, "difficult").text = "0"
+                bbox = ET.SubElement(obj, "bndbox")
+                ET.SubElement(bbox, "xmin").text = f"{int(x1 * (img.width or 1))}"
+                ET.SubElement(bbox, "ymin").text = f"{int(y1 * (img.height or 1))}"
+                ET.SubElement(bbox, "xmax").text = f"{int(x2 * (img.width or 1))}"
+                ET.SubElement(bbox, "ymax").text = f"{int(y2 * (img.height or 1))}"
+                classes.add(f"class_{ann.get('class_id', 0)}")
 
-        # Build command
-        hp = pred.hyperparams or {}
-        conf = hp.get("conf", 0.25)
-        iou = hp.get("iou", 0.45)
-        imgsz = hp.get("imgsz", 640)
-        device = hp.get("device", "0")
+            xml_path = os.path.join(ann_dir, os.path.splitext(img.filename)[0] + ".xml")
+            tree = ET.ElementTree(root)
+            tree.write(xml_path, encoding="utf-8", xml_declaration=True)
 
-        cmd = [
-            "yolo", "predict",
-            f"model=/model/{model_filename}",
-            f"source=/data",
-            f"imgsz={imgsz}",
-            f"conf={conf}",
-            f"iou={iou}",
-            "save_txt=True",
-            "save_conf=True",
-            "project=/output",
-            "name=exp",
+            rel = f"images/{img.filename}\tannotations/{os.path.splitext(img.filename)[0]}.xml"
+            if idx < split_idx:
+                train_lines.append(rel)
+            else:
+                val_lines.append(rel)
+
+    with open(os.path.join(output_dir, "train.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(train_lines))
+    with open(os.path.join(output_dir, "val.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(val_lines))
+    with open(os.path.join(output_dir, "labels.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(classes)))
+    log.info(f"paddlex: train={len(train_lines)} val={len(val_lines)} classes={sorted(classes)}")
+```
+
+- [ ] **Step 4: paddlex 训练命令与产物查找修正**
+
+`scheduler.py`（TrainExecutor）中：
+
+```python
+        if task.framework == TrainFramework.ULTRALYTICS:
+            cmd = _build_ultralytics_cmd(...)
+        elif task.framework == TrainFramework.PADDLEX:
+            # PaddleX 训练需挂载导出目录并执行训练
+            cmd = [
+                "paddlex", "--train", "--data", "/data",
+                "--model", task.hyperparams.get("model", "PP-YOLOE"),
+                "--epochs", str(task.hyperparams.get("epochs", 100)),
+                "--batch", str(task.hyperparams.get("batch", 16)),
+                "--output", "/output",
+            ]
+```
+
+`exporter.py:export_model` 扩展 paddlex 产物搜索（`best.pdparams` 已支持，补充 PaddleX 输出路径变体）：
+
+```python
+    if framework == "paddlex":
+        candidates = [
+            os.path.join(export_dir, "output", "best_model", "model.pdparams"),
+            os.path.join(export_dir, "best_model", "model.pdparams"),
+            os.path.join(export_dir, "exp", "best_model", "model.pdparams"),
         ]
+        for p in candidates:
+            if os.path.isfile(p):
+                best_path = p
+                break
+```
 
-        container = await run_container(
-            DOCKER_IMAGE, cmd,
-            volumes={
-                source_dir: {"bind": "/data", "mode": "ro"},
-                model_dir: {"bind": "/model", "mode": "ro"},
-                output_dir: {"bind": "/output", "mode": "rw"},
-            },
-            gpu_id=device,
-        )
-        container_id = container.id
-        _predict_running[predict_id] = {"container_id": container_id, "cancel": False}
+- [ ] **Step 5: paddlex 评估/预测命令分支**
 
-        log_queue = await follow_container_logs(container_id)
-        log_file = os.path.join(export_dir, "predict.log")
+`eval_scheduler.py`（EvalExecutor）按 `framework` 分支：
 
-        with open(log_file, "w", encoding="utf-8") as lf:
-            while True:
-                line = await log_queue.get()
-                if line == "__EOF__":
-                    break
-                lf.write(line + "\n")
-                lf.flush()
-                await broadcast_predict_log(predict_id, line)
-
-        loop = asyncio.get_event_loop()
-        exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
-
-        result_images = []
-        result_zip_path = None
-
-        if _predict_running.get(predict_id, {}).get("cancel"):
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                        status=TrainStatus.CANCELLED, finished_at=datetime.now()
-                    )
-                )
-        elif exit_code == 0:
-            await remove_container(container_id)
-
-            # Collect result images from output dir
-            predict_output = os.path.join(output_dir, "exp")
-            if os.path.exists(predict_output):
-                for f in sorted(os.listdir(predict_output)):
-                    if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp")):
-                        img_path = os.path.join(predict_output, f)
-                        rustfs_key = f"train/predict/{predict_id}/{f}"
-                        with open(img_path, "rb") as img_f:
-                            s3_client.upload_fileobj(img_f, rustfs_key)
-                        result_images.append(s3_client.presigned_url(rustfs_key))
-
-                # Create ZIP
-                zip_path = os.path.join(export_dir, "results.zip")
-                with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                    for root, _, files in os.walk(predict_output):
-                        for fn in files:
-                            fp = os.path.join(root, fn)
-                            zf.write(fp, os.path.relpath(fp, predict_output))
-                zip_rustfs_key = f"train/predict/{predict_id}/results.zip"
-                with open(zip_path, "rb") as zf:
-                    s3_client.upload_fileobj(zf, zip_rustfs_key)
-                result_zip_path = s3_client.presigned_url(zip_rustfs_key)
-
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                        status=TrainStatus.SUCCESS,
-                        result_images=result_images or None,
-                        result_zip_path=result_zip_path,
-                        finished_at=datetime.now(),
-                    )
-                )
+```python
+        if eval_rec.framework == TrainFramework.ULTRALYTICS:
+            cmd = ["yolo", "val", ...]
         else:
-            error_msg = ""
-            try:
-                err_logs = container.logs(stdout=False, stderr=True, tail=50).decode("utf-8", errors="replace")
-                if err_logs:
-                    error_msg = err_logs.strip()
-            except Exception:
-                pass
-            await remove_container(container_id)
-            async with async_db_session.begin() as db:
-                await db.execute(
-                    update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                        status=TrainStatus.FAILED, log=error_msg or "predict failed",
-                        finished_at=datetime.now(),
-                    )
-                )
-
-    except Exception as e:
-        log.error(f"predict task {predict_id} failed: {e}")
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                    status=TrainStatus.FAILED, log=str(e), finished_at=datetime.now()
-                )
-            )
-    finally:
-        _predict_running.pop(predict_id, None)
-        if container_id:
-            await remove_container(container_id)
+            cmd = ["paddlex", "--eval", f"--model=/model/{model_filename}", "data=/data", ...]
 ```
 
-## 前置条件
-- `TrainPredict` 模型（Task 1）包含字段：`model_repo_id`, `model_id`, `source_type`, `source_dataset_id`, `source_images`, `result_images`, `result_zip_path`, `hyperparams`, `status`, `started_at`, `finished_at`, `log`
-- `broadcast_predict_log` 已定义在 `ws.py`（Task 7）
-- `s3_client` 有 `download_fileobj` 和 `upload_fileobj` 方法
+`predict_executor.py`（PredictExecutor）同理按框架构造命令。
 
-## 提交信息
+- [ ] **Step 6: 运行测试**
+
+Run: `cd backend && uv run pytest tests/test_paddlex_export.py -v`
+Expected: PASS
+
+- [ ] **Step 7: 提交**
+
 ```bash
-git add backend/app/plugin/module_train/predict_executor.py
-git commit -m "feat(train): add predict executor for running yolo predict in Docker"
+git add backend/app/plugin/module_train/scheduler.py backend/app/plugin/module_train/eval_scheduler.py backend/app/plugin/module_train/predict_executor.py backend/app/plugin/module_train/exporter.py backend/tests/test_paddlex_export.py
+git commit -m "feat(train): implement PaddleX training/eval/predict pipeline"
 ```
+
+---
+
+

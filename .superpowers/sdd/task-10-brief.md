@@ -1,293 +1,86 @@
-# Task 10: 前端评估页面 — 增强列表 + 新建详情页
+### Task 10: 清理与回归验证
 
-## 要修改/创建的文件
-- Modify: `frontend/src/views/module_train/eval/index.vue`（增强）
-- Create: `frontend/src/views/module_train/eval/detail.vue`（新建）
+**Files:**
+- Modify: `backend/app/scripts/init_app.py`（如残留旧调度器引用）
+- Test: 全量回归
 
-## 要求
+- [ ] **Step 1: 清理临时目录残留**
 
-### A. 增强 `eval/index.vue`
+确认 `%TEMP%/train_output`、`eval_output`、`predict_output` 下无占用大文件。提供 `backend/app/plugin/module_train/cleanup.py` 定时清理（保留最近 N 天）：
 
-**1. 添加导入**
-在 `import { TrainAPI } from "@/api/module_train"` 旁边添加：
-```typescript
-import { useRouter } from "vue-router";
-const router = useRouter();
+```python
+"""定时清理临时训练产物目录。"""
+import asyncio
+import os
+import shutil
+import tempfile
+import time
+
+
+async def cleanup_loop(keep_days: int = 7, interval_sec: int = 3600):
+    while True:
+        try:
+            base = tempfile.gettempdir()
+            for sub in ("train_output", "eval_output", "predict_output", "deploy_output", "model_export", "dataset_export", "model_export_logs"):
+                d = os.path.join(base, sub)
+                if not os.path.isdir(d):
+                    continue
+                cutoff = time.time() - keep_days * 86400
+                for entry in os.listdir(d):
+                    p = os.path.join(d, entry)
+                    try:
+                        if os.path.getmtime(p) < cutoff:
+                            if os.path.isdir(p):
+                                shutil.rmtree(p, ignore_errors=True)
+                            else:
+                                os.remove(p)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        await asyncio.sleep(interval_sec)
 ```
 
-**2. 添加响应式数据**
-```typescript
-const createDialogVisible = ref(false);
-const modelVersions = ref<any[]>([]);
-const createForm = reactive({
-  modelId: null as number | null,
-  evalDatasetId: null as number | null,
-  hyperparams: { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 },
-});
+在 `init_app.py` 启动该清理循环。
 
-// 加载模型版本列表
-(async () => {
-  const r = await TrainAPI.getModelList();
-  modelVersions.value = r.data?.data || [];
-})();
-```
+- [ ] **Step 2: 后端全量测试**
 
-**3. 添加操作方法**
-```typescript
-async function handleStartEval(id: number) {
-  await TrainAPI.startEval(id);
-  ElMessage.success("评估已开始");
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
-}
+Run: `cd backend && uv run pytest tests/ -v`
+Expected: 全部 PASS（含既有测试）
 
-async function handleStopEval(id: number) {
-  await TrainAPI.stopEval(id);
-  ElMessage.success("评估已停止");
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
-}
+- [ ] **Step 3: ruff 检查**
 
-async function handleDeleteEval(ids: number[]) {
-  await TrainAPI.deleteEval(ids);
-  ElMessage.success("已删除");
-  await reloadEvalData();
-  contentRef.value?.fetchPageData({}, true);
-}
-```
+Run: `cd backend && uv run ruff check`
+Expected: 0 errors（若有历史问题记录，注明忽略项）
 
-**4. 修改创建评估逻辑**
-替换现有 `handleCreateEval` 函数，使用对话框中的参数：
-```typescript
-async function handleCreateEval() {
-  if (!createForm.modelId || !createForm.evalDatasetId) {
-    ElMessage.warning("请选择模型版本和评估数据集");
-    return;
-  }
-  creating.value = true;
-  try {
-    await TrainAPI.createEval({
-      model_repo_id: modelRepoId,
-      model_id: createForm.modelId,
-      eval_dataset_id: createForm.evalDatasetId,
-      hyperparams: createForm.hyperparams,
-    });
-    ElMessage.success("评估任务已创建");
-    createDialogVisible.value = false;
-    createForm.modelId = null;
-    createForm.evalDatasetId = null;
-    createForm.hyperparams = { imgsz: 640, batch: 16, conf: 0.001, iou: 0.6 };
-    await reloadEvalData();
-    contentRef.value?.fetchPageData({}, true);
-  } finally {
-    creating.value = false;
-  }
-}
-```
+- [ ] **Step 4: 前端 type-check + build**
 
-**5. 添加操作列表**
-在 `<el-table>` 中添加操作列：
-```vue
-<el-table-column label="操作" width="200" fixed="right">
-  <template #default="{ row }">
-    <el-button text size="small" type="primary" @click="router.push(`/train/eval/${row.id}`)">详情</el-button>
-    <el-button v-if="row.status === 'pending'" text size="small" type="success" @click="handleStartEval(row.id)">开始</el-button>
-    <el-button v-if="row.status === 'running'" text size="small" type="danger" @click="handleStopEval(row.id)">停止</el-button>
-    <el-popconfirm title="确定删除？" @confirm="handleDeleteEval([row.id])">
-      <template #reference><el-button text size="small" type="danger">删除</el-button></template>
-    </el-popconfirm>
-  </template>
-</el-table-column>
-```
+Run: `cd frontend/web && pnpm run type-check && npx vite build 2>&1 | Select-Object -Last 3`
+Expected: type-check 0 errors，build 成功
 
-**6. 修改创建按钮为对话框触发**
-将现有 `创建评估` 按钮改为：
-```vue
-<el-button type="primary" size="small" @click="createDialogVisible = true">创建评估</el-button>
-```
+- [ ] **Step 5: 真实库端到端冒烟**
 
-**7. 添加创建对话框**
-在 `</PageContent>` 之后添加：
-```vue
-<el-dialog v-model="createDialogVisible" title="创建评估" width="500px">
-  <el-form label-width="100px">
-    <el-form-item label="模型版本">
-      <el-select v-model="createForm.modelId" filterable style="width:100%">
-        <el-option v-for="m in modelVersions" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
-      </el-select>
-    </el-form-item>
-    <el-form-item label="评估数据集">
-      <el-select v-model="createForm.evalDatasetId" filterable style="width:100%">
-        <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
-      </el-select>
-    </el-form-item>
-    <el-form-item label="imgsz"><el-input-number v-model="createForm.hyperparams.imgsz" :min="32" :step="32" /></el-form-item>
-    <el-form-item label="batch"><el-input-number v-model="createForm.hyperparams.batch" :min="1" :max="128" /></el-form-item>
-    <el-form-item label="conf"><el-input-number v-model="createForm.hyperparams.conf" :min="0.001" :max="1" :step="0.01" /></el-form-item>
-    <el-form-item label="iou"><el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" /></el-form-item>
-  </el-form>
-  <template #footer>
-    <el-button @click="createDialogVisible = false">取消</el-button>
-    <el-button type="primary" :loading="creating" @click="handleCreateEval">创建</el-button>
-  </template>
-</el-dialog>
-```
+1. 登录 v3 前端 (http://localhost:5190/web) admin/123456
+2. 模型仓库页：确认 41 条旧数据聚合为仓库+版本两级展示，无 `vv1`
+3. 创建一次训练任务 → 跑通 → 确认产物落盘、metrics 非空
+4. 评估：选最新版本 → 跑通 → metrics 正常
+5. 预测：上传图片 → 跑通 → 结果图/zip 可见
+6. 部署：创建 + 启动 → 健康检查通过 → 停止
+7. 重启后端：确认无 RUNNING 残留任务卡死（孤儿恢复生效）
 
-### B. 创建 `eval/detail.vue`
+- [ ] **Step 6: 提交**
 
-File content:
-
-```vue
-<template>
-  <div class="app-container train-detail-page">
-    <div class="detail-header">
-      <el-button text size="small" @click="router.back()"><el-icon><ArrowLeft /></el-icon></el-button>
-      <span class="task-name">评估 #{{ evalData?.id }}</span>
-      <el-tag :type="(tagType(evalData?.status || '') as any)" size="small">{{ tagLabel(evalData?.status || '') }}</el-tag>
-    </div>
-
-    <div class="info-cards">
-      <el-card shadow="never" class="info-card">
-        <template #header><span class="card-title">评估信息</span></template>
-        <el-descriptions :column="1" size="small" border>
-          <el-descriptions-item label="模型仓库 ID">{{ evalData?.model_repo_id }}</el-descriptions-item>
-          <el-descriptions-item label="模型版本 ID">{{ evalData?.model_id || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="评估数据集 ID">{{ evalData?.eval_dataset_id }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ evalData?.created_time }}</el-descriptions-item>
-          <el-descriptions-item label="完成时间">{{ evalData?.finished_at || '—' }}</el-descriptions-item>
-        </el-descriptions>
-      </el-card>
-      <el-card shadow="never" class="info-card">
-        <template #header><span class="card-title">评估参数</span></template>
-        <div class="hp-grid">
-          <div class="hp-item"><span class="hp-label">imgsz</span><span class="hp-value">{{ evalData?.hyperparams?.imgsz ?? 640 }}</span></div>
-          <div class="hp-item"><span class="hp-label">batch</span><span class="hp-value">{{ evalData?.hyperparams?.batch ?? 16 }}</span></div>
-          <div class="hp-item"><span class="hp-label">conf</span><span class="hp-value">{{ evalData?.hyperparams?.conf ?? 0.001 }}</span></div>
-          <div class="hp-item"><span class="hp-label">iou</span><span class="hp-value">{{ evalData?.hyperparams?.iou ?? 0.6 }}</span></div>
-        </div>
-      </el-card>
-    </div>
-
-    <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">评估指标</span></template>
-      <div v-if="evalData?.metrics" class="metric-grid">
-        <div class="metric-item"><span class="metric-val metric-green">{{ fmtPct(evalData.metrics.precision) }}</span><span class="metric-lbl">Precision</span></div>
-        <div class="metric-item"><span class="metric-val metric-blue">{{ fmtPct(evalData.metrics.recall) }}</span><span class="metric-lbl">Recall</span></div>
-        <div class="metric-item"><span class="metric-val metric-orange">{{ fmtPct(evalData.metrics.map50) }}</span><span class="metric-lbl">mAP@50</span></div>
-        <div class="metric-item"><span class="metric-val metric-purple">{{ fmtPct(evalData.metrics.map5095) }}</span><span class="metric-lbl">mAP@50:95</span></div>
-      </div>
-      <el-empty v-else :image-size="40" description="暂无评估指标" />
-    </el-card>
-
-    <!-- Per-class metrics table -->
-    <el-card v-if="evalData?.metrics?.classes" shadow="never" class="section-card">
-      <template #header><span class="card-title">各类别指标</span></template>
-      <el-table :data="classTableData" border size="small" style="width:100%">
-        <el-table-column prop="cls" label="类别" width="100" />
-        <el-table-column label="Precision"><template #default="{row}">{{ fmtPct(row.precision) }}</template></el-table-column>
-        <el-table-column label="Recall"><template #default="{row}">{{ fmtPct(row.recall) }}</template></el-table-column>
-        <el-table-column label="mAP@50"><template #default="{row}">{{ fmtPct(row.map50) }}</template></el-table-column>
-        <el-table-column label="mAP@50:95"><template #default="{row}">{{ fmtPct(row.map5095) }}</template></el-table-column>
-      </el-table>
-    </el-card>
-
-    <!-- Log area -->
-    <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">评估日志</span></template>
-      <div ref="logRef" class="log-container">
-        <pre class="log-text">{{ logText || '等待日志...' }}</pre>
-      </div>
-    </el-card>
-  </div>
-</template>
-
-<script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { ArrowLeft } from "@element-plus/icons-vue";
-import { TrainAPI } from "@/api/module_train";
-
-const route = useRoute();
-const router = useRouter();
-const evalData = ref<any>(null);
-const logText = ref("");
-const logRef = ref<HTMLElement | null>(null);
-let ws: WebSocket | null = null;
-
-function tagType(s: string) { return ({ pending: "info", running: "warning", success: "success", failed: "danger" } as any)[s] || "info"; }
-function tagLabel(s: string) { return ({ pending: "待开始", running: "评估中", success: "已完成", failed: "失败" } as any)[s] || s; }
-function fmtPct(v: number | undefined) { return v != null ? (v * 100).toFixed(1) + "%" : "—"; }
-
-const classTableData = computed(() => {
-  const cls = evalData.value?.metrics?.classes;
-  if (!cls) return [];
-  return Object.entries(cls).map(([k, v]: [string, any]) => ({ cls: k, precision: v.precision, recall: v.recall, map50: v.map50, map5095: v.map5095 }));
-});
-
-function connectWs(evalId: number) {
-  const baseUrl = (import.meta.env.VITE_API_BASE_URL || "").replace(/^http/, "ws");
-  ws = new WebSocket(`${baseUrl}/api/v1/train/ws/eval/logs?eval_id=${evalId}`);
-  ws.onmessage = (e: MessageEvent) => {
-    logText.value += e.data + "\n";
-  };
-  ws.onclose = () => {};
-  ws.onerror = () => {};
-}
-
-onMounted(async () => {
-  const id = Number(route.params.id);
-  if (!id) return;
-  const r = await TrainAPI.getEvalDetail(id);
-  evalData.value = r.data?.data;
-  if (evalData.value?.status === "running") {
-    connectWs(id);
-  }
-  if (evalData.value?.log) {
-    logText.value = evalData.value.log;
-  }
-});
-
-onBeforeUnmount(() => { ws?.close(); });
-</script>
-
-<style lang="scss">
-.app-container.train-detail-page {
-  display: block !important;
-  height: auto !important;
-  overflow: visible !important;
-}
-</style>
-
-<style scoped lang="scss">
-.detail-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 10px 16px; background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
-.task-name { font-size: 15px; font-weight: 600; margin-right: 4px; color: #303133; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-title { font-weight: 600; font-size: 14px; color: #303133; }
-.info-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-.info-card { height: 100%; }
-.hp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.hp-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f2f3f5; }
-.hp-label { color: #909399; font-size: 13px; }
-.hp-value { color: #303133; font-size: 13px; font-weight: 500; }
-.section-card { margin-bottom: 16px; }
-.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.metric-item { background: #fff; border: 1px solid #ebeef5; border-radius: 8px; padding: 16px 12px; text-align: center; transition: box-shadow .2s; &:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); } }
-.metric-val { display: block; font-size: 18px; font-weight: 700; font-family: "Cascadia Code",monospace; color: #303133; }
-.metric-lbl { display: block; font-size: 12px; color: #909399; margin-top: 4px; }
-.metric-green { color: #67c23a; }
-.metric-blue { color: #409eff; }
-.metric-orange { color: #e6a23c; }
-.metric-purple { color: #9b59b6; }
-.log-container { height: 500px; min-height: 200px; overflow-y: auto; background: #1e1e1e; border-radius: 6px; padding: 16px; }
-.log-text { font-family: "Cascadia Code","Fira Code",monospace; font-size: 13px; line-height: 1.5; color: #d4d4d4; white-space: pre-wrap; word-break: break-all; margin: 0; }
-</style>
-```
-
-## 前置条件
-- 现有文件 `frontend/src/views/module_train/eval/index.vue`（136 行）
-- `TrainAPI` 已有 `createEval`, `getEvalList`, `deleteEval`, 新增 `getEvalDetail`, `startEval`, `stopEval`（Task 9）
-
-## 提交信息
 ```bash
-git add frontend/src/views/module_train/eval/
-git commit -m "feat(train): enhance eval list page, add eval detail page"
+git add backend/app/plugin/module_train/cleanup.py backend/app/scripts/init_app.py
+git commit -m "chore(train): temp dir cleanup and regression verification"
 ```
+
+---
+
+## Self-Review 结论
+
+- **Spec 覆盖**：P0 数据模型语义（Task 1-3, 5）✅；P0 导出覆盖 hack（Task 5）✅；P1 并发控制（Task 4）✅；P1 predict 孤儿（Task 4）✅；P1 paddlex 半成品（Task 6）✅；P1 指标未回流（Task 7）✅；P2 部署未用/端口竞态（Task 9）✅；P2 临时目录清理（Task 10）✅；前端适配（Task 8）✅。版本号 vv bug（Task 2, 5）✅。
+- **回滚安全**：Task 2 迁移含 downgrade；Task 3-9 均小步提交。
+- **类型一致性**：`_parse_version`、`_resolve_model_storage`、`TaskExecutor` 接口在各 Task 间签名一致。
+- **遗留说明**：`TrainTask.model_repo_id` 保留指向版本行 id（兼容旧前端跳转），前端已改为通过 `version/{id}/repo` 解析仓库。
+
