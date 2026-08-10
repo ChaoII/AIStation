@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Body, Depends, Path, Request
+import os
+
+from fastapi import APIRouter, Body, Depends, File, Path, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -50,6 +52,25 @@ async def create_algorithm_controller(
 ) -> JSONResponse:
     result = await AlgorithmService.create_algorithm_service(data=data, auth=auth)
     return SuccessResponse(data=result, msg="创建成功")
+
+
+@AlgorithmRouter.post("/model/upload", summary="上传算法模型文件")
+async def upload_algorithm_model_controller(
+    file: UploadFile = File(...),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:create"])),
+) -> JSONResponse:
+    """上传模型文件到本地 models 目录，返回可存储到 model_path 的路径。"""
+    import shutil
+
+    from app.config.path_conf import BASE_DIR
+
+    models_dir = BASE_DIR / "data" / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = os.path.basename(file.filename or "model.bin")
+    dest = models_dir / safe_name
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return SuccessResponse(data={"model_path": str(dest)}, msg="上传成功")
 
 
 @AlgorithmRouter.put("/update/{id}", summary="修改算法")

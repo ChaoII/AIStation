@@ -63,9 +63,9 @@ export function setupWebSocket() {
   }
 
   try {
-    // 建立告警通知 WebSocket 连接
+    // 建立告警通知 WebSocket 连接（后端 AlarmWSRouter 挂载于 /alarm/ws，非 /video 下）
     const token = Auth.getAccessToken();
-    const wsUrl = `${WS_BASE.replace(/^http/, "ws")}/api/v1/video/alarm/ws?token=${token}`;
+    const wsUrl = `${WS_BASE.replace(/^http/, "ws")}/api/v1/alarm/ws?token=${token}`;
     const alarmWs = new WebSocket(wsUrl);
 
     alarmWs.onopen = () => {

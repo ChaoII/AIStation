@@ -31,7 +31,7 @@
         <div v-if="camId && camerasMap[camId]" class="bs-player-wrap">
           <LivePlayer
             :ref="(el: any) => setPlayerRef(`w${idx + 1}`, el)"
-            :stream-id="String(camId)"
+            :stream-id="'camera_' + camId"
             :poster="camerasMap[camId].screenshot || ''"
             :name="camerasMap[camId].name"
           />
@@ -47,6 +47,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
 import { getLayoutList, getLayoutDetail } from "@/api/module_video/layout";
 import { getCameraList } from "@/api/module_video/camera";
 import LivePlayer from "@/components/Video/LivePlayer.vue";
@@ -115,18 +116,23 @@ function togglePatrol() {
 
 function startPatrol() {
   if (!layoutPatrolInterval.value || patrolRunning.value) return;
+  const cameras = Object.values(camerasMap.value).filter((c: any) => c.status === "ONLINE");
+  const winKeys = Object.keys(layoutWindows.value);
+  if (winKeys.length === 0 || cameras.length === 0) {
+    ElMessage.warning("轮巡需要至少一路在线摄像机");
+    return;
+  }
   patrolRunning.value = true;
-  let current = 0;
-  const windows = windowOrder.value;
-  if (!windows.length) return;
+  let cursor = 0;
   patrolTimer = setInterval(() => {
-    const playerKeys = Object.keys(playerRefs.value);
-    if (playerKeys.length > current) {
-      const key = playerKeys[current];
-      // Switch to next window's camera by cycling through cameras
-      // This is simplified - real implementation would rotate
-    }
-    current = (current + 1) % playerKeys.length;
+    // 旋转分配：把在线摄像机顺序填充到各窗口
+    const next: Record<string, number> = {};
+    winKeys.forEach((wk, i) => {
+      const cam = cameras[(cursor + i) % cameras.length];
+      next[wk] = cam.id;
+    });
+    layoutWindows.value = next;
+    cursor = (cursor + 1) % cameras.length;
   }, layoutPatrolInterval.value * 1000);
 }
 

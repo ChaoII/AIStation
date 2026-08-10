@@ -47,6 +47,14 @@ class RecordService:
     @classmethod
     async def _start_ffmpeg_recording(cls, camera_id: int, stream_id: str, trigger: str = "MANUAL",
                                        known_segments: set[str] | None = None):
+        # 录像前验证流确实在线，避免对死流启动 ffmpeg（静默无产物）
+        from app.core.media_server import media_server
+        try:
+            online = await media_server.is_media_online(stream_id)
+        except Exception as e:
+            raise CustomException(msg=f"校验流状态失败: {e}")
+        if not online:
+            raise CustomException(msg="流当前不在线，无法开始录像，请先启动推流")
         flv_url = f"{settings.ZLM_BASE_URL}/live/{stream_id}.live.flv"
         outdir = _ensure_dir(stream_id)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -62,7 +70,7 @@ class RecordService:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         # Pre-populate from both filesystem and caller (DB-backed) to prevent re-persist
-        fs_files = set(f.name for f in outdir.glob("*.mp4") if f.stat().st_size > 10000)
+        fs_files = {f.name for f in outdir.glob("*.mp4") if f.stat().st_size > 10000}
         known = fs_files | (known_segments or set())
         _running_recordings[stream_id] = {
             "proc": proc,
@@ -294,7 +302,7 @@ class RecordService:
         if not plan:
             raise CustomException(msg="录制计划不存在")
         new_status = not plan.status
-        updated = await RecordPlanCRUD(auth).update(id=id, data={"status": new_status})
+        await RecordPlanCRUD(auth).update(id=id, data={"status": new_status})
         return {"id": id, "status": new_status}
 
     @classmethod

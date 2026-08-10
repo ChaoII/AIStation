@@ -443,7 +443,7 @@ import {
   ArrowDown,
   Refresh,
 } from "@element-plus/icons-vue";
-import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
+import { getCameraList, getCameraGroupList, startStream } from "@/api/module_video/camera";
 import { getPlayUrls } from "@/api/module_video/preview";
 import { getRealtimeAlarms, confirmAlarm } from "@/api/module_video/alarm";
 import { getLayoutList, createLayout, updateLayout } from "@/api/module_video/layout";
@@ -714,7 +714,18 @@ async function getOrCreatePlayUrl(camera: any): Promise<any> {
     const res = await getPlayUrls(camera.id);
     return { ...camera, play_urls: res.data?.data || res.data || {} };
   } catch {
-    return camera;
+    // 未推流：尝试自动推流后再取播放地址（逻辑闭环，无需跳转摄像头管理页）
+    try {
+      await startStream(camera.id);
+    } catch {
+      return camera;
+    }
+    try {
+      const res = await getPlayUrls(camera.id);
+      return { ...camera, play_urls: res.data?.data || res.data || {} };
+    } catch {
+      return camera;
+    }
   }
 }
 
@@ -1026,7 +1037,7 @@ function onDeviceDragEnd() {
 }
 
 function handlePtz() {
-  // PTZ control would be sent to the backend/ZLM
+  ElMessage.info("当前设备暂不支持云台(PTZ)控制");
 }
 
 function updateTime() {

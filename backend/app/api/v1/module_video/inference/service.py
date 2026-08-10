@@ -82,6 +82,13 @@ class InferenceService:
                 await session.flush()
                 alarm_id = record.id
 
+            # 触发事件联动（ALARM 事件 → RECORD/通知等动作，逻辑闭环）
+            try:
+                from app.api.v1.module_video.event.service import EventService
+                await EventService.execute_linkage_actions(camera_id, "ALARM")
+            except Exception as e:
+                log.warning(f"事件联动执行异常: {e}")
+
             # Async notification
             if rule:
                 try:

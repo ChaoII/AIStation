@@ -260,6 +260,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onBeforeMount } from "vue";
 import { Upload, Document, Checked } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
+import request from "@/utils/request";
 import {
   getAlgorithmList,
   createAlgorithm,
@@ -414,9 +416,28 @@ function onAlgoTypeChange() {
   loadConfigTemplate();
 }
 
-function handleModelUpload(uploadFile: any) {
+async function handleModelUpload(uploadFile: any) {
   const file = uploadFile.raw;
-  if (file) algoForm.model_path = file.name;
+  if (!file) return;
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await request({
+      url: "/video/algorithm/model/upload",
+      method: "post",
+      data: fd,
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    const mp = res?.data?.data?.model_path;
+    if (mp) {
+      algoForm.model_path = mp;
+      ElMessage.success(`模型已上传: ${file.name}`);
+    } else {
+      ElMessage.error("上传失败");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.msg || "上传失败");
+  }
 }
 
 function formatConfigJson() {
