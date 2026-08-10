@@ -276,7 +276,6 @@ const settingsStore = useSettingsStore();
 
 const algoSubmitLoading = ref(false);
 const algoFormRef = ref();
-const algoList = ref<any[]>([]);
 const algoTypeOpts = algoTypeLabels;
 const codeTheme = computed(() => (settingsStore.theme === ThemeMode.DARK ? "one-dark" : "default"));
 const algoDialogVisible = reactive({
@@ -524,12 +523,7 @@ async function handleSubmitAlgo() {
 }
 
 onBeforeMount(async () => {
-  try {
-    const algoRes = await getAlgorithmList({ page_size: 100 });
-    algoList.value = algoRes.data.data.items || [];
-  } catch {
-    /* noop */
-  }
+  refreshAlgoList();
 });
 </script>
 

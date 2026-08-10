@@ -1079,7 +1079,6 @@ watch(tourMode, (val) => {
 });
 
 watch(layoutType, (nv, ov) => {
-  console.log("[LivePage] layoutType changed", ov, "->", nv);
   const max = parseInt(layoutType.value);
   const entries = Object.entries(cameraBindings.value);
   if (entries.length > max) {
@@ -1092,7 +1091,6 @@ watch(layoutType, (nv, ov) => {
 });
 
 onMounted(() => {
-  console.log("[LivePage] onMounted");
   fetchCameras();
   fetchGroups();
   fetchAlarms();
@@ -1104,28 +1102,23 @@ onMounted(() => {
   // Auto-load layout from query param (from layout management page)
   const layoutId = route.query.layout_id ? Number(route.query.layout_id) : null;
   if (layoutId) {
-    console.log("[LivePage] auto-loading layout", layoutId);
     getLayoutList({ page_size: 50 })
       .then((res: any) => {
         if (unmounted) {
-          console.log("[LivePage] getLayoutList resolved after unmount, skipping");
           return;
         }
         const items = res.data?.data?.items || [];
         const layout = items.find((i: any) => i.id === layoutId);
         if (layout) {
-          console.log("[LivePage] found layout, creating watcher");
           selectedLayoutId.value = layout.id;
           const unwatch = watch(
             cameras,
             (cams) => {
               if (unmounted) {
-                console.log("[LivePage] layout watcher fired after unmount");
                 unwatch();
                 return;
               }
               if (cams.length > 0) {
-                console.log("[LivePage] applying layout via watcher");
                 applyLayout(layout);
                 unwatch();
               }
@@ -1167,11 +1160,9 @@ watch(savedLayouts, (layouts) => {
 });
 
 onBeforeUnmount(() => {
-  console.log("[LivePage] onBeforeUnmount");
   unmounted = true;
   if (alarmPollTimer) {
     clearInterval(alarmPollTimer);
-    console.log("[LivePage] cleared alarmPollTimer");
   }
   if (tourTimer) {
     clearInterval(tourTimer);

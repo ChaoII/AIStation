@@ -1105,7 +1105,9 @@
                 placeholder="编辑OCR文本"
                 @change="onAnnEdit"
               />
-              <el-button size="small" type="danger" text @click="deleteSelected">删除选中</el-button>
+              <el-button size="small" type="danger" text @click="deleteSelected">
+                删除选中
+              </el-button>
             </div>
             <div class="scroll-area">
               <div
@@ -1706,7 +1708,9 @@ function clsColor(id: number) {
   return getCls(id)?.color || "#3b82f6";
 }
 const selectedAnn = computed(() =>
-  store.selectedAnnotationId ? store.annotations.find((a) => a.id === store.selectedAnnotationId) || null : null
+  store.selectedAnnotationId
+    ? store.annotations.find((a) => a.id === store.selectedAnnotationId) || null
+    : null
 );
 function onAnnClassChange() {
   markUnsaved();
@@ -1755,7 +1759,9 @@ function removeClass(id: number) {
       if (a.class_ids.length === 0) delete a.class_ids;
     }
   });
-  store.annotations = store.annotations.filter((a: any) => a.class_id !== -1 && !(a.type === "Classification" && !a.class_ids?.length));
+  store.annotations = store.annotations.filter(
+    (a: any) => a.class_id !== -1 && !(a.type === "Classification" && !a.class_ids?.length)
+  );
   if (selectedClassId.value === id) selectedClassId.value = taskClasses.value[0]?.id ?? 0;
   saveClassesToTask();
 }
@@ -2729,10 +2735,7 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
   }
   e.stopPropagation();
 
-  if (
-    currentTool.value === "select" ||
-    currentTool.value === "ocr"
-  ) {
+  if (currentTool.value === "select" || currentTool.value === "ocr") {
     const t = e.target as HTMLElement;
     const handle = t.getAttribute("data-handle");
 
@@ -2965,9 +2968,13 @@ function pasteCopied() {
   // 轻微偏移，避免完全重叠
   if (copy.x1 !== undefined) {
     const dw = 0.01;
-    copy.x1 += dw; copy.x2 += dw; copy.y1 += 0.01; copy.y2 += 0.01;
+    copy.x1 += dw;
+    copy.x2 += dw;
+    copy.y1 += 0.01;
+    copy.y2 += 0.01;
   } else if (copy.cx !== undefined) {
-    copy.cx += 0.01; copy.cy += 0.01;
+    copy.cx += 0.01;
+    copy.cy += 0.01;
   } else if (copy.points) {
     copy.points = copy.points.map((p: any) => ({ x: p.x + 0.01, y: p.y + 0.01 }));
   }
@@ -3091,10 +3098,7 @@ function restoreHistory() {
             };
           }
           if (type === "Classification" && parts.length >= 4) {
-            const classIds = parts[3]
-              .split(",")
-              .filter(Boolean)
-              .map(Number);
+            const classIds = parts[3].split(",").filter(Boolean).map(Number);
             return {
               id: parts[0],
               type: "Classification",
@@ -3261,14 +3265,13 @@ function scrollToTop() {
 }
 
 // ===== 任务进度 =====
-const taskProgress = ref(0);
 async function fetchTaskProgress() {
   if (!task.value?.id) return;
   try {
     const r = await AnnotationAPI.getTaskProgress(task.value.id);
     const d = r.data?.data;
     if (d) {
-      taskProgress.value = d.progress || 0;
+      // 进度用于 header 展示（updateProgress 客户端计算）；保留调用以保持后端进度缓存
     }
   } catch {}
 }

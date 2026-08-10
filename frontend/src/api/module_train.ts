@@ -24,7 +24,11 @@ export const TrainAPI = {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/create`, method: "post", data });
   },
   updateTask(taskId: number, data: any) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/task/${taskId}/update`, method: "put", data });
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/task/${taskId}/update`,
+      method: "put",
+      data,
+    });
   },
   getTaskList(params?: Record<string, any>) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
@@ -37,7 +41,10 @@ export const TrainAPI = {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/detail`, method: "get" });
   },
   getTaskLogs(id: number) {
-    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/task/${id}/logs`, method: "get" });
+    return request<ApiResponse<{ logs: string }>>({
+      url: `${API_PATH}/task/${id}/logs`,
+      method: "get",
+    });
   },
   stopTask(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/stop`, method: "post" });
@@ -63,7 +70,13 @@ export const TrainAPI = {
     return request<ApiResponse>({ url: `${API_PATH}/eval/delete`, method: "delete", data: ids });
   },
 
-  exportDataset(data: { dataset_id: number; annotation_task_id?: number; format: string; ocr_rec?: boolean; train_ratio?: number }) {
+  exportDataset(data: {
+    dataset_id: number;
+    annotation_task_id?: number;
+    format: string;
+    ocr_rec?: boolean;
+    train_ratio?: number;
+  }) {
     return request<ApiResponse<{ download_url: string; format: string; dataset_id: number }>>({
       url: `${API_PATH}/dataset/export`,
       method: "post",
@@ -76,7 +89,10 @@ export const TrainAPI = {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/detail`, method: "get" });
   },
   getEvalLogs(id: number) {
-    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/eval/${id}/logs`, method: "get" });
+    return request<ApiResponse<{ logs: string }>>({
+      url: `${API_PATH}/eval/${id}/logs`,
+      method: "get",
+    });
   },
   startEval(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/${id}/start`, method: "post" });
@@ -98,9 +114,6 @@ export const TrainAPI = {
   getPredictDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/detail`, method: "get" });
   },
-  getPredictLogs(id: number) {
-    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/predict/${id}/logs`, method: "get" });
-  },
   startPredict(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/${id}/start`, method: "post" });
   },
@@ -112,31 +125,27 @@ export const TrainAPI = {
   },
   uploadPredictImages(files: File[]) {
     const formData = new FormData();
-    files.forEach(f => formData.append("files", f));
-    return request<ApiResponse<string[]>>({ url: `${API_PATH}/predict/upload`, method: "post", data: formData, headers: { "Content-Type": "multipart/form-data" } });
+    files.forEach((f) => formData.append("files", f));
+    return request<ApiResponse<string[]>>({
+      url: `${API_PATH}/predict/upload`,
+      method: "post",
+      data: formData,
+      headers: { "Content-Type": "multipart/form-data" },
+    });
   },
 
   getTempDir() {
-    return request<ApiResponse<{ tempdir: string }>>({ url: `${API_PATH}/system/tempdir`, method: "get" });
-  },
-
-  // Schedules
-  getScheduleList() {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/schedule/list`, method: "get" });
-  },
-  createSchedule(data: any) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/create`, method: "post", data });
-  },
-  updateSchedule(id: number, data: any) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/update/${id}`, method: "put", data });
-  },
-  deleteSchedule(ids: number[]) {
-    return request<ApiResponse>({ url: `${API_PATH}/schedule/delete`, method: "delete", data: ids });
+    return request<ApiResponse<{ tempdir: string }>>({
+      url: `${API_PATH}/system/tempdir`,
+      method: "get",
+    });
   },
 
   // Model export
   exportModel(modelId: number, data: any) {
-    return request<ApiResponse<{ download_url: string; format: string; file_size: number; file_name: string }>>({
+    return request<
+      ApiResponse<{ download_url: string; format: string; file_size: number; file_name: string }>
+    >({
       url: `${API_PATH}/model/${modelId}/export`,
       method: "post",
       data,
@@ -144,10 +153,17 @@ export const TrainAPI = {
     });
   },
   downloadModel(modelId: number) {
-    return request<ApiResponse<{ download_url: string; format: string }>>({ url: `${API_PATH}/model/${modelId}/download`, method: "get" });
+    return request<ApiResponse<{ download_url: string; format: string }>>({
+      url: `${API_PATH}/model/${modelId}/download`,
+      method: "get",
+    });
   },
   updateModel(modelId: number, data: any) {
-    return request<ApiResponse>({ url: `${API_PATH}/model/update/${modelId}`, method: "put", data });
+    return request<ApiResponse>({
+      url: `${API_PATH}/model/update/${modelId}`,
+      method: "put",
+      data,
+    });
   },
 
   // Deploy
@@ -169,12 +185,6 @@ export const TrainAPI = {
       method: "get",
       params,
     });
-  },
-  getDeployDetail(id: number) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/detail`, method: "get" });
-  },
-  getDeployLogs(id: number) {
-    return request<ApiResponse<{ logs: string }>>({ url: `${API_PATH}/deploy/${id}/logs`, method: "get" });
   },
   deleteDeploy(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/deploy/delete`, method: "delete", data: ids });

@@ -87,13 +87,6 @@ export const AnnotationAPI = {
       data,
     });
   },
-  getAnnotationHistory(taskId: number, imageId: number) {
-    return request<ApiResponse<any[]>>({
-      url: `${API_PATH}/anno/image/${imageId}/history`,
-      method: "get",
-      params: { task_id: taskId },
-    });
-  },
   lockImage(imageId: number, taskId: number) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/anno/image/${imageId}/lock`,
@@ -128,11 +121,17 @@ export const AnnotationAPI = {
     return request<ApiResponse<any>>({ url: `${API_PATH}/stats/overview`, method: "get" });
   },
   getDatasetStats(datasetId: number) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/stats/dataset/${datasetId}`, method: "get" });
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/stats/dataset/${datasetId}`,
+      method: "get",
+    });
   },
 
   // Export history
   getExportHistory(datasetId: number) {
-    return request<ApiResponse<any[]>>({ url: `${API_PATH}/dataset/export/history/${datasetId}`, method: "get" });
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/dataset/export/history/${datasetId}`,
+      method: "get",
+    });
   },
 };
