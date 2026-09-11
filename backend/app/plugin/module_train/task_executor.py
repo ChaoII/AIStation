@@ -9,6 +9,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .docker_utils import follow_container_logs, stop_container
+from .framework_utils import framework_value
 
 
 class TaskExecutor(ABC):
@@ -127,7 +128,10 @@ class TaskExecutor(ABC):
                     continue
                 # PaddleX 任务由 PaddleXOCR*Executor 各自的 registry 管理，其他执行器跳过
                 framework = getattr(r, "framework", None)
-                if framework is not None and str(framework).lower() == "paddlex" and cls.__name__ != "PaddleXOCRExecutor":
+                if (
+                    framework_value(framework) == "paddlex"
+                    and "PaddleXOCR" not in cls.__name__
+                ):
                     continue
                 if r.started_at and (datetime.now() - r.started_at).total_seconds() > cls._orphan_timeout_sec:
                     async with async_db_session.begin() as db2:

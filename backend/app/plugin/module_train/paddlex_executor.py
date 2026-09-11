@@ -14,6 +14,7 @@ from app.core.database import async_db_session
 from app.core.logger import log
 
 from .docker_utils import pull_image, remove_container, run_container
+from .framework_utils import framework_value
 from .model import TrainStatus, TrainTask
 from .scheduler import _build_cmd
 from .task_executor import TaskExecutor
@@ -56,8 +57,7 @@ class PaddleXOCRExecutor(TaskExecutor):
                 if isinstance(reg, dict):
                     all_registries.update(reg)
             for r in rows:
-                fw = str(getattr(r, "framework", "") or "").lower()
-                if fw != "paddlex":
+                if framework_value(getattr(r, "framework", None)) != "paddlex":
                     continue
                 if r.id in all_registries:
                     continue
