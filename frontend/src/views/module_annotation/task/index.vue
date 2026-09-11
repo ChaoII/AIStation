@@ -462,8 +462,8 @@ async function handleSubmit() {
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.msg || e?.msg || "保存失败");
+      } catch {
+        // 错误提示统一由请求拦截器负责，避免重复 toast
       } finally {
         submitLoading.value = false;
       }

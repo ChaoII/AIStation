@@ -46,9 +46,25 @@ test("编辑模型仓库仅弹出一个成功提示", async ({ page, request }) 
   await expect(dialog).toBeVisible({ timeout: 10_000 });
 
   // 修改一个字段后提交
-  await dialog.getByPlaceholder("模型描述（可选）").fill(`e2e-updated-${Date.now()}`);
+  const updatedDesc = `e2e-updated-${Date.now()}`;
+  await dialog.getByPlaceholder("模型描述（可选）").fill(updatedDesc);
   await dialog.getByRole("button", { name: "保存" }).click();
 
-  // 5) 断言仅一个 el-message（重复 toast 回归时这里会 > 1）
+  // 5) 必须出现成功提示：若 PUT 失败只会出现 error 提示，
+  //    此断言会失败（避免原用例“失败也恰好 1 个 toast”的假通过）
+  await expect(page.locator(".el-message--success")).toHaveCount(1, { timeout: 10_000 });
+
+  // 6) 断言仅一个 el-message（重复 toast 回归时这里会 > 1）
   await expect(page.locator(".el-message")).toHaveCount(1, { timeout: 10_000 });
+
+  // 7) 落库校验：编辑请求失败时不会持久化，行内描述仍是旧值
+  const list = await request.get(`${API}/train/model/list`, {
+    params: { name },
+    headers: auth,
+  });
+  expect(list.ok()).toBeTruthy();
+  const edited = ((await list.json()).data.items as Array<{ name: string; description: string }>).find(
+    (it) => it.name === name
+  );
+  expect(edited?.description).toBe(updatedDesc);
 });
