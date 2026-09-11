@@ -420,11 +420,112 @@ git commit -m "fix(annotation): 删除数据集级联软删图片与标注记录
 
 ---
 
+### Task 3: 修复 CRUDBase 空查询条件下软删过滤被跳过
+
+**背景:** `backend/app/core/base_crud.py` 中 `list()`（约 93 行）、`tree_list()`（约 128 行）、`page()`（约 178 行）在 `search` 为空/falsy 时直接 `conditions = []`，未调用 `__build_conditions`，因此默认的 `is_deleted == False` 过滤被跳过——所有"无筛选条件"的列表接口都会返回已软删的行（已确认 `GET /annotation/dataset/list`、`GET /annotation/task/list`）。该过滤条件定义在 `__build_conditions` 内（约 467-469 行）。
+
+**Files:**
+- Modify: `backend/app/core/base_crud.py`（`list` / `tree_list` / `page` 三处）
+- Test: `backend/tests/test_base_crud_soft_delete.py`
+
+**Interfaces:**
+- 行为契约：`list`/`tree_list`/`page` 在 `search` 为空时也必须应用模型默认条件（含软删过滤）；`search` 非空时行为不变。
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+"""CRUDBase 空查询条件下软删过滤测试（经数据集列表接口）。"""
+from uuid import uuid4
+
+from fastapi.testclient import TestClient
+
+_FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+
+def test_empty_search_list_excludes_soft_deleted(
+    test_client: TestClient, auth_headers: dict, monkeypatch
+):
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+
+    name = f"softdel-{uuid4().hex[:8]}"
+    created = test_client.post(
+        "/api/v1/annotation/dataset/create", json={"name": name}, headers=auth_headers
+    )
+    assert created.status_code == 200, created.text
+    data = created.json()["data"]
+    dataset_id = data["id"] if isinstance(data, dict) and "id" in data else None
+    if dataset_id is None:
+        items = test_client.get(
+            "/api/v1/annotation/dataset/list",
+            params={"page_no": 1, "page_size": 5},
+            headers=auth_headers,
+        ).json()["data"]["items"]
+        dataset_id = next(i["id"] for i in items if i["name"] == name)
+
+    deleted = test_client.request(
+        "DELETE", "/api/v1/annotation/dataset/delete", json=[dataset_id], headers=auth_headers
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    # 无任何筛选条件（search 为空）时，软删的数据集不应出现
+    items = test_client.get(
+        "/api/v1/annotation/dataset/list",
+        params={"page_no": 1, "page_size": 100},
+        headers=auth_headers,
+    ).json()["data"]["items"]
+    assert name not in [i["name"] for i in items]
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd backend && uv run pytest tests/test_base_crud_soft_delete.py -q`
+Expected: FAIL（软删数据集仍出现在无筛选列表中）。
+
+- [ ] **Step 3: 修复三处条件构建**
+
+在 `backend/app/core/base_crud.py` 中：
+
+`list()`（约 93 行）：
+```python
+            conditions = await self.__build_conditions(**(search or {}))
+```
+
+`tree_list()`（约 128 行）：
+```python
+            conditions = await self.__build_conditions(**(search or {}))
+```
+
+`page()`（约 178 行）：
+```python
+            conditions = await self.__build_conditions(**(search or {}))
+```
+
+（`__build_conditions` 内部已对 `hasattr(self.model, "is_deleted")` 做判断，无需额外改动。）
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd backend && uv run pytest tests/test_base_crud_soft_delete.py -q`
+Expected: PASS
+
+- [ ] **Step 5: Full suite + ruff + commit**
+
+Run: `cd backend && uv run pytest -q && uv run ruff check app/core/base_crud.py`
+Expected: 通过；无新增 ruff 告警。注意：此改动会影响所有列表接口，若有既有测试因期望"能查到软删行"而失败，说明该测试本身假设了错误行为，应在报告中说明并修正断言（而非回退修复）。
+
+```bash
+git add backend/app/core/base_crud.py backend/tests/test_base_crud_soft_delete.py
+git commit -m "fix(core): CRUDBase 空查询条件不再跳过软删过滤"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage（对照 design 第 5.1 节）:**
 - 0.1 审计字段统一 → Task 1 ✅
 - 0.2 删除级联 → Task 2 ✅（另附带修复 `get_images` 的软删过滤，属同一致性问题）
+- 软删过滤一致性（复核 Task 2 时发现的 CRUDBase 缺陷）→ Task 3 ✅
 
 **Placeholder scan:** 无 TBD/TODO；每个代码步骤含完整代码。
 
