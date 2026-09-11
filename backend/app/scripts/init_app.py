@@ -279,6 +279,33 @@ async def _ensure_annotation_button_menus() -> None:
             log.info(f"✅ 标注按钮权限已注册 ({len(buttons)} 项)")
 
 
+TRAIN_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_train:model:query", "查询模型"),
+    ("module_train:model:create", "创建模型"),
+    ("module_train:model:update", "编辑模型"),
+    ("module_train:model:delete", "删除模型"),
+    ("module_train:task:query", "查询任务"),
+    ("module_train:task:create", "创建任务"),
+    ("module_train:task:update", "更新任务"),
+    ("module_train:task:delete", "删除任务"),
+    ("module_train:eval:query", "查询评估"),
+    ("module_train:eval:create", "创建评估"),
+    ("module_train:eval:delete", "删除评估"),
+    ("module_train:predict:query", "查询预测"),
+    ("module_train:predict:create", "创建预测"),
+    ("module_train:predict:delete", "删除预测"),
+]
+
+# (name, route_name, route_path, component_path, permission, hidden)
+TRAIN_EXTRA_MENUS: list[tuple[str, str, str, str, str, bool]] = [
+    ("模型预测", "TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query", False),
+    ("模型部署", "TrainDeploy", "/train/deploy", "module_train/deploy/index", "module_train:model:query", False),
+    ("训练详情", "TrainTaskDetail", "/train/task/:id", "module_train/task/detail", "module_train:task:query", True),
+    ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query", True),
+    ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query", True),
+]
+
+
 async def _ensure_train_menus() -> None:
     """Ensure the training module menu entries exist."""
     from sqlalchemy import select
@@ -336,39 +363,27 @@ async def _ensure_train_menus() -> None:
                     await db.flush()
                     db.add(RoleMenusModel(role_id=1, menu_id=child.id))
 
-                # Detail pages
-                for detail_data in [
-                    ("训练详情", "TrainTaskDetail", "/train/task/:id", "module_train/task/detail", "module_train:task:query"),
-                    ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
-                    ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
-                ]:
-                    dm = MenuModel(name=detail_data[0], type=2, icon=None, order=99,
-                                   route_name=detail_data[1], route_path=detail_data[2],
-                                   component_path=detail_data[3],
-                                   permission=detail_data[4], parent_id=parent.id,
-                                   status="0", is_deleted=False, title=detail_data[0], hidden=True)
+                # Detail / extra pages（与已存在分支共用 TRAIN_EXTRA_MENUS，避免清单分叉）
+                for name, route_name, route_path, component_path, permission, hidden in TRAIN_EXTRA_MENUS:
+                    existing_menu = await db.execute(
+                        select(MenuModel).where(MenuModel.route_name == route_name)
+                    )
+                    if existing_menu.scalar_one_or_none():
+                        continue
+                    dm = MenuModel(
+                        name=name, type=2, icon=None, order=99,
+                        route_name=route_name, route_path=route_path,
+                        component_path=component_path,
+                        permission=permission, parent_id=parent.id,
+                        status="0", is_deleted=False, title=name, hidden=hidden,
+                    )
                     db.add(dm)
                     await db.flush()
                     db.add(RoleMenusModel(role_id=1, menu_id=dm.id))
 
                 db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
 
-                button_perms = [
-                    ("module_train:model:query", "查询模型"),
-                    ("module_train:model:create", "创建模型"),
-                    ("module_train:model:delete", "删除模型"),
-                    ("module_train:task:query", "查询任务"),
-                    ("module_train:task:create", "创建任务"),
-                    ("module_train:task:update", "更新任务"),
-                    ("module_train:task:delete", "删除任务"),
-                    ("module_train:eval:query", "查询评估"),
-                    ("module_train:eval:create", "创建评估"),
-                    ("module_train:eval:delete", "删除评估"),
-                    ("module_train:predict:query", "查询预测"),
-                    ("module_train:predict:create", "创建预测"),
-                    ("module_train:predict:delete", "删除预测"),
-                ]
-                for perm_code, perm_name in button_perms:
+                for perm_code, perm_name in TRAIN_BUTTON_PERMS:
                     existing_perm = await db.execute(
                         select(MenuModel).where(MenuModel.permission == perm_code)
                     )
@@ -385,35 +400,25 @@ async def _ensure_train_menus() -> None:
                 return
 
             # ── Parent already exists: add any missing sub-menus ──
-            missing = [
-                ("模型预测", "TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query"),
-                ("模型部署", "TrainDeploy", "/train/deploy", "module_train/deploy/index", "module_train:model:query"),
-                ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
-                ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
-            ]
-            for name, route_name, route_path, component_path, permission in missing:
+            for name, route_name, route_path, component_path, permission, hidden in TRAIN_EXTRA_MENUS:
                 existing_menu = await db.execute(
                     select(MenuModel).where(MenuModel.route_name == route_name)
                 )
                 if existing_menu.scalar_one_or_none():
                     continue
-                is_hidden = "Detail" in route_name
-                mm = MenuModel(name=name, type=2, icon=None, order=99,
-                               route_name=route_name, route_path=route_path,
-                               component_path=component_path,
-                               permission=permission, parent_id=parent.id,
-                               status="0", is_deleted=False, title=name,
-                               hidden=is_hidden)
+                mm = MenuModel(
+                    name=name, type=2, icon=None, order=99,
+                    route_name=route_name, route_path=route_path,
+                    component_path=component_path, permission=permission,
+                    parent_id=parent.id, status="0", is_deleted=False,
+                    title=name, hidden=hidden,
+                )
                 db.add(mm)
                 await db.flush()
                 db.add(RoleMenusModel(role_id=1, menu_id=mm.id))
 
             # Add missing permissions
-            for perm_code, perm_name in [
-                ("module_train:predict:query", "查询预测"),
-                ("module_train:predict:create", "创建预测"),
-                ("module_train:predict:delete", "删除预测"),
-            ]:
+            for perm_code, perm_name in TRAIN_BUTTON_PERMS:
                 existing_perm = await db.execute(
                     select(MenuModel).where(MenuModel.permission == perm_code)
                 )
@@ -603,52 +608,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
                 """))
         except Exception as e:
             log.warning(f"train migration warning: {e}")
-
-        # Ensure missing sub-menus exist (direct SQL, doesn't rely on menu seed)
-        try:
-            import uuid as _uuid
-
-            from sqlalchemy import text as sa_text
-
-            from app.core.database import async_db_session as db_session
-            async with db_session.begin() as db:
-                row = await db.execute(sa_text("SELECT id FROM sys_menu WHERE route_name = 'Train' LIMIT 1"))
-                parent_row = row.fetchone()
-                if parent_row:
-                    pid = parent_row[0]
-                    for rn, rp, cp, perm, is_hidden in [
-                        ("TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query", False),
-                        ("TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query", True),
-                        ("TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query", True),
-                    ]:
-                        exists = await db.execute(sa_text(f"SELECT 1 FROM sys_menu WHERE route_name = '{rn}'"))
-                        if exists.fetchone() is None:
-                            title = {"TrainPredict": "模型预测", "TrainEvalDetail": "评估详情", "TrainPredictDetail": "预测详情"}[rn]
-                            uid = str(_uuid.uuid4())
-                            await db.execute(sa_text(f"""
-                                INSERT INTO sys_menu (uuid, name, type, "order", route_name, route_path, component_path, permission, parent_id, status, is_deleted, title, hidden, created_time)
-                                VALUES ('{uid}', '{title}', 2, 99, '{rn}', '{rp}', '{cp}', '{perm}', {pid}, '0', FALSE, '{title}', {str(is_hidden).upper()}, NOW())
-                            """))
-                            mid_row = await db.execute(sa_text(f"SELECT id FROM sys_menu WHERE route_name = '{rn}'"))
-                            mid = mid_row.fetchone()
-                            if mid:
-                                await db.execute(sa_text(f"INSERT INTO sys_role_menus (role_id, menu_id) VALUES (1, {mid[0]})"))
-                    # Add missing permissions
-                    for pc, pn in [("module_train:predict:query", "查询预测"), ("module_train:predict:create", "创建预测"), ("module_train:predict:delete", "删除预测")]:
-                        exists = await db.execute(sa_text(f"SELECT 1 FROM sys_menu WHERE permission = '{pc}'"))
-                        if exists.fetchone() is None:
-                            uid = str(_uuid.uuid4())
-                            await db.execute(sa_text(f"""
-                                INSERT INTO sys_menu (uuid, name, type, "order", route_name, route_path, component_path, permission, parent_id, status, is_deleted, title, hidden, created_time)
-                                VALUES ('{uid}', '{pn}', 3, 99, '', '', '', '{pc}', {pid}, '0', FALSE, '{pn}', FALSE, NOW())
-                            """))
-                            mid_row = await db.execute(sa_text(f"SELECT id FROM sys_menu WHERE permission = '{pc}'"))
-                            mid = mid_row.fetchone()
-                            if mid:
-                                await db.execute(sa_text(f"INSERT INTO sys_role_menus (role_id, menu_id) VALUES (1, {mid[0]})"))
-                    log.info("✅ 训练模块缺失菜单已通过SQL补全")
-        except Exception as e:
-            log.warning(f"train menu sql migration warning: {e}")
 
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
