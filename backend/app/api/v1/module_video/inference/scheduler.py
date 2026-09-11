@@ -79,8 +79,15 @@ def _build_task_config(task: AlgorithmTaskModel, camera: CameraModel, algorithm)
 
 
 async def start_inference(task_id: int) -> dict:
-    from app.api.v1.module_video.inference.registry import ensure_inference_backend
-    ensure_inference_backend()
+    # 仅当 worker 使用后端同一解释器时才做进程内校验；
+    # 若配置了独立 worker 解释器（可能自带 modeldeploy），后端解释器并不权威。
+    if not settings.INFERENCE_WORKER_PYTHON:
+        from app.api.v1.module_video.inference.registry import ensure_inference_backend
+        ensure_inference_backend()
+    else:
+        logger.info(
+            "[推理调度器] 已配置 INFERENCE_WORKER_PYTHON，跳过后端进程内推理后端校验"
+        )
 
     if task_id in _running_inferences:
         info = _running_inferences[task_id]

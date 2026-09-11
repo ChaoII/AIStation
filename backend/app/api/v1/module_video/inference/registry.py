@@ -54,12 +54,16 @@ def create_model(algorithm_type: str, model_path: str, runtime_config: dict | No
 
 
 def inference_backend_available() -> bool:
-    """推理后端（modeldeploy/FastDeploy）是否可导入。"""
+    """推理后端（modeldeploy/FastDeploy）是否可导入。
+
+    这是布尔探测，任何异常（包括原生库加载时抛出的 OSError/RuntimeError 等）
+    都不应外溢，否则会中断整个应用启动流程。
+    """
     import importlib
 
     try:
         importlib.import_module("modeldeploy")
-    except ImportError:
+    except Exception:
         return False
     return True
 
@@ -70,7 +74,7 @@ def ensure_inference_backend() -> None:
 
     try:
         importlib.import_module("modeldeploy")
-    except ImportError as e:
+    except Exception as e:
         raise ImportError(
             f"智能分析推理库 modeldeploy(FastDeploy) 未安装或不可用: {e}。"
             "请先安装 FastDeploy 推理库后再启动推理任务。"
