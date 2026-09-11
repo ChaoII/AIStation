@@ -5,7 +5,7 @@ import tempfile
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.core.audit import set_create_audit
+from app.core.audit import set_create_audit, set_update_audit
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -239,7 +239,7 @@ class TrainService:
             return {"repo_id": ver.repo_id, "repo_name": repo.name if repo else ver.name}
 
     @classmethod
-    async def update_model(cls, model_id: int, data: dict) -> dict | None:
+    async def update_model(cls, model_id: int, data: dict, auth) -> dict | None:
         async with async_db_session.begin() as db:
             m = await db.get(TrainModel, model_id)
             if not m:
@@ -247,6 +247,7 @@ class TrainService:
             for key, val in data.items():
                 if hasattr(m, key) and val is not None:
                     setattr(m, key, val)
+            set_update_audit(m, auth)
             return {"id": m.id}
 
     @classmethod
@@ -343,7 +344,7 @@ class TrainService:
                     await db.delete(t)
 
     @classmethod
-    async def update_task(cls, task_id: int, data) -> dict:
+    async def update_task(cls, task_id: int, data, auth) -> dict:
         from .model import TrainStatus
         async with async_db_session.begin() as db:
             t = await db.get(TrainTask, task_id)
@@ -355,6 +356,7 @@ class TrainService:
                 t.name = data.name
             if data.hyperparams is not None:
                 t.hyperparams = data.hyperparams
+            set_update_audit(t, auth)
             return {"id": t.id}
 
     @classmethod

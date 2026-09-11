@@ -137,7 +137,7 @@ async def update_task(
     auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"])),
 ):
     try:
-        result = await TrainService.update_task(task_id, data)
+        result = await TrainService.update_task(task_id, data, auth)
         return SuccessResponse(data=result, msg="训练任务已更新")
     except ValueError as e:
         from app.common.response import ErrorResponse
@@ -458,7 +458,7 @@ async def update_model(
     auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     from .service import TrainService
-    result = await TrainService.update_model(model_id, data.model_dump(exclude_none=True))
+    result = await TrainService.update_model(model_id, data.model_dump(exclude_none=True), auth)
     if result:
         return SuccessResponse(data=result, msg="更新成功")
     from app.common.response import ErrorResponse
