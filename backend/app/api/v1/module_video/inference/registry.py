@@ -51,3 +51,27 @@ def create_model(algorithm_type: str, model_path: str, runtime_config: dict | No
 
     model = model_cls(model_path, option)
     return model
+
+
+def inference_backend_available() -> bool:
+    """推理后端（modeldeploy/FastDeploy）是否可导入。"""
+    import importlib
+
+    try:
+        importlib.import_module("modeldeploy")
+    except ImportError:
+        return False
+    return True
+
+
+def ensure_inference_backend() -> None:
+    """同步校验推理后端可用，不可用则抛出可读 ImportError。"""
+    import importlib
+
+    try:
+        importlib.import_module("modeldeploy")
+    except ImportError as e:
+        raise ImportError(
+            f"智能分析推理库 modeldeploy(FastDeploy) 未安装或不可用: {e}。"
+            "请先安装 FastDeploy 推理库后再启动推理任务。"
+        ) from e

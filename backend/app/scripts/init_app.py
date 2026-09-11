@@ -524,6 +524,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_record_scheduler())
         log.info("✅ 录制定时器已启动")
 
+        from app.api.v1.module_video.inference.registry import inference_backend_available
+        if not inference_backend_available():
+            log.warning("⚠️  智能分析推理库 modeldeploy(FastDeploy) 不可用，视频布控推理将无法启动")
+
         from app.api.v1.module_video.inference.scheduler import start_inference_scheduler
         asyncio.create_task(start_inference_scheduler())
         log.info("✅ 推理调度器已启动")

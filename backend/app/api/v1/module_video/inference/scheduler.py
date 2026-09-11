@@ -79,6 +79,9 @@ def _build_task_config(task: AlgorithmTaskModel, camera: CameraModel, algorithm)
 
 
 async def start_inference(task_id: int) -> dict:
+    from app.api.v1.module_video.inference.registry import ensure_inference_backend
+    ensure_inference_backend()
+
     if task_id in _running_inferences:
         info = _running_inferences[task_id]
         proc = info["proc"]
