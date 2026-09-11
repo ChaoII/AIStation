@@ -20,3 +20,6 @@ package-lock.json
 .eslintcache
 docs/.vitepress/cache
 docs/dist
+e2e/.auth/
+test-results/
+playwright-report/
