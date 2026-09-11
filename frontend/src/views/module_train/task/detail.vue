@@ -727,12 +727,11 @@ async function handleStart() {
       type: "info",
     });
     await TrainAPI.startTask(task.value.id);
-    ElMessage.success("训练已开始");
     await loadTask();
     connectWs(task.value.id);
     startPoll();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     submitting.value = false;
   }
@@ -744,7 +743,6 @@ async function handleStop() {
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(task.value.id);
-    ElMessage.success("训练已停止");
     await loadTask();
   } catch {
     /* */
@@ -766,7 +764,6 @@ async function handleDelete() {
       confirmButtonText: "删除",
     });
     await TrainAPI.deleteTask([task.value.id]);
-    ElMessage.success("已删除");
     router.push("/train/task");
   } catch {
     /* */
@@ -809,7 +806,6 @@ async function handleRetrain() {
       progress: 0,
     });
     await TrainAPI.startTask(task.value.id);
-    ElMessage.success("训练已重新开始");
     await loadTask();
     connectWs(task.value.id);
     startPoll();

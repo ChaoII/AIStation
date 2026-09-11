@@ -413,7 +413,6 @@ async function handleCreate() {
       source_images: sourceImages,
       hyperparams: createForm.hyperparams,
     });
-    ElMessage.success("预测任务已创建");
     showCreateDialog.value = false;
     createForm.modelId = null;
     createForm.sourceType = "dataset";
@@ -439,10 +438,9 @@ async function handleStart(id: number) {
   try {
     await ElMessageBox.confirm("确定开始预测？", "提示", { type: "info" });
     await TrainAPI.startPredict(id);
-    ElMessage.success("预测已开始");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel" && e !== "close") ElMessage.error(e?.msg || "启动失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -450,10 +448,9 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止预测？", "提示", { type: "warning" });
     await TrainAPI.stopPredict(id);
-    ElMessage.success("预测已停止");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel" && e !== "close") ElMessage.error(e?.msg || "停止失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -463,7 +460,6 @@ function downloadZip(url: string) {
 
 async function handleDelete(ids: number[]) {
   await TrainAPI.deletePredict(ids);
-  ElMessage.success("已删除");
   refreshList();
 }
 

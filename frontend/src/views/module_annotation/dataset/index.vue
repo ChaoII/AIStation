@@ -541,12 +541,11 @@ async function handleUploadSubmit() {
       formData.append("files", file.raw);
     }
     await AnnotationAPI.uploadImages(uploadDatasetId.value, formData);
-    ElMessage.success("上传成功");
     uploadVisible.value = false;
     fileList.value = [];
     refreshList();
   } catch {
-    //
+    /* 提示由请求拦截器统一处理 */
   } finally {
     uploadLoading.value = false;
   }
@@ -569,15 +568,14 @@ async function handleImportSubmit() {
   if (!importFile.value) { ElMessage.warning("请选择 ZIP 文件"); return; }
   importing.value = true;
   try {
-    const r = await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
-    ElMessage.success(r.data?.msg || "导入完成");
+    await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
     importDialogVisible.value = false;
     importFile.value = null;
     importDatasetId.value = undefined;
     if (importUploadRef.value) importUploadRef.value.uploadFiles = [];
     refreshList();
   } catch {
-    //
+    /* 提示由请求拦截器统一处理 */
   } finally {
     importing.value = false;
   }
@@ -684,13 +682,12 @@ async function handleExportSubmit() {
       iframe.src = url;
       document.body.appendChild(iframe);
       setTimeout(() => document.body.removeChild(iframe), 120000);
-      ElMessage.success("导出成功，正在下载...");
     } else {
       ElMessage.warning("导出完成但未获取到下载链接，请查看后端日志");
     }
     exportDialogVisible.value = false;
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.data?.msg || e?.message || "导出失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     exporting.value = false;
   }

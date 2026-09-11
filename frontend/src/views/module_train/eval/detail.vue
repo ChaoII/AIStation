@@ -322,12 +322,11 @@ async function handleStart() {
   try {
     await ElMessageBox.confirm(`确定开始评估任务 #${evalData.value?.id}？`, "提示", { type: "info" });
     await TrainAPI.startEval(evalData.value.id);
-    ElMessage.success("评估已开始");
     await loadEval();
     connectWs(evalData.value.id);
     startPoll();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始评估失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     submitting.value = false;
   }
@@ -339,7 +338,6 @@ async function handleStop() {
   try {
     await ElMessageBox.confirm("确定停止该评估？", "提示", { type: "warning" });
     await TrainAPI.stopEval(evalData.value.id);
-    ElMessage.success("评估已停止");
     await loadEval();
   } catch {
     /* */
@@ -357,7 +355,6 @@ async function handleDelete() {
       confirmButtonText: "删除",
     });
     await TrainAPI.deleteEval([evalData.value.id]);
-    ElMessage.success("已删除");
     router.push("/train/eval");
   } catch {
     /* */
@@ -386,7 +383,6 @@ async function handleReEval() {
     }
     clearLogs();
     await TrainAPI.startEval(evalData.value.id);
-    ElMessage.success("评估已重新开始");
     await loadEval();
     connectWs(evalData.value.id);
     startPoll();

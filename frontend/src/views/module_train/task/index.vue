@@ -430,7 +430,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
@@ -799,7 +799,6 @@ async function handleSubmit() {
             name: formData.name,
             hyperparams: buildHyperparams(),
           });
-          ElMessage.success("训练任务已更新");
         } else {
           await TrainAPI.createTask({
             name: formData.name,
@@ -809,13 +808,12 @@ async function handleSubmit() {
             base_model_id: formData.base_model_id,
             hyperparams: buildHyperparams(),
           });
-          ElMessage.success("训练任务已创建");
         }
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
-      } catch (e: any) {
-        ElMessage.error(e?.msg || e?.response?.data?.msg || "保存失败");
+      } catch {
+        /* 提示由请求拦截器统一处理 */
       } finally {
         submitLoading.value = false;
       }
@@ -827,10 +825,9 @@ async function handleStart(row: any) {
   try {
     await ElMessageBox.confirm(`确定开始训练任务「${row.name}」？`, "提示", { type: "info" });
     await TrainAPI.startTask(row.id);
-    ElMessage.success("训练已开始");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -838,7 +835,6 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(id);
-    ElMessage.success("训练已停止");
     refreshList();
   } catch {
     //
@@ -847,7 +843,6 @@ async function handleStop(id: number) {
 
 async function handleDelete(id: number) {
   await TrainAPI.deleteTask([id]);
-  ElMessage.success("已删除");
   refreshList();
 }
 

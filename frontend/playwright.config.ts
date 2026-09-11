@@ -7,6 +7,8 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
+  // 串行执行：后端按客户端 IP 限流，多个浏览器上下文并发会互相触发 429
+  workers: 1,
   retries: 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {

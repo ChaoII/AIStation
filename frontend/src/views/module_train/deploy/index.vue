@@ -423,10 +423,9 @@ function onKeyDialogClose() {
 async function handleDeploy(row: any) {
   try {
     await TrainAPI.startDeploy(row.id);
-    ElMessage.success("部署已启动");
     refreshList();
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "部署失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -434,7 +433,6 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该部署？", "提示", { type: "warning" });
     await TrainAPI.stopDeploy(id);
-    ElMessage.success("部署已停止");
     refreshList();
   } catch { /* */ }
 }
@@ -461,7 +459,6 @@ function copyText(t: string) {
 
 async function handleDelete(ids: number[]) {
   await TrainAPI.deleteDeploy(ids);
-  ElMessage.success("已删除");
   refreshList();
 }
 </script>

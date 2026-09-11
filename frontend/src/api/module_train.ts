@@ -161,8 +161,13 @@ export const TrainAPI = {
   },
 
   // Deploy
-  createDeploy(data: any) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/create`, method: "post", data });
+  createDeploy(data: any, silent = false) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/deploy/create`,
+      method: "post",
+      data,
+      headers: silent ? { _silent: "true" } : undefined,
+    });
   },
   startDeploy(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/start`, method: "post" });

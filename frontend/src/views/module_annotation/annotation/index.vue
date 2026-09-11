@@ -3236,11 +3236,8 @@ async function goToImage(idx: number) {
       updateProgress();
     } catch (e: any) {
       const isCancel = e === "cancel" || e === "close";
-      if (isCancel) {
-        // 用户点"不保存"或关闭弹窗，不保存直接切图
-      } else {
-        // 保存失败（锁定冲突/网络）：提示并留在当前图，不静默丢弃标注
-        ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败，请重试");
+      if (!isCancel) {
+        // 保存失败（锁定冲突/网络）：拦截器已提示，留在当前图，不静默丢弃标注
         return;
       }
     }
@@ -3302,9 +3299,8 @@ async function saveAnn() {
     unsaved.value = false;
     updateProgress();
     await fetchTaskProgress();
-    ElMessage.success("保存成功");
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     store.saving = false;
   }
@@ -3381,9 +3377,8 @@ async function handleBack() {
       updated.updated_time = new Date().toISOString();
       store.images[idx] = updated;
       updateProgress();
-    } catch (e: any) {
-      // 保存失败：提示并留在当前页，不静默丢弃
-      ElMessage.error(e?.response?.data?.msg || e?.message || "保存失败，请重试");
+    } catch {
+      // 保存失败：拦截器已提示，留在当前页，不静默丢弃
       return;
     }
   }
@@ -3619,8 +3614,8 @@ onMounted(async () => {
       .catch(() => {
         imagesLoading.value = false;
       });
-  } catch (e: any) {
-    ElMessage.error("加载失败: " + (e?.msg || e?.message || ""));
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     store.loading = false;
   }
