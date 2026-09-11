@@ -13,5 +13,5 @@ export function updateEvent(id: number, data: any) {
 }
 
 export function deleteEvent(ids: number[]) {
-  return request({ url: "/video/event/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/event/delete", method: "delete", data: ids });
 }

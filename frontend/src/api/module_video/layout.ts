@@ -17,5 +17,5 @@ export function updateLayout(id: number, data: any) {
 }
 
 export function deleteLayout(ids: number[]) {
-  return request({ url: "/video/layout/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/layout/delete", method: "delete", data: ids });
 }

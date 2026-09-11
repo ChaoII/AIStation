@@ -42,6 +42,8 @@ async def get_algorithm_detail_controller(
 ) -> JSONResponse:
     result = await AlgorithmService.get_algorithm_list_service(auth=auth)
     item = next((x for x in result if x.get("id") == id), None)
+    if item is None:
+        raise CustomException(msg="算法不存在", code=404, status_code=404)
     return SuccessResponse(data=item, msg="查询成功")
 
 

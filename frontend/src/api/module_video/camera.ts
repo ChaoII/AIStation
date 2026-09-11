@@ -17,7 +17,7 @@ export function updateCamera(id: number, data: any) {
 }
 
 export function deleteCamera(ids: number[]) {
-  return request({ url: "/video/camera/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/camera/delete", method: "delete", data: ids });
 }
 
 export function startStream(id: number) {
@@ -45,5 +45,5 @@ export function updateCameraGroup(id: number, data: any) {
 }
 
 export function deleteCameraGroup(ids: number[]) {
-  return request({ url: "/video/camera/group/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/camera/group/delete", method: "delete", data: ids });
 }

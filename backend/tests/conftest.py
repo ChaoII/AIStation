@@ -38,3 +38,21 @@ def test_client():
     """
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def auth_headers(test_client):
+    """登录 admin 返回带 Bearer 的请求头，供接口测试复用。"""
+    login = test_client.post(
+        "/api/v1/system/auth/login",
+        data={"username": "admin", "password": "123456"},
+        headers={"X-Forwarded-For": "127.0.0.1"},
+    )
+    assert login.status_code == 200, login.text
+    token = login.json()["data"]["access_token"]
+    # X-Forwarded-For 需随每个请求携带：OperationLogRoute 记录的 DELETE 等写操作
+    # 会校验 request_ip 合法性，缺失时 request.client.host="testclient" 会返回 400。
+    return {
+        "Authorization": f"Bearer {token}",
+        "X-Forwarded-For": "127.0.0.1",
+    }

@@ -13,7 +13,7 @@ export function updateAlgorithm(id: number, data: any) {
 }
 
 export function deleteAlgorithm(ids: number[]) {
-  return request({ url: "/video/algorithm/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/algorithm/delete", method: "delete", data: ids });
 }
 
 export function getAlgorithmTaskList(data?: any) {
@@ -29,5 +29,5 @@ export function updateAlgorithmTask(id: number, data: any) {
 }
 
 export function deleteAlgorithmTask(ids: number[]) {
-  return request({ url: "/video/algorithm/task/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/algorithm/task/delete", method: "delete", data: ids });
 }

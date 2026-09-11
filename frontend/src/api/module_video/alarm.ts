@@ -13,7 +13,7 @@ export function updateAlarmRule(id: number, data: any) {
 }
 
 export function deleteAlarmRule(ids: number[]) {
-  return request({ url: "/video/alarm/rule/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/alarm/rule/delete", method: "delete", data: ids });
 }
 
 export function getAlarmRecordList(data?: any) {
@@ -33,7 +33,7 @@ export function confirmAlarm(id: number, status: string) {
 }
 
 export function deleteAlarmRecord(ids: number[]) {
-  return request({ url: "/video/alarm/record/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/alarm/record/delete", method: "delete", data: ids });
 }
 
 export function testNotification(channel: string, config?: any) {

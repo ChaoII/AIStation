@@ -13,7 +13,7 @@ export function updateRecordPlan(id: number, data: any) {
 }
 
 export function deleteRecordPlan(ids: number[]) {
-  return request({ url: "/video/record/plan/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/record/plan/delete", method: "delete", data: ids });
 }
 
 export function startRecord(cameraId: number, streamId: string) {
