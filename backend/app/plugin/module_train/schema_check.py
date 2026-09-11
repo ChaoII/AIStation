@@ -32,15 +32,22 @@ MISSING_TRAIN_COLUMNS: dict[str, list[tuple[str, str]]] = {
 
 
 async def ensure_train_columns(engine) -> None:
-    """幂等补齐训练相关表的缺失列（ALTER TABLE ... ADD COLUMN IF NOT EXISTS）。"""
+    """幂等补齐训练相关表的缺失列（ALTER TABLE ... ADD COLUMN IF NOT EXISTS）。
+
+    每条 DDL 使用独立事务：PostgreSQL 中一条语句失败会中止当前事务，
+    若共用事务将导致后续语句全部报 InFailedSqlTransaction 并回滚，
+    静默丢弃全部补列。独立事务可隔离单列失败，且失败会被记录而非吞掉。
+    """
     from sqlalchemy import text
 
-    async with engine.begin() as conn:
-        for table, columns in MISSING_TRAIN_COLUMNS.items():
-            for name, col_type in columns:
-                try:
+    from app.core.logger import log
+
+    for table, columns in MISSING_TRAIN_COLUMNS.items():
+        for name, col_type in columns:
+            try:
+                async with engine.begin() as conn:
                     await conn.execute(
                         text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {col_type}")
                     )
-                except Exception:
-                    pass
+            except Exception as e:
+                log.warning(f"train backfill skipped {table}.{name}: {e}")
