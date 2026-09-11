@@ -528,11 +528,14 @@ function handleDeploy(row: any) {
         // Show API Key in a brief alert, then navigate
         ElMessage.success(`API Key: ${d.api_key}（已复制到剪贴板）`);
         navigator.clipboard.writeText(d.api_key).catch(() => {});
+      } else {
+        ElMessage.success("部署已创建");
       }
       router.push("/train/deploy");
     })
-    .catch(() => {
-      /* 提示由请求拦截器统一处理 */
+    .catch((e: any) => {
+      // 该请求带 _silent，拦截器不会提示，错误必须在此处展示
+      ElMessage.error(e?.msg || e?.response?.data?.msg || e?.message || "创建部署失败");
     });
 }
 
