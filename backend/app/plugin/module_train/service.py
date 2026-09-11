@@ -5,6 +5,7 @@ import tempfile
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.audit import set_create_audit
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -150,8 +151,8 @@ class TrainService:
                     name=data.name, framework=data.framework,
                     description=getattr(data, "description", None),
                     annotation_dataset_id=getattr(data, "annotation_dataset_id", None),
-                    created_id=auth.user.id,
                 )
+                set_create_audit(existing, auth)
                 db.add(existing)
                 await db.flush()
 
@@ -166,8 +167,8 @@ class TrainService:
                 version=version, annotation_dataset_id=getattr(data, "annotation_dataset_id", None),
                 export_format=getattr(data, "export_format", None),
                 description=getattr(data, "description", None),
-                created_id=auth.user.id,
             )
+            set_create_audit(ver_row, auth)
             db.add(ver_row)
             await db.flush()
             existing.latest_version_id = ver_row.id
@@ -267,8 +268,8 @@ class TrainService:
                     name=data.name, framework=data.framework,
                     version=version, annotation_dataset_id=data.annotation_dataset_id,
                     export_format=data.export_format, description=data.description,
-                    created_id=auth.user.id,
                 )
+                set_create_audit(m, auth)
                 db.add(m)
                 try:
                     await db.flush()
@@ -326,8 +327,9 @@ class TrainService:
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
                 annotation_task_id=data.annotation_task_id,
                 base_model_id=data.base_model_id, docker_image=image,
-                hyperparams=data.hyperparams, created_id=auth.user.id,
+                hyperparams=data.hyperparams,
             )
+            set_create_audit(t, auth)
             db.add(t)
             await db.flush()
             return {"id": t.id}
@@ -376,8 +378,8 @@ class TrainService:
                 eval_dataset_id=data.eval_dataset_id,
                 framework=framework,
                 hyperparams=data.hyperparams,
-                created_id=auth.user.id,
             )
+            set_create_audit(e, auth)
             db.add(e)
             await db.flush()
             return {"id": e.id}
@@ -459,8 +461,8 @@ class TrainService:
                 source_dataset_id=data.source_dataset_id,
                 source_images=data.source_images,
                 hyperparams=data.hyperparams,
-                created_id=auth.user.id,
             )
+            set_create_audit(p, auth)
             db.add(p)
             await db.flush()
             return {"id": p.id}
@@ -634,8 +636,8 @@ class TrainService:
                 host_port=data.host_port or 0,
                 api_key=uuid.uuid4().hex,
                 hyperparams=data.hyperparams,
-                created_id=auth.user.id,
             )
+            set_create_audit(d, auth)
             db.add(d)
             await db.flush()
             return TrainService._deploy_to_dict(d)

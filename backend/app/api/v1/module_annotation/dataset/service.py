@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import and_, func, select
 
+from app.core.audit import set_create_audit
 from app.core.database import async_db_session
 from app.utils.s3_client import s3_client
 
@@ -57,6 +58,7 @@ class DatasetService:
                     height=height,
                     status=ImageStatus.UNANNOTATED,
                 )
+                set_create_audit(img_record, auth)
                 db.add(img_record)
                 await db.flush()
                 results.append({"id": img_record.id, "filename": file.filename, "object_key": object_key})
