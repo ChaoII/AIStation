@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 _FAKE_PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
 
 
-def _create_dataset_with_image(test_client: TestClient, auth_headers: dict) -> int:
+def _create_dataset_with_image(test_client: TestClient, auth_headers: dict) -> tuple[int, str]:
     name = f"cascade-{uuid4().hex[:8]}"
     created = test_client.post(
         "/api/v1/annotation/dataset/create", json={"name": name}, headers=auth_headers
@@ -26,7 +26,7 @@ def _create_dataset_with_image(test_client: TestClient, auth_headers: dict) -> i
         f"/api/v1/annotation/dataset/{dataset_id}/upload", files=files, headers=auth_headers
     )
     assert up.status_code == 200, up.text
-    return dataset_id
+    return dataset_id, name
 
 
 def test_dataset_delete_cascades_images(
@@ -40,7 +40,7 @@ def test_dataset_delete_cascades_images(
         "app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None
     )
 
-    dataset_id = _create_dataset_with_image(test_client, auth_headers)
+    dataset_id, name = _create_dataset_with_image(test_client, auth_headers)
     before = test_client.get(
         f"/api/v1/annotation/dataset/{dataset_id}/images", headers=auth_headers
     ).json()["data"]
@@ -55,3 +55,10 @@ def test_dataset_delete_cascades_images(
         f"/api/v1/annotation/dataset/{dataset_id}/images", headers=auth_headers
     ).json()["data"]
     assert after["total"] == 0
+
+    listed = test_client.get(
+        "/api/v1/annotation/dataset/list",
+        params={"page_no": 1, "page_size": 100, "name": name},
+        headers=auth_headers,
+    ).json()["data"]["items"]
+    assert name not in [item["name"] for item in listed]
