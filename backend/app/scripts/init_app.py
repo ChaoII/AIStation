@@ -570,15 +570,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.info("✅ 临时训练产物目录清理已启动")
 
         try:
+            from app.core.database import async_engine as _train_engine
+            from app.plugin.module_train.schema_check import ensure_train_columns
+
+            await ensure_train_columns(_train_engine)
+
             from sqlalchemy import text
 
             from app.core.database import async_db_session
             async with async_db_session.begin() as db:
-                for col in ["metrics_log", "best_metrics", "last_metrics"]:
-                    await db.execute(text(f"ALTER TABLE train_tasks ADD COLUMN IF NOT EXISTS {col} JSONB"))
-                # TrainEval new columns
-                for col, typ in [("model_id", "INTEGER"), ("framework", "VARCHAR(16)"), ("hyperparams", "JSONB"), ("started_at", "TIMESTAMP"), ("finished_at", "TIMESTAMP")]:
-                    await db.execute(text(f"ALTER TABLE train_evals ADD COLUMN IF NOT EXISTS {col} {typ}"))
                 # Create train_predicts table if not exists
                 await db.execute(text("""
                     CREATE TABLE IF NOT EXISTS train_predicts (
