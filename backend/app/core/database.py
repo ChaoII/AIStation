@@ -151,17 +151,26 @@ async def redis_connect(app: FastAPI, status: bool) -> Redis | None:
 
     if status:
         try:
-            rd = await Redis.from_url(
-                url=settings.REDIS_URI,
-                encoding="utf-8",
-                decode_responses=True,
-                health_check_interval=20,
-                max_connections=settings.POOL_SIZE,
-                socket_timeout=settings.POOL_TIMEOUT,
-            )
-            app.state.redis = rd
-            if await rd.ping():  # pyright: ignore[reportGeneralTypeIssues]
-                return rd
+            if settings.TESTING:
+                # 测试模式：使用内存 Redis，避免依赖外部服务
+                import fakeredis.aioredis as fakeredis_aioredis
+
+                rd = fakeredis_aioredis.FakeRedis(decode_responses=True)
+                app.state.redis = rd
+                if await rd.ping():
+                    return rd
+            else:
+                rd = await Redis.from_url(
+                    url=settings.REDIS_URI,
+                    encoding="utf-8",
+                    decode_responses=True,
+                    health_check_interval=20,
+                    max_connections=settings.POOL_SIZE,
+                    socket_timeout=settings.POOL_TIMEOUT,
+                )
+                app.state.redis = rd
+                if await rd.ping():  # pyright: ignore[reportGeneralTypeIssues]
+                    return rd
         except exceptions.AuthenticationError as e:
             log.error(f"❌ 数据库 Redis 认证失败: {e}")
             raise
@@ -172,5 +181,6 @@ async def redis_connect(app: FastAPI, status: bool) -> Redis | None:
             log.error(f"❌ 数据库 Redis 连接错误: {e}")
             raise
     else:
-        await app.state.redis.close()
+        close_fn = getattr(app.state.redis, "aclose", None) or app.state.redis.close
+        await close_fn()
         log.info("✅️ Redis连接已关闭")
