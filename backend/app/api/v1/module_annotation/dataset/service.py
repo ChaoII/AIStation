@@ -2,8 +2,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 
+from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.core.audit import set_create_audit
 from app.core.database import async_db_session
 from app.utils.s3_client import s3_client
@@ -21,6 +22,36 @@ class DatasetService:
         dataset = await crud.create(data=data)
         s3_client.ensure_bucket()
         return dataset
+
+    @classmethod
+    async def delete_datasets(cls, ids: list[int], auth) -> None:
+        """软删数据集，并级联软删其图片与标注记录。"""
+        from datetime import datetime
+
+        actor_id = getattr(getattr(auth, "user", None), "id", None)
+        async with async_db_session.begin() as db:
+            for dataset_id in ids:
+                img_ids = (
+                    await db.execute(
+                        select(AnnotationImageModel.id).where(
+                            AnnotationImageModel.dataset_id == dataset_id
+                        )
+                    )
+                ).scalars().all()
+                soft = {"is_deleted": True, "deleted_time": datetime.now(), "deleted_id": actor_id}
+                if img_ids:
+                    await db.execute(
+                        update(AnnotationRecordModel)
+                        .where(AnnotationRecordModel.image_id.in_(img_ids))
+                        .values(**soft)
+                    )
+                await db.execute(
+                    update(AnnotationImageModel)
+                    .where(AnnotationImageModel.dataset_id == dataset_id)
+                    .values(**soft)
+                )
+        from .crud import DatasetCRUD
+        await DatasetCRUD(auth=auth).delete(ids=ids)
 
     @classmethod
     async def upload_images(cls, dataset_id: int, files: list, auth) -> list[dict]:
@@ -77,13 +108,21 @@ class DatasetService:
         async with async_db_session() as db:
             # Count
             count_sql = select(func.count()).select_from(
-                select(AnnotationImageModel).where(AnnotationImageModel.dataset_id == dataset_id).subquery()
+                select(AnnotationImageModel)
+                .where(
+                    AnnotationImageModel.dataset_id == dataset_id,
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
+                )
+                .subquery()
             )
             total = (await db.execute(count_sql)).scalar() or 0
 
             # Get paginated images
             sql = (select(AnnotationImageModel)
-                   .where(AnnotationImageModel.dataset_id == dataset_id)
+                   .where(
+                       AnnotationImageModel.dataset_id == dataset_id,
+                       AnnotationImageModel.is_deleted == False,  # noqa: E712
+                   )
                    .order_by(AnnotationImageModel.filename)
                    .limit(page_size).offset(offset))
             result = await db.execute(sql)
