@@ -90,7 +90,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         - CustomException: 查询失败时抛出异常
         """
         try:
-            conditions = await self.__build_conditions(**search) if search else []
+            conditions = await self.__build_conditions(**(search or {}))
             order = order_by or [{"id": "asc"}]
             sql = select(self.model).where(*conditions).order_by(*self.__order_by(order))
             # 应用可配置的预加载选项
@@ -125,7 +125,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         - CustomException: 查询失败时抛出异常
         """
         try:
-            conditions = await self.__build_conditions(**search) if search else []
+            conditions = await self.__build_conditions(**(search or {}))
             order = order_by or [{"id": "asc"}]
             sql = select(self.model).where(*conditions).order_by(*self.__order_by(order))
 
@@ -175,7 +175,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         - CustomException: 查询失败时抛出异常
         """
         try:
-            conditions = await self.__build_conditions(**search) if search else []
+            conditions = await self.__build_conditions(**(search or {}))
             order = order_by or [{"id": "asc"}]
             sql = select(self.model).where(*conditions).order_by(*self.__order_by(order))
             # 应用预加载选项
