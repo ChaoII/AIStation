@@ -61,6 +61,21 @@
                   sortable
                 />
                 <el-table-column
+                  v-if="recordCols.find((col) => col.prop === 'snapshot')?.show"
+                  key="snapshot"
+                  label="快照"
+                  width="72"
+                  align="center"
+                >
+                  <template #default="scope">
+                    <SnapshotImage
+                      :src="scope.row.snapshot_url || scope.row.snapshot_path"
+                      :width="48"
+                      :height="32"
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'camera')?.show"
                   key="camera"
                   label="摄像机"
@@ -543,19 +558,12 @@
     >
       <template v-if="detailDrawer.data">
         <div class="detail-snapshot">
-          <el-image
-            v-if="detailDrawer.data.snapshot_path"
-            :src="detailDrawer.data.snapshot_path"
-            style="width: 100%; height: 200px"
-            fit="contain"
-            :preview-src-list="[detailDrawer.data.snapshot_path]"
-            preview-teleported
-          >
-            <template #error>
-              <div class="detail-snapshot-empty">无截图</div>
-            </template>
-          </el-image>
-          <div v-else class="detail-snapshot-empty">无截图</div>
+          <SnapshotImage
+            :src="detailDrawer.data.snapshot_url || detailDrawer.data.snapshot_path"
+            width="100%"
+            height="200px"
+            previewable
+          />
         </div>
 
         <el-descriptions :column="1" border class="detail-info">
@@ -634,6 +642,7 @@ import {
 } from "@/api/module_video/alarm";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import SnapshotImage from "@/components/Common/SnapshotImage.vue";
 
 interface TablePageQuery {
   page_no: number;
@@ -750,6 +759,7 @@ const recordCols = reactive<Array<{ prop?: string; label?: string; show?: boolea
   { prop: "selection", label: "选择框", show: true },
   { prop: "index", label: "序号", show: true },
   { prop: "alarm_time", label: "告警时间", show: true },
+  { prop: "snapshot", label: "快照", show: true },
   { prop: "camera", label: "摄像机", show: true },
   { prop: "rule", label: "触发规则", show: true },
   { prop: "alarm_type", label: "类型", show: true },
