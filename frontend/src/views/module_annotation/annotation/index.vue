@@ -1,5 +1,13 @@
 <template>
   <div class="ann-page">
+    <el-alert
+      v-if="lockedByOther"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="该图片已被其他用户锁定，当前为只读模式"
+      class="ann-lock-banner"
+    />
     <div class="ann-header">
       <div class="ann-title">
         <el-button text :icon="ArrowLeft" @click="handleBack" />
@@ -1340,6 +1348,9 @@ const boxPreviewRef = ref<HTMLElement | null>(null);
 // State
 const imgUrl = ref("");
 const imageLoaded = ref(false);
+// 只读锁定状态：图片被他人锁定时禁止编辑，避免保存 409 丢稿
+const lockedByOther = ref(false);
+const lockedByUser = ref<number | null>(null);
 const imageFilter = ref("all");
 const imagesLoading = ref(false);
 const cw = ref(1);
@@ -1952,6 +1963,8 @@ function ocrBBox(ann: any) {
 }
 
 function confirmOcrText() {
+  // 只读模式：禁止新增 OCR 标注
+  if (lockedByOther.value) return;
   // 导出/训练要求 OCR 多边形 ≥4 点（四边形），3 点会被静默丢弃
   if (ocrTextInput.value.trim() && ocrDrawingPoints.value.length >= 4) {
     let pts = ocrDrawingPoints.value.map((p) => ({ x: p.x, y: p.y }));
@@ -1983,6 +1996,8 @@ function confirmOcrText() {
 }
 
 function toggleClassification(clsId: number) {
+  // 只读模式：禁止修改分类标注
+  if (lockedByOther.value) return;
   if (taskClassificationMode.value === "single") {
     store.annotations = store.annotations.filter((a) => a.type !== "Classification");
     store.annotations.push({
@@ -2093,6 +2108,9 @@ function onMouseDown(e: MouseEvent) {
     };
     return;
   }
+
+  // 只读模式：禁止开始新标注（缩放/平移/选择已提前返回）
+  if (lockedByOther.value) return;
 
   // ---- Box draw ----
   if (currentTool.value === "box") {
@@ -2697,6 +2715,8 @@ function onWheel(e: WheelEvent) {
 }
 
 function onDblClick(_e: MouseEvent) {
+  // 只读模式：禁止通过双击闭合多边形新增标注
+  if (lockedByOther.value) return;
   if (currentTool.value === "polygon" && polyDrawingPoints.value.length >= 3) {
     // dblclick 的第二下 click 已通过 mousedown 添加了一个顶点，弹出后再闭合
     const pts = [...polyDrawingPoints.value];
@@ -2715,6 +2735,8 @@ function onDblClick(_e: MouseEvent) {
 
 // ===== 标注选中 / 拖拽 =====
 function startOcrRectResize(e: MouseEvent, ann: any, edges: string) {
+  // 只读模式：禁止拖动 OCR 标注的缩放把手
+  if (lockedByOther.value) return;
   e.stopPropagation();
   e.preventDefault();
   store.selectedAnnotationId = ann.id;
@@ -2733,6 +2755,8 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
   if (currentTool.value === "pan") {
     return;
   }
+  // 只读模式：禁止选中/拖动/缩放已有标注及 Alt 删除顶点
+  if (lockedByOther.value) return;
   e.stopPropagation();
 
   if (currentTool.value === "select" || currentTool.value === "ocr") {
@@ -2939,10 +2963,14 @@ function ocrBoxHandles(ann: any) {
 
 // ===== 标注操作 =====
 function removeAnn(id: string) {
+  // 只读模式：禁止删除已有标注（覆盖键盘 Delete 路径）
+  if (lockedByOther.value) return;
   store.annotations = store.annotations.filter((a) => a.id !== id);
   if (store.selectedAnnotationId === id) store.selectedAnnotationId = null;
 }
 function deleteSelected() {
+  // 只读模式：禁止通过工具栏删除标注
+  if (lockedByOther.value) return;
   if (store.selectedAnnotationId) {
     removeAnn(store.selectedAnnotationId);
     afterEdit();
@@ -2959,6 +2987,8 @@ function copySelected() {
   }
 }
 function pasteCopied() {
+  // 只读模式：禁止粘贴新增标注
+  if (lockedByOther.value) return;
   if (!annClipboard) {
     ElMessage.info("剪贴板为空，先 Ctrl+C 复制标注");
     return;
@@ -3039,11 +3069,15 @@ function pushHistory() {
   historyIndex = historyStack.length - 1;
 }
 function undo() {
+  // 只读模式：禁止撤销（会改写标注）
+  if (lockedByOther.value) return;
   if (historyIndex <= 0) return;
   historyIndex--;
   restoreHistory();
 }
 function redo() {
+  // 只读模式：禁止重做（会改写标注）
+  if (lockedByOther.value) return;
   if (historyIndex >= historyStack.length - 1) return;
   historyIndex++;
   restoreHistory();
@@ -3175,6 +3209,8 @@ async function loadImg(imageId: number) {
   store.selectedAnnotationId = null;
   store.annotations = [];
   unsaved.value = false;
+  lockedByOther.value = false;
+  lockedByUser.value = null;
   const idx = store.images.findIndex((i) => i.id === imageId);
   if (idx >= 0) store.currentImageIndex = idx;
   try {
@@ -3191,9 +3227,15 @@ async function loadImg(imageId: number) {
     // Lock this image for current user
     AnnotationAPI.lockImage(imageId, store.taskId)
       .then((lr: any) => {
+        if (myToken !== loadImgToken) return; // 已被更新的切图请求取代
         const d = lr?.data?.data;
         if (d?.locked) {
-          ElMessage.warning(`该图片已被 ${d.locked_by || "其他用户"} 锁定，你的修改可能无法保存`);
+          lockedByOther.value = true;
+          lockedByUser.value = d.locked_by ?? null;
+          ElMessage.warning(`该图片已被 ${d.locked_by || "其他用户"} 锁定，只读`);
+        } else {
+          lockedByOther.value = false;
+          lockedByUser.value = null;
         }
         // 定期续期（后端 5 分钟过期），避免长标注丢锁
         clearLockRenewal();
@@ -3276,6 +3318,11 @@ async function fetchTaskProgress() {
 async function saveAnn() {
   const img = store.currentImage;
   if (!img) return;
+  // 只读模式：不保存他人锁定的图片，避免 409 丢稿
+  if (lockedByOther.value) {
+    ElMessage.warning("该图片已被其他用户锁定，当前为只读模式");
+    return;
+  }
   store.saving = true;
   try {
     await AnnotationAPI.saveAnnotations(img.id, {
@@ -3661,6 +3708,11 @@ onBeforeUnmount(() => {
   height: 100%;
   background: #f5f7fa;
   overflow: hidden;
+}
+.ann-lock-banner {
+  flex-shrink: 0;
+  border-radius: 0;
+  padding: 6px 12px;
 }
 .ann-header {
   display: flex;

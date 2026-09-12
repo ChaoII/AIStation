@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import desc, func, select, update
 
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
 from app.core.logger import log
 
 from ..dataset.model import AnnotationImageModel, DatasetModel
@@ -44,7 +45,7 @@ class AnnotationService:
             # Verify lock
             img = await db.get(AnnotationImageModel, image_id)
             if img and img.locked_by and img.locked_by != auth.user.id:
-                raise ValueError("图片已被其他用户锁定")
+                raise CustomException(msg="图片已被其他用户锁定，无法保存", code=409, status_code=409)
 
             result = await db.execute(
                 select(AnnotationRecordModel)
