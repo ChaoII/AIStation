@@ -16,6 +16,7 @@ from app.core.logger import log
 from .concurrency import get_train_semaphore
 from .docker_utils import pull_image, remove_container, run_container
 from .framework_utils import framework_value
+from .metrics import best_metric
 from .model import TrainStatus, TrainTask
 from .scheduler import _build_cmd, resolve_base_model
 from .task_executor import TaskExecutor
@@ -180,17 +181,10 @@ class PaddleXOCRExecutor(TaskExecutor):
                 from .exporter import export_model
                 model_info = await export_model(task_id, task.framework, export_dir)
                 if model_info.get("storage_path"):
-                    # 从 metrics_log 提取 best（hmean/acc）与最新指标
-                    best = {}
-                    latest = {}
+                    # 统一最优指标：忽略日志里的 best:True 汇总行，按主指标（det→hmean / rec→acc）取最优轮
+                    best = best_metric(metrics_log, "paddlex", "ocr", mode) or {}
                     epoch_records = [m for m in metrics_log if m.get("epoch") and not m.get("best")]
-                    if epoch_records:
-                        latest = epoch_records[-1]
-                    best_records = [m for m in metrics_log if m.get("best")]
-                    if best_records:
-                        best = best_records[-1]
-                    else:
-                        best = latest
+                    latest = epoch_records[-1] if epoch_records else {}
                     await cls._mark_status(
                         task_id, TrainStatus.SUCCESS,
                         model_repo_id=model_info.get("repo_id"),

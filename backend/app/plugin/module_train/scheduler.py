@@ -20,6 +20,7 @@ from .docker_utils import (
     remove_container,
     run_container,
 )
+from .metrics import best_metric
 from .model import TrainFramework, TrainStatus, TrainTask
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
@@ -329,6 +330,23 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     return ["bash", "-c", f"cd {_PADDLEX_OCR_DIR} && {inner}"]
 
 
+async def _resolve_task_type(task) -> str:
+    """解析训练任务对应标注任务的 ``task_type``；无标注任务时默认 ``detection``。
+
+    ``_build_cmd`` 同样读取该字段，但还需要 ``classification_mode``，故各自查询。
+    """
+    if not getattr(task, "annotation_task_id", None):
+        return "detection"
+    from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+    async with async_db_session() as db:
+        ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
+    tt = getattr(ann_task, "task_type", None) if ann_task else None
+    if not tt:
+        return "detection"
+    # 枚举成员取裸值（AnnotationType.CLASSIFICATION -> "classification"）
+    return getattr(tt, "value", tt)
+
+
 async def _build_cmd(task, data_dir: str, export_dir: str, base_model_name: str | None = None) -> list[str]:
     """按框架构建训练命令。``base_model_name`` 非空时以其为初始权重。"""
     if task.framework == TrainFramework.ULTRALYTICS:
@@ -390,24 +408,14 @@ def _parse_epoch(line: str) -> dict | None:
                     "recall": float(parts[4]) if parts[4] else 0,
                     "map50": float(parts[5]) if parts[5] else 0,
                     "map5095": float(parts[6]) if parts[6] else 0}
+        # 分类验证汇总列不同：all <images> <instances> <top1> <top5>
+        # （检测/分割/姿态仍为 7 列 P/R/mAP50/mAP50-95，优先走上分支）
+        if len(parts) == 5:
+            try:
+                return {"epoch": -1, "top1": float(parts[3]), "top5": float(parts[4])}
+            except ValueError:
+                return None
     return None
-
-
-def _compute_best(metrics_log: list[dict]) -> dict | None:
-    """从每轮指标中选出 map50 最优的一轮；无 map50 时取含最多数值字段的一轮，再退最后一轮。"""
-    if not metrics_log:
-        return None
-    valid = [m for m in metrics_log if m and m.get("map50") is not None]
-    if valid:
-        return max(valid, key=lambda m: m["map50"])
-    # 兜底：若全无 map50，取含最多数值字段的一轮
-    ranked = sorted(
-        metrics_log,
-        key=lambda m: sum(1 for k in ("precision", "recall", "map50", "map5095") if m and m.get(k) is not None),
-        reverse=True,
-    )
-    best = ranked[0] if ranked else None
-    return best if best else metrics_log[-1]
 
 
 class TrainExecutor(TaskExecutor):
@@ -496,6 +504,8 @@ class TrainExecutor(TaskExecutor):
         if not task:
             return
 
+        task_type = await _resolve_task_type(task)
+
         metrics_log = await cls.follow_logs(
             container_id,
             os.path.join(export_dir, "train.log"),
@@ -520,18 +530,27 @@ class TrainExecutor(TaskExecutor):
         elif exit_code == 0:
             await remove_container(container_id)
             from .exporter import export_model
-            best_metrics = _compute_best(metrics_log)
+            best_metrics = best_metric(metrics_log, "ultralytics", task_type)
             last_metrics = metrics_log[-1] if metrics_log else None
             model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
-            await cls._mark_status(task_id, TrainStatus.SUCCESS,
-                                   model_repo_id=model_info.get("repo_id"),
-                                   progress=100, finished_at=datetime.now(),
-                                   metrics_log=metrics_log or None,
-                                   best_metrics=best_metrics,
-                                   last_metrics=last_metrics)
-            if getattr(task, "created_id", None):
-                _send_notify(task.created_id, f"训练完成: {task.name}",
-                             "任务已成功完成，模型已保存", "training_complete", "train", task_id)
+            if not model_info.get("storage_path"):
+                # 训练进程正常退出但未找到模型产物：不标成功，避免写入无权重版本
+                await cls._mark_status(task_id, TrainStatus.FAILED,
+                                       error_log="训练完成但未找到模型产物",
+                                       metrics_log=metrics_log or None,
+                                       best_metrics=best_metrics,
+                                       last_metrics=last_metrics,
+                                       finished_at=datetime.now())
+            else:
+                await cls._mark_status(task_id, TrainStatus.SUCCESS,
+                                       model_repo_id=model_info.get("repo_id"),
+                                       progress=100, finished_at=datetime.now(),
+                                       metrics_log=metrics_log or None,
+                                       best_metrics=best_metrics,
+                                       last_metrics=last_metrics)
+                if getattr(task, "created_id", None):
+                    _send_notify(task.created_id, f"训练完成: {task.name}",
+                                 "任务已成功完成，模型已保存", "training_complete", "train", task_id)
         else:
             error_msg = (await get_container_error_tail(container_id)).strip()
             await remove_container(container_id)
@@ -539,7 +558,7 @@ class TrainExecutor(TaskExecutor):
                                    error_log=error_msg or "training failed",
                                    finished_at=datetime.now(),
                                    metrics_log=metrics_log or None,
-                                   best_metrics=_compute_best(metrics_log),
+                                   best_metrics=best_metric(metrics_log, "ultralytics", task_type),
                                    last_metrics=metrics_log[-1] if metrics_log else None)
             if getattr(task, "created_id", None):
                 _send_notify(task.created_id, f"训练失败: {task.name}",
