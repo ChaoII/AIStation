@@ -251,7 +251,12 @@
           </el-form-item>
         </template>
         <el-form-item label="评估数据集">
-          <el-select v-model="createForm.evalDatasetId" filterable style="width: 100%">
+          <el-select
+            v-model="createForm.evalDatasetId"
+            filterable
+            style="width: 100%"
+            @visible-change="(v: boolean) => v && loadDatasets()"
+          >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
@@ -290,6 +295,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
@@ -333,15 +339,26 @@ const createForm = reactive({
   },
 });
 
-(async () => {
-  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-  datasets.value = dsRes.data?.data?.items || [];
-})();
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
 
 async function loadModelVersions() {
   try {
-    const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
-    modelVersions.value = r.data?.data?.items || [];
+    modelVersions.value = await cachedOptions(
+      "train:models",
+      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
   } catch {
     /* 模型列表加载失败不阻塞页面与自动开窗 */
   }
@@ -461,6 +478,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
 });
 
 function handleOpenCreateDialog() {
+  loadDatasets();
   const curModel =
     modelVersions.value.find((m: any) => m.id === modelRepoId) ||
     modelVersions.value.find((m: any) => m.repo_id === modelRepoId);

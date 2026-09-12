@@ -195,7 +195,7 @@
       </template>
     </PageContent>
       </el-tab-pane>
-      <el-tab-pane label="定时训练" name="schedule">
+      <el-tab-pane label="定时训练" name="schedule" lazy>
         <SchedulePanel />
       </el-tab-pane>
     </el-tabs>
@@ -239,6 +239,7 @@
             style="width: 100%"
             placeholder="请选择标注数据集"
             @change="onDatasetChange"
+            @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
@@ -456,6 +457,7 @@ import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import SchedulePanel from "@/components/Train/SchedulePanel.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
@@ -519,20 +521,27 @@ const modelOptions = computed(() => {
   return opts;
 });
 
-(async () => {
-  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-  datasets.value = dsRes.data?.data?.items || [];
-})();
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
 
 async function onDatasetChange(datasetId: number) {
   formData.annotation_task_id = undefined;
   annoTasks.value = [];
   if (!datasetId) return;
-  try {
-    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-    const ds = r.data?.data?.items?.find((d: any) => d.id === datasetId);
-    annoTasks.value = ds?.tasks || [];
-  } catch {}
+  if (!datasetsLoaded) await loadDatasets();
+  const ds = datasets.value.find((d: any) => d.id === datasetId);
+  annoTasks.value = ds?.tasks || [];
 }
 
 function onAnnoTaskChange(taskId: number) {
@@ -787,6 +796,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  loadDatasets();
   if (id && type === "update") {
     dialogVisible.title = "编辑训练任务";
     const res = await TrainAPI.getTaskDetail(id);

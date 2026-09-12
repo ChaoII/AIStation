@@ -193,7 +193,7 @@
         </PageContent>
       </el-tab-pane>
 
-      <el-tab-pane label="告警规则" name="rule">
+      <el-tab-pane label="告警规则" name="rule" lazy>
         <PageSearch
           ref="ruleSearchRef"
           :search-config="ruleSearchConfig"
@@ -641,6 +641,7 @@ import {
 } from "@/api/module_video/alarm";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { cachedOptions } from "@/composables/useOptions";
 import SnapshotImage from "@/components/Common/SnapshotImage.vue";
 
 interface TablePageQuery {
@@ -726,6 +727,9 @@ const recordSearchConfig = reactive<ISearchConfig>({
         clearable: true,
         filterable: true,
         style: { width: "180px" },
+        onVisibleChange: (v: boolean) => {
+          if (v) ensureCameraOptions();
+        },
       },
     },
     {
@@ -979,6 +983,8 @@ async function handleCloseRuleDialog() {
 
 async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
   ruleDialogVisible.type = type;
+  ensureCameraOptions();
+  ensureAlgorithmTaskOptions();
   if (id && type === "update") {
     ruleDialogVisible.title = "编辑规则";
     const res = await getAlarmRuleList({ page_no: 1, page_size: 100 });
@@ -1134,15 +1140,14 @@ function statusLabel(status: string) {
   return map[(status || "").toUpperCase()] || status;
 }
 
-// Populate camera search options and algorithm tasks
-async function loadCameraOptions() {
+// 摄像机/算法任务下拉：懒加载 + 缓存
+async function ensureCameraOptions() {
+  if (cameraOptions.value.length) return;
   try {
-    const [camRes, taskRes] = await Promise.all([
-      getCameraList({ page_size: 100 }),
-      getAlgorithmTaskList({ page_size: 100 }),
-    ]);
-    cameraOptions.value = camRes.data?.data?.items || [];
-    algorithmTaskOptions.value = taskRes.data?.data?.items || [];
+    cameraOptions.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
     const searchItem: any = (recordSearchConfig.formItems || []).find(
       (i: any) => i.prop === "camera_id"
     );
@@ -1154,8 +1159,19 @@ async function loadCameraOptions() {
   }
 }
 
+async function ensureAlgorithmTaskOptions() {
+  if (algorithmTaskOptions.value.length) return;
+  try {
+    algorithmTaskOptions.value = await cachedOptions(
+      "video:algorithmTasks",
+      async () => (await getAlgorithmTaskList({ page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    /* noop */
+  }
+}
+
 onBeforeMount(() => {
-  loadCameraOptions();
   document.addEventListener("mouseup", onRuleDragEnd);
 });
 onBeforeUnmount(() => {

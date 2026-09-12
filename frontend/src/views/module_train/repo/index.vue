@@ -177,6 +177,7 @@
             filterable
             style="width: 100%"
             placeholder="请选择标注数据集"
+            @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
@@ -240,6 +241,7 @@ import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import ModelExportDialog from "@/components/ModelExportDialog/index.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
@@ -272,10 +274,19 @@ const submitLoading = ref(false);
 const dataFormRef = ref();
 
 const datasets = ref<any[]>([]);
-(async () => {
-  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-  datasets.value = dsRes.data?.data?.items || [];
-})();
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_train:model",
@@ -445,6 +456,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  loadDatasets();
   if (id && type === "update") {
     dialogVisible.title = "编辑模型仓库";
     const res = await TrainAPI.getModelDetail(id);

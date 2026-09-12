@@ -274,12 +274,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled, Link } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import DeployLogDrawer from "@/components/Train/DeployLogDrawer.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
@@ -382,10 +383,22 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   },
 });
 
-onMounted(async () => {
-  const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
-  models.value = r.data?.data?.items || [];
-  refreshList();
+// 模型下拉仅在打开新建部署弹窗时懒加载（带缓存）
+let modelsLoaded = false;
+async function loadModels() {
+  if (modelsLoaded) return;
+  modelsLoaded = true;
+  try {
+    models.value = await cachedOptions(
+      "train:models",
+      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    modelsLoaded = false;
+  }
+}
+watch(showCreateDialog, (v) => {
+  if (v) loadModels();
 });
 
 async function handleCreate() {

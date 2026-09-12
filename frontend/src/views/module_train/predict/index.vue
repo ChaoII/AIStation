@@ -253,6 +253,7 @@
             filterable
             style="width: 100%"
             placeholder="选择数据集"
+            @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
@@ -297,6 +298,7 @@ import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import { Plus } from "@element-plus/icons-vue";
@@ -337,8 +339,10 @@ const createForm = reactive({
 onMounted(async () => {
   // 先加载模型版本（自动开窗预填依赖它）
   try {
-    const mRes = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
-    models.value = mRes.data?.data?.items || [];
+    models.value = await cachedOptions(
+      "train:models",
+      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
   } catch {
     /* 模型列表加载失败不阻塞页面与自动开窗 */
   }
@@ -352,18 +356,21 @@ onMounted(async () => {
     }
     router.replace({ query: {} });
   }
-
-  // 数据集列表后台加载，不阻塞首个渲染与自动开窗
-  AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })
-    .then((r) => {
-      datasets.value = r.data?.data?.items || [];
-    })
-    .catch(() => {
-      /* 忽略数据集加载失败 */
-    });
-
-  refreshList();
 });
+
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
 
 function getModelName(modelId: number) {
   const m = models.value.find((x: any) => x.id === modelId);

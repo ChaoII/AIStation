@@ -42,7 +42,9 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="数据集" required>
-          <el-select v-model="form.dataset_id" filterable style="width: 100%" placeholder="选择数据集">
+          <el-select v-model="form.dataset_id" filterable style="width: 100%" placeholder="选择数据集"
+            @visible-change="(v: boolean) => v && loadDatasets()"
+          >
             <el-option v-for="d in datasets" :key="d.id" :label="d.name" :value="d.id" />
           </el-select>
         </el-form-item>
@@ -77,6 +79,7 @@ import "vue3-cron-plus/dist/index.css";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
+import { cachedOptions } from "@/composables/useOptions";
 
 const rows = ref<any[]>([]);
 const datasets = ref<any[]>([]);
@@ -108,8 +111,23 @@ async function load() {
   }
 }
 
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
+
 function openCreate() {
   Object.assign(form, emptyForm());
+  loadDatasets();
   dialogVisible.value = true;
 }
 
@@ -122,6 +140,7 @@ function openEdit(row: any) {
     cron_expr: row.cron_expr,
     enabled: row.enabled !== false,
   });
+  loadDatasets();
   dialogVisible.value = true;
 }
 
@@ -155,12 +174,6 @@ async function remove(id: number) {
 
 onMounted(async () => {
   await load();
-  try {
-    const ds = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-    datasets.value = ds.data?.data?.items || [];
-  } catch {
-    /* 忽略数据集加载失败 */
-  }
 });
 
 defineExpose({ load });
