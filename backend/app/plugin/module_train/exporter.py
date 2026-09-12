@@ -228,6 +228,34 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
     return shapes
 
 
+def xany_classification_flags(anns: list, class_names: dict[int, str]) -> dict:
+    """收集图像级分类标注，返回 LabelMe/x-anylabeling 的 flags 字典。
+
+    分类标注（type=Classification）在 x-anylabeling 中没有几何形状，若不额外承载
+    会被静默丢弃。此处把单标 ``class_id`` 与多标 ``class_ids`` 统一成图像级
+    ``{"classification": "cat,dog"}``（类名按首次出现顺序、逗号连接，已去重）；
+    无有效分类标注时返回 {}。重新导入分类标注不在本期范围（Phase 1B importer）。
+    """
+    names: list[str] = []
+    seen: set[str] = set()
+    for ann in anns:
+        cids: list = []
+        if ann.get("type") == "Classification" and ann.get("class_id") not in (None, -1):
+            cids.append(ann["class_id"])
+        if isinstance(ann.get("class_ids"), list):
+            cids.extend(ann["class_ids"])
+        for cid in cids:
+            if cid is None or cid == -1:
+                continue
+            label = class_names.get(cid, f"class_{cid}")
+            if label not in seen:
+                seen.add(label)
+                names.append(label)
+    if not names:
+        return {}
+    return {"classification": ",".join(names)}
+
+
 def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] | None = None, img_w: int = 1, img_h: int = 1) -> list[str]:
     """Convert annotations to YOLO label lines based on task_type.
 
@@ -236,7 +264,10 @@ def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] 
     """
     lines = []
     for ann in anns:
-        raw_cls = ann.get("class_id", 0)
+        raw_cls = ann.get("class_id")
+        # 与收集器一致：class_id 缺失或为 -1 的标注不产生标签行，避免 -1/越界类 id 写入
+        if raw_cls is None or raw_cls == -1:
+            continue
         cls_id = (class_id_map or {}).get(raw_cls, raw_cls)
         ann_type = ann.get("type", "")
         if ann_type in ("AxisAlignedBox", "box"):
@@ -469,11 +500,13 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
 
             # Convert to x-anylabeling format（归一化 → 像素；支持全部形状；使用真实类名）
             shapes = xany_shapes(anns, img.width or 0, img.height or 0, class_names or {})
+            # 分类标注无几何形状，改以图像级 flags 承载，避免静默丢失
+            flags = xany_classification_flags(anns, class_names or {})
 
             # Write JSON sidecar
             js = {
                 "version": "3.2.1",
-                "flags": {},
+                "flags": flags,
                 "shapes": shapes,
                 "imagePath": img.filename,
                 "imageData": None,

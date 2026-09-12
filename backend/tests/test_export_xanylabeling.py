@@ -1,7 +1,7 @@
 """X-AnyLabeling shapes 转换测试（归一化→像素、全形状、真实类名）。"""
 import math
 
-from app.plugin.module_train.exporter import xany_shapes
+from app.plugin.module_train.exporter import xany_classification_flags, xany_shapes
 
 
 def test_rectangle_pixelized_and_named():
@@ -48,3 +48,23 @@ def test_keypoint_and_ocr_and_polygon_present():
     assert "polygon" in types
     assert "point" in types
     assert any(s.get("description") == "hi" for s in shapes)
+
+
+def test_classification_multi_label_flags_and_no_shape():
+    """分类标注无几何形状，须以图像级 flags 承载，不能静默丢失。"""
+    anns = [{"type": "Classification", "class_id": 2, "class_ids": [2, 5]}]
+    assert xany_shapes(anns, 100, 100, {2: "cat", 5: "dog"}) == []
+    flags = xany_classification_flags(anns, {2: "cat", 5: "dog"})
+    assert flags == {"classification": "cat,dog"}
+
+
+def test_classification_single_label_flag():
+    anns = [{"type": "Classification", "class_id": 1}]
+    assert xany_classification_flags(anns, {1: "bird"}) == {"classification": "bird"}
+
+
+def test_classification_invalid_and_detection_no_flags():
+    detection = [{"type": "AxisAlignedBox", "class_id": 0, "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}]
+    assert xany_classification_flags(detection, {0: "a"}) == {}
+    invalid = [{"type": "Classification", "class_id": -1}]
+    assert xany_classification_flags(invalid, {}) == {}
