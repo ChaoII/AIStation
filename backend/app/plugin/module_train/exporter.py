@@ -87,62 +87,84 @@ async def _export_core(
 
 
 async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False) -> None:
-    """Export to YOLO format with train/val split. for_training controls YAML path."""
+    """Export to YOLO format with train/val split. for_training controls YAML path.
+
+    两遍式：先收集所有图片的最新标注与全局类 id 集合，构建连续映射后再下载图片、
+    按映射写标签，避免稀疏类 id（类别删除后）导致 nc/names 越界。
+    """
     import random
 
     from app.utils.s3_client import s3_client
+
+    anns_by_img: dict[int, list] = {}
+    used_ids: set[int] = set()
+    async with async_db_session() as db:
+        for img in images:
+            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
+            if annotation_task_id:
+                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
+            record = (await db.execute(query)).scalar_one_or_none()
+            anns = record.annotation_data if record and record.annotation_data else []
+            anns_by_img[img.id] = anns
+            for ann in anns:
+                cid = ann.get("class_id")
+                if cid is not None and cid != -1:
+                    used_ids.add(int(cid))
+
+    class_id_map = build_class_mapping(used_ids)
 
     random.shuffle(images)
     split_idx = max(1, int(len(images) * train_ratio))
     train_imgs = images[:split_idx]
     val_imgs = images[split_idx:]
-    classes: set[int] = set()
 
     for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
         img_split = os.path.join(output_dir, "images", split_name)
         label_split = os.path.join(output_dir, "labels", split_name)
         os.makedirs(img_split, exist_ok=True)
         os.makedirs(label_split, exist_ok=True)
-
-        async with async_db_session() as db:
-            for img in split_imgs:
-                img_path = os.path.join(img_split, img.filename)
-                if not os.path.exists(img_path):
-                    try:
-                        data = s3_client.download_fileobj(img.object_key)
-                        with open(img_path, "wb") as f:
-                            f.write(data.read())
-                    except Exception as e:
-                        log.warning(f"skip {img.filename}: {e}")
-                        continue
-
-                query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-                if annotation_task_id:
-                    query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-                query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-                rec = await db.execute(query)
-                record = rec.scalar_one_or_none()
-                anns = record.annotation_data if record and record.annotation_data else []
-
-                label_path = os.path.join(label_split, img.filename.rsplit(".", 1)[0] + ".txt")
-                lines = _format_yolo_lines(anns, task_type)
-                if lines:
-                    with open(label_path, "w") as f:
-                        f.write("\n".join(lines))
-                    for ann in anns:
-                        classes.add(ann.get("class_id", 0))
+        for img in split_imgs:
+            img_path = os.path.join(img_split, img.filename)
+            if not os.path.exists(img_path):
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+                except Exception as e:
+                    log.warning(f"skip {img.filename}: {e}")
+                    continue
+            anns = anns_by_img.get(img.id, [])
+            lines = _format_yolo_lines(anns, task_type, class_id_map=class_id_map,
+                                       img_w=img.width or 1, img_h=img.height or 1)
+            if lines:
+                label_path = os.path.join(label_split,
+                                          img.filename.rsplit(".", 1)[0] + ".txt")
+                with open(label_path, "w") as f:
+                    f.write("\n".join(lines))
 
     base_path = "/data" if for_training else "."
-    sorted_classes = sorted(classes)
-    _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_classes, class_names or {})
-    log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_classes)} → {output_dir}")
+    sorted_out = list(range(len(class_id_map)))
+    _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_out,
+                class_names or {}, class_id_map=class_id_map)
+    log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_out)} → {output_dir}")
 
 
-def _format_yolo_lines(anns: list, task_type: str) -> list[str]:
-    """Convert annotations to YOLO label lines based on task_type."""
+def build_class_mapping(class_ids: set[int]) -> dict[int, int]:
+    """把稀疏的原始类 id 映射为连续 0..n-1（按原始 id 升序）。"""
+    return {raw: idx for idx, raw in enumerate(sorted(class_ids))}
+
+
+def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] | None = None, img_w: int = 1, img_h: int = 1) -> list[str]:
+    """Convert annotations to YOLO label lines based on task_type.
+
+    class_id_map 把原始类 id 映射为连续下标；img_w/img_h 预留给像素坐标标注的归一化。
+    坐标约定：本工作台标注为归一化 [0,1]，YOLO 也需归一化，故此处不做缩放。
+    """
     lines = []
     for ann in anns:
-        cls_id = ann.get("class_id", 0)
+        raw_cls = ann.get("class_id", 0)
+        cls_id = (class_id_map or {}).get(raw_cls, raw_cls)
         ann_type = ann.get("type", "")
         if ann_type in ("AxisAlignedBox", "box"):
             if "x1" in ann:
@@ -188,18 +210,36 @@ def _format_yolo_lines(anns: list, task_type: str) -> list[str]:
     return lines
 
 
-def _write_yaml(path: str, base_path: str, sorted_classes: list, class_names: dict) -> None:
-    """Write dataset.yaml."""
-    names_dict = {str(c): class_names.get(c, str(c)) for c in sorted_classes}
+def _write_yaml(
+    path: str,
+    base_path: str,
+    sorted_classes: list,
+    class_names: dict,
+    class_id_map: dict[int, int] | None = None,
+    extra_yaml: dict | None = None,
+) -> None:
+    """Write dataset.yaml.
+
+    sorted_classes 为**映射后**的连续下标列表；class_id_map 用于把下标回指原始
+    id 以取真实名称（不传时按下标直接取）。
+    """
+    names_dict: dict[str, str] = {}
+    for out_id in sorted_classes:
+        raw_id = out_id
+        if class_id_map:
+            for raw, mapped in class_id_map.items():
+                if mapped == out_id:
+                    raw_id = raw
+                    break
+        names_dict[str(out_id)] = class_names.get(raw_id, str(out_id))
     with open(path, "w") as f:
         f.write(f"path: {base_path}\n")
         f.write("train: images/train\n")
         f.write("val: images/val\n")
         f.write(f"nc: {len(sorted_classes)}\n")
-        if any(k != v for k, v in names_dict.items()):
-            f.write(f"names: {json.dumps(names_dict, ensure_ascii=False)}\n")
-        else:
-            f.write(f"names: {json.dumps(sorted_classes)}\n")
+        f.write(f"names: {json.dumps(names_dict, ensure_ascii=False)}\n")
+        for k, v in (extra_yaml or {}).items():
+            f.write(f"{k}: {v}\n")
 
 
 def _write_yolo_cls_yaml(output_dir: str, for_training: bool) -> None:
