@@ -121,7 +121,7 @@
                   size="small"
                   link
                   icon="edit"
-                  @click="handleOpenDialog('update', scope.row.id)"
+                  @click="handleEditRepo(scope.row)"
                 >
                   编辑
                 </el-button>
@@ -446,13 +446,27 @@ async function handleCloseDialog() {
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id && type === "update") {
-    dialogVisible.title = "编辑模型";
+    dialogVisible.title = "编辑模型仓库";
     const res = await TrainAPI.getModelDetail(id);
     Object.assign(formData, res.data.data);
   } else {
-    dialogVisible.title = "新建模型";
+    dialogVisible.title = "新建模型仓库";
     formData.id = undefined;
   }
+  dialogVisible.visible = true;
+}
+
+function handleEditRepo(row: any) {
+  dialogVisible.type = "update";
+  dialogVisible.title = "编辑模型仓库";
+  Object.assign(formData, {
+    id: row.id,
+    name: row.name,
+    framework: row.framework,
+    annotation_dataset_id: row.annotation_dataset_id,
+    description: row.description,
+    status: row.status,
+  });
   dialogVisible.visible = true;
 }
 
@@ -470,9 +484,9 @@ async function handleSubmit() {
           status: formData.status,
         };
         if (id) {
-          await TrainAPI.updateModel(id, payload);
+          await TrainAPI.updateModelRepo(id, payload);
         } else {
-          await TrainAPI.createModel(payload);
+          await TrainAPI.createModelRepo(payload);
         }
         dialogVisible.visible = false;
         await resetForm();

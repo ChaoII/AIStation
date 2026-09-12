@@ -222,6 +222,37 @@ class TrainService:
             return {"id": existing.id, "version_id": ver_row.id, "version": version}
 
     @classmethod
+    async def update_model_repo(cls, repo_id: int, data) -> dict | None:
+        """更新模型仓库；并镜像名称/描述/框架到最新版本，保证版本列表一致。"""
+        async with async_db_session.begin() as db:
+            repo = await db.get(TrainModelRepo, repo_id)
+            if not repo:
+                return None
+
+            def _get(key):
+                return data.get(key) if isinstance(data, dict) else getattr(data, key, None)
+
+            for key in ("name", "framework", "description", "status", "annotation_dataset_id"):
+                val = _get(key)
+                if val is not None:
+                    setattr(repo, key, val)
+
+            latest = (
+                await db.execute(
+                    select(TrainModel)
+                    .where(TrainModel.repo_id == repo_id)
+                    .order_by(desc(TrainModel.id))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if latest:
+                for key in ("name", "description", "framework"):
+                    val = _get(key)
+                    if val is not None:
+                        setattr(latest, key, val)
+            return {"id": repo_id}
+
+    @classmethod
     async def delete_model_repos(cls, ids: list[int]) -> None:
         """删除仓库及其下所有版本行。"""
         async with async_db_session.begin() as db:
@@ -255,14 +286,22 @@ class TrainService:
                 .limit(page_size).offset((page_no - 1) * page_size)
             )).scalars().all()
             result = []
+            repo_ids = [r.id for r in rows]
+            counts = dict(
+                (
+                    await db.execute(
+                        select(TrainModel.repo_id, func.count())
+                        .where(
+                            TrainModel.repo_id.in_(repo_ids),
+                            TrainModel.is_deleted == False,  # noqa: E712
+                        )
+                        .group_by(TrainModel.repo_id)
+                    )
+                ).all()
+            )
             for r in rows:
                 d = _model_to_dict(r)
-                vcount = (await db.execute(
-                    select(func.count()).select_from(TrainModel).where(
-                        TrainModel.repo_id == r.id, TrainModel.is_deleted == False  # noqa: E712
-                    )
-                )).scalar() or 0
-                d["version_count"] = vcount
+                d["version_count"] = counts.get(r.id, 0)
                 result.append(d)
             return result, total
 

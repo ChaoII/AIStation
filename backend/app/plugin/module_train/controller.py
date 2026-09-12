@@ -1,5 +1,6 @@
 import os
 import tempfile
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
 
@@ -89,6 +90,19 @@ async def delete_repos(
 ):
     await TrainService.delete_model_repos(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@router.put("/model/repos/{repo_id}", summary="更新模型仓库")
+async def update_repo(
+    repo_id: int,
+    data: Annotated[dict, Body()],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_train:model:update"]))],
+):
+    result = await TrainService.update_model_repo(repo_id, data)
+    if result:
+        return SuccessResponse(data=result, msg="更新成功")
+    from app.common.response import ErrorResponse
+    return ErrorResponse(msg="仓库不存在")
 
 
 @router.get("/model/{repo_id}/versions", summary="模型版本列表")

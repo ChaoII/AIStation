@@ -33,6 +33,16 @@ export const TrainAPI = {
       data: ids,
     });
   },
+  createModelRepo(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/model/repos`, method: "post", data });
+  },
+  updateModelRepo(id: number, data: any) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/model/repos/${id}`,
+      method: "put",
+      data,
+    });
+  },
   createModel(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/create`, method: "post", data });
   },
