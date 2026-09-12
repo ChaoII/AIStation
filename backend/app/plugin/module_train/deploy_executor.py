@@ -78,14 +78,48 @@ def _is_paddlex_framework(framework: TrainFramework) -> bool:
     return framework == TrainFramework.PADDLEX
 
 
-def _generate_server_script(api_key: str, device: str) -> str:
+async def resolve_deploy_spec(deploy, model_rec) -> tuple[str, str]:
+    """推断部署 OCR 的 (mode, size)：deploy.hyperparams → 训练任务 → 默认。
+
+    部署 hyperparams 未显式给出合法 mode/model_size 时，回溯产出该模型的训练
+    任务 hyperparams；仍缺失则回退 ("det", "tiny")。与 eval/predict 的规格推断
+    口径一致：model_id 为模型版本 id，与训练任务的 model_repo_id 对应。
+    """
+    hp = deploy.hyperparams or {}
+    mode = str(hp.get("mode", "")).lower()
+    size = str(hp.get("model_size", ""))
+    if mode not in ("det", "rec") or size not in ("tiny", "small", "medium"):
+        from sqlalchemy import desc, select
+
+        from .model import TrainTask
+
+        async with async_db_session() as db:
+            task = (await db.execute(
+                select(TrainTask).where(TrainTask.model_repo_id == deploy.model_id)
+                .order_by(desc(TrainTask.id)).limit(1)
+            )).scalar_one_or_none()
+        thp = (task.hyperparams or {}) if task else {}
+        mode = mode or str(thp.get("mode", "det")).lower()
+        size = size or str(thp.get("model_size", "tiny"))
+    return (
+        mode if mode in ("det", "rec") else "det",
+        size if size in ("tiny", "small", "medium") else "tiny",
+    )
+
+
+def _generate_server_script(
+    api_key: str, device: str, conf: float = 0.25, iou: float = 0.45, imgsz: int = 640
+) -> str:
     device_arg = device if device != "cpu" else "cpu"
     return f'''#!/usr/bin/env python3
 """Auto-generated inference server for AIStation model deployment."""
 import os, sys, json, time, asyncio, subprocess
 
-# Ensure dependencies
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
+# 依赖按需安装：仅在 fastapi 缺失时安装，避免每次启动都 pip install 拖慢健康检查
+try:
+    import fastapi  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
 
 import numpy as np
 import cv2
@@ -121,7 +155,7 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
     img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(status_code=400, detail="Invalid image")
-    results = model(img, device="{device_arg}", verbose=False)[0]
+    results = model(img, device="{device_arg}", conf={conf}, iou={iou}, imgsz={imgsz}, verbose=False)[0]
     elapsed = round((time.time() - start) * 1000, 1)
     detections = []
     if results.boxes is not None:
@@ -145,16 +179,31 @@ if __name__ == "__main__":
 '''
 
 
-def _generate_paddlex_server_script(api_key: str, device: str) -> str:
+def _generate_paddlex_server_script(
+    api_key: str, device: str, mode: str = "det", size: str = "tiny"
+) -> str:
     """生成 PaddleX OCR 推理服务脚本（PP-OCRv6 det + rec，.pdparams 权重）。
 
     运行在 paddlex:latest 镜像（内置 PaddleOCR），加载 /model/det.pdparams +
     /model/rec.pdparams，/predict 返回 [{text, confidence, box}]。
+    cfg 由模型规格（``mode``/``size``）驱动，避免 tiny/medium 部署套用 small 架构。
     """
     device_arg = device if device != "cpu" else "cpu"
+    if mode not in ("det", "rec"):
+        mode = "det"
+    if size not in ("tiny", "small", "medium"):
+        size = "tiny"
+    det_cfg = f"configs/det/PP-OCRv6/PP-OCRv6_{size}_det.yml"
+    rec_cfg = f"configs/rec/PP-OCRv6/PP-OCRv6_{size}_rec.yml"
     return r'''#!/usr/bin/env python3
 """Auto-generated PaddleX OCR inference server (PP-OCRv6 det + rec)."""
-import os, sys, json, time, io
+import os, sys, json, time, io, subprocess
+
+# 依赖按需安装：仅在 fastapi 缺失时安装，避免每次启动都 pip install
+try:
+    import fastapi  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
 
 _POCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
 sys.path.insert(0, _POCR_DIR)
@@ -212,8 +261,10 @@ def _load_pipeline(cfg_name, weights_path):
     return model, post_process_class, ops
 
 
-DET_CFG = "configs/det/PP-OCRv6/PP-OCRv6_small_det.yml"
-REC_CFG = "configs/rec/PP-OCRv6/PP-OCRv6_small_rec.yml"
+DET_CFG = __DET_CFG__
+REC_CFG = __REC_CFG__
+MODE = __MODE__
+SIZE = __SIZE__
 DET_PATH = "/model/det.pdparams"
 REC_PATH = "/model/rec.pdparams"
 
@@ -249,13 +300,24 @@ def _rec_text(crop):
     return res[0]["text"], res[0]["score"]
 
 
+def _crop_box(img, box):
+    """按检测框裁剪文字区域（越界保护），rec 识别应基于裁剪图而非整图。"""
+    x, y, w, h = cv2.boundingRect(np.asarray(box, dtype=np.int32))
+    ih, iw = img.shape[:2]
+    x1, y1 = max(0, x), max(0, y)
+    x2, y2 = min(iw, x + w), min(ih, y + h)
+    if x2 <= x1 or y2 <= y1:
+        return img
+    return img[y1:y2, x1:x2]
+
+
 app = FastAPI(title="AIStation PaddleX OCR Inference")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": "paddlex-ocr"}
+    return {"status": "ok", "model": "paddlex-ocr", "mode": MODE, "size": SIZE}
 
 
 @app.post("/predict")
@@ -271,7 +333,8 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
     detections = []
     boxes = _det_boxes(img)
     for box in boxes:
-        text, conf = _rec_text(img)
+        crop = _crop_box(img, box)
+        text, conf = _rec_text(crop)
         detections.append({
             "text": text, "confidence": float(conf),
             "box": box.astype(float).tolist(),
@@ -282,7 +345,9 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
 
 if __name__ == "__main__":
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")
-'''.replace("__API_KEY__", repr(api_key)).replace("__DEVICE__", repr(device_arg))
+'''.replace("__API_KEY__", repr(api_key)).replace("__DEVICE__", repr(device_arg)) \
+        .replace("__DET_CFG__", repr(det_cfg)).replace("__REC_CFG__", repr(rec_cfg)) \
+        .replace("__MODE__", repr(mode)).replace("__SIZE__", repr(size))
 
 
 async def start_deployment(deploy_id: int):
@@ -562,9 +627,17 @@ async def _execute_deployment(deploy_id: int):
 
         # Write inference server script
         if is_paddlex:
-            server_script = _generate_paddlex_server_script(deploy.api_key, deploy.device)
+            mode, size = await resolve_deploy_spec(deploy, model_rec)
+            server_script = _generate_paddlex_server_script(
+                deploy.api_key, deploy.device, mode=mode, size=size
+            )
         else:
-            server_script = _generate_server_script(deploy.api_key, deploy.device)
+            hp = deploy.hyperparams or {}
+            server_script = _generate_server_script(
+                deploy.api_key, deploy.device,
+                conf=hp.get("conf", 0.25), iou=hp.get("iou", 0.45),
+                imgsz=hp.get("imgsz", 640),
+            )
         server_path = os.path.join(server_dir, "server.py")
         with open(server_path, "w", encoding="utf-8") as f:
             f.write(server_script)
