@@ -278,6 +278,7 @@
                 filterable
                 placeholder="请选择摄像机"
                 style="width: 300px"
+                @visible-change="(v: boolean) => v && ensureCameraOptions()"
               >
                 <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
               </el-select>
@@ -552,6 +553,7 @@ import {
 import { getCameraList } from "@/api/module_video/camera";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { cachedOptions } from "@/composables/useOptions";
 
 const activeTab = ref("plan");
 
@@ -583,6 +585,9 @@ const searchConfig = reactive<ISearchConfig>({
         clearable: true,
         filterable: true,
         style: { width: "200px" },
+        onVisibleChange: (v: boolean) => {
+          if (v) ensureCameraOptions();
+        },
       },
     },
     {
@@ -772,6 +777,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  ensureCameraOptions();
   if (id && type === "update") {
     dialogVisible.title = "编辑计划";
     const res = await getRecordPlanList({ page_no: 1, page_size: 100 });
@@ -867,6 +873,9 @@ const logSearchConfig = reactive<ISearchConfig>({
         clearable: true,
         filterable: true,
         style: { width: "180px" },
+        onVisibleChange: (v: boolean) => {
+          if (v) ensureCameraOptions();
+        },
       },
     },
     {
@@ -994,10 +1003,14 @@ function playRecordFile(file: any) {
   router.push({ path: "/video/playback", query: { camera_id: file.camera_id } });
 }
 
-onBeforeMount(async () => {
+// 摄像机下拉：懒加载 + 缓存
+async function ensureCameraOptions() {
+  if (cameraOptions.value.length) return;
   try {
-    const res = await getCameraList({ page_size: 100 });
-    cameraOptions.value = res.data?.data?.items || [];
+    cameraOptions.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
     const opts = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
     const si: any = (searchConfig.formItems || []).find((i: any) => i.prop === "camera_id");
     if (si) si.options = opts;
@@ -1006,6 +1019,9 @@ onBeforeMount(async () => {
   } catch {
     cameraOptions.value = [];
   }
+}
+
+onBeforeMount(async () => {
   document.addEventListener("mouseup", onDragEnd);
 });
 
