@@ -1,4 +1,5 @@
 import json
+import math
 import os
 
 from sqlalchemy import desc, select
@@ -155,6 +156,30 @@ def build_class_mapping(class_ids: set[int]) -> dict[int, int]:
     return {raw: idx for idx, raw in enumerate(sorted(class_ids))}
 
 
+def rotated_box_to_obb_corners(cx: float, cy: float, w: float, h: float,
+                               angle_rad: float) -> list[float]:
+    """归一化旋转框 → YOLO OBB 8 点（左上→右上→右下→左下）。
+
+    先在框自身坐标系取四角，再绕中心按 angle_rad（弧度）旋转；最后从页面左上
+    （x+y 最小）起按顺时针重排，保证任意角度下顺序都是 左上→右上→右下→左下。
+    """
+    hw, hh = w / 2.0, h / 2.0
+    cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
+    local = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    corners: list[tuple[float, float]] = []
+    for dx, dy in local:
+        corners.append((
+            cx + dx * cos_a - dy * sin_a,
+            cy + dx * sin_a + dy * cos_a,
+        ))
+    start = min(range(len(corners)), key=lambda i: corners[i][0] + corners[i][1])
+    ordered = corners[start:] + corners[:start]
+    out: list[float] = []
+    for x, y in ordered:
+        out.extend([x, y])
+    return out
+
+
 def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] | None = None, img_w: int = 1, img_h: int = 1) -> list[str]:
     """Convert annotations to YOLO label lines based on task_type.
 
@@ -179,11 +204,12 @@ def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] 
         elif ann_type in ("RotatedBox", "rotated_box"):
             cx, cy = ann["cx"], ann["cy"]
             w, h = ann["width"], ann["height"]
-            ang = ann.get("angle", 0)
-            # 画布 angle 为弧度；YOLO OBB 需要度
-            if isinstance(ang, (int, float)) and abs(ang) > 3.0:
-                ang = ang * 180 / 3.14159265
-            lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {float(ang or 0):.6f}")
+            ang = float(ann.get("angle", 0) or 0)
+            if task_type in ("rotated_detection", "obb"):
+                pts = rotated_box_to_obb_corners(cx, cy, w, h, ang)
+                lines.append(f"{cls_id} " + " ".join(f"{v:.6f}" for v in pts))
+            else:
+                lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {math.degrees(ang):.6f}")
         elif ann_type in ("Polygon", "polygon") and task_type in ("segmentation", "seg"):
             # YOLO Seg: cls_id x1 y1 x2 y2 ... (归一化多边形顶点)
             pts = []
