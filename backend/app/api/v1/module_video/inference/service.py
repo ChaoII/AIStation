@@ -8,6 +8,16 @@ from app.config.setting import settings
 log = logging.getLogger(__name__)
 
 
+def pick_alarm_rule(rules: list, algorithm_type: str):
+    """从多条候选规则中选一条：优先 alarm_type 精确匹配，否则第一条；空返回 None。"""
+    if not rules:
+        return None
+    for r in rules:
+        if getattr(r, "alarm_type", None) == algorithm_type:
+            return r
+    return rules[0]
+
+
 class InferenceService:
 
     @classmethod
@@ -57,7 +67,7 @@ class InferenceService:
                 AlarmRuleModel.is_deleted.is_(False),
             )
             result = await session.execute(stmt)
-            rule = result.scalar_one_or_none()
+            rule = pick_alarm_rule(result.scalars().all(), algorithm_type or "AI_DETECTION")
 
         severity = rule.severity if rule else "WARNING"
 

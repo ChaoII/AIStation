@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from app.core.base_schema import BaseSchema, CommonSchema
 from app.core.validator import DateTimeStr
@@ -58,3 +58,11 @@ class AlarmRecordOutSchema(BaseSchema):
     ai_result: dict | None = None
     camera: CommonSchema | None = None
     rule: CommonSchema | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def snapshot_url(self) -> str | None:
+        """快照可访问 URL（按本地文件 / 对象存储归一化）。"""
+        from app.api.v1.module_video.inference.snapshot import resolve_snapshot_url
+
+        return resolve_snapshot_url(self.snapshot_path)
