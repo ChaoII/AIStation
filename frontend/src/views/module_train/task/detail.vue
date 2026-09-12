@@ -864,7 +864,12 @@ function handleViewModel() {
 }
 
 function handleEvaluate() {
-  ElMessage.info("评估功能需要后端支持");
+  const repoId = task.value?.model_repo_id;
+  if (!repoId) {
+    ElMessage.warning("暂无关联模型，请先完成训练");
+    return;
+  }
+  router.push({ path: "/train/eval", query: { model_repo_id: String(repoId), autoCreate: "1" } });
 }
 
 const exportDialogVisible = ref(false);

@@ -333,10 +333,11 @@ const createForm = reactive({
   datasets.value = dsRes.data?.data?.items || [];
 })();
 
-(async () => {
+async function loadModelVersions() {
   const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
   modelVersions.value = r.data?.data?.items || [];
-})();
+}
+loadModelVersions();
 
 function getModelName(modelId: number) {
   const m = modelVersions.value.find((x: any) => x.id === modelId);
@@ -451,7 +452,9 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
 });
 
 function handleOpenCreateDialog() {
-  const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
+  const curModel =
+    modelVersions.value.find((m: any) => m.id === modelRepoId) ||
+    modelVersions.value.find((m: any) => m.repo_id === modelRepoId);
   createForm.modelId = curModel?.id || null;
   createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
   createForm.hyperparams = {
@@ -557,6 +560,13 @@ function stopPoll() {
   }
 }
 
-onMounted(() => startPoll());
+onMounted(async () => {
+  startPoll();
+  if (route.query.autoCreate === "1") {
+    await loadModelVersions();
+    handleOpenCreateDialog();
+    router.replace({ query: {} });
+  }
+});
 onBeforeUnmount(() => stopPoll());
 </script>
