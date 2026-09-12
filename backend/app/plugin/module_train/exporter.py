@@ -158,11 +158,16 @@ def build_class_mapping(class_ids: set[int]) -> dict[int, int]:
 
 
 def rotated_box_to_obb_corners(cx: float, cy: float, w: float, h: float,
-                               angle_rad: float) -> list[float]:
+                               angle_rad: float, reorder: bool = True) -> list[float]:
     """归一化旋转框 → YOLO OBB 8 点（左上→右上→右下→左下）。
 
-    先在框自身坐标系取四角，再绕中心按 angle_rad（弧度）旋转；最后从页面左上
-    （x+y 最小）起按顺时针重排，保证任意角度下顺序都是 左上→右上→右下→左下。
+    先在框自身坐标系取四角，再绕中心按 angle_rad（弧度）旋转。
+    reorder=True（默认）：从页面左上（x+y 最小）起按顺时针重排，保证任意角度下
+    顺序都是 左上→右上→右下→左下（YOLO OBB 约定）。
+    reorder=False：保留原始局部顺序 [TL, TR, BR, BL] 旋转后的结果，保证
+    ``p0->p1`` 恒为宽边（x-anylabeling 导入按首边解析宽高时需要）。
+
+    注意：仅在 (45°,135°) 等区间 min(x+y) 起点会落在高边，reorder 后才改变首边语义。
     """
     hw, hh = w / 2.0, h / 2.0
     cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
@@ -173,8 +178,11 @@ def rotated_box_to_obb_corners(cx: float, cy: float, w: float, h: float,
             cx + dx * cos_a - dy * sin_a,
             cy + dx * sin_a + dy * cos_a,
         ))
-    start = min(range(len(corners)), key=lambda i: corners[i][0] + corners[i][1])
-    ordered = corners[start:] + corners[:start]
+    if reorder:
+        start = min(range(len(corners)), key=lambda i: corners[i][0] + corners[i][1])
+        ordered = corners[start:] + corners[:start]
+    else:
+        ordered = corners
     out: list[float] = []
     for x, y in ordered:
         out.extend([x, y])
@@ -204,9 +212,12 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
             shapes.append({**base, "points": pts, "shape_type": "rectangle"})
         elif t in ("RotatedBox", "rotated_box"):
             # 旋转必须按像素空间计算（x/y 缩放不同），结果本身就是像素坐标
+            # reorder=False：保持 [TL,TR,BR,BL] 原始顺序，使首边恒为宽边，
+            # 与 importer._shape_to_annotation 的解析约定一致（避免往返几何损坏）
             px = rotated_box_to_obb_corners(ann["cx"] * img_w, ann["cy"] * img_h,
                                             ann["width"] * img_w, ann["height"] * img_h,
-                                            float(ann.get("angle", 0) or 0))
+                                            float(ann.get("angle", 0) or 0),
+                                            reorder=False)
             pts = [[px[i], px[i + 1]] for i in range(0, 8, 2)]
             shapes.append({**base, "points": pts, "shape_type": "rotation"})
         elif t in ("Polygon", "polygon"):
