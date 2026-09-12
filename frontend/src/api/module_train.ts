@@ -197,4 +197,20 @@ export const TrainAPI = {
   deleteDeploy(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/deploy/delete`, method: "delete", data: ids });
   },
+  getTrainScheduleList() {
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/schedule/list`, method: "get" });
+  },
+  createTrainSchedule(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/create`, method: "post", data });
+  },
+  updateTrainSchedule(id: number, data: any) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/schedule/update/${id}`,
+      method: "put",
+      data,
+    });
+  },
+  deleteTrainSchedule(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/schedule/delete`, method: "delete", data: ids });
+  },
 };

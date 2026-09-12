@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="训练任务" name="task">
     <PageSearch
       ref="searchRef"
       :search-config="searchConfig"
@@ -192,6 +194,11 @@
         </div>
       </template>
     </PageContent>
+      </el-tab-pane>
+      <el-tab-pane label="定时训练" name="schedule">
+        <SchedulePanel />
+      </el-tab-pane>
+    </el-tabs>
 
     <EnhancedDialog
       v-model="dialogVisible.visible"
@@ -448,6 +455,7 @@ import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
+import SchedulePanel from "@/components/Train/SchedulePanel.vue";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
@@ -460,6 +468,7 @@ interface TablePageQuery {
 const router = useRouter();
 const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const activeTab = ref("task");
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
