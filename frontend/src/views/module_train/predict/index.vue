@@ -298,7 +298,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -316,6 +316,7 @@ interface TablePageQuery {
 }
 
 const router = useRouter();
+const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const uploadRef = ref<any>(null);
 
@@ -345,6 +346,16 @@ onMounted(async () => {
   models.value = mRes.data?.data?.items || [];
   datasets.value = dsRes.data?.data?.items || [];
   refreshList();
+
+  if (route.query.autoCreate === "1") {
+    const modelId = Number(route.query.model_id || 0);
+    if (modelId && models.value.some((m: any) => m.id === modelId)) {
+      createForm.modelId = modelId;
+      onPredictModelChange(modelId);
+      showCreateDialog.value = true;
+    }
+    router.replace({ query: {} });
+  }
 });
 
 function getModelName(modelId: number) {
@@ -407,7 +418,7 @@ async function handleCreate() {
 
     await TrainAPI.createPredict({
       model_id: createForm.modelId,
-      model_repo_id: models.value.find((m: any) => m.id === createForm.modelId)?.id || 0,
+      model_repo_id: models.value.find((m: any) => m.id === createForm.modelId)?.repo_id || 0,
       source_type: createForm.sourceType,
       source_dataset_id: createForm.sourceDatasetId,
       source_images: sourceImages,

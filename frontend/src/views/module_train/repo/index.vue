@@ -169,6 +169,15 @@
                   v-hasPerm="['module_train:model:query']"
                   size="small"
                   link
+                  icon="DataLine"
+                  @click="handlePredict(scope.row)"
+                >
+                  预测
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_train:model:query']"
+                  size="small"
+                  link
                   icon="Download"
                   @click="handleExport(scope.row)"
                 >
@@ -510,6 +519,13 @@ function handleTrain(row: any) {
 
 function handleEval(row: any) {
   router.push(`/train/eval?model_id=${row.id}`);
+}
+
+function handlePredict(row: any) {
+  router.push({
+    path: "/train/predict",
+    query: { model_id: String(row.id), model_repo_id: String(row.repo_id || 0), autoCreate: "1" },
+  });
 }
 
 function handleDeploy(row: any) {

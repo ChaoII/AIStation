@@ -174,6 +174,14 @@
       <div style="margin-top: 12px">
         <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
         <el-button size="default" @click="handleExport">导出模型</el-button>
+        <el-button
+          v-if="evalData?.status === 'success'"
+          size="default"
+          type="primary"
+          @click="handleGoPredict"
+        >
+          去预测
+        </el-button>
       </div>
     </el-card>
 
@@ -400,6 +408,21 @@ async function handleReEval() {
 function handleViewModel() {
   if (evalData.value?.model_repo_id) router.push(`/train/repo?model_id=${evalData.value.model_repo_id}`);
   else ElMessage.warning("暂无关联模型");
+}
+
+function handleGoPredict() {
+  if (!evalData.value?.model_id) {
+    ElMessage.warning("暂无模型版本，无法预测");
+    return;
+  }
+  router.push({
+    path: "/train/predict",
+    query: {
+      model_id: String(evalData.value.model_id),
+      model_repo_id: String(evalData.value.model_repo_id || 0),
+      autoCreate: "1",
+    },
+  });
 }
 
 const exportDialogVisible = ref(false);
