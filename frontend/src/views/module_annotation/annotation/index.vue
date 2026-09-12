@@ -1788,8 +1788,8 @@ async function saveClassesToTask() {
   if (!task.value?.id) return;
   try {
     await AnnotationAPI.updateTask(task.value.id, { classes: taskClasses.value });
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.msg || "类别保存失败，请重试");
+  } catch {
+    /* 拦截器已提示错误 */
   }
 }
 

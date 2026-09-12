@@ -628,7 +628,6 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, computed } from "vue";
-import { ElMessage } from "element-plus";
 import { getCameraList } from "@/api/module_video/camera";
 import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
@@ -1104,7 +1103,6 @@ async function handleSubmitRule() {
 async function handleConfirm(id: number, status: string) {
   try {
     await confirmAlarm(id, status);
-    ElMessage.success(status === "CONFIRMED" ? "已确认告警" : "已标记为误报");
     recordContentRef.value?.fetchPageData();
   } catch {
     //

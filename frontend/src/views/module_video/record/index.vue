@@ -656,9 +656,8 @@ async function togglePlan(row: any, val: boolean) {
 async function executePlan(row: any) {
   row._executing = true;
   try {
-    const res = await executeRecordPlan(row.id);
+    await executeRecordPlan(row.id);
     row.is_running = true;
-    ElMessage.success("计划已触发执行");
   } catch {}
   row._executing = false;
 }
@@ -668,7 +667,6 @@ async function stopPlan(row: any) {
   try {
     await stopRecordPlan(row.id);
     row.is_running = false;
-    ElMessage.success("计划已停止");
   } catch {}
   row._stopping = false;
 }

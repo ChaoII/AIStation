@@ -426,7 +426,7 @@ async function handleModelUpload(uploadFile: any) {
       url: "/video/algorithm/model/upload",
       method: "post",
       data: fd,
-      headers: { "Content-Type": "multipart/form-data" },
+      headers: { "Content-Type": "multipart/form-data", _silent: "true" },
     });
     const mp = res?.data?.data?.model_path;
     if (mp) {

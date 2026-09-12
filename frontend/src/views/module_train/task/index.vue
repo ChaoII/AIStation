@@ -510,10 +510,6 @@ const modelOptions = computed(() => {
   return opts;
 });
 
-function groupLabel(label: string) {
-  return label;
-}
-
 (async () => {
   const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
   datasets.value = dsRes.data?.data?.items || [];

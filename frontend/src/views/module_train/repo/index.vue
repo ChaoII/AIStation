@@ -300,7 +300,7 @@ onMounted(() => {
     if (id) {
       setTimeout(() => {
         const rows = (contentRef.value as any)?.pageData || [];
-        const hit = rows.find((r: any) => r.id === id || r.repo_id === id || r.id === id);
+        const hit = rows.find((r: any) => r.id === id || r.repo_id === id);
         ElMessage.info(hit ? `已定位到模型 ${hit.name || `#${id}`}` : `模型 #${id} 不在当前页`);
       }, 600);
     }

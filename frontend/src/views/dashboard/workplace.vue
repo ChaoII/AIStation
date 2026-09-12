@@ -1100,7 +1100,7 @@ async function fetchWorkplaceStats() {
 }
 
 .workplace-bookmarks-col {
-  @media (width <= 991px) {
+  @media (max-width: 991px) {
     margin-top: 16px;
   }
 }
@@ -1179,7 +1179,7 @@ async function fetchWorkplaceStats() {
   }
 }
 
-@media (width <= 520px) {
+@media (max-width: 520px) {
   .workplace-modules-card .workplace-module-grid {
     grid-template-columns: 1fr;
   }
@@ -1383,7 +1383,7 @@ async function fetchWorkplaceStats() {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-@media (width <= 575px) {
+@media (max-width: 575px) {
   .workplace-ops-row--pair .workplace-snapshot-grid {
     grid-template-columns: 1fr;
   }
@@ -1609,7 +1609,7 @@ async function fetchWorkplaceStats() {
   min-height: calc(5 * var(--hub-row-h) + 4 * var(--hub-gap));
 }
 
-@media (width <= 520px) {
+@media (max-width: 520px) {
   .workplace-quick-list--hub {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     min-height: calc(8 * var(--hub-row-h) + 7 * var(--hub-gap));
