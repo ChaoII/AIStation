@@ -1189,6 +1189,8 @@
         保存
       </el-button>
       <div class="sep" />
+      <span class="collab-online">在线 {{ collab.onlineUsers.value.length }}</span>
+      <div class="sep" />
       <el-button size="small" :disabled="!store.currentImage" @click="openHistory">历史</el-button>
       <div class="sep" />
       <el-button size="small" circle @click="showShortcutHelp">
@@ -1333,6 +1335,7 @@ import {
 import { Auth } from "@/utils/auth";
 import { AnnotationAPI } from "@/api/module_annotation";
 import AnnotationHistoryDrawer from "@/components/Annotation/AnnotationHistoryDrawer.vue";
+import { useCollab } from "@/composables/useCollab";
 import { useAnnotationStore, type ToolName } from "./store";
 import { useUserStoreHook } from "@/store";
 
@@ -1340,6 +1343,20 @@ const route = useRoute();
 const router = useRouter();
 const store = useAnnotationStore();
 const historyRef = ref();
+const collab = useCollab();
+
+watch(
+  () => collab.remoteAnnotationTick.value,
+  () => {
+    if (store.currentImage && !unsaved.value) loadImg(store.currentImage.id);
+  }
+);
+watch(
+  () => collab.lockDeniedTick.value,
+  () => {
+    ElMessage.warning("图片已被其他用户锁定");
+  }
+);
 
 // Refs
 const canvasRef = ref<HTMLElement | null>(null);
@@ -3235,6 +3252,7 @@ async function loadImg(imageId: number) {
     const ar = await AnnotationAPI.getAnnotations(store.taskId, imageId);
     if (myToken !== loadImgToken) return;
     store.annotations = ar.data?.data || [];
+    collab.focus(imageId);
     lastSavedKey = annotKey(store.annotations);
     unsaved.value = false;
     historyStack = [lastSavedKey];
@@ -3643,6 +3661,7 @@ onMounted(async () => {
     currentTool.value = "select";
     store.setTool("select");
     store.taskId = tid;
+    collab.connect(tid);
     if (taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id;
     // Pinia 状态跨任务复用：先清空上一任务的图片与索引，避免打开新任务沿用旧 currentImageIndex
     store.images = [];
@@ -3714,6 +3733,7 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
   }
 }
 onBeforeUnmount(() => {
+  collab.close();
   document.removeEventListener("keydown", onKey);
   window.removeEventListener("mouseup", onWindowMouseUp);
   window.removeEventListener("mousemove", onMouseMove);
