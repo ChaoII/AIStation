@@ -86,8 +86,9 @@ async def resolve_deploy_spec(deploy, model_rec) -> tuple[str, str]:
     口径一致：model_id 为模型版本 id，与训练任务的 model_repo_id 对应。
     """
     hp = deploy.hyperparams or {}
-    mode = str(hp.get("mode", "")).lower()
-    size = str(hp.get("model_size", ""))
+    # 归一化后再判定：形如 "Small" 的非法值不能靠 or 兜底（其非空会跳过回查）
+    mode = str(hp.get("mode", "") or "").lower()
+    size = str(hp.get("model_size", "") or "").lower()
     if mode not in ("det", "rec") or size not in ("tiny", "small", "medium"):
         from sqlalchemy import desc, select
 
@@ -99,8 +100,8 @@ async def resolve_deploy_spec(deploy, model_rec) -> tuple[str, str]:
                 .order_by(desc(TrainTask.id)).limit(1)
             )).scalar_one_or_none()
         thp = (task.hyperparams or {}) if task else {}
-        mode = mode or str(thp.get("mode", "det")).lower()
-        size = size or str(thp.get("model_size", "tiny"))
+        mode = mode if mode in ("det", "rec") else str(thp.get("mode", "det")).lower()
+        size = size if size in ("tiny", "small", "medium") else str(thp.get("model_size", "tiny")).lower()
     return (
         mode if mode in ("det", "rec") else "det",
         size if size in ("tiny", "small", "medium") else "tiny",
@@ -307,7 +308,8 @@ def _crop_box(img, box):
     x1, y1 = max(0, x), max(0, y)
     x2, y2 = min(iw, x + w), min(ih, y + h)
     if x2 <= x1 or y2 <= y1:
-        return img
+        # 越界/空裁剪：返回 None 让调用方跳过该框，绝不能回退整图识别
+        return None
     return img[y1:y2, x1:x2]
 
 
@@ -333,8 +335,12 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
     detections = []
     boxes = _det_boxes(img)
     for box in boxes:
-        crop = _crop_box(img, box)
-        text, conf = _rec_text(crop)
+        text, conf = "", 0.0
+        if rec_model is not None:
+            crop = _crop_box(img, box)
+            if crop is None:
+                continue
+            text, conf = _rec_text(crop)
         detections.append({
             "text": text, "confidence": float(conf),
             "box": box.astype(float).tolist(),
