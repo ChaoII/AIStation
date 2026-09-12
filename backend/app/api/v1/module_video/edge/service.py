@@ -92,6 +92,7 @@ class EdgeService:
     async def heartbeat(cls, body: dict) -> dict:
         """按 `code` upsert 设备心跳：更新能力/指标/在线状态/最后心跳时间。"""
         from sqlalchemy import select
+        from sqlalchemy.exc import IntegrityError
 
         from app.core.database import async_db_session
 
@@ -104,6 +105,16 @@ class EdgeService:
         metrics = body.get("metrics")
         control_url = body.get("control_url")
 
+        def _apply(existing: EdgeDeviceModel) -> None:
+            # 将本次心跳写入已存在的设备行
+            if capabilities is not None:
+                existing.capabilities = capabilities
+            existing.metrics = metrics or {}
+            existing.status = "online"
+            existing.last_heartbeat = now
+            if control_url:
+                existing.control_url = control_url
+
         async with async_db_session.begin() as session:
             existing = (
                 await session.execute(
@@ -112,13 +123,7 @@ class EdgeService:
             ).scalars().first()
 
             if existing:
-                if capabilities is not None:
-                    existing.capabilities = capabilities
-                existing.metrics = metrics or {}
-                existing.status = "online"
-                existing.last_heartbeat = now
-                if control_url:
-                    existing.control_url = control_url
+                _apply(existing)
                 device_id = existing.id
             else:
                 obj = EdgeDeviceModel(
@@ -131,8 +136,22 @@ class EdgeService:
                     last_heartbeat=now,
                     description=body.get("description"),
                 )
-                session.add(obj)
-                await session.flush()
-                device_id = obj.id
+                try:
+                    # 保存点隔离：并发首次心跳的唯一键冲突只回滚本次插入
+                    async with session.begin_nested():
+                        session.add(obj)
+                        await session.flush()
+                    device_id = obj.id
+                except IntegrityError:
+                    # 已被并发会话抢先插入，回查后按更新处理
+                    existing = (
+                        await session.execute(
+                            select(EdgeDeviceModel).where(EdgeDeviceModel.code == code)
+                        )
+                    ).scalars().first()
+                    if not existing:
+                        raise
+                    _apply(existing)
+                    device_id = existing.id
 
         return {"id": device_id, "code": code, "status": "online"}

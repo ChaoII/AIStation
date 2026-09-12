@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, Depends, Path
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
+from app.common.request import PaginationService
 from app.common.response import SuccessResponse
 from app.config.setting import settings
 from app.core.base_params import PaginationQueryParam
@@ -23,7 +24,8 @@ async def get_edge_list_controller(
     auth: AuthSchema = Depends(AuthPermission(["module_video:edge:query"])),
 ) -> JSONResponse:
     result_list = await EdgeService.get_edge_list_service(search=search, auth=auth, order_by=page.order_by)
-    return SuccessResponse(data=result_list, msg="查询成功")
+    result = await PaginationService.paginate(data_list=result_list, page_no=page.page_no, page_size=page.page_size)
+    return SuccessResponse(data=result, msg="查询成功")
 
 
 @EdgeRouter.get("/detail/{id}", summary="查询边缘设备详情")

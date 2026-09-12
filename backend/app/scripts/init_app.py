@@ -65,17 +65,18 @@ async def _ensure_missing_columns() -> None:
         log.warning(f"annotation_task migration warning: {e}")
 
     # 边缘设备表兜底（旧库无 Alembic 迁移时直接建表，做法同 train_predicts）
+    # DDL 与 EdgeDeviceModel 对齐：uuid NOT NULL UNIQUE，审计/状态字段 NOT NULL 并建立索引
     try:
         async with async_engine.begin() as conn:
             await conn.execute(sa_text("""
                 CREATE TABLE IF NOT EXISTS video_edge_devices (
                     id SERIAL PRIMARY KEY,
-                    uuid VARCHAR(64),
-                    status VARCHAR(16) DEFAULT 'offline',
+                    uuid VARCHAR(64) NOT NULL UNIQUE,
+                    status VARCHAR(16) NOT NULL DEFAULT 'offline',
                     description TEXT,
-                    created_time TIMESTAMP DEFAULT NOW(),
-                    updated_time TIMESTAMP,
-                    is_deleted BOOLEAN DEFAULT FALSE,
+                    created_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
                     deleted_time TIMESTAMP,
                     created_id INTEGER,
                     updated_id INTEGER,
@@ -89,6 +90,10 @@ async def _ensure_missing_columns() -> None:
                     last_heartbeat TIMESTAMP
                 )
             """))
+            for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time"):
+                await conn.execute(
+                    sa_text(f"CREATE INDEX IF NOT EXISTS ix_video_edge_devices_{col} ON video_edge_devices ({col})")
+                )
     except Exception as e:
         log.warning(f"edge device migration warning: {e}")
 
@@ -607,6 +612,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         from app.api.v1.module_video.inference.registry import inference_backend_available
         if not inference_backend_available():
             log.warning("⚠️  智能分析推理库 modeldeploy(FastDeploy) 不可用，视频布控推理将无法启动")
+
+        # 云边模式下心跳写入端无凭证，攻击者可伪造设备上报，启动时显式告警
+        if settings.VIDEO_ANALYSIS_MODE == "cloud_edge" and not settings.EDGE_CONTROL_TOKEN:
+            log.warning("⚠️ 边缘心跳未配置 EDGE_CONTROL_TOKEN，存在被伪造风险")
 
         from app.api.v1.module_video.inference.scheduler import start_inference_scheduler
         asyncio.create_task(start_inference_scheduler())

@@ -25,10 +25,10 @@ class EdgeDeviceUpdateSchema(EdgeDeviceCreateSchema):
 
 
 class EdgeDeviceOutSchema(BaseSchema):
+    # 出参脱敏：secret 属控制面鉴权密钥，仅保留在 Create/Update 入参中，禁止回显
     name: str
     code: str
     control_url: str | None = None
-    secret: str | None = None
     capabilities: dict | None = None
     metrics: dict | None = None
     status: str = "offline"
