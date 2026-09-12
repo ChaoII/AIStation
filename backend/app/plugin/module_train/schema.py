@@ -47,6 +47,7 @@ class TrainTaskOutSchema(BaseModel):
     name: str
     framework: str
     dataset_id: int
+    dataset_name: str | None = None
     annotation_task_id: int | None
     model_repo_id: int | None
     docker_image: str
@@ -73,6 +74,7 @@ class TrainEvalOutSchema(BaseModel):
     model_repo_id: int
     model_id: int | None
     eval_dataset_id: int
+    eval_dataset_name: str | None = None
     framework: str
     hyperparams: dict | None
     metrics: dict | None

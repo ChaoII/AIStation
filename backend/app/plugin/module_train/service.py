@@ -82,13 +82,34 @@ def _model_to_dict(row) -> dict:
     return cols
 
 
-def _enrich_task(row) -> dict:
+def _enrich_task(row, dataset_names: dict[int, str] | None = None) -> dict:
     d = _model_to_dict(row)
     if d.get("status") == "running":
         live = _calc_progress_from_log(d.get("id", 0))
         if live is not None:
             d["progress"] = live
+    if dataset_names:
+        ds_id = d.get("dataset_id")
+        if ds_id in dataset_names:
+            d["dataset_name"] = dataset_names[ds_id]
     return d
+
+
+async def _dataset_name_map(db, ids) -> dict[int, str]:
+    """批量查询标注数据集名称；忽略软删除。"""
+    ds_ids = {int(i) for i in ids if i}
+    if not ds_ids:
+        return {}
+    from app.api.v1.module_annotation.dataset.model import DatasetModel
+
+    rows = (
+        await db.execute(
+            select(DatasetModel.id, DatasetModel.name).where(
+                DatasetModel.id.in_(ds_ids), DatasetModel.is_deleted.is_(False)
+            )
+        )
+    ).all()
+    return {int(r[0]): r[1] for r in rows}
 
 
 def sign_predict_results(predict: dict) -> dict:
@@ -335,13 +356,17 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainTask.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [_enrich_task(r) for r in rows], total
+            name_map = await _dataset_name_map(db, [r.dataset_id for r in rows])
+            return [_enrich_task(r, name_map) for r in rows], total
 
     @classmethod
     async def get_task(cls, task_id: int) -> dict | None:
         async with async_db_session() as db:
             t = await db.get(TrainTask, task_id)
-            return _enrich_task(t) if t else None
+            if not t:
+                return None
+            name_map = await _dataset_name_map(db, [t.dataset_id])
+            return _enrich_task(t, name_map)
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
@@ -450,7 +475,14 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainEval.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [_model_to_dict(r) for r in rows], total
+            name_map = await _dataset_name_map(db, [r.eval_dataset_id for r in rows])
+            items = []
+            for r in rows:
+                d = _model_to_dict(r)
+                if r.eval_dataset_id in name_map:
+                    d["eval_dataset_name"] = name_map[r.eval_dataset_id]
+                items.append(d)
+            return items, total
 
     @classmethod
     async def delete_evals(cls, ids: list[int]) -> None:
@@ -470,6 +502,9 @@ class TrainService:
             if not e:
                 return None
             data = _model_to_dict(e)
+            name_map = await _dataset_name_map(db, [e.eval_dataset_id])
+            if e.eval_dataset_id in name_map:
+                data["eval_dataset_name"] = name_map[e.eval_dataset_id]
 
             log_path = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id), "eval.log")
             if os.path.exists(log_path):

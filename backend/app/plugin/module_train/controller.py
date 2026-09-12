@@ -297,6 +297,7 @@ async def create_predict(data: TrainPredictCreateSchema, auth: AuthSchema = Depe
 @router.get("/predict/list", summary="预测任务列表")
 async def list_predicts(
     model_repo_id: int | None = Query(None),
+    name: str | None = Query(None),
     framework: str | None = Query(None),
     status: str | None = Query(None),
     page_no: int = Query(1, ge=1),
@@ -305,6 +306,7 @@ async def list_predicts(
 ):
     data, total = await TrainService.list_predicts({
         "model_repo_id": model_repo_id,
+        "name": name,
         "framework": framework,
         "status": status,
         "page_no": page_no,
