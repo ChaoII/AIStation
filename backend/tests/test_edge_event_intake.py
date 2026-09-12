@@ -3,9 +3,11 @@ import asyncio
 
 from app.api.v1.module_video.edge.consumer import (
     EdgeEventConsumer,
+    build_mqtt_tls_context,
     dedup,
     normalize_edge_event,
     parse_mqtt_broker,
+    uses_mqtt_tls,
 )
 
 
@@ -164,3 +166,64 @@ def test_callback_keeps_snapshot_reference_without_base64(monkeypatch):
     result = asyncio.run(InferenceService.process_detection_callback(event))
     assert result["alarm_created"] is True
     assert captured["record"].snapshot_path == "edge-01/cam7/2026-09-12/x.jpg"
+
+
+def _topic_matches(topic: str, pattern: str) -> bool:
+    """按 MQTT 语义判断主题是否匹配通配模式（+ 匹配一级）。"""
+    topic_levels = topic.split("/")
+    pattern_levels = pattern.split("/")
+    if len(topic_levels) != len(pattern_levels):
+        return False
+    return all(
+        p == "+" or p == t for t, p in zip(topic_levels, pattern_levels, strict=True)
+    )
+
+
+def test_build_events_topic_matches_subscribe(monkeypatch):
+    """Agent 发布主题必须命中云端消费者的订阅通配（Fix 1 回归）。"""
+    from app.api.v1.module_video.edge.orchestrator import build_events
+    from app.config import setting
+
+    monkeypatch.setattr(setting.settings, "VIDEO_ANALYSIS_MODE", "cloud_edge")
+    events = build_events(camera_id=7, edge_code="edge-01")
+    mqtt = events["mqtt"]
+
+    expected = f"{setting.settings.MQTT_TOPIC_PREFIX.rstrip('/')}/edge-01/camera/7/detect"
+    assert mqtt["topic"] == expected
+    assert _topic_matches(mqtt["topic"], setting.settings.MQTT_SUBSCRIBE_TOPIC)
+    assert "+" not in mqtt["topic"]
+
+
+def test_parse_mqtt_tls_schemes():
+    assert uses_mqtt_tls("mqtts://secure.example.com:8883") is True
+    assert uses_mqtt_tls("ssl://secure.example.com") is True
+    assert uses_mqtt_tls("mqtt://plain:1883") is False
+    assert uses_mqtt_tls("plain.host") is False
+    assert uses_mqtt_tls("") is False
+
+
+def test_build_mqtt_tls_context():
+    import ssl
+
+    assert build_mqtt_tls_context("mqtt://plain:1883") is None
+    ctx = build_mqtt_tls_context("mqtts://secure.example.com")
+    assert isinstance(ctx, ssl.SSLContext)
+    assert ctx.check_hostname is True
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+
+
+def test_consumer_start_stop_cycle_resets_flag(monkeypatch):
+    """stop 后再次 start 必须清除 _stopped，保证可重启（Fix 3）。"""
+    from app.config import setting
+
+    monkeypatch.setattr(setting.settings, "MQTT_ENABLED", False)
+
+    async def _scenario():
+        consumer = EdgeEventConsumer()
+        consumer._stopped = True
+        await consumer.start()
+        assert consumer._stopped is False
+        await consumer.stop()
+        assert consumer._stopped is True
+
+    asyncio.run(_scenario())

@@ -154,7 +154,7 @@ def test_start_task_dispatches_and_marks_running(monkeypatch):
     monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_count_running", staticmethod(_count))
     monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_update_status", staticmethod(_update))
     monkeypatch.setattr(orchestrator, "EdgeAgentClient", _FakeClient)
-    monkeypatch.setattr(orchestrator, "build_events", lambda camera_id: {"transport": "http"})
+    monkeypatch.setattr(orchestrator, "build_events", lambda camera_id, edge_code: {"transport": "http"})
 
     result = asyncio.run(orchestrator.EdgeOrchestrator.start_task(123))
     assert result["delegated"] is True

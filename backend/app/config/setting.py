@@ -257,11 +257,14 @@ class Settings(BaseSettings):
     # *************** 边缘事件 MQTT 接入配置 ************ #
     # ================================================= #
     MQTT_ENABLED: bool = False  # 是否启用 MQTT 事件消费者（未启用/无 broker 时降级不启动）
-    MQTT_BROKER_URL: str = ""  # Broker 地址，如 mqtt://127.0.0.1:1883
+    MQTT_BROKER_URL: str = ""  # Broker 地址，如 mqtt://127.0.0.1:1883 / mqtts://host:8883
     MQTT_USERNAME: str = ""  # Broker 用户名（可空）
     MQTT_PASSWORD: str = ""  # Broker 密码（可空）
-    # 订阅通配前缀：最终主题为 "{MQTT_TOPIC_PREFIX}/+/camera/+/detect"
-    MQTT_TOPIC_PREFIX: str = "aistation/+/edge"
+    # Agent 发布基址（spec §7 `aistation/{tenant}/edge`，不含通配符 +）；
+    # Agent 最终发布主题为 "{MQTT_TOPIC_PREFIX}/{edge_code}/camera/{camera_id}/detect"
+    MQTT_TOPIC_PREFIX: str = "aistation/default/edge"
+    # 云端消费者订阅通配主题（spec §7），默认匹配上述发布主题
+    MQTT_SUBSCRIBE_TOPIC: str = "aistation/+/edge/+/camera/+/detect"
     MQTT_CLIENT_ID: str = "aistation-events"  # 消费者 client_id
     MQTT_QOS: int = 1  # 订阅 QoS
 

@@ -8,6 +8,7 @@
 """
 import asyncio
 import json
+import ssl
 import time
 from collections import OrderedDict
 from urllib.parse import urlparse
@@ -56,6 +57,28 @@ def parse_mqtt_broker(url: str) -> tuple[str, int]:
     host = parsed.hostname or ""
     default_port = 8883 if parsed.scheme in ("mqtts", "ssl", "tls") else 1883
     return host, int(parsed.port or default_port)
+
+
+def uses_mqtt_tls(url: str) -> bool:
+    """判断 Broker 地址是否使用 TLS（`mqtts://` / `ssl://` / `tls://`）。
+
+    纯 `host[:port]` 或 `mqtt://` 视为明文，返回 False。
+    """
+    raw = (url or "").strip()
+    if not raw or "://" not in raw:
+        return False
+    return urlparse(raw).scheme in ("mqtts", "ssl", "tls")
+
+
+def build_mqtt_tls_context(url: str) -> ssl.SSLContext | None:
+    """为 TLS Broker 构造默认校验的 SSL 上下文；明文地址返回 None。
+
+    使用 `ssl.create_default_context()`（校验服务端证书与主机名），
+    对应 aiomqtt 2.x 的 `Client(tls_context=...)` 参数。
+    """
+    if not uses_mqtt_tls(url):
+        return None
+    return ssl.create_default_context()
 
 
 class _Dedup:
@@ -110,6 +133,7 @@ class EdgeEventConsumer:
 
     async def start(self) -> asyncio.Task:
         """以后台任务方式启动消费者，返回该任务句柄。"""
+        self._stopped = False
         self._task = asyncio.create_task(self.run())
         return self._task
 
@@ -138,8 +162,8 @@ class EdgeEventConsumer:
             return None
         return aiomqtt
 
-    def _build_client(self, aiomqtt, host: str, port: int):
-        """构造 aiomqtt.Client（仅在有用户名/密码时携带凭证）。"""
+    def _build_client(self, aiomqtt, host: str, port: int, tls_context=None):
+        """构造 aiomqtt.Client（仅在有用户名/密码时携带凭证，TLS 时传入上下文）。"""
         kwargs: dict = {
             "hostname": host,
             "port": port,
@@ -149,12 +173,14 @@ class EdgeEventConsumer:
             kwargs["username"] = settings.MQTT_USERNAME
         if settings.MQTT_PASSWORD:
             kwargs["password"] = settings.MQTT_PASSWORD
+        if tls_context is not None:
+            kwargs["tls_context"] = tls_context
         return aiomqtt.Client(**kwargs)
 
     async def run(self) -> None:
         """连接 Broker 并持续消费；禁用/无依赖/无地址时直接返回。"""
         if not settings.MQTT_ENABLED:
-            logger.warning("MQTT_ENABLED=false，边缘事件消费者未启动")
+            logger.debug("MQTT_ENABLED=false，边缘事件消费者未启动")
             return
 
         aiomqtt = self._import_aiomqtt()
@@ -166,14 +192,16 @@ class EdgeEventConsumer:
             logger.warning("MQTT_BROKER_URL 未配置，边缘事件消费者未启动")
             return
 
-        topic = f"{settings.MQTT_TOPIC_PREFIX.rstrip('/')}/+/camera/+/detect"
+        tls_context = build_mqtt_tls_context(settings.MQTT_BROKER_URL)
+        topic = settings.MQTT_SUBSCRIBE_TOPIC
         backoff = 1
         while not self._stopped:
             try:
-                async with self._build_client(aiomqtt, host, port) as client:
+                async with self._build_client(aiomqtt, host, port, tls_context) as client:
                     await client.subscribe(topic, qos=int(settings.MQTT_QOS))
                     backoff = 1
-                    logger.info(f"✅ 边缘事件消费者已订阅 {topic} ({host}:{port})")
+                    scheme = "mqtts" if tls_context is not None else "mqtt"
+                    logger.info(f"✅ 边缘事件消费者已订阅 {topic} ({scheme}://{host}:{port})")
                     async for message in client.messages:
                         await self._handle_message(message)
             except asyncio.CancelledError:

@@ -576,7 +576,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     from app.api.v1.module_system.params.service import ParamsService
     from app.core.ap_scheduler import SchedulerUtil
 
-    edge_event_task = None
+    edge_event_consumer = None
 
     try:
         await InitializeData().init_db()
@@ -613,7 +613,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.info("✅ 录制定时器已启动")
 
         from app.api.v1.module_video.edge.consumer import EdgeEventConsumer
-        edge_event_task = asyncio.create_task(EdgeEventConsumer().run())
+        edge_event_consumer = EdgeEventConsumer()
+        await edge_event_consumer.start()
         log.info("✅ 边缘事件消费者已启动")
 
         from app.api.v1.module_video.inference.registry import inference_backend_available
@@ -734,8 +735,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await stop_camera_health_checker()
         log.info("✅ 摄像头健康检查器已关闭")
 
-        if edge_event_task:
-            edge_event_task.cancel()
+        if edge_event_consumer:
+            await edge_event_consumer.stop()
             log.info("✅ 边缘事件消费者已关闭")
 
         await FastAPILimiter.close()

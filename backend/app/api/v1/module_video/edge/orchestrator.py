@@ -113,18 +113,22 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
     }
 
 
-def build_events(camera_id: int) -> dict:
+def build_events(camera_id: int, edge_code: str) -> dict:
     """按视频分析模式构造事件通道参数（云端 HTTP 回调 / 边缘 MQTT）。
 
     MQTT 配置项由 Task 3 引入，此处以 getattr 兜底，未配置时退化为 HTTP。
+    Agent 发布主题遵循 spec §7：`{prefix}/{edge_code}/camera/{camera_id}/detect`。
     """
     buffer = {"dir": "./events_buffer", "max_mb": 512}
     if settings.VIDEO_ANALYSIS_MODE == "cloud_edge":
+        prefix = getattr(settings, "MQTT_TOPIC_PREFIX", "aistation/default/edge").rstrip("/")
+        base = f"{prefix}/{edge_code}".rstrip("/")
         return {
             "transport": "mqtt",
             "mqtt": {
                 "broker": getattr(settings, "MQTT_BROKER_URL", ""),
-                "topic_prefix": f"{getattr(settings, 'MQTT_TOPIC_PREFIX', 'aistation').rstrip('/')}/camera/{camera_id}",
+                "topic_prefix": base,
+                "topic": f"{base}/camera/{camera_id}/detect",
                 "qos": int(getattr(settings, "MQTT_QOS", 1)),
                 "client_id": getattr(settings, "MQTT_CLIENT_ID", f"aistation-agent-{camera_id}"),
             },
@@ -244,7 +248,7 @@ class EdgeOrchestrator:
                 await cls._update_status(task_id, "ERROR", reason)
                 raise CustomException(msg=f"边缘设备能力不足: {reason}", code=400, status_code=400)
 
-        config = build_agent_task_config(task, camera, algorithm, events=build_events(task.camera_id))
+        config = build_agent_task_config(task, camera, algorithm, events=build_events(task.camera_id, device.code if device is not None else "local"))
         secret = device.secret if device is not None else settings.EDGE_CONTROL_TOKEN
         client = EdgeAgentClient(control_url, secret)
 
