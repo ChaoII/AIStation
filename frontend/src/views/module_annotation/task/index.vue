@@ -446,35 +446,61 @@ function makeInitialFormData() {
   };
 }
 
-// 后端 classes 字段存在多种历史存储形态（数组 / {classes:[...]} / id 键字典），
+// 后端 classes 字段存在多种历史存储形态（数组 / {classes:[...]} / id 或 name 键字典），
 // 编辑时必须归一化为 TaskClass[]，否则保存会清空既有类别定义。
 function normalizeClasses(raw: unknown): TaskClass[] {
+  const hasContent =
+    (Array.isArray(raw) && raw.length > 0) ||
+    (!!raw && typeof raw === "object" && Object.keys(raw as Record<string, unknown>).length > 0);
+
+  const result: TaskClass[] = [];
+  const pushClass = (id: number, name: string, color?: unknown) => {
+    result.push({
+      id,
+      name,
+      color: (typeof color === "string" && color) || CLASS_COLORS[id % CLASS_COLORS.length],
+    });
+  };
+
   if (Array.isArray(raw)) {
-    return raw as TaskClass[];
-  }
-  if (raw && typeof raw === "object") {
+    raw.forEach((entry, index) => {
+      if (typeof entry === "string") {
+        // 裸字符串条目 → 归一化为带调色板的类别对象
+        pushClass(index, entry);
+      } else if (entry && typeof entry === "object") {
+        const def = entry as Record<string, unknown>;
+        const id = typeof def.id === "number" ? def.id : index;
+        pushClass(id, String(def.name ?? `class_${id}`), def.color);
+      }
+    });
+  } else if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
     if (Array.isArray(obj.classes)) {
-      return obj.classes as TaskClass[];
+      return normalizeClasses(obj.classes);
     }
-    const result: TaskClass[] = [];
+    let autoId = 0;
     for (const [key, value] of Object.entries(obj)) {
-      const id = Number(key);
-      if (Number.isNaN(id)) continue;
+      if (key === "classes") continue;
+      const numericId = Number(key);
+      const isNameKey = Number.isNaN(numericId);
+      const id = isNameKey ? autoId : numericId;
       if (typeof value === "string") {
-        result.push({ id, name: value, color: CLASS_COLORS[id % CLASS_COLORS.length] });
+        // 数字键：值即类别名；字符串键：键即类别名
+        pushClass(id, isNameKey ? key : value);
       } else if (value && typeof value === "object") {
         const def = value as Record<string, unknown>;
-        result.push({
-          id,
-          name: String(def.name ?? `class_${id}`),
-          color: (def.color as string) || CLASS_COLORS[id % CLASS_COLORS.length],
-        });
+        // 数字键：值是类别定义；name 键：键是类别名，值可含 color
+        pushClass(id, String(def.name ?? (isNameKey ? key : `class_${id}`)), def.color);
       }
+      autoId += 1;
     }
-    return result;
   }
-  return [];
+
+  // 非空输入却解析为空 → 返回原始值，避免编辑保存时把已有类别静默清成 []
+  if (result.length === 0 && hasContent) {
+    return raw as unknown as TaskClass[];
+  }
+  return result;
 }
 
 const rules = reactive({

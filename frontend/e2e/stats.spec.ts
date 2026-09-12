@@ -23,11 +23,18 @@ test("统计页指标卡渲染且无请求失败", async ({ page }) => {
   await page.goto("/#/annotation/stats", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator(".annotation-stats-page")).toBeVisible({ timeout: 15_000 });
-  // 4 张指标卡均渲染
-  await expect(page.locator(".annotation-stats-page .stat-card")).toHaveCount(4);
 
-  // 等待统计页请求收敛（该页无轮询，固定短暂等待即可）
-  await page.waitForTimeout(1500);
+  // 等待统计页请求收敛（overview + datasetOptions 均已完成，页面无轮询）
+  await page.waitForLoadState("networkidle");
+
+  // 4 张指标卡均渲染，且每张卡片渲染出数据驱动的数值（非空白）
+  const values = page.locator(".annotation-stats-page .stat-card__value");
+  await expect(values).toHaveCount(4);
+  for (let i = 0; i < 4; i += 1) {
+    await expect(values.nth(i)).toHaveText(/[\d]/);
+  }
+  // 数据集选择器已就绪
+  await expect(page.locator(".annotation-stats-page .el-select")).toBeVisible();
 
   // 不应弹出全局请求失败提示
   await expect(page.locator("text=请求处理失败")).toHaveCount(0);
