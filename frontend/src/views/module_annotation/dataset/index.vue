@@ -153,6 +153,9 @@
                 >
                   导出历史
                 </el-button>
+                <el-button size="small" link type="warning" @click="cleanRef.open(scope.row.id)">
+                  数据清洗
+                </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
                   type="primary"
@@ -315,6 +318,7 @@
     </el-dialog>
 
     <ExportHistoryDrawer ref="exportHistoryRef" />
+    <CleanDrawer ref="cleanRef" />
   </div>
 </template>
 
@@ -329,6 +333,7 @@ import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue";
+import CleanDrawer from "@/components/Annotation/CleanDrawer.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
@@ -611,6 +616,7 @@ async function handleImportSubmit() {
 // ── Export ──
 const exportDialogVisible = ref(false);
 const exportHistoryRef = ref();
+const cleanRef = ref();
 const exportDatasetId = ref<number | null>(null);
 const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");

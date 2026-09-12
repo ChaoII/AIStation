@@ -30,6 +30,24 @@ export const AnnotationAPI = {
       method: "get",
     });
   },
+  cleanCheck(datasetId: number) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/clean/check/${datasetId}`,
+      method: "get",
+    });
+  },
+  cleanDuplicates(datasetId: number) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/clean/duplicates/${datasetId}`,
+      method: "get",
+    });
+  },
+  cleanAnomalies(datasetId: number) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/clean/anomalies/${datasetId}`,
+      method: "get",
+    });
+  },
   uploadImages(id: number, files: FormData) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/dataset/${id}/upload`,
