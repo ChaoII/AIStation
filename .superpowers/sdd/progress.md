@@ -343,3 +343,9 @@ Report: docs/superpowers/reports/2026-09-13-phase6-regression-report.md
 6 全量 E2E: 受 dev 后端 QueuePool 耗尽/10s 超时影响间歇失败（环境负载，非代码回归）；单跑通过
 6 矩阵真机: det/seg/obb/pose/cls 待人工；OCR det/rec 历史已验（SP2）
 PROGRAM Phase 0-5 全部功能与自动化回归完成（含 3C/3D/4/5A/5B）。Phase 6 报告已出，真机矩阵待人工。
+
+=== PERF: 全站下拉选项懒加载 ===
+新增 frontend/src/composables/useOptions.ts（cachedOptions 短TTL缓存+并发去重 / useLazyOptions 懒加载）
+改造页面（进页面请求数）：智能布控3->1、视频告警2->1(lazy tab)、视频联动2->1、视频布局2->1、录像2->1、训练任务4->2、训练详情评估/预测/部署去重、仓库/数据集/标注任务各1、统计2->1；启动 param/info 2->1
+提交: 28d05f9 / useOptions / 4d1c977 / 6a644a4 / 8b75a55 / d722506
+剩余合理的 page_size=100：训练评估/预测的模型名称映射、临时目录、相机分组（均属真实需要）
