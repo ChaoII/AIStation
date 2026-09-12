@@ -152,6 +152,10 @@ httpRequest.interceptors.response.use(
     } else if (data?.code === ResultEnum.EXCEPTION) {
       if (!silent) ElMessage.error(data.msg || "服务异常");
       return Promise.reject(new Error(data.msg || "服务异常"));
+    } else if (hasApiCode && (data as ApiResponse).msg) {
+      // 其他业务码（如 409 图片锁定冲突）：展示后端具体原因，避免被通用兜底吞掉
+      if (!silent) ElMessage.error((data as ApiResponse).msg);
+      return Promise.reject(new Error((data as ApiResponse).msg));
     } else {
       if (!silent) ElMessage.error("请求处理失败，请稍后重试");
       return Promise.reject(new Error("请求处理失败"));

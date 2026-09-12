@@ -1761,6 +1761,9 @@ function addClass() {
   saveClassesToTask();
 }
 function removeClass(id: number) {
+  // 只读模式：禁止通过删除类别改动 store.annotations
+  if (lockedByOther.value) return;
+  const beforeKey = annotKey(store.annotations);
   taskClasses.value = taskClasses.value.filter((c) => c.id !== id);
   // 同时清理单标签(class_id)和多标签(class_ids)引用
   store.annotations.forEach((a: any) => {
@@ -1773,8 +1776,11 @@ function removeClass(id: number) {
   store.annotations = store.annotations.filter(
     (a: any) => a.class_id !== -1 && !(a.type === "Classification" && !a.class_ids?.length)
   );
-  markUnsaved();
-  pushHistory();
+  // 仅当标注实际发生变化时才标记未保存/记录历史，避免无引用类别删除产生冗余版本
+  if (annotKey(store.annotations) !== beforeKey) {
+    markUnsaved();
+    pushHistory();
+  }
   if (selectedClassId.value === id) selectedClassId.value = taskClasses.value[0]?.id ?? 0;
   saveClassesToTask();
 }
@@ -3258,7 +3264,8 @@ async function loadImg(imageId: number) {
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
   const curImage = store.currentImage;
-  if (unsaved.value && curImage) {
+  // 只读模式（他人锁定）不尝试保存，避免 409 丢稿；直接切图
+  if (unsaved.value && curImage && !lockedByOther.value) {
     try {
       await ElMessageBox.confirm("当前图片有未保存的标注，是否保存？", "提示", {
         confirmButtonText: "保存",
@@ -3401,7 +3408,8 @@ function showShortcutHelp() {
   showHelpModal.value = true;
 }
 async function handleBack() {
-  if (unsaved.value && store.currentImage) {
+  // 只读模式不尝试保存（避免 409），直接退出
+  if (unsaved.value && store.currentImage && !lockedByOther.value) {
     try {
       await ElMessageBox.confirm("当前图片有未保存的标注，是否保存后退出？", "提示", {
         confirmButtonText: "保存并退出",
@@ -3623,6 +3631,9 @@ onMounted(async () => {
     store.setTool("select");
     store.taskId = tid;
     if (taskClasses.value.length > 0) selectedClassId.value = taskClasses.value[0].id;
+    // Pinia 状态跨任务复用：先清空上一任务的图片与索引，避免打开新任务沿用旧 currentImageIndex
+    store.images = [];
+    store.currentImageIndex = 0;
     // Load first page of images + load remaining in background
     imagesLoading.value = true;
     const pageSize = 50;
@@ -3636,9 +3647,8 @@ onMounted(async () => {
         const imgs = data.items || [];
         store.images = imgs;
         const total = data.total || 0;
-        if (imgs.length > 0 && store.currentImageIndex >= 0 && store.currentImageIndex < imgs.length) {
-          loadImg(imgs[store.currentImageIndex].id);
-        } else if (imgs.length > 0) {
+        // 始终加载新任务第一页的首张图（不保留上一任务的索引）
+        if (imgs.length > 0) {
           store.currentImageIndex = 0;
           loadImg(imgs[0].id);
         }
@@ -3696,7 +3706,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("mousemove", onMouseMove);
   window.removeEventListener("beforeunload", onBeforeUnload);
   clearLockRenewal();
-  if (unsaved.value && store.currentImage) {
+  // 只读模式（他人锁定）不尝试保存，避免无谓的 409；但仍需释放锁
+  if (unsaved.value && store.currentImage && !lockedByOther.value) {
     AnnotationAPI.saveAnnotations(store.currentImage.id, {
       task_id: store.taskId,
       image_id: store.currentImage.id,
