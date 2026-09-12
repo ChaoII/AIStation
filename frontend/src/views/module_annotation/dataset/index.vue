@@ -17,7 +17,7 @@
             @add="handleOpenDialog('create')"
             @delete="onToolbar('delete')"
           />
-          <el-button type="primary" @click="importDialogVisible = true" style="margin-left:4px">X-AnyLabeling 导入</el-button>
+          <el-button type="primary" @click="openImportDialog" style="margin-left:4px">X-AnyLabeling 导入</el-button>
         </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -605,13 +605,23 @@ async function handleImportSubmit() {
   }
 }
 
-// Load dataset options for import dialog
-(async () => {
+// 数据集选项仅在打开导入弹窗时懒加载，避免每次进入页面都多拉一次列表
+let datasetOptionsLoaded = false;
+async function loadDatasetOptions() {
+  if (datasetOptionsLoaded) return;
   try {
     const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
     datasetOptions.value = r.data?.data?.items || [];
-  } catch {}
-})();
+    datasetOptionsLoaded = true;
+  } catch {
+    /* 提示由请求拦截器统一处理 */
+  }
+}
+
+function openImportDialog() {
+  loadDatasetOptions();
+  importDialogVisible.value = true;
+}
 
 // ── Export ──
 const exportDialogVisible = ref(false);

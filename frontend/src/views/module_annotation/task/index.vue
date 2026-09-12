@@ -254,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeMount, onMounted } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 
@@ -307,7 +307,11 @@ const datasetOptions = ref<any[]>([]);
 const userOptions = ref<any[]>([]);
 const newClassName = ref("");
 
-onBeforeMount(async () => {
+let optionsLoaded = false;
+// 数据集/用户选项仅在打开新建/编辑弹窗时懒加载，避免每次进入页面都多拉两次列表
+async function loadOptions() {
+  if (optionsLoaded) return;
+  optionsLoaded = true;
   try {
     const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
     datasetOptions.value = dsRes.data.data?.items || [];
@@ -320,7 +324,7 @@ onBeforeMount(async () => {
   } catch {
     userOptions.value = [];
   }
-});
+}
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_annotation:task",
@@ -555,6 +559,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  loadOptions();
   if (id && type === "update") {
     dialogVisible.title = "编辑任务";
     const res = await AnnotationAPI.getTaskDetail(id);
