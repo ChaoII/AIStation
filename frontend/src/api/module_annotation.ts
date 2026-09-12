@@ -24,6 +24,12 @@ export const AnnotationAPI = {
   deleteDataset(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/dataset/delete`, method: "delete", data: ids });
   },
+  getExportHistory(datasetId: number) {
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/dataset/export/history/${datasetId}`,
+      method: "get",
+    });
+  },
   uploadImages(id: number, files: FormData) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/dataset/${id}/upload`,

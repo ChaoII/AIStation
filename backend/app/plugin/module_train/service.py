@@ -675,6 +675,38 @@ class TrainService:
             s3_client.upload_fileobj(f, rustfs_key)
 
         download_url = s3_client.presigned_url(rustfs_key)
+
+        # 记录导出历史（失败不阻断导出主流程）
+        try:
+            import hashlib as _hashlib
+
+            from app.api.v1.module_annotation.dataset.export_model import DatasetExportModel
+            from app.core.database import async_db_session as _db_session
+
+            file_size = os.path.getsize(zip_path)
+            md5 = _hashlib.md5()
+            with open(zip_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    md5.update(chunk)
+            async with _db_session.begin() as db:
+                db.add(
+                    DatasetExportModel(
+                        dataset_id=data.dataset_id,
+                        format=data.format,
+                        exported_by=auth.user.id,
+                        download_url=download_url,
+                        file_size=file_size,
+                        checksum=md5.hexdigest(),
+                        extra={
+                            "annotation_task_id": data.annotation_task_id,
+                            "ocr_rec": data.ocr_rec,
+                            "rustfs_key": rustfs_key,
+                        },
+                    )
+                )
+        except Exception as e:
+            log.warning(f"写入导出历史失败: {e}")
+
         shutil.rmtree(os.path.dirname(export_dir), ignore_errors=True)
 
         # Schedule cleanup after presigned URL expires

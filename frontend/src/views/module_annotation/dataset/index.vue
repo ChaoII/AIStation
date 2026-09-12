@@ -146,6 +146,14 @@
                   导出
                 </el-button>
                 <el-button
+                  size="small"
+                  link
+                  type="info"
+                  @click="exportHistoryRef.open(scope.row.id)"
+                >
+                  导出历史
+                </el-button>
+                <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
                   type="primary"
                   size="small"
@@ -305,6 +313,8 @@
         <el-button type="warning" :loading="exporting" @click="handleExportSubmit">{{ exporting ? "导出中..." : "导出并下载" }}</el-button>
       </template>
     </el-dialog>
+
+    <ExportHistoryDrawer ref="exportHistoryRef" />
   </div>
 </template>
 
@@ -318,6 +328,7 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
@@ -599,6 +610,7 @@ async function handleImportSubmit() {
 
 // ── Export ──
 const exportDialogVisible = ref(false);
+const exportHistoryRef = ref();
 const exportDatasetId = ref<number | null>(null);
 const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");
