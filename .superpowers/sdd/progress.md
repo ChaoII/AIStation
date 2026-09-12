@@ -111,3 +111,100 @@ SP2 final review: 5 Important (rec channels, official vocab, deploy rec guard, r
 SP2 (PyTorch OCR) FULLY COMPLETE: 4 plans, 38+ commits, 150 tests. Milestones: det weight MSE 1.68e-11, rec GTC weights strict-load, Hmean/char-acc evals, aistation-ocr image, real Docker e2e.
 Minor(sp2): det eval BGR/RGB mismatch; NRTR greedy decode waste; cv2 arg order (W,H); degenerate-quad robustness
 LIVE INFERENCE FIX: OCR now works with official weights! blank_idx=0 (official), rec [-1,1] norm, _crop_box minAreaRect fix. Reads: 'Hello World 你好世界' conf 0.955, 'AIStation OCR Test' 0.963, '模型训练测试123' 0.985. Commit c8d40f9, 150 tests.
+
+=== PROGRAM: pipeline optimization (2026-09-11) ===
+Branch: feat/pipeline-optimization
+Baseline: 84632c4 (fakeredis test fix; 59 tests pass)
+Plan 0A: docs/superpowers/plans/2026-09-11-pipeline-optimization-phase0a-backend-contract.md
+0A Task 1: complete (commits 84632c4..ad6967a, review clean)
+Minor(0A t1): executor skip/select fix not covered by regression test (only helper tested)
+0A Task 2: complete (commits ad6967a..2655224, review clean)
+0A Task 3: complete (commits 2655224..2d80c8a, review approved; brief deviations verified: status_code=404 + XFF + session fixture + 10 funcs)
+Minor(0A t3): auth_headers session fixture returns shared mutable dict; positive delete test uses nonexistent id
+0A Task 4: complete (commits 2d80c8a..0032baf, review approved)
+Minor(0A t4): duplicate import try/except in registry; worker python may differ from backend; bool test weak
+0A Task 5: complete (commits 0032baf..b961e61, review approved)
+Minor(0A t5): first-run route guard redundant; constant test only checks route-name; scalar_one_or_none dup-row risk pre-existing
+0A Task 6: complete (commits b961e61..5da0e43, review approved after per-statement transaction fix)
+Minor(0A t6): fix behavior untested; missing_columns_for_model interface unimplemented; dup list between migration and schema_check
+0A ALL 6 TASKS COMPLETE
+0A FINAL REVIEW: Ready to merge = With fixes -> 2 Important (exception-probe blast radius, worker-interpreter gate) fixed in adf9e99 -> verified, 79 tests pass
+Plan 0B: docs/superpowers/plans/2026-09-11-pipeline-optimization-phase0b-data-integrity.md
+Plan 0C: docs/superpowers/plans/2026-09-11-pipeline-optimization-phase0c-frontend-harness.md
+0B baseline: 463a74b
+0B Task 1: complete (commits 463a74b..c4b601e, review approved)
+Minor(0B t1): set_update_audit has no production callers yet (update paths still unset); thin integration coverage; other raw-construction sites unaudited
+0B Task 2: complete (commits c4b601e..a7a6a74, review approved after test strengthening)
+NEW BUG found by review: CRUDBase.page/list/tree_list skip is_deleted default filter when search empty (base_crud.py:93/128/178, condition built in __build_conditions:467-469) -> soft-deleted rows leak into unfiltered lists. Added as 0B Task 3.
+0B Task 3: complete (commits 817e384..ecf25bd, review approved)
+Minor(0B t3): unused _FAKE_PNG in test; list/tree_list paths not directly tested
+0B ALL 3 TASKS COMPLETE
+0C Task 1: complete (commits ecf25bd..f446efc, review approved; discovered+declared undeclared runtime dep vue-echarts; pnpm e2e 2 passed)
+Minor(0C t1): baseURL /web path is a no-op (works via Vite redirect); smoke assertions coarse; README missing playwright install step
+0C Task 2: complete (commits f446efc..a72213c, review approved after deploy-silent-failure + toast-test-retarget fixes; pnpm e2e 3 passed)
+0C ALL 2 TASKS COMPLETE
+PHASE 0 (0A+0B+0C) ALL TASKS COMPLETE
+0B/0C FINAL REVIEW: Ready to merge = With fixes -> 4 Important (_silent on network/blob errors, updated_id on update paths, remaining duplicate toast, toast test hardening) fixed in deabe68+c05dd8d -> verification: all resolved, Ready to merge = YES
+VERIFIED: backend pytest 86 passed; pnpm e2e 3 passed; type-check no new errors
+PHASE 0 COMPLETE (0A+0B+0C).
+Plan 1A: docs/superpowers/plans/2026-09-12-phase1a-export-correctness.md
+1A baseline: 70860c7
+1A Task 1: complete (commits 70860c7..f3ffd4b, review approved)
+Minor(1A t1): -1/None class_id asymmetry between collector and formatter; absent class_id default mismatch; names always dict-form; extra_yaml raw interpolation
+1A Task 2: complete (commits f3ffd4b..245a2f6, review approved; brief's rotation snippet corrected via min(x+y) canonicalization, mathematically verified 0..360deg)
+Minor(1A t2): 90deg ordering under-tested; no branch-level OBB test; AxisAlignedBox obb alias unreachable
+1A Task 3: complete (commits 245a2f6..46854fc, review approved; YAML parse independently verified)
+Minor(1A t3): YAML parse verified; ragged keypoint counts rejected upstream; identity flip_idx
+1A Task 4: complete (commits 46854fc..e5ef026, review approved)
+IMPORTANT(1A t4): rotated-box computed in normalized space -> non-square images wrong; fixed for BOTH x-anylabeling and YOLO OBB in e5ef026 (pixel-space rotation) + non-square regression tests
+Minor(1A t4): unrounded rotated floats; width or 0 vs or 1 fallback
+1A Task 5: complete (commits e5ef026..65ab44f, review approved; official ppocrv6_dict NOT found in repo -> fallback charset + warning; dict not wired into training cmd)
+1A ALL 5 TASKS COMPLETE
+1A FINAL REVIEW: With fixes -> 3 Important (xany classification loss, official dict not used, -1/None class_id) fixed in 5e7b69c (vendored official ppocrv6_dict 18708 lines, classification flags, skip invalid ids) -> verification: all resolved, Ready to merge = YES
+VERIFIED: backend pytest 106 passed
+PHASE 1A COMPLETE (5 tasks). Next: 1B (工作台/导入/进度), 1C (统计/元数据).
+Plan 1B: docs/superpowers/plans/2026-09-12-phase1b-workbench-import-progress.md
+1B baseline: befc3d3
+1B Task 1: complete (commits befc3d3..1311b69, review approved; also fixed SQLite jsonb_array_length->json_array_length)
+Minor(1B t1): mysql branch emits jsonb fn; annotated subquery no record-level is_deleted (unreachable)
+1B Task 2: complete (commits 1311b69..b1f6e15, review approved)
+Minor(1B t2): renewal doesn't clear lockedByOther; a few race-only unguarded commit sites; CustomException code=409 not recognized by interceptor (generic msg)
+1B Task 3: complete (commits b1f6e15..12c6349, review approved; pnpm e2e 4 passed with negative control)
+Minor(1B t3): stale currentImageIndex across task nav (may load image N not first); removeClass always marks unsaved; e2e data not cleaned
+1B Task 4: complete (commits 12c6349..3f693ad, review approved after fixes)
+CRITICAL(1B t4): importer rotation computed in normalized space -> non-square wrong; fixed in 3f693ad (pixel-space) + duplicate-basename/cross-extension collision fixes
+1B ALL 4 TASKS COMPLETE
+1B FINAL REVIEW: With fixes -> 1 Critical (rotated-box export/import roundtrip) + 3 Important (stale image index, read-only mutations, removeClass dirty) fixed in dcd59c4+8295fa2 -> verification: all resolved, Ready to merge = YES
+VERIFIED: backend pytest 116 passed; pnpm e2e 4 passed
+PHASE 1B COMPLETE (4 tasks). Remaining Phase 1: 1C (统计页 422/语义 + 任务类定义/备注/批量接线).
+Plan 1C: docs/superpowers/plans/2026-09-12-phase1c-stats-task-metadata.md
+1C baseline: bc8c4d2
+1C Task 1: complete (commits bc8c4d2..146c626, review approved; also db-agnostic func.date; pnpm e2e 5 passed)
+Minor(1C t1): user_contributions vs total_annotations not consistent; dataset soft-delete does NOT cascade to annotation_task (orphan tasks counted); stats e2e guard narrow
+1C Task 2: complete (commits 146c626..5a76f4c, review approved after form-alias + dict-classes fixes; e2e retries added, exit 0)
+1C ALL 2 TASKS COMPLETE
+PHASE 1 (1A+1B+1C) ALL TASKS COMPLETE
+1C FINAL REVIEW: With fixes -> 1 Important (dataset delete doesn't cascade to tasks) + 3 cheap minors fixed in 4dddf8a+32a1945 -> verification: all resolved, Ready to merge = YES
+VERIFIED: backend pytest 118 passed; pnpm e2e green
+PHASE 1 (1A+1B+1C) COMPLETE. Next: Phase 2 (训练+评估).
+Plan 2A: docs/superpowers/plans/2026-09-12-phase2a-train-scheduler-executor.md
+2A baseline: 568a8b1
+2A Task 1: complete (commits 568a8b1..138ca89, review approved)
+Minor(2A t1): finally update out of inner try (can skip remaining schedules/mask success); new_id reset to None; success log removed; schedule model has no base_model_id column
+2A Task 2: complete (commits 138ca89..df87a04, review approved; labels on train/eval/predict containers, stop-by-label, delete-running stops container, start guard)
+IMPORTANT(2A t2, deferred): find_task_containers swallows Exception w/o log (fails open on daemon error); stop() vs _execute registry-population race (pre-existing)
+2A Task 3 (重启重连) + Task 4 (base_model+并发) REMAIN; then 2B/2C/2D.
+2A Task 3: complete (commits df87a04..6bc64a1, review approved after 2 fix rounds)
+  - TrainExecutor full reattach via shared _finalize + artifact collection; PaddleX/eval/predict resolve to terminal FAILED (no restart artifact re-collection - documented follow-up); find_task_containers now logs on Docker error; registry-pop try/finally + cancel-status guard
+VERIFIED: backend pytest 141 passed
+2A Task 4 (base_model_id + GPU concurrency) REMAIN; then 2B/2C/2D.
+2A Task 4: complete (commits 6bc64a1..a9d0b5e, review approved)
+  - base_model_id wired (ultralytics model=/base/<name>; PaddleX pretrained) + global GPU semaphore across TrainExecutor/PaddleX det+rec
+IMPORTANT(2A t4, deferred): reattach bypasses global semaphore (transient >limit after restart); concurrency gate has only source-string test (no behavioral serialization test)
+PHASE 2A COMPLETE (4 tasks). Final 2A whole-branch review still pending. Next: 2B (指标解析与训练详情).
+Plan 2B: docs/superpowers/plans/2026-09-12-phase2b-metrics-detail.md
+2B baseline: de6bcdf
+2B Task 1: complete (commits de6bcdf..65c67d0, review approved after fixes)
+  - unified metrics.py (primary_metric_key/best_metric); PaddleX det keeps hmean (select_paddlex_best fallback); no-artifact export_model skips DB insert; ultralytics no-artifact -> FAILED
+FOLLOWUP(2B t1): PaddleX model-version row metrics not backfilled with fresh best (export_model called before select_paddlex_best)
+2B Task 2 (训练详情前端按框架展示) REMAIN.
