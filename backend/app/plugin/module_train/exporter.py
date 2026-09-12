@@ -25,9 +25,12 @@ async def prepare_eval_data_for_task(dataset_id: int, task_id: int, framework: s
     相比训练导出必须显式传 ``annotation_task_id``，否则任务类型默认 detection，
     分类/分割评估会导出错误格式。
     """
+    # for_training=True 仅用于让 YOLO YAML 的 path 写容器内基础路径 /data；
+    # 切分逻辑仍由 for_eval 控制（全量进 val），二者互不冲突。
     return await _export_core(dataset_id, task_id, framework, output_dir,
                               annotation_task_id=annotation_task_id,
-                              ocr_rec=(ocr_mode == "rec"), for_eval=True)
+                              ocr_rec=(ocr_mode == "rec"), for_eval=True,
+                              for_training=True)
 
 
 async def export_dataset_for_download(

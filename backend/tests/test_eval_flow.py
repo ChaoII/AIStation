@@ -178,6 +178,14 @@ def test_prepare_eval_data_for_task_puts_all_images_in_val(monkeypatch, tmp_path
     assert train_files == []
 
 
+def test_prepare_eval_data_for_task_yaml_path_is_data(monkeypatch, tmp_path):
+    """评估导出的 dataset.yaml 基础路径须为 /data，否则容器内 yolo val 找不到数据。"""
+    out = _run_eval_export(monkeypatch, tmp_path)
+    content = (out / "dataset.yaml").read_text(encoding="utf-8")
+    assert "path: /data" in content
+    assert "path: ." not in content
+
+
 def test_prepare_eval_data_for_task_signature():
     sig = inspect.signature(exporter.prepare_eval_data_for_task)
     assert "annotation_task_id" in sig.parameters
