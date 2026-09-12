@@ -24,14 +24,41 @@ from .docker_utils import (
 from .model import TrainDeploy, TrainFramework, TrainModel
 
 _deploy_running: dict[int, dict] = {}
-# 已请求取消的部署 id：stop_deployment 弹出注册表后，在途 _execute_deployment
+# 已请求取消的部署 id -> 请求时间：stop_deployment 后，在途 _execute_deployment
 # 仍据此判断"取消"，避免容器被停/移除后误把状态写回 failed。
-_deploy_cancelled: set[int] = set()
+# 带时间戳的映射（而非无界集合）便于过期清理，防止重启场景下墓碑长期残留
+# 压制后续新一次启动的状态写入。
+_deploy_cancelled: dict[int, datetime] = {}
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 PADDLEX_IMAGE = "paddlex:latest"
 
 DEPLOY_RECOVERY_INTERVAL = 30
+# 取消墓碑保留时长：超过后自动失效，避免无限增长
+DEPLOY_CANCEL_TTL = 3600
+
+
+def _mark_deploy_cancelled(deploy_id: int) -> None:
+    """记录取消墓碑（带时间戳），并顺带清理过期项。"""
+    now = datetime.now()
+    expired = [
+        k for k, ts in _deploy_cancelled.items()
+        if (now - ts).total_seconds() > DEPLOY_CANCEL_TTL
+    ]
+    for k in expired:
+        _deploy_cancelled.pop(k, None)
+    _deploy_cancelled[deploy_id] = now
+
+
+def _is_deploy_cancelled(deploy_id: int) -> bool:
+    """是否已请求取消；过期墓碑视为失效并清理。"""
+    ts = _deploy_cancelled.get(deploy_id)
+    if ts is None:
+        return False
+    if (datetime.now() - ts).total_seconds() > DEPLOY_CANCEL_TTL:
+        _deploy_cancelled.pop(deploy_id, None)
+        return False
+    return True
 
 
 def deploy_exit_status(cancel: bool, exit_code: int) -> str | None:
@@ -268,6 +295,8 @@ async def start_deployment(deploy_id: int):
                 status="deploying", started_at=datetime.now()
             )
         )
+    # 全新启动前清掉该 id 的历史取消墓碑，避免新一次运行被旧记录压制。
+    _deploy_cancelled.pop(deploy_id, None)
     asyncio.create_task(_execute_deployment(deploy_id))
 
 
@@ -276,26 +305,32 @@ async def stop_deployment(deploy_id: int):
 
     优先内存注册表；后端重启后注册表丢失，则回退到 DB 的 container_id；
     DB 也没有时按 label 查找残留容器。二者皆无则仅落库为 stopped。
+
+    处于 deploying/running 的部署，无论注册表是否存在，都记录取消墓碑，
+    以便在途执行器观察到取消、不再拉起新容器。
     """
     entry = _deploy_running.pop(deploy_id, None)
     if entry:
         entry["cancel"] = True
     container_id = entry.get("container_id") if entry else None
-    if not container_id:
-        async with async_db_session() as db:
-            row = await db.get(TrainDeploy, deploy_id)
+    db_status = None
+    async with async_db_session() as db:
+        row = await db.get(TrainDeploy, deploy_id)
+        db_status = row.status if row else None
+        if not container_id:
             container_id = row.container_id if row else None
+    # 活跃状态一律记录取消（含注册表丢失但 DB 仍在 deploying/running 的场景）
+    if db_status in ("deploying", "running"):
+        _mark_deploy_cancelled(deploy_id)
     if not container_id:
         cids = find_task_containers("deploy", deploy_id)
         container_id = cids[0] if cids else None
     if container_id:
-        if entry is not None:
-            _deploy_cancelled.add(deploy_id)
         await stop_container(container_id)
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                status="stopped", finished_at=datetime.now()
+                status="stopped", finished_at=datetime.now(), container_id=None
             )
         )
 
@@ -404,17 +439,27 @@ async def recover_orphan_deploys() -> None:
     """回收孤儿部署：容器存活 → 重建内存注册表；容器确认丢失 → 标记 failed。
 
     后端重启后 `_deploy_running` 为空，存活容器需要重建注册表，之后
-    stop_deployment 才能直接停掉它；容器确实不存在的在途部署则标 failed。
+    stop_deployment 才能直接停掉它。
+
+    注意：`deploying` 是拉镜像/下载模型等启动中的在途状态，此时 container_id
+    可能尚未落库（NULL/旧值），不能据此判定容器丢失；仅当行确为 `running`
+    且 container_id 非空、容器又确实不存在时，才标记 failed。
     """
     async with async_db_session() as db:
         rows = (await db.execute(
             select(TrainDeploy).where(TrainDeploy.status.in_(("running", "deploying")))
         )).scalars().all()
     for d in rows:
+        # 已被在途执行器接管（30s 周期对账可能与启动竞态），交给执行器自行维护
+        if d.id in _deploy_running:
+            continue
         # _container_exists 仅在确认 NotFound 时返回 False；daemon 不可达返回 True
         # （"无法证明缺失"），此时按存活处理，避免误杀在途部署。
         if await _container_exists(d.container_id):
             _deploy_running[d.id] = {"container_id": d.container_id, "cancel": False}
+            continue
+        # deploying 属于在途启动，跳过；仅确认丢失的 running 行标 failed
+        if d.status != "running" or not d.container_id:
             continue
         async with async_db_session.begin() as db:
             await db.execute(
@@ -549,6 +594,11 @@ async def _execute_deployment(deploy_id: int):
                 labels={"aistation.task_kind": "deploy", "aistation.task_id": str(deploy_id)},
             )
 
+        # 启动/拉镜像/下载模型期间可能已被 stop/delete 取消：不要在取消后拉起新容器
+        if _is_deploy_cancelled(deploy_id):
+            log.info(f"deploy {deploy_id} cancelled before container launch")
+            return
+
         try:
             container = await _launch(host_port)
         except docker.errors.APIError as e:
@@ -562,7 +612,13 @@ async def _execute_deployment(deploy_id: int):
                 )
             container = await _launch(host_port)
         container_id = container.id
+        # 先登记注册表，便于 stop_deployment 能命中并停掉容器
         _deploy_running[deploy_id] = {"container_id": container_id, "cancel": False}
+        # 拉起容器期间被取消：立即清理，不写 running
+        if _is_deploy_cancelled(deploy_id):
+            log.info(f"deploy {deploy_id} cancelled during launch, removing container")
+            await remove_container(container_id)
+            return
 
         async with async_db_session.begin() as db:
             await db.execute(
@@ -577,7 +633,7 @@ async def _execute_deployment(deploy_id: int):
         if probe_error:
             log.error(f"deploy {deploy_id} health probe failed: {probe_error}")
             await remove_container(container_id)
-            cancelled = deploy_id in _deploy_cancelled or bool(
+            cancelled = _is_deploy_cancelled(deploy_id) or bool(
                 _deploy_running.get(deploy_id, {}).get("cancel")
             )
             if not cancelled:
@@ -604,7 +660,7 @@ async def _execute_deployment(deploy_id: int):
         loop = asyncio.get_event_loop()
         exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=300)["StatusCode"])
 
-        cancel = deploy_id in _deploy_cancelled or bool(
+        cancel = _is_deploy_cancelled(deploy_id) or bool(
             _deploy_running.get(deploy_id, {}).get("cancel")
         )
         status = deploy_exit_status(cancel, exit_code)
@@ -623,7 +679,7 @@ async def _execute_deployment(deploy_id: int):
     except Exception as e:
         log.error(f"deploy {deploy_id} failed: {e}")
         # 已请求取消（stop_deployment）时容器被主动移除，wait 可能抛错，不要覆盖为 failed
-        if deploy_id not in _deploy_cancelled:
+        if not _is_deploy_cancelled(deploy_id):
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
@@ -632,6 +688,6 @@ async def _execute_deployment(deploy_id: int):
                 )
     finally:
         _deploy_running.pop(deploy_id, None)
-        _deploy_cancelled.discard(deploy_id)
+        _deploy_cancelled.pop(deploy_id, None)
         if container_id:
             await remove_container(container_id)

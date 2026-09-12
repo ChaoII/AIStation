@@ -732,12 +732,16 @@ class TrainService:
             d = await db.get(TrainDeploy, deploy_id)
             if not d:
                 return None
+            # deploying 期间容器可能正在拉起但尚未落 container_id，此时 stop+start
+            # 会并发拉起第二个容器（双启动）。要求用户等待运行中再操作。
+            if d.status == "deploying":
+                raise ValueError("部署正在启动中，请等待状态变为运行中后再重新生成 API Key")
             new_key = uuid.uuid4().hex
             d.api_key = new_key
             prev_status = d.status
             result = {"api_key": new_key, "id": d.id}
         # 运行中的部署需要重启容器才能让新 key 生效
-        if prev_status in ("deploying", "running"):
+        if prev_status == "running":
             await stop_deployment(deploy_id)
             await start_deployment(deploy_id)
         return result
