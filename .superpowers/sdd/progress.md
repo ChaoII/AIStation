@@ -289,3 +289,21 @@ Plan: docs/superpowers/plans/2026-09-12-phase3d-cloud-edge-frontend.md (commit 9
 3D 提交区间: ab3659a..9911178
 Minor(3D): 快照对象存储 key 与本地相对路径靠 is_file 区分（极小误判）；RoiEditor contain 坐标换算仅 E2E 区块级验证，真机未验；EdgeDeviceSelect 在能力拦截上只做展示不硬阻止；error_log 仅 tooltip 展示
 PHASE 3D COMPLETE（6 tasks）。Remaining: 真机 Agent 端到端（依赖 ModelDeploy Agent 交付）。Next: Phase 4（端到端串联 + UI/UX 统一）。
+
+=== PHASE 4: 端到端串联 + UI/UX 统一 ===
+Spec: docs/superpowers/specs/2026-09-12-phase4-e2e-linking-ui-design.md (commit e16e7d4)
+Plan: docs/superpowers/plans/2026-09-12-phase4-e2e-linking-ui.md (commit 1545124)
+4 baseline: f4b9cab
+4 Task 1: complete (commit ede7a8c) — 训练/评估列表 dataset_name/eval_dataset_name enrich（按页批量查 annotation_dataset）+ predict list 接通 name 搜索; test_train_dataset_name.py 3 passed
+4 Task 2: complete (commit 43087ec) — task/detail handleEvaluate 跳 /train/eval?model_repo_id&autoCreate=1；eval 页 onMounted 自动开窗预填; e2e/train-to-eval.spec.ts
+4 Task 3: complete (commit d0e1462) — repo 加「预测」按钮 + eval/detail「去预测」；predict 修 model_repo_id 用 repo_id；深链自动开窗; e2e/repo-to-predict.spec.ts
+4 Task 4: complete (commit 7f228ba) — dataset 加「去训练」→ /train/task?dataset_id&autoCreate=1；训练页 dataset_id 预填开窗；数据集任务徽标改为直达工作台（旧 ?task_id= 由任务列表重定向兼容）; e2e/dataset-to-train.spec.ts
+4 Task 5: complete (commit 90e6cbe) — base_model_id 控件/编辑回填/defaultHpPaddle 补 trainRatio；训练/评估列表与详情改用名称
+4 Task 6: complete (commit c67b82e) — camera/record/alarm/algorithm/annotation 重复 toast 去除（algorithm 上传改 _silent 保留自定义文案）；repo 冗余条件 + task groupLabel 死代码；非标准 @media 标准化（GithubCorner/LockDialog/workplace）
+4 Task 7: complete (commit d081727) — train eval/predict/deploy 创建弹窗统一为 EnhancedDialog（deploy 的 API Key 弹窗保持原生）
+4 Task 8: complete (commit e6a6aab) — 深链自动开窗鲁棒性：predict 自动开窗仅依赖模型列表，数据集列表后台加载（修复累计请求下 dataset list 挂起导致不开窗）
+  - VERIFIED backend pytest 273 passed; ruff schema/service clean（module_train/controller.py 91 FAST002 为 pre-existing）
+  - frontend: e2e 全量 22 passed；vue-tsc 改动文件 0 错误（项目级 16 条 pre-existing）；eslint 改动文件 clean（annotation/task/record 残留为 pre-existing）
+4 提交区间: f4b9cab..e6a6aab
+Minor(4): 数据集任务徽标直达工作台（偏离原 spec 的"任务列表消费 task_id"，改为列表重定向兼容）；predict 深链自动开窗会清除 query，刷新不再弹；名称 enrich 对软删数据集回退 #id；E2E dismissTour 不用 Escape（避免误关自动弹窗）
+PHASE 4 COMPLETE（8 tasks）。Next: Phase 5（非主链路半成品补全）→ Phase 6（全量回归验收 6 类型 × 2 框架）。
