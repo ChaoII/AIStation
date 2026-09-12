@@ -307,3 +307,20 @@ Plan: docs/superpowers/plans/2026-09-12-phase4-e2e-linking-ui.md (commit 1545124
 4 提交区间: f4b9cab..e6a6aab
 Minor(4): 数据集任务徽标直达工作台（偏离原 spec 的"任务列表消费 task_id"，改为列表重定向兼容）；predict 深链自动开窗会清除 query，刷新不再弹；名称 enrich 对软删数据集回退 #id；E2E dismissTour 不用 Escape（避免误关自动弹窗）
 PHASE 4 COMPLETE（8 tasks）。Next: Phase 5（非主链路半成品补全）→ Phase 6（全量回归验收 6 类型 × 2 框架）。
+
+=== PHASE 5A: 非主链路半成品补全（P1-P6） ===
+Spec: docs/superpowers/specs/2026-09-12-phase5a-halfdone-features-design.md (commit e98971e)
+Plan: docs/superpowers/plans/2026-09-12-phase5a-halfdone-features.md (commit f1ae939)
+5A baseline: 3f73187
+5A Task 1: complete (commit 后) — P1 导出历史：export_dataset 写 annotation_dataset_export + 前端 ExportHistoryDrawer; test_export_history.py(1)
+5A Task 2: complete — P4 部署详情/日志：getDeployDetail/Logs + DeployLogDrawer + deploy 页详情按钮; e2e/deploy-log.spec.ts
+5A Task 3: complete — P2 定时训练：task 页「定时训练」Tab + SchedulePanel（vue3-cron-plus 可视化）+ schedule API; e2e/train-schedule.spec.ts
+5A Task 4: complete — P3 数据清洗：CleanDrawer（健康检查/重复/异常）+ clean API + dataset 页入口; e2e/clean-drawer.spec.ts
+5A Task 5: complete — P5 标注历史/回滚：rollback_annotation（append-only 新版本）+ POST /anno/image/{id}/rollback + AnnotationHistoryDrawer + 工作台历史按钮; test_annotation_rollback.py(1) + e2e/annotation-history.spec.ts
+5A Task 6: complete — P6 仓库/版本 UI：repo 页改为仓库维度 + 版本抽屉；新增 createModelRepo/updateModelRepo/deleteModelRepos + 后端 PUT /model/repos/{id}（镜像名称/描述到最新版本）；修复编辑回归 + list_model_repos N+1 优化; e2e/repo-versions.spec.ts
+  - VERIFIED backend pytest 275 passed；ruff 改动文件无新增（controller 91 FAST002 pre-existing）
+  - frontend: vue-tsc 改动文件 0 错误；各特性 E2E 隔离运行均通过
+  - 全量 E2E 波动（环境）：长时运行的后端出现 QueuePool limit（10+20）耗尽与 10s 客户端超时，导致个别用例（smoke/stats/clean-drawer/train-to-eval）在全量套件中间歇失败；等待连接池回收后单跑通过。非本次代码回归
+5A 提交区间: f1ae939..b51dc54
+Minor(5A): Task5 后端测试用服务层直接构造数据（行为由 E2E 覆盖）；仓库页搜索仍用 `name`；导出历史下载依赖 presigned URL 过期；cron 构建器渲染待人工确认
+PHASE 5A COMPLETE（6 features）。Next: Phase 5B（P7 实时协作）→ Phase 6。
