@@ -487,6 +487,57 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
     log.info(f"exported {downloaded} images to x-anylabeling format in {output_dir}")
 
 
+def paddle_ocr_det_entries(anns: list, img_w: int, img_h: int,
+                           text_by_ann: dict | None = None) -> list[dict]:
+    """把矩形/多边形/OCR 标注统一成 PaddleOCR det 条目（像素 4 点）。
+
+    AxisAlignedBox（支持 x1/y1/x2/y2 或中心式 x/y/width/height）、Polygon、Ocr
+    统一转成 PaddleX 的 ``{"transcription", "points"}``；points 为像素坐标四角点，
+    顺序为 左上→右上→右下→左下。text_by_ann 可在标注自身无 text 时按标注 id 补文本。
+    """
+    entries: list[dict] = []
+    text_by_ann = text_by_ann or {}
+    for ann in anns:
+        t = ann.get("type", "")
+        text = ann.get("text", "") or ""
+        if not text and ann.get("id") is not None:
+            text = text_by_ann.get(ann["id"], "") or ""
+        if t in ("AxisAlignedBox", "box"):
+            if "x1" in ann:
+                x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
+            else:
+                xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
+                x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
+            points = [[x1 * img_w, y1 * img_h], [x2 * img_w, y1 * img_h],
+                      [x2 * img_w, y2 * img_h], [x1 * img_w, y2 * img_h]]
+        elif t in ("Polygon", "polygon", "Ocr", "ocr"):
+            pts = ann.get("points", [])
+            if len(pts) < 4:
+                continue
+            points = [[(p["x"] if isinstance(p, dict) else p[0]) * img_w,
+                       (p["y"] if isinstance(p, dict) else p[1]) * img_h] for p in pts[:4]]
+        else:
+            continue
+        entries.append({"transcription": text, "points": points})
+    return entries
+
+
+def _find_official_ocr_dict() -> str | None:
+    """在仓库中查找官方 PP-OCRv6 词表 ppocrv6_dict.txt，找不到返回 None。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    preferred = os.path.join(here, "assets", "ppocrv6_dict.txt")
+    if os.path.isfile(preferred):
+        return preferred
+    # backend/ 根：module_train → plugin → app → backend
+    backend_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+    skip = {".venv", "node_modules", "__pycache__", ".git", ".ruff_cache", ".pytest_cache", "data"}
+    for root, dirs, files in os.walk(backend_root):
+        dirs[:] = [d for d in dirs if d not in skip]
+        if "ppocrv6_dict.txt" in files:
+            return os.path.join(root, "ppocrv6_dict.txt")
+    return None
+
+
 def _crop_text_region(img_path: str, quad: list, img_w: int = 1, img_h: int = 1):
     """透视矫正裁剪文本区域（复用 paddle-ocr 的裁剪逻辑）。
 
@@ -625,23 +676,23 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
                              export_rec: bool = False, train_ratio: float = 0.8) -> None:
     """导出 PaddleX OCR（PP-OCRv6）数据格式。
 
-    det:  <output>/det/dataset/  (train.txt + val.txt + images/)  PaddleX JSON 标注
-    rec:  <output>/rec/dataset/  (train.txt + val.txt + images/ + dict.txt)
+    det 始终导出：<output>/det/dataset/  (train.txt + val.txt + images/)  PaddleX JSON 标注。
+    export_rec=True 时额外导出 rec：<output>/rec/dataset/  (train.txt + val.txt + images/)
+    与词表 <output>/rec/dict.txt（优先官方 ppocrv6_dict.txt）。
     """
     import random
 
     from app.utils.s3_client import s3_client
 
-    mode = "rec" if export_rec else "det"
-    dataset_dir = os.path.join(output_dir, mode, "dataset")
-    img_dir = os.path.join(dataset_dir, "images")
-    os.makedirs(img_dir, exist_ok=True)
+    det_dataset_dir = os.path.join(output_dir, "det", "dataset")
+    det_img_dir = os.path.join(det_dataset_dir, "images")
+    os.makedirs(det_img_dir, exist_ok=True)
 
-    # 收集所有图像 + 标注（train/val 切分）
-    records = []  # (img_name, det_json_lines, rec_entries)
+    # 收集所有图像 + 标注（det 条目统一由 paddle_ocr_det_entries 生成，含矩形）
+    records = []  # (img_name, det_entries, rec_entries[(points, text)])
     async with async_db_session() as db:
         for img in images:
-            img_path = os.path.join(img_dir, img.filename)
+            img_path = os.path.join(det_img_dir, img.filename)
             try:
                 if not os.path.exists(img_path):
                     data = s3_client.download_fileobj(img.object_key)
@@ -658,29 +709,16 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
             record = rec.scalar_one_or_none()
             anns = record.annotation_data if record and record.annotation_data else []
 
-            entries = []
-            rec_entries = []
-            w = img.width or 1
-            h = img.height or 1
-            for ann in anns:
-                if ann.get("type") not in ("polygon", "Polygon", "ocr", "Ocr"):
-                    continue
-                pts = ann.get("points", [])
-                if len(pts) < 4:
-                    continue
-                points = [[float(p["x"] * w), float(p["y"] * h)]
-                          if isinstance(p, dict) else [float(p[0] * w), float(p[1] * h)]
-                          for p in pts[:4]]
-                text = ann.get("text", "") or ""
-                entries.append({"transcription": text, "points": points})
-                rec_entries.append((points, text))
-            records.append((img.filename, entries, rec_entries))
+            det_entries = paddle_ocr_det_entries(anns, img.width or 1, img.height or 1)
+            rec_entries = [(e["points"], e["transcription"])
+                           for e in det_entries if (e["transcription"] or "").strip()]
+            records.append((img.filename, det_entries, rec_entries))
 
     random.shuffle(records)
     split_idx = max(1, int(len(records) * train_ratio)) if len(records) > 1 else len(records)
     train_set, val_set = records[:split_idx], records[split_idx:]
 
-    def write_label(path, rows):
+    def write_det_label(path: str, rows: list) -> None:
         lines = []
         for fname, entries, _rec in rows:
             if entries:
@@ -688,48 +726,67 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
         with open(path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
 
+    # det 始终导出
+    write_det_label(os.path.join(det_dataset_dir, "train.txt"), train_set)
+    write_det_label(os.path.join(det_dataset_dir, "val.txt"), val_set)
+    log.info(f"paddlex det: exported {len(train_set)} train / {len(val_set)} val to {det_dataset_dir}")
+
     if not export_rec:
-        write_label(os.path.join(dataset_dir, "train.txt"), train_set)
-        write_label(os.path.join(dataset_dir, "val.txt"), val_set)
-        log.info(f"paddlex det: exported {len(train_set)} train / {len(val_set)} val to {dataset_dir}")
+        return
+
+    # rec：从 det 图像透视矫正裁剪文字区域（cv2 延迟导入，无 cv2 时仅 rec 分支失败）
+    import cv2
+
+    rec_dataset_dir = os.path.join(output_dir, "rec", "dataset")
+    rec_img_dir = os.path.join(rec_dataset_dir, "images")
+    os.makedirs(rec_img_dir, exist_ok=True)
+
+    def crop_rec(rows: list) -> list[str]:
+        lines: list[str] = []
+        for fname, _entries, rec_entries in rows:
+            base = os.path.splitext(fname)[0]
+            for i, (quad, text) in enumerate(rec_entries):
+                if not text.strip():
+                    continue
+                crop = _crop_text_region(os.path.join(det_img_dir, fname), quad)
+                if crop is None:
+                    continue
+                crop_name = f"{base}_{i}.jpg"
+                cv2.imwrite(os.path.join(rec_img_dir, crop_name), crop)
+                lines.append(f"images/{crop_name}\t{text}")
+        return lines
+
+    rec_train = crop_rec(train_set)
+    rec_val = crop_rec(val_set)
+    with open(os.path.join(rec_dataset_dir, "train.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(rec_train))
+    with open(os.path.join(rec_dataset_dir, "val.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(rec_val))
+
+    # 词表：优先官方 ppocrv6_dict.txt（与官方预训练权重匹配），否则退化为数据字符集
+    dict_path = os.path.join(output_dir, "rec", "dict.txt")
+    official_dict = _find_official_ocr_dict()
+    if official_dict:
+        import shutil
+        shutil.copyfile(official_dict, dict_path)
+        log.info(f"paddlex rec: 使用官方词表 {official_dict} → {dict_path}")
     else:
-        # rec：透视矫正裁剪文字区域
-        import cv2
-        rec_train, rec_val = [], []
-        for fname, _entries, rec_entries in train_set:
-            for i, (quad, text) in enumerate(rec_entries):
-                if not text.strip():
-                    continue
-                crop_name = f"{os.path.splitext(fname)[0]}_{i}.jpg"
-                crop = _crop_text_region(os.path.join(img_dir, fname), quad, 1, 1)
-                if crop is not None:
-                    cv2.imwrite(os.path.join(img_dir, crop_name), crop)
-                    rec_train.append(f"images/{crop_name}\t{text}")
-        for fname, _entries, rec_entries in val_set:
-            for i, (quad, text) in enumerate(rec_entries):
-                if not text.strip():
-                    continue
-                crop_name = f"{os.path.splitext(fname)[0]}_{i}.jpg"
-                crop = _crop_text_region(os.path.join(img_dir, fname), quad, 1, 1)
-                if crop is not None:
-                    cv2.imwrite(os.path.join(img_dir, crop_name), crop)
-                    rec_val.append(f"images/{crop_name}\t{text}")
-        with open(os.path.join(dataset_dir, "train.txt"), "w", encoding="utf-8") as f:
-            f.write("\n".join(rec_train))
-        with open(os.path.join(dataset_dir, "val.txt"), "w", encoding="utf-8") as f:
-            f.write("\n".join(rec_val))
-        # dict.txt：从所有 rec 文本提取字符集
-        chars = []
-        seen = set()
-        for _fname, _e, rec_entries in records:
+        chars: list[str] = []
+        seen: set[str] = set()
+        for _fname, _entries, rec_entries in records:
             for _quad, text in rec_entries:
                 for ch in text:
                     if ch not in seen:
                         seen.add(ch)
                         chars.append(ch)
-        with open(os.path.join(dataset_dir, "..", "dict.txt"), "w", encoding="utf-8") as f:
+        with open(dict_path, "w", encoding="utf-8") as f:
             f.write("\n".join(chars))
-        log.info(f"paddlex rec: exported {len(rec_train)} train / {len(rec_val)} val to {dataset_dir}")
+        log.warning(
+            "paddlex rec: 未找到官方 ppocrv6_dict.txt，词表退化为数据字符集"
+            f"（{len(chars)} 字），可能不与官方预训练权重匹配"
+        )
+
+    log.info(f"paddlex rec: exported {len(rec_train)} train / {len(rec_val)} val to {rec_dataset_dir}")
 
 
 async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, output_dir: str,
