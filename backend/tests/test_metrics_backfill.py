@@ -8,6 +8,7 @@ import asyncio
 import inspect
 from types import SimpleNamespace
 
+from app.plugin.module_train import exporter
 from app.plugin.module_train.exporter import export_model
 from app.plugin.module_train.metrics import best_metric
 from app.plugin.module_train.scheduler import (
@@ -96,3 +97,34 @@ def test_resolve_task_type_defaults_to_detection():
     """无标注任务时 task_type 回退 detection。"""
     task = SimpleNamespace(annotation_task_id=None)
     assert asyncio.run(_resolve_task_type(task)) == "detection"
+
+
+def test_export_model_no_artifact_skips_db(tmp_path, monkeypatch):
+    """无训练产物时不插入 TrainModel，避免仓库出现无权重的最新版本。"""
+    calls = {"begin": 0, "add": []}
+
+    class FakeSession:
+        def add(self, obj):
+            calls["add"].append(obj)
+
+    class FakeBegin:
+        async def __aenter__(self):
+            calls["begin"] += 1
+            return FakeSession()
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class FakeFactory:
+        def begin(self):
+            return FakeBegin()
+
+        def __call__(self, *a, **k):
+            return FakeBegin()
+
+    monkeypatch.setattr(exporter, "async_db_session", FakeFactory())
+
+    result = asyncio.run(export_model(1, "paddlex", str(tmp_path)))
+    assert result == {"repo_id": None, "storage_path": None}
+    assert calls["begin"] == 0
+    assert calls["add"] == []

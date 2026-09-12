@@ -16,11 +16,30 @@ from app.core.logger import log
 from .concurrency import get_train_semaphore
 from .docker_utils import pull_image, remove_container, run_container
 from .framework_utils import framework_value
-from .metrics import best_metric
+from .metrics import best_metric, primary_metric_key
 from .model import TrainStatus, TrainTask
 from .scheduler import _build_cmd, resolve_base_model
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
+
+
+def select_paddlex_best(metrics_log: list[dict] | None, mode: str) -> dict:
+    """选取 PaddleX 最优指标行。
+
+    先走统一的 ``best_metric``（已过滤 ``best:True`` 汇总行）。但 PaddleX det 的
+    逐 epoch 行可能不含 hmean，导致 ``best_metric`` 只能退最近一轮、best_metrics
+    丢失主指标。此时退化为取最后一条含主指标的 ``best:True`` 汇总记录，保证前端
+    能读到 hmean（det）/ acc（rec）。全部缺失时返回 ``{}``。
+    """
+    rows = metrics_log or []
+    best = best_metric(rows, "paddlex", "ocr", mode) or {}
+    key = primary_metric_key("paddlex", "ocr", mode)
+    if best.get(key) is None:
+        for row in reversed(rows):
+            if isinstance(row, dict) and row.get("best") and row.get(key) is not None:
+                best = row
+                break
+    return best
 
 
 class PaddleXOCRExecutor(TaskExecutor):
@@ -65,17 +84,33 @@ class PaddleXOCRExecutor(TaskExecutor):
             cur = int(m.group(1))
             total = int(m.group(2))
             out = {"epoch": cur, "total": total}
-            # acc / hmean 指标
+            # acc（rec）/ hmean 及 precision/recall（det）指标
             am = re.search(r"acc:\s*([\d.]+)", line)
             if am:
                 out["acc"] = float(am.group(1))
-            hm = re.search(r"loss:\s*([\d.]+)", line)
+            lm = re.search(r"loss:\s*([\d.]+)", line)
+            if lm:
+                out["loss"] = float(lm.group(1))
+            hm = re.search(r"hmean:\s*([\d.]+)", line)
             if hm:
-                out["loss"] = float(hm.group(1))
+                out["hmean"] = float(hm.group(1))
+            pm = re.search(r"precision:\s*([\d.]+)", line)
+            if pm:
+                out["precision"] = float(pm.group(1))
+            rm = re.search(r"recall:\s*([\d.]+)", line)
+            if rm:
+                out["recall"] = float(rm.group(1))
             return out
         bm = re.search(r"best metric,.*hmean:\s*([\d.]+)", line)
         if bm:
-            return {"hmean": float(bm.group(1)), "best": True}
+            row = {"hmean": float(bm.group(1)), "best": True}
+            pm = re.search(r"precision:\s*([\d.]+)", line)
+            if pm:
+                row["precision"] = float(pm.group(1))
+            rm = re.search(r"recall:\s*([\d.]+)", line)
+            if rm:
+                row["recall"] = float(rm.group(1))
+            return row
         ba = re.search(r"best metric,.*acc:\s*([\d.]+)", line)
         if ba:
             return {"acc": float(ba.group(1)), "best": True}
@@ -181,8 +216,9 @@ class PaddleXOCRExecutor(TaskExecutor):
                 from .exporter import export_model
                 model_info = await export_model(task_id, task.framework, export_dir)
                 if model_info.get("storage_path"):
-                    # 统一最优指标：忽略日志里的 best:True 汇总行，按主指标（det→hmean / rec→acc）取最优轮
-                    best = best_metric(metrics_log, "paddlex", "ocr", mode) or {}
+                    # 统一最优指标：忽略日志里的 best:True 汇总行，按主指标（det→hmean / rec→acc）取最优轮；
+                    # det 逐 epoch 行无 hmean 时退化取 best:True 汇总行
+                    best = select_paddlex_best(metrics_log, mode)
                     epoch_records = [m for m in metrics_log if m.get("epoch") and not m.get("best")]
                     latest = epoch_records[-1] if epoch_records else {}
                     await cls._mark_status(

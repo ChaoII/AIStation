@@ -676,7 +676,12 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
                 s3_client.upload_fileobj(f, rustfs_path)
             storage_path = rustfs_path
         except Exception as e:
-            log.error(f"upload model to RustFS failed: {e}，模型将创建为无存储文件状态")
+            log.error(f"upload model to RustFS failed: {e}，本次不创建模型版本")
+
+    # 无训练产物（未找到 best_path 或上传失败）时直接返回，不写 DB：
+    # 否则会在模型仓库留下一条无权重的最新版本，并污染 task.model_repo_id。
+    if not storage_path:
+        return {"repo_id": None, "storage_path": None}
 
     async with async_db_session.begin() as db:
         task = await db.get(TrainTask, task_id)
