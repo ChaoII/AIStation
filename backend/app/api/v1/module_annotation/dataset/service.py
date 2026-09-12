@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy import and_, func, select, update
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
+from app.api.v1.module_annotation.task.model import AnnotationTaskModel
 from app.core.audit import set_create_audit
 from app.core.database import async_db_session
 from app.utils.s3_client import s3_client
@@ -48,6 +49,12 @@ class DatasetService:
                 await db.execute(
                     update(AnnotationImageModel)
                     .where(AnnotationImageModel.dataset_id == dataset_id)
+                    .values(**soft)
+                )
+                # 级联软删该数据集下的任务，避免数据集删除后任务仍计入统计
+                await db.execute(
+                    update(AnnotationTaskModel)
+                    .where(AnnotationTaskModel.dataset_id == dataset_id)
                     .values(**soft)
                 )
         from .crud import DatasetCRUD

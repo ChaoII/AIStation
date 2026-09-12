@@ -165,14 +165,16 @@ class StatsService:
                     ann_data = row[0]
                     created_id = row[1]
                     if isinstance(ann_data, list):
+                        valid_count = 0
                         for item in ann_data:
                             cid = item.get("class_id") if isinstance(item, dict) else None
                             if cid is not None:
                                 class_counter[cid] = class_counter.get(cid, 0) + 1
                                 total_annotations += 1
-                        # 贡献口径按标注条目数统计（非记录数）
-                        if created_id:
-                            user_counter[created_id] = user_counter.get(created_id, 0) + len(ann_data)
+                                valid_count += 1
+                        # 贡献口径与 total_annotations 对齐：仅统计带 class_id 的条目
+                        if created_id and valid_count:
+                            user_counter[created_id] = user_counter.get(created_id, 0) + valid_count
 
             # Build class name map from all tasks
             class_name_map: dict[int, str] = {}

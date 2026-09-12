@@ -9,6 +9,7 @@ def test_overview_enum_keys_and_soft_delete(test_client: TestClient, auth_header
 
     before = test_client.get("/api/v1/annotation/stats/overview", headers=auth_headers).json()["data"]
     base_ds = before["dataset_count"]
+    base_tasks = before["task_count"]
 
     ds = test_client.post(
         "/api/v1/annotation/dataset/create",
@@ -34,4 +35,6 @@ def test_overview_enum_keys_and_soft_delete(test_client: TestClient, auth_header
     assert deleted.status_code == 200
     after = test_client.get("/api/v1/annotation/stats/overview", headers=auth_headers).json()["data"]
     assert after["dataset_count"] == base_ds, (after["dataset_count"], base_ds)
+    # 级联软删任务后，任务数也应回到基线（防止孤儿任务抬高统计）
+    assert after["task_count"] == base_tasks, (after["task_count"], base_tasks)
     assert task  # 任务创建成功
