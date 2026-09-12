@@ -1773,6 +1773,8 @@ function removeClass(id: number) {
   store.annotations = store.annotations.filter(
     (a: any) => a.class_id !== -1 && !(a.type === "Classification" && !a.class_ids?.length)
   );
+  markUnsaved();
+  pushHistory();
   if (selectedClassId.value === id) selectedClassId.value = taskClasses.value[0]?.id ?? 0;
   saveClassesToTask();
 }
@@ -1780,7 +1782,9 @@ async function saveClassesToTask() {
   if (!task.value?.id) return;
   try {
     await AnnotationAPI.updateTask(task.value.id, { classes: taskClasses.value });
-  } catch {}
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.msg || "类别保存失败，请重试");
+  }
 }
 
 // ===== Rotated box geometry =====
@@ -3632,7 +3636,12 @@ onMounted(async () => {
         const imgs = data.items || [];
         store.images = imgs;
         const total = data.total || 0;
-        if (imgs.length > 0 && !store.currentImage) loadImg(imgs[0].id);
+        if (imgs.length > 0 && store.currentImageIndex >= 0 && store.currentImageIndex < imgs.length) {
+          loadImg(imgs[store.currentImageIndex].id);
+        } else if (imgs.length > 0) {
+          store.currentImageIndex = 0;
+          loadImg(imgs[0].id);
+        }
         fetchTaskProgress();
         // Load remaining pages in background（按页序拼接，避免乱序）
         const totalPages = Math.ceil(total / pageSize);
