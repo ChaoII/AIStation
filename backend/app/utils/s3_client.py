@@ -52,6 +52,14 @@ class S3Client:
     def delete_object(self, object_key: str, env: str | None = None) -> None:
         self.client.delete_object(Bucket=self._bucket(env), Key=object_key)
 
+    def object_exists(self, object_key: str, env: str | None = None) -> bool:
+        """判断对象是否存在（head_object；不存在或无权访问均视为 False）。"""
+        try:
+            self.client.head_object(Bucket=self._bucket(env), Key=object_key)
+            return True
+        except ClientError:
+            return False
+
     def presigned_url(self, object_key: str, env: str | None = None) -> str:
         return self.client.generate_presigned_url(
             "get_object",

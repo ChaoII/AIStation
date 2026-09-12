@@ -441,14 +441,16 @@ async def download_model(
     model_id: int,
     auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
 ):
+    from .export_service import resolve_download_target
     from .service import TrainService
     model = await TrainService.get_model(model_id)
     if not model or not model.get("storage_path"):
         from app.common.response import ErrorResponse
         return ErrorResponse(msg="模型或文件不存在")
 
-    url = s3_client.presigned_url(model["storage_path"])
-    return SuccessResponse(data={"download_url": url, "format": model.get("format", "pytorch")})
+    key, fmt = resolve_download_target(model, s3_client.object_exists)
+    url = s3_client.presigned_url(key)
+    return SuccessResponse(data={"download_url": url, "format": fmt})
 
 
 @router.put("/model/update/{model_id}", summary="更新模型信息")
