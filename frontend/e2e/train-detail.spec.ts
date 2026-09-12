@@ -118,6 +118,34 @@ test("YOLO 检测：保留 Box/Cls/Dfl Loss + mAP/PR 指标", async ({ page }) =
   ).toHaveText("80.0%");
 });
 
+test("YOLO 分类（运行中）：实时 5 列汇总解析为 Top1/Top5", async ({ page }) => {
+  // 通过 WebSocket 推送训练日志：先给出一轮进度行，再给分类验证汇总（5 列）
+  await page.routeWebSocket(/train\/ws\/train\/logs/, async (ws) => {
+    // 等页面完成 WS onmessage 挂载后再推送
+    await new Promise((r) => setTimeout(r, 500));
+    ws.send("      1/10      1.2345G      0.5000      0.4000");
+    ws.send("                   all        100        100      0.9500      0.9900");
+  });
+  const card = await openMetricCard(
+    page,
+    baseTask({
+      framework: "ultralytics",
+      docker_image: "ultralytics/ultralytics:latest",
+      status: "running",
+      // 不放 -cls 模型信号，强制依赖实时指标键（top1/top5）推断分类
+      hyperparams: {},
+      last_metrics: null,
+    })
+  );
+  await expect(card.locator(".metric-lbl").filter({ hasText: /^Top1$/ })).toHaveCount(1);
+  await expect(card.locator(".metric-lbl").filter({ hasText: /^Top5$/ })).toHaveCount(1);
+  await expect(card.locator(".metric-lbl").filter({ hasText: /^Precision$/ })).toHaveCount(0);
+  await expect(card.locator(".metric-lbl").filter({ hasText: /^Recall$/ })).toHaveCount(0);
+  await expect(
+    card.locator(".metric-item").filter({ hasText: /Top1/ }).locator(".metric-val")
+  ).toHaveText("95.0%");
+});
+
 test("YOLO 分类：展示 Top1/Top5 + 单一 Loss", async ({ page }) => {
   const card = await openMetricCard(
     page,

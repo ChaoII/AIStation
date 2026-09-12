@@ -408,6 +408,9 @@ const yoloMetrics = reactive({
   loss: 0,
   hmean: 0,
   acc: 0,
+  // YOLO 分类主指标
+  top1: 0,
+  top5: 0,
   precision: 0,
   recall: 0,
   map50: 0,
@@ -443,11 +446,11 @@ const displayMetricsLog = computed<any[]>(() =>
 const displayBestMetrics = computed<any>(() => liveBestMetrics.value || bestMetrics.value);
 const displayLastMetrics = computed<any>(() => liveLastMetrics.value || lastMetrics.value);
 
-// 分类任务：TrainTask 未直接持久化 task_type，优先看超参，其次依据指标键（top1/top5）推断
+// 分类任务：TrainTask 未直接持久化 task_type。
+// 真实信号：Ultralytics 分类权重的 model 以 -cls 结尾；兜底依据指标键（top1/top5）推断。
 const isClassifyTask = computed(() => {
-  const hp = task.value?.hyperparams || {};
-  const tt = String(hp.task_type || hp.task || "").toLowerCase();
-  if (tt === "cls" || tt === "classification") return true;
+  const model = String(task.value?.hyperparams?.model || "").toLowerCase();
+  if (/-cls(\.|$)/.test(model)) return true;
   const probes = [displayBestMetrics.value, displayLastMetrics.value];
   if (probes.some((m: any) => m && (m.top1 != null || m.top5 != null))) return true;
   return displayMetricsLog.value.some((m: any) => m && (m.top1 != null || m.top5 != null));
@@ -539,7 +542,8 @@ const displayMetrics = computed<Record<string, string>>(() => {
     for (const s of lossSpec.value) out[s.key] = fmtDecimal(liveLossValue(s.src));
     return out;
   }
-  out.epoch = last?.epoch != null ? `${last.epoch}/${last.total_epochs ?? "?"}` : "—";
+  // PaddleX 指标行用 total，其余框架用 total_epochs
+  out.epoch = last?.epoch != null ? `${last.epoch}/${last.total_epochs ?? last.total ?? "?"}` : "—";
   for (const s of metricSpec.value) out[s.key] = fmtRatio(last?.[s.key]);
   for (const s of lossSpec.value) out[s.key] = fmtDecimal(last?.[s.src]);
   return out;
@@ -611,6 +615,8 @@ function pushLiveMetrics() {
       map5095: yoloMetrics.map5095,
       hmean: yoloMetrics.hmean,
       acc: yoloMetrics.acc,
+      top1: yoloMetrics.top1,
+      top5: yoloMetrics.top5,
     });
   }
 }
@@ -663,10 +669,16 @@ function parseYoloMetrics(line: string) {
   }
   if (/^\s+all\s+/.test(line)) {
     const parts = line.trim().split(/\s+/);
-    if (parts.length >= 5) yoloMetrics.precision = parseFloat(parts[3]) || 0;
-    if (parts.length >= 6) yoloMetrics.recall = parseFloat(parts[4]) || 0;
-    if (parts.length >= 7) yoloMetrics.map50 = parseFloat(parts[5]) || 0;
-    if (parts.length >= 7) yoloMetrics.map5095 = parseFloat(parts[6]) || 0;
+    // 检测/分割/姿态汇总为 7 列 P/R/mAP50/mAP50-95；分类汇总为 5 列 top1/top5
+    if (parts.length >= 7) {
+      yoloMetrics.precision = parseFloat(parts[3]) || 0;
+      yoloMetrics.recall = parseFloat(parts[4]) || 0;
+      yoloMetrics.map50 = parseFloat(parts[5]) || 0;
+      yoloMetrics.map5095 = parseFloat(parts[6]) || 0;
+    } else if (parts.length === 5) {
+      yoloMetrics.top1 = parseFloat(parts[3]) || 0;
+      yoloMetrics.top5 = parseFloat(parts[4]) || 0;
+    }
     pushLiveMetrics();
   }
 }
@@ -689,10 +701,16 @@ function parseLogForMetrics(text: string) {
     }
     if (current && /^all\s+/.test(line)) {
       const parts = line.split(/\s+/);
-      if (parts.length >= 5) current.precision = parseFloat(parts[3]) || 0;
-      if (parts.length >= 6) current.recall = parseFloat(parts[4]) || 0;
-      if (parts.length >= 7) current.map50 = parseFloat(parts[5]) || 0;
-      if (parts.length >= 7) current.map5095 = parseFloat(parts[6]) || 0;
+      // 检测/分割/姿态汇总为 7 列 P/R/mAP50/mAP50-95；分类汇总为 5 列 top1/top5
+      if (parts.length >= 7) {
+        current.precision = parseFloat(parts[3]) || 0;
+        current.recall = parseFloat(parts[4]) || 0;
+        current.map50 = parseFloat(parts[5]) || 0;
+        current.map5095 = parseFloat(parts[6]) || 0;
+      } else if (parts.length === 5) {
+        current.top1 = parseFloat(parts[3]) || 0;
+        current.top5 = parseFloat(parts[4]) || 0;
+      }
       metrics.push({ ...current });
       current = null;
     }
@@ -845,6 +863,8 @@ async function handleRetrain() {
       loss: 0,
       hmean: 0,
       acc: 0,
+      top1: 0,
+      top5: 0,
       precision: 0,
       recall: 0,
       map50: 0,
