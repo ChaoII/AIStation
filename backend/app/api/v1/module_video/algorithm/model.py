@@ -40,6 +40,9 @@ class AlgorithmTaskModel(ModelMixin, UserMixin):
     algorithm_id: Mapped[int] = mapped_column(Integer, ForeignKey("video_algorithms.id", ondelete="CASCADE"), nullable=False)
     algorithm: Mapped[Optional["AlgorithmModel"]] = relationship(lazy="selectin")
 
+    # 边缘设备ID（空=纯云端本机 Agent）；不加外键，与启动补列 DDL 保持一致
+    edge_device_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True, comment="边缘设备ID（空=纯云端本机）")
+
     stream_type: Mapped[str] = mapped_column(String(16), default="SUB", comment="分析码流: MAIN/SUB")
     detect_region: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="检测区域")
     sensitivity: Mapped[int] = mapped_column(Integer, default=50, comment="灵敏度 1-100")
@@ -49,4 +52,5 @@ class AlgorithmTaskModel(ModelMixin, UserMixin):
     params_overrides: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="算法参数覆盖值（针对该布控点位调整阈值等）")
 
     status: Mapped[str] = mapped_column(String(16), default="STOPPED", comment="状态: RUNNING/STOPPED/ERROR")
+    error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="最近一次编排/推理失败原因")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")

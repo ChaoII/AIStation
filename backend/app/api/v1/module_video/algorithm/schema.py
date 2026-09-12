@@ -46,6 +46,7 @@ class AlgorithmOutSchema(BaseSchema):
 class AlgorithmTaskCreateSchema(BaseModel):
     camera_id: int = Field(..., description="摄像机ID")
     algorithm_id: int = Field(..., description="算法ID")
+    edge_device_id: int | None = Field(default=None, description="边缘设备ID（空=纯云端本机）")
     stream_type: str = Field(default="SUB", description="分析码流")
     detect_region: dict | None = Field(default=None, description="检测区域")
     sensitivity: int = Field(default=50, ge=1, le=100, description="灵敏度")
@@ -64,6 +65,7 @@ class AlgorithmTaskUpdateSchema(AlgorithmTaskCreateSchema):
 class AlgorithmTaskOutSchema(BaseSchema):
     camera_id: int
     algorithm_id: int
+    edge_device_id: int | None = None
     stream_type: str = "SUB"
     detect_region: dict | None = None
     sensitivity: int = 50
@@ -71,5 +73,6 @@ class AlgorithmTaskOutSchema(BaseSchema):
     runtime_overrides: dict | None = None
     params_overrides: dict | None = None
     status: str = "STOPPED"
+    error_log: str | None = None
     camera: CommonSchema | None = None
     algorithm: CommonSchema | None = None

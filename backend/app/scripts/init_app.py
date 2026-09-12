@@ -40,6 +40,7 @@ async def _ensure_missing_columns() -> None:
             ("runtime_overrides", "JSONB"),
             ("params_overrides", "JSONB"),
             ("edge_device_id", "INTEGER"),
+            ("error_log", "TEXT"),
         ],
         "video_cameras": [
             ("reachable", "BOOLEAN"),

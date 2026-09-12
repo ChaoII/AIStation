@@ -144,9 +144,15 @@ async def start_inference_controller(
     auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:update"])),
 ) -> JSONResponse:
     try:
-        from app.api.v1.module_video.inference.scheduler import start_inference
-        result = await start_inference(id)
+        from app.api.v1.module_video.edge.orchestrator import EdgeOrchestrator
+        result = await EdgeOrchestrator.start_task(id)
+        if not result.get("delegated"):
+            # 未配置边缘设备/本机 Agent：回退旧本地 worker 路径
+            from app.api.v1.module_video.inference.scheduler import start_inference
+            result = await start_inference(id)
         return SuccessResponse(data=result, msg="启动成功")
+    except CustomException:
+        raise
     except LookupError as e:
         raise CustomException(msg=str(e), code=404)
     except ValueError as e:
@@ -161,9 +167,17 @@ async def stop_inference_controller(
     auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:update"])),
 ) -> JSONResponse:
     try:
-        from app.api.v1.module_video.inference.scheduler import stop_inference
-        result = await stop_inference(id)
+        from app.api.v1.module_video.edge.orchestrator import EdgeOrchestrator
+        result = await EdgeOrchestrator.stop_task(id)
+        if not result.get("delegated"):
+            # 未配置边缘设备/本机 Agent：回退旧本地 worker 路径
+            from app.api.v1.module_video.inference.scheduler import stop_inference
+            result = await stop_inference(id)
         return SuccessResponse(data=result, msg="停止成功")
+    except CustomException:
+        raise
+    except LookupError as e:
+        raise CustomException(msg=str(e), code=404)
     except Exception as e:
         raise CustomException(msg=f"停止推理失败: {e}")
 
