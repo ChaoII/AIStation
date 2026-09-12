@@ -9,7 +9,15 @@ from app.core.audit import set_create_audit, set_update_audit
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .model import TrainDeploy, TrainEval, TrainModel, TrainModelRepo, TrainPredict, TrainTask
+from .model import (
+    TrainDeploy,
+    TrainEval,
+    TrainModel,
+    TrainModelRepo,
+    TrainPredict,
+    TrainStatus,
+    TrainTask,
+)
 
 # ultralytics: `1/100 0.983G ...`；PaddleX: `epoch: [1/100], ...`
 _EPOCH_RE = re.compile(r"(?:^\s*(\d+)/(\d+)\s+|epoch:\s*\[(\d+)/(\d+)\])")
@@ -337,6 +345,13 @@ class TrainService:
 
     @classmethod
     async def delete_tasks(cls, ids: list[int]) -> None:
+        # 删除前先停止运行中的任务，避免容器成为孤儿（占 GPU/端口）
+        from .scheduler import stop_training
+        async with async_db_session() as db:
+            rows = [await db.get(TrainTask, i) for i in ids]
+        for t in rows:
+            if t and t.status == TrainStatus.RUNNING:
+                await stop_training(t.id)
         async with async_db_session.begin() as db:
             for tid in ids:
                 t = await db.get(TrainTask, tid)

@@ -28,6 +28,7 @@ class PaddleXOCRExecutor(TaskExecutor):
     均按 mode 分支（scheduler._build_paddlex_ocr_cmd + exporter._export_paddle_ocr）。
     """
     name = "paddlex_ocr_train"
+    task_kind = "train"
     status_enum = TrainStatus
     model_class = TrainTask
     _concurrency = 1
@@ -161,6 +162,7 @@ class PaddleXOCRExecutor(TaskExecutor):
                 volumes=volumes,
                 gpu_id=task.hyperparams.get("device") or task.hyperparams.get("gpu_id") or "0",
                 shm_size="4g",
+                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
             )
             container_id = container.id
             entry = cls._registry.get(task_id) or {}

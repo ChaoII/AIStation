@@ -38,6 +38,7 @@ async def stop_prediction(predict_id: int):
 
 class PredictExecutor(TaskExecutor):
     name = "predict"
+    task_kind = "predict"
     status_enum = TrainStatus
     model_class = TrainPredict
     _concurrency = 1
@@ -154,6 +155,7 @@ class PredictExecutor(TaskExecutor):
                 },
                 gpu_id=device,
                 shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
             )
             container_id = container.id
             entry = cls._registry.get(predict_id) or {}

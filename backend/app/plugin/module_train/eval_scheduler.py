@@ -69,6 +69,7 @@ async def stop_evaluation(eval_id: int):
 
 class EvalExecutor(TaskExecutor):
     name = "eval"
+    task_kind = "eval"
     status_enum = TrainStatus
     model_class = TrainEval
     _concurrency = 1
@@ -179,6 +180,7 @@ class EvalExecutor(TaskExecutor):
                 volumes=volumes,
                 gpu_id=device,
                 shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
             )
             container_id = container.id
             entry = cls._registry.get(eval_id) or {}

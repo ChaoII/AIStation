@@ -33,6 +33,7 @@ def _run_container(
     ports: dict | None = None,
     entrypoint: str | None = None,
     shm_size: str | None = None,
+    labels: dict | None = None,
 ) -> docker.models.containers.Container:
     device_requests = []
     if gpu_id:
@@ -40,7 +41,7 @@ def _run_container(
     kwargs = {
         "image": image, "command": cmd, "volumes": volumes, "environment": env,
         "ports": ports, "entrypoint": entrypoint, "device_requests": device_requests,
-        "detach": True, "remove": False, "stderr": True,
+        "detach": True, "remove": False, "stderr": True, "labels": labels or {},
     }
     if shm_size:
         kwargs["shm_size"] = shm_size
@@ -56,10 +57,11 @@ async def run_container(
     ports: dict | None = None,
     entrypoint: str | None = None,
     shm_size: str | None = None,
+    labels: dict | None = None,
 ) -> docker.models.containers.Container:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
-        None, _run_container, image, cmd, volumes, gpu_id, env or {}, ports, entrypoint, shm_size
+        None, _run_container, image, cmd, volumes, gpu_id, env or {}, ports, entrypoint, shm_size, labels
     )
 
 
@@ -75,6 +77,22 @@ def _stop_container(container_id: str) -> None:
 async def stop_container(container_id: str) -> None:
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _stop_container, container_id)
+
+
+def find_task_containers(task_kind: str, task_id: int) -> list[str]:
+    """按 label 查找该任务的容器 id（含已退出未删除的）。"""
+    try:
+        cs = client.containers.list(all=True, filters={
+            "label": [f"aistation.task_kind={task_kind}", f"aistation.task_id={task_id}"]})
+        return [c.id for c in cs]
+    except Exception:
+        return []
+
+
+async def stop_task_containers(task_kind: str, task_id: int) -> None:
+    """按 label 停止并移除该任务的所有容器（用于内存 registry 丢失后的兜底）。"""
+    for cid in find_task_containers(task_kind, task_id):
+        await stop_container(cid)
 
 
 async def follow_container_logs(container_id: str) -> asyncio.Queue:

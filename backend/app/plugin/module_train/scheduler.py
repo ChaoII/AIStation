@@ -359,6 +359,7 @@ def _compute_best(metrics_log: list[dict]) -> dict | None:
 
 class TrainExecutor(TaskExecutor):
     name = "train"
+    task_kind = "train"
     status_enum = TrainStatus
     model_class = TrainTask
     _concurrency = 1
@@ -398,6 +399,7 @@ class TrainExecutor(TaskExecutor):
                          export_dir: {"bind": "/output", "mode": "rw"},
                          MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}},
                 gpu_id=task.hyperparams.get("gpu_id", "0"),
+                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
             )
             container_id = container.id
             entry = cls._registry.get(task_id) or {}
@@ -467,6 +469,9 @@ async def start_training(task_id: int):
         task = await db.get(TrainTask, task_id)
         if not task:
             raise Exception(f"训练任务 {task_id} 不存在")
+
+        if task.status == TrainStatus.RUNNING:
+            raise Exception("任务正在运行，请勿重复启动")
 
         # If annotation_task_id is set, verify the annotation task is completed (live check)
         if task.annotation_task_id:

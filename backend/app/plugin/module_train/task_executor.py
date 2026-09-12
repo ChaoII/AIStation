@@ -8,7 +8,7 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import follow_container_logs, stop_container
+from .docker_utils import follow_container_logs, stop_container, stop_task_containers
 from .framework_utils import framework_value
 
 
@@ -19,6 +19,7 @@ class TaskExecutor(ABC):
     并发上限由 _concurrency 控制。
     """
     name: str = "task"
+    task_kind: str = "task"  # 容器 label 值：train/eval/predict/deploy
     status_enum = None  # TrainStatus 等
     model_class = None  # TrainTask / TrainEval / TrainPredict
     _concurrency: int = 1
@@ -80,6 +81,9 @@ class TaskExecutor(ABC):
             entry["cancel"] = True
             if entry.get("container_id"):
                 await stop_container(entry["container_id"])
+        else:
+            # 后端重启后内存 registry 丢失，按容器 label 兜底停止
+            await stop_task_containers(cls.task_kind, task_id)
         async with async_db_session.begin() as db:
             await db.execute(
                 update(cls.model_class)
