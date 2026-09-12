@@ -220,6 +220,49 @@ async def _ensure_edge_button_menus() -> None:
             log.info("✅ 边缘设备按钮权限已注册")
 
 
+async def _ensure_edge_page_menu() -> None:
+    """确保『边缘设备』页面菜单存在（挂在视频监控父菜单下，分配 admin）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "VideoEdge")
+            )
+            if existing.scalar_one_or_none():
+                return
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过边缘设备菜单注册")
+                return
+            menu = MenuModel(
+                name="边缘设备",
+                type=2,
+                icon="el-icon-Cpu",
+                order=10,
+                route_name="VideoEdge",
+                route_path="/video/edge",
+                component_path="module_video/edge/index",
+                permission="module_video:edge:query",
+                parent_id=parent.id,
+                status="0",
+                is_deleted=False,
+                title="边缘设备",
+            )
+            db.add(menu)
+            await db.flush()
+            admin = await db.scalar(select(RoleModel).where(RoleModel.id == 1))
+            if admin:
+                db.add(RoleMenusModel(role_id=admin.id, menu_id=menu.id))
+            log.info("✅ 边缘设备菜单已注册")
+
+
 async def _ensure_annotation_menus() -> None:
     """Ensure the 数据标注 menu entries exist."""
     from sqlalchemy import select
@@ -584,6 +627,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_missing_columns()
         await _ensure_deploy_menu()
         await _ensure_edge_button_menus()
+        await _ensure_edge_page_menu()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
