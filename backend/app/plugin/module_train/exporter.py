@@ -203,9 +203,11 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
                    [_px(x2, img_w), _px(y2, img_h)], [_px(x1, img_w), _px(y2, img_h)]]
             shapes.append({**base, "points": pts, "shape_type": "rectangle"})
         elif t in ("RotatedBox", "rotated_box"):
-            flat = rotated_box_to_obb_corners(ann["cx"], ann["cy"], ann["width"], ann["height"],
-                                              float(ann.get("angle", 0) or 0))
-            pts = [[_px(flat[i], img_w), _px(flat[i + 1], img_h)] for i in range(0, 8, 2)]
+            # 旋转必须按像素空间计算（x/y 缩放不同），结果本身就是像素坐标
+            px = rotated_box_to_obb_corners(ann["cx"] * img_w, ann["cy"] * img_h,
+                                            ann["width"] * img_w, ann["height"] * img_h,
+                                            float(ann.get("angle", 0) or 0))
+            pts = [[px[i], px[i + 1]] for i in range(0, 8, 2)]
             shapes.append({**base, "points": pts, "shape_type": "rotation"})
         elif t in ("Polygon", "polygon"):
             pts = [[_px(p["x"] if isinstance(p, dict) else p[0], img_w),
@@ -252,7 +254,9 @@ def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] 
             w, h = ann["width"], ann["height"]
             ang = float(ann.get("angle", 0) or 0)
             if task_type in ("rotated_detection", "obb"):
-                pts = rotated_box_to_obb_corners(cx, cy, w, h, ang)
+                # 旋转必须按像素空间计算（x/y 缩放不同），再归一化回 [0,1] 写入标签
+                px = rotated_box_to_obb_corners(cx * img_w, cy * img_h, w * img_w, h * img_h, ang)
+                pts = [px[i] / (img_w if i % 2 == 0 else img_h) for i in range(8)]
                 lines.append(f"{cls_id} " + " ".join(f"{v:.6f}" for v in pts))
             else:
                 lines.append(f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f} {math.degrees(ang):.6f}")

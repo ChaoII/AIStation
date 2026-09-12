@@ -1,4 +1,6 @@
 """X-AnyLabeling shapes 转换测试（归一化→像素、全形状、真实类名）。"""
+import math
+
 from app.plugin.module_train.exporter import xany_shapes
 
 
@@ -19,6 +21,20 @@ def test_rotated_box_pixelized():
     ys = [p[1] for p in shapes[0]["points"]]
     assert min(xs) == 40.0 and max(xs) == 60.0
     assert min(ys) == 45.0 and max(ys) == 55.0
+
+
+def test_rotated_box_pixelized_non_square():
+    """非正方形图像：旋转框须在像素空间旋转，角点直接为像素坐标。"""
+    anns = [{"type": "RotatedBox", "class_id": 1, "cx": 0.5, "cy": 0.5,
+             "width": 0.2, "height": 0.1, "angle": math.pi / 2}]
+    shapes = xany_shapes(anns, 200, 100, {1: "box"})
+    assert shapes[0]["shape_type"] == "rotation"
+    xs = [p[0] for p in shapes[0]["points"]]
+    ys = [p[1] for p in shapes[0]["points"]]
+    assert abs(min(xs) - 95.0) < 1e-6
+    assert abs(max(xs) - 105.0) < 1e-6
+    assert abs(min(ys) - 30.0) < 1e-6
+    assert abs(max(ys) - 70.0) < 1e-6
 
 
 def test_keypoint_and_ocr_and_polygon_present():
