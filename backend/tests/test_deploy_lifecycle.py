@@ -189,7 +189,35 @@ def test_recover_orphan_rehydrates_live_container(monkeypatch):
 
     assert de._deploy_running[11]["container_id"] == "cid-11"
     assert de._deploy_running[11]["cancel"] is False
+    assert de._deploy_running[11]["adopted"] is True
     assert db.writes == []
+
+
+def test_recover_orphan_marks_failed_when_adopted_container_gone(monkeypatch):
+    """接管后的容器后续丢失：周期复检应标记 failed 并释放注册表。
+
+    后端重启后存活容器被 adopted 接管，但没有在途协程监听其退出；容器若之后
+    退出/崩溃，下一轮恢复必须自行回收（释放端口预留、状态置 failed）。
+    """
+    row = SimpleNamespace(id=15, status="running", container_id="cid-15")
+    db = _FakeDB([row])
+    monkeypatch.setattr(de, "async_db_session", db)
+    monkeypatch.setattr(de, "_container_exists", lambda _cid: _async(True))
+    de._deploy_running.clear()
+
+    # 第一轮：容器存活 → 接管为 adopted
+    asyncio.run(de.recover_orphan_deploys())
+    assert de._deploy_running[15]["adopted"] is True
+
+    # 第二轮：容器已消失 → 标记 failed 并释放注册表
+    monkeypatch.setattr(de, "_container_exists", lambda _cid: _async(False))
+    asyncio.run(de.recover_orphan_deploys())
+
+    assert 15 not in de._deploy_running
+    assert len(db.writes) == 1
+    values = db.writes[0].compile().params
+    assert values.get("status") == "failed"
+    assert values.get("container_id") is None
 
 
 def test_recover_orphan_marks_failed_when_container_missing(monkeypatch):

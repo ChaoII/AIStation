@@ -438,8 +438,9 @@ async def _wait_server_healthy(container, host_port: int, timeout: int = 60, int
 async def recover_orphan_deploys() -> None:
     """回收孤儿部署：容器存活 → 重建内存注册表；容器确认丢失 → 标记 failed。
 
-    后端重启后 `_deploy_running` 为空，存活容器需要重建注册表，之后
-    stop_deployment 才能直接停掉它。
+    后端重启后 `_deploy_running` 为空，存活容器需要重建注册表（标记 adopted），
+    之后 stop_deployment 才能直接停掉它。adopted 条目没有在途协程负责收尾，
+    因此每次周期都要复检容器是否仍在；一旦丢失即释放注册表并把行标记 failed。
 
     注意：`deploying` 是拉镜像/下载模型等启动中的在途状态，此时 container_id
     可能尚未落库（NULL/旧值），不能据此判定容器丢失；仅当行确为 `running`
@@ -450,21 +451,30 @@ async def recover_orphan_deploys() -> None:
             select(TrainDeploy).where(TrainDeploy.status.in_(("running", "deploying")))
         )).scalars().all()
     for d in rows:
-        # 已被在途执行器接管（30s 周期对账可能与启动竞态），交给执行器自行维护
-        if d.id in _deploy_running:
+        entry = _deploy_running.get(d.id)
+        # 在途执行器拥有（非 adopted）的部署由其自行维护，恢复逻辑不介入
+        # （30s 周期对账可能与启动竞态）
+        if entry and not entry.get("adopted"):
             continue
         # _container_exists 仅在确认 NotFound 时返回 False；daemon 不可达返回 True
         # （"无法证明缺失"），此时按存活处理，避免误杀在途部署。
         if await _container_exists(d.container_id):
-            _deploy_running[d.id] = {"container_id": d.container_id, "cancel": False}
+            # 标记 adopted：该条目由恢复逻辑接管而非执行器，后续周期需持续复检，
+            # 容器若消失才能及时回收端口/状态
+            _deploy_running[d.id] = {
+                "container_id": d.container_id, "cancel": False, "adopted": True
+            }
             continue
+        # 容器确认丢失：清理已接管的注册表条目（无在途协程会替它收尾）
+        if entry:
+            _deploy_running.pop(d.id, None)
         # deploying 属于在途启动，跳过；仅确认丢失的 running 行标 failed
         if d.status != "running" or not d.container_id:
             continue
         async with async_db_session.begin() as db:
             await db.execute(
                 update(TrainDeploy).where(TrainDeploy.id == d.id).values(
-                    status="failed", error_log="deploy 会话已断开（容器丢失）",
+                    status="failed", error_log="部署容器已丢失",
                     finished_at=datetime.now(), container_id=None
                 )
             )
