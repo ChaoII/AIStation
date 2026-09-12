@@ -489,22 +489,25 @@ class TrainExecutor(TaskExecutor):
     @classmethod
     async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
         """后端重启后重连存活容器：跟随剩余日志并复用 ``_finalize`` 收尾。"""
-        ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
-        if not ids:
-            log.warning(f"[{cls.name}] 任务 {task_id} 需要重连但未找到存活容器")
-            return
-        cid = ids[0]
+        # 整个流程用 try/finally 包裹：任何早退（未找到容器、获取容器失败）或异常
+        # 都必须清理 registry，否则 recover_orphans 会因注册表残留而永久跳过该行
         try:
-            container = await get_container(cid)
-        except Exception as e:
-            log.error(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {cid}: {e}")
-            return
-        export_dir = await _build_export_dir(task_id)
-        await broadcast_log(task_id, f"[scheduler] 后端已重启，重连到运行中的容器 {cid[:12]}…")
-        try:
-            await cls._finalize(task_id, container, export_dir)
-        except Exception as e:
-            log.error(f"[{cls.name}] 任务 {task_id} 重连收尾失败: {e}")
+            ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
+            if not ids:
+                log.warning(f"[{cls.name}] 任务 {task_id} 需要重连但未找到存活容器")
+                return
+            cid = ids[0]
+            try:
+                container = await get_container(cid)
+            except Exception as e:
+                log.error(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {cid}: {e}")
+                return
+            export_dir = await _build_export_dir(task_id)
+            await broadcast_log(task_id, f"[scheduler] 后端已重启，重连到运行中的容器 {cid[:12]}…")
+            try:
+                await cls._finalize(task_id, container, export_dir)
+            except Exception as e:
+                log.error(f"[{cls.name}] 任务 {task_id} 重连收尾失败: {e}")
         finally:
             cls._registry.pop(task_id, None)
 

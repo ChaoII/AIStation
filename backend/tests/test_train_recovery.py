@@ -233,7 +233,7 @@ def test_train_executor_reattach_reuses_finalize(monkeypatch):
 
 
 def test_train_executor_reattach_without_container_does_nothing(monkeypatch):
-    """找不到容器时只告警、不调用 _finalize。"""
+    """找不到容器时只告警、不调用 _finalize，且早退也要清理 registry（防泄漏）。"""
     monkeypatch.setattr(sch, "find_task_containers", lambda _kind, _tid: [])
     called: list = []
 
@@ -243,11 +243,32 @@ def test_train_executor_reattach_without_container_does_nothing(monkeypatch):
     warnings: list = []
     monkeypatch.setattr(sch, "log", SimpleNamespace(warning=lambda msg: warnings.append(msg), error=lambda msg: None))
     monkeypatch.setattr(sch.TrainExecutor, "_finalize", _fake_finalize)
-    sch.TrainExecutor._registry = {}
+    # 预置残留注册表项，模拟 recover_orphans 预种子；早退必须将其移除
+    sch.TrainExecutor._registry = {6: {"container_id": "stale"}}
 
     asyncio.run(sch.TrainExecutor.reattach(6, None))
     assert called == []
     assert warnings and "6" in warnings[0]
+    assert 6 not in sch.TrainExecutor._registry
+
+
+def test_train_executor_reattach_get_container_error_pops_registry(monkeypatch):
+    """获取容器抛异常时早退，同样必须清理 registry。"""
+    def _boom(_cid):
+        raise RuntimeError("daemon down")
+
+    monkeypatch.setattr(sch, "find_task_containers", lambda _kind, _tid: ["cid-x"])
+    errors: list = []
+    monkeypatch.setattr(
+        sch, "log",
+        SimpleNamespace(warning=lambda msg: None, error=lambda msg: errors.append(msg)),
+    )
+    monkeypatch.setattr(sch, "get_container", _boom)
+    sch.TrainExecutor._registry = {7: {"container_id": "cid-x"}}
+
+    asyncio.run(sch.TrainExecutor.reattach(7, "cid-x"))
+    assert errors and "7" in errors[0]
+    assert 7 not in sch.TrainExecutor._registry
 
 
 async def _async(value):
@@ -344,3 +365,70 @@ def test_base_reattach_skips_task_not_running(monkeypatch):
     assert 23 not in _UnsupportedExecutor._registry
     assert db.writes == []
     assert removed == []
+
+
+def test_base_reattach_stops_leftover_container_when_fetch_fails(monkeypatch):
+    """拿不到容器（返回 None）时，落失败前先按 label 停止残留容器。"""
+    db = _FakeDB([_row(24, datetime.now())])
+    monkeypatch.setattr(te, "async_db_session", db)
+    monkeypatch.setattr(te, "get_container", lambda _cid: _async(None))
+    stopped: list = []
+    removed: list = []
+
+    async def _stop(kind, tid):
+        stopped.append((kind, tid))
+
+    async def _remove(cid):
+        removed.append(cid)
+
+    monkeypatch.setattr(te, "stop_task_containers", _stop)
+    monkeypatch.setattr(te, "remove_container", _remove)
+    _UnsupportedExecutor._registry = {24: {"container_id": "cid-24"}}
+
+    asyncio.run(_UnsupportedExecutor.reattach(24, "cid-24"))
+
+    assert stopped == [("eval", 24)]
+    assert 24 not in _UnsupportedExecutor._registry
+    assert len(db.writes) == 1
+    assert removed == []
+
+
+class _SequencedDB:
+    """按读取次序返回不同行的会话，用于模拟并发取消后的二次读取。"""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+        self.writes = []
+        self._read_count = 0
+
+    def __call__(self):
+        idx = min(self._read_count, len(self._rows) - 1)
+        self._read_count += 1
+        return _Ctx(_ReadSession([self._rows[idx]]))
+
+    def begin(self):
+        return _Ctx(_WriteSession(self.writes))
+
+
+def test_base_reattach_does_not_clobber_concurrent_cancel(monkeypatch):
+    """写终态前二次读取发现已被取消：不覆盖状态，但清理容器与 registry。"""
+    running = _row(25, datetime.now())
+    cancelled = _row(25, datetime.now())
+    cancelled.status = TrainStatus.CANCELLED
+    db = _SequencedDB([running, cancelled])
+    monkeypatch.setattr(te, "async_db_session", db)
+    container = _FakeContainer("cid-25")
+    monkeypatch.setattr(te, "get_container", lambda _cid: _async(container))
+    removed: list = []
+
+    async def _remove(cid):
+        removed.append(cid)
+
+    monkeypatch.setattr(te, "remove_container", _remove)
+    _UnsupportedExecutor._registry = {25: {"container_id": "cid-25"}}
+
+    asyncio.run(_UnsupportedExecutor.reattach(25, "cid-25"))
+
+    assert db.writes == []
+    assert 25 not in _UnsupportedExecutor._registry
+    assert removed == ["cid-25"]

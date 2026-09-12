@@ -159,6 +159,10 @@ class TaskExecutor(ABC):
                     # 容器不存在 / daemon 不可达：无产物可收，按失败落终态
                     log.warning(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {container_id}: {e}")
 
+            if container is None:
+                # 拿不到容器时仍可能有残留容器按 label 存活，落失败前先清理
+                await stop_task_containers(cls.task_kind, task_id)
+
             if container is not None and getattr(container, "status", None) == "running":
                 # 容器仍存活：等待其退出（阻塞 wait 放线程池，避免卡事件循环）
                 try:
@@ -169,11 +173,15 @@ class TaskExecutor(ABC):
                 except Exception as e:
                     log.warning(f"[{cls.name}] 任务 {task_id} 等待容器退出失败: {e}")
 
-            await cls._mark_status(
-                task_id, cls.status_enum.FAILED,
-                error_log="后端重启后无法恢复产物收集（该框架暂不支持自动重连）",
-                finished_at=datetime.now(),
-            )
+            # 写终态前重新读取任务行：若已被并发取消/落到其它终态则不再覆盖
+            async with async_db_session() as db:
+                fresh = await db.get(cls.model_class, task_id)
+            if fresh and getattr(fresh, "status", None) == cls.status_enum.RUNNING:
+                await cls._mark_status(
+                    task_id, cls.status_enum.FAILED,
+                    error_log="后端重启后无法恢复产物收集（该框架暂不支持自动重连）",
+                    finished_at=datetime.now(),
+                )
             if container is not None:
                 await remove_container(container.id)
         finally:
