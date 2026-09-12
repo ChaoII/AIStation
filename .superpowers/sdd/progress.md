@@ -208,3 +208,84 @@ Plan 2B: docs/superpowers/plans/2026-09-12-phase2b-metrics-detail.md
   - unified metrics.py (primary_metric_key/best_metric); PaddleX det keeps hmean (select_paddlex_best fallback); no-artifact export_model skips DB insert; ultralytics no-artifact -> FAILED
 FOLLOWUP(2B t1): PaddleX model-version row metrics not backfilled with fresh best (export_model called before select_paddlex_best)
 2B Task 2 (训练详情前端按框架展示) REMAIN.
+2B Task 2: complete (commits 7790431..0949df5, review approved after live-cls fix)
+  - train detail framework-aware metrics (metricSpec); running cls parses top1/top5; PaddleX epoch total fallback
+PHASE 2B COMPLETE (2 tasks). Next: 2C 评估链路.
+Plan 2C: docs/superpowers/plans/2026-09-12-phase2c-eval-pipeline.md
+2C baseline: 0528357
+2C Task 1: complete (commits 0528357..eed5b43, review approved after YAML path fix)
+  - eval full deterministic export (for_eval all->val); resolve_eval_context passes annotation_task_id + mode/size; start_evaluation clears state; cls top1/top5 parse; dataset.yaml path=/data
+Minor(2C t1): cls eval uses data=*.yaml (pre-existing, may need dir); legacy model_repo_id-as-repo-id degrades to det/tiny
+2C Task 2: complete (commits eed5b43..20f1367, review approved)
+  - eval create sends selected model_id/repo_id; export dialog uses model_id; eval detail framework-aware; extracted utils/trainMetrics.ts (shared w/ task detail)
+PHASE 2C COMPLETE (2 tasks). Next: 2D 仓库/导出/下载一致性.
+Plan 2D: docs/superpowers/plans/2026-09-12-phase2d-repo-export-download.md
+2D baseline: 8a082e8
+2D Task 1: complete (commits 8a082e8..473c5ce, review approved + directory-export URL fix)
+  - object_exists + resolve_download_target (export_service); download_model returns truthful format/re-downloadable; directory export URL points to real key
+2D Task 2 (模型编辑字段/状态 + 模型下拉分页) REMAIN.
+2D Task 2: complete (commits 473c5ce..b79d975, review approved)
+  - repo edit round-trips annotation_dataset_id + status; model dropdowns page_size=100 across eval/predict/deploy; backend status-persistence test
+PHASE 2 COMPLETE (2A+2B+2C+2D). Next: Phase 3 (预测/部署/视频推理).
+Plan 3A: docs/superpowers/plans/2026-09-12-phase3a-predict.md
+3A baseline: c0afa78
+3A Task 1: complete (commits c0afa78..5cd7aa2, review approved)
+  - predict_gpu_id + build_predict_cmd (PaddleX single -o, use_gpu from device, ultralytics device=); rec dataset export ocr_rec
+Minor(3A t1): model_filename shell quoting; predict_gpu_id non-numeric passthrough
+3A Task 2: complete (commits 5cd7aa2..800fb83, review approved + atomic start guard)
+  - sign_predict_results (keys<->URLs, legacy compatible) in get/list; delete_predicts cleans prefix; _execute stores keys; start_prediction atomic guard
+FOLLOWUP: start_training/start_evaluation guards are non-atomic too (apply same atomic pattern)
+PHASE 3A COMPLETE (2 tasks). Next: 3B 部署生命周期与脚本.
+Plan 3B: docs/superpowers/plans/2026-09-12-phase3b-deploy.md
+3B baseline: 2dfefd3
+3B Task 1: complete (commits 2dfefd3..e3241cd, review approved after 2 fix rounds)
+  - deploy labels, registry rehydrate (adopted re-probe), periodic reconcile, stop real container (registry->DB->label), normal-exit status, port reuse active-only, renew refuses deploying, delete stops first
+3B Task 2 (部署脚本规格驱动/rec 裁剪/超参透传) REMAIN.
+3B Task 2: complete (commits e3241cd..67ba42b, review approved after spec-fallback/crop fixes)
+  - resolve_deploy_spec (invalid-value fallback), PaddleX cfg by size, rec crops box (skip OOB), ultralytics conf/iou/imgsz passthrough, conditional pip install
+PHASE 3B COMPLETE (2 tasks). Next: 3C 视频推理.
+Plan 3C: docs/superpowers/plans/2026-09-12-phase3c-inference.md
+3C baseline: 6478d19
+DECISION: 布控改走 ModelDeploy Server 架构。新增专用'布控 Agent'(基于 ModelDeploy SDK，不动 surveillance)，AIStation 做云边协同(边缘 MQTT/纯云端 HTTP)+设备能力管理与任务编排。
+Spec: docs/superpowers/specs/2026-09-12-cloud-edge-visual-analysis-design.md
+ModelDeploy 会话交接: docs/superpowers/specs/2026-09-12-modeldeploy-agent-handoff.md
+Commit: cd0e82f
+Phase 3C 原方案作废，按新 spec 重写 AIStation 侧接入。
+Phase 3C re-written -> docs/superpowers/plans/2026-09-12-phase3c-edge-agent-integration.md (supersedes 2026-09-12-phase3c-inference.md).
+3C baseline: 88565bd
+3C Task 1: complete (commits 88565bd..435eedf, review approved after secret-mask/pagination/heartbeat-warning/DDL fixes)
+  - module_video/edge: EdgeDeviceModel + capability_satisfies + CRUD(分页) + /heartbeat(upsert,脱敏) + settings + init_app backfill
+3C Task 2/3 (编排/下发 + 事件接入) REMAIN.
+3C Task 2: complete (commits 435eedf..444124f, review approved)
+  - build_agent_task_config (spec §6) + EdgeAgentClient + EdgeOrchestrator(capability->compile->dispatch->start/stop) + edge_device_id + error_log; no-edge fallback to legacy worker
+FOLLOWUP(3C t2): EdgeAgentClient.delete not wired (delete布控 leaves orphan on Agent); partial-failure orphan; local-agent skips capability check
+3C Task 3 (事件接入) REMAIN.
+3C Task 3: complete (commits 444124f..b39f929, review approved after MQTT topic/TLS/shutdown fixes)
+  - normalize_edge_event + dedup + EdgeEventConsumer(lazy aiomqtt, 通配订阅, 退避重连, mqtts TLS); MQTT settings; init_app lifespan; service.py 快照引用
+  - topic: publish {MQTT_TOPIC_PREFIX}/{edge_code}/camera/{camera_id}/detect, subscribe aistation/+/edge/+/camera/+/detect
+PHASE 3C (edge-agent integration) 3 tasks complete. Remaining: wire Agent delete; Phase 3D 前端; final 3C review.
+3C follow-up: delete布控同步删 Agent 侧任务 (commit 222f582). PHASE 3C COMPLETE.
+VERIFIED backend pytest 252 passed.
+3C legacy-worker hardening (旧 phase3c-inference.md Task1 补完): commit ab3659a
+  - is_worker_alive 改 basename 精确匹配（修 test_inference_worker.py 子串误判）；scheduler start/stop/health 接通 pidfile 防重；_build_task_config 下发 schedule_json/interval_seconds/class_names；worker within_schedule/sensitivity_to_conf/label_name 生效
+  - VERIFIED backend pytest 252 passed; ruff clean; test_inference_worker.py 8 passed
+  - 未做（可选）: 旧 Task2 报警快照 HTTP 路由 + 规则匹配健壮（legacy worker 回退路径）
+NEXT: Phase 3D 前端（边缘设备管理页/布控页设备选择与状态/告警快照预览）；磁盘暂无 3D plan，需先 brainstorming + writing-plans。
+
+=== PHASE 3D: 云边可视化前端 ===
+Spec: docs/superpowers/specs/2026-09-12-phase3d-cloud-edge-frontend-design.md (commit 770b87c)
+Plan: docs/superpowers/plans/2026-09-12-phase3d-cloud-edge-frontend.md (commit 918a741)
+3D baseline: ab3659a
+3D Task 1: complete (旧 Task2 的快照路由部分) — 受控路由 /api/v1/video/detections/{path}（鉴权+防穿越）+ resolve_snapshot_url 归一化; tests test_snapshot_url.py(9)/test_snapshot_route.py(4)
+3D Task 2: complete — AlarmRecordOutSchema.snapshot_url 计算字段 + pick_alarm_rule 规则匹配健壮化（修多规则 500）; tests test_alarm_rule_match.py(3)/test_alarm_snapshot_url.py(2)
+3D Task 3: complete — 边缘设备管理页（edge.ts + EdgeCapabilityPanel + edge/index.vue + 15s轮询 + 详情抽屉 + _ensure_edge_page_menu 菜单补种）+ e2e/edge.spec.ts
+3D Task 4: complete — LivePlayer overlay 插槽+getVideoElement；RoiEditor（实时预览+SVG 归一化多边形）；EdgeDeviceSelect（本机/纯云端哨兵 -1）；deploy 页设备选择/状态/error_log/ROI；e2e/deploy-edge-roi.spec.ts
+3D Task 5: complete — SnapshotImage（鉴权 blob→objectURL、回收）+ 告警列表缩略图列 + 详情预览；e2e/alarm-snapshot.spec.ts
+3D Task 6: complete (regression)
+  - backend pytest 270 passed; ruff changed-files clean（全项目 FAST002 为 pre-existing）
+  - frontend: 新增/改动文件 eslint+prettier clean；项目级 vue-tsc 有 16 条 pre-existing 错误（module_generator/monitor/system/task），与 3D 无关
+  - Playwright e2e 全量 19 passed（含 3 条 3D 新用例）
+  - 真机 Agent 端到端: **阻塞**（布控 Agent 属 ModelDeploy 仓库另一会话）；等价验证: mock 心跳 POST /video/edge/heartbeat → 设备 online + capabilities 可见 → 列表 → 删除清理成功
+3D 提交区间: ab3659a..9911178
+Minor(3D): 快照对象存储 key 与本地相对路径靠 is_file 区分（极小误判）；RoiEditor contain 坐标换算仅 E2E 区块级验证，真机未验；EdgeDeviceSelect 在能力拦截上只做展示不硬阻止；error_log 仅 tooltip 展示
+PHASE 3D COMPLETE（6 tasks）。Remaining: 真机 Agent 端到端（依赖 ModelDeploy Agent 交付）。Next: Phase 4（端到端串联 + UI/UX 统一）。
