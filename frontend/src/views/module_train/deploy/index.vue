@@ -177,6 +177,15 @@
                   复制URL
                 </el-button>
                 <el-button
+                  size="small"
+                  link
+                  type="info"
+                  icon="Document"
+                  @click="deployLogRef.open(scope.row)"
+                >
+                  详情
+                </el-button>
+                <el-button
                   v-if="scope.row.status === 'failed' || scope.row.status === 'stopped'"
                   size="small"
                   link
@@ -259,6 +268,8 @@
         <el-button type="primary" @click="onKeyDialogClose">我已保存，进入管理页</el-button>
       </template>
     </el-dialog>
+
+    <DeployLogDrawer ref="deployLogRef" />
   </div>
 </template>
 
@@ -269,6 +280,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled, Link } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import DeployLogDrawer from "@/components/Train/DeployLogDrawer.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
@@ -278,6 +290,7 @@ interface TablePageQuery { page_no: number; page_size: number; [key: string]: an
 
 const router = useRouter();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const deployLogRef = ref();
 
 const models = ref<any[]>([]);
 const creating = ref(false);

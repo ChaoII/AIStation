@@ -185,6 +185,15 @@ export const TrainAPI = {
       params,
     });
   },
+  getDeployDetail(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/detail`, method: "get" });
+  },
+  getDeployLogs(id: number) {
+    return request<ApiResponse<{ logs: string }>>({
+      url: `${API_PATH}/deploy/${id}/logs`,
+      method: "get",
+    });
+  },
   deleteDeploy(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/deploy/delete`, method: "delete", data: ids });
   },
