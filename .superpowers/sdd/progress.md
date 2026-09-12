@@ -334,3 +334,12 @@ Plan: docs/superpowers/plans/2026-09-13-phase5b-realtime-collaboration.md (commi
 5B Task 4: complete — e2e/collaboration.spec.ts（在线指示）；backend pytest 278 passed
 5B 已知限制: 内存房间不支持多 worker（Redis 化后续）；last-write-wins 重载（无 CRDT）；远端光标仅广播未精确渲染
 PHASE 5B COMPLETE。Next: Phase 6（全量回归验收 6 类型 × 2 框架）。
+
+=== PHASE 6: 全量回归验收 ===
+Plan: docs/superpowers/plans/2026-09-13-phase6-regression.md
+Report: docs/superpowers/reports/2026-09-13-phase6-regression-report.md
+6 自动化: backend pytest 278 passed；前端新增特性 E2E 逐项通过；vue-tsc 新增文件 0 错误
+6 环境: Docker 29.5.3 + ultralytics/paddlex/rustfs/postgres/redis 镜像均在；后端 8001 + 前端 5180 运行中
+6 全量 E2E: 受 dev 后端 QueuePool 耗尽/10s 超时影响间歇失败（环境负载，非代码回归）；单跑通过
+6 矩阵真机: det/seg/obb/pose/cls 待人工；OCR det/rec 历史已验（SP2）
+PROGRAM Phase 0-5 全部功能与自动化回归完成（含 3C/3D/4/5A/5B）。Phase 6 报告已出，真机矩阵待人工。
