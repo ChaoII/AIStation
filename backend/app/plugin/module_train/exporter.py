@@ -146,8 +146,9 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
 
     base_path = "/data" if for_training else "."
     sorted_out = list(range(len(class_id_map)))
+    extra = pose_extra_yaml(anns_by_img) if task_type in ("keypoint", "pose") else None
     _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_out,
-                class_names or {}, class_id_map=class_id_map)
+                class_names or {}, class_id_map=class_id_map, extra_yaml=extra)
     log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_out)} → {output_dir}")
 
 
@@ -234,6 +235,18 @@ def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] 
             if len(parts) > 4:
                 lines.append(f"{cls_id} {' '.join(parts)}")
     return lines
+
+
+def pose_extra_yaml(anns_by_img: dict[int, list]) -> dict:
+    """当存在关键点标注时，返回 pose 训练所需的 kpt_shape / flip_idx。"""
+    k = 0
+    for anns in anns_by_img.values():
+        for ann in anns:
+            if ann.get("type") in ("Keypoint", "keypoint"):
+                k = max(k, len(ann.get("keypoints", [])))
+    if k <= 0:
+        return {}
+    return {"kpt_shape": f"[{k}, 3]", "flip_idx": "[" + ", ".join(str(i) for i in range(k)) + "]"}
 
 
 def _write_yaml(
