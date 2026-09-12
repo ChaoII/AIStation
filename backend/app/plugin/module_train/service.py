@@ -91,6 +91,24 @@ def _enrich_task(row) -> dict:
     return d
 
 
+def sign_predict_results(predict: dict) -> dict:
+    """把预测结果中的对象键转为签名 URL；历史 URL 原样保留。"""
+    from app.utils.s3_client import s3_client
+
+    def _sign(v):
+        if not v or not isinstance(v, str):
+            return v
+        return v if v.startswith(("http://", "https://")) else s3_client.presigned_url(v)
+
+    if predict is None:
+        return predict
+    out = dict(predict)
+    imgs = predict.get("result_images")
+    out["result_images"] = [_sign(v) for v in imgs] if isinstance(imgs, list) else imgs
+    out["result_zip_path"] = _sign(predict.get("result_zip_path"))
+    return out
+
+
 class TrainService:
 
     @classmethod
@@ -502,7 +520,7 @@ class TrainService:
                         data["log"] = f.read()[-500000:]
                 except Exception:
                     pass
-            return data
+            return sign_predict_results(data)
 
     @classmethod
     async def list_predicts(cls, params: dict | None = None) -> tuple[list[dict], int]:
@@ -537,10 +555,14 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainPredict.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [_model_to_dict(r) for r in rows], total
+            return [sign_predict_results(_model_to_dict(r)) for r in rows], total
 
     @classmethod
     async def delete_predicts(cls, ids: list[int]) -> None:
+        from app.utils.s3_client import s3_client
+
+        for pid in ids:
+            s3_client.delete_prefix(f"train/predict/{pid}/")
         async with async_db_session.begin() as db:
             for pid in ids:
                 p = await db.get(TrainPredict, pid)

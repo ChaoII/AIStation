@@ -52,6 +52,15 @@ class S3Client:
     def delete_object(self, object_key: str, env: str | None = None) -> None:
         self.client.delete_object(Bucket=self._bucket(env), Key=object_key)
 
+    def delete_prefix(self, prefix: str, env: str | None = None) -> int:
+        """删除该前缀下所有对象，返回删除数量。"""
+        bucket = self._bucket(env)
+        resp = self.client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        keys = [o["Key"] for o in resp.get("Contents", [])]
+        for k in keys:
+            self.client.delete_object(Bucket=bucket, Key=k)
+        return len(keys)
+
     def object_exists(self, object_key: str, env: str | None = None) -> bool:
         """判断对象是否存在（head_object；不存在或无权访问均视为 False）。"""
         try:

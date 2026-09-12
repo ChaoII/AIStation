@@ -77,6 +77,9 @@ async def start_prediction_scheduler():
 
 async def start_prediction(predict_id: int):
     async with async_db_session.begin() as db:
+        row = await db.get(TrainPredict, predict_id)
+        if row and row.status == TrainStatus.RUNNING:
+            raise Exception("预测任务正在运行，请勿重复启动")
         await db.execute(
             update(TrainPredict).where(TrainPredict.id == predict_id).values(
                 status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
@@ -227,7 +230,7 @@ class PredictExecutor(TaskExecutor):
                         rustfs_key = f"train/predict/{predict_id}/{f}"
                         with open(img_path, "rb") as img_f:
                             s3_client.upload_fileobj(img_f, rustfs_key)
-                        result_images.append(s3_client.presigned_url(rustfs_key))
+                        result_images.append(rustfs_key)
 
                     # Create ZIP
                     zip_path = os.path.join(export_dir, "results.zip")
@@ -237,7 +240,7 @@ class PredictExecutor(TaskExecutor):
                     zip_rustfs_key = f"train/predict/{predict_id}/results.zip"
                     with open(zip_path, "rb") as zf:
                         s3_client.upload_fileobj(zf, zip_rustfs_key)
-                    result_zip_path = s3_client.presigned_url(zip_rustfs_key)
+                    result_zip_path = zip_rustfs_key
 
                 await cls._mark_status(predict_id, TrainStatus.SUCCESS,
                                        result_images=result_images or None,
