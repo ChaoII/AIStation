@@ -286,7 +286,8 @@ async def export_model_to_format(
             with open(zip_path, "rb") as f:
                 s3_client.upload_fileobj(f, rustfs_key)
             file_size = os.path.getsize(zip_path)
-            rustfs_key = rustfs_key.rstrip("/") + ".zip"
+            # 目录格式打包为 zip 上传，但对象键仍为真实上传键（无 .zip 后缀），
+            # 下载链接必须指向该真实对象，否则会 404。.zip 仅用于用户可见文件名。
 
         # 5. Update DB
         from datetime import datetime
@@ -308,7 +309,8 @@ async def export_model_to_format(
         # 6. Generate download URL
         download_url = s3_client.presigned_url(rustfs_key)
 
-        file_name = f"model_{model_id}_{export_format}{EXPORT_EXT.get(export_format, '.zip')}"
+        # 目录格式（EXPORT_EXT 为空串）用户可见文件名以 .zip 结尾
+        file_name = f"model_{model_id}_{export_format}{EXPORT_EXT.get(export_format) or '.zip'}"
 
         log.info(f"model {model_id} exported to {export_format}: {rustfs_key} ({file_size} bytes)")
 
