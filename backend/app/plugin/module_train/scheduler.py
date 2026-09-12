@@ -11,6 +11,7 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .concurrency import get_train_semaphore
 from .docker_utils import (
     find_task_containers,
     get_container,
@@ -141,6 +142,37 @@ async def _build_export_dir(task_id: int) -> str:
     return export_dir
 
 
+async def resolve_base_model(task, export_dir: str) -> str | None:
+    """解析任务的基础模型：下载到 ``<export_dir>/base/`` 并返回文件名。
+
+    当 ``task.base_model_id`` 指向一个带 ``storage_path`` 的 ``TrainModel`` 版本时，
+    从 RustFS 下载权重到 ``<export_dir>/base/<basename>``，返回该 basename（供容器
+    挂载到 ``/base`` 或 ``/pretrained``）。否则返回 ``None``（训练从默认权重开始）。
+    """
+    base_model_id = getattr(task, "base_model_id", None)
+    if not base_model_id:
+        return None
+
+    from .model import TrainModel
+    async with async_db_session() as db:
+        model = await db.get(TrainModel, base_model_id)
+    storage_path = getattr(model, "storage_path", None) if model else None
+    if not storage_path:
+        return None
+    name = os.path.basename(storage_path)
+    if not name:
+        return None
+
+    base_dir = os.path.join(export_dir, "base")
+    os.makedirs(base_dir, exist_ok=True)
+    from app.utils.s3_client import s3_client
+    data = s3_client.download_fileobj(storage_path)
+    with open(os.path.join(base_dir, name), "wb") as f:
+        f.write(data.read())
+    log.info(f"base model {base_model_id} resolved: {storage_path} -> base/{name}")
+    return name
+
+
 # hp dict key → (yolo CLI flag, 默认值, 校验lambda)。仅当 key 在 hp 且值非 None 时拼入命令。
 _ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
     "model":        ("model", "yolo11n.pt", None),
@@ -167,23 +199,28 @@ _ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
 }
 
 
-def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None) -> list[str]:
+def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None, base_model_name: str | None = None) -> list[str]:
     hp = dict(hp)
     # 兼容旧任务：前端曾发 `lr`，但白名单 key 是 `lr0`（否则 lr 被静默丢弃）
     if "lr" in hp and "lr0" not in hp:
         hp["lr0"] = hp.pop("lr")
     if force_multi_label is not None:
         hp["multi_label"] = force_multi_label
-    model_name = hp.get("model") or "yolo11n.pt"
-    # Auto-select OBB model for rotated_detection tasks
-    if task_type == "rotated_detection" and "-obb" not in model_name:
-        base = model_name.replace(".pt", "")
-        model_name = f"{base}-obb.pt"
-    # Auto-select CLS model for classification tasks
-    if task_type in ("cls", "classification") and "-cls" not in model_name:
-        base = model_name.replace(".pt", "")
-        model_name = f"{base}-cls.pt"
-    cmd = ["yolo", "train", f"model=/models/{model_name}", "data=/data/dataset.yaml",
+    if base_model_name:
+        # 基础模型：直接以挂载到 /base 的已训练权重为起点，跳过内置模型名的任务类型后缀
+        model_arg = f"model=/base/{base_model_name}"
+    else:
+        model_name = hp.get("model") or "yolo11n.pt"
+        # Auto-select OBB model for rotated_detection tasks
+        if task_type == "rotated_detection" and "-obb" not in model_name:
+            base = model_name.replace(".pt", "")
+            model_name = f"{base}-obb.pt"
+        # Auto-select CLS model for classification tasks
+        if task_type in ("cls", "classification") and "-cls" not in model_name:
+            base = model_name.replace(".pt", "")
+            model_name = f"{base}-cls.pt"
+        model_arg = f"model=/models/{model_name}"
+    cmd = ["yolo", "train", model_arg, "data=/data/dataset.yaml",
            "project=/output", "name=exp"]
     for key, (flag, _default, validator) in _ULTRALYTICS_HP.items():
         if key == "model":
@@ -232,13 +269,16 @@ _PADDLEX_WEIGHTS = {
 }
 
 
-def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str = "det") -> list[str]:
+def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str = "det", base_model_name: str | None = None) -> list[str]:
     """构建 PaddleX OCR 训练命令（PP-OCRv6 det/rec，tiny/small/medium）。
 
     数据布局（exporter 生成）：
       det: /data/det/   (dataset/ 子目录含 train.txt + images)
       rec: /data/rec/   (dataset/ 子目录含 train.txt + images)
     输出到 /output/det 或 /output/rec。
+
+    ``base_model_name`` 非空时优先作为初始权重：挂载到 ``/pretrained/<name>``
+    （覆盖官方预训练权重）。
     """
     hp = dict(hp)
     size = hp.get("model_size") or "tiny"
@@ -255,7 +295,13 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     )
     data_dir_in = f"/data/{mode}/dataset"
     out_dir = f"/output/{mode}"
-    pretrained = f"/pretrained/{mode}.pdparams" if use_pretrained else ""
+    if base_model_name:
+        # 基础模型优先于官方预训练权重
+        pretrained = f"/pretrained/{base_model_name}"
+    elif use_pretrained:
+        pretrained = f"/pretrained/{mode}.pdparams"
+    else:
+        pretrained = ""
 
     opts = [
         f"Global.epoch_num={epochs}",
@@ -283,8 +329,8 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     return ["bash", "-c", f"cd {_PADDLEX_OCR_DIR} && {inner}"]
 
 
-async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
-    """按框架构建训练命令。"""
+async def _build_cmd(task, data_dir: str, export_dir: str, base_model_name: str | None = None) -> list[str]:
+    """按框架构建训练命令。``base_model_name`` 非空时以其为初始权重。"""
     if task.framework == TrainFramework.ULTRALYTICS:
         task_type = "detection"
         force_multi_label = None
@@ -298,7 +344,7 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
                     # in sync so a "multi" task always trains with multi_label=True.
                     if task_type in ("cls", "classification") and ann_task.classification_mode == "multi":
                         force_multi_label = True
-        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label)
+        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label, base_model_name=base_model_name)
     if task.framework == TrainFramework.PADDLEX:
         # PaddleX OCR：按任务类型 det/rec 走 PP-OCRv6 训练
         # hyperparams 里用 mode 区分（前端传入 det/rec 或由任务名推断）
@@ -307,7 +353,7 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
         if mode not in ("det", "rec"):
             # 从框架/模型名兜底推断
             mode = "det"
-        return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode)
+        return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode, base_model_name=base_model_name)
     raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
@@ -391,29 +437,42 @@ class TrainExecutor(TaskExecutor):
             data_train_ratio = task.hyperparams.get("train_ratio", 0.8)
             await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id, train_ratio=data_train_ratio)
 
-            cmd = await _build_cmd(task, data_dir, export_dir)
+            base_model_name = await resolve_base_model(task, export_dir)
+            cmd = await _build_cmd(task, data_dir, export_dir, base_model_name=base_model_name)
 
             # Pre-download model weights so container doesn't fetch from internet
-            if task.framework == TrainFramework.ULTRALYTICS:
+            # （base_model 已本地挂载，无需再下载内置权重）
+            if task.framework == TrainFramework.ULTRALYTICS and not base_model_name:
                 model_arg = next((a for a in cmd if a.startswith("model=")), "model=yolo11n.pt")
                 model_name = model_arg.split("=", 1)[1].removeprefix("/models/")
                 _ensure_model_file(model_name)
 
-            os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
-            container = await run_container(
-                task.docker_image, cmd,
-                volumes={data_dir: {"bind": "/data", "mode": "rw"},
-                         export_dir: {"bind": "/output", "mode": "rw"},
-                         MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}},
-                gpu_id=task.hyperparams.get("gpu_id", "0"),
-                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
-            )
-            container_id = container.id
-            entry = cls._registry.get(task_id) or {}
-            entry.update({"container_id": container_id})
-            cls._registry[task_id] = entry
+            volumes = {data_dir: {"bind": "/data", "mode": "rw"},
+                       export_dir: {"bind": "/output", "mode": "rw"},
+                       MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}}
+            if base_model_name:
+                # 已下载的基础模型目录只读挂载到 /base
+                volumes[os.path.join(export_dir, "base")] = {"bind": "/base", "mode": "ro"}
 
-            await cls._finalize(task_id, container, export_dir, task=task)
+            os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
+            # 全局 GPU 并发上限：跨 ultralytics / PaddleX det / rec 共享同一信号量，
+            # 信号量覆盖从启动容器到容器退出（含日志跟随/收尾）的整个 GPU 阶段。
+            async with get_train_semaphore():
+                # 等待信号量期间可能被取消：启动容器前再检查一次
+                if cls._registry.get(task_id, {}).get("cancel"):
+                    return
+                container = await run_container(
+                    task.docker_image, cmd,
+                    volumes=volumes,
+                    gpu_id=task.hyperparams.get("gpu_id", "0"),
+                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
+                )
+                container_id = container.id
+                entry = cls._registry.get(task_id) or {}
+                entry.update({"container_id": container_id})
+                cls._registry[task_id] = entry
+
+                await cls._finalize(task_id, container, export_dir, task=task)
         except Exception as e:
             log.error(f"training task {task_id} failed: {e}")
             await cls._mark_status(task_id, TrainStatus.FAILED,

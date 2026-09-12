@@ -13,10 +13,11 @@ from datetime import datetime
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .concurrency import get_train_semaphore
 from .docker_utils import pull_image, remove_container, run_container
 from .framework_utils import framework_value
 from .model import TrainStatus, TrainTask
-from .scheduler import _build_cmd
+from .scheduler import _build_cmd, resolve_base_model
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
 
@@ -105,59 +106,70 @@ class PaddleXOCRExecutor(TaskExecutor):
                 ocr_rec=(mode == "rec"),
             )
 
-            cmd = await _build_cmd(task, data_dir, export_dir)
+            base_model_name = await resolve_base_model(task, export_dir)
+            cmd = await _build_cmd(task, data_dir, export_dir, base_model_name=base_model_name)
 
             volumes = {
                 data_dir: {"bind": "/data", "mode": "rw"},
                 export_dir: {"bind": "/output", "mode": "rw"},
             }
-            # 官方预训练权重：det/rec 各规格 .pdparams（pretrained=true 时下载到 pretrained_host）
-            pretrained_host = os.path.join(export_dir, "pretrained")
-            os.makedirs(pretrained_host, exist_ok=True)
-            volumes[pretrained_host] = {"bind": "/pretrained", "mode": "rw"}
-            use_pretrained = bool((task.hyperparams or {}).get("pretrained", False))
-            if use_pretrained:
-                size = str((task.hyperparams or {}).get("model_size", "tiny"))
-                if size not in ("tiny", "small", "medium"):
-                    size = "tiny"
-                url = (
-                    f"https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/"
-                    f"PP-OCRv6_{size}_{mode}_pretrained.pdparams"
+            if base_model_name:
+                # 基础模型：只读挂载到 /pretrained，作为 Global.pretrained_model（优先于官方权重）
+                volumes[os.path.join(export_dir, "base")] = {"bind": "/pretrained", "mode": "ro"}
+            else:
+                # 官方预训练权重：det/rec 各规格 .pdparams（pretrained=true 时下载到 pretrained_host）
+                pretrained_host = os.path.join(export_dir, "pretrained")
+                os.makedirs(pretrained_host, exist_ok=True)
+                volumes[pretrained_host] = {"bind": "/pretrained", "mode": "rw"}
+                use_pretrained = bool(hp.get("pretrained", False))
+                if use_pretrained:
+                    size = str(hp.get("model_size", "tiny"))
+                    if size not in ("tiny", "small", "medium"):
+                        size = "tiny"
+                    url = (
+                        f"https://paddle-model-ecology.bj.bcebos.com/paddlex/official_pretrained_model/"
+                        f"PP-OCRv6_{size}_{mode}_pretrained.pdparams"
+                    )
+                    wpath = os.path.join(pretrained_host, f"{mode}.pdparams")
+                    if not os.path.exists(wpath):
+                        await broadcast_log(task_id, f"[{cls.name}] downloading pretrained {url}")
+                        import requests
+                        resp = requests.get(url, timeout=300)
+                        if resp.status_code == 200:
+                            with open(wpath, "wb") as f:
+                                f.write(resp.content)
+                        else:
+                            await broadcast_log(task_id, "[paddlex] pretrained download failed, train from scratch")
+                            use_pretrained = False
+                    if not use_pretrained:
+                        hp = dict(task.hyperparams or {})
+                        hp["pretrained"] = False
+                        task.hyperparams = hp
+
+            # 全局 GPU 并发上限：跨 ultralytics / PaddleX det / rec 共享同一信号量，
+            # 信号量覆盖从启动容器到容器退出（含日志跟随/收尾）的整个 GPU 阶段。
+            async with get_train_semaphore():
+                # 等待信号量期间可能被取消：启动容器前再检查一次
+                if cls._registry.get(task_id, {}).get("cancel"):
+                    return
+                container = await run_container(
+                    cls.DOCKER_IMAGE, cmd,
+                    volumes=volumes,
+                    gpu_id=task.hyperparams.get("device") or task.hyperparams.get("gpu_id") or "0",
+                    shm_size="4g",
+                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
                 )
-                wpath = os.path.join(pretrained_host, f"{mode}.pdparams")
-                if not os.path.exists(wpath):
-                    await broadcast_log(task_id, f"[{cls.name}] downloading pretrained {url}")
-                    import requests
-                    resp = requests.get(url, timeout=300)
-                    if resp.status_code == 200:
-                        with open(wpath, "wb") as f:
-                            f.write(resp.content)
-                    else:
-                        await broadcast_log(task_id, "[paddlex] pretrained download failed, train from scratch")
-                        use_pretrained = False
-                if not use_pretrained:
-                    hp = dict(task.hyperparams or {})
-                    hp["pretrained"] = False
-                    task.hyperparams = hp
+                container_id = container.id
+                entry = cls._registry.get(task_id) or {}
+                entry.update({"container_id": container_id})
+                cls._registry[task_id] = entry
 
-            container = await run_container(
-                cls.DOCKER_IMAGE, cmd,
-                volumes=volumes,
-                gpu_id=task.hyperparams.get("device") or task.hyperparams.get("gpu_id") or "0",
-                shm_size="4g",
-                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
-            )
-            container_id = container.id
-            entry = cls._registry.get(task_id) or {}
-            entry.update({"container_id": container_id})
-            cls._registry[task_id] = entry
-
-            metrics_log = await cls.follow_logs(
-                container_id,
-                os.path.join(export_dir, "train.log"),
-                lambda line: broadcast_log(task_id, line),
-                parse_fn=cls._parse_epoch,
-            )
+                metrics_log = await cls.follow_logs(
+                    container_id,
+                    os.path.join(export_dir, "train.log"),
+                    lambda line: broadcast_log(task_id, line),
+                    parse_fn=cls._parse_epoch,
+                )
             exit_code = await cls._get_exit_code(container)
 
             if cls._registry.get(task_id, {}).get("cancel"):
