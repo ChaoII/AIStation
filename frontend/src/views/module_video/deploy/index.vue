@@ -188,6 +188,7 @@
               filterable
               placeholder="选择摄像机"
               style="width: 280px"
+              @visible-change="(v: boolean) => v && ensureCameraOptions()"
             >
               <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
@@ -211,6 +212,7 @@
               placeholder="选择算法"
               style="width: 280px"
               @change="handleAlgorithmChange"
+              @visible-change="(v: boolean) => v && ensureAlgorithmOptions()"
             >
               <el-option v-for="a in algorithmOptions" :key="a.id" :label="a.name" :value="a.id" />
             </el-select>
@@ -375,6 +377,7 @@ import { getAlgorithmList } from "@/api/module_video/algorithm";
 import { getEdgeDeviceDetail } from "@/api/module_video/edge";
 import EdgeDeviceSelect from "@/components/Edge/EdgeDeviceSelect.vue";
 import RoiEditor from "@/components/Video/RoiEditor.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import {
   getAlgorithmTaskList,
   createAlgorithmTask,
@@ -433,6 +436,9 @@ const searchConfig = reactive<ISearchConfig>({
         clearable: true,
         filterable: true,
         style: { width: "180px" },
+        onVisibleChange: (v: boolean) => {
+          if (v) ensureCameraOptions();
+        },
       },
     },
     {
@@ -531,8 +537,11 @@ async function handleAlgorithmChange(algoId: number) {
   algoParams.value = null;
   if (!algoId) return;
   try {
-    const res = await getAlgorithmList({ page_size: 100 });
-    const algo = res.data?.data?.items?.find((a: any) => a.id === algoId);
+    const items = await cachedOptions(
+      "video:algorithms",
+      async () => (await getAlgorithmList({ page_size: 100 })).data?.data?.items || []
+    );
+    const algo = items.find((a: any) => a.id === algoId);
     if (algo) {
       const config: any = {};
       if (algo.model_file_config && Object.keys(algo.model_file_config).length > 0)
@@ -636,6 +645,8 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  ensureCameraOptions();
+  ensureAlgorithmOptions();
   if (id && type === "update") {
     dialogVisible.title = "编辑布控计划";
     const res = await getAlgorithmTaskList({ page_no: 1, page_size: 100 });
@@ -715,17 +726,28 @@ async function handleSubmit() {
   });
 }
 
-async function loadOptions() {
+async function ensureCameraOptions() {
+  if (cameraOptions.value.length) return;
   try {
-    const [camRes, algRes] = await Promise.all([
-      getCameraList({ page_size: 100 }),
-      getAlgorithmList({ page_size: 100 }),
-    ]);
-    cameraOptions.value = camRes.data?.data?.items || [];
-    algorithmOptions.value = algRes.data?.data?.items || [];
+    cameraOptions.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
     const searchItem: any = searchConfig.formItems?.find((i: any) => i.prop === "camera_id");
     if (searchItem)
       searchItem.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
+  } catch {
+    /* noop */
+  }
+}
+
+async function ensureAlgorithmOptions() {
+  if (algorithmOptions.value.length) return;
+  try {
+    algorithmOptions.value = await cachedOptions(
+      "video:algorithms",
+      async () => (await getAlgorithmList({ page_size: 100 })).data?.data?.items || []
+    );
   } catch {
     /* noop */
   }
@@ -764,7 +786,6 @@ async function pollInferenceStatus() {
 }
 
 onBeforeMount(() => {
-  loadOptions();
   document.addEventListener("mouseup", onDragEnd);
   statusTimer = setInterval(pollInferenceStatus, 5000);
 });
