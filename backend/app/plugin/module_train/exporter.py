@@ -17,6 +17,19 @@ async def prepare_training_data_for_task(dataset_id: int, task_id: int, framewor
     return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec)
 
 
+async def prepare_eval_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, ocr_mode: str = "det") -> str:
+    """评估数据导出：全量、确定性，不随机切分。
+
+    - YOLO：全部图片进 ``images/val``（``train`` 为空），``yolo val`` 读 ``val`` 即全量；
+    - PaddleOCR：全部记录进 ``val.txt``（``train.txt`` 为空）。
+    相比训练导出必须显式传 ``annotation_task_id``，否则任务类型默认 detection，
+    分类/分割评估会导出错误格式。
+    """
+    return await _export_core(dataset_id, task_id, framework, output_dir,
+                              annotation_task_id=annotation_task_id,
+                              ocr_rec=(ocr_mode == "rec"), for_eval=True)
+
+
 async def export_dataset_for_download(
     dataset_id: int, task_id: int, format: str, output_dir: str,
     annotation_task_id: int | None = None, ocr_rec: bool = True, train_ratio: float = 0.8
@@ -28,7 +41,7 @@ async def export_dataset_for_download(
 async def _export_core(
     dataset_id: int, task_id: int, framework: str, output_dir: str,
     annotation_task_id: int | None = None, ocr_rec: bool = True,
-    train_ratio: float = 0.8, for_training: bool = False
+    train_ratio: float = 0.8, for_training: bool = False, for_eval: bool = False
 ) -> str:
     """Core export logic shared by training and download."""
     os.makedirs(output_dir, exist_ok=True)
@@ -64,31 +77,34 @@ async def _export_core(
             await _export_yolo_cls(
                 dataset_id, task_id, images, output_dir, annotation_task_id,
                 train_ratio=train_ratio, class_names=class_names, for_training=for_training,
-                multi_label=(classification_mode == "multi"),
+                multi_label=(classification_mode == "multi"), for_eval=for_eval,
             )
         else:
-            await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training)
+            await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training, for_eval=for_eval)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id, class_names=class_names)
     elif framework == "paddle-ocr":
         # 数据集下载导出 PaddleOCR 格式（det/rec 由 ocr_rec 控制）
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
-                                 export_rec=ocr_rec, train_ratio=train_ratio)
+                                 export_rec=ocr_rec, train_ratio=train_ratio, for_eval=for_eval)
     elif framework == "paddle-mlcls":
         await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id,
                                    class_names=class_names)
     elif framework == "paddlex":
         # PaddleX OCR：ocr_rec 区分 det(false) / rec(true)
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
-                                 export_rec=ocr_rec, train_ratio=train_ratio)
+                                 export_rec=ocr_rec, train_ratio=train_ratio, for_eval=for_eval)
     else:
         raise ValueError(f"不支持的导出框架: {framework}")
 
     log.info(f"export {framework} to {output_dir}")
 
 
-async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False) -> None:
+async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, for_eval: bool = False) -> None:
     """Export to YOLO format with train/val split. for_training controls YAML path.
+
+    for_eval=True 时全部图片进 ``images/val``、不 shuffle，保证评估全量且可复现
+    （``yolo val`` 读 ``val:`` 分片，train 目录仍创建但为空）。
 
     两遍式：先收集所有图片的最新标注与全局类 id 集合，构建连续映射后再下载图片、
     按映射写标签，避免稀疏类 id（类别删除后）导致 nc/names 越界。
@@ -115,10 +131,14 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
 
     class_id_map = build_class_mapping(used_ids)
 
-    random.shuffle(images)
-    split_idx = max(1, int(len(images) * train_ratio))
-    train_imgs = images[:split_idx]
-    val_imgs = images[split_idx:]
+    if for_eval:
+        # 评估：全量进 val、不 shuffle，保证每次评估同一批图片
+        train_imgs, val_imgs = [], images
+    else:
+        random.shuffle(images)
+        split_idx = max(1, int(len(images) * train_ratio))
+        train_imgs = images[:split_idx]
+        val_imgs = images[split_idx:]
 
     for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
         img_split = os.path.join(output_dir, "images", split_name)
@@ -385,11 +405,13 @@ def _write_yolo_cls_yaml(output_dir: str, for_training: bool) -> None:
         f.write("val: val\n")
 
 
-async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, multi_label: bool = False) -> None:
+async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, multi_label: bool = False, for_eval: bool = False) -> None:
     """Export classification to YOLO CLS format with train/val split.
 
     single_label: train/<cls>/<img>.jpg (目录结构)
     multi_label:  train/<img>.jpg + train/labels/<img>.txt (每行一个 class id)
+
+    for_eval=True 时全部图片进 ``val``、不 shuffle（评估全量可复现）。
     """
     import random
 
@@ -431,9 +453,13 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
 
     if multi_label:
         # Multi-label: flat train/val dirs + labels/*.txt (one class id per line)
-        random.shuffle(images)
-        split_idx = max(1, int(len(images) * train_ratio)) if images else 0
-        for split_name, sub in [("train", images[:split_idx]), ("val", images[split_idx:])]:
+        if for_eval:
+            train_sub, val_sub = [], images
+        else:
+            random.shuffle(images)
+            split_idx = max(1, int(len(images) * train_ratio)) if images else 0
+            train_sub, val_sub = images[:split_idx], images[split_idx:]
+        for split_name, sub in [("train", train_sub), ("val", val_sub)]:
             img_dir = os.path.join(output_dir, split_name)
             lbl_dir = os.path.join(output_dir, split_name, "labels")
             os.makedirs(img_dir, exist_ok=True)
@@ -462,9 +488,13 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
         if ids:
             class_imgs.setdefault(ids[0], []).append(img)
     for cid, imgs in class_imgs.items():
-        random.shuffle(imgs)
-        split = max(0, int(len(imgs) * train_ratio))
-        for split_name, sub in [("train", imgs[:split]), ("val", imgs[split:])]:
+        if for_eval:
+            train_sub, val_sub = [], imgs
+        else:
+            random.shuffle(imgs)
+            split = max(0, int(len(imgs) * train_ratio))
+            train_sub, val_sub = imgs[:split], imgs[split:]
+        for split_name, sub in [("train", train_sub), ("val", val_sub)]:
             cls_name = task_cn.get(cid, f"class_{cid}")
             dst_dir = os.path.join(output_dir, split_name, cls_name)
             os.makedirs(dst_dir, exist_ok=True)
@@ -722,12 +752,15 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
 
 async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
                              output_dir: str, annotation_task_id: int | None = None,
-                             export_rec: bool = False, train_ratio: float = 0.8) -> None:
+                             export_rec: bool = False, train_ratio: float = 0.8,
+                             for_eval: bool = False) -> None:
     """导出 PaddleX OCR（PP-OCRv6）数据格式。
 
     det 始终导出：<output>/det/dataset/  (train.txt + val.txt + images/)  PaddleX JSON 标注。
     export_rec=True 时额外导出 rec：<output>/rec/dataset/  (train.txt + val.txt + images/)
     与词表 <output>/rec/dict.txt（优先官方 ppocrv6_dict.txt）。
+
+    for_eval=True 时全部记录进 val.txt、train.txt 为空（评估全量可复现）。
     """
     import random
 
@@ -763,9 +796,13 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
                            for e in det_entries if (e["transcription"] or "").strip()]
             records.append((img.filename, det_entries, rec_entries))
 
-    random.shuffle(records)
-    split_idx = max(1, int(len(records) * train_ratio)) if len(records) > 1 else len(records)
-    train_set, val_set = records[:split_idx], records[split_idx:]
+    if for_eval:
+        # 评估：全部进 val、不 shuffle
+        train_set, val_set = [], records
+    else:
+        random.shuffle(records)
+        split_idx = max(1, int(len(records) * train_ratio)) if len(records) > 1 else len(records)
+        train_set, val_set = records[:split_idx], records[split_idx:]
 
     def write_det_label(path: str, rows: list) -> None:
         lines = []
