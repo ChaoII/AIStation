@@ -55,7 +55,7 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'name')?.show"
               key="name"
-              label="模型名称"
+              label="仓库名称"
               prop="name"
               min-width="160"
               show-overflow-tooltip
@@ -77,28 +77,13 @@
               </template>
             </el-table-column>
             <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'version')?.show"
-              key="version"
-              label="版本"
-              prop="version"
-              width="80"
+              v-if="contentCols.find((col) => col.prop === 'version_count')?.show"
+              key="version_count"
+              label="版本数"
+              prop="version_count"
+              width="90"
+              align="center"
             />
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'metrics')?.show"
-              key="metrics"
-              label="最新指标"
-              prop="metrics"
-              min-width="140"
-            >
-              <template #default="scope">
-                <span
-                  v-if="scope.row.metrics && (scope.row.metrics.map50 || scope.row.metrics.mAP)"
-                >
-                  {{ scope.row.metrics.mAP || scope.row.metrics.map50?.toFixed(4) }}
-                </span>
-                <span v-else class="text-gray-400">--</span>
-              </template>
-            </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
@@ -128,6 +113,9 @@
               min-width="240"
             >
               <template #default="scope">
+                <el-button size="small" link type="primary" @click="openVersions(scope.row)">
+                  版本
+                </el-button>
                 <el-button
                   v-hasPerm="['module_train:model:update']"
                   size="small"
@@ -146,52 +134,6 @@
                   @click="handleRowDelete(scope.row.id)"
                 >
                   删除
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_train:model:query']"
-                  size="small"
-                  link
-                  icon="VideoPlay"
-                  @click="handleTrain(scope.row)"
-                >
-                  训练
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_train:model:query']"
-                  size="small"
-                  link
-                  icon="Search"
-                  @click="handleEval(scope.row)"
-                >
-                  评估
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_train:model:query']"
-                  size="small"
-                  link
-                  icon="DataLine"
-                  @click="handlePredict(scope.row)"
-                >
-                  预测
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_train:model:query']"
-                  size="small"
-                  link
-                  icon="Download"
-                  @click="handleExport(scope.row)"
-                >
-                  导出
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_train:model:query']"
-                  size="small"
-                  link
-                  type="success"
-                  icon="Upload"
-                  @click="handleDeploy(scope.row)"
-                >
-                  部署
                 </el-button>
               </template>
             </el-table-column>
@@ -267,6 +209,25 @@
       :model-name="exportModelName"
       @done="refreshList"
     />
+
+    <el-drawer v-model="versionsVisible" :title="`版本 - ${versionsRepoName}`" size="760px">
+      <el-table v-loading="versionsLoading" :data="versions" border size="small">
+        <el-table-column label="版本" prop="version" width="80" align="center" />
+        <el-table-column label="框架" prop="framework" width="110" />
+        <el-table-column label="状态" prop="status" width="100" />
+        <el-table-column label="创建时间" prop="created_time" min-width="170" />
+        <el-table-column label="操作" min-width="320" align="center">
+          <template #default="{ row }">
+            <el-button size="small" link @click="handleTrain(row)">训练</el-button>
+            <el-button size="small" link @click="handleEval(row)">评估</el-button>
+            <el-button size="small" link @click="handlePredict(row)">预测</el-button>
+            <el-button size="small" link @click="handleExport(row)">导出</el-button>
+            <el-button size="small" link @click="handleDeploy(row)">部署</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!versionsLoading && versions.length === 0" description="暂无版本" />
+    </el-drawer>
   </div>
 </template>
 
@@ -351,10 +312,9 @@ const contentCols = reactive<
 >([
   { prop: "selection", label: "选择框", show: true },
   { prop: "index", label: "序号", show: true },
-  { prop: "name", label: "模型名称", show: true },
+  { prop: "name", label: "仓库名称", show: true },
   { prop: "framework", label: "框架", show: true },
-  { prop: "version", label: "版本", show: true },
-  { prop: "metrics", label: "最新指标", show: true },
+  { prop: "version_count", label: "版本数", show: true },
   { prop: "status", label: "状态", show: true },
   { prop: "created_time", label: "创建时间", show: true },
   { prop: "operation", label: "操作", show: true },
@@ -373,7 +333,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   },
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
-    const res = await TrainAPI.getModelList(params);
+    const res = await TrainAPI.getModelRepos(params);
     const items = res.data?.data?.items || [];
     return {
       total: res.data?.data?.total ?? items.length,
@@ -381,7 +341,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     };
   },
   deleteAction: async (ids) => {
-    await TrainAPI.deleteModel(
+    await TrainAPI.deleteModelRepos(
       ids
         .split(",")
         .map((s) => Number(s.trim()))
@@ -402,6 +362,23 @@ const dialogVisible = reactive({
 });
 
 const exportDialogVisible = ref(false);
+
+const versionsVisible = ref(false);
+const versionsLoading = ref(false);
+const versions = ref<any[]>([]);
+const versionsRepoName = ref("");
+
+async function openVersions(repo: any) {
+  versionsVisible.value = true;
+  versionsRepoName.value = repo.name;
+  versionsLoading.value = true;
+  try {
+    const res = await TrainAPI.getModelVersions(repo.id);
+    versions.value = res.data?.data || [];
+  } finally {
+    versionsLoading.value = false;
+  }
+}
 const exportModelId = ref(0);
 const exportModelName = ref("");
 

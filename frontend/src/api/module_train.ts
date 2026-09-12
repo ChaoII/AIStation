@@ -13,6 +13,26 @@ export const TrainAPI = {
   getModelDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/detail/${id}`, method: "get" });
   },
+  getModelRepos(params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/model/repos`,
+      method: "get",
+      params,
+    });
+  },
+  getModelVersions(repoId: number) {
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/model/${repoId}/versions`,
+      method: "get",
+    });
+  },
+  deleteModelRepos(ids: number[]) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/model/repos`,
+      method: "delete",
+      data: ids,
+    });
+  },
   createModel(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/create`, method: "post", data });
   },
