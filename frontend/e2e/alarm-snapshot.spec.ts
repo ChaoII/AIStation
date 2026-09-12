@@ -7,7 +7,10 @@ async function dismissTour(page: Page) {
     await close.click({ force: true }).catch(() => {});
   }
   await page.keyboard.press("Escape").catch(() => {});
-  await page.locator(".el-tour").waitFor({ state: "hidden", timeout: 3000 }).catch(() => {});
+  await page
+    .locator(".el-tour")
+    .waitFor({ state: "hidden", timeout: 3000 })
+    .catch(() => {});
 }
 
 test("告警页展示快照列并请求 snapshot_url", async ({ page }) => {

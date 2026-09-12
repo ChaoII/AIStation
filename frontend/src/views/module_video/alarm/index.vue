@@ -1145,7 +1145,9 @@ async function loadCameraOptions() {
     ]);
     cameraOptions.value = camRes.data?.data?.items || [];
     algorithmTaskOptions.value = taskRes.data?.data?.items || [];
-    const searchItem: any = (recordSearchConfig.formItems || []).find((i: any) => i.prop === "camera_id");
+    const searchItem: any = (recordSearchConfig.formItems || []).find(
+      (i: any) => i.prop === "camera_id"
+    );
     if (searchItem) {
       searchItem.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
     }

@@ -13,7 +13,13 @@
         <span v-if="!backends.length" class="edge-cap-muted">-</span>
       </el-descriptions-item>
       <el-descriptions-item label="模型族">
-        <el-tag v-for="m in modelFamilies" :key="m" size="small" type="success" class="edge-cap-tag">
+        <el-tag
+          v-for="m in modelFamilies"
+          :key="m"
+          size="small"
+          type="success"
+          class="edge-cap-tag"
+        >
           {{ m }}
         </el-tag>
         <span v-if="!modelFamilies.length" class="edge-cap-muted">-</span>

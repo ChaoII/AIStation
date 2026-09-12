@@ -7,7 +7,10 @@ async function dismissTour(page: Page) {
     await close.click({ force: true }).catch(() => {});
   }
   await page.keyboard.press("Escape").catch(() => {});
-  await page.locator(".el-tour").waitFor({ state: "hidden", timeout: 3000 }).catch(() => {});
+  await page
+    .locator(".el-tour")
+    .waitFor({ state: "hidden", timeout: 3000 })
+    .catch(() => {});
 }
 
 test("边缘设备页可加载并打开新增弹窗", async ({ page }) => {
@@ -18,7 +21,10 @@ test("边缘设备页可加载并打开新增弹窗", async ({ page }) => {
   await dismissTour(page);
 
   // 打开新增弹窗并校验必填项
-  await page.getByRole("button", { name: /新增|添加|Add/i }).first().click({ force: true });
+  await page
+    .getByRole("button", { name: /新增|添加|Add/i })
+    .first()
+    .click({ force: true });
   await expect(page.locator(".el-dialog")).toBeVisible();
   await expect(page.locator(".el-dialog").getByLabel("设备名称")).toBeVisible();
   await page.keyboard.press("Escape");
