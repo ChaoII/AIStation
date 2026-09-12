@@ -883,6 +883,16 @@ onMounted(() => {
   const editId = Number(route.query.edit_id || 0);
   if (editId) {
     handleOpenDialog("update", editId);
+    router.replace({ query: {} });
+    return;
+  }
+  // 从数据集页"去训练"进入：预填数据集并自动开窗
+  const dsId = Number(route.query.dataset_id || 0);
+  if (dsId) {
+    formData.dataset_id = dsId;
+    dialogVisible.title = "新建训练任务";
+    dialogVisible.visible = true;
+    router.replace({ query: {} });
     return;
   }
   // 从模型仓库"训练"按钮进入：自动打开创建对话框并预填框架
@@ -894,6 +904,7 @@ onMounted(() => {
     if (modelId) formData.base_model_id = Number(modelId);
     dialogVisible.title = "新建训练任务";
     dialogVisible.visible = true;
+    router.replace({ query: {} });
   }
 });
 onBeforeUnmount(() => stopPoll());

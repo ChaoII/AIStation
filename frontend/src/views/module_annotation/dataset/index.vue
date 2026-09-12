@@ -100,7 +100,7 @@
                       borderColor: taskTagColor(t.task_type),
                       color: taskTagColor(t.task_type),
                     }"
-                    @click="router.push(`/annotation/task?task_id=${t.id}`)"
+                    @click="router.push(`/annotation/workbench/${t.id}`)"
                   >
                     <span class="task-badge-name">{{ t.name }}</span>
                     <span class="task-badge-pct">{{ t.progress ?? 0 }}%</span>
@@ -154,6 +154,14 @@
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
                   编辑
+                </el-button>
+                <el-button
+                  size="small"
+                  type="success"
+                  link
+                  @click="router.push(`/train/task?dataset_id=${scope.row.id}&autoCreate=1`)"
+                >
+                  去训练
                 </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:dataset:delete']"

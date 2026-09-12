@@ -254,8 +254,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeMount } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, onBeforeMount, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { ElMessage } from "element-plus";
 
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -292,7 +292,14 @@ const CLASS_COLORS = [
 ];
 
 const router = useRouter();
+const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+
+// 兼容旧链接 /annotation/task?task_id=：直接进入该任务工作台
+onMounted(() => {
+  const taskId = Number(route.query.task_id || 0);
+  if (taskId) router.replace(`/annotation/workbench/${taskId}`);
+});
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
