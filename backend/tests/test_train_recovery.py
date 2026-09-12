@@ -1,0 +1,258 @@
+"""重启恢复测试：存活容器判定 + 重连决策。不启动真实容器。"""
+
+import asyncio
+from datetime import datetime, timedelta
+from types import SimpleNamespace
+
+from app.plugin.module_train import docker_utils as du
+from app.plugin.module_train import scheduler as sch
+from app.plugin.module_train import task_executor as te
+from app.plugin.module_train.model import TrainFramework, TrainStatus, TrainTask
+from app.plugin.module_train.task_executor import TaskExecutor, recovery_decision
+
+
+def test_recovery_decision_reattach_when_container_alive():
+    now = datetime.now()
+    assert recovery_decision(True, now - timedelta(hours=2), now, 1800) == "reattach"
+
+
+def test_recovery_decision_wait_before_timeout():
+    now = datetime.now()
+    assert recovery_decision(False, now - timedelta(seconds=30), now, 1800) == "wait"
+
+
+def test_recovery_decision_fail_after_timeout():
+    now = datetime.now()
+    assert recovery_decision(False, now - timedelta(hours=2), now, 1800) == "fail"
+
+
+class _FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._rows
+
+
+class _ReadSession:
+    def __init__(self, rows):
+        self._rows = rows
+
+    async def execute(self, _stmt):
+        return _FakeResult(self._rows)
+
+
+class _WriteSession:
+    def __init__(self, writes):
+        self.writes = writes
+
+    async def execute(self, stmt):
+        self.writes.append(stmt)
+
+
+class _Ctx:
+    def __init__(self, session):
+        self._session = session
+
+    async def __aenter__(self):
+        return self._session
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
+class _FakeDB:
+    """模拟 async_db_session：读取返回固定行，写入记录语句。"""
+
+    def __init__(self, rows):
+        self.rows = rows
+        self.writes = []
+
+    def __call__(self):
+        return _Ctx(_ReadSession(self.rows))
+
+    def begin(self):
+        return _Ctx(_WriteSession(self.writes))
+
+
+class _FakeExecutor(TaskExecutor):
+    name = "fake_train"
+    task_kind = "train"
+    status_enum = TrainStatus
+    model_class = TrainTask
+    _concurrency = 1
+    reattach_calls: list = []
+
+    @classmethod
+    async def _execute(cls, task_id):
+        return None
+
+    @classmethod
+    async def reattach(cls, task_id, container_id=None):
+        cls.reattach_calls.append((task_id, container_id))
+
+
+def _row(task_id, started_at, framework=None):
+    return SimpleNamespace(id=task_id, status=TrainStatus.RUNNING, started_at=started_at, framework=framework)
+
+
+def test_recover_orphans_reattaches_live_container(monkeypatch):
+    """存活容器：重连而不是标记失败，也不清理容器。"""
+    db = _FakeDB([_row(7, datetime.now() - timedelta(hours=2))])
+    monkeypatch.setattr(te, "async_db_session", db)
+    monkeypatch.setattr(te, "find_task_containers", lambda _kind, _tid: ["c1"])
+    stops: list = []
+
+    async def _stop(kind, tid):
+        stops.append((kind, tid))
+
+    monkeypatch.setattr(te, "stop_task_containers", _stop)
+    _FakeExecutor.reattach_calls = []
+    _FakeExecutor._registry = {}
+
+    async def _main():
+        await _FakeExecutor.recover_orphans()
+        await asyncio.sleep(0)
+
+    asyncio.run(_main())
+    assert _FakeExecutor.reattach_calls == [(7, "c1")]
+    assert db.writes == []
+    assert stops == []
+
+
+def test_recover_orphans_waits_without_container_before_timeout(monkeypatch):
+    """无存活容器但未超时：保持不动。"""
+    db = _FakeDB([_row(8, datetime.now() - timedelta(seconds=30))])
+    monkeypatch.setattr(te, "async_db_session", db)
+    monkeypatch.setattr(te, "find_task_containers", lambda _kind, _tid: [])
+    stops: list = []
+
+    async def _stop(kind, tid):
+        stops.append((kind, tid))
+
+    monkeypatch.setattr(te, "stop_task_containers", _stop)
+    _FakeExecutor.reattach_calls = []
+    _FakeExecutor._registry = {}
+
+    asyncio.run(_FakeExecutor.recover_orphans())
+    assert _FakeExecutor.reattach_calls == []
+    assert db.writes == []
+    assert stops == []
+
+
+def test_recover_orphans_fails_and_stops_after_timeout_without_container(monkeypatch):
+    """无存活容器且超时：标记失败并清理容器。"""
+    db = _FakeDB([_row(9, datetime.now() - timedelta(hours=2))])
+    monkeypatch.setattr(te, "async_db_session", db)
+    monkeypatch.setattr(te, "find_task_containers", lambda _kind, _tid: [])
+    stops: list = []
+
+    async def _stop(kind, tid):
+        stops.append((kind, tid))
+
+    monkeypatch.setattr(te, "stop_task_containers", _stop)
+    _FakeExecutor.reattach_calls = []
+    _FakeExecutor._registry = {}
+
+    asyncio.run(_FakeExecutor.recover_orphans())
+    assert _FakeExecutor.reattach_calls == []
+    assert len(db.writes) == 1
+    assert stops == [("train", 9)]
+
+
+def test_recover_orphans_skips_paddlex_for_base_executor(monkeypatch):
+    """基类执行器不处理 PADDLEX 行（由 PaddleX 执行器负责），即使超时也不标记失败。"""
+    db = _FakeDB([_row(10, datetime.now() - timedelta(hours=2), framework=TrainFramework.PADDLEX)])
+    monkeypatch.setattr(te, "async_db_session", db)
+    monkeypatch.setattr(te, "find_task_containers", lambda _kind, _tid: [])
+    stops: list = []
+
+    async def _stop(kind, tid):
+        stops.append((kind, tid))
+
+    monkeypatch.setattr(te, "stop_task_containers", _stop)
+    _FakeExecutor._registry = {}
+
+    asyncio.run(_FakeExecutor.recover_orphans())
+    assert db.writes == []
+    assert stops == []
+
+
+def test_find_task_containers_warns_on_error(monkeypatch):
+    """Docker 查询异常时必须记录 warning 并返回空列表（不再静默失败）。"""
+
+    class _Bad:
+        def list(self, **_kwargs):
+            raise RuntimeError("daemon down")
+
+    monkeypatch.setattr(du, "client", SimpleNamespace(containers=_Bad()))
+    warnings: list = []
+    monkeypatch.setattr(du, "log", SimpleNamespace(warning=lambda msg: warnings.append(msg)))
+
+    assert du.find_task_containers("train", 7) == []
+    assert len(warnings) == 1
+    assert "train" in warnings[0] and "7" in warnings[0]
+
+
+class _FakeContainer:
+    def __init__(self, cid):
+        self.id = cid
+
+
+def test_train_executor_reattach_reuses_finalize(monkeypatch):
+    """TrainExecutor.reattach 解析 export_dir 后复用 _finalize 收尾，并清理 registry。"""
+    container = _FakeContainer("cid-1")
+    monkeypatch.setattr(sch, "get_container", lambda _cid: _async(container))
+    monkeypatch.setattr(sch, "_build_export_dir", lambda _tid: _async("expdir"))
+    monkeypatch.setattr(sch, "broadcast_log", lambda *_a, **_k: _async(None))
+
+    calls: list = []
+
+    async def _fake_finalize(task_id, cont, export_dir, task=None):
+        calls.append((task_id, cont, export_dir))
+
+    monkeypatch.setattr(sch.TrainExecutor, "_finalize", _fake_finalize)
+    sch.TrainExecutor._registry = {5: {"container_id": "cid-1"}}
+
+    asyncio.run(sch.TrainExecutor.reattach(5, "cid-1"))
+    assert calls == [(5, container, "expdir")]
+    assert 5 not in sch.TrainExecutor._registry
+
+
+def test_train_executor_reattach_without_container_does_nothing(monkeypatch):
+    """找不到容器时只告警、不调用 _finalize。"""
+    monkeypatch.setattr(sch, "find_task_containers", lambda _kind, _tid: [])
+    called: list = []
+
+    async def _fake_finalize(*_a, **_k):
+        called.append(True)
+
+    warnings: list = []
+    monkeypatch.setattr(sch, "log", SimpleNamespace(warning=lambda msg: warnings.append(msg), error=lambda msg: None))
+    monkeypatch.setattr(sch.TrainExecutor, "_finalize", _fake_finalize)
+    sch.TrainExecutor._registry = {}
+
+    asyncio.run(sch.TrainExecutor.reattach(6, None))
+    assert called == []
+    assert warnings and "6" in warnings[0]
+
+
+async def _async(value):
+    return value
+
+
+def test_recovery_row_routing_between_yolo_and_paddlex():
+    """PaddleX 行只由 PaddleXOCR* 恢复；YOLO 行只由 TrainExecutor 恢复。"""
+    from app.plugin.module_train.paddlex_executor import PaddleXOCRDetExecutor
+    from app.plugin.module_train.scheduler import TrainExecutor
+
+    paddlex_row = SimpleNamespace(id=1, framework=TrainFramework.PADDLEX)
+    yolo_row = SimpleNamespace(id=2, framework=TrainFramework.ULTRALYTICS)
+
+    assert PaddleXOCRDetExecutor._recover_row_applies(paddlex_row) is True
+    assert PaddleXOCRDetExecutor._recover_row_applies(yolo_row) is False
+    assert TrainExecutor._recover_row_applies(paddlex_row) is False
+    assert TrainExecutor._recover_row_applies(yolo_row) is True

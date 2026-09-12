@@ -79,13 +79,20 @@ async def stop_container(container_id: str) -> None:
     await loop.run_in_executor(None, _stop_container, container_id)
 
 
+async def get_container(container_id: str):
+    """按 id 获取 Docker 容器对象（用于后端重启后的重连）。"""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: client.containers.get(container_id))
+
+
 def find_task_containers(task_kind: str, task_id: int) -> list[str]:
     """按 label 查找该任务的容器 id（含已退出未删除的）。"""
     try:
         cs = client.containers.list(all=True, filters={
             "label": [f"aistation.task_kind={task_kind}", f"aistation.task_id={task_id}"]})
         return [c.id for c in cs]
-    except Exception:
+    except Exception as e:
+        log.warning(f"find_task_containers(kind={task_kind}, id={task_id}) 查询失败: {e}")
         return []
 
 

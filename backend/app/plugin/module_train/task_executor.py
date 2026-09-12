@@ -8,8 +8,22 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import follow_container_logs, stop_container, stop_task_containers
+from .docker_utils import (
+    find_task_containers,
+    follow_container_logs,
+    stop_container,
+    stop_task_containers,
+)
 from .framework_utils import framework_value
+
+
+def recovery_decision(has_live_container: bool, started_at, now, timeout_sec: float) -> str:
+    """重启恢复决策：存活→重连；否则未超时→等待、超时→标记失败。"""
+    if has_live_container:
+        return "reattach"
+    if started_at and (now - started_at).total_seconds() > timeout_sec:
+        return "fail"
+    return "wait"
 
 
 class TaskExecutor(ABC):
@@ -120,24 +134,51 @@ class TaskExecutor(ABC):
         return await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
 
     @classmethod
+    async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
+        """重启后重连存活容器并收尾。基类默认空实现，子类按需覆盖。"""
+        return None
+
+    @classmethod
+    def _collect_recovery_registry(cls) -> dict:
+        """返回用于判定任务是否仍在运行的 registry；子类可合并多个 registry。"""
+        return cls._registry
+
+    @classmethod
+    def _recover_row_applies(cls, row) -> bool:
+        """该 RUNNING 行是否由本执行器负责恢复（PaddleX 由 PaddleXOCR* 负责）。"""
+        framework = getattr(row, "framework", None)
+        if framework_value(framework) == "paddlex" and "PaddleXOCR" not in cls.__name__:
+            return False
+        return True
+
+    @classmethod
     async def recover_orphans(cls) -> None:
-        """DB 中 RUNNING 但不在 registry 的任务，超时则标记 FAILED。"""
+        """DB 中 RUNNING 但不在 registry 的任务：存活容器→重连；否则超时→标记失败。"""
+        registry = cls._collect_recovery_registry()
         async with async_db_session() as db:
             from sqlalchemy import select
             rows = (await db.execute(select(cls.model_class).where(
                 cls.model_class.status == cls.status_enum.RUNNING
             ))).scalars().all()
             for r in rows:
-                if r.id in cls._registry:
+                if r.id in registry:
                     continue
-                # PaddleX 任务由 PaddleXOCR*Executor 各自的 registry 管理，其他执行器跳过
-                framework = getattr(r, "framework", None)
-                if (
-                    framework_value(framework) == "paddlex"
-                    and "PaddleXOCR" not in cls.__name__
-                ):
+                if not cls._recover_row_applies(r):
                     continue
-                if r.started_at and (datetime.now() - r.started_at).total_seconds() > cls._orphan_timeout_sec:
+                container_ids = find_task_containers(cls.task_kind, r.id)
+                decision = recovery_decision(
+                    bool(container_ids), r.started_at, datetime.now(), cls._orphan_timeout_sec
+                )
+                if decision == "reattach":
+                    # 记录 registry，避免下一轮重复重连；重连会长时间跟随日志，放后台执行
+                    entry = cls._registry.setdefault(r.id, {})
+                    entry["container_id"] = container_ids[0]
+                    log.warning(
+                        f"[{cls.name}] task {r.id} 容器仍存活（{container_ids[0][:12]}），重连而非标记失败"
+                    )
+                    # 保存任务引用，防止后台任务被 GC
+                    entry["reattach_task"] = asyncio.create_task(cls.reattach(r.id, container_ids[0]))
+                elif decision == "fail":
                     async with async_db_session.begin() as db2:
                         await db2.execute(
                             update(cls.model_class).where(cls.model_class.id == r.id).values(
@@ -146,6 +187,7 @@ class TaskExecutor(ABC):
                                 finished_at=datetime.now(),
                             )
                         )
+                    await stop_task_containers(cls.task_kind, r.id)
 
     @classmethod
     async def start_recovery_loop(cls) -> None:

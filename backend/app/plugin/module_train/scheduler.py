@@ -11,7 +11,14 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
+from .docker_utils import (
+    find_task_containers,
+    get_container,
+    get_container_error_tail,
+    pull_image,
+    remove_container,
+    run_container,
+)
 from .model import TrainFramework, TrainStatus, TrainTask
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
@@ -406,54 +413,7 @@ class TrainExecutor(TaskExecutor):
             entry.update({"container_id": container_id})
             cls._registry[task_id] = entry
 
-            metrics_log = await cls.follow_logs(
-                container_id,
-                os.path.join(export_dir, "train.log"),
-                lambda line: broadcast_log(task_id, line),
-                _parse_epoch,
-            )
-
-            # Merge trailing "all" summary (epoch == -1) into last real epoch to restore old metrics shape
-            if metrics_log and metrics_log[-1].get("epoch") == -1:
-                summary = metrics_log.pop()
-                for m in metrics_log[::-1]:
-                    if m.get("epoch", -1) > 0:
-                        for k, v in summary.items():
-                            if k != "epoch":
-                                m[k] = v
-                        break
-            exit_code = await cls._get_exit_code(container)
-
-            if cls._registry.get(task_id, {}).get("cancel"):
-                await remove_container(container_id)
-                await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
-            elif exit_code == 0:
-                await remove_container(container_id)
-                from .exporter import export_model
-                best_metrics = _compute_best(metrics_log)
-                last_metrics = metrics_log[-1] if metrics_log else None
-                model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
-                await cls._mark_status(task_id, TrainStatus.SUCCESS,
-                                       model_repo_id=model_info.get("repo_id"),
-                                       progress=100, finished_at=datetime.now(),
-                                       metrics_log=metrics_log or None,
-                                       best_metrics=best_metrics,
-                                       last_metrics=last_metrics)
-                if getattr(task, "created_id", None):
-                    _send_notify(task.created_id, f"训练完成: {task.name}",
-                                 "任务已成功完成，模型已保存", "training_complete", "train", task_id)
-            else:
-                error_msg = (await get_container_error_tail(container_id)).strip()
-                await remove_container(container_id)
-                await cls._mark_status(task_id, TrainStatus.FAILED,
-                                       error_log=error_msg or "training failed",
-                                       finished_at=datetime.now(),
-                                       metrics_log=metrics_log or None,
-                                       best_metrics=_compute_best(metrics_log),
-                                       last_metrics=metrics_log[-1] if metrics_log else None)
-                if getattr(task, "created_id", None):
-                    _send_notify(task.created_id, f"训练失败: {task.name}",
-                                 error_msg or "训练异常退出", "training_failed", "train", task_id)
+            await cls._finalize(task_id, container, export_dir, task=task)
         except Exception as e:
             log.error(f"training task {task_id} failed: {e}")
             await cls._mark_status(task_id, TrainStatus.FAILED,
@@ -462,6 +422,91 @@ class TrainExecutor(TaskExecutor):
             cls._registry.pop(task_id, None)
             if container_id:
                 await remove_container(container_id)
+
+    @classmethod
+    async def _finalize(cls, task_id: int, container, export_dir: str, task=None) -> None:
+        """跟随日志 + 判定退出码 + 导出模型 + 标记状态。
+
+        正常执行（``_execute``）与后端重启后的重连（``reattach``）共用此逻辑，
+        保证两条路径的收尾行为一致。
+        """
+        container_id = container.id
+        if task is None:
+            async with async_db_session() as db:
+                task = await db.get(TrainTask, task_id)
+        if not task:
+            return
+
+        metrics_log = await cls.follow_logs(
+            container_id,
+            os.path.join(export_dir, "train.log"),
+            lambda line: broadcast_log(task_id, line),
+            _parse_epoch,
+        )
+
+        # Merge trailing "all" summary (epoch == -1) into last real epoch to restore old metrics shape
+        if metrics_log and metrics_log[-1].get("epoch") == -1:
+            summary = metrics_log.pop()
+            for m in metrics_log[::-1]:
+                if m.get("epoch", -1) > 0:
+                    for k, v in summary.items():
+                        if k != "epoch":
+                            m[k] = v
+                    break
+        exit_code = await cls._get_exit_code(container)
+
+        if cls._registry.get(task_id, {}).get("cancel"):
+            await remove_container(container_id)
+            await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
+        elif exit_code == 0:
+            await remove_container(container_id)
+            from .exporter import export_model
+            best_metrics = _compute_best(metrics_log)
+            last_metrics = metrics_log[-1] if metrics_log else None
+            model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
+            await cls._mark_status(task_id, TrainStatus.SUCCESS,
+                                   model_repo_id=model_info.get("repo_id"),
+                                   progress=100, finished_at=datetime.now(),
+                                   metrics_log=metrics_log or None,
+                                   best_metrics=best_metrics,
+                                   last_metrics=last_metrics)
+            if getattr(task, "created_id", None):
+                _send_notify(task.created_id, f"训练完成: {task.name}",
+                             "任务已成功完成，模型已保存", "training_complete", "train", task_id)
+        else:
+            error_msg = (await get_container_error_tail(container_id)).strip()
+            await remove_container(container_id)
+            await cls._mark_status(task_id, TrainStatus.FAILED,
+                                   error_log=error_msg or "training failed",
+                                   finished_at=datetime.now(),
+                                   metrics_log=metrics_log or None,
+                                   best_metrics=_compute_best(metrics_log),
+                                   last_metrics=metrics_log[-1] if metrics_log else None)
+            if getattr(task, "created_id", None):
+                _send_notify(task.created_id, f"训练失败: {task.name}",
+                             error_msg or "训练异常退出", "training_failed", "train", task_id)
+
+    @classmethod
+    async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
+        """后端重启后重连存活容器：跟随剩余日志并复用 ``_finalize`` 收尾。"""
+        ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
+        if not ids:
+            log.warning(f"[{cls.name}] 任务 {task_id} 需要重连但未找到存活容器")
+            return
+        cid = ids[0]
+        try:
+            container = await get_container(cid)
+        except Exception as e:
+            log.error(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {cid}: {e}")
+            return
+        export_dir = await _build_export_dir(task_id)
+        await broadcast_log(task_id, f"[scheduler] 后端已重启，重连到运行中的容器 {cid[:12]}…")
+        try:
+            await cls._finalize(task_id, container, export_dir)
+        except Exception as e:
+            log.error(f"[{cls.name}] 任务 {task_id} 重连收尾失败: {e}")
+        finally:
+            cls._registry.pop(task_id, None)
 
 
 async def start_training(task_id: int):

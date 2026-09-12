@@ -18,13 +18,19 @@ def test_export_model_passes_best_metrics():
 
 
 def test_execute_computes_best_before_export_and_passes_it():
-    """_execute 须先计算 best_metrics，再传给 export_model。
+    """_finalize 须先计算 best_metrics，再传给 export_model。
 
     否则 export_model 读到的 task.best_metrics 仍是 DB 旧值（None）。
     """
-    src = inspect.getsource(TrainExecutor._execute)
+    src = inspect.getsource(TrainExecutor._finalize)
     assert src.index("best_metrics = _compute_best") < src.index("export_model(")
     assert "best_metrics=best_metrics" in src
+
+
+def test_execute_delegates_to_finalize():
+    """_execute 的正常收尾必须复用 _finalize（重启重连走同一路径）。"""
+    src = inspect.getsource(TrainExecutor._execute)
+    assert "_finalize(" in src
 
 
 def test_compute_best_picks_highest_map50():
