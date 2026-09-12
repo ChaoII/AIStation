@@ -13,7 +13,6 @@
           :remove-ids="removeIds"
           :perm-create="['module_annotation:task:create']"
           :perm-delete="['module_annotation:task:delete']"
-          :perm-patch="['module_annotation:task:patch']"
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
@@ -210,6 +209,33 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="类别">
+          <div style="width: 100%">
+            <div style="display: flex; gap: 8px; margin-bottom: 8px">
+              <el-input
+                v-model="newClassName"
+                placeholder="输入类别名称，如 person"
+                @keyup.enter="handleAddClass"
+              />
+              <el-button type="primary" icon="plus" @click="handleAddClass">添加</el-button>
+            </div>
+            <div v-if="formData.classes.length" style="display: flex; flex-wrap: wrap; gap: 6px">
+              <el-tag
+                v-for="(cls, index) in formData.classes"
+                :key="`${cls.id}-${index}`"
+                :color="cls.color"
+                effect="dark"
+                closable
+                @close="handleRemoveClass(index)"
+              >
+                {{ cls.name }}
+              </el-tag>
+            </div>
+            <span v-else style="font-size: 12px; color: var(--el-text-color-secondary)">
+              暂无类别，添加后可在标注工作台使用
+            </span>
+          </div>
+        </el-form-item>
         <el-form-item label="备注" prop="description">
           <el-input
             v-model="formData.description"
@@ -230,6 +256,7 @@
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount } from "vue";
 import { useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
 
 import { AnnotationAPI } from "@/api/module_annotation";
 import UserAPI from "@/api/module_system/user";
@@ -247,6 +274,23 @@ interface TaskPageQuery {
   [key: string]: any;
 }
 
+interface TaskClass {
+  id: number;
+  name: string;
+  color: string;
+}
+
+const CLASS_COLORS = [
+  "#409eff",
+  "#67c23a",
+  "#e6a23c",
+  "#f56c6c",
+  "#909399",
+  "#b37feb",
+  "#13c2c2",
+  "#eb2f96",
+];
+
 const router = useRouter();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
@@ -254,6 +298,7 @@ const submitLoading = ref(false);
 const dataFormRef = ref();
 const datasetOptions = ref<any[]>([]);
 const userOptions = ref<any[]>([]);
+const newClassName = ref("");
 
 onBeforeMount(async () => {
   try {
@@ -383,6 +428,7 @@ const formData = reactive({
   assignees: [] as number[],
   description: undefined as string | undefined,
   classification_mode: undefined as string | undefined,
+  classes: [] as TaskClass[],
 });
 
 const initialFormData = {
@@ -393,6 +439,7 @@ const initialFormData = {
   assignees: [] as number[],
   description: undefined as string | undefined,
   classification_mode: undefined as string | undefined,
+  classes: [] as TaskClass[],
 };
 
 const rules = reactive({
@@ -407,6 +454,30 @@ async function resetForm() {
     dataFormRef.value.clearValidate();
   }
   Object.assign(formData, initialFormData);
+  newClassName.value = "";
+}
+
+function handleAddClass() {
+  const name = newClassName.value.trim();
+  if (!name) {
+    ElMessage.warning("请输入类别名称");
+    return;
+  }
+  if (formData.classes.some((c) => c.name === name)) {
+    ElMessage.warning("类别名称已存在");
+    return;
+  }
+  const nextId = formData.classes.reduce((max, c) => Math.max(max, c.id + 1), 0);
+  formData.classes.push({
+    id: nextId,
+    name,
+    color: CLASS_COLORS[nextId % CLASS_COLORS.length],
+  });
+  newClassName.value = "";
+}
+
+function handleRemoveClass(index: number) {
+  formData.classes.splice(index, 1);
 }
 
 async function handleCloseDialog() {
@@ -428,6 +499,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.assignees = item.assignees || [];
       formData.description = item.description;
       formData.classification_mode = item.classification_mode;
+      formData.classes = Array.isArray(item.classes) ? item.classes : [];
     }
   } else {
     dialogVisible.title = "新增任务";
@@ -448,6 +520,8 @@ async function handleSubmit() {
             task_type: formData.task_type,
             assignees: formData.assignees,
             classification_mode: formData.classification_mode,
+            description: formData.description,
+            classes: formData.classes,
           });
         } else {
           await AnnotationAPI.createTask({
@@ -455,8 +529,9 @@ async function handleSubmit() {
             name: formData.name,
             task_type: formData.task_type,
             assignees: formData.assignees,
-            classes: [],
+            classes: formData.classes,
             classification_mode: formData.classification_mode,
+            description: formData.description,
           });
         }
         dialogVisible.visible = false;
