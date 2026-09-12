@@ -246,6 +246,14 @@ class Settings(BaseSettings):
     DETECTIONS_DIR: str = str(BASE_DIR / "data" / "detections")
 
     # ================================================= #
+    # ******************* 云边协同配置 ****************** #
+    # ================================================= #
+    VIDEO_ANALYSIS_MODE: Literal["cloud_edge", "cloud_only"] = "cloud_only"  # 视频分析模式
+    EDGE_HEARTBEAT_TIMEOUT_SEC: int = 90  # 超过该秒数未心跳判定离线
+    EDGE_CONTROL_TOKEN: str = ""  # 边缘控制面共享密钥（空=不校验）
+    EDGE_LOCAL_CONTROL_URL: str = ""  # 纯云端本机 Agent 控制面地址
+
+    # ================================================= #
     # ******************* 请求限制配置 ****************** #
     # ================================================= #
     REQUEST_LIMITER_REDIS_PREFIX: str = "aistation:request_limiter:"

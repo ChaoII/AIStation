@@ -39,6 +39,7 @@ async def _ensure_missing_columns() -> None:
         "video_algorithm_tasks": [
             ("runtime_overrides", "JSONB"),
             ("params_overrides", "JSONB"),
+            ("edge_device_id", "INTEGER"),
         ],
         "video_cameras": [
             ("reachable", "BOOLEAN"),
@@ -62,6 +63,34 @@ async def _ensure_missing_columns() -> None:
             await conn.execute(sa_text("ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0"))
     except Exception as e:
         log.warning(f"annotation_task migration warning: {e}")
+
+    # 边缘设备表兜底（旧库无 Alembic 迁移时直接建表，做法同 train_predicts）
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS video_edge_devices (
+                    id SERIAL PRIMARY KEY,
+                    uuid VARCHAR(64),
+                    status VARCHAR(16) DEFAULT 'offline',
+                    description TEXT,
+                    created_time TIMESTAMP DEFAULT NOW(),
+                    updated_time TIMESTAMP,
+                    is_deleted BOOLEAN DEFAULT FALSE,
+                    deleted_time TIMESTAMP,
+                    created_id INTEGER,
+                    updated_id INTEGER,
+                    deleted_id INTEGER,
+                    name VARCHAR(128) NOT NULL,
+                    code VARCHAR(64) NOT NULL UNIQUE,
+                    control_url VARCHAR(512),
+                    secret VARCHAR(128),
+                    capabilities JSONB,
+                    metrics JSONB,
+                    last_heartbeat TIMESTAMP
+                )
+            """))
+    except Exception as e:
+        log.warning(f"edge device migration warning: {e}")
 
 
 async def _ensure_deploy_menu() -> None:
@@ -138,6 +167,51 @@ async def _ensure_deploy_menu() -> None:
                 if item and (not item.icon or item.icon != icon):
                     item.icon = icon
             log.info("✅ 视频模块菜单图标已更新")
+
+
+EDGE_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_video:edge:query", "查询边缘设备"),
+    ("module_video:edge:create", "创建边缘设备"),
+    ("module_video:edge:update", "编辑边缘设备"),
+    ("module_video:edge:delete", "删除边缘设备"),
+]
+
+
+async def _ensure_edge_button_menus() -> None:
+    """确保边缘设备按钮权限存在（挂在视频监控父菜单下）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过边缘设备按钮权限注册")
+                return
+
+            existing = set(
+                (await db.execute(
+                    select(MenuModel.permission).where(MenuModel.permission.like("module_video:edge:%"))
+                )).scalars().all()
+            )
+            for order, (perm_code, perm_name) in enumerate(EDGE_BUTTON_PERMS, start=1):
+                if perm_code in existing:
+                    continue
+                menu = MenuModel(
+                    name=perm_name, type=3, icon=None, order=order,
+                    route_name="", route_path="", component_path="",
+                    permission=perm_code, parent_id=parent.id,
+                    status="0", is_deleted=False, title=perm_name,
+                )
+                db.add(menu)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=menu.id))
+            log.info("✅ 边缘设备按钮权限已注册")
 
 
 async def _ensure_annotation_menus() -> None:
@@ -501,6 +575,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
         await _ensure_missing_columns()
         await _ensure_deploy_menu()
+        await _ensure_edge_button_menus()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
