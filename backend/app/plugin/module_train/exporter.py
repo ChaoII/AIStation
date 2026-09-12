@@ -69,7 +69,7 @@ async def _export_core(
         else:
             await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training)
     elif framework == "x-anylabeling":
-        await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id)
+        await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id, class_names=class_names)
     elif framework == "paddle-ocr":
         # 数据集下载导出 PaddleOCR 格式（det/rec 由 ocr_rec 控制）
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
@@ -179,6 +179,51 @@ def rotated_box_to_obb_corners(cx: float, cy: float, w: float, h: float,
     for x, y in ordered:
         out.extend([x, y])
     return out
+
+
+def _px(v: float, scale: int) -> float:
+    return round(float(v) * scale, 4)
+
+
+def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str]) -> list[dict]:
+    """工作台归一化标注 → LabelMe/x-anylabeling shapes（像素坐标）。"""
+    shapes: list[dict] = []
+    for ann in anns:
+        cid = ann.get("class_id", 0)
+        label = class_names.get(cid, f"class_{cid}")
+        base = {"label": label, "group_id": None, "flags": {}}
+        t = ann.get("type", "")
+        if t in ("AxisAlignedBox", "box"):
+            if "x1" in ann:
+                x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
+            else:
+                xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
+                x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
+            pts = [[_px(x1, img_w), _px(y1, img_h)], [_px(x2, img_w), _px(y1, img_h)],
+                   [_px(x2, img_w), _px(y2, img_h)], [_px(x1, img_w), _px(y2, img_h)]]
+            shapes.append({**base, "points": pts, "shape_type": "rectangle"})
+        elif t in ("RotatedBox", "rotated_box"):
+            flat = rotated_box_to_obb_corners(ann["cx"], ann["cy"], ann["width"], ann["height"],
+                                              float(ann.get("angle", 0) or 0))
+            pts = [[_px(flat[i], img_w), _px(flat[i + 1], img_h)] for i in range(0, 8, 2)]
+            shapes.append({**base, "points": pts, "shape_type": "rotation"})
+        elif t in ("Polygon", "polygon"):
+            pts = [[_px(p["x"] if isinstance(p, dict) else p[0], img_w),
+                    _px(p["y"] if isinstance(p, dict) else p[1], img_h)] for p in ann.get("points", [])]
+            if len(pts) >= 3:
+                shapes.append({**base, "points": pts, "shape_type": "polygon"})
+        elif t in ("Keypoint", "keypoint"):
+            for kp in ann.get("keypoints", []):
+                shapes.append({**base,
+                               "points": [[_px(kp.get("x", 0), img_w), _px(kp.get("y", 0), img_h)]],
+                               "shape_type": "point"})
+        elif t in ("Ocr", "ocr"):
+            pts = [[_px(p["x"] if isinstance(p, dict) else p[0], img_w),
+                    _px(p["y"] if isinstance(p, dict) else p[1], img_h)] for p in ann.get("points", [])]
+            if len(pts) >= 3:
+                shapes.append({**base, "points": pts, "shape_type": "polygon",
+                               "description": ann.get("text", "")})
+    return shapes
 
 
 def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] | None = None, img_w: int = 1, img_h: int = 1) -> list[str]:
@@ -388,7 +433,7 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
     log.info(f"yolo-cls: exported to {output_dir}")
 
 
-async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None) -> None:
+async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, class_names: dict | None = None) -> None:
     """Export dataset to x-anylabeling (LabelMe JSON) format: images + .json sidecar files."""
     img_dir = os.path.join(output_dir, "images")
     os.makedirs(img_dir, exist_ok=True)
@@ -418,34 +463,8 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
             record = rec.scalar_one_or_none()
             anns = record.annotation_data if record and record.annotation_data else []
 
-            # Convert to x-anylabeling format
-            shapes = []
-            for ann in anns:
-                cls_id = ann.get("class_id", 0)
-                label = ann.get("label", f"class_{cls_id}")
-                if ann.get("type") in ("AxisAlignedBox", "box"):
-                    if "x1" in ann:
-                        x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
-                    else:
-                        xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
-                        x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
-                    shapes.append({
-                        "label": label,
-                        "points": [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
-                        "group_id": None,
-                        "shape_type": "rectangle",
-                        "flags": {},
-                    })
-                elif ann.get("type") in ("Polygon", "polygon"):
-                    pts = ann.get("points", [])
-                    if len(pts) >= 3:
-                        shapes.append({
-                            "label": label,
-                            "points": pts,
-                            "group_id": None,
-                            "shape_type": "polygon",
-                            "flags": {},
-                        })
+            # Convert to x-anylabeling format（归一化 → 像素；支持全部形状；使用真实类名）
+            shapes = xany_shapes(anns, img.width or 0, img.height or 0, class_names or {})
 
             # Write JSON sidecar
             js = {
