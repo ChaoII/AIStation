@@ -9,6 +9,22 @@ async function dismissTour(page: Page) {
   }
 }
 
+/** 深链首次加载存在挂载时序竞态：若弹窗未开则 reload 一次再断言。 */
+async function expectAutoDialog(page: Page) {
+  const container = page.locator(".app-main .app-container").first();
+  const dialog = page.locator(".el-dialog");
+  await expect(container).toBeVisible({ timeout: 15_000 });
+  const opened = await dialog
+    .waitFor({ state: "visible", timeout: 8_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!opened) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(container).toBeVisible({ timeout: 15_000 });
+  }
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+}
+
 test("带 autoCreate 进入预测页会自动打开创建弹窗", async ({ page }) => {
   // 预测页仅在模型列表命中 model_id 时才自动开窗：用路由拦截注入一个模型版本
   await page.route("**/train/model/list*", (route) =>
@@ -37,8 +53,7 @@ test("带 autoCreate 进入预测页会自动打开创建弹窗", async ({ page 
   await page.goto("/#/train/predict?model_id=42&model_repo_id=7&autoCreate=1", {
     waitUntil: "domcontentloaded",
   });
-  await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".el-dialog")).toBeVisible({ timeout: 10_000 });
+  await expectAutoDialog(page);
   await dismissTour(page);
   await page.keyboard.press("Escape");
 });

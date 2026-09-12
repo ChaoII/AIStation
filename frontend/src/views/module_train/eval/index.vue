@@ -218,12 +218,7 @@
       </template>
     </PageContent>
 
-    <EnhancedDialog
-      v-model="createDialogVisible"
-      title="创建评估"
-      append-to-body
-      width="500px"
-    >
+    <EnhancedDialog v-model="createDialogVisible" title="创建评估" append-to-body width="500px">
       <el-form label-width="100px">
         <el-form-item label="模型版本">
           <el-select
@@ -344,8 +339,12 @@ const createForm = reactive({
 })();
 
 async function loadModelVersions() {
-  const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
-  modelVersions.value = r.data?.data?.items || [];
+  try {
+    const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
+    modelVersions.value = r.data?.data?.items || [];
+  } catch {
+    /* 模型列表加载失败不阻塞页面与自动开窗 */
+  }
 }
 loadModelVersions();
 

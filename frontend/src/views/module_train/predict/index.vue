@@ -208,12 +208,7 @@
     </PageContent>
 
     <!-- Create Dialog -->
-    <EnhancedDialog
-      v-model="showCreateDialog"
-      title="创建预测任务"
-      append-to-body
-      width="600px"
-    >
+    <EnhancedDialog v-model="showCreateDialog" title="创建预测任务" append-to-body width="600px">
       <el-form label-width="100px">
         <el-form-item label="模型版本" required>
           <el-select
@@ -297,7 +292,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
@@ -340,13 +335,13 @@ const createForm = reactive({
 });
 
 onMounted(async () => {
-  const [mRes, dsRes] = await Promise.all([
-    TrainAPI.getModelList({ page_no: 1, page_size: 100 }),
-    AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 }),
-  ]);
-  models.value = mRes.data?.data?.items || [];
-  datasets.value = dsRes.data?.data?.items || [];
-  refreshList();
+  // 先加载模型版本（自动开窗预填依赖它）
+  try {
+    const mRes = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
+    models.value = mRes.data?.data?.items || [];
+  } catch {
+    /* 模型列表加载失败不阻塞页面与自动开窗 */
+  }
 
   if (route.query.autoCreate === "1") {
     const modelId = Number(route.query.model_id || 0);
@@ -357,6 +352,17 @@ onMounted(async () => {
     }
     router.replace({ query: {} });
   }
+
+  // 数据集列表后台加载，不阻塞首个渲染与自动开窗
+  AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })
+    .then((r) => {
+      datasets.value = r.data?.data?.items || [];
+    })
+    .catch(() => {
+      /* 忽略数据集加载失败 */
+    });
+
+  refreshList();
 });
 
 function getModelName(modelId: number) {
