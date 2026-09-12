@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "agno==2.5.8",
     "aiofiles==24.1.0",                         # 文件操作
+    "aiomqtt>=2.0,<3",                          # 边缘事件 MQTT 接入（懒加载，未安装/未启用时降级）
     "aiosqlite==0.17.0",                        # sqlite 异步操作数据库
     "alembic==1.15.1",                          # 数据库迁移
     "apscheduler==3.11.0",                      # 定时任务

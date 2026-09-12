@@ -254,6 +254,18 @@ class Settings(BaseSettings):
     EDGE_LOCAL_CONTROL_URL: str = ""  # 纯云端本机 Agent 控制面地址
 
     # ================================================= #
+    # *************** 边缘事件 MQTT 接入配置 ************ #
+    # ================================================= #
+    MQTT_ENABLED: bool = False  # 是否启用 MQTT 事件消费者（未启用/无 broker 时降级不启动）
+    MQTT_BROKER_URL: str = ""  # Broker 地址，如 mqtt://127.0.0.1:1883
+    MQTT_USERNAME: str = ""  # Broker 用户名（可空）
+    MQTT_PASSWORD: str = ""  # Broker 密码（可空）
+    # 订阅通配前缀：最终主题为 "{MQTT_TOPIC_PREFIX}/+/camera/+/detect"
+    MQTT_TOPIC_PREFIX: str = "aistation/+/edge"
+    MQTT_CLIENT_ID: str = "aistation-events"  # 消费者 client_id
+    MQTT_QOS: int = 1  # 订阅 QoS
+
+    # ================================================= #
     # ******************* 请求限制配置 ****************** #
     # ================================================= #
     REQUEST_LIMITER_REDIS_PREFIX: str = "aistation:request_limiter:"

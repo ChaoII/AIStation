@@ -43,6 +43,9 @@ class InferenceService:
                 saved_snapshot_path = str(snap_full)
             except Exception as e:
                 log.warning(f"保存快照失败: {e}")
+        elif snapshot_path:
+            # 边缘事件：快照已由 Agent 上传对象存储，此处仅存相对引用
+            saved_snapshot_path = snapshot_path
 
         # Find matching alarm rule
         rule = None
