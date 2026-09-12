@@ -369,7 +369,7 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
 });
 
 onMounted(async () => {
-  const r = await TrainAPI.getModelList();
+  const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
   models.value = r.data?.data?.items || [];
   refreshList();
 });

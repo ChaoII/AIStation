@@ -334,7 +334,7 @@ const createForm = reactive({
 })();
 
 (async () => {
-  const r = await TrainAPI.getModelList();
+  const r = await TrainAPI.getModelList({ page_no: 1, page_size: 100 });
   modelVersions.value = r.data?.data?.items || [];
 })();
 

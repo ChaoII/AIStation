@@ -339,7 +339,7 @@ const createForm = reactive({
 
 onMounted(async () => {
   const [mRes, dsRes] = await Promise.all([
-    TrainAPI.getModelList(),
+    TrainAPI.getModelList({ page_no: 1, page_size: 100 }),
     AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 }),
   ]);
   models.value = mRes.data?.data?.items || [];

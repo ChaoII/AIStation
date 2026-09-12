@@ -220,9 +220,9 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="来源数据集" prop="dataset_id">
+        <el-form-item label="来源数据集" prop="annotation_dataset_id">
           <el-select
-            v-model="formData.dataset_id"
+            v-model="formData.annotation_dataset_id"
             filterable
             style="width: 100%"
             placeholder="请选择标注数据集"
@@ -400,7 +400,7 @@ const formData = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
   framework: "ultralytics" as string,
-  dataset_id: undefined as number | undefined,
+  annotation_dataset_id: undefined as number | undefined,
   description: undefined as string | undefined,
   status: undefined as string | undefined,
 });
@@ -409,7 +409,7 @@ const initialFormData = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
   framework: "ultralytics" as string,
-  dataset_id: undefined as number | undefined,
+  annotation_dataset_id: undefined as number | undefined,
   description: undefined as string | undefined,
   status: undefined as string | undefined,
 };
@@ -479,8 +479,9 @@ async function handleSubmit() {
         const payload = {
           name: formData.name,
           framework: formData.framework,
-          annotation_dataset_id: formData.dataset_id,
+          annotation_dataset_id: formData.annotation_dataset_id,
           description: formData.description,
+          status: formData.status,
         };
         if (id) {
           await TrainAPI.updateModel(id, payload);
