@@ -11,6 +11,8 @@ from app.core.logger import log
 from .docker_utils import (
     find_task_containers,
     follow_container_logs,
+    get_container,
+    remove_container,
     stop_container,
     stop_task_containers,
 )
@@ -135,8 +137,48 @@ class TaskExecutor(ABC):
 
     @classmethod
     async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
-        """重启后重连存活容器并收尾。基类默认空实现，子类按需覆盖。"""
-        return None
+        """重启后重连存活容器并收尾。
+
+        基类默认行为：该框架暂不支持自动重连（无法收集产物），因此把仍处于
+        RUNNING 的任务落到终态 FAILED，避免任务永久卡在 RUNNING（容器以
+        all=True 查询会被反复重选为 reattach）。子类（如 TrainExecutor）可覆盖
+        此方法实现真正的重连收尾。
+        """
+        try:
+            # 仅当任务行仍存在且仍为 RUNNING 时才处理，避免覆盖已到终态的任务
+            async with async_db_session() as db:
+                task = await db.get(cls.model_class, task_id)
+            if not task or getattr(task, "status", None) != cls.status_enum.RUNNING:
+                return
+
+            container = None
+            if container_id:
+                try:
+                    container = await get_container(container_id)
+                except Exception as e:
+                    # 容器不存在 / daemon 不可达：无产物可收，按失败落终态
+                    log.warning(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {container_id}: {e}")
+
+            if container is not None and getattr(container, "status", None) == "running":
+                # 容器仍存活：等待其退出（阻塞 wait 放线程池，避免卡事件循环）
+                try:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None, lambda: container.wait(timeout=cls._orphan_timeout_sec)
+                    )
+                except Exception as e:
+                    log.warning(f"[{cls.name}] 任务 {task_id} 等待容器退出失败: {e}")
+
+            await cls._mark_status(
+                task_id, cls.status_enum.FAILED,
+                error_log="后端重启后无法恢复产物收集（该框架暂不支持自动重连）",
+                finished_at=datetime.now(),
+            )
+            if container is not None:
+                await remove_container(container.id)
+        finally:
+            # 无论如何都要从 registry 移除，否则下一轮恢复仍会重复处理该任务
+            cls._registry.pop(task_id, None)
 
     @classmethod
     def _collect_recovery_registry(cls) -> dict:

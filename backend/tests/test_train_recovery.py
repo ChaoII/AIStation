@@ -44,6 +44,12 @@ class _ReadSession:
     async def execute(self, _stmt):
         return _FakeResult(self._rows)
 
+    async def get(self, _model, row_id):
+        for r in self._rows:
+            if getattr(r, "id", None) == row_id:
+                return r
+        return None
+
 
 class _WriteSession:
     def __init__(self, writes):
@@ -198,8 +204,12 @@ def test_find_task_containers_warns_on_error(monkeypatch):
 
 
 class _FakeContainer:
-    def __init__(self, cid):
+    def __init__(self, cid, status="running"):
         self.id = cid
+        self.status = status
+
+    def wait(self, timeout=None):
+        return {"StatusCode": 0}
 
 
 def test_train_executor_reattach_reuses_finalize(monkeypatch):
@@ -256,3 +266,81 @@ def test_recovery_row_routing_between_yolo_and_paddlex():
     assert PaddleXOCRDetExecutor._recover_row_applies(yolo_row) is False
     assert TrainExecutor._recover_row_applies(paddlex_row) is False
     assert TrainExecutor._recover_row_applies(yolo_row) is True
+
+
+class _UnsupportedExecutor(TaskExecutor):
+    """未实现 reattach 的执行器（如 Eval / Predict / PaddleX）：走基类默认行为。"""
+
+    name = "fake_unsupported"
+    task_kind = "eval"
+    status_enum = TrainStatus
+    model_class = TrainTask
+    _concurrency = 1
+
+    @classmethod
+    async def _execute(cls, task_id):
+        return None
+
+
+def test_base_reattach_marks_failed_and_pops_registry(monkeypatch):
+    """不支持的框架：基类 reattach 把 RUNNING 行落到 FAILED 并清理 registry。"""
+    db = _FakeDB([_row(21, datetime.now())])
+    monkeypatch.setattr(te, "async_db_session", db)
+    container = _FakeContainer("cid-21")  # 默认 status="running"，覆盖等待退出路径
+    monkeypatch.setattr(te, "get_container", lambda _cid: _async(container))
+    removed: list = []
+
+    async def _remove(cid):
+        removed.append(cid)
+
+    monkeypatch.setattr(te, "remove_container", _remove)
+    _UnsupportedExecutor._registry = {21: {"container_id": "cid-21"}}
+
+    asyncio.run(_UnsupportedExecutor.reattach(21, "cid-21"))
+
+    assert 21 not in _UnsupportedExecutor._registry
+    assert len(db.writes) == 1
+    assert removed == ["cid-21"]
+
+
+def test_base_reattach_resolves_exited_container_to_failed(monkeypatch):
+    """容器已退出：基类 reattach 同样标记 FAILED 并移除容器。"""
+    db = _FakeDB([_row(22, datetime.now())])
+    monkeypatch.setattr(te, "async_db_session", db)
+    container = _FakeContainer("cid-22", status="exited")
+    monkeypatch.setattr(te, "get_container", lambda _cid: _async(container))
+    removed: list = []
+
+    async def _remove(cid):
+        removed.append(cid)
+
+    monkeypatch.setattr(te, "remove_container", _remove)
+    _UnsupportedExecutor._registry = {22: {"container_id": "cid-22"}}
+
+    asyncio.run(_UnsupportedExecutor.reattach(22, "cid-22"))
+
+    assert 22 not in _UnsupportedExecutor._registry
+    assert len(db.writes) == 1
+    assert removed == ["cid-22"]
+
+
+def test_base_reattach_skips_task_not_running(monkeypatch):
+    """任务已不在 RUNNING：基类 reattach 不改状态，但仍清理 registry。"""
+    row = _row(23, datetime.now())
+    row.status = TrainStatus.SUCCESS
+    db = _FakeDB([row])
+    monkeypatch.setattr(te, "async_db_session", db)
+    monkeypatch.setattr(te, "get_container", lambda _cid: _async(_FakeContainer("cid-23")))
+    removed: list = []
+
+    async def _remove(cid):
+        removed.append(cid)
+
+    monkeypatch.setattr(te, "remove_container", _remove)
+    _UnsupportedExecutor._registry = {23: {"container_id": "cid-23"}}
+
+    asyncio.run(_UnsupportedExecutor.reattach(23, "cid-23"))
+
+    assert 23 not in _UnsupportedExecutor._registry
+    assert db.writes == []
+    assert removed == []
