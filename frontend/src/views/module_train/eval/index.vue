@@ -474,9 +474,11 @@ async function handleCreateEval() {
   }
   creating.value = true;
   try {
+    // 关联所选版本的 id 与其所属仓库 id，而非路由缺省值 0
+    const sel = modelVersions.value.find((m: any) => m.id === createForm.modelId);
     await TrainAPI.createEval({
-      model_repo_id: modelRepoId,
       model_id: createForm.modelId,
+      model_repo_id: sel?.repo_id ?? 0,
       eval_dataset_id: createForm.evalDatasetId,
       hyperparams: createForm.hyperparams,
     });

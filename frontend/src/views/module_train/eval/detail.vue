@@ -94,28 +94,15 @@
     <el-card shadow="never" class="section-card">
       <template #header><span class="card-title">评估指标</span></template>
       <el-row v-if="evalData?.metrics" :gutter="12">
-        <el-col :xs="24" :sm="12" :md="6">
+        <el-col v-for="s in metricSpec" :key="s.key" :xs="24" :sm="12" :md="6">
           <div class="metric-item">
-            <span class="metric-val metric-green">{{ fmtPct(evalData.metrics.precision) }}</span>
-            <span class="metric-lbl">Precision</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <span class="metric-val metric-blue">{{ fmtPct(evalData.metrics.recall) }}</span>
-            <span class="metric-lbl">Recall</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <span class="metric-val metric-orange">{{ fmtPct(evalData.metrics.map50) }}</span>
-            <span class="metric-lbl">mAP@50</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <span class="metric-val metric-purple">{{ fmtPct(evalData.metrics.map5095) }}</span>
-            <span class="metric-lbl">mAP@50:95</span>
+            <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
+              <component :is="s.icon" />
+            </el-icon>
+            <span class="metric-val" :style="{ color: s.color }">
+              {{ fmtRatio(evalData.metrics[s.key]) }}
+            </span>
+            <span class="metric-lbl">{{ s.label }}</span>
           </div>
         </el-col>
       </el-row>
@@ -192,8 +179,8 @@
 
     <ModelExportDialog
       v-model="exportDialogVisible"
-      :model-id="evalData?.model_repo_id || 0"
-      :model-name="evalData?.model_repo_id ? `评估 #${evalData?.id}` : ''"
+      :model-id="evalData?.model_id || 0"
+      :model-name="evalData?.model_id ? `评估 #${evalData?.id}` : ''"
       @done="loadEval"
     />
   </div>
@@ -205,6 +192,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
+import { resolveMainMetricSpec, fmtRatio, type MetricSpecItem } from "@/utils/trainMetrics";
 import ModelExportDialog from "@/components/ModelExportDialog/index.vue";
 
 const route = useRoute();
@@ -228,6 +216,22 @@ function tagLabel(s: string) {
 function fmtPct(v: number | undefined) {
   return v != null ? (v * 100).toFixed(1) + "%" : "—";
 }
+
+// 评估框架可能未持久化，且 YOLO 分类无 task_type 字段；
+// 分类信号优先看指标键 top1/top5（与训练详情同一推断思路）。
+const isClassifyEval = computed(() => {
+  const m = evalData.value?.metrics;
+  return !!(m && (m.top1 != null || m.top5 != null));
+});
+
+// 主指标按框架/模式渲染：PaddleX det→HMean/PR、rec→Acc；YOLO cls→Top1/5；其余→mAP/PR
+const metricSpec = computed<MetricSpecItem[]>(() =>
+  resolveMainMetricSpec({
+    framework: evalData.value?.framework,
+    mode: evalData.value?.hyperparams?.mode,
+    classify: isClassifyEval.value,
+  })
+);
 
 const classTableData = computed(() => {
   const cls = evalData.value?.metrics?.classes;
@@ -401,11 +405,12 @@ function handleViewModel() {
 const exportDialogVisible = ref(false);
 
 function handleExport() {
-  if (!evalData.value?.model_repo_id) {
+  if (!evalData.value?.model_id) {
     ElMessage.warning("暂无关联模型");
     return;
   }
-  TrainAPI.getModelDetail(evalData.value.model_repo_id).then(res => {
+  // 导出需要版本 id（model_id），仓库 id 不能用于 export 接口
+  TrainAPI.getModelDetail(evalData.value.model_id).then(res => {
     if (res.data?.data) {
       exportDialogVisible.value = true;
     } else {

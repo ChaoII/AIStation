@@ -285,12 +285,9 @@ import {
   TrendCharts,
   DataBoard,
   DataAnalysis,
-  Aim,
-  Search,
-  StarFilled,
-  TrophyBase,
 } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
+import { resolveMainMetricSpec, type MetricSpecItem } from "@/utils/trainMetrics";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
@@ -456,38 +453,16 @@ const isClassifyTask = computed(() => {
   return displayMetricsLog.value.some((m: any) => m && (m.top1 != null || m.top5 != null));
 });
 
-interface MetricItem {
-  key: string;
-  label: string;
-  color: string;
-  icon: any;
-}
-
 // 主指标定义：PaddleX det→HMean/Precision/Recall；PaddleX rec→Acc；
 // YOLO 分类→Top1/Top5；其余（det/seg/obb/pose）→mAP@50/mAP@50:95/Precision/Recall
-const metricSpec = computed<MetricItem[]>(() => {
-  if (isPaddlex.value) {
-    return paddlexMode.value === "rec"
-      ? [{ key: "acc", label: "Acc", color: "#409eff", icon: Aim }]
-      : [
-          { key: "hmean", label: "HMean", color: "#52c41a", icon: StarFilled },
-          { key: "precision", label: "Precision", color: "#409eff", icon: Aim },
-          { key: "recall", label: "Recall", color: "#fa8c16", icon: Search },
-        ];
-  }
-  if (isClassifyTask.value) {
-    return [
-      { key: "top1", label: "Top1", color: "#52c41a", icon: Aim },
-      { key: "top5", label: "Top5", color: "#409eff", icon: StarFilled },
-    ];
-  }
-  return [
-    { key: "map50", label: "mAP@50", color: "#fa8c16", icon: StarFilled },
-    { key: "map5095", label: "mAP@50:95", color: "#9b59b6", icon: TrophyBase },
-    { key: "precision", label: "Precision", color: "#52c41a", icon: Aim },
-    { key: "recall", label: "Recall", color: "#409eff", icon: Search },
-  ];
-});
+// 复用 @/utils/trainMetrics，与评估详情保持一致
+const metricSpec = computed<MetricSpecItem[]>(() =>
+  resolveMainMetricSpec({
+    framework: task.value?.framework,
+    mode: paddlexMode.value,
+    classify: isClassifyTask.value,
+  })
+);
 
 // Loss 定义：PaddleX 只有单一 loss；YOLO 检测族保留 box/cls/dfl；分类为单一 Loss
 const lossSpec = computed<{ key: string; src: string; label: string; color: string; icon: any }[]>(
