@@ -48,6 +48,20 @@ export const AnnotationAPI = {
       method: "get",
     });
   },
+  getAnnotationHistory(taskId: number, imageId: number) {
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/anno/image/${imageId}/history`,
+      method: "get",
+      params: { task_id: taskId },
+    });
+  },
+  rollbackAnnotation(imageId: number, data: { task_id: number; version: number }) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/anno/image/${imageId}/rollback`,
+      method: "post",
+      data,
+    });
+  },
   uploadImages(id: number, files: FormData) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/dataset/${id}/upload`,

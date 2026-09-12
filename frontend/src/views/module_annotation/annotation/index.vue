@@ -1189,11 +1189,14 @@
         保存
       </el-button>
       <div class="sep" />
+      <el-button size="small" :disabled="!store.currentImage" @click="openHistory">历史</el-button>
+      <div class="sep" />
       <el-button size="small" circle @click="showShortcutHelp">
         <el-icon><QuestionFilled /></el-icon>
       </el-button>
     </footer>
     <!-- 快捷键帮助弹窗 -->
+    <AnnotationHistoryDrawer ref="historyRef" @restored="onHistoryRestored" />
     <el-dialog v-model="showHelpModal" title="快捷键" width="420px">
       <div class="shortcut-grid">
         <div v-for="s in shortcutList" :key="s.keys" class="shortcut-row">
@@ -1329,12 +1332,14 @@ import {
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import { AnnotationAPI } from "@/api/module_annotation";
+import AnnotationHistoryDrawer from "@/components/Annotation/AnnotationHistoryDrawer.vue";
 import { useAnnotationStore, type ToolName } from "./store";
 import { useUserStoreHook } from "@/store";
 
 const route = useRoute();
 const router = useRouter();
 const store = useAnnotationStore();
+const historyRef = ref();
 
 // Refs
 const canvasRef = ref<HTMLElement | null>(null);
@@ -3406,6 +3411,14 @@ const shortcutList = [
 ];
 function showShortcutHelp() {
   showHelpModal.value = true;
+}
+
+function openHistory() {
+  if (store.currentImage) historyRef.value?.open(store.taskId, store.currentImage.id);
+}
+
+async function onHistoryRestored() {
+  if (store.currentImage) await loadImg(store.currentImage.id);
 }
 async function handleBack() {
   // 只读模式不尝试保存（避免 409），直接退出

@@ -9,6 +9,11 @@ class AnnotationSaveSchema(BaseModel):
     annotation_data: list[dict]
 
 
+class AnnotationRollbackSchema(BaseModel):
+    task_id: int
+    version: int
+
+
 class AnnotationOutSchema(BaseModel):
     id: int
     task_id: int
