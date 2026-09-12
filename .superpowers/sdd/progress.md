@@ -324,3 +324,13 @@ Plan: docs/superpowers/plans/2026-09-12-phase5a-halfdone-features.md (commit f1a
 5A 提交区间: f1ae939..b51dc54
 Minor(5A): Task5 后端测试用服务层直接构造数据（行为由 E2E 覆盖）；仓库页搜索仍用 `name`；导出历史下载依赖 presigned URL 过期；cron 构建器渲染待人工确认
 PHASE 5A COMPLETE（6 features）。Next: Phase 5B（P7 实时协作）→ Phase 6。
+
+=== PHASE 5B: 实时协作（P7） ===
+Spec: docs/superpowers/specs/2026-09-13-phase5b-realtime-collaboration-design.md (commit f5463e6)
+Plan: docs/superpowers/plans/2026-09-13-phase5b-realtime-collaboration.md (commit f5463e6)
+5B Task 1: complete (commit 65e6556) — WS 鉴权(query token via decode_access_token)+presence 在线列表+DB 锁(AnnotationService.lock_image)；parse_ws_user/presence_list；test_collaboration_ws.py(3)
+5B Task 2: complete — frontend useCollab composable（连接/token/在线/焦点/远端标注tick/锁冲突tick/退避重连）
+5B Task 3: complete (commit afb6669) — 工作台接入：在线指示、切图 focus、远端标注重载当前图、锁冲突 toast、卸载 close
+5B Task 4: complete — e2e/collaboration.spec.ts（在线指示）；backend pytest 278 passed
+5B 已知限制: 内存房间不支持多 worker（Redis 化后续）；last-write-wins 重载（无 CRDT）；远端光标仅广播未精确渲染
+PHASE 5B COMPLETE。Next: Phase 6（全量回归验收 6 类型 × 2 框架）。
