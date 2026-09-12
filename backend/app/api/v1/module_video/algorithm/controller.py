@@ -10,6 +10,7 @@ from app.config.setting import settings
 from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
+from app.core.logger import logger
 from app.core.router_class import OperationLogRoute
 
 from .param import AlgorithmQueryParam, AlgorithmTaskQueryParam
@@ -129,6 +130,22 @@ async def delete_task_controller(
     ids: list[int] = Body(..., description="ID列表"),
     auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:delete"])),
 ) -> JSONResponse:
+    from app.api.v1.module_video.edge.orchestrator import EdgeOrchestrator
+
+    # 删除 DB 前尽力清理边缘 Agent 侧任务：RUNNING 先停止管线，再删除 Agent 任务。
+    # 任一步失败都只告警，不阻断 DB 删除。
+    for task_id in ids:
+        try:
+            task = await EdgeOrchestrator._load_task(task_id)
+            if getattr(task, "status", None) == "RUNNING":
+                await EdgeOrchestrator.stop_task(task_id)
+        except Exception as e:  # noqa: BLE001 - 边缘清理失败不阻断删除
+            logger.warning(f"[边缘编排] 删除前停止任务失败（忽略）: task_id={task_id} {e}")
+        try:
+            await EdgeOrchestrator.delete_task(task_id)
+        except Exception as e:  # noqa: BLE001 - 边缘清理失败不阻断删除
+            logger.warning(f"[边缘编排] 删除 Agent 侧任务失败（忽略）: task_id={task_id} {e}")
+
     await AlgorithmService.delete_task_service(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
 

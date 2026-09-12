@@ -287,3 +287,32 @@ class EdgeOrchestrator:
         await cls._update_status(task_id, "STOPPED", None)
         logger.info(f"[边缘编排] 已停止: task_id={task_id} control={control_url}")
         return {"task_id": task_id, "status": "STOPPED", "delegated": True, "message": "已停止"}
+
+    @classmethod
+    async def delete_task(cls, task_id: int) -> dict:
+        """删除边缘 Agent 侧任务；无边缘设备时不做任何操作（保持旧行为）。
+
+        尽力而为：解析目标或 Agent 删除失败只记录日志并返回 SKIPPED，
+        不向上抛出，以便调用方继续删除 DB 记录。
+        """
+        try:
+            task = await cls._load_task(task_id)
+            control_url, device = await cls._resolve_target(task)
+        except Exception as e:  # noqa: BLE001 - 清理失败不应阻断 DB 删除
+            logger.warning(f"[边缘编排] 解析边缘目标失败，跳过 Agent 删除: task_id={task_id} {e}")
+            return {"task_id": task_id, "status": "SKIPPED", "delegated": False, "message": f"跳过: {e}"}
+
+        # 本地 Agent / 无设备路径不触碰 Agent，回退旧行为
+        if device is None or not control_url:
+            return {"task_id": task_id, "status": "SKIPPED", "delegated": False, "message": "无边缘设备，跳过 Agent 删除"}
+
+        client = EdgeAgentClient(control_url, device.secret)
+        try:
+            await client.delete(task_id)
+        except Exception as e:  # noqa: BLE001 - 边缘清理失败仅告警
+            msg = getattr(e, "msg", str(e))
+            logger.warning(f"[边缘编排] 删除 Agent 任务失败（忽略）: task_id={task_id} {msg}")
+            return {"task_id": task_id, "status": "SKIPPED", "delegated": True, "message": f"Agent 删除失败: {msg}"}
+
+        logger.info(f"[边缘编排] 已删除 Agent 侧任务: task_id={task_id} control={control_url}")
+        return {"task_id": task_id, "status": "DELETED", "delegated": True, "message": "已删除"}

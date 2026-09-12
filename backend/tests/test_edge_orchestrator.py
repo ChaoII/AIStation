@@ -165,6 +165,98 @@ def test_start_task_dispatches_and_marks_running(monkeypatch):
     assert marked["status"] == "RUNNING"
 
 
+def test_delete_task_invokes_agent_delete_for_edge_device(monkeypatch):
+    from app.api.v1.module_video.edge import orchestrator
+
+    class _Dev:
+        id = 5
+        code = "edge-01"
+        control_url = "http://edge:19090"
+        secret = "s"
+
+    calls = []
+
+    class _FakeClient:
+        def __init__(self, control_url, secret):
+            calls.append(("init", control_url, secret))
+
+        async def delete(self, task_id):
+            calls.append(("delete", task_id))
+            return {}
+
+    async def _load_task(task_id):
+        return _TaskWithRefs()
+
+    async def _resolve(task):
+        return "http://edge:19090", _Dev()
+
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_load_task", staticmethod(_load_task))
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_resolve_target", staticmethod(_resolve))
+    monkeypatch.setattr(orchestrator, "EdgeAgentClient", _FakeClient)
+
+    result = asyncio.run(orchestrator.EdgeOrchestrator.delete_task(123))
+    assert calls == [("init", "http://edge:19090", "s"), ("delete", 123)]
+    assert result["delegated"] is True
+
+
+def test_delete_task_skips_when_no_device(monkeypatch):
+    from app.api.v1.module_video.edge import orchestrator
+
+    calls = []
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            calls.append("init")
+
+        async def delete(self, task_id):
+            calls.append("delete")
+
+    async def _load_task(task_id):
+        return _TaskWithRefs()
+
+    async def _resolve(task):
+        return None, None
+
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_load_task", staticmethod(_load_task))
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_resolve_target", staticmethod(_resolve))
+    monkeypatch.setattr(orchestrator, "EdgeAgentClient", _FakeClient)
+
+    result = asyncio.run(orchestrator.EdgeOrchestrator.delete_task(123))
+    assert calls == []
+    assert result["delegated"] is False
+
+
+def test_delete_task_ignores_agent_error(monkeypatch):
+    from app.api.v1.module_video.edge import orchestrator
+    from app.core.exceptions import CustomException
+
+    class _Dev:
+        id = 5
+        code = "edge-01"
+        control_url = "http://edge:19090"
+        secret = "s"
+
+    class _FakeClient:
+        def __init__(self, control_url, secret):
+            pass
+
+        async def delete(self, task_id):
+            raise CustomException(msg="边缘 Agent 请求失败", code=502, status_code=502)
+
+    async def _load_task(task_id):
+        return _TaskWithRefs()
+
+    async def _resolve(task):
+        return "http://edge:19090", _Dev()
+
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_load_task", staticmethod(_load_task))
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_resolve_target", staticmethod(_resolve))
+    monkeypatch.setattr(orchestrator, "EdgeAgentClient", _FakeClient)
+
+    result = asyncio.run(orchestrator.EdgeOrchestrator.delete_task(123))
+    assert result["status"] == "SKIPPED"
+
+
 def test_agent_client_wraps_http_error(monkeypatch):
     from app.api.v1.module_video.edge.agent_client import EdgeAgentClient
     from app.core.exceptions import CustomException
