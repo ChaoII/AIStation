@@ -77,10 +77,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'dataset_id')?.show"
               key="dataset_id"
-              label="数据集ID"
-              prop="dataset_id"
-              width="90"
-            />
+              label="数据集"
+              min-width="140"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                {{ scope.row.dataset_name || `#${scope.row.dataset_id}` }}
+              </template>
+            </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
@@ -247,6 +251,15 @@
               :value="t.id"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="基础模型">
+          <el-input-number
+            v-model="formData.base_model_id"
+            :min="0"
+            :controls="false"
+            style="width: 100%"
+            placeholder="留空表示从零训练；可填模型版本 ID"
+          />
         </el-form-item>
         <el-divider>超参数配置</el-divider>
 
@@ -640,6 +653,7 @@ const defaultHpPaddle = () => ({
   lr: 0.0005,
   device: "0",
   pretrained: true,
+  trainRatio: 80,
 });
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
@@ -776,6 +790,8 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       id: data.id,
       name: data.name,
       dataset_id: data.dataset_id,
+      annotation_task_id: data.annotation_task_id,
+      base_model_id: data.base_model_id,
       framework: data.framework,
     });
     onFrameworkChange(data.framework);

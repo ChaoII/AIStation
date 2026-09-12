@@ -28,7 +28,9 @@
         <el-card shadow="never" class="info-card">
           <template #header><span class="card-title">任务信息</span></template>
           <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="数据集 ID">{{ task?.dataset_id }}</el-descriptions-item>
+            <el-descriptions-item label="数据集">{{
+              task?.dataset_name || `#${task?.dataset_id}`
+            }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ task?.created_time }}</el-descriptions-item>
             <el-descriptions-item label="Docker 镜像">
               <code class="docker-tag">{{ task?.docker_image }}</code>

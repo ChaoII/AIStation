@@ -21,8 +21,8 @@
             <el-descriptions-item label="模型版本 ID">
               {{ evalData?.model_id || "—" }}
             </el-descriptions-item>
-            <el-descriptions-item label="评估数据集 ID">
-              {{ evalData?.eval_dataset_id }}
+            <el-descriptions-item label="评估数据集">
+              {{ evalData?.eval_dataset_name || `#${evalData?.eval_dataset_id}` }}
             </el-descriptions-item>
             <el-descriptions-item label="创建时间">
               {{ evalData?.created_time }}

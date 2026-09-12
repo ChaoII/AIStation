@@ -81,10 +81,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'eval_dataset_id')?.show"
               key="eval_dataset_id"
-              label="评估数据集ID"
-              prop="eval_dataset_id"
-              width="110"
-            />
+              label="评估数据集"
+              min-width="140"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                {{ scope.row.eval_dataset_name || `#${scope.row.eval_dataset_id}` }}
+              </template>
+            </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
