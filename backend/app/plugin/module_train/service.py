@@ -712,22 +712,32 @@ class TrainService:
 
     @classmethod
     async def delete_deploys(cls, ids: list[int]) -> None:
+        # 删除前先停掉真实容器（含注册表丢失/DB 有 container_id/按 label 兜底），
+        # 避免容器成为孤儿占用端口/GPU。必须在 DB 事务外调用，stop 会开自己的 session。
+        from .deploy_executor import stop_deployment
+        for did in ids:
+            await stop_deployment(did)
         async with async_db_session.begin() as db:
             for did in ids:
                 d = await db.get(TrainDeploy, did)
                 if d:
-                    if d.container_id:
-                        from .deploy_executor import stop_deployment
-                        await stop_deployment(d.id)
                     await db.delete(d)
 
     @classmethod
     async def renew_deploy_key(cls, deploy_id: int) -> dict | None:
         import uuid
+
+        from .deploy_executor import start_deployment, stop_deployment
         async with async_db_session.begin() as db:
             d = await db.get(TrainDeploy, deploy_id)
             if not d:
                 return None
             new_key = uuid.uuid4().hex
             d.api_key = new_key
-            return {"api_key": new_key, "id": d.id}
+            prev_status = d.status
+            result = {"api_key": new_key, "id": d.id}
+        # 运行中的部署需要重启容器才能让新 key 生效
+        if prev_status in ("deploying", "running"):
+            await stop_deployment(deploy_id)
+            await start_deployment(deploy_id)
+        return result
