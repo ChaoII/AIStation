@@ -76,15 +76,19 @@ async def start_prediction_scheduler():
 
 
 async def start_prediction(predict_id: int):
+    # 原子守卫：单条条件 UPDATE 抢占，避免并发 start 的 TOCTOU 重复入队
     async with async_db_session.begin() as db:
-        row = await db.get(TrainPredict, predict_id)
-        if row and row.status == TrainStatus.RUNNING:
-            raise Exception("预测任务正在运行，请勿重复启动")
-        await db.execute(
-            update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
-            )
+        result = await db.execute(
+            update(TrainPredict)
+            .where(TrainPredict.id == predict_id, TrainPredict.status != TrainStatus.RUNNING)
+            .values(status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10)
         )
+        if result.rowcount == 0:
+            # 影响 0 行：要么不存在，要么已在运行
+            row = await db.get(TrainPredict, predict_id)
+            if row:
+                raise Exception("预测任务正在运行，请勿重复启动")
+            raise Exception(f"预测任务 {predict_id} 不存在")
     asyncio.create_task(PredictExecutor.run(predict_id))
 
 
