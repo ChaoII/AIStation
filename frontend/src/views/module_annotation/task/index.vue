@@ -431,16 +431,51 @@ const formData = reactive({
   classes: [] as TaskClass[],
 });
 
-const initialFormData = {
-  id: undefined as number | undefined,
-  name: undefined as string | undefined,
-  dataset_id: undefined as number | undefined,
-  task_type: "detection",
-  assignees: [] as number[],
-  description: undefined as string | undefined,
-  classification_mode: undefined as string | undefined,
-  classes: [] as TaskClass[],
-};
+// 用工厂函数返回全新对象，保证数组字段（assignees/classes）每次都是新引用，
+// 避免 resetForm 里 Object.assign 之后 handleAddClass 的 push 污染初始值。
+function makeInitialFormData() {
+  return {
+    id: undefined as number | undefined,
+    name: undefined as string | undefined,
+    dataset_id: undefined as number | undefined,
+    task_type: "detection",
+    assignees: [] as number[],
+    description: undefined as string | undefined,
+    classification_mode: undefined as string | undefined,
+    classes: [] as TaskClass[],
+  };
+}
+
+// 后端 classes 字段存在多种历史存储形态（数组 / {classes:[...]} / id 键字典），
+// 编辑时必须归一化为 TaskClass[]，否则保存会清空既有类别定义。
+function normalizeClasses(raw: unknown): TaskClass[] {
+  if (Array.isArray(raw)) {
+    return raw as TaskClass[];
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.classes)) {
+      return obj.classes as TaskClass[];
+    }
+    const result: TaskClass[] = [];
+    for (const [key, value] of Object.entries(obj)) {
+      const id = Number(key);
+      if (Number.isNaN(id)) continue;
+      if (typeof value === "string") {
+        result.push({ id, name: value, color: CLASS_COLORS[id % CLASS_COLORS.length] });
+      } else if (value && typeof value === "object") {
+        const def = value as Record<string, unknown>;
+        result.push({
+          id,
+          name: String(def.name ?? `class_${id}`),
+          color: (def.color as string) || CLASS_COLORS[id % CLASS_COLORS.length],
+        });
+      }
+    }
+    return result;
+  }
+  return [];
+}
 
 const rules = reactive({
   name: [{ required: true, message: "请输入任务名称", trigger: "blur" }],
@@ -453,7 +488,7 @@ async function resetForm() {
     dataFormRef.value.resetFields();
     dataFormRef.value.clearValidate();
   }
-  Object.assign(formData, initialFormData);
+  Object.assign(formData, makeInitialFormData());
   newClassName.value = "";
 }
 
@@ -499,7 +534,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.assignees = item.assignees || [];
       formData.description = item.description;
       formData.classification_mode = item.classification_mode;
-      formData.classes = Array.isArray(item.classes) ? item.classes : [];
+      formData.classes = normalizeClasses(item.classes);
     }
   } else {
     dialogVisible.title = "新增任务";
