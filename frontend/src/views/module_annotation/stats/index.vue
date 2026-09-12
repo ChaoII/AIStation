@@ -173,7 +173,7 @@ onMounted(async () => {
   try {
     const [ov, ds] = await Promise.all([
       AnnotationAPI.getOverview(),
-      AnnotationAPI.getDatasetList({ page_no: 1, page_size: 999 }),
+      AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 }),
     ]);
     Object.assign(overview, ov.data?.data || {});
     datasetOptions.value = ds.data?.data?.items || ds.data?.data || [];

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import Date, cast, func, select, text
+from sqlalchemy import func, select, text
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.dataset.model import AnnotationImageModel, DatasetModel
@@ -13,42 +13,56 @@ class StatsService:
     @classmethod
     async def get_overview(cls) -> dict:
         async with async_db_session() as db:
-            dataset_count = await db.scalar(select(func.count(DatasetModel.id)))
-            task_count = await db.scalar(select(func.count(AnnotationTaskModel.id)))
-            image_count = await db.scalar(select(func.count(AnnotationImageModel.id))) or 0
+            # 所有计数均排除软删数据
+            dataset_count = await db.scalar(
+                select(func.count(DatasetModel.id)).where(DatasetModel.is_deleted == False)  # noqa: E712
+            )
+            task_count = await db.scalar(
+                select(func.count(AnnotationTaskModel.id)).where(AnnotationTaskModel.is_deleted == False)  # noqa: E712
+            )
+            image_count = await db.scalar(
+                select(func.count(AnnotationImageModel.id)).where(AnnotationImageModel.is_deleted == False)  # noqa: E712
+            ) or 0
             annotated_count = await db.scalar(
                 select(func.count(func.distinct(AnnotationRecordModel.image_id)))
+                .where(AnnotationRecordModel.is_deleted == False)  # noqa: E712
             ) or 0
 
-            # Task count by type
+            # Task count by type（枚举键取值，而非 "AnnotationType.X"）
             type_rows = await db.execute(
                 select(AnnotationTaskModel.task_type, func.count(AnnotationTaskModel.id))
+                .where(AnnotationTaskModel.is_deleted == False)  # noqa: E712
                 .group_by(AnnotationTaskModel.task_type)
             )
-            tasks_by_type = {str(r[0]): r[1] for r in type_rows}
+            tasks_by_type = {getattr(r[0], "value", r[0]): r[1] for r in type_rows}
 
             # Task count by status
             status_rows = await db.execute(
                 select(AnnotationTaskModel.status, func.count(AnnotationTaskModel.id))
+                .where(AnnotationTaskModel.is_deleted == False)  # noqa: E712
                 .group_by(AnnotationTaskModel.status)
             )
             tasks_by_status = {str(r[0]): r[1] for r in status_rows}
 
-            # Image count by status
+            # Image count by status（枚举键取值）
             img_status_rows = await db.execute(
                 select(AnnotationImageModel.status, func.count(AnnotationImageModel.id))
+                .where(AnnotationImageModel.is_deleted == False)  # noqa: E712
                 .group_by(AnnotationImageModel.status)
             )
-            images_by_status = {str(r[0]): r[1] for r in img_status_rows}
+            images_by_status = {getattr(r[0], "value", r[0]): r[1] for r in img_status_rows}
 
             # Daily annotated images (last 30 days)
             thirty_days_ago = datetime.utcnow() - timedelta(days=30)
             daily_rows = await db.execute(
                 select(
-                    cast(AnnotationRecordModel.created_time, Date).label("day"),
+                    func.date(AnnotationRecordModel.created_time).label("day"),
                     func.count(func.distinct(AnnotationRecordModel.image_id)),
                 )
-                .where(AnnotationRecordModel.created_time >= thirty_days_ago)
+                .where(
+                    AnnotationRecordModel.created_time >= thirty_days_ago,
+                    AnnotationRecordModel.is_deleted == False,  # noqa: E712
+                )
                 .group_by(text("day"))
                 .order_by(text("day"))
             )
@@ -72,12 +86,13 @@ class StatsService:
             if not ds:
                 return None
 
-            # Image counts
+            # Image counts（排除软删图片）
             unannotated = await db.scalar(
                 select(func.count(AnnotationImageModel.id))
                 .where(
                     AnnotationImageModel.dataset_id == dataset_id,
                     AnnotationImageModel.status == "unannotated",
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
                 )
             ) or 0
             in_progress = await db.scalar(
@@ -85,6 +100,7 @@ class StatsService:
                 .where(
                     AnnotationImageModel.dataset_id == dataset_id,
                     AnnotationImageModel.status == "in_progress",
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
                 )
             ) or 0
             annotated = await db.scalar(
@@ -92,6 +108,7 @@ class StatsService:
                 .where(
                     AnnotationImageModel.dataset_id == dataset_id,
                     AnnotationImageModel.status == "annotated",
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
                 )
             ) or 0
 
@@ -102,7 +119,10 @@ class StatsService:
                     AnnotationImageModel.height,
                     func.count(AnnotationImageModel.id),
                 )
-                .where(AnnotationImageModel.dataset_id == dataset_id)
+                .where(
+                    AnnotationImageModel.dataset_id == dataset_id,
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
+                )
                 .group_by(AnnotationImageModel.width, AnnotationImageModel.height)
                 .order_by(func.count(AnnotationImageModel.id).desc())
                 .limit(10)
@@ -111,10 +131,11 @@ class StatsService:
                 {"width": r[0], "height": r[1], "count": r[2]} for r in res_rows
             ]
 
-            # Tasks for this dataset
+            # Tasks for this dataset（排除软删任务）
             tasks = await db.execute(
                 select(AnnotationTaskModel).where(
-                    AnnotationTaskModel.dataset_id == dataset_id
+                    AnnotationTaskModel.dataset_id == dataset_id,
+                    AnnotationTaskModel.is_deleted == False,  # noqa: E712
                 )
             )
             tasks_list = tasks.scalars().all()
@@ -135,7 +156,10 @@ class StatsService:
                 # Query annotation records for this task
                 ann_rows = await db.execute(
                     select(AnnotationRecordModel.annotation_data, AnnotationRecordModel.created_id)
-                    .where(AnnotationRecordModel.task_id == task.id)
+                    .where(
+                        AnnotationRecordModel.task_id == task.id,
+                        AnnotationRecordModel.is_deleted == False,  # noqa: E712
+                    )
                 )
                 for row in ann_rows:
                     ann_data = row[0]
@@ -146,8 +170,9 @@ class StatsService:
                             if cid is not None:
                                 class_counter[cid] = class_counter.get(cid, 0) + 1
                                 total_annotations += 1
-                    if created_id:
-                        user_counter[created_id] = user_counter.get(created_id, 0) + 1
+                        # 贡献口径按标注条目数统计（非记录数）
+                        if created_id:
+                            user_counter[created_id] = user_counter.get(created_id, 0) + len(ann_data)
 
             # Build class name map from all tasks
             class_name_map: dict[int, str] = {}
