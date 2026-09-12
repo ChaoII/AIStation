@@ -115,6 +115,13 @@
                 <el-tag :type="scope.row.status === 'RUNNING' ? 'success' : 'info'" size="small">
                   {{ scope.row.status === "RUNNING" ? "运行中" : "已停止" }}
                 </el-tag>
+                <el-tooltip
+                  v-if="scope.row.error_log"
+                  :content="scope.row.error_log"
+                  placement="top"
+                >
+                  <el-tag type="danger" size="small" class="error-log-tag">失败</el-tag>
+                </el-tooltip>
                 <span v-if="scope.row._inferenceStatus" class="inference-meta">
                   {{
                     scope.row._inferenceStatus.fps || scope.row._inferenceStatus.uptime_seconds
@@ -185,6 +192,18 @@
               <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
           </el-form-item>
+          <el-form-item label="推理设备">
+            <EdgeDeviceSelect v-model="formData.edge_device_id" />
+          </el-form-item>
+          <div v-if="selectedDevice" class="device-status-row">
+            <el-tag :type="selectedDevice.status === 'online' ? 'success' : 'info'" size="small">
+              {{ selectedDevice.status }}
+            </el-tag>
+            <span class="device-status-meta">
+              在跑 {{ selectedDevice.metrics?.running_channels ?? 0 }} /
+              {{ selectedDevice.capabilities?.max_channels ?? "-" }}
+            </span>
+          </div>
           <el-form-item label="智能算法" prop="algorithm_id">
             <el-select
               v-model="formData.algorithm_id"
@@ -218,6 +237,14 @@
               </el-form-item>
             </el-col>
           </el-row>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">
+            检测区域（ROI）
+            <span class="form-section-desc">在预览画面上点击绘制多边形；留空表示全画面</span>
+          </div>
+          <RoiEditor v-model="formData.detect_region_points" :stream-id="selectedStreamId" />
         </div>
 
         <div class="form-section">
@@ -341,10 +368,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { ref, reactive, computed, onBeforeMount, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
 import { getCameraList } from "@/api/module_video/camera";
 import { getAlgorithmList } from "@/api/module_video/algorithm";
+import { getEdgeDeviceDetail } from "@/api/module_video/edge";
+import EdgeDeviceSelect from "@/components/Edge/EdgeDeviceSelect.vue";
+import RoiEditor from "@/components/Video/RoiEditor.vue";
 import {
   getAlgorithmTaskList,
   createAlgorithmTask,
@@ -468,13 +498,33 @@ const formData = reactive({
   id: undefined as number | undefined,
   camera_id: undefined as number | undefined,
   algorithm_id: undefined as number | undefined,
+  edge_device_id: null as number | null,
   stream_type: "SUB",
   sensitivity: 50,
   statusBool: true,
+  detect_region_points: null as number[][] | null,
   description: undefined as string | undefined,
 });
 
 const initialFormData = { ...formData };
+
+const selectedDevice = ref<any>(null);
+
+const selectedStreamId = computed<string>(() => {
+  const cam = cameraOptions.value.find((c: any) => c.id === formData.camera_id);
+  return cam?.stream_id || "";
+});
+
+async function loadSelectedDevice(id: number | null) {
+  selectedDevice.value = null;
+  if (!id) return;
+  try {
+    const res = await getEdgeDeviceDetail(id);
+    selectedDevice.value = res.data?.data || null;
+  } catch {
+    /* 忽略 */
+  }
+}
 
 async function handleAlgorithmChange(algoId: number) {
   algoConfig.value = null;
@@ -576,6 +626,7 @@ async function resetForm() {
   algoConfig.value = null;
   algoParams.value = null;
   scheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
+  selectedDevice.value = null;
 }
 
 async function handleCloseDialog() {
@@ -597,6 +648,11 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.sensitivity = item.sensitivity;
       formData.statusBool = item.status === "RUNNING";
       formData.description = item.description;
+      formData.edge_device_id = item.edge_device_id ?? null;
+      formData.detect_region_points = Array.isArray(item.detect_region?.points)
+        ? item.detect_region.points
+        : null;
+      await loadSelectedDevice(formData.edge_device_id);
       if (item.schedule_json) jsonToScheduleGrid(item.schedule_json);
       // Load algorithm config and merge existing overrides
       await handleAlgorithmChange(item.algorithm_id);
@@ -629,6 +685,10 @@ async function handleSubmit() {
       const payload: any = {
         camera_id: formData.camera_id,
         algorithm_id: formData.algorithm_id,
+        edge_device_id: formData.edge_device_id,
+        detect_region: formData.detect_region_points?.length
+          ? { points: formData.detect_region_points }
+          : null,
         stream_type: formData.stream_type,
         sensitivity: formData.sensitivity,
         status: formData.statusBool ? "RUNNING" : "STOPPED",
@@ -857,5 +917,18 @@ onBeforeUnmount(() => {
   margin-left: 4px;
   font-size: 11px;
   color: var(--el-text-color-placeholder);
+}
+.device-status-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: -8px 0 12px 110px;
+}
+.device-status-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.error-log-tag {
+  margin-left: 4px;
 }
 </style>
