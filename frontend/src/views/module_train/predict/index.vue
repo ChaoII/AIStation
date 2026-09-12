@@ -208,11 +208,11 @@
     </PageContent>
 
     <!-- Create Dialog -->
-    <el-dialog
+    <EnhancedDialog
       v-model="showCreateDialog"
       title="创建预测任务"
+      append-to-body
       width="600px"
-      :close-on-click-modal="false"
     >
       <el-form label-width="100px">
         <el-form-item label="模型版本" required>
@@ -292,7 +292,7 @@
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
       </template>
-    </el-dialog>
+    </EnhancedDialog>
   </div>
 </template>
 
@@ -301,6 +301,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import { Plus } from "@element-plus/icons-vue";

@@ -218,7 +218,12 @@
       </template>
     </PageContent>
 
-    <el-dialog v-model="createDialogVisible" title="创建评估" width="500px">
+    <EnhancedDialog
+      v-model="createDialogVisible"
+      title="创建评估"
+      append-to-body
+      width="500px"
+    >
       <el-form label-width="100px">
         <el-form-item label="模型版本">
           <el-select
@@ -280,7 +285,7 @@
         <el-button @click="createDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="handleCreateEval">创建</el-button>
       </template>
-    </el-dialog>
+    </EnhancedDialog>
   </div>
 </template>
 
@@ -289,6 +294,7 @@ import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";

@@ -211,7 +211,7 @@
       </template>
     </PageContent>
 
-    <el-dialog v-model="showCreateDialog" title="新建部署" width="500px">
+    <EnhancedDialog v-model="showCreateDialog" title="新建部署" append-to-body width="560px">
       <el-form label-width="120px">
         <el-form-item label="选择模型" required>
           <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" @change="onDeployModelChange">
@@ -241,7 +241,7 @@
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
       </template>
-    </el-dialog>
+    </EnhancedDialog>
 
     <el-dialog v-model="showKeyDialog" title="部署成功" width="480px" :close-on-click-modal="false">
       <el-alert type="success" title="API Key 已生成" :description="'API URL: ' + (keyInfo.apiUrl || '待启动')" show-icon style="margin-bottom:16px" />
@@ -268,6 +268,7 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled, Link } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
