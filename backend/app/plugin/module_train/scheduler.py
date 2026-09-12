@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 from datetime import datetime
+from types import SimpleNamespace
 
 import requests
 from sqlalchemy import update
@@ -73,6 +74,18 @@ async def start_scheduler():
         log.info("train scheduler started")
 
 
+def build_scheduled_task_data(schedule) -> SimpleNamespace:
+    """把计划行转成 create_task 所需的数据对象（签名与 TrainService.create_task 一致）。"""
+    return SimpleNamespace(
+        name=f"[定时] {schedule.name}",
+        dataset_id=schedule.dataset_id,
+        annotation_task_id=getattr(schedule, "annotation_task_id", None),
+        framework=schedule.framework,
+        hyperparams=getattr(schedule, "hyperparams", None) or {},
+        base_model_id=getattr(schedule, "base_model_id", None),
+    )
+
+
 async def _scheduler_loop():
     """维护循环：触发定时训练 + 周期孤儿恢复（交由 TrainExecutor.recover_orphans）。"""
     while True:
@@ -90,27 +103,21 @@ async def _scheduler_loop():
                         class _ScheduleAuth:
                             class user:
                                 id = s.created_id or 1
-                        hp = s.hyperparams or {}
-                        task_data = type("data", (), {
-                            "name": f"[定时] {s.name}",
-                            "dataset_id": s.dataset_id,
-                            "annotation_task_id": s.annotation_task_id,
-                            "framework": s.framework,
-                            "hyperparams": hp,
-                        })()
+                        task_data = build_scheduled_task_data(s)
                         result = await TrainService.create_task(task_data, _ScheduleAuth())
                         new_id = result.get("id")
                         if new_id:
                             await start_training(new_id)
+                    except Exception as e:
+                        new_id = None
+                        log.error(f"scheduled training failed for schedule {s.id}: {e}")
+                    finally:
                         async with async_db_session.begin() as db:
                             await db.execute(
                                 update(TrainScheduleModel).where(TrainScheduleModel.id == s.id).values(
                                     last_run_at=datetime.now(), last_task_id=new_id
                                 )
                             )
-                        log.info(f"scheduled training triggered: schedule={s.id} task={new_id}")
-                    except Exception as e:
-                        log.error(f"scheduled training failed for schedule {s.id}: {e}")
             except Exception as e:
                 log.error(f"schedule check error: {e}")
 

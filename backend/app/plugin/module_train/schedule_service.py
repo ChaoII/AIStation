@@ -7,6 +7,11 @@ from app.core.database import async_db_session
 from .schedule_model import TrainScheduleModel
 
 
+def _schedule_to_dict(row) -> dict:
+    """仅导出列，避免 dict(__dict__) 带入 _sa_instance_state 导致序列化 500。"""
+    return {c.name: getattr(row, c.name) for c in row.__table__.columns}
+
+
 class ScheduleService:
 
     @classmethod
@@ -15,7 +20,7 @@ class ScheduleService:
             result = await db.execute(
                 select(TrainScheduleModel).order_by(desc(TrainScheduleModel.created_time))
             )
-            return [dict(r.__dict__) for r in result.scalars().all()]
+            return [_schedule_to_dict(r) for r in result.scalars().all()]
 
     @classmethod
     async def create_schedule(cls, data, auth) -> dict:
