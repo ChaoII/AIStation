@@ -13,12 +13,11 @@
       <el-container class="chat-container">
         <el-header class="chat-header">
           <ChatNavbar
-            :connection-status="connectionStatus"
-            :is-connected="isConnected"
             :message-count="displayMessages.length"
+            :app-name="appName"
             :is-sidebar-collapsed="isSidebarCollapsed"
             @clear-chat="handleClearChat"
-            @toggle-connection="toggleConnection"
+            @close-app="handleCloseApp"
             @toggle-sidebar="toggleSidebar"
           />
         </el-header>
@@ -32,12 +31,7 @@
           />
         </el-main>
         <el-footer class="chat-footer">
-          <ChatInput
-            :disabled="!isConnected"
-            :sending="isSending"
-            :is-connected="isConnected"
-            @send="handleSendMessage"
-          />
+          <ChatInput :sending="isSending" @send="handleSendMessage" />
         </el-footer>
       </el-container>
     </el-container>
@@ -50,31 +44,68 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ChatNavbar from "./components/ChatNavbar.vue";
 import ChatMessages from "./components/ChatMessages.vue";
 import ChatInput from "./components/ChatInput.vue";
 import Sidebar from "./components/Sidebar.vue";
 import AiChatAPI, { ChatSession } from "@/api/module_ai/chat";
+import { getAiAppDetail } from "@/api/module_ai/app";
 import { useAiChat } from "@/composables/ai/useAiChat";
 import { textOf, reasoningOf, toolPartsOf } from "@/composables/ai/uiMessage";
-import { Auth } from "@/utils/auth";
 import type { ChatMessage, UploadedFile } from "./types";
 
-// AI SDK 流式聊天（替代旧手写 SSE）
-const chat = useAiChat();
-const isSending = computed(
-  () => chat.status.value === "submitted" || chat.status.value === "streaming"
-);
+const route = useRoute();
+const router = useRouter();
 
 // 状态
 const messages = ref<ChatMessage[]>([]);
-const isConnected = ref(false);
-const connectionStatus = ref<"connected" | "connecting" | "disconnected">("disconnected");
 const error = ref("");
 const currentSessionId = ref<string | null>(null);
 const isSidebarCollapsed = ref(false);
+
+// 运行中的 AI 应用（?app_id=）：非空时流式走 /ai/apps/{id}/run/stream
+const appId = ref<number | null>(route.query.app_id ? Number(route.query.app_id) : null);
+const appName = ref("");
+
+watch(
+  () => route.query.app_id,
+  async (v) => {
+    appId.value = v ? Number(v) : null;
+    appName.value = "";
+    if (!appId.value) return;
+    try {
+      const res = await getAiAppDetail(appId.value);
+      appName.value = res.data?.data?.name || "";
+    } catch {
+      appName.value = "";
+    }
+  },
+  { immediate: true }
+);
+
+// 助手/应用流的 session_id 为整数（ai_sessions 主键）；当前会话栏沿用旧 Agno 会话（UUID 字符串），
+// 直接透传会触发后端 422，故仅在可解析为整数时才携带（在 body 回调内读取，避免成为 transport 依赖）。
+const streamSessionId = (): number | undefined => {
+  const raw = currentSessionId.value;
+  if (raw === null || raw === "") return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+// AI SDK 流式聊天（getter：随所选应用动态切换 path/body，替代旧 Agno WS）
+const chat = useAiChat(() => ({
+  path: appId.value ? `/ai/apps/${appId.value}/run/stream` : "/ai/assistant/stream",
+  body: () => {
+    const sessionId = streamSessionId();
+    return sessionId === undefined ? {} : { session_id: sessionId };
+  },
+}));
+const isSending = computed(
+  () => chat.status.value === "submitted" || chat.status.value === "streaming"
+);
 
 // Refs
 const chatMessagesRef = ref<{ scrollToBottom: () => void }>();
@@ -104,102 +135,7 @@ const liveMessages = computed<ChatMessage[]>(() =>
 // 历史会话消息（只读）+ 当前流式消息
 const displayMessages = computed<ChatMessage[]>(() => [...messages.value, ...liveMessages.value]);
 
-// WebSocket
-let ws: WebSocket | null = null;
-const WS_URL = import.meta.env.VITE_APP_WS_ENDPOINT;
-
-// ============ WebSocket 操作 ============
-const connectWebSocket = () => {
-  if (ws?.readyState === WebSocket.OPEN) return;
-
-  connectionStatus.value = "connecting";
-  error.value = "";
-
-  try {
-    const url = new URL("/api/v1/ai/chat/ws", WS_URL);
-    const token = Auth.getAccessToken();
-    if (token) url.searchParams.append("token", token);
-
-    ws = new WebSocket(url.toString());
-
-    ws.onopen = () => {
-      isConnected.value = true;
-      connectionStatus.value = "connected";
-      ElMessage.success("连接成功");
-    };
-
-    ws.onmessage = (event) => handleWebSocketMessage(event.data);
-
-    ws.onclose = () => {
-      isConnected.value = false;
-      connectionStatus.value = "disconnected";
-      finishLoadingMessages();
-    };
-
-    ws.onerror = () => {
-      isConnected.value = false;
-      connectionStatus.value = "disconnected";
-      ElMessage.error("连接失败，请检查服务器状态");
-      finishLoadingMessages();
-    };
-  } catch {
-    connectionStatus.value = "disconnected";
-    error.value = "无法创建连接";
-  }
-};
-
-const disconnectWebSocket = () => {
-  if (ws) {
-    ws.close(1000, "用户主动断开");
-    ws = null;
-  }
-  isConnected.value = false;
-  connectionStatus.value = "disconnected";
-  finishLoadingMessages();
-};
-
-const toggleConnection = () => {
-  if (isConnected.value) {
-    disconnectWebSocket();
-    ElMessage.info("已断开连接");
-  } else {
-    connectWebSocket();
-  }
-};
-
 // ============ 消息处理 ============
-const handleWebSocketMessage = (data: string) => {
-  const lastMessage = messages.value[messages.value.length - 1];
-  const content = data || "";
-
-  // Agno 中间步骤事件（以 \u0000STEP 前缀的 JSON 行回传）：渲染为工具/思考提示
-  if (content.startsWith("\u0000STEP ")) {
-    try {
-      const evt = JSON.parse(content.slice(6));
-      const eventName = String(evt.event || "");
-      let line = "";
-      if (evt.tool) line = `\n\n> 🔧 调用工具：${evt.tool}`;
-      else if (eventName.toLowerCase().includes("reason")) line = "\n\n> 🧠 思考中…";
-      if (line) {
-        if (lastMessage?.type === "assistant" && lastMessage.loading) lastMessage.content += line;
-        else addMessage("assistant", line.trim());
-      }
-    } catch {
-      /* 忽略非法事件 */
-    }
-    chatMessagesRef.value?.scrollToBottom();
-    return;
-  }
-
-  if (lastMessage?.type === "assistant" && lastMessage.loading) {
-    lastMessage.content += content;
-  } else {
-    addMessage("assistant", content);
-  }
-
-  chatMessagesRef.value?.scrollToBottom();
-};
-
 const addMessage = (type: "user" | "assistant", content: string, files?: UploadedFile[]) => {
   messages.value.push({
     id: generateId(),
@@ -208,15 +144,6 @@ const addMessage = (type: "user" | "assistant", content: string, files?: Uploade
     timestamp: Date.now(),
     collapsed: content.length > 200,
     files,
-  });
-};
-
-const finishLoadingMessages = () => {
-  messages.value.forEach((msg) => {
-    if (msg.type === "assistant" && msg.loading) {
-      msg.loading = false;
-      msg.collapsed = msg.content.length > 200;
-    }
   });
 };
 
@@ -327,9 +254,10 @@ const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value;
 };
 
-// ============ 生命周期 ============
-onMounted(connectWebSocket);
-onUnmounted(disconnectWebSocket);
+// 关闭应用标签：回到通用助手（appId 由 route 监听同步清空），不清空会话
+const handleCloseApp = () => {
+  router.replace({ path: "/ai/chat" });
+};
 </script>
 
 <style lang="scss" scoped>

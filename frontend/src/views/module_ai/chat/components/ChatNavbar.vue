@@ -5,23 +5,11 @@
         <div v-if="!props.isSidebarCollapsed" class="i-svg:layout_leftbar_close_line w-6 h-6" />
         <div v-else class="i-svg:layout_leftbar_open_line w-6 h-6" />
       </button>
+      <el-tag v-if="props.appName" class="app-tag" effect="light" closable @close="handleCloseApp">
+        应用：{{ props.appName }}
+      </el-tag>
     </div>
     <div class="navbar-right">
-      <el-button text :icon="Setting" @click="handleToggleConnection">
-        {{ isConnected ? "断开连接" : "重新连接" }}
-      </el-button>
-      <el-tag
-        class="connection-status"
-        effect="plain"
-        :type="connectionStatus === 'connected' ? 'success' : 'danger'"
-      >
-        <el-icon :class="['status-icon', connectionStatus]">
-          <Connection v-if="connectionStatus === 'connected'" />
-          <Loading v-else-if="connectionStatus === 'connecting'" />
-          <Warning v-else />
-        </el-icon>
-        <span class="status-text">{{ connectionStatusText }}</span>
-      </el-tag>
       <el-button v-if="hasMessages" text :icon="Delete" @click="handleClearChat">
         清空对话
       </el-button>
@@ -31,38 +19,25 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { Connection, Loading, Warning, Delete, Setting } from "@element-plus/icons-vue";
+import { Delete } from "@element-plus/icons-vue";
 
 interface Props {
-  connectionStatus: "connected" | "connecting" | "disconnected";
-  isConnected: boolean;
   messageCount: number;
   isSidebarCollapsed?: boolean;
+  appName?: string;
 }
 
 interface Emits {
   (e: "clear-chat"): void;
-  (e: "toggle-connection"): void;
+  (e: "close-app"): void;
   (e: "toggle-sidebar"): void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isSidebarCollapsed: false,
+  appName: "",
 });
 const emit = defineEmits<Emits>();
-
-const connectionStatusText = computed(() => {
-  switch (props.connectionStatus) {
-    case "connected":
-      return "已连接";
-    case "connecting":
-      return "连接中...";
-    case "disconnected":
-      return "未连接";
-    default:
-      return "未知状态";
-  }
-});
 
 const hasMessages = computed(() => props.messageCount > 0);
 
@@ -70,8 +45,8 @@ const handleClearChat = () => {
   emit("clear-chat");
 };
 
-const handleToggleConnection = () => {
-  emit("toggle-connection");
+const handleCloseApp = () => {
+  emit("close-app");
 };
 
 const toggleSidebar = () => {
@@ -128,6 +103,13 @@ const toggleSidebar = () => {
         color: inherit;
       }
     }
+
+    .app-tag {
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 
   .navbar-right {
@@ -139,39 +121,6 @@ const toggleSidebar = () => {
     /* EP 相邻按钮自带 margin-left，叠在 flex gap 上会导致间距忽大忽小 */
     :deep(.el-button) {
       margin: 0;
-    }
-
-    .connection-status {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 32px;
-      padding: 0 12px;
-      margin: 0;
-      font-size: 14px;
-      line-height: 1;
-
-      :deep(.el-tag__content) {
-        display: inline-flex;
-        gap: 6px;
-        align-items: center;
-      }
-
-      .status-icon {
-        &.connected {
-          color: var(--el-color-success);
-        }
-        &.connecting {
-          color: var(--el-color-warning);
-        }
-        &.disconnected {
-          color: var(--el-color-danger);
-        }
-      }
-
-      .status-text {
-        color: var(--el-text-color-secondary);
-      }
     }
   }
 }
