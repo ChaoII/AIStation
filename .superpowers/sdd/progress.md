@@ -404,3 +404,9 @@ Spec: docs/superpowers/specs/2026-09-13-ai-platform-v2-design.md
             解析备选 eventsource-parser；不推荐停更的 @microsoft/fetch-event-source。
   当前: module_ai/assistant.ts 手写 SSE 解析 -> 计划替换为 AI SDK；后端 SSE 已加 no-transform/X-Accel-Buffering。
   待办并入 B-E：采用 AI SDK 重构聊天/运行台流式（含工具时间线/思考分片）。
+
+--- AI SDK 依赖已安装 (commit d371e92) ---
+  环境处理: 用户开代理 7890; 设置 git url.https://github.com/.insteadOf git@github.com: (全局); pnpm add 成功。
+  已装: ai@^7.0.99, @ai-sdk/vue@^4.0.99 (package.json 入库; pnpm-lock.yaml 被 gitignore)。
+  待办: 后端 /ai/assistant/stream 改为 AI SDK UI Message Stream 协议；前端聊天页/运行台改 @ai-sdk/vue useChat；随后完成 B-E。
+  注意: 以后 pnpm 安装需带代理 env(HTTP_PROXY/HTTPS_PROXY=127.0.0.1:7890)。
