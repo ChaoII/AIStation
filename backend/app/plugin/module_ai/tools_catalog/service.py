@@ -66,6 +66,22 @@ def build_http_tool_fn(tool: AiToolModel):
     return _fn
 
 
+def build_http_tool_schema(tool: AiToolModel) -> dict:
+    """公开封装：按 params_schema 生成自定义 HTTP 工具的 OpenAI schema。"""
+    return _http_schema(tool)
+
+
+async def get_tool_by_name(name: str) -> AiToolModel | None:
+    """按工具名取未删除的工具行（含启停状态），供应用运行时派发。"""
+    async with async_db_session() as db:
+        return await db.scalar(
+            select(AiToolModel).where(
+                AiToolModel.name == name,
+                AiToolModel.is_deleted.is_(False),
+            )
+        )
+
+
 async def get_enabled_tool_schemas() -> list[dict]:
     """返回所有启用工具的 OpenAI 函数 schema（内置取注册表，HTTP 按 params_schema）。"""
     async with async_db_session() as db:
