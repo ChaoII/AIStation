@@ -69,17 +69,32 @@ const isSidebarCollapsed = ref(false);
 // 运行中的 AI 应用（?app_id=）：非空时流式走 /ai/apps/{id}/run/stream
 const appId = ref<number | null>(route.query.app_id ? Number(route.query.app_id) : null);
 const appName = ref("");
+// 请求令牌：discard out-of-order responses when app_id changes quickly
+let appLoadToken = 0;
 
 watch(
   () => route.query.app_id,
   async (v) => {
+    const token = ++appLoadToken;
     appId.value = v ? Number(v) : null;
     appName.value = "";
     if (!appId.value) return;
     try {
       const res = await getAiAppDetail(appId.value);
-      appName.value = res.data?.data?.name || "";
+      // 过期响应（app_id 已变更）直接丢弃
+      if (token !== appLoadToken) return;
+      const app = res.data?.data;
+      if (!app) {
+        // 应用不存在/无数据：回退通用助手，避免向不存在的应用发消息
+        appId.value = null;
+        appName.value = "";
+        return;
+      }
+      appName.value = app.name || "";
     } catch {
+      if (token !== appLoadToken) return;
+      // 详情请求失败：回退通用助手，避免 POST 到不存在的应用
+      appId.value = null;
       appName.value = "";
     }
   },
@@ -90,9 +105,10 @@ watch(
 // 直接透传会触发后端 422，故仅在可解析为整数时才携带（在 body 回调内读取，避免成为 transport 依赖）。
 const streamSessionId = (): number | undefined => {
   const raw = currentSessionId.value;
-  if (raw === null || raw === "") return undefined;
+  // 严格整数校验：空串/纯空白/小数（如 "1.5"）一律不携带
+  if (raw === null || raw.trim() === "") return undefined;
   const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isInteger(parsed) ? parsed : undefined;
 };
 
 // AI SDK 流式聊天（getter：随所选应用动态切换 path/body，替代旧 Agno WS）

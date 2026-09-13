@@ -48,4 +48,6 @@ test("带未知 app_id 打开智能助手不崩溃", async ({ page }) => {
 
   // 未知应用时应用详情请求失败应被吞掉，页面照常渲染输入框
   await expect(page.locator(".message-input textarea")).toBeVisible({ timeout: 10_000 });
+  // 应用详情失败后回退通用助手：不显示应用标签
+  await expect(page.locator(".app-tag")).toHaveCount(0);
 });
