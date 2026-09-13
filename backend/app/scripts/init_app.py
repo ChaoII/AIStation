@@ -287,7 +287,7 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 
 async def _ensure_ai_menus() -> None:
     """确保 AI 管理下的「模型配置」「AI 报告」页面与按钮权限存在。"""
-    from sqlalchemy import select
+    from sqlalchemy import select, update
 
     from app.api.v1.module_system.menu.model import MenuModel
     from app.api.v1.module_system.role.model import RoleMenusModel
@@ -301,6 +301,22 @@ async def _ensure_ai_menus() -> None:
             if not parent:
                 log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
                 return
+
+            # 父菜单重定向到新控制台；下线旧 AI 聊天/会话记忆页（仅保留新控制台/运行台）
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "AI", MenuModel.type == 1)
+                .values(redirect="/ai/overview")
+            )
+            await db.execute(
+                update(MenuModel)
+                .where(
+                    MenuModel.component_path.in_(
+                        ["module_ai/chat/index", "module_ai/memory/index"]
+                    )
+                )
+                .values(hidden=True)
+            )
 
             pages = [
                 ("控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 8),
