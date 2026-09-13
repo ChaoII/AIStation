@@ -349,7 +349,7 @@ async function handleDelete(row: any) {
 }
 
 function handleRun(row: any) {
-  router.push({ path: "/ai/playground", query: { app_id: String(row.id) } });
+  router.push({ path: "/ai/chat", query: { app_id: String(row.id) } });
 }
 
 onMounted(() => {
