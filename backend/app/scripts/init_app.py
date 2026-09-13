@@ -263,6 +263,94 @@ async def _ensure_edge_page_menu() -> None:
             log.info("✅ 边缘设备菜单已注册")
 
 
+AI_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_ai:model:query", "查询大模型配置"),
+    ("module_ai:model:create", "新增大模型配置"),
+    ("module_ai:model:update", "编辑大模型配置"),
+    ("module_ai:model:delete", "删除大模型配置"),
+    ("module_ai:report:query", "查询AI报告"),
+    ("module_ai:report:delete", "删除AI报告"),
+    ("module_ai:assistant:query", "AI助手对话"),
+]
+
+
+async def _ensure_ai_menus() -> None:
+    """确保 AI 管理下的「模型配置」「AI 报告」页面与按钮权限存在。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "AI", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
+                return
+
+            pages = [
+                ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
+                ("AI 报告", "AiReport", "/ai/report", "module_ai/report/index", "module_ai:report:query", 11),
+            ]
+            for title, rname, rpath, comp, perm, order in pages:
+                exists = await db.scalar(
+                    select(MenuModel).where(MenuModel.route_name == rname)
+                )
+                if exists:
+                    continue
+                m = MenuModel(
+                    name=title,
+                    type=2,
+                    icon=None,
+                    order=order,
+                    route_name=rname,
+                    route_path=rpath,
+                    component_path=comp,
+                    permission=perm,
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=title,
+                )
+                db.add(m)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=m.id))
+
+            existing = set(
+                (
+                    await db.execute(
+                        select(MenuModel.permission).where(
+                            MenuModel.permission.like("module_ai:%")
+                        )
+                    )
+                ).scalars().all()
+            )
+            for order, (perm_code, perm_name) in enumerate(AI_BUTTON_PERMS, start=1):
+                if perm_code in existing:
+                    continue
+                m = MenuModel(
+                    name=perm_name,
+                    type=3,
+                    icon=None,
+                    order=order,
+                    route_name="",
+                    route_path="",
+                    component_path="",
+                    permission=perm_code,
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=perm_name,
+                )
+                db.add(m)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=m.id))
+            log.info("✅ AI 菜单与权限已注册")
+
+
 async def _ensure_annotation_menus() -> None:
     """Ensure the 数据标注 menu entries exist."""
     from sqlalchemy import select
@@ -628,6 +716,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_deploy_menu()
         await _ensure_edge_button_menus()
         await _ensure_edge_page_menu()
+        await _ensure_ai_menus()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
