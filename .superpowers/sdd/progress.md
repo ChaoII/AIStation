@@ -410,3 +410,33 @@ Spec: docs/superpowers/specs/2026-09-13-ai-platform-v2-design.md
   已装: ai@^7.0.99, @ai-sdk/vue@^4.0.99 (package.json 入库; pnpm-lock.yaml 被 gitignore)。
   待办: 后端 /ai/assistant/stream 改为 AI SDK UI Message Stream 协议；前端聊天页/运行台改 @ai-sdk/vue useChat；随后完成 B-E。
   注意: 以后 pnpm 安装需带代理 env(HTTP_PROXY/HTTPS_PROXY=127.0.0.1:7890)。
+
+=== AI v2 EXECUTION (plan docs/superpowers/plans/2026-09-13-ai-platform-v2.md) ===
+AIv2 baseline: 4ec2de8
+AIv2 Task 1: complete (commits 4ec2de8..8eb5bd5, review approved after no-model data-finish fix)
+Minor(aiv2 t1): mid-stream exception aborts without finish/[DONE]; tool() input frame skipped when args=None; get_runtime_model(model_id) + SQLite migration branch untested
+AIv2 Task 2 baseline: 8eb5bd5
+AIv2 Task 2: complete (commits 8eb5bd5..826dc3d, review approved after attachment-drop fix; e2e ai-console 2 passed)
+Minor(aiv2 t2): playground no autoscroll while streaming; chat live-message timestamps unstable; playground tool filter not DRY; partText unused; e2e visibility-only; el-descriptions :column=5 overflow on narrow
+AIv2 Task 3 baseline: 826dc3d
+AIv2 Task 3: complete (commits 826dc3d..9de2bff, review approved after E2E variable/preview assertion fix)
+Minor(aiv2 t3): duplicate name -> 500; version always increments; variables not cross-validated vs blocks; _ensure_ai_menus docstring stale; untyped service param
+AIv2 Task 4 baseline: 9de2bff
+AIv2 Task 4: complete (commits 9de2bff..215970c, review approved after E2E tour-overlay fix; e2e ai-tool 2 passed)
+Minor(aiv2 t4): tool test endpoint httpx errors -> 500; update no name-uniqueness; builtin deletable via API; headers/params cannot be cleared; global guide tour show-close=false can block pointer events
+AIv2 Task 5 baseline: 215970c
+AIv2 Task 5: complete (commits 215970c..1c6d5b3, review approved after HTTP-tool/exec/builtin-enabled/input_schema fixes; e2e ai-app 2 passed)
+IMPORTANT(aiv2 t5, deferred to final review): run_app_ui_stream function-calling loop duplicated ~110 lines from assistant/service.py (plan said copy structure)
+Minor(aiv2 t5): builtin execution not re-gated in _run_app_tool; flat/malformed input_schema shapes untested; perf nit
+AIv2 Task 6 baseline: 1c6d5b3
+AIv2 Task 6: complete (commits 1c6d5b3..496425d, review approved after finally-persistence/ownership/dead-filter/app-context fixes; 311 tests, e2e ai-logs 2 passed)
+Minor(aiv2 t6): null-owner rows not deny-by-default; missing-vs-foreign status inconsistency; accumulated assistant_text includes intermediate rounds
+AIv2 Task 7 baseline: 496425d
+
+AIv2 Task 7: complete (报告增强 app_id/session_id + 全量回归 + 视觉验收)
+  - 后端: AiReportModel 增可空 app_id/session_id; _to_dict/list/detail 返回; AiReportService.create 新增可选参数(既有调用兼容); init_app._ensure_missing_columns 补 ai_reports 两列; 新增 tests/test_ai_report_enhance.py(2)
+  - 前端: module_ai/report 表格增「关联应用/关联会话」el-tag 列(单根元素不变)
+  - 回归: backend pytest 313 passed; ruff app/plugin/module_ai + app/scripts/init_app.py All checks passed
+  - 前端: vue-tsc 16 条 pre-existing 错误(module_generator/monitor/system/task + 旧 module_ai/memory)，report 页 0 错误; pnpm e2e 33 passed / 2 failed(dataset-to-train 单跑通过属 flaky; smoke 为 pre-existing 429 限流, 仅覆盖 train/annotation 页)
+  - 视觉: 无头截图 7 张 C:\Users\aichao\AppData\Local\Temp\opencode\ai-v2-shots\；vision-recognition 六页(overview/playground/prompt/tool/app/logs)全部判定与标准 Element Plus 后台高度一致(浅色卡片/默认蓝/无自定义深色指标卡/无遮挡)
+  - 提交: 见 Task 7 报告

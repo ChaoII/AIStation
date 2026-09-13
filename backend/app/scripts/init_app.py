@@ -55,6 +55,10 @@ async def _ensure_missing_columns() -> None:
         "ai_call_logs": [
             ("user_id", "INTEGER"),
         ],
+        "ai_reports": [
+            ("app_id", "INTEGER"),
+            ("session_id", "INTEGER"),
+        ],
     }
     is_sqlite = settings.DATABASE_TYPE == "sqlite"
     async with async_engine.begin() as conn:

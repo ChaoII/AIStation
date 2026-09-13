@@ -1,4 +1,4 @@
-from sqlalchemy import String, Text
+from sqlalchemy import Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,4 +15,8 @@ class AiReportModel(ModelMixin, UserMixin):
     content: Mapped[str] = mapped_column(Text, default="", comment="Markdown 内容")
     source: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=None, comment="来源数据/工具参数"
+    )
+    app_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="关联应用ID")
+    session_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="关联会话ID"
     )

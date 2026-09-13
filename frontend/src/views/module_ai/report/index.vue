@@ -29,6 +29,22 @@
             </template>
             <el-table-column type="selection" width="55" align="center" />
             <el-table-column label="标题" prop="title" min-width="240" show-overflow-tooltip />
+            <el-table-column label="关联应用" width="110" align="center">
+              <template #default="scope">
+                <el-tag v-if="scope.row.app_id" size="small" type="info">
+                  #{{ scope.row.app_id }}
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="关联会话" width="110" align="center">
+              <template #default="scope">
+                <el-tag v-if="scope.row.session_id" size="small" type="info">
+                  #{{ scope.row.session_id }}
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="生成时间" prop="created_time" width="180" />
             <el-table-column label="操作" fixed="right" width="160" align="center">
               <template #default="scope">

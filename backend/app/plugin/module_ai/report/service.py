@@ -11,6 +11,8 @@ def _to_dict(r: AiReportModel, with_content: bool = True) -> dict:
         "id": r.id,
         "title": r.title,
         "source": r.source,
+        "app_id": r.app_id,
+        "session_id": r.session_id,
         "created_id": r.created_id,
         "created_time": r.created_time,
     }
@@ -22,13 +24,23 @@ def _to_dict(r: AiReportModel, with_content: bool = True) -> dict:
 class AiReportService:
 
     @classmethod
-    async def create(cls, title: str, content: str, source: dict | None, user_id: int | None) -> dict:
+    async def create(
+        cls,
+        title: str,
+        content: str,
+        source: dict | None,
+        user_id: int | None,
+        app_id: int | None = None,
+        session_id: int | None = None,
+    ) -> dict:
         async with async_db_session.begin() as db:
             r = AiReportModel(
                 title=title,
                 content=content,
                 source=source,
                 created_id=user_id,
+                app_id=app_id,
+                session_id=session_id,
             )
             db.add(r)
             await db.flush()
