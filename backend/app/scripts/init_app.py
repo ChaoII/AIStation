@@ -47,6 +47,10 @@ async def _ensure_missing_columns() -> None:
         ],
         "ai_models": [
             ("extra_headers", "JSONB"),
+            ("provider_id", "INTEGER"),
+            ("usage", "VARCHAR(16)"),
+            ("capabilities", "JSONB"),
+            ("context_window", "INTEGER"),
         ],
     }
     async with async_engine.begin() as conn:
@@ -267,6 +271,10 @@ async def _ensure_edge_page_menu() -> None:
 
 
 AI_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_ai:provider:query", "查询提供商"),
+    ("module_ai:provider:create", "新增提供商"),
+    ("module_ai:provider:update", "编辑提供商"),
+    ("module_ai:provider:delete", "删除提供商"),
     ("module_ai:model:query", "查询大模型配置"),
     ("module_ai:model:create", "新增大模型配置"),
     ("module_ai:model:update", "编辑大模型配置"),
@@ -295,6 +303,7 @@ async def _ensure_ai_menus() -> None:
                 return
 
             pages = [
+                ("提供商", "AiProvider", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 9),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
                 ("AI 报告", "AiReport", "/ai/report", "module_ai/report/index", "module_ai:report:query", 11),
             ]

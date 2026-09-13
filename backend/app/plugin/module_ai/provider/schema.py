@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 class AiModelCreateSchema(BaseModel):
     name: str = Field(..., max_length=128, description="配置名称")
     provider: str = Field(default="openai_compatible", max_length=32, description="提供方协议")
+    provider_id: int | None = Field(default=None, description="所属提供商ID")
+    usage: str = Field(default="chat", max_length=16, description="用途 chat/assistant/embedding")
+    capabilities: list | None = Field(default=None, description="能力标签")
+    context_window: int | None = Field(default=None, description="上下文窗口")
     base_url: str = Field(default="", max_length=512, description="API 基址")
     api_key: str | None = Field(default=None, max_length=512, description="API Key")
     model: str = Field(default="", max_length=128, description="模型名")
@@ -34,6 +38,10 @@ class AiModelOutSchema(BaseModel):
     id: int
     name: str
     provider: str
+    provider_id: int | None = None
+    usage: str = "chat"
+    capabilities: list | None = None
+    context_window: int | None = None
     base_url: str
     model: str
     temperature: float

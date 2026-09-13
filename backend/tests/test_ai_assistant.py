@@ -88,7 +88,7 @@ def test_run_assistant_tool_loop(monkeypatch):
     import app.plugin.module_ai.assistant.service as S
     from app.plugin.module_ai.provider.service import AiModelService
 
-    async def _runtime():
+    async def _runtime(usage=None):
         return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
 
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))

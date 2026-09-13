@@ -36,7 +36,7 @@ async def _call_tool(name: str, args: dict, user_id: int | None) -> object:
 
 
 async def run_assistant(message: str, auth) -> dict:
-    runtime = await AiModelService.get_runtime_model()
+    runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
     if not runtime:
         raise CustomException(msg="未配置大模型，请在 AI 管理→模型配置 中添加并启用")
 
@@ -123,3 +123,119 @@ async def run_assistant(message: str, auth) -> dict:
         "action": action,
         "report_id": report_id,
     }
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+async def run_assistant_stream(message: str, auth):
+    """SSE 流式助手：逐块输出，工具调用过程以 event=tool 推送。"""
+    runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
+    if not runtime:
+        yield _sse("error", {"message": "未配置大模型，请在 AI 管理→模型配置 中添加并启用"})
+        return
+
+    from openai import AsyncOpenAI
+
+    from app.plugin.module_ai.provider.service import build_headers
+
+    client = AsyncOpenAI(
+        base_url=runtime["base_url"],
+        api_key=runtime["api_key"] or "sk-none",
+        default_headers=build_headers(
+            runtime["base_url"], runtime.get("extra_headers"), "aistation-assistant"
+        ),
+    )
+    messages: list[dict] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": message},
+    ]
+    user_id = getattr(getattr(auth, "user", None), "id", None)
+    tool_log: list[dict] = []
+    action = None
+    report_id = None
+
+    for _ in range(MAX_ROUNDS):
+        try:
+            stream = await client.chat.completions.create(
+                model=runtime["model"],
+                messages=messages,
+                tools=TOOL_SCHEMAS,
+                tool_choice="auto",
+                temperature=runtime["temperature"],
+                max_tokens=runtime["max_tokens"],
+                stream=True,
+            )
+        except Exception as e:
+            yield _sse("error", {"message": f"大模型调用失败：{e}"})
+            return
+
+        content = ""
+        tool_calls: dict = {}
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if getattr(delta, "content", None):
+                content += delta.content
+                yield _sse("delta", {"text": delta.content})
+            for tc in getattr(delta, "tool_calls", None) or []:
+                idx = tc.index
+                slot = tool_calls.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                if tc.id:
+                    slot["id"] = tc.id
+                if tc.function and tc.function.name:
+                    slot["name"] = tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+
+        if not tool_calls:
+            yield _sse(
+                "done",
+                {
+                    "reply": content,
+                    "tool_calls": tool_log,
+                    "action": action,
+                    "report_id": report_id,
+                },
+            )
+            return
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": content or None,
+                "tool_calls": [
+                    {
+                        "id": s["id"],
+                        "type": "function",
+                        "function": {"name": s["name"], "arguments": s["arguments"]},
+                    }
+                    for s in tool_calls.values()
+                ],
+            }
+        )
+        for s in tool_calls.values():
+            name = s["name"]
+            try:
+                args = json.loads(s["arguments"] or "{}")
+            except Exception:
+                args = {}
+            result = await _call_tool(name, args, user_id)
+            if isinstance(result, dict):
+                if result.get("__action__"):
+                    action = result["__action__"]
+                if result.get("__report_id__"):
+                    report_id = result["__report_id__"]
+            tool_log.append({"name": name, "args": args, "result": result})
+            yield _sse("tool", {"name": name, "args": args, "result": result})
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": s["id"],
+                    "content": json.dumps(result, ensure_ascii=False, default=str)[:4000],
+                }
+            )
+
+    yield _sse("done", {"reply": content, "tool_calls": tool_log, "action": action, "report_id": report_id})

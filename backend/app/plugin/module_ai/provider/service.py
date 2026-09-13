@@ -30,6 +30,10 @@ def _to_dict(m: AiModelModel) -> dict:
         "id": m.id,
         "name": m.name,
         "provider": m.provider,
+        "provider_id": m.provider_id,
+        "usage": m.usage,
+        "capabilities": m.capabilities,
+        "context_window": m.context_window,
         "base_url": m.base_url,
         "model": m.model,
         "temperature": m.temperature,
@@ -58,29 +62,41 @@ class AiModelService:
             return [_to_dict(m) for m in rows]
 
     @classmethod
-    async def get_runtime_model(cls) -> dict | None:
-        """取默认且启用的模型；无则回退 env 配置；均无返回 None。"""
+    async def get_runtime_model(cls, usage: str | None = None) -> dict | None:
+        """取默认且启用的模型（可按用途过滤）；解析所属提供商；无则回退 env。"""
         async with async_db_session() as db:
+            stmt = select(AiModelModel).where(
+                AiModelModel.is_deleted.is_(False),
+                AiModelModel.enabled.is_(True),
+            )
+            if usage:
+                stmt = stmt.where(AiModelModel.usage == usage)
             m = (
                 await db.execute(
-                    select(AiModelModel)
-                    .where(
-                        AiModelModel.is_deleted.is_(False),
-                        AiModelModel.enabled.is_(True),
-                    )
-                    .order_by(AiModelModel.is_default.desc(), AiModelModel.id.desc())
-                    .limit(1)
+                    stmt.order_by(AiModelModel.is_default.desc(), AiModelModel.id.desc()).limit(1)
                 )
             ).scalar_one_or_none()
-            if m and m.base_url and m.model:
-                return {
-                    "base_url": m.base_url,
-                    "api_key": m.api_key,
-                    "model": m.model,
-                    "temperature": m.temperature,
-                    "max_tokens": m.max_tokens,
-                    "extra_headers": m.extra_headers,
-                }
+            if m and m.model:
+                base_url = m.base_url
+                api_key = m.api_key
+                headers = dict(m.extra_headers or {})
+                if m.provider_id:
+                    from app.plugin.module_ai.providers.model import AiProviderModel
+
+                    p = await db.get(AiProviderModel, m.provider_id)
+                    if p and not p.is_deleted:
+                        base_url = base_url or p.base_url
+                        api_key = api_key or p.api_key
+                        headers = {**(p.extra_headers or {}), **headers}
+                if base_url:
+                    return {
+                        "base_url": base_url,
+                        "api_key": api_key,
+                        "model": m.model,
+                        "temperature": m.temperature,
+                        "max_tokens": m.max_tokens,
+                        "extra_headers": headers or None,
+                    }
         if settings.OPENAI_BASE_URL and settings.OPENAI_MODEL:
             return {
                 "base_url": settings.OPENAI_BASE_URL,
@@ -97,6 +113,10 @@ class AiModelService:
             m = AiModelModel(
                 name=data.name,
                 provider=data.provider,
+                provider_id=getattr(data, "provider_id", None),
+                usage=getattr(data, "usage", "chat"),
+                capabilities=getattr(data, "capabilities", None),
+                context_window=getattr(data, "context_window", None),
                 base_url=data.base_url or "",
                 api_key=data.api_key or "",
                 model=data.model or "",
@@ -128,6 +148,10 @@ class AiModelService:
             for key in (
                 "name",
                 "provider",
+                "provider_id",
+                "usage",
+                "capabilities",
+                "context_window",
                 "base_url",
                 "model",
                 "temperature",
