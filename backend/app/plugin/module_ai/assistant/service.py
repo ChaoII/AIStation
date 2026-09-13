@@ -19,6 +19,17 @@ SYSTEM_PROMPT = (
 MAX_ROUNDS = 6
 
 
+async def _load_tool_schemas() -> list[dict]:
+    """取启用工具的合并 schema（system/agno/http）；DB 无数据时回退内置静态列表。"""
+    from app.plugin.module_ai.tools_catalog.service import get_enabled_tool_schemas
+
+    try:
+        schemas = await get_enabled_tool_schemas()
+    except Exception:  # noqa: BLE001  数据库异常不应阻断对话
+        schemas = []
+    return schemas or TOOL_SCHEMAS
+
+
 async def _call_tool(name: str, args: dict, user_id: int | None) -> object:
     entry = TOOL_REGISTRY.get(name)
     if not entry:
@@ -187,6 +198,7 @@ async def run_assistant(message: str, auth) -> dict:
     from openai import AsyncOpenAI
 
     from app.plugin.module_ai.provider.service import build_headers
+    from app.plugin.module_ai.tools_catalog.service import dispatch_tool
 
     client = AsyncOpenAI(
         base_url=runtime["base_url"],
@@ -195,6 +207,7 @@ async def run_assistant(message: str, auth) -> dict:
             runtime["base_url"], runtime.get("extra_headers"), "aistation-assistant"
         ),
     )
+    tool_schemas = await _load_tool_schemas()
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": message},
@@ -209,7 +222,7 @@ async def run_assistant(message: str, auth) -> dict:
             resp = await client.chat.completions.create(
                 model=runtime["model"],
                 messages=messages,
-                tools=TOOL_SCHEMAS,
+                tools=tool_schemas,
                 tool_choice="auto",
                 temperature=runtime["temperature"],
                 max_tokens=runtime["max_tokens"],
@@ -246,7 +259,7 @@ async def run_assistant(message: str, auth) -> dict:
                 args = json.loads(tc.function.arguments or "{}")
             except Exception:
                 args = {}
-            result = await _call_tool(name, args, user_id)
+            result = await dispatch_tool(name, args, user_id)
             if isinstance(result, dict):
                 if result.get("__action__"):
                     action = result["__action__"]
@@ -308,6 +321,7 @@ async def run_assistant_ui_stream(
     from app.plugin.module_ai.provider.service import build_headers
     from app.plugin.module_ai.sessions.service import persist_session_exchange
     from app.plugin.module_ai.streaming import UiMessageStream
+    from app.plugin.module_ai.tools_catalog.service import dispatch_tool
 
     ms = UiMessageStream()
     user_text = last_user_text(ui_messages)
@@ -346,13 +360,14 @@ async def run_assistant_ui_stream(
         )
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages += extract_openai_messages(ui_messages)
+        tool_schemas = await _load_tool_schemas()
 
         async for frame in run_agent_ui_stream(
             client=client,
             runtime=runtime,
             messages=messages,
-            tool_schemas=TOOL_SCHEMAS,
-            dispatch=_call_tool,
+            tool_schemas=tool_schemas,
+            dispatch=dispatch_tool,
             ms=ms,
             user_id=user_id,
             state=state,

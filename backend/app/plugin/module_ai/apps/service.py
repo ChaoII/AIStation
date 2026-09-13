@@ -112,17 +112,28 @@ class AiAppService:
 
 
 async def _build_app_tools(names: list[str] | None):
-    """按应用绑定工具名解析 schema 与执行器：内置与 HTTP 均须 ai_tools 行存在且启用。"""
+    """按应用绑定工具名解析 schema 与执行器：内置/Agno/HTTP 均须 ai_tools 行存在且启用。"""
+    from app.plugin.module_ai.agno_tools import service as agno
     from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
     from app.plugin.module_ai.tools_catalog.service import (
+        _source_of_row,
         build_http_tool_schema,
         get_tool_by_name,
     )
 
+    # 预取绑定工具行，先收集 HTTP 名称用于 Agno 生成名去重
+    rows: dict[str, object] = {}
+    for name in names or []:
+        tool = await get_tool_by_name(name)
+        if tool is not None:
+            rows[name] = tool
+    used: set[str] = set(TOOL_REGISTRY.keys())
+    used.update(n for n, t in rows.items() if _source_of_row(t) == "http")
+
     schemas: list[dict] = []
     http_tools: dict[str, object] = {}
     for name in names or []:
-        tool = await get_tool_by_name(name)
+        tool = rows.get(name)
         entry = TOOL_REGISTRY.get(name)
         if entry:
             # 内置工具须存在 ai_tools 行且全局启用，否则跳过（与 HTTP 工具一致）
@@ -130,25 +141,25 @@ async def _build_app_tools(names: list[str] | None):
                 continue
             schemas.append(entry["schema"])
             continue
-        if tool is None or not tool.enabled or (tool.kind or "builtin") != "http":
+        if tool is None or not tool.enabled:
             continue
-        schemas.append(build_http_tool_schema(tool))
-        http_tools[name] = tool
+        source = _source_of_row(tool)
+        if source == "agno":
+            spec = agno.get_spec(tool.name)
+            if spec:
+                schemas.extend(agno.build_openai_schemas(spec, tool.config, used))
+            continue
+        if source == "http":
+            schemas.append(build_http_tool_schema(tool))
+            http_tools[name] = tool
     return schemas, http_tools
 
 
 async def _run_app_tool(name: str, args: dict, user_id: int | None, http_tools: dict) -> object:
-    """派发应用工具：HTTP 工具走 execute_http_tool，其余走内置注册表。"""
-    from app.plugin.module_ai.assistant.service import _call_tool
-    from app.plugin.module_ai.tools_catalog.service import execute_http_tool
+    """派发应用工具：统一走工具分派器（Agno/内置/HTTP 按来源路由）。"""
+    from app.plugin.module_ai.tools_catalog.service import dispatch_tool
 
-    tool = http_tools.get(name)
-    if tool is not None:
-        try:
-            return await execute_http_tool(tool, args)
-        except Exception as e:  # noqa: BLE001  HTTP 工具异常兜底，不中断对话
-            return {"error": str(e)}
-    return await _call_tool(name, args, user_id)
+    return await dispatch_tool(name, args, user_id, db_rows=http_tools or None)
 
 
 def _merge_variables(input_schema: object, variables: dict | None) -> dict:

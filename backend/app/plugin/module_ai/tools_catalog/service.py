@@ -7,8 +7,11 @@ from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
 
 from .model import AiToolModel
 
-# 请求头脱敏掩码：列表/详情只回显键与掩码，不回传明文密钥
+# 请求头/配置脱敏掩码：列表/详情只回显键与掩码，不回传明文密钥
 HEADER_MASK = "****"
+
+# 配置中疑似密钥的键名片段（命中即脱敏）
+_SECRET_HINTS = ("key", "secret", "token", "password")
 
 
 def _mask_headers(headers: dict | None) -> dict | None:
@@ -16,6 +19,33 @@ def _mask_headers(headers: dict | None) -> dict | None:
     if not headers:
         return headers
     return {str(k): HEADER_MASK for k in headers}
+
+
+def _mask_config(config: dict | None) -> dict | None:
+    """工具配置脱敏：疑似密钥字段的值替换为掩码，其余原样返回。"""
+    if not config:
+        return config
+    masked: dict = {}
+    for key, val in config.items():
+        name = str(key).lower()
+        if val not in (None, "") and any(h in name for h in _SECRET_HINTS):
+            masked[str(key)] = HEADER_MASK
+        else:
+            masked[str(key)] = val
+    return masked
+
+
+def _merge_config(old: dict | None, new: dict) -> dict:
+    """合并更新配置：掩码/空串保留原值，未出现键删除，其余覆盖。"""
+    before = old or {}
+    merged: dict = {}
+    for key, val in (new or {}).items():
+        if val == HEADER_MASK or val == "":
+            if key in before:
+                merged[key] = before[key]
+            continue
+        merged[key] = val
+    return merged
 
 
 def _merge_headers(old: dict | None, new: dict) -> dict:
@@ -31,11 +61,20 @@ def _merge_headers(old: dict | None, new: dict) -> dict:
     return merged
 
 
+def _tool_source(t: AiToolModel) -> str:
+    """推导工具来源：显式 source 优先，其次兼容旧 kind 字段。"""
+    if t.source:
+        return t.source
+    return "http" if (t.kind or "") == "http" else "system"
+
+
 def _to_dict(t: AiToolModel) -> dict:
     return {
         "id": t.id,
         "name": t.name,
         "kind": t.kind or "builtin",
+        "source": _tool_source(t),
+        "config": _mask_config(t.config),
         "method": t.method or "GET",
         "url": t.url or "",
         "headers": _mask_headers(t.headers),
@@ -106,7 +145,12 @@ async def get_tool_by_name(name: str) -> AiToolModel | None:
 
 
 async def get_enabled_tool_schemas() -> list[dict]:
-    """返回所有启用工具的 OpenAI 函数 schema（内置取注册表，HTTP 按 params_schema）。"""
+    """返回所有启用工具的 OpenAI 函数 schema，合并 system/agno/http 三类来源。
+
+    - system：取内置注册表静态 schema。
+    - agno：实例化 toolkit，展开其全部函数 schema（缺依赖/Key 时自动跳过）。
+    - http：按 ``params_schema`` 生成。
+    """
     async with async_db_session() as db:
         rows = (
             await db.execute(
@@ -119,15 +163,67 @@ async def get_enabled_tool_schemas() -> list[dict]:
             )
         ).scalars().all()
 
+    from app.plugin.module_ai.agno_tools import service as agno
+
+    # 预留系统与 HTTP 工具名，避免 Agno 生成名与它们重名
+    reserved: set[str] = set(TOOL_REGISTRY.keys())
+    reserved.update(t.name for t in rows if _source_of_row(t) == "http")
+
     schemas: list[dict] = []
     for tool in rows:
-        if (tool.kind or "builtin") == "builtin":
+        source = _source_of_row(tool)
+        if source == "agno":
+            spec = agno.get_spec(tool.name)
+            if spec:
+                schemas.extend(agno.build_openai_schemas(spec, tool.config, reserved))
+        elif source == "http":
+            schemas.append(_http_schema(tool))
+        else:
             entry = TOOL_REGISTRY.get(tool.name)
             if entry:
                 schemas.append(entry["schema"])
-        else:
-            schemas.append(_http_schema(tool))
     return schemas
+
+
+def _source_of_row(tool: AiToolModel) -> str:
+    """推导 DB 行来源（兼容无 source 的旧数据）。"""
+    if tool.source:
+        return tool.source
+    return "http" if (tool.kind or "") == "http" else "system"
+
+
+async def dispatch_tool(
+    name: str,
+    args: dict | None,
+    user_id: int | None,
+    db_rows: dict | None = None,
+) -> object:
+    """按工具名分派执行：Agno -> execute，system -> _call_tool，http -> execute_http_tool。
+
+    ``name`` 为下发给大模型的 OpenAI function name；Agno 工具可能是生成名
+    （如 ``add`` / ``calculator_add``），由 ``agno_tools.service.resolve_function`` 解析。
+    """
+    from app.plugin.module_ai.agno_tools import service as agno
+
+    resolved = agno.resolve_function(name)
+    if resolved is not None:
+        spec, fn_name = resolved
+        return await agno.execute(spec, fn_name, args, agno.resolve_config(name))
+
+    if name in TOOL_REGISTRY:
+        from app.plugin.module_ai.assistant.service import _call_tool
+
+        return await _call_tool(name, args, user_id)
+
+    tool = db_rows.get(name) if isinstance(db_rows, dict) else None
+    if tool is None:
+        tool = await get_tool_by_name(name)
+    if tool is not None and _source_of_row(tool) == "http":
+        try:
+            return await execute_http_tool(tool, args)
+        except Exception as e:  # noqa: BLE001  HTTP 工具异常兜底，不中断对话
+            return {"error": str(e)}
+    return {"error": f"未知工具：{name}"}
 
 
 class AiToolService:
@@ -158,9 +254,13 @@ class AiToolService:
             exists = await db.scalar(select(AiToolModel).where(AiToolModel.name == data.name))
             if exists:
                 raise CustomException(msg=f"工具名已存在：{data.name}")
+            kind = data.kind or "http"
+            source = getattr(data, "source", None) or ("http" if kind == "http" else "system")
             t = AiToolModel(
                 name=data.name,
-                kind=data.kind or "http",
+                kind=kind,
+                source=source,
+                config=getattr(data, "config", None),
                 method=(data.method or "GET").upper(),
                 url=data.url or "",
                 headers=data.headers,
@@ -184,6 +284,12 @@ class AiToolService:
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(t, key, val)
+            # 来源：仅在显式传入时更新
+            if getattr(data, "source", None):
+                t.source = data.source
+            # 配置单独合并：掩码/空值保留原密文，未出现键删除，其余覆盖
+            if getattr(data, "config", None) is not None:
+                t.config = _merge_config(t.config, data.config)
             # 请求头单独合并：掩码/空值保留原密文，未出现键删除，其余覆盖
             if data.headers is not None:
                 t.headers = _merge_headers(t.headers, data.headers)

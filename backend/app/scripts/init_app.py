@@ -59,6 +59,10 @@ async def _ensure_missing_columns() -> None:
             ("app_id", "INTEGER"),
             ("session_id", "INTEGER"),
         ],
+        "ai_tools": [
+            ("source", "VARCHAR(16) DEFAULT 'system'"),
+            ("config", "JSONB"),
+        ],
     }
     is_sqlite = settings.DATABASE_TYPE == "sqlite"
     async with async_engine.begin() as conn:
@@ -87,6 +91,18 @@ async def _ensure_missing_columns() -> None:
                         )
                 except Exception:
                     pass
+
+    # 存量 HTTP 工具迁移：source 默认 system，需按 kind='http' 修正为 http
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "UPDATE ai_tools SET source='http' "
+                    "WHERE kind='http' AND (source IS NULL OR source='system')"
+                )
+            )
+    except Exception as e:
+        log.warning(f"ai_tools source migration warning: {e}")
 
     # Drop unused columns + ensure re-added columns
     try:
@@ -434,6 +450,7 @@ async def _ensure_ai_tools() -> None:
                     AiToolModel(
                         name=tool_name,
                         kind="builtin",
+                        source="system",
                         method="GET",
                         url="",
                         enabled=True,
@@ -444,6 +461,39 @@ async def _ensure_ai_tools() -> None:
                 log.info(f"✅ 已注册 {added} 个内置 AI 工具")
             else:
                 log.info("✅ 内置 AI 工具已就绪")
+
+
+async def _ensure_agno_tools() -> None:
+    """幂等同步 Agno 精选工具到 ai_tools：仅补缺失行，默认停用，不覆盖已有配置。"""
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.agno_tools.registry import AGNO_CATALOG
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = set((await db.execute(select(AiToolModel.name))).scalars().all())
+            added = 0
+            for spec in AGNO_CATALOG:
+                if spec["key"] in existing:
+                    continue
+                db.add(
+                    AiToolModel(
+                        name=spec["key"],
+                        kind="agno",
+                        source="agno",
+                        method="GET",
+                        url="",
+                        enabled=False,
+                        description=spec.get("description") or spec["title"],
+                    )
+                )
+                added += 1
+            if added:
+                log.info(f"✅ 已注册 {added} 个 Agno 精选 AI 工具")
+            else:
+                log.info("✅ Agno 精选 AI 工具已就绪")
 
 
 async def _ensure_annotation_menus() -> None:
@@ -813,6 +863,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_edge_page_menu()
         await _ensure_ai_menus()
         await _ensure_ai_tools()
+        await _ensure_agno_tools()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()

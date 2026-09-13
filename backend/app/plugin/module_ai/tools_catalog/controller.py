@@ -21,6 +21,15 @@ async def list_tools(
     return SuccessResponse(data=await AiToolService.list_tools(), msg="查询成功")
 
 
+@AiToolRouter.get("/agno", summary="Agno 精选工具规格")
+async def list_agno_tools(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:query"]))],
+) -> JSONResponse:
+    from app.plugin.module_ai.agno_tools.service import get_tool_specs
+
+    return SuccessResponse(data=get_tool_specs(), msg="查询成功")
+
+
 @AiToolRouter.post("/create", summary="新增工具")
 async def create_tool(
     data: AiToolCreateSchema,

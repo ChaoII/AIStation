@@ -17,6 +17,12 @@ class AiToolModel(ModelMixin, UserMixin):
     kind: Mapped[str] = mapped_column(
         String(16), default="builtin", comment="类型: builtin/http"
     )
+    source: Mapped[str] = mapped_column(
+        String(16), default="system", comment="来源: system/agno/http"
+    )
+    config: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="运行配置（API Key / 自定义参数）"
+    )
     method: Mapped[str] = mapped_column(String(8), default="GET", comment="HTTP 方法")
     url: Mapped[str] = mapped_column(
         String(512), default="", comment="请求地址，支持 {key} 路径占位"
