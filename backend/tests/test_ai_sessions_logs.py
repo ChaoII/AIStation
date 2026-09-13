@@ -141,6 +141,61 @@ def test_stream_with_session_id_persists_two_messages(
         _delete_session(test_client, auth_headers, session_id)
 
 
+def test_app_stream_with_session_id_persists(monkeypatch, test_client, auth_headers):
+    """应用运行流式同样落会话：/ai/apps/{id}/run/stream 传 session_id 后多两条消息。"""
+    import openai
+
+    app_name = f"pytest-app-{uuid.uuid4().hex[:8]}"
+    app_id = test_client.post(
+        "/api/v1/ai/apps/create",
+        json={
+            "name": app_name,
+            "icon": "",
+            "description": None,
+            "model_id": None,
+            "prompt_id": None,
+            "tools": [],
+            "output_format": "text",
+            "input_schema": None,
+            "enabled": True,
+            "order": 0,
+        },
+        headers=auth_headers,
+    ).json()["data"]["id"]
+    session_id = _create_session(test_client, auth_headers, "pytest 应用会话", app_id=app_id)
+    rounds = [[_FakeChunk(_FakeDelta(content="应用回复"))]]
+    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
+    _patch_runtime(monkeypatch)
+
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/apps/{app_id}/run/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "执行"}]}],
+                "variables": {},
+                "session_id": session_id,
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert "data: [DONE]" in r.text
+
+        detail = test_client.get(
+            f"/api/v1/ai/sessions/detail/{session_id}", headers=auth_headers
+        ).json()["data"]
+        msgs = detail["messages"]
+        assert len(msgs) == 2, msgs
+        assert msgs[0]["role"] == "user"
+        assert msgs[0]["parts"][0]["text"] == "执行"
+        assert msgs[1]["role"] == "assistant"
+        assert msgs[1]["parts"][0]["text"] == "应用回复"
+    finally:
+        _delete_session(test_client, auth_headers, session_id)
+        test_client.request(
+            "DELETE", "/api/v1/ai/apps/delete", json=[app_id], headers=auth_headers
+        )
+
+
 def test_stream_without_session_id_does_not_persist(monkeypatch, test_client, auth_headers):
     """不传 session_id 时行为不变：不产生任何会话记录（回归保护）。"""
     import openai
