@@ -23,7 +23,7 @@ async function dismissTour(page: Page) {
   await tour.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
 }
 
-test("调用日志页可打开并展示表格与筛选", async ({ page }) => {
+test("调用日志页搜索在列表上方并展示筛选与表格", async ({ page }) => {
   await page.goto("/#/ai/logs", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
@@ -31,4 +31,18 @@ test("调用日志页可打开并展示表格与筛选", async ({ page }) => {
   // 页面容器与日志表格渲染
   await expect(page.locator(".ai-logs-page")).toBeVisible({ timeout: 10_000 });
   await expect(page.locator(".ai-logs-page .el-table").first()).toBeVisible({ timeout: 10_000 });
+
+  // 搜索表单（用途/结果/关键字）在表格上方（DOM 纵向顺序）
+  const search = page.locator(".ai-logs-page .search-container");
+  await expect(search).toBeVisible({ timeout: 10_000 });
+  const labels = search.locator(".el-form-item__label");
+  await expect(labels.filter({ hasText: "用途" })).toBeVisible();
+  await expect(labels.filter({ hasText: "结果" })).toBeVisible();
+  await expect(labels.filter({ hasText: "关键字" })).toBeVisible();
+
+  const searchBox = await search.boundingBox();
+  const tableBox = await page.locator(".ai-logs-page .el-table").first().boundingBox();
+  expect(searchBox).not.toBeNull();
+  expect(tableBox).not.toBeNull();
+  expect(searchBox!.y).toBeLessThan(tableBox!.y);
 });

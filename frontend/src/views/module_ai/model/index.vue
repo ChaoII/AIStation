@@ -230,6 +230,12 @@ const searchConfig = reactive<ISearchConfig>({
       type: "input",
       attrs: { placeholder: "配置名称", clearable: true, style: { width: "200px" } },
     },
+    {
+      prop: "model",
+      label: "模型名",
+      type: "input",
+      attrs: { placeholder: "模型名", clearable: true, style: { width: "200px" } },
+    },
   ],
 });
 
@@ -245,8 +251,13 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   indexAction: async (params) => {
     const res = await getAiModelList(params as TablePageQuery);
     const list = res.data?.data || [];
-    const keyword = (params as any)?.name;
-    const filtered = keyword ? list.filter((x: any) => (x.name || "").includes(keyword)) : list;
+    const name = (params as any)?.name;
+    const model = (params as any)?.model;
+    if (!name && !model) return { total: list.length, list };
+    const filtered = list.filter(
+      (x: any) =>
+        (!name || (x.name || "").includes(name)) && (!model || (x.model || "").includes(model))
+    );
     return { total: filtered.length, list: filtered };
   },
   deleteAction: async (ids) => {

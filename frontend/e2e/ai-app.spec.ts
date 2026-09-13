@@ -23,14 +23,27 @@ async function dismissTour(page: Page) {
   await tour.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
 }
 
-test("AI 应用页可打开并展示新增按钮", async ({ page }) => {
+test("AI 应用页搜索在列表上方且新增按钮可见", async ({ page }) => {
   await page.goto("/#/ai/app", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
 
-  // 页面容器与「新增应用」按钮可见
+  // 页面容器
   await expect(page.locator(".ai-app-page")).toBeVisible({ timeout: 10_000 });
-  const addButton = page.getByRole("button", { name: "新增应用" });
+
+  // 搜索表单在列表上方（DOM 纵向顺序）
+  const search = page.locator(".ai-app-page .search-container");
+  await expect(search).toBeVisible({ timeout: 10_000 });
+  const table = page.locator(".ai-app-page .el-table").first();
+  await expect(table).toBeVisible({ timeout: 10_000 });
+  const searchBox = await search.boundingBox();
+  const tableBox = await table.boundingBox();
+  expect(searchBox).not.toBeNull();
+  expect(tableBox).not.toBeNull();
+  expect(searchBox!.y).toBeLessThan(tableBox!.y);
+
+  // 「新增」按钮可见
+  const addButton = page.getByRole("button", { name: "新增" }).first();
   await addButton.scrollIntoViewIfNeeded();
   await expect(addButton).toBeVisible({ timeout: 10_000 });
 });

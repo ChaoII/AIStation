@@ -54,6 +54,8 @@ const props = withDefaults(
     width?: string | number;
     /** 默认可拖拽；全屏时 Element Plus 会限制拖拽 */
     draggable?: boolean;
+    /** 打开时默认全屏（标题栏按钮仍可切换） */
+    fullscreen?: boolean;
     /** 透传到 el-dialog 的 class */
     dialogClass?: string;
     /** 遮罩层自定义 class */
@@ -61,6 +63,7 @@ const props = withDefaults(
   }>(),
   {
     draggable: true,
+    fullscreen: false,
   }
 );
 
@@ -72,7 +75,16 @@ const emit = defineEmits<{
 }>();
 
 const attrs = useAttrs();
-const fullscreen = ref(false);
+const fullscreen = ref(props.fullscreen);
+
+// 每次打开时按 fullscreen 属性重置（允许调用方指定默认是否全屏）
+watch(
+  () => props.modelValue,
+  (visible) => {
+    if (visible) fullscreen.value = props.fullscreen;
+  },
+  { immediate: true }
+);
 
 // 监听全屏状态变化并发出事件
 watch(fullscreen, (newVal) => {

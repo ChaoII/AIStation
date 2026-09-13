@@ -1,80 +1,106 @@
-<!-- AI 应用：模型+提示词+工具集+输出格式+入参，一键运行 -->
+<!-- AI 应用：上搜索/下列表 + 弹窗表单（模型+提示词+工具集+输出格式+入参），行内可运行 -->
 <template>
   <div class="app-container ai-app-page">
-    <el-card shadow="never" class="app-card">
-      <div class="toolbar">
-        <el-button v-hasPerm="['module_ai:app:create']" type="primary" @click="handleOpenDialog()">
-          新增应用
-        </el-button>
-        <el-button @click="refreshList">刷新</el-button>
-      </div>
+    <PageSearch
+      ref="searchRef"
+      :search-config="searchConfig"
+      @query-click="handleQueryClick"
+      @reset-click="handleResetClick"
+    />
 
-      <el-table v-loading="loading" :data="list" row-key="id" border stripe>
-        <template #empty>
-          <el-empty :image-size="80" description="暂无 AI 应用" />
-        </template>
-        <el-table-column label="图标" width="80" align="center">
-          <template #default="{ row }">
-            <el-icon v-if="row.icon"><component :is="row.icon" /></el-icon>
-            <span v-else>—</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />
-        <el-table-column label="描述" prop="description" min-width="180" show-overflow-tooltip />
-        <el-table-column label="模型" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ modelName(row.model_id) }}</template>
-        </el-table-column>
-        <el-table-column label="提示词" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">{{ promptName(row.prompt_id) }}</template>
-        </el-table-column>
-        <el-table-column label="工具数" width="90" align="center">
-          <template #default="{ row }">{{ (row.tools || []).length }}</template>
-        </el-table-column>
-        <el-table-column label="输出格式" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ formatLabel(row.output_format) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="启用" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-              {{ row.enabled ? "启用" : "停用" }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" fixed="right" width="200" align="center">
-          <template #default="{ row }">
-            <el-button
-              v-hasPerm="['module_ai:app:query']"
-              size="small"
-              link
-              type="primary"
-              @click="handleRun(row)"
-            >
-              运行
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:app:update']"
-              size="small"
-              link
-              type="primary"
-              @click="handleOpenDialog(row)"
-            >
-              编辑
-            </el-button>
-            <el-button
-              v-hasPerm="['module_ai:app:delete']"
-              size="small"
-              link
-              type="danger"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+    <PageContent ref="contentRef" :content-config="contentConfig">
+      <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
+        <CrudToolbarLeft
+          :remove-ids="removeIds"
+          :perm-create="['module_ai:app:create']"
+          :perm-delete="['module_ai:app:delete']"
+          @add="handleOpenDialog()"
+          @delete="onToolbar('delete')"
+        />
+        <div class="data-table__toolbar--right">
+          <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
+        </div>
+      </template>
+
+      <template #table="{ data, loading, tableRef, onSelectionChange }">
+        <div class="data-table__content">
+          <el-table
+            :ref="tableRef as any"
+            v-loading="loading"
+            row-key="id"
+            :data="data"
+            height="100%"
+            border
+            stripe
+            @selection-change="onSelectionChange"
+          >
+            <template #empty>
+              <el-empty :image-size="80" description="暂无 AI 应用" />
+            </template>
+            <el-table-column type="selection" width="55" align="center" />
+            <el-table-column label="图标" width="80" align="center">
+              <template #default="{ row }">
+                <el-icon v-if="row.icon"><component :is="row.icon" /></el-icon>
+                <span v-else>—</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />
+            <el-table-column label="模型" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">{{ modelName(row.model_id) }}</template>
+            </el-table-column>
+            <el-table-column label="提示词" min-width="150" show-overflow-tooltip>
+              <template #default="{ row }">{{ promptName(row.prompt_id) }}</template>
+            </el-table-column>
+            <el-table-column label="工具数" width="90" align="center">
+              <template #default="{ row }">{{ (row.tools || []).length }}</template>
+            </el-table-column>
+            <el-table-column label="输出格式" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ formatLabel(row.output_format) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="启用" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
+                  {{ row.enabled ? "启用" : "停用" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" fixed="right" width="200" align="center">
+              <template #default="{ row }">
+                <el-button
+                  v-hasPerm="['module_ai:app:query']"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="handleRun(row)"
+                >
+                  运行
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:app:update']"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="handleOpenDialog(row)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:app:delete']"
+                  size="small"
+                  link
+                  type="danger"
+                  @click="handleRowDelete(row.id)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </template>
+    </PageContent>
 
     <EnhancedDialog
       v-model="dialogVisible"
@@ -157,33 +183,81 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
+import PageSearch from "@/components/CURD/PageSearch.vue";
+import PageContent from "@/components/CURD/PageContent.vue";
+import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
+import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { useCrudList } from "@/components/CURD/useCrudList";
+import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { createAiApp, deleteAiApp, getAiAppList, updateAiApp } from "@/api/module_ai/app";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiPromptList } from "@/api/module_ai/prompt";
 import { getAiToolList } from "@/api/module_ai/tool";
-import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 
 defineOptions({ name: "AiApp" });
 
-interface AppRow {
-  id: number;
-  name: string;
-  icon: string;
-  description: string | null;
-  model_id: number | null;
-  prompt_id: number | null;
-  tools: string[];
-  output_format: string;
-  input_schema: Record<string, any> | null;
-  enabled: boolean;
-  order: number;
-}
-
 const router = useRouter();
 
-const loading = ref(false);
-const list = ref<AppRow[]>([]);
+const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+
+const searchConfig = reactive<ISearchConfig>({
+  permPrefix: "module_ai:app",
+  colon: true,
+  showNumber: 2,
+  form: { labelWidth: "auto" },
+  formItems: [
+    {
+      prop: "name",
+      label: "名称",
+      type: "input",
+      attrs: { placeholder: "应用名称", clearable: true, style: { width: "200px" } },
+    },
+    {
+      prop: "enabled",
+      label: "启用",
+      type: "select",
+      options: [
+        { label: "启用", value: "true" },
+        { label: "停用", value: "false" },
+      ],
+      attrs: { placeholder: "请选择状态", clearable: true, style: { width: "167.5px" } },
+    },
+  ],
+});
+
+const contentConfig = reactive<IContentConfig>({
+  permPrefix: "module_ai:app",
+  pk: "id",
+  cols: [],
+  hideColumnFilter: true,
+  toolbar: [],
+  defaultToolbar: ["refresh"],
+  pagination: false,
+  indexAction: async (params) => {
+    const res = await getAiAppList();
+    const list = res.data?.data || [];
+    const name = (params as any)?.name;
+    const enabled = (params as any)?.enabled;
+    if (!name && enabled === undefined) return list;
+    return list.filter(
+      (x: any) =>
+        (!name || (x.name || "").includes(name)) &&
+        (enabled === undefined || String(x.enabled) === enabled)
+    );
+  },
+  deleteAction: async (ids) => {
+    await deleteAiApp(
+      ids
+        .split(",")
+        .map((s: string) => Number(s.trim()))
+        .filter((n: number) => !Number.isNaN(n))
+    );
+  },
+  deleteConfirm: { title: "警告", message: "确认删除所选应用?", type: "warning" },
+});
+
 const modelOptions = ref<any[]>([]);
 const promptOptions = ref<any[]>([]);
 const toolOptions = ref<any[]>([]);
@@ -247,16 +321,8 @@ async function loadOptions() {
   }
 }
 
-async function refreshList() {
-  loading.value = true;
-  try {
-    const res = await getAiAppList();
-    list.value = res.data?.data || [];
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "加载失败");
-  } finally {
-    loading.value = false;
-  }
+function handleRowDelete(id: number) {
+  contentRef.value?.handleDelete(id);
 }
 
 function handleOpenDialog(row?: any) {
@@ -324,27 +390,12 @@ async function handleSubmit() {
     if (formData.id) await updateAiApp(formData.id, payload);
     else await createAiApp(payload);
     dialogVisible.value = false;
-    await refreshList();
+    refreshList();
     ElMessage.success("保存成功");
   } catch (e: any) {
     ElMessage.error(e?.msg || "保存失败");
   } finally {
     submitLoading.value = false;
-  }
-}
-
-async function handleDelete(row: any) {
-  try {
-    await ElMessageBox.confirm(`确认删除应用「${row.name}」?`, "警告", { type: "warning" });
-  } catch {
-    return;
-  }
-  try {
-    await deleteAiApp([row.id]);
-    await refreshList();
-    ElMessage.success("删除成功");
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "删除失败");
   }
 }
 
@@ -354,22 +405,11 @@ function handleRun(row: any) {
 
 onMounted(() => {
   loadOptions();
-  refreshList();
 });
 </script>
 
 <style scoped>
 .ai-app-page {
   flex-shrink: 0;
-}
-
-.app-card {
-  flex-shrink: 0;
-}
-
-.toolbar {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
 }
 </style>
