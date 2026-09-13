@@ -57,6 +57,7 @@ import ChatMessages from "./components/ChatMessages.vue";
 import ChatInput from "./components/ChatInput.vue";
 import Sidebar from "./components/Sidebar.vue";
 import AiChatAPI, { ChatSession } from "@/api/module_ai/chat";
+import { assistantStream } from "@/api/module_ai/assistant";
 import { Auth } from "@/utils/auth";
 import type { ChatMessage, UploadedFile } from "./types";
 
@@ -195,7 +196,7 @@ const generateId = () => {
 
 // ============ 发送消息 ============
 const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
-  if ((!message && !files) || !isConnected.value || sending.value) return;
+  if ((!message && !files) || sending.value) return;
 
   // 结束上一个加载中的消息
   finishLoadingMessages();
@@ -217,27 +218,33 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
     timestamp: Date.now(),
     loading: true,
   });
+  const last = messages.value[messages.value.length - 1];
 
   sending.value = true;
   chatMessagesRef.value?.scrollToBottom();
 
   try {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          message,
-          session_id: currentSessionId.value,
-          files: files?.map((f) => ({ name: f.name, type: f.type, size: f.size })),
-        })
-      );
-    } else {
-      throw new Error("WebSocket 连接未建立");
-    }
-  } catch {
-    messages.value.pop();
-    error.value = "发送消息失败，请检查连接状态";
+    // 走运行时 SSE（真流式：思考/回复/工具），不依赖 Agno WS
+    await assistantStream(message, (event, data) => {
+      if (event === "delta") {
+        last.content += data.text || "";
+      } else if (event === "tool") {
+        last.content += `\n\n> 🔧 调用工具：${data.name}`;
+      } else if (event === "reasoning") {
+        last.content += "";
+      } else if (event === "done") {
+        if (data.report_id) last.content += `\n\n> 已生成报告 #${data.report_id}`;
+      } else if (event === "error") {
+        last.content += `\n\n> 出错：${data.message}`;
+      }
+      chatMessagesRef.value?.scrollToBottom();
+    });
+  } catch (e: any) {
+    last.content += `\n\n> 请求失败：${e?.message || e}`;
   } finally {
+    last.loading = false;
     sending.value = false;
+    chatMessagesRef.value?.scrollToBottom();
   }
 };
 
