@@ -146,7 +146,8 @@ async def _build_app_tools(names: list[str] | None):
         source = _source_of_row(tool)
         if source == "agno":
             spec = agno.get_spec(tool.name)
-            if spec:
+            # 显式按 readiness 过滤：缺依赖或缺必填配置的工具不下发 schema
+            if spec and agno.readiness(spec, tool.config)[0]:
                 schemas.extend(agno.build_openai_schemas(spec, tool.config, used))
             continue
         if source == "http":

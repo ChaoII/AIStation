@@ -68,7 +68,19 @@ def _tool_source(t: AiToolModel) -> str:
     return "http" if (t.kind or "") == "http" else "system"
 
 
+def _readiness_of(t: AiToolModel) -> tuple[bool, str]:
+    """按来源判定工具就绪性：agno 走注册表（依赖 + 必填配置），其余恒就绪。"""
+    if _tool_source(t) == "agno":
+        from app.plugin.module_ai.agno_tools import service as agno
+
+        spec = agno.get_spec(t.name)
+        if spec:
+            return agno.readiness(spec, t.config)
+    return True, ""
+
+
 def _to_dict(t: AiToolModel) -> dict:
+    ready, reason = _readiness_of(t)
     return {
         "id": t.id,
         "name": t.name,
@@ -80,6 +92,8 @@ def _to_dict(t: AiToolModel) -> dict:
         "headers": _mask_headers(t.headers),
         "params_schema": t.params_schema,
         "enabled": t.enabled,
+        "ready": ready,
+        "reason": reason,
         "description": t.description,
     }
 
@@ -174,7 +188,8 @@ async def get_enabled_tool_schemas() -> list[dict]:
         source = _source_of_row(tool)
         if source == "agno":
             spec = agno.get_spec(tool.name)
-            if spec:
+            # 显式按 readiness 过滤：缺依赖或缺必填配置的工具不下发 schema
+            if spec and agno.readiness(spec, tool.config)[0]:
                 schemas.extend(agno.build_openai_schemas(spec, tool.config, reserved))
         elif source == "http":
             schemas.append(_http_schema(tool))
@@ -227,6 +242,20 @@ async def dispatch_tool(
 
 
 class AiToolService:
+
+    @classmethod
+    async def get_agno_config_map(cls) -> dict[str, dict]:
+        """取 Agno 工具行的 ``{工具名: 已存 config}`` 映射，供精选规格就绪判定。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiToolModel.name, AiToolModel.config).where(
+                        AiToolModel.is_deleted.is_(False),
+                        AiToolModel.source == "agno",
+                    )
+                )
+            ).all()
+        return {name: (cfg or {}) for name, cfg in rows}
 
     @classmethod
     async def list_tools(cls) -> list[dict]:

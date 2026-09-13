@@ -20,14 +20,17 @@ MAX_ROUNDS = 6
 
 
 async def _load_tool_schemas() -> list[dict]:
-    """取启用工具的合并 schema（system/agno/http）；DB 无数据时回退内置静态列表。"""
+    """取启用工具的合并 schema（system/agno/http）。
+
+    仅在查询**异常**（DB/schema 加载失败）时回退内置静态列表；查询成功但为空
+    （管理员禁用了全部工具）时必须返回 ``[]``，不得重新暴露内置工具。
+    """
     from app.plugin.module_ai.tools_catalog.service import get_enabled_tool_schemas
 
     try:
-        schemas = await get_enabled_tool_schemas()
+        return await get_enabled_tool_schemas()
     except Exception:  # noqa: BLE001  数据库异常不应阻断对话
-        schemas = []
-    return schemas or TOOL_SCHEMAS
+        return TOOL_SCHEMAS
 
 
 async def _call_tool(name: str, args: dict, user_id: int | None) -> object:

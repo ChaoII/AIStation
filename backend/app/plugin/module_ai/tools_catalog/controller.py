@@ -27,7 +27,9 @@ async def list_agno_tools(
 ) -> JSONResponse:
     from app.plugin.module_ai.agno_tools.service import get_tool_specs
 
-    return SuccessResponse(data=get_tool_specs(), msg="查询成功")
+    # 结合各工具行已存 config 判定 ready/reason（如 openweather 缺 api_key）
+    config_map = await AiToolService.get_agno_config_map()
+    return SuccessResponse(data=get_tool_specs(config_map), msg="查询成功")
 
 
 @AiToolRouter.post("/create", summary="新增工具")

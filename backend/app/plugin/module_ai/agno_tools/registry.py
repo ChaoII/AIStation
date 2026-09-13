@@ -3,7 +3,8 @@
 每个条目为「工具集（toolkit）」：
 - ``key``：唯一键，也是 ``ai_tools`` 行的 ``name``（用户开关/配置的单元）。
 - ``module`` / ``class_name``：Agno 真实模块与类名（已按 2.5.8 探测核对）。
-- ``requires``：可选 pip 依赖名；缺失时该工具标记「未就绪」。
+- ``requires``：可选**导入模块名**（供 ``importlib.util.find_spec`` 探测）；缺失时标记「未就绪」。
+- ``pip_name``：可选 pip 分发名，仅用于提示文案（与导入名不同的包才有）。
 - ``config_fields``：前端自动生成配置表单的字段声明。
 - ``group`` / ``risk`` / ``description``：分组、风险级别与简介。
 """
@@ -92,7 +93,8 @@ AGNO_CATALOG: list[dict] = [
         "title": "Tavily 搜索",
         "module": "agno.tools.tavily",
         "class_name": "TavilyTools",
-        "requires": "tavily-python",
+        "requires": "tavily",
+        "pip_name": "tavily-python",
         "config_fields": [
             {"key": "api_key", "label": "API Key", "secret": True, "required": True}
         ],
@@ -105,7 +107,8 @@ AGNO_CATALOG: list[dict] = [
         "title": "SerpAPI 搜索",
         "module": "agno.tools.serpapi",
         "class_name": "SerpApiTools",
-        "requires": "google-search-results",
+        "requires": "serpapi",
+        "pip_name": "google-search-results",
         "config_fields": [
             {"key": "api_key", "label": "API Key", "secret": True, "required": True}
         ],
@@ -153,7 +156,8 @@ AGNO_CATALOG: list[dict] = [
         "title": "新闻抓取",
         "module": "agno.tools.newspaper",
         "class_name": "NewspaperTools",
-        "requires": "newspaper3k",
+        "requires": "newspaper",
+        "pip_name": "newspaper3k",
         "config_fields": [],
         "group": "资讯",
         "risk": "low",

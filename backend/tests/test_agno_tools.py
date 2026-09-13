@@ -129,6 +129,148 @@ def test_agno_catalog_endpoint(test_client, auth_headers):
     specs = {s["key"]: s for s in r.json()["data"]}
     assert specs["calculator"]["ready"] is True
     assert specs["tavily"]["config_fields"][0]["key"] == "api_key"
+    # openweather 无 pip 依赖但缺必填 api_key，应判未就绪且 reason 提到字段
+    assert specs["openweather"]["ready"] is False
+    assert "api_key" in specs["openweather"]["reason"]
+
+
+def test_readiness_required_config_fields():
+    """必填配置缺失 → 未就绪且 reason 提到字段；提供后 → 就绪。"""
+    spec = agno.get_spec("openweather")
+    ready, reason = agno.readiness(spec, None)
+    assert ready is False
+    assert "api_key" in reason
+
+    ready2, reason2 = agno.readiness(spec, {"api_key": "k"})
+    assert ready2 is True
+    assert reason2 == ""
+
+
+def test_get_tool_specs_consumes_config_map():
+    """get_tool_specs 接受 ``{key: config}`` 映射，据此判定 ready/reason。"""
+    no_cfg = {s["key"]: s for s in agno.get_tool_specs()}
+    assert no_cfg["openweather"]["ready"] is False
+
+    with_cfg = {
+        s["key"]: s
+        for s in agno.get_tool_specs({"openweather": {"api_key": "k"}})
+    }
+    assert with_cfg["openweather"]["ready"] is True
+
+
+def test_registry_requires_are_import_module_names():
+    """requires 必须是 import 模块名；pip 分发名放 pip_name 仅供展示。"""
+    assert agno.get_spec("tavily")["requires"] == "tavily"
+    assert agno.get_spec("serpapi")["requires"] == "serpapi"
+    assert agno.get_spec("newspaper")["requires"] == "newspaper"
+    assert agno.get_spec("tavily").get("pip_name") == "tavily-python"
+    assert agno.get_spec("serpapi").get("pip_name") == "google-search-results"
+    assert agno.get_spec("newspaper").get("pip_name") == "newspaper3k"
+
+
+def test_probe_uses_import_name(monkeypatch):
+    """_probe 用 import 模块名调用 find_spec，不能用 pip 分发名。"""
+    import importlib.util as ilu
+
+    seen: list[str] = []
+    real = ilu.find_spec
+
+    def _fake(name, *a, **k):
+        seen.append(name)
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(ilu, "find_spec", _fake)
+    ready, reason = agno._probe(agno.get_spec("tavily"))
+    assert ready is False
+    assert "tavily" in seen
+    assert "tavily-python" not in seen
+    # 提示文案仍用 pip 分发名，便于用户安装
+    assert "tavily-python" in reason
+
+
+def test_enabled_schemas_respect_readiness(monkeypatch, test_client, auth_headers):
+    """get_enabled_tool_schemas 显式按 readiness 过滤未就绪工具。"""
+    from app.plugin.module_ai.tools_catalog.service import get_enabled_tool_schemas
+
+    row = _tool_row(test_client, auth_headers, "calculator")
+    assert row is not None
+    original = row["enabled"]
+    _toggle(test_client, auth_headers, row["id"], True)
+    try:
+        names = {
+            s["function"]["name"] for s in asyncio.run(get_enabled_tool_schemas())
+        }
+        assert "add" in names
+
+        def _forced(spec, config=None):
+            return (False, "缺少配置：x") if spec["key"] == "calculator" else (True, "")
+
+        monkeypatch.setattr(agno, "readiness", _forced)
+        names2 = {
+            s["function"]["name"] for s in asyncio.run(get_enabled_tool_schemas())
+        }
+        assert "add" not in names2
+    finally:
+        _toggle(test_client, auth_headers, row["id"], original)
+
+
+def test_agno_endpoint_uses_stored_config(test_client, auth_headers):
+    """精选规格接口会结合 ai_tools 已存 config 判定 ready。"""
+    row = _tool_row(test_client, auth_headers, "openweather")
+    assert row is not None
+    original = _stored_tool(row["id"])["config"]
+    try:
+        upd = test_client.put(
+            f"/api/v1/ai/tools/update/{row['id']}",
+            json={"config": {"api_key": "k"}},
+            headers=auth_headers,
+        )
+        assert upd.status_code == 200, upd.text
+        specs = {
+            s["key"]: s
+            for s in test_client.get(
+                "/api/v1/ai/tools/agno", headers=auth_headers
+            ).json()["data"]
+        }
+        assert specs["openweather"]["ready"] is True
+    finally:
+        secret_keys = ("key", "secret", "token", "password")
+        restore = {
+            k: ("****" if any(h in k.lower() for h in secret_keys) else v)
+            for k, v in (original or {}).items()
+        }
+        test_client.put(
+            f"/api/v1/ai/tools/update/{row['id']}",
+            json={"config": restore},
+            headers=auth_headers,
+        )
+
+
+def test_load_tool_schemas_no_fallback_when_all_disabled(monkeypatch):
+    """全禁用（查询成功返回 []）不得回退内置 TOOL_SCHEMAS。"""
+    from app.plugin.module_ai.assistant import service as assistant
+    from app.plugin.module_ai.assistant.tools import TOOL_SCHEMAS
+    from app.plugin.module_ai.tools_catalog import service as catalog
+
+    async def _empty():
+        return []
+
+    monkeypatch.setattr(catalog, "get_enabled_tool_schemas", _empty)
+    assert asyncio.run(assistant._load_tool_schemas()) == []
+    assert TOOL_SCHEMAS  # 内置静态列表存在，但不得被回落
+
+
+def test_load_tool_schemas_falls_back_on_exception(monkeypatch):
+    """仅在查询异常时回退内置 TOOL_SCHEMAS。"""
+    from app.plugin.module_ai.assistant import service as assistant
+    from app.plugin.module_ai.assistant.tools import TOOL_SCHEMAS
+    from app.plugin.module_ai.tools_catalog import service as catalog
+
+    async def _boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(catalog, "get_enabled_tool_schemas", _boom)
+    assert asyncio.run(assistant._load_tool_schemas()) == TOOL_SCHEMAS
 
 
 def _stored_tool(tool_id: int):

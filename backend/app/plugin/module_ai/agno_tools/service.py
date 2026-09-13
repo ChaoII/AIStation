@@ -37,7 +37,11 @@ def get_spec(key: str) -> dict | None:
 
 
 def _probe(spec: dict) -> tuple[bool, str]:
-    """探测依赖与类是否可用：返回 ``(ready, reason)``。"""
+    """探测依赖与类是否可用：返回 ``(ready, reason)``。
+
+    ``requires`` 为**导入模块名**（find_spec 需要），提示文案优先用 ``pip_name``
+    （pip 分发名，可与导入名不同），便于用户按正确包名安装。
+    """
     req = spec.get("requires")
     if req:
         try:
@@ -45,7 +49,7 @@ def _probe(spec: dict) -> tuple[bool, str]:
         except (ImportError, ModuleNotFoundError, ValueError):
             found = False
         if not found:
-            return False, f"缺少依赖：{req}"
+            return False, f"缺少依赖：{spec.get('pip_name') or req}"
     try:
         mod = importlib.import_module(spec["module"])
         getattr(mod, spec["class_name"])
@@ -54,11 +58,37 @@ def _probe(spec: dict) -> tuple[bool, str]:
         return False, str(e)
 
 
-def get_tool_specs() -> list[dict]:
-    """返回精选工具规格（含 ``ready`` / ``reason`` / ``config_fields`` 等）。"""
+def readiness(spec: dict, config: dict | None) -> tuple[bool, str]:
+    """综合判定工具是否就绪：依赖探测 + 必填配置项检查。
+
+    - 依赖缺失/类不可用 → ``_probe`` 的 ``(False, reason)``。
+    - ``config_fields`` 中 ``required: True`` 的字段在已存 ``config`` 中缺失或为空
+      → ``(False, "缺少配置：<字段名>")``。
+    """
+    ready, reason = _probe(spec)
+    if not ready:
+        return ready, reason
+    cfg = config or {}
+    for field in spec.get("config_fields") or []:
+        if not field.get("required"):
+            continue
+        key = field["key"]
+        value = cfg.get(key)
+        if value is None or value == "":
+            label = field.get("label") or key
+            return False, f"缺少配置：{label}（{key}）"
+    return True, ""
+
+
+def get_tool_specs(config_by_key: dict | None = None) -> list[dict]:
+    """返回精选工具规格（含 ``ready`` / ``reason`` / ``config_fields`` 等）。
+
+    ``config_by_key``：``{tool_key: 已存 config}`` 映射；据此判定必填配置是否满足。
+    """
+    cfg_map = config_by_key or {}
     out: list[dict] = []
     for spec in AGNO_CATALOG:
-        ready, reason = _probe(spec)
+        ready, reason = readiness(spec, cfg_map.get(spec["key"]))
         out.append({**spec, "ready": ready, "reason": reason, "source": "agno"})
     return out
 
