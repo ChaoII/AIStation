@@ -114,17 +114,6 @@
         >
           <el-input v-model="formData.name" placeholder="如：DeepSeek 生产" />
         </el-form-item>
-        <el-form-item label="提供商">
-          <el-select
-            v-model="formData.provider_id"
-            clearable
-            filterable
-            style="width: 100%"
-            placeholder="选择提供商（可选，留空用自定义地址）"
-          >
-            <el-option v-for="p in providerOptions" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-        </el-form-item>
         <el-form-item label="用途">
           <el-select v-model="formData.usage" style="width: 100%">
             <el-option label="对话/通用" value="chat" />
@@ -215,7 +204,6 @@ import {
   setDefaultAiModel,
   testAiModel,
 } from "@/api/module_ai/model";
-import { getAiProviderList } from "@/api/module_ai/provider";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
@@ -282,7 +270,6 @@ const emptyForm = () => ({
   id: undefined as number | undefined,
   name: "",
   model: "",
-  provider_id: undefined as number | undefined,
   usage: "chat",
   capabilities_text: "",
   context_window: undefined as number | undefined,
@@ -296,16 +283,6 @@ const emptyForm = () => ({
   description: undefined as string | undefined,
 });
 const formData = reactive<any>(emptyForm());
-
-const providerOptions = ref<any[]>([]);
-(async () => {
-  try {
-    const res = await getAiProviderList();
-    providerOptions.value = res.data?.data || [];
-  } catch {
-    providerOptions.value = [];
-  }
-})();
 
 function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
@@ -323,7 +300,6 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
         id: item.id,
         name: item.name,
         model: item.model,
-        provider_id: item.provider_id,
         usage: item.usage || "chat",
         capabilities_text: (item.capabilities || []).join(","),
         context_window: item.context_window,
@@ -349,8 +325,8 @@ async function handleCloseDialog() {
 }
 
 async function handleSubmit() {
-  if (!formData.name || !formData.model || (!formData.base_url && !formData.provider_id)) {
-    ElMessage.warning("请填写配置名称、模型名，并选择提供商或填 API 基址");
+  if (!formData.name || !formData.model || !formData.base_url) {
+    ElMessage.warning("请填写配置名称、模型名与 API 基址");
     return;
   }
   submitLoading.value = true;
@@ -368,7 +344,6 @@ async function handleSubmit() {
     const payload: any = {
       name: formData.name,
       provider: "openai_compatible",
-      provider_id: formData.provider_id,
       usage: formData.usage,
       capabilities: formData.capabilities_text
         ? formData.capabilities_text

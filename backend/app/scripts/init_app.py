@@ -296,10 +296,6 @@ async def _ensure_edge_page_menu() -> None:
 
 
 AI_BUTTON_PERMS: list[tuple[str, str]] = [
-    ("module_ai:provider:query", "查询提供商"),
-    ("module_ai:provider:create", "新增提供商"),
-    ("module_ai:provider:update", "编辑提供商"),
-    ("module_ai:provider:delete", "删除提供商"),
     ("module_ai:model:query", "查询大模型配置"),
     ("module_ai:model:create", "新增大模型配置"),
     ("module_ai:model:update", "编辑大模型配置"),
@@ -307,8 +303,6 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:prompt:create", "新增提示词"),
     ("module_ai:prompt:update", "编辑提示词"),
     ("module_ai:prompt:delete", "删除提示词"),
-    ("module_ai:report:query", "查询AI报告"),
-    ("module_ai:report:delete", "删除AI报告"),
     ("module_ai:assistant:query", "AI助手对话"),
     ("module_ai:tool:query", "查询工具"),
     ("module_ai:tool:create", "新增工具"),
@@ -320,9 +314,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:app:delete", "删除AI应用"),
 ]
 
+# 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
+REMOVED_ROUTE_NAMES: list[str] = ["AiOverview", "AiPlayground", "AiProvider", "AiReport", "Memory"]
+
 
 async def _ensure_ai_menus() -> None:
-    """确保 AI 管理下的「模型配置」「AI 报告」页面与按钮权限存在。"""
+    """确保 AI 管理保留的 5 个页面与按钮权限存在，并隐藏已下线页面（chat 来自种子数据）。"""
     from sqlalchemy import select, update
 
     from app.api.v1.module_system.menu.model import MenuModel
@@ -338,7 +335,7 @@ async def _ensure_ai_menus() -> None:
                 log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
                 return
 
-            # 恢复旧 AI 聊天/记忆页（仅用于样式参考）；父菜单回到聊天页
+            # 父菜单固定落地智能助手；chat 保持可见，已下线页面统一隐藏
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name == "AI", MenuModel.type == 1)
@@ -346,20 +343,17 @@ async def _ensure_ai_menus() -> None:
             )
             await db.execute(
                 update(MenuModel)
-                .where(
-                    MenuModel.component_path.in_(
-                        ["module_ai/chat/index", "module_ai/memory/index"]
-                    )
-                )
+                .where(MenuModel.component_path == "module_ai/chat/index")
                 .values(hidden=False)
+            )
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name.in_(REMOVED_ROUTE_NAMES))
+                .values(hidden=True)
             )
 
             pages = [
-                ("控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 8),
-                ("提供商", "AiProvider", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 9),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
-                ("AI 报告", "AiReport", "/ai/report", "module_ai/report/index", "module_ai:report:query", 11),
-                ("运行台", "AiPlayground", "/ai/playground", "module_ai/playground/index", "module_ai:assistant:query", 12),
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 13),
                 ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 14),
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 15),
