@@ -113,7 +113,7 @@ class AiAppService:
 
 
 async def _build_app_tools(names: list[str] | None):
-    """按应用绑定工具名解析 schema 与执行器：内置取注册表，HTTP 取启用行。"""
+    """按应用绑定工具名解析 schema 与执行器：内置与 HTTP 均须 ai_tools 行存在且启用。"""
     from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
     from app.plugin.module_ai.tools_catalog.service import (
         build_http_tool_schema,
@@ -123,11 +123,14 @@ async def _build_app_tools(names: list[str] | None):
     schemas: list[dict] = []
     http_tools: dict[str, object] = {}
     for name in names or []:
+        tool = await get_tool_by_name(name)
         entry = TOOL_REGISTRY.get(name)
         if entry:
+            # 内置工具须存在 ai_tools 行且全局启用，否则跳过（与 HTTP 工具一致）
+            if tool is None or not tool.enabled:
+                continue
             schemas.append(entry["schema"])
             continue
-        tool = await get_tool_by_name(name)
         if tool is None or not tool.enabled or (tool.kind or "builtin") != "http":
             continue
         schemas.append(build_http_tool_schema(tool))
@@ -142,8 +145,40 @@ async def _run_app_tool(name: str, args: dict, user_id: int | None, http_tools: 
 
     tool = http_tools.get(name)
     if tool is not None:
-        return await execute_http_tool(tool, args)
+        try:
+            return await execute_http_tool(tool, args)
+        except Exception as e:  # noqa: BLE001  HTTP 工具异常兜底，不中断对话
+            return {"error": str(e)}
     return await _call_tool(name, args, user_id)
+
+
+def _merge_variables(input_schema: object, variables: dict | None) -> dict:
+    """合并 input_schema 默认值与调用方变量：显式变量优先，兼容两种 schema 形状。
+
+    - JSON Schema 形状：``{"type": "object", "properties": {"x": {"default": 1}}}``
+    - 扁平字典形状：``{"x": 1}``（含 ``type`` 键时按 JSON Schema 处理，不取默认值）
+    非法/意外形状直接返回原变量，不报错。
+    """
+    values = dict(variables or {})
+    if not isinstance(input_schema, dict):
+        return values
+    if "properties" in input_schema:
+        properties = input_schema.get("properties")
+        if not isinstance(properties, dict):
+            return values
+        for key, spec in properties.items():
+            if key in values:
+                continue
+            if isinstance(spec, dict) and "default" in spec:
+                values[key] = spec["default"]
+        return values
+    if "type" in input_schema:
+        # 无 properties 的 JSON Schema：无默认值可合并
+        return values
+    for key, default in input_schema.items():
+        if key not in values:
+            values[key] = default
+    return values
 
 
 async def run_app_ui_stream(
@@ -187,7 +222,9 @@ async def run_app_ui_stream(
         if app.get("prompt_id"):
             prompt = await AiPromptService.get_prompt(app["prompt_id"])
             if prompt:
-                rendered = render_prompt(prompt.get("blocks"), variables or {})
+                # 提示词变量 = 调用方显式变量 + input_schema 默认值（显式优先）
+                values = _merge_variables(app.get("input_schema"), variables)
+                rendered = render_prompt(prompt.get("blocks"), values)
                 if rendered:
                     system_prompt = rendered
         if app.get("output_format") == "report":

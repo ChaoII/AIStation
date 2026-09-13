@@ -238,3 +238,179 @@ def test_app_run_stream_uses_prompt_tool_and_logs(
         test_client.request(
             "DELETE", "/api/v1/ai/prompts/delete", json=[prompt_id], headers=auth_headers
         )
+
+
+def _create_http_tool(test_client, auth_headers, name: str, url: str) -> int:
+    r = test_client.post(
+        "/api/v1/ai/tools/create",
+        json={
+            "name": name,
+            "kind": "http",
+            "method": "GET",
+            "url": url,
+            "params_schema": {"type": "object", "properties": {}},
+            "enabled": True,
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["data"]["id"]
+
+
+def _get_tool_row(test_client, auth_headers, name: str) -> dict:
+    lst = test_client.get("/api/v1/ai/tools/list", headers=auth_headers).json()["data"]
+    return next(t for t in lst if t["name"] == name)
+
+
+def _toggle_tool(test_client, auth_headers, tool_id: int, enabled: bool) -> None:
+    r = test_client.put(
+        f"/api/v1/ai/tools/toggle/{tool_id}",
+        json={"enabled": enabled},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+
+
+def _run_stream(test_client, auth_headers, app_id: int, variables=None) -> str:
+    payload: dict = {
+        "messages": [{"role": "user", "parts": [{"type": "text", "text": "执行"}]}]
+    }
+    if variables is not None:
+        payload["variables"] = variables
+    r = test_client.post(
+        f"/api/v1/ai/apps/{app_id}/run/stream", json=payload, headers=auth_headers
+    )
+    assert r.status_code == 200, r.text
+    return r.text
+
+
+def test_app_http_tool_error_does_not_abort_stream(monkeypatch, test_client, auth_headers):
+    """HTTP 工具抛异常时兜底：流正常收尾，工具帧携带 error 输出。"""
+    import openai
+
+    from app.plugin.module_ai.tools_catalog import service as tools_service
+
+    tool_name = _new_name("pytest_http")
+    tool_id = _create_http_tool(
+        test_client, auth_headers, tool_name, "http://127.0.0.1:1/should-fail"
+    )
+    app_id = _create_app(test_client, auth_headers, tools=[tool_name])
+
+    async def _boom(tool, args):
+        raise RuntimeError("http 工具炸了")
+
+    monkeypatch.setattr(tools_service, "execute_http_tool", _boom)
+    sent: list[dict] = []
+    rounds = [
+        [
+            _FakeChunk(
+                _FakeDelta(tool_calls=[_FakeToolCallDelta(tool_name, {"q": 1})])
+            )
+        ],
+        [_FakeChunk(_FakeDelta(content="已处理完成"))],
+    ]
+    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds, sent))
+    _patch_runtime(monkeypatch)
+
+    try:
+        body = _run_stream(test_client, auth_headers, app_id)
+        assert '"type": "tool-output-available"' in body
+        assert "http 工具炸了" in body
+        assert '"type": "data-finish"' in body
+        assert "data: [DONE]" in body
+    finally:
+        _delete_apps(test_client, auth_headers, [app_id])
+        test_client.request(
+            "DELETE", "/api/v1/ai/tools/delete", json=[tool_id], headers=auth_headers
+        )
+
+
+def test_app_builtin_tool_respects_enabled_flag(monkeypatch, test_client, auth_headers):
+    """内置工具停用后不发送 schema 且不执行；重新启用后恢复。"""
+    import openai
+
+    assert "navigate" in TOOL_REGISTRY
+    tool_id = _get_tool_row(test_client, auth_headers, "navigate")["id"]
+    app_id = _create_app(test_client, auth_headers, tools=["navigate"])
+    sent: list[dict] = []
+    rounds = [
+        [
+            _FakeChunk(
+                _FakeDelta(tool_calls=[_FakeToolCallDelta("navigate", {"path": "/ai/app"})])
+            )
+        ],
+        [_FakeChunk(_FakeDelta(content="已打开"))],
+    ]
+    _patch_runtime(monkeypatch)
+
+    try:
+        # 停用 → 不发送 tools，也不会出现工具帧
+        _toggle_tool(test_client, auth_headers, tool_id, False)
+        sent.clear()
+        off_rounds = [[_FakeChunk(_FakeDelta(content="未启用工具，直接回答"))]]
+        monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(off_rounds, sent))
+        off_body = _run_stream(test_client, auth_headers, app_id)
+        assert "tools" not in sent[0]
+        assert '"type": "tool-input-available"' not in off_body
+        assert "data: [DONE]" in off_body
+
+        # 重新启用 → schema 发送且工具被调用
+        _toggle_tool(test_client, auth_headers, tool_id, True)
+        sent.clear()
+        monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds, sent))
+        on_body = _run_stream(test_client, auth_headers, app_id)
+        assert any(t["function"]["name"] == "navigate" for t in sent[0]["tools"])
+        assert '"type": "tool-input-available"' in on_body
+        assert '"type": "tool-output-available"' in on_body
+    finally:
+        _toggle_tool(test_client, auth_headers, tool_id, True)
+        _delete_apps(test_client, auth_headers, [app_id])
+
+
+def test_app_input_schema_default_variables(monkeypatch, test_client, auth_headers):
+    """input_schema 默认值参与提示词渲染；显式变量优先覆盖默认值。"""
+    import openai
+
+    prompt_name = _new_name("pytest_prompt")
+    prompt_id = _create_prompt(test_client, auth_headers, prompt_name)
+    app_id = _create_app(
+        test_client,
+        auth_headers,
+        prompt_id=prompt_id,
+        tools=[],
+        input_schema={
+            "type": "object",
+            "properties": {"name": {"type": "string", "default": "默认应用名"}},
+        },
+    )
+    sent: list[dict] = []
+    _patch_runtime(monkeypatch)
+
+    try:
+        # 未传显式变量 → 使用 input_schema 默认值
+        monkeypatch.setattr(
+            openai,
+            "AsyncOpenAI",
+            _make_stream_client([[_FakeChunk(_FakeDelta(content="收到"))]], sent),
+        )
+        _run_stream(test_client, auth_headers, app_id)
+        content = sent[0]["messages"][0]["content"]
+        assert "默认应用名" in content
+        assert "{{name}}" not in content
+
+        # 显式变量覆盖默认值
+        sent.clear()
+        monkeypatch.setattr(
+            openai,
+            "AsyncOpenAI",
+            _make_stream_client([[_FakeChunk(_FakeDelta(content="收到"))]], sent),
+        )
+        _run_stream(test_client, auth_headers, app_id, variables={"name": "显式应用名"})
+        content2 = sent[0]["messages"][0]["content"]
+        assert "显式应用名" in content2
+        assert "默认应用名" not in content2
+    finally:
+        _delete_apps(test_client, auth_headers, [app_id])
+        test_client.request(
+            "DELETE", "/api/v1/ai/prompts/delete", json=[prompt_id], headers=auth_headers
+        )
