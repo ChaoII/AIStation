@@ -134,6 +134,23 @@ def test_agno_catalog_endpoint(test_client, auth_headers):
     assert "api_key" in specs["openweather"]["reason"]
 
 
+def test_list_tools_includes_agno_metadata(test_client, auth_headers):
+    """工具列表对 agno 行合并 config_fields/group/risk/title；非 agno 行字段为空。"""
+    row = _tool_row(test_client, auth_headers, "openweather")
+    assert row is not None
+    assert row["source"] == "agno"
+    assert row["group"] == "网络"
+    assert row["risk"] == "low"
+    assert row["title"] == "城市天气"
+    fields = row["config_fields"]
+    assert fields and fields[0]["key"] == "api_key" and fields[0]["secret"] is True
+
+    rows = test_client.get("/api/v1/ai/tools/list", headers=auth_headers).json()["data"]
+    builtin = next(r for r in rows if r["kind"] == "builtin")
+    assert builtin["config_fields"] == []
+    assert builtin["group"] is None
+
+
 def test_readiness_required_config_fields():
     """必填配置缺失 → 未就绪且 reason 提到字段；提供后 → 就绪。"""
     spec = agno.get_spec("openweather")

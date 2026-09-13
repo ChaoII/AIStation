@@ -79,8 +79,26 @@ def _readiness_of(t: AiToolModel) -> tuple[bool, str]:
     return True, ""
 
 
+def _agno_meta(t: AiToolModel) -> dict:
+    """为 agno 行补充前端所需的注册表元数据：别名/分组/风险/配置字段。"""
+    if _tool_source(t) != "agno":
+        return {}
+    from app.plugin.module_ai.agno_tools import service as agno
+
+    spec = agno.get_spec(t.name)
+    if not spec:
+        return {}
+    return {
+        "title": spec.get("title"),
+        "group": spec.get("group"),
+        "risk": spec.get("risk"),
+        "config_fields": spec.get("config_fields") or [],
+    }
+
+
 def _to_dict(t: AiToolModel) -> dict:
     ready, reason = _readiness_of(t)
+    meta = _agno_meta(t)
     return {
         "id": t.id,
         "name": t.name,
@@ -95,6 +113,10 @@ def _to_dict(t: AiToolModel) -> dict:
         "ready": ready,
         "reason": reason,
         "description": t.description,
+        "title": meta.get("title"),
+        "group": meta.get("group"),
+        "risk": meta.get("risk"),
+        "config_fields": meta.get("config_fields") or [],
     }
 
 

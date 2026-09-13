@@ -23,31 +23,41 @@ async function dismissTour(page: Page) {
   await tour.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
 }
 
-test("工具中心可打开、切换标签页并启停内置工具", async ({ page }) => {
+test("工具中心卡片网格：搜索在上、配置入口与就绪开关", async ({ page }) => {
   await page.goto("/#/ai/tool", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
 
-  const tabs = page.locator(".el-tabs");
-  await expect(tabs).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole("tab", { name: "内置工具" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "自定义 HTTP 工具" })).toBeVisible();
+  // 卡片网格存在（至少一张工具卡片）
+  const cards = page.locator(".ai-tool-page .tool-card");
+  await expect(cards.first()).toBeVisible({ timeout: 10_000 });
+  expect(await cards.count()).toBeGreaterThanOrEqual(1);
 
-  // 内置工具表格与开关渲染
-  const firstSwitch = page.locator(".el-switch").first();
-  await expect(firstSwitch).toBeVisible({ timeout: 10_000 });
+  // 搜索表单在卡片上方（y 坐标）
+  const search = page.locator(".ai-tool-page .tool-search");
+  await expect(search).toBeVisible({ timeout: 10_000 });
+  const searchBox = await search.boundingBox();
+  const cardBox = await cards.first().boundingBox();
+  expect(searchBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(searchBox!.y).toBeLessThan(cardBox!.y);
 
-  // 切换内置工具开关并断言状态变化，随后还原
-  const before = await firstSwitch.getAttribute("aria-checked");
-  await firstSwitch.evaluate((el) => (el as HTMLElement).click());
-  await expect(firstSwitch).not.toHaveAttribute("aria-checked", before ?? "false", {
+  // 存在「配置」按钮
+  await expect(page.getByRole("button", { name: "配置" }).first()).toBeVisible();
+
+  // 就绪卡片开关可切换且状态变化，随后还原
+  const readySwitch = page.locator(".tool-card:not(.is-not-ready) .el-switch").first();
+  await expect(readySwitch).toBeVisible({ timeout: 10_000 });
+  const before = await readySwitch.getAttribute("aria-checked");
+  // 引导遮罩可能拦截指针事件，直接派发 click
+  await readySwitch.evaluate((el) => (el as HTMLElement).click());
+  await expect(readySwitch).not.toHaveAttribute("aria-checked", before ?? "false", {
     timeout: 10_000,
   });
-  await firstSwitch.evaluate((el) => (el as HTMLElement).click());
+  await readySwitch.evaluate((el) => (el as HTMLElement).click());
 
-  // 切换到自定义 HTTP 工具标签页，新增按钮可见。
-  // 引导遮罩可能拦截指针事件，直接派发 click（与 ai-prompt.spec.ts / ai-model.spec.ts 一致）
-  const httpTab = page.getByRole("tab", { name: "自定义 HTTP 工具" });
-  await httpTab.evaluate((el) => (el as HTMLElement).click());
-  await expect(page.getByRole("button", { name: "新增工具" })).toBeVisible({ timeout: 10_000 });
+  // 未就绪卡片开关禁用
+  const notReadySwitch = page.locator(".tool-card.is-not-ready .el-switch").first();
+  await expect(notReadySwitch).toBeVisible({ timeout: 10_000 });
+  await expect(notReadySwitch).toHaveClass(/is-disabled/);
 });
