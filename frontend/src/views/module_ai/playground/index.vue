@@ -14,13 +14,16 @@
 
     <div class="ai-run">
       <div class="ai-panel ai-stream">
-        <div class="ai-stream-list" ref="listRef">
+        <div ref="listRef" class="ai-stream-list">
           <div v-if="!messages.length" class="ai-empty">
             试试：“我们有几个数据集？共多少张图？” / “生成一份训练与告警总结报告” / “打开模型仓库页”
           </div>
           <div v-for="(m, i) in messages" :key="i" class="ai-msg" :class="m.role">
             <div class="av">{{ m.role === "user" ? "U" : "AI" }}</div>
-            <div class="bd" v-html="render(m.text)"></div>
+            <div class="bd">
+              <div v-if="m.think" class="ai-think">{{ m.think }}</div>
+              <div v-html="render(m.text)"></div>
+            </div>
           </div>
         </div>
         <div class="ai-compose">
@@ -61,7 +64,7 @@ const md = new MarkdownIt({ breaks: true, linkify: true });
 
 const input = ref("");
 const running = ref(false);
-const messages = ref<Array<{ role: "user" | "assistant"; text: string }>>([]);
+const messages = ref<Array<{ role: "user" | "assistant"; text: string; think?: string }>>([]);
 const steps = ref<Array<{ name: string; summary: string }>>([]);
 const listRef = ref<HTMLElement | null>(null);
 
@@ -87,7 +90,9 @@ async function send() {
 
   try {
     await assistantStream(text, (event, data) => {
-      if (event === "delta") {
+      if (event === "reasoning") {
+        assistant.think = (assistant.think || "") + (data.text || "");
+      } else if (event === "delta") {
         assistant.text += data.text || "";
       } else if (event === "tool") {
         steps.value.push({ name: data.name, summary: summarize(data.result) });

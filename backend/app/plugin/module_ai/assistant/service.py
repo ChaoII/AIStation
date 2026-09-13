@@ -172,11 +172,16 @@ async def run_assistant_stream(message: str, auth):
             return
 
         content = ""
+        reasoning = ""
         tool_calls: dict = {}
         async for chunk in stream:
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
+            rc = getattr(delta, "reasoning_content", None)
+            if rc:
+                reasoning += rc
+                yield _sse("reasoning", {"text": rc})
             if getattr(delta, "content", None):
                 content += delta.content
                 yield _sse("delta", {"text": delta.content})
