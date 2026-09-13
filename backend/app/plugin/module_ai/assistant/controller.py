@@ -51,6 +51,8 @@ async def assistant_stream(
     async def _gen():
         t0 = time.perf_counter()
         ok, err = True, None
+        # 立即发送注释帧，促使响应头与首块尽早下发（避免代理缓冲）
+        yield ": connected\n\n"
         try:
             async for item in run_assistant_stream(data.message, auth):
                 if isinstance(item, str) and "event: error" in item:
@@ -70,5 +72,11 @@ async def assistant_stream(
             )
 
     return StreamingResponse(
-        _gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
     )

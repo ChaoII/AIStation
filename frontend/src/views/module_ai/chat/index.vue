@@ -50,7 +50,7 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, nextTick } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ChatNavbar from "./components/ChatNavbar.vue";
 import ChatMessages from "./components/ChatMessages.vue";
@@ -225,7 +225,7 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
 
   try {
     // 走运行时 SSE（真流式：思考/回复/工具），不依赖 Agno WS
-    await assistantStream(message, (event, data) => {
+    await assistantStream(message, async (event, data) => {
       if (event === "delta") {
         last.content += data.text || "";
       } else if (event === "tool") {
@@ -237,6 +237,8 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
       } else if (event === "error") {
         last.content += `\n\n> 出错：${data.message}`;
       }
+      // 每个分片强制一次渲染，确保逐字可见
+      await nextTick();
       chatMessagesRef.value?.scrollToBottom();
     });
   } catch (e: any) {

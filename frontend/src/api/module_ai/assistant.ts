@@ -28,7 +28,7 @@ export function assistantChat(message: string) {
 /** SSE 流式助手：逐事件回调（delta/tool/done/error）。 */
 export async function assistantStream(
   message: string,
-  onEvent: (event: string, data: any) => void
+  onEvent: (event: string, data: any) => void | Promise<void>
 ): Promise<void> {
   const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
   const token = Auth.getAccessToken() || "";
@@ -60,9 +60,9 @@ export async function assistantStream(
       }
       if (dataLines.length) {
         try {
-          onEvent(event, JSON.parse(dataLines.join("\n")));
+          await onEvent(event, JSON.parse(dataLines.join("\n")));
         } catch {
-          /* 忽略非法块 */
+          /* 忽略单个事件异常 */
         }
       }
       idx = buf.indexOf("\n\n");
