@@ -17,6 +17,7 @@ AIStation（云）与 ModelDeploy `aistation_agent`（边）**各自按 spec 独
 ### 1.1 已确认一致（不改）
 - 控制面 REST：`GET /health`、`GET /readyz`、`GET /api/v1/metrics`、`POST/GET /api/v1/tasks`、`POST /api/v1/tasks/:id/start|stop`、`PUT/DELETE /api/v1/tasks/:id`、`GET /api/v1/tasks/:id/stats|snapshot.jpg`。
 - 心跳：`POST {cloud_url}/api/v1/video/edge/heartbeat`，载荷 `{edge_code,token,capabilities,metrics,version}`。
+  - **不一致（C9，见 §4.4）**：Agent 发 `edge_code`，AIStation `EdgeService.heartbeat` 读 `code` → 真机首次心跳会报「设备编码不能为空」。
 - 事件字段：`event_id/edge_code/camera_id/task_id/algorithm_type/ts/detections[{label,label_id,confidence,bbox{x,y,width,height}}]/latency_ms/snapshot/schema_version`，`bbox` 归一化。
 - HTTP 事件回调鉴权：`Authorization: Bearer {INFERENCE_CALLBACK_TOKEN}`。
 - 能力族取值 `["det","cls","face"]` 与编排要求 `"det"` 匹配。
@@ -111,7 +112,8 @@ AIStation 实际模型为 **7×24 网格**，统一采用：
 - 不实现 `s3://` 上传；`snapshot.ref` 保留字段但本期 Agent 不产出。
 
 ### 4.4 心跳 / 控制面
-不变（§1.1）。
+- C9（心跳字段统一）：Agent 心跳载荷用 `edge_code`（现状）；AIStation `EdgeService.heartbeat` 必须兼容读取 `edge_code`（并保留 `code` 兼容旧 mock/测试）。统一后以 `edge_code` 为准。
+- 控制面 REST 与鉴权不变：AgentServer 仅认 `Authorization: Bearer <api_key>`；AIStation `EdgeAgentClient` 用 `EdgeDevice.secret` 加该头。联调时 `--api-key` 与 `EdgeDevice.secret` 必须一致（心跳 token 用 `--secret`）。
 
 ## 5. AIStation 侧改动
 
