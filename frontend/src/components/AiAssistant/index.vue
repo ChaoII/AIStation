@@ -124,7 +124,7 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useSettingsStore } from "@/store";
 import { AiChatAPI, ChatSession, ChatSessionDetail } from "@/api/module_ai/chat";
-import { assistantChat } from "@/api/module_ai/assistant";
+import { assistantStream } from "@/api/module_ai/assistant";
 import { AnnotationAPI } from "@/api/module_annotation";
 
 type ToolFunctionCall = {
@@ -376,30 +376,42 @@ const handleExecute = async () => {
   loading.value = true;
 
   try {
-    // 优先走工具调用型助手（问数/统计/报告/导航/操作）
+    // 优先走工具调用型助手（SSE 流式：问数/统计/报告/导航/操作）
     try {
-      const assist = await assistantChat(rawCommand);
-      const d: any = assist.data?.data;
-      if (d) {
-        const toolNames = (d.tool_calls || []).map((t: any) => t.name).join(", ");
+      let acc = "";
+      const toolNames: string[] = [];
+      let action: any = null;
+      let reportId: number | null = null;
+      response.value = { explanation: "", action: null } as any;
+      await assistantStream(rawCommand, (event, data) => {
+        if (event === "delta") {
+          acc += data.text || "";
+        } else if (event === "tool") {
+          toolNames.push(data.name);
+        } else if (event === "done") {
+          if (data.reply) acc = data.reply;
+          action = data.action;
+          reportId = data.report_id;
+        } else if (event === "error") {
+          throw new Error(data.message || "AI 错误");
+        }
         response.value = {
-          explanation: (d.reply || "已完成") + (toolNames ? `\n\n（调用工具：${toolNames}）` : ""),
+          explanation: acc + (toolNames.length ? `\n\n（调用工具：${toolNames.join(", ")}）` : ""),
           action: null,
         } as any;
-        if (d.action?.type === "navigate" && d.action.path) {
-          router.push(d.action.path);
-        } else if (d.action?.type === "confirm") {
-          await confirmAssistantAction(d.action);
-        }
-        if (d.report_id) {
-          ElMessage.success(`已生成报告 #${d.report_id}，可在「AI 管理 → AI 报告」查看`);
-        }
-        return;
+      });
+      if (action?.type === "navigate" && action.path) {
+        router.push(action.path);
+      } else if (action?.type === "confirm") {
+        await confirmAssistantAction(action);
       }
+      if (reportId) {
+        ElMessage.success(`已生成报告 #${reportId}，可在「AI 管理 → AI 报告」查看`);
+      }
+      return;
     } catch {
       /* 未配置模型或助手失败：回退到原聊天解析 */
     }
-
     // 调用 AI API 解析命令
     const result = await AiChatAPI.chat({
       message: rawCommand,
