@@ -66,7 +66,11 @@ AI 管理（父菜单）默认落地 `/ai/chat`：
 - **提示词**：改为「列表（名称/分类/版本/启用/操作）+ 编辑」；点「编辑」打开**全屏 `EnhancedDialog`** 承载现有三栏画布（左块列表拖拽、中编辑、右变量+预览），保存复用现有 API。
 - **AI应用**：搜索（名称/启用）；表格列（图标/名称/模型/提示词/工具数/输出格式/启用/操作）；操作含「运行」；表单沿用现有字段。
 - **调用日志**：搜索（用途/结果/关键字/时间）；表格分页；只读，无新增。
-- **工具中心**：改为**单列表**（不再用 tabs）：搜索（名称/类型/状态）+ 表格（名称/类型/状态/启用/操作）；类型列区分「系统 / Agno / HTTP」；新增/编辑走 `EnhancedDialog`（HTTP 工具表单同现；Agno 工具表单展示配置项）。移除混在页头/工具栏的搜索或标签页。
+- **工具中心**：改为**卡片网格**（不再用 tabs/表格）：
+  - 顶部整行搜索/筛选（关键字、类型：系统 / Agno / HTTP、状态：就绪 / 未就绪）。
+  - 下方 `el-row`/`el-col` 响应式卡片网格（项目里自定义 CSS Grid 易被全局样式覆盖，统一用 `el-row`/`el-col`）。每张卡片：工具名、来源标签、分组、简介、就绪状态 `el-tag`、启用 `el-switch`、「配置」按钮（系统工具无配置项时禁用）。
+  - 新增/编辑/配置统一走 `EnhancedDialog`。
+  - 仍遵循框架视觉：`el-card` + `--el-*`，不自定义主题外壳。
 
 ## 5. 工具中心 · Agno 精选工具
 
@@ -76,6 +80,16 @@ AI 管理（父菜单）默认落地 `/ai/chat`：
 
 - `source` `VARCHAR(16)` default `"system"`：`system` | `agno` | `http`（旧 `kind` 字段可继续使用/兼容）。
 - `config` `JSONB` nullable：Agno/HTTP 工具的运行配置（如 `api_key`、`base_url`）。
+
+### 5.2 工具卡片与参数自动识别
+
+- **卡片**展示每个工具（见 §4）：名称、来源、分组、简介、就绪状态、启用开关、配置入口。
+- **参数自动生成**：工具（尤其 Agno 工具）的配置表单字段**由其定义自动推导**，无需手写：
+  - Agno 工具：注册表 `config_fields`（如 `api_key`、`base_url` 等）→ 自动渲染对应输入；若签名/依赖能推导出额外参数，也一并生成。
+  - HTTP 工具：`method`、`url`、`headers`、`params_schema` 自动生成表单。
+  - 字段类型推断：含 `key`/`secret`/`token`/`password` 字样的字段用密码框并脱敏保存/回显（列表与卡片不回显明文）。
+- **手动添加参数**：配置弹窗内提供「自定义参数」键值对列表，可增删任意参数（键 + 值），保存进 `config`；用于补充自动识别之外的配置。
+- **就绪性**：未安装依赖或缺少必需配置（如 API Key）时，卡片标记「未就绪」并给出缺失项，禁止启用；补齐后即可启用。
 
 ### 5.2 精选清单（可开关 + 配置）
 
@@ -90,9 +104,10 @@ AI 管理（父菜单）默认落地 `/ai/chat`：
 
 - `registry.py`：精选工具注册表，每项含 `key`、显示名、`module`、`class`、`requires`(pip 包/依赖名)、`config_fields`(如 `api_key`)、`group`、`risk`。
 - `service.py`：
-  - `get_tool_specs()` → 列表（含 `ready` 与 `reason`）。
+  - `get_tool_specs()` → 列表（含 `ready` 与 `reason`，以及用于前端自动生成表单的 `config_fields`/`group`/`source` 元数据）。
   - `build_schema(spec)`：惰性 import 并实例化 Agno toolkit，取 `.functions`，用 `inspect.signature(entrypoint)` + docstring 生成 OpenAI function schema（`fn.parameters` 为空时回退 signature）。
   - `execute(spec, args, config)`：`await/调用 entrypoint(**args)`；异常返回 `{"error": ...}`。
+  - `_normalize_config(tool)`：把自动字段 + 自定义键值对合并为运行配置后传给执行器。
   - 启动同步 `_ensure_agno_tools()`：把精选工具写入 `ai_tools`（`source="agno"`，缺失则插入，默认 `enabled=False`，不覆盖已有配置）。
 - `tools_catalog/service.py::get_enabled_tool_schemas()` 合并三类：系统（`TOOL_REGISTRY`）、Agno（`agno_tools.service`）、HTTP。
 - 运行循环的工具派发按 `source` 分派：system→`_call_tool`，agno→`agno_tools.service.execute`，http→`execute_http_tool`。
@@ -109,6 +124,7 @@ AI 管理（父菜单）默认落地 `/ai/chat`：
 
 - **视觉一致性**：6 个页面均与 `module_system/param` 一致（浅色 `el-card`、`--el-*`、无自定义主题外壳、搜索在列表上方）；用无头截图 + `vision-recognition` 核对。
 - **智能助手**：输入框铺满、1 行起步自动增高、按钮内联；会话栏 200↔64；`?app_id=` 显示可关闭应用标签并走应用流。
+- **工具中心**：卡片网格 + 顶部搜索/筛选；卡片显示来源/分组/就绪状态/启用开关；配置弹窗的参数字段由工具定义自动生成（含 API Key 密码框），并支持手动增删自定义参数；未就绪卡片禁止启用。
 - **后端**：`uv run pytest -q` 全绿 + 改动文件 `ruff check` clean；新增 Agno 解析（calculator schema/execute）、就绪性、工具分派测试。
 - **前端**：`pnpm type-check` 新增文件 0 错误；各页 E2E 更新（搜索在上、列表在下）；关键页面截图视觉验收。
 
@@ -120,6 +136,6 @@ AI 管理（父菜单）默认落地 `/ai/chat`：
 
 ## Self-Review
 
-- 覆盖用户诉求：删运行台/提供商/控制台/报告/记忆（§2）；输入框（§3.2）；会话栏收起（§3.1）；搜索/列表规范（§4）；Agno 工具（§5）。
+- 覆盖用户诉求：删运行台/提供商/控制台/报告/记忆（§2）；输入框（§3.2）；会话栏收起（§3.1）；搜索/列表规范（§4）；Agno 工具与卡片式参数配置（§5）。
 - 一致：全部复用既有 API 与 `useAiChat` getter；协议与数据结构不变。
 - 风险：Agno 工具依赖/Key 差异由「就绪性」兜底；删除前端页面需同步清理菜单与 API 引用，避免死链。
