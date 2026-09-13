@@ -300,6 +300,9 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:model:create", "新增大模型配置"),
     ("module_ai:model:update", "编辑大模型配置"),
     ("module_ai:model:delete", "删除大模型配置"),
+    ("module_ai:prompt:create", "新增提示词"),
+    ("module_ai:prompt:update", "编辑提示词"),
+    ("module_ai:prompt:delete", "删除提示词"),
     ("module_ai:report:query", "查询AI报告"),
     ("module_ai:report:delete", "删除AI报告"),
     ("module_ai:assistant:query", "AI助手对话"),
@@ -345,6 +348,7 @@ async def _ensure_ai_menus() -> None:
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
                 ("AI 报告", "AiReport", "/ai/report", "module_ai/report/index", "module_ai:report:query", 11),
                 ("运行台", "AiPlayground", "/ai/playground", "module_ai/playground/index", "module_ai:assistant:query", 12),
+                ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 13),
             ]
             for title, rname, rpath, comp, perm, order in pages:
                 exists = await db.scalar(

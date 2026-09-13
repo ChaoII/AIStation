@@ -56,10 +56,11 @@ class InitializeData:
             from app.plugin.module_train.schedule_model import TrainScheduleModel
             _ = TrainScheduleModel
             from app.plugin.module_ai.overview.model import AiCallLogModel
+            from app.plugin.module_ai.prompts.model import AiPromptModel
             from app.plugin.module_ai.provider.model import AiModelModel
             from app.plugin.module_ai.providers.model import AiProviderModel
             from app.plugin.module_ai.report.model import AiReportModel
-            _ = (AiModelModel, AiProviderModel, AiReportModel, AiCallLogModel)
+            _ = (AiModelModel, AiProviderModel, AiPromptModel, AiReportModel, AiCallLogModel)
             # 使用引擎创建所有表
             # await drop_tables()
             await create_tables()
