@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, Float, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.base_model import ModelMixin, UserMixin
@@ -21,3 +22,6 @@ class AiModelModel(ModelMixin, UserMixin):
     max_tokens: Mapped[int] = mapped_column(Integer, default=2048, comment="最大 token")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否默认")
+    extra_headers: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="自定义请求头（网关鉴权等）"
+    )

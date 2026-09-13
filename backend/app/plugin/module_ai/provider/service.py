@@ -14,6 +14,17 @@ def _mask(key: str | None) -> str:
     return f"{key[:4]}****{key[-4:]}" if len(key) > 8 else "****"
 
 
+def build_headers(base_url: str | None, extra_headers: dict | None = None, session_id: str = "aistation") -> dict:
+    """构造请求头：opencode 网关需 x-opencode-session；再合并自定义头。"""
+    headers: dict[str, str] = {}
+    if base_url and "opencode.ai" in base_url:
+        headers["x-opencode-session"] = session_id
+        headers["User-Agent"] = "aistation/1.0"
+    if extra_headers:
+        headers.update({str(k): str(v) for k, v in extra_headers.items()})
+    return headers
+
+
 def _to_dict(m: AiModelModel) -> dict:
     return {
         "id": m.id,
@@ -25,6 +36,7 @@ def _to_dict(m: AiModelModel) -> dict:
         "max_tokens": m.max_tokens,
         "enabled": m.enabled,
         "is_default": m.is_default,
+        "extra_headers": m.extra_headers,
         "description": m.description,
         "api_key_masked": _mask(m.api_key),
         "created_time": m.created_time,
@@ -67,6 +79,7 @@ class AiModelService:
                     "model": m.model,
                     "temperature": m.temperature,
                     "max_tokens": m.max_tokens,
+                    "extra_headers": m.extra_headers,
                 }
         if settings.OPENAI_BASE_URL and settings.OPENAI_MODEL:
             return {
@@ -91,6 +104,7 @@ class AiModelService:
                 max_tokens=data.max_tokens,
                 enabled=data.enabled,
                 is_default=data.is_default,
+                extra_headers=data.extra_headers,
                 description=getattr(data, "description", None),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
@@ -120,6 +134,7 @@ class AiModelService:
                 "max_tokens",
                 "enabled",
                 "is_default",
+                "extra_headers",
                 "description",
             ):
                 val = getattr(data, key, None)
@@ -162,6 +177,7 @@ class AiModelService:
     async def test_connection(cls, data) -> dict:
         """用已保存配置或临时参数调用一次 LLM 验证连通性。"""
         cfg: dict | None = None
+        extra_headers: dict | None = None
         if data.id:
             async with async_db_session() as db:
                 m = await db.get(AiModelModel, data.id)
@@ -173,19 +189,25 @@ class AiModelService:
                     "api_key": data.api_key or m.api_key,
                     "model": data.model or m.model,
                 }
+                extra_headers = m.extra_headers
         else:
             cfg = {
                 "base_url": data.base_url,
                 "api_key": data.api_key,
                 "model": data.model,
             }
+            extra_headers = getattr(data, "extra_headers", None)
 
         if not cfg or not cfg.get("base_url") or not cfg.get("model"):
             raise CustomException(msg="base_url 与 model 不能为空")
 
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(base_url=cfg["base_url"], api_key=cfg["api_key"] or "sk-none")
+        client = AsyncOpenAI(
+            base_url=cfg["base_url"],
+            api_key=cfg["api_key"] or "sk-none",
+            default_headers=build_headers(cfg["base_url"], extra_headers),
+        )
         try:
             resp = await client.chat.completions.create(
                 model=cfg["model"],

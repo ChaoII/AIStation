@@ -45,6 +45,9 @@ async def _ensure_missing_columns() -> None:
         "video_cameras": [
             ("reachable", "BOOLEAN"),
         ],
+        "ai_models": [
+            ("extra_headers", "JSONB"),
+        ],
     }
     async with async_engine.begin() as conn:
         for table, columns in new_columns.items():

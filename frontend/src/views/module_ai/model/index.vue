@@ -149,6 +149,14 @@
         <el-form-item label="备注">
           <el-input v-model="formData.description" type="textarea" :rows="2" />
         </el-form-item>
+        <el-form-item label="自定义请求头">
+          <el-input
+            v-model="formData.extra_headers_text"
+            type="textarea"
+            :rows="2"
+            placeholder='可选 JSON，如 {"x-opencode-session":"my-session"}；opencode 网关会自动注入该头'
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button :loading="testing" @click="handleTestForm">测试连接</el-button>
@@ -242,6 +250,7 @@ const emptyForm = () => ({
   max_tokens: 2048,
   enabled: true,
   is_default: false,
+  extra_headers_text: "",
   description: undefined as string | undefined,
 });
 const formData = reactive<any>(emptyForm());
@@ -268,6 +277,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
         max_tokens: item.max_tokens,
         enabled: item.enabled,
         is_default: item.is_default,
+        extra_headers_text: item.extra_headers ? JSON.stringify(item.extra_headers) : "",
         description: item.description,
       });
     }
@@ -289,6 +299,16 @@ async function handleSubmit() {
   }
   submitLoading.value = true;
   try {
+    let extraHeaders: any = undefined;
+    if (formData.extra_headers_text && formData.extra_headers_text.trim()) {
+      try {
+        extraHeaders = JSON.parse(formData.extra_headers_text);
+      } catch {
+        ElMessage.error("自定义请求头不是合法 JSON");
+        submitLoading.value = false;
+        return;
+      }
+    }
     const payload: any = {
       name: formData.name,
       provider: "openai_compatible",
@@ -298,6 +318,7 @@ async function handleSubmit() {
       max_tokens: formData.max_tokens,
       enabled: formData.enabled,
       is_default: formData.is_default,
+      extra_headers: extraHeaders,
       description: formData.description,
     };
     if (formData.api_key) payload.api_key = formData.api_key;
@@ -329,6 +350,14 @@ const testing = ref(false);
 // 弹窗内测试：有 Key 用当前表单值；编辑态未改 Key 则用已保存配置
 async function handleTestForm() {
   const payload: any = { base_url: formData.base_url, model: formData.model };
+  if (formData.extra_headers_text && formData.extra_headers_text.trim()) {
+    try {
+      payload.extra_headers = JSON.parse(formData.extra_headers_text);
+    } catch {
+      ElMessage.error("自定义请求头不是合法 JSON");
+      return;
+    }
+  }
   if (formData.api_key) payload.api_key = formData.api_key;
   else if (formData.id) payload.id = formData.id;
   else {

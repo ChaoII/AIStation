@@ -13,6 +13,7 @@ class AiModelCreateSchema(BaseModel):
     max_tokens: int = Field(default=2048, description="最大 token")
     enabled: bool = Field(default=True, description="是否启用")
     is_default: bool = Field(default=False, description="是否默认")
+    extra_headers: dict | None = Field(default=None, description="自定义请求头")
     description: str | None = Field(default=None, max_length=255, description="备注")
 
 
@@ -26,6 +27,7 @@ class AiModelTestSchema(BaseModel):
     base_url: str | None = Field(default=None, description="临时测试用基址")
     api_key: str | None = Field(default=None, description="临时测试用 Key")
     model: str | None = Field(default=None, description="临时测试用模型名")
+    extra_headers: dict | None = Field(default=None, description="临时测试用请求头")
 
 
 class AiModelOutSchema(BaseModel):
@@ -38,6 +40,7 @@ class AiModelOutSchema(BaseModel):
     max_tokens: int
     enabled: bool
     is_default: bool
+    extra_headers: dict | None = None
     description: str | None = None
     api_key_masked: str
     created_time: datetime | None = None

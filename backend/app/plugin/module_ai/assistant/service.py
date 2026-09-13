@@ -42,8 +42,14 @@ async def run_assistant(message: str, auth) -> dict:
 
     from openai import AsyncOpenAI
 
+    from app.plugin.module_ai.provider.service import build_headers
+
     client = AsyncOpenAI(
-        base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none"
+        base_url=runtime["base_url"],
+        api_key=runtime["api_key"] or "sk-none",
+        default_headers=build_headers(
+            runtime["base_url"], runtime.get("extra_headers"), "aistation-assistant"
+        ),
     )
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
