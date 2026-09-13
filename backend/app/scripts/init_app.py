@@ -303,9 +303,11 @@ async def _ensure_ai_menus() -> None:
                 return
 
             pages = [
+                ("控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 8),
                 ("提供商", "AiProvider", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 9),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
                 ("AI 报告", "AiReport", "/ai/report", "module_ai/report/index", "module_ai:report:query", 11),
+                ("运行台", "AiPlayground", "/ai/playground", "module_ai/playground/index", "module_ai:assistant:query", 12),
             ]
             for title, rname, rpath, comp, perm, order in pages:
                 exists = await db.scalar(
