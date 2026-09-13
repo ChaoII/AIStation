@@ -153,6 +153,8 @@ async def run_assistant_ui_stream(ui_messages: list[dict], auth):
     yield ms.start()
     if not runtime:
         yield ms.error("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
+        # 终止分支统一补发 data-finish 结束帧，保持协议一致
+        yield ms.data("finish", {"reply": "", "tool_calls": [], "action": None, "report_id": None})
         yield ms.finish()
         yield ms.done()
         return

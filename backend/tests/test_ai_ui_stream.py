@@ -153,6 +153,27 @@ def test_ui_stream_tool_then_text(monkeypatch, test_client, auth_headers):
     assert "data: [DONE]" in body
 
 
+def test_ui_stream_no_runtime_model_emits_error_and_finish(monkeypatch, test_client, auth_headers):
+    """未配置运行时模型时，终止分支也应发送 error + data-finish + [DONE]。"""
+    from app.plugin.module_ai.provider.service import AiModelService
+
+    async def _none(usage=None, model_id=None):
+        return None
+
+    monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_none))
+
+    r = test_client.post(
+        "/api/v1/ai/assistant/stream",
+        json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.text
+    assert '"type": "error"' in body
+    assert '"type": "data-finish"' in body
+    assert "data: [DONE]" in body
+
+
 def test_add_log_persists_user_id(test_client, auth_headers):
     """回归：旧实现写不存在的 created_id 导致日志静默丢失。"""
     from sqlalchemy import select
