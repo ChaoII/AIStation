@@ -121,9 +121,11 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, watch, ref, computed } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useSettingsStore } from "@/store";
 import { AiChatAPI, ChatSession, ChatSessionDetail } from "@/api/module_ai/chat";
+import { assistantChat } from "@/api/module_ai/assistant";
+import { AnnotationAPI } from "@/api/module_annotation";
 
 type ToolFunctionCall = {
   name: string;
@@ -374,6 +376,30 @@ const handleExecute = async () => {
   loading.value = true;
 
   try {
+    // 优先走工具调用型助手（问数/统计/报告/导航/操作）
+    try {
+      const assist = await assistantChat(rawCommand);
+      const d: any = assist.data?.data;
+      if (d) {
+        const toolNames = (d.tool_calls || []).map((t: any) => t.name).join(", ");
+        response.value = {
+          explanation: (d.reply || "已完成") + (toolNames ? `\n\n（调用工具：${toolNames}）` : ""),
+          action: null,
+        } as any;
+        if (d.action?.type === "navigate" && d.action.path) {
+          router.push(d.action.path);
+        } else if (d.action?.type === "confirm") {
+          await confirmAssistantAction(d.action);
+        }
+        if (d.report_id) {
+          ElMessage.success(`已生成报告 #${d.report_id}，可在「AI 管理 → AI 报告」查看`);
+        }
+        return;
+      }
+    } catch {
+      /* 未配置模型或助手失败：回退到原聊天解析 */
+    }
+
     // 调用 AI API 解析命令
     const result = await AiChatAPI.chat({
       message: rawCommand,
@@ -409,6 +435,28 @@ const handleExecute = async () => {
     ElMessage.error(error.message || "命令执行失败");
   } finally {
     loading.value = false;
+  }
+};
+
+// 待确认操作：用户确认后调用既有业务 API
+const confirmAssistantAction = async (action: any) => {
+  try {
+    await ElMessageBox.confirm(`确认${action.label || "执行该操作"}？`, "AI 操作确认", {
+      type: "warning",
+    });
+  } catch {
+    return;
+  }
+  try {
+    if (action.api === "createDataset") {
+      await AnnotationAPI.createDataset(action.payload);
+      ElMessage.success("数据集已创建");
+    } else if (action.api === "createAnnotationTask") {
+      await AnnotationAPI.createTask(action.payload);
+      ElMessage.success("标注任务已创建");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
   }
 };
 
