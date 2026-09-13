@@ -52,14 +52,35 @@ async def _ensure_missing_columns() -> None:
             ("capabilities", "JSONB"),
             ("context_window", "INTEGER"),
         ],
+        "ai_call_logs": [
+            ("user_id", "INTEGER"),
+        ],
     }
+    is_sqlite = settings.DATABASE_TYPE == "sqlite"
     async with async_engine.begin() as conn:
         for table, columns in new_columns.items():
-            for col_name, col_type in columns:
+            existing: set[str] = set()
+            if is_sqlite:
+                # SQLite 不支持 ADD COLUMN IF NOT EXISTS，先探测现有列
                 try:
-                    await conn.execute(
-                        sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
-                    )
+                    rows = (
+                        await conn.execute(sa_text(f"PRAGMA table_info({table})"))
+                    ).fetchall()
+                    existing = {r[1] for r in rows}
+                except Exception:
+                    existing = set()
+            for col_name, col_type in columns:
+                if col_name in existing:
+                    continue
+                try:
+                    if is_sqlite:
+                        await conn.execute(
+                            sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                        )
+                    else:
+                        await conn.execute(
+                            sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
+                        )
                 except Exception:
                     pass
 

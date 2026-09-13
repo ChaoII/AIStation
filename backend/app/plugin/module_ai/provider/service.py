@@ -62,22 +62,34 @@ class AiModelService:
             return [_to_dict(m) for m in rows]
 
     @classmethod
-    async def get_runtime_model(cls, usage: str | None = None) -> dict | None:
-        """取默认且启用的模型（可按用途过滤）；解析所属提供商；无则回退 env。"""
+    async def get_runtime_model(
+        cls, usage: str | None = None, model_id: int | None = None
+    ) -> dict | None:
+        """取默认且启用的模型（可按用途过滤）；解析所属提供商；无则回退 env。
+
+        给定 ``model_id`` 时按指定模型解析（仍要求启用且未删除），跳过 ``usage`` 过滤。
+        """
         async with async_db_session() as db:
-            stmt = select(AiModelModel).where(
-                AiModelModel.is_deleted.is_(False),
-                AiModelModel.enabled.is_(True),
-            )
-            if usage:
-                stmt = stmt.where(
-                    or_(AiModelModel.usage == usage, AiModelModel.usage.is_(None))
+            if model_id is not None:
+                m = await db.get(AiModelModel, model_id)
+                if not m or m.is_deleted or not m.enabled:
+                    m = None
+            else:
+                stmt = select(AiModelModel).where(
+                    AiModelModel.is_deleted.is_(False),
+                    AiModelModel.enabled.is_(True),
                 )
-            m = (
-                await db.execute(
-                    stmt.order_by(AiModelModel.is_default.desc(), AiModelModel.id.desc()).limit(1)
-                )
-            ).scalar_one_or_none()
+                if usage:
+                    stmt = stmt.where(
+                        or_(AiModelModel.usage == usage, AiModelModel.usage.is_(None))
+                    )
+                m = (
+                    await db.execute(
+                        stmt.order_by(
+                            AiModelModel.is_default.desc(), AiModelModel.id.desc()
+                        ).limit(1)
+                    )
+                ).scalar_one_or_none()
             if m and m.model:
                 base_url = m.base_url
                 api_key = m.api_key

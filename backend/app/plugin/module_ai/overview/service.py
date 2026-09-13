@@ -29,7 +29,7 @@ class AiOverviewService:
                         result=result,
                         error=(error or "")[:2000] or None,
                         app_id=app_id,
-                        created_id=user_id,
+                        user_id=user_id,
                     )
                 )
         except Exception as e:

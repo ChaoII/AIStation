@@ -16,3 +16,4 @@ class AiCallLogModel(ModelMixin):
     result: Mapped[str] = mapped_column(String(16), default="success", comment="success/error")
     error: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误信息")
     app_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="应用ID")
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True, comment="调用用户ID")

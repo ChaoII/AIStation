@@ -125,20 +125,37 @@ async def run_assistant(message: str, auth) -> dict:
     }
 
 
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+def extract_openai_messages(ui_messages: list[dict]) -> list[dict]:
+    """把 AI SDK UIMessage 列表转成 OpenAI messages（只取 user/assistant 的 text part）。"""
+    out: list[dict] = []
+    for m in ui_messages or []:
+        role = m.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        text = ""
+        for part in m.get("parts") or []:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text += part.get("text") or ""
+        if text:
+            out.append({"role": role, "content": text})
+    return out
 
 
-async def run_assistant_stream(message: str, auth):
-    """SSE 流式助手：逐块输出，工具调用过程以 event=tool 推送。"""
-    runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
-    if not runtime:
-        yield _sse("error", {"message": "未配置大模型，请在 AI 管理→模型配置 中添加并启用"})
-        return
-
+async def run_assistant_ui_stream(ui_messages: list[dict], auth):
+    """AI SDK UI Message Stream 版助手：reasoning/text/tool/finish 分片。"""
     from openai import AsyncOpenAI
 
     from app.plugin.module_ai.provider.service import build_headers
+    from app.plugin.module_ai.streaming import UiMessageStream
+
+    ms = UiMessageStream()
+    runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
+    yield ms.start()
+    if not runtime:
+        yield ms.error("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
+        yield ms.finish()
+        yield ms.done()
+        return
 
     client = AsyncOpenAI(
         base_url=runtime["base_url"],
@@ -147,10 +164,8 @@ async def run_assistant_stream(message: str, auth):
             runtime["base_url"], runtime.get("extra_headers"), "aistation-assistant"
         ),
     )
-    messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message},
-    ]
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages += extract_openai_messages(ui_messages)
     user_id = getattr(getattr(auth, "user", None), "id", None)
     tool_log: list[dict] = []
     action = None
@@ -167,12 +182,14 @@ async def run_assistant_stream(message: str, auth):
                 max_tokens=runtime["max_tokens"],
                 stream=True,
             )
-        except Exception as e:
-            yield _sse("error", {"message": f"大模型调用失败：{e}"})
+        except Exception as e:  # noqa: BLE001
+            yield ms.error(f"大模型调用失败：{e}")
+            yield ms.data("finish", {"reply": "", "tool_calls": tool_log, "action": action, "report_id": report_id})
+            yield ms.finish()
+            yield ms.done()
             return
 
         content = ""
-        reasoning = ""
         tool_calls: dict = {}
         async for chunk in stream:
             if not chunk.choices:
@@ -180,14 +197,14 @@ async def run_assistant_stream(message: str, auth):
             delta = chunk.choices[0].delta
             rc = getattr(delta, "reasoning_content", None)
             if rc:
-                reasoning += rc
-                yield _sse("reasoning", {"text": rc})
+                yield ms.reasoning(rc)
             if getattr(delta, "content", None):
                 content += delta.content
-                yield _sse("delta", {"text": delta.content})
+                yield ms.text(delta.content)
             for tc in getattr(delta, "tool_calls", None) or []:
-                idx = tc.index
-                slot = tool_calls.setdefault(idx, {"id": "", "name": "", "arguments": ""})
+                slot = tool_calls.setdefault(
+                    tc.index, {"id": "", "name": "", "arguments": ""}
+                )
                 if tc.id:
                     slot["id"] = tc.id
                 if tc.function and tc.function.name:
@@ -195,16 +212,16 @@ async def run_assistant_stream(message: str, auth):
                 if tc.function and tc.function.arguments:
                     slot["arguments"] += tc.function.arguments
 
+        yield ms.reasoning_end()
+        yield ms.text_end()
+
         if not tool_calls:
-            yield _sse(
-                "done",
-                {
-                    "reply": content,
-                    "tool_calls": tool_log,
-                    "action": action,
-                    "report_id": report_id,
-                },
+            yield ms.data(
+                "finish",
+                {"reply": content, "tool_calls": tool_log, "action": action, "report_id": report_id},
             )
+            yield ms.finish()
+            yield ms.done()
             return
 
         messages.append(
@@ -225,7 +242,7 @@ async def run_assistant_stream(message: str, auth):
             name = s["name"]
             try:
                 args = json.loads(s["arguments"] or "{}")
-            except Exception:
+            except Exception:  # noqa: BLE001
                 args = {}
             result = await _call_tool(name, args, user_id)
             if isinstance(result, dict):
@@ -234,7 +251,7 @@ async def run_assistant_stream(message: str, auth):
                 if result.get("__report_id__"):
                     report_id = result["__report_id__"]
             tool_log.append({"name": name, "args": args, "result": result})
-            yield _sse("tool", {"name": name, "args": args, "result": result})
+            yield ms.tool(s["id"], name, args=args, output=result)
             messages.append(
                 {
                     "role": "tool",
@@ -243,4 +260,16 @@ async def run_assistant_stream(message: str, auth):
                 }
             )
 
-    yield _sse("done", {"reply": content, "tool_calls": tool_log, "action": action, "report_id": report_id})
+    yield ms.text("工具调用次数已达上限，请缩小问题范围后重试。")
+    yield ms.text_end()
+    yield ms.data(
+        "finish",
+        {
+            "reply": "工具调用次数已达上限，请缩小问题范围后重试。",
+            "tool_calls": tool_log,
+            "action": action,
+            "report_id": report_id,
+        },
+    )
+    yield ms.finish()
+    yield ms.done()

@@ -9,8 +9,8 @@ from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.overview.service import AiOverviewService
 
-from .schema import AssistantChatSchema
-from .service import run_assistant, run_assistant_stream
+from .schema import AssistantChatSchema, AssistantUIStreamSchema
+from .service import run_assistant, run_assistant_ui_stream
 
 AssistantRouter = APIRouter(
     route_class=OperationLogRoute, prefix="/assistant", tags=["AI-智能助手"]
@@ -39,46 +39,33 @@ async def assistant_chat(
     return SuccessResponse(data=result, msg="成功")
 
 
-@AssistantRouter.post("/stream", summary="AI 助手对话（SSE 流式）")
+@AssistantRouter.post("/stream", summary="AI 助手对话（AI SDK UI Message Stream）")
 async def assistant_stream(
-    data: AssistantChatSchema,
+    data: AssistantUIStreamSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> StreamingResponse:
     import time
+
+    from app.plugin.module_ai.streaming import ui_stream_response
 
     uid = getattr(getattr(auth, "user", None), "id", None)
 
     async def _gen():
         t0 = time.perf_counter()
         ok, err = True, None
-        # 立即发送注释帧，促使响应头与首块尽早下发（避免代理缓冲）
-        yield ": connected\n\n"
         try:
-            async for item in run_assistant_stream(data.message, auth):
-                if isinstance(item, str) and "event: error" in item:
+            async for item in run_assistant_ui_stream(data.messages, auth):
+                if '"type": "error"' in item:
                     ok = False
+                    err = item
                 yield item
         except Exception as e:  # noqa: BLE001
             ok, err = False, str(e)
             raise
         finally:
             await AiOverviewService.add_log(
-                "assistant",
-                "chat",
-                int((time.perf_counter() - t0) * 1000),
-                "success" if ok else "error",
-                err,
-                user_id=uid,
+                "assistant", "chat", int((time.perf_counter() - t0) * 1000),
+                "success" if ok else "error", err, user_id=uid,
             )
 
-    return StreamingResponse(
-        _gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-            # 让 GZipMiddleware 跳过压缩（否则 SSE 被缓冲，前端无法逐字）
-            "Content-Encoding": "identity",
-        },
-    )
+    return ui_stream_response(_gen())
