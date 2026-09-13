@@ -358,3 +358,31 @@ Plan: docs/superpowers/plans/2026-09-13-ai-management-apps.md
 验证: backend pytest 283 passed（新增 5 用例）；vue-tsc 新增文件 0 错误；eslint clean；e2e/ai-model.spec.ts 通过
 提交: 后端 provider/report/assistant + 前端页面与助手接入
 已知限制: 助手无状态/非流式；工具只读；变更操作为前端二次确认后调用既有 API；需在 AI管理→模型配置 配置 OpenAI 兼容模型后助手才可用
+
+=== AI 管理 v2（进行中，接续交接）===
+Spec: docs/superpowers/specs/2026-09-13-ai-platform-v2-design.md
+用户要求（务必遵守）:
+  1) 前端设计用 frontend-design 技能，但**风格/明暗/大小/配色必须遵循 Element Plus 框架本身**（用 --el-* 变量），不得割裂；
+  2) 完成后用**无头浏览器截图 + vision-recognition 技能做视觉分析**验收；
+  3) 必须是**真流式**：思考(reasoning)/回复(delta)/工具(tool) 三类分片，前端逐步渲染；
+  4) 不要想当然，按用户需求实现。
+已完成:
+  - A 阶段: providers 表/CRUD/拉取远端模型; ai_models 增 provider_id/usage/capabilities/context_window; get_runtime_model 解析 provider→model→env（usage NULL 视为通用）; 助手 SSE /ai/assistant/stream（reasoning+delta+tool+done）。
+  - 控制台外壳: styles/ai-console.css（已改框架一致浅色）; /ai/overview 控制台; /ai/playground 运行台; ai_call_logs + /ai/overview/stats（日志写入需重启后端生效）。
+  - 旧 AI 聊天/AI会话记忆 已 hidden 下线; AI 父菜单 redirect=/ai/overview。旧 Agno WS 链路弃用（module_ai/chat 保留代码不再展示）。
+  - 相关提交: c773b7c / 58ba1ef / addc6f1 / a5b0f03 / 94064dc / 551c0cb。
+待做（B-E，按此顺序）:
+  B 提示词工作台(画布): 表 ai_prompts(name/category/blocks[JSONB 有序块]/variables/version/enabled); CRUD; 前端 /ai/prompt: 左块列表可拖拽、中间编辑、右变量识别与预览；菜单。
+  C AI 应用 + 工具中心: 表 ai_apps(model_id/prompt_id/tools[JSONB]/output_format/input_schema/enabled/order); 表 ai_tools(kind builtin/http, method,url,headers,params_schema,enabled); 内置工具开关 + 自定义 HTTP 工具; 页面 /ai/app、/ai/tool；运行应用走 SSE（按 app 的 model/prompt/tools）。
+  D 会话与日志页: 表 ai_sessions/ai_messages（按 app 续聊）; /ai/logs 页（ai_call_logs 列表/筛选）; 运行台支持选应用 + 会话历史。
+  E 报告增强 + 全量测试: 报告模板; 后端 pytest（prompts/apps/tools/sessions/logs/SSE）; 前端 E2E（含截图+视觉验收）。
+关键坑:
+  - 后端 pytest 用持久化 SQLite(pytest_aistation.db)：改 schema 后需删除该文件再跑。
+  - SSE 用 StreamingResponse(text/event-stream)，OperationLogRoute 不缓冲流；不要给流接口加会读 body 的中间件。
+  - opencode 网关需 x-opencode-session（已自动注入）；模型 usage 为空的旧行按通用处理。
+  - 旧聊天页 /ai/chat、记忆页 /ai/memory 已 hidden；如需彻底删除再评估。
+验证:
+  - 后端: cd backend && uv run pytest -q; uv run ruff check app/plugin/module_ai/
+  - 前端: cd frontend && pnpm type-check; pnpm e2e（ai-model/ai-console 等）
+  - 运行台: 问"我们有几个数据集？共多少张图？" 应见 思考/逐字回复/工具时间线。
+下一步: 开新会话，从 B（提示词工作台）开始，逐项实现+测试+截图视觉验收。
