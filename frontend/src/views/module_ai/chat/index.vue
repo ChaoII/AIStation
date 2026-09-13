@@ -226,7 +226,20 @@ const generateId = () => {
 
 // ============ 发送消息 ============
 const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
-  if ((!message && !files) || isSending.value) return;
+  // 重置上一轮错误状态，避免历史失败提示残留
+  error.value = "";
+
+  const hasFiles = !!files && files.length > 0;
+  const text = (message || "").trim();
+
+  // 后端仅消费文本，附件暂不支持：显式提示，避免静默丢弃
+  if (hasFiles) {
+    ElMessage.warning("当前暂不支持发送附件，仅处理文本内容");
+    // 仅附件、无文本时不发送空消息
+    if (!text) return;
+  }
+
+  if ((!message && !hasFiles) || isSending.value) return;
 
   // 创建新会话（如果没有）
   if (!currentSessionId.value) {
