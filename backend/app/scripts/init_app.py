@@ -306,6 +306,10 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:report:query", "查询AI报告"),
     ("module_ai:report:delete", "删除AI报告"),
     ("module_ai:assistant:query", "AI助手对话"),
+    ("module_ai:tool:query", "查询工具"),
+    ("module_ai:tool:create", "新增工具"),
+    ("module_ai:tool:update", "编辑工具"),
+    ("module_ai:tool:delete", "删除工具"),
 ]
 
 
@@ -349,6 +353,7 @@ async def _ensure_ai_menus() -> None:
                 ("AI 报告", "AiReport", "/ai/report", "module_ai/report/index", "module_ai:report:query", 11),
                 ("运行台", "AiPlayground", "/ai/playground", "module_ai/playground/index", "module_ai:assistant:query", 12),
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 13),
+                ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 14),
             ]
             for title, rname, rpath, comp, perm, order in pages:
                 exists = await db.scalar(
@@ -404,6 +409,37 @@ async def _ensure_ai_menus() -> None:
                 await db.flush()
                 db.add(RoleMenusModel(role_id=1, menu_id=m.id))
             log.info("✅ AI 菜单与权限已注册")
+
+
+async def _ensure_ai_tools() -> None:
+    """幂等同步内置工具到 ai_tools：仅补缺失行，不覆盖已存在行的 enabled 状态。"""
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = set((await db.execute(select(AiToolModel.name))).scalars().all())
+            added = 0
+            for tool_name in TOOL_REGISTRY:
+                if tool_name in existing:
+                    continue
+                db.add(
+                    AiToolModel(
+                        name=tool_name,
+                        kind="builtin",
+                        method="GET",
+                        url="",
+                        enabled=True,
+                    )
+                )
+                added += 1
+            if added:
+                log.info(f"✅ 已注册 {added} 个内置 AI 工具")
+            else:
+                log.info("✅ 内置 AI 工具已就绪")
 
 
 async def _ensure_annotation_menus() -> None:
@@ -772,6 +808,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_edge_button_menus()
         await _ensure_edge_page_menu()
         await _ensure_ai_menus()
+        await _ensure_ai_tools()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()

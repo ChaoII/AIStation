@@ -60,7 +60,15 @@ class InitializeData:
             from app.plugin.module_ai.provider.model import AiModelModel
             from app.plugin.module_ai.providers.model import AiProviderModel
             from app.plugin.module_ai.report.model import AiReportModel
-            _ = (AiModelModel, AiProviderModel, AiPromptModel, AiReportModel, AiCallLogModel)
+            from app.plugin.module_ai.tools_catalog.model import AiToolModel
+            _ = (
+                AiModelModel,
+                AiProviderModel,
+                AiPromptModel,
+                AiReportModel,
+                AiCallLogModel,
+                AiToolModel,
+            )
             # 使用引擎创建所有表
             # await drop_tables()
             await create_tables()
