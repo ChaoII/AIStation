@@ -69,5 +69,5 @@ async def run_app_stream(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:app:query"]))],
 ) -> StreamingResponse:
     return ui_stream_response(
-        run_app_ui_stream(app_id, data.messages, auth, data.variables)
+        run_app_ui_stream(app_id, data.messages, auth, data.variables, data.session_id)
     )

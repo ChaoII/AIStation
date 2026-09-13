@@ -54,7 +54,7 @@ async def assistant_stream(
         t0 = time.perf_counter()
         ok, err = True, None
         try:
-            async for item in run_assistant_ui_stream(data.messages, auth):
+            async for item in run_assistant_ui_stream(data.messages, auth, data.session_id):
                 if '"type": "error"' in item:
                     ok = False
                     err = item

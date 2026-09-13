@@ -34,7 +34,8 @@ class AiAppUpdateSchema(BaseModel):
 
 
 class AiAppRunSchema(BaseModel):
-    """运行应用请求体：UI 消息 + 提示词变量。"""
+    """运行应用请求体：UI 消息 + 提示词变量 + 可选会话。"""
 
     messages: list[dict] = Field(default_factory=list)
     variables: dict | None = None
+    session_id: int | None = None

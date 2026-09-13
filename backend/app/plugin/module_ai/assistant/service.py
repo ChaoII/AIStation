@@ -141,15 +141,27 @@ def extract_openai_messages(ui_messages: list[dict]) -> list[dict]:
     return out
 
 
-async def run_assistant_ui_stream(ui_messages: list[dict], auth):
+def last_user_text(ui_messages: list[dict]) -> str:
+    """取最后一条 user 消息的纯文本，用于会话落库。"""
+    for m in reversed(extract_openai_messages(ui_messages)):
+        if m["role"] == "user":
+            return m["content"]
+    return ""
+
+
+async def run_assistant_ui_stream(
+    ui_messages: list[dict], auth, session_id: int | None = None
+):
     """AI SDK UI Message Stream 版助手：reasoning/text/tool/finish 分片。"""
     from openai import AsyncOpenAI
 
     from app.plugin.module_ai.provider.service import build_headers
+    from app.plugin.module_ai.sessions.service import persist_session_exchange
     from app.plugin.module_ai.streaming import UiMessageStream
 
     ms = UiMessageStream()
     runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
+    user_text = last_user_text(ui_messages)
     yield ms.start()
     if not runtime:
         yield ms.error("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
@@ -157,6 +169,7 @@ async def run_assistant_ui_stream(ui_messages: list[dict], auth):
         yield ms.data("finish", {"reply": "", "tool_calls": [], "action": None, "report_id": None})
         yield ms.finish()
         yield ms.done()
+        await persist_session_exchange(session_id, user_text, "")
         return
 
     client = AsyncOpenAI(
@@ -189,6 +202,7 @@ async def run_assistant_ui_stream(ui_messages: list[dict], auth):
             yield ms.data("finish", {"reply": "", "tool_calls": tool_log, "action": action, "report_id": report_id})
             yield ms.finish()
             yield ms.done()
+            await persist_session_exchange(session_id, user_text, "")
             return
 
         content = ""
@@ -224,6 +238,7 @@ async def run_assistant_ui_stream(ui_messages: list[dict], auth):
             )
             yield ms.finish()
             yield ms.done()
+            await persist_session_exchange(session_id, user_text, content)
             return
 
         messages.append(
@@ -262,12 +277,13 @@ async def run_assistant_ui_stream(ui_messages: list[dict], auth):
                 }
             )
 
-    yield ms.text("工具调用次数已达上限，请缩小问题范围后重试。")
+    reply = "工具调用次数已达上限，请缩小问题范围后重试。"
+    yield ms.text(reply)
     yield ms.text_end()
     yield ms.data(
         "finish",
         {
-            "reply": "工具调用次数已达上限，请缩小问题范围后重试。",
+            "reply": reply,
             "tool_calls": tool_log,
             "action": action,
             "report_id": report_id,
@@ -275,3 +291,4 @@ async def run_assistant_ui_stream(ui_messages: list[dict], auth):
     )
     yield ms.finish()
     yield ms.done()
+    await persist_session_exchange(session_id, user_text, reply)

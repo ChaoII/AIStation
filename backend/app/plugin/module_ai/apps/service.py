@@ -186,6 +186,7 @@ async def run_app_ui_stream(
     ui_messages: list[dict],
     auth,
     variables: dict | None = None,
+    session_id: int | None = None,
 ) -> AsyncIterator[str]:
     """运行 AI 应用：解析应用/模型/提示词/工具，流式产出 UI Message Stream 帧。"""
     from openai import AsyncOpenAI
@@ -194,15 +195,19 @@ async def run_app_ui_stream(
         MAX_ROUNDS,
         SYSTEM_PROMPT,
         extract_openai_messages,
+        last_user_text,
     )
     from app.plugin.module_ai.overview.service import AiOverviewService
     from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
     from app.plugin.module_ai.provider.service import AiModelService, build_headers
+    from app.plugin.module_ai.sessions.service import persist_session_exchange
     from app.plugin.module_ai.streaming import UiMessageStream
 
     ms = UiMessageStream()
     t0 = time.perf_counter()
     uid = getattr(getattr(auth, "user", None), "id", None)
+    user_text = last_user_text(ui_messages)
+    assistant_text = ""
     model_name = "app"
     ok, err = True, None
     empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
@@ -315,6 +320,7 @@ async def run_app_ui_stream(
             yield ms.text_end()
 
             if not tool_calls:
+                assistant_text = content
                 yield ms.data(
                     "finish",
                     {
@@ -365,6 +371,7 @@ async def run_app_ui_stream(
                 )
 
         reply = "工具调用次数已达上限，请缩小问题范围后重试。"
+        assistant_text = reply
         yield ms.text(reply)
         yield ms.text_end()
         yield ms.data(
@@ -389,3 +396,4 @@ async def run_app_ui_stream(
             app_id=app_id,
             user_id=uid,
         )
+        await persist_session_exchange(session_id, user_text, assistant_text, app_id=app_id)

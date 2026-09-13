@@ -359,6 +359,7 @@ async def _ensure_ai_menus() -> None:
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 13),
                 ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 14),
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 15),
+                ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 16),
             ]
             for title, rname, rpath, comp, perm, order in pages:
                 exists = await db.scalar(
