@@ -1,5 +1,10 @@
 # AIStation — Agent Guide
 
+## 交流语言
+
+- 向用户提问（question 工具）、汇报进度、总结结果时，一律使用中文。
+- 代码注释使用中文；提交信息使用 `fix(train): 中文描述` 等中文描述格式。
+
 ## Quick Start
 
 ## Setup
@@ -428,3 +433,26 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 ### 测试
 
 `backend/tests/test_paddlex_removal.py` 已改为 PaddleX 支持测试（枚举/权重规格/cmd 构建），64 测试全通过。
+
+## AI 管理模块（v2，进行中）
+
+- 位置：后端 `backend/app/plugin/module_ai/`（自动发现，容器前缀 `/ai`）；前端 `frontend/src/views/module_ai/`。
+- 结构：
+  - `providers/` 提供商 CRUD + `GET /ai/providers/remote-models/{id}`（拉远端模型列表）
+  - `provider/` 模型配置 CRUD（归属 provider、usage/capabilities/context_window、自定义请求头）+ `/ai/model/test` 连接测试
+  - `assistant/` 工具调用助手：`POST /ai/assistant/chat`（非流式）、`POST /ai/assistant/stream`（SSE：`reasoning`/`delta`/`tool`/`done`）
+  - `overview/` 调用日志 `ai_call_logs` + `GET /ai/overview/stats`
+  - `report/` AI 报告
+- 新控制台（旧 Agno 聊天/记忆页已 hidden 下线，父菜单 redirect `/ai/overview`）：
+  - `/ai/overview` 控制台、`/ai/playground` 运行台、`/ai/provider`、`/ai/model`、`/ai/report`
+- 运行时模型解析：模型 → 所属 provider → env（`OPENAI_*`）；`usage` 为空视为通用（兼容旧数据）。
+- opencode 网关（`opencode.ai`）需 `x-opencode-session` 头：`provider/service.build_headers` 自动注入，另支持模型/提供商自定义头。
+
+### 前端视觉约束（重要）
+- AI 页面**必须与既有模块风格一致**（参考 `module_system/param`）：直接复用 Element Plus 组件（`el-card/el-descriptions/el-table/el-form/el-tag/el-statistic`）与 `--el-*` 变量；**不要自造主题化外壳/自定义配色**（`styles/ai-console.css` 的自定义观感曾被否定，需按框架组件重做）。
+- 完成界面后**用无头浏览器截图 + 视觉分析**（`vision-recognition` 技能）核对，避免与框架割裂。
+
+### 连接超时（QueuePool 耗尽）排查与修复
+- 现象：长时运行或大量 e2e 后，登录/接口返回"请求超时"；日志 `QueuePool limit of size ... overflow ... reached, connection timed out`。
+- 修复：调大连接池 —— `setting.py` 与 `env/.env.dev` 的 `POOL_SIZE=20`、`MAX_OVERFLOW=40`、`POOL_TIMEOUT=30`，保留 `POOL_RECYCLE=1800`、`POOL_PRE_PING=true`；出现时先重启后端。
+- 排查建议：关注流式接口/长事务是否长期占用会话；`OperationLogRoute` 会在响应后另开会话写日志。

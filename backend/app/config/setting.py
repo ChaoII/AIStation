@@ -84,9 +84,9 @@ class Settings(BaseSettings):
     SQL_DB_ENABLE: bool = True  # 是否启用数据库
     DATABASE_ECHO: bool | Literal["debug"] = False  # 是否显示SQL日志
     ECHO_POOL: bool | Literal["debug"] = False  # 是否显示连接池日志
-    POOL_SIZE: int = 10  # 连接池大小
-    MAX_OVERFLOW: int = 20  # 最大溢出连接数
-    POOL_TIMEOUT: int = 5  # 连接超时时间(秒)
+    POOL_SIZE: int = 20  # 连接池大小
+    MAX_OVERFLOW: int = 40  # 最大溢出连接数
+    POOL_TIMEOUT: int = 30  # 连接超时时间(秒)
     POOL_RECYCLE: int = 1800  # 连接回收时间(秒)
     POOL_USE_LIFO: bool = True  # 是否使用LIFO连接池
     POOL_PRE_PING: bool = True  # 是否开启连接预检
