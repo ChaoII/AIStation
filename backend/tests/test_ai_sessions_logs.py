@@ -63,6 +63,29 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
 
 
+def _make_raising_stream_client(chunks):
+    """构造假 AsyncOpenAI：产出给定分片后抛异常，模拟流中途失败。"""
+
+    class _Completions:
+        async def create(self, **kwargs):
+            async def _gen():
+                for c in chunks:
+                    yield c
+                raise RuntimeError("stream boom")
+
+            return _gen()
+
+    class _Chat:
+        def __init__(self):
+            self.completions = _Completions()
+
+    class _Client:
+        def __init__(self, *a, **k):
+            self.chat = _Chat()
+
+    return _Client
+
+
 def _create_session(test_client, auth_headers, title: str, app_id=None) -> int:
     r = test_client.post(
         "/api/v1/ai/sessions/create",
@@ -213,6 +236,74 @@ def test_stream_without_session_id_does_not_persist(monkeypatch, test_client, au
     assert r.status_code == 200, r.text
     after = test_client.get("/api/v1/ai/sessions/list", headers=auth_headers).json()["data"]
     assert len(after) == len(before)
+
+
+def test_stream_error_still_persists_exchange(monkeypatch, test_client, auth_headers):
+    """流中途异常（如工具/解析/连接失败）：已流出的 user/assistant 文本仍落库，不丢会话。"""
+    import openai
+
+    from app.plugin.module_ai.assistant.service import run_assistant_ui_stream
+    from app.plugin.module_ai.sessions.service import AiSessionService
+
+    session_id = _create_session(test_client, auth_headers, "pytest 异常兜底")
+    monkeypatch.setattr(
+        openai,
+        "AsyncOpenAI",
+        _make_raising_stream_client([_FakeChunk(_FakeDelta(content="部分回复"))]),
+    )
+    _patch_runtime(monkeypatch)
+
+    try:
+
+        async def _flow():
+            agen = run_assistant_ui_stream(
+                [{"role": "user", "parts": [{"type": "text", "text": "你好"}]}],
+                SimpleNamespace(user=SimpleNamespace(id=1)),
+                session_id=session_id,
+            )
+            try:
+                async for _ in agen:
+                    pass
+            except RuntimeError:
+                pass
+            return await AiSessionService.get_messages(session_id)
+
+        msgs = asyncio.run(_flow())
+        assert [m["role"] for m in msgs] == ["user", "assistant"], msgs
+        assert msgs[0]["parts"][0]["text"] == "你好"
+        assert msgs[1]["parts"][0]["text"] == "部分回复"
+    finally:
+        _delete_session(test_client, auth_headers, session_id)
+
+
+def test_session_ownership_enforced(test_client, auth_headers):
+    """他人会话：detail/delete 均被拒（404），本人会话仍可访问。"""
+    from app.plugin.module_ai.sessions.service import AiSessionService
+
+    async def _create():
+        return await AiSessionService.create("他人会话", app_id=None, user_id=888888)
+
+    other_id = asyncio.run(_create())["id"]
+    try:
+        detail = test_client.get(
+            f"/api/v1/ai/sessions/detail/{other_id}", headers=auth_headers
+        )
+        assert detail.status_code == 404, detail.text
+
+        deleted = test_client.request(
+            "DELETE",
+            "/api/v1/ai/sessions/delete",
+            json=[other_id],
+            headers=auth_headers,
+        )
+        assert deleted.status_code == 404, deleted.text
+
+        async def _still_there():
+            return await AiSessionService.get_session(other_id)
+
+        assert asyncio.run(_still_there()) is not None
+    finally:
+        asyncio.run(AiSessionService.delete([other_id]))
 
 
 def test_append_message_increments_count():

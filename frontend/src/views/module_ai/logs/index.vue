@@ -85,7 +85,6 @@ const searchConfig = reactive<ISearchConfig>({
       type: "select",
       options: [
         { label: "聊天", value: "chat" },
-        { label: "助手", value: "assistant" },
         { label: "应用", value: "app" },
       ],
       attrs: { placeholder: "请选择用途", clearable: true, style: { width: "167.5px" } },

@@ -296,7 +296,10 @@ async function selectSession(s: any) {
     const res = await getAiSessionDetail(s.id);
     const msgs = res.data?.data?.messages || [];
     sessionId.value = s.id;
-    // sessionId 不是 chat init 的依赖，回填消息不会被重建逻辑清空
+    // 先切回会话所属应用：selectedAppId 是 chat init 依赖，会重建 transport；
+    // 等重建（消息被清空）落地后再回填历史消息，避免续聊串用其他应用的模型/工具。
+    selectedAppId.value = s.app_id ?? 0;
+    await nextTick();
     chat.messages.value = msgs.map((m: any) => ({
       id: `s-${m.id}`,
       role: m.role,
