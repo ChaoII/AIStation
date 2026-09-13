@@ -78,5 +78,7 @@ async def assistant_stream(
             "Cache-Control": "no-cache, no-transform",
             "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
+            # 让 GZipMiddleware 跳过压缩（否则 SSE 被缓冲，前端无法逐字）
+            "Content-Encoding": "identity",
         },
     )
