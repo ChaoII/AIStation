@@ -167,10 +167,11 @@ class AiModelService:
                 m = await db.get(AiModelModel, data.id)
                 if not m:
                     raise CustomException(msg="配置不存在")
+                # 以已保存配置为底，允许用表单中已填的新值覆盖（便于编辑态未改 Key 时测试新地址）
                 cfg = {
-                    "base_url": m.base_url,
-                    "api_key": m.api_key,
-                    "model": m.model,
+                    "base_url": data.base_url or m.base_url,
+                    "api_key": data.api_key or m.api_key,
+                    "model": data.model or m.model,
                 }
         else:
             cfg = {

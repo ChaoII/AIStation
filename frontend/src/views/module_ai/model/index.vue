@@ -151,6 +151,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
+        <el-button :loading="testing" @click="handleTestForm">测试连接</el-button>
         <el-button @click="handleCloseDialog">取消</el-button>
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
@@ -320,6 +321,28 @@ async function handleTest(row: any) {
     ElMessage.success(`连接成功：${res.data?.data?.reply || "ok"}`);
   } catch (e: any) {
     ElMessage.error(e?.msg || e?.message || "连接失败");
+  }
+}
+
+const testing = ref(false);
+
+// 弹窗内测试：有 Key 用当前表单值；编辑态未改 Key 则用已保存配置
+async function handleTestForm() {
+  const payload: any = { base_url: formData.base_url, model: formData.model };
+  if (formData.api_key) payload.api_key = formData.api_key;
+  else if (formData.id) payload.id = formData.id;
+  else {
+    ElMessage.warning("请先填写 API Key");
+    return;
+  }
+  testing.value = true;
+  try {
+    const res = await testAiModel(payload);
+    ElMessage.success(`连接成功：${res.data?.data?.reply || "ok"}`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "连接失败");
+  } finally {
+    testing.value = false;
   }
 }
 </script>
