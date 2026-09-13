@@ -397,3 +397,10 @@ Spec: docs/superpowers/specs/2026-09-13-ai-platform-v2-design.md
      但数据链路换成新运行时+SSE 流式。旧页 /ai/chat 之前被 hidden，可按此方向恢复并改造。
   7) 登录偶发"请求超时"根因: dev 后端 DB 连接池(QueuePool)被长时运行/大量 e2e 打满;
      解决: 重启后端; 后续给 AI/整体可考虑调大 POOL_SIZE/MAX_OVERFLOW 或加连接回收。
+
+--- AI v2 追加：第三方优先原则与流式选型（用户强制）---
+  原则: 能用成熟活跃第三方库就不手撸; 选型需调研维护活跃度并写进文档。
+  流式结论: 聊天不用 EventSource(GET-only)，用 fetch+SSE；**推荐 Vercel AI SDK(ai v5 + @ai-sdk/vue useChat)**；
+            解析备选 eventsource-parser；不推荐停更的 @microsoft/fetch-event-source。
+  当前: module_ai/assistant.ts 手写 SSE 解析 -> 计划替换为 AI SDK；后端 SSE 已加 no-transform/X-Accel-Buffering。
+  待办并入 B-E：采用 AI SDK 重构聊天/运行台流式（含工具时间线/思考分片）。

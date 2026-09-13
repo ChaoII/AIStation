@@ -456,3 +456,17 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 - 现象：长时运行或大量 e2e 后，登录/接口返回"请求超时"；日志 `QueuePool limit of size ... overflow ... reached, connection timed out`。
 - 修复：调大连接池 —— `setting.py` 与 `env/.env.dev` 的 `POOL_SIZE=20`、`MAX_OVERFLOW=40`、`POOL_TIMEOUT=30`，保留 `POOL_RECYCLE=1800`、`POOL_PRE_PING=true`；出现时先重启后端。
 - 排查建议：关注流式接口/长事务是否长期占用会话；`OperationLogRoute` 会在响应后另开会话写日志。
+
+## 工程原则：优先成熟第三方库（用户强制要求）
+
+- **能用成熟库就不要手撸**（网络/流式/解析/图表/编辑器/日期等通用能力）。
+- **只选维护活跃**的项目，避免停更/僵尸库；引入前先调研（star/最近发布/issue 活跃度）。
+- 选型要有依据并写进设计与账本；优先 Web 事实标准（如 Vercel AI SDK）。
+
+### 流式（SSE）选型结论
+- 浏览器原生 `EventSource` 仅支持 GET、无法带 body/自定义头 → **聊天类必须用 fetch POST + ReadableStream 解析 SSE**。
+- **推荐：Vercel AI SDK**（`ai` v5 + `@ai-sdk/vue` 的 `useChat`）：负责传输/流式/消息状态/工具与推理分片，维护活跃、跨框架。
+- 解析层备选：`eventsource-parser`（AI SDK 亦使用）。
+- 不推荐：`@microsoft/fetch-event-source`（发布基本停滞）。
+- 生产常见坑：压缩中间件/反向代理会**缓冲**导致"整块才到"；需 `Cache-Control: no-transform` + `X-Accel-Buffering: no`，并避免压缩 SSE。
+- 现状：AI 聊天当前是手写 SSE 解析（`frontend/src/api/module_ai/assistant.ts`），**待迁移到 Vercel AI SDK**。
