@@ -349,3 +349,12 @@ PROGRAM Phase 0-5 全部功能与自动化回归完成（含 3C/3D/4/5A/5B）。
 改造页面（进页面请求数）：智能布控3->1、视频告警2->1(lazy tab)、视频联动2->1、视频布局2->1、录像2->1、训练任务4->2、训练详情评估/预测/部署去重、仓库/数据集/标注任务各1、统计2->1；启动 param/info 2->1
 提交: 28d05f9 / useOptions / 4d1c977 / 6a644a4 / 8b75a55 / d722506
 剩余合理的 page_size=100：训练评估/预测的模型名称映射、临时目录、相机分组（均属真实需要）
+
+=== AI 管理 + 大模型应用 ===
+Spec: docs/superpowers/specs/2026-09-13-ai-management-apps-design.md
+Plan: docs/superpowers/plans/2026-09-13-ai-management-apps.md
+后端: module_ai/provider(ai_models CRUD/脱敏/默认唯一/测试连接) + module_ai/report(ai_reports) + module_ai/assistant(16个工具 function-calling: 概览/数据集/标注任务/训练/模型/评估/预测/部署/相机/布控/告警/报告/导航/提议操作)；create_all 建表；_ensure_ai_menus 种子
+前端: module_ai/model 模型配置页 + module_ai/report 报告页(markdown-it) + AiAssistant 优先走 /ai/assistant/chat（工具结果/导航/待确认操作/报告提示）
+验证: backend pytest 283 passed（新增 5 用例）；vue-tsc 新增文件 0 错误；eslint clean；e2e/ai-model.spec.ts 通过
+提交: 后端 provider/report/assistant + 前端页面与助手接入
+已知限制: 助手无状态/非流式；工具只读；变更操作为前端二次确认后调用既有 API；需在 AI管理→模型配置 配置 OpenAI 兼容模型后助手才可用
