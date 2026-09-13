@@ -8,6 +8,7 @@
           :is-collapsed="isSidebarCollapsed"
           @select-session="handleSelectSession"
           @new-session="handleNewSession"
+          @delete-session="handleSessionDeleted"
         />
       </el-aside>
       <el-container class="chat-container">
@@ -199,7 +200,21 @@ const createNewSession = async (firstMessage: string): Promise<boolean> => {
 };
 
 // ============ 会话操作 ============
+// 对齐应用归属：以目标会话的 app_id 为准同步 appId 与地址栏 query。
+// 避免在 ?app_id= 下选中通用会话时仍走应用端点，并把 app_id 错盖到通用会话上。
+// appName 由 route.query.app_id 的 watch 负责刷新（query 未变时无需重复请求）。
+const syncAppContext = (targetAppId: number | null) => {
+  appId.value = targetAppId;
+  const current = route.query.app_id ? Number(route.query.app_id) : null;
+  if (targetAppId === current) return;
+  router.replace({
+    path: "/ai/chat",
+    query: targetAppId ? { app_id: String(targetAppId) } : {},
+  });
+};
+
 const handleSelectSession = async (session: AiSessionItem) => {
+  syncAppContext(session.app_id ?? null);
   currentSessionId.value = session.id;
   messages.value = [];
   chat.messages.value = [];
@@ -228,10 +243,21 @@ const handleSelectSession = async (session: AiSessionItem) => {
 };
 
 const handleNewSession = () => {
+  // 保留当前应用上下文：选中应用时新会话归属该 app，已清除应用时 appId 保持 null
   currentSessionId.value = null;
   messages.value = [];
   chat.messages.value = [];
   ElMessage.success("已开启新对话");
+};
+
+// 删除会话后，若删除的是当前激活会话，重置为“未落库”状态，
+// 让下一次发送重新创建会话，避免往已删除的 id 上落库（record_exchange 找不到行）。
+// 应用上下文由 ?app_id= 决定（切换会话时已对齐），删除当前会话不改变所在应用。
+const handleSessionDeleted = (ids: number[]) => {
+  if (currentSessionId.value == null || !ids.includes(currentSessionId.value)) return;
+  currentSessionId.value = null;
+  messages.value = [];
+  chat.messages.value = [];
 };
 
 const handleClearChat = async () => {

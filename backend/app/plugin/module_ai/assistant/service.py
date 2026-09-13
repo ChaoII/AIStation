@@ -224,15 +224,19 @@ async def run_assistant(message: str, auth) -> dict:
     user_id = getattr(getattr(auth, "user", None), "id", None)
 
     for _ in range(MAX_ROUNDS):
+        # 无工具 schema 时不传 tools/tool_choice（与 run_agent_ui_stream 对齐），
+        # 避免部分 provider 对空 tools 直接返回 400
+        kwargs: dict = {
+            "model": runtime["model"],
+            "messages": messages,
+            "temperature": runtime["temperature"],
+            "max_tokens": runtime["max_tokens"],
+        }
+        if tool_schemas:
+            kwargs["tools"] = tool_schemas
+            kwargs["tool_choice"] = "auto"
         try:
-            resp = await client.chat.completions.create(
-                model=runtime["model"],
-                messages=messages,
-                tools=tool_schemas,
-                tool_choice="auto",
-                temperature=runtime["temperature"],
-                max_tokens=runtime["max_tokens"],
-            )
+            resp = await client.chat.completions.create(**kwargs)
         except Exception as e:
             raise CustomException(msg=f"大模型调用失败：{e}")
 

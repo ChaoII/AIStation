@@ -41,6 +41,36 @@ test("智能助手输入框铺满且提示文案正确", async ({ page }) => {
   expect(box?.width ?? 0).toBeGreaterThan(600);
 });
 
+test("新建/切换会话后输入框仍可输入且无未捕获异常", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (e) => pageErrors.push(String(e)));
+
+  await page.goto("/#/ai/chat", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
+  await dismissTour(page);
+
+  const textarea = page.locator(".message-input textarea");
+  await expect(textarea).toBeVisible({ timeout: 10_000 });
+
+  // 新建会话后输入框仍可正常输入（引导遮罩可能残留拦截指针，用 evaluate 直击）
+  await page
+    .getByRole("button", { name: "开启新对话" })
+    .first()
+    .evaluate((el) => (el as HTMLElement).click());
+  await textarea.fill("e2e 会话切换检查");
+  await expect(textarea).toHaveValue("e2e 会话切换检查");
+  await textarea.fill("");
+
+  // 若存在历史会话，切换后输入框仍可用（覆盖 select-session 路径）
+  const firstSession = page.locator(".session-item").first();
+  if (await firstSession.count()) {
+    await firstSession.evaluate((el) => (el as HTMLElement).click());
+    await expect(textarea).toBeVisible();
+  }
+
+  expect(pageErrors, `页面抛出未捕获异常\n${pageErrors.join("\n")}`).toEqual([]);
+});
+
 test("带未知 app_id 打开智能助手不崩溃", async ({ page }) => {
   await page.goto("/#/ai/chat?app_id=999999", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });

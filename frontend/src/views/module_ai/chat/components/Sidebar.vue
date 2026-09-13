@@ -110,6 +110,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import dayjs from "dayjs";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   ChatLineRound,
@@ -137,6 +138,8 @@ interface Props {
 interface Emits {
   (e: "select-session", session: AiSessionItem): void;
   (e: "new-session"): void;
+  // 删除成功后通知父组件被删除的会话 id，便于重置当前激活会话
+  (e: "delete-session", ids: number[]): void;
 }
 
 const { currentSessionId, isCollapsed = false } = defineProps<Props>();
@@ -182,7 +185,9 @@ const groupedSessions = computed<SessionGroup[]>(() => {
   filteredSessions.value.forEach((session) => {
     const raw = session.updated_time || session.created_time;
     if (!raw) return;
-    const updatedTime = new Date(raw).getTime();
+    // 后端序列化为 "YYYY-MM-DD HH:MM:SS"（空格分隔），Safari 用 new Date() 会得到
+    // Invalid Date 导致会话被静默丢弃，这里统一交给 dayjs 解析
+    const updatedTime = dayjs(raw).valueOf();
     if (Number.isNaN(updatedTime)) return;
 
     if (updatedTime >= todayStart) {
@@ -250,11 +255,11 @@ const handleSessionCommand = async (command: string, session: AiSessionItem) => 
       if (index > -1) {
         sessions.value.splice(index, 1);
       }
-      ElMessage.success("已删除");
+      // 成功提示由全局 axios 拦截器统一弹出，这里不再重复
+      emit("delete-session", [session.id]);
     } catch (error) {
-      if (error !== "cancel") {
-        ElMessage.error("删除失败");
-      } else {
+      // 取消/关闭确认框才提示；接口失败已由全局拦截器提示，避免重复
+      if (error === "cancel" || error === "close") {
         ElMessage.info("已取消删除");
       }
     }
