@@ -231,7 +231,7 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
       } else if (event === "tool") {
         last.content += `\n\n> 🔧 调用工具：${data.name}`;
       } else if (event === "reasoning") {
-        last.content += "";
+        last.think = (last.think || "") + (data.text || "");
       } else if (event === "done") {
         if (data.report_id) last.content += `\n\n> 已生成报告 #${data.report_id}`;
       } else if (event === "error") {

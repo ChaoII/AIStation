@@ -3,6 +3,7 @@ export interface ChatMessage {
   id: string;
   type: "user" | "assistant";
   content: string;
+  think?: string;
   timestamp: number;
   loading?: boolean;
   collapsed?: boolean;

@@ -23,6 +23,10 @@
         ></el-button>
       </div>
       <div class="message-body">
+        <div v-if="message.think" class="think-block">
+          <span class="think-label">思考中…</span>
+          {{ message.think }}
+        </div>
         <div v-if="message.files && message.files.length > 0" class="message-files">
           <div v-for="file in message.files" :key="file.id" class="attached-file">
             <el-icon class="file-icon"><Document /></el-icon>
@@ -563,5 +567,20 @@ html.dark .chat-messages .message-text {
   .hljs-literal {
     color: var(--el-color-warning) !important;
   }
+}
+.think-block {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+  white-space: pre-wrap;
+  background: var(--el-fill-color-light);
+  border-left: 2px solid var(--el-border-color);
+  border-radius: 4px;
+}
+.think-label {
+  margin-right: 6px;
+  color: var(--el-color-primary);
 }
 </style>

@@ -68,6 +68,15 @@ class StatsService:
             )
             daily_trend = [{"date": str(r[0]), "count": r[1]} for r in daily_rows]
 
+            # 数据集图片数 Top10（供首页图表；聚合查询，避免前端拉 100 行列表）
+            top_ds_rows = await db.execute(
+                select(DatasetModel.name, DatasetModel.image_count)
+                .where(DatasetModel.is_deleted == False)  # noqa: E712
+                .order_by(DatasetModel.image_count.desc())
+                .limit(10)
+            )
+            top_datasets = [{"name": r[0], "image_count": r[1] or 0} for r in top_ds_rows]
+
             return {
                 "dataset_count": dataset_count or 0,
                 "task_count": task_count or 0,
@@ -77,6 +86,7 @@ class StatsService:
                 "tasks_by_status": tasks_by_status,
                 "images_by_status": images_by_status,
                 "daily_trend": daily_trend,
+                "top_datasets": top_datasets,
             }
 
     @classmethod
