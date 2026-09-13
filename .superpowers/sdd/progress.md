@@ -386,3 +386,14 @@ Spec: docs/superpowers/specs/2026-09-13-ai-platform-v2-design.md
   - 前端: cd frontend && pnpm type-check; pnpm e2e（ai-model/ai-console 等）
   - 运行台: 问"我们有几个数据集？共多少张图？" 应见 思考/逐字回复/工具时间线。
 下一步: 开新会话，从 B（提示词工作台）开始，逐项实现+测试+截图视觉验收。
+
+--- AI v2 追加要求（用户强反馈，必须遵守）---
+  5) 视觉必须与既有模块（如 系统设置/参数管理）**完全一致**：优先复用 Element Plus 组件原样
+     （el-card / el-descriptions / el-table / el-form / el-tag / el-statistic 等），
+     颜色/字体/字号/间距一律用 Element Plus 默认与 --el-* 变量；**不得自造主题化外壳**
+     （当前 ai-console.css 的自定义面板/指标卡观感被用户否定，需按框架组件重做或直接去掉）。
+     参考实现：frontend/src/views/module_system/param/index.vue 与 settings 分组。
+  6) 与其新建一套，不如在**旧的 AI 助手页面骨架**上迭代（其布局/交互用户更认可），
+     但数据链路换成新运行时+SSE 流式。旧页 /ai/chat 之前被 hidden，可按此方向恢复并改造。
+  7) 登录偶发"请求超时"根因: dev 后端 DB 连接池(QueuePool)被长时运行/大量 e2e 打满;
+     解决: 重启后端; 后续给 AI/整体可考虑调大 POOL_SIZE/MAX_OVERFLOW 或加连接回收。
