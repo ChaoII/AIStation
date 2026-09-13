@@ -219,6 +219,8 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = ""
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = ""
+    # 是否允许启用高危 Agno 工具（python/shell 等可执行任意代码/命令，默认关闭）
+    AI_ENABLE_DANGEROUS_TOOLS: bool = False
 
     # ================================================= #
     # ******************* ChromaDB配置 ****************** #

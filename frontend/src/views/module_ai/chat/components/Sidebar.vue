@@ -46,9 +46,7 @@
                   @click="handleSelectSession(session)"
                 >
                   <el-icon class="session-icon"><ChatLineRound /></el-icon>
-                  <span class="session-title">
-                    {{ session.title || session.session_data?.session_name || "未命名会话" }}
-                  </span>
+                  <span class="session-title">{{ session.title || "未命名会话" }}</span>
                   <el-dropdown
                     trigger="click"
                     @command="(cmd) => handleSessionCommand(cmd, session)"
@@ -56,8 +54,7 @@
                     <el-icon class="more-icon" @click.stop><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
-                        <el-dropdown-item command="rename">重命名</el-dropdown-item>
-                        <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                        <el-dropdown-item command="delete">删除</el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
                   </el-dropdown>
@@ -124,16 +121,21 @@ import {
   ArrowDown,
 } from "@element-plus/icons-vue";
 import { useUserStoreHook } from "@/store";
-import { ChatSession, SessionGroup, UserInfo } from "@/api/module_ai/chat";
-import AiChatAPI from "@/api/module_ai/chat";
+import { deleteAiSessions, getAiSessionList, type AiSessionItem } from "@/api/module_ai/session";
+
+interface SessionGroup {
+  id: string;
+  title: string;
+  sessions: AiSessionItem[];
+}
 
 interface Props {
-  currentSessionId?: string | null;
+  currentSessionId?: number | null;
   isCollapsed?: boolean;
 }
 
 interface Emits {
-  (e: "select-session", session: ChatSession): void;
+  (e: "select-session", session: AiSessionItem): void;
   (e: "new-session"): void;
 }
 
@@ -143,11 +145,11 @@ const emit = defineEmits<Emits>();
 const router = useRouter();
 const userStore = useUserStoreHook();
 
-const sessions = ref<ChatSession[]>([]);
+const sessions = ref<AiSessionItem[]>([]);
 const searchQuery = ref("");
 const collapsedGroups = ref<Set<string>>(new Set());
 
-const userInfo = computed<UserInfo>(() => ({
+const userInfo = computed(() => ({
   id: userStore.basicInfo.id || 0,
   name: userStore.basicInfo.name || "用户",
   username: userStore.basicInfo.username || "",
@@ -155,12 +157,12 @@ const userInfo = computed<UserInfo>(() => ({
   email: userStore.basicInfo.email || "",
 }));
 
-const filteredSessions = computed<ChatSession[]>(() => {
+const filteredSessions = computed<AiSessionItem[]>(() => {
   if (!searchQuery.value.trim()) {
     return sessions.value;
   }
   const query = searchQuery.value.toLowerCase();
-  return sessions.value.filter((session: ChatSession) =>
+  return sessions.value.filter((session: AiSessionItem) =>
     (session.title || "").toLowerCase().includes(query)
   );
 });
@@ -172,15 +174,16 @@ const groupedSessions = computed<SessionGroup[]>(() => {
   const yesterdayStart = todayStart - 24 * 60 * 60 * 1000;
   const weekAgo = todayStart - 7 * 24 * 60 * 60 * 1000;
 
-  const todaySessions: ChatSession[] = [];
-  const yesterdaySessions: ChatSession[] = [];
-  const weekSessions: ChatSession[] = [];
-  const earlierSessions: ChatSession[] = [];
+  const todaySessions: AiSessionItem[] = [];
+  const yesterdaySessions: AiSessionItem[] = [];
+  const weekSessions: AiSessionItem[] = [];
+  const earlierSessions: AiSessionItem[] = [];
 
   filteredSessions.value.forEach((session) => {
-    if (!session.updated_at) return;
-    // Unix 时间戳（秒）转换为毫秒
-    const updatedTime = session.updated_at * 1000;
+    const raw = session.updated_time || session.created_time;
+    if (!raw) return;
+    const updatedTime = new Date(raw).getTime();
+    if (Number.isNaN(updatedTime)) return;
 
     if (updatedTime >= todayStart) {
       todaySessions.push(session);
@@ -226,7 +229,7 @@ const toggleGroup = (groupTitle: string) => {
   collapsedGroups.value = newCollapsed;
 };
 
-const handleSelectSession = (session: ChatSession) => {
+const handleSelectSession = (session: AiSessionItem) => {
   emit("select-session", session);
 };
 
@@ -234,37 +237,20 @@ const handleNewSession = () => {
   emit("new-session");
 };
 
-const handleSessionCommand = async (command: string, session: ChatSession) => {
-  if (command === "rename") {
-    try {
-      const { value } = await ElMessageBox.prompt("请输入新的会话名称", "重命名", {
-        confirmButtonText: "确定",
-        cancelButtonText: "取消",
-        inputPattern: /.+/,
-        inputErrorMessage: "会话名称不能为空",
-      });
-      await AiChatAPI.updateSession(session.id, { title: value });
-      session.title = value;
-      ElMessage.success("重命名成功");
-    } catch (error) {
-      if (error !== "cancel") {
-        ElMessage.error("重命名失败");
-      } else {
-        ElMessage.info("已取消重命名");
-      }
-    }
-  } else if (command === "delete") {
+const handleSessionCommand = async (command: string, session: AiSessionItem) => {
+  if (command === "delete") {
     try {
       await ElMessageBox.confirm("确定要删除此会话吗？", "确认删除", {
         confirmButtonText: "确定",
         cancelButtonText: "取消",
         type: "warning",
       });
-      await AiChatAPI.deleteSession([session.id]);
-      const index = sessions.value.findIndex((s: ChatSession) => s.id === session.id);
+      await deleteAiSessions([session.id]);
+      const index = sessions.value.findIndex((s: AiSessionItem) => s.id === session.id);
       if (index > -1) {
         sessions.value.splice(index, 1);
       }
+      ElMessage.success("已删除");
     } catch (error) {
       if (error !== "cancel") {
         ElMessage.error("删除失败");
@@ -289,37 +275,10 @@ const handleUserCommand = (command: string) => {
 
 const loadSessions = async () => {
   try {
-    const res = await AiChatAPI.getSessionList({ page_no: 1, page_size: 100 });
-    const responseData = res.data;
-    const data = responseData?.data;
-
-    if (data?.items && Array.isArray(data.items)) {
-      sessions.value = data.items
-        .filter((item: any) => item.session_id !== undefined)
-        .map((item: any) => ({
-          id: item.session_id,
-          title: item.session_data?.session_name || item.session_id?.slice(0, 8) || "新会话",
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          message_count: item.runs?.length || 0,
-          session_id: item.session_id,
-          session_type: item.session_type,
-          agent_id: item.agent_id,
-          user_id: item.user_id,
-          team_id: item.team_id,
-          team_name: item.team_name,
-          workflow_id: item.workflow_id,
-          summary: item.summary,
-          metadata: item.metadata,
-          runs: item.runs,
-          session_data: item.session_data,
-          agent_data: item.agent_data,
-          team_data: item.team_data,
-          workflow_data: item.workflow_data,
-          created_time: item.created_at ? new Date(item.created_at * 1000).toISOString() : null,
-          updated_time: item.updated_at ? new Date(item.updated_at * 1000).toISOString() : null,
-          messages: item.runs?.flatMap((run: any) => run.messages || []) || [],
-        }));
+    const res = await getAiSessionList();
+    const data = res.data?.data;
+    if (Array.isArray(data)) {
+      sessions.value = data;
     }
   } catch (error) {
     console.error("加载会话列表失败:", error);

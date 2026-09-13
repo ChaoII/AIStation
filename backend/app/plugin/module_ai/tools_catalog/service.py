@@ -69,7 +69,7 @@ def _tool_source(t: AiToolModel) -> str:
 
 
 def _readiness_of(t: AiToolModel) -> tuple[bool, str]:
-    """按来源判定工具就绪性：agno 走注册表（依赖 + 必填配置），其余恒就绪。"""
+    """按来源判定工具就绪性：agno 走注册表（依赖 + 必填配置 + 高危门禁），其余恒就绪。"""
     if _tool_source(t) == "agno":
         from app.plugin.module_ai.agno_tools import service as agno
 
@@ -77,6 +77,13 @@ def _readiness_of(t: AiToolModel) -> tuple[bool, str]:
         if spec:
             return agno.readiness(spec, t.config)
     return True, ""
+
+
+def _assert_enableable(t: AiToolModel) -> None:
+    """启用前校验：未就绪（缺依赖/缺必填配置/高危门禁关闭）一律拒绝，抛 CustomException。"""
+    ready, reason = _readiness_of(t)
+    if not ready:
+        raise CustomException(msg=reason or "工具未就绪，无法启用")
 
 
 def _agno_meta(t: AiToolModel) -> dict:
@@ -201,6 +208,9 @@ async def get_enabled_tool_schemas() -> list[dict]:
 
     from app.plugin.module_ai.agno_tools import service as agno
 
+    # 每次重建派发表：只保留当前启用且就绪的工具，避免禁用工具的函数名残留可派发
+    agno.reset_registry()
+
     # 预留系统与 HTTP 工具名，避免 Agno 生成名与它们重名
     reserved: set[str] = set(TOOL_REGISTRY.keys())
     reserved.update(t.name for t in rows if _source_of_row(t) == "http")
@@ -245,9 +255,16 @@ async def dispatch_tool(
     resolved = agno.resolve_function(name)
     if resolved is not None:
         spec, fn_name = resolved
+        # 派发前校验 DB 行启用 + 就绪（含高危门禁），禁用工具绝不可执行
+        row = await get_tool_by_name(spec["key"])
+        if row is None or not row.enabled or not agno.readiness(spec, row.config)[0]:
+            return {"error": "工具未启用"}
         return await agno.execute(spec, fn_name, args, agno.resolve_config(name))
 
     if name in TOOL_REGISTRY:
+        row = await get_tool_by_name(name)
+        if row is None or not row.enabled:
+            return {"error": "工具未启用"}
         from app.plugin.module_ai.assistant.service import _call_tool
 
         return await _call_tool(name, args, user_id)
@@ -256,6 +273,8 @@ async def dispatch_tool(
     if tool is None:
         tool = await get_tool_by_name(name)
     if tool is not None and _source_of_row(tool) == "http":
+        if not tool.enabled:
+            return {"error": "工具未启用"}
         try:
             return await execute_http_tool(tool, args)
         except Exception as e:  # noqa: BLE001  HTTP 工具异常兜底，不中断对话
@@ -348,6 +367,9 @@ class AiToolService:
                 t.method = data.method.upper()
             if data.url is not None:
                 t.url = data.url
+            # 启用态一律要求就绪（含高危门禁），避免绕过 toggle 把高危工具打开
+            if t.enabled:
+                _assert_enableable(t)
             t.updated_id = auth.user.id
             await db.flush()
             return _to_dict(t)
@@ -366,6 +388,9 @@ class AiToolService:
             t = await db.get(AiToolModel, tool_id)
             if not t or t.is_deleted:
                 return None
+            # 启用前必须就绪：缺依赖/缺配置或高危门禁关闭时拒绝，防止一键开启任意代码执行
+            if enabled:
+                _assert_enableable(t)
             t.enabled = bool(enabled)
             t.updated_id = auth.user.id
             await db.flush()

@@ -362,6 +362,24 @@ async def _ensure_ai_menus() -> None:
                 .where(MenuModel.component_path == "module_ai/chat/index")
                 .values(hidden=False)
             )
+            # 智能助手菜单权限与流式/会话接口对齐（旧的 module_ai:chat:* 页面已不再使用）
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "Chat")
+                .values(permission="module_ai:assistant:query")
+            )
+            chat_menu = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "Chat")
+            )
+            if chat_menu:
+                link = await db.scalar(
+                    select(RoleMenusModel).where(
+                        RoleMenusModel.role_id == 1,
+                        RoleMenusModel.menu_id == chat_menu.id,
+                    )
+                )
+                if not link:
+                    db.add(RoleMenusModel(role_id=1, menu_id=chat_menu.id))
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name.in_(REMOVED_ROUTE_NAMES))

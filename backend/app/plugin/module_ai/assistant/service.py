@@ -7,7 +7,7 @@ import json
 from app.core.exceptions import CustomException
 from app.plugin.module_ai.provider.service import AiModelService
 
-from .tools import TOOL_REGISTRY, TOOL_SCHEMAS
+from .tools import TOOL_REGISTRY
 
 SYSTEM_PROMPT = (
     "你是 AIStation 平台的智能助手。你可以调用工具查询系统数据、生成报告、发起页面导航或提议操作。"
@@ -22,15 +22,18 @@ MAX_ROUNDS = 6
 async def _load_tool_schemas() -> list[dict]:
     """取启用工具的合并 schema（system/agno/http）。
 
-    仅在查询**异常**（DB/schema 加载失败）时回退内置静态列表；查询成功但为空
-    （管理员禁用了全部工具）时必须返回 ``[]``，不得重新暴露内置工具。
+    查询**异常**（DB/schema 加载失败）时返回 ``[]``（记警告），绝不回退内置
+    ``TOOL_SCHEMAS``：一次 DB 抖动不应把管理员已禁用的内置工具全部重新暴露给模型。
     """
     from app.plugin.module_ai.tools_catalog.service import get_enabled_tool_schemas
 
     try:
         return await get_enabled_tool_schemas()
-    except Exception:  # noqa: BLE001  数据库异常不应阻断对话
-        return TOOL_SCHEMAS
+    except Exception as e:  # noqa: BLE001  数据库异常不应阻断对话
+        from app.core.logger import logger
+
+        logger.warning(f"加载启用工具 schema 失败，按无工具处理: {e}")
+        return []
 
 
 async def _call_tool(name: str, args: dict, user_id: int | None) -> object:

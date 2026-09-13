@@ -11,6 +11,10 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import typing
+from collections.abc import Sequence as ABCSequence
+
+from app.config.setting import settings
 
 from .registry import AGNO_BY_KEY, AGNO_CATALOG
 
@@ -27,8 +31,14 @@ _TYPE_MAP: dict[object, str] = {
     bool: "boolean",
 }
 
-# 生成 schema 时忽略的特殊参数名
-_SKIP_PARAMS = {"self", "args", "kwargs"}
+# 数组注解的 origin（typing.List / list / Sequence / tuple）
+_ARRAY_ORIGINS = (list, tuple, ABCSequence)
+
+
+def reset_registry() -> None:
+    """清空进程级派发表/配置表，避免已禁用工具的函数名残留可派发。"""
+    _DISPATCH.clear()
+    _CONFIG_BY_NAME.clear()
 
 
 def get_spec(key: str) -> dict | None:
@@ -64,7 +74,11 @@ def readiness(spec: dict, config: dict | None) -> tuple[bool, str]:
     - 依赖缺失/类不可用 → ``_probe`` 的 ``(False, reason)``。
     - ``config_fields`` 中 ``required: True`` 的字段在已存 ``config`` 中缺失或为空
       → ``(False, "缺少配置：<字段名>")``。
+    - ``risk == "high"`` 且未开启 ``AI_ENABLE_DANGEROUS_TOOLS`` → 直接判未就绪，
+      使其既不能启用、也不会进入 ``get_enabled_tool_schemas``（永不可派发）。
     """
+    if spec.get("risk") == "high" and not settings.AI_ENABLE_DANGEROUS_TOOLS:
+        return False, "高危工具默认禁用（需开启 AI_ENABLE_DANGEROUS_TOOLS）"
     ready, reason = _probe(spec)
     if not ready:
         return ready, reason
@@ -127,9 +141,15 @@ def _instantiate(spec: dict, config: dict | None = None):
 
 
 def _param_schema(p: inspect.Parameter) -> dict:
-    """由单个参数推导 JSON Schema 片段。"""
-    schema: dict = {"type": _TYPE_MAP.get(p.annotation, "string")}
-    return schema
+    """由单个参数推导 JSON Schema 片段。
+
+    - ``List[str]`` / ``Sequence[str]`` / ``list[str]`` / ``tuple[...]`` → 字符串数组，
+      避免把 shell 的 ``args`` 之类命令参数误判为单个字符串（否则工具无法调用）。
+    - 其余已声明基础类型用 ``_TYPE_MAP``，未知注解退化为 ``string``。
+    """
+    if typing.get_origin(p.annotation) in _ARRAY_ORIGINS:
+        return {"type": "array", "items": {"type": "string"}}
+    return {"type": _TYPE_MAP.get(p.annotation, "string")}
 
 
 def _build_parameters(fn) -> dict:
@@ -141,8 +161,8 @@ def _build_parameters(fn) -> dict:
     props: dict = {}
     required: list[str] = []
     for pname, p in sig.parameters.items():
-        if pname in _SKIP_PARAMS:
-            continue
+        # 仅按 kind 过滤 *args/**kwargs；不再按名称跳过 args/self
+        # （ShellTools.run_shell_command 的命令参数就叫 args，跳过会导致工具无法调用）
         if p.kind in (
             inspect.Parameter.VAR_POSITIONAL,
             inspect.Parameter.VAR_KEYWORD,

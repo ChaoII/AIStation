@@ -79,6 +79,8 @@ def test_ai_menus_collapsed(test_client):
         assert menus[rname].hidden is False, f"{rname} 被误隐藏"
     assert menus["Chat"].hidden is False, "chat 不应被隐藏"
     assert menus["AI"].redirect == "/ai/chat"
+    # 智能助手菜单权限与流式/会话接口对齐
+    assert menus["Chat"].permission == "module_ai:assistant:query"
 
 
 def test_ai_button_perms_drop_provider_report():

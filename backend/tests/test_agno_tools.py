@@ -59,13 +59,33 @@ def test_build_openai_schemas_unique_name_fallback():
     assert agno.resolve_function("calculator_add")[1] == "add"
 
 
+def _set_tool_enabled(name: str, enabled: bool) -> None:
+    """直接改 DB 启用态（绕开 API 门禁，仅供测试准备/还原）。"""
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+
+    async def _run() -> None:
+        async with async_db_session.begin() as db:
+            t = await db.scalar(select(AiToolModel).where(AiToolModel.name == name))
+            if t:
+                t.enabled = enabled
+
+    asyncio.run(_run())
+
+
 def test_dispatch_executes_calculator_add():
-    """通过分派路径执行 calculator.add 返回结果。"""
+    """通过分派路径执行 calculator.add 返回结果（工具需处于启用态）。"""
     from app.plugin.module_ai.tools_catalog.service import dispatch_tool
 
     spec = _specs()["calculator"]
     agno.build_openai_schemas(spec, used_names=set())
-    result = asyncio.run(dispatch_tool("add", {"a": 1, "b": 2}, user_id=1))
+    _set_tool_enabled("calculator", True)
+    try:
+        result = asyncio.run(dispatch_tool("add", {"a": 1, "b": 2}, user_id=1))
+    finally:
+        _set_tool_enabled("calculator", False)
     if isinstance(result, str):
         result = json.loads(result)
     assert result["result"] == 3
@@ -86,9 +106,90 @@ def test_dispatch_passes_toolkit_config(monkeypatch):
         return {"ok": True}
 
     monkeypatch.setattr(agno, "execute", _fake_execute)
-    result = asyncio.run(tools_service.dispatch_tool("add", {"a": 1, "b": 2}, 1))
+    _set_tool_enabled("calculator", True)
+    try:
+        result = asyncio.run(tools_service.dispatch_tool("add", {"a": 1, "b": 2}, 1))
+    finally:
+        _set_tool_enabled("calculator", False)
     assert result == {"ok": True}
     assert captured["config"] == {"api_key": "sk-cfg"}
+
+
+def test_disabled_tool_dispatch_rejected():
+    """停用的 Agno 工具即使名字仍在派发表中，也不可执行。"""
+    from app.plugin.module_ai.tools_catalog.service import dispatch_tool
+
+    spec = _specs()["calculator"]
+    agno.build_openai_schemas(spec, used_names=set())  # 注册派发名
+    _set_tool_enabled("calculator", False)
+    result = asyncio.run(dispatch_tool("add", {"a": 1, "b": 2}, user_id=1))
+    assert result == {"error": "工具未启用"}
+
+
+def test_shell_args_param_is_array():
+    """ShellTools.run_shell_command 的 args 应生成 array<string> 且必填（不能被按名跳过）。"""
+    spec = agno.get_spec("shell")
+    by_name = {
+        s["function"]["name"]: s
+        for s in agno.build_openai_schemas(spec, used_names=set())
+    }
+    shell = by_name["run_shell_command"]["function"]["parameters"]
+    assert shell["properties"]["args"]["type"] == "array"
+    assert shell["properties"]["args"]["items"]["type"] == "string"
+    assert "args" in shell["required"]
+
+    py = {
+        s["function"]["name"]: s
+        for s in agno.build_openai_schemas(agno.get_spec("python"), used_names=set())
+    }
+    code = py["run_python_code"]["function"]["parameters"]
+    assert code["properties"]["code"]["type"] == "string"
+    assert code["required"] == ["code"]
+
+
+def test_high_risk_tool_gated_by_flag(monkeypatch):
+    """高危工具默认未就绪；开启 AI_ENABLE_DANGEROUS_TOOLS 后才就绪。"""
+    from app.config.setting import settings
+
+    monkeypatch.setattr(settings, "AI_ENABLE_DANGEROUS_TOOLS", False)
+    for key in ("shell", "python"):
+        ready, reason = agno.readiness(agno.get_spec(key), None)
+        assert ready is False
+        assert "AI_ENABLE_DANGEROUS_TOOLS" in reason
+
+    monkeypatch.setattr(settings, "AI_ENABLE_DANGEROUS_TOOLS", True)
+    for key in ("shell", "python"):
+        ready, reason = agno.readiness(agno.get_spec(key), None)
+        assert ready is True
+        assert reason == ""
+
+
+def test_high_risk_tool_absent_from_schemas_when_flag_off(monkeypatch):
+    """门禁关闭时，即使 DB 行被强制启用，shell 也不进入启用 schema 列表。"""
+    from app.config.setting import settings
+    from app.plugin.module_ai.tools_catalog.service import get_enabled_tool_schemas
+
+    monkeypatch.setattr(settings, "AI_ENABLE_DANGEROUS_TOOLS", False)
+    _set_tool_enabled("shell", True)
+    try:
+        names = {
+            s["function"]["name"] for s in asyncio.run(get_enabled_tool_schemas())
+        }
+        assert "run_shell_command" not in names
+    finally:
+        _set_tool_enabled("shell", False)
+
+
+def test_toggle_high_risk_rejected_when_flag_off(test_client, auth_headers):
+    """高危工具未就绪时 toggle 启用应被拒绝。"""
+    row = _tool_row(test_client, auth_headers, "python")
+    assert row is not None
+    r = test_client.put(
+        f"/api/v1/ai/tools/toggle/{row['id']}",
+        json={"enabled": True},
+        headers=auth_headers,
+    )
+    assert r.status_code != 200, r.text
 
 
 def test_execute_unknown_function_returns_error():
@@ -277,8 +378,8 @@ def test_load_tool_schemas_no_fallback_when_all_disabled(monkeypatch):
     assert TOOL_SCHEMAS  # 内置静态列表存在，但不得被回落
 
 
-def test_load_tool_schemas_falls_back_on_exception(monkeypatch):
-    """仅在查询异常时回退内置 TOOL_SCHEMAS。"""
+def test_load_tool_schemas_returns_empty_on_exception(monkeypatch):
+    """查询异常时返回 []，绝不回退内置 TOOL_SCHEMAS（DB 抖动不得重开禁用工具）。"""
     from app.plugin.module_ai.assistant import service as assistant
     from app.plugin.module_ai.assistant.tools import TOOL_SCHEMAS
     from app.plugin.module_ai.tools_catalog import service as catalog
@@ -287,7 +388,8 @@ def test_load_tool_schemas_falls_back_on_exception(monkeypatch):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(catalog, "get_enabled_tool_schemas", _boom)
-    assert asyncio.run(assistant._load_tool_schemas()) == TOOL_SCHEMAS
+    assert asyncio.run(assistant._load_tool_schemas()) == []
+    assert TOOL_SCHEMAS  # 内置静态列表存在，但不得被回落
 
 
 def _stored_tool(tool_id: int):

@@ -51,7 +51,7 @@ import ChatNavbar from "./components/ChatNavbar.vue";
 import ChatMessages from "./components/ChatMessages.vue";
 import ChatInput from "./components/ChatInput.vue";
 import Sidebar from "./components/Sidebar.vue";
-import AiChatAPI, { ChatSession } from "@/api/module_ai/chat";
+import { createAiSession, getAiSessionDetail, type AiSessionItem } from "@/api/module_ai/session";
 import { getAiAppDetail } from "@/api/module_ai/app";
 import { useAiChat } from "@/composables/ai/useAiChat";
 import { textOf, reasoningOf, toolPartsOf } from "@/composables/ai/uiMessage";
@@ -63,7 +63,8 @@ const router = useRouter();
 // 状态
 const messages = ref<ChatMessage[]>([]);
 const error = ref("");
-const currentSessionId = ref<string | null>(null);
+// 运行时 ai_sessions 主键为整数；null 表示尚未落库的新会话
+const currentSessionId = ref<number | null>(null);
 const isSidebarCollapsed = ref(false);
 
 // 运行中的 AI 应用（?app_id=）：非空时流式走 /ai/apps/{id}/run/stream
@@ -101,22 +102,16 @@ watch(
   { immediate: true }
 );
 
-// 助手/应用流的 session_id 为整数（ai_sessions 主键）；当前会话栏沿用旧 Agno 会话（UUID 字符串），
-// 直接透传会触发后端 422，故仅在可解析为整数时才携带（在 body 回调内读取，避免成为 transport 依赖）。
-const streamSessionId = (): number | undefined => {
-  const raw = currentSessionId.value;
-  // 严格整数校验：空串/纯空白/小数（如 "1.5"）一律不携带
-  if (raw === null || raw.trim() === "") return undefined;
-  const parsed = Number(raw);
-  return Number.isInteger(parsed) ? parsed : undefined;
-};
-
-// AI SDK 流式聊天（getter：随所选应用动态切换 path/body，替代旧 Agno WS）
+// AI SDK 流式聊天（getter：随所选应用动态切换 path/body，替代旧 Agno WS）。
+// body 在发送时读取响应式值：session_id 为 ai_sessions 整数主键（persist_session_exchange 需要），
+// 选中应用时附 app_id 供新建会话记录归属。
 const chat = useAiChat(() => ({
   path: appId.value ? `/ai/apps/${appId.value}/run/stream` : "/ai/assistant/stream",
   body: () => {
-    const sessionId = streamSessionId();
-    return sessionId === undefined ? {} : { session_id: sessionId };
+    const payload: Record<string, unknown> = {};
+    if (currentSessionId.value != null) payload.session_id = currentSessionId.value;
+    if (appId.value != null) payload.app_id = appId.value;
+    return payload;
   },
 }));
 const isSending = computed(
@@ -151,22 +146,6 @@ const liveMessages = computed<ChatMessage[]>(() =>
 // 历史会话消息（只读）+ 当前流式消息
 const displayMessages = computed<ChatMessage[]>(() => [...messages.value, ...liveMessages.value]);
 
-// ============ 消息处理 ============
-const addMessage = (type: "user" | "assistant", content: string, files?: UploadedFile[]) => {
-  messages.value.push({
-    id: generateId(),
-    type,
-    content,
-    timestamp: Date.now(),
-    collapsed: content.length > 200,
-    files,
-  });
-};
-
-const generateId = () => {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
-};
-
 // ============ 发送消息 ============
 const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
   // 重置上一轮错误状态，避免历史失败提示残留
@@ -199,46 +178,50 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
 };
 
 const createNewSession = async (firstMessage: string): Promise<boolean> => {
+  const title = firstMessage.slice(0, 20) + (firstMessage.length > 20 ? "..." : "");
   try {
-    const title = firstMessage.slice(0, 20) + (firstMessage.length > 20 ? "..." : "");
-    const res = await AiChatAPI.createSession({ title });
-
-    if (res.data?.code === 0 || res.data?.success) {
-      currentSessionId.value = res.data.data?.id ?? null;
+    // 运行时会话：写入 ai_sessions（整数主键），选中应用时记录 app_id
+    const res = await createAiSession({ title, app_id: appId.value });
+    const created = res.data?.data;
+    if (created?.id != null) {
+      currentSessionId.value = created.id;
       sidebarRef.value?.loadSessions();
       return true;
     }
-    throw new Error("创建会话失败");
-  } catch {
+    ElMessage.error("创建会话失败");
+    return false;
+  } catch (e: any) {
+    // 请求层通常已弹提示；仅对未被覆盖的异常兜底，保证创建失败绝不静默
+    const alreadyToasted = !!(e?.data?.msg || e?.msg || e instanceof Error);
+    if (!alreadyToasted) ElMessage.error("创建会话失败");
     return false;
   }
 };
 
 // ============ 会话操作 ============
-const handleSelectSession = async (session: ChatSession) => {
+const handleSelectSession = async (session: AiSessionItem) => {
   currentSessionId.value = session.id;
   messages.value = [];
   chat.messages.value = [];
 
   try {
-    const response = await AiChatAPI.getSessionDetail(session.id);
-    if (response.data?.code !== 0) {
-      return;
-    }
+    const res = await getAiSessionDetail(session.id);
+    const detail = res.data?.data;
+    if (!detail) return;
 
-    const sessionData = response.data.data || {};
-    const runs = sessionData.runs || [];
+    // 从落库 parts 还原为 AI SDK UIMessage，既用于展示也作为后续对话上下文
+    chat.messages.value = (detail.messages || [])
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        id: String(m.id),
+        role: m.role as "user" | "assistant",
+        parts: (m.parts || [])
+          .filter((p) => p.type === "text" && p.text)
+          .map((p) => ({ type: "text" as const, text: String(p.text) })),
+      }))
+      .filter((m) => m.parts.length > 0);
 
-    runs.forEach((run: any) => {
-      const runMessages = run.messages || [];
-      runMessages.forEach((msg: any) => {
-        if (msg.role === "user" || msg.role === "assistant") {
-          addMessage(msg.role, msg.content);
-        }
-      });
-    });
-
-    ElMessage.success(`已切换到会话：${session.title}`);
+    ElMessage.success(`已切换到会话：${detail.title || "未命名会话"}`);
   } catch {
     ElMessage.error("获取会话详情失败");
   }

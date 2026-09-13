@@ -58,6 +58,15 @@
                 {{ sourceLabel(tool.source) }}
               </el-tag>
               <el-tag
+                v-if="tool.risk === 'high'"
+                size="small"
+                type="danger"
+                class="tool-card__risk"
+                data-testid="tool-risk-tag"
+              >
+                高危
+              </el-tag>
+              <el-tag
                 size="small"
                 :type="tool.ready ? 'success' : 'warning'"
                 class="tool-card__ready"
@@ -366,6 +375,18 @@ async function refreshList() {
 
 async function onToggle(tool: AiToolRow, enabled: boolean) {
   if (!tool.ready) return;
+  // 高危工具启用前二次确认（后端另有门禁，前端仅作显式提示）
+  if (enabled && tool.risk === "high") {
+    try {
+      await ElMessageBox.confirm(
+        `「${displayName(tool)}」属高危工具，启用后可执行任意代码/命令，确认启用？`,
+        "高危操作确认",
+        { confirmButtonText: "确认启用", cancelButtonText: "取消", type: "warning" }
+      );
+    } catch {
+      return; // 用户取消，保持关闭
+    }
+  }
   try {
     await toggleAiTool(tool.id, enabled);
     tool.enabled = enabled;
