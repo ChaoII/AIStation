@@ -221,7 +221,7 @@ const dataFormRef = ref();
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_ai:model",
   colon: true,
-  showNumber: 1,
+  showNumber: 2,
   form: { labelWidth: "auto" },
   formItems: [
     {
