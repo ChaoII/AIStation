@@ -302,11 +302,11 @@ async def _ensure_ai_menus() -> None:
                 log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
                 return
 
-            # 父菜单重定向到新控制台；下线旧 AI 聊天/会话记忆页（仅保留新控制台/运行台）
+            # 恢复旧 AI 聊天/记忆页（仅用于样式参考）；父菜单回到聊天页
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name == "AI", MenuModel.type == 1)
-                .values(redirect="/ai/overview")
+                .values(redirect="/ai/chat")
             )
             await db.execute(
                 update(MenuModel)
@@ -315,7 +315,7 @@ async def _ensure_ai_menus() -> None:
                         ["module_ai/chat/index", "module_ai/memory/index"]
                     )
                 )
-                .values(hidden=True)
+                .values(hidden=False)
             )
 
             pages = [
