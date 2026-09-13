@@ -174,6 +174,47 @@ def test_ui_stream_no_runtime_model_emits_error_and_finish(monkeypatch, test_cli
     assert "data: [DONE]" in body
 
 
+def test_ui_stream_midstream_error_emits_terminal_frames(
+    monkeypatch, test_client, auth_headers
+):
+    """流中途异常（工具/解析/网络）：仍补发 error + data-finish + finish + [DONE]。"""
+    import openai
+
+    def _raising_client():
+        class _Completions:
+            async def create(self, **kwargs):
+                async def _gen():
+                    yield _FakeChunk(_FakeDelta(content="部分回复"))
+                    raise RuntimeError("mid stream boom")
+
+                return _gen()
+
+        class _Chat:
+            def __init__(self):
+                self.completions = _Completions()
+
+        class _Client:
+            def __init__(self, *a, **k):
+                self.chat = _Chat()
+
+        return _Client
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _raising_client())
+    _patch_runtime(monkeypatch)
+
+    r = test_client.post(
+        "/api/v1/ai/assistant/stream",
+        json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.text
+    assert '"type": "error"' in body
+    assert '"type": "data-finish"' in body
+    assert '"type": "finish"' in body
+    assert "data: [DONE]" in body
+
+
 def test_add_log_persists_user_id(test_client, auth_headers):
     """回归：旧实现写不存在的 created_id 导致日志静默丢失。"""
     from sqlalchemy import select

@@ -16,10 +16,10 @@ AiSessionRouter = APIRouter(route_class=OperationLogRoute, prefix="/sessions", t
 
 
 def _ensure_session_owner(session: dict, auth: AuthSchema) -> None:
-    """会话归属校验：user_id 已设置且非当前用户时按“不存在”拒绝（防 IDOR）。"""
+    """会话归属校验：归属缺失或非当前用户一律按“不存在”拒绝（防 IDOR，deny-by-default）。"""
     uid = getattr(getattr(auth, "user", None), "id", None)
     owner = session.get("user_id")
-    if owner is not None and owner != uid:
+    if owner is None or owner != uid:
         raise CustomException(msg="会话不存在", status_code=status.HTTP_404_NOT_FOUND)
 
 

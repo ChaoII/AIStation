@@ -153,6 +153,55 @@ def test_http_tool_test_endpoint(monkeypatch, test_client, auth_headers):
         _delete_tools(test_client, auth_headers, [tid])
 
 
+def _stored_headers(tool_id: int):
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+
+    async def _get():
+        async with async_db_session() as db:
+            t = await db.get(AiToolModel, tool_id)
+            return dict(t.headers or {})
+
+    return asyncio.run(_get())
+
+
+def test_http_tool_headers_masked_and_kept_on_update(test_client, auth_headers):
+    """请求头脱敏：列表只回显键+****；更新传 **** 保留原值，新值覆盖，缺失键移除。"""
+    import json as _json
+
+    secret = "Bearer super-secret-xyz"
+    tid = _create_tool(
+        test_client, auth_headers, headers={"Authorization": secret, "X-Test": "1"}
+    )
+    try:
+        rows = test_client.get("/api/v1/ai/tools/list", headers=auth_headers).json()["data"]
+        row = next(r for r in rows if r["id"] == tid)
+        assert secret not in _json.dumps(row, ensure_ascii=False)
+        assert row["headers"] == {"Authorization": "****", "X-Test": "****"}
+
+        # 传 **** → 保留已存原值
+        upd = test_client.put(
+            f"/api/v1/ai/tools/update/{tid}",
+            json={"headers": {"Authorization": "****", "X-Test": "****"}},
+            headers=auth_headers,
+        )
+        assert upd.status_code == 200, upd.text
+        stored = _stored_headers(tid)
+        assert stored["Authorization"] == secret
+        assert stored["X-Test"] == "1"
+
+        # 传新值 → 覆盖；未出现的键 → 移除
+        upd2 = test_client.put(
+            f"/api/v1/ai/tools/update/{tid}",
+            json={"headers": {"Authorization": "Bearer new-secret"}},
+            headers=auth_headers,
+        )
+        assert upd2.status_code == 200, upd2.text
+        assert _stored_headers(tid) == {"Authorization": "Bearer new-secret"}
+    finally:
+        _delete_tools(test_client, auth_headers, [tid])
+
+
 def test_get_enabled_tool_schemas_excludes_disabled(test_client, auth_headers):
     """禁用的工具不出现在启用工具 schema 列表中。"""
     from app.plugin.module_ai.tools_catalog.service import get_enabled_tool_schemas

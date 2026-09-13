@@ -1,5 +1,6 @@
 """AI 会话（ai_sessions/ai_messages）与调用日志查询。"""
 import asyncio
+import json
 import uuid
 from types import SimpleNamespace
 
@@ -18,6 +19,19 @@ class _FakeDelta:
 class _FakeChunk:
     def __init__(self, delta):
         self.choices = [SimpleNamespace(delta=delta)]
+
+
+class _FakeFunctionDelta:
+    def __init__(self, name=None, arguments=None):
+        self.name = name
+        self.arguments = arguments
+
+
+class _FakeToolCallDelta:
+    def __init__(self, name, args, index=0, call_id="call_sess_1"):
+        self.index = index
+        self.id = call_id
+        self.function = _FakeFunctionDelta(name, json.dumps(args))
 
 
 def _make_stream_client(rounds):
@@ -304,6 +318,139 @@ def test_session_ownership_enforced(test_client, auth_headers):
         assert asyncio.run(_still_there()) is not None
     finally:
         asyncio.run(AiSessionService.delete([other_id]))
+
+
+def test_stream_cannot_write_other_users_session(monkeypatch, test_client, auth_headers):
+    """越权写入：以当前用户跑带他人 session_id 的流，不产生任何消息。"""
+    import openai
+
+    from app.plugin.module_ai.sessions.service import AiSessionService
+
+    async def _create():
+        return await AiSessionService.create("他人只读会话", app_id=None, user_id=888888)
+
+    other_id = asyncio.run(_create())["id"]
+    rounds = [[_FakeChunk(_FakeDelta(content="越权回复"))]]
+    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
+    _patch_runtime(monkeypatch)
+
+    try:
+        r = test_client.post(
+            "/api/v1/ai/assistant/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "你好"}]}],
+                "session_id": other_id,
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+
+        async def _msgs():
+            return await AiSessionService.get_messages(other_id)
+
+        assert asyncio.run(_msgs()) == []
+    finally:
+        asyncio.run(AiSessionService.delete([other_id]))
+
+
+def test_session_owner_none_is_denied(test_client, auth_headers):
+    """归属缺失（user_id=None）按 deny-by-default 拒绝 detail/delete 与落库。"""
+    from app.plugin.module_ai.sessions.service import (
+        AiSessionService,
+        persist_session_exchange,
+    )
+
+    async def _create():
+        return await AiSessionService.create("无主会话", app_id=None, user_id=None)
+
+    sid = asyncio.run(_create())["id"]
+    try:
+        detail = test_client.get(f"/api/v1/ai/sessions/detail/{sid}", headers=auth_headers)
+        assert detail.status_code == 404, detail.text
+
+        deleted = test_client.request(
+            "DELETE",
+            "/api/v1/ai/sessions/delete",
+            json=[sid],
+            headers=auth_headers,
+        )
+        assert deleted.status_code == 404, deleted.text
+
+        asyncio.run(persist_session_exchange(sid, "u", "a", user_id=1))
+
+        async def _msgs():
+            return await AiSessionService.get_messages(sid)
+
+        assert asyncio.run(_msgs()) == []
+    finally:
+        asyncio.run(AiSessionService.delete([sid]))
+
+
+def test_app_stream_accumulates_all_round_assistant_text(
+    monkeypatch, test_client, auth_headers
+):
+    """多轮应用流式：各轮 assistant 文本累加落库（与助手语义一致）。"""
+    import openai
+
+    from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+
+    assert "navigate" in TOOL_REGISTRY
+    app_id = test_client.post(
+        "/api/v1/ai/apps/create",
+        json={
+            "name": f"pytest-app-{uuid.uuid4().hex[:8]}",
+            "icon": "",
+            "description": None,
+            "model_id": None,
+            "prompt_id": None,
+            "tools": ["navigate"],
+            "output_format": "text",
+            "input_schema": None,
+            "enabled": True,
+            "order": 0,
+        },
+        headers=auth_headers,
+    ).json()["data"]["id"]
+    session_id = _create_session(test_client, auth_headers, "pytest 多轮累加", app_id=app_id)
+    rounds = [
+        [
+            _FakeChunk(_FakeDelta(content="第一段")),
+            _FakeChunk(
+                _FakeDelta(
+                    tool_calls=[
+                        _FakeToolCallDelta("navigate", {"path": "/ai/report", "reason": "t"})
+                    ]
+                )
+            ),
+        ],
+        [_FakeChunk(_FakeDelta(content="第二段"))],
+    ]
+    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
+    _patch_runtime(monkeypatch)
+
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/apps/{app_id}/run/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "执行"}]}],
+                "variables": {},
+                "session_id": session_id,
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+
+        detail = test_client.get(
+            f"/api/v1/ai/sessions/detail/{session_id}", headers=auth_headers
+        ).json()["data"]
+        msgs = detail["messages"]
+        assert [m["role"] for m in msgs] == ["user", "assistant"], msgs
+        assert msgs[1]["parts"][0]["text"] == "第一段第二段"
+    finally:
+        _delete_session(test_client, auth_headers, session_id)
+        test_client.request(
+            "DELETE", "/api/v1/ai/apps/delete", json=[app_id], headers=auth_headers
+        )
 
 
 def test_append_message_increments_count():

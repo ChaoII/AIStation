@@ -7,6 +7,29 @@ from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
 
 from .model import AiToolModel
 
+# 请求头脱敏掩码：列表/详情只回显键与掩码，不回传明文密钥
+HEADER_MASK = "****"
+
+
+def _mask_headers(headers: dict | None) -> dict | None:
+    """请求头脱敏：保留键名，值统一替换为掩码。"""
+    if not headers:
+        return headers
+    return {str(k): HEADER_MASK for k in headers}
+
+
+def _merge_headers(old: dict | None, new: dict) -> dict:
+    """合并更新请求头：值为掩码/空串时保留原值，未出现键删除，其余覆盖。"""
+    before = old or {}
+    merged: dict = {}
+    for key, val in (new or {}).items():
+        if val == HEADER_MASK or val == "":
+            if key in before:
+                merged[key] = before[key]
+            continue
+        merged[key] = val
+    return merged
+
 
 def _to_dict(t: AiToolModel) -> dict:
     return {
@@ -15,7 +38,7 @@ def _to_dict(t: AiToolModel) -> dict:
         "kind": t.kind or "builtin",
         "method": t.method or "GET",
         "url": t.url or "",
-        "headers": t.headers,
+        "headers": _mask_headers(t.headers),
         "params_schema": t.params_schema,
         "enabled": t.enabled,
         "description": t.description,
@@ -157,10 +180,13 @@ class AiToolService:
             t = await db.get(AiToolModel, tool_id)
             if not t or t.is_deleted:
                 return None
-            for key in ("name", "headers", "params_schema", "enabled", "description"):
+            for key in ("name", "params_schema", "enabled", "description"):
                 val = getattr(data, key, None)
                 if val is not None:
                     setattr(t, key, val)
+            # 请求头单独合并：掩码/空值保留原密文，未出现键删除，其余覆盖
+            if data.headers is not None:
+                t.headers = _merge_headers(t.headers, data.headers)
             if data.method is not None:
                 t.method = data.method.upper()
             if data.url is not None:

@@ -36,12 +36,15 @@ async def persist_session_exchange(
     user_text: str,
     assistant_text: str,
     app_id: int | None = None,
+    user_id: int | None = None,
 ) -> None:
-    """流式结束时落会话；无 session_id 或失败仅告警，绝不中断 SSE。"""
+    """流式结束时落会话；无 session_id、归属不符或失败仅告警，绝不中断 SSE。"""
     if not session_id:
         return
     try:
-        await AiSessionService.record_exchange(session_id, user_text, assistant_text, app_id)
+        await AiSessionService.record_exchange(
+            session_id, user_text, assistant_text, app_id, user_id
+        )
     except Exception as e:  # noqa: BLE001
         from app.core.logger import logger
 
@@ -129,13 +132,26 @@ class AiSessionService:
         user_text: str,
         assistant_text: str,
         app_id: int | None = None,
+        user_id: int | None = None,
     ) -> None:
-        """落一次问答：追加 user/assistant 文本消息并累加 message_count。"""
+        """落一次问答：追加 user/assistant 文本消息并累加 message_count。
+
+        归属校验（deny-by-default）：目标会话必须归属调用方；归属缺失（历史数据）
+        或归属不符时静默拒绝并记日志，避免越权写入他人会话。
+        """
         if not user_text and not assistant_text:
             return
         async with async_db_session.begin() as db:
             s = await db.get(AiSessionModel, session_id)
             if not s or s.is_deleted:
+                return
+            if s.user_id is None or s.user_id != user_id:
+                from app.core.logger import logger
+
+                logger.warning(
+                    f"拒绝写入非本人 AI 会话: session_id={session_id} "
+                    f"owner={s.user_id} caller={user_id}"
+                )
                 return
             target_app_id = app_id if app_id is not None else s.app_id
             added = 0

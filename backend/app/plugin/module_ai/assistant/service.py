@@ -35,6 +35,150 @@ async def _call_tool(name: str, args: dict, user_id: int | None) -> object:
         return {"error": str(e)}
 
 
+async def run_agent_ui_stream(
+    *,
+    client,
+    runtime: dict,
+    messages: list[dict],
+    tool_schemas: list[dict] | None,
+    dispatch,
+    ms,
+    user_id: int | None,
+    state: dict,
+    max_rounds: int = MAX_ROUNDS,
+):
+    """共享的 function calling 流式循环：助手 /stream 与应用运行台复用同一实现。
+
+    - ``dispatch(name, args, user_id)`` 由调用方注入（内置注册表或应用 HTTP 工具派发）。
+    - ``state`` 为可变状态字典，含 assistant_text / reply / tool_calls / action /
+      report_id / error；``assistant_text`` 跨轮累加所有 text delta。
+    - 仅依赖传入的 ``UiMessageStream``，产出的 SSE 帧与既有实现保持逐字节一致。
+    """
+    for _ in range(max_rounds):
+        kwargs: dict = {
+            "model": runtime["model"],
+            "messages": messages,
+            "temperature": runtime["temperature"],
+            "max_tokens": runtime["max_tokens"],
+            "stream": True,
+        }
+        if tool_schemas:
+            kwargs["tools"] = tool_schemas
+            kwargs["tool_choice"] = "auto"
+        try:
+            stream = await client.chat.completions.create(**kwargs)
+        except Exception as e:  # noqa: BLE001
+            state["error"] = f"大模型调用失败：{e}"
+            yield ms.error(state["error"])
+            yield ms.data(
+                "finish",
+                {
+                    "reply": "",
+                    "tool_calls": state["tool_calls"],
+                    "action": state["action"],
+                    "report_id": state["report_id"],
+                },
+            )
+            yield ms.finish()
+            yield ms.done()
+            return
+
+        content = ""
+        tool_calls: dict = {}
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            rc = getattr(delta, "reasoning_content", None)
+            if rc:
+                yield ms.reasoning(rc)
+            if getattr(delta, "content", None):
+                content += delta.content
+                state["assistant_text"] += delta.content
+                yield ms.text(delta.content)
+            for tc in getattr(delta, "tool_calls", None) or []:
+                slot = tool_calls.setdefault(
+                    tc.index, {"id": "", "name": "", "arguments": ""}
+                )
+                if tc.id:
+                    slot["id"] = tc.id
+                if tc.function and tc.function.name:
+                    slot["name"] = tc.function.name
+                if tc.function and tc.function.arguments:
+                    slot["arguments"] += tc.function.arguments
+
+        yield ms.reasoning_end()
+        yield ms.text_end()
+
+        if not tool_calls:
+            state["reply"] = content
+            yield ms.data(
+                "finish",
+                {
+                    "reply": content,
+                    "tool_calls": state["tool_calls"],
+                    "action": state["action"],
+                    "report_id": state["report_id"],
+                },
+            )
+            yield ms.finish()
+            yield ms.done()
+            return
+
+        messages.append(
+            {
+                "role": "assistant",
+                "content": content or None,
+                "tool_calls": [
+                    {
+                        "id": s["id"],
+                        "type": "function",
+                        "function": {"name": s["name"], "arguments": s["arguments"]},
+                    }
+                    for s in tool_calls.values()
+                ],
+            }
+        )
+        for s in tool_calls.values():
+            name = s["name"]
+            try:
+                args = json.loads(s["arguments"] or "{}")
+            except Exception:  # noqa: BLE001
+                args = {}
+            result = await dispatch(name, args, user_id)
+            if isinstance(result, dict):
+                if result.get("__action__"):
+                    state["action"] = result["__action__"]
+                if result.get("__report_id__"):
+                    state["report_id"] = result["__report_id__"]
+            state["tool_calls"].append({"name": name, "args": args, "result": result})
+            yield ms.tool(s["id"], name, args=args, output=result)
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": s["id"],
+                    "content": json.dumps(result, ensure_ascii=False, default=str)[:4000],
+                }
+            )
+
+    reply = "工具调用次数已达上限，请缩小问题范围后重试。"
+    state["assistant_text"] += reply
+    state["reply"] = reply
+    yield ms.text(reply)
+    yield ms.text_end()
+    yield ms.data(
+        "finish",
+        {
+            "reply": reply,
+            "tool_calls": state["tool_calls"],
+            "action": state["action"],
+            "report_id": state["report_id"],
+        },
+    )
+    yield ms.finish()
+    yield ms.done()
+
+
 async def run_assistant(message: str, auth) -> dict:
     runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
     if not runtime:
@@ -154,9 +298,10 @@ async def run_assistant_ui_stream(
 ):
     """AI SDK UI Message Stream 版助手：reasoning/text/tool/finish 分片。
 
-    整个生成器体包裹在 ``try/finally`` 中：无论正常结束、模型/工具异常还是客户端中断，
-    只要传入了 ``session_id``，已产出的 user/assistant 文本都会在 ``finally`` 中落库，
-    保证会话行不因流中途失败而丢失（``persist_session_exchange`` 内部已吞掉异常）。
+    整个生成器体包裹在 ``try/except/finally`` 中：无论正常结束、模型/工具异常还是
+    客户端中断，只要传入了 ``session_id``，已产出的 user/assistant 文本都会在
+    ``finally`` 中落库；中途异常也会补发 error + data-finish + finish + [DONE]，
+    保证流始终有终止帧且会话行不丢失（``persist_session_exchange`` 内部已吞掉异常）。
     """
     from openai import AsyncOpenAI
 
@@ -166,8 +311,16 @@ async def run_assistant_ui_stream(
 
     ms = UiMessageStream()
     user_text = last_user_text(ui_messages)
+    user_id = getattr(getattr(auth, "user", None), "id", None)
     # 累积流出的 assistant 文本：即使中途异常，finally 也能落下已产出的内容
-    assistant_text = ""
+    state: dict = {
+        "assistant_text": "",
+        "reply": "",
+        "tool_calls": [],
+        "action": None,
+        "report_id": None,
+        "error": None,
+    }
     yield ms.start()
     try:
         runtime = (
@@ -193,115 +346,28 @@ async def run_assistant_ui_stream(
         )
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages += extract_openai_messages(ui_messages)
-        user_id = getattr(getattr(auth, "user", None), "id", None)
-        tool_log: list[dict] = []
-        action = None
-        report_id = None
 
-        for _ in range(MAX_ROUNDS):
-            try:
-                stream = await client.chat.completions.create(
-                    model=runtime["model"],
-                    messages=messages,
-                    tools=TOOL_SCHEMAS,
-                    tool_choice="auto",
-                    temperature=runtime["temperature"],
-                    max_tokens=runtime["max_tokens"],
-                    stream=True,
-                )
-            except Exception as e:  # noqa: BLE001
-                yield ms.error(f"大模型调用失败：{e}")
-                yield ms.data(
-                    "finish",
-                    {"reply": "", "tool_calls": tool_log, "action": action, "report_id": report_id},
-                )
-                yield ms.finish()
-                yield ms.done()
-                return
-
-            content = ""
-            tool_calls: dict = {}
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                rc = getattr(delta, "reasoning_content", None)
-                if rc:
-                    yield ms.reasoning(rc)
-                if getattr(delta, "content", None):
-                    content += delta.content
-                    assistant_text += delta.content
-                    yield ms.text(delta.content)
-                for tc in getattr(delta, "tool_calls", None) or []:
-                    slot = tool_calls.setdefault(
-                        tc.index, {"id": "", "name": "", "arguments": ""}
-                    )
-                    if tc.id:
-                        slot["id"] = tc.id
-                    if tc.function and tc.function.name:
-                        slot["name"] = tc.function.name
-                    if tc.function and tc.function.arguments:
-                        slot["arguments"] += tc.function.arguments
-
-            yield ms.reasoning_end()
-            yield ms.text_end()
-
-            if not tool_calls:
-                yield ms.data(
-                    "finish",
-                    {"reply": content, "tool_calls": tool_log, "action": action, "report_id": report_id},
-                )
-                yield ms.finish()
-                yield ms.done()
-                return
-
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": content or None,
-                    "tool_calls": [
-                        {
-                            "id": s["id"],
-                            "type": "function",
-                            "function": {"name": s["name"], "arguments": s["arguments"]},
-                        }
-                        for s in tool_calls.values()
-                    ],
-                }
-            )
-            for s in tool_calls.values():
-                name = s["name"]
-                try:
-                    args = json.loads(s["arguments"] or "{}")
-                except Exception:  # noqa: BLE001
-                    args = {}
-                result = await _call_tool(name, args, user_id)
-                if isinstance(result, dict):
-                    if result.get("__action__"):
-                        action = result["__action__"]
-                    if result.get("__report_id__"):
-                        report_id = result["__report_id__"]
-                tool_log.append({"name": name, "args": args, "result": result})
-                yield ms.tool(s["id"], name, args=args, output=result)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": s["id"],
-                        "content": json.dumps(result, ensure_ascii=False, default=str)[:4000],
-                    }
-                )
-
-        reply = "工具调用次数已达上限，请缩小问题范围后重试。"
-        assistant_text += reply
-        yield ms.text(reply)
-        yield ms.text_end()
+        async for frame in run_agent_ui_stream(
+            client=client,
+            runtime=runtime,
+            messages=messages,
+            tool_schemas=TOOL_SCHEMAS,
+            dispatch=_call_tool,
+            ms=ms,
+            user_id=user_id,
+            state=state,
+        ):
+            yield frame
+    except Exception as e:  # noqa: BLE001
+        # 中途异常（工具/解析/网络）也要补发终止帧，避免 SSE 悬空
+        yield ms.error(f"运行失败：{e}")
         yield ms.data(
             "finish",
             {
-                "reply": reply,
-                "tool_calls": tool_log,
-                "action": action,
-                "report_id": report_id,
+                "reply": state["assistant_text"],
+                "tool_calls": state["tool_calls"],
+                "action": state["action"],
+                "report_id": state["report_id"],
             },
         )
         yield ms.finish()
@@ -309,4 +375,6 @@ async def run_assistant_ui_stream(
     finally:
         # 无论正常/异常/客户端中断，都尝试落库；无 session_id 时内部直接返回。
         # persist_session_exchange 已吞异常，保证不会从 finally 抛出。
-        await persist_session_exchange(session_id, user_text, assistant_text)
+        await persist_session_exchange(
+            session_id, user_text, state["assistant_text"], user_id=user_id
+        )
