@@ -141,6 +141,25 @@ const handleWebSocketMessage = (data: string) => {
   const lastMessage = messages.value[messages.value.length - 1];
   const content = data || "";
 
+  // Agno 中间步骤事件（以 \u0000STEP 前缀的 JSON 行回传）：渲染为工具/思考提示
+  if (content.startsWith("\u0000STEP ")) {
+    try {
+      const evt = JSON.parse(content.slice(6));
+      const eventName = String(evt.event || "");
+      let line = "";
+      if (evt.tool) line = `\n\n> 🔧 调用工具：${evt.tool}`;
+      else if (eventName.toLowerCase().includes("reason")) line = "\n\n> 🧠 思考中…";
+      if (line) {
+        if (lastMessage?.type === "assistant" && lastMessage.loading) lastMessage.content += line;
+        else addMessage("assistant", line.trim());
+      }
+    } catch {
+      /* 忽略非法事件 */
+    }
+    chatMessagesRef.value?.scrollToBottom();
+    return;
+  }
+
   if (lastMessage?.type === "assistant" && lastMessage.loading) {
     lastMessage.content += content;
   } else {
