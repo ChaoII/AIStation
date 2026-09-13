@@ -53,6 +53,8 @@ async def assistant_stream(
         ok, err = True, None
         try:
             async for item in run_assistant_stream(data.message, auth):
+                if isinstance(item, str) and "event: error" in item:
+                    ok = False
                 yield item
         except Exception as e:  # noqa: BLE001
             ok, err = False, str(e)

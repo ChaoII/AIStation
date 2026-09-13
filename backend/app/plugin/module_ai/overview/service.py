@@ -32,8 +32,10 @@ class AiOverviewService:
                         created_id=user_id,
                     )
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            from app.core.logger import logger
+
+            logger.warning(f"写入 AI 调用日志失败: {e}")
 
     @classmethod
     async def stats(cls) -> dict:

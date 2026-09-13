@@ -1,5 +1,5 @@
 """大模型配置服务：CRUD、运行时取用、连接测试。"""
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 
 from app.config.setting import settings
 from app.core.database import async_db_session
@@ -70,7 +70,9 @@ class AiModelService:
                 AiModelModel.enabled.is_(True),
             )
             if usage:
-                stmt = stmt.where(AiModelModel.usage == usage)
+                stmt = stmt.where(
+                    or_(AiModelModel.usage == usage, AiModelModel.usage.is_(None))
+                )
             m = (
                 await db.execute(
                     stmt.order_by(AiModelModel.is_default.desc(), AiModelModel.id.desc()).limit(1)
