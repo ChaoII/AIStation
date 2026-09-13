@@ -124,7 +124,8 @@ import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useSettingsStore } from "@/store";
 import { AiChatAPI, ChatSession, ChatSessionDetail } from "@/api/module_ai/chat";
-import { assistantStream } from "@/api/module_ai/assistant";
+import { useAiChat } from "@/composables/ai/useAiChat";
+import { dataPartsOf, textOf, toolPartsOf } from "@/composables/ai/uiMessage";
 import { AnnotationAPI } from "@/api/module_annotation";
 
 type ToolFunctionCall = {
@@ -166,6 +167,9 @@ const dialogVisible = ref(false);
 const command = ref("");
 const loading = ref(false);
 const response = ref<AiResponse | null>(null);
+
+// AI SDK 流式助手（工具调用 / 导航 / 报告）
+const chat = useAiChat();
 
 // 会话管理
 const sessions = ref<ChatSession[]>([]);
@@ -376,30 +380,25 @@ const handleExecute = async () => {
   loading.value = true;
 
   try {
-    // 优先走工具调用型助手（SSE 流式：问数/统计/报告/导航/操作）
+    // 优先走工具调用型助手（AI SDK UI Message Stream：问数/统计/报告/导航/操作）
     try {
-      let acc = "";
-      const toolNames: string[] = [];
-      let action: any = null;
-      let reportId: number | null = null;
-      response.value = { explanation: "", action: null } as any;
-      await assistantStream(rawCommand, (event, data) => {
-        if (event === "delta") {
-          acc += data.text || "";
-        } else if (event === "tool") {
-          toolNames.push(data.name);
-        } else if (event === "done") {
-          if (data.reply) acc = data.reply;
-          action = data.action;
-          reportId = data.report_id;
-        } else if (event === "error") {
-          throw new Error(data.message || "AI 错误");
-        }
-        response.value = {
-          explanation: acc + (toolNames.length ? `\n\n（调用工具：${toolNames.join(", ")}）` : ""),
-          action: null,
-        } as any;
-      });
+      // 每条命令独立上下文
+      chat.messages.value = [];
+      await chat.sendMessage({ text: rawCommand });
+      const list = chat.messages.value;
+      const last = list[list.length - 1];
+      const fin: any = dataPartsOf(last, "data-finish")[0] || {};
+      const action = fin.action;
+      const reportId = fin.report_id;
+      const toolNames = toolPartsOf(last)
+        .map((p) => p.toolName)
+        .filter(Boolean);
+      response.value = {
+        explanation:
+          (fin.reply || textOf(last)) +
+          (toolNames.length ? `\n\n（调用工具：${toolNames.join(", ")}）` : ""),
+        action: null,
+      } as any;
       if (action?.type === "navigate" && action.path) {
         router.push(action.path);
       } else if (action?.type === "confirm") {

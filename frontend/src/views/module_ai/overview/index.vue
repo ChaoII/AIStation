@@ -1,78 +1,69 @@
 <template>
-  <div class="app-container ai-console">
-    <div class="ai-head">
-      <div>
-        <div class="ai-eyebrow">AI · Mission Control</div>
-        <h1>大模型控制台</h1>
-        <div class="ai-sub">模型、提示词、应用与运行观测的统一入口</div>
-      </div>
-      <div class="ai-signal">
-        <span class="dot" :class="stats.errors ? 'err' : 'on'" />
-        {{ stats.errors ? `${stats.errors} 次异常` : "系统正常" }}
-        <span>· 平均 {{ stats.avg_latency_ms }}ms</span>
-      </div>
-    </div>
-
-    <div class="ai-grid">
-      <div class="ai-metric">
-        <div class="k">提供商</div>
-        <div class="v cyan">{{ stats.providers }}</div>
-      </div>
-      <div class="ai-metric">
-        <div class="k">模型</div>
-        <div class="v violet">{{ stats.models }}</div>
-      </div>
-      <div class="ai-metric">
-        <div class="k">调用次数</div>
-        <div class="v">{{ stats.calls }}</div>
-      </div>
-      <div class="ai-metric">
-        <div class="k">报告</div>
-        <div class="v amber">{{ stats.reports }}</div>
-      </div>
-    </div>
-
-    <div class="ai-cols">
-      <div class="ai-panel">
-        <div class="ai-panel-hd">
-          <span>最近调用</span>
-          <el-button size="small" text @click="load">刷新</el-button>
+  <div class="app-container">
+    <el-card shadow="never">
+      <template #header>
+        <div class="ov-head">
+          <span>大模型控制台</span>
+          <el-button size="small" @click="load">刷新</el-button>
         </div>
-        <div class="ai-panel-bd">
-          <table class="ai-table">
-            <thead>
-              <tr><th>模型</th><th>用途</th><th>耗时</th><th>结果</th><th>时间</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="c in stats.recent_calls" :key="c.id">
-                <td>{{ c.model_name || "—" }}</td>
-                <td>{{ c.usage }}</td>
-                <td>{{ c.latency_ms }}ms</td>
-                <td>
-                  <span class="ai-tag" :class="c.result === 'success' ? 'ok' : 'err'">
-                    {{ c.result === "success" ? "成功" : "失败" }}
-                  </span>
-                </td>
-                <td>{{ c.created_time }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="!stats.recent_calls.length" class="ai-empty">暂无调用记录，去运行台问一句试试</div>
-        </div>
-      </div>
+      </template>
+      <el-descriptions :column="5" border>
+        <el-descriptions-item label="提供商">{{ stats.providers }}</el-descriptions-item>
+        <el-descriptions-item label="模型">{{ stats.models }}</el-descriptions-item>
+        <el-descriptions-item label="调用次数">{{ stats.calls }}</el-descriptions-item>
+        <el-descriptions-item label="错误次数">
+          <el-tag :type="stats.errors ? 'danger' : 'success'" size="small" effect="plain">
+            {{ stats.errors }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="平均耗时">{{ stats.avg_latency_ms }} ms</el-descriptions-item>
+      </el-descriptions>
+    </el-card>
 
-      <div class="ai-panel">
-        <div class="ai-panel-hd"><span>快捷入口</span></div>
-        <div class="ai-panel-bd">
+    <el-row :gutter="16" class="ov-row">
+      <el-col :xs="24" :md="16">
+        <el-card shadow="never">
+          <template #header>最近调用</template>
+          <el-table :data="stats.recent_calls" size="small" stripe>
+            <el-table-column prop="model_name" label="模型" min-width="140">
+              <template #default="{ row }">{{ row.model_name || "—" }}</template>
+            </el-table-column>
+            <el-table-column prop="usage" label="用途" min-width="100" />
+            <el-table-column prop="latency_ms" label="耗时" min-width="100">
+              <template #default="{ row }">{{ row.latency_ms }}ms</template>
+            </el-table-column>
+            <el-table-column label="结果" min-width="90">
+              <template #default="{ row }">
+                <el-tag :type="row.result === 'success' ? 'success' : 'danger'" size="small">
+                  {{ row.result === "success" ? "成功" : "失败" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="created_time"
+              label="时间"
+              min-width="170"
+              show-overflow-tooltip
+            />
+            <template #empty>
+              <el-empty :image-size="80" description="暂无调用记录，去运行台问一句试试" />
+            </template>
+          </el-table>
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :md="8">
+        <el-card shadow="never">
+          <template #header>快捷入口</template>
           <el-space direction="vertical" alignment="flex-start" :size="10" style="width: 100%">
-            <el-button class="quick" @click="go('/ai/provider')">配置提供商 / API Key</el-button>
-            <el-button class="quick" @click="go('/ai/model')">添加并启用模型</el-button>
-            <el-button class="quick" @click="go('/ai/playground')">打开运行台试运行</el-button>
-            <el-button class="quick" @click="go('/ai/report')">查看 AI 报告</el-button>
+            <el-button class="ov-quick" @click="go('/ai/provider')">配置提供商 / API Key</el-button>
+            <el-button class="ov-quick" @click="go('/ai/model')">添加并启用模型</el-button>
+            <el-button class="ov-quick" @click="go('/ai/playground')">打开运行台试运行</el-button>
+            <el-button class="ov-quick" @click="go('/ai/report')">查看 AI 报告</el-button>
           </el-space>
-        </div>
-      </div>
-    </div>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -108,9 +99,20 @@ function go(path: string) {
 onMounted(load);
 </script>
 
-<style scoped>
-.quick {
-  width: 100%;
+<style scoped lang="scss">
+.ov-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ov-row {
+  margin-top: 16px;
+}
+
+.ov-quick {
   justify-content: flex-start;
+  width: 100%;
+  margin-left: 0 !important;
 }
 </style>

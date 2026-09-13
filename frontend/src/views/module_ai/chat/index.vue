@@ -15,7 +15,7 @@
           <ChatNavbar
             :connection-status="connectionStatus"
             :is-connected="isConnected"
-            :message-count="messages.length"
+            :message-count="displayMessages.length"
             :is-sidebar-collapsed="isSidebarCollapsed"
             @clear-chat="handleClearChat"
             @toggle-connection="toggleConnection"
@@ -25,7 +25,7 @@
         <el-main class="chat-main">
           <ChatMessages
             ref="chatMessagesRef"
-            :messages="messages"
+            :messages="displayMessages"
             :error="error"
             @prompt-click="handleSendMessage"
             @error-close="error = ''"
@@ -34,7 +34,7 @@
         <el-footer class="chat-footer">
           <ChatInput
             :disabled="!isConnected"
-            :sending="sending"
+            :sending="isSending"
             :is-connected="isConnected"
             @send="handleSendMessage"
           />
@@ -50,20 +50,26 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { ref, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ChatNavbar from "./components/ChatNavbar.vue";
 import ChatMessages from "./components/ChatMessages.vue";
 import ChatInput from "./components/ChatInput.vue";
 import Sidebar from "./components/Sidebar.vue";
 import AiChatAPI, { ChatSession } from "@/api/module_ai/chat";
-import { assistantStream } from "@/api/module_ai/assistant";
+import { useAiChat } from "@/composables/ai/useAiChat";
+import { textOf, reasoningOf, toolPartsOf } from "@/composables/ai/uiMessage";
 import { Auth } from "@/utils/auth";
 import type { ChatMessage, UploadedFile } from "./types";
 
+// AI SDK 流式聊天（替代旧手写 SSE）
+const chat = useAiChat();
+const isSending = computed(
+  () => chat.status.value === "submitted" || chat.status.value === "streaming"
+);
+
 // 状态
 const messages = ref<ChatMessage[]>([]);
-const sending = ref(false);
 const isConnected = ref(false);
 const connectionStatus = ref<"connected" | "connecting" | "disconnected">("disconnected");
 const error = ref("");
@@ -73,6 +79,30 @@ const isSidebarCollapsed = ref(false);
 // Refs
 const chatMessagesRef = ref<{ scrollToBottom: () => void }>();
 const sidebarRef = ref<{ loadSessions: () => void }>();
+
+// 把 AI SDK 的 UIMessage 映射为页面 ChatMessage（正文/思考/工具提示）
+const liveMessages = computed<ChatMessage[]>(() =>
+  chat.messages.value.map((m: any) => {
+    const text = textOf(m);
+    const think = reasoningOf(m);
+    const toolNames = toolPartsOf(m)
+      .map((p) => p.toolName)
+      .filter(Boolean);
+    const toolHint = toolNames.map((n) => `\n\n> 🔧 调用工具：${n}`).join("");
+    return {
+      id: m.id,
+      type: m.role === "user" ? "user" : "assistant",
+      content: `${text}${toolHint}`,
+      think: think || undefined,
+      timestamp: Date.now(),
+      loading: isSending.value && m.role === "assistant" && !text,
+      collapsed: text.length > 200,
+    };
+  })
+);
+
+// 历史会话消息（只读）+ 当前流式消息
+const displayMessages = computed<ChatMessage[]>(() => [...messages.value, ...liveMessages.value]);
 
 // WebSocket
 let ws: WebSocket | null = null;
@@ -196,10 +226,7 @@ const generateId = () => {
 
 // ============ 发送消息 ============
 const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
-  if ((!message && !files) || sending.value) return;
-
-  // 结束上一个加载中的消息
-  finishLoadingMessages();
+  if ((!message && !files) || isSending.value) return;
 
   // 创建新会话（如果没有）
   if (!currentSessionId.value) {
@@ -207,46 +234,11 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
     if (!success) return;
   }
 
-  // 添加用户消息
-  addMessage("user", message, files);
-
-  // 添加加载中的助手消息
-  messages.value.push({
-    id: generateId(),
-    type: "assistant",
-    content: "",
-    timestamp: Date.now(),
-    loading: true,
-  });
-  const last = messages.value[messages.value.length - 1];
-
-  sending.value = true;
-  chatMessagesRef.value?.scrollToBottom();
-
   try {
-    // 走运行时 SSE（真流式：思考/回复/工具），不依赖 Agno WS
-    await assistantStream(message, async (event, data) => {
-      if (event === "delta") {
-        last.content += data.text || "";
-      } else if (event === "tool") {
-        last.content += `\n\n> 🔧 调用工具：${data.name}`;
-      } else if (event === "reasoning") {
-        last.think = (last.think || "") + (data.text || "");
-      } else if (event === "done") {
-        if (data.report_id) last.content += `\n\n> 已生成报告 #${data.report_id}`;
-      } else if (event === "error") {
-        last.content += `\n\n> 出错：${data.message}`;
-      }
-      // 每个分片强制一次渲染，确保逐字可见
-      await nextTick();
-      chatMessagesRef.value?.scrollToBottom();
-    });
+    // 走 AI SDK UI Message Stream（真流式：思考/回复/工具），不依赖 Agno WS
+    await chat.sendMessage({ text: message });
   } catch (e: any) {
-    last.content += `\n\n> 请求失败：${e?.message || e}`;
-  } finally {
-    last.loading = false;
-    sending.value = false;
-    chatMessagesRef.value?.scrollToBottom();
+    error.value = e?.message || String(e);
   }
 };
 
@@ -270,6 +262,7 @@ const createNewSession = async (firstMessage: string): Promise<boolean> => {
 const handleSelectSession = async (session: ChatSession) => {
   currentSessionId.value = session.id;
   messages.value = [];
+  chat.messages.value = [];
 
   try {
     const response = await AiChatAPI.getSessionDetail(session.id);
@@ -298,6 +291,7 @@ const handleSelectSession = async (session: ChatSession) => {
 const handleNewSession = () => {
   currentSessionId.value = null;
   messages.value = [];
+  chat.messages.value = [];
   ElMessage.success("已开启新对话");
 };
 
@@ -309,6 +303,7 @@ const handleClearChat = async () => {
       type: "warning",
     });
     messages.value = [];
+    chat.messages.value = [];
     ElMessage.success("对话已清空");
   } catch {
     ElMessage.info("已取消清空对话");

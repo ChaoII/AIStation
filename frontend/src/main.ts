@@ -11,7 +11,6 @@ import "@/styles/dark/css-vars.css";
 import "@/styles/index.scss";
 import "@/styles/train-detail.css";
 import "@/styles/dashboard.css";
-import "@/styles/ai-console.css";
 
 import "uno.css";
 
