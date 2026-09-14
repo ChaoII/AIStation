@@ -24,20 +24,33 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
     叶子支持 attribute：{"subject":"attribute","field":名,"op":"lt|gt|le|ge|eq","value":数}。
     事件里 attributes 为 {属性名: 分数}（分数=具有该属性的概率）；违规=分数低于阈值。
     其它叶子后续扩展；未知叶子不命中。
+    本函数对异常输入（JSON null / 非数值）一律按不命中处理，绝不向上抛异常，
+    避免单条脏规则导致整个告警事件被丢弃。
     """
     if not conditions:
         return True
+
+    def _to_float(raw) -> float | None:
+        """尽力转换为 float；null/缺失/非数值返回 None，由调用方跳过该叶子。"""
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
 
     def eval_leaf(leaf: dict) -> bool:
         if leaf.get("subject") == "attribute":
             field = leaf.get("field")
             op = leaf.get("op", "eq")
-            value = float(leaf.get("value", 0.0))
+            value = _to_float(leaf.get("value"))
+            if value is None:
+                return False
             for d in detections or []:
                 score = (d.get("attributes") or {}).get(field)
+                score = _to_float(score)
                 if score is None:
                     continue
-                score = float(score)
                 if op == "lt" and score < value:
                     return True
                 if op == "gt" and score > value:

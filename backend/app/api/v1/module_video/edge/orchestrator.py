@@ -233,13 +233,26 @@ class EdgeOrchestrator:
 
     @staticmethod
     def _check_capability(capabilities: dict, algorithm, running_channels: int = 0) -> tuple[bool, str]:
-        """校验设备能力是否满足该算法的模型族/后端/剩余路数。"""
+        """校验设备能力是否满足该算法的模型族/后端/剩余路数。
+
+        算法归属场景目录时，要求设备具备该场景所需的**全部**模型族（如 PED_ATTR
+        需 pedestrian_attribute，仅靠 _resolve_model_type 会被误映射为 det 而放行）；
+        无场景时回退到按算法推断的单一模型族，保持既有行为。
+        """
         runtime = getattr(algorithm, "runtime_config", None) or {}
-        requirement = {
-            "model_family": _resolve_model_type(algorithm),
-            "backend": runtime.get("backend") or "trt",
-            "running_channels": running_channels,
-        }
+        scene = get_scene(getattr(algorithm, "scene_type", "") or "")
+        if scene is not None:
+            requirement = {
+                "model_families": scene.model_families,
+                "backend": runtime.get("backend") or "trt",
+                "running_channels": running_channels,
+            }
+        else:
+            requirement = {
+                "model_family": _resolve_model_type(algorithm),
+                "backend": runtime.get("backend") or "trt",
+                "running_channels": running_channels,
+            }
         return capability_satisfies(capabilities, requirement)
 
     @staticmethod

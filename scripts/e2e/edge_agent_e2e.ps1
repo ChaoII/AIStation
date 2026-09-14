@@ -401,13 +401,19 @@ function Stop-Agent {
 
 # 边缘设备播种：优先 create；若 code 已存在（可能已被 Agent 心跳自动 upsert），则改为 update。
 function Seed-EdgeDevice {
+    # PED_ATTR 场景要求设备声明 pedestrian_attribute 模型族，否则能力校验会拒绝下发；
+    # 其余场景保持仅 det。
+    $capModelFamilies = @("det")
+    if ($Scene -eq "PED_ATTR") {
+        $capModelFamilies = @("det", "pedestrian_attribute")
+    }
     $createBody = @{
         name         = "E2E 边缘设备 $effectiveEdgeCode"
         code         = $effectiveEdgeCode
         control_url  = $script:AgentControlUrl
         secret       = $Secret
         capabilities = @{
-            model_families = @("det")
+            model_families = $capModelFamilies
             backends       = @("ort")
             max_channels   = 8
         }
@@ -421,12 +427,15 @@ function Seed-EdgeDevice {
         $list = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$effectiveEdgeCode&page_no=1&page_size=50"
         $item = @($list.items) | Where-Object { $_.code -eq $effectiveEdgeCode } | Select-Object -First 1
         if (-not $item) { throw "边缘设备不存在且无法创建: $effectiveEdgeCode" }
+        # 复用已有能力清单，但场景要求的模型族必须补齐（PED_ATTR 需 pedestrian_attribute）
+        $updateCaps = if ($item.capabilities) { $item.capabilities } else { @{} }
+        $updateCaps.model_families = $capModelFamilies
         $updateBody = @{
             name         = $item.name
             code         = $effectiveEdgeCode
             control_url  = $script:AgentControlUrl
             secret       = $Secret
-            capabilities = $item.capabilities
+            capabilities = $updateCaps
         }
         Invoke-Api -Method Put -Path "/api/v1/video/edge/update/$($item.id)" -Body $updateBody | Out-Null
         $script:CreatedEdge = $false

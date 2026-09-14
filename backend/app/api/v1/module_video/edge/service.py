@@ -15,14 +15,21 @@ def capability_satisfies(capabilities: dict, requirement: dict) -> tuple[bool, s
 
     参数:
     - capabilities (dict): 设备能力清单。
-    - requirement (dict): 需求，含 `model_family`/`backend`/`running_channels`。
+    - requirement (dict): 需求，含 `model_families`（列表，需全部具备）或兼容旧的
+      `model_family`（单个），以及 `backend`/`running_channels`。
 
     返回:
     - tuple[bool, str]: `(是否满足, 不满足原因)`；满足时原因为空串。
     """
     cap = capabilities or {}
+    available = cap.get("model_families") or []
+    # 支持一次要求多个模型族（场景目录 pipeline 可能依赖多个），必须全部具备
+    for fam in requirement.get("model_families") or []:
+        if fam not in available:
+            return False, f"设备不支持模型族 {fam}"
+    # 兼容旧的单模型族用法
     fam = requirement.get("model_family")
-    if fam and fam not in (cap.get("model_families") or []):
+    if fam and fam not in available:
         return False, f"设备不支持模型族 {fam}"
     be = requirement.get("backend")
     if be and be not in (cap.get("backends") or []):
