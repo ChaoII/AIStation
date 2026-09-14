@@ -30,7 +30,8 @@
 
 .PARAMETER ModelPath
     算法检测模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
-    当 `-Scene PED_ATTR` 且未显式传入本参数时，自动改用 zhgd_det.onnx。
+    当 `-Scene PED_ATTR` 且未显式传入本参数时，自动改用 zhgd_det.onnx；
+    当 `-Scene LPR` 时自动改用 yolov5plate.onnx。
 
 .PARAMETER ClsModelPath
     PED_ATTR 属性分类（cls）模型路径，写入 preset_params.cls_path；仅 `-Scene PED_ATTR` 使用。
@@ -42,6 +43,10 @@
 .PARAMETER DictPath
     OCR_TEXT 字符字典路径，写入 preset_params.dict_path；仅 `-Scene OCR_TEXT` 使用。
 
+.PARAMETER PlateRecModelPath
+    车牌识别（rec）模型路径，写入 preset_params.rec_path；仅 `-Scene LPR` 使用。
+    默认取 plate_recognition_color.onnx（与 yolov5plate.onnx 检测模型配套）。
+
 .PARAMETER Scene
     场景模式：
       - INTRUSION（默认）：单 det 模型，断言 algorithm_type=INTRUSION 告警；
@@ -49,6 +54,8 @@
         objects[].attributes 已透传到 ai_result.detections[].attributes。
       - OCR_TEXT：det+cls+rec+dict 通用文本 pipeline，播种 text_match 规则并断言
         ai_result.detections[].text 非空（模型/字典默认取 ppocrv6_tiny）。
+      - LPR：det+rec 车牌识别 pipeline，播种 text_match 规则并断言
+        ai_result.detections[].text 非空（模型默认取 yolov5plate + plate_recognition_color）。
 
 .PARAMETER DecoderHwAccel
     算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
@@ -116,7 +123,8 @@ param(
     [string]$ClsModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_ml.onnx",
     [string]$RecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\rec_infer.onnx",
     [string]$DictPath = "E:\CLionProjects\ModelDeploy\test_data\ppocrv6_tiny_dict.txt",
-    [ValidateSet("INTRUSION", "PED_ATTR", "OCR_TEXT")]
+    [string]$PlateRecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\plate_recognition_color.onnx",
+    [ValidateSet("INTRUSION", "PED_ATTR", "OCR_TEXT", "LPR")]
     [string]$Scene = "INTRUSION",
     [string]$DecoderHwAccel = "none",
 
@@ -413,13 +421,16 @@ function Stop-Agent {
 
 # 边缘设备播种：优先 create；若 code 已存在（可能已被 Agent 心跳自动 upsert），则改为 update。
 function Seed-EdgeDevice {
-    # PED_ATTR/OCR_TEXT 场景要求设备声明对应模型族（pedestrian_attribute/ocr），
+    # PED_ATTR/OCR_TEXT/LPR 场景要求设备声明对应模型族（pedestrian_attribute/ocr/lpr），
     # 否则能力校验会拒绝下发；其余场景保持仅 det。
     $capModelFamilies = @("det")
     if ($Scene -eq "PED_ATTR") {
         $capModelFamilies = @("det", "pedestrian_attribute")
     } elseif ($Scene -eq "OCR_TEXT") {
         $capModelFamilies = @("ocr")
+    } elseif ($Scene -eq "LPR") {
+        # 车牌场景能力校验只要求 lpr 模型族（见 scene/catalog.py 的 LPR 定义）
+        $capModelFamilies = @("lpr")
     }
     $createBody = @{
         name         = "E2E 边缘设备 $effectiveEdgeCode"
@@ -484,25 +495,32 @@ $script:TmpDir = Join-Path $env:TEMP "aistation-edge-e2e-$($script:RunId)"
 New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 
 # 场景模式：PED_ATTR 使用 det+cls 双模型（zhgd_det + zhgd_ml）与属性告警规则；
-# OCR_TEXT 使用 det+cls+rec+dict 四件套（ppocrv6_tiny）与文本规则。
+# OCR_TEXT 使用 det+cls+rec+dict 四件套（ppocrv6_tiny）与文本规则；
+# LPR 使用 det+rec 双模型（yolov5plate + plate_recognition_color）与文本规则。
 # 未显式传入对应模型参数时，按场景切换到各自默认模型。
 $effectiveAlgorithmType = switch ($Scene) {
     "PED_ATTR" { "PED_ATTR" }
     "OCR_TEXT" { "OCR_TEXT" }
+    "LPR"      { "LPR" }
     default    { "INTRUSION" }
 }
 $pedAttrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx"
 $ocrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\det_infer.onnx"
 $ocrClsDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\cls_infer.onnx"
+$lprDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\yolov5plate.onnx"
 $effectiveModelPath = $ModelPath
 if (-not $PSBoundParameters.ContainsKey("ModelPath")) {
     if ($Scene -eq "PED_ATTR") { $effectiveModelPath = $pedAttrDetDefault }
     elseif ($Scene -eq "OCR_TEXT") { $effectiveModelPath = $ocrDetDefault }
+    elseif ($Scene -eq "LPR") { $effectiveModelPath = $lprDetDefault }
 }
 $effectiveClsPath = $ClsModelPath
 if ($Scene -eq "OCR_TEXT" -and -not $PSBoundParameters.ContainsKey("ClsModelPath")) {
     $effectiveClsPath = $ocrClsDefault
 }
+# LPR 的识别（rec）模型默认取 plate_recognition_color.onnx（车牌专用）
+$effectiveRecPath = $RecModelPath
+if ($Scene -eq "LPR") { $effectiveRecPath = $PlateRecModelPath }
 
 # 已创建资源 ID，便于清理
 $created = @{ AlgorithmId = $null; CameraId = $null; EdgeId = $null; Task1Id = $null; Task2Id = $null; RuleId = $null }
@@ -535,6 +553,7 @@ try {
     $algoName = switch ($Scene) {
         "PED_ATTR" { "E2E 行人属性 $($script:RunId)" }
         "OCR_TEXT" { "E2E 文本识别 $($script:RunId)" }
+        "LPR"      { "E2E 车牌识别 $($script:RunId)" }
         default    { "E2E 闯入检测 $($script:RunId)" }
     }
     $algoBody = @{
@@ -573,6 +592,20 @@ try {
             dict_path            = $DictPath
             input_size           = @(960, 960)
             confidence_threshold = 0.3
+        }
+    } elseif ($Scene -eq "LPR") {
+        # scene_type 触发编排编译 lpr（det+rec）pipeline；不涉及 cls/dict；
+        # runtime_config 按车牌/ORT-CPU 契约显式给定（不做 RTSP transport 覆盖）
+        $algoBody.scene_type = "LPR"
+        $algoBody.runtime_config = @{
+            backend  = "ort"
+            device   = "cpu"
+            decoder  = @{ hw_accel = $DecoderHwAccel; device_only = $false }
+        }
+        $algoBody.preset_params = @{
+            rec_path             = $effectiveRecPath
+            input_size           = @(640, 640)
+            confidence_threshold = 0.25
         }
     }
     $algo = Invoke-Api -Method Post -Path "/api/v1/video/algorithm/create" -Body $algoBody
@@ -623,6 +656,24 @@ try {
         $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
         $created.RuleId = $rule.id
         Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=OCR_TEXT conditions=text_match(.+)（任意文本命中，链路验证）" -Level OK
+    } elseif ($Scene -eq "LPR") {
+        # 链路验证规则：regex=".+" 命中任意非空车牌文本，用于确认 text 从检测框透传到 detections
+        $ruleBody = @{
+            name       = "E2E 车牌规则 $($script:RunId)"
+            camera_id  = $created.CameraId
+            alarm_type = "LPR"
+            severity   = "WARNING"
+            conditions = @{
+                op       = "and"
+                children = @(
+                    @{ subject = "text_match"; regex = ".+" }
+                )
+            }
+            status     = $true
+        }
+        $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
+        $created.RuleId = $rule.id
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=LPR conditions=text_match(.+)（任意车牌文本命中，链路验证）" -Level OK
     }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致
@@ -657,6 +708,19 @@ try {
         return ($item -and $item.status -eq "online")
     }
     [void](Assert-That $deviceOnline "断言1: 设备 status=online")
+
+    if ($Scene -eq "LPR") {
+        # 断言设备能力清单含 lpr 模型族（下发前能力校验的前提；Agent 心跳会上报含 lpr）
+        Write-E2E "Step 3a2: 断言设备能力含 lpr 模型族" -Level STEP
+        $edgeList = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$effectiveEdgeCode&page_no=1&page_size=50"
+        $edgeItem = @($edgeList.items) | Where-Object { $_.code -eq $effectiveEdgeCode } | Select-Object -First 1
+        $families = @()
+        if ($edgeItem -and $edgeItem.capabilities -and $edgeItem.capabilities.model_families) {
+            $families = @($edgeItem.capabilities.model_families)
+        }
+        $lprCapOk = ($families -contains "lpr")
+        [void](Assert-That $lprCapOk "断言1b: 设备 capabilities.model_families 含 lpr（实际: $($families -join ', ')）")
+    }
 
     Write-E2E "Step 3b: 等待 Agent 任务 running 并核对云端任务 RUNNING" -Level STEP
     $agentRunning = Wait-Until -TimeoutSec $PollTimeoutSec -IntervalSec 3 -Message "Agent 任务 $($created.Task1Id) running=true" -Condition {
@@ -708,8 +772,9 @@ try {
         }
     }
 
-    if ($Scene -eq "OCR_TEXT") {
-        Write-E2E "Step 3d2: 断言 OCR 文本已透传（objects[].text → ai_result.detections[].text）" -Level STEP
+    if ($Scene -eq "OCR_TEXT" -or $Scene -eq "LPR") {
+        $sceneLabel = if ($Scene -eq "LPR") { "LPR 车牌" } else { "OCR" }
+        Write-E2E "Step 3d2: 断言 $sceneLabel 文本已透传（objects[].text → ai_result.detections[].text）" -Level STEP
         $textDets = @()
         if ($script:SampleAlarm -and $script:SampleAlarm.ai_result) {
             $textDets = @($script:SampleAlarm.ai_result.detections | Where-Object {
@@ -862,6 +927,9 @@ try {
     }
     if ($Scene -eq "OCR_TEXT") {
         Write-E2E "文本证据（DB）: select id, alarm_type, ai_result->'detections'->0->>'text' as ocr_text from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
+    }
+    if ($Scene -eq "LPR") {
+        Write-E2E "车牌证据（DB）: select id, alarm_type, ai_result->'detections'->0->>'text' as plate_text from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
     }
 }
 catch {
