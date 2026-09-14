@@ -109,7 +109,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 2b | 云端任务 `status=RUNNING` | `GET /api/v1/video/algorithm/task/list` |
 | 3 | 出现 `algorithm_type=INTRUSION` 告警 | `GET /api/v1/video/alarm/record/list?camera_id=<id>` |
 | 4 | 告警 `snapshot_url` 非空 | 告警出参计算字段 `AlarmRecordOutSchema.snapshot_url` |
-| 5 | 重复 `event_id` 不重复建告警 | MQTT：经 Broker 容器 `mosquitto_pub` 连发两条同 `event_id`；HTTP：直连 callback（见第 8 节已知差异） |
+| 5 | 重复 `event_id` 不重复建告警 | MQTT：经 Broker 容器 `mosquitto_pub` 连发两条同 `event_id`；HTTP：直连 `detection/callback`（后端模块级 `_CALLBACK_DEDUP` 已按 `event_id` 去重） |
 | 6 | 窗口外任务在 Agent 侧停止且不产生告警 | 新建 Task#2（schedule 为明天全天）→ Agent `running=false`、`ai_result.task_id=Task2` 告警数为 0 |
 | 7 | stop 同步：Agent `running=false`、云端 `STOPPED` | Task#1 |
 | 8 | delete 同步：Agent `GET /api/v1/tasks/{id}` 返回 404、云端列表移除 | Task#1/#2 |
@@ -164,7 +164,7 @@ psql ... -c "select id, code, status, control_url, last_heartbeat from edge_devi
 ## 8. 已知差异 / 与 brief 的偏差
 
 1. **brief 中的 `GET /api/v1/video/edge/tasks` 不存在**。Agent 任务运行态改由 Agent 控制面 `GET {control_url}/api/v1/tasks` 查询（`agent_server.cpp:152`）；云端任务态由 `GET /api/v1/video/algorithm/task/list` 查询。
-2. **HTTP 通道无 `event_id` 去重**：`InferenceService.process_detection_callback`（`inference/service.py:24`）不处理 `event_id`；去重仅在 MQTT 消费者实现（`edge/consumer.py:229-246`）。因此 `-Transport http` 下重复投递会产生两条告警，脚本将其标记为 WARN 而非失败。
+2. **HTTP 通道已支持 `event_id` 去重（与原 brief 的差异已修复）**：`detection_callback_controller`（`algorithm/controller.py:215`）复用 `edge/consumer.py` 的 `dedup()`，以模块级 `_CALLBACK_DEDUP` 按 `event_id` 幂等去重（命中返回 `{"alarm_created": false, "reason": "duplicate"}`），与 MQTT 消费者（`edge/consumer.py:229-246`）行为一致。`-Transport http` 下重复投递只新建 1 条告警，脚本对该断言按 OK 处理。注：`InferenceService.process_detection_callback`（`inference/service.py:24`）本身仍不处理 `event_id`。
 3. **schedule 更新不向 Agent 回传**：`PUT /api/v1/video/algorithm/task/update/{id}` 只改 DB（`algorithm/service.py:57`），且 Agent `POST /api/v1/tasks` 对已存在 id 返回 400（`pipeline_manager.cpp:129`），故无法“原地改 schedule 再重启”。脚本改为**新建窗口外 Task#2**验证时段透传与 Agent 侧调度。
 4. Broker 默认镜像匿名访问：`eclipse-mosquitto:2` 默认不允许匿名且仅监听容器内。脚本会挂载临时 `mosquitto.conf`（`listener 1883 0.0.0.0` + `allow_anonymous true`），见 `Start-Broker`。
 

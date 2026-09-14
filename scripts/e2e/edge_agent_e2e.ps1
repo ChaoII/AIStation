@@ -190,8 +190,11 @@ function Get-AdminToken {
         if (-not $detail) { $detail = $_.Exception.Message }
         throw "登录失败: $detail`n提示：若后端开启验证码，请设置 CAPTCHA_ENABLE=false 重启后端，或把 -CaptchaReferer 指向以 docs/redoc 结尾的地址。"
     }
-    $token = $resp.data.access_token
-    if (-not $token) { throw "登录响应缺少 data.access_token: $($resp | ConvertTo-Json -Depth 5 -Compress)" }
+    # docs referer 下后端返回扁平 token（login 控制器对 DOCS_URL referer 直接返回 model_dump），
+    # 其余情况返回 { data: { access_token } }；此处兼容两种形状。
+    $token = $resp.access_token
+    if (-not $token) { $token = $resp.data.access_token }
+    if (-not $token) { throw "登录响应缺少 access_token: $($resp | ConvertTo-Json -Depth 5 -Compress)" }
     return $token
 }
 
@@ -555,7 +558,7 @@ try {
     Write-E2E "Step 3e: 重复 event_id 去重断言" -Level STEP
     $dedupTaskId = 999999  # 哨兵 task_id，用于把去重测试的告警与真实 Agent 告警隔离
     $dedupEventId = "e2e-dedup-$($script:RunId)"
-    $dedupCountBefore = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 200 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $dedupTaskId }).Count
+    $dedupCountBefore = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $dedupTaskId }).Count
 
     $dedupPayload = @{
         event_id       = $dedupEventId
@@ -580,13 +583,15 @@ try {
                 docker exec $BrokerName mosquitto_pub -h 127.0.0.1 -p 1883 -t $topic -m $payloadJson | Out-Null
             }
             Start-Sleep -Seconds 8
-            $dedupCountAfter = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 200 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $dedupTaskId }).Count
+            $dedupCountAfter = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $dedupTaskId }).Count
             $delta = $dedupCountAfter - $dedupCountBefore
             [void](Assert-That ($delta -eq 1) "断言5: 重复 event_id 只新建 1 条告警（新增=$delta）")
         }
     } else {
-        # HTTP 通道：后端 detection/callback 未实现 event_id 去重（见 runbook 已知差异）。
-        $before = (Get-AlarmItems -CameraId $created.CameraId -PageSize 200).Count
+        # HTTP 通道：后端 detection/callback 已按 event_id 模块级去重（algorithm/controller.py 的 _CALLBACK_DEDUP）。
+        # 仅统计哨兵 task_id 的告警，避免 Task#1 的真实 Agent 告警污染增量。
+        $before = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $dedupTaskId }).Count
+        $callbackFailed = $false
         foreach ($i in 1..2) {
             try {
                 Invoke-RestMethod -Method Post `
@@ -595,18 +600,15 @@ try {
                     -ContentType "application/json" -Body ($dedupPayload | ConvertTo-Json -Depth 20 -Compress) | Out-Null
             } catch {
                 Add-Warning "断言5(HTTP): 重复事件投递失败（检查 -InferenceCallbackToken 是否与后端 INFERENCE_CALLBACK_TOKEN 一致）: $_"
+                $callbackFailed = $true
                 break
             }
         }
-        Start-Sleep -Seconds 5
-        $after = (Get-AlarmItems -CameraId $created.CameraId -PageSize 200).Count
-        $delta = $after - $before
-        if ($delta -eq 1) {
-            Write-E2E "断言5(HTTP): 重复 event_id 未重复建告警（新增=$delta）" -Level OK
-        } elseif ($delta -eq 2) {
-            Add-Warning "断言5(HTTP): detection/callback 未做 event_id 去重（新增=$delta），属已知差异，见 runbook『已知差异』"
-        } else {
-            Add-Warning "断言5(HTTP): 重复投递结果不符合预期（新增=$delta）"
+        if (-not $callbackFailed) {
+            Start-Sleep -Seconds 5
+            $after = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $dedupTaskId }).Count
+            $delta = $after - $before
+            [void](Assert-That ($delta -eq 1) "断言5(HTTP): 重复 event_id 只新建 1 条告警（新增=$delta）")
         }
     }
 
@@ -639,7 +641,7 @@ try {
     }
     [void](Assert-That $task2NotRunning "断言6: 窗口外任务在 Agent 侧停止（running=false）")
 
-    $task2Alarms = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 200 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $created.Task2Id }).Count
+    $task2Alarms = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object { $_.ai_result -and $_.ai_result.task_id -eq $created.Task2Id }).Count
     [void](Assert-That ($task2Alarms -eq 0) "断言6b: 窗口外任务未产生告警（task#2 告警数=$task2Alarms）")
 
     Write-E2E "Step 4b: 停止任务#1 并断言 Agent 同步" -Level STEP

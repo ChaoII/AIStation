@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, File, Path, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
+from app.api.v1.module_video.edge.consumer import dedup
 from app.common.request import PaginationService
 from app.common.response import SuccessResponse
 from app.config.setting import settings
@@ -21,6 +22,9 @@ from .schema import (
     AlgorithmUpdateSchema,
 )
 from .service import AlgorithmService
+
+# HTTP detection/callback 的 event_id 去重（短时、有界、带 TTL），与 MQTT 消费者复用同一实现
+_CALLBACK_DEDUP = dedup()
 
 AlgorithmRouter = APIRouter(route_class=OperationLogRoute, prefix="/algorithm", tags=["算法管理"])
 
@@ -221,6 +225,15 @@ async def detection_callback_controller(
     if token != settings.INFERENCE_CALLBACK_TOKEN:
         raise CustomException(msg="无效的调用凭证", code=403)
 
+    # spec §7：按 event_id 幂等去重，避免 HTTP 重试重复建告警（与 MQTT 消费者行为一致）
+    event_id = str(body.get("event_id") or "").strip()
+    if event_id and _CALLBACK_DEDUP.seen(event_id):
+        return SuccessResponse(
+            data={"alarm_created": False, "reason": "duplicate"}, msg="处理完成"
+        )
+
     from app.api.v1.module_video.inference.service import InferenceService
     result = await InferenceService.process_detection_callback(body)
+    if event_id:
+        _CALLBACK_DEDUP.mark(event_id)
     return SuccessResponse(data=result, msg="处理完成")
