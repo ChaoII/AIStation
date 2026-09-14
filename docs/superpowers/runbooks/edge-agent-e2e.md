@@ -32,6 +32,9 @@
 | 视频素材（LPR） | `...\test_images\test_lpr_detection.jpg` | 车牌图同样先用 FFmpeg 循环成 mp4 再传给 `-VideoPath`（见第 13 节） |
 | 模型文件（FACE_DET） | `...\test_models\onnx\seetaface\scrfd_2.5g_bnkps_shape640x640.onnx` | `-Scene FACE_DET` 默认人脸检测模型（face_detection，走 `-FaceModelPath`，见第 15 节） |
 | 视频素材（FACE_DET） | `...\test_images\test_face_detection.jpg` | 人脸图同样先用 FFmpeg 循环成 mp4 再传给 `-VideoPath`（见第 15 节） |
+| 模型文件（ABSENT） | `...\test_models\onnx\yolo11n\yolo11n_nms.onnx` | `-Scene ABSENT` 默认检测模型（单 det，走 `-DetModelPath`，见第 16 节） |
+| 视频素材（ABSENT） | 自制「人先出现→随后空白」混合 mp4 | **不可用纯静态图/纯空白图**：需先有目标建立 `last_seen`，再静默触发 absence（见第 16 节） |
+| Agent 心跳 | `heartbeat_sec` 默认 5s（`<=0` 关闭） | absence 依赖静默期空检测心跳事件（见第 16 节） |
 | 登录 | `admin / 123456` | 见 `backend/app/api/v1/module_system/auth/service.py:89` |
 
 > 视频必须先能检出目标（人/车），否则不会产生告警，`断言3` 会超时。
@@ -105,6 +108,11 @@ pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e
   -Scene FACE_DET `
   -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\test_face_detection_loop.mp4
 
+# ABSENT 离岗场景（单 det + absence 时序规则，需「人先出现再离开」的混合视频；见第 16 节）
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene ABSENT `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\absent_person_then_blank.mp4
+
 # DET_ZONE 检测 + 跟踪（-Tracking）：断言告警 detections[].track_id 出现；见第 14 节
 pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
   -Scene DET_ZONE -Tracking `
@@ -123,15 +131,16 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `-Transport` | `mqtt` | `mqtt` / `http` |
-| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `DET_ZONE`（单 det 区域入侵，`scene_type=DET_ZONE`，见第 14 节）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节）/ `LPR`（det+rec 车牌 pipeline，见第 13 节）/ `FACE_DET`（单 face_detection 人脸 pipeline，见第 15 节） |
+| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `DET_ZONE`（单 det 区域入侵，`scene_type=DET_ZONE`，见第 14 节）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节）/ `LPR`（det+rec 车牌 pipeline，见第 13 节）/ `FACE_DET`（单 face_detection 人脸 pipeline，见第 15 节）/ `ABSENT`（单 det + absence 时序规则，见第 16 节） |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
 | `-EdgeCode` | 空（运行时唯一） | 边缘设备编码 / Agent `--edge-code`；留空时按 `RunId` 生成 `edge-e2e-<RunId>`，避免软删后同码无法复用 |
-| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx`，`-Scene OCR_TEXT` 改用 `ppocrv6_tiny\det_infer.onnx`，`-Scene LPR` 改用 `yolov5plate.onnx`，`-Scene FACE_DET` 改用 `-FaceModelPath` |
+| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx`，`-Scene OCR_TEXT` 改用 `ppocrv6_tiny\det_infer.onnx`，`-Scene LPR` 改用 `yolov5plate.onnx`，`-Scene FACE_DET` 改用 `-FaceModelPath`，`-Scene ABSENT` 改用 `-DetModelPath` |
 | `-ClsModelPath` | `...\onnx\zhgd_ml.onnx` | PED_ATTR 属性分类模型，写入 `preset_params.cls_path`；`-Scene OCR_TEXT` 未显式传入时自动改用 `ppocrv6_tiny\cls_infer.onnx` |
 | `-RecModelPath` | `...\ocr\ppocrv6_tiny\rec_infer.onnx` | OCR 文本识别模型，写入 `preset_params.rec_path`；仅 `-Scene OCR_TEXT` 使用 |
 | `-DictPath` | `...\test_data\ppocrv6_tiny_dict.txt` | OCR 字符字典，写入 `preset_params.dict_path`；仅 `-Scene OCR_TEXT` 使用 |
 | `-PlateRecModelPath` | `...\onnx\plate_recognition_color.onnx` | LPR 车牌识别模型，写入 `preset_params.rec_path`；仅 `-Scene LPR` 使用 |
 | `-FaceModelPath` | `...\onnx\seetaface\scrfd_2.5g_bnkps_shape640x640.onnx` | FACE_DET 人脸检测模型，写入 `Algorithm.model_path`；仅 `-Scene FACE_DET` 使用 |
+| `-DetModelPath` | `...\onnx\yolo11n\yolo11n_nms.onnx` | ABSENT 离岗检测模型，写入 `Algorithm.model_path`；仅 `-Scene ABSENT` 使用 |
 | `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
 | `-Tracking` | 关 | 算法 `runtime_config.tracking={enabled=true,algorithm=bytetrack}`，让 Agent 做 ByteTrack 跟踪并回填 `track_id`；启用后追加断言 3d（见第 5 节与第 14 节），仅检测类场景有意义 |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
@@ -170,6 +179,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 > `-Scene OCR_TEXT` 时：断言 3 匹配 `algorithm_type=OCR_TEXT`，并在断言 4 后追加断言 3c（文本透传）。
 > `-Scene LPR` 时：断言 3 匹配 `algorithm_type=LPR`，并在断言 4 后追加断言 3c（车牌文本透传），断言 1 后追加断言 1b（设备能力含 `lpr`）。
 > `-Scene FACE_DET` 时：断言 3 匹配 `algorithm_type=FACE_DET`，并在断言 4 后追加断言 3b（人脸框透传），断言 1 后追加断言 1b（设备能力含 `face`）。
+> `-Scene ABSENT` 时：断言 3 匹配 `algorithm_type=ABSENT`，断言 1 后追加断言 1b（设备能力含 `det`），断言 4 后追加断言 3b（`ai_result.detections` 为空=心跳触发）与断言 3c（`interval_seconds=30` 内不重复，容差 1 条）。
 > `-Tracking` 时：断言 3 匹配当前场景的 `algorithm_type`，并在断言 3c 之后追加断言 3d（`track_id` 透传）。
 
 ## 6. 接口契约（已对照源码核验）
@@ -732,3 +742,125 @@ psql ... -c "select id, alarm_type,
 | 断言 3 超时但 Agent 有事件 | 规则 `object_present` 未命中（无人脸框） | 换含清晰人脸的素材（`test_face_detection.jpg`）；确认 `confidence_threshold=0.3` 下能检出 |
 | 断言 3b 失败 | 事件未带人脸框（Agent 未把 `face_detection` 并入 sink） | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`，确认 Agent 事件 `objects[]` 含人脸框 |
 | 模型加载失败 | `-FaceModelPath` 在 Agent 机不存在 | 核对指向 Agent 可读绝对路径（`seetaface\scrfd_2.5g_bnkps_shape640x640.onnx`） |
+
+## 16. ABSENT 离岗/无人场景（`-Scene ABSENT`）
+
+前置：ModelDeploy 已支持**空事件心跳**（`heartbeat_sec > 0`），Agent 在任务运行期每
+`heartbeat_sec` 上报一条空检测事件 `{detections:[], objects:[], heartbeat:true, ...}`；
+云端 `process_detection_callback` 对含时序叶子（absence）的规则不再因空检测早退，并按
+`rule.interval_seconds` 做触发防抖。对应 SP4-b 收尾
+（`docs/superpowers/specs/2026-09-15-sp4b-wrapup-design.md` §3.3）。
+
+> 关键前置：**视频必须「人先出现、随后离开画面」**。absence 判定依据是「距最近一次
+> 观测到 `person` 的时长 >= `gap_sec`」；若全程空白（`last_seen` 无历史），求值器一律
+> 不命中，`断言3` 会超时。
+
+### 16.1 混合视频素材制作
+
+脚本只接受视频地址（FFmpeg 可直接读 mp4）。推荐把「含人片段」与「空画面片段」拼接成一条：
+
+```powershell
+# 1) 含人片段（例如 6s，需能检出 person）
+ffmpeg -y -i E:\dst\person_clip.mp4 -t 6 -r 25 -pix_fmt yuv420p E:\dst\part_person.mp4
+# 2) 空白片段（例如 20s，纯背景/纯黑；> gap_sec + 若干心跳周期）
+ffmpeg -y -f lavfi -i color=c=black:s=1280x720:d=20 -r 25 -pix_fmt yuv420p E:\dst\part_blank.mp4
+# 3) 拼接（concat demuxer）
+"file 'part_person.mp4'`nfile 'part_blank.mp4'" | Set-Content E:\dst\concat.txt -Encoding ascii
+ffmpeg -y -f concat -safe 0 -i E:\dst\concat.txt -c copy `
+  E:\CLionProjects\ModelDeploy\test_data\test_images\absent_person_then_blank.mp4
+```
+
+> 空白片段的时长建议 >= `gap_sec`（本脚本 10s）+ 2~3 个心跳周期（`heartbeat_sec` 默认 5s），
+> 即 >= 25s，确保静默期内至少有一次心跳到达云端。
+> 若无法拼视频，也可用「人片段」与「纯背景片段」两次运行分别验证：先播人片段使 `last_seen`
+> 有历史，再切到空白源等待心跳触发（脚本单次运行只接受一个 `-VideoPath`，故推荐拼接）。
+
+### 16.2 运行命令
+
+```powershell
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene ABSENT `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\absent_person_then_blank.mp4
+```
+
+> 未显式传 `-ModelPath` 时，ABSENT 场景自动改用 `-DetModelPath`
+> （默认 `yolo11n_nms.onnx`）。`-EdgeCode` / `-Secret` 等与默认场景一致。
+
+### 16.3 播种内容
+
+**Algorithm**（`POST /api/v1/video/algorithm/create`）：
+
+```jsonc
+{
+  "algorithm_type": "ABSENT",
+  "scene_type": "ABSENT",
+  "model_path": "<yolo11n_nms.onnx 绝对路径>",
+  "runtime_config": { "backend": "ort", "device": "cpu",
+                      "decoder": { "hw_accel": "none", "device_only": false } },
+  "preset_params": { "confidence_threshold": 0.3 }
+}
+```
+
+`scene_type=ABSENT` 使 `build_agent_task_config` 编译出单条 `type=det` 的模型条目
+（设备能力校验要求 `model_families=["det"]`，`scene/catalog.py:110`）。
+
+**AlarmRule**（`POST /api/v1/video/alarm/rule/create`）：
+
+```jsonc
+{
+  "camera_id": <本次相机 id>,
+  "alarm_type": "ABSENT",
+  "severity": "WARNING",
+  "interval_seconds": 30,
+  "conditions": { "op": "and",
+    "children": [ { "subject": "absence", "label": "person", "gap_sec": 10 } ] },
+  "status": true
+}
+```
+
+> 规则匹配键是 `camera_id` + `alarm_type`，且 `alarm_type` 必须等于事件的
+> `algorithm_type`（本例均为 `ABSENT`），否则规则不生效（`inference/service.py:111`）。
+
+### 16.4 心跳与 absence 时序语义
+
+| 概念 | 归属 | 含义 | 本脚本取值 |
+|------|------|------|-----------|
+| `heartbeat_sec` | Agent 任务配置 | 任务运行期每 N 秒上报一条空检测事件；`<=0` 关闭、`>=1` 生效 | 默认 5s（Agent 侧） |
+| `gap_sec` | AlarmRule 条件叶子 | 「距最近一次观测到 `label` 的时长」达到该秒数才命中 absence | 10s |
+| `interval_seconds` | AlarmRule 字段 | 告警防抖窗口：同一窗口内 absence 不重复告警（云端触发后写标记，窗口内再命中也不建告警） | 30s |
+
+- 目标出现时，Agent 上报含 `detections` 的事件，云端写入 `last_seen`（时序存储，TTL 24h）。
+- 目标离开后，视频进入静默期。**普通帧不再产生事件**（Agent 空框不发布），唯一到达云端的
+  就是心跳空检测事件；`(now - last_seen) >= gap_sec` 时 absence 命中并建告警。
+- 首次告警后 `interval_seconds=30` 内，心跳继续到达但被防抖标记拦住，不重复建告警；
+  检测恢复后 `last_seen` 推进、gap 条件为假，静默再次超时后可重新告警。
+
+### 16.5 新增断言与证据
+
+| # | 断言 | 判据 |
+|---|------|------|
+| 1b | 设备 `capabilities.model_families` 含 `det` | `GET /api/v1/video/edge/list?code=<EdgeCode>` |
+| 3 | 出现 `algorithm_type=ABSENT` 告警 | 断言 3 按 `$effectiveAlgorithmType` 过滤（由心跳驱动的告警） |
+| 3b | `ai_result.detections` 为空 | 告警样本 `ai_result.detections` 为 `[]`，证明告警来自空检测心跳而非真实框 |
+| 3c | `interval_seconds=30` 内不重复建告警（容差 1 条） | 首次告警后等待 15s（< 30s）再统计新增 `ABSENT` 告警数 `<= 1` |
+
+```bash
+# 离岗证据（DB，PostgreSQL 示例）
+psql ... -c "select id, alarm_type,
+  jsonb_array_length(ai_result->'detections') as n_dets,
+  ai_result->>'task_id' as task_id
+  from video_alarm_records where camera_id=<id> order by id desc limit 5;"
+```
+
+脚本结束清理：`AlarmRule` → `Algorithm` → `Camera` → `EdgeDevice`（`-KeepData` 时保留）。
+
+### 16.6 排障
+
+| 现象 | 可能原因 | 处理 |
+|------|----------|------|
+| 断言 3 超时、无 `ABSENT` 告警 | 视频全程无目标（`last_seen` 无历史）；或视频没有真正的静默段；或 Agent `heartbeat_sec<=0` 未发心跳 | 换「人先出现再离场」的混合视频；确认 Agent 心跳已开启（`heartbeat_sec` 默认 5s）；确认后端为已含 SP4-b 收尾的实现（空检测不再早退） |
+| 断言 3 超时但 Agent 有含检测事件 | 规则 `alarm_type` 与事件 `algorithm_type` 不一致 / 无规则 / `label` 不匹配 | 核对 `alarm_type=ABSENT`；确认视频能检出 `person`（模型 `labels` 含 person） |
+| 断言 3b 失败（detections 非空） | 命中的是真实检测事件而非心跳空事件 | 检查视频静默段是否仍有残留检出（`confidence_threshold` 过低）；提高 `gap_sec` 前的静默质量 |
+| 断言 3c 失败（短窗内多条） | `interval_seconds` 未生效 / 云端防抖标记写入失败 | 核对 AlarmRule `interval_seconds=30` 已落库；用 `-KeepData` 重跑查 DB，确认 Redis/内存标记正常（`ai:temporal:*:__absent__:*`） |
+| 启动任务报「边缘设备能力不足」 | 设备 capabilities 缺 `model_families=["det"]` | 脚本已按场景播种该能力（`Seed-EdgeDevice` 默认 `["det"]`）；手工核对 `GET /api/v1/video/edge/list` |
+| 模型加载失败 | `-DetModelPath` 在 Agent 机不存在 | 核对指向 Agent 可读绝对路径（`yolo11n\yolo11n_nms.onnx`） |

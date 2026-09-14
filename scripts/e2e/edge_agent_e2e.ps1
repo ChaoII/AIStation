@@ -27,12 +27,15 @@
 .PARAMETER VideoPath
     摄像机子码流地址；本脚本用本地 mp4 文件冒充 RTSP（FFmpeg 可直接读文件）。
     OCR_TEXT 场景建议把静态图（如 ocr2.jpg）用 FFmpeg 循环成 mp4 后传入本参数。
+    ABSENT 场景必须传入「人先出现、随后离开画面」的视频：Agent 需先由含目标的事件建立
+    last_seen 历史，静默期心跳触发的 absence 才会命中（只有空白画面会因无历史而不命中）。
 
 .PARAMETER ModelPath
     算法检测模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
     当 `-Scene PED_ATTR` 且未显式传入本参数时，自动改用 zhgd_det.onnx；
     当 `-Scene LPR` 时自动改用 yolov5plate.onnx；
-    当 `-Scene FACE_DET` 时自动改用 -FaceModelPath（scrfd_2.5g_bnkps_shape640x640.onnx）。
+    当 `-Scene FACE_DET` 时自动改用 -FaceModelPath（scrfd_2.5g_bnkps_shape640x640.onnx）；
+    当 `-Scene ABSENT` 时自动改用 -DetModelPath（yolo11n_nms.onnx）。
 
 .PARAMETER ClsModelPath
     PED_ATTR 属性分类（cls）模型路径，写入 preset_params.cls_path；仅 `-Scene PED_ATTR` 使用。
@@ -52,6 +55,10 @@
     人脸检测（face_detection）模型路径，写入 Algorithm.model_path；仅 `-Scene FACE_DET` 使用。
     默认取 seetaface\scrfd_2.5g_bnkps_shape640x640.onnx（SCRFD，输入 640x640、ORT/CPU）。
 
+.PARAMETER DetModelPath
+    ABSENT 离岗场景检测模型路径，写入 Algorithm.model_path；仅 `-Scene ABSENT` 使用。
+    默认复用各检测场景通用的 yolo11n_nms.onnx（单 det pipeline，ORT/CPU）。
+
 .PARAMETER Scene
     场景模式：
       - INTRUSION（默认）：单 det 模型，断言 algorithm_type=INTRUSION 告警；
@@ -65,6 +72,10 @@
         ai_result.detections[].text 非空（模型默认取 yolov5plate + plate_recognition_color）。
       - FACE_DET：单 face_detection（SCRFD）模型管线，播种 object_present 规则并断言
         algorithm_type=FACE_DET 告警且 ai_result.detections[] 非空（模型默认取 -FaceModelPath）。
+      - ABSENT：单 det 模型 + absence 时序规则（label=person、gap_sec=10、interval_seconds=30），
+        断言 algorithm_type=ABSENT 告警、ai_result.detections 为空（由 Agent 静默期心跳的空检测
+        事件驱动），且 interval_seconds 内不重复告警（容差 1 条）。视频需「人先出现再离开画面」，
+        否则 last_seen 无历史，absence 永不命中；检测模型默认取 -DetModelPath。
 
 .PARAMETER DecoderHwAccel
     算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
@@ -140,7 +151,8 @@ param(
     [string]$DictPath = "E:\CLionProjects\ModelDeploy\test_data\ppocrv6_tiny_dict.txt",
     [string]$PlateRecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\plate_recognition_color.onnx",
     [string]$FaceModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\seetaface\scrfd_2.5g_bnkps_shape640x640.onnx",
-    [ValidateSet("INTRUSION", "DET_ZONE", "PED_ATTR", "OCR_TEXT", "LPR", "FACE_DET")]
+    [string]$DetModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx",
+    [ValidateSet("INTRUSION", "DET_ZONE", "PED_ATTR", "OCR_TEXT", "LPR", "FACE_DET", "ABSENT")]
     [string]$Scene = "INTRUSION",
     [string]$DecoderHwAccel = "none",
     [switch]$Tracking,
@@ -438,10 +450,13 @@ function Stop-Agent {
 
 # 边缘设备播种：优先 create；若 code 已存在（可能已被 Agent 心跳自动 upsert），则改为 update。
 function Seed-EdgeDevice {
-    # PED_ATTR/OCR_TEXT/LPR/FACE_DET 场景要求设备声明对应模型族，
+    # PED_ATTR/OCR_TEXT/LPR/FACE_DET/ABSENT 场景要求设备声明对应模型族，
     # 否则能力校验会拒绝下发；其余场景保持仅 det。
     $capModelFamilies = @("det")
-    if ($Scene -eq "PED_ATTR") {
+    if ($Scene -eq "ABSENT") {
+        # 场景目录 ABSENT 要求模型族 det（scene/catalog.py），与默认值一致，此处显式声明便于对照
+        $capModelFamilies = @("det")
+    } elseif ($Scene -eq "PED_ATTR") {
         $capModelFamilies = @("det", "pedestrian_attribute")
     } elseif ($Scene -eq "OCR_TEXT") {
         $capModelFamilies = @("ocr")
@@ -518,7 +533,8 @@ New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 # 场景模式：PED_ATTR 使用 det+cls 双模型（zhgd_det + zhgd_ml）与属性告警规则；
 # OCR_TEXT 使用 det+cls+rec+dict 四件套（ppocrv6_tiny）与文本规则；
 # LPR 使用 det+rec 双模型（yolov5plate + plate_recognition_color）与文本规则；
-# FACE_DET 使用单 face_detection 模型（scrfd）与 object_present 规则。
+# FACE_DET 使用单 face_detection 模型（scrfd）与 object_present 规则；
+# ABSENT 使用单 det 模型（yolo11n_nms）与 absence 时序规则（依赖 Agent 空事件心跳）。
 # 未显式传入对应模型参数时，按场景切换到各自默认模型。
 $effectiveAlgorithmType = switch ($Scene) {
     "DET_ZONE" { "DET_ZONE" }
@@ -526,6 +542,7 @@ $effectiveAlgorithmType = switch ($Scene) {
     "OCR_TEXT" { "OCR_TEXT" }
     "LPR"      { "LPR" }
     "FACE_DET" { "FACE_DET" }
+    "ABSENT"   { "ABSENT" }
     default    { "INTRUSION" }
 }
 $pedAttrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx"
@@ -538,6 +555,7 @@ if (-not $PSBoundParameters.ContainsKey("ModelPath")) {
     elseif ($Scene -eq "OCR_TEXT") { $effectiveModelPath = $ocrDetDefault }
     elseif ($Scene -eq "LPR") { $effectiveModelPath = $lprDetDefault }
     elseif ($Scene -eq "FACE_DET") { $effectiveModelPath = $FaceModelPath }
+    elseif ($Scene -eq "ABSENT") { $effectiveModelPath = $DetModelPath }
 }
 $effectiveClsPath = $ClsModelPath
 if ($Scene -eq "OCR_TEXT" -and -not $PSBoundParameters.ContainsKey("ClsModelPath")) {
@@ -581,6 +599,7 @@ try {
         "OCR_TEXT" { "E2E 文本识别 $($script:RunId)" }
         "LPR"      { "E2E 车牌识别 $($script:RunId)" }
         "FACE_DET" { "E2E 人脸检测 $($script:RunId)" }
+        "ABSENT"   { "E2E 离岗检测 $($script:RunId)" }
         default    { "E2E 闯入检测 $($script:RunId)" }
     }
     $algoBody = @{
@@ -645,6 +664,18 @@ try {
         }
         $algoBody.preset_params = @{
             input_size           = @(640, 640)
+            confidence_threshold = 0.3
+        }
+    } elseif ($Scene -eq "ABSENT") {
+        # scene_type 触发编排编译检测（det）pipeline；
+        # runtime_config 按检测/ORT-CPU 契约显式给定（不做 RTSP transport 覆盖）
+        $algoBody.scene_type = "ABSENT"
+        $algoBody.runtime_config = @{
+            backend  = "ort"
+            device   = "cpu"
+            decoder  = @{ hw_accel = $DecoderHwAccel; device_only = $false }
+        }
+        $algoBody.preset_params = @{
             confidence_threshold = 0.3
         }
     } elseif ($Scene -eq "DET_ZONE") {
@@ -741,6 +772,26 @@ try {
         $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
         $created.RuleId = $rule.id
         Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=FACE_DET conditions=object_present（出现人脸框即命中，链路验证）" -Level OK
+    } elseif ($Scene -eq "ABSENT") {
+        # absence 时序规则：最近一次 person 出现后静默 >= gap_sec=10s 命中；
+        # interval_seconds=30 为告警防抖窗口（心跳每 5s 报一次空检测，靠它避免重复告警）
+        $ruleBody = @{
+            name             = "E2E 离岗规则 $($script:RunId)"
+            camera_id        = $created.CameraId
+            alarm_type       = "ABSENT"
+            severity         = "WARNING"
+            interval_seconds = 30
+            conditions       = @{
+                op       = "and"
+                children = @(
+                    @{ subject = "absence"; label = "person"; gap_sec = 10 }
+                )
+            }
+            status           = $true
+        }
+        $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
+        $created.RuleId = $rule.id
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=ABSENT conditions=absence(person,gap_sec=10) interval_seconds=30（静默超时即命中，链路验证）" -Level OK
     }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致
@@ -801,6 +852,19 @@ try {
         }
         $faceCapOk = ($families -contains "face")
         [void](Assert-That $faceCapOk "断言1b: 设备 capabilities.model_families 含 face（实际: $($families -join ', ')）")
+    }
+
+    if ($Scene -eq "ABSENT") {
+        # 断言设备能力清单含 det 模型族（场景目录 ABSENT 的能力要求为 det）
+        Write-E2E "Step 3a2: 断言设备能力含 det 模型族" -Level STEP
+        $edgeList = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$effectiveEdgeCode&page_no=1&page_size=50"
+        $edgeItem = @($edgeList.items) | Where-Object { $_.code -eq $effectiveEdgeCode } | Select-Object -First 1
+        $families = @()
+        if ($edgeItem -and $edgeItem.capabilities -and $edgeItem.capabilities.model_families) {
+            $families = @($edgeItem.capabilities.model_families)
+        }
+        $detCapOk = ($families -contains "det")
+        [void](Assert-That $detCapOk "断言1b: 设备 capabilities.model_families 含 det（实际: $($families -join ', ')）")
     }
 
     Write-E2E "Step 3b: 等待 Agent 任务 running 并核对云端任务 RUNNING" -Level STEP
@@ -864,6 +928,27 @@ try {
         if ($faceDetOk) {
             Write-E2E "detections 样本数: $($faceDets.Count)"
         }
+    }
+
+    if ($Scene -eq "ABSENT") {
+        Write-E2E "Step 3d2: 断言 absence 告警由空检测心跳驱动（ai_result.detections 为空）" -Level STEP
+        $absentDets = @()
+        if ($script:SampleAlarm -and $script:SampleAlarm.ai_result) {
+            $absentDets = @($script:SampleAlarm.ai_result.detections)
+        }
+        [void](Assert-That ($absentDets.Count -eq 0) "断言3b: absence 告警 ai_result.detections 为空（心跳空检测触发）")
+
+        Write-E2E "Step 3d3: 断言 interval_seconds=30 内 absence 告警不重复（容差 1 条）" -Level STEP
+        $firstAbsentId = -1
+        if ($script:SampleAlarm) { $firstAbsentId = [int]$script:SampleAlarm.id }
+        $absentWindowSec = 15  # < interval_seconds=30，窗口内约 2~3 次心跳
+        Write-E2E "等待 ${absentWindowSec}s（< interval_seconds=30）观察心跳是否重复建告警…"
+        Start-Sleep -Seconds $absentWindowSec
+        $absentAlarms = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object {
+            $_.alarm_type -eq "ABSENT" -or ($_.ai_result -and $_.ai_result.algorithm_type -eq "ABSENT")
+        })
+        $absentNew = @($absentAlarms | Where-Object { [int]$_.id -ne $firstAbsentId }).Count
+        [void](Assert-That ($absentNew -le 1) "断言3c: interval_seconds=30 内新增 absence 告警 <= 1（实际新增=$absentNew，容差 1 条）")
     }
 
     if ($Scene -eq "OCR_TEXT" -or $Scene -eq "LPR") {
@@ -1045,6 +1130,9 @@ try {
     }
     if ($Scene -eq "FACE_DET") {
         Write-E2E "人脸证据（DB）: select id, alarm_type, jsonb_array_length(ai_result->'detections') as n_dets from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
+    }
+    if ($Scene -eq "ABSENT") {
+        Write-E2E "离岗证据（DB）: select id, alarm_type, jsonb_array_length(ai_result->'detections') as n_dets, ai_result->>'task_id' as task_id from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
     }
     if ($Tracking) {
         Write-E2E "跟踪证据（DB）: select id, alarm_type, jsonb_path_query_array(ai_result, '$.detections[*].track_id') as track_ids from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
