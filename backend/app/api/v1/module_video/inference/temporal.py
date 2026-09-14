@@ -28,6 +28,9 @@ _FIRST = "first"
 _LAST = "last"
 _POS_P = "pos_p"  # 上一次观测中心 "x,y"
 _POS_C = "pos_c"  # 当前观测中心 "x,y"
+_ABSENT_MARK = "__absent__"
+# 无 label（或仅给 labels 列表）时 absence 标记使用的聚合标签
+ABSENT_ALL = "__all__"
 _TTL_SEC = 24 * 3600  # 观测状态保留一天，防止 Redis 键无限增长
 
 
@@ -128,6 +131,7 @@ class TemporalStore:
         self._prefer_redis = prefer_redis
         self._lock = threading.Lock()
         self._memory: dict[str, dict[str, float]] = {}
+        self._memory_meta: dict[str, float] = {}
         # 允许测试注入 Redis 客户端（如 fakeredis），绕过全局配置
         self._redis = redis_client
         self._redis_failed = False
@@ -328,11 +332,48 @@ class TemporalStore:
                 out[field] = (prevs.get(field), cur)
         return out
 
+    # ------------------------------------------------------------- absence 标记
+    @staticmethod
+    def _absent_key(camera_id, alarm_type, label, scope: str) -> str:
+        return f"{KEY_PREFIX}:{camera_id}:{alarm_type}:{_ABSENT_MARK}:{scope}:{label}"
+
+    def get_absent_fired(self, camera_id, alarm_type, label, scope: str = _SCOPE_ALL) -> float | None:
+        """读取 absence 上次触发时间；无记录返回 None。"""
+        scope = scope or _SCOPE_ALL
+        key = self._absent_key(camera_id, alarm_type, label, scope)
+        rd = self._get_redis()
+        if rd is not None:
+            try:
+                return _to_float(rd.get(key))
+            except Exception as e:
+                log.warning(f"absence 标记读取失败，降级内存: {e}")
+                self._redis = None
+                self._redis_failed = True
+        with self._lock:
+            return self._memory_meta.get(key)
+
+    def set_absent_fired(self, camera_id, alarm_type, label, scope: str, ts: float) -> None:
+        """记录 absence 本次触发时间，用于同一节流窗口内不重复告警。"""
+        scope = scope or _SCOPE_ALL
+        key = self._absent_key(camera_id, alarm_type, label, scope)
+        rd = self._get_redis()
+        if rd is not None:
+            try:
+                rd.setex(key, _TTL_SEC, str(float(ts)))
+                return
+            except Exception as e:
+                log.warning(f"absence 标记写入失败，降级内存: {e}")
+                self._redis = None
+                self._redis_failed = True
+        with self._lock:
+            self._memory_meta[key] = float(ts)
+
     # ----------------------------------------------------------------- 维护
     def reset(self) -> None:
         """清空内存与 Redis 中本 store 写入的状态（测试用）。"""
         with self._lock:
             self._memory.clear()
+            self._memory_meta.clear()
         rd = self._get_redis()
         if rd is not None:
             try:

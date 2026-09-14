@@ -213,3 +213,93 @@ def test_count_window_alarm_when_gather_threshold_reached(monkeypatch):
         _event(1002, track_id=3),
     ])
     assert [r["alarm_created"] for r in results] == [False, False, True]
+
+
+# ----------------------------------------------------------------- absence
+class _FakeRuleThrottled(_FakeRule):
+    """带节流间隔的规则（absence 防抖依赖 interval_seconds）。"""
+
+    interval_seconds = 30
+
+
+def _heartbeat(ts):
+    """构造一次空检测心跳事件（Agent 静默期上报）。"""
+    return {
+        "task_id": 1,
+        "camera_id": CAM,
+        "algorithm_type": ALGO,
+        "detections": [],
+        "heartbeat": True,
+        "frame_timestamp": ts,
+    }
+
+
+def test_absence_alarm_on_heartbeat_after_gap(monkeypatch):
+    """先出现目标，静默超过 gap_sec 后由心跳事件触发 absence 告警。"""
+    store = TemporalStore(prefer_redis=False)
+    rule = _FakeRule({
+        "op": "and",
+        "children": [{"subject": "absence", "label": "person", "gap_sec": 30}],
+    })
+    _patch_runtime(monkeypatch, rule, store)
+
+    first = asyncio.run(service.InferenceService.process_detection_callback(_event(1000)))
+    assert first == {"alarm_created": False, "reason": "rule_not_matched"}
+
+    early = asyncio.run(service.InferenceService.process_detection_callback(_heartbeat(1010)))
+    assert early == {"alarm_created": False, "reason": "rule_not_matched"}
+
+    after = asyncio.run(service.InferenceService.process_detection_callback(_heartbeat(1040)))
+    assert after["alarm_created"] is True
+    assert after["rule_matched"] == rule.name
+
+
+def test_absence_heartbeat_throttled_within_interval(monkeypatch):
+    """同一节流窗口内，心跳触发的 absence 告警不重复。"""
+    store = TemporalStore(prefer_redis=False)
+    rule = _FakeRuleThrottled({
+        "op": "and",
+        "children": [{"subject": "absence", "label": "person", "gap_sec": 30}],
+    })
+    _patch_runtime(monkeypatch, rule, store)
+
+    asyncio.run(service.InferenceService.process_detection_callback(_event(1000)))
+    first = asyncio.run(service.InferenceService.process_detection_callback(_heartbeat(1040)))
+    assert first["alarm_created"] is True
+
+    second = asyncio.run(service.InferenceService.process_detection_callback(_heartbeat(1045)))
+    assert second == {"alarm_created": False, "reason": "rule_not_matched"}
+
+
+def test_absence_rearms_after_detection_resumes(monkeypatch):
+    """检测恢复后重新计时，再次静默超时可再次告警。"""
+    store = TemporalStore(prefer_redis=False)
+    rule = _FakeRuleThrottled({
+        "op": "and",
+        "children": [{"subject": "absence", "label": "person", "gap_sec": 30}],
+    })
+    _patch_runtime(monkeypatch, rule, store)
+
+    asyncio.run(service.InferenceService.process_detection_callback(_event(1000)))
+    assert asyncio.run(
+        service.InferenceService.process_detection_callback(_heartbeat(1040))
+    )["alarm_created"] is True
+
+    # 目标重新出现（推进 last_seen，解除 gap 条件）
+    asyncio.run(service.InferenceService.process_detection_callback(_event(1050)))
+    assert asyncio.run(
+        service.InferenceService.process_detection_callback(_heartbeat(1090))
+    )["alarm_created"] is True
+
+
+def test_heartbeat_without_temporal_rule_is_noop(monkeypatch):
+    """规则非时序时，空检测心跳维持既有 no_detections 语义。"""
+    store = TemporalStore(prefer_redis=False)
+    rule = _FakeRule({
+        "op": "and",
+        "children": [{"subject": "object_present", "label": "person"}],
+    })
+    _patch_runtime(monkeypatch, rule, store)
+
+    res = asyncio.run(service.InferenceService.process_detection_callback(_heartbeat(1000)))
+    assert res == {"alarm_created": False, "reason": "no_detections"}

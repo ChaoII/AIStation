@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.api.v1.module_video.inference.temporal import (
+    ABSENT_ALL,
     region_fingerprint,
     temporal_store,
     to_epoch,
@@ -353,7 +354,16 @@ def _eval_temporal(
         if not entries:
             return False
         last_seen = max(last for _first, last in entries.values())
-        return (now - last_seen) >= gap
+        if (now - last_seen) < gap:
+            return False
+        # 同一节流窗口内不重复告警（alarm_interval<=0 表示不节流）
+        label = leaf.get("label")
+        mark_label = label if isinstance(label, str) and label else ABSENT_ALL
+        fired = temporal.get_absent_fired(camera_id, alarm_type, mark_label, scope)
+        interval = _as_float(alarm_interval) or 0.0
+        if fired is not None and interval > 0 and (now - fired) < interval:
+            return False
+        return True
 
     return False
 
@@ -375,6 +385,24 @@ def _observe_temporal_event(camera_id, alarm_type: str, detections: list, now: f
             temporal_store.observe(camera_id, alarm_type, batch, now, scope=scope)
     except Exception as e:
         log.warning(f"时序状态写入失败: {e}")
+
+
+def _mark_absence_fired(camera_id, alarm_type: str, conditions, now: float, temporal=None) -> None:
+    """规则命中后写入 absence 触发标记，避免心跳在同一节流窗口内重复告警。"""
+    temporal = temporal or temporal_store
+    try:
+        for leaf in _iter_temporal_leaves(conditions):
+            if leaf.get("subject") != "absence":
+                continue
+            scope, ok = _leaf_scope(leaf)
+            if not ok:
+                continue
+            label = leaf.get("label")
+            if not isinstance(label, str) or not label:
+                label = ABSENT_ALL
+            temporal.set_absent_fired(camera_id, alarm_type, label, scope, now)
+    except Exception as e:
+        log.warning(f"absence 触发标记写入失败: {e}")
 
 
 def _match_conditions(
@@ -557,12 +585,11 @@ class InferenceService:
         camera_id = event.get("camera_id")
         algorithm_type = event.get("algorithm_type")
         detections = event.get("detections", [])
+        if not isinstance(detections, list):
+            detections = []
         snapshot_data = event.get("snapshot_data")
         snapshot_path = event.get("snapshot_path")
         frame_timestamp = event.get("frame_timestamp")
-
-        if not detections:
-            return {"alarm_created": False, "reason": "no_detections"}
 
         # Save snapshot
         saved_snapshot_path = None
@@ -594,13 +621,21 @@ class InferenceService:
             result = await session.execute(stmt)
             rule = pick_alarm_rule(result.scalars().all(), algorithm_type or "AI_DETECTION")
 
+        alarm_type = algorithm_type or "AI_DETECTION"
+        event_now = to_epoch(frame_timestamp)
+        has_temporal = bool(
+            rule is not None and rule.conditions and _has_temporal_leaf(rule.conditions)
+        )
+        # 无检测：仅当规则含时序叶子（absence 等）时才继续评估，否则维持既有语义
+        if not detections and not has_temporal:
+            return {"alarm_created": False, "reason": "no_detections"}
+
         if rule is not None and rule.conditions:
             # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变
-            event_now = to_epoch(frame_timestamp)
-            if _has_temporal_leaf(rule.conditions):
+            if has_temporal:
                 _observe_temporal_event(
                     camera_id,
-                    algorithm_type or "AI_DETECTION",
+                    alarm_type,
                     detections,
                     event_now,
                     rule.conditions,
@@ -609,18 +644,21 @@ class InferenceService:
                 rule.conditions,
                 detections,
                 camera_id=camera_id,
-                alarm_type=algorithm_type or "AI_DETECTION",
+                alarm_type=alarm_type,
                 now=event_now,
                 alarm_interval=getattr(rule, "interval_seconds", 0) or 0,
             ):
                 return {"alarm_created": False, "reason": "rule_not_matched"}
+            if has_temporal:
+                # 命中后写入 absence 触发标记（纯读取的 _eval_temporal 不改状态）
+                _mark_absence_fired(camera_id, alarm_type, rule.conditions, event_now)
 
         severity = rule.severity if rule else "WARNING"
 
         alarm_data = {
             "camera_id": camera_id,
             "rule_id": rule.id if rule else None,
-            "alarm_type": algorithm_type or "AI_DETECTION",
+            "alarm_type": alarm_type,
             "severity": severity,
             "snapshot_path": saved_snapshot_path,
             "ai_result": {
@@ -629,7 +667,12 @@ class InferenceService:
                 "detections": detections,
                 "frame_timestamp": frame_timestamp,
             },
-            "description": f"AI 检测到 {len(detections)} 个目标: {', '.join(d.get('label', '') for d in detections[:5])}",
+            "description": (
+                f"AI 检测到 {len(detections)} 个目标: "
+                f"{', '.join(d.get('label', '') for d in detections[:5])}"
+                if detections
+                else (f"{rule.name}：区域内持续无目标" if rule else "区域内持续无目标")
+            ),
             "status": "PENDING",
         }
 
