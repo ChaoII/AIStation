@@ -93,12 +93,17 @@ _IMPLEMENTED_LEAF_KEYS = {
     "object_present": None,
     "zone_enter": None,
     "count": "value",
+    # SP4-b 时序叶子：依赖跨事件状态（inference/temporal.py），时间由事件 ts 注入
+    "dwell": "min_sec",
+    "count_window": "window_sec",
+    "absence": "gap_sec",
 }
 
 # 各叶子受求值器支持的比较算子（与 inference/service.py 保持一致）
 _LEAF_OPS = {
     "attribute": {"lt", "gt", "le", "ge", "eq"},
     "count": {">=", ">", "<=", "<", "=="},
+    "count_window": {">=", ">", "<=", "<", "=="},
 }
 
 
@@ -148,13 +153,37 @@ def test_default_rules_implemented_leaves_are_evaluable():
                 assert leaf.get("op") in _LEAF_OPS[subject], (
                     f"{scene.code} 的 {subject} 叶子 op={leaf.get('op')!r} 不受求值器支持"
                 )
-            if subject in ("attribute", "count"):
+            if subject in ("attribute", "count", "count_window"):
                 value = leaf.get("value")
                 assert isinstance(value, (int, float)) and not isinstance(value, bool), (
                     f"{scene.code} 的 {subject} 叶子 value 必须为数值，实际 {value!r}"
                 )
-    # 非空守卫：核心叶子至少各有场景覆盖，避免测试空跑
+    # 非空守卫：核心叶子（含时序叶子）至少各有场景覆盖，避免测试空跑
     assert {"object_present", "count", "attribute", "text_match"} <= checked
+    assert {"dwell", "count_window", "absence"} <= checked
+
+
+def test_temporal_default_rules_use_temporal_leaves():
+    """时序场景默认规则必须落到 SP4-b 已实现的时序叶子。
+
+    - LOITER / ILLEGAL_PARK → dwell；
+    - ABSENT → absence；
+    - GATHER → count_window（滑窗去重计数）。
+    时序叶子依赖跨事件状态（需检测携带 track_id 形成轨迹），因此默认规则不得再写
+    符号化 region（如 "roi"）或字符串阈值（如 "min_sec"）——评估器只认数值键。
+    """
+    expected = {
+        "LOITER": "dwell",
+        "ILLEGAL_PARK": "dwell",
+        "ABSENT": "absence",
+        "GATHER": "count_window",
+    }
+    for code, subject in expected.items():
+        scene = get_scene(code)
+        assert scene is not None, code
+        leaves = list(_iter_rule_leaves(scene.default_rule))
+        assert leaves, f"{code} 默认规则应至少含一个叶子"
+        assert [leaf.get("subject") for leaf in leaves] == [subject], code
 
 
 def test_catalog_api_lists_and_filters_category(test_client: TestClient, auth_headers: dict):

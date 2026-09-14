@@ -80,16 +80,20 @@ _add(SceneDef(
 _add(SceneDef(
     "LOITER", "徘徊/停留", "tracking", "LOITER", ["det"], [_DET, _TRACK],
     [_POLY, _MIN_SEC, _CONF],
-    # TODO(SP4): dwell 依赖时序跟踪，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "dwell", "region": "roi", "op": "gte", "value": "min_sec"}]},
+    # dwell 时序叶子（SP4-b 已实现）：时间由事件 ts 注入，min_sec 取 _MIN_SEC 默认值 5。
+    # TODO(SP4): 需检测携带 track_id 才能形成跨事件轨迹并累计停留时长；
+    # region 由任务参数在运行时注入，默认规则不写符号化占位。
+    {"op": "and", "children": [{"subject": "dwell", "min_sec": 5}]},
     True, "目标在区域内停留超过阈值",
 ))
 
 _add(SceneDef(
     "GATHER", "聚集", "tracking", "GATHER", ["det"], [_DET, _TRACK],
     [_POLY, _COUNT, {"key": "window", "type": "int", "default": 5, "label": "滑窗帧数"}, _CONF],
-    # 单事件计数叶子；region 缺省全画面，value 取 _COUNT 默认阈值 5。
-    {"op": "and", "children": [{"subject": "count", "op": ">=", "value": 5}]},
+    # count_window 时序叶子（SP4-b 已实现）：滑窗 5 秒内去重目标数 >= value(=5)。
+    # TODO(SP4): 需检测携带 track_id 才能按轨迹去重（否则退化为按事件计数）；
+    # region 由任务参数在运行时注入，默认规则不写符号化占位。
+    {"op": "and", "children": [{"subject": "count_window", "window_sec": 5, "op": ">=", "value": 5}]},
     True, "滑窗内区域内人数超过阈值",
 ))
 
@@ -104,16 +108,18 @@ _add(SceneDef(
 _add(SceneDef(
     "ABSENT", "离岗/无人", "detection", "ABSENT", ["det"], [_DET],
     [_POLY, _GAP_SEC, _CONF],
-    # TODO(SP4): absence 依赖持续时长/时序，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "absent", "region": "roi", "op": "gte", "value": "gap_sec"}]},
+    # absence 时序叶子（SP4-b 已实现）：距最近一次出现 >= gap_sec，取 _GAP_SEC 默认值 30。
+    # TODO(SP4): 需真实事件流（含区域"无目标"帧）支撑；region 由任务参数运行时注入。
+    {"op": "and", "children": [{"subject": "absence", "gap_sec": 30}]},
     False, "区域内持续无目标超过阈值",
 ))
 
 _add(SceneDef(
     "ILLEGAL_PARK", "车辆违停", "tracking", "ILLEGAL_PARK", ["det"], [_DET, _TRACK],
     [_POLY, _SECONDS, _CONF, {**_LABELS, "default": ["car"]}],
-    # TODO(SP4): dwell 依赖时序跟踪，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "dwell", "region": "roi", "label": "car", "op": "gte", "value": "dwell_sec"}]},
+    # dwell 时序叶子（SP4-b 已实现）：车辆停留超时，min_sec 取 _SECONDS 默认值 10。
+    # TODO(SP4): 需检测携带 track_id 形成车辆轨迹；region 由任务参数运行时注入。
+    {"op": "and", "children": [{"subject": "dwell", "label": "car", "min_sec": 10}]},
     True, "车辆在区域内停留超时",
 ))
 
