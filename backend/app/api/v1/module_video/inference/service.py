@@ -19,6 +19,112 @@ def pick_alarm_rule(rules: list, algorithm_type: str):
     return rules[0]
 
 
+def _as_float(raw) -> float | None:
+    """尽力转换为 float；None/缺失/非数值返回 None。"""
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bbox_center(d: dict) -> tuple[float, float] | None:
+    """取检测框中心点 (x + w/2, y + h/2)；bbox 缺失/非法返回 None。"""
+    if not isinstance(d, dict):
+        return None
+    bbox = d.get("bbox")
+    if not isinstance(bbox, dict):
+        return None
+    x = _as_float(bbox.get("x"))
+    y = _as_float(bbox.get("y"))
+    w = _as_float(bbox.get("width"))
+    h = _as_float(bbox.get("height"))
+    if None in (x, y, w, h):
+        return None
+    return (x + w / 2.0, y + h / 2.0)
+
+
+def _region_of(leaf: dict) -> list[tuple[float, float]] | None:
+    """解析归一化多边形区域。
+
+    缺失/None 返回 None（表示不限定区域）；非法（非多边形 / 坐标非数值）返回空列表，
+    由调用方判为不命中。
+    """
+    if not isinstance(leaf, dict):
+        return []
+    region = leaf.get("region")
+    if region is None:
+        return None
+    if not isinstance(region, (list, tuple)) or len(region) < 3:
+        return []
+    pts: list[tuple[float, float]] = []
+    for p in region:
+        if not isinstance(p, (list, tuple)) or len(p) < 2:
+            return []
+        x = _as_float(p[0])
+        y = _as_float(p[1])
+        if x is None or y is None:
+            return []
+        pts.append((x, y))
+    return pts
+
+
+def _point_on_segment(px, py, x1, y1, x2, y2, eps: float = 1e-9) -> bool:
+    """判断点是否落在线段上（含端点），用于边界确定性判定。"""
+    cross = (px - x1) * (y2 - y1) - (py - y1) * (x2 - x1)
+    if abs(cross) > eps:
+        return False
+    dot = (px - x1) * (px - x2) + (py - y1) * (py - y2)
+    return dot <= eps
+
+
+def _point_in_polygon(x: float, y: float, pts: list[tuple[float, float]]) -> bool:
+    """射线法判断点是否在多边形内；落在边界（含端点）视为命中。"""
+    if not pts or len(pts) < 3:
+        return False
+    n = len(pts)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if _point_on_segment(x, y, xi, yi, xj, yj):
+            return True
+        if (yi > y) != (yj > y):
+            x_cross = (xj - xi) * (y - yi) / (yj - yi) + xi
+            if x < x_cross:
+                inside = not inside
+        j = i
+    return inside
+
+
+def _matches_label(d: dict, leaf: dict) -> bool:
+    """label/labels 过滤：labels 非空优先；都缺省表示任意目标。"""
+    if not isinstance(d, dict) or not isinstance(leaf, dict):
+        return False
+    labels = leaf.get("labels")
+    if isinstance(labels, (list, tuple)) and labels:
+        return d.get("label") in labels
+    label = leaf.get("label")
+    if label is None:
+        return True
+    return d.get("label") == label
+
+
+def _in_region(d: dict, leaf: dict) -> bool:
+    """检测框中心是否落在区域多边形内；未限定区域返回 True，非法区域返回 False。"""
+    if not isinstance(leaf, dict) or leaf.get("region") is None:
+        return True
+    pts = _region_of(leaf)
+    if not pts:  # 非法区域
+        return False
+    center = _bbox_center(d)
+    if center is None:
+        return False
+    return _point_in_polygon(center[0], center[1], pts)
+
+
 def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
     """评估规则条件树；空/None 视为命中。
 
@@ -28,12 +134,26 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
     - text_match：{"subject":"text_match","regex":"..."}，任一 detection.text 命中正则即命中；
       非法正则视为不命中。
     - ocr_label：{"subject":"ocr_label","contains":"..."}，任一 detection.text 包含子串即命中。
+    对象/区域/计数叶子（基于 bbox 中心与归一化多边形区域）：
+    - object_present：{"subject":"object_present","label"?,"labels"?,"region"?,"min_confidence"?}
+      存在满足 label/labels、位于 region 内、且置信度 >= min_confidence 的目标即命中。
+    - zone_enter：{"subject":"zone_enter","label","region"}，目标中心落入区域即命中；
+      未限定 region 时等价于 object_present（不限置信度）。
+    - count：{"subject":"count","label"?,"region"?,"op":">=|>|<=|<|==","value":n}，
+      统计满足条件的目标数并与 value 比较。
     其它叶子后续扩展；未知叶子不命中。
-    本函数对异常输入（JSON null / 非数值）一律按不命中处理，绝不向上抛异常，
+    本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
     """
     if not conditions:
         return True
+    if not isinstance(conditions, dict):
+        # 非 dict 的脏条件不得抛异常，按不命中处理
+        return False
+
+    # 过滤脏检测项（非 dict 一律跳过），后续统一使用该列表
+    raw_dets = detections if isinstance(detections, (list, tuple)) else []
+    dets = [d for d in raw_dets if isinstance(d, dict)]
 
     def _to_float(raw) -> float | None:
         """尽力转换为 float；null/缺失/非数值返回 None，由调用方跳过该叶子。"""
@@ -46,7 +166,7 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
 
     def _texts() -> list[str]:
         """收集所有 detection 上的 OCR 文本（非字符串一律跳过）。"""
-        return [d["text"] for d in detections or [] if isinstance(d.get("text"), str)]
+        return [d["text"] for d in dets if isinstance(d.get("text"), str)]
 
     def eval_leaf(leaf: dict) -> bool:
         subject = leaf.get("subject")
@@ -56,7 +176,7 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
             value = _to_float(leaf.get("value"))
             if value is None:
                 return False
-            for d in detections or []:
+            for d in dets:
                 score = (d.get("attributes") or {}).get(field)
                 score = _to_float(score)
                 if score is None:
@@ -87,11 +207,51 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
             if not isinstance(needle, str):
                 return False
             return any(needle in text for text in _texts())
+        if subject in ("object_present", "zone_enter"):
+            min_conf = None
+            if subject == "object_present":
+                raw_min = leaf.get("min_confidence")
+                if raw_min is not None:
+                    min_conf = _as_float(raw_min)
+                    if min_conf is None:
+                        # min_confidence 非法（非数值）→ 不命中
+                        return False
+            for d in dets:
+                if not _matches_label(d, leaf):
+                    continue
+                if not _in_region(d, leaf):
+                    continue
+                if min_conf is not None:
+                    conf = _as_float(d.get("confidence"))
+                    if conf is None or conf < min_conf:
+                        continue
+                return True
+            return False
+        if subject == "count":
+            op = leaf.get("op")
+            if op not in (">=", ">", "<=", "<", "=="):
+                return False
+            target = _as_float(leaf.get("value"))
+            if target is None:
+                return False
+            matched = sum(1 for d in dets if _matches_label(d, leaf) and _in_region(d, leaf))
+            if op == ">=":
+                return matched >= target
+            if op == ">":
+                return matched > target
+            if op == "<=":
+                return matched <= target
+            if op == "<":
+                return matched < target
+            return matched == target
         return False
 
     def eval_node(node: dict) -> bool:
+        # 非 dict 节点（脏规则）不得抛异常，按不命中处理
+        if not isinstance(node, dict):
+            return False
         # 逻辑节点（and/or/not）与属性叶子都带 "op"，用逻辑算子集合区分：
-        # 叶子 op 为 lt/gt/le/ge/eq，若误当逻辑节点会直接不命中。
+        # 叶子 op 为 lt/gt/le/ge/eq 或比较符，若误当逻辑节点会直接不命中。
         op = node.get("op")
         if op in ("and", "or", "not"):
             kids = node.get("children") or []
