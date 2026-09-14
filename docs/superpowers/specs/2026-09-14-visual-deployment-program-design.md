@@ -54,7 +54,7 @@ AIStation（云）                                        ModelDeploy Agent（�
 | `ABANDON` | 遗留/抛洒物 | det | ROI、dwell_sec | 静止 >T | ✅ |
 | `FIRE_SMOKE` | 烟火 | det 自定义 | ROI、conf | 命中 label | 否 |
 | `TRAFFIC_DET` | 交通目标 | `yolo26n.onnx` | ROI、labels | 命中/计数 | 可选 |
-| `PED_ATTR` | **工作服/安全帽/反光衣/安全带** | `onnx/zhgd_det.onnx`(1x3x1280x1280) + `onnx/zhgd_ml.onnx`(1x3x256x192) | ROI、属性映射、conf、cls_thr | `attribute(field)==false` | 否 |
+| `PED_ATTR` | **工作服/安全帽/反光衣/安全带** | `onnx/zhgd_det.onnx`(1x3x1280x1280) + `onnx/zhgd_ml.onnx`(1x3x256x192) | ROI、属性映射、conf、cls_thr | `attribute(field,op,value)` | 否 |
 
 ### 3.2 分类类
 | 场景码 | 名称 | pipeline / 模型 | 参数 | 规则 |
@@ -148,8 +148,7 @@ AIStation（云）                                        ModelDeploy Agent（�
   "objects": [
     { "track_id": 12, "label": "person", "label_id": 0, "confidence": 0.91,
       "bbox": {"x":0.1,"y":0.2,"width":0.15,"height":0.3},
-      "attributes": { "safety_helmet": {"label":"no","score":0.12},
-                      "work_uniform":  {"label":"no","score":0.20} } }
+      "attributes": { "safety_helmet": 0.12, "work_uniform": 0.20 } }   // {属性名: 分数}（分数=具有该属性的概率）
   ],
   "regions": [ {"region_id":"R1","count":6,"labels":{"person":6}} ],
   "lines":   [ {"line_id":"L1","crossings":[{"track_id":12,"dir":"A2B"}]} ],
@@ -167,7 +166,7 @@ AIStation（云）                                        ModelDeploy Agent（�
 ## 6. 云端规则引擎（AIStation，SP3）
 
 - **数据模型**：`AlarmRuleModel` 增 `conditions`（JSONB，条件树）；保留 `schedule/interval_seconds/severity/notify_channels`。
-- **叶子原语**：`object_present / zone_enter / zone_exit / zone_dwell / line_cross(dir) / count(op,window) / density / absence(gap) / attribute(field,value,score) / text_match(regex) / ocr_label / meter_value / barcode_match / face_match|stranger|gender|age|anti_spoof / lpr_match(list) / pose_geo(fall|phone|smoke|climb) / action_class / seg_ratio / depth / reid_match`。
+- **叶子原语**：`object_present / zone_enter / zone_exit / zone_dwell / line_cross(dir) / count(op,window) / density / absence(gap) / attribute(field,op,value) / text_match(regex) / ocr_label / meter_value / barcode_match / face_match|stranger|gender|age|anti_spoof / lpr_match(list) / pose_geo(fall|phone|smoke|climb) / action_class / seg_ratio / depth / reid_match`。
 - **组合**：`and/or/not` 嵌套。
 - **有状态**：Redis（滑窗计数、轨迹/穿越状态、冷却 `interval_seconds`）。
 - **执行点**：`EdgeEventConsumer`（MQTT）与 HTTP 回调**共用**事件归一化（v2）后进入规则引擎；命中→建 `alarm_record`→联动/通知（复用现有 `EventService.execute_linkage_actions` + `dispatch_notification`）。
@@ -186,7 +185,7 @@ AIStation（云）                                        ModelDeploy Agent（�
 ### 7.2 云端（AIStation）
 - 场景 `PED_ATTR` 注册（§4）；`AlgorithmModel.scene_type="PED_ATTR"`（含 det/cls 路径、属性映射、阈值）。
 - 编排：`build_agent_task_config` 产出 pipeline 模型条目（含 `det_url/cls_url/labels/attributes/password`）。
-- 规则：`attribute(field="work_uniform", equals="no", min_score=0.5)` 等；事件归一化到 v2 后判定；命中→告警。
+- 规则：`attribute(field="work_uniform", op="lt", value=0.5)` 等；事件归一化到 v2 后判定；命中→告警。
 - 前端（最小）：场景选择 + 属性规则表单。
 
 ### 7.3 验收
