@@ -26,6 +26,7 @@
 
 .PARAMETER VideoPath
     摄像机子码流地址；本脚本用本地 mp4 文件冒充 RTSP（FFmpeg 可直接读文件）。
+    OCR_TEXT 场景建议把静态图（如 ocr2.jpg）用 FFmpeg 循环成 mp4 后传入本参数。
 
 .PARAMETER ModelPath
     算法检测模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
@@ -33,12 +34,21 @@
 
 .PARAMETER ClsModelPath
     PED_ATTR 属性分类（cls）模型路径，写入 preset_params.cls_path；仅 `-Scene PED_ATTR` 使用。
+    OCR_TEXT 场景未显式传入时自动改用 ppocrv6_tiny\cls_infer.onnx。
+
+.PARAMETER RecModelPath
+    OCR_TEXT 文本识别（rec）模型路径，写入 preset_params.rec_path；仅 `-Scene OCR_TEXT` 使用。
+
+.PARAMETER DictPath
+    OCR_TEXT 字符字典路径，写入 preset_params.dict_path；仅 `-Scene OCR_TEXT` 使用。
 
 .PARAMETER Scene
     场景模式：
       - INTRUSION（默认）：单 det 模型，断言 algorithm_type=INTRUSION 告警；
       - PED_ATTR：det+cls 行人属性 pipeline，播种属性规则并断言
         objects[].attributes 已透传到 ai_result.detections[].attributes。
+      - OCR_TEXT：det+cls+rec+dict 通用文本 pipeline，播种 text_match 规则并断言
+        ai_result.detections[].text 非空（模型/字典默认取 ppocrv6_tiny）。
 
 .PARAMETER DecoderHwAccel
     算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
@@ -104,7 +114,9 @@ param(
     [string]$VideoPath = "E:\CLionProjects\ModelDeploy\test_data\test_video60.mp4",
     [string]$ModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx",
     [string]$ClsModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_ml.onnx",
-    [ValidateSet("INTRUSION", "PED_ATTR")]
+    [string]$RecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\rec_infer.onnx",
+    [string]$DictPath = "E:\CLionProjects\ModelDeploy\test_data\ppocrv6_tiny_dict.txt",
+    [ValidateSet("INTRUSION", "PED_ATTR", "OCR_TEXT")]
     [string]$Scene = "INTRUSION",
     [string]$DecoderHwAccel = "none",
 
@@ -401,11 +413,13 @@ function Stop-Agent {
 
 # 边缘设备播种：优先 create；若 code 已存在（可能已被 Agent 心跳自动 upsert），则改为 update。
 function Seed-EdgeDevice {
-    # PED_ATTR 场景要求设备声明 pedestrian_attribute 模型族，否则能力校验会拒绝下发；
-    # 其余场景保持仅 det。
+    # PED_ATTR/OCR_TEXT 场景要求设备声明对应模型族（pedestrian_attribute/ocr），
+    # 否则能力校验会拒绝下发；其余场景保持仅 det。
     $capModelFamilies = @("det")
     if ($Scene -eq "PED_ATTR") {
         $capModelFamilies = @("det", "pedestrian_attribute")
+    } elseif ($Scene -eq "OCR_TEXT") {
+        $capModelFamilies = @("ocr")
     }
     $createBody = @{
         name         = "E2E 边缘设备 $effectiveEdgeCode"
@@ -470,10 +484,25 @@ $script:TmpDir = Join-Path $env:TEMP "aistation-edge-e2e-$($script:RunId)"
 New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 
 # 场景模式：PED_ATTR 使用 det+cls 双模型（zhgd_det + zhgd_ml）与属性告警规则；
-# 未显式传入 -ModelPath 时，PED_ATTR 默认改用 zhgd_det.onnx。
-$effectiveAlgorithmType = if ($Scene -eq "PED_ATTR") { "PED_ATTR" } else { "INTRUSION" }
+# OCR_TEXT 使用 det+cls+rec+dict 四件套（ppocrv6_tiny）与文本规则。
+# 未显式传入对应模型参数时，按场景切换到各自默认模型。
+$effectiveAlgorithmType = switch ($Scene) {
+    "PED_ATTR" { "PED_ATTR" }
+    "OCR_TEXT" { "OCR_TEXT" }
+    default    { "INTRUSION" }
+}
 $pedAttrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx"
-$effectiveModelPath = if ($Scene -eq "PED_ATTR" -and -not $PSBoundParameters.ContainsKey("ModelPath")) { $pedAttrDetDefault } else { $ModelPath }
+$ocrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\det_infer.onnx"
+$ocrClsDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\cls_infer.onnx"
+$effectiveModelPath = $ModelPath
+if (-not $PSBoundParameters.ContainsKey("ModelPath")) {
+    if ($Scene -eq "PED_ATTR") { $effectiveModelPath = $pedAttrDetDefault }
+    elseif ($Scene -eq "OCR_TEXT") { $effectiveModelPath = $ocrDetDefault }
+}
+$effectiveClsPath = $ClsModelPath
+if ($Scene -eq "OCR_TEXT" -and -not $PSBoundParameters.ContainsKey("ClsModelPath")) {
+    $effectiveClsPath = $ocrClsDefault
+}
 
 # 已创建资源 ID，便于清理
 $created = @{ AlgorithmId = $null; CameraId = $null; EdgeId = $null; Task1Id = $null; Task2Id = $null; RuleId = $null }
@@ -503,8 +532,13 @@ try {
 
     Write-E2E "Step 2: 播种 Algorithm / Camera / AlgorithmTask（scene=$Scene）" -Level STEP
     $algoCode = New-UniqueCode $effectiveAlgorithmType
+    $algoName = switch ($Scene) {
+        "PED_ATTR" { "E2E 行人属性 $($script:RunId)" }
+        "OCR_TEXT" { "E2E 文本识别 $($script:RunId)" }
+        default    { "E2E 闯入检测 $($script:RunId)" }
+    }
     $algoBody = @{
-        name            = if ($Scene -eq "PED_ATTR") { "E2E 行人属性 $($script:RunId)" } else { "E2E 闯入检测 $($script:RunId)" }
+        name            = $algoName
         code            = $algoCode
         algorithm_type  = $effectiveAlgorithmType
         model_path      = $effectiveModelPath
@@ -519,10 +553,26 @@ try {
         # scene_type 触发编排编译 pedestrian_attribute（det+cls）pipeline
         $algoBody.scene_type = "PED_ATTR"
         $algoBody.preset_params = @{
-            cls_path             = $ClsModelPath
+            cls_path             = $effectiveClsPath
             attributes           = @("safety_helmet", "reflective_vest", "safety_rope", "work_uniform")
             confidence_threshold = 0.4
             cls_threshold        = 0.5
+        }
+    } elseif ($Scene -eq "OCR_TEXT") {
+        # scene_type 触发编排编译 ocr（det+cls+rec+dict）pipeline；
+        # runtime_config 按 OCR/ORT-CPU 契约显式给定（不做 RTSP transport 覆盖）
+        $algoBody.scene_type = "OCR_TEXT"
+        $algoBody.runtime_config = @{
+            backend  = "ort"
+            device   = "cpu"
+            decoder  = @{ hw_accel = $DecoderHwAccel; device_only = $false }
+        }
+        $algoBody.preset_params = @{
+            cls_path             = $effectiveClsPath
+            rec_path             = $RecModelPath
+            dict_path            = $DictPath
+            input_size           = @(960, 960)
+            confidence_threshold = 0.3
         }
     }
     $algo = Invoke-Api -Method Post -Path "/api/v1/video/algorithm/create" -Body $algoBody
@@ -555,6 +605,24 @@ try {
         $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
         $created.RuleId = $rule.id
         Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=PED_ATTR conditions=work_uniform>-1（属性存在即命中，链路验证）" -Level OK
+    } elseif ($Scene -eq "OCR_TEXT") {
+        # 链路验证规则：regex=".+" 命中任意非空识别文本，用于确认 text 从检测框透传到 detections
+        $ruleBody = @{
+            name       = "E2E 文本规则 $($script:RunId)"
+            camera_id  = $created.CameraId
+            alarm_type = "OCR_TEXT"
+            severity   = "WARNING"
+            conditions = @{
+                op       = "and"
+                children = @(
+                    @{ subject = "text_match"; regex = ".+" }
+                )
+            }
+            status     = $true
+        }
+        $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
+        $created.RuleId = $rule.id
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=OCR_TEXT conditions=text_match(.+)（任意文本命中，链路验证）" -Level OK
     }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致
@@ -637,6 +705,22 @@ try {
         if ($attrOk) {
             $attrNames = @($attrDets[0].attributes.PSObject.Properties.Name)
             Write-E2E "属性样本: $($attrNames -join ', ')"
+        }
+    }
+
+    if ($Scene -eq "OCR_TEXT") {
+        Write-E2E "Step 3d2: 断言 OCR 文本已透传（objects[].text → ai_result.detections[].text）" -Level STEP
+        $textDets = @()
+        if ($script:SampleAlarm -and $script:SampleAlarm.ai_result) {
+            $textDets = @($script:SampleAlarm.ai_result.detections | Where-Object {
+                $_.text -is [string] -and -not [string]::IsNullOrWhiteSpace($_.text)
+            })
+        }
+        $textOk = ($textDets.Count -gt 0)
+        [void](Assert-That $textOk "断言3c: 告警 ai_result.detections[].text 非空")
+        if ($textOk) {
+            $textSample = @($textDets | ForEach-Object { $_.text }) -join " | "
+            Write-E2E "文本样本: $textSample"
         }
     }
 
@@ -775,6 +859,9 @@ try {
     if ($script:AgentDataDir) { Write-E2E "Agent 事件落盘目录: $($script:AgentDataDir)" }
     if ($Scene -eq "PED_ATTR") {
         Write-E2E "属性证据（DB）: select id, alarm_type, ai_result->'detections' from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 1;"
+    }
+    if ($Scene -eq "OCR_TEXT") {
+        Write-E2E "文本证据（DB）: select id, alarm_type, ai_result->'detections'->0->>'text' as ocr_text from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
     }
 }
 catch {

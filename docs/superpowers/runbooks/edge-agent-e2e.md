@@ -25,6 +25,9 @@
 | 模型文件（默认） | `...\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx` | ONNX 检测模型（ORT/CPU），`-Scene INTRUSION` 默认 |
 | 模型文件（PED_ATTR det） | `...\test_data\test_models\onnx\zhgd_det.onnx` | `-Scene PED_ATTR` 且未显式传 `-ModelPath` 时的默认检测模型 |
 | 模型文件（PED_ATTR cls） | `...\test_data\test_models\onnx\zhgd_ml.onnx` | `-Scene PED_ATTR` 属性分类模型（`preset_params.cls_path`） |
+| 模型文件（OCR det/cls/rec） | `...\test_data\test_models\onnx\ocr\ppocrv6_tiny\{det,cls,rec}_infer.onnx` | `-Scene OCR_TEXT` 默认三模型（det=`-ModelPath`、cls=`-ClsModelPath`、rec=`-RecModelPath`） |
+| 字典（OCR） | `...\test_data\ppocrv6_tiny_dict.txt` | `-Scene OCR_TEXT` 字符字典（`preset_params.dict_path`） |
+| 视频素材（OCR） | `...\test_data\test_images\ocr2.jpg` | 静态图需先用 FFmpeg 循环成 mp4 再传给 `-VideoPath`（见第 12 节） |
 | 登录 | `admin / 123456` | 见 `backend/app/api/v1/module_system/auth/service.py:89` |
 
 > 视频必须先能检出目标（人/车），否则不会产生告警，`断言3` 会超时。
@@ -83,6 +86,11 @@ pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e
   -ModelPath E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx `
   -ClsModelPath E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_ml.onnx
 
+# OCR_TEXT 通用文本场景（det+cls+rec+dict + 文本规则；见第 12 节）
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene OCR_TEXT `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\ocr2_loop.mp4
+
 # 复用已有 Broker（例如 docker-compose 起的），保留数据便于人工排查
 pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -SkipBroker `
   -KeepResources -KeepData
@@ -96,11 +104,13 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `-Transport` | `mqtt` | `mqtt` / `http` |
-| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节） |
+| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节） |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
 | `-EdgeCode` | 空（运行时唯一） | 边缘设备编码 / Agent `--edge-code`；留空时按 `RunId` 生成 `edge-e2e-<RunId>`，避免软删后同码无法复用 |
-| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx` |
-| `-ClsModelPath` | `...\onnx\zhgd_ml.onnx` | PED_ATTR 属性分类模型，写入 `preset_params.cls_path`；仅 `-Scene PED_ATTR` 使用 |
+| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx`，`-Scene OCR_TEXT` 改用 `ppocrv6_tiny\det_infer.onnx` |
+| `-ClsModelPath` | `...\onnx\zhgd_ml.onnx` | PED_ATTR 属性分类模型，写入 `preset_params.cls_path`；`-Scene OCR_TEXT` 未显式传入时自动改用 `ppocrv6_tiny\cls_infer.onnx` |
+| `-RecModelPath` | `...\ocr\ppocrv6_tiny\rec_infer.onnx` | OCR 文本识别模型，写入 `preset_params.rec_path`；仅 `-Scene OCR_TEXT` 使用 |
+| `-DictPath` | `...\test_data\ppocrv6_tiny_dict.txt` | OCR 字符字典，写入 `preset_params.dict_path`；仅 `-Scene OCR_TEXT` 使用 |
 | `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
 | `-AgentPort` | `19090` | Agent 控制面端口 |
@@ -129,9 +139,11 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 7 | stop 同步：Agent `running=false`、云端 `STOPPED` | Task#1 |
 | 8 | delete 同步：Agent `GET /api/v1/tasks/{id}` 返回 404、云端列表移除 | Task#1/#2 |
 | 3b | （仅 `-Scene PED_ATTR`）`ai_result.detections[].attributes` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].attributes` 已透传 |
+| 3c | （仅 `-Scene OCR_TEXT`）`ai_result.detections[].text` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].text` 已透传到检测框文本 |
 
 > 去重测试使用哨兵 `task_id=999999`，避免与真实 Agent 告警混淆。
 > `-Scene PED_ATTR` 时：断言 3 匹配 `algorithm_type=PED_ATTR`，并在断言 4 后追加断言 3b（属性透传）。
+> `-Scene OCR_TEXT` 时：断言 3 匹配 `algorithm_type=OCR_TEXT`，并在断言 4 后追加断言 3c（文本透传）。
 
 ## 6. 接口契约（已对照源码核验）
 
@@ -298,3 +310,112 @@ Agent 上报事件 v2（`objects[]`），每个对象带 `attributes = {属性�
 | 断言 3 超时但 Agent 有事件 | 规则条件不命中 | 本例 `value=0.99` 几乎必命中；若仍不中，检查事件 `attributes` 是否含 `work_uniform` |
 | 断言 3b 失败 | 事件未带 `attributes`（Plan B 未编译属性头） | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`，确认 Agent 事件 `objects[].attributes` |
 | cls 模型加载失败 | `preset_params.cls_path` 路径在 Agent 机不存在 | 核对 `-ClsModelPath` 指向 Agent 可读的绝对路径 |
+
+## 12. OCR_TEXT 通用文本场景（`-Scene OCR_TEXT`）
+
+前置：ModelDeploy（Plan B）已支持 `ocr`（det+cls+rec+dict）pipeline，且本机存在
+`ppocrv6_tiny\{det,cls,rec}_infer.onnx` 与 `ppocrv6_tiny_dict.txt`。
+
+### 12.1 视频素材（静态图循环为 mp4）
+
+脚本只接受视频地址（FFmpeg 可直接读 mp4），先把静态图循环成短 mp4：
+
+```powershell
+# 用 ocr2.jpg 生成 30s、25fps 的循环视频（需本机有 ffmpeg）
+ffmpeg -y -loop 1 -i E:\CLionProjects\ModelDeploy\test_data\test_images\ocr2.jpg `
+  -t 30 -r 25 -pix_fmt yuv420p `
+  E:\CLionProjects\ModelDeploy\test_data\test_images\ocr2_loop.mp4
+```
+
+### 12.2 运行命令
+
+```powershell
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene OCR_TEXT `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\ocr2_loop.mp4
+```
+
+> 未显式传 `-ModelPath` / `-ClsModelPath` 时，OCR 场景自动改用
+> `ppocrv6_tiny\det_infer.onnx` 与 `cls_infer.onnx`；`-RecModelPath` / `-DictPath`
+> 已有对应默认值。`-EdgeCode` / `-Secret` 等与默认场景一致。
+
+### 12.3 播种内容
+
+**Algorithm**（`POST /api/v1/video/algorithm/create`）：
+
+```jsonc
+{
+  "algorithm_type": "OCR_TEXT",
+  "scene_type": "OCR_TEXT",
+  "model_path": "<ppocrv6_tiny/det_infer.onnx 绝对路径>",
+  "runtime_config": { "backend": "ort", "device": "cpu",
+                      "decoder": { "hw_accel": "none", "device_only": false } },
+  "preset_params": {
+    "cls_path": "<ppocrv6_tiny/cls_infer.onnx 绝对路径>",
+    "rec_path": "<ppocrv6_tiny/rec_infer.onnx 绝对路径>",
+    "dict_path": "<ppocrv6_tiny_dict.txt 绝对路径>",
+    "input_size": [960, 960],
+    "confidence_threshold": 0.3
+  }
+}
+```
+
+`scene_type=OCR_TEXT` 使 `build_agent_task_config` 编译出单条 `type=ocr`
+的模型条目（`det_url` + `cls_url` + `rec_url` + `dict_url`，见
+`edge/orchestrator.py:125`）；设备能力校验要求 `model_families=["ocr"]`
+（`scene/catalog.py:306`，Agent 心跳上报的能力清单含 `ocr`）。
+
+**AlarmRule**（`POST /api/v1/video/alarm/rule/create`）：
+
+```jsonc
+{
+  "camera_id": <本次相机 id>,
+  "alarm_type": "OCR_TEXT",
+  "severity": "WARNING",
+  "conditions": { "op": "and",
+    "children": [ { "subject": "text_match", "regex": ".+" } ] },
+  "status": true
+}
+```
+
+> 规则匹配键是 `camera_id` + `alarm_type`，且 `alarm_type` 必须等于事件的
+> `algorithm_type`（本例均为 `OCR_TEXT`），否则规则不生效（`inference/service.py:111`）。
+>
+> **正则 `.+` 是故意放宽**：只要任一识别框文本非空即命中，用于验证
+> 「事件→归一化→文本规则→告警落库」整条链路。生产应改为业务需要的正则
+> （如 `\d{4,}`）；本脚本为链路验证不校验「无文本不告警」分支。
+
+### 12.4 事件与文本语义
+
+Agent 上报事件 v2（`objects[]`），每个对象可带 `text`（识别文本）与
+`text_score`（置信度）。云端 `normalize_edge_event` 把 `objects[].text/text_score`
+归一化并入 `detections[]`（`edge/consumer.py`），最终落到
+`video_alarm_records.ai_result.detections[].text`。规则叶子 `text_match`
+（正则）与 `ocr_label`（子串）均基于该字段判定（`inference/service.py:75-89`）。
+
+### 12.5 新增断言与证据
+
+| # | 断言 | 判据 |
+|---|------|------|
+| 3 | 出现 `algorithm_type=OCR_TEXT` 告警 | 断言 3 按 `$effectiveAlgorithmType` 过滤 |
+| 3c | `ai_result.detections[].text` 非空 | 告警样本中至少一个 detection 的 `text` 为非空字符串 |
+| 4 | 告警 `snapshot_url` 非空 | 同默认场景 |
+
+```bash
+# 文本证据（DB，PostgreSQL 示例）
+psql ... -c "select id, alarm_type,
+  ai_result->'detections'->0->>'text' as ocr_text
+  from video_alarm_records where camera_id=<id> order by id desc limit 5;"
+```
+
+脚本结束清理：`AlarmRule` → `Algorithm` → `Camera` → `EdgeDevice`（`-KeepData` 时保留）。
+
+### 12.6 排障
+
+| 现象 | 可能原因 | 处理 |
+|------|----------|------|
+| 断言 3 超时、无 OCR 告警 | 规则 `alarm_type` 与事件 `algorithm_type` 不一致 / 无规则 | 核对 `alarm_type=OCR_TEXT`；确认事件 `algorithm_type` 由 TaskConfig 透传 |
+| 断言 3 超时但 Agent 有事件 | 规则正则未命中（识别文本为空） | 本例 `.+` 只要非空即命中；若仍不中，确认视频可识别出文字（换清晰素材） |
+| 断言 3c 失败 | 事件未带 `text`（Plan B 未编译 OCR 头 / 未透传） | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`，确认 Agent 事件 `objects[].text` |
+| 启动任务报「边缘设备能力不足」 | 设备 capabilities 缺 `model_families=["ocr"]` | 脚本已按场景播种该能力；手工核对 `GET /api/v1/video/edge/list` 的 capabilities（Agent 心跳上报含 `ocr`） |
+| det/cls/rec 或字典加载失败 | `preset_params` 路径在 Agent 机不存在 | 核对 `-ModelPath`/`-ClsModelPath`/`-RecModelPath`/`-DictPath` 指向 Agent 可读绝对路径 |
