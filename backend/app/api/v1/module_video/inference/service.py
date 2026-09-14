@@ -4,9 +4,17 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from app.api.v1.module_video.inference.temporal import (
+    region_fingerprint,
+    temporal_store,
+    to_epoch,
+)
 from app.config.setting import settings
 
 log = logging.getLogger(__name__)
+
+# 时序叶子：需依赖跨事件的状态存储（temporal.py）
+TEMPORAL_SUBJECTS = ("dwell", "count_window", "absence")
 
 
 def pick_alarm_rule(rules: list, algorithm_type: str):
@@ -125,7 +133,174 @@ def _in_region(d: dict, leaf: dict) -> bool:
     return _point_in_polygon(center[0], center[1], pts)
 
 
-def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
+def _iter_temporal_leaves(node) -> list[dict]:
+    """遍历条件树，收集所有时序叶子（dwell/count_window/absence）；脏节点安全跳过。"""
+    found: list[dict] = []
+    if not isinstance(node, dict):
+        return found
+    if node.get("op") in ("and", "or", "not"):
+        kids = node.get("children") or []
+        if isinstance(kids, (list, tuple)):
+            for k in kids:
+                found.extend(_iter_temporal_leaves(k))
+        return found
+    if node.get("subject") in TEMPORAL_SUBJECTS:
+        found.append(node)
+    return found
+
+
+def _has_temporal_leaf(node) -> bool:
+    """条件树是否含时序叶子（决定回调是否需要写入观测状态）。"""
+    return bool(_iter_temporal_leaves(node))
+
+
+def _leaf_scope(leaf: dict) -> tuple[str | None, bool]:
+    """时序叶子的状态桶 scope。
+
+    无 region → ("all", True)；region 合法 → (指纹, True)；非法 region → (None, False)。
+    """
+    if leaf.get("region") is None:
+        return "all", True
+    pts = _region_of(leaf)
+    if not pts:
+        return None, False
+    fp = region_fingerprint(pts)
+    if fp is None:
+        return None, False
+    return fp, True
+
+
+def _leaf_labels(leaf: dict) -> list[str]:
+    """时序叶子的标签过滤：labels 列表优先，其次单个 label；都缺省表示任意标签。"""
+    labels = leaf.get("labels")
+    if isinstance(labels, (list, tuple)):
+        return [x for x in labels if isinstance(x, str)]
+    label = leaf.get("label")
+    if isinstance(label, str):
+        return [label]
+    return []
+
+
+def _query_temporal(temporal, camera_id, alarm_type: str, leaf: dict, scope: str):
+    """读取时序状态：{track_key: (first_seen, last_seen)}；无标签限制时聚合全部标签。"""
+    labels = _leaf_labels(leaf)
+    if not labels:
+        return temporal.query(camera_id, alarm_type, None, scope)
+    merged: dict = {}
+    for lab in labels:
+        merged.update(temporal.query(camera_id, alarm_type, lab, scope))
+    return merged
+
+
+def _compare_count(value: float, op: str, target: float) -> bool:
+    """计数比较：支持 >= / > / <= / < / ==。"""
+    if op == ">=":
+        return value >= target
+    if op == ">":
+        return value > target
+    if op == "<=":
+        return value <= target
+    if op == "<":
+        return value < target
+    return value == target
+
+
+def _eval_temporal(
+    subject: str,
+    leaf: dict,
+    temporal,
+    camera_id,
+    alarm_type,
+    now: float | None,
+    alarm_interval,
+) -> bool:
+    """评估时序叶子；缺状态/时间或非法字段一律不命中，绝不抛异常。
+
+    - dwell：某轨迹 first_seen 起持续 >= min_sec，且最近出现未超 grace
+      （grace = max(min_sec, alarm_interval)）；可选 track_id 限定具体轨迹。
+    - count_window：窗口 window_sec 内最近出现的去重目标数与 value 按 op 比较。
+    - absence：距最近一次出现 >= gap_sec；无历史视为未过期 → 不命中。
+    """
+    if temporal is None or camera_id is None or now is None:
+        return False
+    scope, ok = _leaf_scope(leaf)
+    if not ok:
+        return False
+    entries = _query_temporal(temporal, camera_id, alarm_type, leaf, scope)
+
+    if subject == "dwell":
+        min_sec = _as_float(leaf.get("min_sec"))
+        if min_sec is None or min_sec < 0:
+            return False
+        want_field = None
+        if leaf.get("track_id") is not None:
+            num = _as_float(leaf.get("track_id"))
+            if num is None:
+                return False
+            want_field = f"t:{int(num)}"
+        grace = max(min_sec, _as_float(alarm_interval) or 0.0)
+        for field, (first, last) in entries.items():
+            if want_field is not None and field != want_field:
+                continue
+            if (now - first) >= min_sec and (now - last) <= grace:
+                return True
+        return False
+
+    if subject == "count_window":
+        window = _as_float(leaf.get("window_sec"))
+        if window is None or window < 0:
+            return False
+        op = leaf.get("op")
+        if op not in (">=", ">", "<=", "<", "=="):
+            return False
+        target = _as_float(leaf.get("value"))
+        if target is None:
+            return False
+        start = now - window
+        count = sum(1 for _first, last in entries.values() if last >= start)
+        return _compare_count(count, op, target)
+
+    if subject == "absence":
+        gap = _as_float(leaf.get("gap_sec"))
+        if gap is None or gap < 0:
+            return False
+        if not entries:
+            return False
+        last_seen = max(last for _first, last in entries.values())
+        return (now - last_seen) >= gap
+
+    return False
+
+
+def _observe_temporal_event(camera_id, alarm_type: str, detections: list, now: float, conditions) -> None:
+    """评估前把事件检测写入时序状态；按条件树中的区域分桶，失败仅告警不阻断告警流程。"""
+    try:
+        scopes: dict[str, dict | None] = {"all": None}
+        for leaf in _iter_temporal_leaves(conditions):
+            fp, ok = _leaf_scope(leaf)
+            if not ok:
+                continue
+            scopes[fp] = leaf.get("region")
+        for scope, region in scopes.items():
+            if region is None:
+                batch = detections
+            else:
+                batch = [d for d in detections if _in_region(d, {"region": region})]
+            temporal_store.observe(camera_id, alarm_type, batch, now, scope=scope)
+    except Exception as e:
+        log.warning(f"时序状态写入失败: {e}")
+
+
+def _match_conditions(
+    conditions: dict | None,
+    detections: list[dict],
+    *,
+    temporal=None,
+    camera_id=None,
+    alarm_type=None,
+    now: float | None = None,
+    alarm_interval=0,
+) -> bool:
     """评估规则条件树；空/None 视为命中。
 
     叶子支持 attribute：{"subject":"attribute","field":名,"op":"lt|gt|le|ge|eq","value":数}。
@@ -141,6 +316,13 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
       未限定 region 时等价于 object_present（不限置信度）。
     - count：{"subject":"count","label"?,"region"?,"op":">=|>|<=|<|==","value":n}，
       统计满足条件的目标数并与 value 比较。
+    时序叶子（读取 temporal 状态存储；需 camera_id/alarm_type/now）：
+    - dwell：{"subject":"dwell","track_id"?,"label"?,"region"?,"min_sec":s}
+      轨迹存在时长 >= min_sec 且仍活跃（last_seen 在 grace 内）。
+    - count_window：{"subject":"count_window","label"?,"region"?,"window_sec":s,"op":..,"value":n}
+      窗口内去重目标数（有 track_id 按轨迹，否则按事件）与 value 比较。
+    - absence：{"subject":"absence","label"?,"region"?,"gap_sec":s}
+      距最近一次出现 >= gap_sec（无历史视为未过期）。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -150,6 +332,10 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
     if not isinstance(conditions, dict):
         # 非 dict 的脏条件不得抛异常，按不命中处理
         return False
+
+    # 未显式传入状态存储时使用进程级单例（时序叶子）；非时序规则不受影响
+    if temporal is None:
+        temporal = temporal_store
 
     # 过滤脏检测项（非 dict 一律跳过），后续统一使用该列表
     raw_dets = detections if isinstance(detections, (list, tuple)) else []
@@ -170,6 +356,10 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
 
     def eval_leaf(leaf: dict) -> bool:
         subject = leaf.get("subject")
+        if subject in TEMPORAL_SUBJECTS:
+            return _eval_temporal(
+                subject, leaf, temporal, camera_id, alarm_type, now, alarm_interval
+            )
         if subject == "attribute":
             field = leaf.get("field")
             op = leaf.get("op", "eq")
@@ -316,8 +506,26 @@ class InferenceService:
             result = await session.execute(stmt)
             rule = pick_alarm_rule(result.scalars().all(), algorithm_type or "AI_DETECTION")
 
-        if rule is not None and rule.conditions and not _match_conditions(rule.conditions, detections):
-            return {"alarm_created": False, "reason": "rule_not_matched"}
+        if rule is not None and rule.conditions:
+            # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变
+            event_now = to_epoch(frame_timestamp)
+            if _has_temporal_leaf(rule.conditions):
+                _observe_temporal_event(
+                    camera_id,
+                    algorithm_type or "AI_DETECTION",
+                    detections,
+                    event_now,
+                    rule.conditions,
+                )
+            if not _match_conditions(
+                rule.conditions,
+                detections,
+                camera_id=camera_id,
+                alarm_type=algorithm_type or "AI_DETECTION",
+                now=event_now,
+                alarm_interval=getattr(rule, "interval_seconds", 0) or 0,
+            ):
+                return {"alarm_created": False, "reason": "rule_not_matched"}
 
         severity = rule.severity if rule else "WARNING"
 
