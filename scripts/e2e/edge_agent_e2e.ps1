@@ -72,7 +72,7 @@
         ai_result.detections[].text 非空（模型默认取 yolov5plate + plate_recognition_color）。
       - FACE_DET：单 face_detection（SCRFD）模型管线，播种 object_present 规则并断言
         algorithm_type=FACE_DET 告警且 ai_result.detections[] 非空（模型默认取 -FaceModelPath）。
-      - ABSENT：单 det 模型 + absence 时序规则（label=person、gap_sec=10、interval_seconds=30），
+      - ABSENT：单 det 模型 + absence 时序规则（不限 label、gap_sec=10、interval_seconds=30），
         断言 algorithm_type=ABSENT 告警、ai_result.detections 为空（由 Agent 静默期心跳的空检测
         事件驱动），且 interval_seconds 内不重复告警（容差 1 条）。视频需「人先出现再离开画面」，
         否则 last_seen 无历史，absence 永不命中；检测模型默认取 -DetModelPath。
@@ -773,7 +773,9 @@ try {
         $created.RuleId = $rule.id
         Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=FACE_DET conditions=object_present（出现人脸框即命中，链路验证）" -Level OK
     } elseif ($Scene -eq "ABSENT") {
-        # absence 时序规则：最近一次 person 出现后静默 >= gap_sec=10s 命中；
+        # absence 时序规则：最近一次目标出现后静默 >= gap_sec=10s 命中；
+        # 不限定 label：Agent 的检测 label 取自任务配置的 labels 列表，未配置时会退化为
+        # 数字字符串（如 "0"），因此这里按「任意目标均算出现」判定，与目录 ABSENT 默认规则一致。
         # interval_seconds=30 为告警防抖窗口（心跳每 5s 报一次空检测，靠它避免重复告警）
         $ruleBody = @{
             name             = "E2E 离岗规则 $($script:RunId)"
@@ -784,14 +786,14 @@ try {
             conditions       = @{
                 op       = "and"
                 children = @(
-                    @{ subject = "absence"; label = "person"; gap_sec = 10 }
+                    @{ subject = "absence"; gap_sec = 10 }
                 )
             }
             status           = $true
         }
         $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
         $created.RuleId = $rule.id
-        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=ABSENT conditions=absence(person,gap_sec=10) interval_seconds=30（静默超时即命中，链路验证）" -Level OK
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=ABSENT conditions=absence(gap_sec=10，不限 label) interval_seconds=30（静默超时即命中，链路验证）" -Level OK
     }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致
