@@ -22,7 +22,9 @@
 | Broker 镜像 | `docker pull eclipse-mosquitto:2` | 脚本检测不到镜像会直接报错退出 |
 | Agent | `E:\CLionProjects\ModelDeploy\build\bin\aistation_agent.exe` | Plan B 已重编，含控制面 + 心跳 + MQTT/HTTP 发布 |
 | 视频素材 | `E:\CLionProjects\ModelDeploy\test_data\test_video60.mp4` | 作为 `camera.rtsp_url_sub`，FFmpeg 可直接读本地文件 |
-| 模型文件 | `...\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx` | ONNX 检测模型（ORT/CPU） |
+| 模型文件（默认） | `...\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx` | ONNX 检测模型（ORT/CPU），`-Scene INTRUSION` 默认 |
+| 模型文件（PED_ATTR det） | `...\test_data\test_models\onnx\zhgd_det.onnx` | `-Scene PED_ATTR` 且未显式传 `-ModelPath` 时的默认检测模型 |
+| 模型文件（PED_ATTR cls） | `...\test_data\test_models\onnx\zhgd_ml.onnx` | `-Scene PED_ATTR` 属性分类模型（`preset_params.cls_path`） |
 | 登录 | `admin / 123456` | 见 `backend/app/api/v1/module_system/auth/service.py:89` |
 
 > 视频必须先能检出目标（人/车），否则不会产生告警，`断言3` 会超时。
@@ -75,6 +77,12 @@ pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e
 pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport http -SkipBroker `
   -InferenceCallbackToken infer_callback_shared_secret
 
+# PED_ATTR 行人属性场景（det+cls 双模型 + 属性告警规则；见第 11 节）
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene PED_ATTR `
+  -ModelPath E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx `
+  -ClsModelPath E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_ml.onnx
+
 # 复用已有 Broker（例如 docker-compose 起的），保留数据便于人工排查
 pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -SkipBroker `
   -KeepResources -KeepData
@@ -88,9 +96,11 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `-Transport` | `mqtt` | `mqtt` / `http` |
+| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节） |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
 | `-EdgeCode` | 空（运行时唯一） | 边缘设备编码 / Agent `--edge-code`；留空时按 `RunId` 生成 `edge-e2e-<RunId>`，避免软删后同码无法复用 |
-| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径 |
+| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx` |
+| `-ClsModelPath` | `...\onnx\zhgd_ml.onnx` | PED_ATTR 属性分类模型，写入 `preset_params.cls_path`；仅 `-Scene PED_ATTR` 使用 |
 | `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
 | `-AgentPort` | `19090` | Agent 控制面端口 |
@@ -118,8 +128,10 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 6 | 窗口外任务在 Agent 侧停止且不产生告警 | 新建 Task#2（schedule 为明天全天）→ Agent `running=false`、`ai_result.task_id=Task2` 告警数为 0 |
 | 7 | stop 同步：Agent `running=false`、云端 `STOPPED` | Task#1 |
 | 8 | delete 同步：Agent `GET /api/v1/tasks/{id}` 返回 404、云端列表移除 | Task#1/#2 |
+| 3b | （仅 `-Scene PED_ATTR`）`ai_result.detections[].attributes` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].attributes` 已透传 |
 
 > 去重测试使用哨兵 `task_id=999999`，避免与真实 Agent 告警混淆。
+> `-Scene PED_ATTR` 时：断言 3 匹配 `algorithm_type=PED_ATTR`，并在断言 4 后追加断言 3b（属性透传）。
 
 ## 6. 接口契约（已对照源码核验）
 
@@ -135,6 +147,8 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 任务列表 | `GET /api/v1/video/algorithm/task/list` | `page_no`、`page_size` | `algorithm/controller.py:98` |
 | 启动/停止 | `POST /api/v1/video/algorithm/task/{id}/start|stop` | 无 body | `algorithm/controller.py:158,181` |
 | 任务删除 | `DELETE /api/v1/video/algorithm/task/delete` | body: `[id,...]` | `algorithm/controller.py:128` |
+| 告警规则创建 | `POST /api/v1/video/alarm/rule/create` | `name`、`camera_id`、`alarm_type`、`severity`、`conditions`、`status` | `alarm/controller.py:30`、`alarm/schema.py:8` |
+| 告警规则删除 | `DELETE /api/v1/video/alarm/rule/delete` | body: `[id,...]` | `alarm/controller.py:49` |
 | 告警列表 | `GET /api/v1/video/alarm/record/list` | `camera_id`、`page_no`、`page_size` | `alarm/controller.py:58`、`alarm/schema.py:47` |
 | 检测回调（内部） | `POST /api/v1/video/algorithm/detection/callback` | `Authorization: Bearer <INFERENCE_CALLBACK_TOKEN>` | `algorithm/controller.py:215`、`setting.py:243` |
 | Agent 控制面 | `POST/GET/DELETE {control_url}/api/v1/tasks[...]` | `Authorization: Bearer <secret>` | `edge/agent_client.py:51-65`；Agent 侧 `application/aistation_agent/agent_server.cpp:129-259` |
@@ -200,3 +214,87 @@ pwsh -NoProfile -Command "[scriptblock]::Create((Get-Content -Raw scripts/e2e/ed
 # 如安装 PSScriptAnalyzer
 pwsh -NoProfile -Command "Invoke-ScriptAnalyzer -Path scripts/e2e/edge_agent_e2e.ps1"
 ```
+
+## 11. PED_ATTR 行人属性场景（`-Scene PED_ATTR`）
+
+前置：ModelDeploy（Plan B）已支持 `pedestrian_attribute`（det+cls）pipeline，且本机存在
+`zhgd_det.onnx`（检测）与 `zhgd_ml.onnx`（属性分类）两个 ONNX 模型。
+
+```powershell
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene PED_ATTR `
+  -ModelPath E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx `
+  -ClsModelPath E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_ml.onnx
+```
+
+### 11.1 播种内容
+
+**Algorithm**（`POST /api/v1/video/algorithm/create`）：
+
+```jsonc
+{
+  "algorithm_type": "PED_ATTR",
+  "scene_type": "PED_ATTR",
+  "model_path": "<zhgd_det.onnx 绝对路径>",
+  "runtime_config": { "backend": "ort", "device": "cpu",
+                      "decoder": { "hw_accel": "none", "device_only": false, "rtsp_transport": "tcp" } },
+  "preset_params": {
+    "cls_path": "<zhgd_ml.onnx 绝对路径>",
+    "attributes": ["safety_helmet", "reflective_vest", "safety_rope", "work_uniform"],
+    "confidence_threshold": 0.4,
+    "cls_threshold": 0.5
+  }
+}
+```
+
+`scene_type=PED_ATTR` 使 `build_agent_task_config` 编译出单条 `type=pedestrian_attribute`
+的模型条目（`det_url` + `cls_url` + `attributes` + `cls_threshold`，见 `edge/orchestrator.py:115`）。
+
+**AlarmRule**（`POST /api/v1/video/alarm/rule/create`）：
+
+```jsonc
+{
+  "camera_id": <本次相机 id>,
+  "alarm_type": "PED_ATTR",
+  "severity": "WARNING",
+  "conditions": { "op": "and",
+    "children": [ { "subject": "attribute", "field": "work_uniform", "op": "lt", "value": 0.99 } ] },
+  "status": true
+}
+```
+
+> 规则匹配键是 `camera_id` + `alarm_type`，且 `alarm_type` 必须等于事件的 `algorithm_type`
+> （本例均为 `PED_ATTR`），否则规则不生效（`inference/service.py:111`）。
+>
+> **阈值 0.99 是故意放宽**：属性叶子语义为「分数 < 阈值 即违规」，用 0.99 可保证示例视频
+> 必出告警，用于验证「事件→归一化→属性规则→告警落库」整条链路。生产应改为合理阈值
+> （如 `work_uniform < 0.5`）；本脚本为链路验证不校验「合规不告警」分支。
+
+### 11.2 事件与属性语义
+
+Agent 上报事件 v2（`objects[]`），每个对象带 `attributes = {属性名: 分数}`，分数含义为
+「具有该属性的概率」。云端 `normalize_edge_event` 把 `objects[]` 归一化为
+`detections[]` 并保留 `attributes`（`edge/consumer.py:44`），最终落到
+`video_alarm_records.ai_result.detections[].attributes`。
+
+期望属性标签：`safety_helmet`（安全帽）、`reflective_vest`（反光衣）、
+`safety_rope`（安全带）、`work_uniform`（工作服）。
+
+### 11.3 新增断言
+
+| # | 断言 | 判据 |
+|---|------|------|
+| 3 | 出现 `algorithm_type=PED_ATTR` 告警 | 断言 3 按 `$effectiveAlgorithmType` 过滤 |
+| 3b | `ai_result.detections[].attributes` 非空 | 告警样本中至少一个 detection 带 `attributes`，证明事件 `objects[].attributes` 已透传 |
+| 4 | 告警 `snapshot_url` 非空 | 同默认场景 |
+
+脚本结束清理：`AlarmRule` → `Algorithm` → `Camera` → `EdgeDevice`（`-KeepData` 时保留）。
+
+### 11.4 排障
+
+| 现象 | 可能原因 | 处理 |
+|------|----------|------|
+| 断言 3 超时、无 PED_ATTR 告警 | 规则 `alarm_type` 与事件 `algorithm_type` 不一致 / 无规则 | 核对 `alarm_type=PED_ATTR`；确认事件 `algorithm_type` 由 TaskConfig 透传 |
+| 断言 3 超时但 Agent 有事件 | 规则条件不命中 | 本例 `value=0.99` 几乎必命中；若仍不中，检查事件 `attributes` 是否含 `work_uniform` |
+| 断言 3b 失败 | 事件未带 `attributes`（Plan B 未编译属性头） | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`，确认 Agent 事件 `objects[].attributes` |
+| cls 模型加载失败 | `preset_params.cls_path` 路径在 Agent 机不存在 | 核对 `-ClsModelPath` 指向 Agent 可读的绝对路径 |

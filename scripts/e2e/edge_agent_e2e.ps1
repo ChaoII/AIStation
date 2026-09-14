@@ -28,7 +28,17 @@
     摄像机子码流地址；本脚本用本地 mp4 文件冒充 RTSP（FFmpeg 可直接读文件）。
 
 .PARAMETER ModelPath
-    算法模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
+    算法检测模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
+    当 `-Scene PED_ATTR` 且未显式传入本参数时，自动改用 zhgd_det.onnx。
+
+.PARAMETER ClsModelPath
+    PED_ATTR 属性分类（cls）模型路径，写入 preset_params.cls_path；仅 `-Scene PED_ATTR` 使用。
+
+.PARAMETER Scene
+    场景模式：
+      - INTRUSION（默认）：单 det 模型，断言 algorithm_type=INTRUSION 告警；
+      - PED_ATTR：det+cls 行人属性 pipeline，播种属性规则并断言
+        objects[].attributes 已透传到 ai_result.detections[].attributes。
 
 .PARAMETER DecoderHwAccel
     算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
@@ -93,6 +103,9 @@ param(
     [string]$AgentExe = "E:\CLionProjects\ModelDeploy\build\bin\aistation_agent.exe",
     [string]$VideoPath = "E:\CLionProjects\ModelDeploy\test_data\test_video60.mp4",
     [string]$ModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx",
+    [string]$ClsModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_ml.onnx",
+    [ValidateSet("INTRUSION", "PED_ATTR")]
+    [string]$Scene = "INTRUSION",
     [string]$DecoderHwAccel = "none",
 
     [string]$EdgeCode = "",
@@ -447,10 +460,16 @@ if ([string]::IsNullOrWhiteSpace($CaptchaReferer)) { $CaptchaReferer = "$($scrip
 $script:TmpDir = Join-Path $env:TEMP "aistation-edge-e2e-$($script:RunId)"
 New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 
-# 已创建资源 ID，便于清理
-$created = @{ AlgorithmId = $null; CameraId = $null; EdgeId = $null; Task1Id = $null; Task2Id = $null }
+# 场景模式：PED_ATTR 使用 det+cls 双模型（zhgd_det + zhgd_ml）与属性告警规则；
+# 未显式传入 -ModelPath 时，PED_ATTR 默认改用 zhgd_det.onnx。
+$effectiveAlgorithmType = if ($Scene -eq "PED_ATTR") { "PED_ATTR" } else { "INTRUSION" }
+$pedAttrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx"
+$effectiveModelPath = if ($Scene -eq "PED_ATTR" -and -not $PSBoundParameters.ContainsKey("ModelPath")) { $pedAttrDetDefault } else { $ModelPath }
 
-Write-E2E "==== AIStation 云边 Agent 真机 E2E（transport=$Transport） ===="
+# 已创建资源 ID，便于清理
+$created = @{ AlgorithmId = $null; CameraId = $null; EdgeId = $null; Task1Id = $null; Task2Id = $null; RuleId = $null }
+
+Write-E2E "==== AIStation 云边 Agent 真机 E2E（transport=$Transport scene=$Scene） ===="
 Write-E2E "RunId=$($script:RunId)  TmpDir=$($script:TmpDir)  AgentControl=$($script:AgentControlUrl)"
 
 try {
@@ -473,13 +492,13 @@ try {
     Start-Agent
     Write-E2E "Agent 控制面就绪: $($script:AgentControlUrl)" -Level OK
 
-    Write-E2E "Step 2: 播种 Algorithm / Camera / AlgorithmTask" -Level STEP
-    $algoCode = New-UniqueCode "INTRUSION"
+    Write-E2E "Step 2: 播种 Algorithm / Camera / AlgorithmTask（scene=$Scene）" -Level STEP
+    $algoCode = New-UniqueCode $effectiveAlgorithmType
     $algoBody = @{
-        name            = "E2E 闯入检测 $($script:RunId)"
+        name            = if ($Scene -eq "PED_ATTR") { "E2E 行人属性 $($script:RunId)" } else { "E2E 闯入检测 $($script:RunId)" }
         code            = $algoCode
-        algorithm_type  = "INTRUSION"
-        model_path      = $ModelPath
+        algorithm_type  = $effectiveAlgorithmType
+        model_path      = $effectiveModelPath
         runtime_config  = @{
             backend  = "ort"
             device   = "cpu"
@@ -487,9 +506,19 @@ try {
         }
         preset_params   = @{ confidence_threshold = 0.4; input_size = @(640, 640) }
     }
+    if ($Scene -eq "PED_ATTR") {
+        # scene_type 触发编排编译 pedestrian_attribute（det+cls）pipeline
+        $algoBody.scene_type = "PED_ATTR"
+        $algoBody.preset_params = @{
+            cls_path             = $ClsModelPath
+            attributes           = @("safety_helmet", "reflective_vest", "safety_rope", "work_uniform")
+            confidence_threshold = 0.4
+            cls_threshold        = 0.5
+        }
+    }
     $algo = Invoke-Api -Method Post -Path "/api/v1/video/algorithm/create" -Body $algoBody
     $created.AlgorithmId = $algo.id
-    Write-E2E "Algorithm id=$($created.AlgorithmId) code=$algoCode" -Level OK
+    Write-E2E "Algorithm id=$($created.AlgorithmId) code=$algoCode model=$effectiveModelPath" -Level OK
 
     $cameraBody = @{
         name        = "E2E 摄像机 $($script:RunId)"
@@ -498,6 +527,24 @@ try {
     $camera = Invoke-Api -Method Post -Path "/api/v1/video/camera/create" -Body $cameraBody
     $created.CameraId = $camera.id
     Write-E2E "Camera id=$($created.CameraId) rtsp_url_sub=$VideoPath" -Level OK
+
+    if ($Scene -eq "PED_ATTR") {
+        # 属性规则：work_uniform 概率 < 0.99 即判违规（故意放宽阈值，保证示例视频必出告警用于链路验证）
+        $ruleBody = @{
+            name       = "E2E 工作服属性规则 $($script:RunId)"
+            camera_id  = $created.CameraId
+            alarm_type = "PED_ATTR"
+            severity   = "WARNING"
+            conditions = @{
+                op       = "and"
+                children = @(@{ subject = "attribute"; field = "work_uniform"; op = "lt"; value = 0.99 })
+            }
+            status     = $true
+        }
+        $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
+        $created.RuleId = $rule.id
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=PED_ATTR conditions=work_uniform<0.99（故意放宽）" -Level OK
+    }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致
     $todayIso = ((Get-Date).DayOfWeek.value__ + 6) % 7
@@ -547,17 +594,17 @@ try {
     }
     [void](Assert-That $cloudRunning "断言2b: 云端任务#1 status=RUNNING")
 
-    Write-E2E "Step 3c: 等待 INTRUSION 告警落库" -Level STEP
-    $intrusionAlarm = Wait-Until -TimeoutSec $AlarmWaitSec -IntervalSec 5 -Message "camera=$($created.CameraId) 出现 algorithm_type=INTRUSION 告警" -Condition {
+    Write-E2E "Step 3c: 等待 $effectiveAlgorithmType 告警落库" -Level STEP
+    $sceneAlarm = Wait-Until -TimeoutSec $AlarmWaitSec -IntervalSec 5 -Message "camera=$($created.CameraId) 出现 algorithm_type=$effectiveAlgorithmType 告警" -Condition {
         $alarms = Get-AlarmItems -CameraId $created.CameraId
         $hit = @($alarms) | Where-Object {
-            $_.alarm_type -eq "INTRUSION" -or ($_.ai_result -and $_.ai_result.algorithm_type -eq "INTRUSION")
+            $_.alarm_type -eq $effectiveAlgorithmType -or ($_.ai_result -and $_.ai_result.algorithm_type -eq $effectiveAlgorithmType)
         } | Select-Object -First 1
         if ($hit) { $script:SampleAlarm = $hit; return $true }
         return $false
     }
-    [void](Assert-That $intrusionAlarm "断言3: 出现 algorithm_type=INTRUSION 告警")
-    if ($intrusionAlarm -and $script:SampleAlarm) {
+    [void](Assert-That $sceneAlarm "断言3: 出现 algorithm_type=$effectiveAlgorithmType 告警")
+    if ($sceneAlarm -and $script:SampleAlarm) {
         Write-E2E "告警样本: id=$($script:SampleAlarm.id) alarm_type=$($script:SampleAlarm.alarm_type) snapshot_url=$($script:SampleAlarm.snapshot_url)"
     }
 
@@ -567,6 +614,20 @@ try {
         $snapOk = -not [string]::IsNullOrWhiteSpace($script:SampleAlarm.snapshot_url)
     }
     [void](Assert-That $snapOk "断言4: 告警 snapshot_url 非空（内联快照已落 DETECTIONS_DIR）")
+
+    if ($Scene -eq "PED_ATTR") {
+        Write-E2E "Step 3d2: 断言 PED_ATTR 属性已透传（objects[].attributes → ai_result.detections[].attributes）" -Level STEP
+        $attrDets = @()
+        if ($script:SampleAlarm -and $script:SampleAlarm.ai_result) {
+            $attrDets = @($script:SampleAlarm.ai_result.detections | Where-Object { $_.attributes })
+        }
+        $attrOk = ($attrDets.Count -gt 0)
+        [void](Assert-That $attrOk "断言3b: 告警 ai_result.detections[].attributes 非空")
+        if ($attrOk) {
+            $attrNames = @($attrDets[0].attributes.PSObject.Properties.Name)
+            Write-E2E "属性样本: $($attrNames -join ', ')"
+        }
+    }
 
     Write-E2E "Step 3e: 重复 event_id 去重断言" -Level STEP
     $dedupTaskId = 999999  # 哨兵 task_id，用于把去重测试的告警与真实 Agent 告警隔离
@@ -701,6 +762,9 @@ try {
         'where camera_id=' + $created.CameraId + ' order by id desc limit 20;"')
     Write-E2E "Agent 日志: $($script:AgentStdout) / $($script:AgentStderr)"
     if ($script:AgentDataDir) { Write-E2E "Agent 事件落盘目录: $($script:AgentDataDir)" }
+    if ($Scene -eq "PED_ATTR") {
+        Write-E2E "属性证据（DB）: select id, alarm_type, ai_result->'detections' from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 1;"
+    }
 }
 catch {
     Add-Failure "执行中断: $($_.Exception.Message)"
@@ -713,6 +777,10 @@ finally {
 
     if (-not $KeepData -and $script:Token) {
         try {
+            if ($created.RuleId) {
+                Invoke-Api -Method Delete -Path "/api/v1/video/alarm/rule/delete" -Body (@($created.RuleId) | ConvertTo-Json -AsArray) | Out-Null
+                Write-E2E "已清理 AlarmRule id=$($created.RuleId)"
+            }
             if ($created.AlgorithmId) {
                 Invoke-Api -Method Delete -Path "/api/v1/video/algorithm/delete" -Body (@($created.AlgorithmId) | ConvertTo-Json -AsArray) | Out-Null
                 Write-E2E "已清理 Algorithm id=$($created.AlgorithmId)"
