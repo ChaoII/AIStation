@@ -72,7 +72,7 @@ if old_c is not None: mapping[f"{field}\x1fpos_p"] = old_c
 - 语义：一次穿越只命中一次（穿越后 `pos_p` 前移到穿越后位置，符号不再变化）；回穿需再跨，可被再次命中。
 - 越界为**状态转移**，天然不重复，不再额外节流。
 
-**目录**：`catalog.py` `LINE_CROSS` 去掉 TODO 注释，规则保持 `{"subject":"line_cross","line":"line","dir":"A2B"}`；`_LINE`（polyline）+ `_DIRECTION` 参数已就绪。`needs_tracking=True` 不变。
+**目录**：`catalog.py` `LINE_CROSS` 去掉 TODO 注释，默认规则改为 `{"op":"and","children":[{"subject":"line_cross","dir":"A2B"}]}`——**不写符号化 `line`**（与 `region` 一致：实际绊线由任务参数在运行时注入，`"line": "line"` 这类字符串引用无法被求值器解析）。`_LINE`（polyline）+ `_DIRECTION` 参数已就绪。`needs_tracking=True` 不变。
 
 ### 3.2 GATHER window_sec 口径
 
