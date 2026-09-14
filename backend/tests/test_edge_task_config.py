@@ -97,3 +97,33 @@ def test_ped_attr_pipeline_config():
     assert m["cls_url"] == "/models/zhgd_ml.onnx"
     assert m["attributes"] == ["safety_helmet", "work_uniform"]
     assert m["cls_threshold"] == 0.5
+
+
+class _AlgOcr:
+    name = "仪表读数"
+    algorithm_type = "OCR"
+    scene_type = "OCR_TEXT"
+    model_path = "/models/ocr_det.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {
+        "cls_path": "/models/ocr_cls.onnx",
+        "rec_path": "/models/ocr_rec.onnx",
+        "dict_path": "/models/ocr_dict.txt",
+        "input_size": [960, 960],
+    }
+
+
+class _TaskOcr(_Task):
+    algorithm_id = 3
+
+
+def test_ocr_pipeline_config():
+    cfg = build_agent_task_config(_TaskOcr(), _Cam(), _AlgOcr(), events={})
+    assert cfg["scene_type"] == "OCR_TEXT"
+    m = cfg["models"][0]
+    assert m["type"] == "ocr"
+    assert m["det_url"] == "/models/ocr_det.onnx"
+    assert m["cls_url"] == "/models/ocr_cls.onnx"
+    assert m["rec_url"] == "/models/ocr_rec.onnx"
+    assert m["dict_url"] == "/models/ocr_dict.txt"
+    assert m["input_size"] == [960, 960]

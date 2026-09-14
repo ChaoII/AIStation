@@ -122,6 +122,17 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
             "cls_threshold": merged_params.get("cls_threshold", 0.5),
             "password": merged_runtime.get("model_password") or "",
         }]
+    elif scene is not None and scene.code in ("OCR_TEXT", "METER_OCR"):
+        # OCR 场景编译为 det+cls+rec 三模型 pipeline，路径取覆盖合并后的参数/运行配置
+        models = [{
+            **base_model,
+            "type": "ocr",
+            "det_url": algorithm.model_path or "",
+            "cls_url": merged_params.get("cls_path") or merged_runtime.get("cls_path") or "",
+            "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
+            "dict_url": merged_params.get("dict_path") or merged_runtime.get("dict_path") or "",
+            "password": merged_runtime.get("model_password") or "",
+        }]
     else:
         models = [{**base_model, "type": _resolve_model_type(algorithm), "url": algorithm.model_path or ""}]
 
