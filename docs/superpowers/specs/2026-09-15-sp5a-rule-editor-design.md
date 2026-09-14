@@ -55,6 +55,12 @@
 
 > 说明：Konva 提供画布与图形原语（Stage/Layer/Line/Circle + 事件），多边形拾取与顶点拖拽是本项目业务逻辑；**不使用原生 `<canvas>` + 手写鼠标绘制**（那才是被禁止的"手写编辑器"）。
 
+### 3.3 集成 POC 结论（2026-09-15，已通过）
+
+落地版本：`@svar-ui/vue-filter` 2.6.1、`vue-konva` 4.0.1、`konva` 10.5.0（无控制台报错）。
+产出：`docs/superpowers/runbooks/sp5a-poc.md` + `docs/superpowers/runbooks/sp5a-poc/`（5 张截图）。
+结论：两个组件均可用；`FilterBuilder` 的 fields 形态与上述限制已写入 §4.6，未触发回退选型。
+
 ## 4. 设计
 
 ### 4.1 数据模型
@@ -167,8 +173,11 @@ PARAM_TO_LEAF = {
 - `SceneParamsForm.vue`：按 `param_schema` 的 `type` 分派：
   `polygon`/`polyline`/`point` → `RoiCanvas`；`int`/`float` → `el-input-number`；`str` → `el-input`；`list` → `el-select multiple`（allow-create）；`bool` → `el-switch`。
 - `RoiCanvas.vue`：`vue-konva` 的 `v-stage/v-layer/v-line/v-circle`；支持加点、拖顶点、双击删点、清空；`v-model` 为归一化 `[[x,y],...]`；底图可传快照 URL。
-- `ConditionTree.vue`：封装 `@svar-ui/vue-filter` 的 `FilterBuilder`；把 `rule-capabilities` 编译成 `fields`（每个叶子一个 field，`operators` 来自叶子 `ops`，参数编辑器按 `type` 分派）；`implemented:false` 的叶子置灰（`disabled`）。
-  - 库只支持 AND/OR → 条件树 UI 不产出一元 `not`；后端仍兼容 `not`。
+- `ConditionTree.vue`：封装 `@svar-ui/vue-filter` 的 `FilterBuilder`；把 `rule-capabilities` 编译成 `fields`。
+  - **POC 实测限制（2026-09-15）**：① 不支持自定义 value 编辑组件（无插槽）；② 不支持按字段禁用/限制算子（算子由 field `type` 推导）；③ `all.css` 必须配 `<Willow :fonts="false">` 包裹，否则无样式。
+  - **适配**：每个已实现叶子一个 field，`type` 按叶子取值语义选（多为 `text`=标签、计数类为 `number`）；field 取值即该叶子的**主标签/主数值**，叶子其余参数（region/line/阈值/窗口）**全部由参数区唯一编辑**（与 §4.3 注入语义一致）。库算子经 `OP_MAP` 映射到本项目算子（如 `equals→==`、`more→>`、`less→<`）。
+  - `implemented:false` 的叶子**不进 `fields`**（库不支持置灰），改在编辑器下方渲染"暂不支持的叶子"置灰标签区。
+  - 库只支持 AND/OR → 条件树 UI 不产出一元 `not`；后端仍兼容 `not`（历史数据只读展示）。
 - `src/api/module_video/scene.ts`：`getSceneCatalog`、`getSceneDetail`、`getRuleCapabilities`。
 - 集成：`alarm/index.vue` 规则对话框内嵌 `RuleEditor`，保存时提交 `{scene_type, params, conditions}`。
 
