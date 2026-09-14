@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Body, Depends, Path
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.request import PaginationService
@@ -73,3 +73,13 @@ async def edge_heartbeat_controller(
         raise CustomException(msg="无效的设备凭证", code=403)
     await EdgeService.heartbeat(body)
     return SuccessResponse(msg="ok")
+
+
+@EdgeRouter.get("/{device_id}/tasks/{task_id}/snapshot", summary="边缘任务快照预览")
+async def get_edge_task_snapshot_controller(
+    device_id: int = Path(..., description="边缘设备ID"),
+    task_id: int = Path(..., description="布控任务ID"),
+    auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:query"])),
+) -> Response:
+    content = await EdgeService.get_task_snapshot_service(device_id=device_id, task_id=task_id, auth=auth)
+    return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "no-store"})

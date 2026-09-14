@@ -63,3 +63,21 @@ class EdgeAgentClient:
     async def delete(self, task_id: int) -> dict:
         """删除边缘任务。"""
         return await self._request("DELETE", f"/api/v1/tasks/{task_id}")
+
+    async def fetch_snapshot(self, task_id: int, timeout: float = 5.0) -> bytes:
+        """取 Agent 侧最新帧 JPEG（二进制，绕开仅处理 JSON 的 _request）。"""
+        url = f"{self.control_url}/api/v1/tasks/{task_id}/snapshot.jpg"
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(url, headers=self._headers())
+        except httpx.HTTPError as e:
+            raise CustomException(msg=f"边缘快照请求失败: {url} ({e})", code=502, status_code=502) from e
+        if response.status_code >= 400:
+            raise CustomException(
+                msg=f"边缘快照返回错误 {response.status_code}",
+                code=502,
+                status_code=502,
+            )
+        if not response.content:
+            raise CustomException(msg="边缘快照为空", code=502, status_code=502)
+        return response.content

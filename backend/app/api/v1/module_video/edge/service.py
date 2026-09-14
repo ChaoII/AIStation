@@ -94,6 +94,19 @@ class EdgeService:
         await EdgeCRUD(auth).delete(ids=ids)
 
     @classmethod
+    async def get_task_snapshot_service(cls, device_id: int, task_id: int, auth: AuthSchema) -> bytes:
+        """经边缘设备控制面代理取某任务最新帧 JPEG。"""
+        from .agent_client import EdgeAgentClient
+
+        device = await EdgeCRUD(auth).get_by_id_crud(id=device_id)
+        if not device:
+            raise CustomException(msg="边缘设备不存在", code=404, status_code=404)
+        if not (device.control_url or "").strip():
+            raise CustomException(msg="边缘设备未配置控制面地址", code=400, status_code=400)
+        client = EdgeAgentClient(device.control_url, device.secret)
+        return await client.fetch_snapshot(task_id)
+
+    @classmethod
     async def heartbeat(cls, body: dict) -> dict:
         """按 `code` upsert 设备心跳：更新能力/指标/在线状态/最后心跳时间。"""
         from sqlalchemy import select
