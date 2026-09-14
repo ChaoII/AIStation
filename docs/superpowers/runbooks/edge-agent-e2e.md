@@ -89,6 +89,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 |------|------|------|
 | `-Transport` | `mqtt` | `mqtt` / `http` |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
+| `-EdgeCode` | 空（运行时唯一） | 边缘设备编码 / Agent `--edge-code`；留空时按 `RunId` 生成 `edge-e2e-<RunId>`，避免软删后同码无法复用 |
 | `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径 |
 | `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
@@ -102,6 +103,9 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 
 流程：起 Broker（可选）→ 登录 → 播种 EdgeDevice → 起 Agent → 播种 Algorithm/Camera/Task#1
 → start → 轮询断言 → 去重测试 → 时段测试（Task#2 窗口外）→ stop/delete 生命周期 → 证据与清理。
+
+> `EdgeCode` 默认按 `RunId` 生成运行时唯一值 `edge-e2e-<RunId>`（也可用 `-EdgeCode` 显式指定）；
+> 设备创建、Agent `--edge-code`、MQTT 主题与日志引用统一使用该有效编码。
 
 | # | 断言 | 数据来源 |
 |---|------|----------|

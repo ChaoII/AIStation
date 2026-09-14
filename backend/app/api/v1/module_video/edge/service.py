@@ -75,10 +75,31 @@ class EdgeService:
 
     @classmethod
     async def create_edge_service(cls, data: EdgeDeviceCreateSchema, auth: AuthSchema) -> dict:
-        existing = await EdgeCRUD(auth).get(code=data.code)
-        if existing:
-            raise CustomException(msg=f"设备编码已存在: {data.code}")
-        item = await EdgeCRUD(auth).create(data=data)
+        from sqlalchemy import select
+
+        from app.core.database import async_db_session
+
+        crud = EdgeCRUD(auth)
+        # 软删行仍占用 code 的唯一键：CRUDBase.get 会过滤 is_deleted，故直接查询连软删行一并取出，
+        # 否则同码重建会撞 UniqueViolationError 返回 500。
+        async with async_db_session() as session:
+            row = (
+                await session.execute(
+                    select(EdgeDeviceModel).where(EdgeDeviceModel.code == data.code)
+                )
+            ).scalars().first()
+            row_id = row.id if row is not None else None
+            row_deleted = bool(row.is_deleted) if row is not None else False
+
+        if row_id is not None:
+            if not row_deleted:
+                raise CustomException(msg=f"设备编码已存在: {data.code}")
+            # 命中同码软删行：先恢复再按本次入参覆盖，复用同一行（保持 id 稳定）
+            await crud.restore(ids=[row_id])
+            updated = await crud.update(id=row_id, data=EdgeDeviceUpdateSchema(**data.model_dump()))
+            return EdgeDeviceOutSchema.model_validate(updated).model_dump()
+
+        item = await crud.create(data=data)
         return EdgeDeviceOutSchema.model_validate(item).model_dump()
 
     @classmethod

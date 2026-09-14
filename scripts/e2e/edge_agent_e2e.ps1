@@ -37,6 +37,7 @@
 
 .PARAMETER EdgeCode
     边缘设备编码；必须与 Agent `--edge-code` 一致（心跳按 code upsert）。
+    留空（默认）时按 RunId 生成运行时唯一编码 `edge-e2e-<RunId>`，避免软删后同码无法复用。
 
 .PARAMETER Secret
     边缘控制面/心跳共享密钥；同时用作 Agent 的 `--api-key` 与 `--secret`，并写入 EdgeDevice.secret
@@ -94,7 +95,7 @@ param(
     [string]$ModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx",
     [string]$DecoderHwAccel = "none",
 
-    [string]$EdgeCode = "edge-01",
+    [string]$EdgeCode = "",
     [string]$Secret = "e2e-shared-secret",
     [string]$ApiBase = "http://127.0.0.1:8001",
     [string]$BackendDir = "D:\AIStation\backend",
@@ -352,7 +353,7 @@ function Start-Agent {
         "--api-key", $Secret,
         "--secret", $Secret,
         "--cloud-url", $ApiBase,
-        "--edge-code", $EdgeCode,
+        "--edge-code", $effectiveEdgeCode,
         "--heartbeat-interval", "10"
     )
     $script:AgentStdout = Join-Path $script:TmpDir "agent.stdout.log"
@@ -388,8 +389,8 @@ function Stop-Agent {
 # 边缘设备播种：优先 create；若 code 已存在（可能已被 Agent 心跳自动 upsert），则改为 update。
 function Seed-EdgeDevice {
     $createBody = @{
-        name         = "E2E 边缘设备 $EdgeCode"
-        code         = $EdgeCode
+        name         = "E2E 边缘设备 $effectiveEdgeCode"
+        code         = $effectiveEdgeCode
         control_url  = $script:AgentControlUrl
         secret       = $Secret
         capabilities = @{
@@ -404,12 +405,12 @@ function Seed-EdgeDevice {
         return $data.id
     } catch {
         Write-E2E "edge/create 未成功（可能已存在），尝试按 code 查询并更新: $_"
-        $list = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$EdgeCode&page_no=1&page_size=50"
-        $item = @($list.items) | Where-Object { $_.code -eq $EdgeCode } | Select-Object -First 1
-        if (-not $item) { throw "边缘设备不存在且无法创建: $EdgeCode" }
+        $list = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$effectiveEdgeCode&page_no=1&page_size=50"
+        $item = @($list.items) | Where-Object { $_.code -eq $effectiveEdgeCode } | Select-Object -First 1
+        if (-not $item) { throw "边缘设备不存在且无法创建: $effectiveEdgeCode" }
         $updateBody = @{
             name         = $item.name
-            code         = $EdgeCode
+            code         = $effectiveEdgeCode
             control_url  = $script:AgentControlUrl
             secret       = $Secret
             capabilities = $item.capabilities
@@ -428,6 +429,8 @@ function New-UniqueCode {
 # ─────────────────────────── 主流程 ───────────────────────────
 
 $script:RunId = (Get-Date).ToString("MMddHHmmss")
+# 显式 -EdgeCode 优先；否则按 RunId 生成运行时唯一编码，避免软删后同码无法复用（对齐 Agent 的 per-edge 身份）
+$effectiveEdgeCode = if ($EdgeCode) { $EdgeCode } else { "edge-e2e-$($script:RunId)" }
 $script:BrokerStarted = $false
 $script:CreatedEdge = $false
 $script:AgentProc = $null
@@ -464,7 +467,7 @@ try {
     $script:Token = Get-AdminToken -Base $script:ApiBase -User $Username -Pass $Password -Referer $CaptchaReferer
     Write-E2E "登录成功，已获取 Bearer token" -Level OK
     $created.EdgeId = Seed-EdgeDevice
-    Write-E2E "EdgeDevice id=$($created.EdgeId) code=$EdgeCode" -Level OK
+    Write-E2E "EdgeDevice id=$($created.EdgeId) code=$effectiveEdgeCode" -Level OK
 
     Write-E2E "Step 1c: 启动边缘 Agent（先播种设备，避免心跳抢先 upsert 丢失 control_url/secret）" -Level STEP
     Start-Agent
@@ -522,9 +525,9 @@ try {
     Write-E2E "Step 3a: 启动任务#1 并等待设备 online" -Level STEP
     Invoke-Api -Method Post -Path "/api/v1/video/algorithm/task/$($created.Task1Id)/start" | Out-Null
 
-    $deviceOnline = Wait-Until -TimeoutSec $PollTimeoutSec -IntervalSec 3 -Message "设备 $EdgeCode online" -Condition {
-        $list = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$EdgeCode&page_no=1&page_size=50"
-        $item = @($list.items) | Where-Object { $_.code -eq $EdgeCode } | Select-Object -First 1
+    $deviceOnline = Wait-Until -TimeoutSec $PollTimeoutSec -IntervalSec 3 -Message "设备 $effectiveEdgeCode online" -Condition {
+        $list = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$effectiveEdgeCode&page_no=1&page_size=50"
+        $item = @($list.items) | Where-Object { $_.code -eq $effectiveEdgeCode } | Select-Object -First 1
         return ($item -and $item.status -eq "online")
     }
     [void](Assert-That $deviceOnline "断言1: 设备 status=online")
@@ -572,7 +575,7 @@ try {
 
     $dedupPayload = @{
         event_id       = $dedupEventId
-        edge_code      = $EdgeCode
+        edge_code      = $effectiveEdgeCode
         camera_id      = $created.CameraId
         task_id        = $dedupTaskId
         algorithm_type = "INTRUSION"
@@ -586,7 +589,7 @@ try {
         if ($SkipBroker) {
             Add-Warning "断言5: 未启动 Broker（-SkipBroker），跳过 MQTT 重复 event_id 去重断言"
         } else {
-            $topic = "$MqttTopicPrefix/$EdgeCode/camera/$($created.CameraId)/detect"
+            $topic = "$MqttTopicPrefix/$effectiveEdgeCode/camera/$($created.CameraId)/detect"
             $payloadJson = $dedupPayload | ConvertTo-Json -Depth 20 -Compress
             # 通过 Broker 容器内 mosquitto_pub 连续投递两条相同 event_id 的消息
             foreach ($i in 1..2) {
