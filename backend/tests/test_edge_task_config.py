@@ -127,3 +127,56 @@ def test_ocr_pipeline_config():
     assert m["rec_url"] == "/models/ocr_rec.onnx"
     assert m["dict_url"] == "/models/ocr_dict.txt"
     assert m["input_size"] == [960, 960]
+
+
+class _AlgLpr:
+    name = "车牌识别"
+    algorithm_type = "LPR"
+    scene_type = "LPR"
+    model_path = "/models/lpr_det.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {
+        "rec_path": "/models/lpr_rec.onnx",
+        "input_size": [640, 640],
+        "confidence_threshold": 0.5,
+    }
+
+
+class _TaskLpr(_Task):
+    algorithm_id = 4
+
+
+def test_lpr_pipeline_config():
+    cfg = build_agent_task_config(_TaskLpr(), _Cam(), _AlgLpr(), events={})
+    assert cfg["scene_type"] == "LPR"
+    assert len(cfg["models"]) == 1
+    m = cfg["models"][0]
+    assert m["type"] == "lpr"
+    assert m["det_url"] == "/models/lpr_det.onnx"
+    assert m["rec_url"] == "/models/lpr_rec.onnx"
+    assert m["input_size"] == [640, 640]
+    assert m["confidence_threshold"] == 0.5
+    assert m["backend"] == "ort"
+    assert m["device"] == "cpu"
+
+
+class _AlgLprList(_AlgLpr):
+    name = "车牌黑白名单"
+    scene_type = "LPR_LIST"
+    runtime_config = {"backend": "trt", "device": "gpu", "model_password": "pw", "rec_path": "/rt/rec.onnx"}
+    preset_params = {}
+
+
+class _TaskLprList(_Task):
+    algorithm_id = 5
+
+
+def test_lpr_list_runtime_rec_path_and_password():
+    """LPR_LIST 同样产出 lpr 条目，rec_path/password 可来自 runtime_config。"""
+    cfg = build_agent_task_config(_TaskLprList(), _Cam(), _AlgLprList(), events={})
+    m = cfg["models"][0]
+    assert m["type"] == "lpr"
+    assert m["det_url"] == "/models/lpr_det.onnx"
+    assert m["rec_url"] == "/rt/rec.onnx"
+    assert m["password"] == "pw"
+    assert m["backend"] == "trt"

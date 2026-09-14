@@ -290,7 +290,8 @@ _add(SceneDef(
 _add(SceneDef(
     "LPR", "车牌识别", "lpr", "LPR", ["lpr"], [_LPR],
     [_POLY, _CONF, {"key": "plate_pattern", "type": "str", "label": "车牌正则"}],
-    {"op": "and", "children": [{"subject": "plate_match", "op": "regex", "value": "plate_pattern"}]},
+    # 评估器尚未实现 plate_match 叶子；默认命中任意已识别车牌文本（对齐 text_match 已实现原语）
+    {"op": "and", "children": [{"subject": "text_match", "regex": ".+"}]},
     False, "车牌检测 + 字符识别",
 ))
 
@@ -298,7 +299,8 @@ _add(SceneDef(
     "LPR_LIST", "车牌黑白名单", "lpr", "LPR_LIST", ["lpr"], [_LPR],
     [_POLY, _CONF, {"key": "plate_list", "type": "list", "label": "车牌名单"},
      {"key": "list_type", "type": "str", "default": "black", "label": "名单类型(black/white)"}],
-    {"op": "and", "children": [{"subject": "plate_in_list", "list": "plate_list"}]},
+    # 评估器尚未实现 plate_in_list / 名单叶子；默认命中任意已识别车牌文本
+    {"op": "and", "children": [{"subject": "text_match", "regex": ".+"}]},
     False, "车牌号命中黑白名单",
 ))
 

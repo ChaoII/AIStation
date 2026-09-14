@@ -84,6 +84,28 @@ def test_default_rules_text_match_leaves_use_regex_key():
     assert checked >= 2
 
 
+# 推理评估器已实现的叶子 subject → 必填键（见 inference/service.py:_match_conditions）
+_IMPLEMENTED_LEAF_KEYS = {
+    "attribute": "field",
+    "text_match": "regex",
+    "ocr_label": "contains",
+}
+
+
+def test_lpr_default_rules_use_implemented_leaves():
+    """LPR/LPR_LIST 默认规则叶子必须落到评估器已实现的 subject，并携带对应必填键。"""
+    for code in ("LPR", "LPR_LIST"):
+        scene = get_scene(code)
+        assert scene is not None
+        leaves = list(_iter_rule_leaves(scene.default_rule))
+        assert leaves, f"{code} 默认规则应至少含一个叶子"
+        for leaf in leaves:
+            subject = leaf.get("subject")
+            assert subject in _IMPLEMENTED_LEAF_KEYS, f"{code} 使用未实现叶子 subject={subject!r}"
+            required = _IMPLEMENTED_LEAF_KEYS[subject]
+            assert required in leaf, f"{code} 的 {subject} 叶子缺少 {required} 键"
+
+
 def test_catalog_api_lists_and_filters_category(test_client: TestClient, auth_headers: dict):
     resp = test_client.get("/api/v1/video/scene/catalog", headers=auth_headers)
     assert resp.status_code == 200

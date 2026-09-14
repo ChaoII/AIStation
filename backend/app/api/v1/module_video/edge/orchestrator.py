@@ -133,6 +133,15 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
             "dict_url": merged_params.get("dict_path") or merged_runtime.get("dict_path") or "",
             "password": merged_runtime.get("model_password") or "",
         }]
+    elif scene is not None and scene.code in ("LPR", "LPR_LIST"):
+        # 车牌场景编译为 det+rec 两模型 pipeline，识别模型路径取 rec_path 覆盖合并值
+        models = [{
+            **base_model,
+            "type": "lpr",
+            "det_url": algorithm.model_path or "",
+            "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
+            "password": merged_runtime.get("model_password") or "",
+        }]
     else:
         models = [{**base_model, "type": _resolve_model_type(algorithm), "url": algorithm.model_path or ""}]
 
