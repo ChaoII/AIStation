@@ -51,6 +51,42 @@ def test_attribute_non_numeric_value_does_not_raise():
     assert _match_conditions(cond, dets) is False
 
 
+def test_text_match_regex_leaf():
+    """text_match：任一 detection.text 命中正则即命中。"""
+    dets = [{"label": "text", "text": "禁止吸烟"}]
+    cond = {"op": "and", "children": [{"subject": "text_match", "regex": "吸烟"}]}
+    assert _match_conditions(cond, dets) is True
+
+
+def test_text_match_regex_no_match():
+    dets = [{"label": "text", "text": "禁止吸烟"}]
+    cond = {"op": "and", "children": [{"subject": "text_match", "regex": "^安全帽$"}]}
+    assert _match_conditions(cond, dets) is False
+
+
+def test_text_match_illegal_regex_no_match():
+    """非法正则视为不命中，且不得抛异常。"""
+    dets = [{"label": "text", "text": "禁止吸烟"}]
+    cond = {"op": "and", "children": [{"subject": "text_match", "regex": "("}]}
+    assert _match_conditions(cond, dets) is False
+
+
+def test_text_match_non_string_text_skipped():
+    """text 非字符串时跳过该检测框，不抛异常。"""
+    dets = [{"label": "text", "text": 123}, {"label": "text", "text": "吸烟"}]
+    cond = {"op": "and", "children": [{"subject": "text_match", "regex": "吸烟"}]}
+    assert _match_conditions(cond, dets) is True
+
+
+def test_ocr_label_contains_leaf():
+    """ocr_label：任一副本文本包含子串即命中。"""
+    dets = [{"label": "text", "text": "请佩戴安全帽"}]
+    hit = {"op": "and", "children": [{"subject": "ocr_label", "contains": "安全帽"}]}
+    miss = {"op": "and", "children": [{"subject": "ocr_label", "contains": "禁止"}]}
+    assert _match_conditions(hit, dets) is True
+    assert _match_conditions(miss, dets) is False
+
+
 class _FakeRule:
     id = 1
     name = "属性规则"

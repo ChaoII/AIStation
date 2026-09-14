@@ -91,6 +91,64 @@ def test_normalize_event_v2_merges_objects_attributes_into_detections():
     assert d["track_id"] == 42
 
 
+def test_normalize_event_v2_objects_only_carries_ocr_text():
+    """仅有 objects 时派生 detections，需带上 OCR text/text_score。"""
+    ev = {
+        "event_id": "e2c",
+        "camera_id": 7,
+        "task_id": 1,
+        "schema_version": 2,
+        "scene_type": "OCR",
+        "objects": [
+            {
+                "label": "text",
+                "label_id": 0,
+                "confidence": 0.9,
+                "bbox": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+                "text": "禁止吸烟",
+                "text_score": 0.98,
+            }
+        ],
+    }
+    out = normalize_edge_event(ev)
+    d = out["detections"][0]
+    assert d["text"] == "禁止吸烟"
+    assert d["text_score"] == 0.98
+
+
+def test_normalize_event_v2_merges_objects_text_into_detections():
+    """事件 v2 同时含 detections 与 objects 时，OCR text/text_score 需按索引并入 detections。"""
+    ev = {
+        "event_id": "e2d",
+        "camera_id": 7,
+        "task_id": 1,
+        "schema_version": 2,
+        "scene_type": "OCR",
+        "detections": [
+            {
+                "label": "text",
+                "label_id": 0,
+                "confidence": 0.9,
+                "bbox": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+            }
+        ],
+        "objects": [
+            {
+                "label": "text",
+                "label_id": 0,
+                "confidence": 0.9,
+                "bbox": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+                "text": "禁止吸烟",
+                "text_score": 0.98,
+            }
+        ],
+    }
+    out = normalize_edge_event(ev)
+    d = out["detections"][0]
+    assert d["text"] == "禁止吸烟"
+    assert d["text_score"] == 0.98
+
+
 def test_normalize_event_v1_unchanged():
     ev = {"detections": [{"label": "person"}]}
     out = normalize_edge_event(ev)

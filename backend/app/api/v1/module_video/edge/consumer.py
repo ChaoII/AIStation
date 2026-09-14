@@ -61,6 +61,11 @@ def normalize_edge_event(payload: dict) -> dict:
                     det["track_id"] = obj["track_id"]
                 if isinstance(obj.get("attributes"), dict):
                     det["attributes"] = obj["attributes"]
+                # OCR 文本（事件 v2 objects[].text/text_score）需保留，供文本规则判定
+                if obj.get("text") is not None:
+                    det["text"] = obj["text"]
+                if obj.get("text_score") is not None:
+                    det["text_score"] = obj["text_score"]
                 dets.append(det)
             normalized["detections"] = dets
         else:
@@ -75,6 +80,11 @@ def normalize_edge_event(payload: dict) -> dict:
                     dets[i]["attributes"] = obj["attributes"]
                 if "track_id" not in dets[i] and obj.get("track_id") is not None:
                     dets[i]["track_id"] = obj["track_id"]
+                # OCR 文本同样按索引并入 detections，避免随 objects 一起丢失
+                if "text" not in dets[i] and obj.get("text") is not None:
+                    dets[i]["text"] = obj["text"]
+                if "text_score" not in dets[i] and obj.get("text_score") is not None:
+                    dets[i]["text_score"] = obj["text_score"]
     return normalized
 
 

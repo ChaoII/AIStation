@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +24,10 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
 
     叶子支持 attribute：{"subject":"attribute","field":名,"op":"lt|gt|le|ge|eq","value":数}。
     事件里 attributes 为 {属性名: 分数}（分数=具有该属性的概率）；违规=分数低于阈值。
+    OCR 文本叶子：
+    - text_match：{"subject":"text_match","regex":"..."}，任一 detection.text 命中正则即命中；
+      非法正则视为不命中。
+    - ocr_label：{"subject":"ocr_label","contains":"..."}，任一 detection.text 包含子串即命中。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -39,8 +44,13 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
         except (TypeError, ValueError):
             return None
 
+    def _texts() -> list[str]:
+        """收集所有 detection 上的 OCR 文本（非字符串一律跳过）。"""
+        return [d["text"] for d in detections or [] if isinstance(d.get("text"), str)]
+
     def eval_leaf(leaf: dict) -> bool:
-        if leaf.get("subject") == "attribute":
+        subject = leaf.get("subject")
+        if subject == "attribute":
             field = leaf.get("field")
             op = leaf.get("op", "eq")
             value = _to_float(leaf.get("value"))
@@ -61,6 +71,22 @@ def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
                     return True
                 if op == "eq" and score == value:
                     return True
+            return False
+        if subject == "text_match":
+            pattern = leaf.get("regex")
+            if not isinstance(pattern, str):
+                return False
+            try:
+                compiled = re.compile(pattern)
+            except re.error:
+                # 非法正则视为不命中，避免单条脏规则导致告警事件被丢弃
+                return False
+            return any(compiled.search(text) for text in _texts())
+        if subject == "ocr_label":
+            needle = leaf.get("contains")
+            if not isinstance(needle, str):
+                return False
+            return any(needle in text for text in _texts())
         return False
 
     def eval_node(node: dict) -> bool:
