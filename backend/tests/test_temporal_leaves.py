@@ -305,3 +305,63 @@ def test_store_falls_back_to_memory_when_redis_disabled(monkeypatch):
     s = TemporalStore()
     s.observe(CAM, ALGO, [_det(track_id=1)], 1000)
     assert s.query(CAM, ALGO, "person")
+
+
+# ------------------------------------------------------- observe 原子性（Fix 1）
+def test_observe_read_write_under_single_lock(monkeypatch):
+    """读-改-写全程持锁：内部读/写函数被调用时锁应已持有，避免并发丢失 first_seen。"""
+    s = _store()
+    held: list[tuple[str, bool]] = []
+    orig_read = s._read_hash_nolock
+    orig_write = s._write_hash_nolock
+
+    def read(key):
+        held.append(("read", s._lock.locked()))
+        return orig_read(key)
+
+    def write(key, mapping):
+        held.append(("write", s._lock.locked()))
+        return orig_write(key, mapping)
+
+    monkeypatch.setattr(s, "_read_hash_nolock", read)
+    monkeypatch.setattr(s, "_write_hash_nolock", write)
+    s.observe(CAM, ALGO, [_det(track_id=1)], 1000)
+    assert held == [("read", True), ("write", True)]
+
+
+# ------------------------------------------------------------ Redis 后端（Fix 2）
+def _fake_redis():
+    import fakeredis
+
+    return fakeredis.FakeStrictRedis(decode_responses=True)
+
+
+def test_redis_backend_observe_and_query():
+    """注入 fakeredis：hset/hgetall/scan_iter 路径生效，first/last 取最值且不回退内存。"""
+    client = _fake_redis()
+    s = TemporalStore(redis_client=client)
+    # 乱序写入：first 取最小、last 取最大
+    s.observe(CAM, ALGO, [_det(track_id=1)], 1006)
+    s.observe(CAM, ALGO, [_det(track_id=1)], 1000)
+    assert s.query(CAM, ALGO, "person") == {"t:1": (1000.0, 1006.0)}
+    keys = list(client.scan_iter(match="ai:temporal:*"))
+    assert len(keys) == 1
+    stored = client.hgetall(keys[0])
+    assert stored["t:1\x1ffirst"] == "1000.0"
+    assert stored["t:1\x1flast"] == "1006.0"
+    assert s._memory == {}
+
+
+def test_redis_backend_temporal_eval():
+    """Redis 后端下 dwell / count_window 求值结果与内存后端一致。"""
+    s = TemporalStore(redis_client=_fake_redis())
+    s.observe(CAM, ALGO, [_det(track_id=1)], 1000)
+    s.observe(CAM, ALGO, [_det(track_id=1)], 1006)
+    s.observe(CAM, ALGO, [_det(track_id=2)], 1030)
+    assert _eval({"subject": "dwell", "label": "person", "min_sec": 5}, s, 1006) is True
+    assert _eval({"subject": "dwell", "label": "person", "min_sec": 5}, s, 1020) is False
+    leaf = {"subject": "count_window", "label": "person", "window_sec": 60, "op": "==", "value": 2}
+    assert _eval(leaf, s, 1050) is True
+    # 窄窗口 10s：两条轨迹均已超出 [1040,1050] → 计数 0
+    narrow = {"subject": "count_window", "label": "person", "window_sec": 10, "op": "==", "value": 0}
+    assert _eval(narrow, s, 1050) is True

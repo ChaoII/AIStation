@@ -85,20 +85,21 @@ def region_fingerprint(region) -> str | None:
 class TemporalStore:
     """时序观测状态存储：优先 Redis，失败/未启用时降级进程内字典。"""
 
-    def __init__(self, prefer_redis: bool = True) -> None:
+    def __init__(self, prefer_redis: bool = True, redis_client=None) -> None:
         self._prefer_redis = prefer_redis
         self._lock = threading.Lock()
         self._memory: dict[str, dict[str, float]] = {}
-        self._redis = None
+        # 允许测试注入 Redis 客户端（如 fakeredis），绕过全局配置
+        self._redis = redis_client
         self._redis_failed = False
 
     # ------------------------------------------------------------- 后端选择
     def _get_redis(self):
         """惰性创建 Redis 客户端；失败则永久降级内存并返回 None。"""
-        if not self._prefer_redis or not settings.REDIS_ENABLE:
-            return None
         if self._redis is not None:
             return self._redis
+        if not self._prefer_redis or not settings.REDIS_ENABLE:
+            return None
         if self._redis_failed:
             return None
         try:
@@ -134,7 +135,8 @@ class TemporalStore:
             return f"t:{int(num)}"
         return f"e:{ts}"
 
-    def _read_hash(self, key: str) -> dict:
+    def _read_hash_nolock(self, key: str) -> dict:
+        """不加锁读取；调用方需自行持有 ``self._lock``。"""
         rd = self._get_redis()
         if rd is not None:
             try:
@@ -143,10 +145,14 @@ class TemporalStore:
                 log.warning(f"时序状态读取失败，降级内存: {e}")
                 self._redis = None
                 self._redis_failed = True
-        with self._lock:
-            return dict(self._memory.get(key, {}))
+        return dict(self._memory.get(key, {}))
 
-    def _write_hash(self, key: str, mapping: dict) -> None:
+    def _read_hash(self, key: str) -> dict:
+        with self._lock:
+            return self._read_hash_nolock(key)
+
+    def _write_hash_nolock(self, key: str, mapping: dict) -> None:
+        """不加锁写入；调用方需自行持有 ``self._lock``。"""
         rd = self._get_redis()
         if rd is not None:
             try:
@@ -158,8 +164,11 @@ class TemporalStore:
                 log.warning(f"时序状态写入失败，降级内存: {e}")
                 self._redis = None
                 self._redis_failed = True
+        self._memory.setdefault(key, {}).update(mapping)
+
+    def _write_hash(self, key: str, mapping: dict) -> None:
         with self._lock:
-            self._memory.setdefault(key, {}).update(mapping)
+            self._write_hash_nolock(key, mapping)
 
     # ----------------------------------------------------------------- 观测
     def observe(self, camera_id, alarm_type, detections, ts, scope: str = _SCOPE_ALL) -> None:
@@ -180,14 +189,19 @@ class TemporalStore:
             grouped.setdefault(label, {})[self._field(d.get("track_id"), now)] = now
         for label, fields in grouped.items():
             key = self._key(camera_id, alarm_type, label, scope)
-            current = self._read_hash(key)
+            self._observe_locked(key, fields)
+
+    def _observe_locked(self, key: str, fields: dict[str, float]) -> None:
+        """在同一把锁内完成读-改-写，避免并发同键事件互相覆盖丢失 first_seen。"""
+        with self._lock:
+            current = self._read_hash_nolock(key)
             mapping: dict[str, float] = {}
             for field, value in fields.items():
                 prev_first = _to_float(current.get(field + _SEP + _FIRST))
                 prev_last = _to_float(current.get(field + _SEP + _LAST))
                 mapping[field + _SEP + _FIRST] = value if prev_first is None else min(prev_first, value)
                 mapping[field + _SEP + _LAST] = value if prev_last is None else max(prev_last, value)
-            self._write_hash(key, mapping)
+            self._write_hash_nolock(key, mapping)
 
     # ----------------------------------------------------------------- 查询
     def _keys(self, camera_id, alarm_type, label, scope: str) -> list[str]:
