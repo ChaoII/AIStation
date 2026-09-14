@@ -5,8 +5,8 @@ import router from "@/router";
 import { usePermissionStore, useUserStore } from "@/store";
 
 export function setupPermission() {
-  // 白名单路由
-  const whiteList = ["/login"];
+  // 白名单路由（/poc/sp5a 为 SP5-a POC 临时放行，Task 9 删除）
+  const whiteList = ["/login", "/poc/sp5a"];
 
   router.beforeEach(async (to, from, next) => {
     NProgress.start();
