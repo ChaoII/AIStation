@@ -72,8 +72,9 @@ _add(SceneDef(
 _add(SceneDef(
     "LINE_CROSS", "越界/绊线", "tracking", "LINE_CROSS", ["det"], [_DET, _TRACK],
     [_LINE, _DIRECTION, _CONF],
-    # TODO(SP4): line_cross 依赖轨迹/时序判定，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "line_cross", "line": "line", "dir": "A2B"}]},
+    # line_cross 时序几何叶子（SP4-b 收尾已实现）：绊线由任务参数在运行时注入，
+    # 默认规则不写符号化 line（与 region 同理，符号引用无法被求值器解析）。
+    {"op": "and", "children": [{"subject": "line_cross", "dir": "A2B"}]},
     True, "目标轨迹穿越绊线",
 ))
 

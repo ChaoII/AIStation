@@ -14,7 +14,7 @@ from app.config.setting import settings
 log = logging.getLogger(__name__)
 
 # 时序叶子：需依赖跨事件的状态存储（temporal.py）
-TEMPORAL_SUBJECTS = ("dwell", "count_window", "absence")
+TEMPORAL_SUBJECTS = ("dwell", "count_window", "absence", "line_cross")
 
 
 def pick_alarm_rule(rules: list, algorithm_type: str):
@@ -107,6 +107,55 @@ def _point_in_polygon(x: float, y: float, pts: list[tuple[float, float]]) -> boo
     return inside
 
 
+def _orient(a, b, c) -> float:
+    """叉积 (B-A)×(C-A)：>0 表示 C 在有向线段 A→B 左侧。"""
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _segments_cross(p1, p2, p3, p4, eps: float = 1e-12) -> bool:
+    """两线段是否真正相交（严格跨立；共线/仅端点触碰视为不相交）。"""
+    d1 = _orient(p3, p4, p1)
+    d2 = _orient(p3, p4, p2)
+    d3 = _orient(p1, p2, p3)
+    d4 = _orient(p1, p2, p4)
+    return (
+        ((d1 > eps and d2 < -eps) or (d1 < -eps and d2 > eps))
+        and ((d3 > eps and d4 < -eps) or (d3 < -eps and d4 > eps))
+    )
+
+
+def _parse_line(leaf: dict) -> tuple[tuple[float, float], tuple[float, float]] | None:
+    """解析绊线折线：取首尾两点构成有向线段；非法/退化返回 None。"""
+    line = leaf.get("line")
+    if not isinstance(line, (list, tuple)) or len(line) < 2:
+        return None
+
+    def _pt(p):
+        if not isinstance(p, (list, tuple)) or len(p) < 2:
+            return None
+        x = _as_float(p[0])
+        y = _as_float(p[1])
+        if x is None or y is None:
+            return None
+        return (x, y)
+
+    a = _pt(line[0])
+    b = _pt(line[-1])
+    if a is None or b is None or a == b:
+        return None
+    return a, b
+
+
+def _point_pass_region(pt, leaf: dict) -> bool:
+    """点是否落在叶子 region 内；未限定 region 返回 True，非法区域返回 False。"""
+    if not isinstance(leaf, dict) or leaf.get("region") is None:
+        return True
+    pts = _region_of(leaf)
+    if not pts:
+        return False
+    return _point_in_polygon(pt[0], pt[1], pts)
+
+
 def _matches_label(d: dict, leaf: dict) -> bool:
     """label/labels 过滤：labels 非空优先；都缺省表示任意目标。"""
     if not isinstance(d, dict) or not isinstance(leaf, dict):
@@ -192,6 +241,17 @@ def _query_temporal(temporal, camera_id, alarm_type: str, leaf: dict, scope: str
     return merged
 
 
+def _query_positions(temporal, camera_id, alarm_type: str, leaf: dict, scope: str):
+    """读取轨迹位置状态；无标签限制时聚合全部标签（与 _query_temporal 同构）。"""
+    labels = _leaf_labels(leaf)
+    if not labels:
+        return temporal.query_positions(camera_id, alarm_type, None, scope)
+    merged: dict = {}
+    for lab in labels:
+        merged.update(temporal.query_positions(camera_id, alarm_type, lab, scope))
+    return merged
+
+
 def _compare_count(value: float, op: str, target: float) -> bool:
     """计数比较：支持 >= / > / <= / < / ==。"""
     if op == ">=":
@@ -260,6 +320,32 @@ def _eval_temporal(
         count = sum(1 for _first, last in entries.values() if last >= start)
         return _compare_count(count, op, target)
 
+    if subject == "line_cross":
+        line = _parse_line(leaf)
+        if line is None:
+            return False
+        direction = leaf.get("dir", "A2B")
+        if direction not in ("A2B", "B2A", "both"):
+            return False
+        l0, l1 = line
+        positions = _query_positions(temporal, camera_id, alarm_type, leaf, scope)
+        for _field, (prev, cur) in positions.items():
+            if prev is None or cur is None:
+                continue
+            if not _point_pass_region(cur, leaf):
+                continue
+            if not _segments_cross(prev, cur, l0, l1):
+                continue
+            s_prev = _orient(l0, l1, prev)
+            s_cur = _orient(l0, l1, cur)
+            if direction == "both":
+                return True
+            if direction == "A2B" and s_prev > 0 > s_cur:
+                return True
+            if direction == "B2A" and s_prev < 0 < s_cur:
+                return True
+        return False
+
     if subject == "absence":
         gap = _as_float(leaf.get("gap_sec"))
         if gap is None or gap < 0:
@@ -323,6 +409,8 @@ def _match_conditions(
       窗口内去重目标数（有 track_id 按轨迹，否则按事件）与 value 比较。
     - absence：{"subject":"absence","label"?,"region"?,"gap_sec":s}
       距最近一次出现 >= gap_sec（无历史视为未过期）。
+    - line_cross：{"subject":"line_cross","line":[[x,y],…],"dir":"A2B|B2A|both","region"?}
+      轨迹上一帧中心与当前帧中心连线是否真正穿越绊线（首尾两点），并按方向命中。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。

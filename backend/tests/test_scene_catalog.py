@@ -97,6 +97,7 @@ _IMPLEMENTED_LEAF_KEYS = {
     "dwell": "min_sec",
     "count_window": "window_sec",
     "absence": "gap_sec",
+    "line_cross": None,
 }
 
 # 各叶子受求值器支持的比较算子（与 inference/service.py 保持一致）
@@ -171,7 +172,18 @@ def test_default_rules_implemented_leaves_are_evaluable():
                 )
     # 非空守卫：核心叶子（含时序叶子）至少各有场景覆盖，避免测试空跑
     assert {"object_present", "count", "attribute", "text_match"} <= checked
-    assert {"dwell", "count_window", "absence"} <= checked
+    assert {"dwell", "count_window", "absence", "line_cross"} <= checked
+
+
+def test_line_cross_default_rule_uses_line_cross_leaf():
+    """LINE_CROSS 默认规则必须落到已实现的 line_cross 叶子，且不写符号化 line。"""
+    scene = get_scene("LINE_CROSS")
+    assert scene is not None
+    leaves = list(_iter_rule_leaves(scene.default_rule))
+    assert [leaf.get("subject") for leaf in leaves] == ["line_cross"]
+    for leaf in leaves:
+        assert not isinstance(leaf.get("line"), str), "line 不得为符号化字符串"
+        assert leaf.get("dir", "A2B") in ("A2B", "B2A", "both")
 
 
 def test_temporal_default_rules_use_temporal_leaves():
