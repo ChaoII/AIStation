@@ -174,6 +174,7 @@ _add(SceneDef(
 _add(SceneDef(
     "ACTION_SKELETON", "骨架动作", "pose", "ACTION_SKELETON", ["action_skeleton"], [_DET, _POSE, _CLS],
     [_POLY, {"key": "window", "type": "int", "default": 30, "label": "骨架窗口"}, _CONF, _LABELS],
+    # TODO(SP4): 骨架序列动作依赖姿态时序跟踪，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "classification", "op": "in", "value": "labels"}]},
     True, "骨架序列动作分类",
 ))
@@ -213,6 +214,7 @@ _add(SceneDef(
 _add(SceneDef(
     "HAND_GESTURE", "手势", "pose", "HAND_GESTURE", ["hand"], [_DET, _POSE],
     [_POLY, _CONF, _LABELS],
+    # TODO(SP4): 手势依赖手部关键点时序跟踪，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "gesture", "region": "roi"}]},
     True, "21 手部关键点手势识别",
 ))
@@ -361,6 +363,7 @@ _add(SceneDef(
 _add(SceneDef(
     "REID_TRACK", "跨镜重识别", "tracking", "REID_TRACK", ["reid"], [_DET, _REID],
     [_POLY, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
+    # TODO(SP4): reid_match 依赖跨镜轨迹/时序关联，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "reid_match", "op": "gte", "value": "similarity_threshold"}]},
     True, "跨相机行人重识别关联",
 ))
@@ -368,6 +371,7 @@ _add(SceneDef(
 _add(SceneDef(
     "DEPLOY_TRACK", "通用跟踪", "tracking", "DEPLOY_TRACK", ["det"], [_DET, _TRACK],
     [_POLY, _CONF, _LABELS],
+    # TODO(SP4): track 依赖多目标轨迹/时序跟踪，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "track", "region": "roi"}]},
     True, "通用多目标跟踪",
 ))
