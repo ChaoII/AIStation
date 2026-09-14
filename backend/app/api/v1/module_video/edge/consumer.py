@@ -39,6 +39,26 @@ def normalize_edge_event(payload: dict) -> dict:
     snapshot_data = payload.get("snapshot_data") or snapshot.get("data")
     if snapshot_data:
         normalized["snapshot_data"] = snapshot_data
+
+    # 事件 v2：objects[] → detections[]（复用既有告警链路），并保留属性/scene_type
+    if not normalized.get("detections") and isinstance(payload.get("objects"), list):
+        dets = []
+        for obj in payload["objects"]:
+            if not isinstance(obj, dict):
+                continue
+            bbox = obj.get("bbox") or {}
+            det = {
+                "label": obj.get("label", ""),
+                "label_id": obj.get("label_id", 0),
+                "confidence": obj.get("confidence", 0.0),
+                "bbox": bbox,
+            }
+            if obj.get("track_id") is not None:
+                det["track_id"] = obj["track_id"]
+            if isinstance(obj.get("attributes"), dict):
+                det["attributes"] = obj["attributes"]
+            dets.append(det)
+        normalized["detections"] = dets
     return normalized
 
 

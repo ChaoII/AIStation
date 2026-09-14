@@ -32,6 +32,38 @@ def test_normalize_snapshot_ref():
     assert out["detections"][0]["label"] == "person"
 
 
+def test_normalize_event_v2_objects_to_detections():
+    ev = {
+        "event_id": "e2",
+        "camera_id": 7,
+        "task_id": 1,
+        "schema_version": 2,
+        "scene_type": "PED_ATTR",
+        "objects": [
+            {
+                "label": "person",
+                "label_id": 0,
+                "confidence": 0.9,
+                "bbox": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+                "attributes": {"work_uniform": 0.2},
+            }
+        ],
+    }
+    out = normalize_edge_event(ev)
+    assert out["scene_type"] == "PED_ATTR"
+    assert len(out["detections"]) == 1
+    d = out["detections"][0]
+    assert d["label"] == "person" and d["bbox"]["x"] == 0.1
+    # 属性为 {属性名: 分数}（分数=具有该属性的概率；违规=分数低于阈值）
+    assert d["attributes"]["work_uniform"] == 0.2
+
+
+def test_normalize_event_v1_unchanged():
+    ev = {"detections": [{"label": "person"}]}
+    out = normalize_edge_event(ev)
+    assert out["detections"] == [{"label": "person"}]
+
+
 def test_normalize_frame_timestamp_from_ts():
     ev = {"event_id": "e2", "ts": "2026-09-12T08:00:00.123Z"}
     out = normalize_edge_event(ev)
