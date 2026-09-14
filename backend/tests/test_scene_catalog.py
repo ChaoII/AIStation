@@ -85,10 +85,20 @@ def test_default_rules_text_match_leaves_use_regex_key():
 
 
 # 推理评估器已实现的叶子 subject → 必填键（见 inference/service.py:_match_conditions）
+# 值为 None 表示该叶子没有必填键。
 _IMPLEMENTED_LEAF_KEYS = {
     "attribute": "field",
     "text_match": "regex",
     "ocr_label": "contains",
+    "object_present": None,
+    "zone_enter": None,
+    "count": "value",
+}
+
+# 各叶子受求值器支持的比较算子（与 inference/service.py 保持一致）
+_LEAF_OPS = {
+    "attribute": {"lt", "gt", "le", "ge", "eq"},
+    "count": {">=", ">", "<=", "<", "=="},
 }
 
 
@@ -103,7 +113,48 @@ def test_lpr_default_rules_use_implemented_leaves():
             subject = leaf.get("subject")
             assert subject in _IMPLEMENTED_LEAF_KEYS, f"{code} 使用未实现叶子 subject={subject!r}"
             required = _IMPLEMENTED_LEAF_KEYS[subject]
-            assert required in leaf, f"{code} 的 {subject} 叶子缺少 {required} 键"
+            if required is not None:
+                assert required in leaf, f"{code} 的 {subject} 叶子缺少 {required} 键"
+
+
+def test_default_rules_implemented_leaves_are_evaluable():
+    """凡使用已实现叶子（object_present/zone_enter/count/attribute/text_match/ocr_label）
+    的默认规则，都必须与求值器键名/算子/取值完全一致，确保可直接评估：
+
+    - subject 必须在已实现集合内；
+    - 该叶子的必填键必须存在；
+    - region 不得是符号化字符串（必须省略，或为合法多边形点列）；
+    - attribute/count 的 op 必须受支持，value 必须为数值。
+    """
+    checked: set[str] = set()
+    for scene in SCENES.values():
+        for leaf in _iter_rule_leaves(scene.default_rule):
+            subject = leaf.get("subject")
+            if subject not in _IMPLEMENTED_LEAF_KEYS:
+                continue
+            checked.add(subject)
+            required = _IMPLEMENTED_LEAF_KEYS[subject]
+            if required is not None:
+                assert required in leaf, f"{scene.code} 的 {subject} 叶子缺少 {required} 键"
+            region = leaf.get("region")
+            assert not isinstance(region, str), (
+                f"{scene.code} 的 {subject} 叶子不应使用符号化 region={region!r}"
+            )
+            if region is not None:
+                assert isinstance(region, (list, tuple)) and len(region) >= 3, (
+                    f"{scene.code} 的 {subject} 叶子 region 必须是多边形点列"
+                )
+            if subject in _LEAF_OPS:
+                assert leaf.get("op") in _LEAF_OPS[subject], (
+                    f"{scene.code} 的 {subject} 叶子 op={leaf.get('op')!r} 不受求值器支持"
+                )
+            if subject in ("attribute", "count"):
+                value = leaf.get("value")
+                assert isinstance(value, (int, float)) and not isinstance(value, bool), (
+                    f"{scene.code} 的 {subject} 叶子 value 必须为数值，实际 {value!r}"
+                )
+    # 非空守卫：核心叶子至少各有场景覆盖，避免测试空跑
+    assert {"object_present", "count", "attribute", "text_match"} <= checked
 
 
 def test_catalog_api_lists_and_filters_category(test_client: TestClient, auth_headers: dict):

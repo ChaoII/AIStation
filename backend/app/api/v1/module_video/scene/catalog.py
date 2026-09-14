@@ -64,13 +64,15 @@ def _add(s: SceneDef) -> None:
 _add(SceneDef(
     "DET_ZONE", "区域入侵", "detection", "DET_ZONE", ["det"], [_DET],
     [_POLY, _CONF, {**_LABELS, "default": ["person"]}],
-    {"op": "and", "children": [{"subject": "object_present", "label": "person", "region": "roi"}]},
+    # 单事件叶子；region 缺省表示全画面（ROI 由任务参数提供，不写符号化占位）。
+    {"op": "and", "children": [{"subject": "object_present", "label": "person"}]},
     False, "区域内出现目标",
 ))
 
 _add(SceneDef(
     "LINE_CROSS", "越界/绊线", "tracking", "LINE_CROSS", ["det"], [_DET, _TRACK],
     [_LINE, _DIRECTION, _CONF],
+    # TODO(SP4): line_cross 依赖轨迹/时序判定，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "line_cross", "line": "line", "dir": "A2B"}]},
     True, "目标轨迹穿越绊线",
 ))
@@ -78,6 +80,7 @@ _add(SceneDef(
 _add(SceneDef(
     "LOITER", "徘徊/停留", "tracking", "LOITER", ["det"], [_DET, _TRACK],
     [_POLY, _MIN_SEC, _CONF],
+    # TODO(SP4): dwell 依赖时序跟踪，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "dwell", "region": "roi", "op": "gte", "value": "min_sec"}]},
     True, "目标在区域内停留超过阈值",
 ))
@@ -85,20 +88,23 @@ _add(SceneDef(
 _add(SceneDef(
     "GATHER", "聚集", "tracking", "GATHER", ["det"], [_DET, _TRACK],
     [_POLY, _COUNT, {"key": "window", "type": "int", "default": 5, "label": "滑窗帧数"}, _CONF],
-    {"op": "and", "children": [{"subject": "count", "region": "roi", "op": "gte", "value": "count"}]},
+    # 单事件计数叶子；region 缺省全画面，value 取 _COUNT 默认阈值 5。
+    {"op": "and", "children": [{"subject": "count", "op": ">=", "value": 5}]},
     True, "滑窗内区域内人数超过阈值",
 ))
 
 _add(SceneDef(
     "OVERCROWD", "超员", "detection", "OVERCROWD", ["det"], [_DET],
     [_POLY, _COUNT, _CONF],
-    {"op": "and", "children": [{"subject": "count", "region": "roi", "op": "gt", "value": "count"}]},
+    # 单事件计数叶子；value 取 _COUNT 默认阈值 5。
+    {"op": "and", "children": [{"subject": "count", "op": ">", "value": 5}]},
     False, "区域内目标数量超过上限",
 ))
 
 _add(SceneDef(
     "ABSENT", "离岗/无人", "detection", "ABSENT", ["det"], [_DET],
     [_POLY, _GAP_SEC, _CONF],
+    # TODO(SP4): absence 依赖持续时长/时序，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "absent", "region": "roi", "op": "gte", "value": "gap_sec"}]},
     False, "区域内持续无目标超过阈值",
 ))
@@ -106,6 +112,7 @@ _add(SceneDef(
 _add(SceneDef(
     "ILLEGAL_PARK", "车辆违停", "tracking", "ILLEGAL_PARK", ["det"], [_DET, _TRACK],
     [_POLY, _SECONDS, _CONF, {**_LABELS, "default": ["car"]}],
+    # TODO(SP4): dwell 依赖时序跟踪，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "dwell", "region": "roi", "label": "car", "op": "gte", "value": "dwell_sec"}]},
     True, "车辆在区域内停留超时",
 ))
@@ -113,6 +120,7 @@ _add(SceneDef(
 _add(SceneDef(
     "ABANDON", "遗留/抛洒物", "tracking", "ABANDON", ["det"], [_DET, _TRACK],
     [_POLY, _SECONDS, _CONF],
+    # TODO(SP4): static 静止判定依赖时序跟踪，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "static", "region": "roi", "op": "gte", "value": "dwell_sec"}]},
     True, "目标静止超过阈值",
 ))
@@ -120,14 +128,14 @@ _add(SceneDef(
 _add(SceneDef(
     "FIRE_SMOKE", "烟火", "detection", "FIRE_SMOKE", ["det"], [_DET],
     [_POLY, _CONF, {**_LABELS, "default": ["fire", "smoke"]}],
-    {"op": "and", "children": [{"subject": "object_present", "label": "fire", "region": "roi"}]},
+    {"op": "and", "children": [{"subject": "object_present", "label": "fire"}]},
     False, "命中烟火标签",
 ))
 
 _add(SceneDef(
     "TRAFFIC_DET", "交通目标", "detection", "TRAFFIC_DET", ["det"], [_DET],
     [_POLY, _CONF, {**_LABELS, "default": ["car", "bus", "truck", "person"]}],
-    {"op": "and", "children": [{"subject": "object_present", "label": "car", "region": "roi"}]},
+    {"op": "and", "children": [{"subject": "object_present", "label": "car"}]},
     False, "检测交通目标并可计数",
 ))
 
@@ -174,6 +182,7 @@ _add(SceneDef(
 _add(SceneDef(
     "FALL", "跌倒", "pose", "FALL", ["pose"], [_DET, _POSE],
     [_POLY, _CONF, {"key": "angle_threshold", "type": "float", "default": 60.0, "label": "倾斜角阈值"}],
+    # TODO(SP4): keypoint_geometry(fall) 依赖姿态时序，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "fall", "region": "roi"}]},
     True, "关键点几何判定跌倒",
 ))
@@ -181,6 +190,7 @@ _add(SceneDef(
 _add(SceneDef(
     "SMOKE_PHONE", "抽烟/打电话", "pose", "SMOKE_PHONE", ["pose"], [_DET, _POSE],
     [_POLY, _CONF, _MIN_SEC],
+    # TODO(SP4): keypoint_geometry(hand_head) 依赖姿态时序，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "hand_head", "op": "gte", "value": "min_sec"}]},
     True, "手-头/手-耳几何 + 持续时长",
 ))
@@ -188,6 +198,7 @@ _add(SceneDef(
 _add(SceneDef(
     "CLIMB", "攀爬/翻越", "pose", "CLIMB", ["pose"], [_DET, _POSE],
     [_POLY, _LINE, _CONF],
+    # TODO(SP4): keypoint_geometry(climb) 依赖姿态/越线时序，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "climb", "line": "line"}]},
     True, "关键点高度/越线判定攀爬",
 ))
@@ -195,7 +206,7 @@ _add(SceneDef(
 _add(SceneDef(
     "NO_MASK", "未戴口罩", "classification", "NO_MASK", ["det", "cls"], [_DET, _CLS],
     [_POLY, _CONF, _CLS_THR, _LABELS],
-    {"op": "and", "children": [{"subject": "object_present", "label": "no_mask", "region": "roi"}]},
+    {"op": "and", "children": [{"subject": "object_present", "label": "no_mask"}]},
     False, "人体/人脸口罩佩戴判定",
 ))
 
@@ -210,7 +221,8 @@ _add(SceneDef(
 _add(SceneDef(
     "I_SEG", "实例分割", "seg", "I_SEG", ["iseg"], [_ISEG],
     [_POLY, _CONF, _LABELS],
-    {"op": "and", "children": [{"subject": "instance", "region": "roi"}]},
+    # 评估器尚未实现 instance 叶子；实例分割按目标出现判定（region 缺省全画面）。
+    {"op": "and", "children": [{"subject": "object_present"}]},
     False, "区域内实例分割",
 ))
 
@@ -231,7 +243,7 @@ _add(SceneDef(
 _add(SceneDef(
     "OBB_DET", "旋转目标", "obb", "OBB_DET", ["obb"], [_OBB],
     [_POLY, _CONF, _LABELS],
-    {"op": "and", "children": [{"subject": "object_present", "region": "roi"}]},
+    {"op": "and", "children": [{"subject": "object_present"}]},
     False, "旋转框目标检测",
 ))
 
@@ -239,7 +251,7 @@ _add(SceneDef(
 _add(SceneDef(
     "FACE_DET", "人脸检测", "face", "FACE_DET", ["face_detection"], [_FACE_DET],
     [_POLY, _CONF],
-    {"op": "and", "children": [{"subject": "object_present", "region": "roi"}]},
+    {"op": "and", "children": [{"subject": "object_present"}]},
     False, "区域内人脸检测",
 ))
 
@@ -260,7 +272,8 @@ _add(SceneDef(
 _add(SceneDef(
     "FACE_ATTR", "性别/年龄", "face", "FACE_ATTR", ["face_detection", "face_attr"], [_FACE_DET, _FACE_ATTR],
     [_POLY, _CONF, _LABELS],
-    {"op": "and", "children": [{"subject": "attribute", "op": "in", "value": "labels"}]},
+    # 评估器尚未实现性别/年龄专用叶子；暂按人脸出现判定（region 缺省全画面）。
+    {"op": "and", "children": [{"subject": "object_present"}]},
     False, "人脸性别/年龄属性识别",
 ))
 
@@ -282,7 +295,8 @@ _add(SceneDef(
 _add(SceneDef(
     "FACE_CROWD", "人脸计数", "face", "FACE_CROWD", ["face_detection"], [_FACE_DET],
     [_POLY, _COUNT, _CONF],
-    {"op": "and", "children": [{"subject": "count", "region": "roi", "op": "gte", "value": "count"}]},
+    # 单事件计数叶子；value 取 _COUNT 默认阈值 5。
+    {"op": "and", "children": [{"subject": "count", "op": ">=", "value": 5}]},
     False, "区域内人脸计数",
 ))
 
