@@ -136,7 +136,7 @@
               fixed="right"
               label="操作"
               align="center"
-              min-width="130"
+              min-width="190"
             >
               <template #default="scope">
                 <el-button
@@ -164,6 +164,16 @@
                   @click="handleToggleInference(scope.row)"
                 >
                   {{ scope.row.status === "RUNNING" ? "停止" : "启动" }}
+                </el-button>
+                <el-button
+                  v-if="scope.row.edge_device_id"
+                  type="primary"
+                  size="small"
+                  link
+                  icon="view"
+                  @click="handleOpenPreview(scope.row)"
+                >
+                  预览
                 </el-button>
               </template>
             </el-table-column>
@@ -366,6 +376,17 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <el-dialog
+      v-model="previewVisible"
+      title="边缘快照预览"
+      append-to-body
+      width="560px"
+      @close="handleClosePreview"
+    >
+      <SnapshotImage :src="previewSrc" height="320" />
+      <div class="preview-hint">每 2 秒自动刷新；无画面请确认边缘设备在线且布控任务已启动。</div>
+    </el-dialog>
   </div>
 </template>
 
@@ -374,9 +395,10 @@ import { ref, reactive, computed, onBeforeMount, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
 import { getCameraList } from "@/api/module_video/camera";
 import { getAlgorithmList } from "@/api/module_video/algorithm";
-import { getEdgeDeviceDetail } from "@/api/module_video/edge";
+import { getEdgeDeviceDetail, edgeTaskSnapshotUrl } from "@/api/module_video/edge";
 import EdgeDeviceSelect from "@/components/Edge/EdgeDeviceSelect.vue";
 import RoiEditor from "@/components/Video/RoiEditor.vue";
+import SnapshotImage from "@/components/Common/SnapshotImage.vue";
 import { cachedOptions } from "@/composables/useOptions";
 import {
   getAlgorithmTaskList,
@@ -785,6 +807,45 @@ async function pollInferenceStatus() {
   }
 }
 
+const previewVisible = ref(false);
+const previewTask = ref<any>(null);
+const previewTick = ref(0);
+let previewTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 供 SnapshotImage 使用的请求相对地址（其内部会再拼 request 基址 /api/v1）。 */
+const previewSrc = computed<string | null>(() => {
+  const row = previewTask.value;
+  if (!row?.edge_device_id || !row?.id) return null;
+  const base = import.meta.env.VITE_APP_BASE_API || "";
+  const full = edgeTaskSnapshotUrl(row.edge_device_id, row.id);
+  const relative = base && full.startsWith(base) ? full.slice(base.length) : full;
+  // 加时间戳驱动 SnapshotImage 重新拉流，实现 2s 刷新
+  return `${relative}?t=${previewTick.value}`;
+});
+
+function stopPreviewTimer() {
+  if (previewTimer) {
+    clearInterval(previewTimer);
+    previewTimer = null;
+  }
+}
+
+function handleOpenPreview(row: any) {
+  previewTask.value = row;
+  previewTick.value = Date.now();
+  previewVisible.value = true;
+  stopPreviewTimer();
+  previewTimer = setInterval(() => {
+    previewTick.value = Date.now();
+  }, 2000);
+}
+
+function handleClosePreview() {
+  stopPreviewTimer();
+  previewVisible.value = false;
+  previewTask.value = null;
+}
+
 onBeforeMount(() => {
   document.addEventListener("mouseup", onDragEnd);
   statusTimer = setInterval(pollInferenceStatus, 5000);
@@ -792,6 +853,7 @@ onBeforeMount(() => {
 onBeforeUnmount(() => {
   document.removeEventListener("mouseup", onDragEnd);
   if (statusTimer) clearInterval(statusTimer);
+  stopPreviewTimer();
 });
 </script>
 
@@ -951,5 +1013,10 @@ onBeforeUnmount(() => {
 }
 .error-log-tag {
   margin-left: 4px;
+}
+.preview-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
 }
 </style>
