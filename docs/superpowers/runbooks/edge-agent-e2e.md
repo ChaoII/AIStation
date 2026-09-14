@@ -30,6 +30,8 @@
 | 视频素材（OCR） | `...\test_data\test_images\ocr2.jpg` | 静态图需先用 FFmpeg 循环成 mp4 再传给 `-VideoPath`（见第 12 节） |
 | 模型文件（LPR det/rec） | `...\onnx\yolov5plate.onnx` + `...\onnx\plate_recognition_color.onnx` | `-Scene LPR` 默认检测/识别模型（rec 走 `-PlateRecModelPath`，见第 13 节） |
 | 视频素材（LPR） | `...\test_images\test_lpr_detection.jpg` | 车牌图同样先用 FFmpeg 循环成 mp4 再传给 `-VideoPath`（见第 13 节） |
+| 模型文件（FACE_DET） | `...\test_models\onnx\seetaface\scrfd_2.5g_bnkps_shape640x640.onnx` | `-Scene FACE_DET` 默认人脸检测模型（face_detection，走 `-FaceModelPath`，见第 15 节） |
+| 视频素材（FACE_DET） | `...\test_images\test_face_detection.jpg` | 人脸图同样先用 FFmpeg 循环成 mp4 再传给 `-VideoPath`（见第 15 节） |
 | 登录 | `admin / 123456` | 见 `backend/app/api/v1/module_system/auth/service.py:89` |
 
 > 视频必须先能检出目标（人/车），否则不会产生告警，`断言3` 会超时。
@@ -98,6 +100,11 @@ pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e
   -Scene LPR `
   -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\test_lpr_detection_loop.mp4
 
+# FACE_DET 人脸检测场景（单 face_detection 模型 + object_present 规则；见第 15 节）
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene FACE_DET `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\test_face_detection_loop.mp4
+
 # DET_ZONE 检测 + 跟踪（-Tracking）：断言告警 detections[].track_id 出现；见第 14 节
 pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
   -Scene DET_ZONE -Tracking `
@@ -116,14 +123,15 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `-Transport` | `mqtt` | `mqtt` / `http` |
-| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `DET_ZONE`（单 det 区域入侵，`scene_type=DET_ZONE`，见第 14 节）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节）/ `LPR`（det+rec 车牌 pipeline，见第 13 节） |
+| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `DET_ZONE`（单 det 区域入侵，`scene_type=DET_ZONE`，见第 14 节）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节）/ `LPR`（det+rec 车牌 pipeline，见第 13 节）/ `FACE_DET`（单 face_detection 人脸 pipeline，见第 15 节） |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
 | `-EdgeCode` | 空（运行时唯一） | 边缘设备编码 / Agent `--edge-code`；留空时按 `RunId` 生成 `edge-e2e-<RunId>`，避免软删后同码无法复用 |
-| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx`，`-Scene OCR_TEXT` 改用 `ppocrv6_tiny\det_infer.onnx`，`-Scene LPR` 改用 `yolov5plate.onnx` |
+| `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx`，`-Scene OCR_TEXT` 改用 `ppocrv6_tiny\det_infer.onnx`，`-Scene LPR` 改用 `yolov5plate.onnx`，`-Scene FACE_DET` 改用 `-FaceModelPath` |
 | `-ClsModelPath` | `...\onnx\zhgd_ml.onnx` | PED_ATTR 属性分类模型，写入 `preset_params.cls_path`；`-Scene OCR_TEXT` 未显式传入时自动改用 `ppocrv6_tiny\cls_infer.onnx` |
 | `-RecModelPath` | `...\ocr\ppocrv6_tiny\rec_infer.onnx` | OCR 文本识别模型，写入 `preset_params.rec_path`；仅 `-Scene OCR_TEXT` 使用 |
 | `-DictPath` | `...\test_data\ppocrv6_tiny_dict.txt` | OCR 字符字典，写入 `preset_params.dict_path`；仅 `-Scene OCR_TEXT` 使用 |
 | `-PlateRecModelPath` | `...\onnx\plate_recognition_color.onnx` | LPR 车牌识别模型，写入 `preset_params.rec_path`；仅 `-Scene LPR` 使用 |
+| `-FaceModelPath` | `...\onnx\seetaface\scrfd_2.5g_bnkps_shape640x640.onnx` | FACE_DET 人脸检测模型，写入 `Algorithm.model_path`；仅 `-Scene FACE_DET` 使用 |
 | `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
 | `-Tracking` | 关 | 算法 `runtime_config.tracking={enabled=true,algorithm=bytetrack}`，让 Agent 做 ByteTrack 跟踪并回填 `track_id`；启用后追加断言 3d（见第 5 节与第 14 节），仅检测类场景有意义 |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
@@ -153,6 +161,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 7 | stop 同步：Agent `running=false`、云端 `STOPPED` | Task#1 |
 | 8 | delete 同步：Agent `GET /api/v1/tasks/{id}` 返回 404、云端列表移除 | Task#1/#2 |
 | 3b | （仅 `-Scene PED_ATTR`）`ai_result.detections[].attributes` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].attributes` 已透传 |
+| 3b | （仅 `-Scene FACE_DET`）`ai_result.detections[]` 非空（人脸框） | 告警样本 `ai_result.detections`，证明事件 `objects[]` 人脸框已归一化落库 |
 | 3c | （仅 `-Scene OCR_TEXT` / `LPR`）`ai_result.detections[].text` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].text` 已透传到检测框文本 |
 | 3d | （仅 `-Tracking`）`ai_result.detections[].track_id` 至少一条出现且 `>= 0` | 告警样本 `ai_result.detections`，证明事件 `objects[].track_id` 已透传（Agent 仅在 `track_id >= 0` 时写该字段） |
 
@@ -160,6 +169,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 > `-Scene PED_ATTR` 时：断言 3 匹配 `algorithm_type=PED_ATTR`，并在断言 4 后追加断言 3b（属性透传）。
 > `-Scene OCR_TEXT` 时：断言 3 匹配 `algorithm_type=OCR_TEXT`，并在断言 4 后追加断言 3c（文本透传）。
 > `-Scene LPR` 时：断言 3 匹配 `algorithm_type=LPR`，并在断言 4 后追加断言 3c（车牌文本透传），断言 1 后追加断言 1b（设备能力含 `lpr`）。
+> `-Scene FACE_DET` 时：断言 3 匹配 `algorithm_type=FACE_DET`，并在断言 4 后追加断言 3b（人脸框透传），断言 1 后追加断言 1b（设备能力含 `face`）。
 > `-Tracking` 时：断言 3 匹配当前场景的 `algorithm_type`，并在断言 3c 之后追加断言 3d（`track_id` 透传）。
 
 ## 6. 接口契约（已对照源码核验）
@@ -619,3 +629,106 @@ psql ... -c "select id, alarm_type,
 | 断言 3 超时、无 `DET_ZONE` 告警 | 规则 `alarm_type` 与事件 `algorithm_type` 不一致 / 无规则 | 该场景不播种显式规则，后端按无规则直接落告警；仍超时则核对视频是否可检出目标 |
 | 启动任务报「边缘设备能力不足」 | 设备 capabilities 缺 `model_families=["det"]` | 脚本已按场景播种该能力（`Seed-EdgeDevice` 默认 `["det"]`）；手工核对 `GET /api/v1/video/edge/list` |
 | 模型加载失败 | `model_path` 在 Agent 机不存在 | 核对 `-ModelPath` 指向 Agent 可读绝对路径 |
+
+## 15. FACE_DET 人脸检测场景（`-Scene FACE_DET`）
+
+前置：ModelDeploy（Plan B）已支持 `face_detection`（SCRFD）pipeline，能把人脸框并入事件 v2
+`objects[]`；本机存在 `scrfd_2.5g_bnkps_shape640x640.onnx`（输入固定 640x640，ORT/CPU）。
+
+### 15.1 视频素材（静态图循环为 mp4）
+
+脚本只接受视频地址（FFmpeg 可直接读 mp4），先把人脸静态图循环成短 mp4：
+
+```powershell
+# 用 test_face_detection.jpg 生成 30s、25fps 的循环视频（需本机有 ffmpeg）
+ffmpeg -y -loop 1 -i E:\CLionProjects\ModelDeploy\test_data\test_images\test_face_detection.jpg `
+  -t 30 -r 25 -pix_fmt yuv420p `
+  E:\CLionProjects\ModelDeploy\test_data\test_images\test_face_detection_loop.mp4
+```
+
+> `test_images\` 下人脸素材：`test_face_detection.jpg`（另见 `test_face_detection0-5.*`、
+> `test_face.jpg`、`test_face1-3.jpg`）。本 runbook 选用文件名含 `face_detection` 的
+> `test_face_detection.jpg`，与 SCRFD 检测场景对应；换图时用文件名确认素材含人脸。
+
+### 15.2 运行命令
+
+```powershell
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene FACE_DET `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\test_face_detection_loop.mp4
+```
+
+> 未显式传 `-ModelPath` 时，FACE_DET 场景自动改用 `-FaceModelPath`
+> （默认 `seetaface\scrfd_2.5g_bnkps_shape640x640.onnx`）。`-EdgeCode` / `-Secret` 等与默认场景一致。
+
+### 15.3 播种内容
+
+**Algorithm**（`POST /api/v1/video/algorithm/create`）：
+
+```jsonc
+{
+  "algorithm_type": "FACE_DET",
+  "scene_type": "FACE_DET",
+  "model_path": "<scrfd_2.5g_bnkps_shape640x640.onnx 绝对路径>",
+  "runtime_config": { "backend": "ort", "device": "cpu",
+                      "decoder": { "hw_accel": "none", "device_only": false } },
+  "preset_params": { "input_size": [640, 640], "confidence_threshold": 0.3 }
+}
+```
+
+`scene_type=FACE_DET` 使 `build_agent_task_config` 编译出单条 `type=face_detection`
+的模型条目（`url` 取 `model_path`，见 `edge/orchestrator.py:153`）；场景目录要求设备具备
+`model_families` 含 `face_detection`（`scene/catalog.py:260`）。
+
+**AlarmRule**（`POST /api/v1/video/alarm/rule/create`）：
+
+```jsonc
+{
+  "camera_id": <本次相机 id>,
+  "alarm_type": "FACE_DET",
+  "severity": "WARNING",
+  "conditions": { "op": "and", "children": [ { "subject": "object_present" } ] },
+  "status": true
+}
+```
+
+> 规则匹配键是 `camera_id` + `alarm_type`，且 `alarm_type` 必须等于事件的
+> `algorithm_type`（本例均为 `FACE_DET`），否则规则不生效（`inference/service.py:111`）。
+>
+> **不限定 `label` 是故意放宽**：人脸模型 `labels` 为空/随模型而异，限定 `"face"` 可能漏命中；
+> 只要出现任一人脸框即命中，用于验证「事件→归一化→object_present 规则→告警落库」整条链路。
+> 生产可改为 `object_present` + `label` 或 `count >= N`。
+
+### 15.4 事件与人脸框语义
+
+Agent 上报事件 v2（`objects[]`），人脸框由 `label/label_id/confidence/bbox` 承载；
+云端 `normalize_edge_event` 把 `objects[]` 归一化为 `detections[]`（`edge/consumer.py`），
+最终落到 `video_alarm_records.ai_result.detections[]`。人脸 `keypoints` 暂不上报（后续 FACE_LANDMARK）。
+
+### 15.5 新增断言与证据
+
+| # | 断言 | 判据 |
+|---|------|------|
+| 1b | 设备 `capabilities.model_families` 含 `face` | `GET /api/v1/video/edge/list?code=<EdgeCode>`（Agent 心跳上报的人脸族名） |
+| 3 | 出现 `algorithm_type=FACE_DET` 告警 | 断言 3 按 `$effectiveAlgorithmType` 过滤 |
+| 3b | `ai_result.detections[]` 非空（人脸框） | 告警样本中至少一个人脸检测框 |
+| 4 | 告警 `snapshot_url` 非空 | 同默认场景 |
+
+```bash
+# 人脸证据（DB，PostgreSQL 示例）
+psql ... -c "select id, alarm_type,
+  jsonb_array_length(ai_result->'detections') as n_dets
+  from video_alarm_records where camera_id=<id> order by id desc limit 5;"
+```
+
+脚本结束清理：`AlarmRule` → `Algorithm` → `Camera` → `EdgeDevice`（`-KeepData` 时保留）。
+
+### 15.6 排障
+
+| 现象 | 可能原因 | 处理 |
+|------|----------|------|
+| 启动任务报「边缘设备能力不足: 设备不支持模型族 face_detection」 | 场景目录要求 `face_detection`，而 Agent 心跳上报的族名为 `face`（`capability.cpp`） | 已知命名差异：脚本播种 `["face_detection","face"]` 兜底，但心跳会覆盖为 Agent 上报值；若仍报错，需将场景目录 `FACE_DET.model_families` 对齐为 `face`（或让 Agent 上报 `face_detection`） |
+| 断言 3 超时、无 `FACE_DET` 告警 | 规则 `alarm_type` 与事件 `algorithm_type` 不一致 / 无规则 | 核对 `alarm_type=FACE_DET`；确认事件 `algorithm_type` 由 TaskConfig 透传 |
+| 断言 3 超时但 Agent 有事件 | 规则 `object_present` 未命中（无人脸框） | 换含清晰人脸的素材（`test_face_detection.jpg`）；确认 `confidence_threshold=0.3` 下能检出 |
+| 断言 3b 失败 | 事件未带人脸框（Agent 未把 `face_detection` 并入 sink） | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`，确认 Agent 事件 `objects[]` 含人脸框 |
+| 模型加载失败 | `-FaceModelPath` 在 Agent 机不存在 | 核对指向 Agent 可读绝对路径（`seetaface\scrfd_2.5g_bnkps_shape640x640.onnx`） |

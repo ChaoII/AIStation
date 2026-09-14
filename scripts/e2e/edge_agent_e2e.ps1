@@ -31,7 +31,8 @@
 .PARAMETER ModelPath
     算法检测模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
     当 `-Scene PED_ATTR` 且未显式传入本参数时，自动改用 zhgd_det.onnx；
-    当 `-Scene LPR` 时自动改用 yolov5plate.onnx。
+    当 `-Scene LPR` 时自动改用 yolov5plate.onnx；
+    当 `-Scene FACE_DET` 时自动改用 -FaceModelPath（scrfd_2.5g_bnkps_shape640x640.onnx）。
 
 .PARAMETER ClsModelPath
     PED_ATTR 属性分类（cls）模型路径，写入 preset_params.cls_path；仅 `-Scene PED_ATTR` 使用。
@@ -47,6 +48,10 @@
     车牌识别（rec）模型路径，写入 preset_params.rec_path；仅 `-Scene LPR` 使用。
     默认取 plate_recognition_color.onnx（与 yolov5plate.onnx 检测模型配套）。
 
+.PARAMETER FaceModelPath
+    人脸检测（face_detection）模型路径，写入 Algorithm.model_path；仅 `-Scene FACE_DET` 使用。
+    默认取 seetaface\scrfd_2.5g_bnkps_shape640x640.onnx（SCRFD，输入 640x640、ORT/CPU）。
+
 .PARAMETER Scene
     场景模式：
       - INTRUSION（默认）：单 det 模型，断言 algorithm_type=INTRUSION 告警；
@@ -58,6 +63,8 @@
         ai_result.detections[].text 非空（模型/字典默认取 ppocrv6_tiny）。
       - LPR：det+rec 车牌识别 pipeline，播种 text_match 规则并断言
         ai_result.detections[].text 非空（模型默认取 yolov5plate + plate_recognition_color）。
+      - FACE_DET：单 face_detection（SCRFD）模型管线，播种 object_present 规则并断言
+        algorithm_type=FACE_DET 告警且 ai_result.detections[] 非空（模型默认取 -FaceModelPath）。
 
 .PARAMETER DecoderHwAccel
     算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
@@ -132,7 +139,8 @@ param(
     [string]$RecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\rec_infer.onnx",
     [string]$DictPath = "E:\CLionProjects\ModelDeploy\test_data\ppocrv6_tiny_dict.txt",
     [string]$PlateRecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\plate_recognition_color.onnx",
-    [ValidateSet("INTRUSION", "DET_ZONE", "PED_ATTR", "OCR_TEXT", "LPR")]
+    [string]$FaceModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\seetaface\scrfd_2.5g_bnkps_shape640x640.onnx",
+    [ValidateSet("INTRUSION", "DET_ZONE", "PED_ATTR", "OCR_TEXT", "LPR", "FACE_DET")]
     [string]$Scene = "INTRUSION",
     [string]$DecoderHwAccel = "none",
     [switch]$Tracking,
@@ -430,7 +438,7 @@ function Stop-Agent {
 
 # 边缘设备播种：优先 create；若 code 已存在（可能已被 Agent 心跳自动 upsert），则改为 update。
 function Seed-EdgeDevice {
-    # PED_ATTR/OCR_TEXT/LPR 场景要求设备声明对应模型族（pedestrian_attribute/ocr/lpr），
+    # PED_ATTR/OCR_TEXT/LPR/FACE_DET 场景要求设备声明对应模型族，
     # 否则能力校验会拒绝下发；其余场景保持仅 det。
     $capModelFamilies = @("det")
     if ($Scene -eq "PED_ATTR") {
@@ -440,6 +448,10 @@ function Seed-EdgeDevice {
     } elseif ($Scene -eq "LPR") {
         # 车牌场景能力校验只要求 lpr 模型族（见 scene/catalog.py 的 LPR 定义）
         $capModelFamilies = @("lpr")
+    } elseif ($Scene -eq "FACE_DET") {
+        # 场景目录 FACE_DET 要求模型族 face_detection（scene/catalog.py），
+        # 而 Agent 心跳上报的人脸族名为 face；两者都播种以兼容（心跳随后覆盖为上报值）。
+        $capModelFamilies = @("face_detection", "face")
     }
     $createBody = @{
         name         = "E2E 边缘设备 $effectiveEdgeCode"
@@ -505,13 +517,15 @@ New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 
 # 场景模式：PED_ATTR 使用 det+cls 双模型（zhgd_det + zhgd_ml）与属性告警规则；
 # OCR_TEXT 使用 det+cls+rec+dict 四件套（ppocrv6_tiny）与文本规则；
-# LPR 使用 det+rec 双模型（yolov5plate + plate_recognition_color）与文本规则。
+# LPR 使用 det+rec 双模型（yolov5plate + plate_recognition_color）与文本规则；
+# FACE_DET 使用单 face_detection 模型（scrfd）与 object_present 规则。
 # 未显式传入对应模型参数时，按场景切换到各自默认模型。
 $effectiveAlgorithmType = switch ($Scene) {
     "DET_ZONE" { "DET_ZONE" }
     "PED_ATTR" { "PED_ATTR" }
     "OCR_TEXT" { "OCR_TEXT" }
     "LPR"      { "LPR" }
+    "FACE_DET" { "FACE_DET" }
     default    { "INTRUSION" }
 }
 $pedAttrDetDefault = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\zhgd_det.onnx"
@@ -523,6 +537,7 @@ if (-not $PSBoundParameters.ContainsKey("ModelPath")) {
     if ($Scene -eq "PED_ATTR") { $effectiveModelPath = $pedAttrDetDefault }
     elseif ($Scene -eq "OCR_TEXT") { $effectiveModelPath = $ocrDetDefault }
     elseif ($Scene -eq "LPR") { $effectiveModelPath = $lprDetDefault }
+    elseif ($Scene -eq "FACE_DET") { $effectiveModelPath = $FaceModelPath }
 }
 $effectiveClsPath = $ClsModelPath
 if ($Scene -eq "OCR_TEXT" -and -not $PSBoundParameters.ContainsKey("ClsModelPath")) {
@@ -565,6 +580,7 @@ try {
         "PED_ATTR" { "E2E 行人属性 $($script:RunId)" }
         "OCR_TEXT" { "E2E 文本识别 $($script:RunId)" }
         "LPR"      { "E2E 车牌识别 $($script:RunId)" }
+        "FACE_DET" { "E2E 人脸检测 $($script:RunId)" }
         default    { "E2E 闯入检测 $($script:RunId)" }
     }
     $algoBody = @{
@@ -617,6 +633,19 @@ try {
             rec_path             = $effectiveRecPath
             input_size           = @(640, 640)
             confidence_threshold = 0.25
+        }
+    } elseif ($Scene -eq "FACE_DET") {
+        # scene_type 触发编排编译 face_detection（单模型）pipeline；
+        # runtime_config 按人脸/ORT-CPU 契约显式给定（不做 RTSP transport 覆盖）
+        $algoBody.scene_type = "FACE_DET"
+        $algoBody.runtime_config = @{
+            backend  = "ort"
+            device   = "cpu"
+            decoder  = @{ hw_accel = $DecoderHwAccel; device_only = $false }
+        }
+        $algoBody.preset_params = @{
+            input_size           = @(640, 640)
+            confidence_threshold = 0.3
         }
     } elseif ($Scene -eq "DET_ZONE") {
         # 检测场景：显式声明 scene_type，编排按场景目录（model_families=["det"]）解析
@@ -693,6 +722,25 @@ try {
         $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
         $created.RuleId = $rule.id
         Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=LPR conditions=text_match(.+)（任意车牌文本命中，链路验证）" -Level OK
+    } elseif ($Scene -eq "FACE_DET") {
+        # 链路验证规则：object_present 不限定 label（人脸模型 labels 为空且随模型而异，
+        # 限定 "face" 可能漏命中），只要出现任意人脸框即命中，用于验证整条链路。
+        $ruleBody = @{
+            name       = "E2E 人脸规则 $($script:RunId)"
+            camera_id  = $created.CameraId
+            alarm_type = "FACE_DET"
+            severity   = "WARNING"
+            conditions = @{
+                op       = "and"
+                children = @(
+                    @{ subject = "object_present" }
+                )
+            }
+            status     = $true
+        }
+        $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
+        $created.RuleId = $rule.id
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=FACE_DET conditions=object_present（出现人脸框即命中，链路验证）" -Level OK
     }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致
@@ -739,6 +787,20 @@ try {
         }
         $lprCapOk = ($families -contains "lpr")
         [void](Assert-That $lprCapOk "断言1b: 设备 capabilities.model_families 含 lpr（实际: $($families -join ', ')）")
+    }
+
+    if ($Scene -eq "FACE_DET") {
+        # 断言设备能力清单含 face 模型族（Agent 心跳上报的人脸族名；
+        # 场景目录 FACE_DET 的能力要求为 face_detection）
+        Write-E2E "Step 3a2: 断言设备能力含 face 模型族" -Level STEP
+        $edgeList = Invoke-Api -Method Get -Path "/api/v1/video/edge/list?code=$effectiveEdgeCode&page_no=1&page_size=50"
+        $edgeItem = @($edgeList.items) | Where-Object { $_.code -eq $effectiveEdgeCode } | Select-Object -First 1
+        $families = @()
+        if ($edgeItem -and $edgeItem.capabilities -and $edgeItem.capabilities.model_families) {
+            $families = @($edgeItem.capabilities.model_families)
+        }
+        $faceCapOk = ($families -contains "face")
+        [void](Assert-That $faceCapOk "断言1b: 设备 capabilities.model_families 含 face（实际: $($families -join ', ')）")
     }
 
     Write-E2E "Step 3b: 等待 Agent 任务 running 并核对云端任务 RUNNING" -Level STEP
@@ -788,6 +850,19 @@ try {
         if ($attrOk) {
             $attrNames = @($attrDets[0].attributes.PSObject.Properties.Name)
             Write-E2E "属性样本: $($attrNames -join ', ')"
+        }
+    }
+
+    if ($Scene -eq "FACE_DET") {
+        Write-E2E "Step 3d2: 断言人脸检测框已透传（objects[] → ai_result.detections[]）" -Level STEP
+        $faceDets = @()
+        if ($script:SampleAlarm -and $script:SampleAlarm.ai_result) {
+            $faceDets = @($script:SampleAlarm.ai_result.detections)
+        }
+        $faceDetOk = ($faceDets.Count -gt 0)
+        [void](Assert-That $faceDetOk "断言3b: 告警 ai_result.detections[] 非空（人脸框）")
+        if ($faceDetOk) {
+            Write-E2E "detections 样本数: $($faceDets.Count)"
         }
     }
 
@@ -967,6 +1042,9 @@ try {
     }
     if ($Scene -eq "LPR") {
         Write-E2E "车牌证据（DB）: select id, alarm_type, ai_result->'detections'->0->>'text' as plate_text from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
+    }
+    if ($Scene -eq "FACE_DET") {
+        Write-E2E "人脸证据（DB）: select id, alarm_type, jsonb_array_length(ai_result->'detections') as n_dets from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
     }
     if ($Tracking) {
         Write-E2E "跟踪证据（DB）: select id, alarm_type, jsonb_path_query_array(ai_result, '$.detections[*].track_id') as track_ids from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
