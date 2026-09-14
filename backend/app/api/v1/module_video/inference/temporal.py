@@ -26,6 +26,8 @@ _SCOPE_ALL = "all"
 _SEP = "\x1f"
 _FIRST = "first"
 _LAST = "last"
+_POS_P = "pos_p"  # 上一次观测中心 "x,y"
+_POS_C = "pos_c"  # 当前观测中心 "x,y"
 _TTL_SEC = 24 * 3600  # 观测状态保留一天，防止 Redis 键无限增长
 
 
@@ -37,6 +39,43 @@ def _to_float(raw) -> float | None:
         return float(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _center(d) -> tuple[float, float] | None:
+    """取检测框中心 (x + w/2, y + h/2)；bbox 缺失/非法返回 None。"""
+    if not isinstance(d, dict):
+        return None
+    bbox = d.get("bbox")
+    if not isinstance(bbox, dict):
+        return None
+    x = _to_float(bbox.get("x"))
+    y = _to_float(bbox.get("y"))
+    w = _to_float(bbox.get("width"))
+    h = _to_float(bbox.get("height"))
+    if None in (x, y, w, h):
+        return None
+    return (x + w / 2.0, y + h / 2.0)
+
+
+def _ser_pos(pos: tuple[float, float]) -> str:
+    """位置序列化为 "x,y"（保留 6 位小数，避免浮点噪声）。"""
+    return f"{round(pos[0], 6)},{round(pos[1], 6)}"
+
+
+def _parse_pos(raw) -> tuple[float, float] | None:
+    """解析位置："x,y" 字符串或 [x, y] 序列；非法返回 None。"""
+    if isinstance(raw, (list, tuple)) and len(raw) >= 2:
+        x = _to_float(raw[0])
+        y = _to_float(raw[1])
+        return None if x is None or y is None else (x, y)
+    if not isinstance(raw, str):
+        return None
+    parts = raw.split(",")
+    if len(parts) != 2:
+        return None
+    x = _to_float(parts[0])
+    y = _to_float(parts[1])
+    return None if x is None or y is None else (x, y)
 
 
 def to_epoch(ts) -> float:
@@ -180,19 +219,26 @@ class TemporalStore:
             return
         scope = scope or _SCOPE_ALL
         grouped: dict[str, dict[str, float]] = {}
+        positions: dict[str, dict[str, tuple[float, float]]] = {}
         for d in detections:
             if not isinstance(d, dict):
                 continue
             label = d.get("label")
             if not isinstance(label, str):
                 label = ""
-            grouped.setdefault(label, {})[self._field(d.get("track_id"), now)] = now
+            field = self._field(d.get("track_id"), now)
+            grouped.setdefault(label, {})[field] = now
+            center = _center(d)
+            if center is not None:
+                positions.setdefault(label, {}).setdefault(field, center)
         for label, fields in grouped.items():
             key = self._key(camera_id, alarm_type, label, scope)
-            self._observe_locked(key, fields)
+            self._observe_locked(key, fields, positions.get(label, {}))
 
-    def _observe_locked(self, key: str, fields: dict[str, float]) -> None:
-        """在同一把锁内完成读-改-写，避免并发同键事件互相覆盖丢失 first_seen。"""
+    def _observe_locked(self, key: str, fields: dict[str, float],
+                        positions: dict[str, tuple[float, float]] | None = None) -> None:
+        """在同一把锁内完成读-改-写；位置推进 prev <- 旧 cur，cur <- 新中心。"""
+        positions = positions or {}
         with self._lock:
             current = self._read_hash_nolock(key)
             mapping: dict[str, float] = {}
@@ -201,6 +247,13 @@ class TemporalStore:
                 prev_last = _to_float(current.get(field + _SEP + _LAST))
                 mapping[field + _SEP + _FIRST] = value if prev_first is None else min(prev_first, value)
                 mapping[field + _SEP + _LAST] = value if prev_last is None else max(prev_last, value)
+
+                pos = positions.get(field)
+                if pos is not None:
+                    old_cur = _parse_pos(current.get(field + _SEP + _POS_C))
+                    if old_cur is not None:
+                        mapping[field + _SEP + _POS_P] = _ser_pos(old_cur)
+                    mapping[field + _SEP + _POS_C] = _ser_pos(pos)
             self._write_hash_nolock(key, mapping)
 
     # ----------------------------------------------------------------- 查询
@@ -250,6 +303,29 @@ class TemporalStore:
                 last = lasts.get(field)
                 if last is not None:
                     out[field] = (first, last)
+        return out
+
+    def query_positions(self, camera_id, alarm_type, label=None, scope: str = _SCOPE_ALL):
+        """返回 ``{track_key: (prev_xy | None, cur_xy)}``；label=None 聚合全部标签。"""
+        scope = scope or _SCOPE_ALL
+        out: dict[str, tuple[tuple[float, float] | None, tuple[float, float] | None]] = {}
+        for key in self._keys(camera_id, alarm_type, label, scope):
+            h = self._read_hash(key)
+            prevs: dict[str, tuple[float, float]] = {}
+            curs: dict[str, tuple[float, float]] = {}
+            for k, v in h.items():
+                if not isinstance(k, str):
+                    continue
+                if k.endswith(_SEP + _POS_C):
+                    p = _parse_pos(v)
+                    if p is not None:
+                        curs[k[: -len(_SEP + _POS_C)]] = p
+                elif k.endswith(_SEP + _POS_P):
+                    p = _parse_pos(v)
+                    if p is not None:
+                        prevs[k[: -len(_SEP + _POS_P)]] = p
+            for field, cur in curs.items():
+                out[field] = (prevs.get(field), cur)
         return out
 
     # ----------------------------------------------------------------- 维护
