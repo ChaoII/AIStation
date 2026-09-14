@@ -333,9 +333,12 @@ async def inference_scheduler_loop():
     while True:
         try:
             async with async_db_session() as session:
+                # 边缘委派任务（edge_device_id 非空）由边缘 Agent 经 EdgeOrchestrator 执行，
+                # 本地调度器不得接管，否则会误拉起本地 worker（报 modeldeploy 未安装）并干扰边缘运行。
                 stmt = select(AlgorithmTaskModel).where(
                     AlgorithmTaskModel.status == "RUNNING",
                     AlgorithmTaskModel.is_deleted.is_(False),
+                    AlgorithmTaskModel.edge_device_id.is_(None),
                 )
                 result = await session.execute(stmt)
                 db_tasks = {t.id: t for t in result.scalars().all()}

@@ -90,6 +90,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | `-Transport` | `mqtt` | `mqtt` / `http` |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
 | `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径 |
+| `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
 | `-AgentPort` | `19090` | Agent 控制面端口 |
 | `-BrokerPort` | `1883` | Broker 端口 |

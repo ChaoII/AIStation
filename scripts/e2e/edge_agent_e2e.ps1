@@ -30,6 +30,11 @@
 .PARAMETER ModelPath
     算法模型文件路径。支持本地绝对路径（同机 Agent 直接读取）或 http(s)/s3 URL（Agent 下载）。
 
+.PARAMETER DecoderHwAccel
+    算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
+    Agent 侧可选值：auto/none/cuda/vaapi/qsv/sophgo（见 ModelDeploy config.hpp）。
+    若模型走 GPU（backend=cuda）则需改为 cuda，否则 CPU 后端会拒绝 GPU NV12。
+
 .PARAMETER EdgeCode
     边缘设备编码；必须与 Agent `--edge-code` 一致（心跳按 code upsert）。
 
@@ -87,6 +92,7 @@ param(
     [string]$AgentExe = "E:\CLionProjects\ModelDeploy\build\bin\aistation_agent.exe",
     [string]$VideoPath = "E:\CLionProjects\ModelDeploy\test_data\test_video60.mp4",
     [string]$ModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\yolo11n\yolo11n_nms.onnx",
+    [string]$DecoderHwAccel = "none",
 
     [string]$EdgeCode = "edge-01",
     [string]$Secret = "e2e-shared-secret",
@@ -471,7 +477,11 @@ try {
         code            = $algoCode
         algorithm_type  = "INTRUSION"
         model_path      = $ModelPath
-        runtime_config  = @{ backend = "ort"; device = "cpu" }
+        runtime_config  = @{
+            backend  = "ort"
+            device   = "cpu"
+            decoder  = @{ hw_accel = $DecoderHwAccel; device_only = $false; rtsp_transport = "tcp" }
+        }
         preset_params   = @{ confidence_threshold = 0.4; input_size = @(640, 640) }
     }
     $algo = Invoke-Api -Method Post -Path "/api/v1/video/algorithm/create" -Body $algoBody
