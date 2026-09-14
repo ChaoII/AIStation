@@ -9,6 +9,7 @@ class AlgorithmCreateSchema(BaseModel):
     code: str = Field(..., max_length=64, description="算法编码")
     version: str = Field(default="1.0.0", max_length=32, description="版本号")
     algorithm_type: str = Field(..., max_length=32, description="算法类型")
+    scene_type: str | None = Field(default=None, max_length=64, description="场景码")
     model_path: str | None = Field(default=None, max_length=512, description="模型文件路径")
     plugin_path: str | None = Field(default=None, max_length=512, description="插件路径")
     model_file_config: dict | None = Field(default=None, description="模型配置（格式、加密密钥等）")
@@ -31,6 +32,7 @@ class AlgorithmOutSchema(BaseSchema):
     code: str
     version: str = "1.0.0"
     algorithm_type: str
+    scene_type: str | None = None
     model_path: str | None = None
     plugin_path: str | None = None
     model_file_config: dict | None = None

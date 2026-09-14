@@ -16,6 +16,7 @@ class AlgorithmModel(ModelMixin, UserMixin):
     version: Mapped[str] = mapped_column(String(32), default="1.0.0", comment="版本号")
 
     algorithm_type: Mapped[str] = mapped_column(String(32), nullable=False, comment="算法类型: INTRUSION/LINE_CROSSING/FACE_DETECT/...")
+    scene_type: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="场景码（任务类型目录，如 PED_ATTR）")
     model_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="模型文件路径")
     plugin_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="C++ SDK插件路径")
 

@@ -35,6 +35,7 @@ async def _ensure_missing_columns() -> None:
             ("model_file_config", "JSONB"),
             ("runtime_config", "JSONB"),
             ("preset_params", "JSONB"),
+            ("scene_type", "VARCHAR(64)"),
         ],
         "video_algorithm_tasks": [
             ("runtime_overrides", "JSONB"),
