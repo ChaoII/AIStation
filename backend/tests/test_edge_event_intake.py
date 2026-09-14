@@ -168,6 +168,76 @@ def test_callback_keeps_snapshot_reference_without_base64(monkeypatch):
     assert captured["record"].snapshot_path == "edge-01/cam7/2026-09-12/x.jpg"
 
 
+def test_http_callback_normalizes_inline_snapshot(monkeypatch):
+    """HTTP 回调路径必须与 MQTT 共用归一化，内联快照需映射为 snapshot_data。"""
+    from app.api.v1.module_video.algorithm import controller as algo_ctrl
+    from app.api.v1.module_video.inference import service as svc
+    from app.config import setting
+
+    monkeypatch.setattr(setting.settings, "INFERENCE_CALLBACK_TOKEN", "tok")
+
+    captured = {}
+
+    async def _fake_callback(event):
+        captured["event"] = event
+        return {"alarm_created": True}
+
+    monkeypatch.setattr(svc.InferenceService, "process_detection_callback", _fake_callback)
+
+    class _Req:
+        headers = {"Authorization": "Bearer tok"}
+
+    body = {
+        "event_id": "http-inline-1",
+        "edge_code": "edge-01",
+        "camera_id": 7,
+        "task_id": 1,
+        "detections": [{"label": "person"}],
+        "snapshot": {"data": "QUJD"},
+        "ts": "2026-09-12T08:00:00Z",
+    }
+    resp = asyncio.run(algo_ctrl.detection_callback_controller(_Req(), body))
+
+    assert resp.status_code == 200
+    # 归一化生效：Agent 嵌套结构映射为回调兼容字段，内联快照不再被丢弃
+    assert captured["event"]["snapshot_data"] == "QUJD"
+    assert captured["event"]["frame_timestamp"] == "2026-09-12T08:00:00Z"
+    assert captured["event"]["edge_code"] == "edge-01"
+
+
+def test_http_callback_legacy_flat_payload_passthrough(monkeypatch):
+    """旧版扁平回调（无 snapshot 嵌套）原样透传，不受归一化影响。"""
+    from app.api.v1.module_video.algorithm import controller as algo_ctrl
+    from app.api.v1.module_video.inference import service as svc
+    from app.config import setting
+
+    monkeypatch.setattr(setting.settings, "INFERENCE_CALLBACK_TOKEN", "tok")
+
+    captured = {}
+
+    async def _fake_callback(event):
+        captured["event"] = event
+        return {"alarm_created": True}
+
+    monkeypatch.setattr(svc.InferenceService, "process_detection_callback", _fake_callback)
+
+    class _Req:
+        headers = {"Authorization": "Bearer tok"}
+
+    body = {
+        "event_id": "http-legacy-1",
+        "camera_id": 7,
+        "task_id": 1,
+        "detections": [{"label": "person"}],
+        "snapshot_path": "legacy/x.jpg",
+    }
+    resp = asyncio.run(algo_ctrl.detection_callback_controller(_Req(), body))
+
+    assert resp.status_code == 200
+    assert captured["event"]["snapshot_path"] == "legacy/x.jpg"
+    assert "snapshot_data" not in captured["event"]
+
+
 def _topic_matches(topic: str, pattern: str) -> bool:
     """按 MQTT 语义判断主题是否匹配通配模式（+ 匹配一级）。"""
     topic_levels = topic.split("/")

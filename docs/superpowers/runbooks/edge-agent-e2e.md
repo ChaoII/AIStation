@@ -168,6 +168,7 @@ psql ... -c "select id, code, status, control_url, last_heartbeat from edge_devi
 2. **HTTP 通道已支持 `event_id` 去重（与原 brief 的差异已修复）**：`detection_callback_controller`（`algorithm/controller.py:215`）复用 `edge/consumer.py` 的 `dedup()`，以模块级 `_CALLBACK_DEDUP` 按 `event_id` 幂等去重（命中返回 `{"alarm_created": false, "reason": "duplicate"}`），与 MQTT 消费者（`edge/consumer.py:229-246`）行为一致。`-Transport http` 下重复投递只新建 1 条告警，脚本对该断言按 OK 处理。注：`InferenceService.process_detection_callback`（`inference/service.py:24`）本身仍不处理 `event_id`。
 3. **schedule 更新不向 Agent 回传**：`PUT /api/v1/video/algorithm/task/update/{id}` 只改 DB（`algorithm/service.py:57`），且 Agent `POST /api/v1/tasks` 对已存在 id 返回 400（`pipeline_manager.cpp:129`），故无法“原地改 schedule 再重启”。脚本改为**新建窗口外 Task#2**验证时段透传与 Agent 侧调度。
 4. Broker 默认镜像匿名访问：`eclipse-mosquitto:2` 默认不允许匿名且仅监听容器内。脚本会挂载临时 `mosquitto.conf`（`listener 1883 0.0.0.0` + `allow_anonymous true`），见 `Start-Broker`。
+5. **HTTP 通道已复用 MQTT 事件归一化（内联快照修复）**：`detection_callback_controller` 在 token 校验与 `event_id` 去重后调用 `edge/consumer.py:normalize_edge_event`，把 Agent 嵌套结构 `snapshot.ref`/`snapshot.data`/`ts` 映射为 `snapshot_path`/`snapshot_data`/`frame_timestamp` 再交给 `InferenceService.process_detection_callback`。此前 HTTP 通道直传原始 body，`snapshot.data` 未映射导致告警 `snapshot_path` 为空；扁平/旧版 payload 原样透传，行为不变。
 
 ## 9. 排障表
 

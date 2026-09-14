@@ -232,8 +232,14 @@ async def detection_callback_controller(
             data={"alarm_created": False, "reason": "duplicate"}, msg="处理完成"
         )
 
+    from app.api.v1.module_video.edge.consumer import normalize_edge_event
     from app.api.v1.module_video.inference.service import InferenceService
-    result = await InferenceService.process_detection_callback(body)
+
+    # HTTP 回调与 MQTT 消费者是同一 Agent 事件的两个接入通道，必须共用同一套归一化：
+    # Agent 上报的是嵌套结构（snapshot.ref / snapshot.data / ts），只有归一化后才能
+    # 映射为 snapshot_path / frame_timestamp / 内联 snapshot_data，避免内联快照被丢弃。
+    event = normalize_edge_event(body)
+    result = await InferenceService.process_detection_callback(event)
     if event_id:
         _CALLBACK_DEDUP.mark(event_id)
     return SuccessResponse(data=result, msg="处理完成")
