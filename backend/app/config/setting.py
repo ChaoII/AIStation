@@ -269,6 +269,13 @@ class Settings(BaseSettings):
     MQTT_SUBSCRIBE_TOPIC: str = "aistation/+/edge/+/camera/+/detect"
     MQTT_CLIENT_ID: str = "aistation-events"  # 消费者 client_id
     MQTT_QOS: int = 1  # 订阅 QoS
+    # 事件内联快照（Agent 采集 JPEG → base64 随事件上报）
+    MQTT_SNAPSHOT_ENABLED: bool = True
+    MQTT_SNAPSHOT_INLINE: bool = True
+    MQTT_SNAPSHOT_QUALITY: int = 75
+    MQTT_SNAPSHOT_MAX_WIDTH: int = 640
+    # 边缘预览（当前以受控快照流实现）
+    EDGE_PREVIEW_ENABLED: bool = True
 
     # ================================================= #
     # ******************* 请求限制配置 ****************** #

@@ -68,6 +68,24 @@ def _resolve_stream_url(task, camera) -> str:
     return stream_url
 
 
+def normalize_broker_scheme(url: str) -> str:
+    """把 MQTT Broker 地址统一为 paho 可识别的 tcp:// 或 ssl://。
+
+    Agent 用 paho，只认 tcp:// 与 ssl://；aiomqtt 侧由 parse_mqtt_broker 解析。
+    空串原样返回；未知 scheme 原样返回，交由实现/运维纠正。
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("mqtts://"):
+        return "ssl://" + raw[len("mqtts://"):]
+    if raw.startswith("mqtt://"):
+        return "tcp://" + raw[len("mqtt://"):]
+    if "://" not in raw:
+        return "tcp://" + raw
+    return raw
+
+
 def build_agent_task_config(task, camera, algorithm, events: dict | None = None) -> dict:
     """把 task/camera/algorithm 编译为 spec §6 的 Agent TaskConfig（纯函数）。"""
     runtime_config = getattr(algorithm, "runtime_config", None) or {}
@@ -85,6 +103,8 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
 
     return {
         "task_id": task.id,
+        "tenant": merged_runtime.get("tenant") or "default",
+        "algorithm_type": getattr(algorithm, "algorithm_type", "") or "",
         "camera": {
             "id": camera.id,
             "name": camera.name,
@@ -110,15 +130,25 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
         "events": events or {},
         "decoder": merged_runtime.get("decoder") or {"hw_accel": "cuda", "device_only": True},
         "encoder": merged_runtime.get("encoder") or {"codec": "h264_nvenc", "format": "flv", "bitrate_kbps": 2500},
+        "preview": {
+            "enabled": bool(getattr(settings, "EDGE_PREVIEW_ENABLED", True)),
+            "format": "snapshot",
+        },
     }
 
 
 def build_events(camera_id: int, edge_code: str) -> dict:
     """按视频分析模式构造事件通道参数（云端 HTTP 回调 / 边缘 MQTT）。
 
-    MQTT 配置项由 Task 3 引入，此处以 getattr 兜底，未配置时退化为 HTTP。
-    Agent 发布主题遵循 spec §7：`{prefix}/{edge_code}/camera/{camera_id}/detect`。
+    MQTT：broker scheme 归一化为 paho 可识别形式；client_id 每边缘唯一；
+    账号密码按 settings 下发。两分支均携带内联快照配置。
     """
+    snapshot = {
+        "enabled": bool(getattr(settings, "MQTT_SNAPSHOT_ENABLED", True)),
+        "inline": bool(getattr(settings, "MQTT_SNAPSHOT_INLINE", True)),
+        "quality": int(getattr(settings, "MQTT_SNAPSHOT_QUALITY", 75)),
+        "max_width": int(getattr(settings, "MQTT_SNAPSHOT_MAX_WIDTH", 640)),
+    }
     buffer = {"dir": "./events_buffer", "max_mb": 512}
     if settings.VIDEO_ANALYSIS_MODE == "cloud_edge":
         prefix = getattr(settings, "MQTT_TOPIC_PREFIX", "aistation/default/edge").rstrip("/")
@@ -126,13 +156,16 @@ def build_events(camera_id: int, edge_code: str) -> dict:
         return {
             "transport": "mqtt",
             "mqtt": {
-                "broker": getattr(settings, "MQTT_BROKER_URL", ""),
+                "broker": normalize_broker_scheme(getattr(settings, "MQTT_BROKER_URL", "")),
                 "topic_prefix": base,
                 "topic": f"{base}/camera/{camera_id}/detect",
                 "qos": int(getattr(settings, "MQTT_QOS", 1)),
-                "client_id": getattr(settings, "MQTT_CLIENT_ID", f"aistation-agent-{camera_id}"),
+                "client_id": f"aistation-agent-{edge_code}",
+                "username": getattr(settings, "MQTT_USERNAME", "") or "",
+                "password": getattr(settings, "MQTT_PASSWORD", "") or "",
             },
             "buffer": buffer,
+            "snapshot": snapshot,
         }
     return {
         "transport": "http",
@@ -141,6 +174,7 @@ def build_events(camera_id: int, edge_code: str) -> dict:
             "token": settings.INFERENCE_CALLBACK_TOKEN,
         },
         "buffer": buffer,
+        "snapshot": snapshot,
     }
 
 
