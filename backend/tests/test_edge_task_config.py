@@ -182,6 +182,33 @@ def test_lpr_list_runtime_rec_path_and_password():
     assert m["backend"] == "trt"
 
 
+class _AlgFace:
+    name = "人脸检测"
+    algorithm_type = "FACE_DETECT"
+    scene_type = "FACE_DET"
+    model_path = "/models/scrfd_2.5g_bnkps_shape640x640.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {"confidence_threshold": 0.5}
+
+
+class _TaskFace(_Task):
+    algorithm_id = 6
+
+
+def test_face_det_pipeline_config():
+    """FACE_DET 场景编译为单条 face_detection 模型，url 取 model_path。"""
+    cfg = build_agent_task_config(_TaskFace(), _Cam(), _AlgFace(), events={})
+    assert cfg["scene_type"] == "FACE_DET"
+    assert len(cfg["models"]) == 1
+    m = cfg["models"][0]
+    assert m["type"] == "face_detection"
+    assert m["url"] == "/models/scrfd_2.5g_bnkps_shape640x640.onnx"
+    assert m["input_size"] == [640, 640]
+    assert m["confidence_threshold"] == 0.5
+    assert m["backend"] == "ort"
+    assert m["device"] == "cpu"
+
+
 class _AlgTrack(_Alg):
     """跟踪开关来自 algorithm.runtime_config.tracking。"""
     runtime_config = {

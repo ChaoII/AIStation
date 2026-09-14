@@ -122,6 +122,17 @@ def test_lpr_default_rules_use_implemented_leaves():
                 assert required in leaf, f"{code} 的 {subject} 叶子缺少 {required} 键"
 
 
+def test_face_det_default_rule_uses_implemented_leaf():
+    """FACE_DET 默认规则必须落到评估器已实现的 object_present 叶子。"""
+    scene = get_scene("FACE_DET")
+    assert scene is not None
+    leaves = list(_iter_rule_leaves(scene.default_rule))
+    assert leaves, "FACE_DET 默认规则应至少含一个叶子"
+    assert [leaf.get("subject") for leaf in leaves] == ["object_present"]
+    for leaf in leaves:
+        assert leaf.get("subject") in _IMPLEMENTED_LEAF_KEYS
+
+
 def test_default_rules_implemented_leaves_are_evaluable():
     """凡使用已实现叶子（object_present/zone_enter/count/attribute/text_match/ocr_label）
     的默认规则，都必须与求值器键名/算子/取值完全一致，确保可直接评估：

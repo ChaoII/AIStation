@@ -150,6 +150,9 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
             "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
             "password": merged_runtime.get("model_password") or "",
         }]
+    elif scene is not None and scene.code == "FACE_DET":
+        # 人脸检测场景编译为单条 face_detection 模型，url 取算法主模型路径
+        models = [{**base_model, "type": "face_detection", "url": algorithm.model_path or ""}]
     else:
         models = [{**base_model, "type": _resolve_model_type(algorithm), "url": algorithm.model_path or ""}]
 
