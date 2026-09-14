@@ -90,7 +90,7 @@ _add(SceneDef(
 
 _add(SceneDef(
     "GATHER", "聚集", "tracking", "GATHER", ["det"], [_DET, _TRACK],
-    [_POLY, _COUNT, {"key": "window", "type": "int", "default": 5, "label": "滑窗帧数"}, _CONF],
+    [_POLY, _COUNT, {"key": "window_sec", "type": "int", "default": 5, "label": "滑窗时长(秒)"}, _CONF],
     # count_window 时序叶子（SP4-b 已实现）：滑窗 5 秒内去重目标数 >= value(=5)。
     # TODO(SP4): 需检测携带 track_id 才能按轨迹去重（否则退化为按事件计数）；
     # region 由任务参数在运行时注入，默认规则不写符号化占位。

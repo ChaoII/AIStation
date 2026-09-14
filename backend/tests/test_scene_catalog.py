@@ -209,6 +209,20 @@ def test_temporal_default_rules_use_temporal_leaves():
         assert [leaf.get("subject") for leaf in leaves] == [subject], code
 
 
+def test_gather_param_schema_uses_window_sec():
+    """GATHER 滑窗参数必须与规则口径一致（window_sec / 秒），不得再用帧数 window。"""
+    scene = get_scene("GATHER")
+    assert scene is not None
+    keys = {p["key"] for p in scene.param_schema}
+    assert "window_sec" in keys
+    assert "window" not in keys
+    param = next(p for p in scene.param_schema if p["key"] == "window_sec")
+    assert param["default"] == 5
+    leaf = next(iter(_iter_rule_leaves(scene.default_rule)))
+    assert leaf.get("subject") == "count_window"
+    assert leaf.get("window_sec") == param["default"]
+
+
 def test_catalog_api_lists_and_filters_category(test_client: TestClient, auth_headers: dict):
     resp = test_client.get("/api/v1/video/scene/catalog", headers=auth_headers)
     assert resp.status_code == 200
