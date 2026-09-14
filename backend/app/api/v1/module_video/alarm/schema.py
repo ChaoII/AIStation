@@ -15,6 +15,7 @@ class AlarmRuleCreateSchema(BaseModel):
     sensitivity: int = Field(default=50, ge=1, le=100, description="灵敏度")
     interval_seconds: int = Field(default=30, description="告警间隔")
     notify_channels: list | None = Field(default=None, description="通知方式")
+    conditions: dict | None = Field(default=None, description="规则条件树")
     schedule_json: dict | None = Field(default=None, description="生效时间段")
     status: bool = Field(default=True, description="是否启用")
     description: str | None = Field(default=None, max_length=255, description="备注")
@@ -35,6 +36,7 @@ class AlarmRuleOutSchema(BaseSchema):
     sensitivity: int = 50
     interval_seconds: int = 30
     notify_channels: list | None = None
+    conditions: dict | None = None
     schedule_json: dict | None = None
     status: bool = True
     camera: CommonSchema | None = None

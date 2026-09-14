@@ -27,6 +27,8 @@ class AlarmRuleModel(ModelMixin, UserMixin):
 
     notify_channels: Mapped[list | None] = mapped_column(JSONB, nullable=True, comment="通知方式: [WS_PUSH, SMS, EMAIL]")
 
+    conditions: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="规则条件树（spec §6）")
+
     schedule_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="生效时间段")
     status: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
 

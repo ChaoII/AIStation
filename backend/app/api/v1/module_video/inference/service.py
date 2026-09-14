@@ -18,6 +18,54 @@ def pick_alarm_rule(rules: list, algorithm_type: str):
     return rules[0]
 
 
+def _match_conditions(conditions: dict | None, detections: list[dict]) -> bool:
+    """评估规则条件树；空/None 视为命中。
+
+    叶子支持 attribute：{"subject":"attribute","field":名,"op":"lt|gt|le|ge|eq","value":数}。
+    事件里 attributes 为 {属性名: 分数}（分数=具有该属性的概率）；违规=分数低于阈值。
+    其它叶子后续扩展；未知叶子不命中。
+    """
+    if not conditions:
+        return True
+
+    def eval_leaf(leaf: dict) -> bool:
+        if leaf.get("subject") == "attribute":
+            field = leaf.get("field")
+            op = leaf.get("op", "eq")
+            value = float(leaf.get("value", 0.0))
+            for d in detections or []:
+                score = (d.get("attributes") or {}).get(field)
+                if score is None:
+                    continue
+                score = float(score)
+                if op == "lt" and score < value:
+                    return True
+                if op == "gt" and score > value:
+                    return True
+                if op == "le" and score <= value:
+                    return True
+                if op == "ge" and score >= value:
+                    return True
+                if op == "eq" and score == value:
+                    return True
+        return False
+
+    def eval_node(node: dict) -> bool:
+        # 逻辑节点（and/or/not）与属性叶子都带 "op"，用逻辑算子集合区分：
+        # 叶子 op 为 lt/gt/le/ge/eq，若误当逻辑节点会直接不命中。
+        op = node.get("op")
+        if op in ("and", "or", "not"):
+            kids = node.get("children") or []
+            if op == "and":
+                return all(eval_node(k) for k in kids) if kids else True
+            if op == "or":
+                return any(eval_node(k) for k in kids)
+            return not any(eval_node(k) for k in kids)
+        return eval_leaf(node)
+
+    return eval_node(conditions)
+
+
 class InferenceService:
 
     @classmethod
@@ -68,6 +116,9 @@ class InferenceService:
             )
             result = await session.execute(stmt)
             rule = pick_alarm_rule(result.scalars().all(), algorithm_type or "AI_DETECTION")
+
+        if rule is not None and rule.conditions and not _match_conditions(rule.conditions, detections):
+            return {"alarm_created": False, "reason": "rule_not_matched"}
 
         severity = rule.severity if rule else "WARNING"
 

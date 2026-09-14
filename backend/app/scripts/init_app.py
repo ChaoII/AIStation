@@ -46,6 +46,9 @@ async def _ensure_missing_columns() -> None:
         "video_cameras": [
             ("reachable", "BOOLEAN"),
         ],
+        "video_alarm_rules": [
+            ("conditions", "JSONB"),
+        ],
         "ai_models": [
             ("extra_headers", "JSONB"),
             ("provider_id", "INTEGER"),
