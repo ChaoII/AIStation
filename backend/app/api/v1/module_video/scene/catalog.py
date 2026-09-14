@@ -305,7 +305,8 @@ _add(SceneDef(
 _add(SceneDef(
     "OCR_TEXT", "通用文本", "ocr", "OCR_TEXT", ["ocr"], [_OCR],
     [_POLY, {"key": "pattern", "type": "str", "label": "文本正则"}, _CONF],
-    {"op": "and", "children": [{"subject": "text_match", "op": "regex", "value": "pattern"}]},
+    # 评估器只识别 text_match 叶子的 regex 键（见 inference/service.py），默认即"任意非空文本"
+    {"op": "and", "children": [{"subject": "text_match", "regex": ".+"}]},
     False, "通用文本检测识别",
 ))
 
@@ -313,7 +314,9 @@ _add(SceneDef(
     "METER_OCR", "仪表读数", "ocr", "METER_OCR", ["ocr"], [_OCR],
     [_POLY, {"key": "min_value", "type": "float", "label": "读数下限"},
      {"key": "max_value", "type": "float", "label": "读数上限"}],
-    {"op": "and", "children": [{"subject": "numeric", "op": "between", "min": "min_value", "max": "max_value"}]},
+    # 评估器尚未实现数值比较叶子；暂用 text_match 匹配数字文本（含小数）作为默认规则。
+    # TODO: 后续新增专用数值比较叶子（如 subject="numeric"，支持 min/max 参数）后再切换。
+    {"op": "and", "children": [{"subject": "text_match", "regex": "[0-9]+(?:\\.[0-9]+)?"}]},
     False, "仪表数字读数判定",
 ))
 

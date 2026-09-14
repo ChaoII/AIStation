@@ -50,6 +50,40 @@ def test_get_scene_missing():
     assert get_scene("NOPE") is None
 
 
+def _iter_rule_leaves(rule: dict):
+    """深度遍历规则条件树，产出所有叶子节点（非逻辑算子节点）。"""
+    stack = [rule]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            continue
+        op = node.get("op")
+        if op in ("and", "or", "not"):
+            stack.extend(node.get("children") or [])
+            continue
+        yield node
+
+
+def test_default_rules_text_match_leaves_use_regex_key():
+    """目录默认规则的 text_match 叶子必须携带 regex 键，与推理评估器保持一致。
+
+    评估器 `_match_conditions` 只读取 `leaf.get("regex")`，若目录误用 op/value
+    写法则默认规则永远无法命中；本测试防止该不一致回归。
+    """
+    checked = 0
+    for scene in SCENES.values():
+        for leaf in _iter_rule_leaves(scene.default_rule):
+            if leaf.get("subject") != "text_match":
+                continue
+            checked += 1
+            assert "regex" in leaf, f"{scene.code} 的 text_match 叶子缺少 regex 键"
+            # 旧式 op/value 写法不会被评估器识别，必须禁止
+            assert "op" not in leaf, f"{scene.code} 的 text_match 叶子不应带 op 键"
+            assert "value" not in leaf, f"{scene.code} 的 text_match 叶子不应带 value 键"
+    # 非空守卫：至少校验到 OCR_TEXT 与 METER_OCR 两处，避免测试空跑
+    assert checked >= 2
+
+
 def test_catalog_api_lists_and_filters_category(test_client: TestClient, auth_headers: dict):
     resp = test_client.get("/api/v1/video/scene/catalog", headers=auth_headers)
     assert resp.status_code == 200
