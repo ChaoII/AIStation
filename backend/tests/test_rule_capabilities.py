@@ -1,0 +1,50 @@
+"""叶子能力注册表测试：与求值器支持集必须一致（单一事实源对拍）。"""
+
+from app.api.v1.module_video.inference.service import TEMPORAL_SUBJECTS
+from app.api.v1.module_video.scene.leaves import IMPLEMENTED_LEAVES, LEAF_CAPABILITIES
+
+# 求值器当前实际支持的非时序叶子（见 inference/service.py:_match_conditions）
+_EVALUABLE_NON_TEMPORAL = {
+    "attribute",
+    "text_match",
+    "ocr_label",
+    "object_present",
+    "zone_enter",
+    "count",
+}
+
+
+def test_implemented_leaves_match_evaluator():
+    expected = _EVALUABLE_NON_TEMPORAL | set(TEMPORAL_SUBJECTS)
+    assert IMPLEMENTED_LEAVES == expected
+
+
+def test_every_entry_declares_contract():
+    for subject, cap in LEAF_CAPABILITIES.items():
+        assert isinstance(cap.get("label"), str) and cap["label"], subject
+        assert isinstance(cap.get("implemented"), bool), subject
+        assert isinstance(cap.get("params"), list), subject
+        assert isinstance(cap.get("ops"), list), subject
+        for p in cap["params"]:
+            assert isinstance(p.get("key"), str) and isinstance(p.get("type"), str), subject
+
+
+def test_implemented_flags_consistent():
+    for subject, cap in LEAF_CAPABILITIES.items():
+        assert cap["implemented"] is (subject in IMPLEMENTED_LEAVES), subject
+
+
+def test_unimplemented_leaves_listed_for_ui():
+    """未实现叶子必须列出（供前端置灰），至少覆盖人脸/姿态类。"""
+    assert {"face_match", "liveness", "keypoint_geometry"} <= set(LEAF_CAPABILITIES)
+    for s in ("face_match", "liveness", "keypoint_geometry"):
+        assert LEAF_CAPABILITIES[s]["implemented"] is False
+
+
+def test_rule_capabilities_api(test_client, auth_headers):
+    resp = test_client.get("/api/v1/video/scene/rule-capabilities", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert set(data["logic"]) >= {"and", "or"}
+    subjects = {x["subject"] for x in data["leaves"]}
+    assert "object_present" in subjects and "line_cross" in subjects

@@ -12,6 +12,7 @@ from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
 from .catalog import get_scene, list_scenes
+from .leaves import get_capabilities
 
 SceneRouter = APIRouter(route_class=OperationLogRoute, prefix="/scene", tags=["场景目录"])
 
@@ -36,3 +37,11 @@ async def get_scene_controller(
     if s is None:
         raise CustomException(msg="场景不存在", code=404, status_code=404)
     return SuccessResponse(data=asdict(s), msg="查询成功")
+
+
+@SceneRouter.get("/rule-capabilities", summary="规则叶子能力")
+async def rule_capabilities_controller(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:algorithm:query"]))],
+) -> JSONResponse:
+    """返回逻辑算子与全部叶子能力描述（前端条件树据此渲染，spec §4.2/§4.5）。"""
+    return SuccessResponse(data=get_capabilities(), msg="获取成功")
