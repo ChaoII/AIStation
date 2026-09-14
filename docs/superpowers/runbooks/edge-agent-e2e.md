@@ -98,6 +98,11 @@ pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e
   -Scene LPR `
   -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_images\test_lpr_detection_loop.mp4
 
+# DET_ZONE 检测 + 跟踪（-Tracking）：断言告警 detections[].track_id 出现；见第 14 节
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene DET_ZONE -Tracking `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_video60.mp4
+
 # 复用已有 Broker（例如 docker-compose 起的），保留数据便于人工排查
 pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -SkipBroker `
   -KeepResources -KeepData
@@ -111,7 +116,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `-Transport` | `mqtt` | `mqtt` / `http` |
-| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节）/ `LPR`（det+rec 车牌 pipeline，见第 13 节） |
+| `-Scene` | `INTRUSION` | `INTRUSION`（单 det 模型）/ `DET_ZONE`（单 det 区域入侵，`scene_type=DET_ZONE`，见第 14 节）/ `PED_ATTR`（det+cls 属性 pipeline，见第 11 节）/ `OCR_TEXT`（det+cls+rec+dict 文本 pipeline，见第 12 节）/ `LPR`（det+rec 车牌 pipeline，见第 13 节） |
 | `-Secret` | `e2e-shared-secret` | Agent `--api-key`/`--secret`、EdgeDevice.secret、后端 `EDGE_CONTROL_TOKEN` |
 | `-EdgeCode` | 空（运行时唯一） | 边缘设备编码 / Agent `--edge-code`；留空时按 `RunId` 生成 `edge-e2e-<RunId>`，避免软删后同码无法复用 |
 | `-AgentExe` / `-VideoPath` / `-ModelPath` | 见第 2 节 | 真机素材路径；`-Scene PED_ATTR` 未显式传 `-ModelPath` 时自动改用 `zhgd_det.onnx`，`-Scene OCR_TEXT` 改用 `ppocrv6_tiny\det_infer.onnx`，`-Scene LPR` 改用 `yolov5plate.onnx` |
@@ -120,6 +125,7 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | `-DictPath` | `...\test_data\ppocrv6_tiny_dict.txt` | OCR 字符字典，写入 `preset_params.dict_path`；仅 `-Scene OCR_TEXT` 使用 |
 | `-PlateRecModelPath` | `...\onnx\plate_recognition_color.onnx` | LPR 车牌识别模型，写入 `preset_params.rec_path`；仅 `-Scene LPR` 使用 |
 | `-DecoderHwAccel` | `none` | 算法 `runtime_config.decoder.hw_accel`；默认 CPU 解码以匹配 ORT/CPU 模型，GPU 后端改为 `cuda` |
+| `-Tracking` | 关 | 算法 `runtime_config.tracking={enabled=true,algorithm=bytetrack}`，让 Agent 做 ByteTrack 跟踪并回填 `track_id`；启用后追加断言 3d（见第 5 节与第 14 节），仅检测类场景有意义 |
 | `-ApiBase` | `http://127.0.0.1:8001` | 后端基址 |
 | `-AgentPort` | `19090` | Agent 控制面端口 |
 | `-BrokerPort` | `1883` | Broker 端口 |
@@ -148,11 +154,13 @@ pwsh -NoProfile -Command "Get-Help scripts/e2e/edge_agent_e2e.ps1 -Detailed"
 | 8 | delete 同步：Agent `GET /api/v1/tasks/{id}` 返回 404、云端列表移除 | Task#1/#2 |
 | 3b | （仅 `-Scene PED_ATTR`）`ai_result.detections[].attributes` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].attributes` 已透传 |
 | 3c | （仅 `-Scene OCR_TEXT` / `LPR`）`ai_result.detections[].text` 非空 | 告警样本 `ai_result.detections`，证明事件 `objects[].text` 已透传到检测框文本 |
+| 3d | （仅 `-Tracking`）`ai_result.detections[].track_id` 至少一条出现且 `>= 0` | 告警样本 `ai_result.detections`，证明事件 `objects[].track_id` 已透传（Agent 仅在 `track_id >= 0` 时写该字段） |
 
 > 去重测试使用哨兵 `task_id=999999`，避免与真实 Agent 告警混淆。
 > `-Scene PED_ATTR` 时：断言 3 匹配 `algorithm_type=PED_ATTR`，并在断言 4 后追加断言 3b（属性透传）。
 > `-Scene OCR_TEXT` 时：断言 3 匹配 `algorithm_type=OCR_TEXT`，并在断言 4 后追加断言 3c（文本透传）。
 > `-Scene LPR` 时：断言 3 匹配 `algorithm_type=LPR`，并在断言 4 后追加断言 3c（车牌文本透传），断言 1 后追加断言 1b（设备能力含 `lpr`）。
+> `-Tracking` 时：断言 3 匹配当前场景的 `algorithm_type`，并在断言 3c 之后追加断言 3d（`track_id` 透传）。
 
 ## 6. 接口契约（已对照源码核验）
 
@@ -536,3 +544,78 @@ psql ... -c "select id, alarm_type,
 | 断言 3c 失败 | 事件未带 `text`（Plan B 未编译 lpr 头 / 未透传） | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`，确认 Agent 事件 `objects[].text` |
 | 启动任务报「边缘设备能力不足」 | 设备 capabilities 缺 `model_families=["lpr"]` | 脚本已按场景播种该能力；手工核对 `GET /api/v1/video/edge/list` 的 capabilities（Agent 心跳上报含 `lpr`） |
 | det/rec 模型加载失败 | `preset_params` 路径在 Agent 机不存在 | 核对 `-ModelPath`/`-PlateRecModelPath` 指向 Agent 可读绝对路径 |
+
+## 14. 跟踪 track_id 场景（`-Scene DET_ZONE -Tracking`）
+
+前置：ModelDeploy（Plan B）已支持逐帧目标跟踪（ByteTrack），能在事件 v2 `objects[].track_id`
+回填稳定轨迹号；`-Scene DET_ZONE -Tracking` 使用单 det 模型（默认 `yolo11n_nms.onnx`）与
+`test_video60.mp4`（含目标，能持续检出才可能稳定赋 ID）。对应 SP4 跟踪纵切片
+（`docs/superpowers/specs/2026-09-15-tracking-slice-design.md`）。
+
+### 14.1 运行命令
+
+```powershell
+pwsh -NoProfile -File scripts/e2e/edge_agent_e2e.ps1 -Transport mqtt -Secret e2e-shared-secret `
+  -Scene DET_ZONE -Tracking `
+  -VideoPath E:\CLionProjects\ModelDeploy\test_data\test_video60.mp4
+```
+
+> `-Scene DET_ZONE` 为单 det 检测场景（`algorithm_type=DET_ZONE`、`scene_type=DET_ZONE`，
+> 设备能力要求 `model_families=["det"]`）。`-Tracking` 与场景正交：任何检测类场景
+> （`DET_ZONE`/`INTRUSION`）均可叠加，脚本把 `runtime_config.tracking` 写入 Algorithm。
+
+### 14.2 播种内容
+
+**Algorithm**（`POST /api/v1/video/algorithm/create`）：
+
+```jsonc
+{
+  "algorithm_type": "DET_ZONE",
+  "scene_type": "DET_ZONE",
+  "model_path": "<yolo11n_nms.onnx 绝对路径>",
+  "runtime_config": {
+    "backend": "ort", "device": "cpu",
+    "decoder": { "hw_accel": "none", "device_only": false, "rtsp_transport": "tcp" },
+    "tracking": { "enabled": true, "algorithm": "bytetrack" }
+  },
+  "preset_params": { "confidence_threshold": 0.4, "input_size": [640, 640] }
+}
+```
+
+`build_agent_task_config` 把 `runtime_config.tracking` 编译为 Agent TaskConfig 顶层
+`tracking={enabled,algorithm}`（缺省 `{"enabled": false, "algorithm": "bytetrack"}`，
+见 `edge/orchestrator.py:105-111`）。
+
+### 14.3 事件与 track_id 语义
+
+Agent 在 `tracking.enabled=true` 时对每帧检测结果跑跟踪器，把 `track_id` 回填到 detection，
+并在事件 v2 `objects[].track_id` 上报（仅 `>= 0` 才写）。云端 `normalize_edge_event`
+把 `objects[].track_id` 并入 `detections[]`（`edge/consumer.py:60`），最终落到
+`video_alarm_records.ai_result.detections[].track_id`。关闭跟踪时 `track_id=-1`（不下发该字段）。
+
+### 14.4 新增断言与证据
+
+| # | 断言 | 判据 |
+|---|------|------|
+| 3 | 出现 `algorithm_type=DET_ZONE` 告警 | 断言 3 按 `$effectiveAlgorithmType` 过滤 |
+| 3d | `ai_result.detections[].track_id` 至少一条出现且 `>= 0` | 告警样本中至少一个 detection 带 `track_id` 且数值 `>= 0` |
+| 4 | 告警 `snapshot_url` 非空 | 同默认场景 |
+
+```bash
+# 跟踪证据（DB，PostgreSQL 示例）
+psql ... -c "select id, alarm_type,
+  jsonb_path_query_array(ai_result, '$.detections[*].track_id') as track_ids
+  from video_alarm_records where camera_id=<id> order by id desc limit 5;"
+```
+
+脚本结束清理：`Algorithm` → `Camera` → `EdgeDevice`（`-KeepData` 时保留）。
+
+### 14.5 排障
+
+| 现象 | 可能原因 | 处理 |
+|------|----------|------|
+| 断言 3d 失败（无 `track_id`） | Agent 未启用跟踪 / 未回填 / 事件未带 `objects[].track_id` | 用 `-KeepData` 重跑并查 `video_alarm_records.ai_result->'detections'`；确认 Algorithm 的 `runtime_config.tracking.enabled=true` 且 Agent 版本支持跟踪 |
+| 断言 3d 失败但断言 3 通过 | 检测到目标但未形成轨迹（目标过少/抽帧稀疏） | 换含持续运动目标的视频；跟踪状态在抽帧/丢帧下可能断轨（可接受，见 spec §7） |
+| 断言 3 超时、无 `DET_ZONE` 告警 | 规则 `alarm_type` 与事件 `algorithm_type` 不一致 / 无规则 | 该场景不播种显式规则，后端按无规则直接落告警；仍超时则核对视频是否可检出目标 |
+| 启动任务报「边缘设备能力不足」 | 设备 capabilities 缺 `model_families=["det"]` | 脚本已按场景播种该能力（`Seed-EdgeDevice` 默认 `["det"]`）；手工核对 `GET /api/v1/video/edge/list` |
+| 模型加载失败 | `model_path` 在 Agent 机不存在 | 核对 `-ModelPath` 指向 Agent 可读绝对路径 |

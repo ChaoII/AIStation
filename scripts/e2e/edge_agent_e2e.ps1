@@ -50,6 +50,8 @@
 .PARAMETER Scene
     场景模式：
       - INTRUSION（默认）：单 det 模型，断言 algorithm_type=INTRUSION 告警；
+      - DET_ZONE：单 det 检测场景（区域入侵），scene_type=DET_ZONE，断言
+        algorithm_type=DET_ZONE 告警（可配合 -Tracking 验证跟踪）；
       - PED_ATTR：det+cls 行人属性 pipeline，播种属性规则并断言
         objects[].attributes 已透传到 ai_result.detections[].attributes。
       - OCR_TEXT：det+cls+rec+dict 通用文本 pipeline，播种 text_match 规则并断言
@@ -61,6 +63,12 @@
     算法 runtime_config.decoder.hw_accel，默认 none（CPU 解码，匹配 -ModelPath 的 ORT/CPU 后端）。
     Agent 侧可选值：auto/none/cuda/vaapi/qsv/sophgo（见 ModelDeploy config.hpp）。
     若模型走 GPU（backend=cuda）则需改为 cuda，否则 CPU 后端会拒绝 GPU NV12。
+
+.PARAMETER Tracking
+    启用算法 runtime_config.tracking={enabled=true, algorithm=bytetrack}，让 Agent 对检测目标
+    做 ByteTrack 跟踪，并在事件 objects[].track_id 回填稳定轨迹号（缺省关闭）。
+    仅对检测类场景（DET_ZONE/INTRUSION）有意义；启用后脚本追加断言：
+    告警 ai_result.detections[].track_id 至少一条出现且 >= 0。
 
 .PARAMETER EdgeCode
     边缘设备编码；必须与 Agent `--edge-code` 一致（心跳按 code upsert）。
@@ -124,9 +132,10 @@ param(
     [string]$RecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\ocr\ppocrv6_tiny\rec_infer.onnx",
     [string]$DictPath = "E:\CLionProjects\ModelDeploy\test_data\ppocrv6_tiny_dict.txt",
     [string]$PlateRecModelPath = "E:\CLionProjects\ModelDeploy\test_data\test_models\onnx\plate_recognition_color.onnx",
-    [ValidateSet("INTRUSION", "PED_ATTR", "OCR_TEXT", "LPR")]
+    [ValidateSet("INTRUSION", "DET_ZONE", "PED_ATTR", "OCR_TEXT", "LPR")]
     [string]$Scene = "INTRUSION",
     [string]$DecoderHwAccel = "none",
+    [switch]$Tracking,
 
     [string]$EdgeCode = "",
     [string]$Secret = "e2e-shared-secret",
@@ -499,6 +508,7 @@ New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 # LPR 使用 det+rec 双模型（yolov5plate + plate_recognition_color）与文本规则。
 # 未显式传入对应模型参数时，按场景切换到各自默认模型。
 $effectiveAlgorithmType = switch ($Scene) {
+    "DET_ZONE" { "DET_ZONE" }
     "PED_ATTR" { "PED_ATTR" }
     "OCR_TEXT" { "OCR_TEXT" }
     "LPR"      { "LPR" }
@@ -551,6 +561,7 @@ try {
     Write-E2E "Step 2: 播种 Algorithm / Camera / AlgorithmTask（scene=$Scene）" -Level STEP
     $algoCode = New-UniqueCode $effectiveAlgorithmType
     $algoName = switch ($Scene) {
+        "DET_ZONE" { "E2E 区域入侵 $($script:RunId)" }
         "PED_ATTR" { "E2E 行人属性 $($script:RunId)" }
         "OCR_TEXT" { "E2E 文本识别 $($script:RunId)" }
         "LPR"      { "E2E 车牌识别 $($script:RunId)" }
@@ -607,6 +618,14 @@ try {
             input_size           = @(640, 640)
             confidence_threshold = 0.25
         }
+    } elseif ($Scene -eq "DET_ZONE") {
+        # 检测场景：显式声明 scene_type，编排按场景目录（model_families=["det"]）解析
+        $algoBody.scene_type = "DET_ZONE"
+    }
+    if ($Tracking) {
+        # 跟踪开关：写入算法 runtime_config.tracking，编排透传为 Agent TaskConfig.tracking
+        $algoBody.runtime_config["tracking"] = @{ enabled = $true; algorithm = "bytetrack" }
+        Write-E2E "跟踪已启用: runtime_config.tracking={enabled=true, algorithm=bytetrack}"
     }
     $algo = Invoke-Api -Method Post -Path "/api/v1/video/algorithm/create" -Body $algoBody
     $created.AlgorithmId = $algo.id
@@ -789,6 +808,24 @@ try {
         }
     }
 
+    if ($Tracking) {
+        Write-E2E "Step 3d3: 断言跟踪 track_id 已透传（objects[].track_id → ai_result.detections[].track_id）" -Level STEP
+        # 扫描全部场景告警的检测框（首条告警可能尚未形成轨迹，故不只看样本告警）；
+        # Agent 仅在 track_id >= 0 时才写该字段（见 SP4 跟踪契约 §3）。
+        $trackAlarms = @(Get-AlarmItems -CameraId $created.CameraId -PageSize 100 | Where-Object {
+            $_.alarm_type -eq $effectiveAlgorithmType -or ($_.ai_result -and $_.ai_result.algorithm_type -eq $effectiveAlgorithmType)
+        })
+        $trackDets = @($trackAlarms | ForEach-Object { @($_.ai_result.detections) } | Where-Object {
+            $null -ne $_.track_id -and [int]$_.track_id -ge 0
+        })
+        $trackOk = ($trackDets.Count -gt 0)
+        [void](Assert-That $trackOk "断言3d: 告警 ai_result.detections[].track_id 至少一条出现且 >= 0")
+        if ($trackOk) {
+            $trackSample = @($trackDets | ForEach-Object { $_.track_id } | Select-Object -Unique) -join ", "
+            Write-E2E "track_id 样本: $trackSample"
+        }
+    }
+
     Write-E2E "Step 3e: 重复 event_id 去重断言" -Level STEP
     $dedupTaskId = 999999  # 哨兵 task_id，用于把去重测试的告警与真实 Agent 告警隔离
     $dedupEventId = "e2e-dedup-$($script:RunId)"
@@ -930,6 +967,9 @@ try {
     }
     if ($Scene -eq "LPR") {
         Write-E2E "车牌证据（DB）: select id, alarm_type, ai_result->'detections'->0->>'text' as plate_text from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
+    }
+    if ($Tracking) {
+        Write-E2E "跟踪证据（DB）: select id, alarm_type, jsonb_path_query_array(ai_result, '$.detections[*].track_id') as track_ids from video_alarm_records where camera_id=$($created.CameraId) order by id desc limit 5;"
     }
 }
 catch {
