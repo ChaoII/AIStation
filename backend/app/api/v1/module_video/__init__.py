@@ -13,6 +13,7 @@ def _register_video_routers():
     from .layout.controller import LayoutRouter
     from .preview.controller import PreviewRouter
     from .record.controller import RecordRouter
+    from .scene.controller import SceneRouter
     video_router.include_router(AlarmRouter)
     video_router.include_router(AlgorithmRouter)
     video_router.include_router(CameraRouter)
@@ -21,4 +22,5 @@ def _register_video_routers():
     video_router.include_router(LayoutRouter)
     video_router.include_router(PreviewRouter)
     video_router.include_router(RecordRouter)
+    video_router.include_router(SceneRouter)
     video_router.include_router(SnapshotRouter)
