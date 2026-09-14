@@ -529,7 +529,7 @@ try {
     Write-E2E "Camera id=$($created.CameraId) rtsp_url_sub=$VideoPath" -Level OK
 
     if ($Scene -eq "PED_ATTR") {
-        # 属性规则：work_uniform 概率 < 0.99 即判违规（故意放宽阈值，保证示例视频必出告警用于链路验证）
+        # 链路验证规则：work_uniform 分数存在即 >-1 命中，用于确认属性从 objects 透传到 detections
         $ruleBody = @{
             name       = "E2E 工作服属性规则 $($script:RunId)"
             camera_id  = $created.CameraId
@@ -537,13 +537,15 @@ try {
             severity   = "WARNING"
             conditions = @{
                 op       = "and"
-                children = @(@{ subject = "attribute"; field = "work_uniform"; op = "lt"; value = 0.99 })
+                children = @(
+                    @{ subject = "attribute"; field = "work_uniform"; op = "gt"; value = -1.0 }
+                )
             }
             status     = $true
         }
         $rule = Invoke-Api -Method Post -Path "/api/v1/video/alarm/rule/create" -Body $ruleBody
         $created.RuleId = $rule.id
-        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=PED_ATTR conditions=work_uniform<0.99（故意放宽）" -Level OK
+        Write-E2E "AlarmRule id=$($created.RuleId) alarm_type=PED_ATTR conditions=work_uniform>-1（属性存在即命中，链路验证）" -Level OK
     }
 
     # 今天 ISO 星期（0=周一 .. 6=周日），与 Agent schedule 语义一致

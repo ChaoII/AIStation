@@ -58,6 +58,39 @@ def test_normalize_event_v2_objects_to_detections():
     assert d["attributes"]["work_uniform"] == 0.2
 
 
+def test_normalize_event_v2_merges_objects_attributes_into_detections():
+    """事件 v2 同时含 detections 与 objects 时，属性/轨迹需按索引并入 detections。"""
+    ev = {
+        "event_id": "e2b",
+        "camera_id": 7,
+        "task_id": 1,
+        "schema_version": 2,
+        "scene_type": "PED_ATTR",
+        "detections": [
+            {
+                "label": "person",
+                "label_id": 0,
+                "confidence": 0.9,
+                "bbox": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+            }
+        ],
+        "objects": [
+            {
+                "label": "person",
+                "label_id": 0,
+                "confidence": 0.9,
+                "bbox": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+                "track_id": 42,
+                "attributes": {"work_uniform": 0.2},
+            }
+        ],
+    }
+    out = normalize_edge_event(ev)
+    d = out["detections"][0]
+    assert d["attributes"]["work_uniform"] == 0.2
+    assert d["track_id"] == 42
+
+
 def test_normalize_event_v1_unchanged():
     ev = {"detections": [{"label": "person"}]}
     out = normalize_edge_event(ev)

@@ -41,24 +41,40 @@ def normalize_edge_event(payload: dict) -> dict:
         normalized["snapshot_data"] = snapshot_data
 
     # 事件 v2：objects[] → detections[]（复用既有告警链路），并保留属性/scene_type
-    if not normalized.get("detections") and isinstance(payload.get("objects"), list):
-        dets = []
-        for obj in payload["objects"]:
-            if not isinstance(obj, dict):
-                continue
-            bbox = obj.get("bbox") or {}
-            det = {
-                "label": obj.get("label", ""),
-                "label_id": obj.get("label_id", 0),
-                "confidence": obj.get("confidence", 0.0),
-                "bbox": bbox,
-            }
-            if obj.get("track_id") is not None:
-                det["track_id"] = obj["track_id"]
-            if isinstance(obj.get("attributes"), dict):
-                det["attributes"] = obj["attributes"]
-            dets.append(det)
-        normalized["detections"] = dets
+    objs = payload.get("objects")
+    dets = normalized.get("detections")
+    if isinstance(objs, list):
+        if not dets:
+            # 仅有 objects：由 objects 派生 detections（含属性/轨迹）
+            dets = []
+            for obj in objs:
+                if not isinstance(obj, dict):
+                    continue
+                bbox = obj.get("bbox") or {}
+                det = {
+                    "label": obj.get("label", ""),
+                    "label_id": obj.get("label_id", 0),
+                    "confidence": obj.get("confidence", 0.0),
+                    "bbox": bbox,
+                }
+                if obj.get("track_id") is not None:
+                    det["track_id"] = obj["track_id"]
+                if isinstance(obj.get("attributes"), dict):
+                    det["attributes"] = obj["attributes"]
+                dets.append(det)
+            normalized["detections"] = dets
+        else:
+            # 事件 v2 同时含 detections 与 objects：按索引把属性/轨迹并入 detections，
+            # 避免属性随 objects 一起丢失导致属性规则永不命中。
+            for i, obj in enumerate(objs):
+                if i >= len(dets) or not isinstance(obj, dict):
+                    continue
+                if not isinstance(dets[i], dict):
+                    continue
+                if "attributes" not in dets[i] and isinstance(obj.get("attributes"), dict):
+                    dets[i]["attributes"] = obj["attributes"]
+                if "track_id" not in dets[i] and obj.get("track_id") is not None:
+                    dets[i]["track_id"] = obj["track_id"]
     return normalized
 
 
