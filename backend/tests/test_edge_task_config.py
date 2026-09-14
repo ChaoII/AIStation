@@ -71,3 +71,29 @@ def test_build_events_http(monkeypatch):
     assert ev["transport"] == "http"
     assert ev["http"]["url"].endswith("/video/algorithm/detection/callback")
     assert ev["snapshot"]["enabled"] is True
+
+
+class _AlgAttr:
+    name = "工作服"
+    algorithm_type = "PED_ATTR"
+    scene_type = "PED_ATTR"
+    model_path = "/models/zhgd_det.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {"cls_path": "/models/zhgd_ml.onnx",
+                     "attributes": ["safety_helmet", "work_uniform"],
+                     "confidence_threshold": 0.4, "cls_threshold": 0.5}
+
+
+class _TaskAttr(_Task):
+    algorithm_id = 2
+
+
+def test_ped_attr_pipeline_config():
+    cfg = build_agent_task_config(_TaskAttr(), _Cam(), _AlgAttr(), events={})
+    assert cfg["scene_type"] == "PED_ATTR"
+    m = cfg["models"][0]
+    assert m["type"] == "pedestrian_attribute"
+    assert m["det_url"] == "/models/zhgd_det.onnx"
+    assert m["cls_url"] == "/models/zhgd_ml.onnx"
+    assert m["attributes"] == ["safety_helmet", "work_uniform"]
+    assert m["cls_threshold"] == 0.5

@@ -8,6 +8,7 @@ from app.api.v1.module_video.algorithm.model import AlgorithmTaskModel
 from app.api.v1.module_video.edge.agent_client import EdgeAgentClient
 from app.api.v1.module_video.edge.model import EdgeDeviceModel
 from app.api.v1.module_video.edge.service import capability_satisfies
+from app.api.v1.module_video.scene.catalog import get_scene
 from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
@@ -101,28 +102,41 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
     labels = merged_params.get("labels") or []
     alarm_interval = merged_params.get("alarm_interval_sec") or merged_runtime.get("alarm_interval_sec") or 30
 
+    # 场景目录：PED_ATTR 编译为 det+cls pipeline，其余保持单模型条目
+    scene = get_scene(getattr(algorithm, "scene_type", "") or "")
+    base_model = {
+        "name": algorithm.name,
+        "backend": merged_runtime.get("backend") or "trt",
+        "device": merged_runtime.get("device") or "gpu",
+        "labels": labels,
+        "input_size": input_size,
+        "confidence_threshold": confidence,
+    }
+    if scene is not None and scene.code == "PED_ATTR":
+        models = [{
+            **base_model,
+            "type": "pedestrian_attribute",
+            "det_url": algorithm.model_path or "",
+            "cls_url": merged_params.get("cls_path") or merged_runtime.get("cls_path") or "",
+            "attributes": merged_params.get("attributes") or [],
+            "cls_threshold": merged_params.get("cls_threshold", 0.5),
+            "password": merged_runtime.get("model_password") or "",
+        }]
+    else:
+        models = [{**base_model, "type": _resolve_model_type(algorithm), "url": algorithm.model_path or ""}]
+
     return {
         "task_id": task.id,
         "tenant": merged_runtime.get("tenant") or "default",
         "algorithm_type": getattr(algorithm, "algorithm_type", "") or "",
+        "scene_type": getattr(algorithm, "scene_type", "") or "",
         "camera": {
             "id": camera.id,
             "name": camera.name,
             "url": _resolve_stream_url(task, camera),
             "transport": merged_runtime.get("transport") or "tcp",
         },
-        "models": [
-            {
-                "name": algorithm.name,
-                "type": _resolve_model_type(algorithm),
-                "backend": merged_runtime.get("backend") or "trt",
-                "device": merged_runtime.get("device") or "gpu",
-                "url": algorithm.model_path or "",
-                "labels": labels,
-                "input_size": input_size,
-                "confidence_threshold": confidence,
-            }
-        ],
+        "models": models,
         "roi": _normalize_roi(getattr(task, "detect_region", None)),
         "sensitivity": task.sensitivity if task.sensitivity is not None else 50,
         "schedule": getattr(task, "schedule_json", None) or {},
