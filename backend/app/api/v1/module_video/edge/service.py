@@ -34,6 +34,11 @@ def capability_satisfies(capabilities: dict, requirement: dict) -> tuple[bool, s
     return True, ""
 
 
+def extract_device_code(body: dict) -> str:
+    """从心跳载荷取设备编码：优先 `code`，兼容 Agent 的 `edge_code`。"""
+    return str(body.get("code") or body.get("edge_code") or "").strip()
+
+
 class EdgeCRUD(CRUDBase[EdgeDeviceModel, EdgeDeviceCreateSchema, EdgeDeviceUpdateSchema]):
     """边缘设备数据层。"""
 
@@ -96,7 +101,7 @@ class EdgeService:
 
         from app.core.database import async_db_session
 
-        code = str(body.get("code") or "").strip()
+        code = extract_device_code(body)
         if not code:
             raise CustomException(msg="设备编码不能为空", code=400)
 
