@@ -102,6 +102,14 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
     labels = merged_params.get("labels") or []
     alarm_interval = merged_params.get("alarm_interval_sec") or merged_runtime.get("alarm_interval_sec") or 30
 
+    # 目标跟踪：来源 runtime_config/preset_params 的 tracking，任务级覆盖已并入 merged_*；
+    # 缺省关闭，algorithm 缺省 bytetrack（见 SP4 跟踪契约 spec §4）。
+    tracking_cfg = merged_runtime.get("tracking") or merged_params.get("tracking") or {}
+    tracking = {
+        "enabled": bool(tracking_cfg.get("enabled", False)),
+        "algorithm": tracking_cfg.get("algorithm") or "bytetrack",
+    }
+
     # 场景目录：PED_ATTR 编译为 det+cls pipeline，其余保持单模型条目
     scene = get_scene(getattr(algorithm, "scene_type", "") or "")
     base_model = {
@@ -157,6 +165,7 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
             "transport": merged_runtime.get("transport") or "tcp",
         },
         "models": models,
+        "tracking": tracking,
         "roi": _normalize_roi(getattr(task, "detect_region", None)),
         "sensitivity": task.sensitivity if task.sensitivity is not None else 50,
         "schedule": getattr(task, "schedule_json", None) or {},

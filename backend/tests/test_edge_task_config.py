@@ -180,3 +180,36 @@ def test_lpr_list_runtime_rec_path_and_password():
     assert m["rec_url"] == "/rt/rec.onnx"
     assert m["password"] == "pw"
     assert m["backend"] == "trt"
+
+
+class _AlgTrack(_Alg):
+    """跟踪开关来自 algorithm.runtime_config.tracking。"""
+    runtime_config = {
+        "backend": "ort",
+        "device": "cpu",
+        "tracking": {"enabled": True, "algorithm": "bytetrack"},
+    }
+
+
+def test_tracking_enabled_from_runtime_config():
+    cfg = build_agent_task_config(_Task(), _Cam(), _AlgTrack(), events={})
+    assert cfg["tracking"]["enabled"] is True
+    assert cfg["tracking"]["algorithm"] == "bytetrack"
+
+
+class _TaskTrack(_Task):
+    """跟踪开关经任务运行时覆盖传入。"""
+    runtime_overrides = {"tracking": {"enabled": True, "algorithm": "botsort"}}
+
+
+def test_tracking_enabled_from_runtime_overrides():
+    cfg = build_agent_task_config(_TaskTrack(), _Cam(), _Alg(), events={})
+    assert cfg["tracking"]["enabled"] is True
+    assert cfg["tracking"]["algorithm"] == "botsort"
+
+
+def test_tracking_default_disabled():
+    """缺省不含 tracking 配置时应关闭跟踪，algorithm 缺省 bytetrack。"""
+    cfg = build_agent_task_config(_Task(), _Cam(), _Alg(), events={})
+    assert cfg["tracking"]["enabled"] is False
+    assert cfg["tracking"]["algorithm"] == "bytetrack"
