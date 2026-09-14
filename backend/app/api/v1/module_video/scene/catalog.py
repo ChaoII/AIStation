@@ -257,7 +257,7 @@ _add(SceneDef(
 
 # ── §3.5 人脸（face pipeline） ──────────────────────────────
 _add(SceneDef(
-    "FACE_DET", "人脸检测", "face", "FACE_DET", ["face_detection"], [_FACE_DET],
+    "FACE_DET", "人脸检测", "face", "FACE_DET", ["face"], [_FACE_DET],
     [_POLY, _CONF],
     {"op": "and", "children": [{"subject": "object_present"}]},
     False, "区域内人脸检测",
@@ -301,7 +301,7 @@ _add(SceneDef(
 ))
 
 _add(SceneDef(
-    "FACE_CROWD", "人脸计数", "face", "FACE_CROWD", ["face_detection"], [_FACE_DET],
+    "FACE_CROWD", "人脸计数", "face", "FACE_CROWD", ["face"], [_FACE_DET],
     [_POLY, _COUNT, _CONF],
     # 单事件计数叶子；value 取 _COUNT 默认阈值 5。
     {"op": "and", "children": [{"subject": "count", "op": ">=", "value": 5}]},
