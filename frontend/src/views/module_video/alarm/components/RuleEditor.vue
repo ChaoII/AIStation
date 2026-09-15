@@ -227,13 +227,23 @@ function handleScopeChange(next: string | number | boolean | undefined) {
   if (scope === currentScope.value) return;
   error.value = "";
   if (scope === "group") {
-    emitPayload({ scope, camera_id: undefined, group_id: groupId.value });
+    // 切到相机组：补齐组参数默认值（组叶子必填键依赖参数注入）
+    emitPayload({
+      scope,
+      camera_id: undefined,
+      group_id: groupId.value,
+      params: { ...groupParamDefaults(), ...params.value },
+    });
     ensureGroupOptions();
   } else {
+    // 切回相机：剔除组作用域参数，并清理条件树中的组叶子
+    const nextParams = { ...params.value };
+    for (const key of groupParamKeys()) delete nextParams[key];
     emitPayload({
       scope,
       group_id: undefined,
       camera_id: cameraId.value,
+      params: nextParams,
       conditions: stripGroupLeaves(conditions.value),
     });
     ensureCameraOptions();
@@ -249,7 +259,15 @@ function handleGroupChange(v: number | undefined) {
 }
 
 const currentScene = computed(() => scenes.value.find((s) => s.code === props.sceneType) ?? null);
-const schema = computed<SceneParamSchema[]>(() => currentScene.value?.param_schema ?? []);
+
+/** 按作用域过滤参数 schema：未声明 scope 的为通用参数，声明 scope="group" 的仅在相机组作用域展示 */
+function paramSchemaFor(def: SceneDefinition | null, scope: AlarmRuleScope): SceneParamSchema[] {
+  return (def?.param_schema ?? []).filter((p) => !p.scope || p.scope === scope);
+}
+
+const schema = computed<SceneParamSchema[]>(() =>
+  paramSchemaFor(currentScene.value, currentScope.value)
+);
 const preview = computed(() => {
   try {
     return JSON.stringify(conditions.value ?? {}, null, 2);
@@ -279,12 +297,26 @@ function updateConditions(value: Record<string, unknown>) {
 }
 
 /** 参数初值：取 schema 中显式声明的 default（含 list 默认项），几何类无默认则不注入 */
-function buildParamDefaults(def: SceneDefinition | null): Record<string, unknown> {
+function buildParamDefaults(items: SceneParamSchema[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const item of def?.param_schema ?? []) {
+  for (const item of items) {
     if (item.default !== undefined && item.default !== null) out[item.key] = item.default;
   }
   return out;
+}
+
+/** 当前场景声明的组作用域参数键（切回相机作用域时需清理，避免残留无效配置） */
+function groupParamKeys(): string[] {
+  return (currentScene.value?.param_schema ?? [])
+    .filter((p) => p.scope === "group")
+    .map((p) => p.key);
+}
+
+/** 组作用域参数默认值（切到相机组作用域时补齐，保证组叶子必填键可被编译层注入） */
+function groupParamDefaults(): Record<string, unknown> {
+  return buildParamDefaults(
+    (currentScene.value?.param_schema ?? []).filter((p) => p.scope === "group")
+  );
 }
 
 function cloneTree<T>(value: T): T {
@@ -298,7 +330,7 @@ function handleSceneChange(code: string) {
   const def = scenes.value.find((s) => s.code === code) ?? null;
   const defaultRule = (cloneTree(def?.default_rule) as Record<string, unknown>) ?? null;
   emitPayload({
-    params: buildParamDefaults(def),
+    params: buildParamDefaults(paramSchemaFor(def, currentScope.value)),
     conditions: currentScope.value === "camera" ? stripGroupLeaves(defaultRule) : defaultRule,
   });
 }
@@ -355,7 +387,7 @@ onMounted(async () => {
   if (Object.keys(params.value).length === 0 && isEmptyTree(conditions.value)) {
     const defaultRule = (cloneTree(def.default_rule) as Record<string, unknown>) ?? null;
     emitPayload({
-      params: buildParamDefaults(def),
+      params: buildParamDefaults(schema.value),
       conditions: currentScope.value === "camera" ? stripGroupLeaves(defaultRule) : defaultRule,
     });
   }

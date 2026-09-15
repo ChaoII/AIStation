@@ -10,6 +10,8 @@ export interface SceneParamSchema {
   label?: string;
   /** 默认值 */
   default?: unknown;
+  /** 作用域限定：缺省=通用；"group"=仅相机组作用域展示（如组聚合参数） */
+  scope?: string;
 }
 
 /** 场景（任务类型）定义，对齐后端 SceneDef */

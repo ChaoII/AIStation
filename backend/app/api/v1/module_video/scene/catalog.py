@@ -34,6 +34,11 @@ _SECONDS = {"key": "dwell_sec", "type": "int", "default": 10, "label": "停留�
 _MIN_SEC = {"key": "min_sec", "type": "int", "default": 5, "label": "最短时长(秒)"}
 _GAP_SEC = {"key": "gap_sec", "type": "int", "default": 30, "label": "无目标时长(秒)"}
 _DIRECTION = {"key": "direction", "type": "str", "default": "A2B", "label": "越线方向"}
+# 组聚合参数：仅相机组作用域展示并注入 group_* 叶子（编译层 PARAM_TO_LEAF 消费）。
+# `scope:"group"` 供前端按作用域过滤参数表单；键名必须与 compile.py 的映射保持一致。
+_GROUP_WINDOW = {"key": "group_window_sec", "type": "int", "default": 10, "label": "组聚合滑窗(秒)", "scope": "group"}
+_GROUP_COUNT = {"key": "group_count", "type": "int", "default": 2, "label": "组内目标数阈值", "scope": "group"}
+_GROUP_LABELS = {"key": "group_labels", "type": "list", "default": ["person"], "label": "组内目标标签", "scope": "group"}
 
 # ── pipeline 片段 ──────────────────────────────
 _DET = {"role": "det", "type": "detection"}
@@ -63,7 +68,7 @@ def _add(s: SceneDef) -> None:
 # ── §3.1 目标检测类 ──────────────────────────────
 _add(SceneDef(
     "DET_ZONE", "区域入侵", "detection", "DET_ZONE", ["det"], [_DET],
-    [_POLY, _CONF, {**_LABELS, "default": ["person"]}],
+    [_POLY, _CONF, {**_LABELS, "default": ["person"]}, _GROUP_WINDOW, _GROUP_COUNT, _GROUP_LABELS],
     # 单事件叶子；region 缺省表示全画面（ROI 由任务参数提供，不写符号化占位）。
     {"op": "and", "children": [{"subject": "object_present", "label": "person"}]},
     False, "区域内出现目标",
@@ -90,7 +95,8 @@ _add(SceneDef(
 
 _add(SceneDef(
     "GATHER", "聚集", "tracking", "GATHER", ["det"], [_DET, _TRACK],
-    [_POLY, _COUNT, {"key": "window_sec", "type": "int", "default": 5, "label": "滑窗时长(秒)"}, _CONF],
+    [_POLY, _COUNT, {"key": "window_sec", "type": "int", "default": 5, "label": "滑窗时长(秒)"}, _CONF,
+     _GROUP_WINDOW, _GROUP_COUNT, _GROUP_LABELS],
     # count_window 时序叶子（SP4-b 已实现）：滑窗 5 秒内去重目标数 >= value(=5)。
     # TODO(SP4): 需检测携带 track_id 才能按轨迹去重（否则退化为按事件计数）；
     # region 由任务参数在运行时注入，默认规则不写符号化占位。
@@ -100,7 +106,7 @@ _add(SceneDef(
 
 _add(SceneDef(
     "OVERCROWD", "超员", "detection", "OVERCROWD", ["det"], [_DET],
-    [_POLY, _COUNT, _CONF],
+    [_POLY, _COUNT, _CONF, _GROUP_WINDOW, _GROUP_COUNT, _GROUP_LABELS],
     # 单事件计数叶子；value 取 _COUNT 默认阈值 5。
     {"op": "and", "children": [{"subject": "count", "op": ">", "value": 5}]},
     False, "区域内目标数量超过上限",

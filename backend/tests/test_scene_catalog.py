@@ -223,6 +223,48 @@ def test_gather_param_schema_uses_window_sec():
     assert leaf.get("window_sec") == param["default"]
 
 
+# SP6-a 修复：可组作用域的场景必须声明组聚合参数，供纯 UI 新增组规则使用
+_GROUP_SCOPED_SCENES = ("GATHER", "OVERCROWD", "DET_ZONE")
+_GROUP_PARAM_KEYS = ("group_window_sec", "group_count", "group_labels")
+
+
+def test_group_scoped_scenes_declare_group_params():
+    """GATHER/OVERCROWD/DET_ZONE 必须声明组聚合参数（scope=group），键名与默认值固定。"""
+    for code in _GROUP_SCOPED_SCENES:
+        scene = get_scene(code)
+        assert scene is not None, code
+        params = {p["key"]: p for p in scene.param_schema}
+        for key in _GROUP_PARAM_KEYS:
+            assert key in params, f"{code} 缺少组聚合参数 {key}"
+            assert params[key].get("scope") == "group", f"{code}.{key} 应声明 scope=group"
+            assert params[key].get("label"), f"{code}.{key} 缺少中文标签"
+        assert params["group_window_sec"]["type"] == "int"
+        assert params["group_window_sec"]["default"] == 10
+        assert params["group_count"]["type"] == "int"
+        assert params["group_count"]["default"] == 2
+        assert params["group_labels"]["type"] == "list"
+        assert params["group_labels"]["default"] == ["person"]
+
+
+def test_group_params_inject_group_leaves():
+    """目录声明的组参数（UI 初值）必须能被编译层注入组叶子必填键（catalog↔compile 一致）。"""
+    from app.api.v1.module_video.scene.compile import compile_rule
+
+    scene = get_scene("GATHER")
+    assert scene is not None
+    params = {
+        p["key"]: p["default"]
+        for p in scene.param_schema
+        if p.get("scope") == "group" and p.get("default") is not None
+    }
+    cond = {"op": "and", "children": [{"subject": "group_count", "op": ">=", "value": 2}]}
+    out = compile_rule("GATHER", params, cond, scope="group")
+    leaf = out["children"][0]
+    assert leaf["window_sec"] == 10
+    assert leaf["value"] == 2
+    assert leaf["labels"] == ["person"]
+
+
 def test_catalog_api_lists_and_filters_category(test_client: TestClient, auth_headers: dict):
     resp = test_client.get("/api/v1/video/scene/catalog", headers=auth_headers)
     assert resp.status_code == 200
