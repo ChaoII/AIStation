@@ -549,11 +549,12 @@
     >
       <template v-if="detailDrawer.data">
         <div class="detail-snapshot">
-          <SnapshotImage
+          <SnapshotOverlayViewer
             :src="detailDrawer.data.snapshot_url || detailDrawer.data.snapshot_path"
-            width="100%"
-            height="200px"
-            previewable
+            :objects="
+              detailDrawer.data.ai_result?.objects ?? detailDrawer.data.ai_result?.detections ?? []
+            "
+            height="420px"
           />
         </div>
 
@@ -634,6 +635,7 @@ import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { cachedOptions } from "@/composables/useOptions";
 import SnapshotImage from "@/components/Common/SnapshotImage.vue";
+import SnapshotOverlayViewer from "@/components/SnapshotOverlayViewer/index.vue";
 import RuleEditor, { type RuleEditorValue } from "./components/RuleEditor.vue";
 
 interface TablePageQuery {
