@@ -41,6 +41,14 @@ def test_unimplemented_leaves_listed_for_ui():
         assert LEAF_CAPABILITIES[s]["implemented"] is False
 
 
+def test_group_leaves_registered():
+    """跨相机聚合叶子必须进入注册表且标记为已实现（与求值器对拍）。"""
+    for s in ("group_count", "group_coverage"):
+        assert s in LEAF_CAPABILITIES, s
+        assert LEAF_CAPABILITIES[s]["implemented"] is True, s
+        assert s in IMPLEMENTED_LEAVES, s
+
+
 def test_rule_capabilities_api(test_client, auth_headers):
     resp = test_client.get("/api/v1/video/scene/rule-capabilities", headers=auth_headers)
     assert resp.status_code == 200

@@ -27,6 +27,10 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "min_sec": ("min_sec", "dwell"),
     "gap_sec": ("gap_sec", "absence"),
     "pattern": ("regex", "text_match"),
+    # 组叶子走独立参数键（group_* 前缀），避免破坏既有的 window_sec→count_window 等绑定
+    "group_window_sec": ("window_sec", {"group_count", "group_coverage"}),
+    "group_count": ("value", {"group_count", "group_coverage"}),
+    "group_labels": ("labels", {"group_count"}),
     # 仅作 UI 选项、不注入叶子的参数：attributes / cls_threshold / topk / plate_pattern
     # / min_value / max_value
 }
@@ -43,7 +47,12 @@ _REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "count_window": ("window_sec", "value"),
     "dwell": ("min_sec",),
     "absence": ("gap_sec",),
+    "group_count": ("window_sec", "value"),
+    "group_coverage": ("window_sec", "value"),
 }
+
+# 跨相机聚合叶子：仅允许相机组作用域规则使用（相机作用域误用 → 编译报错）
+_GROUP_LEAVES: set[str] = {"group_count", "group_coverage"}
 
 
 class RuleCompileError(Exception):
@@ -104,7 +113,7 @@ def _validate_leaf(subject: str, leaf: dict) -> None:
             raise RuleCompileError(f"叶子 {subject} 缺少必填键 {key}")
 
 
-def _compile_node(node: Any, params: dict) -> dict:
+def _compile_node(node: Any, params: dict, scope: str | None = None) -> dict:
     if not isinstance(node, dict):
         raise RuleCompileError("条件节点必须为对象")
     op = node.get("op")
@@ -112,10 +121,15 @@ def _compile_node(node: Any, params: dict) -> dict:
         kids = node.get("children") or []
         if not isinstance(kids, (list, tuple)):
             raise RuleCompileError("逻辑节点 children 必须为数组")
-        return {"op": op, "children": [_compile_node(k, params) for k in kids]}
+        return {
+            "op": op,
+            "children": [_compile_node(k, params, scope) for k in kids],
+        }
     subject = node.get("subject")
     if not isinstance(subject, str):
         raise RuleCompileError("叶子缺少 subject")
+    if scope == "camera" and subject in _GROUP_LEAVES:
+        raise RuleCompileError("group_* 叶子仅可用于相机组作用域的规则")
     out = dict(node)
     cap = LEAF_CAPABILITIES.get(subject) or {}
     for pkey, (leafkey, target) in PARAM_TO_LEAF.items():
@@ -132,10 +146,20 @@ def _compile_node(node: Any, params: dict) -> dict:
     return out
 
 
-def compile_rule(scene_type: str | None, params: dict | None, conditions: dict | None) -> dict:
-    """校验并展开条件树；空条件返回 {}（求值器视为匹配一切）。"""
+def compile_rule(
+    scene_type: str | None,
+    params: dict | None,
+    conditions: dict | None,
+    *,
+    scope: str | None = None,
+) -> dict:
+    """校验并展开条件树；空条件返回 {}（求值器视为匹配一切）。
+
+    ``scope ∈ {"camera","group"}``：相机作用域禁止使用组聚合叶子；缺省
+    ``None`` 放行（兼容未传作用域的既有调用点）。
+    """
     if not conditions:
         return {}
     if not isinstance(conditions, dict):
         raise RuleCompileError("conditions 必须为对象")
-    return _compile_node(conditions, params or {})
+    return _compile_node(conditions, params or {}, scope)

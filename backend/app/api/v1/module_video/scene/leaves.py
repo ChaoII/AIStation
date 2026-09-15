@@ -13,7 +13,7 @@ LOGIC_OPS: list[str] = ["and", "or", "not"]
 _CMP_OPS = [">=", ">", "<=", "<", "=="]
 _ATTR_OPS = ["lt", "gt", "le", "ge", "eq"]
 
-# 已实现 10 个叶子（对拍求值器）
+# 已实现 12 个叶子（对拍求值器）
 LEAF_CAPABILITIES: dict[str, dict] = {
     "object_present": {
         "label": "存在目标",
@@ -108,6 +108,27 @@ LEAF_CAPABILITIES: dict[str, dict] = {
             {"key": "region", "type": "polygon"},
         ],
         "ops": [],
+    },
+    # 跨相机聚合叶子：仅可用于相机组作用域规则（编译层校验）
+    "group_count": {
+        "label": "组内目标总数",
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "window_sec", "type": "int"},
+            {"key": "value", "type": "int"},
+        ],
+        "ops": _CMP_OPS,
+    },
+    "group_coverage": {
+        "label": "组内覆盖比例",
+        "implemented": True,
+        "params": [
+            {"key": "window_sec", "type": "int"},
+            {"key": "value", "type": "float"},
+        ],
+        "ops": _CMP_OPS,
     },
     # ── 以下叶子求值器尚未实现，仅列出供前端置灰展示 ──
     "face_match": {
