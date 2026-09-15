@@ -443,11 +443,43 @@ def _match_conditions(
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
     """
+    # 对外行为与返回类型不变：委托 explain_conditions，仅取判定结果
+    return explain_conditions(
+        conditions,
+        detections,
+        temporal=temporal,
+        camera_id=camera_id,
+        alarm_type=alarm_type,
+        now=now,
+        alarm_interval=alarm_interval,
+    )[0]
+
+
+def explain_conditions(
+    conditions: dict | None,
+    detections: list[dict],
+    *,
+    temporal=None,
+    camera_id=None,
+    alarm_type=None,
+    now: float | None = None,
+    alarm_interval=0,
+) -> tuple[bool, list[dict]]:
+    """在与 _match_conditions 完全相同的语义下求值，并额外返回命中叶子说明。
+
+    返回 ``(是否命中, hits)``；hits 元素为
+    ``{"path": "and/0", "subject": "object_present", "detail": "...", "negated": False}``。
+    - 空/None 条件：命中且 hits 为空；非 dict 脏条件：不命中。
+    - `and`：子节点全部命中才命中，返回所有命中子叶；`or`：只返回首个命中分支；
+      `not`：命中（子节点均未命中）时，把子树叶子说明标记 ``negated=True`` 返回。
+    - detail 为简洁中文友好描述，尽量携带关键量（置信度/计数/时长等）。
+    本函数对异常输入一律按不命中处理，绝不向上抛异常。
+    """
     if not conditions:
-        return True
+        return True, []
     if not isinstance(conditions, dict):
         # 非 dict 的脏条件不得抛异常，按不命中处理
-        return False
+        return False, []
 
     # 未显式传入状态存储时使用进程级单例（时序叶子）；非时序规则不受影响
     if temporal is None:
@@ -552,23 +584,199 @@ def _match_conditions(
             return matched == target
         return False
 
-    def eval_node(node: dict) -> bool:
+    def _fmt_num(v) -> str:
+        """数值说明格式化：整数值去掉小数点，其余按原样。"""
+        if isinstance(v, float) and v.is_integer():
+            return str(int(v))
+        return str(v)
+
+    def _label_text(leaf: dict) -> str:
+        """叶子的标签展示文本：labels 列表优先，其次单个 label，都缺省为 *。"""
+        labels = leaf.get("labels")
+        if isinstance(labels, (list, tuple)) and labels:
+            return "/".join(str(x) for x in labels)
+        label = leaf.get("label")
+        return str(label) if label is not None else "*"
+
+    def _find_det(leaf: dict, subject: str) -> dict | None:
+        """找出首个满足 object_present/zone_enter 的检测（仅用于生成说明，不参与判定）。"""
+        min_conf = None
+        if subject == "object_present":
+            raw_min = leaf.get("min_confidence")
+            if raw_min is not None:
+                min_conf = _as_float(raw_min)
+        for d in dets:
+            if not _matches_label(d, leaf) or not _in_region(d, leaf):
+                continue
+            if min_conf is not None:
+                conf = _as_float(d.get("confidence"))
+                if conf is None or conf < min_conf:
+                    continue
+            return d
+        return None
+
+    def _object_detail(subject: str, leaf: dict) -> str:
+        label = _label_text(leaf)
+        d = _find_det(leaf, subject)
+        if d is not None:
+            conf = _as_float(d.get("confidence"))
+            if conf is not None:
+                return f"{d.get('label') or label} conf={conf:.2f}"
+        raw_min = leaf.get("min_confidence")
+        min_conf = _as_float(raw_min) if raw_min is not None else None
+        if min_conf is not None:
+            return f"{label} conf>={min_conf:.2f}"
+        return f"{label} conf=-"
+
+    def _attribute_detail(leaf: dict) -> str:
+        field = leaf.get("field")
+        op = leaf.get("op", "eq")
+        value = _to_float(leaf.get("value"))
+        for d in dets:
+            score = _to_float((d.get("attributes") or {}).get(field))
+            if score is None:
+                continue
+            hit = value is not None and (
+                (op == "lt" and score < value)
+                or (op == "gt" and score > value)
+                or (op == "le" and score <= value)
+                or (op == "ge" and score >= value)
+                or (op == "eq" and score == value)
+            )
+            if hit:
+                return f"{field}={score:.2f}{op}{_fmt_num(value)}"
+        return f"{field}=?{op}{_fmt_num(leaf.get('value'))}"
+
+    def _temporal_detail(subject: str, leaf: dict) -> str:
+        """时序叶子的关键量说明；缺状态时给出可读回退。"""
+        scope, ok = _leaf_scope(leaf)
+        entries: dict = {}
+        if ok and temporal is not None and camera_id is not None and now is not None:
+            entries = _query_temporal(temporal, camera_id, alarm_type, leaf, scope)
+        if subject == "dwell":
+            elapsed = (
+                max((now - first for first, _last in entries.values()), default=0.0)
+                if now is not None
+                else 0.0
+            )
+            return f"dwell {elapsed:.0f}s>={_fmt_num(leaf.get('min_sec'))}s"
+        if subject == "count_window":
+            window = _as_float(leaf.get("window_sec"))
+            count = 0
+            if window is not None and now is not None:
+                start = now - window
+                count = sum(1 for _first, last in entries.values() if last >= start)
+            return f"window {count}{leaf.get('op')}{_fmt_num(leaf.get('value'))}"
+        if subject == "absence":
+            silent = 0.0
+            if entries and now is not None:
+                silent = now - max(last for _first, last in entries.values())
+            return f"absence {silent:.0f}s>={_fmt_num(leaf.get('gap_sec'))}s"
+        if subject == "line_cross":
+            direction = leaf.get("dir", "A2B")
+            line = _parse_line(leaf)
+            if line is not None and ok and temporal is not None and camera_id is not None:
+                l0, l1 = line
+                positions = _query_positions(temporal, camera_id, alarm_type, leaf, scope)
+                for _field, (prev, cur) in positions.items():
+                    if prev is None or cur is None:
+                        continue
+                    if not _point_pass_region(cur, leaf):
+                        continue
+                    if not _segments_cross(prev, cur, l0, l1):
+                        continue
+                    return (
+                        f"cross ({prev[0]:.2f},{prev[1]:.2f})->"
+                        f"({cur[0]:.2f},{cur[1]:.2f}) dir={direction}"
+                    )
+            return f"cross dir={direction}"
+        return str(subject)
+
+    def leaf_detail(leaf: dict) -> str:
+        """生成叶子说明；任何异常都回退为 subject 名，绝不影响判定结果。"""
+        subject = leaf.get("subject")
+        try:
+            if subject in ("object_present", "zone_enter"):
+                return _object_detail(subject, leaf)
+            if subject == "count":
+                op = leaf.get("op")
+                matched = sum(1 for d in dets if _matches_label(d, leaf) and _in_region(d, leaf))
+                return f"{matched}{op}{_fmt_num(leaf.get('value'))}"
+            if subject == "attribute":
+                return _attribute_detail(leaf)
+            if subject == "text_match":
+                return f"text~{leaf.get('regex')}"
+            if subject == "ocr_label":
+                return f"text⊃{leaf.get('contains')}"
+            if subject in TEMPORAL_SUBJECTS:
+                return _temporal_detail(subject, leaf)
+        except Exception:
+            pass
+        return str(subject)
+
+    def _leaf_hit(leaf: dict, path: str, *, negated: bool = False) -> dict:
+        """构造命中叶子说明。"""
+        return {
+            "path": path,
+            "subject": leaf.get("subject"),
+            "detail": leaf_detail(leaf),
+            "negated": negated,
+        }
+
+    def collect(node, path: str) -> list[dict]:
+        """收集子树内所有叶子的说明（供 not 取反时使用）。"""
+        if not isinstance(node, dict):
+            return []
+        op = node.get("op")
+        if op in ("and", "or", "not"):
+            out: list[dict] = []
+            for i, k in enumerate(node.get("children") or []):
+                out.extend(collect(k, f"{path}/{op}/{i}" if path else f"{op}/{i}"))
+            return out
+        return [_leaf_hit(node, path)]
+
+    def eval_node(node, path: str) -> tuple[bool, list[dict]]:
         # 非 dict 节点（脏规则）不得抛异常，按不命中处理
         if not isinstance(node, dict):
-            return False
+            return False, []
         # 逻辑节点（and/or/not）与属性叶子都带 "op"，用逻辑算子集合区分：
         # 叶子 op 为 lt/gt/le/ge/eq 或比较符，若误当逻辑节点会直接不命中。
         op = node.get("op")
         if op in ("and", "or", "not"):
             kids = node.get("children") or []
             if op == "and":
-                return all(eval_node(k) for k in kids) if kids else True
+                if not kids:
+                    return True, []
+                hits: list[dict] = []
+                for i, k in enumerate(kids):
+                    ok, kh = eval_node(k, f"{path}/and/{i}" if path else f"and/{i}")
+                    if not ok:
+                        return False, []
+                    hits.extend(kh)
+                return True, hits
             if op == "or":
-                return any(eval_node(k) for k in kids)
-            return not any(eval_node(k) for k in kids)
-        return eval_leaf(node)
+                for i, k in enumerate(kids):
+                    ok, kh = eval_node(k, f"{path}/or/{i}" if path else f"or/{i}")
+                    if ok:
+                        return True, kh
+                return False, []
+            # not：命中（子节点均未命中）时，把子树叶子说明标记取反返回
+            for i, k in enumerate(kids):
+                ok, _kh = eval_node(k, f"{path}/not/{i}" if path else f"not/{i}")
+                if ok:
+                    return False, []
+            hits = []
+            for i, k in enumerate(kids):
+                kpath = f"{path}/not/{i}" if path else f"not/{i}"
+                for h in collect(k, kpath):
+                    hits.append({**h, "negated": True})
+            return True, hits
+        ok = eval_leaf(node)
+        if not ok:
+            return False, []
+        return True, [_leaf_hit(node, path)]
 
-    return eval_node(conditions)
+    return eval_node(conditions, "")
 
 
 class InferenceService:
