@@ -470,3 +470,24 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 - 不推荐：`@microsoft/fetch-event-source`（发布基本停滞）。
 - 生产常见坑：压缩中间件/反向代理会**缓冲**导致"整块才到"；需 `Cache-Control: no-transform` + `X-Accel-Buffering: no`，并避免压缩 SSE。
 - 现状：AI 聊天当前是手写 SSE 解析（`frontend/src/api/module_ai/assistant.ts`），**待迁移到 Vercel AI SDK**。
+
+### 编辑器 / 表单构造类 UI 选型结论（用户强制要求）
+- **凡“编辑器/构造器”类交互（条件树、规则/公式编辑器、代码编辑器、富文本、表格字段构造、查询构造等），必须采用成熟第三方组件，禁止手写实现**（用 `el-card`+`el-tree`+表单自己拼装也属手写，不允许）。
+- 选型门槛：MIT/Apache 等宽松许可、维护活跃（近一年有发布）、Vue 3 原生、TypeScript 类型完整。
+- 引入前必须在设计与账本写明候选对比（许可/最近发布/star/依赖洁净度）与落选原因。
+
+#### SP5-a 规则编辑器（条件树）选型候选
+| 包 | 许可 | 最近发布 | 评估 |
+|----|------|----------|------|
+| `@svar-ui/vue-filter`（FilterBuilder） | MIT | 2026-09（活跃） | Vue 3 原生 + 嵌套 AND/OR + JSON 进出 + TS；生态新（star 少），**首选** |
+| `@syncfusion/ej2-vue-querybuilder` | 商业许可 | 2026-09（很活跃） | 最成熟（217 版本），但需商业授权，暂不采用 |
+| `vue3-advanced-query-builder` | MIT | 2023-09（停更 ~3 年） | 违反“维护活跃”门槛，落选 |
+| `@form-create/element-ui` | MIT | 2024-12 | 是表单构造器而非条件构造器，仍需自定义嵌套逻辑，备选 |
+
+- 注意：多数第三方 query builder 只支持 AND/OR（不支持一元 NOT）→ 叶子层面的否定用算子表达（如 `attribute op=ge`），条件树的 `not` 仅在后端兼容。
+
+#### 集成坑（SP5-a 实测）
+- `@svar-ui/vue-filter` 的按钮是**无 `type` 的原生 `<button>`**；放进 Element Plus `el-form`（渲染裸 `<form>`）时点「Add filter/Apply」会触发表单提交导致**整页刷新、对话框数据全丢**。修复：在包裹元素上加 `@submit.prevent`。
+- 该库 `all.css` 必须配 `<Willow :fonts="false">` 包裹，否则无样式；主题变量定义在 `.wx-willow-theme` 上，覆盖样式需用**非 scoped** 选择器。
+- 该库**不支持自定义 value 编辑组件、不支持按字段禁用/限制算子**（算子由 field `type` 推导）；因此异构叶子参数统一放到「参数区」编辑，条件树只选 field + 算子 + 值。
+- 画布（Konva）容器若用 `ResizeObserver` 观测**被 Konva 自身撑大**的元素会形成自反馈锁定尺寸 → 必须观测外层包裹容器。
