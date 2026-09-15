@@ -102,24 +102,109 @@
       <el-form-item label="条件预览">
         <pre class="rule-editor__preview">{{ preview }}</pre>
       </el-form-item>
+
+      <el-divider content-position="left">灰度</el-divider>
+
+      <el-form-item label="生效时间段">
+        <div class="schedule-grid-wrapper">
+          <div class="schedule-header-row">
+            <div class="schedule-corner" />
+            <div v-for="h in 24" :key="h" class="schedule-header-cell">
+              {{ String(h - 1).padStart(2, "0") }}
+            </div>
+          </div>
+          <div v-for="day in 7" :key="day" class="schedule-row">
+            <div class="schedule-day-label">{{ weekDays[day - 1] }}</div>
+            <div
+              v-for="hour in 24"
+              :key="hour"
+              class="schedule-cell"
+              :class="{ active: scheduleGrid[day - 1]?.[hour - 1], disabled }"
+              @mousedown.prevent="onCellMouseDown(day - 1, hour - 1, $event)"
+              @mouseenter="onCellMouseEnter(day - 1, hour - 1)"
+            />
+          </div>
+        </div>
+        <div class="schedule-actions">
+          <el-button size="small" :disabled="disabled" @click="fillSchedule(true)">全选</el-button>
+          <el-button size="small" :disabled="disabled" @click="fillSchedule(false)">清空</el-button>
+          <el-button size="small" :disabled="disabled" @click="fillWorkHours">
+            工作日 08-18
+          </el-button>
+          <span class="rule-editor__hint">不选择任何时段 = 全天生效</span>
+        </div>
+      </el-form-item>
+
+      <el-form-item label="灰度比例">
+        <div class="rollout-percent">
+          <el-slider
+            data-testid="rule-rollout-percent"
+            :model-value="rolloutPercent"
+            :min="0"
+            :max="100"
+            :disabled="disabled"
+            @update:model-value="(v: number | number[]) => updateRolloutPercent(Number(v))"
+          />
+          <span class="rollout-percent__value">{{ rolloutPercentText }}</span>
+        </div>
+      </el-form-item>
+
+      <el-form-item label="相机白名单">
+        <el-select
+          data-testid="rule-rollout-whitelist"
+          :model-value="rolloutWhitelist"
+          multiple
+          filterable
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          :disabled="disabled"
+          :loading="cameraLoading"
+          placeholder="白名单相机始终生效（忽略比例）"
+          style="width: 100%"
+          @update:model-value="(v: number[]) => updateRolloutList('whitelist', v)"
+        >
+          <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="相机黑名单">
+        <el-select
+          data-testid="rule-rollout-blacklist"
+          :model-value="rolloutBlacklist"
+          multiple
+          filterable
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          :disabled="disabled"
+          :loading="cameraLoading"
+          placeholder="黑名单相机强制跳过"
+          style="width: 100%"
+          @update:model-value="(v: number[]) => updateRolloutList('blacklist', v)"
+        >
+          <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
+        </el-select>
+        <div v-if="rolloutError" class="rule-editor__field-error">{{ rolloutError }}</div>
+      </el-form-item>
     </el-form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   getSceneCatalog,
   type SceneDefinition,
   type SceneParamSchema,
 } from "@/api/module_video/scene";
 import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
-import type { AlarmRuleScope } from "@/api/module_video/alarm";
+import type { AlarmRuleRollout, AlarmRuleSchedule, AlarmRuleScope } from "@/api/module_video/alarm";
 import { cachedOptions, useLazyOptions } from "@/composables/useOptions";
 import SceneParamsForm from "./SceneParamsForm.vue";
 import ConditionTree from "./ConditionTree.vue";
 
-/** 编辑器产物：作用域 + 目标 + 场景参数原值 + 条件树（后端编译后落库） */
+/** 编辑器产物：作用域 + 目标 + 场景参数原值 + 条件树 + 灰度配置（后端编译后落库） */
 export interface RuleEditorValue {
   /** 作用域：相机 / 相机组（camera_id 与 group_id 恰有其一） */
   scope: AlarmRuleScope;
@@ -129,6 +214,10 @@ export interface RuleEditorValue {
   group_id?: number;
   params: Record<string, unknown>;
   conditions: Record<string, unknown> | null;
+  /** 生效时间段（周计划 slots；null/空 = 全天） */
+  schedule_json?: AlarmRuleSchedule | null;
+  /** 灰度配置 {percent, whitelist, blacklist}；{} = 全量生效 */
+  rollout?: AlarmRuleRollout;
 }
 
 /** 跨相机聚合叶子：相机作用域禁用（后端编译层拒绝），切换作用域时清理 */
@@ -146,7 +235,13 @@ const props = withDefaults(
   }>(),
   {
     sceneType: "",
-    modelValue: () => ({ scope: "camera", params: {}, conditions: null }),
+    modelValue: () => ({
+      scope: "camera",
+      params: {},
+      conditions: null,
+      schedule_json: null,
+      rollout: {},
+    }),
     background: "",
     disabled: false,
   }
@@ -211,6 +306,130 @@ function emitPayload(patch: Partial<RuleEditorValue>) {
     conditions: null,
   };
   emit("update:modelValue", { ...base, ...patch });
+}
+
+const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+/** 拖选状态：mousedown 决定本次是「填充」还是「清除」 */
+const gridDragState = ref<{ active: boolean; mode: "set" | "clear" }>({
+  active: false,
+  mode: "set",
+});
+
+/**
+ * 生效时间段网格（7×24）由 schedule_json 派生，不保留本地副本，
+ * 避免与父级 v-model 出现不同步（复用既有周计划数据结构 {type,slots:[{day,start,end}]}）。
+ */
+const scheduleGrid = computed<boolean[][]>(() => {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(false));
+  const slots = (props.modelValue?.schedule_json as AlarmRuleSchedule | null)?.slots;
+  if (!Array.isArray(slots)) return grid;
+  for (const slot of slots) {
+    const day = Number(slot?.day);
+    const start = Number(slot?.start);
+    const end = Number(slot?.end);
+    if (!Number.isInteger(day) || day < 0 || day > 6) continue;
+    for (let h = Math.max(0, start); h < Math.min(24, end); h++) grid[day][h] = true;
+  }
+  return grid;
+});
+
+/** 网格 → schedule_json：连续小时合并为 slot，空网格回 null（= 全天） */
+function gridToSchedule(grid: boolean[][]): AlarmRuleSchedule | null {
+  const slots: Array<{ day: number; start: number; end: number }> = [];
+  for (let d = 0; d < 7; d++) {
+    let start = -1;
+    for (let h = 0; h <= 24; h++) {
+      const active = h < 24 && grid[d][h];
+      if (active && start === -1) start = h;
+      if (!active && start !== -1) {
+        slots.push({ day: d, start, end: h });
+        start = -1;
+      }
+    }
+  }
+  return slots.length ? { type: "weekly", slots } : null;
+}
+
+function commitSchedule(grid: boolean[][]) {
+  emitPayload({ schedule_json: gridToSchedule(grid) });
+}
+
+function onCellMouseDown(day: number, hour: number, e: MouseEvent) {
+  if (props.disabled || e.button !== 0) return;
+  const grid = scheduleGrid.value.map((row) => row.slice());
+  const current = grid[day][hour];
+  gridDragState.value = { active: true, mode: current ? "clear" : "set" };
+  grid[day][hour] = !current;
+  commitSchedule(grid);
+}
+
+function onCellMouseEnter(day: number, hour: number) {
+  if (!gridDragState.value.active) return;
+  const grid = scheduleGrid.value.map((row) => row.slice());
+  grid[day][hour] = gridDragState.value.mode === "set";
+  commitSchedule(grid);
+}
+
+function onGridDragEnd() {
+  gridDragState.value.active = false;
+}
+
+function fillSchedule(val: boolean) {
+  commitSchedule(Array.from({ length: 7 }, () => Array(24).fill(val)));
+}
+
+function fillWorkHours() {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(false));
+  for (let d = 0; d < 5; d++) for (let h = 8; h < 18; h++) grid[d][h] = true;
+  commitSchedule(grid);
+}
+
+// ---- 灰度比例 / 白黑名单 ----
+
+/** 当前灰度配置（缺省 = 全量 + 空名单） */
+const rollout = computed<AlarmRuleRollout>(() => props.modelValue?.rollout ?? {});
+const rolloutPercent = computed(() => rollout.value.percent ?? 100);
+const rolloutWhitelist = computed<number[]>(() => rollout.value.whitelist ?? []);
+const rolloutBlacklist = computed<number[]>(() => rollout.value.blacklist ?? []);
+const rolloutPercentText = computed(() => {
+  if (rolloutPercent.value <= 0) return "0（不生效）";
+  if (rolloutPercent.value >= 100) return "100（全量）";
+  return `${rolloutPercent.value}%`;
+});
+
+/** 白黑名单交集（非空即非法，提交前拦截） */
+const rolloutConflict = computed(() => {
+  const white = new Set(rolloutWhitelist.value);
+  return rolloutBlacklist.value.filter((id) => white.has(id));
+});
+
+const rolloutError = computed(() => {
+  if (!rolloutConflict.value.length) return "";
+  const names = rolloutConflict.value.map((id) => cameraName(id));
+  return `白名单与黑名单冲突：${names.join("、")} 不能同时出现在两个名单中`;
+});
+
+function cameraName(id: number): string {
+  const hit = (cameraOptions.value as any[]).find((c) => c.id === id);
+  return hit?.name || `#${id}`;
+}
+
+/** 归一化灰度配置：去重正整数；全量且无名单时回 {}（保持「不设灰度」语义） */
+function normalizeRollout(next: AlarmRuleRollout): AlarmRuleRollout {
+  const clean = (arr?: number[]) => Array.from(new Set((arr ?? []).filter((x) => x > 0)));
+  const percent = Math.min(100, Math.max(0, Math.round(next.percent ?? 100)));
+  const whitelist = clean(next.whitelist);
+  const blacklist = clean(next.blacklist);
+  if (percent >= 100 && !whitelist.length && !blacklist.length) return {};
+  return { percent, whitelist, blacklist };
+}
+
+function updateRolloutPercent(v: number) {
+  emitPayload({ rollout: normalizeRollout({ ...rollout.value, percent: v }) });
+}
+
+function updateRolloutList(key: "whitelist" | "blacklist", ids: number[]) {
+  emitPayload({ rollout: normalizeRollout({ ...rollout.value, [key]: ids }) });
 }
 
 /** 递归剔除组聚合叶子（相机作用域不允许，后端会 400） */
@@ -364,6 +583,11 @@ function validate(): boolean {
       return false;
     }
   }
+  // 灰度白/黑名单互斥：有交集则阻止提交（后端也会 400）
+  if (rolloutError.value) {
+    error.value = rolloutError.value;
+    return false;
+  }
   return true;
 }
 
@@ -372,10 +596,12 @@ function isGeometry(type: string): boolean {
 }
 
 // 挂载时拉取场景目录 + 当前作用域的目标下拉；
+// 灰度白/黑名单始终需要相机列表，故无论作用域都预加载相机选项。
 // 若已带场景码（编辑态）且参数/条件为空，则回填默认规则
 onMounted(async () => {
   if (currentScope.value === "group") ensureGroupOptions();
-  else ensureCameraOptions();
+  ensureCameraOptions();
+  document.addEventListener("mouseup", onGridDragEnd);
   loadingScenes.value = true;
   try {
     const res = await getSceneCatalog();
@@ -398,6 +624,10 @@ onMounted(async () => {
 });
 
 defineExpose({ validate });
+
+onBeforeUnmount(() => {
+  document.removeEventListener("mouseup", onGridDragEnd);
+});
 </script>
 
 <style scoped>
@@ -408,6 +638,95 @@ defineExpose({ validate });
 .rule-editor__hint {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+}
+
+.rule-editor__field-error {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-color-danger);
+}
+
+/* 生效时间段网格（与任务/录像计划保持同一交互与视觉） */
+.schedule-grid-wrapper {
+  padding-bottom: 4px;
+  overflow-x: auto;
+}
+.schedule-header-row {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+.schedule-corner {
+  flex-shrink: 0;
+  width: 44px;
+}
+.schedule-header-cell {
+  flex-shrink: 0;
+  width: 24px;
+  font-size: 10px;
+  line-height: 20px;
+  color: var(--el-text-color-placeholder);
+  text-align: center;
+}
+.schedule-row {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.schedule-day-label {
+  flex-shrink: 0;
+  width: 44px;
+  padding-right: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-align: right;
+}
+.schedule-cell {
+  flex-shrink: 0;
+  width: 24px;
+  height: 20px;
+  cursor: pointer;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 2px;
+  transition: all 0.15s;
+}
+.schedule-cell:hover {
+  border-color: var(--el-color-primary);
+}
+.schedule-cell.active {
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+}
+.schedule-cell.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.schedule-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.rollout-percent {
+  display: flex;
+  flex: 1;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+}
+.rollout-percent :deep(.el-slider) {
+  flex: 1;
+  min-width: 0;
+}
+.rollout-percent__value {
+  flex-shrink: 0;
+  min-width: 72px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 
 .rule-editor__preview {

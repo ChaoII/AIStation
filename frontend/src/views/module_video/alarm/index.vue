@@ -304,6 +304,19 @@
                   align="center"
                 />
                 <el-table-column
+                  v-if="ruleCols.find((col) => col.prop === 'rollout')?.show"
+                  key="rollout"
+                  label="灰度"
+                  min-width="190"
+                  show-overflow-tooltip
+                >
+                  <template #default="scope">
+                    <span v-if="ruleRolloutSummary(scope.row)">
+                      {{ ruleRolloutSummary(scope.row) }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'status')?.show"
                   key="status"
                   label="状态"
@@ -496,32 +509,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="生效时段">
-          <div class="schedule-grid-wrapper">
-            <div class="schedule-header-row">
-              <div class="schedule-corner" />
-              <div v-for="h in 24" :key="h" class="schedule-header-cell">
-                {{ String(h - 1).padStart(2, "0") }}
-              </div>
-            </div>
-            <div v-for="day in 7" :key="day" class="schedule-row">
-              <div class="schedule-day-label">{{ weekDays[day - 1] }}</div>
-              <div
-                v-for="hour in 24"
-                :key="hour"
-                class="schedule-cell"
-                :class="{ active: ruleScheduleGrid[day - 1]?.[hour - 1] }"
-                @mousedown.prevent="onRuleCellMouseDown(day - 1, hour - 1, $event)"
-                @mouseenter="onRuleCellMouseEnter(day - 1, hour - 1)"
-              />
-            </div>
-          </div>
-          <div class="schedule-actions">
-            <el-button size="small" @click="fillRuleSchedule(true)">全选</el-button>
-            <el-button size="small" @click="fillRuleSchedule(false)">清空</el-button>
-            <el-button size="small" @click="fillRuleWorkHours">工作日 08-18</el-button>
-          </div>
-        </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-switch v-model="ruleForm.status" />
         </el-form-item>
@@ -640,7 +627,7 @@ import { useCrudList } from "@/components/CURD/useCrudList";
 import { cachedOptions } from "@/composables/useOptions";
 import SnapshotImage from "@/components/Common/SnapshotImage.vue";
 import SnapshotOverlayViewer from "@/components/SnapshotOverlayViewer/index.vue";
-import type { AlarmRuleScope } from "@/api/module_video/alarm";
+import type { AlarmRuleRollout, AlarmRuleScope } from "@/api/module_video/alarm";
 import RuleEditor, { type RuleEditorValue } from "./components/RuleEditor.vue";
 
 interface TablePageQuery {
@@ -675,12 +662,6 @@ const groupOptions = ref<any[]>([]);
 const ruleLookup = ref<Record<number, any>>({});
 let ruleLookupLoaded = false;
 const algorithmTaskOptions = ref<any[]>([]);
-const ruleScheduleGrid = ref<boolean[][]>(Array.from({ length: 7 }, () => Array(24).fill(false)));
-const ruleDragState = ref<{ active: boolean; mode: "set" | "clear" }>({
-  active: false,
-  mode: "set",
-});
-const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 const ruleChannelSelection = ref<string[]>([]);
 const ruleChannelEmailTo = ref("");
@@ -841,6 +822,7 @@ const ruleCols = reactive<Array<{ prop?: string; label?: string; show?: boolean 
   { prop: "severity", label: "级别", show: true },
   { prop: "sensitivity", label: "灵敏度", show: true },
   { prop: "interval_seconds", label: "间隔(秒)", show: true },
+  { prop: "rollout", label: "灰度", show: true },
   { prop: "status", label: "状态", show: true },
   { prop: "operation", label: "操作", show: true },
 ]);
@@ -897,6 +879,7 @@ const ruleForm = reactive({
   interval_seconds: 30,
   notify_channels: [] as string[],
   schedule_json: null as any,
+  rollout: {} as AlarmRuleRollout,
   status: true,
   description: undefined as string | undefined,
   // 场景规则编辑器新增字段（spec §4.6）
@@ -918,13 +901,14 @@ const initialRuleForm = {
   interval_seconds: 30,
   notify_channels: [] as string[],
   schedule_json: null as any,
+  rollout: {} as AlarmRuleRollout,
   status: true,
   description: undefined as string | undefined,
 };
 
 const ruleEditorRef = ref<InstanceType<typeof RuleEditor> | null>(null);
 
-/** RuleEditor 的 v-model：作用域 / 目标 / 参数 / 条件直接落到 ruleForm */
+/** RuleEditor 的 v-model：作用域 / 目标 / 参数 / 条件 / 灰度直接落到 ruleForm */
 const ruleEditorModel = computed<RuleEditorValue>({
   get: () => ({
     scope: ruleForm.scope,
@@ -932,6 +916,8 @@ const ruleEditorModel = computed<RuleEditorValue>({
     group_id: ruleForm.group_id,
     params: ruleForm.params,
     conditions: ruleForm.conditions,
+    schedule_json: ruleForm.schedule_json,
+    rollout: ruleForm.rollout,
   }),
   set: (v) => {
     ruleForm.scope = v?.scope ?? "camera";
@@ -939,6 +925,8 @@ const ruleEditorModel = computed<RuleEditorValue>({
     ruleForm.group_id = v?.group_id;
     ruleForm.params = v?.params ?? {};
     ruleForm.conditions = v?.conditions ?? null;
+    ruleForm.schedule_json = v?.schedule_json ?? null;
+    ruleForm.rollout = v?.rollout ?? {};
   },
 });
 
@@ -1000,57 +988,71 @@ function handleSceneTypeChange(code: string) {
   ruleForm.alarm_type = code || ruleForm.alarm_type;
 }
 
-function onRuleCellMouseDown(day: number, hour: number, e: MouseEvent) {
-  if (e.button !== 0) return;
-  const current = ruleScheduleGrid.value[day][hour];
-  ruleDragState.value = { active: true, mode: current ? "clear" : "set" };
-  ruleScheduleGrid.value[day][hour] = !current;
-}
+const WEEK_DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
-function onRuleCellMouseEnter(day: number, hour: number) {
-  if (!ruleDragState.value.active) return;
-  ruleScheduleGrid.value[day][hour] = ruleDragState.value.mode === "set";
-}
-
-function onRuleDragEnd() {
-  ruleDragState.value.active = false;
-}
-
-function fillRuleSchedule(val: boolean) {
-  for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) ruleScheduleGrid.value[d][h] = val;
-}
-
-function fillRuleWorkHours() {
-  fillRuleSchedule(false);
-  for (let d = 0; d < 5; d++) for (let h = 8; h < 18; h++) ruleScheduleGrid.value[d][h] = true;
-}
-
-function ruleScheduleGridToJson() {
-  const slots: { day: number; start: number; end: number }[] = [];
+/** 生效时间段摘要：相同窗口的连续天合并，如「周一至周五 09:00-18:00」；无配置返回空串 */
+function ruleScheduleSummary(json: any): string {
+  const slots: any[] = Array.isArray(json?.slots) ? json.slots : [];
+  if (!slots.length) return "";
+  const byDay = new Map<number, string>();
+  for (const slot of slots) {
+    const day = Number(slot?.day);
+    const start = Number(slot?.start);
+    const end = Number(slot?.end);
+    if (!Number.isInteger(day) || day < 0 || day > 6 || !(end > start)) continue;
+    const text = `${String(start).padStart(2, "0")}:00-${String(end).padStart(2, "0")}:00`;
+    byDay.set(day, byDay.has(day) ? `${byDay.get(day)}、${text}` : text);
+  }
+  if (!byDay.size) return "";
+  const parts: string[] = [];
+  let start = -1;
+  let end = -1;
+  let win = "";
+  const flush = () => {
+    if (start < 0) return;
+    const label =
+      start === end ? WEEK_DAY_LABELS[start] : `${WEEK_DAY_LABELS[start]}至${WEEK_DAY_LABELS[end]}`;
+    parts.push(`${label} ${win}`);
+  };
   for (let d = 0; d < 7; d++) {
-    let start = -1;
-    for (let h = 0; h <= 24; h++) {
-      const active = h < 24 && ruleScheduleGrid.value[d][h];
-      if (active && start === -1) start = h;
-      if (!active && start !== -1) {
-        slots.push({ day: d, start, end: h });
-        start = -1;
-      }
+    const cur = byDay.get(d);
+    if (!cur) {
+      flush();
+      start = -1;
+      end = -1;
+      win = "";
+      continue;
+    }
+    if (start >= 0 && cur === win && d === end + 1) {
+      end = d;
+    } else {
+      flush();
+      start = d;
+      end = d;
+      win = cur;
     }
   }
-  return slots.length ? { type: "weekly", slots } : null;
+  flush();
+  return parts.join("，");
 }
 
-function jsonToRuleScheduleGrid(json: any) {
-  ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
-  if (!json?.slots) return;
-  for (const slot of json.slots) {
-    if (slot.day >= 0 && slot.day < 7) {
-      for (let h = slot.start; h < slot.end && h < 24; h++) {
-        ruleScheduleGrid.value[slot.day][h] = true;
-      }
-    }
+/** 规则灰度摘要：比例 / 白名单 / 黑名单 / 生效时段；无任何灰度配置返回空串（列表不显示） */
+function ruleRolloutSummary(row: any): string {
+  const rollout = row?.rollout || {};
+  const parts: string[] = [];
+  const percent = rollout.percent;
+  if (typeof percent === "number" && percent < 100) {
+    parts.push(percent <= 0 ? "不生效" : `${percent}%`);
   }
+  if (Array.isArray(rollout.whitelist) && rollout.whitelist.length) {
+    parts.push(`白名单 ${rollout.whitelist.length} 台`);
+  }
+  if (Array.isArray(rollout.blacklist) && rollout.blacklist.length) {
+    parts.push(`黑名单 ${rollout.blacklist.length} 台`);
+  }
+  const schedule = ruleScheduleSummary(row?.schedule_json);
+  if (schedule) parts.push(schedule);
+  return parts.join(" · ");
 }
 
 async function resetRuleForm() {
@@ -1063,7 +1065,8 @@ async function resetRuleForm() {
   ruleForm.scene_type = undefined;
   ruleForm.params = {};
   ruleForm.conditions = null;
-  ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
+  ruleForm.schedule_json = null;
+  ruleForm.rollout = {};
   ruleChannelSelection.value = [];
   ruleChannelEmailTo.value = "";
   ruleChannelSmsPhones.value = "";
@@ -1098,7 +1101,9 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
       ruleForm.params = item.params || {};
       ruleForm.conditions = item.conditions || null;
       ruleForm.scene_type = item.alarm_type || undefined;
-      jsonToRuleScheduleGrid(ruleForm.schedule_json);
+      // 灰度配置回填：缺省 {} 表示全量生效
+      ruleForm.schedule_json = item.schedule_json || null;
+      ruleForm.rollout = item.rollout || {};
       // Parse notify_channels into selection + per-channel config
       const channels = item.notify_channels || [];
       ruleChannelSelection.value = [];
@@ -1200,7 +1205,9 @@ async function handleSubmitRule() {
       sensitivity: ruleForm.sensitivity,
       interval_seconds: ruleForm.interval_seconds,
       notify_channels: buildNotifyChannels(),
-      schedule_json: ruleScheduleGridToJson(),
+      schedule_json: ruleForm.schedule_json || null,
+      // 灰度配置：{percent, whitelist, blacklist}，{} = 全量生效
+      rollout: ruleForm.rollout || {},
       status: ruleForm.status,
       description: ruleForm.description || null,
       // 场景规则：算法/场景类型 + 参数原值 + 条件树（后端编译展开后落库）
@@ -1289,12 +1296,8 @@ async function ensureAlgorithmTaskOptions() {
 }
 
 onBeforeMount(() => {
-  document.addEventListener("mouseup", onRuleDragEnd);
   // 规则列表「作用域」列需展示组名，进页即预加载组选项
   ensureGroupOptions();
-});
-onBeforeUnmount(() => {
-  document.removeEventListener("mouseup", onRuleDragEnd);
 });
 </script>
 
@@ -1372,64 +1375,6 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-placeholder);
 }
 
-/* Schedule Grid */
-.schedule-grid-wrapper {
-  padding-bottom: 4px;
-  overflow-x: auto;
-}
-.schedule-header-row {
-  display: flex;
-  gap: 2px;
-  margin-bottom: 2px;
-}
-.schedule-corner {
-  flex-shrink: 0;
-  width: 44px;
-}
-.schedule-header-cell {
-  flex-shrink: 0;
-  width: 24px;
-  font-size: 10px;
-  line-height: 20px;
-  color: var(--el-text-color-placeholder);
-  text-align: center;
-}
-.schedule-row {
-  display: flex;
-  gap: 2px;
-  align-items: center;
-  margin-bottom: 2px;
-}
-.schedule-day-label {
-  flex-shrink: 0;
-  width: 44px;
-  padding-right: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  text-align: right;
-}
-.schedule-cell {
-  flex-shrink: 0;
-  width: 24px;
-  height: 20px;
-  cursor: pointer;
-  background: var(--el-fill-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 2px;
-  transition: all 0.15s;
-}
-.schedule-cell:hover {
-  border-color: var(--el-color-primary);
-}
-.schedule-cell.active {
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
-}
-.schedule-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
 .notify-config-block {
   margin-top: 8px;
   padding: 8px 12px;

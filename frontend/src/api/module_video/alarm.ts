@@ -25,6 +25,23 @@ export interface AlarmRuleParams {
 /** 规则作用域：相机 / 相机组（camera_id 与 group_id 恰有其一，后端校验） */
 export type AlarmRuleScope = "camera" | "group";
 
+/** 灰度配置：比例 0-100 + 相机白/黑名单；缺省 {} 表示全量生效（白黑名单互斥） */
+export interface AlarmRuleRollout {
+  /** 灰度比例：0=不生效，100=全量（等同不设灰度） */
+  percent?: number;
+  /** 白名单相机 id：强制生效（忽略比例） */
+  whitelist?: number[];
+  /** 黑名单相机 id：强制跳过 */
+  blacklist?: number[];
+}
+
+/** 生效时间段（周计划）：slots 为空/缺失 = 全天生效 */
+export interface AlarmRuleSchedule {
+  type?: string;
+  /** day 以 ISO 周一为 0；窗口为 [start, end)，单位小时 */
+  slots?: Array<{ day: number; start: number; end: number }>;
+}
+
 /** 告警规则创建/更新载荷 */
 export interface AlarmRulePayload {
   name?: string;
@@ -39,7 +56,10 @@ export interface AlarmRulePayload {
   sensitivity?: number;
   interval_seconds?: number;
   notify_channels?: string[];
-  schedule_json?: unknown;
+  /** 生效时间段（周计划 slots，空=全天） */
+  schedule_json?: AlarmRuleSchedule | null;
+  /** 灰度配置（比例 + 相机白/黑名单） */
+  rollout?: AlarmRuleRollout;
   status?: boolean;
   description?: string | null;
   /** 场景码（与 alarm_type 对应） */
