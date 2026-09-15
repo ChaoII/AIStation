@@ -164,6 +164,15 @@
           </el-descriptions-item>
         </el-descriptions>
 
+        <!-- 快照叠加查看器：src 为 http(s) 或受保护相对路径时组件内部鉴权取图；为空显示占位 -->
+        <div class="event-detail__section">
+          <SnapshotOverlayViewer
+            :src="drawer.detail.snapshot_ref || null"
+            :objects="drawer.detail.objects ?? drawer.detail.detections ?? []"
+            height="360px"
+          />
+        </div>
+
         <div class="event-detail__section">
           <div class="event-detail__title">命中叶子</div>
           <div class="event-detail__leaves">
@@ -224,6 +233,7 @@ import {
 import { cachedOptions } from "@/composables/useOptions";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
+import SnapshotOverlayViewer from "@/components/SnapshotOverlayViewer/index.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 
