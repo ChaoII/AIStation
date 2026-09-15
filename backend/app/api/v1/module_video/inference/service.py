@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from app.api.v1.module_video.inference.gating import rule_active_now
 from app.api.v1.module_video.inference.temporal import (
     ABSENT_ALL,
     region_fingerprint,
@@ -1136,8 +1137,22 @@ class InferenceService:
         matched_rule_names: list[str] = []
         first_matched_rule_id = None
         first_hit_leaves: list = []
+        skipped: list[dict] = []
         try:
             for rule in candidates:
+                # 规则层灰度 gating：跳过者不观测、不评估、不落库（逐条独立）
+                if rule is not None:
+                    active, reason = rule_active_now(
+                        getattr(rule, "schedule_json", None),
+                        getattr(rule, "rollout", None),
+                        camera_id,
+                        event_now,
+                        rule_id=rule.id,
+                    )
+                    if not active:
+                        log.info(f"规则 {rule.id} 灰度跳过（{reason}）: camera={camera_id}")
+                        skipped.append({"rule_id": rule.id, "reason": reason})
+                        continue
                 res = await _evaluate_rule(
                     rule,
                     event,
@@ -1163,14 +1178,19 @@ class InferenceService:
 
         if not alarm_ids:
             # 有规则但全部未命中：落一条未命中事件（便于回溯"为什么没命中"）
-            await _persist_edge_event(
-                event, matched=False, rule_id=rules[0].id if rules else None, matched_leaves=[]
-            )
-            return {
+            # 被灰度跳过的规则不落库：仅当存在真正被评估的候选时才落未命中事件
+            if len(skipped) < len(candidates):
+                await _persist_edge_event(
+                    event, matched=False, rule_id=rules[0].id if rules else None, matched_leaves=[]
+                )
+            result = {
                 "alarm_created": False,
                 "reason": "rule_not_matched",
                 **_event_id_kv(event_id),
             }
+            if skipped:
+                result["rule_skipped_list"] = skipped
+            return result
 
         # 命中（或规则为空）建告警后落库；失败仅告警，不影响告警返回
         await _persist_edge_event(
@@ -1180,7 +1200,7 @@ class InferenceService:
             matched_leaves=first_hit_leaves,
         )
 
-        return {
+        result = {
             "alarm_id": alarm_ids[0],
             "alarm_created": True,
             "rule_matched": matched_rule_names[0] if matched_rule_names else None,
@@ -1188,3 +1208,7 @@ class InferenceService:
             "rule_matched_list": matched_rule_names,
             **_event_id_kv(event_id),
         }
+        # 单规则/无跳过路径保持返回体逐字节不变；仅在有跳过时附加排查字段
+        if skipped:
+            result["rule_skipped_list"] = skipped
+        return result
