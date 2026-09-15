@@ -1,12 +1,12 @@
 <template>
-  <div class="roi-canvas">
+  <div ref="rootRef" class="roi-canvas">
     <div class="roi-canvas__toolbar">
       <el-button size="small" :disabled="disabled || !points.length" @click="undo">撤销</el-button>
       <el-button size="small" :disabled="disabled || !points.length" @click="clear">清空</el-button>
       <span class="roi-canvas__tip">{{ tip }}</span>
     </div>
 
-    <div ref="wrapRef" class="roi-canvas__stage">
+    <div class="roi-canvas__stage">
       <Stage :config="{ width: stageW, height: stageH, listening: !disabled }" @click="handleClick">
         <Layer>
           <!-- 底图占位（未传快照时显示） -->
@@ -97,7 +97,7 @@ const props = withDefaults(
 /** v-model：归一化坐标点列 [[x,y],...]，0~1 */
 const model = defineModel<number[][]>({ default: () => [] });
 
-const wrapRef = ref<HTMLElement | null>(null);
+const rootRef = ref<HTMLElement | null>(null);
 const stageW = ref(640);
 const stageH = ref(360);
 const bgImage = ref<HTMLImageElement | null>(null);
@@ -219,9 +219,10 @@ watch(
 );
 
 // 容器尺寸自适应：保持 16:9 画布，底图按 contain 适配（letterbox）
+// 注意：必须观测“外层包裹容器”而非 Konva 自身撑大的舞台容器，否则会形成自反馈锁定尺寸
 let ro: ResizeObserver | null = null;
 onMounted(() => {
-  const el = wrapRef.value;
+  const el = rootRef.value;
   if (!el) return;
   const apply = () => {
     stageW.value = Math.max(240, el.clientWidth);
@@ -239,6 +240,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.roi-canvas {
+  /* 允许在 flex 容器（el-form-item__content）中收缩，避免被 Konva 舞台撑宽 */
+  min-width: 0;
+}
+
 .roi-canvas__toolbar {
   display: flex;
   gap: 8px;
