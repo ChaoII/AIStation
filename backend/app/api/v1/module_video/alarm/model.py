@@ -14,7 +14,13 @@ class AlarmRuleModel(ModelMixin, UserMixin):
     __loader_options__ = ["camera", "creator"]
 
     name: Mapped[str] = mapped_column(String(128), nullable=False, comment="规则名称")
-    camera_id: Mapped[int] = mapped_column(Integer, ForeignKey("video_cameras.id", ondelete="CASCADE"), nullable=False, index=True)
+    camera_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("video_cameras.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # 作用域：camera_id 与 group_id 恰有其一非空（组规则覆盖组内多台相机）
+    group_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("video_camera_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     camera: Mapped[Optional["CameraModel"]] = relationship(lazy="selectin")
 
     alarm_type: Mapped[str] = mapped_column(String(32), nullable=False, comment="告警类型: MOTION/LINE_CROSSING/INTRUSION/FACE_DETECT/...")

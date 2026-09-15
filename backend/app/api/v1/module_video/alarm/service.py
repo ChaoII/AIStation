@@ -22,6 +22,16 @@ def _compile_or_raise(scene_type: str | None, params: dict | None, conditions: d
         raise CustomException(msg=f"规则条件非法：{e}", code=400, status_code=400) from e
 
 
+def _validate_scope(camera_id: int | None, group_id: int | None) -> None:
+    """作用域校验：camera_id 与 group_id 恰有其一非空，否则 HTTP 400。"""
+    if (camera_id is None) == (group_id is None):
+        raise CustomException(
+            msg="规则作用域非法：camera_id 与 group_id 必须且只能指定一个",
+            code=400,
+            status_code=400,
+        )
+
+
 class AlarmService:
 
     @classmethod
@@ -35,6 +45,8 @@ class AlarmService:
         from .crud import AlarmRuleCRUD
         # 写库前完成条件编译校验，非法条件直接拒绝（HTTP 400）
         payload = data.model_dump()
+        # 作用域校验：camera_id 与 group_id 恰有其一（都空/都填 → 400）
+        _validate_scope(payload.get("camera_id"), payload.get("group_id"))
         payload["conditions"] = _compile_or_raise(
             payload.get("alarm_type"), payload.get("params"), payload.get("conditions")
         )
@@ -48,6 +60,11 @@ class AlarmService:
         if not rule:
             raise CustomException(msg="告警规则不存在")
         payload = data.model_dump(exclude_unset=True)
+        # 局部更新：按「合并库中现值后的结果态」校验作用域，避免仅改名称被误判
+        _validate_scope(
+            payload["camera_id"] if "camera_id" in payload else rule.camera_id,
+            payload["group_id"] if "group_id" in payload else rule.group_id,
+        )
         # 仅在本次涉及条件/参数/告警类型时重编译；未提供的字段回退库中现值，
         # 避免仅改名称的局部更新把既有条件清空
         if {"conditions", "params", "alarm_type"} & payload.keys():

@@ -7,7 +7,8 @@ from app.core.validator import DateTimeStr
 
 class AlarmRuleCreateSchema(BaseModel):
     name: str = Field(..., max_length=128, description="规则名称")
-    camera_id: int = Field(..., description="摄像机ID")
+    camera_id: int | None = Field(default=None, description="摄像机ID")
+    group_id: int | None = Field(default=None, description="摄像机组ID（与 camera_id 恰有其一）")
     alarm_type: str = Field(..., description="告警类型")
     algorithm_task_id: int | None = Field(default=None, description="算法任务ID")
     severity: str = Field(default="WARNING", description="严重级别")
@@ -25,11 +26,13 @@ class AlarmRuleCreateSchema(BaseModel):
 class AlarmRuleUpdateSchema(AlarmRuleCreateSchema):
     name: str | None = Field(default=None, max_length=128)
     camera_id: int | None = Field(default=None)
+    group_id: int | None = Field(default=None)
 
 
 class AlarmRuleOutSchema(BaseSchema):
     name: str
-    camera_id: int
+    camera_id: int | None = None
+    group_id: int | None = None
     alarm_type: str
     algorithm_task_id: int | None = None
     severity: str = "WARNING"
