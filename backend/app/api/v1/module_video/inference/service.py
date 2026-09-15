@@ -779,6 +779,26 @@ def explain_conditions(
     return eval_node(conditions, "")
 
 
+def _event_id_kv(event_id) -> dict:
+    """仅当事件携带 ``event_id`` 时附加到返回体，保持既有返回体兼容。"""
+    return {"event_id": event_id} if event_id else {}
+
+
+async def _persist_edge_event(
+    event: dict, *, matched: bool, rule_id, matched_leaves
+) -> int | None:
+    """落库边缘事件（薄封装）；任何失败仅告警，绝不阻断告警链路。"""
+    try:
+        from app.api.v1.module_video.edge.store import record_edge_event
+
+        return await record_edge_event(
+            event, matched=matched, rule_id=rule_id, matched_leaves=matched_leaves
+        )
+    except Exception as e:
+        log.warning(f"边缘事件落库失败: {e}")
+        return None
+
+
 class InferenceService:
 
     @classmethod
@@ -838,6 +858,8 @@ class InferenceService:
         if not detections and not has_temporal:
             return {"alarm_created": False, "reason": "no_detections"}
 
+        event_id = event.get("event_id")
+        hit_leaves: list = []
         if rule is not None and rule.conditions:
             # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变
             if has_temporal:
@@ -848,15 +870,24 @@ class InferenceService:
                     event_now,
                     rule.conditions,
                 )
-            if not _match_conditions(
+            matched, hit_leaves = explain_conditions(
                 rule.conditions,
                 detections,
                 camera_id=camera_id,
                 alarm_type=alarm_type,
                 now=event_now,
                 alarm_interval=getattr(rule, "interval_seconds", 0) or 0,
-            ):
-                return {"alarm_created": False, "reason": "rule_not_matched"}
+            )
+            if not matched:
+                # 未命中也落库（有检测的事件），便于回溯"为什么没命中"
+                await _persist_edge_event(
+                    event, matched=False, rule_id=rule.id, matched_leaves=[]
+                )
+                return {
+                    "alarm_created": False,
+                    "reason": "rule_not_matched",
+                    **_event_id_kv(event_id),
+                }
             if has_temporal:
                 # 命中后写入 absence 触发标记（纯读取的 _eval_temporal 不改状态）
                 _mark_absence_fired(camera_id, alarm_type, rule.conditions, event_now)
@@ -929,10 +960,19 @@ class InferenceService:
                 except Exception as e:
                     log.warning(f"通知分发失败: {e}")
 
+            # 命中（或规则为空）建告警后落库；失败仅告警，不影响告警返回
+            await _persist_edge_event(
+                event,
+                matched=True,
+                rule_id=rule.id if rule else None,
+                matched_leaves=hit_leaves,
+            )
+
             return {
                 "alarm_id": alarm_id,
                 "alarm_created": True,
                 "rule_matched": rule.name if rule else None,
+                **_event_id_kv(event_id),
             }
 
         except Exception as e:
