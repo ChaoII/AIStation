@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 
 from app.api.v1.module_system.auth.schema import AuthSchema
+from app.api.v1.module_video.inference.snapshot import resolve_snapshot_url
 from app.core.base_crud import CRUDBase
 from app.core.exceptions import CustomException
 
@@ -117,7 +118,9 @@ def _event_base_fields(row: EdgeEventModel) -> dict:
         "algorithm_type": row.algorithm_type,
         "ts": row.ts,
         "latency_ms": row.latency_ms,
+        # snapshot_ref 保持原始存储值；snapshot_url 为归一化后的可取图地址（与告警侧一致）
         "snapshot_ref": row.snapshot_ref,
+        "snapshot_url": resolve_snapshot_url(row.snapshot_ref),
         "matched": bool(row.matched),
         "matched_rule_id": row.matched_rule_id,
         "object_count": len(objects),

@@ -55,7 +55,10 @@ export interface EdgeEventItem {
   algorithm_type?: string;
   ts?: string;
   latency_ms?: number;
+  /** 快照原始存储引用（对象存储 key / 本地路径 / URL） */
   snapshot_ref?: string;
+  /** 归一化后的可取图地址（后端解析，可能为 null） */
+  snapshot_url?: string | null;
   matched?: boolean;
   matched_rule_id?: number | null;
   object_count?: number;

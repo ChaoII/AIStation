@@ -151,23 +151,23 @@
           <el-descriptions-item label="命中规则">
             {{ drawer.detail.matched_rule_id ?? "-" }}
           </el-descriptions-item>
-          <el-descriptions-item label="快照引用">
+          <el-descriptions-item label="快照">
             <el-link
-              v-if="isHttpUrl(drawer.detail.snapshot_ref)"
+              v-if="isHttpUrl(snapshotSrc)"
               type="primary"
-              :href="drawer.detail.snapshot_ref"
+              :href="snapshotSrc || undefined"
               target="_blank"
             >
-              {{ drawer.detail.snapshot_ref }}
+              {{ snapshotSrc }}
             </el-link>
-            <span v-else>{{ drawer.detail.snapshot_ref || "无" }}</span>
+            <span v-else>{{ snapshotSrc || "无" }}</span>
           </el-descriptions-item>
         </el-descriptions>
 
         <!-- 快照叠加查看器：src 为 http(s) 或受保护相对路径时组件内部鉴权取图；为空显示占位 -->
         <div class="event-detail__section">
           <SnapshotOverlayViewer
-            :src="drawer.detail.snapshot_ref || null"
+            :src="snapshotSrc"
             :objects="drawer.detail.objects ?? drawer.detail.detections ?? []"
             height="360px"
           />
@@ -565,7 +565,12 @@ function leafTagType(leaf: EdgeEventMatchedLeaf): "success" | "danger" {
   return leaf.negated ? "danger" : "success";
 }
 
-function isHttpUrl(url?: string): boolean {
+/** 快照可取图地址：优先后端归一化的 snapshot_url，缺失时回退原始 snapshot_ref */
+const snapshotSrc = computed<string | null>(
+  () => drawer.detail?.snapshot_url || drawer.detail?.snapshot_ref || null
+);
+
+function isHttpUrl(url?: string | null): boolean {
   return !!url && /^https?:\/\//i.test(url);
 }
 

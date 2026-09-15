@@ -57,6 +57,7 @@ def _seed(
     label: str = "person",
     ts: float | str = 1000,
     event_id: str | None = None,
+    snapshot_ref: str | None = None,
 ) -> tuple[int | None, str]:
     """落一条事件，返回 (主键 id, event_id)。"""
     eid = event_id or f"ev-{uuid4().hex}"
@@ -70,6 +71,7 @@ def _seed(
         "objects": _objects(label),
         "detections": _objects(label),
         "latency_ms": 12.3,
+        "snapshot_ref": snapshot_ref,
     }
     row_id = asyncio.run(
         record_edge_event(
@@ -178,6 +180,47 @@ def test_detail_returns_full_payload(test_client, event_headers):
     assert body["matched_rule_id"] == 7
     assert body["matched_leaves"][0]["subject"] == "object_present"
     assert "snapshot_data" not in body
+
+
+def test_list_and_detail_expose_snapshot_url(test_client, event_headers, monkeypatch, tmp_path):
+    """相对对象 key 命中 DETECTIONS_DIR 时，列表/详情均给出可取图的 snapshot_url。"""
+    from app.api.v1.module_video.inference import snapshot as snap
+
+    monkeypatch.setattr(snap.settings, "DETECTIONS_DIR", str(tmp_path))
+    f = tmp_path / "raw" / "a.jpg"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(b"x")
+
+    cam = _unique_camera()
+    row_id, _ = _seed(camera_id=cam, snapshot_ref="raw/a.jpg")
+
+    item = _list(test_client, event_headers, camera_id=cam).json()["data"]["items"][0]
+    assert item["snapshot_ref"] == "raw/a.jpg"
+    assert item["snapshot_url"] == "/api/v1/video/detections/raw/a.jpg"
+
+    detail = test_client.get(f"{BASE}/detail/{row_id}", headers=event_headers).json()["data"]
+    assert detail["snapshot_ref"] == "raw/a.jpg"
+    assert detail["snapshot_url"] == "/api/v1/video/detections/raw/a.jpg"
+
+
+def test_snapshot_url_http_passthrough(test_client, event_headers):
+    """已是绝对 http(s) URL → snapshot_url 原样返回。"""
+    cam = _unique_camera()
+    _seed(camera_id=cam, snapshot_ref="https://cdn.example.com/a.jpg")
+
+    item = _list(test_client, event_headers, camera_id=cam).json()["data"]["items"][0]
+    assert item["snapshot_ref"] == "https://cdn.example.com/a.jpg"
+    assert item["snapshot_url"] == "https://cdn.example.com/a.jpg"
+
+
+def test_snapshot_url_none_when_missing(test_client, event_headers):
+    """无快照引用 → snapshot_url 为 null（snapshot_ref 保持原值）。"""
+    cam = _unique_camera()
+    _seed(camera_id=cam)
+
+    item = _list(test_client, event_headers, camera_id=cam).json()["data"]["items"][0]
+    assert item["snapshot_ref"] is None
+    assert item["snapshot_url"] is None
 
 
 def test_detail_not_found(test_client, event_headers):
