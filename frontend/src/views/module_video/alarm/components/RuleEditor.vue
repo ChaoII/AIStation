@@ -9,7 +9,10 @@
       :title="error"
     />
 
-    <el-form label-width="100px" size="default">
+    <!-- @submit.prevent：条件树里的第三方 FilterBuilder 使用原生 <button>（无 type），
+         处在 el-form 的 <form> 内点击时会触发原生表单提交并刷新页面（丢失对话框内容），
+         故在最内层表单上拦截 submit 事件（事件在 form 上触发并向祖先冒泡）。 -->
+    <el-form label-width="100px" size="default" @submit.prevent>
       <el-form-item label="业务场景" required>
         <el-select
           :model-value="sceneType || ''"
