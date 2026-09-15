@@ -834,17 +834,154 @@ async def _persist_edge_event(
     return row_id
 
 
+async def _evaluate_rule(
+    rule,
+    event: dict,
+    detections: list,
+    camera_id,
+    alarm_type: str,
+    event_now: float,
+    saved_snapshot_path,
+) -> dict | None:
+    """对单条规则执行「观测 → 评估 → 建告警（+联动/通知）」。
+
+    未命中返回 None；命中返回
+    ``{"alarm_id": int, "rule_id": int | None, "rule_name": str | None, "hit_leaves": list}``。
+    ``rule`` 为 None 表示无匹配规则时的历史兼容路径（直接建档，rule_matched 为 None）。
+    """
+    from app.api.v1.module_video.alarm.model import AlarmRecordModel
+    from app.core.database import async_db_session
+
+    has_temporal = bool(
+        rule is not None and rule.conditions and _has_temporal_leaf(rule.conditions)
+    )
+    hit_leaves: list = []
+    if rule is not None and rule.conditions:
+        # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变
+        if has_temporal:
+            _observe_temporal_event(camera_id, alarm_type, detections, event_now, rule.conditions)
+        matched, hit_leaves = explain_conditions(
+            rule.conditions,
+            detections,
+            camera_id=camera_id,
+            alarm_type=alarm_type,
+            now=event_now,
+            alarm_interval=getattr(rule, "interval_seconds", 0) or 0,
+        )
+        if not matched:
+            return None
+        if has_temporal:
+            # 命中后写入 absence 触发标记（纯读取的 _eval_temporal 不改状态）
+            _mark_absence_fired(camera_id, alarm_type, rule.conditions, event_now)
+
+    severity = rule.severity if rule else "WARNING"
+
+    # v2 objects：优先取事件携带的；HTTP 兼容路径缺失时由 detections 派生
+    raw_objects = event.get("objects")
+    objects = (
+        [o for o in raw_objects if isinstance(o, dict)] if isinstance(raw_objects, list) else []
+    )
+    if not objects and detections:
+        objects = [
+            {
+                "label": d.get("label", ""),
+                "label_id": d.get("label_id", 0),
+                "confidence": d.get("confidence", 0.0),
+                "bbox": d.get("bbox") or {},
+                **({"track_id": d["track_id"]} if d.get("track_id") is not None else {}),
+                **({"attributes": d["attributes"]} if isinstance(d.get("attributes"), dict) else {}),
+                **({"text": d["text"]} if d.get("text") is not None else {}),
+            }
+            for d in detections
+            if isinstance(d, dict)
+        ]
+
+    alarm_data = {
+        "camera_id": camera_id,
+        "rule_id": rule.id if rule else None,
+        "alarm_type": alarm_type,
+        "severity": severity,
+        "snapshot_path": saved_snapshot_path,
+        "ai_result": {
+            "task_id": event.get("task_id"),
+            "algorithm_type": event.get("algorithm_type"),
+            "detections": detections,
+            "objects": objects,
+            "frame_timestamp": event.get("frame_timestamp"),
+        },
+        "description": (
+            f"AI 检测到 {len(detections)} 个目标: "
+            f"{', '.join(d.get('label', '') for d in detections[:5])}"
+            if detections
+            else (f"{rule.name}：区域内持续无目标" if rule else "区域内持续无目标")
+        ),
+        "status": "PENDING",
+    }
+
+    async with async_db_session.begin() as session:
+        record = AlarmRecordModel(**alarm_data)
+        session.add(record)
+        await session.flush()
+        alarm_id = record.id
+
+    # 触发事件联动（ALARM 事件 → RECORD/通知等动作，逻辑闭环）
+    try:
+        from app.api.v1.module_video.event.service import EventService
+
+        await EventService.execute_linkage_actions(camera_id, "ALARM")
+    except Exception as e:
+        log.warning(f"事件联动执行异常: {e}")
+
+    # Async notification
+    if rule:
+        try:
+            # dispatch_notification 只读 auth.db；提供真实会话而非构造 AuthSchema(db=None)
+            from types import SimpleNamespace
+
+            from app.utils.notification import dispatch_notification
+
+            async with async_db_session() as notify_db:
+                auth_like = SimpleNamespace(db=notify_db)
+                alarm_dict = {
+                    "id": alarm_id,
+                    "camera_id": camera_id,
+                    "alarm_type": event.get("algorithm_type"),
+                    "severity": severity,
+                    "alarm_time": datetime.now().isoformat(),
+                    "description": alarm_data["description"],
+                    "snapshot_path": saved_snapshot_path,
+                    "camera": {"name": ""},
+                    "rule_id": rule.id,
+                }
+                rule_dict = {
+                    "id": rule.id,
+                    "name": rule.name,
+                    "severity": rule.severity,
+                    "notify_channels": rule.notify_channels,
+                }
+                await dispatch_notification(auth_like, alarm_dict, rule_dict)
+        except Exception as e:
+            log.warning(f"通知分发失败: {e}")
+
+    return {
+        "alarm_id": alarm_id,
+        "rule_id": rule.id if rule else None,
+        "rule_name": rule.name if rule else None,
+        "hit_leaves": hit_leaves,
+    }
+
+
 class InferenceService:
 
     @classmethod
     async def process_detection_callback(cls, event: dict) -> dict:
         """Process a detection event from a worker callback."""
-        from sqlalchemy import select
+        from sqlalchemy import or_, select
 
-        from app.api.v1.module_video.alarm.model import AlarmRecordModel, AlarmRuleModel
+        from app.api.v1.module_video.alarm.model import AlarmRuleModel
+        from app.api.v1.module_video.camera.model import CameraModel
         from app.core.database import async_db_session
 
-        task_id = event.get("task_id")
         camera_id = event.get("camera_id")
         algorithm_type = event.get("algorithm_type")
         detections = event.get("detections", [])
@@ -872,165 +1009,90 @@ class InferenceService:
             # 边缘事件：快照已由 Agent 上传对象存储，此处仅存相对引用
             saved_snapshot_path = snapshot_path
 
-        # Find matching alarm rule
-        rule = None
+        alarm_type = algorithm_type or "AI_DETECTION"
+        event_now = to_epoch(frame_timestamp)
+
+        # 作用域查询：直绑该相机 OR 绑定该相机所属相机组（一条组规则覆盖组内多台相机）
+        rules: list = []
         async with async_db_session() as session:
+            # 用 scalars().all() 而非 scalar_one_or_none()，兼容既有测试的极简假会话
+            group_rows = (
+                await session.execute(
+                    select(CameraModel.group_id).where(CameraModel.id == camera_id)
+                )
+            ).scalars().all()
+            cam_group_id = group_rows[0] if group_rows else None
+
+            scope_conds = [AlarmRuleModel.camera_id == camera_id]
+            if cam_group_id is not None:
+                scope_conds.append(AlarmRuleModel.group_id == cam_group_id)
+            # 注：Task 3 将在此补查组内相机 id 列表，并透传给
+            # explain_conditions(group_camera_ids=...)，供跨相机聚合叶子使用
             stmt = select(AlarmRuleModel).where(
-                AlarmRuleModel.camera_id == camera_id,
-                AlarmRuleModel.alarm_type == (algorithm_type or "AI_DETECTION"),
+                or_(*scope_conds),
+                AlarmRuleModel.alarm_type == alarm_type,
                 AlarmRuleModel.status.is_(True),
                 AlarmRuleModel.is_deleted.is_(False),
             )
-            result = await session.execute(stmt)
-            rule = pick_alarm_rule(result.scalars().all(), algorithm_type or "AI_DETECTION")
+            rules = list((await session.execute(stmt)).scalars().all())
 
-        alarm_type = algorithm_type or "AI_DETECTION"
-        event_now = to_epoch(frame_timestamp)
-        has_temporal = bool(
-            rule is not None and rule.conditions and _has_temporal_leaf(rule.conditions)
+        # 任一规则含时序叶子（absence 等）时，空检测心跳仍需继续评估
+        any_temporal = any(
+            r.conditions and _has_temporal_leaf(r.conditions) for r in rules
         )
-        # 无检测：仅当规则含时序叶子（absence 等）时才继续评估，否则维持既有语义
-        if not detections and not has_temporal:
+        if not detections and not any_temporal:
             return {"alarm_created": False, "reason": "no_detections"}
 
         event_id = event.get("event_id")
-        hit_leaves: list = []
-        if rule is not None and rule.conditions:
-            # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变
-            if has_temporal:
-                _observe_temporal_event(
-                    camera_id,
-                    alarm_type,
-                    detections,
-                    event_now,
-                    rule.conditions,
-                )
-            matched, hit_leaves = explain_conditions(
-                rule.conditions,
-                detections,
-                camera_id=camera_id,
-                alarm_type=alarm_type,
-                now=event_now,
-                alarm_interval=getattr(rule, "interval_seconds", 0) or 0,
-            )
-            if not matched:
-                # 未命中也落库（有检测的事件），便于回溯"为什么没命中"
-                await _persist_edge_event(
-                    event, matched=False, rule_id=rule.id, matched_leaves=[]
-                )
-                return {
-                    "alarm_created": False,
-                    "reason": "rule_not_matched",
-                    **_event_id_kv(event_id),
-                }
-            if has_temporal:
-                # 命中后写入 absence 触发标记（纯读取的 _eval_temporal 不改状态）
-                _mark_absence_fired(camera_id, alarm_type, rule.conditions, event_now)
+        # 无匹配规则时保留既有兼容路径：建一条 rule=None 的告警（rule_matched 为 None）
+        candidates = rules if rules else [None]
 
-        severity = rule.severity if rule else "WARNING"
-
-        # v2 objects：优先取事件携带的；HTTP 兼容路径缺失时由 detections 派生
-        raw_objects = event.get("objects")
-        objects = (
-            [o for o in raw_objects if isinstance(o, dict)] if isinstance(raw_objects, list) else []
-        )
-        if not objects and detections:
-            objects = [
-                {
-                    "label": d.get("label", ""),
-                    "label_id": d.get("label_id", 0),
-                    "confidence": d.get("confidence", 0.0),
-                    "bbox": d.get("bbox") or {},
-                    **({"track_id": d["track_id"]} if d.get("track_id") is not None else {}),
-                    **({"attributes": d["attributes"]} if isinstance(d.get("attributes"), dict) else {}),
-                    **({"text": d["text"]} if d.get("text") is not None else {}),
-                }
-                for d in detections
-                if isinstance(d, dict)
-            ]
-
-        alarm_data = {
-            "camera_id": camera_id,
-            "rule_id": rule.id if rule else None,
-            "alarm_type": alarm_type,
-            "severity": severity,
-            "snapshot_path": saved_snapshot_path,
-            "ai_result": {
-                "task_id": task_id,
-                "algorithm_type": algorithm_type,
-                "detections": detections,
-                "objects": objects,
-                "frame_timestamp": frame_timestamp,
-            },
-            "description": (
-                f"AI 检测到 {len(detections)} 个目标: "
-                f"{', '.join(d.get('label', '') for d in detections[:5])}"
-                if detections
-                else (f"{rule.name}：区域内持续无目标" if rule else "区域内持续无目标")
-            ),
-            "status": "PENDING",
-        }
-
-        # Create alarm record
+        alarm_ids: list[int] = []
+        matched_rule_names: list[str] = []
+        first_matched_rule_id = None
+        first_hit_leaves: list = []
         try:
-            async with async_db_session.begin() as session:
-                record = AlarmRecordModel(**alarm_data)
-                session.add(record)
-                await session.flush()
-                alarm_id = record.id
+            for rule in candidates:
+                res = await _evaluate_rule(
+                    rule, event, detections, camera_id, alarm_type, event_now, saved_snapshot_path
+                )
+                if not res:
+                    continue
+                if not alarm_ids:
+                    first_matched_rule_id = res.get("rule_id")
+                    first_hit_leaves = res.get("hit_leaves") or []
+                if res.get("rule_name") is not None:
+                    matched_rule_names.append(res["rule_name"])
+                alarm_ids.append(res["alarm_id"])
+        except Exception as e:
+            log.error(f"创建告警记录失败: {e}")
+            if not alarm_ids:
+                return {"alarm_created": False, "error": str(e)}
 
-            # 触发事件联动（ALARM 事件 → RECORD/通知等动作，逻辑闭环）
-            try:
-                from app.api.v1.module_video.event.service import EventService
-                await EventService.execute_linkage_actions(camera_id, "ALARM")
-            except Exception as e:
-                log.warning(f"事件联动执行异常: {e}")
-
-            # Async notification
-            if rule:
-                try:
-                    # dispatch_notification 只读 auth.db；提供真实会话而非构造 AuthSchema(db=None)
-                    from types import SimpleNamespace
-
-                    from app.utils.notification import dispatch_notification
-                    async with async_db_session() as notify_db:
-                        auth_like = SimpleNamespace(db=notify_db)
-                        alarm_dict = {
-                            "id": alarm_id,
-                            "camera_id": camera_id,
-                            "alarm_type": algorithm_type,
-                            "severity": severity,
-                            "alarm_time": datetime.now().isoformat(),
-                            "description": alarm_data["description"],
-                            "snapshot_path": saved_snapshot_path,
-                            "camera": {"name": ""},
-                            "rule_id": rule.id,
-                        }
-                        rule_dict = {
-                            "id": rule.id,
-                            "name": rule.name,
-                            "severity": rule.severity,
-                            "notify_channels": rule.notify_channels,
-                        }
-                        await dispatch_notification(auth_like, alarm_dict, rule_dict)
-                except Exception as e:
-                    log.warning(f"通知分发失败: {e}")
-
-            # 命中（或规则为空）建告警后落库；失败仅告警，不影响告警返回
+        if not alarm_ids:
+            # 有规则但全部未命中：落一条未命中事件（便于回溯"为什么没命中"）
             await _persist_edge_event(
-                event,
-                matched=True,
-                rule_id=rule.id if rule else None,
-                matched_leaves=hit_leaves,
+                event, matched=False, rule_id=rules[0].id if rules else None, matched_leaves=[]
             )
-
             return {
-                "alarm_id": alarm_id,
-                "alarm_created": True,
-                "rule_matched": rule.name if rule else None,
+                "alarm_created": False,
+                "reason": "rule_not_matched",
                 **_event_id_kv(event_id),
             }
 
-        except Exception as e:
-            log.error(f"创建告警记录失败: {e}")
-            return {"alarm_created": False, "error": str(e)}
+        # 命中（或规则为空）建告警后落库；失败仅告警，不影响告警返回
+        await _persist_edge_event(
+            event,
+            matched=True,
+            rule_id=first_matched_rule_id,
+            matched_leaves=first_hit_leaves,
+        )
+
+        return {
+            "alarm_id": alarm_ids[0],
+            "alarm_created": True,
+            "rule_matched": matched_rule_names[0] if matched_rule_names else None,
+            "alarm_ids": alarm_ids,
+            "rule_matched_list": matched_rule_names,
+            **_event_id_kv(event_id),
+        }
