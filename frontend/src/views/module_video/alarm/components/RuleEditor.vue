@@ -15,6 +15,7 @@
     <el-form label-width="100px" size="default" @submit.prevent>
       <el-form-item label="作用域" required>
         <el-radio-group
+          data-testid="rule-scope-select"
           :model-value="currentScope"
           :disabled="disabled"
           @update:model-value="handleScopeChange"
@@ -26,6 +27,7 @@
 
       <el-form-item v-if="currentScope === 'camera'" label="关联摄像机" required>
         <el-select
+          data-testid="rule-camera-select"
           :model-value="cameraId"
           filterable
           clearable
@@ -41,6 +43,7 @@
 
       <el-form-item v-else label="关联相机组" required>
         <el-select
+          data-testid="rule-group-select"
           :model-value="groupId"
           filterable
           clearable
@@ -56,6 +59,7 @@
 
       <el-form-item label="业务场景" required>
         <el-select
+          data-testid="rule-scene-select"
           :model-value="sceneType || ''"
           filterable
           clearable

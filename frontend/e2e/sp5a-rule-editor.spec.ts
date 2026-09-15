@@ -48,7 +48,7 @@ test("规则编辑器：ROI 画布 + 条件树 创建并回填", async ({ page }
   await expect(dialog).toBeVisible();
 
   // 2. 选择业务场景 DET_ZONE（场景码即告警类型）
-  await dialog.locator(".rule-editor .el-select").first().click();
+  await dialog.locator('[data-testid="rule-scene-select"]').click();
   const sceneOption = page.getByRole("option", { name: /DET_ZONE/ }).first();
   await expect(sceneOption).toBeVisible({ timeout: 15_000 });
   await sceneOption.click();
@@ -88,12 +88,7 @@ test("规则编辑器：ROI 画布 + 条件树 创建并回填", async ({ page }
     .first()
     .locator("input")
     .fill(RULE_NAME);
-  await dialog
-    .locator(".el-form-item")
-    .filter({ hasText: "关联摄像机" })
-    .first()
-    .locator(".el-select")
-    .click();
+  await dialog.locator('[data-testid="rule-camera-select"]').click();
   const cameraOption = page.locator(".el-select-dropdown__item:visible").first();
   await expect(cameraOption).toBeVisible();
   await cameraOption.click();

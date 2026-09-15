@@ -218,7 +218,9 @@ test("规则作用域：组规则列表展示组名 + 相机作用域隐藏聚�
     await row.getByRole("button", { name: "编辑" }).click();
     const dialog = page.locator(".el-dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator(".rule-editor .el-radio.is-checked")).toContainText("相机组");
+    await expect(dialog.locator('[data-testid="rule-scope-select"] .el-radio.is-checked')).toContainText(
+      "相机组"
+    );
     await expect(
       dialog.locator(".el-form-item").filter({ hasText: "关联相机组" }).first()
     ).toContainText(GROUP_NAME);
@@ -266,7 +268,11 @@ test("规则作用域：组规则列表展示组名 + 相机作用域隐藏聚�
     expect(refillTree.children[0].subject).toBe("group_count");
 
     // 10. 切回「相机」作用域：组聚合叶子从条件树与字段候选中消失（作用域过滤要求）
-    await dialog.locator(".el-radio").filter({ hasText: "相机" }).first().click();
+    await dialog
+      .locator('[data-testid="rule-scope-select"] .el-radio')
+      .filter({ hasText: "相机" })
+      .first()
+      .click();
     await expect(ruleRows).toHaveCount(0);
     const strippedTree = JSON.parse(await dialog.locator(".rule-editor__preview").innerText());
     expect(JSON.stringify(strippedTree)).not.toContain("group_count");
@@ -312,20 +318,16 @@ test("纯 UI 新增组规则：组参数声明 + group_count 叶子鼠标选择 
     await expect(dialog).toBeVisible();
 
     // 1. 作用域切到「相机组」，选择本用例相机组
-    await dialog.locator(".el-radio").filter({ hasText: "相机组" }).first().click();
     await dialog
-      .locator(".rule-editor .el-form-item")
-      .filter({ has: page.locator('.el-form-item__label:text-is("关联相机组")') })
-      .locator(".el-select")
+      .locator('[data-testid="rule-scope-select"] .el-radio')
+      .filter({ hasText: "相机组" })
+      .first()
       .click();
+    await dialog.locator('[data-testid="rule-group-select"]').click();
     await page.getByRole("option", { name: PURE_UI_GROUP_NAME }).first().click();
 
     // 2. 选择场景 GATHER（目录已声明组聚合参数）
-    await dialog
-      .locator(".rule-editor .el-form-item")
-      .filter({ has: page.locator('.el-form-item__label:text-is("业务场景")') })
-      .locator(".el-select")
-      .click();
+    await dialog.locator('[data-testid="rule-scene-select"]').click();
     await page.getByRole("option", { name: /GATHER/ }).first().click();
 
     // 3. 组作用域参数表单出现（此前目录未声明，表单无字段 → 保存 400）
