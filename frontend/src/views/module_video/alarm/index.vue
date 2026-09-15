@@ -345,7 +345,7 @@
       v-model="ruleDialogVisible.visible"
       :title="ruleDialogVisible.title"
       append-to-body
-      width="600px"
+      width="960px"
       @close="handleCloseRuleDialog"
     >
       <el-form ref="ruleFormRef" :model="ruleForm" label-width="100px" size="default">
@@ -378,30 +378,21 @@
             />
           </el-select>
         </el-form-item>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="告警类型" prop="alarm_type">
-              <el-select v-model="ruleForm.alarm_type" style="width: 100%">
-                <el-option label="运动检测" value="MOTION" />
-                <el-option label="越界检测" value="LINE_CROSSING" />
-                <el-option label="区域入侵" value="INTRUSION" />
-                <el-option label="人脸识别" value="FACE_DETECT" />
-                <el-option label="移动侦测" value="MOVEMENT" />
-                <el-option label="视频遮挡" value="VIDEO_BLOCK" />
-                <el-option label="视频丢失" value="VIDEO_LOST" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="级别" prop="severity">
-              <el-select v-model="ruleForm.severity" style="width: 100%">
-                <el-option label="严重" value="CRITICAL" />
-                <el-option label="警告" value="WARNING" />
-                <el-option label="信息" value="INFO" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <el-form-item label="规则场景" prop="scene_type">
+          <RuleEditor
+            ref="ruleEditorRef"
+            v-model="ruleEditorModel"
+            :scene-type="ruleForm.scene_type"
+            @update:scene-type="handleSceneTypeChange"
+          />
+        </el-form-item>
+        <el-form-item label="级别" prop="severity">
+          <el-select v-model="ruleForm.severity" style="width: 100%">
+            <el-option label="严重" value="CRITICAL" />
+            <el-option label="警告" value="WARNING" />
+            <el-option label="信息" value="INFO" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="通知方式" prop="notify_channels">
           <div style="width: 100%">
             <el-checkbox-group v-model="ruleChannelSelection">
@@ -643,6 +634,7 @@ import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { cachedOptions } from "@/composables/useOptions";
 import SnapshotImage from "@/components/Common/SnapshotImage.vue";
+import RuleEditor, { type RuleEditorValue } from "./components/RuleEditor.vue";
 
 interface TablePageQuery {
   page_no: number;
@@ -889,6 +881,10 @@ const ruleForm = reactive({
   schedule_json: null as any,
   status: true,
   description: undefined as string | undefined,
+  // 场景规则编辑器新增字段（spec §4.6）
+  scene_type: undefined as string | undefined,
+  params: {} as Record<string, unknown>,
+  conditions: null as Record<string, unknown> | null,
 });
 
 const initialRuleForm = {
@@ -905,6 +901,23 @@ const initialRuleForm = {
   status: true,
   description: undefined as string | undefined,
 };
+
+const ruleEditorRef = ref<InstanceType<typeof RuleEditor> | null>(null);
+
+/** RuleEditor 的 v-model：{ params, conditions } 直接落到 ruleForm */
+const ruleEditorModel = computed<RuleEditorValue>({
+  get: () => ({ params: ruleForm.params, conditions: ruleForm.conditions }),
+  set: (v) => {
+    ruleForm.params = v?.params ?? {};
+    ruleForm.conditions = v?.conditions ?? null;
+  },
+});
+
+/** 场景码即告警类型（后端以 alarm_type 作为场景/算法类型持久化） */
+function handleSceneTypeChange(code: string) {
+  ruleForm.scene_type = code || undefined;
+  ruleForm.alarm_type = code || ruleForm.alarm_type;
+}
 
 function onRuleCellMouseDown(day: number, hour: number, e: MouseEvent) {
   if (e.button !== 0) return;
@@ -965,6 +978,10 @@ async function resetRuleForm() {
     ruleFormRef.value.clearValidate();
   }
   Object.assign(ruleForm, initialRuleForm);
+  // 场景编辑器字段单独重置，避免与 initialRuleForm 共享引用
+  ruleForm.scene_type = undefined;
+  ruleForm.params = {};
+  ruleForm.conditions = null;
   ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
   ruleChannelSelection.value = [];
   ruleChannelEmailTo.value = "";
@@ -991,6 +1008,10 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
       Object.assign(ruleForm, item);
+      // 回填场景规则：场景码存于 alarm_type，params/conditions 原样取回（无 detail 接口，走列表）
+      ruleForm.params = item.params || {};
+      ruleForm.conditions = item.conditions || null;
+      ruleForm.scene_type = item.alarm_type || undefined;
       jsonToRuleScheduleGrid(ruleForm.schedule_json);
       // Parse notify_channels into selection + per-channel config
       const channels = item.notify_channels || [];
@@ -1075,6 +1096,8 @@ function buildNotifyChannels(): any[] {
 }
 
 async function handleSubmitRule() {
+  // 场景规则校验（未配置场景数据时可跳过，保持既有规则创建路径可用）
+  if (ruleEditorRef.value && !ruleEditorRef.value.validate()) return;
   ruleSubmitLoading.value = true;
   const id = ruleForm.id;
   try {
@@ -1090,6 +1113,10 @@ async function handleSubmitRule() {
       schedule_json: ruleScheduleGridToJson(),
       status: ruleForm.status,
       description: ruleForm.description || null,
+      // 场景规则：算法/场景类型 + 参数原值 + 条件树（后端编译展开后落库）
+      algorithm_type: ruleForm.scene_type,
+      params: ruleForm.params || {},
+      conditions: ruleForm.conditions || null,
     };
     if (id) {
       await updateAlarmRule(id, payload);
