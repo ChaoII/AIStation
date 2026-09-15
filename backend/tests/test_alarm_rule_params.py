@@ -203,3 +203,61 @@ def test_update_rule_recompiles_and_partial_update_keeps_conditions(
     assert resp.status_code == 200, resp.text
     after = _find_rule(test_client, auth_headers, new_name)
     assert after["conditions"] == detail["conditions"]
+
+
+def test_rule_list_name_filters_by_substring(test_client, auth_headers, a_camera_id):
+    """缺陷修复：name 查询按 like 过滤（子串命中），且不返回无关规则。"""
+    suffix = uuid.uuid4().hex[:8]
+    hit = f"名称过滤命中-{suffix}"
+    miss = f"名称过滤无关-{uuid.uuid4().hex[:8]}"
+    _create(test_client, _hdr(auth_headers, "10.12.0.1"), a_camera_id, hit)
+    _create(test_client, _hdr(auth_headers, "10.12.0.2"), a_camera_id, miss)
+
+    resp = test_client.get(
+        "/api/v1/video/alarm/rule/list",
+        params={"name": suffix, "page_no": 1, "page_size": 50},
+        headers=_hdr(auth_headers, "10.12.0.3"),
+    )
+    assert resp.status_code == 200, resp.text
+    names = {x["name"] for x in resp.json()["data"]["items"]}
+    assert hit in names
+    assert miss not in names
+
+
+def test_create_group_rule_with_catalog_params_is_pure_ui_path(
+    test_client, auth_headers, a_group_id
+):
+    """缺陷修复：纯 UI 等价路径——只用场景目录声明的组参数默认值 + group_count 叶子 → 200。
+
+    此前目录未声明 group_window_sec/group_count，UI 无法产出必填参数，
+    该路径会因编译层缺少 window_sec 而 400。
+    """
+    from app.api.v1.module_video.scene.catalog import get_scene
+
+    scene = get_scene("GATHER")
+    assert scene is not None
+    params = {
+        p["key"]: p["default"]
+        for p in scene.param_schema
+        if p.get("scope") == "group" and p.get("default") is not None
+    }
+    name = f"纯UI组规则-{uuid.uuid4().hex[:8]}"
+    body = {
+        "name": name,
+        "group_id": a_group_id,
+        "alarm_type": "GATHER",
+        "severity": "WARNING",
+        "interval_seconds": 30,
+        "status": True,
+        "params": params,
+        "conditions": _GROUP_COUNT_CONDITIONS,
+    }
+    resp = test_client.post(
+        "/api/v1/video/alarm/rule/create",
+        headers=_hdr(auth_headers, "10.11.0.1"),
+        json=body,
+    )
+    assert resp.status_code == 200, resp.text
+    leaf = _find_rule(test_client, _hdr(auth_headers, "10.11.0.2"), name)["conditions"]["children"][0]
+    assert leaf["subject"] == "group_count"
+    assert leaf["window_sec"] == 10 and leaf["value"] == 2

@@ -428,6 +428,20 @@ onMounted(async () => {
   }
 }
 
+/* 缺陷修复：第三方弹层（字段下拉）默认 --wx-popup-z-index:1001，低于 el-dialog，
+   且选项较多时末项超出视口、鼠标点击被对话框内容拦截。实测该弹层未必渲染在
+   `.condition-tree` 子树内（会挂到 theme 子树），故用非 scoped 全局选择器直接锁定
+   `.wx-popup` 提升层级并限高滚动，保证所有候选项均可鼠标点击。 */
+.wx-willow-theme {
+  --wx-popup-z-index: 3000;
+}
+
+.wx-popup {
+  z-index: 3000 !important;
+  max-height: 60vh;
+  overflow-y: auto !important;
+}
+
 .condition-tree__alert {
   margin-bottom: 12px;
 }
