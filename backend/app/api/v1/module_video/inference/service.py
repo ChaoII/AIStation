@@ -929,6 +929,26 @@ class InferenceService:
 
         severity = rule.severity if rule else "WARNING"
 
+        # v2 objects：优先取事件携带的；HTTP 兼容路径缺失时由 detections 派生
+        raw_objects = event.get("objects")
+        objects = (
+            [o for o in raw_objects if isinstance(o, dict)] if isinstance(raw_objects, list) else []
+        )
+        if not objects and detections:
+            objects = [
+                {
+                    "label": d.get("label", ""),
+                    "label_id": d.get("label_id", 0),
+                    "confidence": d.get("confidence", 0.0),
+                    "bbox": d.get("bbox") or {},
+                    **({"track_id": d["track_id"]} if d.get("track_id") is not None else {}),
+                    **({"attributes": d["attributes"]} if isinstance(d.get("attributes"), dict) else {}),
+                    **({"text": d["text"]} if d.get("text") is not None else {}),
+                }
+                for d in detections
+                if isinstance(d, dict)
+            ]
+
         alarm_data = {
             "camera_id": camera_id,
             "rule_id": rule.id if rule else None,
@@ -939,6 +959,7 @@ class InferenceService:
                 "task_id": task_id,
                 "algorithm_type": algorithm_type,
                 "detections": detections,
+                "objects": objects,
                 "frame_timestamp": frame_timestamp,
             },
             "description": (
