@@ -15,7 +15,14 @@ from app.config.setting import settings
 log = logging.getLogger(__name__)
 
 # 时序叶子：需依赖跨事件的状态存储（temporal.py）
-TEMPORAL_SUBJECTS = ("dwell", "count_window", "absence", "line_cross")
+TEMPORAL_SUBJECTS = (
+    "dwell",
+    "count_window",
+    "absence",
+    "line_cross",
+    "group_count",
+    "group_coverage",
+)
 
 
 def pick_alarm_rule(rules: list, algorithm_type: str):
@@ -274,6 +281,7 @@ def _eval_temporal(
     alarm_type,
     now: float | None,
     alarm_interval,
+    group_camera_ids: list[int] | None = None,
 ) -> bool:
     """评估时序叶子；缺状态/时间或非法字段一律不命中，绝不抛异常。
 
@@ -281,6 +289,9 @@ def _eval_temporal(
       （grace = max(min_sec, alarm_interval)）；可选 track_id 限定具体轨迹。
     - count_window：窗口 window_sec 内最近出现的去重目标数与 value 按 op 比较。
     - absence：距最近一次出现 >= gap_sec；无历史视为未过期 → 不命中。
+    - group_count：跨相机窗口内去重目标数（键含 camera_id，跨相机同 track 不合并）。
+    - group_coverage：窗口内有目标的相机数 / 组内相机总数（含离线，分母为组规模）。
+      组聚合叶子无组上下文（group_camera_ids 为空）→ fail-closed 不命中。
     """
     if temporal is None or camera_id is None or now is None:
         return False
@@ -288,6 +299,34 @@ def _eval_temporal(
     if not ok:
         return False
     entries = _query_temporal(temporal, camera_id, alarm_type, leaf, scope)
+
+    if subject in ("group_count", "group_coverage"):
+        # 跨相机聚合：纯只读，无组上下文（group_camera_ids 空）→ fail-closed
+        if not group_camera_ids:
+            return False
+        window = _as_float(leaf.get("window_sec"))
+        if window is None or window < 0:
+            return False
+        op = leaf.get("op")
+        if op not in (">=", ">", "<=", "<", "=="):
+            return False
+        target = _as_float(leaf.get("value"))
+        if target is None:
+            return False
+        labels = _leaf_labels(leaf)
+        merged: dict = {}
+        for lab in labels or [None]:
+            merged.update(
+                temporal.query_multi(group_camera_ids, alarm_type, lab, scope)
+            )
+        start = now - window
+        if subject == "group_count":
+            count = sum(1 for _k, (_first, last) in merged.items() if last >= start)
+            return _compare_count(count, op, target)
+        active = {cam for (cam, _field), (_first, last) in merged.items() if last >= start}
+        total = len(group_camera_ids)
+        ratio = (len(active) / total) if total else 0.0
+        return _compare_count(ratio, op, target)
 
     if subject == "dwell":
         min_sec = _as_float(leaf.get("min_sec"))
@@ -414,6 +453,7 @@ def _match_conditions(
     alarm_type=None,
     now: float | None = None,
     alarm_interval=0,
+    group_camera_ids: list[int] | None = None,
 ) -> bool:
     """评估规则条件树；空/None 视为命中。
 
@@ -452,6 +492,7 @@ def _match_conditions(
         alarm_type=alarm_type,
         now=now,
         alarm_interval=alarm_interval,
+        group_camera_ids=group_camera_ids,
     )[0]
 
 
@@ -464,6 +505,7 @@ def explain_conditions(
     alarm_type=None,
     now: float | None = None,
     alarm_interval=0,
+    group_camera_ids: list[int] | None = None,
 ) -> tuple[bool, list[dict]]:
     """在与 _match_conditions 完全相同的语义下求值，并额外返回命中叶子说明。
 
@@ -506,7 +548,14 @@ def explain_conditions(
         subject = leaf.get("subject")
         if subject in TEMPORAL_SUBJECTS:
             return _eval_temporal(
-                subject, leaf, temporal, camera_id, alarm_type, now, alarm_interval
+                subject,
+                leaf,
+                temporal,
+                camera_id,
+                alarm_type,
+                now,
+                alarm_interval,
+                group_camera_ids=group_camera_ids,
             )
         if subject == "attribute":
             field = leaf.get("field")
@@ -653,6 +702,29 @@ def explain_conditions(
         entries: dict = {}
         if ok and temporal is not None and camera_id is not None and now is not None:
             entries = _query_temporal(temporal, camera_id, alarm_type, leaf, scope)
+        if subject in ("group_count", "group_coverage"):
+            window = _as_float(leaf.get("window_sec"))
+            count = 0
+            active_n = 0
+            total = len(group_camera_ids or [])
+            if ok and temporal is not None and now is not None and group_camera_ids and window is not None:
+                merged: dict = {}
+                for lab in _leaf_labels(leaf) or [None]:
+                    merged.update(
+                        temporal.query_multi(group_camera_ids, alarm_type, lab, scope)
+                    )
+                start = now - window
+                count = sum(1 for _k, (_first, last) in merged.items() if last >= start)
+                active_n = len(
+                    {
+                        cam
+                        for (cam, _field), (_first, last) in merged.items()
+                        if last >= start
+                    }
+                )
+            if subject == "group_count":
+                return f"group {count}{leaf.get('op')}{_fmt_num(leaf.get('value'))}"
+            return f"group cov {active_n}/{total}{leaf.get('op')}{_fmt_num(leaf.get('value'))}"
         if subject == "dwell":
             elapsed = (
                 max((now - first for first, _last in entries.values()), default=0.0)
@@ -842,12 +914,14 @@ async def _evaluate_rule(
     alarm_type: str,
     event_now: float,
     saved_snapshot_path,
+    group_camera_ids: list[int] | None = None,
 ) -> dict | None:
     """对单条规则执行「观测 → 评估 → 建告警（+联动/通知）」。
 
     未命中返回 None；命中返回
     ``{"alarm_id": int, "rule_id": int | None, "rule_name": str | None, "hit_leaves": list}``。
     ``rule`` 为 None 表示无匹配规则时的历史兼容路径（直接建档，rule_matched 为 None）。
+    ``group_camera_ids`` 供组作用域规则的跨相机聚合叶子使用（相机规则传入亦无害）。
     """
     from app.api.v1.module_video.alarm.model import AlarmRecordModel
     from app.core.database import async_db_session
@@ -867,6 +941,7 @@ async def _evaluate_rule(
             alarm_type=alarm_type,
             now=event_now,
             alarm_interval=getattr(rule, "interval_seconds", 0) or 0,
+            group_camera_ids=group_camera_ids,
         )
         if not matched:
             return None
@@ -1026,8 +1101,6 @@ class InferenceService:
             scope_conds = [AlarmRuleModel.camera_id == camera_id]
             if cam_group_id is not None:
                 scope_conds.append(AlarmRuleModel.group_id == cam_group_id)
-            # 注：Task 3 将在此补查组内相机 id 列表，并透传给
-            # explain_conditions(group_camera_ids=...)，供跨相机聚合叶子使用
             stmt = select(AlarmRuleModel).where(
                 or_(*scope_conds),
                 AlarmRuleModel.alarm_type == alarm_type,
@@ -1035,6 +1108,18 @@ class InferenceService:
                 AlarmRuleModel.is_deleted.is_(False),
             )
             rules = list((await session.execute(stmt)).scalars().all())
+
+            # 组内相机 id 列表：仅当命中组作用域规则时才查（跨相机聚合叶子所需的上下文）
+            group_camera_ids: list[int] = []
+            if cam_group_id is not None and any(
+                getattr(r, "group_id", None) is not None for r in rules
+            ):
+                group_cam_rows = (
+                    await session.execute(
+                        select(CameraModel.id).where(CameraModel.group_id == cam_group_id)
+                    )
+                ).scalars().all()
+                group_camera_ids = [int(x) for x in group_cam_rows]
 
         # 任一规则含时序叶子（absence 等）时，空检测心跳仍需继续评估
         any_temporal = any(
@@ -1054,7 +1139,14 @@ class InferenceService:
         try:
             for rule in candidates:
                 res = await _evaluate_rule(
-                    rule, event, detections, camera_id, alarm_type, event_now, saved_snapshot_path
+                    rule,
+                    event,
+                    detections,
+                    camera_id,
+                    alarm_type,
+                    event_now,
+                    saved_snapshot_path,
+                    group_camera_ids=group_camera_ids,
                 )
                 if not res:
                     continue

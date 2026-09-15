@@ -309,6 +309,19 @@ class TemporalStore:
                     out[field] = (first, last)
         return out
 
+    def query_multi(self, camera_ids, alarm_type, label=None, scope: str = _SCOPE_ALL):
+        """跨相机聚合读取：返回 ``{(camera_id, track_key): (first_seen, last_seen)}``。
+
+        跨相机 track_id 独立，故键含 camera_id 前缀；调用方自行决定是否复用 track_id。
+        纯只读：逐相机调用 ``query()`` 合并，不引入任何跨相机写路径。
+        """
+        scope = scope or _SCOPE_ALL
+        out: dict[tuple[int, str], tuple[float, float]] = {}
+        for cam in camera_ids or []:
+            for field, rng in self.query(cam, alarm_type, label, scope).items():
+                out[(int(cam), field)] = rng
+        return out
+
     def query_positions(self, camera_id, alarm_type, label=None, scope: str = _SCOPE_ALL):
         """返回 ``{track_key: (prev_xy | None, cur_xy)}``；label=None 聚合全部标签。"""
         scope = scope or _SCOPE_ALL
