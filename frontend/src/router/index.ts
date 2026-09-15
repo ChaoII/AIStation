@@ -40,13 +40,6 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { hidden: true, title: "500" },
     component: () => import("@/views/error/500.vue"),
   },
-  // SP5-a POC 临时路由（Task 9 删除）
-  {
-    path: "/poc/sp5a",
-    name: "Sp5aPoc",
-    meta: { hidden: true, title: "SP5-a POC" },
-    component: () => import("@/views/module_video/alarm/components/__poc__/PocPage.vue"),
-  },
   {
     path: "/",
     name: "/",
