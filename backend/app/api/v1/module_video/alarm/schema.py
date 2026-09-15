@@ -19,6 +19,7 @@ class AlarmRuleCreateSchema(BaseModel):
     conditions: dict | None = Field(default=None, description="规则条件树")
     params: dict = Field(default_factory=dict, description="场景参数原值")
     schedule_json: dict | None = Field(default=None, description="生效时间段")
+    rollout: dict = Field(default_factory=dict, description="灰度配置: {percent, whitelist, blacklist}")
     status: bool = Field(default=True, description="是否启用")
     description: str | None = Field(default=None, max_length=255, description="备注")
 
@@ -43,6 +44,7 @@ class AlarmRuleOutSchema(BaseSchema):
     conditions: dict | None = None
     params: dict = Field(default_factory=dict, description="场景参数原值")
     schedule_json: dict | None = None
+    rollout: dict = Field(default_factory=dict, description="灰度配置: {percent, whitelist, blacklist}")
     status: bool = True
     camera: CommonSchema | None = None
 

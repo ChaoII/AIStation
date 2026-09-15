@@ -41,6 +41,34 @@ def _validate_scope(camera_id: int | None, group_id: int | None) -> None:
         )
 
 
+def _validate_rollout(rollout: dict | None) -> None:
+    """灰度配置校验：percent 0-100；名单为相机 id 列表且互斥。非法 → 400。"""
+    if not rollout:
+        return
+    if not isinstance(rollout, dict):
+        raise CustomException(msg="灰度配置非法：必须为对象", code=400, status_code=400)
+    percent = rollout.get("percent")
+    if percent is not None:
+        if isinstance(percent, bool) or not isinstance(percent, int) or not (0 <= percent <= 100):
+            raise CustomException(
+                msg="灰度配置非法：percent 必须为 0-100 的整数", code=400, status_code=400
+            )
+    wl, bl = rollout.get("whitelist"), rollout.get("blacklist")
+    for name, lst in (("whitelist", wl), ("blacklist", bl)):
+        if lst is None:
+            continue
+        if not isinstance(lst, list) or any(
+            isinstance(x, bool) or not isinstance(x, int) or x <= 0 for x in lst
+        ):
+            raise CustomException(
+                msg=f"灰度配置非法：{name} 必须为相机 id 正整数列表", code=400, status_code=400
+            )
+    if wl and bl and set(wl) & set(bl):
+        raise CustomException(
+            msg="灰度配置非法：白名单与黑名单不得同时包含同一相机", code=400, status_code=400
+        )
+
+
 class AlarmService:
 
     @classmethod
@@ -56,6 +84,8 @@ class AlarmService:
         payload = data.model_dump()
         # 作用域校验：camera_id 与 group_id 恰有其一（都空/都填 → 400）
         _validate_scope(payload.get("camera_id"), payload.get("group_id"))
+        # 灰度配置校验：percent 范围、白黑名单合法性与互斥（非法 → 400）
+        _validate_rollout(payload.get("rollout"))
         # 编译层需知作用域：仅相机组作用域允许 group_* 聚合叶子
         scope = "group" if payload.get("group_id") is not None else "camera"
         payload["conditions"] = _compile_or_raise(
@@ -75,6 +105,9 @@ class AlarmService:
         camera_id = payload["camera_id"] if "camera_id" in payload else rule.camera_id
         group_id = payload["group_id"] if "group_id" in payload else rule.group_id
         _validate_scope(camera_id, group_id)
+        # 灰度配置校验同样按「合并库中现值后的结果态」，避免仅改其他字段被误判
+        rollout = payload["rollout"] if "rollout" in payload else rule.rollout
+        _validate_rollout(rollout)
         # 编译层需知（合并后的）作用域：仅相机组作用域允许 group_* 聚合叶子
         scope = "group" if group_id is not None else "camera"
         # 仅在本次涉及条件/参数/告警类型时重编译；未提供的字段回退库中现值，

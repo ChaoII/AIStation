@@ -37,6 +37,9 @@ class AlarmRuleModel(ModelMixin, UserMixin):
     params: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", comment="场景参数原值")
 
     schedule_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="生效时间段")
+    # 灰度配置：{percent, whitelist, blacklist}；缺省 {} 表示全量生效
+    rollout: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}",
+                                          comment="灰度配置: {percent, whitelist, blacklist}")
     status: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
 
 
