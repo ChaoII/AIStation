@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from app.api.v1.module_system.auth.schema import AuthSchema
+from app.api.v1.module_video.scene.compile import RuleCompileError, compile_rule
 from app.core.exceptions import CustomException
 
 from .schema import (
@@ -11,6 +12,14 @@ from .schema import (
     AlarmRuleOutSchema,
     AlarmRuleUpdateSchema,
 )
+
+
+def _compile_or_raise(scene_type: str | None, params: dict | None, conditions: dict | None) -> dict:
+    """写库前编译条件树：把场景参数展开进叶子，非法条件映射为 HTTP 400。"""
+    try:
+        return compile_rule(scene_type, params, conditions)
+    except RuleCompileError as e:
+        raise CustomException(msg=f"规则条件非法：{e}", code=400, status_code=400) from e
 
 
 class AlarmService:
@@ -24,7 +33,12 @@ class AlarmService:
     @classmethod
     async def create_rule_service(cls, data: AlarmRuleCreateSchema, auth: AuthSchema) -> dict:
         from .crud import AlarmRuleCRUD
-        new_rule = await AlarmRuleCRUD(auth).create(data=data)
+        # 写库前完成条件编译校验，非法条件直接拒绝（HTTP 400）
+        payload = data.model_dump()
+        payload["conditions"] = _compile_or_raise(
+            payload.get("alarm_type"), payload.get("params"), payload.get("conditions")
+        )
+        new_rule = await AlarmRuleCRUD(auth).create(data=payload)
         return AlarmRuleOutSchema.model_validate(new_rule).model_dump()
 
     @classmethod
@@ -33,7 +47,16 @@ class AlarmService:
         rule = await AlarmRuleCRUD(auth).get_by_id_crud(id=id)
         if not rule:
             raise CustomException(msg="告警规则不存在")
-        updated = await AlarmRuleCRUD(auth).update(id=id, data=data)
+        payload = data.model_dump(exclude_unset=True)
+        # 仅在本次涉及条件/参数/告警类型时重编译；未提供的字段回退库中现值，
+        # 避免仅改名称的局部更新把既有条件清空
+        if {"conditions", "params", "alarm_type"} & payload.keys():
+            payload["conditions"] = _compile_or_raise(
+                payload.get("alarm_type", rule.alarm_type),
+                payload.get("params", rule.params),
+                payload.get("conditions", rule.conditions),
+            )
+        updated = await AlarmRuleCRUD(auth).update(id=id, data=payload)
         return AlarmRuleOutSchema.model_validate(updated).model_dump()
 
     @classmethod
