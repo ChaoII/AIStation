@@ -93,6 +93,84 @@ def test_create_rule_without_conditions_still_ok(test_client, auth_headers, a_ca
     assert not detail["conditions"]
 
 
+_GROUP_COUNT_CONDITIONS = {
+    "op": "and",
+    "children": [{"subject": "group_count", "window_sec": 60, "op": ">=", "value": 2}],
+}
+
+
+def _hdr(auth_headers, ip):
+    """构造独立来源 IP 的请求头，隔离 video 模块 5 次/10 秒限流。"""
+    return {**auth_headers, "X-Forwarded-For": ip}
+
+
+def test_create_camera_rule_rejects_group_leaf(test_client, auth_headers, a_camera_id):
+    """相机作用域规则含 group_* 叶子 → 400（作用域须透传到编译层）。"""
+    body = _body(a_camera_id, f"相机组叶子-{uuid.uuid4().hex[:8]}")
+    body["params"] = {}
+    body["conditions"] = _GROUP_COUNT_CONDITIONS
+    resp = test_client.post(
+        "/api/v1/video/alarm/rule/create",
+        headers=_hdr(auth_headers, "10.9.0.1"),
+        json=body,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.fixture(scope="module")
+def a_group_id(test_client, auth_headers):
+    """走相机组创建接口建组，用例结束后清理。"""
+    resp = test_client.post(
+        "/api/v1/video/camera/group/create",
+        headers=_hdr(auth_headers, "10.9.0.2"),
+        json={"name": f"sp6a-rule-group-{uuid.uuid4().hex[:8]}"},
+    )
+    assert resp.status_code == 200, resp.text
+    group_id = resp.json()["data"]["id"]
+    yield group_id
+    test_client.request(
+        "DELETE",
+        "/api/v1/video/camera/group/delete",
+        headers=_hdr(auth_headers, "10.9.0.3"),
+        json=[group_id],
+    )
+
+
+def test_create_group_rule_accepts_group_leaf(test_client, auth_headers, a_group_id):
+    """相机组作用域规则使用 group_count → 200，且条件真实落库。"""
+    name = f"组规则-{uuid.uuid4().hex[:8]}"
+    body = {
+        "name": name,
+        "group_id": a_group_id,
+        "alarm_type": "DET_ZONE",
+        "severity": "WARNING",
+        "interval_seconds": 30,
+        "status": True,
+        "params": {},
+        "conditions": _GROUP_COUNT_CONDITIONS,
+    }
+    resp = test_client.post(
+        "/api/v1/video/alarm/rule/create",
+        headers=_hdr(auth_headers, "10.9.0.4"),
+        json=body,
+    )
+    assert resp.status_code == 200, resp.text
+    detail = _find_rule(test_client, _hdr(auth_headers, "10.9.0.5"), name)
+    assert detail["group_id"] == a_group_id
+    assert detail["conditions"]["children"][0]["subject"] == "group_count"
+
+
+def test_create_camera_rule_object_present_regression(test_client, auth_headers, a_camera_id):
+    """回归：普通相机作用域 + object_present 仍应成功（不受作用域校验影响）。"""
+    name = f"回归规则-{uuid.uuid4().hex[:8]}"
+    resp = test_client.post(
+        "/api/v1/video/alarm/rule/create",
+        headers=_hdr(auth_headers, "10.9.0.6"),
+        json=_body(a_camera_id, name),
+    )
+    assert resp.status_code == 200, resp.text
+
+
 def test_update_rule_recompiles_and_partial_update_keeps_conditions(
     test_client, auth_headers, a_camera_id
 ):

@@ -14,10 +14,19 @@ from .schema import (
 )
 
 
-def _compile_or_raise(scene_type: str | None, params: dict | None, conditions: dict | None) -> dict:
-    """写库前编译条件树：把场景参数展开进叶子，非法条件映射为 HTTP 400。"""
+def _compile_or_raise(
+    scene_type: str | None,
+    params: dict | None,
+    conditions: dict | None,
+    *,
+    scope: str | None = None,
+) -> dict:
+    """写库前编译条件树：把场景参数展开进叶子，非法条件映射为 HTTP 400。
+
+    ``scope`` 透传到编译层，保证相机作用域误用 group_* 叶子时同样返回 400。
+    """
     try:
-        return compile_rule(scene_type, params, conditions)
+        return compile_rule(scene_type, params, conditions, scope=scope)
     except RuleCompileError as e:
         raise CustomException(msg=f"规则条件非法：{e}", code=400, status_code=400) from e
 
@@ -47,8 +56,10 @@ class AlarmService:
         payload = data.model_dump()
         # 作用域校验：camera_id 与 group_id 恰有其一（都空/都填 → 400）
         _validate_scope(payload.get("camera_id"), payload.get("group_id"))
+        # 编译层需知作用域：仅相机组作用域允许 group_* 聚合叶子
+        scope = "group" if payload.get("group_id") is not None else "camera"
         payload["conditions"] = _compile_or_raise(
-            payload.get("alarm_type"), payload.get("params"), payload.get("conditions")
+            payload.get("alarm_type"), payload.get("params"), payload.get("conditions"), scope=scope
         )
         new_rule = await AlarmRuleCRUD(auth).create(data=payload)
         return AlarmRuleOutSchema.model_validate(new_rule).model_dump()
@@ -61,10 +72,11 @@ class AlarmService:
             raise CustomException(msg="告警规则不存在")
         payload = data.model_dump(exclude_unset=True)
         # 局部更新：按「合并库中现值后的结果态」校验作用域，避免仅改名称被误判
-        _validate_scope(
-            payload["camera_id"] if "camera_id" in payload else rule.camera_id,
-            payload["group_id"] if "group_id" in payload else rule.group_id,
-        )
+        camera_id = payload["camera_id"] if "camera_id" in payload else rule.camera_id
+        group_id = payload["group_id"] if "group_id" in payload else rule.group_id
+        _validate_scope(camera_id, group_id)
+        # 编译层需知（合并后的）作用域：仅相机组作用域允许 group_* 聚合叶子
+        scope = "group" if group_id is not None else "camera"
         # 仅在本次涉及条件/参数/告警类型时重编译；未提供的字段回退库中现值，
         # 避免仅改名称的局部更新把既有条件清空
         if {"conditions", "params", "alarm_type"} & payload.keys():
@@ -72,6 +84,7 @@ class AlarmService:
                 payload.get("alarm_type", rule.alarm_type),
                 payload.get("params", rule.params),
                 payload.get("conditions", rule.conditions),
+                scope=scope,
             )
         updated = await AlarmRuleCRUD(auth).update(id=id, data=payload)
         return AlarmRuleOutSchema.model_validate(updated).model_dump()
