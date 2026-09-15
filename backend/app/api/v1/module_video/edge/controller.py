@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Body, Depends, Path
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, Path, Query
 from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -9,12 +11,34 @@ from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
+from app.core.validator import DateTimeStr
 
 from .param import EdgeQueryParam
 from .schema import EdgeDeviceCreateSchema, EdgeDeviceUpdateSchema
 from .service import EdgeService
 
 EdgeRouter = APIRouter(route_class=OperationLogRoute, prefix="/edge", tags=["边缘设备"])
+
+
+def edge_event_query_param(
+    camera_id: Annotated[int | None, Query(description="相机ID")] = None,
+    task_id: Annotated[int | None, Query(description="布控任务ID")] = None,
+    algorithm_type: Annotated[str | None, Query(description="场景码")] = None,
+    matched: Annotated[bool | None, Query(description="是否命中规则")] = None,
+    start_time: Annotated[DateTimeStr | None, Query(description="事件起始时间（含）")] = None,
+    end_time: Annotated[DateTimeStr | None, Query(description="事件结束时间（含）")] = None,
+    keyword: Annotated[str | None, Query(description="目标 label/文本模糊")] = None,
+) -> dict:
+    """边缘事件列表查询参数（独立依赖，与设备查询参数区分语义）。"""
+    return {
+        "camera_id": camera_id,
+        "task_id": task_id,
+        "algorithm_type": algorithm_type,
+        "matched": matched,
+        "start_time": start_time,
+        "end_time": end_time,
+        "keyword": keyword,
+    }
 
 
 @EdgeRouter.get("/list", summary="查询边缘设备列表")
@@ -34,6 +58,31 @@ async def get_edge_detail_controller(
     auth: AuthSchema = Depends(AuthPermission(["module_video:edge:query"])),
 ) -> JSONResponse:
     result = await EdgeService.get_edge_detail_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="查询成功")
+
+
+@EdgeRouter.get("/event/list", summary="查询边缘事件列表")
+async def get_edge_event_list_controller(
+    page: Annotated[PaginationQueryParam, Depends()],
+    search: Annotated[dict, Depends(edge_event_query_param)],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:edge:query"]))],
+) -> JSONResponse:
+    result = await EdgeService.get_edge_event_page_service(
+        auth=auth,
+        page_no=page.page_no,
+        page_size=page.page_size,
+        order_by=page.order_by,
+        **search,
+    )
+    return SuccessResponse(data=result, msg="查询成功")
+
+
+@EdgeRouter.get("/event/detail/{id}", summary="查询边缘事件详情")
+async def get_edge_event_detail_controller(
+    id: Annotated[int, Path(description="边缘事件ID")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:edge:query"]))],
+) -> JSONResponse:
+    result = await EdgeService.get_edge_event_detail_service(id=id, auth=auth)
     return SuccessResponse(data=result, msg="查询成功")
 
 

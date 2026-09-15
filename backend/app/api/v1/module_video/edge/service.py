@@ -6,7 +6,7 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.base_crud import CRUDBase
 from app.core.exceptions import CustomException
 
-from .model import EdgeDeviceModel
+from .model import EdgeDeviceModel, EdgeEventModel
 from .schema import EdgeDeviceCreateSchema, EdgeDeviceOutSchema, EdgeDeviceUpdateSchema
 
 
@@ -46,6 +46,100 @@ def extract_device_code(body: dict) -> str:
     return str(body.get("code") or body.get("edge_code") or "").strip()
 
 
+def _event_conditions(
+    *,
+    camera_id: int | None = None,
+    task_id: int | None = None,
+    algorithm_type: str | None = None,
+    matched: bool | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    keyword: str | None = None,
+) -> list:
+    """构造边缘事件筛选条件（含软删过滤）；``keyword`` 对 objects 文本模糊。"""
+    from sqlalchemy import Text, cast
+
+    conditions = [EdgeEventModel.is_deleted == False]
+    if camera_id is not None:
+        conditions.append(EdgeEventModel.camera_id == camera_id)
+    if task_id is not None:
+        conditions.append(EdgeEventModel.task_id == task_id)
+    if algorithm_type:
+        conditions.append(EdgeEventModel.algorithm_type == algorithm_type)
+    if matched is not None:
+        conditions.append(EdgeEventModel.matched.is_(bool(matched)))
+    if start_time is not None:
+        conditions.append(EdgeEventModel.ts >= start_time)
+    if end_time is not None:
+        conditions.append(EdgeEventModel.ts <= end_time)
+    if keyword:
+        # JSONB 文本化后 ILIKE：值经参数绑定，天然防注入（%/_ 由用户自控，属模糊匹配语义）
+        conditions.append(cast(EdgeEventModel.objects, Text).ilike(f"%{keyword}%"))
+    return conditions
+
+
+def _event_order_columns(order_by: list[dict[str, str]] | None) -> list:
+    """按前端/分页入参生成排序列，默认按 id 倒序（最新在前）。"""
+    from sqlalchemy import asc, desc
+
+    columns = []
+    for spec in order_by or []:
+        for field, direction in spec.items():
+            column = getattr(EdgeEventModel, field, None)
+            if column is None:
+                continue
+            columns.append(desc(column) if str(direction).lower() == "desc" else asc(column))
+    return columns or [desc(EdgeEventModel.id)]
+
+
+def _event_object_labels(objects, limit: int = 10) -> list[str]:
+    """从 objects 提取去重后的 label 摘要（供列表展示）。"""
+    labels: list[str] = []
+    for obj in objects or []:
+        if isinstance(obj, dict):
+            label = obj.get("label")
+            if label and label not in labels:
+                labels.append(label)
+                if len(labels) >= limit:
+                    break
+    return labels
+
+
+def _event_base_fields(row: EdgeEventModel) -> dict:
+    """事件公共字段；仅暴露白名单列，``snapshot_data`` 不可能出现。"""
+    objects = row.objects or []
+    return {
+        "id": row.id,
+        "event_id": row.event_id,
+        "edge_code": row.edge_code,
+        "camera_id": row.camera_id,
+        "task_id": row.task_id,
+        "algorithm_type": row.algorithm_type,
+        "ts": row.ts,
+        "latency_ms": row.latency_ms,
+        "snapshot_ref": row.snapshot_ref,
+        "matched": bool(row.matched),
+        "matched_rule_id": row.matched_rule_id,
+        "object_count": len(objects),
+        "labels": _event_object_labels(objects),
+        "created_time": row.created_time,
+    }
+
+
+def _event_item(row: EdgeEventModel) -> dict:
+    """列表项（轻量摘要）。"""
+    return _event_base_fields(row)
+
+
+def _event_detail(row: EdgeEventModel) -> dict:
+    """详情：全量 objects/detections/matched_leaves。"""
+    data = _event_base_fields(row)
+    data["objects"] = row.objects or []
+    data["detections"] = row.detections or []
+    data["matched_leaves"] = row.matched_leaves or []
+    return data
+
+
 class EdgeCRUD(CRUDBase[EdgeDeviceModel, EdgeDeviceCreateSchema, EdgeDeviceUpdateSchema]):
     """边缘设备数据层。"""
 
@@ -79,6 +173,76 @@ class EdgeService:
         if not item:
             raise CustomException(msg="边缘设备不存在", code=404, status_code=404)
         return EdgeDeviceOutSchema.model_validate(item).model_dump()
+
+    @classmethod
+    async def get_edge_event_page_service(
+        cls,
+        *,
+        auth: AuthSchema,
+        page_no: int = 1,
+        page_size: int = 10,
+        order_by: list[dict[str, str]] | None = None,
+        camera_id: int | None = None,
+        task_id: int | None = None,
+        algorithm_type: str | None = None,
+        matched: bool | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        keyword: str | None = None,
+    ) -> dict:
+        """边缘事件分页查询，返回项目标准分页结构与轻量列表项。"""
+        from sqlalchemy import func, select
+
+        from app.core.permission import Permission
+
+        permission = Permission(model=EdgeEventModel, auth=auth)
+        conditions = _event_conditions(
+            camera_id=camera_id,
+            task_id=task_id,
+            algorithm_type=algorithm_type,
+            matched=matched,
+            start_time=start_time,
+            end_time=end_time,
+            keyword=keyword,
+        )
+
+        sql = (
+            select(EdgeEventModel)
+            .where(*conditions)
+            .order_by(*_event_order_columns(order_by))
+        )
+        sql = await permission.filter_query(sql)
+        count_sql = await permission.filter_query(
+            select(func.count(EdgeEventModel.id)).where(*conditions)
+        )
+
+        total = int((await auth.db.execute(count_sql)).scalar() or 0)
+        offset = (page_no - 1) * page_size
+        rows = (await auth.db.execute(sql.offset(offset).limit(page_size))).scalars().all()
+        return {
+            "page_no": page_no,
+            "page_size": page_size,
+            "total": total,
+            "has_next": offset + page_size < total,
+            "items": [_event_item(row) for row in rows],
+        }
+
+    @classmethod
+    async def get_edge_event_detail_service(cls, *, auth: AuthSchema, id: int) -> dict:
+        """边缘事件详情（全量 objects/detections/matched_leaves）；不存在返回 404。"""
+        from sqlalchemy import select
+
+        from app.core.permission import Permission
+
+        sql = select(EdgeEventModel).where(
+            EdgeEventModel.id == id,
+            EdgeEventModel.is_deleted == False,
+        )
+        sql = await Permission(model=EdgeEventModel, auth=auth).filter_query(sql)
+        row = (await auth.db.execute(sql)).scalars().first()
+        if not row:
+            raise CustomException(msg="边缘事件不存在", code=404, status_code=404)
+        return _event_detail(row)
 
     @classmethod
     async def create_edge_service(cls, data: EdgeDeviceCreateSchema, auth: AuthSchema) -> dict:
