@@ -2,7 +2,8 @@
 
 覆盖：
 - AlgorithmModel 新增 previous_model_path/previous_version 两列与输出 Schema；
-- hot-update 枚举引用任务、逐任务下发、成功/部分失败汇总；
+- 算法更新时模型变更才记录 previous_*（无关字段不写）；
+- hot-update 枚举引用任务、逐任务下发、成功/部分失败汇总（不再改写 previous_*）；
 - EdgeAgentClient 调用异常被捕获计入 failed（不向上抛出）；
 - rollback 交换 previous_* 并按旧模型下发；
 - 无可回滚版本 → 400。
@@ -13,7 +14,7 @@ import pytest
 
 from app.api.v1.module_video.algorithm import service as algorithm_service
 from app.api.v1.module_video.algorithm.model import AlgorithmModel
-from app.api.v1.module_video.algorithm.schema import AlgorithmOutSchema
+from app.api.v1.module_video.algorithm.schema import AlgorithmOutSchema, AlgorithmUpdateSchema
 from app.api.v1.module_video.algorithm.service import AlgorithmService
 from app.api.v1.module_video.edge import orchestrator
 from app.core.exceptions import CustomException
@@ -61,6 +62,7 @@ def _make_algorithm(**overrides) -> _Obj:
     base = {
         "id": 1,
         "name": "入侵检测",
+        "code": "INTRUSION",
         "algorithm_type": "INTRUSION",
         "scene_type": None,
         "model_path": "s3://m/v2.onnx",
@@ -94,6 +96,28 @@ def _install(monkeypatch, algorithm, tasks, persist=None):
     monkeypatch.setattr(AlgorithmService, "_list_referencing_tasks", staticmethod(_list))
     monkeypatch.setattr(AlgorithmService, "_persist_algorithm_fields", staticmethod(_persist))
     monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_resolve_target", staticmethod(_resolve))
+
+
+def _install_crud(monkeypatch, algorithm, updates, loads=None):
+    """装好 AlgorithmCRUD 桩：读取返回给定算法，更新记录并写回算法对象。"""
+
+    class _FakeCRUD:
+        def __init__(self, auth=None):
+            pass
+
+        async def get_by_id_crud(self, id):
+            if loads is not None:
+                loads.append(id)
+            return algorithm
+
+        async def update(self, id, data):
+            values = data if isinstance(data, dict) else data.model_dump(exclude_unset=True)
+            updates.append((id, values))
+            for key, value in values.items():
+                setattr(algorithm, key, value)
+            return algorithm
+
+    monkeypatch.setattr(algorithm_service, "AlgorithmCRUD", _FakeCRUD)
 
 
 def test_previous_columns_in_model_and_schema():
@@ -142,7 +166,7 @@ def test_list_referencing_tasks_filters_by_algorithm(monkeypatch):
 
 
 def test_hot_update_enumerates_and_dispatches(monkeypatch):
-    """枚举全部引用任务并逐任务下发，记录当前版本为上一版本。"""
+    """枚举全部引用任务并逐任务下发（热更新本身不再改写 previous_*）。"""
     algorithm = _make_algorithm()
     tasks = [_make_task(11), _make_task(22)]
     persist: list = []
@@ -170,10 +194,174 @@ def test_hot_update_enumerates_and_dispatches(monkeypatch):
     # 载荷与编排编译出的模型条目同形（name/url 一致）
     assert posts[0][2]["name"] == "入侵检测"
     assert posts[0][2]["url"] == "s3://m/v2.onnx"
-    # 记录当前版本为上一版本
-    assert persist == [(1, {"previous_model_path": "s3://m/v2.onnx", "previous_version": "2.0.0"})]
+    # 热更新只下发，不再写 previous_*（记录职责移至算法更新路径）
+    assert persist == []
+    assert algorithm.previous_model_path is None
+    assert algorithm.previous_version is None
+
+
+def test_update_model_path_records_previous_model_path(monkeypatch):
+    """更新 model_path 时把旧值记入 previous_model_path；version 未变则不动 previous_version。"""
+    algorithm = _make_algorithm(model_path="s3://m/v2.onnx", version="2.0.0")
+    updates: list = []
+    _install_crud(monkeypatch, algorithm, updates)
+
+    result = asyncio.run(
+        AlgorithmService.update_algorithm_service(
+            id=1, data=AlgorithmUpdateSchema(algorithm_type="INTRUSION", model_path="s3://m/v3.onnx"), auth=None
+        )
+    )
+
+    assert updates == [
+        (
+            1,
+            {
+                "algorithm_type": "INTRUSION",
+                "model_path": "s3://m/v3.onnx",
+                "previous_model_path": "s3://m/v2.onnx",
+            },
+        )
+    ]
+    assert result["previous_model_path"] == "s3://m/v2.onnx"
+    assert result["previous_version"] is None
+    assert result["model_path"] == "s3://m/v3.onnx"
+
+
+def test_update_version_records_only_previous_version(monkeypatch):
+    """仅更新 version 时只记录 previous_version。"""
+    algorithm = _make_algorithm(model_path="s3://m/v2.onnx", version="2.0.0")
+    updates: list = []
+    _install_crud(monkeypatch, algorithm, updates)
+
+    asyncio.run(
+        AlgorithmService.update_algorithm_service(
+            id=1, data=AlgorithmUpdateSchema(algorithm_type="INTRUSION", version="3.0.0"), auth=None
+        )
+    )
+
+    assert updates == [
+        (1, {"algorithm_type": "INTRUSION", "version": "3.0.0", "previous_version": "2.0.0"})
+    ]
+    assert algorithm.previous_model_path is None
+    assert algorithm.previous_version == "2.0.0"
+
+
+def test_update_unrelated_field_does_not_touch_previous(monkeypatch):
+    """更新无关字段（description）不影响 previous_*。"""
+    algorithm = _make_algorithm(
+        previous_model_path="s3://m/v1.onnx", previous_version="1.0.0"
+    )
+    updates: list = []
+    _install_crud(monkeypatch, algorithm, updates)
+
+    asyncio.run(
+        AlgorithmService.update_algorithm_service(
+            id=1, data=AlgorithmUpdateSchema(algorithm_type="INTRUSION", description="新描述"), auth=None
+        )
+    )
+
+    assert updates == [(1, {"algorithm_type": "INTRUSION", "description": "新描述"})]
+    assert algorithm.previous_model_path == "s3://m/v1.onnx"
+    assert algorithm.previous_version == "1.0.0"
+
+
+def test_update_same_model_path_does_not_record_previous(monkeypatch):
+    """传入值与库中相同（未真正变化）时不记录 previous_*。"""
+    algorithm = _make_algorithm(model_path="s3://m/v2.onnx", version="2.0.0")
+    updates: list = []
+    _install_crud(monkeypatch, algorithm, updates)
+
+    asyncio.run(
+        AlgorithmService.update_algorithm_service(
+            id=1,
+            data=AlgorithmUpdateSchema(algorithm_type="INTRUSION", model_path="s3://m/v2.onnx", version="2.0.0"),
+            auth=None,
+        )
+    )
+
+    assert updates == [
+        (1, {"algorithm_type": "INTRUSION", "model_path": "s3://m/v2.onnx", "version": "2.0.0"})
+    ]
+    assert algorithm.previous_model_path is None
+    assert algorithm.previous_version is None
+
+
+def test_flow_update_hot_update_rollback_restores_previous(monkeypatch):
+    """update → hot-update（仅下发）→ rollback 真正恢复到变更前的版本。"""
+    algorithm = _make_algorithm(model_path="s3://m/v2.onnx", version="2.0.0")
+    tasks = [_make_task(11)]
+    updates: list = []
+    payloads: list = []
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def _request(self, method, path, json=None):
+            payloads.append(json)
+            return {"ok": True, "generation": 1}
+
+    async def _list(algorithm_id):
+        return tasks
+
+    async def _resolve(task):
+        return "http://edge:19090", _Device()
+
+    _install_crud(monkeypatch, algorithm, updates)
+    monkeypatch.setattr(AlgorithmService, "_list_referencing_tasks", staticmethod(_list))
+    monkeypatch.setattr(orchestrator.EdgeOrchestrator, "_resolve_target", staticmethod(_resolve))
+    monkeypatch.setattr(algorithm_service, "EdgeAgentClient", _FakeClient)
+
+    # ① 用户把算法改为新版本 → 旧值记入 previous_*
+    asyncio.run(
+        AlgorithmService.update_algorithm_service(
+            id=1,
+            data=AlgorithmUpdateSchema(algorithm_type="INTRUSION", model_path="s3://m/v3.onnx", version="3.0.0"),
+            auth=None,
+        )
+    )
+    assert algorithm.model_path == "s3://m/v3.onnx"
     assert algorithm.previous_model_path == "s3://m/v2.onnx"
     assert algorithm.previous_version == "2.0.0"
+
+    # ② 热更新仅下发新版本，不改写 previous_*
+    snapshot = list(updates)
+    result = asyncio.run(AlgorithmService.hot_update_service(id=1, auth=None))
+    assert result == {"succeeded": [11], "failed": []}
+    assert payloads[-1]["url"] == "s3://m/v3.onnx"
+    assert updates == snapshot
+    assert algorithm.previous_model_path == "s3://m/v2.onnx"
+    assert algorithm.previous_version == "2.0.0"
+
+    # ③ 回滚 → 当前值回到更新前；previous_* 变为热更新期间在用的版本
+    asyncio.run(AlgorithmService.rollback_service(id=1, auth=None))
+    assert algorithm.model_path == "s3://m/v2.onnx"
+    assert algorithm.version == "2.0.0"
+    assert algorithm.previous_model_path == "s3://m/v3.onnx"
+    assert algorithm.previous_version == "3.0.0"
+    assert payloads[-1]["url"] == "s3://m/v2.onnx"
+
+
+def test_hot_update_on_algorithm_with_empty_previous_leaves_them_empty(monkeypatch):
+    """算法无 previous_* 时热更新仍保持为空（不凭空写入）。"""
+    algorithm = _make_algorithm(previous_model_path=None, previous_version=None)
+    persist: list = []
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def _request(self, method, path, json=None):
+            return {"ok": True, "generation": 1}
+
+    _install(monkeypatch, algorithm, [_make_task(11)], persist=persist)
+    monkeypatch.setattr(algorithm_service, "EdgeAgentClient", _FakeClient)
+
+    asyncio.run(AlgorithmService.hot_update_service(id=1, auth=None))
+
+    assert persist == []
+    assert algorithm.previous_model_path is None
+    assert algorithm.previous_version is None
 
 
 def test_hot_update_partial_failure_is_isolated(monkeypatch):

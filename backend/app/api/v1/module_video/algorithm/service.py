@@ -47,7 +47,17 @@ class AlgorithmService:
         item = await AlgorithmCRUD(auth).get_by_id_crud(id=id)
         if not item:
             raise CustomException(msg="算法不存在")
-        updated = await AlgorithmCRUD(auth).update(id=id, data=data)
+
+        # SP6-c：模型在"变更时"记录上一版本（回滚依据）。
+        # 只有 model_path / version 真正变化时才写入对应的 previous_*，
+        # 未变化的字段保持原值不动；仅改描述等无关字段不触碰 previous_*。
+        values = data.model_dump(exclude_unset=True)
+        if "model_path" in values and values["model_path"] != item.model_path:
+            values["previous_model_path"] = item.model_path
+        if "version" in values and values["version"] != item.version:
+            values["previous_version"] = item.version
+
+        updated = await AlgorithmCRUD(auth).update(id=id, data=values)
         return AlgorithmOutSchema.model_validate(updated).model_dump()
 
     @classmethod
@@ -156,21 +166,16 @@ class AlgorithmService:
 
     @classmethod
     async def hot_update_service(cls, id: int, auth: AuthSchema) -> dict:
-        """记录当前模型为上一版本，并把当前模型热更新下发到所有引用任务。"""
+        """把当前模型热更新下发到所有引用任务。
+
+        `previous_*` 已在算法更新路径（`update_algorithm_service`）于模型真正变更时记录，
+        本接口**不再改写** `previous_*`；若尚未发生变更则保持为空。
+        """
         algorithm = await cls._load_algorithm(id, auth)
         if not algorithm:
             raise CustomException(msg="算法不存在", code=404, status_code=404)
 
-        # ① 记录当前版本为上一版本（回滚依据）
-        await cls._persist_algorithm_fields(
-            id,
-            {"previous_model_path": algorithm.model_path, "previous_version": algorithm.version},
-            auth,
-        )
-        algorithm.previous_model_path = algorithm.model_path
-        algorithm.previous_version = algorithm.version
-
-        # ②③④ 枚举引用任务并逐任务下发，部分失败不整体回滚
+        # 枚举引用任务并逐任务下发，部分失败不整体回滚
         result = await cls._dispatch_algorithm_model(algorithm, auth)
         logger.info(
             f"[模型热更新] algorithm_id={id} succeeded={len(result['succeeded'])} failed={len(result['failed'])}"

@@ -66,8 +66,13 @@ class InferGroup {
 
 | 接口 | 行为 |
 |------|------|
-| `POST /video/algorithm/{id}/hot-update` | ① 记录 `previous_model_path/previous_version`（当前值）；② 查出所有引用该算法的 `AlgorithmTask`；③ 逐任务经 `EdgeAgentClient` 下发模型热更新；④ 返回 `{succeeded:[task_id], failed:[{task_id, error}]}`；⑤ 写操作日志 |
-| `POST /video/algorithm/{id}/rollback` | 用 `previous_*` 重跑同一流程（并交换 `previous_*` 与当前值），返回同上 |
+| `PUT /video/algorithm/update/{id}` | `model_path` / `version` 与库中值**不同**时，把**旧值**写入对应的 `previous_model_path` / `previous_version`（只记录真正变化的字段，另一字段保持不动）；无关字段更新不触碰 `previous_*`。 |
+| `POST /video/algorithm/{id}/hot-update` | 不接收任何覆写参数；**不再改写** `previous_*`（记录职责已移至更新路径）：① 查出所有引用该算法的 `AlgorithmTask`；② 逐任务经 `EdgeAgentClient` 下发**当前**模型热更新；③ 返回 `{succeeded:[task_id], failed:[{task_id, error}]}`；④ 写操作日志。若此前未发生模型变更，`previous_*` 保持为空。 |
+| `POST /video/algorithm/{id}/rollback` | 用 `previous_*` 重跑同一流程（并交换 `previous_*` 与当前值），返回同上；`previous_*` 全空时返回 400。 |
+
+> **previous_\* 在模型变更时记录**：`previous_*` 不是热更新时的快照，而是"最近一次真实变更前的值"。因此自然流程
+> 「更新算法（PUT 新 `model_path`/`version`）→ 热更新（下发新模型）→ 回滚」能够真正恢复到更新前的版本；
+> 若在此之前从未变更过模型（`previous_*` 为空），回滚返回 400。
 
 - **引用任务枚举**：`AlgorithmTask` 通过 `algorithm_id`（或 `scene_type`/`model_path` 归属）关联；实现者先核实既有外键与查询路径（`algorithm/model.py::AlgorithmTaskModel`）。
 - **权限**：沿用算法模块既有权限串；hot-update/rollback 为写操作。
