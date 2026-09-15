@@ -267,6 +267,8 @@ class Settings(BaseSettings):
     MQTT_TOPIC_PREFIX: str = "aistation/default/edge"
     # 云端消费者订阅通配主题（spec §7），默认匹配上述发布主题
     MQTT_SUBSCRIBE_TOPIC: str = "aistation/+/edge/+/camera/+/detect"
+    # 边缘事件保留天数（TTL 清理；<=0 视为不清理）
+    EDGE_EVENT_RETENTION_DAYS: int = 30
     MQTT_CLIENT_ID: str = "aistation-events"  # 消费者 client_id
     MQTT_QOS: int = 1  # 订阅 QoS
     # 事件内联快照（Agent 采集 JPEG → base64 随事件上报）

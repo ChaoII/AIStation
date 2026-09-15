@@ -963,6 +963,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(cleanup_loop())
         log.info("✅ 临时训练产物目录清理已启动")
 
+        from app.api.v1.module_video.edge.retention import start_edge_event_retention
+        start_edge_event_retention()
+        log.info("✅ 边缘事件 TTL 清理已启动")
+
         try:
             from app.core.database import async_engine as _train_engine
             from app.plugin.module_train.schema_check import ensure_train_columns
@@ -1040,6 +1044,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         if edge_event_consumer:
             await edge_event_consumer.stop()
             log.info("✅ 边缘事件消费者已关闭")
+
+        from app.api.v1.module_video.edge.retention import stop_edge_event_retention
+        await stop_edge_event_retention()
+        log.info("✅ 边缘事件 TTL 清理已关闭")
 
         await FastAPILimiter.close()
         log.info("✅ 请求限制器已关闭")
