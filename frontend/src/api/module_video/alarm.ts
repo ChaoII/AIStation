@@ -22,10 +22,17 @@ export interface AlarmRuleParams {
   [key: string]: unknown;
 }
 
+/** 规则作用域：相机 / 相机组（camera_id 与 group_id 恰有其一，后端校验） */
+export type AlarmRuleScope = "camera" | "group";
+
 /** 告警规则创建/更新载荷 */
 export interface AlarmRulePayload {
   name?: string;
-  camera_id?: number;
+  camera_id?: number | null;
+  /** 摄像机组ID（与 camera_id 恰有其一；组规则覆盖组内多台相机） */
+  group_id?: number | null;
+  /** 前端作用域标记（仅用于选择交互，后端由 camera_id/group_id 判定） */
+  scope?: AlarmRuleScope;
   algorithm_task_id?: number | null;
   alarm_type?: string;
   severity?: string;

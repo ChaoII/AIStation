@@ -75,6 +75,7 @@ import {
 } from "@svar-ui/vue-filter";
 import "@svar-ui/vue-filter/all.css";
 import { getRuleCapabilities, type LeafCapability } from "@/api/module_video/scene";
+import type { AlarmRuleScope } from "@/api/module_video/alarm";
 
 /**
  * 条件树组件：封装 @svar-ui/vue-filter 的 FilterBuilder，按后端「叶子能力注册表」渲染字段，
@@ -101,8 +102,10 @@ const props = withDefaults(
     modelValue?: Record<string, unknown>;
     /** 场景码，仅作标识透出（能力集不随场景变化） */
     sceneType?: string;
+    /** 规则作用域：相机作用域下隐藏跨相机聚合叶子（group_count/group_coverage） */
+    scope?: AlarmRuleScope;
   }>(),
-  { modelValue: () => ({}), sceneType: "" }
+  { modelValue: () => ({}), sceneType: "", scope: "camera" }
 );
 
 const emit = defineEmits<{ "update:modelValue": [value: Record<string, unknown>] }>();
@@ -164,6 +167,9 @@ const NUMERIC_PROJECT_OPS = new Set([
   "ne",
 ]);
 
+/** 跨相机聚合叶子：仅相机组作用域可用，相机作用域下从 fields 与解析中剔除 */
+const GROUP_LEAVES = new Set(["group_count", "group_coverage"]);
+
 /** 叶子主取值键：库 field 的 value 落到该键上（其余参数由参数区编辑） */
 const PRIMARY_VALUE_KEY: Record<string, string> = {
   object_present: "label",
@@ -185,10 +191,16 @@ const options = ref<Record<string, (number | string)[]>>({});
 const filterValue = ref<IFilterSet>({ glue: "and", rules: [] });
 /** 最近一次由库回写的条件树序列化值，用于打断「父级回填 → 重新初始化」回环 */
 let lastEmitted = "";
+/** 最近一次渲染使用的作用域：作用域切换时强制重建 filterValue（丢弃不可见叶子） */
+let lastScope: AlarmRuleScope | null = null;
 
-const leafMap = computed(() => new Map(leaves.value.map((l) => [l.subject, l])));
-const implementedLeaves = computed(() => leaves.value.filter((l) => l.implemented));
-const unavailableLeaves = computed(() => leaves.value.filter((l) => !l.implemented));
+/** 当前作用域可见的叶子：相机作用域下组聚合叶子不可见（后端也不允许） */
+const visibleLeaves = computed(() =>
+  leaves.value.filter((l) => !(props.scope === "camera" && GROUP_LEAVES.has(l.subject)))
+);
+const leafMap = computed(() => new Map(visibleLeaves.value.map((l) => [l.subject, l])));
+const implementedLeaves = computed(() => visibleLeaves.value.filter((l) => l.implemented));
+const unavailableLeaves = computed(() => visibleLeaves.value.filter((l) => !l.implemented));
 
 /** 每个已实现叶子一个 field，type 按取值语义选（计数/阈值为 number，其余 text） */
 const fields = computed<IField[]>(() =>
@@ -352,13 +364,15 @@ function handleInit(api: {
   });
 }
 
-/** 外部条件树（含能力集变化）→ 重建库的 IFilterSet；能力未就绪时先不转换，避免叶子全被判为未知 */
+/** 外部条件树（含能力集/作用域变化）→ 重建库的 IFilterSet；能力未就绪时先不转换，避免叶子全被判为未知 */
 watch(
-  [() => props.modelValue, leaves],
+  [() => props.modelValue, leaves, () => props.scope],
   () => {
     const tree = props.modelValue as ConditionNode;
     if (!leaves.value.length && Object.keys(tree ?? {}).length) return;
-    if (stringify(tree) === lastEmitted) return;
+    const scopeChanged = props.scope !== lastScope;
+    lastScope = props.scope;
+    if (!scopeChanged && stringify(tree) === lastEmitted) return;
     filterValue.value = toFilterSet(tree);
   },
   { immediate: true, deep: true }

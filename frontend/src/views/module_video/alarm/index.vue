@@ -256,6 +256,17 @@
                   show-overflow-tooltip
                 />
                 <el-table-column
+                  v-if="ruleCols.find((col) => col.prop === 'scope')?.show"
+                  key="scope"
+                  label="作用域"
+                  min-width="150"
+                  show-overflow-tooltip
+                >
+                  <template #default="scope">
+                    {{ ruleScopeLabel(scope.row) }}
+                  </template>
+                </el-table-column>
+                <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'alarm_type')?.show"
                   key="alarm_type"
                   label="告警类型"
@@ -351,16 +362,6 @@
       <el-form ref="ruleFormRef" :model="ruleForm" label-width="100px" size="default">
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
-        </el-form-item>
-        <el-form-item label="关联摄像机" prop="camera_id">
-          <el-select
-            v-model="ruleForm.camera_id"
-            filterable
-            placeholder="选择摄像机"
-            style="width: 100%"
-          >
-            <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
         </el-form-item>
         <el-form-item label="算法布控任务" prop="algorithm_task_id">
           <el-select
@@ -568,6 +569,9 @@
           <el-descriptions-item label="触发规则">
             {{ detailDrawer.data.rule?.name || "-" }}
           </el-descriptions-item>
+          <el-descriptions-item label="规则作用域">
+            {{ ruleScopeText(detailDrawer.data.rule_id) }}
+          </el-descriptions-item>
           <el-descriptions-item label="告警类型">
             {{ detailDrawer.data.alarm_type }}
           </el-descriptions-item>
@@ -620,7 +624,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, computed } from "vue";
-import { getCameraList } from "@/api/module_video/camera";
+import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
   getAlarmRecordList,
@@ -636,6 +640,7 @@ import { useCrudList } from "@/components/CURD/useCrudList";
 import { cachedOptions } from "@/composables/useOptions";
 import SnapshotImage from "@/components/Common/SnapshotImage.vue";
 import SnapshotOverlayViewer from "@/components/SnapshotOverlayViewer/index.vue";
+import type { AlarmRuleScope } from "@/api/module_video/alarm";
 import RuleEditor, { type RuleEditorValue } from "./components/RuleEditor.vue";
 
 interface TablePageQuery {
@@ -664,6 +669,11 @@ const {
 const ruleSubmitLoading = ref(false);
 const ruleFormRef = ref();
 const cameraOptions = ref<any[]>([]);
+/** 相机组选项（扁平化，用于规则作用域选择与列表/详情展示） */
+const groupOptions = ref<any[]>([]);
+/** 规则 id → 规则原始数据（告警详情里展示触发规则的作用域） */
+const ruleLookup = ref<Record<number, any>>({});
+let ruleLookupLoaded = false;
 const algorithmTaskOptions = ref<any[]>([]);
 const ruleScheduleGrid = ref<boolean[][]>(Array.from({ length: 7 }, () => Array(24).fill(false)));
 const ruleDragState = ref<{ active: boolean; mode: "set" | "clear" }>({
@@ -702,6 +712,8 @@ function handleViewDetail(row: any) {
   detailDrawer.data = row;
   detailDrawer.title = `告警详情 - ${row.alarm_type}`;
   detailDrawer.visible = true;
+  ensureGroupOptions();
+  ensureRuleLookup();
 }
 
 const recordSearchConfig = reactive<ISearchConfig>({
@@ -824,6 +836,7 @@ const ruleCols = reactive<Array<{ prop?: string; label?: string; show?: boolean 
   { prop: "selection", label: "选择框", show: true },
   { prop: "index", label: "序号", show: true },
   { prop: "name", label: "规则名称", show: true },
+  { prop: "scope", label: "作用域", show: true },
   { prop: "alarm_type", label: "告警类型", show: true },
   { prop: "severity", label: "级别", show: true },
   { prop: "sensitivity", label: "灵敏度", show: true },
@@ -873,7 +886,10 @@ const ruleDialogVisible = reactive({
 const ruleForm = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
+  // 作用域：相机 / 相机组（camera_id 与 group_id 恰有其一）
+  scope: "camera" as AlarmRuleScope,
   camera_id: undefined as number | undefined,
+  group_id: undefined as number | undefined,
   algorithm_task_id: undefined as number | undefined,
   alarm_type: "MOTION",
   severity: "WARNING",
@@ -892,7 +908,9 @@ const ruleForm = reactive({
 const initialRuleForm = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
+  scope: "camera" as AlarmRuleScope,
   camera_id: undefined as number | undefined,
+  group_id: undefined as number | undefined,
   algorithm_task_id: undefined as number | undefined,
   alarm_type: "MOTION" as const,
   severity: "WARNING" as const,
@@ -906,14 +924,75 @@ const initialRuleForm = {
 
 const ruleEditorRef = ref<InstanceType<typeof RuleEditor> | null>(null);
 
-/** RuleEditor 的 v-model：{ params, conditions } 直接落到 ruleForm */
+/** RuleEditor 的 v-model：作用域 / 目标 / 参数 / 条件直接落到 ruleForm */
 const ruleEditorModel = computed<RuleEditorValue>({
-  get: () => ({ params: ruleForm.params, conditions: ruleForm.conditions }),
+  get: () => ({
+    scope: ruleForm.scope,
+    camera_id: ruleForm.camera_id,
+    group_id: ruleForm.group_id,
+    params: ruleForm.params,
+    conditions: ruleForm.conditions,
+  }),
   set: (v) => {
+    ruleForm.scope = v?.scope ?? "camera";
+    ruleForm.camera_id = v?.camera_id;
+    ruleForm.group_id = v?.group_id;
     ruleForm.params = v?.params ?? {};
     ruleForm.conditions = v?.conditions ?? null;
   },
 });
+
+/** 相机组选项加载（扁平化树） */
+async function ensureGroupOptions() {
+  if (groupOptions.value.length) return;
+  try {
+    const res = await getCameraGroupList();
+    groupOptions.value = flattenGroupTree(res.data?.data || []);
+  } catch {
+    /* noop */
+  }
+}
+
+function flattenGroupTree(nodes: any[], out: any[] = []): any[] {
+  for (const node of nodes || []) {
+    if (node?.id !== undefined) out.push({ id: node.id, name: node.name });
+    if (Array.isArray(node?.children)) flattenGroupTree(node.children, out);
+  }
+  return out;
+}
+
+/** 规则列表「作用域」列文案：相机名 / 组名 */
+function ruleScopeLabel(row: any): string {
+  if (row?.group_id) {
+    const g = groupOptions.value.find((x) => x.id === row.group_id);
+    return `相机组：${g?.name || `#${row.group_id}`}`;
+  }
+  if (row?.camera_id) {
+    return `相机：${row?.camera?.name || `#${row.camera_id}`}`;
+  }
+  return "-";
+}
+
+/** 懒加载规则数据，供告警详情展示触发规则的作用域 */
+async function ensureRuleLookup() {
+  if (ruleLookupLoaded) return;
+  try {
+    const res = await getAlarmRuleList({ page_no: 1, page_size: 200 });
+    const map: Record<number, any> = {};
+    for (const item of res.data?.data?.items ?? []) map[item.id] = item;
+    ruleLookup.value = map;
+    ruleLookupLoaded = true;
+  } catch {
+    /* noop */
+  }
+}
+
+/** 告警详情「规则作用域」文案（按触发规则解析） */
+function ruleScopeText(ruleId?: number): string {
+  const rule = ruleId != null ? ruleLookup.value[ruleId] : undefined;
+  if (!rule) return "-";
+  return ruleScopeLabel(rule);
+}
 
 /** 场景码即告警类型（后端以 alarm_type 作为场景/算法类型持久化） */
 function handleSceneTypeChange(code: string) {
@@ -1003,6 +1082,7 @@ async function handleCloseRuleDialog() {
 async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
   ruleDialogVisible.type = type;
   ensureCameraOptions();
+  ensureGroupOptions();
   ensureAlgorithmTaskOptions();
   if (id && type === "update") {
     ruleDialogVisible.title = "编辑规则";
@@ -1010,6 +1090,10 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
       Object.assign(ruleForm, item);
+      // 回填作用域：有 group_id 即组规则，否则相机规则（camera_id/group_id 恰有其一）
+      ruleForm.scope = item.group_id ? "group" : "camera";
+      ruleForm.camera_id = item.camera_id ?? undefined;
+      ruleForm.group_id = item.group_id ?? undefined;
       // 回填场景规则：场景码存于 alarm_type，params/conditions 原样取回（无 detail 接口，走列表）
       ruleForm.params = item.params || {};
       ruleForm.conditions = item.conditions || null;
@@ -1103,9 +1187,13 @@ async function handleSubmitRule() {
   ruleSubmitLoading.value = true;
   const id = ruleForm.id;
   try {
+    // 作用域：camera_id 与 group_id 恰有其一（另一个显式置 null 以支持编辑时切换作用域）
+    const isGroupScope = ruleForm.scope === "group";
     const payload: any = {
       name: ruleForm.name,
-      camera_id: ruleForm.camera_id,
+      camera_id: isGroupScope ? null : (ruleForm.camera_id ?? null),
+      group_id: isGroupScope ? (ruleForm.group_id ?? null) : null,
+      scope: ruleForm.scope,
       algorithm_task_id: ruleForm.algorithm_task_id || null,
       alarm_type: ruleForm.alarm_type,
       severity: ruleForm.severity,
@@ -1202,6 +1290,8 @@ async function ensureAlgorithmTaskOptions() {
 
 onBeforeMount(() => {
   document.addEventListener("mouseup", onRuleDragEnd);
+  // 规则列表「作用域」列需展示组名，进页即预加载组选项
+  ensureGroupOptions();
 });
 onBeforeUnmount(() => {
   document.removeEventListener("mouseup", onRuleDragEnd);
