@@ -784,19 +784,54 @@ def _event_id_kv(event_id) -> dict:
     return {"event_id": event_id} if event_id else {}
 
 
+async def _publish_edge_event(row_id: int | None) -> None:
+    """落库成功后广播事件详情（与 detail 接口同结构）；失败仅告警，不阻断告警链路。"""
+    if not row_id:
+        return
+    try:
+        from fastapi.encoders import jsonable_encoder
+        from sqlalchemy import select
+
+        from app.api.v1.module_video.edge.event_bus import publish_edge_event
+        from app.api.v1.module_video.edge.model import EdgeEventModel
+        from app.api.v1.module_video.edge.service import _event_detail
+        from app.core.database import async_db_session
+
+        async with async_db_session() as session:
+            row = (
+                await session.execute(select(EdgeEventModel).where(EdgeEventModel.id == row_id))
+            ).scalars().first()
+        if row is None:
+            return
+        await publish_edge_event(jsonable_encoder(_event_detail(row)))
+    except Exception as e:
+        log.warning(f"边缘事件广播失败: {e}")
+
+
 async def _persist_edge_event(
     event: dict, *, matched: bool, rule_id, matched_leaves
 ) -> int | None:
-    """落库边缘事件（薄封装）；任何失败仅告警，绝不阻断告警链路。"""
+    """落库边缘事件（薄封装）；任何失败仅告警，绝不阻断告警链路。
+
+    仅当真正落库成功（非空事件、非重复 ``event_id``）才广播事件详情，
+    广播失败不得影响返回的落库 id。
+    """
     try:
         from app.api.v1.module_video.edge.store import record_edge_event
 
-        return await record_edge_event(
+        row_id = await record_edge_event(
             event, matched=matched, rule_id=rule_id, matched_leaves=matched_leaves
         )
     except Exception as e:
         log.warning(f"边缘事件落库失败: {e}")
         return None
+
+    if row_id:
+        try:
+            await _publish_edge_event(row_id)
+        except Exception as e:
+            log.warning(f"边缘事件广播失败: {e}")
+    return row_id
 
 
 class InferenceService:

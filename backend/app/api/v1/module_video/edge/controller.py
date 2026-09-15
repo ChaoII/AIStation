@@ -1,6 +1,9 @@
+import asyncio
+import json
+import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, Path, Query
+from fastapi import APIRouter, Body, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -13,9 +16,12 @@ from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 from app.core.validator import DateTimeStr
 
+from . import event_bus
 from .param import EdgeQueryParam
 from .schema import EdgeDeviceCreateSchema, EdgeDeviceUpdateSchema
 from .service import EdgeService
+
+log = logging.getLogger(__name__)
 
 EdgeRouter = APIRouter(route_class=OperationLogRoute, prefix="/edge", tags=["边缘设备"])
 
@@ -132,3 +138,125 @@ async def get_edge_task_snapshot_controller(
 ) -> Response:
     content = await EdgeService.get_task_snapshot_service(device_id=device_id, task_id=task_id, auth=auth)
     return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+def verify_edge_event_ws_token(token: str | None):
+    """校验 WS query token；复用协作 WS 既有 JWT 解析助手，不新造鉴权方案。"""
+    from app.api.v1.module_annotation.collaboration.controller import parse_ws_user
+
+    return parse_ws_user(token)
+
+
+async def _forward_pubsub(websocket: WebSocket, pubsub) -> None:
+    """把 Redis 频道消息（``{"type":"event","data":...}``）转发给前端。"""
+    async for message in pubsub.listen():
+        if message.get("type") != "message":
+            continue
+        data = message.get("data")
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode("utf-8", errors="ignore")
+        try:
+            payload = json.loads(data) if isinstance(data, str) else data
+        except (ValueError, TypeError):
+            continue
+        if isinstance(payload, dict):
+            await websocket.send_json(payload)
+        elif data is not None:
+            await websocket.send_text(str(data))
+
+
+async def _forward_queue(websocket: WebSocket, queue: asyncio.Queue) -> None:
+    """把进程内降级队列消息转发给前端。"""
+    while True:
+        await websocket.send_json(await queue.get())
+
+
+async def _detect_disconnect(websocket: WebSocket) -> None:
+    """感知客户端断开：纯推送连接不主动收消息，用 receive 任务兜底。
+
+    循环读取以忽略客户端上行报文（如 ping），仅在真正 disconnect 时返回。
+    """
+    while True:
+        message = await websocket.receive()
+        if message.get("type") == "websocket.disconnect":
+            return
+
+
+async def edge_event_ws_controller(websocket: WebSocket) -> None:
+    """边缘事件实时推送：query token 鉴权，失败以 4401 关闭。
+
+    浏览器 WS 无法携带自定义头，故 token 走 query 参数。连接后订阅 Redis 频道
+    ``ai:edge:event``（Redis 不可用降级进程内广播），把落库事件详情原样转发。
+    """
+    token = websocket.query_params.get("token")
+    if verify_edge_event_ws_token(token) is None:
+        await websocket.close(code=4401)
+        return
+
+    # 复用应用级 Redis 连接（多进程安全）；Redis 不可用时降级进程内队列
+    app_redis = getattr(websocket.app.state, "redis", None)
+    if app_redis is not None:
+        event_bus.set_redis(app_redis)
+    redis = await event_bus.get_redis()
+
+    pubsub = None
+    queue = None
+    if redis is not None:
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(event_bus.EDGE_EVENT_CHANNEL)
+    else:
+        queue = event_bus.subscribe_local()
+
+    # 先订阅再 accept：客户端握手成功即代表订阅就绪，避免漏掉首条事件
+    await websocket.accept()
+
+    forward = asyncio.create_task(
+        _forward_pubsub(websocket, pubsub)
+        if pubsub is not None
+        else _forward_queue(websocket, queue)
+    )
+    disconnected = asyncio.create_task(_detect_disconnect(websocket))
+
+    try:
+        done, pending = await asyncio.wait(
+            {forward, disconnected}, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in pending:
+            task.cancel()
+        # 等待取消落地，避免悬挂任务
+        await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            if task.cancelled():
+                continue
+            exc = task.exception()
+            if exc is not None and not isinstance(exc, WebSocketDisconnect):
+                log.warning(f"边缘事件 WS 转发异常: {exc}")
+    finally:
+        for task in (forward, disconnected):
+            if not task.done():
+                task.cancel()
+        # 注销订阅，禁止泄漏
+        if queue is not None:
+            event_bus.unsubscribe_local(queue)
+        if pubsub is not None:
+            try:
+                await pubsub.unsubscribe(event_bus.EDGE_EVENT_CHANNEL)
+                await pubsub.aclose()
+            except Exception:  # noqa: BLE001 - 清理失败不影响连接关闭
+                pass
+
+
+# 注册为 Starlette 原生 WS 路由：video_router 的 HTTP 限流依赖（RateLimiter 需要 Request）
+# 在 WS 作用域解析会失败，而原生 WebSocketRoute 在 include_router 时不继承该依赖。
+# 代价是原生路由不烘焙 APIRouter 前缀，故这里按最终挂载路径写全（root_path 为 /api/v1）。
+def _register_edge_event_ws() -> None:
+    from app.api.v1.module_video import video_router
+
+    video_router.add_websocket_route(
+        f"{video_router.prefix}/edge/event/ws",
+        edge_event_ws_controller,
+        name="edge_event_ws",
+    )
+
+
+_register_edge_event_ws()
