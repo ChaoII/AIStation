@@ -290,9 +290,13 @@ class Settings(BaseSettings):
 
     # 按模块覆盖限流参数：{"module": {"times": N, "seconds": M}}
     # 标注工作台会一次性加载图片列表+预签名URL+标注数据，合法请求较多，默认放宽
+    # 视频模块的规则编辑器/事件流/边缘页在单次交互中会对同一路由（如 rule/list）
+    # 连续多次请求（打开对话框、保存后刷新、搜索、再次编辑），默认 5 次/10s 会误伤
+    # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由 60 次/10s 上限）。
     RATE_LIMIT_OVERRIDES: dict[str, dict] = {
         "annotation": {"times": 60, "seconds": 10},
         "train": {"times": 30, "seconds": 10},
+        "video": {"times": 60, "seconds": 10},
     }
 
     # ================================================= #
