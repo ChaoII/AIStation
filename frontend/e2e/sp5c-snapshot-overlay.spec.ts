@@ -12,10 +12,9 @@ import { deflateSync } from "node:zlib";
  * - 先建一条含条件树（object_present person）的规则，保证命中非空；
  * - 回调 body 携带 `snapshot: { ref, data }`（内联 base64 PNG）→ 后端落盘到
  *   `DETECTIONS_DIR/<ref>` 并写 `snapshot_path`；
- * - 同时显式传 `snapshot_ref = /api/v1/video/detections/<ref>`（即告警 `snapshot_url`
- *   的同款受保护相对路径），使事件流抽屉也能命中受保护快照路由。若只传对象存储 key
- *   （如 `edge/2026-09-15/x.jpg`），查看器会请求 `/api/v1/<key>` 而 404 —— 该集成
- *   缺口已在 `docs/superpowers/runbooks/sp5c-visual.md` 记录。
+ * - 边缘事件仅上报**原始对象 key**（`snapshot_ref = <ref>`），由后端归一化出
+ *   `snapshot_url = /api/v1/video/detections/<ref>`；前端事件流抽屉消费该字段，
+ *   从而验证「原始 key → 可取图 URL」链路（此前直接传受保护相对路径属临时规避）。
  *
  * 用例结束清理规则、告警记录与落盘快照；视频路由限流 5 次/10s 且按路由分桶，
  * 本用例调用稀疏，不会触发 429。
@@ -33,8 +32,8 @@ const RULE_NAME = `SP5C E2E 快照叠加规则 ${STAMP}`;
 const EVENT_ID = `sp5c-e2e-${STAMP}`;
 /** 落盘文件名（相对 DETECTIONS_DIR） */
 const SNAPSHOT_NAME = `sp5c-e2e-${STAMP}.png`;
-/** 受保护快照相对路径（与告警记录 `snapshot_url` 同构） */
-const SNAPSHOT_REF = `/api/v1/video/detections/${SNAPSHOT_NAME}`;
+/** 边缘事件上报的原始对象 key（相对 DETECTIONS_DIR）；由后端归一化为可取图 snapshot_url */
+const SNAPSHOT_RAW_KEY = SNAPSHOT_NAME;
 
 /** CRC32 查表（PNG chunk 校验用，Node 内置 zlib 不提供） */
 const CRC_TABLE = (() => {
@@ -174,7 +173,7 @@ async function seedEventWithSnapshot(page: Page) {
       camera_id: cameraId,
       algorithm_type: ALARM_TYPE,
       ts: new Date().toISOString(),
-      snapshot_ref: SNAPSHOT_REF,
+      snapshot_ref: SNAPSHOT_RAW_KEY,
       snapshot: { ref: SNAPSHOT_NAME, data: SNAPSHOT_B64 },
       objects: OBJECTS,
       latency_ms: 12.3,
@@ -277,7 +276,9 @@ test("快照叠加查看器：告警详情与事件流详情渲染检测框", as
 
     const eventDrawer = page.locator(".el-drawer:visible").first();
     await expect(eventDrawer).toBeVisible({ timeout: 15_000 });
-    await expect(eventDrawer.locator(".event-detail__title", { hasText: "检测目标" })).toBeVisible();
+    await expect(
+      eventDrawer.locator(".event-detail__title", { hasText: "检测目标" })
+    ).toBeVisible();
     await expectOverlay(eventDrawer, true);
 
     await page.screenshot({

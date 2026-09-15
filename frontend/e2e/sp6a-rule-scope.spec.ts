@@ -40,8 +40,14 @@ async function authHeaders(page: Page) {
   return { Authorization: `Bearer ${token}` };
 }
 
-/** 经 API 造一个相机组 + 一条组作用域规则（带组叶子所需参数），返回 id 供清理。 */
-async function seedGroupRule(page: Page) {
+/** 已创建资源句柄：创建即登记，保证 finally 能清理半途失败的残留。 */
+interface Created {
+  groupId?: number;
+  ruleId?: number;
+}
+
+/** 经 API 造一个相机组 + 一条组作用域规则（带组叶子所需参数），id 同步登记到 created。 */
+async function seedGroupRule(page: Page, created: Created) {
   const headers = await authHeaders(page);
 
   const gRes = await page.request.post(`${API_BASE}/video/camera/group/create`, {
@@ -50,6 +56,7 @@ async function seedGroupRule(page: Page) {
   });
   expect(gRes.ok(), `创建相机组失败: ${gRes.status()} ${await gRes.text()}`).toBeTruthy();
   const groupId = (await gRes.json()).data.id as number;
+  created.groupId = groupId;
 
   const rRes = await page.request.post(`${API_BASE}/video/alarm/rule/create`, {
     headers,
@@ -67,23 +74,28 @@ async function seedGroupRule(page: Page) {
   expect(rRes.ok(), `创建组规则失败: ${rRes.status()} ${await rRes.text()}`).toBeTruthy();
   const ruleId = (await rRes.json()).data.id as number;
   expect(ruleId, "规则 id 应已落库").toBeTruthy();
+  created.ruleId = ruleId;
   return { groupId, ruleId };
 }
 
 /** 清理种子产生的规则与相机组（失败仅打印告警，不影响用例结论）。 */
-async function cleanup(page: Page, ruleId: number, groupId: number) {
+async function cleanup(page: Page, ruleId?: number, groupId?: number) {
   try {
     const headers = await authHeaders(page);
-    const rRes = await page.request.delete(`${API_BASE}/video/alarm/rule/delete`, {
-      headers,
-      data: [ruleId],
-    });
-    if (!rRes.ok()) console.warn(`清理规则失败: ${rRes.status()} ${await rRes.text()}`);
-    const gRes = await page.request.delete(`${API_BASE}/video/camera/group/delete`, {
-      headers,
-      data: [groupId],
-    });
-    if (!gRes.ok()) console.warn(`清理相机组失败: ${gRes.status()} ${await gRes.text()}`);
+    if (ruleId) {
+      const rRes = await page.request.delete(`${API_BASE}/video/alarm/rule/delete`, {
+        headers,
+        data: [ruleId],
+      });
+      if (!rRes.ok()) console.warn(`清理规则失败: ${rRes.status()} ${await rRes.text()}`);
+    }
+    if (groupId) {
+      const gRes = await page.request.delete(`${API_BASE}/video/camera/group/delete`, {
+        headers,
+        data: [groupId],
+      });
+      if (!gRes.ok()) console.warn(`清理相机组失败: ${gRes.status()} ${await gRes.text()}`);
+    }
   } catch (e) {
     console.warn(`清理异常: ${e}`);
   }
@@ -154,20 +166,15 @@ async function openFieldPicker(page: Page, dialog: ReturnType<Page["locator"]>) 
 }
 
 /**
- * 定位规则行：规则列表按 id 升序、默认 10 条/页，本次种子规则位于末页。
- * 后端 `name` 过滤已修复（like 语义），但本用例刻意不使用搜索，仅靠翻页验证列表渲染。
+ * 定位规则行：改用「规则名称」搜索（列表分页下新规则不保证落在首页；
+ * 后端 `name` 过滤为 like 语义，搜索最稳，也避免历史数据翻页导致的假失败）。
  */
 async function locateRuleRow(page: Page, name: string) {
   const pane = page.locator("#pane-rule");
+  await pane.getByPlaceholder("请输入规则名称").fill(name);
+  await pane.getByRole("button", { name: "搜索" }).click();
   const row = pane.locator(".el-table__row").filter({ hasText: name }).first();
-  await pane.locator(".el-table__row").first().waitFor({ timeout: 15_000 });
-  const next = pane.locator(".el-pagination .btn-next");
-  for (let i = 0; i < 30; i++) {
-    if (await row.count()) break;
-    if (await next.isDisabled().catch(() => true)) break;
-    await next.click();
-    await page.waitForTimeout(500);
-  }
+  await expect(row).toBeVisible({ timeout: 15_000 });
   return row;
 }
 
@@ -182,8 +189,13 @@ async function selectFieldByLabel(page: Page, fieldLabel: string) {
   const items = (await popup.locator(".wx-item").allInnerTexts()).map((s) => s.trim());
   for (let i = 0; i < items.length + 2; i++) {
     await page.keyboard.press("ArrowDown");
-    const focused = (await popup.locator(".wx-item.wx-focus").first().innerText().catch(() => ""))
-      .trim();
+    const focused = (
+      await popup
+        .locator(".wx-item.wx-focus")
+        .first()
+        .innerText()
+        .catch(() => "")
+    ).trim();
     if (focused === fieldLabel) break;
   }
   await page.keyboard.press("Enter");
@@ -197,8 +209,9 @@ test("规则作用域：组规则列表展示组名 + 相机作用域隐藏聚�
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
 
-  const { groupId, ruleId } = await seedGroupRule(page);
+  const created: Created = {};
   try {
+    await seedGroupRule(page, created);
     // 种子在首次加载后创建，重载页面以重新拉取相机组列表（列表「作用域」列依赖组名解析）
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
@@ -218,9 +231,9 @@ test("规则作用域：组规则列表展示组名 + 相机作用域隐藏聚�
     await row.getByRole("button", { name: "编辑" }).click();
     const dialog = page.locator(".el-dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator('[data-testid="rule-scope-select"] .el-radio.is-checked')).toContainText(
-      "相机组"
-    );
+    await expect(
+      dialog.locator('[data-testid="rule-scope-select"] .el-radio.is-checked')
+    ).toContainText("相机组");
     await expect(
       dialog.locator(".el-form-item").filter({ hasText: "关联相机组" }).first()
     ).toContainText(GROUP_NAME);
@@ -286,7 +299,7 @@ test("规则作用域：组规则列表展示组名 + 相机作用域隐藏聚�
     await dialog.getByRole("button", { name: "取消" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
   } finally {
-    await cleanup(page, ruleId, groupId);
+    await cleanup(page, created.ruleId, created.groupId);
   }
 });
 
@@ -305,8 +318,9 @@ test("纯 UI 新增组规则：组参数声明 + group_count 叶子鼠标选择 
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
 
-  const groupId = await seedGroup(page, PURE_UI_GROUP_NAME);
+  let groupId: number | undefined;
   try {
+    groupId = await seedGroup(page, PURE_UI_GROUP_NAME);
     // 种子组在首次加载后创建，重载以刷新组下拉
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
@@ -328,7 +342,10 @@ test("纯 UI 新增组规则：组参数声明 + group_count 叶子鼠标选择 
 
     // 2. 选择场景 GATHER（目录已声明组聚合参数）
     await dialog.locator('[data-testid="rule-scene-select"]').click();
-    await page.getByRole("option", { name: /GATHER/ }).first().click();
+    await page
+      .getByRole("option", { name: /GATHER/ })
+      .first()
+      .click();
 
     // 3. 组作用域参数表单出现（此前目录未声明，表单无字段 → 保存 400）
     await expect(dialog.getByText("组内目标数阈值").first()).toBeVisible({ timeout: 15_000 });
@@ -343,7 +360,9 @@ test("纯 UI 新增组规则：组参数声明 + group_count 叶子鼠标选择 
     await editor.locator(".wx-richselect").first().click();
     const popup = page.locator(".wx-popup:visible").first();
     await popup.waitFor({ timeout: 15_000 });
-    await page.screenshot({ path: "C:/Users/aichao/AppData/Local/Temp/opencode/sp6a-defect2-popup.png" });
+    await page.screenshot({
+      path: "C:/Users/aichao/AppData/Local/Temp/opencode/sp6a-defect2-popup.png",
+    });
     // 鼠标点击（若被对话框层级遮挡，Playwright 可点击性检查会失败）
     await popup.locator('.wx-item[data-id=":group_count"]').click();
     await expect(editor.locator(".wx-richselect .wx-label").first()).toHaveText("组内目标总数");
@@ -384,6 +403,6 @@ test("纯 UI 新增组规则：组参数声明 + group_count 叶子鼠标选择 
     expect(leaf!.value).toBe(2);
   } finally {
     await deleteRuleByName(page, PURE_UI_RULE_NAME);
-    await deleteGroup(page, groupId);
+    if (groupId) await deleteGroup(page, groupId);
   }
 });

@@ -102,25 +102,36 @@ async function fillRuleName(dialog: ReturnType<Page["locator"]>, name: string) {
     .fill(name);
 }
 
+/** 等待所有下拉完全收起，避免下一次选择命中上一个下拉的残留项（关闭动画竞态）。 */
+async function waitDropdownSettled(page: Page) {
+  await page
+    .locator(".el-select-dropdown:visible")
+    .waitFor({ state: "hidden", timeout: 3000 })
+    .catch(() => {});
+}
+
 /** 在单选框（相机）中选中第一台相机，返回其显示名。 */
 async function selectFirstCamera(page: Page, dialog: ReturnType<Page["locator"]>): Promise<string> {
+  await waitDropdownSettled(page);
   await dialog.locator('[data-testid="rule-camera-select"]').click();
   return pickFirstOption(page);
 }
 
 /** 在多选下拉（白/黑名单）中选中第一项，返回其显示名。 */
 async function selectFirstInMulti(page: Page, testid: string): Promise<string> {
+  await waitDropdownSettled(page);
   await page.locator(`[data-testid="${testid}"]`).click();
   return pickFirstOption(page);
 }
 
 /** 点击当前展开下拉的第一项（多选下不自动收起，需 Escape 关闭）。 */
 async function pickFirstOption(page: Page): Promise<string> {
-  const option = page.locator(".el-select-dropdown__item:visible").first();
+  const option = page.locator(".el-select-dropdown:visible .el-select-dropdown__item").first();
   await expect(option).toBeVisible({ timeout: 15_000 });
   const name = (await option.innerText()).trim();
   await option.click();
   await page.keyboard.press("Escape");
+  await waitDropdownSettled(page);
   await page.waitForTimeout(150);
   return name;
 }

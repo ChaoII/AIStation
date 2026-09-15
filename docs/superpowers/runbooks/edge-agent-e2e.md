@@ -864,3 +864,27 @@ psql ... -c "select id, alarm_type,
 | 断言 3c 失败（短窗内多条） | `interval_seconds` 未生效 / 云端防抖标记写入失败 | 核对 AlarmRule `interval_seconds=30` 已落库；用 `-KeepData` 重跑查 DB，确认 Redis/内存标记正常（`ai:temporal:*:__absent__:*`） |
 | 启动任务报「边缘设备能力不足」 | 设备 capabilities 缺 `model_families=["det"]` | 脚本已按场景播种该能力（`Seed-EdgeDevice` 默认 `["det"]`）；手工核对 `GET /api/v1/video/edge/list` |
 | 模型加载失败 | `-DetModelPath` 在 Agent 机不存在 | 核对指向 Agent 可读绝对路径（`yolo11n\yolo11n_nms.onnx`） |
+
+## 17. 本机测试库与前端 e2e 限流提示
+
+### 17.1 SQLite 测试库是持久化的
+
+`uv run pytest` 使用仓库内**持久化**的 SQLite 测试库 `backend/pytest_aistation.db`
+（由 `backend/tests/conftest.py` 设置 `DATABASE_NAME`，`create_app` 的 lifespan 负责建表）。
+它**不会**随模型变更自动迁移：新增/修改列后必须手动 `ALTER TABLE ... ADD COLUMN ...`
+（或删除该文件让 lifespan 重建 —— 重建会清空测试数据），否则测试会因缺列报错。
+
+### 17.2 前端 smoke 用例 429 的根因与处理
+
+`frontend/e2e/smoke.spec.ts` 会连续整页加载 8 个页面，每次加载应用外壳都会请求
+`/api/v1/system/param/info`、`/api/v1/system/notice/available`、
+`/api/v1/system/notification/unread-count`。`system` 模块默认限流 **5 次/10s**，
+且 fastapi_limiter 按 `(客户端 IP, 路由)` 分桶（`FastAPILimiter.default_identifier`
+= `X-Forwarded-For 首值 + ":" + path`），故连续 8 次整页导航会超限返回 429，
+在页面内表现为未捕获异常（`请求过于频繁，请稍后重试`），使 smoke 的
+「无致命渲染错误」断言偶发失败。
+
+处理：smoke 用例为每个页面分配独立 `X-Forwarded-For` 隔离限流桶（与 `sp6a`/`sp6b`
+一致的既有手法），**不放松后端限流配置**。若后续仍有 `system`/`common` 路由被应用外壳
+高频调用导致 429，可在 `setting.py::RATE_LIMIT_OVERRIDES` 按模块放宽，但需评估登录等
+敏感路由的同模块影响。

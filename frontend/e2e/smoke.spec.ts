@@ -16,7 +16,13 @@ test("登录后可进入主链路各页面且无致命渲染错误", async ({ pa
   const consoleErrors: string[] = [];
   page.on("pageerror", (e) => consoleErrors.push(String(e)));
 
-  for (const [path, title] of PAGES) {
+  for (const [index, [path, title]] of PAGES.entries()) {
+    // 每次整页加载都会触发应用外壳拉取 /system/param/info、/system/notice/available、
+    // /system/notification/unread-count；system 模块默认限流 5 次/10s 且按
+    // (客户端 IP, 路由) 分桶，连续 8 次整页导航会超限返回 429（表现为未捕获异常）。
+    // 为每个页面分配独立转发 IP 隔离限流桶（与 sp6a/sp6b 的隔离手法一致），
+    // 避免「页面渲染断言」被限流误伤。
+    await page.setExtraHTTPHeaders({ "X-Forwarded-For": `10.87.0.${index + 1}` });
     // 用 domcontentloaded：部分页面有轮询/长连接，networkidle 永不满足
     await page.goto(path, { waitUntil: "domcontentloaded" });
     // 激活标签标题与目标页面一致，确认路由确实解析到该页
