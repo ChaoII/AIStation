@@ -1,4 +1,5 @@
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Path, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -97,6 +98,24 @@ async def delete_algorithm_controller(
 ) -> JSONResponse:
     await AlgorithmService.delete_algorithm_service(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
+
+
+@AlgorithmRouter.post("/{id}/hot-update", summary="模型热更新（下发所有引用任务）")
+async def hot_update_algorithm_controller(
+    id: Annotated[int, Path(..., description="算法ID")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:algorithm:update"]))],
+) -> JSONResponse:
+    result = await AlgorithmService.hot_update_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="热更新已下发")
+
+
+@AlgorithmRouter.post("/{id}/rollback", summary="模型回滚（恢复上一版本并下发）")
+async def rollback_algorithm_controller(
+    id: Annotated[int, Path(..., description="算法ID")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:algorithm:update"]))],
+) -> JSONResponse:
+    result = await AlgorithmService.rollback_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="回滚已下发")
 
 
 @AlgorithmRouter.get("/task/list", summary="查询算法任务列表")

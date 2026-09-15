@@ -35,6 +35,9 @@ class AlgorithmOutSchema(BaseSchema):
     scene_type: str | None = None
     model_path: str | None = None
     plugin_path: str | None = None
+    # SP6-c：上一版本（回滚用），仅输出；由热更新/回滚接口维护，不允许直接写入
+    previous_model_path: str | None = None
+    previous_version: str | None = None
     model_file_config: dict | None = None
     runtime_config: dict | None = None
     preset_params: dict | None = None

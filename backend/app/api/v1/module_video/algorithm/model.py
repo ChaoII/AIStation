@@ -19,6 +19,9 @@ class AlgorithmModel(ModelMixin, UserMixin):
     scene_type: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="场景码（任务类型目录，如 PED_ATTR）")
     model_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="模型文件路径")
     plugin_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="C++ SDK插件路径")
+    # SP6-c：保留上一版本，供模型热更新后一键回滚（可空，不影响既有数据）
+    previous_model_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="上一版本模型路径（回滚用）")
+    previous_version: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="上一版本号（回滚用）")
 
     model_file_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="模型配置（格式、加密密钥、解密参数等）")
     runtime_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="运行时配置（推理引擎、GPU、线程数、批处理大小等）")
