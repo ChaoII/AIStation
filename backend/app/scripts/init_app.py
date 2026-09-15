@@ -315,6 +315,49 @@ async def _ensure_edge_page_menu() -> None:
             log.info("✅ 边缘设备菜单已注册")
 
 
+async def _ensure_edge_event_page_menu() -> None:
+    """确保『边缘事件』页面菜单存在（挂在视频监控父菜单下，分配 admin；幂等）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "VideoEdgeEvent")
+            )
+            if existing.scalar_one_or_none():
+                return
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过边缘事件菜单注册")
+                return
+            menu = MenuModel(
+                name="边缘事件",
+                type=2,
+                icon="el-icon-DataLine",
+                order=11,
+                route_name="VideoEdgeEvent",
+                route_path="/video/event-stream",
+                component_path="module_video/event_stream/index",
+                permission="module_video:edge:query",
+                parent_id=parent.id,
+                status="0",
+                is_deleted=False,
+                title="边缘事件",
+            )
+            db.add(menu)
+            await db.flush()
+            admin = await db.scalar(select(RoleModel).where(RoleModel.id == 1))
+            if admin:
+                db.add(RoleMenusModel(role_id=admin.id, menu_id=menu.id))
+            log.info("✅ 边缘事件菜单已注册")
+
+
 AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:model:query", "查询大模型配置"),
     ("module_ai:model:create", "新增大模型配置"),
@@ -883,6 +926,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_deploy_menu()
         await _ensure_edge_button_menus()
         await _ensure_edge_page_menu()
+        await _ensure_edge_event_page_menu()
         await _ensure_ai_menus()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
