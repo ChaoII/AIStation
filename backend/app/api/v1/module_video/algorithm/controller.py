@@ -1,3 +1,4 @@
+import hmac
 import os
 from typing import Annotated
 
@@ -6,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.api.v1.module_video.edge.consumer import dedup
+from app.common.enums import EnvironmentEnum
 from app.common.request import PaginationService
 from app.common.response import SuccessResponse
 from app.config.setting import settings
@@ -241,8 +243,19 @@ async def detection_callback_controller(
     body: dict = Body(..., description="检测事件"),
 ) -> JSONResponse:
     token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    if token != settings.INFERENCE_CALLBACK_TOKEN:
-        raise CustomException(msg="无效的调用凭证", code=403)
+    # fail-closed：未配置共享密钥时拒绝（不再使用公开默认值，也不因空值放行）；
+    # 仅 dev 环境且显式开启开关时才允许无凭据放行，便于本地联调。
+    expected = (settings.INFERENCE_CALLBACK_TOKEN or "").strip()
+    if not expected:
+        allow_insecure_dev = (
+            settings.ENVIRONMENT == EnvironmentEnum.DEV
+            and settings.INFERENCE_CALLBACK_ALLOW_INSECURE_DEV
+        )
+        if not allow_insecure_dev:
+            raise CustomException(msg="推理回调未配置共享密钥，已拒绝", code=403, status_code=403)
+        logger.warning("[安全告警] 推理回调未配置共享密钥，dev 显式开关已放行（严禁用于生产）")
+    elif not token or not hmac.compare_digest(token, expected):
+        raise CustomException(msg="无效的调用凭证", code=403, status_code=403)
 
     # spec §7：按 event_id 幂等去重，避免 HTTP 重试重复建告警（与 MQTT 消费者行为一致）
     event_id = str(body.get("event_id") or "").strip()
