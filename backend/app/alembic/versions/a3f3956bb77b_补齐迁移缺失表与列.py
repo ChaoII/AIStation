@@ -15,10 +15,18 @@ Create Date: 2026-09-16
 因此「先重启应用（兜底补列/兜底建表）、再跑迁移」与「先迁移、再重启」两种顺序都成立，
 不会出现 DuplicateTable / DuplicateColumn。
 """
+import re
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+
+from app.alembic.dialect_compat import (
+    dialect_name,
+    is_postgres,
+    is_sqlite,
+    portable_add_column,
+)
 
 # revision identifiers, used by Alembic.
 revision: str = "a3f3956bb77b"
@@ -724,12 +732,90 @@ def _existing_fk_columns(table: str) -> set[tuple[str, ...]]:
     return {tuple(fk.get("constrained_columns") or ()) for fk in insp.get_foreign_keys(table)}
 
 
+_ADD_COLUMN_RE = re.compile(
+    r"^ALTER TABLE (\S+) ADD COLUMN IF NOT EXISTS (\w+) (.+?);?$", re.IGNORECASE
+)
+_SET_NOT_NULL_RE = re.compile(
+    r"^ALTER TABLE (\S+) ALTER COLUMN (\w+) SET NOT NULL;?$", re.IGNORECASE
+)
+_DROP_COLUMN_RE = re.compile(
+    r"^ALTER TABLE (\S+) DROP COLUMN IF EXISTS (\w+);?$", re.IGNORECASE
+)
+
+
+def _render_type(sql: str, dialect: str) -> str:
+    """按方言降级 DDL 中的 PG 专属类型/函数。"""
+    sql = sql.replace("JSONB", "JSON")
+    sql = sql.replace("TIMESTAMP WITHOUT TIME ZONE", "TIMESTAMP")
+    sql = sql.replace("NOW()", "CURRENT_TIMESTAMP")
+    if dialect == "sqlite":
+        sql = sql.replace("SERIAL", "INTEGER")
+        sql = sql.replace(
+            "md5(random()::text || clock_timestamp()::text)",
+            "lower(hex(randomblob(16)))",
+        )
+    elif dialect == "mysql":
+        sql = sql.replace(
+            "md5(random()::text || clock_timestamp()::text)",
+            "REPLACE(UUID(), '-', '')",
+        )
+    return sql
+
+
+def _exec_portable(sql: str) -> None:
+    """按方言执行单条 DDL：PG 原样执行，SQLite/MySQL 做语法与类型降级。"""
+    stmt = sql.strip().rstrip(";")
+    if not stmt:
+        return
+    bind = op.get_bind()
+    if is_postgres(bind):
+        op.execute(stmt)
+        return
+
+    dialect = dialect_name(bind)
+
+    # SQLite/MySQL 无 ALTER COLUMN ... SET NOT NULL（列已由补列/回填保证有值）
+    if _SET_NOT_NULL_RE.match(stmt):
+        return
+
+    # ADD COLUMN IF NOT EXISTS → 探测后添加
+    m = _ADD_COLUMN_RE.match(stmt)
+    if m:
+        portable_add_column(m.group(1), m.group(2), _render_type(m.group(3), dialect))
+        return
+
+    # DROP COLUMN IF EXISTS → 探测后删除
+    m = _DROP_COLUMN_RE.match(stmt)
+    if m:
+        insp = sa.inspect(bind)
+        table, col = m.group(1), m.group(2)
+        if insp.has_table(table) and col in {c["name"] for c in insp.get_columns(table)}:
+            op.execute(f"ALTER TABLE {table} DROP COLUMN {col}")
+        return
+
+    op.execute(_render_type(stmt, dialect))
+
+
 def _ensure_layout_foreign_keys() -> None:
-    """幂等补齐 video_layouts → sys_user 的三个审计外键。"""
+    """幂等补建 video_layouts 到 sys_user 的外键（探测列）"""
     existing = _existing_fk_columns("video_layouts")
-    for name, cols in _LAYOUT_FKS:
-        if cols in existing:
-            continue
+    pending = [(name, cols) for name, cols in _LAYOUT_FKS if cols not in existing]
+    if not pending:
+        return
+    if is_sqlite(op.get_bind()):
+        # SQLite 无法 ALTER ADD CONSTRAINT，走 batch 重建表
+        with op.batch_alter_table("video_layouts") as batch_op:
+            for name, cols in pending:
+                batch_op.create_foreign_key(
+                    name,
+                    "sys_user",
+                    list(cols),
+                    ["id"],
+                    ondelete="SET NULL",
+                    onupdate="CASCADE",
+                )
+        return
+    for name, cols in pending:
         op.create_foreign_key(
             name,
             "video_layouts",
@@ -742,12 +828,13 @@ def _ensure_layout_foreign_keys() -> None:
 
 
 def upgrade() -> None:
-    # 枚举块含内部 `;`，整体作为单条语句执行
-    for stmt in _ENUM_DDL:
-        op.execute(stmt)
-    # 其余块可能含多条语句，逐条执行（避免驱动不支持多语句）
+    # 枚举类型仅 PostgreSQL 需要（SQLite/MySQL 将 ENUM 渲染为 VARCHAR/CHECK）
+    if is_postgres(op.get_bind()):
+        for stmt in _ENUM_DDL:
+            op.execute(stmt)
+    # 建表与补列合并后逐条执行（每条按方言降级）
     for stmt in _split(_TABLE_DDL + _COLUMN_DDL + _LAYOUT_MIGRATION):
-        op.execute(stmt)
+        _exec_portable(stmt)
     _ensure_layout_foreign_keys()
 
 

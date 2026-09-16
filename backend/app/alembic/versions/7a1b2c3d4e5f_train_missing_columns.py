@@ -8,6 +8,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
+from app.alembic.dialect_compat import portable_add_column
+
 revision: str = "7a1b2c3d4e5f"
 down_revision: str | None = "1c2d3e4f5a6b"
 branch_labels: str | Sequence[str] | None = None
@@ -44,7 +46,7 @@ _ADDITIONS: dict[str, list[tuple[str, str]]] = {
 def upgrade() -> None:
     for table, columns in _ADDITIONS.items():
         for name, col_type in columns:
-            op.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {col_type}")
+            portable_add_column(table, name, col_type)
 
 
 def downgrade() -> None:

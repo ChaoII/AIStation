@@ -11,6 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from app.alembic.dialect_compat import is_sqlite
+
 # revision identifiers, used by Alembic.
 revision: str = '2e9f6ccd3ff4'
 down_revision: str | None = 'a923822e9bef'
@@ -34,7 +36,9 @@ def upgrade() -> None:
     # 历史遗留表：仅旧库存在，空库重放时必须跳过
     _drop_apscheduler_jobs()
     op.add_column('video_layouts', sa.Column('is_template', sa.Boolean(), nullable=False, server_default='false', comment='是否模板'))
-    op.alter_column('video_layouts', 'is_template', server_default=None)
+    # SQLite 不支持 ALTER COLUMN ... DROP DEFAULT（需重建表）；保留 server_default 无副作用
+    if not is_sqlite(op.get_bind()):
+        op.alter_column('video_layouts', 'is_template', server_default=None)
     op.add_column('video_layouts', sa.Column('patrol_interval', sa.Integer(), nullable=True, comment='轮巡间隔(秒)'))
     op.alter_column('video_layouts', 'description',
                existing_type=sa.TEXT(),

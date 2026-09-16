@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.alembic import dialect_compat  # noqa: F401  注册 JSONB→JSON 等跨方言降级
 from app.config.path_conf import ALEMBIC_VERSION_DIR
 from app.config.setting import settings
 from app.core.base_model import MappedBase

@@ -12,6 +12,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
+from app.alembic.dialect_compat import is_sqlite
+
 # revision identifiers, used by Alembic.
 revision: str = "d6d5f85952f5"
 down_revision: str | None = "2eab490f8488"
@@ -46,8 +48,41 @@ def _has_foreign_key(table: str, fk_name: str) -> bool:
     return fk_name in {fk["name"] for fk in insp.get_foreign_keys(table)}
 
 
+def _upgrade_sqlite() -> None:
+    """SQLite 分支：ALTER COLUMN / ADD CONSTRAINT 需走 batch 模式（重建表）。"""
+    add_group = not _has_column("video_alarm_rules", "group_id")
+    add_index = not _has_index("video_alarm_rules", op.f("ix_video_alarm_rules_group_id"))
+    add_fk = not _has_foreign_key("video_alarm_rules", FK_NAME)
+    with op.batch_alter_table("video_alarm_rules") as batch_op:
+        batch_op.alter_column(
+            "camera_id",
+            existing_type=sa.INTEGER(),
+            nullable=True,
+        )
+        if add_group:
+            batch_op.add_column(sa.Column("group_id", sa.Integer(), nullable=True))
+        if add_index:
+            batch_op.create_index(
+                op.f("ix_video_alarm_rules_group_id"),
+                ["group_id"],
+                unique=False,
+            )
+        if add_fk:
+            batch_op.create_foreign_key(
+                FK_NAME,
+                "video_camera_groups",
+                ["group_id"],
+                ["id"],
+                ondelete="SET NULL",
+            )
+
+
 def upgrade() -> None:
     """仅变更 video_alarm_rules：camera_id 改可空 + 新增 group_id（FK/索引）。"""
+    # SQLite 不支持 ALTER COLUMN / ADD CONSTRAINT，改走 batch 重建表
+    if is_sqlite(op.get_bind()):
+        _upgrade_sqlite()
+        return
     # 组规则的 camera_id 为空，故放开 NOT NULL（重复执行设置 nullable=True 亦幂等）
     op.alter_column(
         "video_alarm_rules",
