@@ -78,6 +78,18 @@ class AlarmService:
         return [AlarmRuleOutSchema.model_validate(r).model_dump() for r in rules]
 
     @classmethod
+    async def get_rule_detail_service(cls, auth: AuthSchema, id: int) -> dict:
+        """按 id 精确查询单条规则；不存在返回 404。
+
+        前端「编辑」不再依赖仅取前 N 条的列表匹配（规则数 >N 时会把编辑误判为新建）。
+        """
+        from .crud import AlarmRuleCRUD
+        rule = await AlarmRuleCRUD(auth).get_by_id_crud(id=id)
+        if not rule:
+            raise CustomException(msg="告警规则不存在", code=404, status_code=404)
+        return AlarmRuleOutSchema.model_validate(rule).model_dump()
+
+    @classmethod
     async def create_rule_service(cls, data: AlarmRuleCreateSchema, auth: AuthSchema) -> dict:
         from .crud import AlarmRuleCRUD
         # 写库前完成条件编译校验，非法条件直接拒绝（HTTP 400）
@@ -128,22 +140,46 @@ class AlarmService:
         await AlarmRuleCRUD(auth).delete(ids=ids)
 
     @classmethod
-    async def get_record_list_service(cls, auth: AuthSchema, search: Any | None = None) -> list[dict]:
+    async def get_record_list_service(
+        cls,
+        auth: AuthSchema,
+        page_no: int = 1,
+        page_size: int = 10,
+        search: Any | None = None,
+    ) -> dict:
+        """告警记录列表：数据库分页（LIMIT/OFFSET + COUNT），不再全表载入内存。
+
+        参数:
+        - auth (AuthSchema): 认证信息。
+        - page_no (int): 页码（从 1 开始）。
+        - page_size (int): 每页数量。
+        - search (Any | None): 查询条件对象。
+
+        返回:
+        - dict: `CRUDBase.page` 约定的分页结构。
+        """
         from .crud import AlarmRecordCRUD
-        records = await AlarmRecordCRUD(auth).get_list_crud(
-            search=search.__dict__ if search else None,
-            order_by=[{"alarm_time": "desc"}]
+        offset = max(page_no - 1, 0) * page_size
+        return await AlarmRecordCRUD(auth).page(
+            offset=offset,
+            limit=page_size,
+            order_by=[{"alarm_time": "desc"}],
+            search=search.__dict__ if search else {},
+            out_schema=AlarmRecordOutSchema,
         )
-        return [AlarmRecordOutSchema.model_validate(r).model_dump() for r in records]
 
     @classmethod
     async def get_realtime_alarms_service(cls, auth: AuthSchema) -> list[dict]:
+        """实时告警：SQL 侧 LIMIT 100（原实现先取全量再切片）。"""
         from .crud import AlarmRecordCRUD
-        records = await AlarmRecordCRUD(auth).get_list_crud(
+        result = await AlarmRecordCRUD(auth).page(
+            offset=0,
+            limit=100,
+            order_by=[{"alarm_time": "desc"}],
             search={"status": "PENDING"},
-            order_by=[{"alarm_time": "desc"}]
+            out_schema=AlarmRecordOutSchema,
         )
-        return [AlarmRecordOutSchema.model_validate(r).model_dump() for r in records[:100]]
+        return result["items"]
 
     @classmethod
     async def confirm_alarm_service(cls, id: int, data: AlarmRecordConfirmSchema, auth: AuthSchema) -> dict:

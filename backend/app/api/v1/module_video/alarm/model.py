@@ -59,7 +59,7 @@ class AlarmRecordModel(MappedBase):
     snapshot_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="告警截图")
     video_clip_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="告警视频片段")
 
-    alarm_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=datetime.now, comment="告警时间")
+    alarm_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=datetime.now, index=True, comment="告警时间")
     confirm_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="确认时间")
     confirm_user: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="确认人")
 

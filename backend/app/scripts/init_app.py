@@ -1050,6 +1050,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         start_edge_event_retention()
         log.info("✅ 边缘事件 TTL 清理已启动")
 
+        from app.api.v1.module_video.alarm.retention import start_alarm_record_retention
+        start_alarm_record_retention()
+        log.info("✅ 告警记录 TTL 清理已启动")
+
         try:
             from app.core.database import async_engine as _train_engine
             from app.plugin.module_train.schema_check import ensure_train_columns
@@ -1141,6 +1145,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         from app.api.v1.module_video.edge.retention import stop_edge_event_retention
         await stop_edge_event_retention()
         log.info("✅ 边缘事件 TTL 清理已关闭")
+
+        from app.api.v1.module_video.alarm.retention import stop_alarm_record_retention
+        await stop_alarm_record_retention()
+        log.info("✅ 告警记录 TTL 清理已关闭")
 
         await FastAPILimiter.close()
         log.info("✅ 请求限制器已关闭")

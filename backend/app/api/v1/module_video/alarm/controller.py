@@ -1,4 +1,6 @@
 
+from typing import Annotated
+
 from fastapi import APIRouter, Body, Depends, Path, Query
 from fastapi.responses import JSONResponse
 
@@ -24,6 +26,15 @@ async def get_rule_list_controller(
 ) -> JSONResponse:
     result_list = await AlarmService.get_rule_list_service(auth=auth, search=search)
     result = await PaginationService.paginate(data_list=result_list, page_no=page.page_no, page_size=page.page_size)
+    return SuccessResponse(data=result, msg="查询成功")
+
+
+@AlarmRouter.get("/rule/detail/{id}", summary="查询告警规则详情")
+async def get_rule_detail_controller(
+    id: Annotated[int, Path(description="规则ID")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:alarm:query"]))],
+) -> JSONResponse:
+    result = await AlarmService.get_rule_detail_service(auth=auth, id=id)
     return SuccessResponse(data=result, msg="查询成功")
 
 
@@ -68,9 +79,10 @@ async def get_record_list_controller(
     search = AlarmRecordQueryParam(
         camera_id=camera_id, alarm_type=alarm_type, severity=severity, status=status
     )
-    result_list = await AlarmService.get_record_list_service(search=search, auth=auth)
-    result = await PaginationService.paginate(data_list=result_list, page_no=page.page_no, page_size=page.page_size)
-    return SuccessResponse(data=result, msg="查询成功")
+    result_list = await AlarmService.get_record_list_service(
+        search=search, auth=auth, page_no=page.page_no, page_size=page.page_size
+    )
+    return SuccessResponse(data=result_list, msg="查询成功")
 
 
 @AlarmRouter.get("/record/realtime", summary="获取实时告警(最近100条)")
