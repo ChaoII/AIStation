@@ -253,7 +253,11 @@ class TemporalStore:
                 mapping[field + _SEP + _LAST] = value if prev_last is None else max(prev_last, value)
 
                 pos = positions.get(field)
-                if pos is not None:
+                # 位置只在「更新的观测时间戳」推进：同一事件被多条规则重复观测时
+                # （同 scope 共享观测）不得二次推进，否则 prev==cur 使 line_cross 永不命中；
+                # 乱序到达的更早事件也不得让位置回退。
+                newer = prev_last is None or value > prev_last
+                if pos is not None and newer:
                     old_cur = _parse_pos(current.get(field + _SEP + _POS_C))
                     if old_cur is not None:
                         mapping[field + _SEP + _POS_P] = _ser_pos(old_cur)

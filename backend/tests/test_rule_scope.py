@@ -148,6 +148,19 @@ def _detection(label="person", track_id=1):
     return det
 
 
+def _detection_at(cx, cy, label="person", track_id=1):
+    """构造中心为 (cx, cy) 的检测框（line_cross 用）。"""
+    w = h = 0.1
+    det = {
+        "label": label,
+        "confidence": 0.9,
+        "bbox": {"x": cx - w / 2, "y": cy - h / 2, "width": w, "height": h},
+    }
+    if track_id is not None:
+        det["track_id"] = track_id
+    return det
+
+
 def _event(detections=None, ts=1000):
     return {
         "task_id": 1,
@@ -294,3 +307,36 @@ def test_temporal_observe_runs_per_temporal_rule(monkeypatch):
     _run(_event())
 
     assert len(calls) == 2
+
+
+# ------------------------------------- 多时序规则共享观测：两条 line_cross 均命中
+LINE_CROSS_PERSON = {
+    "op": "and",
+    "children": [{
+        "subject": "line_cross",
+        "label": "person",
+        "line": [[0.5, 0.0], [0.5, 1.0]],
+        "dir": "A2B",
+    }],
+}
+
+
+def test_two_line_cross_rules_both_fire(monkeypatch):
+    """同相机同 alarm_type 的两条 line_cross 规则必须都命中。
+
+    回归：重复观测会覆盖 prev 位置，导致第二条时序规则的 line_cross 永不命中。
+    """
+    r1 = _FakeRule(1, "越线规则A", LINE_CROSS_PERSON, camera_id=CAM)
+    r2 = _FakeRule(2, "越线规则B", LINE_CROSS_PERSON, camera_id=CAM)
+    _patch_runtime(monkeypatch, [r1, r2], None)
+
+    # 第 1 帧：位于绊线左侧，无越线 → 不告警
+    first = _run(_event(detections=[_detection_at(0.2, 0.5)], ts=1000))
+    assert first["alarm_created"] is False
+    assert first["reason"] == "rule_not_matched"
+
+    # 第 2 帧：移动到绊线右侧 → 两条规则都应命中
+    second = _run(_event(detections=[_detection_at(0.8, 0.5)], ts=1001))
+    assert second["alarm_created"] is True
+    assert second["rule_matched_list"] == ["越线规则A", "越线规则B"]
+    assert len(second["alarm_ids"]) == 2

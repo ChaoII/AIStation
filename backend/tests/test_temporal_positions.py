@@ -50,3 +50,28 @@ def test_query_positions_scoped_by_region_bucket():
     s.observe(CAM, ALGO, [_det(1, 0.2, 0.5)], 1000, scope="bucketA")
     assert s.query_positions(CAM, ALGO, "person", "bucketA") == {"t:1": (None, (0.2, 0.5))}
     assert s.query_positions(CAM, ALGO, "person", "bucketB") == {}
+
+
+def test_repeated_observe_same_ts_does_not_advance_position():
+    """同一事件时间戳被重复观测（多规则共享 scope）时不得二次推进位置。
+
+    否则 prev 会被覆盖为 cur，line_cross 的 prev==cur 恒不命中。
+    """
+    s = TemporalStore(prefer_redis=False)
+    # 两个规则对同一帧各观测一次：第二次必须是 no-op
+    s.observe(CAM, ALGO, [_det(1, 0.2, 0.5)], 1000)
+    s.observe(CAM, ALGO, [_det(1, 0.2, 0.5)], 1000)
+    assert s.query_positions(CAM, ALGO, "person", "all") == {"t:1": (None, (0.2, 0.5))}
+    # 下一帧正常推进：prev 仍是上一帧位置
+    s.observe(CAM, ALGO, [_det(1, 0.8, 0.5)], 1001)
+    s.observe(CAM, ALGO, [_det(1, 0.8, 0.5)], 1001)
+    assert s.query_positions(CAM, ALGO, "person", "all") == {"t:1": ((0.2, 0.5), (0.8, 0.5))}
+
+
+def test_observe_older_ts_does_not_rewind_position():
+    """乱序到达的更早事件不得覆盖较新位置（位置只前进不后退）。"""
+    s = TemporalStore(prefer_redis=False)
+    s.observe(CAM, ALGO, [_det(1, 0.2, 0.5)], 1000)
+    s.observe(CAM, ALGO, [_det(1, 0.8, 0.5)], 1001)
+    s.observe(CAM, ALGO, [_det(1, 0.3, 0.5)], 999)
+    assert s.query_positions(CAM, ALGO, "person", "all") == {"t:1": ((0.2, 0.5), (0.8, 0.5))}
