@@ -29,7 +29,7 @@ def _ws_headers() -> dict:
 
 
 def _token(user_id: int = 7, name: str = "alice") -> str:
-    """复用项目 JWT 签发，供 WS query token 鉴权。"""
+    """复用项目 JWT 签发，供 WS query token 鉴权（无 Redis 在线会话）。"""
     from app.api.v1.module_system.auth.schema import JWTPayloadSchema
     from app.core.security import create_access_token
 
@@ -42,10 +42,28 @@ def _token(user_id: int = 7, name: str = "alice") -> str:
     )
 
 
+def _alg_none_token(sub: str = '{"user_id":1,"user_name":"admin"}') -> str:
+    """手工构造 alg=none 的无签名 token。"""
+    import base64
+
+    def _b64(obj: dict) -> str:
+        raw = json.dumps(obj, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    payload = {"sub": sub, "is_refresh": False, "exp": 9999999999, "iss": "aistation"}
+    return f"{_b64({'alg': 'none', 'typ': 'JWT'})}.{_b64(payload)}."
+
+
 @pytest.fixture(autouse=True)
 def _schema(test_client):
     """启动应用生命周期（含 fakeredis 初始化），WS 与广播共用同一实例。"""
     return test_client
+
+
+@pytest.fixture
+def valid_ws_token(auth_headers) -> str:
+    """真实登录得到的 access_token（Redis 中有在线会话，签名/签发者均合法）。"""
+    return auth_headers["Authorization"].removeprefix("Bearer ")
 
 
 def _wait_until(pred, timeout: float = 3.0) -> bool:
@@ -79,6 +97,57 @@ def test_ws_rejects_invalid_token(test_client):
     assert event_bus.local_subscriber_count() == before
 
 
+def test_ws_rejects_signed_token_without_online_session(test_client):
+    """签名正确但无 Redis 在线会话（未登录/伪造 sub）必须拒绝：仅验签不够。"""
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with test_client.websocket_connect(
+            f"{WS_PATH}?token={_token()}", headers=_ws_headers()
+        ):
+            pass
+    assert exc.value.code == 4401
+
+
+def test_ws_rejects_tampered_token(test_client, valid_ws_token):
+    """篡改签名后的 token 必须拒绝。"""
+    tampered = valid_ws_token[:-3] + ("aaa" if valid_ws_token[-3:] != "aaa" else "bbb")
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with test_client.websocket_connect(
+            f"{WS_PATH}?token={tampered}", headers=_ws_headers()
+        ):
+            pass
+    assert exc.value.code == 4401
+
+
+def test_ws_rejects_expired_token(test_client):
+    """过期 token 必须拒绝。"""
+    from app.api.v1.module_system.auth.schema import JWTPayloadSchema
+    from app.core.security import create_access_token
+
+    token = create_access_token(
+        JWTPayloadSchema(
+            sub=json.dumps({"user_id": 1, "user_name": "admin", "session_id": "expired"}),
+            is_refresh=False,
+            exp=datetime.now() - timedelta(minutes=1),
+        )
+    )
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with test_client.websocket_connect(
+            f"{WS_PATH}?token={token}", headers=_ws_headers()
+        ):
+            pass
+    assert exc.value.code == 4401
+
+
+def test_ws_rejects_alg_none_token(test_client):
+    """alg=none 的无签名 token 必须拒绝。"""
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with test_client.websocket_connect(
+            f"{WS_PATH}?token={_alg_none_token()}", headers=_ws_headers()
+        ):
+            pass
+    assert exc.value.code == 4401
+
+
 # --------------------------------------------------------------- Redis pub/sub
 def test_publish_edge_event_reaches_redis_subscriber(test_client):
     """publish_edge_event 经 Redis 频道 ``ai:edge:event`` 发布，订阅者收到封装消息。"""
@@ -108,11 +177,10 @@ def test_publish_edge_event_reaches_redis_subscriber(test_client):
     assert body["data"]["event_id"] == "ev-pub"
 
 
-def test_ws_receives_published_event(test_client):
+def test_ws_receives_published_event(test_client, valid_ws_token):
     """WS 连接后发布事件，前端收到 ``{"type":"event","data":<详情>}``。"""
-    token = _token()
     with test_client.websocket_connect(
-        f"{WS_PATH}?token={token}", headers=_ws_headers()
+        f"{WS_PATH}?token={valid_ws_token}", headers=_ws_headers()
     ) as ws:
         asyncio.run(
             event_bus.publish_edge_event(
@@ -126,7 +194,7 @@ def test_ws_receives_published_event(test_client):
 
 
 # --------------------------------------------------------------- 订阅清理
-def test_local_fallback_subscription_is_cleaned(test_client, monkeypatch):
+def test_local_fallback_subscription_is_cleaned(test_client, monkeypatch, valid_ws_token):
     """Redis 不可用时降级为进程内广播；断连后订阅必须注销，不得泄漏。"""
 
     async def _no_redis():
@@ -134,9 +202,8 @@ def test_local_fallback_subscription_is_cleaned(test_client, monkeypatch):
 
     monkeypatch.setattr(event_bus, "get_redis", _no_redis)
 
-    token = _token()
     with test_client.websocket_connect(
-        f"{WS_PATH}?token={token}", headers=_ws_headers()
+        f"{WS_PATH}?token={valid_ws_token}", headers=_ws_headers()
     ) as ws:
         assert event_bus.local_subscriber_count() == 1
         asyncio.run(event_bus.publish_edge_event({"event_id": "ev-local"}))

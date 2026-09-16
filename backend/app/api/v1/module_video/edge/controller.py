@@ -144,11 +144,30 @@ async def get_edge_task_snapshot_controller(
     return Response(content=content, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
-def verify_edge_event_ws_token(token: str | None):
-    """校验 WS query token；复用协作 WS 既有 JWT 解析助手，不新造鉴权方案。"""
-    from app.api.v1.module_annotation.collaboration.controller import parse_ws_user
+async def verify_edge_event_ws_token(token: str | None, websocket: WebSocket) -> bool:
+    """严格校验边缘事件 WS token，与 HTTP 路径同强度（fail-closed）。
 
-    return parse_ws_user(token)
+    校验内容：非空 → JWT 签名 + 过期时间（exp 必填）+ 签发者（iss）→
+    非 refresh token → Redis 在线会话 → 用户存在且未停用。
+    任一环节失败或 Redis 不可用均返回 False（拒绝连接），不做弱化放行。
+    """
+    if not token or not token.strip():
+        return False
+
+    redis = getattr(websocket.app.state, "redis", None)
+    if redis is None:
+        # 无法校验在线会话 → 直接拒绝，避免仅凭签名放行
+        return False
+
+    from app.core.database import async_db_session
+    from app.core.dependencies import _verify_token
+
+    try:
+        async with async_db_session() as db:
+            await _verify_token(token.strip(), db, redis)
+        return True
+    except Exception:  # noqa: BLE001 - 任何校验失败都视为未通过鉴权
+        return False
 
 
 async def _forward_pubsub(websocket: WebSocket, pubsub) -> None:
@@ -193,7 +212,7 @@ async def edge_event_ws_controller(websocket: WebSocket) -> None:
     ``ai:edge:event``（Redis 不可用降级进程内广播），把落库事件详情原样转发。
     """
     token = websocket.query_params.get("token")
-    if verify_edge_event_ws_token(token) is None:
+    if not await verify_edge_event_ws_token(token, websocket):
         await websocket.close(code=4401)
         return
 
