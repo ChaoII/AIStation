@@ -1,11 +1,15 @@
+import hmac
+
 from fastapi import APIRouter, Body, Depends, Path, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.request import PaginationService
 from app.common.response import SuccessResponse
+from app.config.setting import settings
 from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
+from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
 from .param import RecordExecutionLogQueryParam, RecordFileQueryParam, RecordPlanQueryParam
@@ -173,6 +177,15 @@ async def get_execution_log_detail_controller(
 
 @RecordRouter.post("/webhook/on_record_mp4", summary="ZLM录制完成回调", include_in_schema=False)
 async def on_record_mp4_webhook(request: Request) -> dict:
+    # fail-closed：必须配置共享密钥，且请求凭据需匹配（防未鉴权写库）
+    expected = (settings.RECORD_WEBHOOK_TOKEN or "").strip()
+    if not expected:
+        raise CustomException(msg="录像回调未配置共享密钥，已拒绝", code=403, status_code=403)
+    provided = (request.headers.get("X-Record-Token") or "").strip()
+    if not provided:
+        provided = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        raise CustomException(msg="无效的回调凭证", code=403, status_code=403)
     data = await request.json()
     return await RecordService.handle_record_webhook(data)
 

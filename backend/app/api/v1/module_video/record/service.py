@@ -30,12 +30,56 @@ RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
 
 _SEGMENT_SEC = 300  # 5 min per segment
 
+# stream_id 允许的字符集（防目录穿越/越界写入）；显式排除 . 与 ..
+_STREAM_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
+
 # stream_id -> {"proc": subprocess.Popen, "known_segments": set[str], "start_time": datetime, "camera_id": int}
 _running_recordings: dict[str, dict] = {}
 
 
+def safe_stream_segment(stream_id: str | None) -> str:
+    """校验并返回安全的 stream_id 目录段。
+
+    参数:
+    - stream_id (str | None): 原始流ID。
+
+    返回:
+    - str: 通过白名单校验的流ID。
+
+    异常:
+    - CustomException: 流ID为空或含非法字符（含 ``.``/``..``/路径分隔符）时抛出 400。
+    """
+    seg = (stream_id or "").strip()
+    if not seg or seg in (".", "..") or not _STREAM_SEGMENT_RE.match(seg):
+        raise CustomException(msg="非法的流ID", code=400, status_code=400)
+    return seg
+
+
+def is_within_recordings_dir(path_str: str | None) -> bool:
+    """校验路径归一化后是否落在 RECORDINGS_DIR 内（防目录穿越）。
+
+    相对路径按 RECORDINGS_DIR 为基准解析；绝对路径直接归一化后判定归属。
+
+    参数:
+    - path_str (str | None): 待校验路径。
+
+    返回:
+    - bool: 位于录像根目录内返回 True，否则 False。
+    """
+    if not path_str or not str(path_str).strip():
+        return False
+    try:
+        target = Path(str(path_str))
+        if not target.is_absolute():
+            target = RECORDINGS_DIR / target
+        target = target.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return target == RECORDINGS_DIR or RECORDINGS_DIR in target.parents
+
+
 def _ensure_dir(stream_id: str) -> Path:
-    d = RECORDINGS_DIR / stream_id
+    d = RECORDINGS_DIR / safe_stream_segment(stream_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -509,6 +553,12 @@ class RecordService:
         duration = data.get("duration", 0)
         start_time_str = data.get("start_time", "")
         end_time_str = data.get("time", "")
+
+        # 路径安全：回调写入的 file_path 必须位于录像根目录内，拒绝目录穿越
+        candidate = file_path or file_name
+        if not is_within_recordings_dir(candidate):
+            raise CustomException(msg="非法的录像文件路径", code=403, status_code=403)
+
         camera_id = None
         if stream_id:
             async with async_db_session() as session:
