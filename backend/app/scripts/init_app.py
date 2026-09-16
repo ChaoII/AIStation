@@ -23,6 +23,51 @@ from app.utils.console import console_close, console_run
 
 from .initialize import InitializeData
 
+# 既有库「不跑 Alembic、仅重启后端」的兜底补列清单：
+# 模型新增的可空/带默认列必须同步登记在此，server_default 与 Alembic 迁移保持一致。
+ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "video_algorithms": [
+        ("model_file_config", "JSONB"),
+        ("runtime_config", "JSONB"),
+        ("preset_params", "JSONB"),
+        ("scene_type", "VARCHAR(64)"),
+    ],
+    "video_algorithm_tasks": [
+        ("runtime_overrides", "JSONB"),
+        ("params_overrides", "JSONB"),
+        ("edge_device_id", "INTEGER"),
+        ("error_log", "TEXT"),
+    ],
+    "video_cameras": [
+        ("reachable", "BOOLEAN"),
+    ],
+    "video_alarm_rules": [
+        ("conditions", "JSONB"),
+        # 与 Alembic 1164d4a7539d / 183fb76b1184 / d6d5f85952f5 对齐
+        ("params", "JSONB NOT NULL DEFAULT '{}'"),
+        ("rollout", "JSONB NOT NULL DEFAULT '{}'"),
+        ("group_id", "INTEGER"),
+    ],
+    "ai_models": [
+        ("extra_headers", "JSONB"),
+        ("provider_id", "INTEGER"),
+        ("usage", "VARCHAR(16)"),
+        ("capabilities", "JSONB"),
+        ("context_window", "INTEGER"),
+    ],
+    "ai_call_logs": [
+        ("user_id", "INTEGER"),
+    ],
+    "ai_reports": [
+        ("app_id", "INTEGER"),
+        ("session_id", "INTEGER"),
+    ],
+    "ai_tools": [
+        ("source", "VARCHAR(16) DEFAULT 'system'"),
+        ("config", "JSONB"),
+    ],
+}
+
 
 async def _ensure_missing_columns() -> None:
     """Add new columns to existing tables if they don't exist."""
@@ -30,44 +75,7 @@ async def _ensure_missing_columns() -> None:
 
     from app.core.database import async_engine
 
-    new_columns: dict[str, list[tuple[str, str]]] = {
-        "video_algorithms": [
-            ("model_file_config", "JSONB"),
-            ("runtime_config", "JSONB"),
-            ("preset_params", "JSONB"),
-            ("scene_type", "VARCHAR(64)"),
-        ],
-        "video_algorithm_tasks": [
-            ("runtime_overrides", "JSONB"),
-            ("params_overrides", "JSONB"),
-            ("edge_device_id", "INTEGER"),
-            ("error_log", "TEXT"),
-        ],
-        "video_cameras": [
-            ("reachable", "BOOLEAN"),
-        ],
-        "video_alarm_rules": [
-            ("conditions", "JSONB"),
-        ],
-        "ai_models": [
-            ("extra_headers", "JSONB"),
-            ("provider_id", "INTEGER"),
-            ("usage", "VARCHAR(16)"),
-            ("capabilities", "JSONB"),
-            ("context_window", "INTEGER"),
-        ],
-        "ai_call_logs": [
-            ("user_id", "INTEGER"),
-        ],
-        "ai_reports": [
-            ("app_id", "INTEGER"),
-            ("session_id", "INTEGER"),
-        ],
-        "ai_tools": [
-            ("source", "VARCHAR(16) DEFAULT 'system'"),
-            ("config", "JSONB"),
-        ],
-    }
+    new_columns = ENSURE_NEW_COLUMNS
     is_sqlite = settings.DATABASE_TYPE == "sqlite"
     async with async_engine.begin() as conn:
         for table, columns in new_columns.items():
