@@ -6,8 +6,6 @@ Create Date: 2026-09-11
 """
 from collections.abc import Sequence
 
-from alembic import op
-
 from app.alembic.dialect_compat import portable_add_column
 
 revision: str = "7a1b2c3d4e5f"
