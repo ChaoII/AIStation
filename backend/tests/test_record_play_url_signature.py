@@ -20,7 +20,11 @@ def test_tampered_and_expired_rejected():
     sig = sign_recording_url("cam1", "a.mp4", exp)
     assert verify_recording_signature("cam2", "a.mp4", exp, sig) is False
     assert verify_recording_signature("cam1", "b.mp4", exp, sig) is False
-    assert verify_recording_signature("cam1", "a.mp4", exp, sig[:-1] + "0") is False
+    # 确定性篡改：翻转首位十六进制字符（0↔1），保证必然与原签名不同
+    # （旧写法 `sig[:-1] + "0"` 在末位恰为 "0" 时等价于原签名，约 1/16 概率误判）
+    tampered = ("1" if sig[0] == "0" else "0") + sig[1:]
+    assert tampered != sig
+    assert verify_recording_signature("cam1", "a.mp4", exp, tampered) is False
     assert verify_recording_signature("cam1", "a.mp4", 0, sig) is False
     old = int(time.time()) - 10
     assert verify_recording_signature("cam1", "a.mp4", old, sign_recording_url("cam1", "a.mp4", old)) is False

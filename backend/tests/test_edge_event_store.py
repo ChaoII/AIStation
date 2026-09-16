@@ -255,7 +255,7 @@ def test_callback_absence_heartbeat_not_persisted(monkeypatch):
     走真实回调 + 真实落库，仅替换规则查询之外的副作用（联动/通知）与内存时序状态。
     """
     from app.api.v1.module_video.alarm.model import AlarmRuleModel
-    from app.api.v1.module_video.edge.store import count_events
+    from app.api.v1.module_video.edge.store import get_event_by_event_id
     from app.api.v1.module_video.inference.temporal import TemporalStore
 
     camera_id = 880001
@@ -298,14 +298,14 @@ def test_callback_absence_heartbeat_not_persisted(monkeypatch):
     monkeypatch.setattr(EventService, "execute_linkage_actions", _noop_linkage)
     monkeypatch.setattr(notification, "dispatch_notification", _noop_notify)
 
-    def _count() -> int:
+    def _persisted(event_id: str) -> bool:
+        """按 event_id 精确查库：隔离断言，不受其他写入者（后台任务/并发套件）的全局计数干扰。"""
         session = database.db_session()
         try:
-            return count_events(session)
+            return get_event_by_event_id(session, event_id) is not None
         finally:
             session.close()
 
-    before = _count()
     # 首帧有检测：记 last_seen，但 absence 未达 gap → 未命中（有检测仍落库）
     asyncio.run(
         service.InferenceService.process_detection_callback(
@@ -334,8 +334,9 @@ def test_callback_absence_heartbeat_not_persisted(monkeypatch):
         )
     )
     assert result.get("alarm_created") is True
-    # 只新增「有检测」的那一条；absence 心跳（空检测）被落库层过滤
-    assert _count() == before + 1
+    # 只落「有检测」的那一条；absence 心跳（空检测）被落库层过滤
+    assert _persisted(seen_event_id) is True
+    assert _persisted(absent_event_id) is False
 
 
 def test_callback_unmatched_with_detections_persists(monkeypatch):
