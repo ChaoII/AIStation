@@ -1,6 +1,17 @@
 /**
  * 算法配置文件模板
  * 不同算法类型有不同的配置结构
+ *
+ * 键名契约（与边缘编排器/本地 worker 对齐）：
+ * - `runtime.engine`（tensorrt/onnxruntime/mnn）与 `runtime.gpu.enabled/device_id`：
+ *   本地 worker（inference/registry.py）直接读取；边缘侧由 orchestrator.resolve_backend/
+ *   resolve_device 作为**偏好**映射为规范键 `backend`（trt/ort/mnn）/`device`（cpu/gpu）。
+ *   未显式指定时按目标设备上报的 capabilities.backends 协商（默认 ort），设备不支持时回退。
+ * - `params.confidence`：本地 worker 读取；边缘侧映射为 `models[].confidence_threshold`
+ *   （显式阈值优先，缺省由任务灵敏度推导）。
+ * - `runtime.input_width`/`input_height`：边缘侧映射为 `models[].input_size`（[w,h]）。
+ * 规范键（新数据建议直接使用）：`runtime.backend`、`runtime.device`、`runtime.input_size`、
+ * `params.confidence_threshold`。
  */
 
 export interface AlgoConfig {

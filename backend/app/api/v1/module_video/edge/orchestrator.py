@@ -28,6 +28,131 @@ _MODEL_TYPE_KEYWORDS: dict[str, str] = {
     "OBB": "obb",
 }
 
+# 设备上报后端时的偏好顺序：未显式指定时取设备可用后端中此顺序最优者
+_BACKEND_PREFERENCE: tuple[str, ...] = ("trt", "ort", "mnn", "ncnn", "sophgo")
+# 视为「自动协商」的占位值（前后端模板均可用它表示交由云端/设备决定）
+_AUTO_VALUES: frozenset[str] = frozenset({"", "auto", "default"})
+# 旧前端模板 runtime.engine → 规范后端名（模板迁移期兼容；仅作偏好，不作硬要求）
+_ENGINE_TO_BACKEND: dict[str, str] = {
+    "tensorrt": "trt",
+    "trt": "trt",
+    "onnxruntime": "ort",
+    "ort": "ort",
+    "mnn": "mnn",
+    "ncnn": "ncnn",
+    "sophgo": "sophgo",
+}
+
+
+def _first_present(mapping: dict, *keys: str):
+    """按顺序返回第一个非空值；全为空返回 None。"""
+    for key in keys:
+        value = mapping.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _normalize_backend(value) -> str | None:
+    """把后端名/旧引擎名归一化；auto/空返回 None（表示未指定）。"""
+    if value is None:
+        return None
+    name = str(value).strip().lower()
+    if name in _AUTO_VALUES:
+        return None
+    return _ENGINE_TO_BACKEND.get(name, name)
+
+
+def resolve_backend(runtime: dict | None, capabilities: dict | None = None) -> str:
+    """协商推理后端：显式 `backend`（硬要求）> 旧 `engine`（偏好）> 设备上报 > 默认。
+
+    - `runtime.backend` 非空且非 auto：原样返回，是否可用交由能力校验判定（硬要求）。
+    - 旧模板 `runtime.engine`：仅作偏好，设备不支持时回退到设备可用后端；避免旧模板
+      硬编码 tensorrt 使 ort-only Agent 的默认下发路径必然被拒（审计 §1.1 BLOCKER）。
+    - 无设备上报（本机 Agent）时回退 `settings.EDGE_DEFAULT_BACKEND`。
+    """
+    runtime = runtime or {}
+    caps = capabilities or {}
+    available = [str(b).strip().lower() for b in (caps.get("backends") or []) if str(b).strip()]
+
+    explicit = _normalize_backend(runtime.get("backend"))
+    if explicit:
+        return explicit
+
+    legacy = _normalize_backend(runtime.get("engine"))
+    if legacy and (not available or legacy in available):
+        return legacy
+    if legacy:
+        logger.warning(
+            f"[边缘编排] 旧运行时 engine={legacy} 设备不支持，按设备可用后端回退：{available}"
+        )
+
+    for preferred in _BACKEND_PREFERENCE:
+        if preferred in available:
+            return preferred
+    if available:
+        return available[0]
+    return str(getattr(settings, "EDGE_DEFAULT_BACKEND", "ort") or "ort")
+
+
+def resolve_device(runtime: dict | None, capabilities: dict | None = None) -> str:
+    """协商推理设备：显式 `device`（硬）> 设备平台 > 旧 `gpu.enabled` > 默认。
+
+    有设备上报平台时以平台为准（避免旧模板 `gpu.enabled=true` 把 CPU 设备误判为 GPU）；
+    无设备上报（本机 Agent）时退回旧模板的 `gpu.enabled`，保持既有行为。
+    """
+    runtime = runtime or {}
+    explicit = runtime.get("device")
+    if explicit is not None and str(explicit).strip().lower() not in _AUTO_VALUES:
+        return str(explicit).strip().lower()
+    platform = str(((capabilities or {}).get("hardware") or {}).get("platform") or "").strip().lower()
+    if platform:
+        return "gpu" if platform in ("nvidia", "jetson") else "cpu"
+    gpu = runtime.get("gpu")
+    if isinstance(gpu, dict) and isinstance(gpu.get("enabled"), bool):
+        return "gpu" if gpu["enabled"] else "cpu"
+    return str(getattr(settings, "EDGE_DEFAULT_DEVICE", "cpu") or "cpu")
+
+
+def resolve_input_size(params: dict | None, runtime: dict | None) -> list[int]:
+    """协商输入分辨率：`input_size` 列表 > 旧 `input_width/height`（params 优先）。"""
+    params, runtime = params or {}, runtime or {}
+    size = _first_present(params, "input_size") or _first_present(runtime, "input_size")
+    if isinstance(size, (list, tuple)) and len(size) >= 2:
+        try:
+            return [int(size[0]), int(size[1])]
+        except (TypeError, ValueError):
+            pass
+    width = _first_present(params, "input_width") or _first_present(runtime, "input_width")
+    height = _first_present(params, "input_height") or _first_present(runtime, "input_height")
+    try:
+        if width is not None and height is not None:
+            return [int(width), int(height)]
+    except (TypeError, ValueError):
+        pass
+    return [640, 640]
+
+
+def sensitivity_to_conf(sensitivity, base: float = 0.5) -> float:
+    """灵敏度(0-100) → 置信度阈值；公式与本地 `inference.worker.sensitivity_to_conf` 一致。"""
+    try:
+        value = max(0, min(100, int(sensitivity)))
+    except (TypeError, ValueError):
+        value = 50
+    return max(0.05, min(0.95, base * (1 - (value - 50) / 100.0)))
+
+
+def resolve_confidence(params: dict | None, sensitivity=None) -> float:
+    """协商置信度阈值：显式阈值 > 由任务灵敏度推导（与本地 worker 同语义）。"""
+    params = params or {}
+    raw = _first_present(params, "confidence_threshold", "conf_threshold", "confidence")
+    if raw is not None:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            pass
+    return sensitivity_to_conf(50 if sensitivity is None else sensitivity)
+
 
 def _resolve_model_type(algorithm) -> str:
     """由算法运行配置或算法类型推断 ModelDeploy 模型族，缺省 det。"""
@@ -87,8 +212,14 @@ def normalize_broker_scheme(url: str) -> str:
     return raw
 
 
-def build_agent_task_config(task, camera, algorithm, events: dict | None = None) -> dict:
-    """把 task/camera/algorithm 编译为 spec §6 的 Agent TaskConfig（纯函数）。"""
+def build_agent_task_config(task, camera, algorithm, events: dict | None = None, capabilities: dict | None = None) -> dict:
+    """把 task/camera/algorithm 编译为 spec §6 的 Agent TaskConfig（纯函数）。
+
+    `capabilities` 为目标设备上报的能力清单：用于协商推理后端/设备，未显式指定时从中取值。
+    后端/设备/输入分辨率/置信度均同时兼容新旧键（见 resolve_backend/resolve_device/
+    resolve_input_size/resolve_confidence），保证前端 `runtime.engine`/`gpu`/`input_width`
+    等旧键与规范键 `backend`/`device`/`input_size`/`confidence_threshold` 均能生效。
+    """
     runtime_config = getattr(algorithm, "runtime_config", None) or {}
     preset_params = getattr(algorithm, "preset_params", None) or {}
     runtime_overrides = getattr(task, "runtime_overrides", None) or {}
@@ -97,10 +228,13 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
     merged_runtime = {**runtime_config, **runtime_overrides}
     merged_params = {**preset_params, **params_overrides}
 
-    confidence = merged_params.get("confidence_threshold", merged_params.get("conf_threshold", 0.45))
-    input_size = merged_params.get("input_size") or merged_runtime.get("input_size") or [640, 640]
+    # 置信度：显式阈值优先，缺省由任务灵敏度推导（顶层不再下发 Agent 不读的 sensitivity）
+    confidence = resolve_confidence(merged_params, getattr(task, "sensitivity", None))
+    input_size = resolve_input_size(merged_params, merged_runtime)
     labels = merged_params.get("labels") or []
     alarm_interval = merged_params.get("alarm_interval_sec") or merged_runtime.get("alarm_interval_sec") or 30
+    backend = resolve_backend(merged_runtime, capabilities)
+    device = resolve_device(merged_runtime, capabilities)
 
     # 目标跟踪：来源 runtime_config/preset_params 的 tracking，任务级覆盖已并入 merged_*；
     # 缺省关闭，algorithm 缺省 bytetrack（见 SP4 跟踪契约 spec §4）。
@@ -114,8 +248,8 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
     scene = get_scene(getattr(algorithm, "scene_type", "") or "")
     base_model = {
         "name": algorithm.name,
-        "backend": merged_runtime.get("backend") or "trt",
-        "device": merged_runtime.get("device") or "gpu",
+        "backend": backend,
+        "device": device,
         "labels": labels,
         "input_size": input_size,
         "confidence_threshold": confidence,
@@ -170,7 +304,8 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None)
         "models": models,
         "tracking": tracking,
         "roi": _normalize_roi(getattr(task, "detect_region", None)),
-        "sensitivity": task.sensitivity if task.sensitivity is not None else 50,
+        # 注：不再下发顶层 `sensitivity`（Agent 全程不读，见审计 §1.3）；该旋钮已通过
+        # resolve_confidence 折算进 models[].confidence_threshold，对边缘真正生效。
         "schedule": getattr(task, "schedule_json", None) or {},
         "alarm_interval_sec": int(alarm_interval),
         "events": events or {},
@@ -270,22 +405,29 @@ class EdgeOrchestrator:
         算法归属场景目录时，要求设备具备该场景所需的**全部**模型族（如 PED_ATTR
         需 pedestrian_attribute，仅靠 _resolve_model_type 会被误映射为 det 而放行）；
         无场景时回退到按算法推断的单一模型族，保持既有行为。
+        后端取协商结果（显式 backend > 旧 engine > 设备上报），避免默认值恒为 trt
+        而 ort-only Agent 被判为「设备不支持后端 trt」。
         """
         runtime = getattr(algorithm, "runtime_config", None) or {}
         scene = get_scene(getattr(algorithm, "scene_type", "") or "")
+        backend = resolve_backend(runtime, capabilities)
         if scene is not None:
             requirement = {
                 "model_families": scene.model_families,
-                "backend": runtime.get("backend") or "trt",
+                "backend": backend,
                 "running_channels": running_channels,
             }
         else:
             requirement = {
                 "model_family": _resolve_model_type(algorithm),
-                "backend": runtime.get("backend") or "trt",
+                "backend": backend,
                 "running_channels": running_channels,
             }
-        return capability_satisfies(capabilities, requirement)
+        ok, reason = capability_satisfies(capabilities, requirement)
+        if not ok and scene is not None:
+            # 场景级失败给出可操作原因：所需模型族 vs 设备实际上报
+            return False, f"该场景 {scene.code} 无法在该设备落地：{reason}"
+        return ok, reason
 
     @staticmethod
     async def _count_running(device_id: int, exclude_id: int) -> int:
@@ -341,7 +483,13 @@ class EdgeOrchestrator:
                 await cls._update_status(task_id, "ERROR", reason)
                 raise CustomException(msg=f"边缘设备能力不足: {reason}", code=400, status_code=400)
 
-        config = build_agent_task_config(task, camera, algorithm, events=build_events(task.camera_id, device.code if device is not None else "local"))
+        config = build_agent_task_config(
+            task,
+            camera,
+            algorithm,
+            events=build_events(task.camera_id, device.code if device is not None else "local"),
+            capabilities=getattr(device, "capabilities", None) if device is not None else None,
+        )
         secret = device.secret if device is not None else settings.EDGE_CONTROL_TOKEN
         client = EdgeAgentClient(control_url, secret)
 

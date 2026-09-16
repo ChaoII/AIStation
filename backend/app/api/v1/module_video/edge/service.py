@@ -27,14 +27,20 @@ def capability_satisfies(capabilities: dict, requirement: dict) -> tuple[bool, s
     # 支持一次要求多个模型族（场景目录 pipeline 可能依赖多个），必须全部具备
     for fam in requirement.get("model_families") or []:
         if fam not in available:
-            return False, f"设备不支持模型族 {fam}"
+            have = "、".join(str(x) for x in available) or "无"
+            return False, f"缺少所需模型族 {fam}（设备仅支持：{have}）"
     # 兼容旧的单模型族用法
     fam = requirement.get("model_family")
     if fam and fam not in available:
-        return False, f"设备不支持模型族 {fam}"
+        have = "、".join(str(x) for x in available) or "无"
+        return False, f"缺少所需模型族 {fam}（设备仅支持：{have}）"
     be = requirement.get("backend")
-    if be and be not in (cap.get("backends") or []):
-        return False, f"设备不支持后端 {be}"
+    if be:
+        backs = [str(x) for x in (cap.get("backends") or [])]
+        if not backs:
+            return False, f"设备未上报可用推理后端，无法下发后端 {be}"
+        if be not in backs:
+            return False, f"设备不支持后端 {be}（设备可用后端：{'、'.join(backs)}）"
     maxc = int(cap.get("max_channels") or 0)
     running = int(requirement.get("running_channels") or 0)
     if maxc and running >= maxc:
