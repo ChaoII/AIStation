@@ -299,6 +299,7 @@ import {
   deleteAlgorithm,
   hotUpdateAlgorithm,
   rollbackAlgorithm,
+  retryDispatchAlgorithm,
   type AlgorithmDispatchResult,
 } from "@/api/module_video/algorithm";
 import { configTemplates, algoTypeLabels } from "@/config/algoTemplates";
@@ -421,8 +422,12 @@ function escapeHtml(text: unknown): string {
   return String(text ?? "").replace(/[&<>"']/g, (c) => map[c]);
 }
 
-/** 汇总展示下发结果：成功/失败任务数，失败时列出任务ID与原因 */
-function showDispatchResult(action: string, result?: AlgorithmDispatchResult) {
+/** 汇总展示下发结果：成功/失败任务数，失败时可一键重试失败任务 */
+async function showDispatchResult(
+  action: string,
+  result: AlgorithmDispatchResult | undefined,
+  row: any
+) {
   const succeeded = result?.succeeded?.length ?? 0;
   const failed = result?.failed ?? [];
   if (failed.length === 0) {
@@ -435,14 +440,34 @@ function showDispatchResult(action: string, result?: AlgorithmDispatchResult) {
         `<li style="margin-bottom:4px"><span style="color:var(--el-color-danger)">任务 #${f.task_id}</span>：${escapeHtml(f.error)}</li>`
     )
     .join("");
-  ElMessageBox.alert(
-    `<div style="max-height:300px;overflow:auto">
-      <p style="margin:0 0 6px">成功 ${succeeded} 个任务 / 失败 ${failed.length} 个任务</p>
-      <ul style="padding-left:18px;margin:0">${items}</ul>
-    </div>`,
-    `${action}结果`,
-    { confirmButtonText: "确定", dangerouslyUseHTMLString: true }
-  );
+  try {
+    await ElMessageBox.confirm(
+      `<div style="max-height:300px;overflow:auto">
+        <p style="margin:0 0 6px">成功 ${succeeded} 个任务 / 失败 ${failed.length} 个任务</p>
+        <ul style="padding-left:18px;margin:0">${items}</ul>
+      </div>`,
+      `${action}结果`,
+      {
+        confirmButtonText: "重试失败任务",
+        cancelButtonText: "关闭",
+        type: "warning",
+        dangerouslyUseHTMLString: true,
+      }
+    );
+  } catch {
+    // 用户选择关闭：保留失败清单（后端已 ERROR 日志记录），不阻断操作
+    return;
+  }
+  try {
+    const retryRes = await retryDispatchAlgorithm(
+      row.id,
+      failed.map((f) => f.task_id)
+    );
+    refreshAlgoList();
+    await showDispatchResult(`${action}重试`, retryRes.data.data as AlgorithmDispatchResult, row);
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "重试下发失败");
+  }
 }
 
 async function handleHotUpdate(row: any) {
@@ -457,7 +482,7 @@ async function handleHotUpdate(row: any) {
   }
   try {
     const res = await hotUpdateAlgorithm(row.id);
-    showDispatchResult("热更新", res.data.data as AlgorithmDispatchResult);
+    await showDispatchResult("热更新", res.data.data as AlgorithmDispatchResult, row);
     refreshAlgoList();
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "热更新失败");
@@ -477,7 +502,7 @@ async function handleRollback(row: any) {
   }
   try {
     const res = await rollbackAlgorithm(row.id);
-    showDispatchResult("回滚", res.data.data as AlgorithmDispatchResult);
+    await showDispatchResult("回滚", res.data.data as AlgorithmDispatchResult, row);
     refreshAlgoList();
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "回滚失败");

@@ -55,3 +55,13 @@ export function rollbackAlgorithm(id: number) {
     headers: { _silent: "true" },
   });
 }
+
+/** 重试模型下发：仅对指定失败任务重新下发当前模型（补偿部分失败） */
+export function retryDispatchAlgorithm(id: number, taskIds: number[]) {
+  return request({
+    url: `/video/algorithm/${id}/dispatch-retry`,
+    method: "post",
+    data: { task_ids: taskIds },
+    headers: { _silent: "true" },
+  });
+}

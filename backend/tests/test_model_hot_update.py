@@ -458,3 +458,75 @@ def test_hot_update_unknown_algorithm_raises_404(monkeypatch):
         asyncio.run(AlgorithmService.hot_update_service(id=999, auth=None))
 
     assert exc.value.code == 404
+
+
+def test_rollback_all_failed_compensates_db_and_raises(monkeypatch):
+    """回滚下发全部失败：还原 DB 交换并抛出可操作错误（避免 DB/Agent 静默不一致）。"""
+    algorithm = _make_algorithm(
+        model_path="s3://m/v2.onnx",
+        version="2.0.0",
+        previous_model_path="s3://m/v1.onnx",
+        previous_version="1.0.0",
+    )
+    tasks = [_make_task(11), _make_task(22)]
+    persist: list = []
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def _request(self, method, path, json=None):
+            raise CustomException(msg="边缘 Agent 不可达", code=502, status_code=502)
+
+    _install(monkeypatch, algorithm, tasks, persist=persist)
+    monkeypatch.setattr(algorithm_service, "EdgeAgentClient", _FakeClient)
+
+    with pytest.raises(CustomException) as exc:
+        asyncio.run(AlgorithmService.rollback_service(id=1, auth=None))
+
+    assert exc.value.code == 502
+    # 第一次写：交换；第二次写：补偿还原（回到当前值 v2/2.0.0）
+    assert [p[1]["model_path"] for p in persist] == ["s3://m/v1.onnx", "s3://m/v2.onnx"]
+    assert persist[-1][1] == {
+        "model_path": "s3://m/v2.onnx",
+        "version": "2.0.0",
+        "previous_model_path": "s3://m/v1.onnx",
+        "previous_version": "1.0.0",
+    }
+
+
+def test_retry_dispatch_only_requested_tasks(monkeypatch):
+    """重试下发只针对指定失败任务，返回同一 succeeded/failed 结构。"""
+    algorithm = _make_algorithm()
+    tasks = [_make_task(11), _make_task(22), _make_task(33)]
+    paths: list = []
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def _request(self, method, path, json=None):
+            paths.append(path)
+            if "/tasks/33/" in path:
+                return {"ok": False, "error": "模型自检失败"}
+            return {"ok": True, "generation": 1}
+
+    _install(monkeypatch, algorithm, tasks)
+    monkeypatch.setattr(algorithm_service, "EdgeAgentClient", _FakeClient)
+
+    result = asyncio.run(AlgorithmService.retry_dispatch_service(id=1, task_ids=[11, 33], auth=None))
+
+    assert result["succeeded"] == [11]
+    assert [f["task_id"] for f in result["failed"]] == [33]
+    assert len(paths) == 2  # 未重试未指定的 22
+    assert all("/tasks/22/" not in p for p in paths)
+
+
+def test_retry_dispatch_unknown_tasks_raises_400(monkeypatch):
+    algorithm = _make_algorithm()
+    _install(monkeypatch, algorithm, [_make_task(11)])
+
+    with pytest.raises(CustomException) as exc:
+        asyncio.run(AlgorithmService.retry_dispatch_service(id=1, task_ids=[999], auth=None))
+
+    assert exc.value.code == 400

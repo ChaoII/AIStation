@@ -74,8 +74,48 @@ class AlgorithmService:
 
     @classmethod
     async def create_task_service(cls, data: AlgorithmTaskCreateSchema, auth: AuthSchema) -> dict:
+        # 指定边缘设备时先做场景↔能力校验：把「创建成功但下发必失败」提前为清晰的 400
+        await cls._precheck_edge_capability(data)
         item = await AlgorithmTaskCRUD(auth).create(data=data)
         return AlgorithmTaskOutSchema.model_validate(item).model_dump()
+
+    @classmethod
+    async def _precheck_edge_capability(cls, data: AlgorithmTaskCreateSchema) -> None:
+        """创建任务前的边缘能力预检（仅当指定了边缘设备）。
+
+        场景↔能力不匹配（如 FALL 需 pose、设备仅支持 det）在创建时即拒绝，报
+        「该场景需要模型族 X，设备仅支持 Y」，而不是等到下发时才以通用错误失败。
+        """
+        edge_device_id = getattr(data, "edge_device_id", None)
+        algorithm_id = getattr(data, "algorithm_id", None)
+        if not edge_device_id or not algorithm_id:
+            return
+        from app.api.v1.module_video.edge.model import EdgeDeviceModel
+
+        async with async_db_session() as session:
+            device = (
+                await session.execute(
+                    select(EdgeDeviceModel).where(
+                        EdgeDeviceModel.id == edge_device_id,
+                        EdgeDeviceModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            algorithm = (
+                await session.execute(
+                    select(AlgorithmModel).where(
+                        AlgorithmModel.id == algorithm_id,
+                        AlgorithmModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+        if device is None or algorithm is None:
+            # 交由 CRUD 外键/存在性校验给出原始错误，避免此处掩盖
+            return
+        running = await EdgeOrchestrator._count_running(edge_device_id, exclude_id=0)
+        ok, reason = EdgeOrchestrator._check_capability(device.capabilities, algorithm, running)
+        if not ok:
+            raise CustomException(msg=f"边缘设备能力不足：{reason}", code=400, status_code=400)
 
     @classmethod
     async def update_task_service(cls, id: int, data: AlgorithmTaskUpdateSchema, auth: AuthSchema) -> dict:
@@ -125,17 +165,24 @@ class AlgorithmService:
         if camera is None:
             raise ValueError("任务未关联摄像头")
 
-        config = build_agent_task_config(task, camera, algorithm, events={})
+        # 先解析目标设备，再用其上报能力协商模型条目（后端/设备），保证载荷与下发时一致
+        control_url, device = await EdgeOrchestrator._resolve_target(task)
+        if not control_url:
+            raise RuntimeError("任务未配置边缘设备/本机 Agent，无法热更新")
+
+        config = build_agent_task_config(
+            task,
+            camera,
+            algorithm,
+            events={},
+            capabilities=getattr(device, "capabilities", None) if device is not None else None,
+        )
         model_entry = next(
             (m for m in (config.get("models") or []) if m.get("name") == algorithm.name),
             None,
         )
         if model_entry is None:
             raise ValueError("未解析到算法模型配置")
-
-        control_url, device = await EdgeOrchestrator._resolve_target(task)
-        if not control_url:
-            raise RuntimeError("任务未配置边缘设备/本机 Agent，无法热更新")
 
         secret = device.secret if device is not None else settings.EDGE_CONTROL_TOKEN
         client = EdgeAgentClient(control_url, secret)
@@ -153,6 +200,11 @@ class AlgorithmService:
     async def _dispatch_algorithm_model(cls, algorithm: AlgorithmModel, auth: AuthSchema) -> dict:
         """枚举引用任务并逐任务下发；单任务失败被捕获，不影响其余任务。"""
         tasks = await cls._list_referencing_tasks(algorithm.id)
+        return await cls._dispatch_tasks(tasks, algorithm)
+
+    @classmethod
+    async def _dispatch_tasks(cls, tasks: list[AlgorithmTaskModel], algorithm: AlgorithmModel) -> dict:
+        """对指定任务集合逐条下发模型热更新，汇总 `{succeeded, failed}`。"""
         succeeded: list[int] = []
         failed: list[dict] = []
         for task in tasks:
@@ -162,6 +214,13 @@ class AlgorithmService:
             except Exception as e:  # noqa: BLE001 - 单任务失败隔离，汇总返回由调用方重试
                 logger.warning(f"[模型热更新] 下发失败: algorithm_id={algorithm.id} task_id={task.id} {e}")
                 failed.append({"task_id": task.id, "error": _error_text(e)})
+        if failed:
+            # 部分失败必须可观测：ERROR 级 + 明确的任务清单，供运维重试
+            logger.error(
+                f"[模型热更新] algorithm_id={algorithm.id} 下发存在失败："
+                f"成功 {succeeded} / 失败 {[f['task_id'] for f in failed]}；"
+                "可重新执行热更新或调用回滚下发重试接口"
+            )
         return {"succeeded": succeeded, "failed": failed}
 
     @classmethod
@@ -216,5 +275,45 @@ class AlgorithmService:
         result = await cls._dispatch_algorithm_model(algorithm, auth)
         logger.info(
             f"[模型回滚] algorithm_id={id} succeeded={len(result['succeeded'])} failed={len(result['failed'])}"
+        )
+        if result["failed"] and not result["succeeded"]:
+            # 补偿：全部任务下发失败时 DB 已交换但 Agent 仍用旧模型，属静默不一致。
+            # 这里把 DB 交换还原（当前值退回 current），并抛出可操作错误，避免状态分裂。
+            await cls._persist_algorithm_fields(
+                id,
+                {
+                    "model_path": cur_path,
+                    "version": cur_version,
+                    "previous_model_path": prev_path,
+                    "previous_version": prev_version,
+                },
+                auth,
+            )
+            failed_ids = [f["task_id"] for f in result["failed"]]
+            logger.error(
+                f"[模型回滚] algorithm_id={id} 全部任务下发失败，已还原模型配置；失败任务：{failed_ids}"
+            )
+            raise CustomException(
+                msg=f"回滚下发全部失败，已还原原模型配置；失败任务：{failed_ids}",
+                code=502,
+                status_code=502,
+            )
+        return result
+
+    @classmethod
+    async def retry_dispatch_service(cls, id: int, task_ids: list[int], auth: AuthSchema) -> dict:
+        """重试向指定任务下发当前模型（补偿部分失败的热更新/回滚）。"""
+        algorithm = await cls._load_algorithm(id, auth)
+        if not algorithm:
+            raise CustomException(msg="算法不存在", code=404, status_code=404)
+        wanted = {int(t) for t in (task_ids or [])}
+        all_tasks = await cls._list_referencing_tasks(algorithm.id)
+        tasks = [t for t in all_tasks if t.id in wanted]
+        if not tasks:
+            raise CustomException(msg="未找到可重试的任务", code=400, status_code=400)
+        result = await cls._dispatch_tasks(tasks, algorithm)
+        logger.info(
+            f"[模型热更新] 重试下发 algorithm_id={id} tasks={sorted(wanted)} "
+            f"succeeded={len(result['succeeded'])} failed={len(result['failed'])}"
         )
         return result

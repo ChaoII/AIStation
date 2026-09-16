@@ -120,6 +120,16 @@ async def rollback_algorithm_controller(
     return SuccessResponse(data=result, msg="回滚已下发")
 
 
+@AlgorithmRouter.post("/{id}/dispatch-retry", summary="重试模型下发（补偿失败任务）")
+async def retry_dispatch_algorithm_controller(
+    id: Annotated[int, Path(..., description="算法ID")],
+    task_ids: Annotated[list[int], Body(embed=True, description="需重试下发的任务ID列表")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:algorithm:update"]))],
+) -> JSONResponse:
+    result = await AlgorithmService.retry_dispatch_service(id=id, task_ids=task_ids, auth=auth)
+    return SuccessResponse(data=result, msg="重试下发完成")
+
+
 @AlgorithmRouter.get("/task/list", summary="查询算法任务列表")
 async def get_task_list_controller(
     page: PaginationQueryParam = Depends(),
