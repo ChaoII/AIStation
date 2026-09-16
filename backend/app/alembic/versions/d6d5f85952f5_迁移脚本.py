@@ -22,33 +22,61 @@ depends_on: str | Sequence[str] | None = None
 FK_NAME = "fk_video_alarm_rules_group_id"
 
 
+def _has_column(table: str, column: str) -> bool:
+    """列存在探测：兼容「先重启兜底补列、后跑迁移」的顺序（避免 DuplicateColumn）。"""
+    insp = sa.inspect(op.get_bind())
+    if not insp.has_table(table):
+        return False
+    return column in {col["name"] for col in insp.get_columns(table)}
+
+
+def _has_index(table: str, index_name: str) -> bool:
+    """索引存在探测（兜底补列只加列、不加索引，故需按需创建）。"""
+    insp = sa.inspect(op.get_bind())
+    if not insp.has_table(table):
+        return False
+    return index_name in {idx["name"] for idx in insp.get_indexes(table)}
+
+
+def _has_foreign_key(table: str, fk_name: str) -> bool:
+    """外键存在探测（幂等创建 FK）。"""
+    insp = sa.inspect(op.get_bind())
+    if not insp.has_table(table):
+        return False
+    return fk_name in {fk["name"] for fk in insp.get_foreign_keys(table)}
+
+
 def upgrade() -> None:
     """仅变更 video_alarm_rules：camera_id 改可空 + 新增 group_id（FK/索引）。"""
-    # 组规则的 camera_id 为空，故放开 NOT NULL
+    # 组规则的 camera_id 为空，故放开 NOT NULL（重复执行设置 nullable=True 亦幂等）
     op.alter_column(
         "video_alarm_rules",
         "camera_id",
         existing_type=sa.INTEGER(),
         nullable=True,
     )
-    op.add_column(
-        "video_alarm_rules",
-        sa.Column("group_id", sa.Integer(), nullable=True),
-    )
-    op.create_index(
-        op.f("ix_video_alarm_rules_group_id"),
-        "video_alarm_rules",
-        ["group_id"],
-        unique=False,
-    )
-    op.create_foreign_key(
-        FK_NAME,
-        "video_alarm_rules",
-        "video_camera_groups",
-        ["group_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    # group_id 可能已由启动兜底补列添加
+    if not _has_column("video_alarm_rules", "group_id"):
+        op.add_column(
+            "video_alarm_rules",
+            sa.Column("group_id", sa.Integer(), nullable=True),
+        )
+    if not _has_index("video_alarm_rules", op.f("ix_video_alarm_rules_group_id")):
+        op.create_index(
+            op.f("ix_video_alarm_rules_group_id"),
+            "video_alarm_rules",
+            ["group_id"],
+            unique=False,
+        )
+    if not _has_foreign_key("video_alarm_rules", FK_NAME):
+        op.create_foreign_key(
+            FK_NAME,
+            "video_alarm_rules",
+            "video_camera_groups",
+            ["group_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:

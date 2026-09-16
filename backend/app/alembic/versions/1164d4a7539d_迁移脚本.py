@@ -18,18 +18,27 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _has_column(table: str, column: str) -> bool:
+    """列存在探测：兼容「先重启兜底补列、后跑迁移」的顺序（避免 DuplicateColumn）。"""
+    insp = sa.inspect(op.get_bind())
+    if not insp.has_table(table):
+        return False
+    return column in {col["name"] for col in insp.get_columns(table)}
+
+
 def upgrade() -> None:
-    """仅新增 video_alarm_rules.params（JSONB，默认 '{}'）。"""
-    op.add_column(
-        "video_alarm_rules",
-        sa.Column(
-            "params",
-            postgresql.JSONB(astext_type=sa.Text()),
-            server_default="{}",
-            nullable=False,
-            comment="场景参数原值",
-        ),
-    )
+    """仅新增 video_alarm_rules.params（JSONB，默认 '{}'）；列已存在则跳过。"""
+    if not _has_column("video_alarm_rules", "params"):
+        op.add_column(
+            "video_alarm_rules",
+            sa.Column(
+                "params",
+                postgresql.JSONB(astext_type=sa.Text()),
+                server_default="{}",
+                nullable=False,
+                comment="场景参数原值",
+            ),
+        )
 
 
 def downgrade() -> None:
