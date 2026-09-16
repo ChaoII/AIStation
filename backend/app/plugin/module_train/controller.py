@@ -1,5 +1,6 @@
 import os
 import tempfile
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
 
@@ -91,6 +92,19 @@ async def delete_repos(
     return SuccessResponse(msg="删除成功")
 
 
+@router.put("/model/repos/{repo_id}", summary="更新模型仓库")
+async def update_repo(
+    repo_id: int,
+    data: Annotated[dict, Body()],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_train:model:update"]))],
+):
+    result = await TrainService.update_model_repo(repo_id, data)
+    if result:
+        return SuccessResponse(data=result, msg="更新成功")
+    from app.common.response import ErrorResponse
+    return ErrorResponse(msg="仓库不存在")
+
+
 @router.get("/model/{repo_id}/versions", summary="模型版本列表")
 async def list_model_versions(repo_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
     data = await TrainService.list_model_versions(repo_id)
@@ -137,7 +151,7 @@ async def update_task(
     auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"])),
 ):
     try:
-        result = await TrainService.update_task(task_id, data)
+        result = await TrainService.update_task(task_id, data, auth)
         return SuccessResponse(data=result, msg="训练任务已更新")
     except ValueError as e:
         from app.common.response import ErrorResponse
@@ -297,6 +311,7 @@ async def create_predict(data: TrainPredictCreateSchema, auth: AuthSchema = Depe
 @router.get("/predict/list", summary="预测任务列表")
 async def list_predicts(
     model_repo_id: int | None = Query(None),
+    name: str | None = Query(None),
     framework: str | None = Query(None),
     status: str | None = Query(None),
     page_no: int = Query(1, ge=1),
@@ -305,6 +320,7 @@ async def list_predicts(
 ):
     data, total = await TrainService.list_predicts({
         "model_repo_id": model_repo_id,
+        "name": name,
         "framework": framework,
         "status": status,
         "page_no": page_no,
@@ -441,14 +457,16 @@ async def download_model(
     model_id: int,
     auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
 ):
+    from .export_service import resolve_download_target
     from .service import TrainService
     model = await TrainService.get_model(model_id)
     if not model or not model.get("storage_path"):
         from app.common.response import ErrorResponse
         return ErrorResponse(msg="模型或文件不存在")
 
-    url = s3_client.presigned_url(model["storage_path"])
-    return SuccessResponse(data={"download_url": url, "format": model.get("format", "pytorch")})
+    key, fmt = resolve_download_target(model, s3_client.object_exists)
+    url = s3_client.presigned_url(key)
+    return SuccessResponse(data={"download_url": url, "format": fmt})
 
 
 @router.put("/model/update/{model_id}", summary="更新模型信息")
@@ -458,7 +476,7 @@ async def update_model(
     auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     from .service import TrainService
-    result = await TrainService.update_model(model_id, data.model_dump(exclude_none=True))
+    result = await TrainService.update_model(model_id, data.model_dump(exclude_none=True), auth)
     if result:
         return SuccessResponse(data=result, msg="更新成功")
     from app.common.response import ErrorResponse

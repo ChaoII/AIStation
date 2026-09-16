@@ -14,7 +14,13 @@ class AlarmRuleModel(ModelMixin, UserMixin):
     __loader_options__ = ["camera", "creator"]
 
     name: Mapped[str] = mapped_column(String(128), nullable=False, comment="规则名称")
-    camera_id: Mapped[int] = mapped_column(Integer, ForeignKey("video_cameras.id", ondelete="CASCADE"), nullable=False, index=True)
+    camera_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("video_cameras.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    # 作用域：camera_id 与 group_id 恰有其一非空（组规则覆盖组内多台相机）
+    group_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("video_camera_groups.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     camera: Mapped[Optional["CameraModel"]] = relationship(lazy="selectin")
 
     alarm_type: Mapped[str] = mapped_column(String(32), nullable=False, comment="告警类型: MOTION/LINE_CROSSING/INTRUSION/FACE_DETECT/...")
@@ -27,7 +33,13 @@ class AlarmRuleModel(ModelMixin, UserMixin):
 
     notify_channels: Mapped[list | None] = mapped_column(JSONB, nullable=True, comment="通知方式: [WS_PUSH, SMS, EMAIL]")
 
+    conditions: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="规则条件树（spec §6）")
+    params: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", comment="场景参数原值")
+
     schedule_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="生效时间段")
+    # 灰度配置：{percent, whitelist, blacklist}；缺省 {} 表示全量生效
+    rollout: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}",
+                                          comment="灰度配置: {percent, whitelist, blacklist}")
     status: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
 
 

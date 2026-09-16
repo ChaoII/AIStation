@@ -88,9 +88,7 @@ async def delete_dataset(
     ids: list[int],
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:delete"])),
 ) -> JSONResponse:
-    from .crud import DatasetCRUD
-    crud = DatasetCRUD(auth=auth)
-    await crud.delete(ids=ids)
+    await DatasetService.delete_datasets(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
 
 

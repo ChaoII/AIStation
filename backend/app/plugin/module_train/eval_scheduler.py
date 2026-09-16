@@ -57,10 +57,87 @@ async def start_evaluation(eval_id: int):
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainEval).where(TrainEval.id == eval_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
+                status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10,
+                metrics=None, metrics_log=None, best_metrics=None, last_metrics=None,
+                log=None, error_log=None, finished_at=None,
             )
         )
     asyncio.create_task(EvalExecutor.run(eval_id))
+
+
+async def resolve_eval_context(model_id: int) -> tuple[int | None, str, str]:
+    """从产出该模型的训练任务推断 ``(annotation_task_id, mode, size)``。
+
+    评估必须传 ``annotation_task_id`` 给导出，否则任务类型默认 detection，
+    分类/分割评估会导出错误格式；PaddleX 规格也须与被评模型一致而非沿用
+    eval 超参。无匹配训练任务时回退 ``(None, "det", "tiny")``。
+    """
+    from sqlalchemy import desc, select
+
+    from .model import TrainTask
+
+    async with async_db_session() as db:
+        task = (await db.execute(
+            select(TrainTask).where(TrainTask.model_repo_id == model_id).order_by(desc(TrainTask.id)).limit(1)
+        )).scalar_one_or_none()
+    if not task:
+        return (None, "det", "tiny")
+    hp = task.hyperparams or {}
+    mode = str(hp.get("mode", "det")).lower()
+    size = str(hp.get("model_size", "tiny"))
+    return (
+        task.annotation_task_id,
+        mode if mode in ("det", "rec") else "det",
+        size if size in ("tiny", "small", "medium") else "tiny",
+    )
+
+
+def _parse_yolo_cls_line(line: str) -> dict | None:
+    """解析 YOLO 分类 val 汇总行：``all <img> <inst> <top1> <top5>``（5 列）。"""
+    if re.match(r"^\s+all\s+", line):
+        parts = line.strip().split()
+        if len(parts) == 5:
+            try:
+                return {"top1": float(parts[3]), "top5": float(parts[4])}
+            except ValueError:
+                return None
+    return None
+
+
+def _accumulate_yolo_metrics(line: str, metrics: dict) -> dict | None:
+    """累积解析 YOLO val 输出行到 ``metrics``。
+
+    分类汇总行（5 列）走 ``_parse_yolo_cls_line``；检测汇总行（7 列）解析
+    precision/recall/map50/map5095；per-class 行按检测格式累积。
+    命中时返回当前 metrics 快照，否则 None。
+    """
+    m_cls = _parse_yolo_cls_line(line)
+    if m_cls is not None:
+        metrics.update(m_cls)
+        return dict(metrics)
+    if re.match(r"^\s+all\s+", line):
+        parts = line.strip().split()
+        if len(parts) >= 7:
+            metrics.update({
+                "precision": float(parts[3]) if parts[3] else 0,
+                "recall": float(parts[4]) if parts[4] else 0,
+                "map50": float(parts[5]) if parts[5] else 0,
+                "map5095": float(parts[6]) if parts[6] else 0,
+            })
+            return dict(metrics)
+    m = re.match(r"^\s+(\d+)\s+", line)
+    if m:
+        parts = line.strip().split()
+        if len(parts) >= 7:
+            cls_id = int(parts[0])
+            metrics.setdefault("classes", {})[str(cls_id)] = {
+                "precision": float(parts[3]) if parts[3] else 0,
+                "recall": float(parts[4]) if parts[4] else 0,
+                "map50": float(parts[5]) if parts[5] else 0,
+                "map5095": float(parts[6]) if parts[6] else 0,
+            }
+            return dict(metrics)
+    return None
 
 
 async def stop_evaluation(eval_id: int):
@@ -69,6 +146,7 @@ async def stop_evaluation(eval_id: int):
 
 class EvalExecutor(TaskExecutor):
     name = "eval"
+    task_kind = "eval"
     status_enum = TrainStatus
     model_class = TrainEval
     _concurrency = 1
@@ -97,14 +175,13 @@ class EvalExecutor(TaskExecutor):
             os.makedirs(data_dir, exist_ok=True)
             os.makedirs(model_dir, exist_ok=True)
 
-            # Export evaluation dataset
-            from .exporter import prepare_training_data_for_task
+            # Export evaluation dataset（全量确定性 + 任务类型/规格从产出模型推断）
+            from .exporter import prepare_eval_data_for_task
             await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
-            eval_ocr_rec = (framework == TrainFramework.PADDLEX
-                            and str((eval_rec.hyperparams or {}).get("mode", "det")).lower() == "rec")
-            await prepare_training_data_for_task(
+            ann_task_id, paddlex_mode, paddlex_size = await resolve_eval_context(eval_rec.model_id)
+            await prepare_eval_data_for_task(
                 eval_rec.eval_dataset_id, eval_id, framework.value, data_dir,
-                ocr_rec=eval_ocr_rec,
+                annotation_task_id=ann_task_id, ocr_mode=paddlex_mode,
             )
 
             # Download model file from RustFS（统一解析：/export/ 导出产物自动回溯原始 best.pt）
@@ -130,10 +207,9 @@ class EvalExecutor(TaskExecutor):
 
             if framework == TrainFramework.PADDLEX:
                 # PaddleX OCR eval：容器内脚本加载 best.pdparams 跑 program.eval（det/rec）
-                mode = str(hp.get("mode", "det")).lower()
-                size = str(hp.get("model_size", "tiny"))
-                if size not in ("tiny", "small", "medium"):
-                    size = "tiny"
+                # 规格取自产出该模型的训练任务（resolve_eval_context），不用 eval 超参
+                mode = paddlex_mode
+                size = paddlex_size
                 cfg = (
                     f"configs/det/PP-OCRv6/PP-OCRv6_{size}_det.yml"
                     if mode == "det" else f"configs/rec/PP-OCRv6/PP-OCRv6_{size}_rec.yml"
@@ -179,6 +255,7 @@ class EvalExecutor(TaskExecutor):
                 volumes=volumes,
                 gpu_id=device,
                 shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
             )
             container_id = container.id
             entry = cls._registry.get(eval_id) or {}
@@ -199,30 +276,8 @@ class EvalExecutor(TaskExecutor):
                 return None
 
             def _parse_val_metrics(line: str) -> dict | None:
-                """解析 YOLO val 输出：all 汇总行与 per-class 行（累积到 metrics）。"""
-                if re.match(r"^\s+all\s+", line):
-                    parts = line.strip().split()
-                    if len(parts) >= 7:
-                        metrics.update({
-                            "precision": float(parts[3]) if parts[3] else 0,
-                            "recall": float(parts[4]) if parts[4] else 0,
-                            "map50": float(parts[5]) if parts[5] else 0,
-                            "map5095": float(parts[6]) if parts[6] else 0,
-                        })
-                        return dict(metrics)
-                m = re.match(r"^\s+(\d+)\s+", line)
-                if m:
-                    parts = line.strip().split()
-                    if len(parts) >= 7:
-                        cls_id = int(parts[0])
-                        metrics.setdefault("classes", {})[str(cls_id)] = {
-                            "precision": float(parts[3]) if parts[3] else 0,
-                            "recall": float(parts[4]) if parts[4] else 0,
-                            "map50": float(parts[5]) if parts[5] else 0,
-                            "map5095": float(parts[6]) if parts[6] else 0,
-                        }
-                        return dict(metrics)
-                return None
+                """解析 YOLO val 输出：分类 top1/top5 与检测汇总/per-class 均累积到 metrics。"""
+                return _accumulate_yolo_metrics(line, metrics)
 
             await cls.follow_logs(
                 container_id,

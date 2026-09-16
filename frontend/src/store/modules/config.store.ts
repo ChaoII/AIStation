@@ -1,6 +1,9 @@
 import { store } from "@/store";
 import ParamsAPI, { ConfigTable } from "@/api/module_system/params";
 
+/** 上次成功拉取时间：用于合并启动期近同时的强制刷新 */
+let lastLoadedAt = 0;
+
 interface ConfigState {
   // 网站信息
   sys_web_title: ConfigTable;
@@ -34,9 +37,10 @@ export const useConfigStore = defineStore("config", {
 
   actions: {
     async getConfig(force = false) {
-      if ((this.isConfigLoaded && !force) || this.configLoading) {
-        return;
-      }
+      // 合并并发/近同时的强制刷新：启动时 main.ts 与 store 初始化会各调一次
+      const now = Date.now();
+      if (this.configLoading) return;
+      if (this.isConfigLoaded && (!force || now - lastLoadedAt < 2000)) return;
       this.configLoading = true;
       try {
         const response = await ParamsAPI.getInitConfig();
@@ -46,6 +50,7 @@ export const useConfigStore = defineStore("config", {
           }
         });
         this.isConfigLoaded = true;
+        lastLoadedAt = Date.now();
       } finally {
         this.configLoading = false;
       }

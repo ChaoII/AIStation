@@ -81,10 +81,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'eval_dataset_id')?.show"
               key="eval_dataset_id"
-              label="评估数据集ID"
-              prop="eval_dataset_id"
-              width="110"
-            />
+              label="评估数据集"
+              min-width="140"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                {{ scope.row.eval_dataset_name || `#${scope.row.eval_dataset_id}` }}
+              </template>
+            </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
@@ -214,7 +218,7 @@
       </template>
     </PageContent>
 
-    <el-dialog v-model="createDialogVisible" title="创建评估" width="500px">
+    <EnhancedDialog v-model="createDialogVisible" title="创建评估" append-to-body width="500px">
       <el-form label-width="100px">
         <el-form-item label="模型版本">
           <el-select
@@ -247,7 +251,12 @@
           </el-form-item>
         </template>
         <el-form-item label="评估数据集">
-          <el-select v-model="createForm.evalDatasetId" filterable style="width: 100%">
+          <el-select
+            v-model="createForm.evalDatasetId"
+            filterable
+            style="width: 100%"
+            @visible-change="(v: boolean) => v && loadDatasets()"
+          >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
         </el-form-item>
@@ -276,7 +285,7 @@
         <el-button @click="createDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="handleCreateEval">创建</el-button>
       </template>
-    </el-dialog>
+    </EnhancedDialog>
   </div>
 </template>
 
@@ -285,6 +294,8 @@ import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
@@ -328,15 +339,31 @@ const createForm = reactive({
   },
 });
 
-(async () => {
-  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-  datasets.value = dsRes.data?.data?.items || [];
-})();
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
 
-(async () => {
-  const r = await TrainAPI.getModelList();
-  modelVersions.value = r.data?.data?.items || [];
-})();
+async function loadModelVersions() {
+  try {
+    modelVersions.value = await cachedOptions(
+      "train:models",
+      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    /* 模型列表加载失败不阻塞页面与自动开窗 */
+  }
+}
+loadModelVersions();
 
 function getModelName(modelId: number) {
   const m = modelVersions.value.find((x: any) => x.id === modelId);
@@ -451,7 +478,10 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
 });
 
 function handleOpenCreateDialog() {
-  const curModel = modelVersions.value.find((m: any) => m.id === modelRepoId);
+  loadDatasets();
+  const curModel =
+    modelVersions.value.find((m: any) => m.id === modelRepoId) ||
+    modelVersions.value.find((m: any) => m.repo_id === modelRepoId);
   createForm.modelId = curModel?.id || null;
   createForm.evalDatasetId = curModel?.annotation_dataset_id || null;
   createForm.hyperparams = {
@@ -474,13 +504,14 @@ async function handleCreateEval() {
   }
   creating.value = true;
   try {
+    // 关联所选版本的 id 与其所属仓库 id，而非路由缺省值 0
+    const sel = modelVersions.value.find((m: any) => m.id === createForm.modelId);
     await TrainAPI.createEval({
-      model_repo_id: modelRepoId,
       model_id: createForm.modelId,
+      model_repo_id: sel?.repo_id ?? 0,
       eval_dataset_id: createForm.evalDatasetId,
       hyperparams: createForm.hyperparams,
     });
-    ElMessage.success("评估任务已创建");
     createDialogVisible.value = false;
     createForm.modelId = null;
     createForm.evalDatasetId = null;
@@ -503,10 +534,9 @@ async function handleStartEval(id: number) {
   try {
     await ElMessageBox.confirm("确定开始评估？", "提示", { type: "info" });
     await TrainAPI.startEval(id);
-    ElMessage.success("评估已开始");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始评估失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -514,7 +544,6 @@ async function handleStopEval(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该评估？", "提示", { type: "warning" });
     await TrainAPI.stopEval(id);
-    ElMessage.success("评估已停止");
     refreshList();
   } catch {
     //
@@ -523,7 +552,6 @@ async function handleStopEval(id: number) {
 
 async function handleDeleteEval(ids: number[]) {
   await TrainAPI.deleteEval(ids);
-  ElMessage.success("已删除");
   refreshList();
 }
 
@@ -559,6 +587,13 @@ function stopPoll() {
   }
 }
 
-onMounted(() => startPoll());
+onMounted(async () => {
+  startPoll();
+  if (route.query.autoCreate === "1") {
+    await loadModelVersions();
+    handleOpenCreateDialog();
+    router.replace({ query: {} });
+  }
+});
 onBeforeUnmount(() => stopPoll());
 </script>

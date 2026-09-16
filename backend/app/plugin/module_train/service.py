@@ -5,10 +5,19 @@ import tempfile
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.audit import set_create_audit, set_update_audit
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .model import TrainDeploy, TrainEval, TrainModel, TrainModelRepo, TrainPredict, TrainTask
+from .model import (
+    TrainDeploy,
+    TrainEval,
+    TrainModel,
+    TrainModelRepo,
+    TrainPredict,
+    TrainStatus,
+    TrainTask,
+)
 
 # ultralytics: `1/100 0.983G ...`；PaddleX: `epoch: [1/100], ...`
 _EPOCH_RE = re.compile(r"(?:^\s*(\d+)/(\d+)\s+|epoch:\s*\[(\d+)/(\d+)\])")
@@ -73,13 +82,52 @@ def _model_to_dict(row) -> dict:
     return cols
 
 
-def _enrich_task(row) -> dict:
+def _enrich_task(row, dataset_names: dict[int, str] | None = None) -> dict:
     d = _model_to_dict(row)
     if d.get("status") == "running":
         live = _calc_progress_from_log(d.get("id", 0))
         if live is not None:
             d["progress"] = live
+    if dataset_names:
+        ds_id = d.get("dataset_id")
+        if ds_id in dataset_names:
+            d["dataset_name"] = dataset_names[ds_id]
     return d
+
+
+async def _dataset_name_map(db, ids) -> dict[int, str]:
+    """批量查询标注数据集名称；忽略软删除。"""
+    ds_ids = {int(i) for i in ids if i}
+    if not ds_ids:
+        return {}
+    from app.api.v1.module_annotation.dataset.model import DatasetModel
+
+    rows = (
+        await db.execute(
+            select(DatasetModel.id, DatasetModel.name).where(
+                DatasetModel.id.in_(ds_ids), DatasetModel.is_deleted.is_(False)
+            )
+        )
+    ).all()
+    return {int(r[0]): r[1] for r in rows}
+
+
+def sign_predict_results(predict: dict) -> dict:
+    """把预测结果中的对象键转为签名 URL；历史 URL 原样保留。"""
+    from app.utils.s3_client import s3_client
+
+    def _sign(v):
+        if not v or not isinstance(v, str):
+            return v
+        return v if v.startswith(("http://", "https://")) else s3_client.presigned_url(v)
+
+    if predict is None:
+        return predict
+    out = dict(predict)
+    imgs = predict.get("result_images")
+    out["result_images"] = [_sign(v) for v in imgs] if isinstance(imgs, list) else imgs
+    out["result_zip_path"] = _sign(predict.get("result_zip_path"))
+    return out
 
 
 class TrainService:
@@ -150,8 +198,8 @@ class TrainService:
                     name=data.name, framework=data.framework,
                     description=getattr(data, "description", None),
                     annotation_dataset_id=getattr(data, "annotation_dataset_id", None),
-                    created_id=auth.user.id,
                 )
+                set_create_audit(existing, auth)
                 db.add(existing)
                 await db.flush()
 
@@ -166,12 +214,43 @@ class TrainService:
                 version=version, annotation_dataset_id=getattr(data, "annotation_dataset_id", None),
                 export_format=getattr(data, "export_format", None),
                 description=getattr(data, "description", None),
-                created_id=auth.user.id,
             )
+            set_create_audit(ver_row, auth)
             db.add(ver_row)
             await db.flush()
             existing.latest_version_id = ver_row.id
             return {"id": existing.id, "version_id": ver_row.id, "version": version}
+
+    @classmethod
+    async def update_model_repo(cls, repo_id: int, data) -> dict | None:
+        """更新模型仓库；并镜像名称/描述/框架到最新版本，保证版本列表一致。"""
+        async with async_db_session.begin() as db:
+            repo = await db.get(TrainModelRepo, repo_id)
+            if not repo:
+                return None
+
+            def _get(key):
+                return data.get(key) if isinstance(data, dict) else getattr(data, key, None)
+
+            for key in ("name", "framework", "description", "status", "annotation_dataset_id"):
+                val = _get(key)
+                if val is not None:
+                    setattr(repo, key, val)
+
+            latest = (
+                await db.execute(
+                    select(TrainModel)
+                    .where(TrainModel.repo_id == repo_id)
+                    .order_by(desc(TrainModel.id))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if latest:
+                for key in ("name", "description", "framework"):
+                    val = _get(key)
+                    if val is not None:
+                        setattr(latest, key, val)
+            return {"id": repo_id}
 
     @classmethod
     async def delete_model_repos(cls, ids: list[int]) -> None:
@@ -207,14 +286,22 @@ class TrainService:
                 .limit(page_size).offset((page_no - 1) * page_size)
             )).scalars().all()
             result = []
+            repo_ids = [r.id for r in rows]
+            counts = dict(
+                (
+                    await db.execute(
+                        select(TrainModel.repo_id, func.count())
+                        .where(
+                            TrainModel.repo_id.in_(repo_ids),
+                            TrainModel.is_deleted == False,  # noqa: E712
+                        )
+                        .group_by(TrainModel.repo_id)
+                    )
+                ).all()
+            )
             for r in rows:
                 d = _model_to_dict(r)
-                vcount = (await db.execute(
-                    select(func.count()).select_from(TrainModel).where(
-                        TrainModel.repo_id == r.id, TrainModel.is_deleted == False  # noqa: E712
-                    )
-                )).scalar() or 0
-                d["version_count"] = vcount
+                d["version_count"] = counts.get(r.id, 0)
                 result.append(d)
             return result, total
 
@@ -238,7 +325,7 @@ class TrainService:
             return {"repo_id": ver.repo_id, "repo_name": repo.name if repo else ver.name}
 
     @classmethod
-    async def update_model(cls, model_id: int, data: dict) -> dict | None:
+    async def update_model(cls, model_id: int, data: dict, auth) -> dict | None:
         async with async_db_session.begin() as db:
             m = await db.get(TrainModel, model_id)
             if not m:
@@ -246,6 +333,7 @@ class TrainService:
             for key, val in data.items():
                 if hasattr(m, key) and val is not None:
                     setattr(m, key, val)
+            set_update_audit(m, auth)
             return {"id": m.id}
 
     @classmethod
@@ -267,8 +355,8 @@ class TrainService:
                     name=data.name, framework=data.framework,
                     version=version, annotation_dataset_id=data.annotation_dataset_id,
                     export_format=data.export_format, description=data.description,
-                    created_id=auth.user.id,
                 )
+                set_create_audit(m, auth)
                 db.add(m)
                 try:
                     await db.flush()
@@ -307,13 +395,17 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainTask.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [_enrich_task(r) for r in rows], total
+            name_map = await _dataset_name_map(db, [r.dataset_id for r in rows])
+            return [_enrich_task(r, name_map) for r in rows], total
 
     @classmethod
     async def get_task(cls, task_id: int) -> dict | None:
         async with async_db_session() as db:
             t = await db.get(TrainTask, task_id)
-            return _enrich_task(t) if t else None
+            if not t:
+                return None
+            name_map = await _dataset_name_map(db, [t.dataset_id])
+            return _enrich_task(t, name_map)
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
@@ -326,14 +418,22 @@ class TrainService:
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
                 annotation_task_id=data.annotation_task_id,
                 base_model_id=data.base_model_id, docker_image=image,
-                hyperparams=data.hyperparams, created_id=auth.user.id,
+                hyperparams=data.hyperparams,
             )
+            set_create_audit(t, auth)
             db.add(t)
             await db.flush()
             return {"id": t.id}
 
     @classmethod
     async def delete_tasks(cls, ids: list[int]) -> None:
+        # 删除前先停止运行中的任务，避免容器成为孤儿（占 GPU/端口）
+        from .scheduler import stop_training
+        async with async_db_session() as db:
+            rows = [await db.get(TrainTask, i) for i in ids]
+        for t in rows:
+            if t and t.status == TrainStatus.RUNNING:
+                await stop_training(t.id)
         async with async_db_session.begin() as db:
             for tid in ids:
                 t = await db.get(TrainTask, tid)
@@ -341,7 +441,7 @@ class TrainService:
                     await db.delete(t)
 
     @classmethod
-    async def update_task(cls, task_id: int, data) -> dict:
+    async def update_task(cls, task_id: int, data, auth) -> dict:
         from .model import TrainStatus
         async with async_db_session.begin() as db:
             t = await db.get(TrainTask, task_id)
@@ -353,6 +453,7 @@ class TrainService:
                 t.name = data.name
             if data.hyperparams is not None:
                 t.hyperparams = data.hyperparams
+            set_update_audit(t, auth)
             return {"id": t.id}
 
     @classmethod
@@ -376,8 +477,8 @@ class TrainService:
                 eval_dataset_id=data.eval_dataset_id,
                 framework=framework,
                 hyperparams=data.hyperparams,
-                created_id=auth.user.id,
             )
+            set_create_audit(e, auth)
             db.add(e)
             await db.flush()
             return {"id": e.id}
@@ -413,7 +514,14 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainEval.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [_model_to_dict(r) for r in rows], total
+            name_map = await _dataset_name_map(db, [r.eval_dataset_id for r in rows])
+            items = []
+            for r in rows:
+                d = _model_to_dict(r)
+                if r.eval_dataset_id in name_map:
+                    d["eval_dataset_name"] = name_map[r.eval_dataset_id]
+                items.append(d)
+            return items, total
 
     @classmethod
     async def delete_evals(cls, ids: list[int]) -> None:
@@ -433,6 +541,9 @@ class TrainService:
             if not e:
                 return None
             data = _model_to_dict(e)
+            name_map = await _dataset_name_map(db, [e.eval_dataset_id])
+            if e.eval_dataset_id in name_map:
+                data["eval_dataset_name"] = name_map[e.eval_dataset_id]
 
             log_path = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id), "eval.log")
             if os.path.exists(log_path):
@@ -459,8 +570,8 @@ class TrainService:
                 source_dataset_id=data.source_dataset_id,
                 source_images=data.source_images,
                 hyperparams=data.hyperparams,
-                created_id=auth.user.id,
             )
+            set_create_audit(p, auth)
             db.add(p)
             await db.flush()
             return {"id": p.id}
@@ -483,7 +594,7 @@ class TrainService:
                         data["log"] = f.read()[-500000:]
                 except Exception:
                     pass
-            return data
+            return sign_predict_results(data)
 
     @classmethod
     async def list_predicts(cls, params: dict | None = None) -> tuple[list[dict], int]:
@@ -518,10 +629,14 @@ class TrainService:
             stmt = stmt.order_by(desc(TrainPredict.created_time)).limit(page_size).offset((page_no - 1) * page_size)
             result = await db.execute(stmt)
             rows = result.scalars().all()
-            return [_model_to_dict(r) for r in rows], total
+            return [sign_predict_results(_model_to_dict(r)) for r in rows], total
 
     @classmethod
     async def delete_predicts(cls, ids: list[int]) -> None:
+        from app.utils.s3_client import s3_client
+
+        for pid in ids:
+            s3_client.delete_prefix(f"train/predict/{pid}/")
         async with async_db_session.begin() as db:
             for pid in ids:
                 p = await db.get(TrainPredict, pid)
@@ -599,6 +714,38 @@ class TrainService:
             s3_client.upload_fileobj(f, rustfs_key)
 
         download_url = s3_client.presigned_url(rustfs_key)
+
+        # 记录导出历史（失败不阻断导出主流程）
+        try:
+            import hashlib as _hashlib
+
+            from app.api.v1.module_annotation.dataset.export_model import DatasetExportModel
+            from app.core.database import async_db_session as _db_session
+
+            file_size = os.path.getsize(zip_path)
+            md5 = _hashlib.md5()
+            with open(zip_path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    md5.update(chunk)
+            async with _db_session.begin() as db:
+                db.add(
+                    DatasetExportModel(
+                        dataset_id=data.dataset_id,
+                        format=data.format,
+                        exported_by=auth.user.id,
+                        download_url=download_url,
+                        file_size=file_size,
+                        checksum=md5.hexdigest(),
+                        extra={
+                            "annotation_task_id": data.annotation_task_id,
+                            "ocr_rec": data.ocr_rec,
+                            "rustfs_key": rustfs_key,
+                        },
+                    )
+                )
+        except Exception as e:
+            log.warning(f"写入导出历史失败: {e}")
+
         shutil.rmtree(os.path.dirname(export_dir), ignore_errors=True)
 
         # Schedule cleanup after presigned URL expires
@@ -634,8 +781,8 @@ class TrainService:
                 host_port=data.host_port or 0,
                 api_key=uuid.uuid4().hex,
                 hyperparams=data.hyperparams,
-                created_id=auth.user.id,
             )
+            set_create_audit(d, auth)
             db.add(d)
             await db.flush()
             return TrainService._deploy_to_dict(d)
@@ -671,22 +818,36 @@ class TrainService:
 
     @classmethod
     async def delete_deploys(cls, ids: list[int]) -> None:
+        # 删除前先停掉真实容器（含注册表丢失/DB 有 container_id/按 label 兜底），
+        # 避免容器成为孤儿占用端口/GPU。必须在 DB 事务外调用，stop 会开自己的 session。
+        from .deploy_executor import stop_deployment
+        for did in ids:
+            await stop_deployment(did)
         async with async_db_session.begin() as db:
             for did in ids:
                 d = await db.get(TrainDeploy, did)
                 if d:
-                    if d.container_id:
-                        from .deploy_executor import stop_deployment
-                        await stop_deployment(d.id)
                     await db.delete(d)
 
     @classmethod
     async def renew_deploy_key(cls, deploy_id: int) -> dict | None:
         import uuid
+
+        from .deploy_executor import start_deployment, stop_deployment
         async with async_db_session.begin() as db:
             d = await db.get(TrainDeploy, deploy_id)
             if not d:
                 return None
+            # deploying 期间容器可能正在拉起但尚未落 container_id，此时 stop+start
+            # 会并发拉起第二个容器（双启动）。要求用户等待运行中再操作。
+            if d.status == "deploying":
+                raise ValueError("部署正在启动中，请等待状态变为运行中后再重新生成 API Key")
             new_key = uuid.uuid4().hex
             d.api_key = new_key
-            return {"api_key": new_key, "id": d.id}
+            prev_status = d.status
+            result = {"api_key": new_key, "id": d.id}
+        # 运行中的部署需要重启容器才能让新 key 生效
+        if prev_status == "running":
+            await stop_deployment(deploy_id)
+            await start_deployment(deploy_id)
+        return result

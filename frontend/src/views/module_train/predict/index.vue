@@ -208,12 +208,7 @@
     </PageContent>
 
     <!-- Create Dialog -->
-    <el-dialog
-      v-model="showCreateDialog"
-      title="创建预测任务"
-      width="600px"
-      :close-on-click-modal="false"
-    >
+    <EnhancedDialog v-model="showCreateDialog" title="创建预测任务" append-to-body width="600px">
       <el-form label-width="100px">
         <el-form-item label="模型版本" required>
           <el-select
@@ -258,6 +253,7 @@
             filterable
             style="width: 100%"
             placeholder="选择数据集"
+            @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
@@ -292,15 +288,17 @@
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
       </template>
-    </el-dialog>
+    </EnhancedDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, onMounted, onBeforeUnmount } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import { Plus } from "@element-plus/icons-vue";
@@ -316,6 +314,7 @@ interface TablePageQuery {
 }
 
 const router = useRouter();
+const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 const uploadRef = ref<any>(null);
 
@@ -338,14 +337,40 @@ const createForm = reactive({
 });
 
 onMounted(async () => {
-  const [mRes, dsRes] = await Promise.all([
-    TrainAPI.getModelList(),
-    AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 }),
-  ]);
-  models.value = mRes.data?.data?.items || [];
-  datasets.value = dsRes.data?.data?.items || [];
-  refreshList();
+  // 先加载模型版本（自动开窗预填依赖它）
+  try {
+    models.value = await cachedOptions(
+      "train:models",
+      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    /* 模型列表加载失败不阻塞页面与自动开窗 */
+  }
+
+  if (route.query.autoCreate === "1") {
+    const modelId = Number(route.query.model_id || 0);
+    if (modelId && models.value.some((m: any) => m.id === modelId)) {
+      createForm.modelId = modelId;
+      onPredictModelChange(modelId);
+      showCreateDialog.value = true;
+    }
+    router.replace({ query: {} });
+  }
 });
+
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
 
 function getModelName(modelId: number) {
   const m = models.value.find((x: any) => x.id === modelId);
@@ -407,13 +432,12 @@ async function handleCreate() {
 
     await TrainAPI.createPredict({
       model_id: createForm.modelId,
-      model_repo_id: models.value.find((m: any) => m.id === createForm.modelId)?.id || 0,
+      model_repo_id: models.value.find((m: any) => m.id === createForm.modelId)?.repo_id || 0,
       source_type: createForm.sourceType,
       source_dataset_id: createForm.sourceDatasetId,
       source_images: sourceImages,
       hyperparams: createForm.hyperparams,
     });
-    ElMessage.success("预测任务已创建");
     showCreateDialog.value = false;
     createForm.modelId = null;
     createForm.sourceType = "dataset";
@@ -439,10 +463,9 @@ async function handleStart(id: number) {
   try {
     await ElMessageBox.confirm("确定开始预测？", "提示", { type: "info" });
     await TrainAPI.startPredict(id);
-    ElMessage.success("预测已开始");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel" && e !== "close") ElMessage.error(e?.msg || "启动失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -450,10 +473,9 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止预测？", "提示", { type: "warning" });
     await TrainAPI.stopPredict(id);
-    ElMessage.success("预测已停止");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel" && e !== "close") ElMessage.error(e?.msg || "停止失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -463,7 +485,6 @@ function downloadZip(url: string) {
 
 async function handleDelete(ids: number[]) {
   await TrainAPI.deletePredict(ids);
-  ElMessage.success("已删除");
   refreshList();
 }
 

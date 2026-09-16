@@ -268,6 +268,7 @@
               filterable
               style="width: 100%"
               @change="(v: any) => onWindowChange(i, v)"
+              @visible-change="(v: boolean) => v && fetchCameras()"
             >
               <el-option v-for="c in allCameras" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
@@ -285,12 +286,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import { getLayoutList, createLayout, updateLayout, deleteLayout } from "@/api/module_video/layout";
 import { getCameraList } from "@/api/module_video/camera";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { cachedOptions } from "@/composables/useOptions";
 import { ElMessage } from "element-plus";
 
 interface TablePageQuery {
@@ -529,17 +531,16 @@ async function resetForm() {
 }
 
 async function fetchCameras() {
+  if (allCameras.value.length) return;
   try {
-    const res = await getCameraList({ page_size: 100 });
-    allCameras.value = res.data?.data?.items || [];
+    allCameras.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
   } catch {
     /* empty */
   }
 }
-
-onMounted(() => {
-  fetchCameras();
-});
 
 async function handleCloseDialog() {
   dialogVisible.visible = false;
@@ -548,6 +549,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  fetchCameras();
   if (id && type === "update") {
     dialogVisible.title = "编辑布局";
     const res = await getLayoutList({ page_no: 1, page_size: 100 });

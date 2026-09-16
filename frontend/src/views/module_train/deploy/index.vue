@@ -177,6 +177,15 @@
                   复制URL
                 </el-button>
                 <el-button
+                  size="small"
+                  link
+                  type="info"
+                  icon="Document"
+                  @click="deployLogRef.open(scope.row)"
+                >
+                  详情
+                </el-button>
+                <el-button
                   v-if="scope.row.status === 'failed' || scope.row.status === 'stopped'"
                   size="small"
                   link
@@ -211,7 +220,7 @@
       </template>
     </PageContent>
 
-    <el-dialog v-model="showCreateDialog" title="新建部署" width="500px">
+    <EnhancedDialog v-model="showCreateDialog" title="新建部署" append-to-body width="560px">
       <el-form label-width="120px">
         <el-form-item label="选择模型" required>
           <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" @change="onDeployModelChange">
@@ -241,7 +250,7 @@
         <el-button @click="showCreateDialog = false">取消</el-button>
         <el-button type="primary" :loading="creating" @click="handleCreate">创建</el-button>
       </template>
-    </el-dialog>
+    </EnhancedDialog>
 
     <el-dialog v-model="showKeyDialog" title="部署成功" width="480px" :close-on-click-modal="false">
       <el-alert type="success" title="API Key 已生成" :description="'API URL: ' + (keyInfo.apiUrl || '待启动')" show-icon style="margin-bottom:16px" />
@@ -259,15 +268,20 @@
         <el-button type="primary" @click="onKeyDialogClose">我已保存，进入管理页</el-button>
       </template>
     </el-dialog>
+
+    <DeployLogDrawer ref="deployLogRef" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled, Link } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import { cachedOptions } from "@/composables/useOptions";
+import DeployLogDrawer from "@/components/Train/DeployLogDrawer.vue";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
@@ -277,6 +291,7 @@ interface TablePageQuery { page_no: number; page_size: number; [key: string]: an
 
 const router = useRouter();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const deployLogRef = ref();
 
 const models = ref<any[]>([]);
 const creating = ref(false);
@@ -368,10 +383,22 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   },
 });
 
-onMounted(async () => {
-  const r = await TrainAPI.getModelList();
-  models.value = r.data?.data?.items || [];
-  refreshList();
+// 模型下拉仅在打开新建部署弹窗时懒加载（带缓存）
+let modelsLoaded = false;
+async function loadModels() {
+  if (modelsLoaded) return;
+  modelsLoaded = true;
+  try {
+    models.value = await cachedOptions(
+      "train:models",
+      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    modelsLoaded = false;
+  }
+}
+watch(showCreateDialog, (v) => {
+  if (v) loadModels();
 });
 
 async function handleCreate() {
@@ -423,10 +450,9 @@ function onKeyDialogClose() {
 async function handleDeploy(row: any) {
   try {
     await TrainAPI.startDeploy(row.id);
-    ElMessage.success("部署已启动");
     refreshList();
-  } catch (e: any) {
-    ElMessage.error(e?.msg || "部署失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -434,7 +460,6 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该部署？", "提示", { type: "warning" });
     await TrainAPI.stopDeploy(id);
-    ElMessage.success("部署已停止");
     refreshList();
   } catch { /* */ }
 }
@@ -461,7 +486,6 @@ function copyText(t: string) {
 
 async function handleDelete(ids: number[]) {
   await TrainAPI.deleteDeploy(ids);
-  ElMessage.success("已删除");
   refreshList();
 }
 </script>

@@ -55,6 +55,25 @@ class InitializeData:
             _ = UserNotificationModel
             from app.plugin.module_train.schedule_model import TrainScheduleModel
             _ = TrainScheduleModel
+            from app.plugin.module_ai.apps.model import AiAppModel
+            from app.plugin.module_ai.overview.model import AiCallLogModel
+            from app.plugin.module_ai.prompts.model import AiPromptModel
+            from app.plugin.module_ai.provider.model import AiModelModel
+            from app.plugin.module_ai.providers.model import AiProviderModel
+            from app.plugin.module_ai.report.model import AiReportModel
+            from app.plugin.module_ai.sessions.model import AiMessageModel, AiSessionModel
+            from app.plugin.module_ai.tools_catalog.model import AiToolModel
+            _ = (
+                AiAppModel,
+                AiModelModel,
+                AiProviderModel,
+                AiPromptModel,
+                AiReportModel,
+                AiCallLogModel,
+                AiToolModel,
+                AiSessionModel,
+                AiMessageModel,
+            )
             # 使用引擎创建所有表
             # await drop_tables()
             await create_tables()

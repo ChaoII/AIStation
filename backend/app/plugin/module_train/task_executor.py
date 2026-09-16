@@ -8,7 +8,24 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import follow_container_logs, stop_container
+from .docker_utils import (
+    find_task_containers,
+    follow_container_logs,
+    get_container,
+    remove_container,
+    stop_container,
+    stop_task_containers,
+)
+from .framework_utils import framework_value
+
+
+def recovery_decision(has_live_container: bool, started_at, now, timeout_sec: float) -> str:
+    """重启恢复决策：存活→重连；否则未超时→等待、超时→标记失败。"""
+    if has_live_container:
+        return "reattach"
+    if started_at and (now - started_at).total_seconds() > timeout_sec:
+        return "fail"
+    return "wait"
 
 
 class TaskExecutor(ABC):
@@ -18,6 +35,7 @@ class TaskExecutor(ABC):
     并发上限由 _concurrency 控制。
     """
     name: str = "task"
+    task_kind: str = "task"  # 容器 label 值：train/eval/predict/deploy
     status_enum = None  # TrainStatus 等
     model_class = None  # TrainTask / TrainEval / TrainPredict
     _concurrency: int = 1
@@ -79,6 +97,9 @@ class TaskExecutor(ABC):
             entry["cancel"] = True
             if entry.get("container_id"):
                 await stop_container(entry["container_id"])
+        else:
+            # 后端重启后内存 registry 丢失，按容器 label 兜底停止
+            await stop_task_containers(cls.task_kind, task_id)
         async with async_db_session.begin() as db:
             await db.execute(
                 update(cls.model_class)
@@ -115,21 +136,99 @@ class TaskExecutor(ABC):
         return await loop.run_in_executor(None, lambda: container.wait(timeout=600)["StatusCode"])
 
     @classmethod
+    async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
+        """重启后重连存活容器并收尾。
+
+        基类默认行为：该框架暂不支持自动重连（无法收集产物），因此把仍处于
+        RUNNING 的任务落到终态 FAILED，避免任务永久卡在 RUNNING（容器以
+        all=True 查询会被反复重选为 reattach）。子类（如 TrainExecutor）可覆盖
+        此方法实现真正的重连收尾。
+        """
+        try:
+            # 仅当任务行仍存在且仍为 RUNNING 时才处理，避免覆盖已到终态的任务
+            async with async_db_session() as db:
+                task = await db.get(cls.model_class, task_id)
+            if not task or getattr(task, "status", None) != cls.status_enum.RUNNING:
+                return
+
+            container = None
+            if container_id:
+                try:
+                    container = await get_container(container_id)
+                except Exception as e:
+                    # 容器不存在 / daemon 不可达：无产物可收，按失败落终态
+                    log.warning(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {container_id}: {e}")
+
+            if container is None:
+                # 拿不到容器时仍可能有残留容器按 label 存活，落失败前先清理
+                await stop_task_containers(cls.task_kind, task_id)
+
+            if container is not None and getattr(container, "status", None) == "running":
+                # 容器仍存活：等待其退出（阻塞 wait 放线程池，避免卡事件循环）
+                try:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None, lambda: container.wait(timeout=cls._orphan_timeout_sec)
+                    )
+                except Exception as e:
+                    log.warning(f"[{cls.name}] 任务 {task_id} 等待容器退出失败: {e}")
+
+            # 写终态前重新读取任务行：若已被并发取消/落到其它终态则不再覆盖
+            async with async_db_session() as db:
+                fresh = await db.get(cls.model_class, task_id)
+            if fresh and getattr(fresh, "status", None) == cls.status_enum.RUNNING:
+                await cls._mark_status(
+                    task_id, cls.status_enum.FAILED,
+                    error_log="后端重启后无法恢复产物收集（该框架暂不支持自动重连）",
+                    finished_at=datetime.now(),
+                )
+            if container is not None:
+                await remove_container(container.id)
+        finally:
+            # 无论如何都要从 registry 移除，否则下一轮恢复仍会重复处理该任务
+            cls._registry.pop(task_id, None)
+
+    @classmethod
+    def _collect_recovery_registry(cls) -> dict:
+        """返回用于判定任务是否仍在运行的 registry；子类可合并多个 registry。"""
+        return cls._registry
+
+    @classmethod
+    def _recover_row_applies(cls, row) -> bool:
+        """该 RUNNING 行是否由本执行器负责恢复（PaddleX 由 PaddleXOCR* 负责）。"""
+        framework = getattr(row, "framework", None)
+        if framework_value(framework) == "paddlex" and "PaddleXOCR" not in cls.__name__:
+            return False
+        return True
+
+    @classmethod
     async def recover_orphans(cls) -> None:
-        """DB 中 RUNNING 但不在 registry 的任务，超时则标记 FAILED。"""
+        """DB 中 RUNNING 但不在 registry 的任务：存活容器→重连；否则超时→标记失败。"""
+        registry = cls._collect_recovery_registry()
         async with async_db_session() as db:
             from sqlalchemy import select
             rows = (await db.execute(select(cls.model_class).where(
                 cls.model_class.status == cls.status_enum.RUNNING
             ))).scalars().all()
             for r in rows:
-                if r.id in cls._registry:
+                if r.id in registry:
                     continue
-                # PaddleX 任务由 PaddleXOCR*Executor 各自的 registry 管理，其他执行器跳过
-                framework = getattr(r, "framework", None)
-                if framework is not None and str(framework).lower() == "paddlex" and cls.__name__ != "PaddleXOCRExecutor":
+                if not cls._recover_row_applies(r):
                     continue
-                if r.started_at and (datetime.now() - r.started_at).total_seconds() > cls._orphan_timeout_sec:
+                container_ids = find_task_containers(cls.task_kind, r.id)
+                decision = recovery_decision(
+                    bool(container_ids), r.started_at, datetime.now(), cls._orphan_timeout_sec
+                )
+                if decision == "reattach":
+                    # 记录 registry，避免下一轮重复重连；重连会长时间跟随日志，放后台执行
+                    entry = cls._registry.setdefault(r.id, {})
+                    entry["container_id"] = container_ids[0]
+                    log.warning(
+                        f"[{cls.name}] task {r.id} 容器仍存活（{container_ids[0][:12]}），重连而非标记失败"
+                    )
+                    # 保存任务引用，防止后台任务被 GC
+                    entry["reattach_task"] = asyncio.create_task(cls.reattach(r.id, container_ids[0]))
+                elif decision == "fail":
                     async with async_db_session.begin() as db2:
                         await db2.execute(
                             update(cls.model_class).where(cls.model_class.id == r.id).values(
@@ -138,6 +237,7 @@ class TaskExecutor(ABC):
                                 finished_at=datetime.now(),
                             )
                         )
+                    await stop_task_containers(cls.task_kind, r.id)
 
     @classmethod
     async def start_recovery_loop(cls) -> None:

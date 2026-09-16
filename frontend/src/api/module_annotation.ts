@@ -24,6 +24,44 @@ export const AnnotationAPI = {
   deleteDataset(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/dataset/delete`, method: "delete", data: ids });
   },
+  getExportHistory(datasetId: number) {
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/dataset/export/history/${datasetId}`,
+      method: "get",
+    });
+  },
+  cleanCheck(datasetId: number) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/clean/check/${datasetId}`,
+      method: "get",
+    });
+  },
+  cleanDuplicates(datasetId: number) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/clean/duplicates/${datasetId}`,
+      method: "get",
+    });
+  },
+  cleanAnomalies(datasetId: number) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/clean/anomalies/${datasetId}`,
+      method: "get",
+    });
+  },
+  getAnnotationHistory(taskId: number, imageId: number) {
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/anno/image/${imageId}/history`,
+      method: "get",
+      params: { task_id: taskId },
+    });
+  },
+  rollbackAnnotation(imageId: number, data: { task_id: number; version: number }) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/anno/image/${imageId}/rollback`,
+      method: "post",
+      data,
+    });
+  },
   uploadImages(id: number, files: FormData) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/dataset/${id}/upload`,

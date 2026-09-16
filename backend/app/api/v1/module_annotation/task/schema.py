@@ -13,6 +13,7 @@ class TaskCreateSchema(BaseModel):
     assignees: list[int] = Field(default_factory=list)
     classes: list[dict] = Field(default_factory=list)
     classification_mode: str | None = None
+    description: str | None = None
 
 
 class TaskUpdateSchema(BaseModel):
@@ -20,6 +21,7 @@ class TaskUpdateSchema(BaseModel):
     assignees: list[int] | None = None
     classes: list[dict] | None = None
     classification_mode: str | None = None
+    description: str | None = None
 
 
 class TaskOutSchema(BaseModel):
@@ -33,6 +35,7 @@ class TaskOutSchema(BaseModel):
     assignees: list
     classes: Any
     classification_mode: str | None = None
+    description: str | None = None
     progress: int
     created_id: int | None
     created_time: datetime | None

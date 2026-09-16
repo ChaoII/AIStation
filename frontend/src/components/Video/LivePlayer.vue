@@ -8,6 +8,7 @@
         :width="overlayWidth"
         :height="overlayHeight"
       />
+      <slot name="overlay" />
     </div>
 
     <div v-if="loading && !error" class="player-overlay connecting">
@@ -354,7 +355,11 @@ onBeforeUnmount(() => {
   destroyPlayer();
 });
 
-defineExpose({ play, destroyPlayer, switchProtocol });
+function getVideoElement(): HTMLVideoElement | null {
+  return videoRef.value;
+}
+
+defineExpose({ play, destroyPlayer, switchProtocol, getVideoElement });
 </script>
 
 <style scoped>

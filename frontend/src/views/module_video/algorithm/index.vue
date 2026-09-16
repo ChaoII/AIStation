@@ -100,7 +100,7 @@
               fixed="right"
               label="操作"
               align="center"
-              min-width="160"
+              min-width="300"
             >
               <template #default="scope">
                 <el-button
@@ -113,6 +113,36 @@
                 >
                   编辑
                 </el-button>
+                <el-button
+                  v-hasPerm="['module_video:algorithm:update']"
+                  type="success"
+                  size="small"
+                  link
+                  :icon="RefreshRight"
+                  @click="handleHotUpdate(scope.row)"
+                >
+                  热更新
+                </el-button>
+                <span v-hasPerm="['module_video:algorithm:update']" class="rollback-trigger">
+                  <el-tooltip
+                    :disabled="canRollback(scope.row)"
+                    content="暂无上一版本模型，无法回滚"
+                    placement="top"
+                  >
+                    <span>
+                      <el-button
+                        type="warning"
+                        size="small"
+                        link
+                        :icon="RefreshLeft"
+                        :disabled="!canRollback(scope.row)"
+                        @click="handleRollback(scope.row)"
+                      >
+                        回滚
+                      </el-button>
+                    </span>
+                  </el-tooltip>
+                </span>
                 <el-button
                   v-hasPerm="['module_video:algorithm:delete']"
                   type="danger"
@@ -259,14 +289,17 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onBeforeMount } from "vue";
-import { Upload, Document, Checked } from "@element-plus/icons-vue";
-import { ElMessage } from "element-plus";
+import { Upload, Document, Checked, RefreshLeft, RefreshRight } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 import request from "@/utils/request";
 import {
   getAlgorithmList,
   createAlgorithm,
   updateAlgorithm,
   deleteAlgorithm,
+  hotUpdateAlgorithm,
+  rollbackAlgorithm,
+  type AlgorithmDispatchResult,
 } from "@/api/module_video/algorithm";
 import { configTemplates, algoTypeLabels } from "@/config/algoTemplates";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
@@ -371,6 +404,86 @@ function handleAlgoReset() {
   algoContentRef.value?.fetchPageData({ page_no: 1 });
 }
 
+/** 是否存在可回滚的历史版本（后端以 previous_model_path/previous_version 判断） */
+function canRollback(row: any): boolean {
+  return Boolean(row?.previous_version || row?.previous_model_path);
+}
+
+/** HTML 转义，避免后端错误信息里的特殊字符破坏提示结构 */
+function escapeHtml(text: unknown): string {
+  const map: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+  return String(text ?? "").replace(/[&<>"']/g, (c) => map[c]);
+}
+
+/** 汇总展示下发结果：成功/失败任务数，失败时列出任务ID与原因 */
+function showDispatchResult(action: string, result?: AlgorithmDispatchResult) {
+  const succeeded = result?.succeeded?.length ?? 0;
+  const failed = result?.failed ?? [];
+  if (failed.length === 0) {
+    ElMessage.success(`${action}完成：成功 ${succeeded} 个任务 / 失败 0 个任务`);
+    return;
+  }
+  const items = failed
+    .map(
+      (f) =>
+        `<li style="margin-bottom:4px"><span style="color:var(--el-color-danger)">任务 #${f.task_id}</span>：${escapeHtml(f.error)}</li>`
+    )
+    .join("");
+  ElMessageBox.alert(
+    `<div style="max-height:300px;overflow:auto">
+      <p style="margin:0 0 6px">成功 ${succeeded} 个任务 / 失败 ${failed.length} 个任务</p>
+      <ul style="padding-left:18px;margin:0">${items}</ul>
+    </div>`,
+    `${action}结果`,
+    { confirmButtonText: "确定", dangerouslyUseHTMLString: true }
+  );
+}
+
+async function handleHotUpdate(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确定将算法「${row.name}」的当前模型热更新下发到所有引用该算法的任务？`,
+      "热更新确认",
+      { type: "warning", confirmButtonText: "确定下发", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res = await hotUpdateAlgorithm(row.id);
+    showDispatchResult("热更新", res.data.data as AlgorithmDispatchResult);
+    refreshAlgoList();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "热更新失败");
+  }
+}
+
+async function handleRollback(row: any) {
+  if (!canRollback(row)) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定回滚算法「${row.name}」到上一版本（${row.previous_version || "未知版本"}）并下发到所有引用任务？`,
+      "回滚确认",
+      { type: "warning", confirmButtonText: "确定回滚", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res = await rollbackAlgorithm(row.id);
+    showDispatchResult("回滚", res.data.data as AlgorithmDispatchResult);
+    refreshAlgoList();
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || e?.msg || "回滚失败");
+  }
+}
+
 const algoForm = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
@@ -426,7 +539,7 @@ async function handleModelUpload(uploadFile: any) {
       url: "/video/algorithm/model/upload",
       method: "post",
       data: fd,
-      headers: { "Content-Type": "multipart/form-data" },
+      headers: { "Content-Type": "multipart/form-data", _silent: "true" },
     });
     const mp = res?.data?.data?.model_path;
     if (mp) {
@@ -604,5 +717,10 @@ onBeforeMount(async () => {
   width: 100%;
   overflow: hidden;
   border-radius: 4px;
+}
+
+.rollback-trigger {
+  display: inline-flex;
+  align-items: center;
 }
 </style>

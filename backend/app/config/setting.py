@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # ******************* 项目环境 ****************** #
     # ================================================= #
     ENVIRONMENT: EnvironmentEnum = EnvironmentEnum.DEV
+    TESTING: bool = False  # 测试模式：使用内存 Redis(fakeredis)，无需外部服务
 
     # ================================================= #
     # ******************* 服务器配置 ****************** #
@@ -83,9 +84,9 @@ class Settings(BaseSettings):
     SQL_DB_ENABLE: bool = True  # 是否启用数据库
     DATABASE_ECHO: bool | Literal["debug"] = False  # 是否显示SQL日志
     ECHO_POOL: bool | Literal["debug"] = False  # 是否显示连接池日志
-    POOL_SIZE: int = 10  # 连接池大小
-    MAX_OVERFLOW: int = 20  # 最大溢出连接数
-    POOL_TIMEOUT: int = 5  # 连接超时时间(秒)
+    POOL_SIZE: int = 20  # 连接池大小
+    MAX_OVERFLOW: int = 40  # 最大溢出连接数
+    POOL_TIMEOUT: int = 30  # 连接超时时间(秒)
     POOL_RECYCLE: int = 1800  # 连接回收时间(秒)
     POOL_USE_LIFO: bool = True  # 是否使用LIFO连接池
     POOL_PRE_PING: bool = True  # 是否开启连接预检
@@ -218,6 +219,8 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = ""
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = ""
+    # 是否允许启用高危 Agno 工具（python/shell 等可执行任意代码/命令，默认关闭）
+    AI_ENABLE_DANGEROUS_TOOLS: bool = False
 
     # ================================================= #
     # ******************* ChromaDB配置 ****************** #
@@ -245,6 +248,38 @@ class Settings(BaseSettings):
     DETECTIONS_DIR: str = str(BASE_DIR / "data" / "detections")
 
     # ================================================= #
+    # ******************* 云边协同配置 ****************** #
+    # ================================================= #
+    VIDEO_ANALYSIS_MODE: Literal["cloud_edge", "cloud_only"] = "cloud_only"  # 视频分析模式
+    EDGE_HEARTBEAT_TIMEOUT_SEC: int = 90  # 超过该秒数未心跳判定离线
+    EDGE_CONTROL_TOKEN: str = ""  # 边缘控制面共享密钥（空=不校验）
+    EDGE_LOCAL_CONTROL_URL: str = ""  # 纯云端本机 Agent 控制面地址
+
+    # ================================================= #
+    # *************** 边缘事件 MQTT 接入配置 ************ #
+    # ================================================= #
+    MQTT_ENABLED: bool = False  # 是否启用 MQTT 事件消费者（未启用/无 broker 时降级不启动）
+    MQTT_BROKER_URL: str = ""  # Broker 地址，如 mqtt://127.0.0.1:1883 / mqtts://host:8883
+    MQTT_USERNAME: str = ""  # Broker 用户名（可空）
+    MQTT_PASSWORD: str = ""  # Broker 密码（可空）
+    # Agent 发布基址（spec §7 `aistation/{tenant}/edge`，不含通配符 +）；
+    # Agent 最终发布主题为 "{MQTT_TOPIC_PREFIX}/{edge_code}/camera/{camera_id}/detect"
+    MQTT_TOPIC_PREFIX: str = "aistation/default/edge"
+    # 云端消费者订阅通配主题（spec §7），默认匹配上述发布主题
+    MQTT_SUBSCRIBE_TOPIC: str = "aistation/+/edge/+/camera/+/detect"
+    # 边缘事件保留天数（TTL 清理；<=0 视为不清理）
+    EDGE_EVENT_RETENTION_DAYS: int = 30
+    MQTT_CLIENT_ID: str = "aistation-events"  # 消费者 client_id
+    MQTT_QOS: int = 1  # 订阅 QoS
+    # 事件内联快照（Agent 采集 JPEG → base64 随事件上报）
+    MQTT_SNAPSHOT_ENABLED: bool = True
+    MQTT_SNAPSHOT_INLINE: bool = True
+    MQTT_SNAPSHOT_QUALITY: int = 75
+    MQTT_SNAPSHOT_MAX_WIDTH: int = 640
+    # 边缘预览（当前以受控快照流实现）
+    EDGE_PREVIEW_ENABLED: bool = True
+
+    # ================================================= #
     # ******************* 请求限制配置 ****************** #
     # ================================================= #
     REQUEST_LIMITER_REDIS_PREFIX: str = "aistation:request_limiter:"
@@ -255,9 +290,13 @@ class Settings(BaseSettings):
 
     # 按模块覆盖限流参数：{"module": {"times": N, "seconds": M}}
     # 标注工作台会一次性加载图片列表+预签名URL+标注数据，合法请求较多，默认放宽
+    # 视频模块的规则编辑器/事件流/边缘页在单次交互中会对同一路由（如 rule/list）
+    # 连续多次请求（打开对话框、保存后刷新、搜索、再次编辑），默认 5 次/10s 会误伤
+    # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由 60 次/10s 上限）。
     RATE_LIMIT_OVERRIDES: dict[str, dict] = {
         "annotation": {"times": 60, "seconds": 10},
         "train": {"times": 30, "seconds": 10},
+        "video": {"times": 60, "seconds": 10},
     }
 
     # ================================================= #

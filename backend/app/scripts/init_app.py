@@ -23,6 +23,51 @@ from app.utils.console import console_close, console_run
 
 from .initialize import InitializeData
 
+# 既有库「不跑 Alembic、仅重启后端」的兜底补列清单：
+# 模型新增的可空/带默认列必须同步登记在此，server_default 与 Alembic 迁移保持一致。
+ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
+    "video_algorithms": [
+        ("model_file_config", "JSONB"),
+        ("runtime_config", "JSONB"),
+        ("preset_params", "JSONB"),
+        ("scene_type", "VARCHAR(64)"),
+    ],
+    "video_algorithm_tasks": [
+        ("runtime_overrides", "JSONB"),
+        ("params_overrides", "JSONB"),
+        ("edge_device_id", "INTEGER"),
+        ("error_log", "TEXT"),
+    ],
+    "video_cameras": [
+        ("reachable", "BOOLEAN"),
+    ],
+    "video_alarm_rules": [
+        ("conditions", "JSONB"),
+        # 与 Alembic 1164d4a7539d / 183fb76b1184 / d6d5f85952f5 对齐
+        ("params", "JSONB NOT NULL DEFAULT '{}'"),
+        ("rollout", "JSONB NOT NULL DEFAULT '{}'"),
+        ("group_id", "INTEGER"),
+    ],
+    "ai_models": [
+        ("extra_headers", "JSONB"),
+        ("provider_id", "INTEGER"),
+        ("usage", "VARCHAR(16)"),
+        ("capabilities", "JSONB"),
+        ("context_window", "INTEGER"),
+    ],
+    "ai_call_logs": [
+        ("user_id", "INTEGER"),
+    ],
+    "ai_reports": [
+        ("app_id", "INTEGER"),
+        ("session_id", "INTEGER"),
+    ],
+    "ai_tools": [
+        ("source", "VARCHAR(16) DEFAULT 'system'"),
+        ("config", "JSONB"),
+    ],
+}
+
 
 async def _ensure_missing_columns() -> None:
     """Add new columns to existing tables if they don't exist."""
@@ -30,29 +75,46 @@ async def _ensure_missing_columns() -> None:
 
     from app.core.database import async_engine
 
-    new_columns: dict[str, list[tuple[str, str]]] = {
-        "video_algorithms": [
-            ("model_file_config", "JSONB"),
-            ("runtime_config", "JSONB"),
-            ("preset_params", "JSONB"),
-        ],
-        "video_algorithm_tasks": [
-            ("runtime_overrides", "JSONB"),
-            ("params_overrides", "JSONB"),
-        ],
-        "video_cameras": [
-            ("reachable", "BOOLEAN"),
-        ],
-    }
+    new_columns = ENSURE_NEW_COLUMNS
+    is_sqlite = settings.DATABASE_TYPE == "sqlite"
     async with async_engine.begin() as conn:
         for table, columns in new_columns.items():
-            for col_name, col_type in columns:
+            existing: set[str] = set()
+            if is_sqlite:
+                # SQLite 不支持 ADD COLUMN IF NOT EXISTS，先探测现有列
                 try:
-                    await conn.execute(
-                        sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
-                    )
+                    rows = (
+                        await conn.execute(sa_text(f"PRAGMA table_info({table})"))
+                    ).fetchall()
+                    existing = {r[1] for r in rows}
+                except Exception:
+                    existing = set()
+            for col_name, col_type in columns:
+                if col_name in existing:
+                    continue
+                try:
+                    if is_sqlite:
+                        await conn.execute(
+                            sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+                        )
+                    else:
+                        await conn.execute(
+                            sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
+                        )
                 except Exception:
                     pass
+
+    # 存量 HTTP 工具迁移：source 默认 system，需按 kind='http' 修正为 http
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(
+                sa_text(
+                    "UPDATE ai_tools SET source='http' "
+                    "WHERE kind='http' AND (source IS NULL OR source='system')"
+                )
+            )
+    except Exception as e:
+        log.warning(f"ai_tools source migration warning: {e}")
 
     # Drop unused columns + ensure re-added columns
     try:
@@ -62,6 +124,39 @@ async def _ensure_missing_columns() -> None:
             await conn.execute(sa_text("ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0"))
     except Exception as e:
         log.warning(f"annotation_task migration warning: {e}")
+
+    # 边缘设备表兜底（旧库无 Alembic 迁移时直接建表，做法同 train_predicts）
+    # DDL 与 EdgeDeviceModel 对齐：uuid NOT NULL UNIQUE，审计/状态字段 NOT NULL 并建立索引
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS video_edge_devices (
+                    id SERIAL PRIMARY KEY,
+                    uuid VARCHAR(64) NOT NULL UNIQUE,
+                    status VARCHAR(16) NOT NULL DEFAULT 'offline',
+                    description TEXT,
+                    created_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+                    deleted_time TIMESTAMP,
+                    created_id INTEGER,
+                    updated_id INTEGER,
+                    deleted_id INTEGER,
+                    name VARCHAR(128) NOT NULL,
+                    code VARCHAR(64) NOT NULL UNIQUE,
+                    control_url VARCHAR(512),
+                    secret VARCHAR(128),
+                    capabilities JSONB,
+                    metrics JSONB,
+                    last_heartbeat TIMESTAMP
+                )
+            """))
+            for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time"):
+                await conn.execute(
+                    sa_text(f"CREATE INDEX IF NOT EXISTS ix_video_edge_devices_{col} ON video_edge_devices ({col})")
+                )
+    except Exception as e:
+        log.warning(f"edge device migration warning: {e}")
 
 
 async def _ensure_deploy_menu() -> None:
@@ -138,6 +233,340 @@ async def _ensure_deploy_menu() -> None:
                 if item and (not item.icon or item.icon != icon):
                     item.icon = icon
             log.info("✅ 视频模块菜单图标已更新")
+
+
+EDGE_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_video:edge:query", "查询边缘设备"),
+    ("module_video:edge:create", "创建边缘设备"),
+    ("module_video:edge:update", "编辑边缘设备"),
+    ("module_video:edge:delete", "删除边缘设备"),
+]
+
+
+async def _ensure_edge_button_menus() -> None:
+    """确保边缘设备按钮权限存在（挂在视频监控父菜单下）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过边缘设备按钮权限注册")
+                return
+
+            existing = set(
+                (await db.execute(
+                    select(MenuModel.permission).where(MenuModel.permission.like("module_video:edge:%"))
+                )).scalars().all()
+            )
+            for order, (perm_code, perm_name) in enumerate(EDGE_BUTTON_PERMS, start=1):
+                if perm_code in existing:
+                    continue
+                menu = MenuModel(
+                    name=perm_name, type=3, icon=None, order=order,
+                    route_name="", route_path="", component_path="",
+                    permission=perm_code, parent_id=parent.id,
+                    status="0", is_deleted=False, title=perm_name,
+                )
+                db.add(menu)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=menu.id))
+            log.info("✅ 边缘设备按钮权限已注册")
+
+
+async def _ensure_edge_page_menu() -> None:
+    """确保『边缘设备』页面菜单存在（挂在视频监控父菜单下，分配 admin）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "VideoEdge")
+            )
+            if existing.scalar_one_or_none():
+                return
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过边缘设备菜单注册")
+                return
+            menu = MenuModel(
+                name="边缘设备",
+                type=2,
+                icon="el-icon-Cpu",
+                order=10,
+                route_name="VideoEdge",
+                route_path="/video/edge",
+                component_path="module_video/edge/index",
+                permission="module_video:edge:query",
+                parent_id=parent.id,
+                status="0",
+                is_deleted=False,
+                title="边缘设备",
+            )
+            db.add(menu)
+            await db.flush()
+            admin = await db.scalar(select(RoleModel).where(RoleModel.id == 1))
+            if admin:
+                db.add(RoleMenusModel(role_id=admin.id, menu_id=menu.id))
+            log.info("✅ 边缘设备菜单已注册")
+
+
+async def _ensure_edge_event_page_menu() -> None:
+    """确保『边缘事件』页面菜单存在（挂在视频监控父菜单下，分配 admin；幂等）。"""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "VideoEdgeEvent")
+            )
+            if existing.scalar_one_or_none():
+                return
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过边缘事件菜单注册")
+                return
+            menu = MenuModel(
+                name="边缘事件",
+                type=2,
+                icon="el-icon-DataLine",
+                order=11,
+                route_name="VideoEdgeEvent",
+                route_path="/video/event-stream",
+                component_path="module_video/event_stream/index",
+                permission="module_video:edge:query",
+                parent_id=parent.id,
+                status="0",
+                is_deleted=False,
+                title="边缘事件",
+            )
+            db.add(menu)
+            await db.flush()
+            admin = await db.scalar(select(RoleModel).where(RoleModel.id == 1))
+            if admin:
+                db.add(RoleMenusModel(role_id=admin.id, menu_id=menu.id))
+            log.info("✅ 边缘事件菜单已注册")
+
+
+AI_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_ai:model:query", "查询大模型配置"),
+    ("module_ai:model:create", "新增大模型配置"),
+    ("module_ai:model:update", "编辑大模型配置"),
+    ("module_ai:model:delete", "删除大模型配置"),
+    ("module_ai:prompt:create", "新增提示词"),
+    ("module_ai:prompt:update", "编辑提示词"),
+    ("module_ai:prompt:delete", "删除提示词"),
+    ("module_ai:assistant:query", "AI助手对话"),
+    ("module_ai:tool:query", "查询工具"),
+    ("module_ai:tool:create", "新增工具"),
+    ("module_ai:tool:update", "编辑工具"),
+    ("module_ai:tool:delete", "删除工具"),
+    ("module_ai:app:query", "查询AI应用"),
+    ("module_ai:app:create", "新增AI应用"),
+    ("module_ai:app:update", "编辑AI应用"),
+    ("module_ai:app:delete", "删除AI应用"),
+]
+
+# 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
+REMOVED_ROUTE_NAMES: list[str] = ["AiOverview", "AiPlayground", "AiProvider", "AiReport", "Memory"]
+
+
+async def _ensure_ai_menus() -> None:
+    """确保 AI 管理保留的 5 个页面与按钮权限存在，并隐藏已下线页面（chat 来自种子数据）。"""
+    from sqlalchemy import select, update
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "AI", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
+                return
+
+            # 父菜单固定落地智能助手；chat 保持可见，已下线页面统一隐藏
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "AI", MenuModel.type == 1)
+                .values(redirect="/ai/chat")
+            )
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.component_path == "module_ai/chat/index")
+                .values(hidden=False)
+            )
+            # 智能助手菜单权限与流式/会话接口对齐（旧的 module_ai:chat:* 页面已不再使用）
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "Chat")
+                .values(permission="module_ai:assistant:query")
+            )
+            chat_menu = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "Chat")
+            )
+            if chat_menu:
+                link = await db.scalar(
+                    select(RoleMenusModel).where(
+                        RoleMenusModel.role_id == 1,
+                        RoleMenusModel.menu_id == chat_menu.id,
+                    )
+                )
+                if not link:
+                    db.add(RoleMenusModel(role_id=1, menu_id=chat_menu.id))
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name.in_(REMOVED_ROUTE_NAMES))
+                .values(hidden=True)
+            )
+
+            pages = [
+                ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
+                ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 13),
+                ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 14),
+                ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 15),
+                ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 16),
+            ]
+            for title, rname, rpath, comp, perm, order in pages:
+                exists = await db.scalar(
+                    select(MenuModel).where(MenuModel.route_name == rname)
+                )
+                if exists:
+                    continue
+                m = MenuModel(
+                    name=title,
+                    type=2,
+                    icon=None,
+                    order=order,
+                    route_name=rname,
+                    route_path=rpath,
+                    component_path=comp,
+                    permission=perm,
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=title,
+                )
+                db.add(m)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=m.id))
+
+            existing = set(
+                (
+                    await db.execute(
+                        select(MenuModel.permission).where(
+                            MenuModel.permission.like("module_ai:%")
+                        )
+                    )
+                ).scalars().all()
+            )
+            for order, (perm_code, perm_name) in enumerate(AI_BUTTON_PERMS, start=1):
+                if perm_code in existing:
+                    continue
+                m = MenuModel(
+                    name=perm_name,
+                    type=3,
+                    icon=None,
+                    order=order,
+                    route_name="",
+                    route_path="",
+                    component_path="",
+                    permission=perm_code,
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=perm_name,
+                )
+                db.add(m)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=m.id))
+            log.info("✅ AI 菜单与权限已注册")
+
+
+async def _ensure_ai_tools() -> None:
+    """幂等同步内置工具到 ai_tools：仅补缺失行，不覆盖已存在行的 enabled 状态。"""
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = set((await db.execute(select(AiToolModel.name))).scalars().all())
+            added = 0
+            for tool_name in TOOL_REGISTRY:
+                if tool_name in existing:
+                    continue
+                db.add(
+                    AiToolModel(
+                        name=tool_name,
+                        kind="builtin",
+                        source="system",
+                        method="GET",
+                        url="",
+                        enabled=True,
+                    )
+                )
+                added += 1
+            if added:
+                log.info(f"✅ 已注册 {added} 个内置 AI 工具")
+            else:
+                log.info("✅ 内置 AI 工具已就绪")
+
+
+async def _ensure_agno_tools() -> None:
+    """幂等同步 Agno 精选工具到 ai_tools：仅补缺失行，默认停用，不覆盖已有配置。"""
+    from sqlalchemy import select
+
+    from app.core.database import async_db_session
+    from app.plugin.module_ai.agno_tools.registry import AGNO_CATALOG
+    from app.plugin.module_ai.tools_catalog.model import AiToolModel
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = set((await db.execute(select(AiToolModel.name))).scalars().all())
+            added = 0
+            for spec in AGNO_CATALOG:
+                if spec["key"] in existing:
+                    continue
+                db.add(
+                    AiToolModel(
+                        name=spec["key"],
+                        kind="agno",
+                        source="agno",
+                        method="GET",
+                        url="",
+                        enabled=False,
+                        description=spec.get("description") or spec["title"],
+                    )
+                )
+                added += 1
+            if added:
+                log.info(f"✅ 已注册 {added} 个 Agno 精选 AI 工具")
+            else:
+                log.info("✅ Agno 精选 AI 工具已就绪")
 
 
 async def _ensure_annotation_menus() -> None:
@@ -279,6 +708,33 @@ async def _ensure_annotation_button_menus() -> None:
             log.info(f"✅ 标注按钮权限已注册 ({len(buttons)} 项)")
 
 
+TRAIN_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_train:model:query", "查询模型"),
+    ("module_train:model:create", "创建模型"),
+    ("module_train:model:update", "编辑模型"),
+    ("module_train:model:delete", "删除模型"),
+    ("module_train:task:query", "查询任务"),
+    ("module_train:task:create", "创建任务"),
+    ("module_train:task:update", "更新任务"),
+    ("module_train:task:delete", "删除任务"),
+    ("module_train:eval:query", "查询评估"),
+    ("module_train:eval:create", "创建评估"),
+    ("module_train:eval:delete", "删除评估"),
+    ("module_train:predict:query", "查询预测"),
+    ("module_train:predict:create", "创建预测"),
+    ("module_train:predict:delete", "删除预测"),
+]
+
+# (name, route_name, route_path, component_path, permission, hidden)
+TRAIN_EXTRA_MENUS: list[tuple[str, str, str, str, str, bool]] = [
+    ("模型预测", "TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query", False),
+    ("模型部署", "TrainDeploy", "/train/deploy", "module_train/deploy/index", "module_train:model:query", False),
+    ("训练详情", "TrainTaskDetail", "/train/task/:id", "module_train/task/detail", "module_train:task:query", True),
+    ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query", True),
+    ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query", True),
+]
+
+
 async def _ensure_train_menus() -> None:
     """Ensure the training module menu entries exist."""
     from sqlalchemy import select
@@ -336,39 +792,27 @@ async def _ensure_train_menus() -> None:
                     await db.flush()
                     db.add(RoleMenusModel(role_id=1, menu_id=child.id))
 
-                # Detail pages
-                for detail_data in [
-                    ("训练详情", "TrainTaskDetail", "/train/task/:id", "module_train/task/detail", "module_train:task:query"),
-                    ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
-                    ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
-                ]:
-                    dm = MenuModel(name=detail_data[0], type=2, icon=None, order=99,
-                                   route_name=detail_data[1], route_path=detail_data[2],
-                                   component_path=detail_data[3],
-                                   permission=detail_data[4], parent_id=parent.id,
-                                   status="0", is_deleted=False, title=detail_data[0], hidden=True)
+                # Detail / extra pages（与已存在分支共用 TRAIN_EXTRA_MENUS，避免清单分叉）
+                for name, route_name, route_path, component_path, permission, hidden in TRAIN_EXTRA_MENUS:
+                    existing_menu = await db.execute(
+                        select(MenuModel).where(MenuModel.route_name == route_name)
+                    )
+                    if existing_menu.scalar_one_or_none():
+                        continue
+                    dm = MenuModel(
+                        name=name, type=2, icon=None, order=99,
+                        route_name=route_name, route_path=route_path,
+                        component_path=component_path,
+                        permission=permission, parent_id=parent.id,
+                        status="0", is_deleted=False, title=name, hidden=hidden,
+                    )
                     db.add(dm)
                     await db.flush()
                     db.add(RoleMenusModel(role_id=1, menu_id=dm.id))
 
                 db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
 
-                button_perms = [
-                    ("module_train:model:query", "查询模型"),
-                    ("module_train:model:create", "创建模型"),
-                    ("module_train:model:delete", "删除模型"),
-                    ("module_train:task:query", "查询任务"),
-                    ("module_train:task:create", "创建任务"),
-                    ("module_train:task:update", "更新任务"),
-                    ("module_train:task:delete", "删除任务"),
-                    ("module_train:eval:query", "查询评估"),
-                    ("module_train:eval:create", "创建评估"),
-                    ("module_train:eval:delete", "删除评估"),
-                    ("module_train:predict:query", "查询预测"),
-                    ("module_train:predict:create", "创建预测"),
-                    ("module_train:predict:delete", "删除预测"),
-                ]
-                for perm_code, perm_name in button_perms:
+                for perm_code, perm_name in TRAIN_BUTTON_PERMS:
                     existing_perm = await db.execute(
                         select(MenuModel).where(MenuModel.permission == perm_code)
                     )
@@ -385,35 +829,25 @@ async def _ensure_train_menus() -> None:
                 return
 
             # ── Parent already exists: add any missing sub-menus ──
-            missing = [
-                ("模型预测", "TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query"),
-                ("模型部署", "TrainDeploy", "/train/deploy", "module_train/deploy/index", "module_train:model:query"),
-                ("评估详情", "TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query"),
-                ("预测详情", "TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query"),
-            ]
-            for name, route_name, route_path, component_path, permission in missing:
+            for name, route_name, route_path, component_path, permission, hidden in TRAIN_EXTRA_MENUS:
                 existing_menu = await db.execute(
                     select(MenuModel).where(MenuModel.route_name == route_name)
                 )
                 if existing_menu.scalar_one_or_none():
                     continue
-                is_hidden = "Detail" in route_name
-                mm = MenuModel(name=name, type=2, icon=None, order=99,
-                               route_name=route_name, route_path=route_path,
-                               component_path=component_path,
-                               permission=permission, parent_id=parent.id,
-                               status="0", is_deleted=False, title=name,
-                               hidden=is_hidden)
+                mm = MenuModel(
+                    name=name, type=2, icon=None, order=99,
+                    route_name=route_name, route_path=route_path,
+                    component_path=component_path, permission=permission,
+                    parent_id=parent.id, status="0", is_deleted=False,
+                    title=name, hidden=hidden,
+                )
                 db.add(mm)
                 await db.flush()
                 db.add(RoleMenusModel(role_id=1, menu_id=mm.id))
 
             # Add missing permissions
-            for perm_code, perm_name in [
-                ("module_train:predict:query", "查询预测"),
-                ("module_train:predict:create", "创建预测"),
-                ("module_train:predict:delete", "删除预测"),
-            ]:
+            for perm_code, perm_name in TRAIN_BUTTON_PERMS:
                 existing_perm = await db.execute(
                     select(MenuModel).where(MenuModel.permission == perm_code)
                 )
@@ -491,11 +925,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
     from app.api.v1.module_system.params.service import ParamsService
     from app.core.ap_scheduler import SchedulerUtil
 
+    edge_event_consumer = None
+
     try:
         await InitializeData().init_db()
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
         await _ensure_missing_columns()
         await _ensure_deploy_menu()
+        await _ensure_edge_button_menus()
+        await _ensure_edge_page_menu()
+        await _ensure_edge_event_page_menu()
+        await _ensure_ai_menus()
+        await _ensure_ai_tools()
+        await _ensure_agno_tools()
         await _ensure_notification_params()
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
@@ -523,6 +965,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         from app.api.v1.module_video.record.scheduler import start_record_scheduler
         asyncio.create_task(start_record_scheduler())
         log.info("✅ 录制定时器已启动")
+
+        from app.api.v1.module_video.edge.consumer import EdgeEventConsumer
+        edge_event_consumer = EdgeEventConsumer()
+        await edge_event_consumer.start()
+        log.info("✅ 边缘事件消费者已启动")
+
+        from app.api.v1.module_video.inference.registry import inference_backend_available
+        if not inference_backend_available():
+            log.warning("⚠️  智能分析推理库 modeldeploy(FastDeploy) 不可用，视频布控推理将无法启动")
+
+        # 云边模式下心跳写入端无凭证，攻击者可伪造设备上报，启动时显式告警
+        if settings.VIDEO_ANALYSIS_MODE == "cloud_edge" and not settings.EDGE_CONTROL_TOKEN:
+            log.warning("⚠️ 边缘心跳未配置 EDGE_CONTROL_TOKEN，存在被伪造风险")
 
         from app.api.v1.module_video.inference.scheduler import start_inference_scheduler
         asyncio.create_task(start_inference_scheduler())
@@ -560,16 +1015,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(cleanup_loop())
         log.info("✅ 临时训练产物目录清理已启动")
 
+        from app.api.v1.module_video.edge.retention import start_edge_event_retention
+        start_edge_event_retention()
+        log.info("✅ 边缘事件 TTL 清理已启动")
+
         try:
+            from app.core.database import async_engine as _train_engine
+            from app.plugin.module_train.schema_check import ensure_train_columns
+
+            await ensure_train_columns(_train_engine)
+
             from sqlalchemy import text
 
             from app.core.database import async_db_session
             async with async_db_session.begin() as db:
-                for col in ["metrics_log", "best_metrics", "last_metrics"]:
-                    await db.execute(text(f"ALTER TABLE train_tasks ADD COLUMN IF NOT EXISTS {col} JSONB"))
-                # TrainEval new columns
-                for col, typ in [("model_id", "INTEGER"), ("framework", "VARCHAR(16)"), ("hyperparams", "JSONB"), ("started_at", "TIMESTAMP"), ("finished_at", "TIMESTAMP")]:
-                    await db.execute(text(f"ALTER TABLE train_evals ADD COLUMN IF NOT EXISTS {col} {typ}"))
                 # Create train_predicts table if not exists
                 await db.execute(text("""
                     CREATE TABLE IF NOT EXISTS train_predicts (
@@ -599,52 +1058,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
                 """))
         except Exception as e:
             log.warning(f"train migration warning: {e}")
-
-        # Ensure missing sub-menus exist (direct SQL, doesn't rely on menu seed)
-        try:
-            import uuid as _uuid
-
-            from sqlalchemy import text as sa_text
-
-            from app.core.database import async_db_session as db_session
-            async with db_session.begin() as db:
-                row = await db.execute(sa_text("SELECT id FROM sys_menu WHERE route_name = 'Train' LIMIT 1"))
-                parent_row = row.fetchone()
-                if parent_row:
-                    pid = parent_row[0]
-                    for rn, rp, cp, perm, is_hidden in [
-                        ("TrainPredict", "/train/predict", "module_train/predict/index", "module_train:predict:query", False),
-                        ("TrainEvalDetail", "/train/eval/:id", "module_train/eval/detail", "module_train:eval:query", True),
-                        ("TrainPredictDetail", "/train/predict/:id", "module_train/predict/detail", "module_train:predict:query", True),
-                    ]:
-                        exists = await db.execute(sa_text(f"SELECT 1 FROM sys_menu WHERE route_name = '{rn}'"))
-                        if exists.fetchone() is None:
-                            title = {"TrainPredict": "模型预测", "TrainEvalDetail": "评估详情", "TrainPredictDetail": "预测详情"}[rn]
-                            uid = str(_uuid.uuid4())
-                            await db.execute(sa_text(f"""
-                                INSERT INTO sys_menu (uuid, name, type, "order", route_name, route_path, component_path, permission, parent_id, status, is_deleted, title, hidden, created_time)
-                                VALUES ('{uid}', '{title}', 2, 99, '{rn}', '{rp}', '{cp}', '{perm}', {pid}, '0', FALSE, '{title}', {str(is_hidden).upper()}, NOW())
-                            """))
-                            mid_row = await db.execute(sa_text(f"SELECT id FROM sys_menu WHERE route_name = '{rn}'"))
-                            mid = mid_row.fetchone()
-                            if mid:
-                                await db.execute(sa_text(f"INSERT INTO sys_role_menus (role_id, menu_id) VALUES (1, {mid[0]})"))
-                    # Add missing permissions
-                    for pc, pn in [("module_train:predict:query", "查询预测"), ("module_train:predict:create", "创建预测"), ("module_train:predict:delete", "删除预测")]:
-                        exists = await db.execute(sa_text(f"SELECT 1 FROM sys_menu WHERE permission = '{pc}'"))
-                        if exists.fetchone() is None:
-                            uid = str(_uuid.uuid4())
-                            await db.execute(sa_text(f"""
-                                INSERT INTO sys_menu (uuid, name, type, "order", route_name, route_path, component_path, permission, parent_id, status, is_deleted, title, hidden, created_time)
-                                VALUES ('{uid}', '{pn}', 3, 99, '', '', '', '{pc}', {pid}, '0', FALSE, '{pn}', FALSE, NOW())
-                            """))
-                            mid_row = await db.execute(sa_text(f"SELECT id FROM sys_menu WHERE permission = '{pc}'"))
-                            mid = mid_row.fetchone()
-                            if mid:
-                                await db.execute(sa_text(f"INSERT INTO sys_role_menus (role_id, menu_id) VALUES (1, {mid[0]})"))
-                    log.info("✅ 训练模块缺失菜单已通过SQL补全")
-        except Exception as e:
-            log.warning(f"train menu sql migration warning: {e}")
 
         # 导入并显示最终的启动信息面板
         from app.common.enums import EnvironmentEnum
@@ -679,6 +1092,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         from app.api.v1.module_video.camera.health_checker import stop_camera_health_checker
         await stop_camera_health_checker()
         log.info("✅ 摄像头健康检查器已关闭")
+
+        if edge_event_consumer:
+            await edge_event_consumer.stop()
+            log.info("✅ 边缘事件消费者已关闭")
+
+        from app.api.v1.module_video.edge.retention import stop_edge_event_retention
+        await stop_edge_event_retention()
+        log.info("✅ 边缘事件 TTL 清理已关闭")
+
         await FastAPILimiter.close()
         log.info("✅ 请求限制器已关闭")
         await import_modules_async(modules=settings.EVENT_LIST, desc="全局事件", app=app, status=False)

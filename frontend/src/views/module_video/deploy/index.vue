@@ -115,6 +115,13 @@
                 <el-tag :type="scope.row.status === 'RUNNING' ? 'success' : 'info'" size="small">
                   {{ scope.row.status === "RUNNING" ? "运行中" : "已停止" }}
                 </el-tag>
+                <el-tooltip
+                  v-if="scope.row.error_log"
+                  :content="scope.row.error_log"
+                  placement="top"
+                >
+                  <el-tag type="danger" size="small" class="error-log-tag">失败</el-tag>
+                </el-tooltip>
                 <span v-if="scope.row._inferenceStatus" class="inference-meta">
                   {{
                     scope.row._inferenceStatus.fps || scope.row._inferenceStatus.uptime_seconds
@@ -129,7 +136,7 @@
               fixed="right"
               label="操作"
               align="center"
-              min-width="130"
+              min-width="190"
             >
               <template #default="scope">
                 <el-button
@@ -158,6 +165,16 @@
                 >
                   {{ scope.row.status === "RUNNING" ? "停止" : "启动" }}
                 </el-button>
+                <el-button
+                  v-if="scope.row.edge_device_id"
+                  type="primary"
+                  size="small"
+                  link
+                  icon="view"
+                  @click="handleOpenPreview(scope.row)"
+                >
+                  预览
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -181,10 +198,23 @@
               filterable
               placeholder="选择摄像机"
               style="width: 280px"
+              @visible-change="(v: boolean) => v && ensureCameraOptions()"
             >
               <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
           </el-form-item>
+          <el-form-item label="推理设备">
+            <EdgeDeviceSelect v-model="formData.edge_device_id" />
+          </el-form-item>
+          <div v-if="selectedDevice" class="device-status-row">
+            <el-tag :type="selectedDevice.status === 'online' ? 'success' : 'info'" size="small">
+              {{ selectedDevice.status }}
+            </el-tag>
+            <span class="device-status-meta">
+              在跑 {{ selectedDevice.metrics?.running_channels ?? 0 }} /
+              {{ selectedDevice.capabilities?.max_channels ?? "-" }}
+            </span>
+          </div>
           <el-form-item label="智能算法" prop="algorithm_id">
             <el-select
               v-model="formData.algorithm_id"
@@ -192,6 +222,7 @@
               placeholder="选择算法"
               style="width: 280px"
               @change="handleAlgorithmChange"
+              @visible-change="(v: boolean) => v && ensureAlgorithmOptions()"
             >
               <el-option v-for="a in algorithmOptions" :key="a.id" :label="a.name" :value="a.id" />
             </el-select>
@@ -218,6 +249,14 @@
               </el-form-item>
             </el-col>
           </el-row>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">
+            检测区域（ROI）
+            <span class="form-section-desc">在预览画面上点击绘制多边形；留空表示全画面</span>
+          </div>
+          <RoiEditor v-model="formData.detect_region_points" :stream-id="selectedStreamId" />
         </div>
 
         <div class="form-section">
@@ -337,14 +376,30 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <el-dialog
+      v-model="previewVisible"
+      title="边缘快照预览"
+      append-to-body
+      width="560px"
+      @close="handleClosePreview"
+    >
+      <SnapshotImage :src="previewSrc" height="320" />
+      <div class="preview-hint">每 2 秒自动刷新；无画面请确认边缘设备在线且布控任务已启动。</div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeMount, onBeforeUnmount } from "vue";
+import { ref, reactive, computed, onBeforeMount, onBeforeUnmount } from "vue";
 import { ElMessage } from "element-plus";
 import { getCameraList } from "@/api/module_video/camera";
 import { getAlgorithmList } from "@/api/module_video/algorithm";
+import { getEdgeDeviceDetail, edgeTaskSnapshotUrl } from "@/api/module_video/edge";
+import EdgeDeviceSelect from "@/components/Edge/EdgeDeviceSelect.vue";
+import RoiEditor from "@/components/Video/RoiEditor.vue";
+import SnapshotImage from "@/components/Common/SnapshotImage.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import {
   getAlgorithmTaskList,
   createAlgorithmTask,
@@ -403,6 +458,9 @@ const searchConfig = reactive<ISearchConfig>({
         clearable: true,
         filterable: true,
         style: { width: "180px" },
+        onVisibleChange: (v: boolean) => {
+          if (v) ensureCameraOptions();
+        },
       },
     },
     {
@@ -468,21 +526,44 @@ const formData = reactive({
   id: undefined as number | undefined,
   camera_id: undefined as number | undefined,
   algorithm_id: undefined as number | undefined,
+  edge_device_id: null as number | null,
   stream_type: "SUB",
   sensitivity: 50,
   statusBool: true,
+  detect_region_points: null as number[][] | null,
   description: undefined as string | undefined,
 });
 
 const initialFormData = { ...formData };
+
+const selectedDevice = ref<any>(null);
+
+const selectedStreamId = computed<string>(() => {
+  const cam = cameraOptions.value.find((c: any) => c.id === formData.camera_id);
+  return cam?.stream_id || "";
+});
+
+async function loadSelectedDevice(id: number | null) {
+  selectedDevice.value = null;
+  if (!id) return;
+  try {
+    const res = await getEdgeDeviceDetail(id);
+    selectedDevice.value = res.data?.data || null;
+  } catch {
+    /* 忽略 */
+  }
+}
 
 async function handleAlgorithmChange(algoId: number) {
   algoConfig.value = null;
   algoParams.value = null;
   if (!algoId) return;
   try {
-    const res = await getAlgorithmList({ page_size: 100 });
-    const algo = res.data?.data?.items?.find((a: any) => a.id === algoId);
+    const items = await cachedOptions(
+      "video:algorithms",
+      async () => (await getAlgorithmList({ page_size: 100 })).data?.data?.items || []
+    );
+    const algo = items.find((a: any) => a.id === algoId);
     if (algo) {
       const config: any = {};
       if (algo.model_file_config && Object.keys(algo.model_file_config).length > 0)
@@ -576,6 +657,7 @@ async function resetForm() {
   algoConfig.value = null;
   algoParams.value = null;
   scheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
+  selectedDevice.value = null;
 }
 
 async function handleCloseDialog() {
@@ -585,6 +667,8 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  ensureCameraOptions();
+  ensureAlgorithmOptions();
   if (id && type === "update") {
     dialogVisible.title = "编辑布控计划";
     const res = await getAlgorithmTaskList({ page_no: 1, page_size: 100 });
@@ -597,6 +681,11 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.sensitivity = item.sensitivity;
       formData.statusBool = item.status === "RUNNING";
       formData.description = item.description;
+      formData.edge_device_id = item.edge_device_id ?? null;
+      formData.detect_region_points = Array.isArray(item.detect_region?.points)
+        ? item.detect_region.points
+        : null;
+      await loadSelectedDevice(formData.edge_device_id);
       if (item.schedule_json) jsonToScheduleGrid(item.schedule_json);
       // Load algorithm config and merge existing overrides
       await handleAlgorithmChange(item.algorithm_id);
@@ -629,6 +718,10 @@ async function handleSubmit() {
       const payload: any = {
         camera_id: formData.camera_id,
         algorithm_id: formData.algorithm_id,
+        edge_device_id: formData.edge_device_id,
+        detect_region: formData.detect_region_points?.length
+          ? { points: formData.detect_region_points }
+          : null,
         stream_type: formData.stream_type,
         sensitivity: formData.sensitivity,
         status: formData.statusBool ? "RUNNING" : "STOPPED",
@@ -655,17 +748,28 @@ async function handleSubmit() {
   });
 }
 
-async function loadOptions() {
+async function ensureCameraOptions() {
+  if (cameraOptions.value.length) return;
   try {
-    const [camRes, algRes] = await Promise.all([
-      getCameraList({ page_size: 100 }),
-      getAlgorithmList({ page_size: 100 }),
-    ]);
-    cameraOptions.value = camRes.data?.data?.items || [];
-    algorithmOptions.value = algRes.data?.data?.items || [];
+    cameraOptions.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
     const searchItem: any = searchConfig.formItems?.find((i: any) => i.prop === "camera_id");
     if (searchItem)
       searchItem.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
+  } catch {
+    /* noop */
+  }
+}
+
+async function ensureAlgorithmOptions() {
+  if (algorithmOptions.value.length) return;
+  try {
+    algorithmOptions.value = await cachedOptions(
+      "video:algorithms",
+      async () => (await getAlgorithmList({ page_size: 100 })).data?.data?.items || []
+    );
   } catch {
     /* noop */
   }
@@ -703,14 +807,53 @@ async function pollInferenceStatus() {
   }
 }
 
+const previewVisible = ref(false);
+const previewTask = ref<any>(null);
+const previewTick = ref(0);
+let previewTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 供 SnapshotImage 使用的请求相对地址（其内部会再拼 request 基址 /api/v1）。 */
+const previewSrc = computed<string | null>(() => {
+  const row = previewTask.value;
+  if (!row?.edge_device_id || !row?.id) return null;
+  const base = import.meta.env.VITE_APP_BASE_API || "";
+  const full = edgeTaskSnapshotUrl(row.edge_device_id, row.id);
+  const relative = base && full.startsWith(base) ? full.slice(base.length) : full;
+  // 加时间戳驱动 SnapshotImage 重新拉流，实现 2s 刷新
+  return `${relative}?t=${previewTick.value}`;
+});
+
+function stopPreviewTimer() {
+  if (previewTimer) {
+    clearInterval(previewTimer);
+    previewTimer = null;
+  }
+}
+
+function handleOpenPreview(row: any) {
+  previewTask.value = row;
+  previewTick.value = Date.now();
+  previewVisible.value = true;
+  stopPreviewTimer();
+  previewTimer = setInterval(() => {
+    previewTick.value = Date.now();
+  }, 2000);
+}
+
+function handleClosePreview() {
+  stopPreviewTimer();
+  previewVisible.value = false;
+  previewTask.value = null;
+}
+
 onBeforeMount(() => {
-  loadOptions();
   document.addEventListener("mouseup", onDragEnd);
   statusTimer = setInterval(pollInferenceStatus, 5000);
 });
 onBeforeUnmount(() => {
   document.removeEventListener("mouseup", onDragEnd);
   if (statusTimer) clearInterval(statusTimer);
+  stopPreviewTimer();
 });
 </script>
 
@@ -856,6 +999,24 @@ onBeforeUnmount(() => {
   display: inline-block;
   margin-left: 4px;
   font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+.device-status-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: -8px 0 12px 110px;
+}
+.device-status-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.error-log-tag {
+  margin-left: 4px;
+}
+.preview-hint {
+  margin-top: 8px;
+  font-size: 12px;
   color: var(--el-text-color-placeholder);
 }
 </style>

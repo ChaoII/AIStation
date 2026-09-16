@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import psutil
 from sqlalchemy import select
 
 from app.api.v1.module_video.algorithm.model import AlgorithmTaskModel
@@ -39,6 +40,67 @@ def _get_worker_python() -> str:
     return settings.INFERENCE_WORKER_PYTHON or sys.executable
 
 
+# ---------------------------------------------------------------------------
+# Worker PID 防重：内存字典在后端重启后会丢失，改用 pidfile 落盘辅助判断，
+# 避免对 DB 中仍是 RUNNING 的任务重复拉起 worker（旧 worker 仍在回调）。
+# ---------------------------------------------------------------------------
+def pid_file(task_id: int) -> Path:
+    return CONFIG_DIR / f"infer_{task_id}.pid"
+
+
+def read_worker_pid(task_id: int) -> int | None:
+    try:
+        return int(pid_file(task_id).read_text().strip())
+    except Exception:
+        return None
+
+
+def is_worker_alive(pid: int | None) -> bool:
+    """校验 pid 对应进程是否存活且确为推理 worker。
+
+    用 cmdline 各参数的 basename 精确匹配 ``worker.py``，避免子串误判
+    （例如 ``test_inference_worker.py`` 也包含 "worker.py"）。
+    """
+    if not pid:
+        return False
+    try:
+        p = psutil.Process(pid)
+        return any(Path(arg).name == WORKER_SCRIPT.name for arg in p.cmdline())
+    except Exception:
+        return False
+
+
+def write_worker_pid(task_id: int, pid: int) -> None:
+    try:
+        pid_file(task_id).write_text(str(pid))
+    except OSError as e:
+        logger.warning(f"[推理调度器] 写入 pidfile 失败: task_id={task_id} {e}")
+
+
+def clear_worker_pid(task_id: int) -> None:
+    try:
+        pid_file(task_id).unlink()
+    except OSError:
+        pass
+
+
+def terminate_stale_worker(task_id: int) -> None:
+    """终止 pidfile 记录的存活孤儿 worker 并清理 pidfile（用于后端重启后防重）。"""
+    pid = read_worker_pid(task_id)
+    if pid and is_worker_alive(pid):
+        try:
+            p = psutil.Process(pid)
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+            except psutil.TimeoutExpired:
+                p.kill()
+            logger.info(f"[推理调度器] 已终止残留 worker: task_id={task_id} pid={pid}")
+        except psutil.Error:
+            pass
+    clear_worker_pid(task_id)
+
+
 def _build_task_config(task: AlgorithmTaskModel, camera: CameraModel, algorithm) -> dict:
     stream_type = task.stream_type or "SUB"
     if stream_type == "MAIN":
@@ -57,6 +119,14 @@ def _build_task_config(task: AlgorithmTaskModel, camera: CameraModel, algorithm)
     merged_runtime = {**runtime_config, **runtime_overrides}
     merged_params = {**preset_params, **params_overrides}
 
+    # 告警去重间隔与类别名：与边缘 Agent 配置（orchestrator）保持同源
+    interval_seconds = int(
+        merged_params.get("alarm_interval_sec")
+        or merged_runtime.get("alarm_interval_sec")
+        or 30
+    )
+    class_names = merged_params.get("labels") or []
+
     return {
         "task_id": task.id,
         "camera_id": task.camera_id,
@@ -67,18 +137,30 @@ def _build_task_config(task: AlgorithmTaskModel, camera: CameraModel, algorithm)
         "preset_params": merged_params,
         "detect_region": task.detect_region,
         "sensitivity": task.sensitivity or 50,
+        "schedule_json": task.schedule_json,
+        "class_names": class_names,
         "callback_url": (
             f"http://127.0.0.1:{settings.SERVER_PORT}"
             f"{settings.ROOT_PATH}/video/algorithm/detection/callback"
         ),
         "callback_token": settings.INFERENCE_CALLBACK_TOKEN,
         "fps_target": 5,
-        "alarm_interval": 30,
+        "interval_seconds": interval_seconds,
         "snapshot_dir": str(settings.DETECTIONS_DIR),
     }
 
 
 async def start_inference(task_id: int) -> dict:
+    # 仅当 worker 使用后端同一解释器时才做进程内校验；
+    # 若配置了独立 worker 解释器（可能自带 modeldeploy），后端解释器并不权威。
+    if not settings.INFERENCE_WORKER_PYTHON:
+        from app.api.v1.module_video.inference.registry import ensure_inference_backend
+        ensure_inference_backend()
+    else:
+        logger.info(
+            "[推理调度器] 已配置 INFERENCE_WORKER_PYTHON，跳过后端进程内推理后端校验"
+        )
+
     if task_id in _running_inferences:
         info = _running_inferences[task_id]
         proc = info["proc"]
@@ -101,6 +183,10 @@ async def start_inference(task_id: int) -> dict:
             raise ValueError("任务未关联摄像头")
         if not algorithm:
             raise ValueError("任务未关联算法")
+
+    # 后端重启后内存注册表已丢失：若 pidfile 记录的旧 worker 仍存活，先终止，
+    # 避免对同一任务重复拉起导致重复回调/告警。
+    terminate_stale_worker(task_id)
 
     config = _build_task_config(task_model, camera, algorithm)
     config_path = CONFIG_DIR / f"infer_{task_id}_{int(time.time())}.json"
@@ -137,6 +223,7 @@ async def start_inference(task_id: int) -> dict:
         "camera_id": task_model.camera_id,
         "camera_name": camera.name or "",
     }
+    write_worker_pid(task_id, proc.pid)
 
     async with async_db_session.begin() as session:
         stmt = select(AlgorithmTaskModel).where(AlgorithmTaskModel.id == task_id)
@@ -158,6 +245,7 @@ async def stop_inference(task_id: int) -> dict:
             t = result.scalar_one_or_none()
             if t:
                 t.status = "STOPPED"
+        clear_worker_pid(task_id)
         return {"task_id": task_id, "status": "STOPPED", "message": "未在运行中"}
 
     proc = info["proc"]
@@ -176,6 +264,8 @@ async def stop_inference(task_id: int) -> dict:
             os.unlink(config_path)
         except OSError:
             pass
+
+    clear_worker_pid(task_id)
 
     async with async_db_session.begin() as session:
         stmt = select(AlgorithmTaskModel).where(AlgorithmTaskModel.id == task_id)
@@ -222,6 +312,7 @@ async def check_inference_health():
                 os.unlink(info["config_path"])
             except OSError:
                 pass
+        clear_worker_pid(task_id)
         try:
             async with async_db_session.begin() as session:
                 stmt = select(AlgorithmTaskModel).where(AlgorithmTaskModel.id == task_id)
@@ -242,9 +333,12 @@ async def inference_scheduler_loop():
     while True:
         try:
             async with async_db_session() as session:
+                # 边缘委派任务（edge_device_id 非空）由边缘 Agent 经 EdgeOrchestrator 执行，
+                # 本地调度器不得接管，否则会误拉起本地 worker（报 modeldeploy 未安装）并干扰边缘运行。
                 stmt = select(AlgorithmTaskModel).where(
                     AlgorithmTaskModel.status == "RUNNING",
                     AlgorithmTaskModel.is_deleted.is_(False),
+                    AlgorithmTaskModel.edge_device_id.is_(None),
                 )
                 result = await session.execute(stmt)
                 db_tasks = {t.id: t for t in result.scalars().all()}

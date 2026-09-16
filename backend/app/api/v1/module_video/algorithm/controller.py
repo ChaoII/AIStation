@@ -1,15 +1,18 @@
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Path, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
+from app.api.v1.module_video.edge.consumer import dedup
 from app.common.request import PaginationService
 from app.common.response import SuccessResponse
 from app.config.setting import settings
 from app.core.base_params import PaginationQueryParam
 from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
+from app.core.logger import logger
 from app.core.router_class import OperationLogRoute
 
 from .param import AlgorithmQueryParam, AlgorithmTaskQueryParam
@@ -20,6 +23,9 @@ from .schema import (
     AlgorithmUpdateSchema,
 )
 from .service import AlgorithmService
+
+# HTTP detection/callback 的 event_id 去重（短时、有界、带 TTL），与 MQTT 消费者复用同一实现
+_CALLBACK_DEDUP = dedup()
 
 AlgorithmRouter = APIRouter(route_class=OperationLogRoute, prefix="/algorithm", tags=["算法管理"])
 
@@ -42,6 +48,8 @@ async def get_algorithm_detail_controller(
 ) -> JSONResponse:
     result = await AlgorithmService.get_algorithm_list_service(auth=auth)
     item = next((x for x in result if x.get("id") == id), None)
+    if item is None:
+        raise CustomException(msg="算法不存在", code=404, status_code=404)
     return SuccessResponse(data=item, msg="查询成功")
 
 
@@ -92,6 +100,24 @@ async def delete_algorithm_controller(
     return SuccessResponse(msg="删除成功")
 
 
+@AlgorithmRouter.post("/{id}/hot-update", summary="模型热更新（下发所有引用任务）")
+async def hot_update_algorithm_controller(
+    id: Annotated[int, Path(..., description="算法ID")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:algorithm:update"]))],
+) -> JSONResponse:
+    result = await AlgorithmService.hot_update_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="热更新已下发")
+
+
+@AlgorithmRouter.post("/{id}/rollback", summary="模型回滚（恢复上一版本并下发）")
+async def rollback_algorithm_controller(
+    id: Annotated[int, Path(..., description="算法ID")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_video:algorithm:update"]))],
+) -> JSONResponse:
+    result = await AlgorithmService.rollback_service(id=id, auth=auth)
+    return SuccessResponse(data=result, msg="回滚已下发")
+
+
 @AlgorithmRouter.get("/task/list", summary="查询算法任务列表")
 async def get_task_list_controller(
     page: PaginationQueryParam = Depends(),
@@ -127,6 +153,22 @@ async def delete_task_controller(
     ids: list[int] = Body(..., description="ID列表"),
     auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:delete"])),
 ) -> JSONResponse:
+    from app.api.v1.module_video.edge.orchestrator import EdgeOrchestrator
+
+    # 删除 DB 前尽力清理边缘 Agent 侧任务：RUNNING 先停止管线，再删除 Agent 任务。
+    # 任一步失败都只告警，不阻断 DB 删除。
+    for task_id in ids:
+        try:
+            task = await EdgeOrchestrator._load_task(task_id)
+            if getattr(task, "status", None) == "RUNNING":
+                await EdgeOrchestrator.stop_task(task_id)
+        except Exception as e:  # noqa: BLE001 - 边缘清理失败不阻断删除
+            logger.warning(f"[边缘编排] 删除前停止任务失败（忽略）: task_id={task_id} {e}")
+        try:
+            await EdgeOrchestrator.delete_task(task_id)
+        except Exception as e:  # noqa: BLE001 - 边缘清理失败不阻断删除
+            logger.warning(f"[边缘编排] 删除 Agent 侧任务失败（忽略）: task_id={task_id} {e}")
+
     await AlgorithmService.delete_task_service(ids=ids, auth=auth)
     return SuccessResponse(msg="删除成功")
 
@@ -142,9 +184,15 @@ async def start_inference_controller(
     auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:update"])),
 ) -> JSONResponse:
     try:
-        from app.api.v1.module_video.inference.scheduler import start_inference
-        result = await start_inference(id)
+        from app.api.v1.module_video.edge.orchestrator import EdgeOrchestrator
+        result = await EdgeOrchestrator.start_task(id)
+        if not result.get("delegated"):
+            # 未配置边缘设备/本机 Agent：回退旧本地 worker 路径
+            from app.api.v1.module_video.inference.scheduler import start_inference
+            result = await start_inference(id)
         return SuccessResponse(data=result, msg="启动成功")
+    except CustomException:
+        raise
     except LookupError as e:
         raise CustomException(msg=str(e), code=404)
     except ValueError as e:
@@ -159,9 +207,17 @@ async def stop_inference_controller(
     auth: AuthSchema = Depends(AuthPermission(["module_video:algorithm:update"])),
 ) -> JSONResponse:
     try:
-        from app.api.v1.module_video.inference.scheduler import stop_inference
-        result = await stop_inference(id)
+        from app.api.v1.module_video.edge.orchestrator import EdgeOrchestrator
+        result = await EdgeOrchestrator.stop_task(id)
+        if not result.get("delegated"):
+            # 未配置边缘设备/本机 Agent：回退旧本地 worker 路径
+            from app.api.v1.module_video.inference.scheduler import stop_inference
+            result = await stop_inference(id)
         return SuccessResponse(data=result, msg="停止成功")
+    except CustomException:
+        raise
+    except LookupError as e:
+        raise CustomException(msg=str(e), code=404)
     except Exception as e:
         raise CustomException(msg=f"停止推理失败: {e}")
 
@@ -188,6 +244,21 @@ async def detection_callback_controller(
     if token != settings.INFERENCE_CALLBACK_TOKEN:
         raise CustomException(msg="无效的调用凭证", code=403)
 
+    # spec §7：按 event_id 幂等去重，避免 HTTP 重试重复建告警（与 MQTT 消费者行为一致）
+    event_id = str(body.get("event_id") or "").strip()
+    if event_id and _CALLBACK_DEDUP.seen(event_id):
+        return SuccessResponse(
+            data={"alarm_created": False, "reason": "duplicate"}, msg="处理完成"
+        )
+
+    from app.api.v1.module_video.edge.consumer import normalize_edge_event
     from app.api.v1.module_video.inference.service import InferenceService
-    result = await InferenceService.process_detection_callback(body)
+
+    # HTTP 回调与 MQTT 消费者是同一 Agent 事件的两个接入通道，必须共用同一套归一化：
+    # Agent 上报的是嵌套结构（snapshot.ref / snapshot.data / ts），只有归一化后才能
+    # 映射为 snapshot_path / frame_timestamp / 内联 snapshot_data，避免内联快照被丢弃。
+    event = normalize_edge_event(body)
+    result = await InferenceService.process_detection_callback(event)
+    if event_id:
+        _CALLBACK_DEDUP.mark(event_id)
     return SuccessResponse(data=result, msg="处理完成")

@@ -13,18 +13,64 @@ from app.core.logger import log
 
 from .docker_utils import client as docker_client
 from .docker_utils import (
+    find_task_containers,
     follow_container_logs,
     get_container_error_tail,
     pull_image,
     remove_container,
     run_container,
+    stop_container,
 )
 from .model import TrainDeploy, TrainFramework, TrainModel
 
 _deploy_running: dict[int, dict] = {}
+# 已请求取消的部署 id -> 请求时间：stop_deployment 后，在途 _execute_deployment
+# 仍据此判断"取消"，避免容器被停/移除后误把状态写回 failed。
+# 带时间戳的映射（而非无界集合）便于过期清理，防止重启场景下墓碑长期残留
+# 压制后续新一次启动的状态写入。
+_deploy_cancelled: dict[int, datetime] = {}
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 PADDLEX_IMAGE = "paddlex:latest"
+
+DEPLOY_RECOVERY_INTERVAL = 30
+# 取消墓碑保留时长：超过后自动失效，避免无限增长
+DEPLOY_CANCEL_TTL = 3600
+
+
+def _mark_deploy_cancelled(deploy_id: int) -> None:
+    """记录取消墓碑（带时间戳），并顺带清理过期项。"""
+    now = datetime.now()
+    expired = [
+        k for k, ts in _deploy_cancelled.items()
+        if (now - ts).total_seconds() > DEPLOY_CANCEL_TTL
+    ]
+    for k in expired:
+        _deploy_cancelled.pop(k, None)
+    _deploy_cancelled[deploy_id] = now
+
+
+def _is_deploy_cancelled(deploy_id: int) -> bool:
+    """是否已请求取消；过期墓碑视为失效并清理。"""
+    ts = _deploy_cancelled.get(deploy_id)
+    if ts is None:
+        return False
+    if (datetime.now() - ts).total_seconds() > DEPLOY_CANCEL_TTL:
+        _deploy_cancelled.pop(deploy_id, None)
+        return False
+    return True
+
+
+def deploy_exit_status(cancel: bool, exit_code: int) -> str | None:
+    """容器退出后的部署状态：取消由 stop 处理；否则成功=stopped、失败=failed。"""
+    if cancel:
+        return None
+    return "stopped" if exit_code == 0 else "failed"
+
+
+def is_port_reusable(status: str) -> bool:
+    """已停止/失败/待开始的部署端口可复用；部署中/运行中不可复用。"""
+    return status not in ("deploying", "running")
 
 
 def _is_paddlex_framework(framework: TrainFramework) -> bool:
@@ -32,14 +78,49 @@ def _is_paddlex_framework(framework: TrainFramework) -> bool:
     return framework == TrainFramework.PADDLEX
 
 
-def _generate_server_script(api_key: str, device: str) -> str:
+async def resolve_deploy_spec(deploy, model_rec) -> tuple[str, str]:
+    """推断部署 OCR 的 (mode, size)：deploy.hyperparams → 训练任务 → 默认。
+
+    部署 hyperparams 未显式给出合法 mode/model_size 时，回溯产出该模型的训练
+    任务 hyperparams；仍缺失则回退 ("det", "tiny")。与 eval/predict 的规格推断
+    口径一致：model_id 为模型版本 id，与训练任务的 model_repo_id 对应。
+    """
+    hp = deploy.hyperparams or {}
+    # 归一化后再判定：形如 "Small" 的非法值不能靠 or 兜底（其非空会跳过回查）
+    mode = str(hp.get("mode", "") or "").lower()
+    size = str(hp.get("model_size", "") or "").lower()
+    if mode not in ("det", "rec") or size not in ("tiny", "small", "medium"):
+        from sqlalchemy import desc, select
+
+        from .model import TrainTask
+
+        async with async_db_session() as db:
+            task = (await db.execute(
+                select(TrainTask).where(TrainTask.model_repo_id == deploy.model_id)
+                .order_by(desc(TrainTask.id)).limit(1)
+            )).scalar_one_or_none()
+        thp = (task.hyperparams or {}) if task else {}
+        mode = mode if mode in ("det", "rec") else str(thp.get("mode", "det")).lower()
+        size = size if size in ("tiny", "small", "medium") else str(thp.get("model_size", "tiny")).lower()
+    return (
+        mode if mode in ("det", "rec") else "det",
+        size if size in ("tiny", "small", "medium") else "tiny",
+    )
+
+
+def _generate_server_script(
+    api_key: str, device: str, conf: float = 0.25, iou: float = 0.45, imgsz: int = 640
+) -> str:
     device_arg = device if device != "cpu" else "cpu"
     return f'''#!/usr/bin/env python3
 """Auto-generated inference server for AIStation model deployment."""
 import os, sys, json, time, asyncio, subprocess
 
-# Ensure dependencies
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
+# 依赖按需安装：仅在 fastapi 缺失时安装，避免每次启动都 pip install 拖慢健康检查
+try:
+    import fastapi  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
 
 import numpy as np
 import cv2
@@ -75,7 +156,7 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
     img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(status_code=400, detail="Invalid image")
-    results = model(img, device="{device_arg}", verbose=False)[0]
+    results = model(img, device="{device_arg}", conf={conf}, iou={iou}, imgsz={imgsz}, verbose=False)[0]
     elapsed = round((time.time() - start) * 1000, 1)
     detections = []
     if results.boxes is not None:
@@ -99,16 +180,31 @@ if __name__ == "__main__":
 '''
 
 
-def _generate_paddlex_server_script(api_key: str, device: str) -> str:
+def _generate_paddlex_server_script(
+    api_key: str, device: str, mode: str = "det", size: str = "tiny"
+) -> str:
     """生成 PaddleX OCR 推理服务脚本（PP-OCRv6 det + rec，.pdparams 权重）。
 
     运行在 paddlex:latest 镜像（内置 PaddleOCR），加载 /model/det.pdparams +
     /model/rec.pdparams，/predict 返回 [{text, confidence, box}]。
+    cfg 由模型规格（``mode``/``size``）驱动，避免 tiny/medium 部署套用 small 架构。
     """
     device_arg = device if device != "cpu" else "cpu"
+    if mode not in ("det", "rec"):
+        mode = "det"
+    if size not in ("tiny", "small", "medium"):
+        size = "tiny"
+    det_cfg = f"configs/det/PP-OCRv6/PP-OCRv6_{size}_det.yml"
+    rec_cfg = f"configs/rec/PP-OCRv6/PP-OCRv6_{size}_rec.yml"
     return r'''#!/usr/bin/env python3
 """Auto-generated PaddleX OCR inference server (PP-OCRv6 det + rec)."""
-import os, sys, json, time, io
+import os, sys, json, time, io, subprocess
+
+# 依赖按需安装：仅在 fastapi 缺失时安装，避免每次启动都 pip install
+try:
+    import fastapi  # noqa: F401
+except ImportError:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
 
 _POCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
 sys.path.insert(0, _POCR_DIR)
@@ -166,8 +262,10 @@ def _load_pipeline(cfg_name, weights_path):
     return model, post_process_class, ops
 
 
-DET_CFG = "configs/det/PP-OCRv6/PP-OCRv6_small_det.yml"
-REC_CFG = "configs/rec/PP-OCRv6/PP-OCRv6_small_rec.yml"
+DET_CFG = __DET_CFG__
+REC_CFG = __REC_CFG__
+MODE = __MODE__
+SIZE = __SIZE__
 DET_PATH = "/model/det.pdparams"
 REC_PATH = "/model/rec.pdparams"
 
@@ -203,13 +301,25 @@ def _rec_text(crop):
     return res[0]["text"], res[0]["score"]
 
 
+def _crop_box(img, box):
+    """按检测框裁剪文字区域（越界保护），rec 识别应基于裁剪图而非整图。"""
+    x, y, w, h = cv2.boundingRect(np.asarray(box, dtype=np.int32))
+    ih, iw = img.shape[:2]
+    x1, y1 = max(0, x), max(0, y)
+    x2, y2 = min(iw, x + w), min(ih, y + h)
+    if x2 <= x1 or y2 <= y1:
+        # 越界/空裁剪：返回 None 让调用方跳过该框，绝不能回退整图识别
+        return None
+    return img[y1:y2, x1:x2]
+
+
 app = FastAPI(title="AIStation PaddleX OCR Inference")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": "paddlex-ocr"}
+    return {"status": "ok", "model": "paddlex-ocr", "mode": MODE, "size": SIZE}
 
 
 @app.post("/predict")
@@ -225,7 +335,12 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
     detections = []
     boxes = _det_boxes(img)
     for box in boxes:
-        text, conf = _rec_text(img)
+        text, conf = "", 0.0
+        if rec_model is not None:
+            crop = _crop_box(img, box)
+            if crop is None:
+                continue
+            text, conf = _rec_text(crop)
         detections.append({
             "text": text, "confidence": float(conf),
             "box": box.astype(float).tolist(),
@@ -236,7 +351,9 @@ async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_
 
 if __name__ == "__main__":
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")
-'''.replace("__API_KEY__", repr(api_key)).replace("__DEVICE__", repr(device_arg))
+'''.replace("__API_KEY__", repr(api_key)).replace("__DEVICE__", repr(device_arg)) \
+        .replace("__DET_CFG__", repr(det_cfg)).replace("__REC_CFG__", repr(rec_cfg)) \
+        .replace("__MODE__", repr(mode)).replace("__SIZE__", repr(size))
 
 
 async def start_deployment(deploy_id: int):
@@ -249,20 +366,42 @@ async def start_deployment(deploy_id: int):
                 status="deploying", started_at=datetime.now()
             )
         )
+    # 全新启动前清掉该 id 的历史取消墓碑，避免新一次运行被旧记录压制。
+    _deploy_cancelled.pop(deploy_id, None)
     asyncio.create_task(_execute_deployment(deploy_id))
 
 
 async def stop_deployment(deploy_id: int):
-    entry = _deploy_running.get(deploy_id)
+    """停止部署并停掉真实容器。
+
+    优先内存注册表；后端重启后注册表丢失，则回退到 DB 的 container_id；
+    DB 也没有时按 label 查找残留容器。二者皆无则仅落库为 stopped。
+
+    处于 deploying/running 的部署，无论注册表是否存在，都记录取消墓碑，
+    以便在途执行器观察到取消、不再拉起新容器。
+    """
+    entry = _deploy_running.pop(deploy_id, None)
     if entry:
         entry["cancel"] = True
-        if entry.get("container_id"):
-            from .docker_utils import stop_container
-            await stop_container(entry["container_id"])
+    container_id = entry.get("container_id") if entry else None
+    db_status = None
+    async with async_db_session() as db:
+        row = await db.get(TrainDeploy, deploy_id)
+        db_status = row.status if row else None
+        if not container_id:
+            container_id = row.container_id if row else None
+    # 活跃状态一律记录取消（含注册表丢失但 DB 仍在 deploying/running 的场景）
+    if db_status in ("deploying", "running"):
+        _mark_deploy_cancelled(deploy_id)
+    if not container_id:
+        cids = find_task_containers("deploy", deploy_id)
+        container_id = cids[0] if cids else None
+    if container_id:
+        await stop_container(container_id)
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                status="stopped", finished_at=datetime.now()
+                status="stopped", finished_at=datetime.now(), container_id=None
             )
         )
 
@@ -368,24 +507,45 @@ async def _wait_server_healthy(container, host_port: int, timeout: int = 60, int
 
 
 async def recover_orphan_deploys() -> None:
-    """回收孤儿部署：running/deploying 但容器不存在的部署 → 标记 failed。
+    """回收孤儿部署：容器存活 → 重建内存注册表；容器确认丢失 → 标记 failed。
 
-    后端重启后，在途部署的容器丢失或从未存在（部署中崩溃），状态会永久卡在
-    running/deploying，需要一次性回收。
+    后端重启后 `_deploy_running` 为空，存活容器需要重建注册表（标记 adopted），
+    之后 stop_deployment 才能直接停掉它。adopted 条目没有在途协程负责收尾，
+    因此每次周期都要复检容器是否仍在；一旦丢失即释放注册表并把行标记 failed。
+
+    注意：`deploying` 是拉镜像/下载模型等启动中的在途状态，此时 container_id
+    可能尚未落库（NULL/旧值），不能据此判定容器丢失；仅当行确为 `running`
+    且 container_id 非空、容器又确实不存在时，才标记 failed。
     """
     async with async_db_session() as db:
         rows = (await db.execute(
             select(TrainDeploy).where(TrainDeploy.status.in_(("running", "deploying")))
         )).scalars().all()
     for d in rows:
-        # 仅当容器被确认不存在（NotFound）才回收；daemon 不可达时 _container_exists 返回
-        # True（"无法证明缺失"），跳过以免误杀在途部署。
+        entry = _deploy_running.get(d.id)
+        # 在途执行器拥有（非 adopted）的部署由其自行维护，恢复逻辑不介入
+        # （30s 周期对账可能与启动竞态）
+        if entry and not entry.get("adopted"):
+            continue
+        # _container_exists 仅在确认 NotFound 时返回 False；daemon 不可达返回 True
+        # （"无法证明缺失"），此时按存活处理，避免误杀在途部署。
         if await _container_exists(d.container_id):
+            # 标记 adopted：该条目由恢复逻辑接管而非执行器，后续周期需持续复检，
+            # 容器若消失才能及时回收端口/状态
+            _deploy_running[d.id] = {
+                "container_id": d.container_id, "cancel": False, "adopted": True
+            }
+            continue
+        # 容器确认丢失：清理已接管的注册表条目（无在途协程会替它收尾）
+        if entry:
+            _deploy_running.pop(d.id, None)
+        # deploying 属于在途启动，跳过；仅确认丢失的 running 行标 failed
+        if d.status != "running" or not d.container_id:
             continue
         async with async_db_session.begin() as db:
             await db.execute(
                 update(TrainDeploy).where(TrainDeploy.id == d.id).values(
-                    status="failed", error_log="deploy 会话已断开（容器丢失）",
+                    status="failed", error_log="部署容器已丢失",
                     finished_at=datetime.now(), container_id=None
                 )
             )
@@ -393,10 +553,13 @@ async def recover_orphan_deploys() -> None:
 
 
 async def start_deploy_recovery() -> None:
-    try:
-        await recover_orphan_deploys()
-    except Exception as e:
-        log.error(f"deploy orphan recovery failed: {e}")
+    """周期对账部署状态：立即执行一次，之后每 30s 重建注册表/回收孤儿。"""
+    while True:
+        try:
+            await recover_orphan_deploys()
+        except Exception as e:
+            log.error(f"deploy orphan recovery failed: {e}")
+        await asyncio.sleep(DEPLOY_RECOVERY_INTERVAL)
 
 
 async def _execute_deployment(deploy_id: int):
@@ -470,9 +633,17 @@ async def _execute_deployment(deploy_id: int):
 
         # Write inference server script
         if is_paddlex:
-            server_script = _generate_paddlex_server_script(deploy.api_key, deploy.device)
+            mode, size = await resolve_deploy_spec(deploy, model_rec)
+            server_script = _generate_paddlex_server_script(
+                deploy.api_key, deploy.device, mode=mode, size=size
+            )
         else:
-            server_script = _generate_server_script(deploy.api_key, deploy.device)
+            hp = deploy.hyperparams or {}
+            server_script = _generate_server_script(
+                deploy.api_key, deploy.device,
+                conf=hp.get("conf", 0.25), iou=hp.get("iou", 0.45),
+                imgsz=hp.get("imgsz", 640),
+            )
         server_path = os.path.join(server_dir, "server.py")
         with open(server_path, "w", encoding="utf-8") as f:
             f.write(server_script)
@@ -482,7 +653,10 @@ async def _execute_deployment(deploy_id: int):
         if not host_port:
             async with async_db_session() as db:
                 rows = (await db.execute(
-                    select(TrainDeploy.host_port).where(TrainDeploy.host_port > 0)
+                    select(TrainDeploy.host_port).where(
+                        TrainDeploy.host_port > 0,
+                        TrainDeploy.status.in_(("deploying", "running")),
+                    )
                 )).scalars().all()
             reserved = set(rows)
             docker_used = await _docker_published_host_ports()
@@ -506,7 +680,13 @@ async def _execute_deployment(deploy_id: int):
                 gpu_id=deploy.device if deploy.device != "cpu" else None,
                 entrypoint="",
                 shm_size="4g" if is_paddlex else None,
+                labels={"aistation.task_kind": "deploy", "aistation.task_id": str(deploy_id)},
             )
+
+        # 启动/拉镜像/下载模型期间可能已被 stop/delete 取消：不要在取消后拉起新容器
+        if _is_deploy_cancelled(deploy_id):
+            log.info(f"deploy {deploy_id} cancelled before container launch")
+            return
 
         try:
             container = await _launch(host_port)
@@ -521,7 +701,13 @@ async def _execute_deployment(deploy_id: int):
                 )
             container = await _launch(host_port)
         container_id = container.id
+        # 先登记注册表，便于 stop_deployment 能命中并停掉容器
         _deploy_running[deploy_id] = {"container_id": container_id, "cancel": False}
+        # 拉起容器期间被取消：立即清理，不写 running
+        if _is_deploy_cancelled(deploy_id):
+            log.info(f"deploy {deploy_id} cancelled during launch, removing container")
+            await remove_container(container_id)
+            return
 
         async with async_db_session.begin() as db:
             await db.execute(
@@ -536,7 +722,10 @@ async def _execute_deployment(deploy_id: int):
         if probe_error:
             log.error(f"deploy {deploy_id} health probe failed: {probe_error}")
             await remove_container(container_id)
-            if not _deploy_running.get(deploy_id, {}).get("cancel"):
+            cancelled = _is_deploy_cancelled(deploy_id) or bool(
+                _deploy_running.get(deploy_id, {}).get("cancel")
+            )
+            if not cancelled:
                 async with async_db_session.begin() as db:
                     await db.execute(
                         update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
@@ -560,28 +749,34 @@ async def _execute_deployment(deploy_id: int):
         loop = asyncio.get_event_loop()
         exit_code = await loop.run_in_executor(None, lambda: container.wait(timeout=300)["StatusCode"])
 
-        if _deploy_running.get(deploy_id, {}).get("cancel"):
-            pass  # already handled by stop_deployment
-        elif exit_code != 0:
+        cancel = _is_deploy_cancelled(deploy_id) or bool(
+            _deploy_running.get(deploy_id, {}).get("cancel")
+        )
+        status = deploy_exit_status(cancel, exit_code)
+        if status == "failed":
             error_msg = (await get_container_error_tail(container_id)).strip()
+        if status is not None:
             await remove_container(container_id)
             async with async_db_session.begin() as db:
                 await db.execute(
                     update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                        status="failed", error_log=error_msg or "deploy failed",
-                        finished_at=datetime.now(), container_id=None
+                        status=status, finished_at=datetime.now(),
+                        container_id=None, error_log=(error_msg if status == "failed" else None),
                     )
                 )
 
     except Exception as e:
         log.error(f"deploy {deploy_id} failed: {e}")
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                    status="failed", error_log=str(e), finished_at=datetime.now()
+        # 已请求取消（stop_deployment）时容器被主动移除，wait 可能抛错，不要覆盖为 failed
+        if not _is_deploy_cancelled(deploy_id):
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
+                        status="failed", error_log=str(e), finished_at=datetime.now()
+                    )
                 )
-            )
     finally:
         _deploy_running.pop(deploy_id, None)
+        _deploy_cancelled.pop(deploy_id, None)
         if container_id:
             await remove_container(container_id)

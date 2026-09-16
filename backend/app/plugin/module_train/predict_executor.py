@@ -17,18 +17,78 @@ from .ws import broadcast_predict_log
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 
 
+def predict_gpu_id(device) -> str | None:
+    """GPU 设备 id；cpu/空 → None（不请求 GPU）。"""
+    if device is None:
+        return None
+    d = str(device).strip().lower()
+    if d in ("", "cpu"):
+        return None
+    return str(device)
+
+
+def build_predict_cmd(framework: str, model_filename: str, hp: dict) -> list[str]:
+    """按框架构建预测命令。"""
+    conf = hp.get("conf", 0.25)
+    iou = hp.get("iou", 0.45)
+    imgsz = hp.get("imgsz", 640)
+    device = hp.get("device", "0")
+    if str(framework).lower() == "paddlex":
+        mode = str(hp.get("mode", "det")).lower()
+        size = hp.get("model_size", "tiny")
+        if size not in ("tiny", "small", "medium"):
+            size = "tiny"
+        if mode == "rec":
+            cfg = f"configs/rec/PP-OCRv6/PP-OCRv6_{size}_rec.yml"
+            infer = "tools/infer_rec.py"
+        else:
+            cfg = f"configs/det/PP-OCRv6/PP-OCRv6_{size}_det.yml"
+            infer = "tools/infer_det.py"
+        use_gpu = "true" if predict_gpu_id(device) is not None else "false"
+        opts = [
+            "Global.infer_img=/data",
+            f"Global.pretrained_model=/model/{model_filename}",
+            "Global.save_res_path=/output/results.txt",
+            f"Global.use_gpu={use_gpu}",
+            "Global.output_dir=/output",
+        ]
+        inner = (
+            "cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && "
+            f"python {infer} -c {cfg} -o " + " ".join(opts)
+        )
+        return ["bash", "-c", inner]
+    return [
+        "yolo", "predict",
+        f"model=/model/{model_filename}",
+        "source=/data",
+        f"imgsz={imgsz}",
+        f"conf={conf}",
+        f"iou={iou}",
+        f"device={device}",
+        "save_txt=True", "save_conf=True",
+        "project=/output", "name=exp",
+    ]
+
+
 async def start_prediction_scheduler():
     """PredictExecutor 孤儿恢复循环（此前缺失，Task 4 修复）。"""
     await PredictExecutor.start_recovery_loop()
 
 
 async def start_prediction(predict_id: int):
+    # 原子守卫：单条条件 UPDATE 抢占，避免并发 start 的 TOCTOU 重复入队
     async with async_db_session.begin() as db:
-        await db.execute(
-            update(TrainPredict).where(TrainPredict.id == predict_id).values(
-                status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10
-            )
+        result = await db.execute(
+            update(TrainPredict)
+            .where(TrainPredict.id == predict_id, TrainPredict.status != TrainStatus.RUNNING)
+            .values(status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10)
         )
+        if result.rowcount == 0:
+            # 影响 0 行：要么不存在，要么已在运行
+            row = await db.get(TrainPredict, predict_id)
+            if row:
+                raise Exception("预测任务正在运行，请勿重复启动")
+            raise Exception(f"预测任务 {predict_id} 不存在")
     asyncio.create_task(PredictExecutor.run(predict_id))
 
 
@@ -38,6 +98,7 @@ async def stop_prediction(predict_id: int):
 
 class PredictExecutor(TaskExecutor):
     name = "predict"
+    task_kind = "predict"
     status_enum = TrainStatus
     model_class = TrainPredict
     _concurrency = 1
@@ -68,12 +129,19 @@ class PredictExecutor(TaskExecutor):
             os.makedirs(output_dir, exist_ok=True)
             os.makedirs(model_dir, exist_ok=True)
 
+            # 超参需在数据导出前取得，供 mode/device 使用
+            hp = pred.hyperparams or {}
+            device = hp.get("device", "0")
+
             # Prepare source images
             from app.utils.s3_client import s3_client
             if pred.source_type == "dataset":
                 await broadcast_predict_log(predict_id, "[predict] exporting dataset images...")
                 from .exporter import prepare_training_data_for_task
-                await prepare_training_data_for_task(pred.source_dataset_id, predict_id, framework.value, source_dir)
+                ocr_rec = (framework == TrainFramework.PADDLEX and str(hp.get("mode", "det")).lower() == "rec")
+                await prepare_training_data_for_task(
+                    pred.source_dataset_id, predict_id, framework.value, source_dir, ocr_rec=ocr_rec
+                )
                 # Remove label files and yaml, keep only images
                 for root, _, files in os.walk(source_dir):
                     for f in files:
@@ -103,45 +171,10 @@ class PredictExecutor(TaskExecutor):
                 f.write(model_data.read())
 
             # Build command by framework
-            hp = pred.hyperparams or {}
-            conf = hp.get("conf", 0.25)
-            iou = hp.get("iou", 0.45)
-            imgsz = hp.get("imgsz", 640)
-            device = hp.get("device", "0")
-
             if framework == TrainFramework.PADDLEX:
-                # PaddleX OCR 推理：infer_det / infer_rec（用训练产物 .pdparams）
-                mode = str(hp.get("mode", "det")).lower()
-                if mode == "rec":
-                    cfg = "configs/rec/PP-OCRv6/PP-OCRv6_{}_rec.yml".format(hp.get("model_size", "tiny"))
-                    infer = "tools/infer_rec.py"
-                else:
-                    cfg = "configs/det/PP-OCRv6/PP-OCRv6_{}_det.yml".format(hp.get("model_size", "tiny"))
-                    infer = "tools/infer_det.py"
                 docker_image = "paddlex:latest"
-                inner = (
-                    f"cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && "
-                    f"python {infer} -c {cfg} "
-                    f"-o Global.infer_img=/data "
-                    f"-o Global.pretrained_model=/model/{model_filename} "
-                    f"-o Global.save_res_path=/output/results.txt "
-                    f"-o Global.use_gpu=true "
-                    f"-o Global.output_dir=/output"
-                )
-                cmd = ["bash", "-c", inner]
-            else:
-                cmd = [
-                    "yolo", "predict",
-                    f"model=/model/{model_filename}",
-                    "source=/data",
-                    f"imgsz={imgsz}",
-                    f"conf={conf}",
-                    f"iou={iou}",
-                    "save_txt=True",
-                    "save_conf=True",
-                    "project=/output",
-                    "name=exp",
-                ]
+
+            cmd = build_predict_cmd(framework.value, model_filename, hp)
 
             await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
             await pull_image(docker_image)
@@ -152,8 +185,9 @@ class PredictExecutor(TaskExecutor):
                     model_dir: {"bind": "/model", "mode": "ro"},
                     output_dir: {"bind": "/output", "mode": "rw"},
                 },
-                gpu_id=device,
+                gpu_id=predict_gpu_id(device),
                 shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
             )
             container_id = container.id
             entry = cls._registry.get(predict_id) or {}
@@ -200,7 +234,7 @@ class PredictExecutor(TaskExecutor):
                         rustfs_key = f"train/predict/{predict_id}/{f}"
                         with open(img_path, "rb") as img_f:
                             s3_client.upload_fileobj(img_f, rustfs_key)
-                        result_images.append(s3_client.presigned_url(rustfs_key))
+                        result_images.append(rustfs_key)
 
                     # Create ZIP
                     zip_path = os.path.join(export_dir, "results.zip")
@@ -210,7 +244,7 @@ class PredictExecutor(TaskExecutor):
                     zip_rustfs_key = f"train/predict/{predict_id}/results.zip"
                     with open(zip_path, "rb") as zf:
                         s3_client.upload_fileobj(zf, zip_rustfs_key)
-                    result_zip_path = s3_client.presigned_url(zip_rustfs_key)
+                    result_zip_path = zip_rustfs_key
 
                 await cls._mark_status(predict_id, TrainStatus.SUCCESS,
                                        result_images=result_images or None,

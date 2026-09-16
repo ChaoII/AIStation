@@ -8,36 +8,31 @@
           :is-collapsed="isSidebarCollapsed"
           @select-session="handleSelectSession"
           @new-session="handleNewSession"
+          @delete-session="handleSessionDeleted"
         />
       </el-aside>
       <el-container class="chat-container">
         <el-header class="chat-header">
           <ChatNavbar
-            :connection-status="connectionStatus"
-            :is-connected="isConnected"
-            :message-count="messages.length"
+            :message-count="displayMessages.length"
+            :app-name="appName"
             :is-sidebar-collapsed="isSidebarCollapsed"
             @clear-chat="handleClearChat"
-            @toggle-connection="toggleConnection"
+            @close-app="handleCloseApp"
             @toggle-sidebar="toggleSidebar"
           />
         </el-header>
         <el-main class="chat-main">
           <ChatMessages
             ref="chatMessagesRef"
-            :messages="messages"
+            :messages="displayMessages"
             :error="error"
             @prompt-click="handleSendMessage"
             @error-close="error = ''"
           />
         </el-main>
         <el-footer class="chat-footer">
-          <ChatInput
-            :disabled="!isConnected"
-            :sending="sending"
-            :is-connected="isConnected"
-            @send="handleSendMessage"
-          />
+          <ChatInput :sending="isSending" @send="handleSendMessage" />
         </el-footer>
       </el-container>
     </el-container>
@@ -50,136 +45,124 @@ defineOptions({
   inheritAttrs: false,
 });
 
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import ChatNavbar from "./components/ChatNavbar.vue";
 import ChatMessages from "./components/ChatMessages.vue";
 import ChatInput from "./components/ChatInput.vue";
 import Sidebar from "./components/Sidebar.vue";
-import AiChatAPI, { ChatSession } from "@/api/module_ai/chat";
-import { Auth } from "@/utils/auth";
+import { createAiSession, getAiSessionDetail, type AiSessionItem } from "@/api/module_ai/session";
+import { getAiAppDetail } from "@/api/module_ai/app";
+import { useAiChat } from "@/composables/ai/useAiChat";
+import { textOf, reasoningOf, toolPartsOf } from "@/composables/ai/uiMessage";
 import type { ChatMessage, UploadedFile } from "./types";
+
+const route = useRoute();
+const router = useRouter();
 
 // 状态
 const messages = ref<ChatMessage[]>([]);
-const sending = ref(false);
-const isConnected = ref(false);
-const connectionStatus = ref<"connected" | "connecting" | "disconnected">("disconnected");
 const error = ref("");
-const currentSessionId = ref<string | null>(null);
+// 运行时 ai_sessions 主键为整数；null 表示尚未落库的新会话
+const currentSessionId = ref<number | null>(null);
 const isSidebarCollapsed = ref(false);
+
+// 运行中的 AI 应用（?app_id=）：非空时流式走 /ai/apps/{id}/run/stream
+const appId = ref<number | null>(route.query.app_id ? Number(route.query.app_id) : null);
+const appName = ref("");
+// 请求令牌：discard out-of-order responses when app_id changes quickly
+let appLoadToken = 0;
+
+watch(
+  () => route.query.app_id,
+  async (v) => {
+    const token = ++appLoadToken;
+    appId.value = v ? Number(v) : null;
+    appName.value = "";
+    if (!appId.value) return;
+    try {
+      const res = await getAiAppDetail(appId.value);
+      // 过期响应（app_id 已变更）直接丢弃
+      if (token !== appLoadToken) return;
+      const app = res.data?.data;
+      if (!app) {
+        // 应用不存在/无数据：回退通用助手，避免向不存在的应用发消息
+        appId.value = null;
+        appName.value = "";
+        return;
+      }
+      appName.value = app.name || "";
+    } catch {
+      if (token !== appLoadToken) return;
+      // 详情请求失败：回退通用助手，避免 POST 到不存在的应用
+      appId.value = null;
+      appName.value = "";
+    }
+  },
+  { immediate: true }
+);
+
+// AI SDK 流式聊天（getter：随所选应用动态切换 path/body，替代旧 Agno WS）。
+// body 在发送时读取响应式值：session_id 为 ai_sessions 整数主键（persist_session_exchange 需要），
+// 选中应用时附 app_id 供新建会话记录归属。
+const chat = useAiChat(() => ({
+  path: appId.value ? `/ai/apps/${appId.value}/run/stream` : "/ai/assistant/stream",
+  body: () => {
+    const payload: Record<string, unknown> = {};
+    if (currentSessionId.value != null) payload.session_id = currentSessionId.value;
+    if (appId.value != null) payload.app_id = appId.value;
+    return payload;
+  },
+}));
+const isSending = computed(
+  () => chat.status.value === "submitted" || chat.status.value === "streaming"
+);
 
 // Refs
 const chatMessagesRef = ref<{ scrollToBottom: () => void }>();
 const sidebarRef = ref<{ loadSessions: () => void }>();
 
-// WebSocket
-let ws: WebSocket | null = null;
-const WS_URL = import.meta.env.VITE_APP_WS_ENDPOINT;
-
-// ============ WebSocket 操作 ============
-const connectWebSocket = () => {
-  if (ws?.readyState === WebSocket.OPEN) return;
-
-  connectionStatus.value = "connecting";
-  error.value = "";
-
-  try {
-    const url = new URL("/api/v1/ai/chat/ws", WS_URL);
-    const token = Auth.getAccessToken();
-    if (token) url.searchParams.append("token", token);
-
-    ws = new WebSocket(url.toString());
-
-    ws.onopen = () => {
-      isConnected.value = true;
-      connectionStatus.value = "connected";
-      ElMessage.success("连接成功");
+// 把 AI SDK 的 UIMessage 映射为页面 ChatMessage（正文/思考/工具提示）
+const liveMessages = computed<ChatMessage[]>(() =>
+  chat.messages.value.map((m: any) => {
+    const text = textOf(m);
+    const think = reasoningOf(m);
+    const toolNames = toolPartsOf(m)
+      .map((p) => p.toolName)
+      .filter(Boolean);
+    const toolHint = toolNames.map((n) => `\n\n> 🔧 调用工具：${n}`).join("");
+    return {
+      id: m.id,
+      type: m.role === "user" ? "user" : "assistant",
+      content: `${text}${toolHint}`,
+      think: think || undefined,
+      timestamp: Date.now(),
+      loading: isSending.value && m.role === "assistant" && !text,
+      collapsed: text.length > 200,
     };
+  })
+);
 
-    ws.onmessage = (event) => handleWebSocketMessage(event.data);
-
-    ws.onclose = () => {
-      isConnected.value = false;
-      connectionStatus.value = "disconnected";
-      finishLoadingMessages();
-    };
-
-    ws.onerror = () => {
-      isConnected.value = false;
-      connectionStatus.value = "disconnected";
-      ElMessage.error("连接失败，请检查服务器状态");
-      finishLoadingMessages();
-    };
-  } catch {
-    connectionStatus.value = "disconnected";
-    error.value = "无法创建连接";
-  }
-};
-
-const disconnectWebSocket = () => {
-  if (ws) {
-    ws.close(1000, "用户主动断开");
-    ws = null;
-  }
-  isConnected.value = false;
-  connectionStatus.value = "disconnected";
-  finishLoadingMessages();
-};
-
-const toggleConnection = () => {
-  if (isConnected.value) {
-    disconnectWebSocket();
-    ElMessage.info("已断开连接");
-  } else {
-    connectWebSocket();
-  }
-};
-
-// ============ 消息处理 ============
-const handleWebSocketMessage = (data: string) => {
-  const lastMessage = messages.value[messages.value.length - 1];
-  const content = data || "";
-
-  if (lastMessage?.type === "assistant" && lastMessage.loading) {
-    lastMessage.content += content;
-  } else {
-    addMessage("assistant", content);
-  }
-
-  chatMessagesRef.value?.scrollToBottom();
-};
-
-const addMessage = (type: "user" | "assistant", content: string, files?: UploadedFile[]) => {
-  messages.value.push({
-    id: generateId(),
-    type,
-    content,
-    timestamp: Date.now(),
-    collapsed: content.length > 200,
-    files,
-  });
-};
-
-const finishLoadingMessages = () => {
-  messages.value.forEach((msg) => {
-    if (msg.type === "assistant" && msg.loading) {
-      msg.loading = false;
-      msg.collapsed = msg.content.length > 200;
-    }
-  });
-};
-
-const generateId = () => {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
-};
+// 历史会话消息（只读）+ 当前流式消息
+const displayMessages = computed<ChatMessage[]>(() => [...messages.value, ...liveMessages.value]);
 
 // ============ 发送消息 ============
 const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
-  if ((!message && !files) || !isConnected.value || sending.value) return;
+  // 重置上一轮错误状态，避免历史失败提示残留
+  error.value = "";
 
-  // 结束上一个加载中的消息
-  finishLoadingMessages();
+  const hasFiles = !!files && files.length > 0;
+  const text = (message || "").trim();
+
+  // 后端仅消费文本，附件暂不支持：显式提示，避免静默丢弃
+  if (hasFiles) {
+    ElMessage.warning("当前暂不支持发送附件，仅处理文本内容");
+    // 仅附件、无文本时不发送空消息
+    if (!text) return;
+  }
+
+  if ((!message && !hasFiles) || isSending.value) return;
 
   // 创建新会话（如果没有）
   if (!currentSessionId.value) {
@@ -187,90 +170,94 @@ const handleSendMessage = async (message: string, files?: UploadedFile[]) => {
     if (!success) return;
   }
 
-  // 添加用户消息
-  addMessage("user", message, files);
-
-  // 添加加载中的助手消息
-  messages.value.push({
-    id: generateId(),
-    type: "assistant",
-    content: "",
-    timestamp: Date.now(),
-    loading: true,
-  });
-
-  sending.value = true;
-  chatMessagesRef.value?.scrollToBottom();
-
   try {
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          message,
-          session_id: currentSessionId.value,
-          files: files?.map((f) => ({ name: f.name, type: f.type, size: f.size })),
-        })
-      );
-    } else {
-      throw new Error("WebSocket 连接未建立");
-    }
-  } catch {
-    messages.value.pop();
-    error.value = "发送消息失败，请检查连接状态";
-  } finally {
-    sending.value = false;
+    // 走 AI SDK UI Message Stream（真流式：思考/回复/工具），不依赖 Agno WS
+    await chat.sendMessage({ text: message });
+  } catch (e: any) {
+    error.value = e?.message || String(e);
   }
 };
 
 const createNewSession = async (firstMessage: string): Promise<boolean> => {
+  const title = firstMessage.slice(0, 20) + (firstMessage.length > 20 ? "..." : "");
   try {
-    const title = firstMessage.slice(0, 20) + (firstMessage.length > 20 ? "..." : "");
-    const res = await AiChatAPI.createSession({ title });
-
-    if (res.data?.code === 0 || res.data?.success) {
-      currentSessionId.value = res.data.data?.id ?? null;
+    // 运行时会话：写入 ai_sessions（整数主键），选中应用时记录 app_id
+    const res = await createAiSession({ title, app_id: appId.value });
+    const created = res.data?.data;
+    if (created?.id != null) {
+      currentSessionId.value = created.id;
       sidebarRef.value?.loadSessions();
       return true;
     }
-    throw new Error("创建会话失败");
-  } catch {
+    ElMessage.error("创建会话失败");
+    return false;
+  } catch (e: any) {
+    // 请求层通常已弹提示；仅对未被覆盖的异常兜底，保证创建失败绝不静默
+    const alreadyToasted = !!(e?.data?.msg || e?.msg || e instanceof Error);
+    if (!alreadyToasted) ElMessage.error("创建会话失败");
     return false;
   }
 };
 
 // ============ 会话操作 ============
-const handleSelectSession = async (session: ChatSession) => {
+// 对齐应用归属：以目标会话的 app_id 为准同步 appId 与地址栏 query。
+// 避免在 ?app_id= 下选中通用会话时仍走应用端点，并把 app_id 错盖到通用会话上。
+// appName 由 route.query.app_id 的 watch 负责刷新（query 未变时无需重复请求）。
+const syncAppContext = (targetAppId: number | null) => {
+  appId.value = targetAppId;
+  const current = route.query.app_id ? Number(route.query.app_id) : null;
+  if (targetAppId === current) return;
+  router.replace({
+    path: "/ai/chat",
+    query: targetAppId ? { app_id: String(targetAppId) } : {},
+  });
+};
+
+const handleSelectSession = async (session: AiSessionItem) => {
+  syncAppContext(session.app_id ?? null);
   currentSessionId.value = session.id;
   messages.value = [];
+  chat.messages.value = [];
 
   try {
-    const response = await AiChatAPI.getSessionDetail(session.id);
-    if (response.data?.code !== 0) {
-      return;
-    }
+    const res = await getAiSessionDetail(session.id);
+    const detail = res.data?.data;
+    if (!detail) return;
 
-    const sessionData = response.data.data || {};
-    const runs = sessionData.runs || [];
+    // 从落库 parts 还原为 AI SDK UIMessage，既用于展示也作为后续对话上下文
+    chat.messages.value = (detail.messages || [])
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({
+        id: String(m.id),
+        role: m.role as "user" | "assistant",
+        parts: (m.parts || [])
+          .filter((p) => p.type === "text" && p.text)
+          .map((p) => ({ type: "text" as const, text: String(p.text) })),
+      }))
+      .filter((m) => m.parts.length > 0);
 
-    runs.forEach((run: any) => {
-      const runMessages = run.messages || [];
-      runMessages.forEach((msg: any) => {
-        if (msg.role === "user" || msg.role === "assistant") {
-          addMessage(msg.role, msg.content);
-        }
-      });
-    });
-
-    ElMessage.success(`已切换到会话：${session.title}`);
+    ElMessage.success(`已切换到会话：${detail.title || "未命名会话"}`);
   } catch {
     ElMessage.error("获取会话详情失败");
   }
 };
 
 const handleNewSession = () => {
+  // 保留当前应用上下文：选中应用时新会话归属该 app，已清除应用时 appId 保持 null
   currentSessionId.value = null;
   messages.value = [];
+  chat.messages.value = [];
   ElMessage.success("已开启新对话");
+};
+
+// 删除会话后，若删除的是当前激活会话，重置为“未落库”状态，
+// 让下一次发送重新创建会话，避免往已删除的 id 上落库（record_exchange 找不到行）。
+// 应用上下文由 ?app_id= 决定（切换会话时已对齐），删除当前会话不改变所在应用。
+const handleSessionDeleted = (ids: number[]) => {
+  if (currentSessionId.value == null || !ids.includes(currentSessionId.value)) return;
+  currentSessionId.value = null;
+  messages.value = [];
+  chat.messages.value = [];
 };
 
 const handleClearChat = async () => {
@@ -281,6 +268,7 @@ const handleClearChat = async () => {
       type: "warning",
     });
     messages.value = [];
+    chat.messages.value = [];
     ElMessage.success("对话已清空");
   } catch {
     ElMessage.info("已取消清空对话");
@@ -291,9 +279,10 @@ const toggleSidebar = () => {
   isSidebarCollapsed.value = !isSidebarCollapsed.value;
 };
 
-// ============ 生命周期 ============
-onMounted(connectWebSocket);
-onUnmounted(disconnectWebSocket);
+// 关闭应用标签：回到通用助手（appId 由 route 监听同步清空），不清空会话
+const handleCloseApp = () => {
+  router.replace({ path: "/ai/chat" });
+};
 </script>
 
 <style lang="scss" scoped>

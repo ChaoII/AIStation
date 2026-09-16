@@ -597,20 +597,18 @@ async function handleSubmit() {
 async function handleStartStream(row: any) {
   try {
     await startStream(row.id);
-    ElMessage.success("推流启动成功");
     refreshList();
-  } catch (e: any) {
-    ElMessage.error(e?.message || "推流启动失败");
+  } catch {
+    /* 拦截器已提示错误 */
   }
 }
 
 async function handleStopStream(row: any) {
   try {
     await stopStream(row.id);
-    ElMessage.success("推流已停止");
     refreshList();
-  } catch (e: any) {
-    ElMessage.error(e?.message || "停止推流失败");
+  } catch {
+    /* 拦截器已提示错误 */
   }
 }
 

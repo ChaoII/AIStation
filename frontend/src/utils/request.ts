@@ -79,6 +79,9 @@ httpRequest.interceptors.response.use(
     return response;
   },
   async (error: AxiosError<ApiResponse>) => {
+    // 统一计算静默标记：调用方通过 headers._silent 关闭全局提示（error.config 可能为空）
+    const silent = error.config?.headers?._silent === "true";
+
     // 处理网络错误（连接拒绝、超时等）
     if (!error.response) {
       let errorMessage = "网络连接异常";
@@ -93,7 +96,7 @@ httpRequest.interceptors.response.use(
       }
 
       console.error("网络请求失败:", error);
-      ElMessage.error(errorMessage);
+      if (!silent) ElMessage.error(errorMessage);
       return Promise.reject(new Error(errorMessage));
     }
 
@@ -107,16 +110,16 @@ httpRequest.interceptors.response.use(
         const jsonData: ApiResponse = JSON.parse(text);
 
         if (jsonData.code === ResultEnum.ERROR) {
-          ElMessage.error(jsonData.msg || "请求错误");
+          if (!silent) ElMessage.error(jsonData.msg || "请求错误");
           return Promise.reject(new Error(jsonData.msg || "请求错误"));
         } else if (jsonData.code === ResultEnum.EXCEPTION) {
-          ElMessage.error(jsonData.msg || "服务异常");
+          if (!silent) ElMessage.error(jsonData.msg || "服务异常");
           return Promise.reject(new Error(jsonData.msg || "服务异常"));
         }
       } catch (e) {
         console.error("请求异常:", e);
         // 如果无法解析为JSON，则使用默认错误处理
-        ElMessage.error("数据解析失败");
+        if (!silent) ElMessage.error("数据解析失败");
         return Promise.reject(new Error("数据解析失败"));
       }
     }
@@ -137,8 +140,6 @@ httpRequest.interceptors.response.use(
       return Promise.reject(new Error("Unauthorized"));
     }
 
-    const silent = error.response.config?.headers?._silent === "true";
-
     if (data?.code === ResultEnum.TOKEN_EXPIRED) {
       if (!silent) await redirectToLogin("登录已过期，请重新登录");
       return Promise.reject(new Error(data.msg));
@@ -151,6 +152,10 @@ httpRequest.interceptors.response.use(
     } else if (data?.code === ResultEnum.EXCEPTION) {
       if (!silent) ElMessage.error(data.msg || "服务异常");
       return Promise.reject(new Error(data.msg || "服务异常"));
+    } else if (hasApiCode && (data as ApiResponse).msg) {
+      // 其他业务码（如 409 图片锁定冲突）：展示后端具体原因，避免被通用兜底吞掉
+      if (!silent) ElMessage.error((data as ApiResponse).msg);
+      return Promise.reject(new Error((data as ApiResponse).msg));
     } else {
       if (!silent) ElMessage.error("请求处理失败，请稍后重试");
       return Promise.reject(new Error("请求处理失败"));

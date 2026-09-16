@@ -13,7 +13,6 @@
           :remove-ids="removeIds"
           :perm-create="['module_annotation:task:create']"
           :perm-delete="['module_annotation:task:delete']"
-          :perm-patch="['module_annotation:task:patch']"
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
@@ -210,6 +209,33 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="类别">
+          <div style="width: 100%">
+            <div style="display: flex; gap: 8px; margin-bottom: 8px">
+              <el-input
+                v-model="newClassName"
+                placeholder="输入类别名称，如 person"
+                @keyup.enter="handleAddClass"
+              />
+              <el-button type="primary" icon="plus" @click="handleAddClass">添加</el-button>
+            </div>
+            <div v-if="formData.classes.length" style="display: flex; flex-wrap: wrap; gap: 6px">
+              <el-tag
+                v-for="(cls, index) in formData.classes"
+                :key="`${cls.id}-${index}`"
+                :color="cls.color"
+                effect="dark"
+                closable
+                @close="handleRemoveClass(index)"
+              >
+                {{ cls.name }}
+              </el-tag>
+            </div>
+            <span v-else style="font-size: 12px; color: var(--el-text-color-secondary)">
+              暂无类别，添加后可在标注工作台使用
+            </span>
+          </div>
+        </el-form-item>
         <el-form-item label="备注" prop="description">
           <el-input
             v-model="formData.description"
@@ -228,8 +254,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onBeforeMount } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, onMounted } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { ElMessage } from "element-plus";
 
 import { AnnotationAPI } from "@/api/module_annotation";
 import UserAPI from "@/api/module_system/user";
@@ -247,15 +274,44 @@ interface TaskPageQuery {
   [key: string]: any;
 }
 
+interface TaskClass {
+  id: number;
+  name: string;
+  color: string;
+}
+
+const CLASS_COLORS = [
+  "#409eff",
+  "#67c23a",
+  "#e6a23c",
+  "#f56c6c",
+  "#909399",
+  "#b37feb",
+  "#13c2c2",
+  "#eb2f96",
+];
+
 const router = useRouter();
+const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+
+// 兼容旧链接 /annotation/task?task_id=：直接进入该任务工作台
+onMounted(() => {
+  const taskId = Number(route.query.task_id || 0);
+  if (taskId) router.replace(`/annotation/workbench/${taskId}`);
+});
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
 const datasetOptions = ref<any[]>([]);
 const userOptions = ref<any[]>([]);
+const newClassName = ref("");
 
-onBeforeMount(async () => {
+let optionsLoaded = false;
+// 数据集/用户选项仅在打开新建/编辑弹窗时懒加载，避免每次进入页面都多拉两次列表
+async function loadOptions() {
+  if (optionsLoaded) return;
+  optionsLoaded = true;
   try {
     const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
     datasetOptions.value = dsRes.data.data?.items || [];
@@ -268,7 +324,7 @@ onBeforeMount(async () => {
   } catch {
     userOptions.value = [];
   }
-});
+}
 
 const searchConfig = reactive<ISearchConfig>({
   permPrefix: "module_annotation:task",
@@ -383,17 +439,80 @@ const formData = reactive({
   assignees: [] as number[],
   description: undefined as string | undefined,
   classification_mode: undefined as string | undefined,
+  classes: [] as TaskClass[],
 });
 
-const initialFormData = {
-  id: undefined as number | undefined,
-  name: undefined as string | undefined,
-  dataset_id: undefined as number | undefined,
-  task_type: "detection",
-  assignees: [] as number[],
-  description: undefined as string | undefined,
-  classification_mode: undefined as string | undefined,
-};
+// 用工厂函数返回全新对象，保证数组字段（assignees/classes）每次都是新引用，
+// 避免 resetForm 里 Object.assign 之后 handleAddClass 的 push 污染初始值。
+function makeInitialFormData() {
+  return {
+    id: undefined as number | undefined,
+    name: undefined as string | undefined,
+    dataset_id: undefined as number | undefined,
+    task_type: "detection",
+    assignees: [] as number[],
+    description: undefined as string | undefined,
+    classification_mode: undefined as string | undefined,
+    classes: [] as TaskClass[],
+  };
+}
+
+// 后端 classes 字段存在多种历史存储形态（数组 / {classes:[...]} / id 或 name 键字典），
+// 编辑时必须归一化为 TaskClass[]，否则保存会清空既有类别定义。
+function normalizeClasses(raw: unknown): TaskClass[] {
+  const hasContent =
+    (Array.isArray(raw) && raw.length > 0) ||
+    (!!raw && typeof raw === "object" && Object.keys(raw as Record<string, unknown>).length > 0);
+
+  const result: TaskClass[] = [];
+  const pushClass = (id: number, name: string, color?: unknown) => {
+    result.push({
+      id,
+      name,
+      color: (typeof color === "string" && color) || CLASS_COLORS[id % CLASS_COLORS.length],
+    });
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach((entry, index) => {
+      if (typeof entry === "string") {
+        // 裸字符串条目 → 归一化为带调色板的类别对象
+        pushClass(index, entry);
+      } else if (entry && typeof entry === "object") {
+        const def = entry as Record<string, unknown>;
+        const id = typeof def.id === "number" ? def.id : index;
+        pushClass(id, String(def.name ?? `class_${id}`), def.color);
+      }
+    });
+  } else if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.classes)) {
+      return normalizeClasses(obj.classes);
+    }
+    let autoId = 0;
+    for (const [key, value] of Object.entries(obj)) {
+      if (key === "classes") continue;
+      const numericId = Number(key);
+      const isNameKey = Number.isNaN(numericId);
+      const id = isNameKey ? autoId : numericId;
+      if (typeof value === "string") {
+        // 数字键：值即类别名；字符串键：键即类别名
+        pushClass(id, isNameKey ? key : value);
+      } else if (value && typeof value === "object") {
+        const def = value as Record<string, unknown>;
+        // 数字键：值是类别定义；name 键：键是类别名，值可含 color
+        pushClass(id, String(def.name ?? (isNameKey ? key : `class_${id}`)), def.color);
+      }
+      autoId += 1;
+    }
+  }
+
+  // 非空输入却解析为空 → 返回原始值，避免编辑保存时把已有类别静默清成 []
+  if (result.length === 0 && hasContent) {
+    return raw as unknown as TaskClass[];
+  }
+  return result;
+}
 
 const rules = reactive({
   name: [{ required: true, message: "请输入任务名称", trigger: "blur" }],
@@ -406,7 +525,31 @@ async function resetForm() {
     dataFormRef.value.resetFields();
     dataFormRef.value.clearValidate();
   }
-  Object.assign(formData, initialFormData);
+  Object.assign(formData, makeInitialFormData());
+  newClassName.value = "";
+}
+
+function handleAddClass() {
+  const name = newClassName.value.trim();
+  if (!name) {
+    ElMessage.warning("请输入类别名称");
+    return;
+  }
+  if (formData.classes.some((c) => c.name === name)) {
+    ElMessage.warning("类别名称已存在");
+    return;
+  }
+  const nextId = formData.classes.reduce((max, c) => Math.max(max, c.id + 1), 0);
+  formData.classes.push({
+    id: nextId,
+    name,
+    color: CLASS_COLORS[nextId % CLASS_COLORS.length],
+  });
+  newClassName.value = "";
+}
+
+function handleRemoveClass(index: number) {
+  formData.classes.splice(index, 1);
 }
 
 async function handleCloseDialog() {
@@ -416,6 +559,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  loadOptions();
   if (id && type === "update") {
     dialogVisible.title = "编辑任务";
     const res = await AnnotationAPI.getTaskDetail(id);
@@ -428,6 +572,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.assignees = item.assignees || [];
       formData.description = item.description;
       formData.classification_mode = item.classification_mode;
+      formData.classes = normalizeClasses(item.classes);
     }
   } else {
     dialogVisible.title = "新增任务";
@@ -448,6 +593,8 @@ async function handleSubmit() {
             task_type: formData.task_type,
             assignees: formData.assignees,
             classification_mode: formData.classification_mode,
+            description: formData.description,
+            classes: formData.classes,
           });
         } else {
           await AnnotationAPI.createTask({
@@ -455,15 +602,16 @@ async function handleSubmit() {
             name: formData.name,
             task_type: formData.task_type,
             assignees: formData.assignees,
-            classes: [],
+            classes: formData.classes,
             classification_mode: formData.classification_mode,
+            description: formData.description,
           });
         }
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
-      } catch (e: any) {
-        ElMessage.error(e?.response?.data?.msg || e?.msg || "保存失败");
+      } catch {
+        // 错误提示统一由请求拦截器负责，避免重复 toast
       } finally {
         submitLoading.value = false;
       }

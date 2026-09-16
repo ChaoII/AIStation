@@ -158,7 +158,6 @@
 import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { UserFilled, Folder, Edit, Aim, Camera, WarningFilled } from "@element-plus/icons-vue";
-import { useUserStoreHook } from "@/store";
 import ECharts from "@/components/ECharts/index.vue";
 import { AnnotationAPI } from "@/api/module_annotation";
 import { TrainAPI } from "@/api/module_train";
@@ -442,29 +441,30 @@ async function loadAllData() {
   if (onlineR.status === "fulfilled") stats.onlineUsers = onlineR.value.data?.data?.total || 0;
 
   try {
-    const r = await AnnotationAPI.getTaskList({ page_no: 1, page_size: 100 });
-    const tasks = r.data?.data?.items || [];
-    stats.taskTotal = tasks.length;
-    for (const t of tasks) {
-      if (t.status === "pending") stats.taskPending++;
-      else if (t.status === "in_progress") stats.taskInProgress++;
-      else if (t.status === "completed") stats.taskCompleted++;
-      const tt = t.task_type || "detection";
-      taskTypeCount[tt] = (taskTypeCount[tt] || 0) + 1;
-    }
-    stats.taskTypeTotal = Object.keys(taskTypeCount).length;
-    recentAnno.value = tasks.slice(0, 5).reverse();
+    // 用后端聚合接口一次取全，避免拉 100 行列表（首页图表用）
+    const ov = (await AnnotationAPI.getOverview()).data?.data || {};
+    stats.taskTotal = ov.task_count || 0;
+    const byStatus = ov.tasks_by_status || {};
+    stats.taskPending = byStatus.pending || 0;
+    stats.taskInProgress = byStatus.in_progress || byStatus.inprogress || 0;
+    stats.taskCompleted = byStatus.completed || 0;
+    stats.taskTypeTotal = Object.keys(ov.tasks_by_type || {}).length;
+    // 同步任务类型分布（供类型图表）
+    Object.keys(taskTypeCount).forEach((k) => delete taskTypeCount[k]);
+    Object.entries(ov.tasks_by_type || {}).forEach(([k, v]) => {
+      taskTypeCount[k] = Number(v) || 0;
+    });
+    datasetImageCounts.value = (ov.top_datasets || []).map((d: any) => ({
+      name: d.name || `#${d.id}`,
+      count: d.image_count || 0,
+    }));
   } catch {
     // 忽略错误
   }
 
   try {
-    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-    const items = r.data?.data?.items || [];
-    datasetImageCounts.value = items.map((d: any) => ({
-      name: d.name || `#${d.id}`,
-      count: d.image_count || d.annotated_count || 0,
-    }));
+    const r = await AnnotationAPI.getTaskList({ page_no: 1, page_size: 5 });
+    recentAnno.value = (r.data?.data?.items || []).slice().reverse();
   } catch {
     // 忽略错误
   }

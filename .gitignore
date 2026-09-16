@@ -52,6 +52,10 @@ backend/static/upload/
 backend/data/*.png
 backend/data/*.jpg
 
+# 运行时产物目录（本地生成，不纳入版本控制）
+events_buffer/
+backend/data/
+
 # Root-level temp scripts, logs, and stray files
 *.log
 *.err
@@ -66,3 +70,6 @@ test_*.js
 pytorch-ocr/.venv
 pytorch-ocr/.pytest_cache
 pytorch-ocr/*.egg-info
+
+# 可视化头脑风暴伴侣产物（本地草稿，勿提交）
+.superpowers/brainstorm/

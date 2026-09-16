@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 from datetime import datetime
+from types import SimpleNamespace
 
 import requests
 from sqlalchemy import update
@@ -10,7 +11,16 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
+from .concurrency import get_train_semaphore
+from .docker_utils import (
+    find_task_containers,
+    get_container,
+    get_container_error_tail,
+    pull_image,
+    remove_container,
+    run_container,
+)
+from .metrics import best_metric
 from .model import TrainFramework, TrainStatus, TrainTask
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
@@ -73,6 +83,18 @@ async def start_scheduler():
         log.info("train scheduler started")
 
 
+def build_scheduled_task_data(schedule) -> SimpleNamespace:
+    """把计划行转成 create_task 所需的数据对象（签名与 TrainService.create_task 一致）。"""
+    return SimpleNamespace(
+        name=f"[定时] {schedule.name}",
+        dataset_id=schedule.dataset_id,
+        annotation_task_id=getattr(schedule, "annotation_task_id", None),
+        framework=schedule.framework,
+        hyperparams=getattr(schedule, "hyperparams", None) or {},
+        base_model_id=getattr(schedule, "base_model_id", None),
+    )
+
+
 async def _scheduler_loop():
     """维护循环：触发定时训练 + 周期孤儿恢复（交由 TrainExecutor.recover_orphans）。"""
     while True:
@@ -90,27 +112,21 @@ async def _scheduler_loop():
                         class _ScheduleAuth:
                             class user:
                                 id = s.created_id or 1
-                        hp = s.hyperparams or {}
-                        task_data = type("data", (), {
-                            "name": f"[定时] {s.name}",
-                            "dataset_id": s.dataset_id,
-                            "annotation_task_id": s.annotation_task_id,
-                            "framework": s.framework,
-                            "hyperparams": hp,
-                        })()
+                        task_data = build_scheduled_task_data(s)
                         result = await TrainService.create_task(task_data, _ScheduleAuth())
                         new_id = result.get("id")
                         if new_id:
                             await start_training(new_id)
+                    except Exception as e:
+                        new_id = None
+                        log.error(f"scheduled training failed for schedule {s.id}: {e}")
+                    finally:
                         async with async_db_session.begin() as db:
                             await db.execute(
                                 update(TrainScheduleModel).where(TrainScheduleModel.id == s.id).values(
                                     last_run_at=datetime.now(), last_task_id=new_id
                                 )
                             )
-                        log.info(f"scheduled training triggered: schedule={s.id} task={new_id}")
-                    except Exception as e:
-                        log.error(f"scheduled training failed for schedule {s.id}: {e}")
             except Exception as e:
                 log.error(f"schedule check error: {e}")
 
@@ -125,6 +141,37 @@ async def _build_export_dir(task_id: int) -> str:
     export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
     os.makedirs(export_dir, exist_ok=True)
     return export_dir
+
+
+async def resolve_base_model(task, export_dir: str) -> str | None:
+    """解析任务的基础模型：下载到 ``<export_dir>/base/`` 并返回文件名。
+
+    当 ``task.base_model_id`` 指向一个带 ``storage_path`` 的 ``TrainModel`` 版本时，
+    从 RustFS 下载权重到 ``<export_dir>/base/<basename>``，返回该 basename（供容器
+    挂载到 ``/base`` 或 ``/pretrained``）。否则返回 ``None``（训练从默认权重开始）。
+    """
+    base_model_id = getattr(task, "base_model_id", None)
+    if not base_model_id:
+        return None
+
+    from .model import TrainModel
+    async with async_db_session() as db:
+        model = await db.get(TrainModel, base_model_id)
+    storage_path = getattr(model, "storage_path", None) if model else None
+    if not storage_path:
+        return None
+    name = os.path.basename(storage_path)
+    if not name:
+        return None
+
+    base_dir = os.path.join(export_dir, "base")
+    os.makedirs(base_dir, exist_ok=True)
+    from app.utils.s3_client import s3_client
+    data = s3_client.download_fileobj(storage_path)
+    with open(os.path.join(base_dir, name), "wb") as f:
+        f.write(data.read())
+    log.info(f"base model {base_model_id} resolved: {storage_path} -> base/{name}")
+    return name
 
 
 # hp dict key → (yolo CLI flag, 默认值, 校验lambda)。仅当 key 在 hp 且值非 None 时拼入命令。
@@ -153,23 +200,28 @@ _ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
 }
 
 
-def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None) -> list[str]:
+def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None, base_model_name: str | None = None) -> list[str]:
     hp = dict(hp)
     # 兼容旧任务：前端曾发 `lr`，但白名单 key 是 `lr0`（否则 lr 被静默丢弃）
     if "lr" in hp and "lr0" not in hp:
         hp["lr0"] = hp.pop("lr")
     if force_multi_label is not None:
         hp["multi_label"] = force_multi_label
-    model_name = hp.get("model") or "yolo11n.pt"
-    # Auto-select OBB model for rotated_detection tasks
-    if task_type == "rotated_detection" and "-obb" not in model_name:
-        base = model_name.replace(".pt", "")
-        model_name = f"{base}-obb.pt"
-    # Auto-select CLS model for classification tasks
-    if task_type in ("cls", "classification") and "-cls" not in model_name:
-        base = model_name.replace(".pt", "")
-        model_name = f"{base}-cls.pt"
-    cmd = ["yolo", "train", f"model=/models/{model_name}", "data=/data/dataset.yaml",
+    if base_model_name:
+        # 基础模型：直接以挂载到 /base 的已训练权重为起点，跳过内置模型名的任务类型后缀
+        model_arg = f"model=/base/{base_model_name}"
+    else:
+        model_name = hp.get("model") or "yolo11n.pt"
+        # Auto-select OBB model for rotated_detection tasks
+        if task_type == "rotated_detection" and "-obb" not in model_name:
+            base = model_name.replace(".pt", "")
+            model_name = f"{base}-obb.pt"
+        # Auto-select CLS model for classification tasks
+        if task_type in ("cls", "classification") and "-cls" not in model_name:
+            base = model_name.replace(".pt", "")
+            model_name = f"{base}-cls.pt"
+        model_arg = f"model=/models/{model_name}"
+    cmd = ["yolo", "train", model_arg, "data=/data/dataset.yaml",
            "project=/output", "name=exp"]
     for key, (flag, _default, validator) in _ULTRALYTICS_HP.items():
         if key == "model":
@@ -218,13 +270,16 @@ _PADDLEX_WEIGHTS = {
 }
 
 
-def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str = "det") -> list[str]:
+def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str = "det", base_model_name: str | None = None) -> list[str]:
     """构建 PaddleX OCR 训练命令（PP-OCRv6 det/rec，tiny/small/medium）。
 
     数据布局（exporter 生成）：
       det: /data/det/   (dataset/ 子目录含 train.txt + images)
       rec: /data/rec/   (dataset/ 子目录含 train.txt + images)
     输出到 /output/det 或 /output/rec。
+
+    ``base_model_name`` 非空时优先作为初始权重：挂载到 ``/pretrained/<name>``
+    （覆盖官方预训练权重）。
     """
     hp = dict(hp)
     size = hp.get("model_size") or "tiny"
@@ -241,7 +296,13 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     )
     data_dir_in = f"/data/{mode}/dataset"
     out_dir = f"/output/{mode}"
-    pretrained = f"/pretrained/{mode}.pdparams" if use_pretrained else ""
+    if base_model_name:
+        # 基础模型优先于官方预训练权重
+        pretrained = f"/pretrained/{base_model_name}"
+    elif use_pretrained:
+        pretrained = f"/pretrained/{mode}.pdparams"
+    else:
+        pretrained = ""
 
     opts = [
         f"Global.epoch_num={epochs}",
@@ -269,8 +330,25 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     return ["bash", "-c", f"cd {_PADDLEX_OCR_DIR} && {inner}"]
 
 
-async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
-    """按框架构建训练命令。"""
+async def _resolve_task_type(task) -> str:
+    """解析训练任务对应标注任务的 ``task_type``；无标注任务时默认 ``detection``。
+
+    ``_build_cmd`` 同样读取该字段，但还需要 ``classification_mode``，故各自查询。
+    """
+    if not getattr(task, "annotation_task_id", None):
+        return "detection"
+    from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+    async with async_db_session() as db:
+        ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
+    tt = getattr(ann_task, "task_type", None) if ann_task else None
+    if not tt:
+        return "detection"
+    # 枚举成员取裸值（AnnotationType.CLASSIFICATION -> "classification"）
+    return getattr(tt, "value", tt)
+
+
+async def _build_cmd(task, data_dir: str, export_dir: str, base_model_name: str | None = None) -> list[str]:
+    """按框架构建训练命令。``base_model_name`` 非空时以其为初始权重。"""
     if task.framework == TrainFramework.ULTRALYTICS:
         task_type = "detection"
         force_multi_label = None
@@ -284,7 +362,7 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
                     # in sync so a "multi" task always trains with multi_label=True.
                     if task_type in ("cls", "classification") and ann_task.classification_mode == "multi":
                         force_multi_label = True
-        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label)
+        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label, base_model_name=base_model_name)
     if task.framework == TrainFramework.PADDLEX:
         # PaddleX OCR：按任务类型 det/rec 走 PP-OCRv6 训练
         # hyperparams 里用 mode 区分（前端传入 det/rec 或由任务名推断）
@@ -293,7 +371,7 @@ async def _build_cmd(task, data_dir: str, export_dir: str) -> list[str]:
         if mode not in ("det", "rec"):
             # 从框架/模型名兜底推断
             mode = "det"
-        return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode)
+        return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode, base_model_name=base_model_name)
     raise ValueError(f"不支持的训练框架: {task.framework}")
 
 
@@ -330,28 +408,19 @@ def _parse_epoch(line: str) -> dict | None:
                     "recall": float(parts[4]) if parts[4] else 0,
                     "map50": float(parts[5]) if parts[5] else 0,
                     "map5095": float(parts[6]) if parts[6] else 0}
+        # 分类验证汇总列不同：all <images> <instances> <top1> <top5>
+        # （检测/分割/姿态仍为 7 列 P/R/mAP50/mAP50-95，优先走上分支）
+        if len(parts) == 5:
+            try:
+                return {"epoch": -1, "top1": float(parts[3]), "top5": float(parts[4])}
+            except ValueError:
+                return None
     return None
-
-
-def _compute_best(metrics_log: list[dict]) -> dict | None:
-    """从每轮指标中选出 map50 最优的一轮；无 map50 时取含最多数值字段的一轮，再退最后一轮。"""
-    if not metrics_log:
-        return None
-    valid = [m for m in metrics_log if m and m.get("map50") is not None]
-    if valid:
-        return max(valid, key=lambda m: m["map50"])
-    # 兜底：若全无 map50，取含最多数值字段的一轮
-    ranked = sorted(
-        metrics_log,
-        key=lambda m: sum(1 for k in ("precision", "recall", "map50", "map5095") if m and m.get(k) is not None),
-        reverse=True,
-    )
-    best = ranked[0] if ranked else None
-    return best if best else metrics_log[-1]
 
 
 class TrainExecutor(TaskExecutor):
     name = "train"
+    task_kind = "train"
     status_enum = TrainStatus
     model_class = TrainTask
     _concurrency = 1
@@ -376,75 +445,42 @@ class TrainExecutor(TaskExecutor):
             data_train_ratio = task.hyperparams.get("train_ratio", 0.8)
             await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id, train_ratio=data_train_ratio)
 
-            cmd = await _build_cmd(task, data_dir, export_dir)
+            base_model_name = await resolve_base_model(task, export_dir)
+            cmd = await _build_cmd(task, data_dir, export_dir, base_model_name=base_model_name)
 
             # Pre-download model weights so container doesn't fetch from internet
-            if task.framework == TrainFramework.ULTRALYTICS:
+            # （base_model 已本地挂载，无需再下载内置权重）
+            if task.framework == TrainFramework.ULTRALYTICS and not base_model_name:
                 model_arg = next((a for a in cmd if a.startswith("model=")), "model=yolo11n.pt")
                 model_name = model_arg.split("=", 1)[1].removeprefix("/models/")
                 _ensure_model_file(model_name)
 
+            volumes = {data_dir: {"bind": "/data", "mode": "rw"},
+                       export_dir: {"bind": "/output", "mode": "rw"},
+                       MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}}
+            if base_model_name:
+                # 已下载的基础模型目录只读挂载到 /base
+                volumes[os.path.join(export_dir, "base")] = {"bind": "/base", "mode": "ro"}
+
             os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
-            container = await run_container(
-                task.docker_image, cmd,
-                volumes={data_dir: {"bind": "/data", "mode": "rw"},
-                         export_dir: {"bind": "/output", "mode": "rw"},
-                         MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}},
-                gpu_id=task.hyperparams.get("gpu_id", "0"),
-            )
-            container_id = container.id
-            entry = cls._registry.get(task_id) or {}
-            entry.update({"container_id": container_id})
-            cls._registry[task_id] = entry
+            # 全局 GPU 并发上限：跨 ultralytics / PaddleX det / rec 共享同一信号量，
+            # 信号量覆盖从启动容器到容器退出（含日志跟随/收尾）的整个 GPU 阶段。
+            async with get_train_semaphore():
+                # 等待信号量期间可能被取消：启动容器前再检查一次
+                if cls._registry.get(task_id, {}).get("cancel"):
+                    return
+                container = await run_container(
+                    task.docker_image, cmd,
+                    volumes=volumes,
+                    gpu_id=task.hyperparams.get("gpu_id", "0"),
+                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
+                )
+                container_id = container.id
+                entry = cls._registry.get(task_id) or {}
+                entry.update({"container_id": container_id})
+                cls._registry[task_id] = entry
 
-            metrics_log = await cls.follow_logs(
-                container_id,
-                os.path.join(export_dir, "train.log"),
-                lambda line: broadcast_log(task_id, line),
-                _parse_epoch,
-            )
-
-            # Merge trailing "all" summary (epoch == -1) into last real epoch to restore old metrics shape
-            if metrics_log and metrics_log[-1].get("epoch") == -1:
-                summary = metrics_log.pop()
-                for m in metrics_log[::-1]:
-                    if m.get("epoch", -1) > 0:
-                        for k, v in summary.items():
-                            if k != "epoch":
-                                m[k] = v
-                        break
-            exit_code = await cls._get_exit_code(container)
-
-            if cls._registry.get(task_id, {}).get("cancel"):
-                await remove_container(container_id)
-                await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
-            elif exit_code == 0:
-                await remove_container(container_id)
-                from .exporter import export_model
-                best_metrics = _compute_best(metrics_log)
-                last_metrics = metrics_log[-1] if metrics_log else None
-                model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
-                await cls._mark_status(task_id, TrainStatus.SUCCESS,
-                                       model_repo_id=model_info.get("repo_id"),
-                                       progress=100, finished_at=datetime.now(),
-                                       metrics_log=metrics_log or None,
-                                       best_metrics=best_metrics,
-                                       last_metrics=last_metrics)
-                if getattr(task, "created_id", None):
-                    _send_notify(task.created_id, f"训练完成: {task.name}",
-                                 "任务已成功完成，模型已保存", "training_complete", "train", task_id)
-            else:
-                error_msg = (await get_container_error_tail(container_id)).strip()
-                await remove_container(container_id)
-                await cls._mark_status(task_id, TrainStatus.FAILED,
-                                       error_log=error_msg or "training failed",
-                                       finished_at=datetime.now(),
-                                       metrics_log=metrics_log or None,
-                                       best_metrics=_compute_best(metrics_log),
-                                       last_metrics=metrics_log[-1] if metrics_log else None)
-                if getattr(task, "created_id", None):
-                    _send_notify(task.created_id, f"训练失败: {task.name}",
-                                 error_msg or "训练异常退出", "training_failed", "train", task_id)
+                await cls._finalize(task_id, container, export_dir, task=task)
         except Exception as e:
             log.error(f"training task {task_id} failed: {e}")
             await cls._mark_status(task_id, TrainStatus.FAILED,
@@ -454,12 +490,114 @@ class TrainExecutor(TaskExecutor):
             if container_id:
                 await remove_container(container_id)
 
+    @classmethod
+    async def _finalize(cls, task_id: int, container, export_dir: str, task=None) -> None:
+        """跟随日志 + 判定退出码 + 导出模型 + 标记状态。
+
+        正常执行（``_execute``）与后端重启后的重连（``reattach``）共用此逻辑，
+        保证两条路径的收尾行为一致。
+        """
+        container_id = container.id
+        if task is None:
+            async with async_db_session() as db:
+                task = await db.get(TrainTask, task_id)
+        if not task:
+            return
+
+        task_type = await _resolve_task_type(task)
+
+        metrics_log = await cls.follow_logs(
+            container_id,
+            os.path.join(export_dir, "train.log"),
+            lambda line: broadcast_log(task_id, line),
+            _parse_epoch,
+        )
+
+        # Merge trailing "all" summary (epoch == -1) into last real epoch to restore old metrics shape
+        if metrics_log and metrics_log[-1].get("epoch") == -1:
+            summary = metrics_log.pop()
+            for m in metrics_log[::-1]:
+                if m.get("epoch", -1) > 0:
+                    for k, v in summary.items():
+                        if k != "epoch":
+                            m[k] = v
+                    break
+        exit_code = await cls._get_exit_code(container)
+
+        if cls._registry.get(task_id, {}).get("cancel"):
+            await remove_container(container_id)
+            await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
+        elif exit_code == 0:
+            await remove_container(container_id)
+            from .exporter import export_model
+            best_metrics = best_metric(metrics_log, "ultralytics", task_type)
+            last_metrics = metrics_log[-1] if metrics_log else None
+            model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
+            if not model_info.get("storage_path"):
+                # 训练进程正常退出但未找到模型产物：不标成功，避免写入无权重版本
+                await cls._mark_status(task_id, TrainStatus.FAILED,
+                                       error_log="训练完成但未找到模型产物",
+                                       metrics_log=metrics_log or None,
+                                       best_metrics=best_metrics,
+                                       last_metrics=last_metrics,
+                                       finished_at=datetime.now())
+            else:
+                await cls._mark_status(task_id, TrainStatus.SUCCESS,
+                                       model_repo_id=model_info.get("repo_id"),
+                                       progress=100, finished_at=datetime.now(),
+                                       metrics_log=metrics_log or None,
+                                       best_metrics=best_metrics,
+                                       last_metrics=last_metrics)
+                if getattr(task, "created_id", None):
+                    _send_notify(task.created_id, f"训练完成: {task.name}",
+                                 "任务已成功完成，模型已保存", "training_complete", "train", task_id)
+        else:
+            error_msg = (await get_container_error_tail(container_id)).strip()
+            await remove_container(container_id)
+            await cls._mark_status(task_id, TrainStatus.FAILED,
+                                   error_log=error_msg or "training failed",
+                                   finished_at=datetime.now(),
+                                   metrics_log=metrics_log or None,
+                                   best_metrics=best_metric(metrics_log, "ultralytics", task_type),
+                                   last_metrics=metrics_log[-1] if metrics_log else None)
+            if getattr(task, "created_id", None):
+                _send_notify(task.created_id, f"训练失败: {task.name}",
+                             error_msg or "训练异常退出", "training_failed", "train", task_id)
+
+    @classmethod
+    async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
+        """后端重启后重连存活容器：跟随剩余日志并复用 ``_finalize`` 收尾。"""
+        # 整个流程用 try/finally 包裹：任何早退（未找到容器、获取容器失败）或异常
+        # 都必须清理 registry，否则 recover_orphans 会因注册表残留而永久跳过该行
+        try:
+            ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
+            if not ids:
+                log.warning(f"[{cls.name}] 任务 {task_id} 需要重连但未找到存活容器")
+                return
+            cid = ids[0]
+            try:
+                container = await get_container(cid)
+            except Exception as e:
+                log.error(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {cid}: {e}")
+                return
+            export_dir = await _build_export_dir(task_id)
+            await broadcast_log(task_id, f"[scheduler] 后端已重启，重连到运行中的容器 {cid[:12]}…")
+            try:
+                await cls._finalize(task_id, container, export_dir)
+            except Exception as e:
+                log.error(f"[{cls.name}] 任务 {task_id} 重连收尾失败: {e}")
+        finally:
+            cls._registry.pop(task_id, None)
+
 
 async def start_training(task_id: int):
     async with async_db_session.begin() as db:
         task = await db.get(TrainTask, task_id)
         if not task:
             raise Exception(f"训练任务 {task_id} 不存在")
+
+        if task.status == TrainStatus.RUNNING:
+            raise Exception("任务正在运行，请勿重复启动")
 
         # If annotation_task_id is set, verify the annotation task is completed (live check)
         if task.annotation_task_id:

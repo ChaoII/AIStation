@@ -160,15 +160,42 @@ class ChatService:
             # 创建 AgnoFactory 实例并创建 Team，传入数据库连接
             agno_factory = AgnoFactory()
             dept_id = str(auth.user.dept_id) if auth and auth.user and hasattr(auth.user, 'dept_id') and auth.user.dept_id else "default"
+            # 使用新模型配置（提供商/模型），缺省回退 env
+            runtime = None
+            try:
+                from app.plugin.module_ai.provider.service import AiModelService
+
+                runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
+            except Exception:
+                runtime = None
             agent = agno_factory.create_agent(
                 user_id=auth.user.username if auth and auth.user else "user",
                 dept_id=dept_id,
                 session_id=session_id,
-                db=crud.db
+                db=crud.db,
+                model_config=runtime,
             )
 
-            # 执行聊天查询 - 使用流式输出
-            async for chunk in agent.arun(input=query.message, stream=True):
+            # 执行聊天查询 - 流式输出（含工具/推理中间步骤，若支持）
+            run = None
+            try:
+                run = agent.arun(input=query.message, stream=True, stream_intermediate_steps=True)
+            except TypeError:
+                run = agent.arun(input=query.message, stream=True)
+            async for chunk in run:
+                # Agno 中间步骤事件（工具调用/推理）：以 JSON 行回传，前端识别渲染
+                event = getattr(chunk, "event", None)
+                if event and event not in ("RunResponse", "run_response"):
+                    payload = {
+                        "type": "step",
+                        "event": str(event),
+                        "tool": getattr(getattr(chunk, "tool", None), "tool_name", None),
+                        "content": getattr(chunk, "content", None),
+                    }
+                    import json as _json
+
+                    yield "\u0000STEP " + _json.dumps(payload, ensure_ascii=False, default=str)
+                    continue
                 if chunk and chunk.content:
                     yield chunk.content
 

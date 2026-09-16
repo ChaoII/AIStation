@@ -1,0 +1,83 @@
+import { test, expect, type Page } from "@playwright/test";
+
+// 关闭引导遮罩。Guide 组件设置了 :show-close="false"，不存在关闭按钮，仅底部「跳过」可退出。
+async function dismissTour(page: Page) {
+  const tour = page.locator(".el-tour");
+  // 引导可能在页面加载后才出现，短等一次；无引导则直接返回，避免无谓挂起
+  const appeared = await tour
+    .waitFor({ state: "visible", timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!appeared) return;
+
+  // 优先点「跳过」（关闭按钮在 show-close=false 时不存在，作为兜底）
+  const skip = page.locator(".el-tour").getByRole("button", { name: "跳过" }).first();
+  const close = page.locator(".el-tour__close").first();
+  const target = (await skip.count()) ? skip : close;
+  if (await target.count()) {
+    // 直接派发 click，避免遮罩拦截指针事件
+    await target.evaluate((el) => (el as HTMLElement).click()).catch(() => {});
+  }
+
+  // 等待遮罩真正隐藏/移除，设上限避免无引导时挂住
+  await tour.waitFor({ state: "hidden", timeout: 5_000 }).catch(() => {});
+}
+
+test("智能助手输入框铺满且提示文案正确", async ({ page }) => {
+  await page.goto("/#/ai/chat", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
+  await dismissTour(page);
+
+  const textarea = page.locator(".message-input textarea");
+  await expect(textarea).toBeVisible({ timeout: 10_000 });
+
+  // placeholder 含「输入消息」且不再出现「FA助手」
+  const placeholder = await textarea.getAttribute("placeholder");
+  expect(placeholder).toContain("输入消息");
+  expect(placeholder).not.toContain("FA助手");
+
+  // 输入框铺满聊天区：输入区容器宽度 > 600px
+  const box = await page.locator(".message-input").boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThan(600);
+});
+
+test("新建/切换会话后输入框仍可输入且无未捕获异常", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (e) => pageErrors.push(String(e)));
+
+  await page.goto("/#/ai/chat", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
+  await dismissTour(page);
+
+  const textarea = page.locator(".message-input textarea");
+  await expect(textarea).toBeVisible({ timeout: 10_000 });
+
+  // 新建会话后输入框仍可正常输入（引导遮罩可能残留拦截指针，用 evaluate 直击）
+  await page
+    .getByRole("button", { name: "开启新对话" })
+    .first()
+    .evaluate((el) => (el as HTMLElement).click());
+  await textarea.fill("e2e 会话切换检查");
+  await expect(textarea).toHaveValue("e2e 会话切换检查");
+  await textarea.fill("");
+
+  // 若存在历史会话，切换后输入框仍可用（覆盖 select-session 路径）
+  const firstSession = page.locator(".session-item").first();
+  if (await firstSession.count()) {
+    await firstSession.evaluate((el) => (el as HTMLElement).click());
+    await expect(textarea).toBeVisible();
+  }
+
+  expect(pageErrors, `页面抛出未捕获异常\n${pageErrors.join("\n")}`).toEqual([]);
+});
+
+test("带未知 app_id 打开智能助手不崩溃", async ({ page }) => {
+  await page.goto("/#/ai/chat?app_id=999999", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
+  await dismissTour(page);
+
+  // 未知应用时应用详情请求失败应被吞掉，页面照常渲染输入框
+  await expect(page.locator(".message-input textarea")).toBeVisible({ timeout: 10_000 });
+  // 应用详情失败后回退通用助手：不显示应用标签
+  await expect(page.locator(".app-tag")).toHaveCount(0);
+});

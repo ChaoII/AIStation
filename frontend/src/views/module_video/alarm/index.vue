@@ -61,6 +61,21 @@
                   sortable
                 />
                 <el-table-column
+                  v-if="recordCols.find((col) => col.prop === 'snapshot')?.show"
+                  key="snapshot"
+                  label="快照"
+                  width="72"
+                  align="center"
+                >
+                  <template #default="scope">
+                    <SnapshotImage
+                      :src="scope.row.snapshot_url || scope.row.snapshot_path"
+                      :width="48"
+                      :height="32"
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column
                   v-if="recordCols.find((col) => col.prop === 'camera')?.show"
                   key="camera"
                   label="摄像机"
@@ -178,7 +193,7 @@
         </PageContent>
       </el-tab-pane>
 
-      <el-tab-pane label="告警规则" name="rule">
+      <el-tab-pane label="告警规则" name="rule" lazy>
         <PageSearch
           ref="ruleSearchRef"
           :search-config="ruleSearchConfig"
@@ -241,6 +256,17 @@
                   show-overflow-tooltip
                 />
                 <el-table-column
+                  v-if="ruleCols.find((col) => col.prop === 'scope')?.show"
+                  key="scope"
+                  label="作用域"
+                  min-width="150"
+                  show-overflow-tooltip
+                >
+                  <template #default="scope">
+                    {{ ruleScopeLabel(scope.row) }}
+                  </template>
+                </el-table-column>
+                <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'alarm_type')?.show"
                   key="alarm_type"
                   label="告警类型"
@@ -277,6 +303,19 @@
                   width="90"
                   align="center"
                 />
+                <el-table-column
+                  v-if="ruleCols.find((col) => col.prop === 'rollout')?.show"
+                  key="rollout"
+                  label="灰度"
+                  min-width="190"
+                  show-overflow-tooltip
+                >
+                  <template #default="scope">
+                    <span v-if="ruleRolloutSummary(scope.row)">
+                      {{ ruleRolloutSummary(scope.row) }}
+                    </span>
+                  </template>
+                </el-table-column>
                 <el-table-column
                   v-if="ruleCols.find((col) => col.prop === 'status')?.show"
                   key="status"
@@ -330,22 +369,12 @@
       v-model="ruleDialogVisible.visible"
       :title="ruleDialogVisible.title"
       append-to-body
-      width="600px"
+      width="960px"
       @close="handleCloseRuleDialog"
     >
       <el-form ref="ruleFormRef" :model="ruleForm" label-width="100px" size="default">
         <el-form-item label="规则名称" prop="name">
           <el-input v-model="ruleForm.name" placeholder="请输入规则名称" />
-        </el-form-item>
-        <el-form-item label="关联摄像机" prop="camera_id">
-          <el-select
-            v-model="ruleForm.camera_id"
-            filterable
-            placeholder="选择摄像机"
-            style="width: 100%"
-          >
-            <el-option v-for="c in cameraOptions" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
         </el-form-item>
         <el-form-item label="算法布控任务" prop="algorithm_task_id">
           <el-select
@@ -363,30 +392,21 @@
             />
           </el-select>
         </el-form-item>
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="告警类型" prop="alarm_type">
-              <el-select v-model="ruleForm.alarm_type" style="width: 100%">
-                <el-option label="运动检测" value="MOTION" />
-                <el-option label="越界检测" value="LINE_CROSSING" />
-                <el-option label="区域入侵" value="INTRUSION" />
-                <el-option label="人脸识别" value="FACE_DETECT" />
-                <el-option label="移动侦测" value="MOVEMENT" />
-                <el-option label="视频遮挡" value="VIDEO_BLOCK" />
-                <el-option label="视频丢失" value="VIDEO_LOST" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="级别" prop="severity">
-              <el-select v-model="ruleForm.severity" style="width: 100%">
-                <el-option label="严重" value="CRITICAL" />
-                <el-option label="警告" value="WARNING" />
-                <el-option label="信息" value="INFO" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <el-form-item label="规则场景" prop="scene_type">
+          <RuleEditor
+            ref="ruleEditorRef"
+            v-model="ruleEditorModel"
+            :scene-type="ruleForm.scene_type"
+            @update:scene-type="handleSceneTypeChange"
+          />
+        </el-form-item>
+        <el-form-item label="级别" prop="severity">
+          <el-select v-model="ruleForm.severity" style="width: 100%">
+            <el-option label="严重" value="CRITICAL" />
+            <el-option label="警告" value="WARNING" />
+            <el-option label="信息" value="INFO" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="通知方式" prop="notify_channels">
           <div style="width: 100%">
             <el-checkbox-group v-model="ruleChannelSelection">
@@ -489,32 +509,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="生效时段">
-          <div class="schedule-grid-wrapper">
-            <div class="schedule-header-row">
-              <div class="schedule-corner" />
-              <div v-for="h in 24" :key="h" class="schedule-header-cell">
-                {{ String(h - 1).padStart(2, "0") }}
-              </div>
-            </div>
-            <div v-for="day in 7" :key="day" class="schedule-row">
-              <div class="schedule-day-label">{{ weekDays[day - 1] }}</div>
-              <div
-                v-for="hour in 24"
-                :key="hour"
-                class="schedule-cell"
-                :class="{ active: ruleScheduleGrid[day - 1]?.[hour - 1] }"
-                @mousedown.prevent="onRuleCellMouseDown(day - 1, hour - 1, $event)"
-                @mouseenter="onRuleCellMouseEnter(day - 1, hour - 1)"
-              />
-            </div>
-          </div>
-          <div class="schedule-actions">
-            <el-button size="small" @click="fillRuleSchedule(true)">全选</el-button>
-            <el-button size="small" @click="fillRuleSchedule(false)">清空</el-button>
-            <el-button size="small" @click="fillRuleWorkHours">工作日 08-18</el-button>
-          </div>
-        </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-switch v-model="ruleForm.status" />
         </el-form-item>
@@ -543,19 +537,13 @@
     >
       <template v-if="detailDrawer.data">
         <div class="detail-snapshot">
-          <el-image
-            v-if="detailDrawer.data.snapshot_path"
-            :src="detailDrawer.data.snapshot_path"
-            style="width: 100%; height: 200px"
-            fit="contain"
-            :preview-src-list="[detailDrawer.data.snapshot_path]"
-            preview-teleported
-          >
-            <template #error>
-              <div class="detail-snapshot-empty">无截图</div>
-            </template>
-          </el-image>
-          <div v-else class="detail-snapshot-empty">无截图</div>
+          <SnapshotOverlayViewer
+            :src="detailDrawer.data.snapshot_url || detailDrawer.data.snapshot_path"
+            :objects="
+              detailDrawer.data.ai_result?.objects ?? detailDrawer.data.ai_result?.detections ?? []
+            "
+            height="420px"
+          />
         </div>
 
         <el-descriptions :column="1" border class="detail-info">
@@ -567,6 +555,9 @@
           </el-descriptions-item>
           <el-descriptions-item label="触发规则">
             {{ detailDrawer.data.rule?.name || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="规则作用域">
+            {{ ruleScopeText(detailDrawer.data.rule_id) }}
           </el-descriptions-item>
           <el-descriptions-item label="告警类型">
             {{ detailDrawer.data.alarm_type }}
@@ -620,8 +611,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onBeforeMount, computed } from "vue";
-import { ElMessage } from "element-plus";
-import { getCameraList } from "@/api/module_video/camera";
+import { getCameraList, getCameraGroupList } from "@/api/module_video/camera";
 import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
   getAlarmRecordList,
@@ -634,6 +624,11 @@ import {
 } from "@/api/module_video/alarm";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { cachedOptions } from "@/composables/useOptions";
+import SnapshotImage from "@/components/Common/SnapshotImage.vue";
+import SnapshotOverlayViewer from "@/components/SnapshotOverlayViewer/index.vue";
+import type { AlarmRuleRollout, AlarmRuleScope } from "@/api/module_video/alarm";
+import RuleEditor, { type RuleEditorValue } from "./components/RuleEditor.vue";
 
 interface TablePageQuery {
   page_no: number;
@@ -661,13 +656,12 @@ const {
 const ruleSubmitLoading = ref(false);
 const ruleFormRef = ref();
 const cameraOptions = ref<any[]>([]);
+/** 相机组选项（扁平化，用于规则作用域选择与列表/详情展示） */
+const groupOptions = ref<any[]>([]);
+/** 规则 id → 规则原始数据（告警详情里展示触发规则的作用域） */
+const ruleLookup = ref<Record<number, any>>({});
+let ruleLookupLoaded = false;
 const algorithmTaskOptions = ref<any[]>([]);
-const ruleScheduleGrid = ref<boolean[][]>(Array.from({ length: 7 }, () => Array(24).fill(false)));
-const ruleDragState = ref<{ active: boolean; mode: "set" | "clear" }>({
-  active: false,
-  mode: "set",
-});
-const weekDays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
 const ruleChannelSelection = ref<string[]>([]);
 const ruleChannelEmailTo = ref("");
@@ -699,6 +693,8 @@ function handleViewDetail(row: any) {
   detailDrawer.data = row;
   detailDrawer.title = `告警详情 - ${row.alarm_type}`;
   detailDrawer.visible = true;
+  ensureGroupOptions();
+  ensureRuleLookup();
 }
 
 const recordSearchConfig = reactive<ISearchConfig>({
@@ -718,6 +714,9 @@ const recordSearchConfig = reactive<ISearchConfig>({
         clearable: true,
         filterable: true,
         style: { width: "180px" },
+        onVisibleChange: (v: boolean) => {
+          if (v) ensureCameraOptions();
+        },
       },
     },
     {
@@ -750,6 +749,7 @@ const recordCols = reactive<Array<{ prop?: string; label?: string; show?: boolea
   { prop: "selection", label: "选择框", show: true },
   { prop: "index", label: "序号", show: true },
   { prop: "alarm_time", label: "告警时间", show: true },
+  { prop: "snapshot", label: "快照", show: true },
   { prop: "camera", label: "摄像机", show: true },
   { prop: "rule", label: "触发规则", show: true },
   { prop: "alarm_type", label: "类型", show: true },
@@ -817,10 +817,12 @@ const ruleCols = reactive<Array<{ prop?: string; label?: string; show?: boolean 
   { prop: "selection", label: "选择框", show: true },
   { prop: "index", label: "序号", show: true },
   { prop: "name", label: "规则名称", show: true },
+  { prop: "scope", label: "作用域", show: true },
   { prop: "alarm_type", label: "告警类型", show: true },
   { prop: "severity", label: "级别", show: true },
   { prop: "sensitivity", label: "灵敏度", show: true },
   { prop: "interval_seconds", label: "间隔(秒)", show: true },
+  { prop: "rollout", label: "灰度", show: true },
   { prop: "status", label: "状态", show: true },
   { prop: "operation", label: "操作", show: true },
 ]);
@@ -866,7 +868,10 @@ const ruleDialogVisible = reactive({
 const ruleForm = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
+  // 作用域：相机 / 相机组（camera_id 与 group_id 恰有其一）
+  scope: "camera" as AlarmRuleScope,
   camera_id: undefined as number | undefined,
+  group_id: undefined as number | undefined,
   algorithm_task_id: undefined as number | undefined,
   alarm_type: "MOTION",
   severity: "WARNING",
@@ -874,14 +879,21 @@ const ruleForm = reactive({
   interval_seconds: 30,
   notify_channels: [] as string[],
   schedule_json: null as any,
+  rollout: {} as AlarmRuleRollout,
   status: true,
   description: undefined as string | undefined,
+  // 场景规则编辑器新增字段（spec §4.6）
+  scene_type: undefined as string | undefined,
+  params: {} as Record<string, unknown>,
+  conditions: null as Record<string, unknown> | null,
 });
 
 const initialRuleForm = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
+  scope: "camera" as AlarmRuleScope,
   camera_id: undefined as number | undefined,
+  group_id: undefined as number | undefined,
   algorithm_task_id: undefined as number | undefined,
   alarm_type: "MOTION" as const,
   severity: "WARNING" as const,
@@ -889,61 +901,158 @@ const initialRuleForm = {
   interval_seconds: 30,
   notify_channels: [] as string[],
   schedule_json: null as any,
+  rollout: {} as AlarmRuleRollout,
   status: true,
   description: undefined as string | undefined,
 };
 
-function onRuleCellMouseDown(day: number, hour: number, e: MouseEvent) {
-  if (e.button !== 0) return;
-  const current = ruleScheduleGrid.value[day][hour];
-  ruleDragState.value = { active: true, mode: current ? "clear" : "set" };
-  ruleScheduleGrid.value[day][hour] = !current;
+const ruleEditorRef = ref<InstanceType<typeof RuleEditor> | null>(null);
+
+/** RuleEditor 的 v-model：作用域 / 目标 / 参数 / 条件 / 灰度直接落到 ruleForm */
+const ruleEditorModel = computed<RuleEditorValue>({
+  get: () => ({
+    scope: ruleForm.scope,
+    camera_id: ruleForm.camera_id,
+    group_id: ruleForm.group_id,
+    params: ruleForm.params,
+    conditions: ruleForm.conditions,
+    schedule_json: ruleForm.schedule_json,
+    rollout: ruleForm.rollout,
+  }),
+  set: (v) => {
+    ruleForm.scope = v?.scope ?? "camera";
+    ruleForm.camera_id = v?.camera_id;
+    ruleForm.group_id = v?.group_id;
+    ruleForm.params = v?.params ?? {};
+    ruleForm.conditions = v?.conditions ?? null;
+    ruleForm.schedule_json = v?.schedule_json ?? null;
+    ruleForm.rollout = v?.rollout ?? {};
+  },
+});
+
+/** 相机组选项加载（扁平化树） */
+async function ensureGroupOptions() {
+  if (groupOptions.value.length) return;
+  try {
+    const res = await getCameraGroupList();
+    groupOptions.value = flattenGroupTree(res.data?.data || []);
+  } catch {
+    /* noop */
+  }
 }
 
-function onRuleCellMouseEnter(day: number, hour: number) {
-  if (!ruleDragState.value.active) return;
-  ruleScheduleGrid.value[day][hour] = ruleDragState.value.mode === "set";
+function flattenGroupTree(nodes: any[], out: any[] = []): any[] {
+  for (const node of nodes || []) {
+    if (node?.id !== undefined) out.push({ id: node.id, name: node.name });
+    if (Array.isArray(node?.children)) flattenGroupTree(node.children, out);
+  }
+  return out;
 }
 
-function onRuleDragEnd() {
-  ruleDragState.value.active = false;
+/** 规则列表「作用域」列文案：相机名 / 组名 */
+function ruleScopeLabel(row: any): string {
+  if (row?.group_id) {
+    const g = groupOptions.value.find((x) => x.id === row.group_id);
+    return `相机组：${g?.name || `#${row.group_id}`}`;
+  }
+  if (row?.camera_id) {
+    return `相机：${row?.camera?.name || `#${row.camera_id}`}`;
+  }
+  return "-";
 }
 
-function fillRuleSchedule(val: boolean) {
-  for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) ruleScheduleGrid.value[d][h] = val;
+/** 懒加载规则数据，供告警详情展示触发规则的作用域 */
+async function ensureRuleLookup() {
+  if (ruleLookupLoaded) return;
+  try {
+    const res = await getAlarmRuleList({ page_no: 1, page_size: 200 });
+    const map: Record<number, any> = {};
+    for (const item of res.data?.data?.items ?? []) map[item.id] = item;
+    ruleLookup.value = map;
+    ruleLookupLoaded = true;
+  } catch {
+    /* noop */
+  }
 }
 
-function fillRuleWorkHours() {
-  fillRuleSchedule(false);
-  for (let d = 0; d < 5; d++) for (let h = 8; h < 18; h++) ruleScheduleGrid.value[d][h] = true;
+/** 告警详情「规则作用域」文案（按触发规则解析） */
+function ruleScopeText(ruleId?: number): string {
+  const rule = ruleId != null ? ruleLookup.value[ruleId] : undefined;
+  if (!rule) return "-";
+  return ruleScopeLabel(rule);
 }
 
-function ruleScheduleGridToJson() {
-  const slots: { day: number; start: number; end: number }[] = [];
+/** 场景码即告警类型（后端以 alarm_type 作为场景/算法类型持久化） */
+function handleSceneTypeChange(code: string) {
+  ruleForm.scene_type = code || undefined;
+  ruleForm.alarm_type = code || ruleForm.alarm_type;
+}
+
+const WEEK_DAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
+/** 生效时间段摘要：相同窗口的连续天合并，如「周一至周五 09:00-18:00」；无配置返回空串 */
+function ruleScheduleSummary(json: any): string {
+  const slots: any[] = Array.isArray(json?.slots) ? json.slots : [];
+  if (!slots.length) return "";
+  const byDay = new Map<number, string>();
+  for (const slot of slots) {
+    const day = Number(slot?.day);
+    const start = Number(slot?.start);
+    const end = Number(slot?.end);
+    if (!Number.isInteger(day) || day < 0 || day > 6 || !(end > start)) continue;
+    const text = `${String(start).padStart(2, "0")}:00-${String(end).padStart(2, "0")}:00`;
+    byDay.set(day, byDay.has(day) ? `${byDay.get(day)}、${text}` : text);
+  }
+  if (!byDay.size) return "";
+  const parts: string[] = [];
+  let start = -1;
+  let end = -1;
+  let win = "";
+  const flush = () => {
+    if (start < 0) return;
+    const label =
+      start === end ? WEEK_DAY_LABELS[start] : `${WEEK_DAY_LABELS[start]}至${WEEK_DAY_LABELS[end]}`;
+    parts.push(`${label} ${win}`);
+  };
   for (let d = 0; d < 7; d++) {
-    let start = -1;
-    for (let h = 0; h <= 24; h++) {
-      const active = h < 24 && ruleScheduleGrid.value[d][h];
-      if (active && start === -1) start = h;
-      if (!active && start !== -1) {
-        slots.push({ day: d, start, end: h });
-        start = -1;
-      }
+    const cur = byDay.get(d);
+    if (!cur) {
+      flush();
+      start = -1;
+      end = -1;
+      win = "";
+      continue;
+    }
+    if (start >= 0 && cur === win && d === end + 1) {
+      end = d;
+    } else {
+      flush();
+      start = d;
+      end = d;
+      win = cur;
     }
   }
-  return slots.length ? { type: "weekly", slots } : null;
+  flush();
+  return parts.join("，");
 }
 
-function jsonToRuleScheduleGrid(json: any) {
-  ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
-  if (!json?.slots) return;
-  for (const slot of json.slots) {
-    if (slot.day >= 0 && slot.day < 7) {
-      for (let h = slot.start; h < slot.end && h < 24; h++) {
-        ruleScheduleGrid.value[slot.day][h] = true;
-      }
-    }
+/** 规则灰度摘要：比例 / 白名单 / 黑名单 / 生效时段；无任何灰度配置返回空串（列表不显示） */
+function ruleRolloutSummary(row: any): string {
+  const rollout = row?.rollout || {};
+  const parts: string[] = [];
+  const percent = rollout.percent;
+  if (typeof percent === "number" && percent < 100) {
+    parts.push(percent <= 0 ? "不生效" : `${percent}%`);
   }
+  if (Array.isArray(rollout.whitelist) && rollout.whitelist.length) {
+    parts.push(`白名单 ${rollout.whitelist.length} 台`);
+  }
+  if (Array.isArray(rollout.blacklist) && rollout.blacklist.length) {
+    parts.push(`黑名单 ${rollout.blacklist.length} 台`);
+  }
+  const schedule = ruleScheduleSummary(row?.schedule_json);
+  if (schedule) parts.push(schedule);
+  return parts.join(" · ");
 }
 
 async function resetRuleForm() {
@@ -952,7 +1061,12 @@ async function resetRuleForm() {
     ruleFormRef.value.clearValidate();
   }
   Object.assign(ruleForm, initialRuleForm);
-  ruleScheduleGrid.value = Array.from({ length: 7 }, () => Array(24).fill(false));
+  // 场景编辑器字段单独重置，避免与 initialRuleForm 共享引用
+  ruleForm.scene_type = undefined;
+  ruleForm.params = {};
+  ruleForm.conditions = null;
+  ruleForm.schedule_json = null;
+  ruleForm.rollout = {};
   ruleChannelSelection.value = [];
   ruleChannelEmailTo.value = "";
   ruleChannelSmsPhones.value = "";
@@ -970,13 +1084,26 @@ async function handleCloseRuleDialog() {
 
 async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
   ruleDialogVisible.type = type;
+  ensureCameraOptions();
+  ensureGroupOptions();
+  ensureAlgorithmTaskOptions();
   if (id && type === "update") {
     ruleDialogVisible.title = "编辑规则";
     const res = await getAlarmRuleList({ page_no: 1, page_size: 100 });
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
       Object.assign(ruleForm, item);
-      jsonToRuleScheduleGrid(ruleForm.schedule_json);
+      // 回填作用域：有 group_id 即组规则，否则相机规则（camera_id/group_id 恰有其一）
+      ruleForm.scope = item.group_id ? "group" : "camera";
+      ruleForm.camera_id = item.camera_id ?? undefined;
+      ruleForm.group_id = item.group_id ?? undefined;
+      // 回填场景规则：场景码存于 alarm_type，params/conditions 原样取回（无 detail 接口，走列表）
+      ruleForm.params = item.params || {};
+      ruleForm.conditions = item.conditions || null;
+      ruleForm.scene_type = item.alarm_type || undefined;
+      // 灰度配置回填：缺省 {} 表示全量生效
+      ruleForm.schedule_json = item.schedule_json || null;
+      ruleForm.rollout = item.rollout || {};
       // Parse notify_channels into selection + per-channel config
       const channels = item.notify_channels || [];
       ruleChannelSelection.value = [];
@@ -1060,21 +1187,33 @@ function buildNotifyChannels(): any[] {
 }
 
 async function handleSubmitRule() {
+  // 场景规则校验（未配置场景数据时可跳过，保持既有规则创建路径可用）
+  if (ruleEditorRef.value && !ruleEditorRef.value.validate()) return;
   ruleSubmitLoading.value = true;
   const id = ruleForm.id;
   try {
+    // 作用域：camera_id 与 group_id 恰有其一（另一个显式置 null 以支持编辑时切换作用域）
+    const isGroupScope = ruleForm.scope === "group";
     const payload: any = {
       name: ruleForm.name,
-      camera_id: ruleForm.camera_id,
+      camera_id: isGroupScope ? null : (ruleForm.camera_id ?? null),
+      group_id: isGroupScope ? (ruleForm.group_id ?? null) : null,
+      scope: ruleForm.scope,
       algorithm_task_id: ruleForm.algorithm_task_id || null,
       alarm_type: ruleForm.alarm_type,
       severity: ruleForm.severity,
       sensitivity: ruleForm.sensitivity,
       interval_seconds: ruleForm.interval_seconds,
       notify_channels: buildNotifyChannels(),
-      schedule_json: ruleScheduleGridToJson(),
+      schedule_json: ruleForm.schedule_json || null,
+      // 灰度配置：{percent, whitelist, blacklist}，{} = 全量生效
+      rollout: ruleForm.rollout || {},
       status: ruleForm.status,
       description: ruleForm.description || null,
+      // 场景规则：算法/场景类型 + 参数原值 + 条件树（后端编译展开后落库）
+      algorithm_type: ruleForm.scene_type,
+      params: ruleForm.params || {},
+      conditions: ruleForm.conditions || null,
     };
     if (id) {
       await updateAlarmRule(id, payload);
@@ -1094,7 +1233,6 @@ async function handleSubmitRule() {
 async function handleConfirm(id: number, status: string) {
   try {
     await confirmAlarm(id, status);
-    ElMessage.success(status === "CONFIRMED" ? "已确认告警" : "已标记为误报");
     recordContentRef.value?.fetchPageData();
   } catch {
     //
@@ -1126,16 +1264,17 @@ function statusLabel(status: string) {
   return map[(status || "").toUpperCase()] || status;
 }
 
-// Populate camera search options and algorithm tasks
-async function loadCameraOptions() {
+// 摄像机/算法任务下拉：懒加载 + 缓存
+async function ensureCameraOptions() {
+  if (cameraOptions.value.length) return;
   try {
-    const [camRes, taskRes] = await Promise.all([
-      getCameraList({ page_size: 100 }),
-      getAlgorithmTaskList({ page_size: 100 }),
-    ]);
-    cameraOptions.value = camRes.data?.data?.items || [];
-    algorithmTaskOptions.value = taskRes.data?.data?.items || [];
-    const searchItem: any = (recordSearchConfig.formItems || []).find((i: any) => i.prop === "camera_id");
+    cameraOptions.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
+    const searchItem: any = (recordSearchConfig.formItems || []).find(
+      (i: any) => i.prop === "camera_id"
+    );
     if (searchItem) {
       searchItem.options = cameraOptions.value.map((c: any) => ({ label: c.name, value: c.id }));
     }
@@ -1144,12 +1283,21 @@ async function loadCameraOptions() {
   }
 }
 
+async function ensureAlgorithmTaskOptions() {
+  if (algorithmTaskOptions.value.length) return;
+  try {
+    algorithmTaskOptions.value = await cachedOptions(
+      "video:algorithmTasks",
+      async () => (await getAlgorithmTaskList({ page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    /* noop */
+  }
+}
+
 onBeforeMount(() => {
-  loadCameraOptions();
-  document.addEventListener("mouseup", onRuleDragEnd);
-});
-onBeforeUnmount(() => {
-  document.removeEventListener("mouseup", onRuleDragEnd);
+  // 规则列表「作用域」列需展示组名，进页即预加载组选项
+  ensureGroupOptions();
 });
 </script>
 
@@ -1227,64 +1375,6 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-placeholder);
 }
 
-/* Schedule Grid */
-.schedule-grid-wrapper {
-  padding-bottom: 4px;
-  overflow-x: auto;
-}
-.schedule-header-row {
-  display: flex;
-  gap: 2px;
-  margin-bottom: 2px;
-}
-.schedule-corner {
-  flex-shrink: 0;
-  width: 44px;
-}
-.schedule-header-cell {
-  flex-shrink: 0;
-  width: 24px;
-  font-size: 10px;
-  line-height: 20px;
-  color: var(--el-text-color-placeholder);
-  text-align: center;
-}
-.schedule-row {
-  display: flex;
-  gap: 2px;
-  align-items: center;
-  margin-bottom: 2px;
-}
-.schedule-day-label {
-  flex-shrink: 0;
-  width: 44px;
-  padding-right: 6px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  text-align: right;
-}
-.schedule-cell {
-  flex-shrink: 0;
-  width: 24px;
-  height: 20px;
-  cursor: pointer;
-  background: var(--el-fill-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 2px;
-  transition: all 0.15s;
-}
-.schedule-cell:hover {
-  border-color: var(--el-color-primary);
-}
-.schedule-cell.active {
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
-}
-.schedule-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
 .notify-config-block {
   margin-top: 8px;
   padding: 8px 12px;

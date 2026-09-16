@@ -22,5 +22,5 @@ class AlarmRuleQueryParam:
         name: str | None = Query(None, description="规则名称"),
         alarm_type: str | None = Query(None, description="告警类型"),
     ) -> None:
-        self.name = name
+        self.name = ("like", name)
         self.alarm_type = alarm_type

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import desc, func, select, update
 
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
 from app.core.logger import log
 
 from ..dataset.model import AnnotationImageModel, DatasetModel
@@ -44,7 +45,7 @@ class AnnotationService:
             # Verify lock
             img = await db.get(AnnotationImageModel, image_id)
             if img and img.locked_by and img.locked_by != auth.user.id:
-                raise ValueError("图片已被其他用户锁定")
+                raise CustomException(msg="图片已被其他用户锁定，无法保存", code=409, status_code=409)
 
             result = await db.execute(
                 select(AnnotationRecordModel)
@@ -100,6 +101,67 @@ class AnnotationService:
             )
             record = result.scalar_one_or_none()
             return record.annotation_data if record else None
+
+    @classmethod
+    async def rollback_annotation(cls, task_id: int, image_id: int, version: int, auth) -> dict:
+        """把所选历史版本内容作为新的最新版本写回（append-only 回滚）。"""
+        async with async_db_session.begin() as db:
+            img = await db.get(AnnotationImageModel, image_id)
+            if img and img.locked_by and img.locked_by != auth.user.id:
+                raise CustomException(msg="图片已被其他用户锁定，无法回滚", code=409, status_code=409)
+
+            target = (
+                await db.execute(
+                    select(AnnotationRecordModel).where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.image_id == image_id,
+                        AnnotationRecordModel.version == version,
+                    )
+                )
+            ).scalar_one_or_none()
+            if not target:
+                raise CustomException(msg="目标版本不存在", code=404, status_code=404)
+
+            latest = (
+                await db.execute(
+                    select(AnnotationRecordModel)
+                    .where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.image_id == image_id,
+                    )
+                    .order_by(desc(AnnotationRecordModel.version))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            new_version = (latest.version + 1) if latest else 1
+
+            data = target.annotation_data or []
+            db.add(
+                AnnotationRecordModel(
+                    task_id=task_id,
+                    image_id=image_id,
+                    annotation_data=data,
+                    version=new_version,
+                    created_id=auth.user.id,
+                )
+            )
+            if img:
+                img.status = "annotated" if data else "unannotated"
+                img.annotation_count = len(data)
+                subq = select(AnnotationImageModel.id).where(
+                    AnnotationImageModel.dataset_id == img.dataset_id
+                )
+                annotated = await db.scalar(
+                    select(func.count(func.distinct(AnnotationRecordModel.image_id))).where(
+                        AnnotationRecordModel.image_id.in_(subq)
+                    )
+                )
+                await db.execute(
+                    update(DatasetModel)
+                    .where(DatasetModel.id == img.dataset_id)
+                    .values(annotated_count=annotated or 0)
+                )
+        return {"version": new_version, "annotation_count": len(data)}
 
     @classmethod
     async def get_annotation_history(cls, task_id: int, image_id: int) -> list[dict]:

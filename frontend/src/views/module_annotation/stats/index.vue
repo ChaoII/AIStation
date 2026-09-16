@@ -17,7 +17,7 @@
         <el-card shadow="never">
           <template #header>
             <span style="font-weight:600;font-size:14px">数据集详情</span>
-            <el-select v-model="selectedDatasetId" placeholder="选择数据集" style="width:240px;margin-left:12px" clearable @change="loadDatasetStats">
+            <el-select v-model="selectedDatasetId" placeholder="选择数据集" style="width:240px;margin-left:12px" clearable @change="loadDatasetStats" @visible-change="(v: boolean) => v && loadDatasets()">
               <el-option v-for="ds in datasetOptions" :key="ds.id" :label="ds.name" :value="ds.id" />
             </el-select>
           </template>
@@ -68,6 +68,7 @@ defineOptions({ name: "AnnotationStats", inheritAttrs: false });
 
 import { ref, reactive, computed, onMounted } from "vue";
 import { AnnotationAPI } from "@/api/module_annotation";
+import { cachedOptions } from "@/composables/useOptions";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { PieChart, BarChart, LineChart } from "echarts/charts";
@@ -169,14 +170,24 @@ async function loadDatasetStats() {
   finally { dsLoading.value = false; }
 }
 
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasetOptions.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
+}
+
 onMounted(async () => {
   try {
-    const [ov, ds] = await Promise.all([
-      AnnotationAPI.getOverview(),
-      AnnotationAPI.getDatasetList({ page_no: 1, page_size: 999 }),
-    ]);
+    const ov = await AnnotationAPI.getOverview();
     Object.assign(overview, ov.data?.data || {});
-    datasetOptions.value = ds.data?.data?.items || ds.data?.data || [];
   } catch {}
 });
 </script>

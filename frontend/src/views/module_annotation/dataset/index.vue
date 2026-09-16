@@ -17,7 +17,7 @@
             @add="handleOpenDialog('create')"
             @delete="onToolbar('delete')"
           />
-          <el-button type="primary" @click="importDialogVisible = true" style="margin-left:4px">X-AnyLabeling 导入</el-button>
+          <el-button type="primary" @click="openImportDialog" style="margin-left:4px">X-AnyLabeling 导入</el-button>
         </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -100,7 +100,7 @@
                       borderColor: taskTagColor(t.task_type),
                       color: taskTagColor(t.task_type),
                     }"
-                    @click="router.push(`/annotation/task?task_id=${t.id}`)"
+                    @click="router.push(`/annotation/workbench/${t.id}`)"
                   >
                     <span class="task-badge-name">{{ t.name }}</span>
                     <span class="task-badge-pct">{{ t.progress ?? 0 }}%</span>
@@ -146,6 +146,17 @@
                   导出
                 </el-button>
                 <el-button
+                  size="small"
+                  link
+                  type="info"
+                  @click="exportHistoryRef.open(scope.row.id)"
+                >
+                  导出历史
+                </el-button>
+                <el-button size="small" link type="warning" @click="cleanRef.open(scope.row.id)">
+                  数据清洗
+                </el-button>
+                <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
                   type="primary"
                   size="small"
@@ -154,6 +165,14 @@
                   @click="handleOpenDialog('update', scope.row.id)"
                 >
                   编辑
+                </el-button>
+                <el-button
+                  size="small"
+                  type="success"
+                  link
+                  @click="router.push(`/train/task?dataset_id=${scope.row.id}&autoCreate=1`)"
+                >
+                  去训练
                 </el-button>
                 <el-button
                   v-hasPerm="['module_annotation:dataset:delete']"
@@ -297,6 +316,9 @@
         <el-button type="warning" :loading="exporting" @click="handleExportSubmit">{{ exporting ? "导出中..." : "导出并下载" }}</el-button>
       </template>
     </el-dialog>
+
+    <ExportHistoryDrawer ref="exportHistoryRef" />
+    <CleanDrawer ref="cleanRef" />
   </div>
 </template>
 
@@ -310,6 +332,8 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
+import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue";
+import CleanDrawer from "@/components/Annotation/CleanDrawer.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
@@ -541,12 +565,11 @@ async function handleUploadSubmit() {
       formData.append("files", file.raw);
     }
     await AnnotationAPI.uploadImages(uploadDatasetId.value, formData);
-    ElMessage.success("上传成功");
     uploadVisible.value = false;
     fileList.value = [];
     refreshList();
   } catch {
-    //
+    /* 提示由请求拦截器统一处理 */
   } finally {
     uploadLoading.value = false;
   }
@@ -569,30 +592,41 @@ async function handleImportSubmit() {
   if (!importFile.value) { ElMessage.warning("请选择 ZIP 文件"); return; }
   importing.value = true;
   try {
-    const r = await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
-    ElMessage.success(r.data?.msg || "导入完成");
+    await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
     importDialogVisible.value = false;
     importFile.value = null;
     importDatasetId.value = undefined;
     if (importUploadRef.value) importUploadRef.value.uploadFiles = [];
     refreshList();
   } catch {
-    //
+    /* 提示由请求拦截器统一处理 */
   } finally {
     importing.value = false;
   }
 }
 
-// Load dataset options for import dialog
-(async () => {
+// 数据集选项仅在打开导入弹窗时懒加载，避免每次进入页面都多拉一次列表
+let datasetOptionsLoaded = false;
+async function loadDatasetOptions() {
+  if (datasetOptionsLoaded) return;
   try {
     const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
     datasetOptions.value = r.data?.data?.items || [];
-  } catch {}
-})();
+    datasetOptionsLoaded = true;
+  } catch {
+    /* 提示由请求拦截器统一处理 */
+  }
+}
+
+function openImportDialog() {
+  loadDatasetOptions();
+  importDialogVisible.value = true;
+}
 
 // ── Export ──
 const exportDialogVisible = ref(false);
+const exportHistoryRef = ref();
+const cleanRef = ref();
 const exportDatasetId = ref<number | null>(null);
 const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");
@@ -684,13 +718,12 @@ async function handleExportSubmit() {
       iframe.src = url;
       document.body.appendChild(iframe);
       setTimeout(() => document.body.removeChild(iframe), 120000);
-      ElMessage.success("导出成功，正在下载...");
     } else {
       ElMessage.warning("导出完成但未获取到下载链接，请查看后端日志");
     }
     exportDialogVisible.value = false;
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.msg || e?.data?.msg || e?.message || "导出失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     exporting.value = false;
   }

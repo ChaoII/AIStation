@@ -16,8 +16,12 @@ class AlgorithmModel(ModelMixin, UserMixin):
     version: Mapped[str] = mapped_column(String(32), default="1.0.0", comment="版本号")
 
     algorithm_type: Mapped[str] = mapped_column(String(32), nullable=False, comment="算法类型: INTRUSION/LINE_CROSSING/FACE_DETECT/...")
+    scene_type: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="场景码（任务类型目录，如 PED_ATTR）")
     model_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="模型文件路径")
     plugin_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="C++ SDK插件路径")
+    # SP6-c：保留上一版本，供模型热更新后一键回滚（可空，不影响既有数据）
+    previous_model_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="上一版本模型路径（回滚用）")
+    previous_version: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="上一版本号（回滚用）")
 
     model_file_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="模型配置（格式、加密密钥、解密参数等）")
     runtime_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="运行时配置（推理引擎、GPU、线程数、批处理大小等）")
@@ -40,6 +44,9 @@ class AlgorithmTaskModel(ModelMixin, UserMixin):
     algorithm_id: Mapped[int] = mapped_column(Integer, ForeignKey("video_algorithms.id", ondelete="CASCADE"), nullable=False)
     algorithm: Mapped[Optional["AlgorithmModel"]] = relationship(lazy="selectin")
 
+    # 边缘设备ID（空=纯云端本机 Agent）；不加外键，与启动补列 DDL 保持一致
+    edge_device_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True, comment="边缘设备ID（空=纯云端本机）")
+
     stream_type: Mapped[str] = mapped_column(String(16), default="SUB", comment="分析码流: MAIN/SUB")
     detect_region: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="检测区域")
     sensitivity: Mapped[int] = mapped_column(Integer, default=50, comment="灵敏度 1-100")
@@ -49,4 +56,5 @@ class AlgorithmTaskModel(ModelMixin, UserMixin):
     params_overrides: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="算法参数覆盖值（针对该布控点位调整阈值等）")
 
     status: Mapped[str] = mapped_column(String(16), default="STOPPED", comment="状态: RUNNING/STOPPED/ERROR")
+    error_log: Mapped[str | None] = mapped_column(Text, nullable=True, comment="最近一次编排/推理失败原因")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")

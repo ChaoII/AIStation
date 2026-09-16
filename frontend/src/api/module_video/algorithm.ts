@@ -13,7 +13,7 @@ export function updateAlgorithm(id: number, data: any) {
 }
 
 export function deleteAlgorithm(ids: number[]) {
-  return request({ url: "/video/algorithm/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/algorithm/delete", method: "delete", data: ids });
 }
 
 export function getAlgorithmTaskList(data?: any) {
@@ -29,5 +29,29 @@ export function updateAlgorithmTask(id: number, data: any) {
 }
 
 export function deleteAlgorithmTask(ids: number[]) {
-  return request({ url: "/video/algorithm/task/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/algorithm/task/delete", method: "delete", data: ids });
+}
+
+/** 热更新/回滚下发结果：成功任务ID列表 + 失败任务及原因 */
+export interface AlgorithmDispatchResult {
+  succeeded: number[];
+  failed: { task_id: number; error: string }[];
+}
+
+/** 模型热更新：把当前模型下发到所有引用该算法的任务（_silent 由页面自行汇总提示） */
+export function hotUpdateAlgorithm(id: number) {
+  return request({
+    url: `/video/algorithm/${id}/hot-update`,
+    method: "post",
+    headers: { _silent: "true" },
+  });
+}
+
+/** 模型回滚：恢复上一版本并下发到所有引用任务 */
+export function rollbackAlgorithm(id: number) {
+  return request({
+    url: `/video/algorithm/${id}/rollback`,
+    method: "post",
+    headers: { _silent: "true" },
+  });
 }

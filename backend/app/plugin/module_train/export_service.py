@@ -40,6 +40,23 @@ EXPORT_EXT = {
 }
 
 
+def resolve_download_target(model: dict, exists_fn) -> tuple[str, str]:
+    """决定下载对象键与真实格式：优先确定性导出产物，否则原始权重。
+
+    导出产物上传到确定性键 `train/models/model_{id}/export/best.<ext>`，
+    当模型 format 非原始且该键存在时返回导出键与导出格式；否则回退
+    `storage_path` 与真实原始格式 "pytorch"。
+    """
+    storage_path = model.get("storage_path") or ""
+    fmt = model.get("format") or "pytorch"
+    if fmt != "pytorch":
+        ext = EXPORT_EXT.get(fmt, "")
+        key = f"train/models/model_{model.get('id')}/export/best{ext}"
+        if exists_fn(key):
+            return key, fmt
+    return storage_path, "pytorch"
+
+
 def _build_export_cmd(params: dict) -> list[str]:
     """Build yolo export CLI command from user params"""
     cmd = ["yolo", "export", "model=/weights/best.pt", "project=/output", "name=export"]
@@ -269,7 +286,8 @@ async def export_model_to_format(
             with open(zip_path, "rb") as f:
                 s3_client.upload_fileobj(f, rustfs_key)
             file_size = os.path.getsize(zip_path)
-            rustfs_key = rustfs_key.rstrip("/") + ".zip"
+            # 目录格式打包为 zip 上传，但对象键仍为真实上传键（无 .zip 后缀），
+            # 下载链接必须指向该真实对象，否则会 404。.zip 仅用于用户可见文件名。
 
         # 5. Update DB
         from datetime import datetime
@@ -291,7 +309,8 @@ async def export_model_to_format(
         # 6. Generate download URL
         download_url = s3_client.presigned_url(rustfs_key)
 
-        file_name = f"model_{model_id}_{export_format}{EXPORT_EXT.get(export_format, '.zip')}"
+        # 目录格式（EXPORT_EXT 为空串）用户可见文件名以 .zip 结尾
+        file_name = f"model_{model_id}_{export_format}{EXPORT_EXT.get(export_format) or '.zip'}"
 
         log.info(f"model {model_id} exported to {export_format}: {rustfs_key} ({file_size} bytes)")
 

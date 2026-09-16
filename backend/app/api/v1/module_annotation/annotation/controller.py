@@ -8,7 +8,7 @@ from app.core.router_class import OperationLogRoute
 
 from ..dataset.service import DatasetService
 from ..task.service import TaskService
-from .schema import AnnotationSaveSchema
+from .schema import AnnotationRollbackSchema, AnnotationSaveSchema
 from .service import AnnotationService
 
 AnnotationRouter = APIRouter(route_class=OperationLogRoute, prefix="/anno", tags=["数据标注-标注操作"])
@@ -51,6 +51,19 @@ async def get_annotation_history(
     await _verify_task_access(task_id, auth)
     history = await AnnotationService.get_annotation_history(task_id, image_id)
     return SuccessResponse(data=history)
+
+
+@AnnotationRouter.post("/image/{image_id}/rollback", summary="回滚标注到指定版本")
+async def rollback_annotation(
+    image_id: int,
+    data: AnnotationRollbackSchema,
+    auth: AuthSchema = Depends(AuthPermission(["annotation:workbench:query"])),
+) -> JSONResponse:
+    await _verify_task_access(data.task_id, auth)
+    result = await AnnotationService.rollback_annotation(
+        data.task_id, image_id, data.version, auth
+    )
+    return SuccessResponse(data=result, msg="已回滚")
 
 
 @AnnotationRouter.get("/image/{image_id}/presigned-url", summary="获取图片访问URL")

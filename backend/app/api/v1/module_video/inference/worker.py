@@ -33,6 +33,79 @@ def load_config(path: str) -> dict:
     return cfg
 
 
+def within_schedule(schedule_json, now) -> bool:
+    """判断当前时间是否在布控时段内；无配置或解析失败→True（不误停）。
+
+    支持两种格式：
+    - 前端实际下发：``{"type": "weekly", "slots": [{"day": 0-6, "start": 0-24, "end": 0-24}]}``
+      （day 以周一为 0，start 含、end 不含）
+    - 简化/兼容：``{"days": [0-6], "start": "HH:MM", "end": "HH:MM"}``
+      或 ``{"ranges": [["HH:MM", "HH:MM"], ...]}``
+    """
+    if not schedule_json:
+        return True
+    try:
+        cfg = schedule_json if isinstance(schedule_json, dict) else json.loads(schedule_json)
+        if not isinstance(cfg, dict):
+            return True
+
+        # 前端 weekly slots 格式（day 与 datetime.weekday() 一致，周一=0）
+        slots = cfg.get("slots")
+        if isinstance(slots, list) and slots:
+            day = now.weekday()
+            hour = now.hour
+            for s in slots:
+                if not isinstance(s, dict):
+                    continue
+                if int(s.get("day")) != day:
+                    continue
+                if int(s.get("start", 0)) <= hour < int(s.get("end", 24)):
+                    return True
+            return False
+
+        days = cfg.get("days")
+        if days and now.weekday() not in days:
+            return False
+        start = cfg.get("start")
+        end = cfg.get("end")
+        if start and end:
+            hm = now.strftime("%H:%M")
+            if start <= end:
+                return start <= hm <= end
+            return hm >= start or hm <= end  # 跨天
+        ranges = cfg.get("ranges")
+        if isinstance(ranges, list):
+            hm = now.strftime("%H:%M")
+            return any(
+                isinstance(r, (list, tuple)) and len(r) == 2 and r[0] <= hm <= r[1]
+                for r in ranges
+            )
+    except Exception:
+        return True
+    return True
+
+
+def sensitivity_to_conf(sensitivity, base: float = 0.5) -> float:
+    """灵敏度(0-100) → 置信度阈值：越高阈值越低，clamp 到 [0.05, 0.95]。"""
+    try:
+        s = max(0, min(100, int(sensitivity)))
+    except (TypeError, ValueError):
+        s = 50
+    conf = base * (1 - (s - 50) / 100.0)
+    return max(0.05, min(0.95, conf))
+
+
+def label_name(result, names: list | None = None) -> str:
+    """结果标签名：优先 result.label，其次外部名称表，最后数字 id。"""
+    lbl = getattr(result, "label", None)
+    if lbl:
+        return str(lbl)
+    lid = getattr(result, "label_id", None)
+    if names and lid is not None and 0 <= int(lid) < len(names):
+        return str(names[int(lid)])
+    return str(lid)
+
+
 def stderr_json(**kwargs):
     """Emit a JSON line to stderr for machine parsing."""
     kwargs["t"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
@@ -52,7 +125,11 @@ def create_model(config: dict):
 
     params = config.get("preset_params", {})
     if hasattr(model, "postprocessor"):
-        model.postprocessor.conf_threshold = params.get("conf_threshold", 0.5)
+        # 预设未显式给阈值时由灵敏度推导，保证灵敏度配置真正生效
+        conf = params.get("conf_threshold", params.get("confidence"))
+        if conf is None:
+            conf = sensitivity_to_conf(config.get("sensitivity", 50))
+        model.postprocessor.conf_threshold = conf
         model.postprocessor.nms_threshold = params.get("nms_threshold", 0.45)
 
     return model
@@ -118,12 +195,21 @@ def main():
     callback_url = config.get("callback_url")
     callback_token = config.get("callback_token", "")
     fps_target = config.get("fps_target", 5)
-    alarm_interval = config.get("alarm_interval", 30)
+    # 告警去重间隔：优先 interval_seconds，兼容旧键 alarm_interval
+    alarm_interval = config.get("interval_seconds", config.get("alarm_interval", 30))
     snapshot_dir = config.get("snapshot_dir", "data/detections")
     _pp = config.get("preset_params", {}) or {}
-    # seed 用 confidence，部分配置用 conf_threshold——兼容两者
-    conf_threshold = _pp.get("conf_threshold", _pp.get("confidence", 0.5))
+    # seed 用 confidence，部分配置用 conf_threshold——兼容两者；
+    # 预设未给时由灵敏度推导，保证灵敏度配置真正生效
+    if "conf_threshold" in _pp:
+        conf_threshold = _pp["conf_threshold"]
+    elif "confidence" in _pp:
+        conf_threshold = _pp["confidence"]
+    else:
+        conf_threshold = sensitivity_to_conf(config.get("sensitivity", 50))
     detect_region = config.get("detect_region")
+    schedule_json = config.get("schedule_json")
+    class_names = config.get("class_names") or None
 
     stderr_json(type="init", task=task_id, algorithm=algorithm_type, stream=stream_url)
 
@@ -182,6 +268,11 @@ def main():
         if frame_count % skip != 0:
             continue
 
+        # 布控时段外：跳过推理（配置为空/解析失败时不误停）
+        if not within_schedule(schedule_json, datetime.now()):
+            time.sleep(1)
+            continue
+
         # ROI mask
         if detect_region:
             frame_masked = apply_roi(frame, detect_region)
@@ -205,7 +296,7 @@ def main():
                 continue
             box = r.box
 
-            label = str(label_id)
+            label = label_name(r, class_names)
             now = time.time()
             last = last_alarm_time.get(label, 0)
             if now - last < alarm_interval:

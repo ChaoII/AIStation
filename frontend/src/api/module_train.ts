@@ -13,6 +13,36 @@ export const TrainAPI = {
   getModelDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/detail/${id}`, method: "get" });
   },
+  getModelRepos(params?: Record<string, any>) {
+    return request<ApiResponse<{ items: any[]; total: number }>>({
+      url: `${API_PATH}/model/repos`,
+      method: "get",
+      params,
+    });
+  },
+  getModelVersions(repoId: number) {
+    return request<ApiResponse<any[]>>({
+      url: `${API_PATH}/model/${repoId}/versions`,
+      method: "get",
+    });
+  },
+  deleteModelRepos(ids: number[]) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/model/repos`,
+      method: "delete",
+      data: ids,
+    });
+  },
+  createModelRepo(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/model/repos`, method: "post", data });
+  },
+  updateModelRepo(id: number, data: any) {
+    return request<ApiResponse>({
+      url: `${API_PATH}/model/repos/${id}`,
+      method: "put",
+      data,
+    });
+  },
   createModel(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/model/create`, method: "post", data });
   },
@@ -161,8 +191,13 @@ export const TrainAPI = {
   },
 
   // Deploy
-  createDeploy(data: any) {
-    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/create`, method: "post", data });
+  createDeploy(data: any, silent = false) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/deploy/create`,
+      method: "post",
+      data,
+      headers: silent ? { _silent: "true" } : undefined,
+    });
   },
   startDeploy(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/start`, method: "post" });
@@ -180,7 +215,32 @@ export const TrainAPI = {
       params,
     });
   },
+  getDeployDetail(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/detail`, method: "get" });
+  },
+  getDeployLogs(id: number) {
+    return request<ApiResponse<{ logs: string }>>({
+      url: `${API_PATH}/deploy/${id}/logs`,
+      method: "get",
+    });
+  },
   deleteDeploy(ids: number[]) {
     return request<ApiResponse>({ url: `${API_PATH}/deploy/delete`, method: "delete", data: ids });
+  },
+  getTrainScheduleList() {
+    return request<ApiResponse<any[]>>({ url: `${API_PATH}/schedule/list`, method: "get" });
+  },
+  createTrainSchedule(data: any) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/schedule/create`, method: "post", data });
+  },
+  updateTrainSchedule(id: number, data: any) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/schedule/update/${id}`,
+      method: "put",
+      data,
+    });
+  },
+  deleteTrainSchedule(ids: number[]) {
+    return request<ApiResponse>({ url: `${API_PATH}/schedule/delete`, method: "delete", data: ids });
   },
 };

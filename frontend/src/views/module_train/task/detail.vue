@@ -28,7 +28,9 @@
         <el-card shadow="never" class="info-card">
           <template #header><span class="card-title">任务信息</span></template>
           <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="数据集 ID">{{ task?.dataset_id }}</el-descriptions-item>
+            <el-descriptions-item label="数据集">{{
+              task?.dataset_name || `#${task?.dataset_id}`
+            }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{ task?.created_time }}</el-descriptions-item>
             <el-descriptions-item label="Docker 镜像">
               <code class="docker-tag">{{ task?.docker_image }}</code>
@@ -140,55 +142,24 @@
             <span class="metric-lbl">Epoch</span>
           </div>
         </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
+        <!-- 损失卡片：按框架选择（PaddleX 单一 Loss / YOLO box-cls-dfl） -->
+        <el-col v-for="s in lossSpec" :key="s.key" :xs="24" :sm="12" :md="6">
           <div class="metric-item">
-            <el-icon :size="22" style="color: #f56c6c; margin-bottom: 4px"><TrendCharts /></el-icon>
-            <span class="metric-val">{{ displayMetrics.boxLoss }}</span>
-            <span class="metric-lbl">Box Loss</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" style="color: #e6a23c; margin-bottom: 4px"><DataBoard /></el-icon>
-            <span class="metric-val">{{ displayMetrics.clsLoss }}</span>
-            <span class="metric-lbl">Cls Loss</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" style="color: #409eff; margin-bottom: 4px">
-              <DataAnalysis />
+            <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
+              <component :is="s.icon" />
             </el-icon>
-            <span class="metric-val">{{ displayMetrics.dflLoss }}</span>
-            <span class="metric-lbl">Dfl Loss</span>
+            <span class="metric-val">{{ displayMetrics[s.key] }}</span>
+            <span class="metric-lbl">{{ s.label }}</span>
           </div>
         </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
+        <!-- 主指标卡片：按框架选择（PaddleX hmean/acc、YOLO mAP/PR、分类 top1/top5） -->
+        <el-col v-for="s in metricSpec" :key="s.key" :xs="24" :sm="12" :md="6">
           <div class="metric-item">
-            <el-icon :size="22" style="color: #52c41a; margin-bottom: 4px"><Aim /></el-icon>
-            <span class="metric-val" style="color: #52c41a">{{ displayMetrics.precision }}</span>
-            <span class="metric-lbl">{{ isOcrFramework ? "Acc / Precision" : "Precision" }}</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" style="color: #409eff; margin-bottom: 4px"><Search /></el-icon>
-            <span class="metric-val" style="color: #409eff">{{ displayMetrics.recall }}</span>
-            <span class="metric-lbl">Recall</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" style="color: #fa8c16; margin-bottom: 4px"><StarFilled /></el-icon>
-            <span class="metric-val" style="color: #fa8c16">{{ displayMetrics.map50 }}</span>
-            <span class="metric-lbl">{{ isOcrFramework ? "HMean" : "mAP@50" }}</span>
-          </div>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" style="color: #9b59b6; margin-bottom: 4px"><TrophyBase /></el-icon>
-            <span class="metric-val" style="color: #9b59b6">{{ displayMetrics.map5095 }}</span>
-            <span class="metric-lbl">mAP@50:95</span>
+            <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
+              <component :is="s.icon" />
+            </el-icon>
+            <span class="metric-val" :style="{ color: s.color }">{{ displayMetrics[s.key] }}</span>
+            <span class="metric-lbl">{{ s.label }}</span>
           </div>
         </el-col>
       </el-row>
@@ -299,8 +270,8 @@
 
   <ModelExportDialog
     v-model:visible="exportDialogVisible"
-    :model-id="task.value?.model_repo_id || 0"
-    :model-name="task.value?.name"
+    :model-id="task?.model_repo_id || 0"
+    :model-name="task?.name"
     @done="loadTask"
   />
   </div>
@@ -316,12 +287,9 @@ import {
   TrendCharts,
   DataBoard,
   DataAnalysis,
-  Aim,
-  Search,
-  StarFilled,
-  TrophyBase,
 } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
+import { resolveMainMetricSpec, type MetricSpecItem } from "@/utils/trainMetrics";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
@@ -435,6 +403,13 @@ const yoloMetrics = reactive({
   boxLoss: 0,
   clsLoss: 0,
   dflLoss: 0,
+  // PaddleX 单一 loss 与主指标
+  loss: 0,
+  hmean: 0,
+  acc: 0,
+  // YOLO 分类主指标
+  top1: 0,
+  top5: 0,
   precision: 0,
   recall: 0,
   map50: 0,
@@ -444,20 +419,24 @@ const yoloMetrics = reactive({
 });
 
 const liveMetricsLog = ref<any[]>([]);
+
+// 框架感知：PaddleX 以 hmean(det)/acc(rec) 为主指标，其余框架为 map50
+const isPaddlex = computed(() => String(task.value?.framework || "").toLowerCase() === "paddlex");
+const paddlexMode = computed(() => String(task.value?.hyperparams?.mode || "det").toLowerCase());
+const livePrimaryKey = computed(() =>
+  isPaddlex.value ? (paddlexMode.value === "rec" ? "acc" : "hmean") : "map50"
+);
+
 const liveBestMetrics = computed(() => {
-  const v = liveMetricsLog.value.filter((m: any) => m.map50 != null);
-  if (v.length) return v.reduce((b: any, m: any) => (m.map50 > (b.map50 || 0) ? m : b), v[0]);
+  const key = livePrimaryKey.value;
+  const v = liveMetricsLog.value.filter((m: any) => m[key] != null);
+  if (v.length) return v.reduce((b: any, m: any) => (m[key] > (b[key] ?? 0) ? m : b), v[0]);
   return liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null;
 });
 const liveLastMetrics = computed(() =>
   liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null
 );
 const metricsLog = computed<any[]>(() => task.value?.metrics_log || []);
-// OCR 类框架（PaddleX）：指标为 HMean(检测)/Acc(识别)，非 mAP
-const isOcrFramework = computed(() => {
-  const fw = task.value?.framework;
-  return fw === "paddlex";
-});
 const bestMetrics = computed<any>(() => task.value?.best_metrics || null);
 const lastMetrics = computed<any>(() => task.value?.last_metrics || null);
 const displayMetricsLog = computed<any[]>(() =>
@@ -466,99 +445,136 @@ const displayMetricsLog = computed<any[]>(() =>
 const displayBestMetrics = computed<any>(() => liveBestMetrics.value || bestMetrics.value);
 const displayLastMetrics = computed<any>(() => liveLastMetrics.value || lastMetrics.value);
 
-const displayMetrics = computed(() => {
-  const hasLive = yoloMetrics.epoch > 0;
-  if (task.value?.status === "running" && hasLive) {
-    return {
-      epoch: `${yoloMetrics.epoch}/${yoloMetrics.totalEpochs}`,
-      boxLoss: yoloMetrics.boxLoss.toFixed(4),
-      clsLoss: yoloMetrics.clsLoss.toFixed(4),
-      dflLoss: yoloMetrics.dflLoss.toFixed(4),
-      precision:
-        yoloMetrics.precision > 0 ? (yoloMetrics.precision * 100).toFixed(1) + "%" : "0.0%",
-      recall: yoloMetrics.recall > 0 ? (yoloMetrics.recall * 100).toFixed(1) + "%" : "0.0%",
-      map50: yoloMetrics.map50 > 0 ? (yoloMetrics.map50 * 100).toFixed(1) + "%" : "0.0%",
-      map5095: yoloMetrics.map5095 > 0 ? (yoloMetrics.map5095 * 100).toFixed(1) + "%" : "0.0%",
-    };
-  }
-  const last = displayLastMetrics.value;
-  if (last) return metricsFromLast(last);
-  return {
-    epoch: "—",
-    boxLoss: "—",
-    clsLoss: "—",
-    dflLoss: "—",
-    precision: "—",
-    recall: "—",
-    map50: "—",
-    map5095: "—",
-  };
+// 分类任务：TrainTask 未直接持久化 task_type。
+// 真实信号：Ultralytics 分类权重的 model 以 -cls 结尾；兜底依据指标键（top1/top5）推断。
+const isClassifyTask = computed(() => {
+  const model = String(task.value?.hyperparams?.model || "").toLowerCase();
+  if (/-cls(\.|$)/.test(model)) return true;
+  const probes = [displayBestMetrics.value, displayLastMetrics.value];
+  if (probes.some((m: any) => m && (m.top1 != null || m.top5 != null))) return true;
+  return displayMetricsLog.value.some((m: any) => m && (m.top1 != null || m.top5 != null));
 });
 
-function metricsFromLast(last: any) {
-  return {
-    epoch: `${last.epoch || "?"}/${last.total_epochs || "?"}`,
-    boxLoss: last.box_loss != null ? last.box_loss.toFixed(4) : "—",
-    clsLoss: last.cls_loss != null ? last.cls_loss.toFixed(4) : "—",
-    dflLoss: last.dfl_loss != null ? last.dfl_loss.toFixed(4) : "—",
-    precision: last.precision != null ? (last.precision * 100).toFixed(1) + "%" : "—",
-    recall: last.recall != null ? (last.recall * 100).toFixed(1) + "%" : "—",
-    map50: last.map50 != null ? (last.map50 * 100).toFixed(1) + "%" : "—",
-    map5095: last.map5095 != null ? (last.map5095 * 100).toFixed(1) + "%" : "—",
-  };
+// 主指标定义：PaddleX det→HMean/Precision/Recall；PaddleX rec→Acc；
+// YOLO 分类→Top1/Top5；其余（det/seg/obb/pose）→mAP@50/mAP@50:95/Precision/Recall
+// 复用 @/utils/trainMetrics，与评估详情保持一致
+const metricSpec = computed<MetricSpecItem[]>(() =>
+  resolveMainMetricSpec({
+    framework: task.value?.framework,
+    mode: paddlexMode.value,
+    classify: isClassifyTask.value,
+  })
+);
+
+// Loss 定义：PaddleX 只有单一 loss；YOLO 检测族保留 box/cls/dfl；分类为单一 Loss
+const lossSpec = computed<{ key: string; src: string; label: string; color: string; icon: any }[]>(
+  () => {
+    if (isPaddlex.value) {
+      return [{ key: "loss", src: "loss", label: "Loss", color: "#f56c6c", icon: TrendCharts }];
+    }
+    if (isClassifyTask.value) {
+      // Ultralytics 分类日志的 loss 仅一项，后端解析落在首列 box_loss 上
+      return [{ key: "loss", src: "box_loss", label: "Loss", color: "#f56c6c", icon: TrendCharts }];
+    }
+    return [
+      { key: "boxLoss", src: "box_loss", label: "Box Loss", color: "#f56c6c", icon: TrendCharts },
+      { key: "clsLoss", src: "cls_loss", label: "Cls Loss", color: "#e6a23c", icon: DataBoard },
+      { key: "dflLoss", src: "dfl_loss", label: "Dfl Loss", color: "#409eff", icon: DataAnalysis },
+    ];
+  }
+);
+
+// 0-1 比例指标 → 百分比；loss → 保留 4 位小数
+function fmtRatio(v: any): string {
+  return v != null && !isNaN(Number(v)) ? (Number(v) * 100).toFixed(1) + "%" : "—";
 }
+function fmtDecimal(v: any): string {
+  return v != null && !isNaN(Number(v)) ? Number(v).toFixed(4) : "—";
+}
+
+// 运行中实时值（来自 WS 解析）；否则取最终一轮（last_metrics）
+const liveMetricsActive = computed(
+  () => task.value?.status === "running" && yoloMetrics.epoch > 0
+);
+
+function liveMetricValue(key: string): any {
+  return (yoloMetrics as any)[key];
+}
+function liveLossValue(src: string): any {
+  const map: Record<string, any> = {
+    box_loss: yoloMetrics.boxLoss,
+    cls_loss: yoloMetrics.clsLoss,
+    dfl_loss: yoloMetrics.dflLoss,
+    loss: yoloMetrics.loss,
+  };
+  return map[src];
+}
+
+const displayMetrics = computed<Record<string, string>>(() => {
+  const out: Record<string, string> = {};
+  const last = displayLastMetrics.value;
+  if (liveMetricsActive.value) {
+    out.epoch = `${yoloMetrics.epoch}/${yoloMetrics.totalEpochs}`;
+    for (const s of metricSpec.value) out[s.key] = fmtRatio(liveMetricValue(s.key));
+    for (const s of lossSpec.value) out[s.key] = fmtDecimal(liveLossValue(s.src));
+    return out;
+  }
+  // PaddleX 指标行用 total，其余框架用 total_epochs
+  out.epoch = last?.epoch != null ? `${last.epoch}/${last.total_epochs ?? last.total ?? "?"}` : "—";
+  for (const s of metricSpec.value) out[s.key] = fmtRatio(last?.[s.key]);
+  for (const s of lossSpec.value) out[s.key] = fmtDecimal(last?.[s.src]);
+  return out;
+});
 
 const lossChartOption = computed(() => {
   const log = displayMetricsLog.value;
   if (!log.length) return {};
+  const spec = lossSpec.value;
   return {
     tooltip: { trigger: "axis" },
-    legend: { data: ["Box Loss", "Cls Loss", "Dfl Loss"], top: 0 },
+    legend: { data: spec.map((s) => s.label), top: 0 },
     grid: { left: 50, right: 20, top: 40, bottom: 30 },
     xAxis: { type: "category", data: log.map((m: any) => m.epoch), name: "Epoch" },
     yAxis: { type: "value", name: "Loss" },
-    series: [
-      { name: "Box Loss", type: "line", data: log.map((m: any) => m.box_loss ?? null) },
-      { name: "Cls Loss", type: "line", data: log.map((m: any) => m.cls_loss ?? null) },
-      { name: "Dfl Loss", type: "line", data: log.map((m: any) => m.dfl_loss ?? null) },
-    ],
+    series: spec.map((s) => ({
+      name: s.label,
+      type: "line",
+      data: log.map((m: any) => m[s.src] ?? null),
+    })),
   };
 });
 
 const valChartOption = computed(() => {
-  const log = displayMetricsLog.value.filter((m: any) => m.precision != null);
+  const spec = metricSpec.value;
+  const log = displayMetricsLog.value;
   if (!log.length) return {};
+  const usable = log.filter((m: any) => spec.some((s) => m[s.key] != null));
+  if (!usable.length) return {};
   return {
     tooltip: { trigger: "axis" },
-    legend: { data: ["Precision", "Recall", "mAP@50", "mAP@50:95"], top: 0 },
+    legend: { data: spec.map((s) => s.label), top: 0 },
     grid: { left: 50, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: "category", data: log.map((m: any) => m.epoch), name: "Epoch" },
+    xAxis: { type: "category", data: usable.map((m: any) => m.epoch), name: "Epoch" },
     yAxis: { type: "value", name: "Metric" },
-    series: [
-      { name: "Precision", type: "line", data: log.map((m: any) => m.precision ?? null) },
-      { name: "Recall", type: "line", data: log.map((m: any) => m.recall ?? null) },
-      { name: "mAP@50", type: "line", data: log.map((m: any) => m.map50 ?? null) },
-      { name: "mAP@50:95", type: "line", data: log.map((m: any) => m.map5095 ?? null) },
-    ],
+    series: spec.map((s) => ({
+      name: s.label,
+      type: "line",
+      data: usable.map((m: any) => m[s.key] ?? null),
+    })),
   };
 });
 
 const compareTableData = computed(() => [
-  { label: "Box Loss", getter: (m: any) => m.box_loss, fmt: (v: number) => v.toFixed(4) },
-  { label: "Cls Loss", getter: (m: any) => m.cls_loss, fmt: (v: number) => v.toFixed(4) },
-  { label: "Dfl Loss", getter: (m: any) => m.dfl_loss, fmt: (v: number) => v.toFixed(4) },
-  {
-    label: "Precision",
-    getter: (m: any) => m.precision,
-    fmt: (v: number) => (v * 100).toFixed(1) + "%",
-  },
-  { label: "Recall", getter: (m: any) => m.recall, fmt: (v: number) => (v * 100).toFixed(1) + "%" },
-  { label: "mAP@50", getter: (m: any) => m.map50, fmt: (v: number) => (v * 100).toFixed(1) + "%" },
-  {
-    label: "mAP@50:95",
-    getter: (m: any) => m.map5095,
-    fmt: (v: number) => (v * 100).toFixed(1) + "%",
-  },
+  ...lossSpec.value.map((s) => ({
+    label: s.label,
+    getter: (m: any) => m?.[s.src],
+    fmt: (v: number) => Number(v).toFixed(4),
+  })),
+  ...metricSpec.value.map((s) => ({
+    label: s.label,
+    getter: (m: any) => m?.[s.key],
+    fmt: (v: number) => (Number(v) * 100).toFixed(1) + "%",
+  })),
 ]);
 
 function pushLiveMetrics() {
@@ -569,37 +585,48 @@ function pushLiveMetrics() {
       box_loss: yoloMetrics.boxLoss,
       cls_loss: yoloMetrics.clsLoss,
       dfl_loss: yoloMetrics.dflLoss,
+      loss: yoloMetrics.loss,
       precision: yoloMetrics.precision,
       recall: yoloMetrics.recall,
       map50: yoloMetrics.map50,
       map5095: yoloMetrics.map5095,
+      hmean: yoloMetrics.hmean,
+      acc: yoloMetrics.acc,
+      top1: yoloMetrics.top1,
+      top5: yoloMetrics.top5,
     });
   }
 }
 function parseYoloMetrics(line: string) {
-  // PaddleX: `epoch: [1/100], ... hmean/acc`
+  // PaddleX: `epoch: [1/100], ... hmean/acc/loss`
   const pe = line.match(/epoch:\s*\[(\d+)\/(\d+)\]/);
   if (pe) {
     yoloMetrics.epoch = parseInt(pe[1]);
     yoloMetrics.totalEpochs = parseInt(pe[2]);
     yoloMetrics.progress = Math.round((yoloMetrics.epoch / yoloMetrics.totalEpochs) * 100);
     const hm = line.match(/hmean:\s*([\d.]+)/);
-    if (hm) yoloMetrics.map50 = parseFloat(hm[1]);
+    if (hm) yoloMetrics.hmean = parseFloat(hm[1]);
     const ca = line.match(/acc:\s*([\d.]+)/);
-    if (ca) yoloMetrics.precision = parseFloat(ca[1]);
+    if (ca) yoloMetrics.acc = parseFloat(ca[1]);
+    const lo = line.match(/loss:\s*([\d.]+)/);
+    if (lo) yoloMetrics.loss = parseFloat(lo[1]);
+    const pr = line.match(/precision:\s*([\d.]+)/);
+    if (pr) yoloMetrics.precision = parseFloat(pr[1]);
+    const rc = line.match(/recall:\s*([\d.]+)/);
+    if (rc) yoloMetrics.recall = parseFloat(rc[1]);
     pushLiveMetrics();
     return;
   }
   // PaddleX det / rec eval 行
   const eh = line.match(/eval hmean\s+([\d.]+)/);
   if (eh) {
-    yoloMetrics.map50 = parseFloat(eh[1]);
+    yoloMetrics.hmean = parseFloat(eh[1]);
     pushLiveMetrics();
     return;
   }
   const ec = line.match(/eval char_acc\s+([\d.]+)/);
   if (ec) {
-    yoloMetrics.precision = parseFloat(ec[1]);
+    yoloMetrics.acc = parseFloat(ec[1]);
     pushLiveMetrics();
     return;
   }
@@ -619,10 +646,16 @@ function parseYoloMetrics(line: string) {
   }
   if (/^\s+all\s+/.test(line)) {
     const parts = line.trim().split(/\s+/);
-    if (parts.length >= 5) yoloMetrics.precision = parseFloat(parts[3]) || 0;
-    if (parts.length >= 6) yoloMetrics.recall = parseFloat(parts[4]) || 0;
-    if (parts.length >= 7) yoloMetrics.map50 = parseFloat(parts[5]) || 0;
-    if (parts.length >= 7) yoloMetrics.map5095 = parseFloat(parts[6]) || 0;
+    // 检测/分割/姿态汇总为 7 列 P/R/mAP50/mAP50-95；分类汇总为 5 列 top1/top5
+    if (parts.length >= 7) {
+      yoloMetrics.precision = parseFloat(parts[3]) || 0;
+      yoloMetrics.recall = parseFloat(parts[4]) || 0;
+      yoloMetrics.map50 = parseFloat(parts[5]) || 0;
+      yoloMetrics.map5095 = parseFloat(parts[6]) || 0;
+    } else if (parts.length === 5) {
+      yoloMetrics.top1 = parseFloat(parts[3]) || 0;
+      yoloMetrics.top5 = parseFloat(parts[4]) || 0;
+    }
     pushLiveMetrics();
   }
 }
@@ -645,10 +678,16 @@ function parseLogForMetrics(text: string) {
     }
     if (current && /^all\s+/.test(line)) {
       const parts = line.split(/\s+/);
-      if (parts.length >= 5) current.precision = parseFloat(parts[3]) || 0;
-      if (parts.length >= 6) current.recall = parseFloat(parts[4]) || 0;
-      if (parts.length >= 7) current.map50 = parseFloat(parts[5]) || 0;
-      if (parts.length >= 7) current.map5095 = parseFloat(parts[6]) || 0;
+      // 检测/分割/姿态汇总为 7 列 P/R/mAP50/mAP50-95；分类汇总为 5 列 top1/top5
+      if (parts.length >= 7) {
+        current.precision = parseFloat(parts[3]) || 0;
+        current.recall = parseFloat(parts[4]) || 0;
+        current.map50 = parseFloat(parts[5]) || 0;
+        current.map5095 = parseFloat(parts[6]) || 0;
+      } else if (parts.length === 5) {
+        current.top1 = parseFloat(parts[3]) || 0;
+        current.top5 = parseFloat(parts[4]) || 0;
+      }
       metrics.push({ ...current });
       current = null;
     }
@@ -727,12 +766,11 @@ async function handleStart() {
       type: "info",
     });
     await TrainAPI.startTask(task.value.id);
-    ElMessage.success("训练已开始");
     await loadTask();
     connectWs(task.value.id);
     startPoll();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     submitting.value = false;
   }
@@ -744,7 +782,6 @@ async function handleStop() {
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(task.value.id);
-    ElMessage.success("训练已停止");
     await loadTask();
   } catch {
     /* */
@@ -766,7 +803,6 @@ async function handleDelete() {
       confirmButtonText: "删除",
     });
     await TrainAPI.deleteTask([task.value.id]);
-    ElMessage.success("已删除");
     router.push("/train/task");
   } catch {
     /* */
@@ -801,6 +837,11 @@ async function handleRetrain() {
       boxLoss: 0,
       clsLoss: 0,
       dflLoss: 0,
+      loss: 0,
+      hmean: 0,
+      acc: 0,
+      top1: 0,
+      top5: 0,
       precision: 0,
       recall: 0,
       map50: 0,
@@ -809,7 +850,6 @@ async function handleRetrain() {
       progress: 0,
     });
     await TrainAPI.startTask(task.value.id);
-    ElMessage.success("训练已重新开始");
     await loadTask();
     connectWs(task.value.id);
     startPoll();
@@ -826,7 +866,12 @@ function handleViewModel() {
 }
 
 function handleEvaluate() {
-  ElMessage.info("评估功能需要后端支持");
+  const repoId = task.value?.model_repo_id;
+  if (!repoId) {
+    ElMessage.warning("暂无关联模型，请先完成训练");
+    return;
+  }
+  router.push({ path: "/train/eval", query: { model_repo_id: String(repoId), autoCreate: "1" } });
 }
 
 const exportDialogVisible = ref(false);

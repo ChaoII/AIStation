@@ -13,7 +13,7 @@ export function updateAlgorithmTask(id: number, data: any) {
 }
 
 export function deleteAlgorithmTask(ids: number[]) {
-  return request({ url: "/video/algorithm/task/delete", method: "delete", data: { ids } });
+  return request({ url: "/video/algorithm/task/delete", method: "delete", data: ids });
 }
 
 export function startInferenceTask(id: number) {

@@ -16,16 +16,21 @@ JSON structure:
     "imageHeight": 1440,
     "imageWidth": 2560
   }
+
+分类标注以图像级 ``flags.classification`` 承载（逗号分隔的类名），
+导入时还原为内部 ``Classification`` 标注。
 """
 
 import json
+import math
 import os
 import tempfile
 import uuid
 import zipfile
+from collections import Counter
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.dataset.model import (
@@ -39,49 +44,125 @@ from app.core.database import async_db_session
 from app.core.logger import log
 from app.utils.s3_client import s3_client
 
+# 类别颜色调色板，按序循环分配
+_CLASS_COLORS = [
+    "#FF3838", "#FF9D97", "#FF701F", "#FFB21D", "#CFD231",
+    "#48F90A", "#92CC17", "#3DDB86", "#1A9334", "#00D4BB",
+    "#2C99A8", "#00C2FF", "#344593", "#6473FF", "#0018EC",
+    "#8438FF", "#520085", "#CB38FF", "#FF95C8", "#FF37C7",
+]
+
 
 async def import_x_anylabeling_zip(zip_file, dataset_id: int, user_id: int) -> dict:
     """Parse x-anylabeling ZIP, import images + annotations into dataset."""
     extract_dir = tempfile.mkdtemp(prefix="xal_")
     try:
         with zipfile.ZipFile(zip_file, "r") as zf:
-            zf.extractall(extract_dir)
+            _safe_extract(zf, extract_dir)
         return await _import_from_dir(extract_dir, dataset_id, user_id)
     finally:
         import shutil
         shutil.rmtree(extract_dir, ignore_errors=True)
 
 
+def _safe_extract(zf: zipfile.ZipFile, dest: str) -> None:
+    """解压并拒绝任何越界的 zip 成员（zip-slip）。"""
+    dest_abs = os.path.abspath(dest)
+    for member in zf.namelist():
+        target = os.path.abspath(os.path.join(dest, member))
+        if not (target == dest_abs or target.startswith(dest_abs + os.sep)):
+            raise ValueError(f"非法的压缩包路径: {member}")
+    zf.extractall(dest)
+
+
+def _infer_task_type(shapes_all: list[dict]) -> str:
+    """按形状推断任务类型。"""
+    types = {s.get("shape_type") for s in shapes_all}
+    if "rotation" in types:
+        return "rotated_detection"
+    if types == {"point"}:
+        return "keypoint"
+    if types == {"polygon"}:
+        return "segmentation"
+    return "detection"
+
+
+def _classification_names(flags: dict | None) -> list[str]:
+    """解析 sidecar 的图像级分类 flags（``classification`` 逗号分隔）。"""
+    if not isinstance(flags, dict):
+        return []
+    raw = flags.get("classification")
+    if not raw or not isinstance(raw, str):
+        return []
+    return [name.strip() for name in raw.split(",") if name.strip()]
+
+
+def _class_color(index: int) -> str:
+    """按调色板循环取颜色。"""
+    return _CLASS_COLORS[index % len(_CLASS_COLORS)]
+
+
 async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
     """Import x-anylabeling data from an extracted directory."""
-    # Collect image files and their JSON sidecars
+    # Collect image files and their JSON sidecars.
+    # 图片以「相对目录 + stem + 小写扩展名」为键，避免同目录同 stem 不同扩展名
+    # （img.jpg / img.png）互相覆盖；sidecar 仍以「相对目录 + stem」配对，
+    # 保证 JSON 与任意扩展名的图片都能匹配。
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
-    json_files: dict[str, str] = {}  # stem → json_path
-    image_files: dict[str, str] = {}  # stem → img_path
+    json_files: dict[tuple[str, str], str] = {}  # (reldir, stem) → json_path
+    image_entries: list[dict] = []  # 每张图片一条，保留 reldir/stem/ext/文件名
 
     for root, _, files in os.walk(src_dir):
         for f in files:
-            stem, ext = os.path.splitext(f)
-            ext_lower = ext.lower()
             path = os.path.join(root, f)
+            relpath = os.path.relpath(path, src_dir)
+            reldir, base = os.path.split(relpath)
+            stem, ext = os.path.splitext(base)
+            ext_lower = ext.lower()
             if ext_lower == ".json":
-                json_files[stem] = path
+                json_files[(reldir, stem)] = path
             elif ext_lower in image_extensions:
-                image_files[stem] = path
+                image_entries.append(
+                    {"path": path, "reldir": reldir, "stem": stem, "ext": ext, "basename": base}
+                )
 
-    if not image_files:
+    if not image_entries:
         return {"imported": 0, "total_images": 0, "total_annotations": 0, "class_mapping": {}, "error": "ZIP 中未找到图片文件"}
+
+    # 派生唯一显示 filename：basename 唯一时保持原样；否则用相对目录前缀消歧
+    # （如 d2/img.png → d2__img.png），避免导出时按 filename 写入互相覆盖。
+    basename_counts = Counter(e["basename"] for e in image_entries)
+    used_filenames: set[str] = set()
+    for e in image_entries:
+        if basename_counts[e["basename"]] == 1:
+            candidate = e["basename"]
+        else:
+            prefix = e["reldir"].replace("\\", "__").replace("/", "__")
+            candidate = f"{prefix}__{e['basename']}" if prefix else e["basename"]
+        final = candidate
+        idx = 1
+        while final in used_filenames:
+            candidate_stem, candidate_ext = os.path.splitext(candidate)
+            idx += 1
+            final = f"{candidate_stem}_{idx}{candidate_ext}"
+        used_filenames.add(final)
+        e["filename"] = final
 
     # Scan all JSON files to build class mapping (label → sequential class_id)
     all_labels: set[str] = set()
-    for stem, jp in json_files.items():
+    all_shapes: list[dict] = []
+    for jp in json_files.values():
         try:
             with open(jp, encoding="utf-8") as f:
                 data = json.load(f)
-            for shape in data.get("shapes", []):
-                label = shape.get("label", "").strip()
+            shapes = data.get("shapes", []) or []
+            all_shapes.extend(shapes)
+            for shape in shapes:
+                label = (shape.get("label") or "").strip()
                 if label:
                     all_labels.add(label)
+            for name in _classification_names(data.get("flags")):
+                all_labels.add(name)
         except Exception:
             continue
 
@@ -92,8 +173,8 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
     imported_count = 0
     total_annotations = 0
 
-    # Determine annotation type from labels (heuristic: if class_mapping has entries, use detection)
-    task_type = AnnotationType.DETECTION
+    # 按实际形状推断任务类型
+    task_type = AnnotationType(_infer_task_type(all_shapes))
 
     async with async_db_session.begin() as db:
         # Create an annotation task for the imported data
@@ -104,7 +185,10 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
             name=task_name,
             task_type=task_type,
             status=TaskStatus.COMPLETED,
-            classes=[{"id": cid, "name": label} for label, cid in sorted(class_mapping.items(), key=lambda x: x[1])],
+            classes=[
+                {"id": cid, "name": label, "color": _class_color(cid)}
+                for label, cid in sorted(class_mapping.items(), key=lambda x: x[1])
+            ],
             progress=100,
             completed_at=now,
             created_id=user_id,
@@ -113,31 +197,38 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
         await db.flush()
         task_id = ann_task.id
 
-        for stem, img_path in image_files.items():
-            # Upload image to RustFS
-            ext = os.path.splitext(img_path)[1]
-            object_key = f"annotations/dataset_{dataset_id}/{stem}{ext}"
+        for entry in image_entries:
+            img_path = entry["path"]
+            # Upload image to RustFS（object_key 加 uuid 前缀，重复导入不覆盖）
+            ext = entry["ext"]
+            object_key = f"annotations/dataset_{dataset_id}/{uuid.uuid4().hex}{ext}"
             with open(img_path, "rb") as f:
                 s3_client.upload_fileobj(f, object_key)
 
-            # Determine image dimensions from JSON sidecar if available
+            # Load sidecar once: dimensions + shapes + classification flags
             img_height = 0
             img_width = 0
-            if stem in json_files:
+            shapes: list[dict] = []
+            classification_names: list[str] = []
+            json_path = json_files.get((entry["reldir"], entry["stem"]))
+            if json_path:
                 try:
-                    with open(json_files[stem], encoding="utf-8") as f:
+                    with open(json_path, encoding="utf-8") as f:
                         meta = json.load(f)
                     img_height = meta.get("imageHeight", 0) or 0
                     img_width = meta.get("imageWidth", 0) or 0
+                    shapes = meta.get("shapes", []) or []
+                    classification_names = _classification_names(meta.get("flags"))
                 except Exception:
                     pass
             if not img_height or not img_width:
                 img_height, img_width = _get_image_size(img_path)
 
-            # Create image record
+            # Create image record（filename 唯一，重复 basename 用相对目录前缀消歧）
+            filename = entry["filename"]
             img_rec = AnnotationImageModel(
                 dataset_id=dataset_id,
-                filename=f"{stem}{ext}",
+                filename=filename,
                 object_key=object_key,
                 status=ImageStatus.ANNOTATED,
                 width=img_width,
@@ -149,16 +240,23 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
 
             # Parse annotations
             annotations = []
-            if stem in json_files:
-                try:
-                    with open(json_files[stem], encoding="utf-8") as f:
-                        data = json.load(f)
-                    for shape in data.get("shapes", []):
-                        ann = _shape_to_annotation(shape, class_mapping, img_width, img_height)
-                        if ann:
-                            annotations.append(ann)
-                except Exception as e:
-                    log.warning(f"skip annotation for {stem}: {e}")
+            for shape in shapes:
+                ann = _shape_to_annotation(shape, class_mapping, img_width, img_height)
+                if ann:
+                    annotations.append(ann)
+
+            # 分类 flags → Classification 标注
+            class_ids = [class_mapping[n] for n in classification_names if n in class_mapping]
+            if class_ids:
+                annotations.append(
+                    {
+                        "id": uuid.uuid4().hex,
+                        "type": "Classification",
+                        "class_id": class_ids[0],
+                        "class_ids": class_ids,
+                        "label": classification_names[0],
+                    }
+                )
 
             # Create annotation record
             if annotations:
@@ -174,14 +272,26 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
 
             imported_count += 1
 
-        # Update dataset counts
-        await db.execute(
-            select(DatasetModel).where(DatasetModel.id == dataset_id)
-        )
+        # 重算数据集计数（避免重复导入累加导致 double count）
+        await db.flush()
         ds = await db.get(DatasetModel, dataset_id)
         if ds:
-            ds.image_count = (ds.image_count or 0) + imported_count
-            ds.annotated_count = (ds.annotated_count or 0) + imported_count
+            ds.image_count = await db.scalar(
+                select(func.count(AnnotationImageModel.id)).where(
+                    AnnotationImageModel.dataset_id == dataset_id,
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
+                )
+            ) or 0
+            ds.annotated_count = await db.scalar(
+                select(func.count(func.distinct(AnnotationRecordModel.image_id)))
+                .select_from(AnnotationRecordModel)
+                .join(AnnotationImageModel, AnnotationImageModel.id == AnnotationRecordModel.image_id)
+                .where(
+                    AnnotationImageModel.dataset_id == dataset_id,
+                    AnnotationImageModel.is_deleted == False,  # noqa: E712
+                    AnnotationRecordModel.is_deleted == False,  # noqa: E712
+                )
+            ) or 0
 
     # Update task progress after transaction commits
     if task_id:
@@ -193,7 +303,7 @@ async def _import_from_dir(src_dir: str, dataset_id: int, user_id: int) -> dict:
 
     return {
         "imported": imported_count,
-        "total_images": len(image_files),
+        "total_images": len(image_entries),
         "total_annotations": total_annotations,
         "class_mapping": class_mapping,
         "task_id": task_id,
@@ -227,6 +337,30 @@ def _shape_to_annotation(shape: dict, class_mapping: dict, img_w: int, img_h: in
             "y1": y1 / img_h if img_h else 0,
             "x2": x2 / img_w if img_w else 0,
             "y2": y2 / img_h if img_h else 0,
+        }
+    elif shape_type == "rotation" and len(points) >= 4:
+        # 内部约定：angle 在像素空间定义，width 按图像宽归一化、height 按图像高
+        # 归一化（与 exporter.xany_shapes / rotated_box_to_obb_corners 对齐）。
+        # 若先在归一化空间计算 hypot/atan2，非方形图像上会得到错误的角度与宽高。
+        dx = points[1][0] - points[0][0]
+        dy = points[1][1] - points[0][1]
+        width = math.hypot(dx, dy) / img_w if img_w else 0
+        angle = math.atan2(dy, dx)
+        ex = points[2][0] - points[1][0]
+        ey = points[2][1] - points[1][1]
+        height = math.hypot(ex, ey) / img_h if img_h else 0
+        cx = sum(p[0] for p in points[:4]) / 4 / img_w if img_w else 0
+        cy = sum(p[1] for p in points[:4]) / 4 / img_h if img_h else 0
+        return {
+            "id": uuid.uuid4().hex,
+            "type": "RotatedBox",
+            "class_id": class_id,
+            "label": label,
+            "cx": cx,
+            "cy": cy,
+            "width": width,
+            "height": height,
+            "angle": angle,
         }
     elif shape_type == "polygon" and len(points) >= 3:
         return {

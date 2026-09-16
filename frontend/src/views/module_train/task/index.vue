@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="训练任务" name="task">
     <PageSearch
       ref="searchRef"
       :search-config="searchConfig"
@@ -77,10 +79,14 @@
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'dataset_id')?.show"
               key="dataset_id"
-              label="数据集ID"
-              prop="dataset_id"
-              width="90"
-            />
+              label="数据集"
+              min-width="140"
+              show-overflow-tooltip
+            >
+              <template #default="scope">
+                {{ scope.row.dataset_name || `#${scope.row.dataset_id}` }}
+              </template>
+            </el-table-column>
             <el-table-column
               v-if="contentCols.find((col) => col.prop === 'status')?.show"
               key="status"
@@ -188,6 +194,11 @@
         </div>
       </template>
     </PageContent>
+      </el-tab-pane>
+      <el-tab-pane label="定时训练" name="schedule" lazy>
+        <SchedulePanel />
+      </el-tab-pane>
+    </el-tabs>
 
     <EnhancedDialog
       v-model="dialogVisible.visible"
@@ -228,6 +239,7 @@
             style="width: 100%"
             placeholder="请选择标注数据集"
             @change="onDatasetChange"
+            @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="ds in datasets" :key="ds.id" :label="ds.name" :value="ds.id" />
           </el-select>
@@ -247,6 +259,15 @@
               :value="t.id"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="基础模型">
+          <el-input-number
+            v-model="formData.base_model_id"
+            :min="0"
+            :controls="false"
+            style="width: 100%"
+            placeholder="留空表示从零训练；可填模型版本 ID"
+          />
         </el-form-item>
         <el-divider>超参数配置</el-divider>
 
@@ -430,11 +451,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
+import SchedulePanel from "@/components/Train/SchedulePanel.vue";
+import { cachedOptions } from "@/composables/useOptions";
 import { TrainAPI } from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
@@ -447,6 +470,7 @@ interface TablePageQuery {
 const router = useRouter();
 const route = useRoute();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+const activeTab = ref("task");
 
 const submitLoading = ref(false);
 const dataFormRef = ref();
@@ -497,24 +521,27 @@ const modelOptions = computed(() => {
   return opts;
 });
 
-function groupLabel(label: string) {
-  return label;
+let datasetsLoaded = false;
+async function loadDatasets() {
+  if (datasetsLoaded) return;
+  datasetsLoaded = true;
+  try {
+    datasets.value = await cachedOptions(
+      "annotation:datasets",
+      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+    );
+  } catch {
+    datasetsLoaded = false;
+  }
 }
-
-(async () => {
-  const dsRes = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-  datasets.value = dsRes.data?.data?.items || [];
-})();
 
 async function onDatasetChange(datasetId: number) {
   formData.annotation_task_id = undefined;
   annoTasks.value = [];
   if (!datasetId) return;
-  try {
-    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-    const ds = r.data?.data?.items?.find((d: any) => d.id === datasetId);
-    annoTasks.value = ds?.tasks || [];
-  } catch {}
+  if (!datasetsLoaded) await loadDatasets();
+  const ds = datasets.value.find((d: any) => d.id === datasetId);
+  annoTasks.value = ds?.tasks || [];
 }
 
 function onAnnoTaskChange(taskId: number) {
@@ -640,6 +667,7 @@ const defaultHpPaddle = () => ({
   lr: 0.0005,
   device: "0",
   pretrained: true,
+  trainRatio: 80,
 });
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
@@ -768,6 +796,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  loadDatasets();
   if (id && type === "update") {
     dialogVisible.title = "编辑训练任务";
     const res = await TrainAPI.getTaskDetail(id);
@@ -776,6 +805,8 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       id: data.id,
       name: data.name,
       dataset_id: data.dataset_id,
+      annotation_task_id: data.annotation_task_id,
+      base_model_id: data.base_model_id,
       framework: data.framework,
     });
     onFrameworkChange(data.framework);
@@ -799,7 +830,6 @@ async function handleSubmit() {
             name: formData.name,
             hyperparams: buildHyperparams(),
           });
-          ElMessage.success("训练任务已更新");
         } else {
           await TrainAPI.createTask({
             name: formData.name,
@@ -809,13 +839,12 @@ async function handleSubmit() {
             base_model_id: formData.base_model_id,
             hyperparams: buildHyperparams(),
           });
-          ElMessage.success("训练任务已创建");
         }
         dialogVisible.visible = false;
         await resetForm();
         refreshList();
-      } catch (e: any) {
-        ElMessage.error(e?.msg || e?.response?.data?.msg || "保存失败");
+      } catch {
+        /* 提示由请求拦截器统一处理 */
       } finally {
         submitLoading.value = false;
       }
@@ -827,10 +856,9 @@ async function handleStart(row: any) {
   try {
     await ElMessageBox.confirm(`确定开始训练任务「${row.name}」？`, "提示", { type: "info" });
     await TrainAPI.startTask(row.id);
-    ElMessage.success("训练已开始");
     refreshList();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始训练失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   }
 }
 
@@ -838,7 +866,6 @@ async function handleStop(id: number) {
   try {
     await ElMessageBox.confirm("确定停止该训练任务？", "提示", { type: "warning" });
     await TrainAPI.stopTask(id);
-    ElMessage.success("训练已停止");
     refreshList();
   } catch {
     //
@@ -847,7 +874,6 @@ async function handleStop(id: number) {
 
 async function handleDelete(id: number) {
   await TrainAPI.deleteTask([id]);
-  ElMessage.success("已删除");
   refreshList();
 }
 
@@ -888,6 +914,16 @@ onMounted(() => {
   const editId = Number(route.query.edit_id || 0);
   if (editId) {
     handleOpenDialog("update", editId);
+    router.replace({ query: {} });
+    return;
+  }
+  // 从数据集页"去训练"进入：预填数据集并自动开窗
+  const dsId = Number(route.query.dataset_id || 0);
+  if (dsId) {
+    formData.dataset_id = dsId;
+    dialogVisible.title = "新建训练任务";
+    dialogVisible.visible = true;
+    router.replace({ query: {} });
     return;
   }
   // 从模型仓库"训练"按钮进入：自动打开创建对话框并预填框架
@@ -899,6 +935,7 @@ onMounted(() => {
     if (modelId) formData.base_model_id = Number(modelId);
     dialogVisible.title = "新建训练任务";
     dialogVisible.visible = true;
+    router.replace({ query: {} });
   }
 });
 onBeforeUnmount(() => stopPoll());

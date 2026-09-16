@@ -142,7 +142,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
 
@@ -246,12 +246,11 @@ async function handleStart() {
   try {
     await ElMessageBox.confirm(`确定开始预测任务 #${predict.value?.id}？`, "提示", { type: "info" });
     await TrainAPI.startPredict(predict.value.id);
-    ElMessage.success("预测已开始");
     await loadPredict();
     connectWs(predict.value.id);
     startPoll();
-  } catch (e: any) {
-    if (e !== "cancel") ElMessage.error(e?.msg || "开始预测失败");
+  } catch {
+    /* 提示由请求拦截器统一处理 */
   } finally {
     submitting.value = false;
   }
@@ -263,7 +262,6 @@ async function handleStop() {
   try {
     await ElMessageBox.confirm("确定停止该预测？", "提示", { type: "warning" });
     await TrainAPI.stopPredict(predict.value.id);
-    ElMessage.success("预测已停止");
     await loadPredict();
   } catch {
     /* */
@@ -281,7 +279,6 @@ async function handleDelete() {
       confirmButtonText: "删除",
     });
     await TrainAPI.deletePredict([predict.value.id]);
-    ElMessage.success("已删除");
     router.push("/train/predict");
   } catch {
     /* */

@@ -1,5 +1,6 @@
 from sqlalchemy import and_, func, select
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -11,16 +12,23 @@ from .model import AnnotationTaskModel
 class TaskService:
 
     @classmethod
-    async def update_progress(cls, task_id: int, auth=None) -> None:
-        async with async_db_session() as db:
+    async def update_progress(cls, task_id: int, auth=None) -> dict:
+        from datetime import datetime
+
+        async with async_db_session.begin() as db:
             task = await db.get(AnnotationTaskModel, task_id)
             if not task:
                 log.warning(f"update_progress: task {task_id} not found")
-                return
+                return {}
             result = await cls._calc_progress(db, task_id, task.dataset_id)
             if result:
                 task.progress = result["progress"]
                 task.status = result["status"]
+                if result["progress"] >= 100:
+                    task.completed_at = task.completed_at or datetime.now()
+                else:
+                    task.completed_at = None
+            return result
 
     @classmethod
     async def get_task_progress(cls, task_id: int, auth) -> dict:
@@ -32,10 +40,13 @@ class TaskService:
 
     @classmethod
     async def _calc_progress(cls, db, task_id: int, dataset_id: int) -> dict:
-        # Total images in dataset
+        # Total images in dataset（排除软删图片）
         total = await db.scalar(
             select(func.count(AnnotationImageModel.id))
-            .where(AnnotationImageModel.dataset_id == dataset_id)
+            .where(
+                AnnotationImageModel.dataset_id == dataset_id,
+                AnnotationImageModel.is_deleted == False,  # noqa: E712
+            )
         ) or 0
 
         # Annotated images for THIS task only (count distinct images in annotation_record
@@ -51,6 +62,13 @@ class TaskService:
             AnnotationRecordModel.task_id == task_id
         ).group_by(AnnotationRecordModel.image_id).subquery()
 
+        # SQLite 无 jsonb_array_length，退化为 json_array_length（测试库兼容）
+        json_length = (
+            func.json_array_length
+            if settings.DATABASE_TYPE == "sqlite"
+            else func.jsonb_array_length
+        )
+
         # Join to get the actual records and count those with non-empty annotation_data
         annotated = await db.scalar(
             select(func.count(func.distinct(AnnotationRecordModel.image_id)))
@@ -62,7 +80,7 @@ class TaskService:
             .where(
                 AnnotationRecordModel.task_id == task_id,
                 AnnotationRecordModel.annotation_data.isnot(None),
-                func.jsonb_array_length(AnnotationRecordModel.annotation_data) > 0,
+                json_length(AnnotationRecordModel.annotation_data) > 0,
             )
         ) or 0
 

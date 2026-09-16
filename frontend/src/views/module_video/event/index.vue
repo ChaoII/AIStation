@@ -198,6 +198,7 @@
             filterable
             style="width: 100%"
             placeholder="选择摄像机（可选，不选则对所有摄像机生效）"
+            @visible-change="(v: boolean) => v && ensureCameras()"
           >
             <el-option v-for="c in cameras" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
@@ -237,6 +238,7 @@ import { getCameraList } from "@/api/module_video/camera";
 import { getEventList, createEvent, updateEvent, deleteEvent } from "@/api/module_video/event";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
+import { cachedOptions } from "@/composables/useOptions";
 
 interface TablePageQuery {
   page_no: number;
@@ -332,10 +334,13 @@ function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
 }
 
-async function fetchCameras() {
+async function ensureCameras() {
+  if (cameras.value.length) return;
   try {
-    const res = await getCameraList({ page_size: 100 });
-    cameras.value = res.data?.data?.items || [];
+    cameras.value = await cachedOptions(
+      "video:cameras",
+      async () => (await getCameraList({ page_size: 100 })).data?.data?.items || []
+    );
   } catch {
     //
   }
@@ -387,6 +392,7 @@ async function handleCloseDialog() {
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
+  ensureCameras();
   if (id && type === "update") {
     dialogVisible.title = "编辑联动";
     const res = await getEventList({ page_no: 1, page_size: 100 });
@@ -474,6 +480,4 @@ function actionTag(type: string): any {
   };
   return map[type] || "";
 }
-
-fetchCameras();
 </script>

@@ -9,6 +9,7 @@ class AlgorithmCreateSchema(BaseModel):
     code: str = Field(..., max_length=64, description="算法编码")
     version: str = Field(default="1.0.0", max_length=32, description="版本号")
     algorithm_type: str = Field(..., max_length=32, description="算法类型")
+    scene_type: str | None = Field(default=None, max_length=64, description="场景码")
     model_path: str | None = Field(default=None, max_length=512, description="模型文件路径")
     plugin_path: str | None = Field(default=None, max_length=512, description="插件路径")
     model_file_config: dict | None = Field(default=None, description="模型配置（格式、加密密钥等）")
@@ -31,8 +32,12 @@ class AlgorithmOutSchema(BaseSchema):
     code: str
     version: str = "1.0.0"
     algorithm_type: str
+    scene_type: str | None = None
     model_path: str | None = None
     plugin_path: str | None = None
+    # SP6-c：上一版本（回滚用），仅输出；由热更新/回滚接口维护，不允许直接写入
+    previous_model_path: str | None = None
+    previous_version: str | None = None
     model_file_config: dict | None = None
     runtime_config: dict | None = None
     preset_params: dict | None = None
@@ -46,6 +51,7 @@ class AlgorithmOutSchema(BaseSchema):
 class AlgorithmTaskCreateSchema(BaseModel):
     camera_id: int = Field(..., description="摄像机ID")
     algorithm_id: int = Field(..., description="算法ID")
+    edge_device_id: int | None = Field(default=None, description="边缘设备ID（空=纯云端本机）")
     stream_type: str = Field(default="SUB", description="分析码流")
     detect_region: dict | None = Field(default=None, description="检测区域")
     sensitivity: int = Field(default=50, ge=1, le=100, description="灵敏度")
@@ -64,6 +70,7 @@ class AlgorithmTaskUpdateSchema(AlgorithmTaskCreateSchema):
 class AlgorithmTaskOutSchema(BaseSchema):
     camera_id: int
     algorithm_id: int
+    edge_device_id: int | None = None
     stream_type: str = "SUB"
     detect_region: dict | None = None
     sensitivity: int = 50
@@ -71,5 +78,6 @@ class AlgorithmTaskOutSchema(BaseSchema):
     runtime_overrides: dict | None = None
     params_overrides: dict | None = None
     status: str = "STOPPED"
+    error_log: str | None = None
     camera: CommonSchema | None = None
     algorithm: CommonSchema | None = None

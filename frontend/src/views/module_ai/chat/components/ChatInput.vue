@@ -9,48 +9,39 @@
         </div>
       </div>
       <div class="input-container">
-        <el-form>
-          <el-input
-            v-model="inputMessage"
-            type="textarea"
-            :placeholder="placeholder"
-            :disabled="disabled || sending"
-            :autosize="{ minRows: 1, maxRows: 6 }"
-            resize="none"
-            class="message-input"
-            @keydown.enter.exact.prevent="handleSend"
-            @keydown.shift.enter.exact="handleShiftEnter"
-          />
-        </el-form>
-        <div class="input-footer">
-          <div class="input-actions">
-            <el-upload
-              ref="uploadRef"
-              :auto-upload="false"
-              :show-file-list="false"
-              :on-change="handleFileChange"
-              :accept="acceptTypes"
-              :multiple="true"
-            >
-              <el-button :icon="Paperclip" class="upload-btn" circle />
-            </el-upload>
-            <el-button
-              :disabled="
-                (!inputMessage.trim() && uploadedFiles.length === 0) || disabled || sending
-              "
-              :loading="sending"
-              class="send-button"
-              type="primary"
-              circle
-              @click="handleSend"
-            >
-              <el-icon><Promotion /></el-icon>
-            </el-button>
-          </div>
+        <el-input
+          v-model="inputMessage"
+          type="textarea"
+          :placeholder="placeholder"
+          :disabled="disabled || sending"
+          :autosize="{ minRows: 1, maxRows: 6 }"
+          resize="none"
+          class="message-input"
+          @keydown.enter.exact.prevent="handleSend"
+          @keydown.shift.enter.exact="handleShiftEnter"
+        />
+        <div class="input-actions">
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="handleFileChange"
+            :accept="acceptTypes"
+            :multiple="true"
+          >
+            <el-button :icon="Paperclip" class="upload-btn" circle />
+          </el-upload>
+          <el-button
+            :disabled="(!inputMessage.trim() && uploadedFiles.length === 0) || disabled || sending"
+            :loading="sending"
+            class="send-button"
+            type="primary"
+            circle
+            @click="handleSend"
+          >
+            <el-icon><Promotion /></el-icon>
+          </el-button>
         </div>
-      </div>
-      <div class="input-hint">
-        <span>按 Enter 发送消息，Shift + Enter 换行</span>
       </div>
     </div>
   </div>
@@ -65,7 +56,6 @@ import type { UploadedFile } from "@/views/module_ai/chat/types";
 interface Props {
   disabled?: boolean;
   sending?: boolean;
-  isConnected?: boolean;
 }
 
 interface Emits {
@@ -75,7 +65,6 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   sending: false,
-  isConnected: true,
 });
 
 const emit = defineEmits<Emits>();
@@ -87,9 +76,7 @@ const acceptTypes = computed(() => {
   return ".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.mp3,.wav,.mp4,.avi,.mov";
 });
 
-const placeholder = computed(() => {
-  return props.isConnected ? "向FA助手发送消息..." : "请先连接到服务器";
-});
+const placeholder = "输入消息…（Enter 发送 / Shift+Enter 换行）";
 
 const handleFileChange = (uploadFile: UploadFile) => {
   const file = uploadFile.raw;
@@ -144,15 +131,14 @@ defineExpose({
 <style lang="scss" scoped>
 .chat-input {
   .input-wrapper {
-    max-width: 800px;
-    padding: 20px;
-    margin: 0 auto;
+    /* 铺满聊天区，仅保留左右内边距，不再居中限宽 */
+    padding: 12px 16px;
 
     .uploaded-files {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
 
       .file-item {
         display: flex;
@@ -196,24 +182,23 @@ defineExpose({
       }
     }
 
+    /* 紧凑一行：左侧 textarea 自适应，右侧附件/发送按钮内联 */
     .input-container {
       display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 20px;
+      gap: 8px;
+      align-items: flex-end;
+      padding: 8px 12px;
       background: var(--el-bg-color-overlay);
       border: 1px solid var(--el-border-color-light);
-      border-radius: 16px;
+      border-radius: 8px;
       box-shadow: var(--el-box-shadow-light);
       transition:
         border-color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.2s ease;
+        box-shadow 0.2s ease;
 
       &:hover {
         border-color: var(--el-color-primary);
         box-shadow: var(--el-box-shadow);
-        transform: translateY(-2px);
       }
 
       &:focus-within {
@@ -240,54 +225,39 @@ defineExpose({
         }
       }
 
-      .input-footer {
+      .input-actions {
         display: flex;
+        flex-shrink: 0;
+        gap: 8px;
         align-items: center;
-        justify-content: flex-end;
-        padding-top: 8px;
 
-        .input-actions {
-          display: flex;
-          gap: 10px;
-          align-items: center;
+        .upload-btn {
+          font-size: 18px;
+          color: var(--el-text-color-secondary);
+          transition: all 0.2s ease;
 
-          .upload-btn {
-            font-size: 18px;
-            color: var(--el-text-color-secondary);
-            transition: all 0.2s ease;
+          &:hover {
+            color: var(--el-color-primary);
+            transform: scale(1.05);
+          }
+        }
 
-            &:hover {
-              color: var(--el-color-primary);
-              transform: scale(1.05);
-            }
+        .send-button {
+          flex-shrink: 0;
+          border-radius: 50%;
+          box-shadow: var(--el-box-shadow-light);
+          transition: all 0.2s ease;
+
+          &:hover {
+            box-shadow: var(--el-box-shadow);
+            transform: translateY(-1px);
           }
 
-          .send-button {
-            flex-shrink: 0;
-            border-radius: 50%;
-            box-shadow: var(--el-box-shadow-light);
-            transition: all 0.2s ease;
-
-            &:hover {
-              box-shadow: var(--el-box-shadow);
-              transform: translateY(-1px);
-            }
-
-            &:active {
-              transform: translateY(0);
-            }
+          &:active {
+            transform: translateY(0);
           }
         }
       }
-    }
-
-    .input-hint {
-      margin-top: 12px;
-      font-size: 12px;
-      font-weight: 400;
-      color: var(--el-text-color-secondary);
-      text-align: center;
-      letter-spacing: 0.5px;
     }
   }
 
@@ -298,7 +268,6 @@ defineExpose({
     &:hover {
       border-color: var(--el-border-color-light);
       box-shadow: var(--el-box-shadow-light);
-      transform: none;
     }
 
     &:focus-within {
