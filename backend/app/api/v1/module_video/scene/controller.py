@@ -11,10 +11,17 @@ from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
-from .catalog import get_scene, list_scenes
+from .catalog import get_scene, is_edge_implementable, list_scenes
 from .leaves import get_capabilities
 
 SceneRouter = APIRouter(route_class=OperationLogRoute, prefix="/scene", tags=["场景目录"])
+
+
+def _scene_dict(scene) -> dict:
+    """场景序列化：附加 `edge_supported`（边缘 Agent 是否已实现该场景），供前端置灰。"""
+    data = asdict(scene)
+    data["edge_supported"] = is_edge_implementable(scene)
+    return data
 
 
 @SceneRouter.get("/catalog", summary="查询任务类型目录")
@@ -23,7 +30,7 @@ async def list_scene_catalog_controller(
     category: Annotated[str | None, Query(description="场景分类过滤")] = None,
 ) -> JSONResponse:
     """列出全部场景（任务类型）定义，可按 category 过滤。"""
-    items = [asdict(s) for s in list_scenes(category=category)]
+    items = [_scene_dict(s) for s in list_scenes(category=category)]
     return SuccessResponse(data={"items": items, "total": len(items)}, msg="查询成功")
 
 
@@ -36,7 +43,7 @@ async def get_scene_controller(
     s = get_scene(code)
     if s is None:
         raise CustomException(msg="场景不存在", code=404, status_code=404)
-    return SuccessResponse(data=asdict(s), msg="查询成功")
+    return SuccessResponse(data=_scene_dict(s), msg="查询成功")
 
 
 @SceneRouter.get("/rule-capabilities", summary="规则叶子能力")

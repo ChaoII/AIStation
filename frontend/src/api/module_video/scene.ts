@@ -26,6 +26,8 @@ export interface SceneDefinition {
   default_rule: Record<string, unknown>;
   needs_tracking: boolean;
   description: string;
+  /** 边缘 Agent 是否已实现该场景（false 时前端置灰，避免「选了必失败」） */
+  edge_supported?: boolean;
 }
 
 /** 叶子参数 schema 项（对齐后端 LEAF_CAPABILITIES.params） */

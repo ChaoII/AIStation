@@ -72,8 +72,9 @@
           <el-option
             v-for="s in scenes"
             :key="s.code"
-            :label="`${s.name}（${s.code}）`"
+            :label="`${s.name}（${s.code}）${s.edge_supported === false ? ' · 边缘未实现' : ''}`"
             :value="s.code"
+            :disabled="s.edge_supported === false"
           />
         </el-select>
       </el-form-item>

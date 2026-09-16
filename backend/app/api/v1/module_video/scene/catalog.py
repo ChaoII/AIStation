@@ -395,6 +395,25 @@ def get_scene(code: str) -> SceneDef | None:
     return SCENES.get(code)
 
 
+# 边缘 Agent 默认构建上报的模型族（对齐 ModelDeploy `application/aistation_agent/
+# capability.cpp: detect_capabilities`：det/cls/face/pedestrian_attribute/ocr/lpr/tracking）。
+# 仅由这些族构成的场景才能在边缘落地；其余场景（pose/obb/face_rec/...）Agent 端尚无实现，
+# 目录对用户可见但「选了必失败」，故据此标记 `edge_supported` 供前端置灰。
+EDGE_ADVERTISED_MODEL_FAMILIES: frozenset[str] = frozenset(
+    {"det", "cls", "face", "pedestrian_attribute", "ocr", "lpr", "tracking"}
+)
+
+
+def is_edge_implementable(scene: SceneDef) -> bool:
+    """场景所需模型族是否全部为边缘 Agent 默认构建上报的族。"""
+    return all(fam in EDGE_ADVERTISED_MODEL_FAMILIES for fam in scene.model_families)
+
+
+def unsupported_scene_codes() -> list[str]:
+    """当前边缘 Agent 未实现（拒绝下发）的场景码列表（诊断/测试用）。"""
+    return [code for code, scene in SCENES.items() if not is_edge_implementable(scene)]
+
+
 def list_scenes(category: str | None = None) -> list[SceneDef]:
     """列出场景定义，可按 category 过滤。"""
     items = list(SCENES.values())
