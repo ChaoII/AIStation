@@ -31,6 +31,10 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("runtime_config", "JSONB"),
         ("preset_params", "JSONB"),
         ("scene_type", "VARCHAR(64)"),
+        # 与 Alembic 38d18b9077de / b2c3d4e5f6a7 对齐
+        ("param_meta", "JSONB"),
+        ("previous_model_path", "VARCHAR(512)"),
+        ("previous_version", "VARCHAR(32)"),
     ],
     "video_algorithm_tasks": [
         ("runtime_overrides", "JSONB"),
@@ -47,6 +51,12 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("params", "JSONB NOT NULL DEFAULT '{}'"),
         ("rollout", "JSONB NOT NULL DEFAULT '{}'"),
         ("group_id", "INTEGER"),
+    ],
+    # train_predicts 兜底建表 DDL 为旧版，补齐模型声明的列（与 a3f3956bb77b 对齐）
+    "train_predicts": [
+        ("description", "TEXT"),
+        ("progress", "INTEGER NOT NULL DEFAULT 0"),
+        ("error_log", "TEXT"),
     ],
     "ai_models": [
         ("extra_headers", "JSONB"),
@@ -69,94 +79,115 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
 }
 
 
-async def _ensure_missing_columns() -> None:
-    """Add new columns to existing tables if they don't exist."""
+async def _exec_ddl(sql: str, label: str) -> bool:
+    """单条 DDL 用**独立事务**执行；失败仅告警并返回 False。
+
+    PostgreSQL 中一条语句失败会让当前事务进入 aborted 状态，后续语句全部报
+    ``InFailedSqlTransaction``，块尾 COMMIT 实际变 ROLLBACK——同块内先前成功的
+    语句会被一并丢弃且不留痕迹。逐条独立事务可隔离单条失败，保证其余补列不被
+    静默回滚，并留下明确日志（H1）。
+    """
     from sqlalchemy import text as sa_text
 
     from app.core.database import async_engine
 
-    new_columns = ENSURE_NEW_COLUMNS
+    try:
+        async with async_engine.begin() as conn:
+            await conn.execute(sa_text(sql))
+        return True
+    except Exception as e:
+        log.warning(f"[补列/建表] {label} 执行失败，已跳过: {e}")
+        return False
+
+
+async def _ensure_missing_columns() -> None:
+    """为既有表幂等补齐模型新增列（逐列独立事务，失败必留日志）。
+
+    ``ENSURE_NEW_COLUMNS`` 是「既有库不跑 Alembic、仅重启后端」的兜底清单，
+    必须与 Alembic 迁移保持同步；漏登会导致运行期随机 ``UndefinedColumn`` 500。
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.core.database import async_engine
+
     is_sqlite = settings.DATABASE_TYPE == "sqlite"
-    async with async_engine.begin() as conn:
-        for table, columns in new_columns.items():
-            existing: set[str] = set()
+    for table, columns in ENSURE_NEW_COLUMNS.items():
+        for col_name, col_type in columns:
             if is_sqlite:
-                # SQLite 不支持 ADD COLUMN IF NOT EXISTS，先探测现有列
+                # SQLite 不支持 ADD COLUMN IF NOT EXISTS，先探测现有列（失败则跳过整表该列）
                 try:
-                    rows = (
-                        await conn.execute(sa_text(f"PRAGMA table_info({table})"))
-                    ).fetchall()
-                    existing = {r[1] for r in rows}
-                except Exception:
-                    existing = set()
-            for col_name, col_type in columns:
-                if col_name in existing:
+                    async with async_engine.begin() as conn:
+                        rows = (
+                            await conn.execute(sa_text(f"PRAGMA table_info({table})"))
+                        ).fetchall()
+                    if col_name in {r[1] for r in rows}:
+                        continue
+                except Exception as e:
+                    log.warning(f"[补列] {table}.{col_name} 列探测失败，已跳过: {e}")
                     continue
-                try:
-                    if is_sqlite:
-                        await conn.execute(
-                            sa_text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                        )
-                    else:
-                        await conn.execute(
-                            sa_text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}")
-                        )
-                except Exception:
-                    pass
+                await _exec_ddl(
+                    f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}",
+                    f"{table}.{col_name}",
+                )
+            else:
+                await _exec_ddl(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}",
+                    f"{table}.{col_name}",
+                )
 
     # 存量 HTTP 工具迁移：source 默认 system，需按 kind='http' 修正为 http
-    try:
-        async with async_engine.begin() as conn:
-            await conn.execute(
-                sa_text(
-                    "UPDATE ai_tools SET source='http' "
-                    "WHERE kind='http' AND (source IS NULL OR source='system')"
-                )
-            )
-    except Exception as e:
-        log.warning(f"ai_tools source migration warning: {e}")
+    await _exec_ddl(
+        "UPDATE ai_tools SET source='http' "
+        "WHERE kind='http' AND (source IS NULL OR source='system')",
+        "ai_tools.source 修正",
+    )
 
     # Drop unused columns + ensure re-added columns
-    try:
-        async with async_engine.begin() as conn:
-            await conn.execute(sa_text("ALTER TABLE annotation_dataset DROP COLUMN IF EXISTS annotation_type"))
-            await conn.execute(sa_text("ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'pending'"))
-            await conn.execute(sa_text("ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0"))
-    except Exception as e:
-        log.warning(f"annotation_task migration warning: {e}")
+    await _exec_ddl(
+        "ALTER TABLE annotation_dataset DROP COLUMN IF EXISTS annotation_type",
+        "annotation_dataset.annotation_type 清理",
+    )
+    await _exec_ddl(
+        "ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS status VARCHAR(16) DEFAULT 'pending'",
+        "annotation_task.status",
+    )
+    await _exec_ddl(
+        "ALTER TABLE annotation_task ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0",
+        "annotation_task.progress",
+    )
 
     # 边缘设备表兜底（旧库无 Alembic 迁移时直接建表，做法同 train_predicts）
     # DDL 与 EdgeDeviceModel 对齐：uuid NOT NULL UNIQUE，审计/状态字段 NOT NULL 并建立索引
-    try:
-        async with async_engine.begin() as conn:
-            await conn.execute(sa_text("""
-                CREATE TABLE IF NOT EXISTS video_edge_devices (
-                    id SERIAL PRIMARY KEY,
-                    uuid VARCHAR(64) NOT NULL UNIQUE,
-                    status VARCHAR(16) NOT NULL DEFAULT 'offline',
-                    description TEXT,
-                    created_time TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_time TIMESTAMP NOT NULL DEFAULT NOW(),
-                    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
-                    deleted_time TIMESTAMP,
-                    created_id INTEGER,
-                    updated_id INTEGER,
-                    deleted_id INTEGER,
-                    name VARCHAR(128) NOT NULL,
-                    code VARCHAR(64) NOT NULL UNIQUE,
-                    control_url VARCHAR(512),
-                    secret VARCHAR(128),
-                    capabilities JSONB,
-                    metrics JSONB,
-                    last_heartbeat TIMESTAMP
-                )
-            """))
-            for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time"):
-                await conn.execute(
-                    sa_text(f"CREATE INDEX IF NOT EXISTS ix_video_edge_devices_{col} ON video_edge_devices ({col})")
-                )
-    except Exception as e:
-        log.warning(f"edge device migration warning: {e}")
+    await _exec_ddl(
+        """
+        CREATE TABLE IF NOT EXISTS video_edge_devices (
+            id SERIAL PRIMARY KEY,
+            uuid VARCHAR(64) NOT NULL UNIQUE,
+            status VARCHAR(16) NOT NULL DEFAULT 'offline',
+            description TEXT,
+            created_time TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_time TIMESTAMP NOT NULL DEFAULT NOW(),
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_time TIMESTAMP,
+            created_id INTEGER,
+            updated_id INTEGER,
+            deleted_id INTEGER,
+            name VARCHAR(128) NOT NULL,
+            code VARCHAR(64) NOT NULL UNIQUE,
+            control_url VARCHAR(512),
+            secret VARCHAR(128),
+            capabilities JSONB,
+            metrics JSONB,
+            last_heartbeat TIMESTAMP
+        )
+        """,
+        "video_edge_devices 建表",
+    )
+    for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time"):
+        await _exec_ddl(
+            f"CREATE INDEX IF NOT EXISTS ix_video_edge_devices_{col} ON video_edge_devices ({col})",
+            f"video_edge_devices.{col} 索引",
+        )
 
 
 async def _ensure_deploy_menu() -> None:
@@ -1025,37 +1056,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
 
             await ensure_train_columns(_train_engine)
 
-            from sqlalchemy import text
-
-            from app.core.database import async_db_session
-            async with async_db_session.begin() as db:
-                # Create train_predicts table if not exists
-                await db.execute(text("""
-                    CREATE TABLE IF NOT EXISTS train_predicts (
-                        id SERIAL PRIMARY KEY,
-                        uuid VARCHAR(36),
-                        status VARCHAR(16) DEFAULT 'pending',
-                        created_time TIMESTAMP DEFAULT NOW(),
-                        updated_time TIMESTAMP,
-                        is_deleted BOOLEAN DEFAULT FALSE,
-                        deleted_time TIMESTAMP,
-                        created_id INTEGER,
-                        updated_id INTEGER,
-                        deleted_id INTEGER,
-                        model_repo_id INTEGER NOT NULL,
-                        model_id INTEGER NOT NULL,
-                        framework VARCHAR(16) DEFAULT 'ultralytics',
-                        source_type VARCHAR(16) NOT NULL,
-                        source_dataset_id INTEGER,
-                        source_images JSONB,
-                        result_images JSONB,
-                        result_zip_path VARCHAR(512),
-                        hyperparams JSONB,
-                        started_at TIMESTAMP,
-                        finished_at TIMESTAMP,
-                        log TEXT
-                    )
-                """))
+            # train_predicts 兜底建表：DDL 与 TrainPredictModel 对齐（逐条独立事务，失败留日志）
+            await _exec_ddl(
+                """
+                CREATE TABLE IF NOT EXISTS train_predicts (
+                    id SERIAL PRIMARY KEY,
+                    uuid VARCHAR(64) NOT NULL,
+                    status VARCHAR(10) NOT NULL DEFAULT 'PENDING',
+                    description TEXT,
+                    created_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+                    deleted_time TIMESTAMP,
+                    created_id INTEGER,
+                    updated_id INTEGER,
+                    deleted_id INTEGER,
+                    model_repo_id INTEGER NOT NULL,
+                    model_id INTEGER NOT NULL,
+                    framework VARCHAR(16) NOT NULL DEFAULT 'ULTRALYTICS',
+                    source_type VARCHAR(16) NOT NULL,
+                    source_dataset_id INTEGER,
+                    source_images JSONB,
+                    result_images JSONB,
+                    result_zip_path VARCHAR(512),
+                    hyperparams JSONB,
+                    progress INTEGER NOT NULL DEFAULT 0,
+                    started_at TIMESTAMP,
+                    finished_at TIMESTAMP,
+                    log TEXT,
+                    error_log TEXT
+                )
+                """,
+                "train_predicts 建表",
+            )
+            for col in (
+                "uuid", "status", "created_time", "updated_time",
+                "is_deleted", "deleted_time", "created_id", "updated_id", "deleted_id",
+            ):
+                await _exec_ddl(
+                    f"CREATE INDEX IF NOT EXISTS ix_train_predicts_{col} ON train_predicts ({col})",
+                    f"train_predicts.{col} 索引",
+                )
         except Exception as e:
             log.warning(f"train migration warning: {e}")
 
