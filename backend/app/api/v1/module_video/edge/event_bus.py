@@ -10,6 +10,7 @@
 import asyncio
 import json
 import logging
+import time
 
 log = logging.getLogger(__name__)
 
@@ -25,21 +26,28 @@ _redis_client = None
 # Redis 降级告警只打一次
 _redis_warned = False
 
+# Redis 不可用时的冷却截止（monotonic）；冷却期内直接走本地广播，避免每条事件都重试连接
+_redis_cooldown_until = 0.0
+
 
 def set_redis(redis) -> None:
     """注入应用级 Redis 客户端（WS 端点调用，供同进程发布方复用同一实例）。"""
-    global _redis_client
+    global _redis_client, _redis_cooldown_until
     _redis_client = redis
+    _redis_cooldown_until = 0.0
 
 
 async def get_redis():
-    """解析 Redis 客户端；未启用或不可用时返回 ``None``。"""
-    global _redis_client
+    """解析 Redis 客户端；未启用或不可用（含冷却期内）时返回 ``None``。"""
+    global _redis_client, _redis_cooldown_until
     if _redis_client is not None:
         return _redis_client
     from app.config.setting import settings
 
     if not getattr(settings, "REDIS_ENABLE", False):
+        return None
+    if time.monotonic() < _redis_cooldown_until:
+        # 冷却期内（上次连接失败）直接降级，避免每条事件都等待连接超时
         return None
     try:
         if getattr(settings, "TESTING", False):
@@ -55,12 +63,30 @@ async def get_redis():
                 encoding="utf-8",
                 decode_responses=True,
                 health_check_interval=20,
+                socket_connect_timeout=float(getattr(settings, "TEMPORAL_REDIS_TIMEOUT", 0.5) or 0.5),
                 socket_timeout=settings.POOL_TIMEOUT,
             )
+        _redis_cooldown_until = 0.0
         return _redis_client
     except Exception as e:
+        _enter_redis_cooldown(e)
         log.warning(f"边缘事件广播获取 Redis 连接失败: {e}")
         return None
+
+
+def _enter_redis_cooldown(exc: Exception) -> None:
+    """进入 Redis 冷却：冷却期内发布直接走本地广播，避免逐条重试拖慢事件接入。"""
+    global _redis_client, _redis_cooldown_until
+    _redis_client = None
+    cooldown = 10.0
+    try:
+        from app.config.setting import settings
+
+        cooldown = max(0.0, float(getattr(settings, "TEMPORAL_REDIS_COOLDOWN_SEC", 10.0) or 10.0))
+    except Exception:  # noqa: BLE001 - 配置缺失时用默认冷却
+        pass
+    _redis_cooldown_until = time.monotonic() + cooldown
+    _warn_redis_once(exc)
 
 
 def subscribe_local() -> asyncio.Queue:
@@ -118,5 +144,6 @@ async def publish_edge_event(payload: dict) -> None:
         )
         return
     except Exception as e:
-        _warn_redis_once(e)
+        # 发布失败同样进入冷却：避免 Redis 半可用时每条事件都重试连接拖慢接入
+        _enter_redis_cooldown(e)
     await _broadcast_local(message)
