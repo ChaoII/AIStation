@@ -1,7 +1,10 @@
 import asyncio
+import hashlib
+import hmac
 import re
 import signal
 import subprocess
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -82,6 +85,56 @@ def _ensure_dir(stream_id: str) -> Path:
     d = RECORDINGS_DIR / safe_stream_segment(stream_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _recording_sign_key() -> bytes:
+    """返回录像播放 URL 的 HMAC 密钥。
+
+    优先使用 ``RECORD_URL_SIGN_KEY``；未配置时由 ``SECRET_KEY`` 派生，避免把
+    主密钥直接复用于该场景（密钥分离）。
+    """
+    custom = (settings.RECORD_URL_SIGN_KEY or "").strip()
+    if custom:
+        return custom.encode("utf-8")
+    return hmac.new(
+        settings.SECRET_KEY.encode("utf-8"),
+        b"aistation:recording-url:v1",
+        hashlib.sha256,
+    ).digest()
+
+
+def sign_recording_url(stream_id: str, file_name: str, exp: int) -> str:
+    """对 ``stream_id:file_name:exp`` 生成 HMAC-SHA256 十六进制签名。"""
+    msg = f"{stream_id}:{file_name}:{exp}".encode()
+    return hmac.new(_recording_sign_key(), msg, hashlib.sha256).hexdigest()
+
+
+def verify_recording_signature(
+    stream_id: str, file_name: str, exp: int, sig: str
+) -> bool:
+    """校验短时签名：签名匹配且未过期才放行（否则拒绝播放）。
+
+    参数:
+    - stream_id (str): 已通过字符集校验的流ID目录段。
+    - file_name (str): 已 ``Path(...).name`` 归一化的文件名。
+    - exp (int): 过期时间（POSIX 秒）。
+    - sig (str): 待校验签名。
+
+    返回:
+    - bool: 合法返回 True。
+    """
+    if not sig or not isinstance(exp, int) or exp <= 0:
+        return False
+    if exp < int(time.time()):
+        return False
+    return hmac.compare_digest(sign_recording_url(stream_id, file_name, exp), sig)
+
+
+def build_signed_play_url(stream_id: str, file_name: str, ttl: int | None = None) -> str:
+    """构造带 ``exp``/``sig`` 的短时播放地址（供前端 ``<video>`` 直接使用）。"""
+    expires = int(time.time()) + (ttl or settings.RECORD_URL_TTL_SECONDS)
+    sig = sign_recording_url(stream_id, file_name, expires)
+    return f"/recordings/{stream_id}/{file_name}?exp={expires}&sig={sig}"
 
 
 class RecordService:
@@ -493,7 +546,12 @@ class RecordService:
         if not file_obj:
             raise CustomException(msg="录制文件不存在")
         fp = Path(str(file_obj.file_path))
-        play_url = f"/recordings/{file_obj.stream_id}/{fp.name}" if file_obj.stream_id else ""
+        # 短时签名 URL：静态路由校验 sig + exp 后才返回文件（替代原未鉴权静态路由）
+        play_url = (
+            build_signed_play_url(file_obj.stream_id, fp.name)
+            if file_obj.stream_id
+            else ""
+        )
         return {
             "id": file_obj.id,
             "camera_id": file_obj.camera_id,

@@ -1271,16 +1271,37 @@ def register_files(app: FastAPI) -> None:
             app=StaticFiles(directory=settings.STATIC_ROOT),
             name=settings.STATIC_DIR,
         )
-    # 挂载录制文件目录 — try simpler path
+    # 挂载录制文件目录 — 短时签名 URL（替代原未鉴权 app 级静态路由）
     from pathlib import Path
 
     from fastapi.responses import FileResponse
 
-    from app.api.v1.module_video.record.service import RECORDINGS_DIR
+    from app.api.v1.module_video.record.service import (
+        RECORDINGS_DIR,
+        safe_stream_segment,
+        verify_recording_signature,
+    )
 
     @app.get("/recordings/{stream_id}/{file_name}")
-    async def serve_recording(stream_id: str, file_name: str):
-        fp = RECORDINGS_DIR / stream_id / Path(file_name).name
+    async def serve_recording(
+        stream_id: str,
+        file_name: str,
+        exp: int = 0,
+        sig: str = "",
+    ):
+        """校验短时签名后返回录像文件（无签名/过期/越界一律拒绝）。
+
+        前端 ``<video>`` 无法携带 Authorization 头，故使用 ``play_url`` 中的
+        ``?exp=&sig=`` 短时签名鉴权；签名由 ``record`` 模块的受权限保护接口签发。
+        """
+        try:
+            seg = safe_stream_segment(stream_id)
+        except Exception:
+            return HTMLResponse(status_code=403)
+        safe_name = Path(file_name).name
+        if not verify_recording_signature(seg, safe_name, exp, sig):
+            return HTMLResponse(status_code=403)
+        fp = RECORDINGS_DIR / seg / safe_name
         if fp.exists() and fp.is_file():
             return FileResponse(str(fp), media_type="video/mp4")
         return HTMLResponse(status_code=404)

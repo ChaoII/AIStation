@@ -313,12 +313,24 @@ class Settings(BaseSettings):
     INFERENCE_CONFIG_DIR: str = "/tmp/inference_configs"
     INFERENCE_WORKER_PYTHON: str = ""  # 留空则使用 sys.executable
     DETECTIONS_DIR: str = str(BASE_DIR / "data" / "detections")
+    # 时序状态（TemporalStore）Redis 访问超时：必须短，避免 Redis 抖动时阻塞事件循环。
+    # 每次访问最多阻塞该秒数；连续失败进入 cooldown 直接走内存，避免每条事件都等待。
+    TEMPORAL_REDIS_TIMEOUT: float = 0.5
+    TEMPORAL_REDIS_COOLDOWN_SEC: float = 10.0
+    # 内存降级状态的 TTL（秒，与 Redis 路径 _TTL_SEC 语义一致，防无界增长）
+    TEMPORAL_MEMORY_TTL_SEC: int = 24 * 3600
 
     # ================================================= #
     # ******************* 录像回调配置 ****************** #
     # ================================================= #
     # ZLM 录像完成 Webhook 共享密钥：默认空并 fail-closed（未配置时拒绝回调）
     RECORD_WEBHOOK_TOKEN: str = ""
+    # 录像文件播放短时签名 URL：签名密钥（空则由 SECRET_KEY 派生，避免跨协议复用主密钥）
+    RECORD_URL_SIGN_KEY: str = ""
+    # 播放签名 URL 有效期（秒）
+    RECORD_URL_TTL_SECONDS: int = 3600
+    # 告警记录保留天数（TTL 清理；<=0 视为不清理），与 EDGE_EVENT_RETENTION_DAYS 同语义
+    ALARM_RECORD_RETENTION_DAYS: int = 90
 
     # ================================================= #
     # ******************* 云边协同配置 ****************** #
@@ -327,6 +339,9 @@ class Settings(BaseSettings):
     EDGE_HEARTBEAT_TIMEOUT_SEC: int = 90  # 超过该秒数未心跳判定离线
     EDGE_CONTROL_TOKEN: str = ""  # 边缘控制面共享密钥（空=不校验）
     EDGE_LOCAL_CONTROL_URL: str = ""  # 纯云端本机 Agent 控制面地址
+    # 未显式指定后端/设备时的协商回退值（设备上报 capabilities 时优先取上报值）
+    EDGE_DEFAULT_BACKEND: str = "ort"
+    EDGE_DEFAULT_DEVICE: str = "cpu"
 
     # ================================================= #
     # *************** 边缘事件 MQTT 接入配置 ************ #
@@ -365,11 +380,23 @@ class Settings(BaseSettings):
     # 标注工作台会一次性加载图片列表+预签名URL+标注数据，合法请求较多，默认放宽
     # 视频模块的规则编辑器/事件流/边缘页在单次交互中会对同一路由（如 rule/list）
     # 连续多次请求（打开对话框、保存后刷新、搜索、再次编辑），默认 5 次/10s 会误伤
-    # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由 60 次/10s 上限）。
+    # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由上限）。
+    #
+    # 注意：`POST /api/v1/video/algorithm/detection/callback`（边缘事件 HTTP 接入）与
+    # 视频模块共用同一个 `video` 路由级限流器。边缘机队每台相机约 1 事件/s，60/10s
+    # （=6 事件/s）会在真实部署下直接 429 丢告警，故 video 覆盖必须显著高于机队峰值。
+    # 现阶段按 1200/10s（=120 事件/s，可支撑约 120 台满负荷相机）配置；机队更大时按
+    # 下面的 EDGE_INGEST_* 常量线性上调。彻底的「接入路由独立限额」需要路由装配层
+    # （init_app.py）按路径分流，属后续项。
+    EDGE_INGEST_RATE_LIMIT_TIMES: int = 1200
+    EDGE_INGEST_RATE_LIMIT_SECONDS: int = 10
     RATE_LIMIT_OVERRIDES: dict[str, dict] = {
         "annotation": {"times": 60, "seconds": 10},
         "train": {"times": 30, "seconds": 10},
-        "video": {"times": 60, "seconds": 10},
+        "video": {
+            "times": EDGE_INGEST_RATE_LIMIT_TIMES,
+            "seconds": EDGE_INGEST_RATE_LIMIT_SECONDS,
+        },
     }
 
     # ================================================= #
