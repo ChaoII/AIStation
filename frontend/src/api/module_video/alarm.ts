@@ -75,6 +75,11 @@ export function getAlarmRuleList(data?: any) {
   return request({ url: "/video/alarm/rule/list", method: "get", params: data });
 }
 
+/** 按 id 精确查询单条规则（编辑回填；避免只取前 N 条导致编辑变新建） */
+export function getAlarmRuleDetail(id: number) {
+  return request({ url: `/video/alarm/rule/detail/${id}`, method: "get" });
+}
+
 export function createAlarmRule(data: AlarmRulePayload) {
   return request({ url: "/video/alarm/rule/create", method: "post", data });
 }

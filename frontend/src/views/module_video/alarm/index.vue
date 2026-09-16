@@ -616,6 +616,7 @@ import { getAlgorithmTaskList } from "@/api/module_video/deploy";
 import {
   getAlarmRecordList,
   getAlarmRuleList,
+  getAlarmRuleDetail,
   confirmAlarm,
   deleteAlarmRecord,
   deleteAlarmRule,
@@ -1089,49 +1090,61 @@ async function handleOpenRuleDialog(type: "create" | "update", id?: number) {
   ensureAlgorithmTaskOptions();
   if (id && type === "update") {
     ruleDialogVisible.title = "编辑规则";
-    const res = await getAlarmRuleList({ page_no: 1, page_size: 100 });
-    const item = res.data.data.items.find((i: any) => i.id === id);
-    if (item) {
-      Object.assign(ruleForm, item);
-      // 回填作用域：有 group_id 即组规则，否则相机规则（camera_id/group_id 恰有其一）
-      ruleForm.scope = item.group_id ? "group" : "camera";
-      ruleForm.camera_id = item.camera_id ?? undefined;
-      ruleForm.group_id = item.group_id ?? undefined;
-      // 回填场景规则：场景码存于 alarm_type，params/conditions 原样取回（无 detail 接口，走列表）
-      ruleForm.params = item.params || {};
-      ruleForm.conditions = item.conditions || null;
-      ruleForm.scene_type = item.alarm_type || undefined;
-      // 灰度配置回填：缺省 {} 表示全量生效
-      ruleForm.schedule_json = item.schedule_json || null;
-      ruleForm.rollout = item.rollout || {};
-      // Parse notify_channels into selection + per-channel config
-      const channels = item.notify_channels || [];
-      ruleChannelSelection.value = [];
-      ruleChannelEmailTo.value = "";
-      ruleChannelSmsPhones.value = "";
-      ruleChannelWebhookUrl.value = "";
-      ruleChannelWebhookMethod.value = "POST";
-      ruleChannelWebhookSecret.value = "";
-      ruleChannelWebhookHeaders.value = "";
-      ruleChannelWebhookTemplate.value = "";
-      for (const entry of channels) {
-        if (typeof entry === "string") {
-          ruleChannelSelection.value.push(entry);
-        } else if (typeof entry === "object" && entry.channel) {
-          ruleChannelSelection.value.push(entry.channel);
-          if (entry.channel === "EMAIL" && entry.recipients) {
-            ruleChannelEmailTo.value = (entry.recipients as string[]).join(", ");
-          }
-          if (entry.channel === "SMS" && entry.phones) {
-            ruleChannelSmsPhones.value = (entry.phones as string[]).join(", ");
-          }
-          if (entry.channel === "WEBHOOK") {
-            ruleChannelWebhookUrl.value = entry.url || "";
-            ruleChannelWebhookMethod.value = entry.method || "POST";
-            ruleChannelWebhookSecret.value = entry.secret || "";
-            ruleChannelWebhookHeaders.value = entry.headers ? JSON.stringify(entry.headers) : "";
-            ruleChannelWebhookTemplate.value = entry.template || "";
-          }
+    // 按 id 精确取回（不再只取前 100 条做匹配：规则数 >100 时会把编辑误判为新建）
+    let item: any = null;
+    try {
+      const res = await getAlarmRuleDetail(id);
+      item = res.data?.data ?? null;
+    } catch {
+      ElMessage.error("规则不存在或已被删除，请刷新列表后重试");
+      return;
+    }
+    if (!item) {
+      ElMessage.error("规则不存在或已被删除，请刷新列表后重试");
+      return;
+    }
+    // 无条件回填 id：即便后续字段异常也绝不允许退化为「新建」
+    ruleForm.id = id;
+    Object.assign(ruleForm, item);
+    ruleForm.id = id;
+    // 回填作用域：有 group_id 即组规则，否则相机规则（camera_id/group_id 恰有其一）
+    ruleForm.scope = item.group_id ? "group" : "camera";
+    ruleForm.camera_id = item.camera_id ?? undefined;
+    ruleForm.group_id = item.group_id ?? undefined;
+    // 回填场景规则：场景码存于 alarm_type，params/conditions 原样取回
+    ruleForm.params = item.params || {};
+    ruleForm.conditions = item.conditions || null;
+    ruleForm.scene_type = item.alarm_type || undefined;
+    // 灰度配置回填：缺省 {} 表示全量生效
+    ruleForm.schedule_json = item.schedule_json || null;
+    ruleForm.rollout = item.rollout || {};
+    // Parse notify_channels into selection + per-channel config
+    const channels = item.notify_channels || [];
+    ruleChannelSelection.value = [];
+    ruleChannelEmailTo.value = "";
+    ruleChannelSmsPhones.value = "";
+    ruleChannelWebhookUrl.value = "";
+    ruleChannelWebhookMethod.value = "POST";
+    ruleChannelWebhookSecret.value = "";
+    ruleChannelWebhookHeaders.value = "";
+    ruleChannelWebhookTemplate.value = "";
+    for (const entry of channels) {
+      if (typeof entry === "string") {
+        ruleChannelSelection.value.push(entry);
+      } else if (typeof entry === "object" && entry.channel) {
+        ruleChannelSelection.value.push(entry.channel);
+        if (entry.channel === "EMAIL" && entry.recipients) {
+          ruleChannelEmailTo.value = (entry.recipients as string[]).join(", ");
+        }
+        if (entry.channel === "SMS" && entry.phones) {
+          ruleChannelSmsPhones.value = (entry.phones as string[]).join(", ");
+        }
+        if (entry.channel === "WEBHOOK") {
+          ruleChannelWebhookUrl.value = entry.url || "";
+          ruleChannelWebhookMethod.value = entry.method || "POST";
+          ruleChannelWebhookSecret.value = entry.secret || "";
+          ruleChannelWebhookHeaders.value = entry.headers ? JSON.stringify(entry.headers) : "";
+          ruleChannelWebhookTemplate.value = entry.template || "";
         }
       }
     }

@@ -200,3 +200,35 @@ class AlarmService:
     async def delete_record_service(cls, ids: list[int], auth: AuthSchema) -> None:
         from .crud import AlarmRecordCRUD
         await AlarmRecordCRUD(auth).delete(ids=ids)
+
+
+async def validate_rule_scope_invariant() -> int:
+    """启动校验：统计 camera_id/group_id 非「恰有其一」的非法规则并告警。
+
+    DB 层已加 ``CHECK ((camera_id IS NULL) <> (group_id IS NULL)) NOT VALID``
+    约束（仅约束新写入）；本函数用于**发现**历史遗留非法行（双空/双非空），
+    便于运维清理。返回非法行数（失败返回 0）。
+    """
+    from sqlalchemy import and_, func, or_, select
+
+    from app.api.v1.module_video.alarm.model import AlarmRuleModel
+    from app.core.database import async_db_session
+    from app.core.logger import log
+
+    bad = or_(
+        and_(AlarmRuleModel.camera_id.is_(None), AlarmRuleModel.group_id.is_(None)),
+        and_(AlarmRuleModel.camera_id.isnot(None), AlarmRuleModel.group_id.isnot(None)),
+    )
+    try:
+        async with async_db_session() as db:
+            count = (
+                await db.execute(select(func.count()).select_from(AlarmRuleModel).where(bad))
+            ).scalar() or 0
+        if count:
+            log.warning(
+                f"⚠️  检测到 {count} 条告警规则作用域非法（camera_id/group_id 需恰有其一），请清理"
+            )
+        return int(count)
+    except Exception as e:
+        log.warning(f"告警规则作用域校验失败: {e}")
+        return 0
