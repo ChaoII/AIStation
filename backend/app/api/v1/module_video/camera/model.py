@@ -14,7 +14,16 @@ class CameraGroupModel(MappedBase):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False, comment="分组名称")
-    parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None, comment="上级分组ID")
+    # 自引用外键：父分组删除前必须无子分组（应用层 delete_group_service 已前置校验，
+    # 此处 RESTRICT 作为 DB 级兜底，避免遗留指向不存在父节点的悬空子分组导致树丢节点）。
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("video_camera_groups.id", ondelete="RESTRICT", name="fk_video_camera_groups_parent_id"),
+        nullable=True,
+        default=None,
+        index=True,
+        comment="上级分组ID",
+    )
     sort_order: Mapped[int] = mapped_column(Integer, default=0, comment="排序")
     status: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="备注")
