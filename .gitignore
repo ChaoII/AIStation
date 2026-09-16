@@ -70,3 +70,6 @@ test_*.js
 pytorch-ocr/.venv
 pytorch-ocr/.pytest_cache
 pytorch-ocr/*.egg-info
+
+# 可视化头脑风暴伴侣产物（本地草稿，勿提交）
+.superpowers/brainstorm/
