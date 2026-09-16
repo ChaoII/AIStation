@@ -23,12 +23,21 @@ class CustomCORSMiddleware(CORSMiddleware):
     """CORS跨域中间件"""
 
     def __init__(self, app: ASGIApp) -> None:
+        allow_credentials = settings.ALLOW_CREDENTIALS
+        if "*" in settings.ALLOW_ORIGINS and allow_credentials:
+            # 通配来源 + 允许凭据会被浏览器视为对任意站点开放凭据（并回显 Origin），
+            # 这里强制降级为不携带凭据；需要凭据时应配置显式域名白名单。
+            log.warning(
+                "[安全告警] ALLOW_ORIGINS 为通配 '*'，已强制关闭 ALLOW_CREDENTIALS；"
+                "如需携带凭据请配置显式域名白名单。"
+            )
+            allow_credentials = False
         super().__init__(
             app,
             allow_origins=settings.ALLOW_ORIGINS,
             allow_methods=settings.ALLOW_METHODS,
             allow_headers=settings.ALLOW_HEADERS,
-            allow_credentials=settings.ALLOW_CREDENTIALS,
+            allow_credentials=allow_credentials,
             expose_headers=settings.CORS_EXPOSE_HEADERS,
         )
 
@@ -194,7 +203,8 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
 
         except CustomException as e:
             log.exception(f"中间件处理异常: {e!s}")
-            return ErrorResponse(msg="系统异常，请联系管理员", data=str(e))
+            # 不回显异常细节，避免泄露内部实现/敏感信息
+            return ErrorResponse(msg="系统异常，请联系管理员")
 
 
 class CustomGZipMiddleware(GZipMiddleware):
