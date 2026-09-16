@@ -132,19 +132,33 @@ class TemporalStore:
         self._lock = threading.Lock()
         self._memory: dict[str, dict[str, float]] = {}
         self._memory_meta: dict[str, float] = {}
+        # 内存降级路径的过期时间（monotonic 秒）；与 Redis 路径 _TTL_SEC 语义一致，防无界增长
+        self._memory_expiry: dict[str, float] = {}
         # 允许测试注入 Redis 客户端（如 fakeredis），绕过全局配置
         self._redis = redis_client
         self._redis_failed = False
+        # Redis 故障冷却截止时间（monotonic）：冷却期内直接走内存，避免每条事件都阻塞超时
+        self._redis_cooldown_until = 0.0
 
     # ------------------------------------------------------------- 后端选择
+    def _mark_redis_failed(self, exc: Exception) -> None:
+        """标记 Redis 不可用并进入冷却；冷却结束后会自动重连（不再永久降级）。"""
+        self._redis = None
+        if not self._redis_failed:
+            log.warning(f"时序状态 Redis 不可用，暂降级为进程内存储（将自动重试恢复）: {exc}")
+        self._redis_failed = True
+        cooldown = float(getattr(settings, "TEMPORAL_REDIS_COOLDOWN_SEC", 10.0) or 10.0)
+        self._redis_cooldown_until = time.monotonic() + max(0.0, cooldown)
+
     def _get_redis(self):
-        """惰性创建 Redis 客户端；失败则永久降级内存并返回 None。"""
+        """惰性创建 Redis 客户端；失败进入冷却并返回 None，冷却后可自动恢复。"""
         if self._redis is not None:
             return self._redis
         if not self._prefer_redis or not settings.REDIS_ENABLE:
             return None
-        if self._redis_failed:
+        if self._redis_failed and time.monotonic() < self._redis_cooldown_until:
             return None
+        # 冷却结束：尝试重连；成功则清除降级标记（多 worker 部署下恢复共享状态）
         try:
             if getattr(settings, "TESTING", False):
                 import fakeredis
@@ -153,19 +167,33 @@ class TemporalStore:
             else:
                 import redis
 
+                # 超时必须短（默认 0.5s）：该调用在事件处理热路径上，长超时会阻塞事件循环
+                timeout = float(getattr(settings, "TEMPORAL_REDIS_TIMEOUT", 0.5) or 0.5)
                 self._redis = redis.Redis.from_url(
                     settings.REDIS_URI,
                     encoding="utf-8",
                     decode_responses=True,
-                    socket_connect_timeout=settings.POOL_TIMEOUT,
-                    socket_timeout=settings.POOL_TIMEOUT,
+                    socket_connect_timeout=timeout,
+                    socket_timeout=timeout,
                 )
                 self._redis.ping()
+            self._redis_failed = False
+            self._redis_cooldown_until = 0.0
         except Exception as e:
-            log.warning(f"时序状态 Redis 不可用，降级为进程内存储: {e}")
-            self._redis = None
-            self._redis_failed = True
+            self._mark_redis_failed(e)
         return self._redis
+
+    def _memory_ttl(self) -> float:
+        """内存降级状态的 TTL（秒）。"""
+        return float(getattr(settings, "TEMPORAL_MEMORY_TTL_SEC", _TTL_SEC) or _TTL_SEC)
+
+    def _evict_memory_locked(self) -> None:
+        """清理过期的内存状态；调用方需持有 ``self._lock``。"""
+        now = time.monotonic()
+        for key in [k for k, exp in self._memory_expiry.items() if exp <= now]:
+            self._memory_expiry.pop(key, None)
+            self._memory.pop(key, None)
+            self._memory_meta.pop(key, None)
 
     @staticmethod
     def _key(camera_id, alarm_type, label, scope: str) -> str:
@@ -185,9 +213,8 @@ class TemporalStore:
             try:
                 return dict(rd.hgetall(key) or {})
             except Exception as e:
-                log.warning(f"时序状态读取失败，降级内存: {e}")
-                self._redis = None
-                self._redis_failed = True
+                self._mark_redis_failed(e)
+        self._evict_memory_locked()
         return dict(self._memory.get(key, {}))
 
     def _read_hash(self, key: str) -> dict:
@@ -204,10 +231,10 @@ class TemporalStore:
                     rd.expire(key, _TTL_SEC)
                 return
             except Exception as e:
-                log.warning(f"时序状态写入失败，降级内存: {e}")
-                self._redis = None
-                self._redis_failed = True
+                self._mark_redis_failed(e)
+        self._evict_memory_locked()
         self._memory.setdefault(key, {}).update(mapping)
+        self._memory_expiry[key] = time.monotonic() + self._memory_ttl()
 
     def _write_hash(self, key: str, mapping: dict) -> None:
         with self._lock:
@@ -274,11 +301,10 @@ class TemporalStore:
             try:
                 return list(rd.scan_iter(match=pattern))
             except Exception as e:
-                log.warning(f"时序状态扫描失败，降级内存: {e}")
-                self._redis = None
-                self._redis_failed = True
+                self._mark_redis_failed(e)
         target = f"{base}{label}{suffix}" if label is not None else None
         with self._lock:
+            self._evict_memory_locked()
             keys = []
             for k in list(self._memory.keys()):
                 if not k.startswith(base) or not k.endswith(suffix):
@@ -363,10 +389,9 @@ class TemporalStore:
             try:
                 return _to_float(rd.get(key))
             except Exception as e:
-                log.warning(f"absence 标记读取失败，降级内存: {e}")
-                self._redis = None
-                self._redis_failed = True
+                self._mark_redis_failed(e)
         with self._lock:
+            self._evict_memory_locked()
             return self._memory_meta.get(key)
 
     def set_absent_fired(self, camera_id, alarm_type, label, scope: str, ts: float) -> None:
@@ -379,11 +404,11 @@ class TemporalStore:
                 rd.setex(key, _TTL_SEC, str(float(ts)))
                 return
             except Exception as e:
-                log.warning(f"absence 标记写入失败，降级内存: {e}")
-                self._redis = None
-                self._redis_failed = True
+                self._mark_redis_failed(e)
         with self._lock:
+            self._evict_memory_locked()
             self._memory_meta[key] = float(ts)
+            self._memory_expiry[key] = time.monotonic() + self._memory_ttl()
 
     # ----------------------------------------------------------------- 维护
     def reset(self) -> None:
@@ -391,6 +416,7 @@ class TemporalStore:
         with self._lock:
             self._memory.clear()
             self._memory_meta.clear()
+            self._memory_expiry.clear()
         rd = self._get_redis()
         if rd is not None:
             try:

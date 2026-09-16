@@ -4,6 +4,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from starlette.concurrency import run_in_threadpool
+
 from app.api.v1.module_video.inference.gating import rule_active_now
 from app.api.v1.module_video.inference.temporal import (
     ABSENT_ALL,
@@ -932,10 +934,20 @@ async def _evaluate_rule(
     )
     hit_leaves: list = []
     if rule is not None and rule.conditions:
-        # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变
+        # 时序叶子需先写入本次观测（按事件 ts），再评估；非时序规则行为不变。
+        # 时序状态存储（TemporalStore）当前为同步 Redis 客户端，直接在事件循环里调用
+        # 会在 Redis 抖动时阻塞整个事件循环（审计 §并发-5），故经线程池下发执行。
         if has_temporal:
-            _observe_temporal_event(camera_id, alarm_type, detections, event_now, rule.conditions)
-        matched, hit_leaves = explain_conditions(
+            await run_in_threadpool(
+                _observe_temporal_event,
+                camera_id,
+                alarm_type,
+                detections,
+                event_now,
+                rule.conditions,
+            )
+        matched, hit_leaves = await run_in_threadpool(
+            explain_conditions,
             rule.conditions,
             detections,
             camera_id=camera_id,
@@ -948,7 +960,9 @@ async def _evaluate_rule(
             return None
         if has_temporal:
             # 命中后写入 absence 触发标记（纯读取的 _eval_temporal 不改状态）
-            _mark_absence_fired(camera_id, alarm_type, rule.conditions, event_now)
+            await run_in_threadpool(
+                _mark_absence_fired, camera_id, alarm_type, rule.conditions, event_now
+            )
 
     severity = rule.severity if rule else "WARNING"
 
@@ -1144,21 +1158,24 @@ class InferenceService:
         first_matched_rule_id = None
         first_hit_leaves: list = []
         skipped: list[dict] = []
-        try:
-            for rule in candidates:
-                # 规则层灰度 gating：跳过者不观测、不评估、不落库（逐条独立）
-                if rule is not None:
-                    active, reason = rule_active_now(
-                        getattr(rule, "schedule_json", None),
-                        getattr(rule, "rollout", None),
-                        camera_id,
-                        event_now,
-                        rule_id=rule.id,
-                    )
-                    if not active:
-                        log.info(f"规则 {rule.id} 灰度跳过（{reason}）: camera={camera_id}")
-                        skipped.append({"rule_id": rule.id, "reason": reason})
-                        continue
+        rule_errors: list[dict] = []
+        for rule in candidates:
+            # 规则层灰度 gating：跳过者不观测、不评估、不落库（逐条独立）
+            if rule is not None:
+                active, reason = rule_active_now(
+                    getattr(rule, "schedule_json", None),
+                    getattr(rule, "rollout", None),
+                    camera_id,
+                    event_now,
+                    rule_id=rule.id,
+                )
+                if not active:
+                    log.info(f"规则 {rule.id} 灰度跳过（{reason}）: camera={camera_id}")
+                    skipped.append({"rule_id": rule.id, "reason": reason})
+                    continue
+            # 单规则异常隔离：某规则抛错不得中断后续规则（审计 §6-4），
+            # 失败规则单独记录并在返回体中可观测（不再让事件以 matched=True 掩盖）。
+            try:
                 res = await _evaluate_rule(
                     rule,
                     event,
@@ -1169,18 +1186,19 @@ class InferenceService:
                     saved_snapshot_path,
                     group_camera_ids=group_camera_ids,
                 )
-                if not res:
-                    continue
-                if not alarm_ids:
-                    first_matched_rule_id = res.get("rule_id")
-                    first_hit_leaves = res.get("hit_leaves") or []
-                if res.get("rule_name") is not None:
-                    matched_rule_names.append(res["rule_name"])
-                alarm_ids.append(res["alarm_id"])
-        except Exception as e:
-            log.error(f"创建告警记录失败: {e}")
+            except Exception as e:  # noqa: BLE001 - 逐规则隔离，继续评估其余规则
+                rid = getattr(rule, "id", None)
+                log.error(f"规则 {rid} 评估/落库失败，已跳过并继续其余规则: {e}")
+                rule_errors.append({"rule_id": rid, "error": str(e)})
+                continue
+            if not res:
+                continue
             if not alarm_ids:
-                return {"alarm_created": False, "error": str(e)}
+                first_matched_rule_id = res.get("rule_id")
+                first_hit_leaves = res.get("hit_leaves") or []
+            if res.get("rule_name") is not None:
+                matched_rule_names.append(res["rule_name"])
+            alarm_ids.append(res["alarm_id"])
 
         if not alarm_ids:
             # 有规则但全部未命中：落一条未命中事件（便于回溯"为什么没命中"）
@@ -1196,6 +1214,8 @@ class InferenceService:
             }
             if skipped:
                 result["rule_skipped_list"] = skipped
+            if rule_errors:
+                result["rule_error_list"] = rule_errors
             return result
 
         # 命中（或规则为空）建告警后落库；失败仅告警，不影响告警返回
@@ -1214,7 +1234,9 @@ class InferenceService:
             "rule_matched_list": matched_rule_names,
             **_event_id_kv(event_id),
         }
-        # 单规则/无跳过路径保持返回体逐字节不变；仅在有跳过时附加排查字段
+        # 单规则/无跳过路径保持返回体逐字节不变；仅在有跳过/失败时附加排查字段
         if skipped:
             result["rule_skipped_list"] = skipped
+        if rule_errors:
+            result["rule_error_list"] = rule_errors
         return result
