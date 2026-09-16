@@ -1,7 +1,7 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from typing import Any
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.concurrency import asynccontextmanager
 from fastapi.openapi.docs import (
     get_redoc_html,
@@ -1208,20 +1208,67 @@ def register_exceptions(app: FastAPI) -> None:
     handle_exception(app)
 
 
+def resolve_rate_limit(module: str, method: str, paths: Iterable[str]) -> dict[str, int]:
+    """解析某请求实际生效的限流参数。
+
+    优先按 ``"METHOD /path"`` 精确匹配 ``settings.RATE_LIMIT_PATH_OVERRIDES``
+    （设备接入/回调路径独立限额），否则回退到 ``settings.RATE_LIMIT_OVERRIDES[module]``。
+    传入的 ``paths`` 可含/不含 ``ROOT_PATH`` 前缀，均会归一化后匹配。
+
+    参数:
+    - module (str): 模块名。
+    - method (str): HTTP 方法。
+    - paths (Iterable[str]): 候选请求路径（如 ``scope["path"]`` 与 ``url.path``）。
+
+    返回:
+    - dict[str, int]: ``{"times": N, "seconds": M}``。
+    """
+    from app.config.setting import settings
+
+    root = settings.ROOT_PATH.rstrip("/")
+    normalized: set[str] = set()
+    for path in paths:
+        if not path:
+            continue
+        normalized.add(path)
+        if root and path.startswith(root):
+            normalized.add(path[len(root):] or "/")
+    method = method.upper()
+    for path in normalized:
+        cfg = settings.RATE_LIMIT_PATH_OVERRIDES.get(f"{method} {path}")
+        if cfg:
+            return {"times": cfg["times"], "seconds": cfg["seconds"]}
+    ov = settings.RATE_LIMIT_OVERRIDES.get(module, {})
+    return {
+        "times": ov.get("times", settings.REQUEST_RATE_LIMIT_TIMES),
+        "seconds": ov.get("seconds", settings.REQUEST_RATE_LIMIT_SECONDS),
+    }
+
+
 def _rate_limit(module: str = "default"):
-    """按模块读取限流参数，生成 RateLimiter 依赖（支持 settings 动态配置）。
+    """按「路径优先、模块兜底」生成限流依赖（支持 settings 动态配置）。
+
+    设备接入/回调路径（边缘事件回调、心跳、录像 webhook）由
+    ``RATE_LIMIT_PATH_OVERRIDES`` 单独限额，避免与交互路由共用模块级小额限流而
+    在机队峰值下 429 丢告警；其余路由沿用模块级限额。
 
     参数:
     - module (str): 模块名，对应 settings.RATE_LIMIT_OVERRIDES 的 key。
 
     返回:
-    - Depends(RateLimiter): 对应模块的限流依赖。
+    - Depends: 对应请求的限流依赖。
     """
-    from app.config.setting import settings
-    ov = settings.RATE_LIMIT_OVERRIDES.get(module, {})
-    times = ov.get("times", settings.REQUEST_RATE_LIMIT_TIMES)
-    seconds = ov.get("seconds", settings.REQUEST_RATE_LIMIT_SECONDS)
-    return Depends(RateLimiter(times=times, seconds=seconds))
+
+    async def _limiter_dependency(request: Request, response: Response) -> None:
+        cfg = resolve_rate_limit(
+            module,
+            request.method,
+            (request.scope.get("path", ""), request.url.path),
+        )
+        limiter = RateLimiter(times=cfg["times"], seconds=cfg["seconds"])
+        await limiter(request, response)
+
+    return Depends(_limiter_dependency)
 
 
 def register_routers(app: FastAPI) -> None:

@@ -1,16 +1,35 @@
-"""边缘事件接入限流配置回归（审计 §并发-4：60/10s = 6 事件/s 会丢告警）。
+"""边缘接入与交互路由限流隔离回归（审计 §并发-4 后续项）。
 
-边缘事件 HTTP 接入 `POST /api/v1/video/algorithm/detection/callback` 与视频模块共用
-同一个路由级限流器，故校验 video 覆盖值必须显著高于旧值。彻底按路径独立限额需要
-路由装配层（init_app.py）支持，属后续项；本测试锁定当前配置下界。
+设备侧接入/回调路径（detection/callback、edge/heartbeat、record webhook）由
+``settings.RATE_LIMIT_PATH_OVERRIDES`` 单独给到 ``EDGE_INGEST_*`` 限额；``video``
+模块交互路由回落到 60/10s，二者不再共用同一限额（否则机队峰值会 429 丢告警）。
+逐路径生效解析见 ``tests/test_rate_limit_paths.py``。
 """
 from app.config.setting import settings
 
 
-def test_edge_ingest_rate_limit_is_high_enough():
-    video = settings.RATE_LIMIT_OVERRIDES["video"]
-    assert video["times"] == settings.EDGE_INGEST_RATE_LIMIT_TIMES
-    assert video["seconds"] == settings.EDGE_INGEST_RATE_LIMIT_SECONDS
-    per_second = video["times"] / video["seconds"]
+def test_edge_ingest_paths_have_dedicated_high_limit():
+    per_second = (
+        settings.EDGE_INGEST_RATE_LIMIT_TIMES / settings.EDGE_INGEST_RATE_LIMIT_SECONDS
+    )
     assert per_second > 6, f"接入限流过低（旧值 6/s）：{per_second}/s"
     assert per_second >= 100, f"接入限流不足以支撑边缘机队：{per_second}/s"
+
+    keys = set(settings.RATE_LIMIT_PATH_OVERRIDES)
+    for suffix in (
+        "/video/algorithm/detection/callback",
+        "/video/edge/heartbeat",
+        "/video/record/webhook/on_record_mp4",
+    ):
+        matched = [k for k in keys if k.endswith(suffix)]
+        assert len(matched) == 1, f"缺少设备路径限流覆盖: {suffix}"
+        cfg = settings.RATE_LIMIT_PATH_OVERRIDES[matched[0]]
+        assert cfg["times"] == settings.EDGE_INGEST_RATE_LIMIT_TIMES
+        assert cfg["seconds"] == settings.EDGE_INGEST_RATE_LIMIT_SECONDS
+
+
+def test_video_interactive_limit_is_protected_and_below_ingest():
+    video = settings.RATE_LIMIT_OVERRIDES["video"]
+    assert video["times"] == 60
+    assert video["seconds"] == 10
+    assert video["times"] < settings.EDGE_INGEST_RATE_LIMIT_TIMES

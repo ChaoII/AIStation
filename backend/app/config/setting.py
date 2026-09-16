@@ -380,20 +380,29 @@ class Settings(BaseSettings):
     # 标注工作台会一次性加载图片列表+预签名URL+标注数据，合法请求较多，默认放宽
     # 视频模块的规则编辑器/事件流/边缘页在单次交互中会对同一路由（如 rule/list）
     # 连续多次请求（打开对话框、保存后刷新、搜索、再次编辑），默认 5 次/10s 会误伤
-    # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由上限）。
-    #
-    # 注意：`POST /api/v1/video/algorithm/detection/callback`（边缘事件 HTTP 接入）与
-    # 视频模块共用同一个 `video` 路由级限流器。边缘机队每台相机约 1 事件/s，60/10s
-    # （=6 事件/s）会在真实部署下直接 429 丢告警，故 video 覆盖必须显著高于机队峰值。
-    # 现阶段按 1200/10s（=120 事件/s，可支撑约 120 台满负荷相机）配置；机队更大时按
-    # 下面的 EDGE_INGEST_* 常量线性上调。彻底的「接入路由独立限额」需要路由装配层
-    # （init_app.py）按路径分流，属后续项。
-    EDGE_INGEST_RATE_LIMIT_TIMES: int = 1200
-    EDGE_INGEST_RATE_LIMIT_SECONDS: int = 10
+    # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由 60 次/10s 上限）。
     RATE_LIMIT_OVERRIDES: dict[str, dict] = {
         "annotation": {"times": 60, "seconds": 10},
         "train": {"times": 30, "seconds": 10},
-        "video": {
+        "video": {"times": 60, "seconds": 10},
+    }
+
+    # 设备侧接入/回调路径的**独立**限额（键为 "METHOD /不含 ROOT_PATH 的路径"）：
+    # 这些接口各有设备控制令牌/回调共享密钥鉴权，且属机队流量（每台相机约 1 事件/s），
+    # 绝不能与交互路由共用 `video` 模块级小额限流，否则机队峰值会让告警被 429 丢弃。
+    # 现阶段按 1200/10s（≈120 事件/s，可支撑约 120 台满负荷相机），机队更大时线性上调。
+    EDGE_INGEST_RATE_LIMIT_TIMES: int = 1200
+    EDGE_INGEST_RATE_LIMIT_SECONDS: int = 10
+    RATE_LIMIT_PATH_OVERRIDES: dict[str, dict] = {
+        "POST /video/algorithm/detection/callback": {
+            "times": EDGE_INGEST_RATE_LIMIT_TIMES,
+            "seconds": EDGE_INGEST_RATE_LIMIT_SECONDS,
+        },
+        "POST /video/edge/heartbeat": {
+            "times": EDGE_INGEST_RATE_LIMIT_TIMES,
+            "seconds": EDGE_INGEST_RATE_LIMIT_SECONDS,
+        },
+        "POST /video/record/webhook/on_record_mp4": {
             "times": EDGE_INGEST_RATE_LIMIT_TIMES,
             "seconds": EDGE_INGEST_RATE_LIMIT_SECONDS,
         },
