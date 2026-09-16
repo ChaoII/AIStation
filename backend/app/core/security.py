@@ -1,7 +1,10 @@
+from datetime import datetime
+
 import jwt
 from fastapi import Form, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.security.utils import get_authorization_scheme_param
+from pydantic import ValidationError
 
 from app.api.v1.module_system.auth.schema import JWTPayloadSchema
 from app.config.setting import settings
@@ -106,6 +109,14 @@ def create_access_token(payload: JWTPayloadSchema) -> str:
     - str: 生成的JWT访问令牌。
     """
     payload_dict = payload.model_dump()
+    # 显式把 datetime 过期时间换算为 POSIX 时间戳：PyJWT 对 naive datetime
+    # 会按 UTC 解释，在非 UTC 时区（如 +08:00）会导致实际有效期被拉长。
+    exp = payload_dict.get("exp")
+    if isinstance(exp, datetime):
+        payload_dict["exp"] = int(exp.timestamp())
+    # 强制带签发者（iss），供 HTTP/WS 校验，避免同密钥跨域伪造
+    if settings.JWT_ISSUER:
+        payload_dict["iss"] = settings.JWT_ISSUER
     return jwt.encode(
         payload=payload_dict,
         key=settings.SECRET_KEY,
@@ -126,11 +137,23 @@ def decode_access_token(token: str) -> JWTPayloadSchema:
     异常:
     - CustomException: 解析失败时抛出,状态码为401。
     """
-    if not token:
+    if not token or not isinstance(token, str):
         raise CustomException(msg="认证不存在,请重新登录", code=10401, status_code=401)
 
+    options: dict = {"require": ["exp", "sub"]}
+    decode_kwargs: dict = {}
+    if settings.JWT_ISSUER:
+        # 校验签发者；缺失或不匹配均拒绝
+        decode_kwargs["issuer"] = settings.JWT_ISSUER
+
     try:
-        payload = jwt.decode(jwt=token, key=settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            jwt=token,
+            key=settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            options=options,
+            **decode_kwargs,
+        )
 
         online_user_info = payload.get("sub")
         if not online_user_info:
@@ -144,5 +167,5 @@ def decode_access_token(token: str) -> JWTPayloadSchema:
     except jwt.ExpiredSignatureError:
         raise CustomException(msg="认证已过期,请重新登录", code=10401, status_code=401)
 
-    except jwt.InvalidTokenError:
+    except (jwt.InvalidTokenError, ValidationError, KeyError, TypeError, ValueError):
         raise CustomException(msg="token已失效,请重新登录", code=10401, status_code=401)

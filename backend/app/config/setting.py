@@ -1,13 +1,75 @@
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote_plus
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.common.enums import EnvironmentEnum
 from app.config.path_conf import BASE_DIR, ENV_DIR
+
+# 源码内置的历史默认 JWT 密钥：公开可见，等同于无鉴权，严禁用于非 dev 环境
+DEFAULT_INSECURE_SECRET_KEY = "vgb0tnl9d58+6n-6h-ea&u^1#s0ccp!794=krylxcjq75vzps$"
+
+# 已知弱/示例密钥（审计与文档中出现过）：非 dev 环境一律拒绝
+INSECURE_SECRET_KEYS: frozenset[str] = frozenset(
+    {
+        DEFAULT_INSECURE_SECRET_KEY,
+        "change-me",
+        "changeme",
+        "secret",
+        "please-change-me",
+        "please-change-me-to-a-strong-random-secret",
+        "your_secret_key",
+        "your-secret-key",
+    }
+)
+
+# JWT 密钥最小长度（字符）
+MIN_SECRET_KEY_LENGTH = 32
+
+# 仅允许的对称签名算法；显式排除 alg=none 等危险算法
+SAFE_JWT_ALGORITHMS: frozenset[str] = frozenset({"HS256", "HS384", "HS512"})
+
+# 推理回调共享密钥的公开默认值/占位值：非 dev 环境一律拒绝
+INSECURE_INFERENCE_TOKENS: frozenset[str] = frozenset(
+    {
+        "",
+        "infer_callback_shared_secret",
+        "change-me",
+        "please-change-me",
+    }
+)
+
+# 占位符特征子串：命中即视为未替换的示例值（非 dev 环境拒绝）
+PLACEHOLDER_MARKERS: tuple[str, ...] = (
+    "change_me",
+    "change-me",
+    "changeme",
+    "replace_me",
+    "your_secret",
+    "your-secret",
+    "placeholder",
+    "example",
+    "insecure",
+)
+
+
+def is_placeholder_secret(value: str) -> bool:
+    """判断配置值是否为未替换的占位符/示例值。
+
+    参数:
+    - value (str): 待检查配置值。
+
+    返回:
+    - bool: 命中占位符特征时返回 True。
+    """
+    lowered = (value or "").strip().lower()
+    return any(marker in lowered for marker in PLACEHOLDER_MARKERS)
+
 
 
 class Settings(BaseSettings):
@@ -65,8 +127,11 @@ class Settings(BaseSettings):
     # ================================================= #
     # ******************* 登录认证配置 ****************** #
     # ================================================= #
-    SECRET_KEY: str = "vgb0tnl9d58+6n-6h-ea&u^1#s0ccp!794=krylxcjq75vzps$"  # JWT密钥
-    ALGORITHM: str = "HS256"  # JWT算法
+    # JWT密钥：仅 dev 允许沿用源码内置默认值（应用启动时打印醒目告警）；
+    # 非 dev 环境若仍为默认/空/过短值，将在实例化配置时硬失败，拒绝启动。
+    SECRET_KEY: str = DEFAULT_INSECURE_SECRET_KEY
+    ALGORITHM: str = "HS256"  # JWT算法（仅允许 HS256/HS384/HS512）
+    JWT_ISSUER: str = "aistation"  # JWT 签发者（iss），签发与校验均强制
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # access_token 过期时间 7 天
     REFRESH_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # refresh_token 过期时间 30 天
     TOKEN_TYPE: str = "bearer"  # token类型
@@ -240,12 +305,21 @@ class Settings(BaseSettings):
     # ================================================= #
     # ******************* AI推理引擎配置 ****************** #
     # ================================================= #
-    INFERENCE_CALLBACK_TOKEN: str = "infer_callback_shared_secret"
+    # 推理回调共享密钥：默认空并 fail-closed（未配置时拒绝回调，不再使用公开默认值）
+    INFERENCE_CALLBACK_TOKEN: str = ""
+    # 仅 dev 显式开关：允许在未配置回调密钥时放行（默认关闭，便于本地无凭据联调）
+    INFERENCE_CALLBACK_ALLOW_INSECURE_DEV: bool = False
     INFERENCE_SCHEDULER_INTERVAL: int = 60
     INFERENCE_WARMUP_DELAY: int = 15
     INFERENCE_CONFIG_DIR: str = "/tmp/inference_configs"
     INFERENCE_WORKER_PYTHON: str = ""  # 留空则使用 sys.executable
     DETECTIONS_DIR: str = str(BASE_DIR / "data" / "detections")
+
+    # ================================================= #
+    # ******************* 录像回调配置 ****************** #
+    # ================================================= #
+    # ZLM 录像完成 Webhook 共享密钥：默认空并 fail-closed（未配置时拒绝回调）
+    RECORD_WEBHOOK_TOKEN: str = ""
 
     # ================================================= #
     # ******************* 云边协同配置 ****************** #
@@ -298,6 +372,65 @@ class Settings(BaseSettings):
         "train": {"times": 30, "seconds": 10},
         "video": {"times": 60, "seconds": 10},
     }
+
+    # ================================================= #
+    # ******************* 安全校验 ******************* #
+    # ================================================= #
+    @model_validator(mode="after")
+    def _validate_security_config(self) -> "Settings":
+        """启动期安全校验：弱默认密钥/危险算法/公开回调密钥在非 dev 环境硬失败。
+
+        返回:
+        - Settings: 校验通过的配置实例。
+
+        异常:
+        - ValueError: 非 dev 环境配置不安全时抛出，使应用拒绝启动。
+        """
+        logger = logging.getLogger(__name__)
+        is_dev = self.ENVIRONMENT == EnvironmentEnum.DEV
+
+        # 1) JWT 算法白名单：显式排除 alg=none（否则验签形同虚设）
+        if self.ALGORITHM not in SAFE_JWT_ALGORITHMS:
+            raise ValueError(
+                f"ALGORITHM 仅允许 {sorted(SAFE_JWT_ALGORITHMS)}，当前为 {self.ALGORITHM!r}（禁止 none）"
+            )
+
+        # 2) token 过期时间必须为正数
+        if self.ACCESS_TOKEN_EXPIRE_MINUTES <= 0 or self.REFRESH_TOKEN_EXPIRE_MINUTES <= 0:
+            raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES / REFRESH_TOKEN_EXPIRE_MINUTES 必须为正数")
+
+        # 3) JWT 密钥强度
+        secret = (self.SECRET_KEY or "").strip()
+        weak_secret = (
+            not secret
+            or len(secret) < MIN_SECRET_KEY_LENGTH
+            or secret in INSECURE_SECRET_KEYS
+            or is_placeholder_secret(secret)
+        )
+        if is_dev:
+            if weak_secret:
+                logger.warning(
+                    "[安全告警] 当前 SECRET_KEY 为源码内置/空/过短值，仅限本地开发使用；"
+                    "非 dev 环境将拒绝启动，请务必更换为随机强密钥。"
+                )
+        elif weak_secret:
+            raise ValueError(
+                "非 dev 环境必须通过环境变量注入强 SECRET_KEY"
+                f"（>= {MIN_SECRET_KEY_LENGTH} 字符且非源码内置/示例值）"
+            )
+
+        # 4) 推理回调共享密钥（非 dev 环境禁止空值、公开默认值与占位符）
+        infer_token = (self.INFERENCE_CALLBACK_TOKEN or "").strip()
+        if not is_dev and (infer_token in INSECURE_INFERENCE_TOKENS or is_placeholder_secret(infer_token)):
+            raise ValueError(
+                "非 dev 环境必须配置非公开默认值的 INFERENCE_CALLBACK_TOKEN（禁止空值/示例值/占位符）"
+            )
+
+        # 5) 非 dev 环境开启 DEBUG 会泄露内部细节，至少给出醒目告警
+        if not is_dev and self.DEBUG:
+            logger.warning("[安全告警] 非 dev 环境 DEBUG=True，建议关闭以避免泄露内部实现细节。")
+
+        return self
 
     # ================================================= #
     # ******************* 重构配置 ******************* #
