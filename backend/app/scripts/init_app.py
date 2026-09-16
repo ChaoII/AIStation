@@ -962,6 +962,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await InitializeData().init_db()
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
         await _ensure_missing_columns()
+        # 作用域不变量启动校验：发现历史「双空/双非空」告警规则并告警
+        from app.api.v1.module_video.alarm.service import validate_rule_scope_invariant
+        await validate_rule_scope_invariant()
         await _ensure_deploy_menu()
         await _ensure_edge_button_menus()
         await _ensure_edge_page_menu()

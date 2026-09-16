@@ -1,9 +1,16 @@
+from datetime import datetime
+
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
+
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.core.exceptions import CustomException
 from app.core.media_server import media_server
 from app.utils.common_util import traversal_to_tree
 
 from .crud import CameraCRUD, CameraGroupCRUD
+from .model import CameraGroupModel
 from .param import CameraQueryParam
 from .schema import (
     CameraCreateSchema,
@@ -64,6 +71,14 @@ class CameraService:
 
     @classmethod
     async def delete_camera_service(cls, ids: list[int], auth: AuthSchema) -> None:
+        from app.api.v1.module_video.alarm.model import AlarmRecordModel, AlarmRuleModel
+        from app.api.v1.module_video.algorithm.model import AlgorithmTaskModel
+        from app.api.v1.module_video.record.model import (
+            RecordExecutionLog,
+            RecordFileModel,
+            RecordPlanModel,
+        )
+
         for id in ids:
             camera = await CameraCRUD(auth).get_by_id_crud(id=id)
             if not camera:
@@ -73,6 +88,23 @@ class CameraService:
                     await media_server.close_stream(camera.stream_id)
                 except Exception:
                     pass
+
+        # 相机是软删（CameraModel 含 is_deleted），DB 永远收不到 DELETE，
+        # 子表的 ON DELETE CASCADE 因此永不触发（H4）。此处显式处理子表：
+        # 支持软删的子表置 is_deleted；不支持软删的子表物理删除（与 FK 语义一致）。
+        now = datetime.now()
+        deleted_by = auth.user.id if auth.user else None
+        for model in (AlgorithmTaskModel, AlarmRuleModel, RecordPlanModel):
+            values: dict = {"is_deleted": True, "deleted_time": now}
+            if deleted_by is not None:
+                values["deleted_id"] = deleted_by
+            await auth.db.execute(
+                sa_update(model).where(model.camera_id.in_(ids)).values(**values)
+            )
+        for model in (AlarmRecordModel, RecordFileModel, RecordExecutionLog):
+            await auth.db.execute(sa_delete(model).where(model.camera_id.in_(ids)))
+        await auth.db.flush()
+
         await CameraCRUD(auth).delete_crud(ids=ids)
 
     @classmethod
@@ -164,4 +196,43 @@ class CameraService:
 
     @classmethod
     async def delete_group_service(cls, ids: list[int], auth: AuthSchema) -> None:
+        """删除相机分组：存在子分组或告警规则引用时拒绝（H3）。
+
+        ``group_id`` 外键为 ``ON DELETE SET NULL``，直接删除会让组规则的
+        ``camera_id``/``group_id`` 同时为空（双空作用域），规则既不触发也无法编辑。
+        故在删除前显式校验引用。
+        """
+        from app.api.v1.module_video.alarm.model import AlarmRuleModel
+
+        child_count = (
+            await auth.db.execute(
+                select(func.count())
+                .select_from(CameraGroupModel)
+                .where(CameraGroupModel.parent_id.in_(ids))
+            )
+        ).scalar() or 0
+        if child_count > 0:
+            raise CustomException(
+                msg="分组下存在子分组，请先删除或迁移子分组",
+                code=400,
+                status_code=400,
+            )
+
+        rule_count = (
+            await auth.db.execute(
+                select(func.count())
+                .select_from(AlarmRuleModel)
+                .where(
+                    AlarmRuleModel.group_id.in_(ids),
+                    AlarmRuleModel.is_deleted.is_(False),
+                )
+            )
+        ).scalar() or 0
+        if rule_count > 0:
+            raise CustomException(
+                msg="分组下存在告警规则，请先删除或改绑规则",
+                code=400,
+                status_code=400,
+            )
+
         await CameraGroupCRUD(auth).delete_crud(ids=ids)
