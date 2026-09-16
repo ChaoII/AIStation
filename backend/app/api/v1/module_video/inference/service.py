@@ -1071,14 +1071,20 @@ class InferenceService:
         saved_snapshot_path = None
         if snapshot_data:
             try:
+                from app.api.v1.module_video.inference.snapshot import safe_detections_path
+
                 detectors_dir = Path(settings.DETECTIONS_DIR)
                 detectors_dir.mkdir(parents=True, exist_ok=True)
                 snap_name = snapshot_path or f"{camera_id}_{int(datetime.now().timestamp())}.jpg"
-                snap_full = detectors_dir / snap_name
-                snap_full.parent.mkdir(parents=True, exist_ok=True)
-                img_bytes = base64.b64decode(snapshot_data)
-                snap_full.write_bytes(img_bytes)
-                saved_snapshot_path = str(snap_full)
+                # 归一化并校验路径必须落在 DETECTIONS_DIR 内，拒绝目录穿越
+                snap_full = safe_detections_path(snap_name)
+                if snap_full is None:
+                    log.warning(f"拒绝越界的快照写入路径: {snap_name!r}")
+                else:
+                    snap_full.parent.mkdir(parents=True, exist_ok=True)
+                    img_bytes = base64.b64decode(snapshot_data)
+                    snap_full.write_bytes(img_bytes)
+                    saved_snapshot_path = str(snap_full)
             except Exception as e:
                 log.warning(f"保存快照失败: {e}")
         elif snapshot_path:

@@ -59,3 +59,17 @@ def test_safe_local_snapshot_ok(monkeypatch, tmp_path):
     f = tmp_path / "a.jpg"
     f.write_bytes(b"x")
     assert snap.safe_local_snapshot("a.jpg") == f.resolve()
+
+
+def test_safe_detections_path_blocks_traversal(monkeypatch, tmp_path):
+    """写盘路径解析：``../`` 与越界绝对路径必须被拒绝（不要求文件存在）。"""
+    monkeypatch.setattr(snap.settings, "DETECTIONS_DIR", str(tmp_path))
+    assert snap.safe_detections_path("../../evil.jpg") is None
+    assert snap.safe_detections_path(str(Path(tmp_path).parent / "evil.jpg")) is None
+    assert snap.safe_detections_path("") is None
+
+
+def test_safe_detections_path_allows_nested_relative(monkeypatch, tmp_path):
+    """合法的子目录相对路径应归一化到 DETECTIONS_DIR 内。"""
+    monkeypatch.setattr(snap.settings, "DETECTIONS_DIR", str(tmp_path))
+    assert snap.safe_detections_path("2026-09-12/a.jpg") == (tmp_path / "2026-09-12" / "a.jpg").resolve()

@@ -20,8 +20,11 @@ def detections_base() -> Path:
     return Path(settings.DETECTIONS_DIR)
 
 
-def safe_local_snapshot(file_path: str) -> Path | None:
-    """在 DETECTIONS_DIR 下解析文件路径；目录穿越或文件不存在返回 None。"""
+def safe_detections_path(file_path: str) -> Path | None:
+    """在 DETECTIONS_DIR 下归一化路径；目录穿越/越界返回 None（不要求文件存在）。
+
+    供写盘前校验：拒绝 ``../`` 与落在 DETECTIONS_DIR 之外的绝对路径。
+    """
     if not file_path:
         return None
     base = detections_base().resolve()
@@ -31,7 +34,13 @@ def safe_local_snapshot(file_path: str) -> Path | None:
         return None
     if target != base and base not in target.parents:
         return None
-    return target if target.is_file() else None
+    return target
+
+
+def safe_local_snapshot(file_path: str) -> Path | None:
+    """在 DETECTIONS_DIR 下解析文件路径；目录穿越或文件不存在返回 None。"""
+    target = safe_detections_path(file_path)
+    return target if target is not None and target.is_file() else None
 
 
 def _presign(object_key: str) -> str | None:
