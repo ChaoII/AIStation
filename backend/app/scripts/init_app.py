@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter, WebSocketRateLimiter
 
+# 注册 JSONB→JSON、SQLite 注释降级等跨方言编译规则（SQLite/MySQL 下 create_all 需要）
+from app.alembic import dialect_compat  # noqa: F401
 from app.config.setting import settings
 from app.core.docs import get_custom_ui_html
 from app.core.exceptions import handle_exception
@@ -962,6 +964,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await InitializeData().init_db()
         log.info(f"✅ {settings.DATABASE_TYPE}数据库初始化完成")
         await _ensure_missing_columns()
+        # I1：create_all 建的库无 alembic_version，直接 upgrade head 会在 base create_table
+        # 处 DuplicateTable。schema 与当前模型一致时补写 head（使升级成安全空操作）；
+        # schema 落后则拒绝并给出指引，绝不把落后库误标为 head 而跳过迁移。
+        from app.core.database import async_engine as _stamp_engine
+        from app.scripts.schema_stamp import StampState, ensure_schema_stamp
+
+        _stamp = await ensure_schema_stamp(_stamp_engine)
+        if _stamp.state is StampState.SCHEMA_MATCHES_HEAD:
+            log.info(f"✅ 已为 create_all 库补写 Alembic 版本戳: {_stamp.revision}")
+        elif _stamp.state is StampState.LEGACY_MISMATCH:
+            log.warning(f"⚠️  {_stamp.message} 缺失项: {_stamp.missing}")
+        else:
+            log.info(f"ℹ️  Alembic 版本戳检查: {_stamp.state.value}")
         # 作用域不变量启动校验：发现历史「双空/双非空」告警规则并告警
         from app.api.v1.module_video.alarm.service import validate_rule_scope_invariant
         await validate_rule_scope_invariant()
