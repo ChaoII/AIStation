@@ -340,3 +340,48 @@ def test_two_line_cross_rules_both_fire(monkeypatch):
     assert second["alarm_created"] is True
     assert second["rule_matched_list"] == ["越线规则A", "越线规则B"]
     assert len(second["alarm_ids"]) == 2
+
+
+# ------------------------------------------------- 单规则异常隔离（审计 §6-4）
+
+def test_rule_exception_does_not_abort_other_rules(monkeypatch):
+    """某条规则评估抛错：不得中断后续规则，失败规则须在返回体中可观测。"""
+    r1 = _FakeRule(1, "坏规则", MATCH_PERSON, camera_id=CAM)
+    r2 = _FakeRule(2, "好规则", MATCH_PERSON, camera_id=CAM)
+    r3 = _FakeRule(3, "又坏", MATCH_PERSON, camera_id=CAM)
+    _patch_runtime(monkeypatch, [r1, r2, r3], None)
+
+    calls: list = []
+
+    async def _eval(rule, *args, **kwargs):
+        calls.append(getattr(rule, "id", None))
+        if getattr(rule, "id", None) in (1, 3):
+            raise RuntimeError("boom")
+        return {"alarm_id": 100 + rule.id, "rule_id": rule.id, "rule_name": rule.name, "hit_leaves": []}
+
+    monkeypatch.setattr(service, "_evaluate_rule", _eval)
+
+    res = _run(_event())
+
+    assert calls == [1, 2, 3]  # 后续规则未被中断
+    assert res["alarm_created"] is True
+    assert res["alarm_ids"] == [102]
+    assert [e["rule_id"] for e in res["rule_error_list"]] == [1, 3]
+
+
+def test_all_rules_failing_is_observable_and_not_matched(monkeypatch):
+    """全部规则失败：返回未命中 + 失败清单，事件不得以 matched=True 掩盖。"""
+    r1 = _FakeRule(1, "坏A", MATCH_PERSON, camera_id=CAM)
+    r2 = _FakeRule(2, "坏B", MATCH_PERSON, camera_id=CAM)
+    _patch_runtime(monkeypatch, [r1, r2], None)
+
+    async def _eval(rule, *args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(service, "_evaluate_rule", _eval)
+
+    res = _run(_event())
+
+    assert res["alarm_created"] is False
+    assert res["reason"] == "rule_not_matched"
+    assert [e["rule_id"] for e in res["rule_error_list"]] == [1, 2]
