@@ -191,6 +191,48 @@ async def _ensure_missing_columns() -> None:
             f"video_edge_devices.{col} 索引",
         )
 
+    await _ensure_camera_group_parent_fk()
+
+
+CAMERA_GROUP_PARENT_FK = "fk_video_camera_groups_parent_id"
+
+
+async def _ensure_camera_group_parent_fk() -> None:
+    """兜底补建 ``video_camera_groups.parent_id`` 自引用外键（审计 M7）。
+
+    仅对「不跑迁移、只靠 create_all + 兜底」的既有库生效：create_all 建的新库已含该
+    外键、跑过迁移的库已由 ``e6f7a8b9c0d1`` 补建，此处按存在性探测幂等跳过。SQLite
+    不支持 ``ALTER ADD CONSTRAINT``，其外键依赖 create_all 建表时声明。
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    from app.core.database import async_engine
+
+    def _needs_fk(conn) -> bool:
+        insp = sa_inspect(conn)
+        if not insp.has_table("video_camera_groups"):
+            return False
+        if "parent_id" not in {c["name"] for c in insp.get_columns("video_camera_groups")}:
+            return False
+        return not any(
+            tuple(fk.get("constrained_columns") or ()) == ("parent_id",)
+            for fk in insp.get_foreign_keys("video_camera_groups")
+        )
+
+    try:
+        async with async_engine.connect() as conn:
+            needed = await conn.run_sync(_needs_fk)
+    except Exception as e:
+        log.warning(f"[补列] video_camera_groups.parent_id 外键探测失败，已跳过: {e}")
+        return
+    if needed:
+        await _exec_ddl(
+            "ALTER TABLE video_camera_groups ADD CONSTRAINT "
+            f"{CAMERA_GROUP_PARENT_FK} FOREIGN KEY (parent_id) "
+            "REFERENCES video_camera_groups(id) ON DELETE RESTRICT",
+            "video_camera_groups.parent_id 外键",
+        )
+
 
 async def _ensure_deploy_menu() -> None:
     """Ensure the 智能布控 menu entry exists in the database."""

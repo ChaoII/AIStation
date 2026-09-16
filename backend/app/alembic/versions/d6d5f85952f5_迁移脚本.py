@@ -114,18 +114,65 @@ def upgrade() -> None:
         )
 
 
+def _assert_no_null_camera_id(bind) -> None:
+    """回滚前置校验：存在 camera_id 为 NULL 的组规则时明确拒绝（L3）。
+
+    直接 ALTER 恢复 NOT NULL 会抛出难懂的数据库错误；此处提前检测并给出可操作提示。
+    """
+    insp = sa.inspect(bind)
+    if not insp.has_table("video_alarm_rules"):
+        return
+    if "camera_id" not in {col["name"] for col in insp.get_columns("video_alarm_rules")}:
+        return
+    nulls = bind.execute(
+        sa.text("SELECT COUNT(*) FROM video_alarm_rules WHERE camera_id IS NULL")
+    ).scalar()
+    if nulls:
+        raise RuntimeError(
+            f"无法回滚 d6d5f85952f5：video_alarm_rules 仍有 {nulls} 行 camera_id 为 NULL"
+            "（组规则）。请先删除或改绑这些组规则，再执行 downgrade。"
+        )
+
+
+def _downgrade_sqlite() -> None:
+    """SQLite 分支：ALTER/删约束需 batch 重建表。"""
+    has_fk = _has_foreign_key("video_alarm_rules", FK_NAME)
+    has_idx = _has_index("video_alarm_rules", op.f("ix_video_alarm_rules_group_id"))
+    has_group = _has_column("video_alarm_rules", "group_id")
+    with op.batch_alter_table("video_alarm_rules") as batch_op:
+        if has_fk:
+            batch_op.drop_constraint(FK_NAME, type_="foreignkey")
+        if has_idx:
+            batch_op.drop_index(op.f("ix_video_alarm_rules_group_id"))
+        batch_op.alter_column(
+            "camera_id",
+            existing_type=sa.INTEGER(),
+            nullable=False,
+        )
+        if has_group:
+            batch_op.drop_column("group_id")
+
+
 def downgrade() -> None:
     """回滚：删除 group_id 并恢复 camera_id NOT NULL。
 
     注意：恢复 NOT NULL 前必须确保表中不存在 camera_id 为 NULL 的行
     （即所有组规则已删除或已回填 camera_id），否则本迁移会因存在 NULL 而失败。
     """
-    op.drop_constraint(FK_NAME, "video_alarm_rules", type_="foreignkey")
-    op.drop_index(op.f("ix_video_alarm_rules_group_id"), table_name="video_alarm_rules")
+    bind = op.get_bind()
+    _assert_no_null_camera_id(bind)
+    if is_sqlite(bind):
+        _downgrade_sqlite()
+        return
+    if _has_foreign_key("video_alarm_rules", FK_NAME):
+        op.drop_constraint(FK_NAME, "video_alarm_rules", type_="foreignkey")
+    if _has_index("video_alarm_rules", op.f("ix_video_alarm_rules_group_id")):
+        op.drop_index(op.f("ix_video_alarm_rules_group_id"), table_name="video_alarm_rules")
     op.alter_column(
         "video_alarm_rules",
         "camera_id",
         existing_type=sa.INTEGER(),
         nullable=False,
     )
-    op.drop_column("video_alarm_rules", "group_id")
+    if _has_column("video_alarm_rules", "group_id"):
+        op.drop_column("video_alarm_rules", "group_id")

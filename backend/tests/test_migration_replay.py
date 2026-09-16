@@ -9,6 +9,9 @@
 from importlib import import_module
 from pathlib import Path
 
+import pytest
+from sqlalchemy import create_engine, text
+
 VERSIONS_DIR = Path(__file__).parent.parent / "app" / "alembic" / "versions"
 
 # 迁移路径历史上缺失、由 a3f3956bb77b 补齐的表
@@ -70,3 +73,23 @@ def test_guarded_add_column_migrations():
             or "IF NOT EXISTS" in src
         )
         assert guarded, rev
+
+
+def test_d6d5_downgrade_rejects_null_camera_id():
+    """L3：回滚前检测 camera_id 为 NULL 的组规则，给出明确拒绝而非数据库报错。"""
+    mod = import_module("app.alembic.versions.d6d5f85952f5_迁移脚本")
+    engine = create_engine("sqlite://")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE video_alarm_rules "
+                "(id INTEGER, camera_id INTEGER, group_id INTEGER)"
+            )
+        )
+        conn.execute(text("INSERT INTO video_alarm_rules VALUES (1, NULL, 5)"))
+        with pytest.raises(RuntimeError, match="camera_id 为 NULL"):
+            mod._assert_no_null_camera_id(conn)
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM video_alarm_rules"))
+        conn.execute(text("INSERT INTO video_alarm_rules VALUES (1, 2, NULL)"))
+        mod._assert_no_null_camera_id(conn)  # 不应抛错
