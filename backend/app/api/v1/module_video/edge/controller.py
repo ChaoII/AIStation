@@ -124,8 +124,12 @@ async def delete_edge_controller(
 async def edge_heartbeat_controller(
     body: dict = Body(..., description="心跳/能力上报"),
 ) -> JSONResponse:
-    if settings.EDGE_CONTROL_TOKEN and body.get("token") != settings.EDGE_CONTROL_TOKEN:
-        raise CustomException(msg="无效的设备凭证", code=403)
+    # fail-closed：未配置共享密钥时拒绝心跳，避免任意伪造设备上报（凭据为空同样拒绝）
+    token = (settings.EDGE_CONTROL_TOKEN or "").strip()
+    if not token:
+        raise CustomException(msg="边缘心跳未配置共享密钥，已拒绝", code=403, status_code=403)
+    if body.get("token") != token:
+        raise CustomException(msg="无效的设备凭证", code=403, status_code=403)
     await EdgeService.heartbeat(body)
     return SuccessResponse(msg="ok")
 
