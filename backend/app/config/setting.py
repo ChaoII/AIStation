@@ -71,7 +71,6 @@ def is_placeholder_secret(value: str) -> bool:
     return any(marker in lowered for marker in PLACEHOLDER_MARKERS)
 
 
-
 class Settings(BaseSettings):
     """系统配置类"""
 
