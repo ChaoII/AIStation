@@ -10,6 +10,7 @@
 import asyncio
 import json
 import logging
+import threading
 import time
 
 log = logging.getLogger(__name__)
@@ -20,8 +21,14 @@ EDGE_EVENT_CHANNEL = "ai:edge:event"
 # 进程内订阅者队列集合（Redis 降级通道）；WS 断开时必须注销，避免订阅泄漏
 _local_subscribers: set[asyncio.Queue] = set()
 
+# 保护 `_local_subscribers`：发布方可能在其它线程/协程触发广播（审计·并发 #17）
+_local_lock = threading.Lock()
+
 # 应用级 Redis 客户端（由 WS 端点注入，或按配置惰性创建）
 _redis_client = None
+
+# WS 订阅专用 Redis 客户端（独立连接池，每个订阅独占一条 pubsub 连接）
+_pubsub_client = None
 
 # Redis 降级告警只打一次
 _redis_warned = False
@@ -89,21 +96,63 @@ def _enter_redis_cooldown(exc: Exception) -> None:
     _warn_redis_once(exc)
 
 
+async def get_pubsub_redis():
+    """WS 订阅专用 Redis 客户端：独立连接池，与 DB/应用 Redis 池解耦（审计·并发 #10）。
+
+    每个 WS 客户端独占一条 pubsub 连接，故独立池上限与 ``EDGE_WS_MAX_CONNECTIONS``
+    对齐（+少量余量）；这样 WS 数量只受显式配置约束，不会因共用应用 Redis 池
+    （旧实现复用 ``POOL_SIZE``=20）而把第 21 个订阅打成 HTTP 500。
+
+    返回:
+    - Redis | None: 专用客户端；未启用 Redis 或创建失败返回 None（调用方降级/干净关闭）。
+    """
+    global _pubsub_client
+    from app.config.setting import settings
+
+    if not getattr(settings, "REDIS_ENABLE", False):
+        return None
+    if getattr(settings, "TESTING", False):
+        # 测试模式：与 app 生命周期共用内存 Redis（同一 fakeredis 实例才有真 pub/sub）
+        return await get_redis()
+    if _pubsub_client is not None:
+        return _pubsub_client
+    limit = max(1, int(getattr(settings, "EDGE_WS_MAX_CONNECTIONS", 200) or 200))
+    try:
+        from redis.asyncio import Redis
+
+        _pubsub_client = await Redis.from_url(
+            url=settings.REDIS_URI,
+            encoding="utf-8",
+            decode_responses=True,
+            health_check_interval=20,
+            max_connections=limit + 8,
+            socket_connect_timeout=float(getattr(settings, "TEMPORAL_REDIS_TIMEOUT", 0.5) or 0.5),
+            socket_timeout=settings.POOL_TIMEOUT,
+        )
+        return _pubsub_client
+    except Exception as e:  # noqa: BLE001 - 订阅降级由调用方决定（干净关闭/进程内广播）
+        log.warning(f"边缘事件 WS 订阅 Redis 连接创建失败: {e}")
+        return None
+
+
 def subscribe_local() -> asyncio.Queue:
     """注册进程内订阅队列（Redis 不可用时的降级通道）。"""
     queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
-    _local_subscribers.add(queue)
+    with _local_lock:
+        _local_subscribers.add(queue)
     return queue
 
 
 def unsubscribe_local(queue) -> None:
     """注销进程内订阅队列；重复注销安全。"""
-    _local_subscribers.discard(queue)
+    with _local_lock:
+        _local_subscribers.discard(queue)
 
 
 def local_subscriber_count() -> int:
     """当前进程内订阅者数量（测试/诊断）。"""
-    return len(_local_subscribers)
+    with _local_lock:
+        return len(_local_subscribers)
 
 
 def build_message(payload: dict) -> dict:
@@ -121,7 +170,9 @@ def _warn_redis_once(exc: Exception) -> None:
 
 async def _broadcast_local(message: dict) -> None:
     """向进程内所有订阅队列投递；队列满则丢弃本条，避免阻塞发布方。"""
-    for queue in list(_local_subscribers):
+    with _local_lock:
+        queues = list(_local_subscribers)
+    for queue in queues:
         try:
             queue.put_nowait(message)
         except asyncio.QueueFull:

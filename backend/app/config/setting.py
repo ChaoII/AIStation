@@ -176,6 +176,9 @@ class Settings(BaseSettings):
     REDIS_DB_NAME: int = 1
     REDIS_USER: str = ""
     REDIS_PASSWORD: str = ""
+    # 应用级 Redis 连接池上限：与 DB 的 POOL_SIZE 解耦（审计·并发 #10/#22）。
+    # 边缘事件 WS 实时订阅使用独立连接池（见 EDGE_WS_MAX_CONNECTIONS），不占用本池。
+    REDIS_MAX_CONNECTIONS: int = 100
 
     # ================================================= #
     # ************** RustFS / S3 对象存储 ************** #
@@ -348,6 +351,10 @@ class Settings(BaseSettings):
     # 未显式指定后端/设备时的协商回退值（设备上报 capabilities 时优先取上报值）
     EDGE_DEFAULT_BACKEND: str = "ort"
     EDGE_DEFAULT_DEVICE: str = "cpu"
+    # 边缘事件 WS 实时订阅上限（审计·并发 #10）：每个订阅独占一条 Redis pubsub 连接，
+    # 故 WS 订阅使用独立连接池（上限 = 本值 + 少量余量），与 DB/应用 Redis 池解耦；
+    # 达到上限时对端以 1013（稍后重试）干净关闭，绝不返回 HTTP 500。
+    EDGE_WS_MAX_CONNECTIONS: int = 200
 
     # ================================================= #
     # *************** 边缘事件 MQTT 接入配置 ************ #

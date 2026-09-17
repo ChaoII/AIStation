@@ -205,42 +205,83 @@ async def _detect_disconnect(websocket: WebSocket) -> None:
             return
 
 
+# 当前活跃 WS 订阅数（审计·并发 #10）：controller 在单事件循环内运行，且「检查+自增」
+# 之间无 await，故整数计数天然原子；用它把并发订阅约束在显式配置内。
+_ws_active = 0
+
+
+def _try_acquire_ws_slot() -> bool:
+    """占用一个 WS 订阅名额；已达 ``EDGE_WS_MAX_CONNECTIONS`` 上限返回 False。"""
+    global _ws_active
+    limit = max(1, int(getattr(settings, "EDGE_WS_MAX_CONNECTIONS", 200) or 200))
+    if _ws_active >= limit:
+        return False
+    _ws_active += 1
+    return True
+
+
+def _release_ws_slot() -> None:
+    """释放 WS 订阅名额；幂等，且不会降到 0 以下。"""
+    global _ws_active
+    if _ws_active > 0:
+        _ws_active -= 1
+
+
+def active_ws_count() -> int:
+    """当前活跃 WS 订阅数（测试/诊断）。"""
+    return _ws_active
+
+
 async def edge_event_ws_controller(websocket: WebSocket) -> None:
     """边缘事件实时推送：query token 鉴权，失败以 4401 关闭。
 
     浏览器 WS 无法携带自定义头，故 token 走 query 参数。连接后订阅 Redis 频道
-    ``ai:edge:event``（Redis 不可用降级进程内广播），把落库事件详情原样转发。
+    ``ai:edge:event``（专用连接池，与 DB/应用 Redis 池解耦）；Redis 不可用降级进程内
+    广播。达到并发上限或订阅建立失败时以 1013 干净关闭，绝不冒泡为 HTTP 500。
     """
     token = websocket.query_params.get("token")
     if not await verify_edge_event_ws_token(token, websocket):
         await websocket.close(code=4401)
         return
 
+    # 并发上限：先 accept 再以 1013 关闭，客户端能读到明确关闭码（绝不 500）
+    if not _try_acquire_ws_slot():
+        log.warning("边缘事件 WS 并发订阅已达上限，拒绝新连接")
+        await websocket.accept()
+        await websocket.close(code=1013, reason="实时订阅连接数已达上限，请稍后重试")
+        return
+
     # 复用应用级 Redis 连接（多进程安全）；Redis 不可用时降级进程内队列
     app_redis = getattr(websocket.app.state, "redis", None)
     if app_redis is not None:
         event_bus.set_redis(app_redis)
-    redis = await event_bus.get_redis()
 
     pubsub = None
     queue = None
-    if redis is not None:
-        pubsub = redis.pubsub()
-        await pubsub.subscribe(event_bus.EDGE_EVENT_CHANNEL)
-    else:
-        queue = event_bus.subscribe_local()
-
-    # 先订阅再 accept：客户端握手成功即代表订阅就绪，避免漏掉首条事件
-    await websocket.accept()
-
-    forward = asyncio.create_task(
-        _forward_pubsub(websocket, pubsub)
-        if pubsub is not None
-        else _forward_queue(websocket, queue)
-    )
-    disconnected = asyncio.create_task(_detect_disconnect(websocket))
-
+    forward = None
+    disconnected = None
+    accepted = False
     try:
+        # 订阅使用独立 Redis 连接池（上限 = EDGE_WS_MAX_CONNECTIONS + 余量），
+        # 不再占用应用/DB 连接池，避免第 21 个订阅被打成 500（审计·并发 #10）。
+        pubsub_redis = await event_bus.get_pubsub_redis()
+        if pubsub_redis is not None:
+            pubsub = pubsub_redis.pubsub()
+            await pubsub.subscribe(event_bus.EDGE_EVENT_CHANNEL)
+        else:
+            queue = event_bus.subscribe_local()
+
+        # 先订阅再 accept：客户端握手成功即代表订阅就绪，避免漏掉首条事件
+        await websocket.accept()
+        accepted = True
+
+        forward = asyncio.create_task(
+            _forward_pubsub(websocket, pubsub)
+            if pubsub is not None
+            else _forward_queue(websocket, queue)
+        )
+        disconnected = asyncio.create_task(_detect_disconnect(websocket))
+
         done, pending = await asyncio.wait(
             {forward, disconnected}, return_when=asyncio.FIRST_COMPLETED
         )
@@ -254,9 +295,21 @@ async def edge_event_ws_controller(websocket: WebSocket) -> None:
             exc = task.exception()
             if exc is not None and not isinstance(exc, WebSocketDisconnect):
                 log.warning(f"边缘事件 WS 转发异常: {exc}")
+    except Exception as e:  # noqa: BLE001 - 订阅/握手异常以 1013 干净关闭，绝不 500
+        log.warning(f"边缘事件 WS 订阅建立失败: {e}")
+        if not accepted:
+            try:
+                await websocket.accept()
+            except Exception:  # noqa: BLE001 - 握手已失败则忽略
+                pass
+        try:
+            await websocket.close(code=1013, reason="实时订阅暂不可用，请稍后重试")
+        except Exception:  # noqa: BLE001 - 关闭失败不影响清理
+            pass
     finally:
+        _release_ws_slot()
         for task in (forward, disconnected):
-            if not task.done():
+            if task is not None and not task.done():
                 task.cancel()
         # 注销订阅，禁止泄漏
         if queue is not None:

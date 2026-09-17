@@ -8,14 +8,17 @@ import asyncio
 import itertools
 import json
 import time
+from contextlib import ExitStack
 from datetime import datetime, timedelta
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
+from app.api.v1.module_video.edge import controller as edge_controller
 from app.api.v1.module_video.edge import event_bus
 from app.api.v1.module_video.edge import store as edge_store
 from app.api.v1.module_video.inference import service
+from app.config.setting import settings
 
 WS_PATH = "/api/v1/video/edge/event/ws"
 
@@ -191,6 +194,75 @@ def test_ws_receives_published_event(test_client, valid_ws_token):
         assert msg["type"] == "event"
         assert msg["data"]["event_id"] == "ev-live"
         assert msg["data"]["matched"] is True
+
+
+# --------------------------------------------------------------- 并发上限
+def test_ws_above_twenty_clients_all_connect(test_client, valid_ws_token):
+    """N>20 并发订阅全部握手成功、绝不 500（审计·并发 #10）。
+
+    旧实现复用应用 Redis 池（max_connections=POOL_SIZE=20），第 21 个订阅在建连
+    阶段抛异常 → HTTP 500。现用独立订阅连接池，数量只受 EDGE_WS_MAX_CONNECTIONS 约束。
+    """
+    assert _wait_until(lambda: edge_controller.active_ws_count() == 0)
+    with ExitStack() as stack:
+        sockets = [
+            stack.enter_context(
+                test_client.websocket_connect(
+                    f"{WS_PATH}?token={valid_ws_token}", headers=_ws_headers()
+                )
+            )
+            for _ in range(25)
+        ]
+        assert len(sockets) == 25
+        assert edge_controller.active_ws_count() == 25
+    assert _wait_until(lambda: edge_controller.active_ws_count() == 0)
+
+
+def test_ws_concurrency_limit_closes_cleanly_with_1013(
+    test_client, valid_ws_token, monkeypatch
+):
+    """达到并发上限的订阅以 1013（稍后重试）干净关闭，绝不 500（审计·并发 #10）。"""
+    monkeypatch.setattr(settings, "EDGE_WS_MAX_CONNECTIONS", 2)
+    assert _wait_until(lambda: edge_controller.active_ws_count() == 0)
+    with test_client.websocket_connect(
+        f"{WS_PATH}?token={valid_ws_token}", headers=_ws_headers()
+    ):
+        with test_client.websocket_connect(
+            f"{WS_PATH}?token={valid_ws_token}", headers=_ws_headers()
+        ):
+            with pytest.raises(WebSocketDisconnect) as exc:
+                with test_client.websocket_connect(
+                    f"{WS_PATH}?token={valid_ws_token}", headers=_ws_headers()
+                ) as ws3:
+                    # 服务端已 accept，随后以 1013 关闭；读取即抛出对应关闭码
+                    ws3.receive_json()
+            assert exc.value.code == 1013
+    assert _wait_until(lambda: edge_controller.active_ws_count() == 0)
+
+
+def test_pubsub_redis_pool_is_decoupled_from_app_pool(monkeypatch):
+    """生产路径的订阅连接池按 EDGE_WS_MAX_CONNECTIONS 独立创建（审计·并发 #10）。"""
+    import redis.asyncio as redis_asyncio
+
+    monkeypatch.setattr(event_bus, "_pubsub_client", None)
+    monkeypatch.setattr(settings, "TESTING", False)
+    monkeypatch.setattr(settings, "REDIS_ENABLE", True)
+    monkeypatch.setattr(settings, "EDGE_WS_MAX_CONNECTIONS", 37)
+    captured: dict = {}
+
+    async def _fake_from_url(url, **kwargs):  # noqa: ARG001 - 仅捕获参数
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(redis_asyncio.Redis, "from_url", _fake_from_url)
+    assert asyncio.run(event_bus.get_pubsub_redis()) is not None
+    assert captured["max_connections"] == 37 + 8
+
+
+def test_pubsub_redis_reuses_app_redis_in_testing(test_client):
+    """TESTING 下复用应用内存 Redis（同一 fakeredis 才有真 pub/sub）。"""
+    event_bus.set_redis(test_client.app.state.redis)
+    assert asyncio.run(event_bus.get_pubsub_redis()) is test_client.app.state.redis
 
 
 # --------------------------------------------------------------- 订阅清理

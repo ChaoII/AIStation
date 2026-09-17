@@ -165,7 +165,7 @@ async def redis_connect(app: FastAPI, status: bool) -> Redis | None:
                     encoding="utf-8",
                     decode_responses=True,
                     health_check_interval=20,
-                    max_connections=settings.POOL_SIZE,
+                    max_connections=settings.REDIS_MAX_CONNECTIONS,
                     socket_timeout=settings.POOL_TIMEOUT,
                 )
                 app.state.redis = rd
