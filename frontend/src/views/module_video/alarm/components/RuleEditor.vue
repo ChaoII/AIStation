@@ -79,7 +79,10 @@
           />
         </el-select>
         <div v-if="sceneUnsupportedReason" class="rule-editor__field-error">
-          {{ sceneUnsupportedReason }}
+          <template v-if="currentScene?.blockers?.length">
+            <div v-for="(blocker, i) in currentScene.blockers" :key="i">{{ blocker }}</div>
+          </template>
+          <template v-else>{{ sceneUnsupportedReason }}</template>
         </div>
       </el-form-item>
 

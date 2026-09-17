@@ -26,15 +26,21 @@ export interface SceneDefinition {
   default_rule: Record<string, unknown>;
   needs_tracking: boolean;
   description: string;
+  /** 是否依赖边缘把分类结果写入事件（未落地时置灰，见后端 scene/contract.py） */
+  requires_classification?: boolean;
+  /** 所需云端外部资产（如 face_gallery 人脸底库 / reid_gallery 跨镜底库） */
+  required_assets?: string[];
   /** 边缘 Agent 是否已实现该场景（false 时前端置灰，避免「选了必失败」） */
   edge_supported?: boolean;
   /**
-   * 是否可配置：模型族 + 默认规则求值器叶子均已就绪，选中后一定能保存成功。
-   * false 时前端必须置灰并给出 `unsupported_reason`，不得静默误导。
+   * 是否可配置：模型族 + 外部资产 + 分类契约 + 默认规则求值器叶子均已就绪，
+   * 选中后一定能保存成功。false 时前端必须置灰并给出 `unsupported_reason`，不得静默误导。
    */
   configurable?: boolean;
   /** 不可配置的中文原因（可配置时为空串） */
   unsupported_reason?: string;
+  /** 结构化不可配置原因清单（缺模型族/外部资产/分类契约/求值器叶子），逐条展示 */
+  blockers?: string[];
 }
 
 /** 叶子参数 schema 项（对齐后端 LEAF_CAPABILITIES.params） */
