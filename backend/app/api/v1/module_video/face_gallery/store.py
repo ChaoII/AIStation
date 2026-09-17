@@ -11,17 +11,34 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
+
+#: 进程内缓存的兜底新鲜度上界（秒）。
+#: 多 worker 场景优先用 Redis 版本号近实时失效；Redis 不可用或「enroll 与事务提交之间」的
+#: 竞态窗口内，事件热路径最多每 TTL 秒回读一次 DB，保证跨进程变更**最终可见**（有界延迟）。
+DEFAULT_CACHE_TTL_SEC = 10.0
 
 
 class FaceGalleryStore:
-    """进程内人脸底库缓存：持有若干 ``{id, name, person_no, model_key, embedding, dimension}``。"""
+    """进程内人脸底库缓存：持有若干 ``{id, name, person_no, model_key, embedding, dimension}``。
 
-    def __init__(self) -> None:
+    多 worker 一致性：缓存自带 ``version``（对应 Redis 全局版本号）与 ``loaded_at``。
+    ``sync_cache``（见 service.py）在事件热路径按「版本号变化 或 缓存超过 TTL」触发重读，
+    从而让任一 worker 的录入/删除对其他 worker 尽快生效。
+    """
+
+    def __init__(self, ttl_sec: float = DEFAULT_CACHE_TTL_SEC) -> None:
         self._entries: list[dict] = []
+        self._version: int = 0
+        self._loaded_at: float = 0.0
+        self._ttl: float = max(0.0, float(ttl_sec))
 
-    def replace(self, entries: list[dict] | None) -> None:
-        """整体替换缓存（仅保留结构合法且向量非空的条目）。"""
+    def replace(self, entries: list[dict] | None, version: int | None = None) -> None:
+        """整体替换缓存（仅保留结构合法且向量非空的条目）。
+
+        传 ``version`` 时同步记录全局版本号；``loaded_at`` 恒更新为当前单调时钟。
+        """
         cleaned: list[dict] = []
         for e in entries or []:
             if not isinstance(e, dict):
@@ -31,10 +48,31 @@ class FaceGalleryStore:
                 continue
             cleaned.append({**e, "embedding": emb, "dimension": len(emb)})
         self._entries = cleaned
+        self._loaded_at = time.monotonic()
+        if version is not None:
+            self._version = int(version)
 
     def clear(self) -> None:
-        """清空缓存（测试用）。"""
+        """清空缓存并标记未加载（测试用）。"""
         self._entries = []
+        self._loaded_at = 0.0
+
+    @property
+    def version(self) -> int:
+        """当前缓存对应的全局版本号。"""
+        return self._version
+
+    def mark_version(self, version: int) -> None:
+        """记录缓存已同步到的全局版本号。"""
+        self._version = int(version)
+
+    def is_stale(self) -> bool:
+        """缓存是否超过 TTL 未刷新（从未加载恒为 True）。"""
+        if self._loaded_at <= 0.0:
+            return True
+        if self._ttl <= 0.0:
+            return False
+        return (time.monotonic() - self._loaded_at) > self._ttl
 
     def snapshot(self) -> list[dict]:
         """返回当前缓存快照（只读用途，勿原地修改）。"""

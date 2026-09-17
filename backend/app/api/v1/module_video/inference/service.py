@@ -2144,6 +2144,15 @@ class InferenceService:
         detections = event.get("detections", [])
         if not isinstance(detections, list):
             detections = []
+        # 多 worker 底库缓存同步：仅当事件携带人脸嵌入时才检查（其他事件无底库依赖，
+        # 避免热路径无谓的 Redis/DB 访问）。版本号变化或 TTL 到期即重读 DB。
+        if any(isinstance(d, dict) and d.get("embedding") is not None for d in detections):
+            try:
+                from app.api.v1.module_video.face_gallery.service import FaceGalleryService
+
+                await FaceGalleryService.sync_cache()
+            except Exception as e:  # noqa: BLE001 - 缓存同步失败不得阻断告警判定
+                log.warning(f"人脸底库缓存同步失败（忽略，继续评估）: {e}")
         snapshot_data = event.get("snapshot_data")
         snapshot_path = event.get("snapshot_path")
         frame_timestamp = event.get("frame_timestamp")
