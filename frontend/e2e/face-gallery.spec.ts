@@ -47,3 +47,35 @@ test("人脸底库页可加载并完成录入→列表→删除", async ({ page 
   await page.getByRole("button", { name: "确定" }).click();
   await expect(page.locator(".el-table__row", { hasText: name })).toHaveCount(0);
 });
+
+test("底库页可切换跨镜底库并完成录入→列表→删除", async ({ page }) => {
+  await page.goto("/#/video/face-gallery", { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
+  await dismissTour(page);
+
+  // 切到跨镜底库 tab（新增时底库类型应默认 reid）
+  await page.getByRole("tab", { name: "跨镜底库" }).click();
+
+  const name = `E2E 跨镜 ${Date.now()}`;
+  await page
+    .getByRole("button", { name: /新增|添加|Add/i })
+    .first()
+    .click({ force: true });
+  const dialog = page.locator(".el-dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("姓名/标签").fill(name);
+  await dialog.getByLabel("特征向量").fill("[0.5, 0.5, 0.5, 0.5]");
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect(dialog).toBeHidden();
+
+  // 列表可见且类型标记为「跨镜」
+  const row = page.locator(".el-table__row", { hasText: name }).first();
+  await expect(row).toBeVisible();
+  await expect(row.locator(".el-tag", { hasText: "跨镜" })).toBeVisible();
+
+  // 删除
+  await row.locator(".el-checkbox").click();
+  await page.getByRole("button", { name: /^删除$/ }).first().click({ force: true });
+  await page.getByRole("button", { name: "确定" }).click();
+  await expect(page.locator(".el-table__row", { hasText: name })).toHaveCount(0);
+});

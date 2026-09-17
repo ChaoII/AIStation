@@ -1,5 +1,10 @@
 <template>
   <div class="app-container">
+    <el-tabs v-model="activeKind" class="gallery-kind-tabs" @tab-change="handleKindChange">
+      <el-tab-pane label="人脸底库" name="face" />
+      <el-tab-pane label="跨镜底库" name="reid" />
+    </el-tabs>
+
     <PageSearch
       ref="searchRef"
       :search-config="searchConfig"
@@ -8,12 +13,12 @@
     />
 
     <div class="gallery-summary">
-      <el-tag type="info" size="small">底库总数：{{ gallerySummary.total }}</el-tag>
+      <el-tag type="info" size="small">{{ kindMeta.label }}总数：{{ gallerySummary.total }}</el-tag>
       <el-tag v-if="gallerySummary.dimensions.length" type="info" size="small" effect="plain">
         当前页特征维度：{{ gallerySummary.dimensions.join(" / ") }}
       </el-tag>
       <el-tag v-if="gallerySummary.total === 0" type="warning" size="small">
-        底库为空：FACE_REC / STRANGER 规则不会命中，请先录入人脸特征
+        {{ kindMeta.emptyTip }}
       </el-tag>
     </div>
 
@@ -44,10 +49,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty
-                :image-size="80"
-                description="人脸底库为空：启用 FACE_REC / STRANGER 规则前请先录入人脸特征"
-              />
+              <el-empty :image-size="80" :description="kindMeta.emptyListTip" />
             </template>
             <el-table-column
               v-if="galleryCols.find((c) => c.prop === 'selection')?.show"
@@ -64,6 +66,13 @@
               align="center"
             />
             <el-table-column label="姓名/标签" prop="name" min-width="130" show-overflow-tooltip />
+            <el-table-column label="类型" prop="kind" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.kind === 'reid' ? 'warning' : 'success'" size="small">
+                  {{ row.kind === "reid" ? "跨镜" : "人脸" }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column
               label="工号/编号"
               prop="person_no"
@@ -135,7 +144,7 @@
         type="info"
         :closable="false"
         show-icon
-        title="粘贴人脸特征向量（支持 JSON 数组 / 逗号分隔 / f16b64 base64），或从文件导入"
+        title="粘贴特征向量（支持 JSON 数组 / 逗号分隔 / f16b64 base64），或从文件导入"
       />
       <el-alert
         v-else
@@ -147,6 +156,17 @@
       />
 
       <el-form ref="dataFormRef" :model="formData" label-width="100px" size="default">
+        <el-form-item label="底库类型" prop="kind">
+          <el-select
+            v-model="formData.kind"
+            :disabled="dialogVisible.type === 'update'"
+            placeholder="请选择底库类型"
+            style="width: 100%"
+          >
+            <el-option label="人脸底库（FACE_REC / STRANGER）" value="face" />
+            <el-option label="跨镜底库（REID_TRACK）" value="reid" />
+          </el-select>
+        </el-form-item>
         <el-form-item
           label="姓名/标签"
           prop="name"
@@ -225,6 +245,24 @@ interface TablePageQuery {
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
 
+/** 当前管理的底库类型：face=人脸 / reid=跨镜重识别（后端同一张表按 kind 隔离） */
+const activeKind = ref("face");
+
+/** 底库类型对应的文案（列表/摘要/空态按类型切换） */
+const kindMeta = computed(() =>
+  activeKind.value === "reid"
+    ? {
+        label: "跨镜底库",
+        emptyTip: "跨镜底库为空：REID_TRACK 规则不会命中，请先录入跨镜特征",
+        emptyListTip: "跨镜底库为空：启用 REID_TRACK 规则前请先录入跨镜特征",
+      }
+    : {
+        label: "人脸底库",
+        emptyTip: "人脸底库为空：FACE_REC / STRANGER 规则不会命中，请先录入人脸特征",
+        emptyListTip: "人脸底库为空：启用 FACE_REC / STRANGER 规则前请先录入人脸特征",
+      }
+);
+
 const submitLoading = ref(false);
 const dataFormRef = ref();
 const fileInputRef = ref<HTMLInputElement>();
@@ -279,7 +317,10 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
   pagination: { pageSize: 10, pageSizes: [10, 20, 30, 50] },
   request: { page_no: "page_no", page_size: "page_size" },
   indexAction: async (params) => {
-    const res = await getFaceGalleryList(params as TablePageQuery);
+    const res = await getFaceGalleryList({
+      ...(params as TablePageQuery),
+      kind: activeKind.value,
+    });
     const items = (res.data.data.items ?? []) as FaceGalleryItem[];
     gallerySummary.total = res.data.data.total ?? 0;
     gallerySummary.dimensions = Array.from(new Set(items.map((i) => i.dimension))).sort(
@@ -306,6 +347,7 @@ const dialogVisible = reactive({
 
 const formData = reactive({
   id: undefined as number | undefined,
+  kind: "face" as "face" | "reid",
   name: "",
   person_no: "",
   model_key: "w600k_r50",
@@ -386,6 +428,11 @@ function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
 }
 
+/** 切换底库类型：刷新列表（搜索条件由使用方决定是否保留） */
+function handleKindChange() {
+  refreshList();
+}
+
 function triggerFilePick() {
   fileInputRef.value?.click();
 }
@@ -418,8 +465,9 @@ async function handleCloseDialog() {
 function handleOpenDialog(type: "create" | "update", row?: any) {
   dialogVisible.type = type;
   if (type === "update" && row) {
-    dialogVisible.title = "编辑人脸底库";
+    dialogVisible.title = "编辑底库条目";
     formData.id = row.id;
+    formData.kind = row.kind === "reid" ? "reid" : "face";
     formData.name = row.name;
     formData.person_no = row.person_no ?? "";
     formData.model_key = row.model_key ?? "w600k_r50";
@@ -427,8 +475,9 @@ function handleOpenDialog(type: "create" | "update", row?: any) {
     formData.face_image_url = row.face_image_url ?? "";
     formData.embeddingText = "";
   } else {
-    dialogVisible.title = "录入人脸底库";
+    dialogVisible.title = "录入底库条目";
     resetForm();
+    formData.kind = activeKind.value === "reid" ? "reid" : "face";
   }
   dialogVisible.visible = true;
 }
@@ -451,6 +500,8 @@ async function handleSubmit() {
         id: formData.id,
         name: formData.name,
         person_no: formData.person_no || null,
+        // 仅新增时指定类型；更新省略 kind → 后端保持原类型不变
+        kind: dialogVisible.type === "create" ? formData.kind : undefined,
         model_key: formData.model_key || "unknown",
         description: formData.description || null,
         face_image_url: formData.face_image_url || null,
@@ -469,6 +520,9 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
+.gallery-kind-tabs {
+  margin-bottom: 4px;
+}
 .gallery-summary {
   display: flex;
   flex-wrap: wrap;
