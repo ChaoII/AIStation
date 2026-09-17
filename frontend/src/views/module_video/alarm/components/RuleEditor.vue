@@ -84,6 +84,10 @@
           </template>
           <template v-else>{{ sceneUnsupportedReason }}</template>
         </div>
+        <!-- 可配置但需注意的运行期提示（如「人脸底库为空」），非阻断 -->
+        <div v-else-if="sceneHints.length" class="rule-editor__hint">
+          <div v-for="(hint, i) in sceneHints" :key="i">{{ hint }}</div>
+        </div>
       </el-form-item>
 
       <el-form-item label="场景参数">
@@ -506,6 +510,9 @@ const sceneUnsupportedReason = computed(() => {
   const s = currentScene.value;
   return s && s.configurable === false ? s.unsupported_reason || "该场景暂不可配置" : "";
 });
+
+/** 当前场景的运行期提示（如「人脸底库为空」），仅可配置场景展示 */
+const sceneHints = computed(() => currentScene.value?.hints ?? []);
 
 /** 按作用域过滤参数 schema：未声明 scope 的为通用参数，声明 scope="group" 的仅在相机组作用域展示 */
 function paramSchemaFor(def: SceneDefinition | null, scope: AlarmRuleScope): SceneParamSchema[] {

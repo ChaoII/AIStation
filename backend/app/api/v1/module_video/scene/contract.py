@@ -36,7 +36,9 @@
 
 3. ``AGENT_ASSETS``（外部资产）：云端底库等非代码资产。
    - ``face_gallery``：人脸底库（FACE_REC/STRANGER）；``reid_gallery``：跨镜底库（REID_TRACK）。
-   - **翻转条件（B3/B5）**：底库表 + 导入 API + Agent 装载链路就绪后在此加入。
+   - **已落地（B3）**：``face_gallery`` 底库表（``video_face_gallery``）+ 录入/列表/删除/比对
+     API + 规则叶子求值链路均已就绪，故已加入；底库为空时不再置灰，改由场景 ``hints`` 提示。
+   - **仍待**：``reid_gallery`` 跨镜底库（REID_TRACK，B5）。
 """
 from __future__ import annotations
 
@@ -72,6 +74,11 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
         "face_landmark",
         "doc",
         "barcode",
+        # B3 交互分割（sam）/ 人脸特征（face_rec）：sam 以普通 bbox 对象（label="segment"）
+        # 承载分割结果；face_rec 新增 objects[].embedding（L2 归一化 512/1024 维）。
+        # 两者 Agent 侧 capability 上报并行落地中（同样按「在途族」放行）。
+        "sam",
+        "face_rec",
     }
 )
 
@@ -84,7 +91,9 @@ AGENT_EVENT_FEATURES: frozenset[str] = frozenset(
 )
 
 # 云端外部资产（见模块 docstring 的翻转条件）。
-AGENT_ASSETS: frozenset[str] = frozenset()
+# B3：人脸底库表 + 录入/查询/比对 API 已就绪（``video_face_gallery``），故声明 face_gallery；
+# 底库「为空」不再是硬阻断，而是由场景目录以 ``hints``（「底库为空」）提示运维先录入。
+AGENT_ASSETS: frozenset[str] = frozenset({"face_gallery"})
 
 # 外部资产中文名（用于生成面向用户的置灰原因）
 _ASSET_LABELS: dict[str, str] = {

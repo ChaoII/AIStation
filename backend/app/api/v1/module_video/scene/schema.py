@@ -41,3 +41,6 @@ class SceneOutSchema(BaseModel):
     blockers: list[str] = Field(
         default_factory=list, description="不可配置的数据驱动原因清单（缺族/缺资产/缺叶子，可配置时为空）"
     )
+    hints: list[str] = Field(
+        default_factory=list, description="可配置但需注意的运行期提示（如「人脸底库为空」），非阻断"
+    )

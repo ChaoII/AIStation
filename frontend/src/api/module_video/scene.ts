@@ -49,6 +49,8 @@ export interface SceneDefinition {
   unsupported_reason?: string;
   /** 结构化不可配置原因清单（缺模型族/外部资产/分类契约/求值器叶子），逐条展示 */
   blockers?: string[];
+  /** 可配置但需注意的运行期提示（如「人脸底库为空」），非阻断，仅提示 */
+  hints?: string[];
 }
 
 /** 叶子参数 schema 项（对齐后端 LEAF_CAPABILITIES.params） */

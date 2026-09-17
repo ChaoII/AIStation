@@ -50,6 +50,11 @@ _TEXT_SCENES = {"DOC_TABLE"}
 # B2b：人脸关键点复用 keypoint_geometry（rule=face_landmark）+ keypoints 事件契约
 _LANDMARK_SCENES = {"FACE_LANDMARK"}
 
+# B3：人脸底库比对（依赖云端 face_gallery 资产 + face_rec 模型族）
+_FACE_MATCH_SCENES = {"FACE_REC", "STRANGER"}
+# B3：交互分割（sam 族 + prompt_segment 叶子）
+_SAM_SCENES = {"SAM_SEG"}
+
 
 def _iter_leaves(rule: dict):
     """深度遍历规则条件树，产出所有叶子节点（非逻辑算子节点）。"""
@@ -92,9 +97,11 @@ def test_configurable_scenes_compile_default_rule():
     assert _ATTRIBUTE_SCENES <= set(checked)
     assert _DEPTH_SCENES <= set(checked)
     assert (_RATIO_SCENES | _CODE_SCENES | _TEXT_SCENES | _LANDMARK_SCENES) <= set(checked)
+    # B3：B3 B3 人脸底库/交互分割场景转为可配置
+    assert (_FACE_MATCH_SCENES | _SAM_SCENES) <= set(checked)
     assert "HAND_GESTURE" not in set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 33
+    assert len(checked) == 36
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -438,13 +445,101 @@ def test_face_family_is_canonical_with_legacy_alias():
 
 
 def test_required_assets_gate_scenes_with_reason():
-    """缺底库场景必须据实置灰并在原因中标注资产（缺底库，而非静默失败）。"""
-    for code, asset_label in (("FACE_REC", "人脸底库"), ("STRANGER", "人脸底库"), ("REID_TRACK", "跨镜底库")):
+    """缺底库场景必须据实置灰并在原因中标注资产（缺底库，而非静默失败）。
+
+    B3 后人脸底库（face_gallery）已具备，FACE_REC/STRANGER 转为可配置；
+    跨镜底库（reid_gallery）仍未具备，REID_TRACK 继续按「缺外部资产」置灰。
+    """
+    assert contract.has_asset("face_gallery") is True
+    for code in ("FACE_REC", "STRANGER"):
         scene = SCENES[code]
-        assert scene.required_assets, code
-        assert not contract.has_asset(scene.required_assets[0]), code
-        blockers = "；".join(scene_blockers(scene))
-        assert "缺外部资产" in blockers and asset_label in blockers, f"{code}: {blockers}"
+        assert scene.required_assets == ["face_gallery"], code
+        assert scene_configurability(scene)[0] is True, code
+        assert "缺外部资产" not in "；".join(scene_blockers(scene)), code
+
+    reid = SCENES["REID_TRACK"]
+    assert reid.required_assets == ["reid_gallery"]
+    assert contract.has_asset("reid_gallery") is False
+    blockers = "；".join(scene_blockers(reid))
+    assert "缺外部资产" in blockers and "跨镜底库" in blockers, blockers
+
+
+def test_face_gallery_empty_is_hint_not_blocker():
+    """底库为空只作为运行期提示，不再是硬阻断（表/API 已就绪）。"""
+    from app.api.v1.module_video.scene.catalog import scene_hints
+
+    for code in ("FACE_REC", "STRANGER"):
+        scene = SCENES[code]
+        assert scene_hints(scene, face_gallery_count=0) == [
+            "人脸底库为空：启用本场景后不会命中，请先录入底库特征"
+        ]
+        # 底库非空 / 未查库时不产生提示
+        assert scene_hints(scene, face_gallery_count=3) == []
+        assert scene_hints(scene, face_gallery_count=None) == []
+    # 不依赖底库的场景恒无提示
+    assert scene_hints(SCENES["DET_ZONE"], face_gallery_count=0) == []
+
+
+def test_face_and_sam_scenes_configurable_after_b3():
+    """B3：face_rec/sam 族 + face_gallery 资产就绪 → 三个场景可配置且默认规则可编译。
+
+    - FACE_REC 用 face_match(gte)；STRANGER 用 stranger(lt)；
+    - SAM_SEG 用 prompt_segment（标签 segment，提示点经参数注入）。
+    """
+    assert {"sam", "face_rec"} <= contract.AGENT_MODEL_FAMILIES
+    assert contract.has_asset("face_gallery") is True
+    expected = {"FACE_REC": "face_match", "STRANGER": "stranger", "SAM_SEG": "prompt_segment"}
+    for code, subject in expected.items():
+        scene = SCENES[code]
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 契约已就绪却仍置灰：{reason}"
+        out = compile_rule(code, _default_params(scene), scene.default_rule)
+        leaves = list(_iter_leaves(out))
+        assert leaves and all(leaf["subject"] == subject for leaf in leaves), code
+    # 相似度阈值 / 提示点必须可注入（界面可填即生效）
+    out = compile_rule("FACE_REC", {"similarity_threshold": 0.7}, SCENES["FACE_REC"].default_rule)
+    assert out["children"][0]["value"] == 0.7
+    out = compile_rule(
+        "SAM_SEG",
+        {"prompt_point": [[0.5, 0.5], [0.6, 0.6]]},
+        SCENES["SAM_SEG"].default_rule,
+    )
+    assert out["children"][0]["point"] == [[0.5, 0.5], [0.6, 0.6]]
+
+
+def test_face_match_scenes_re_gate_without_family_or_asset(monkeypatch):
+    """机制锁定：撤下 face_rec 族或 face_gallery 资产后，FACE_REC/STRANGER 必须重新置灰。"""
+    monkeypatch.setattr(
+        contract, "AGENT_MODEL_FAMILIES", contract.AGENT_MODEL_FAMILIES - {"face_rec"}
+    )
+    try:
+        for code in _FACE_MATCH_SCENES:
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 撤下族后不应仍可配置"
+            assert "face_rec" in reason, f"{code}: {reason}"
+    finally:
+        monkeypatch.undo()
+    monkeypatch.setattr(contract, "AGENT_ASSETS", frozenset())
+    try:
+        for code in _FACE_MATCH_SCENES:
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 撤下底库后不应仍可配置"
+            assert "人脸底库" in reason, f"{code}: {reason}"
+    finally:
+        monkeypatch.undo()
+
+
+def test_sam_seg_re_gates_without_family(monkeypatch):
+    """机制锁定：撤下 sam 族后，SAM_SEG 必须重新按「缺模型族」置灰。"""
+    monkeypatch.setattr(
+        contract, "AGENT_MODEL_FAMILIES", contract.AGENT_MODEL_FAMILIES - {"sam"}
+    )
+    try:
+        ok, reason = scene_configurability(SCENES["SAM_SEG"])
+        assert ok is False
+        assert "sam" in reason, reason
+    finally:
+        monkeypatch.undo()
 
 
 def test_configurable_scene_params_are_consumed():
@@ -489,11 +584,17 @@ def test_catalog_api_exposes_configurability(test_client, auth_headers):
     assert by_code["DEPLOY_TRACK"]["configurable"] is True
     assert by_code["OBB_DET"]["configurable"] is True
     assert by_code["I_SEG"]["configurable"] is True
+    # B3：人脸底库/交互分割就绪 → FACE_REC/STRANGER/SAM_SEG 转为可配置
+    for code in ("FACE_REC", "STRANGER", "SAM_SEG"):
+        assert by_code[code]["configurable"] is True, code
+        assert by_code[code]["blockers"] == [], code
+    # 底库为空时给出运行期提示（非阻断）；本条 e2e 库底库为空
+    assert any("底库为空" in h for h in by_code["FACE_REC"]["hints"])
     # 仍不可配置的场景：模型族/资产未就绪 → 必须给出置灰原因
-    assert by_code["FACE_REC"]["configurable"] is False
-    assert by_code["FACE_REC"]["unsupported_reason"]
-    assert any("底库" in b for b in by_code["FACE_REC"]["blockers"])
-    assert all("configurable" in s and "blockers" in s for s in items)
+    assert by_code["REID_TRACK"]["configurable"] is False
+    assert by_code["REID_TRACK"]["unsupported_reason"]
+    assert any("跨镜底库" in b for b in by_code["REID_TRACK"]["blockers"])
+    assert all("configurable" in s and "blockers" in s and "hints" in s for s in items)
 
 
 def test_scene_cls_default_rule_degrades_to_object_present():

@@ -17,19 +17,31 @@ from .catalog import (
     list_scenes,
     scene_blockers,
     scene_configurability,
+    scene_hints,
 )
 from .leaves import get_capabilities
 
 SceneRouter = APIRouter(route_class=OperationLogRoute, prefix="/scene", tags=["场景目录"])
 
 
-def _scene_dict(scene) -> dict:
+async def _face_gallery_count() -> int | None:
+    """有效人脸底库条目数（供「底库为空」提示）；查询失败返回 None（不产生提示）。"""
+    try:
+        from app.api.v1.module_video.face_gallery.service import FaceGalleryService
+
+        return await FaceGalleryService.count_active_service()
+    except Exception:
+        return None
+
+
+def _scene_dict(scene, face_gallery_count: int | None = None) -> dict:
     """场景序列化：附加前端置灰所需的诚实标记。
 
     - ``edge_supported``：所需模型族是否由边缘 Agent 上报（历史字段，语义不变）；
     - ``configurable``：综合「模型族 + 外部资产 + 分类契约 + 默认规则叶子」后可选中并保存成功；
     - ``unsupported_reason``：不可配置的中文原因（置灰时提示用户，而非静默失败）；
-    - ``blockers``：结构化原因清单（缺族/缺资产/缺叶子），前端逐条展示。
+    - ``blockers``：结构化原因清单（缺族/缺资产/缺叶子），前端逐条展示；
+    - ``hints``：可配置但需注意的运行期提示（如「人脸底库为空」），非阻断。
     """
     data = asdict(scene)
     data["edge_supported"] = is_edge_implementable(scene)
@@ -37,6 +49,7 @@ def _scene_dict(scene) -> dict:
     data["configurable"] = configurable
     data["unsupported_reason"] = reason
     data["blockers"] = scene_blockers(scene)
+    data["hints"] = scene_hints(scene, face_gallery_count=face_gallery_count)
     return data
 
 
@@ -46,7 +59,8 @@ async def list_scene_catalog_controller(
     category: Annotated[str | None, Query(description="场景分类过滤")] = None,
 ) -> JSONResponse:
     """列出全部场景（任务类型）定义，可按 category 过滤。"""
-    items = [_scene_dict(s) for s in list_scenes(category=category)]
+    gallery_count = await _face_gallery_count()
+    items = [_scene_dict(s, face_gallery_count=gallery_count) for s in list_scenes(category=category)]
     return SuccessResponse(data={"items": items, "total": len(items)}, msg="查询成功")
 
 
@@ -59,7 +73,7 @@ async def get_scene_controller(
     s = get_scene(code)
     if s is None:
         raise CustomException(msg="场景不存在", code=404, status_code=404)
-    return SuccessResponse(data=_scene_dict(s), msg="查询成功")
+    return SuccessResponse(data=_scene_dict(s, face_gallery_count=await _face_gallery_count()), msg="查询成功")
 
 
 @SceneRouter.get("/rule-capabilities", summary="规则叶子能力")
