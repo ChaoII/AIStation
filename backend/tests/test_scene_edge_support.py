@@ -28,20 +28,15 @@ from app.api.v1.module_video.scene.contract import (
 
 # Agent `application/aistation_agent/capability.cpp::detect_capabilities()` 上报的族（逐项枚举）。
 # 若工作区可读 ModelDeploy 仓库，下方对拍测试会直接解析该文件，防止本常量与 Agent 漂移。
-# 姿态切片：Agent 侧已上报 pose（关键点事件并行落地）。
-# B2a 人脸属性/活体/深度：Agent 侧已上报。
-# B2b 语义分割/人脸关键点/文档/条码、B3 交互分割/人脸特征：云契约先行声明、
-# Agent 并行接线（见 _IN_FLIGHT_FAMILIES）。
+# 姿态切片：Agent 侧已上报 pose。
+# B2a 人脸属性/活体/深度、B2b 语义分割/人脸关键点/文档/条码、B3 交互分割/人脸特征：
+# Agent（HEAD e6a4556）均已如实上报，故「在途族」放行清单已删除，对拍改为严格相等。
 _AGENT_REPORTED_FAMILIES = {
     "det", "cls", "face", "pedestrian_attribute", "ocr", "lpr", "tracking", "obb", "iseg",
     "pose", "face_attr", "face_as", "depth",
     "sem", "face_landmark", "doc", "barcode",
     "sam", "face_rec",
 }
-
-# 「在途族」：云侧契约已声明、Agent 侧接线并行进行中，capability.cpp 暂未上报。
-# 跨仓对拍按此显式清单放行；Agent 落地后清单自然为空（与姿态 pose 同机制）。
-_IN_FLIGHT_FAMILIES = {"sem", "face_landmark", "doc", "barcode", "sam", "face_rec"}
 
 
 def _read_agent_capability_families() -> set[str] | None:
@@ -72,18 +67,18 @@ def test_agent_capability_reported_families_match_contract():
 def test_agent_capability_cpp_has_no_family_drift():
     """直接解析 Agent capability.cpp 对拍（无该仓库时跳过，CI 亦安全）。
 
-    在途族（云契约先行、Agent 并行接线）允许暂未上报；其余必须逐项一致。
+    Agent（HEAD e6a4556）已如实上报含 sam/face_rec 在内的全部族，故不再有「在途族」放行，
+    对拍必须与真实上报集**严格相等**（云契约族集合 == Agent 上报集）。
     """
     actual = _read_agent_capability_families()
     if actual is None:
         pytest.skip("ModelDeploy 仓库不可读，跳过 capability.cpp 对拍")
-    assert actual | _IN_FLIGHT_FAMILIES == _AGENT_REPORTED_FAMILIES, (
+    assert actual == _AGENT_REPORTED_FAMILIES, (
         f"Agent 上报族与本测试枚举不一致：AgentOnly="
-        f"{sorted((actual | _IN_FLIGHT_FAMILIES) - _AGENT_REPORTED_FAMILIES)}, "
-        f"EnumOnly={sorted(_AGENT_REPORTED_FAMILIES - (actual | _IN_FLIGHT_FAMILIES))}"
+        f"{sorted(actual - _AGENT_REPORTED_FAMILIES)}, "
+        f"EnumOnly={sorted(_AGENT_REPORTED_FAMILIES - actual)}"
     )
-    assert actual <= set(AGENT_MODEL_FAMILIES)
-    assert set(AGENT_MODEL_FAMILIES) - actual <= _IN_FLIGHT_FAMILIES
+    assert actual == set(AGENT_MODEL_FAMILIES)
 
 
 def test_pipeline_type_aliases_cover_agent_normalization():

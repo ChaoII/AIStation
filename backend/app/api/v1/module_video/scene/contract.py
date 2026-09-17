@@ -9,13 +9,13 @@
 1. ``AGENT_MODEL_FAMILIES``（模型族）：对齐 ModelDeploy
    ``application/aistation_agent/capability.cpp:detect_capabilities`` 上报的族集合。
    - B1 已接线 obb/iseg，故默认纳入；二者未落地时 OBB_DET/I_SEG 会自动置灰。
-   - ``pose``：姿态切片新增。云侧契约已定稿（关键点事件 + keypoint_geometry 叶子），
-     Agent 侧 capability.cpp 上报由并行姿态切片补齐；补齐前本集合比 Agent 实际上报多
-     ``pose`` 一项，跨仓对拍测试按显式「在途族」清单放行（见 test_scene_edge_support.py）。
-   - B2b 新增 ``sem``/``face_landmark``/``doc``/``barcode``：均复用既有事件字段
-     （``attributes``/``keypoints``/``text``），Agent 侧接线并行落地中，同样按「在途族」放行。
-   - 后续每落地一族（face_rec/...）在此加入，或在 Agent 改为按编译开关上报后
-      改为运行时读取设备能力。
+     - ``pose``：姿态切片新增。云侧契约已定稿（关键点事件 + keypoint_geometry 叶子），
+       Agent 侧 capability.cpp 已如实上报。
+     - B2b 新增 ``sem``/``face_landmark``/``doc``/``barcode``：均复用既有事件字段
+       （``attributes``/``keypoints``/``text``），Agent 侧已如实上报。
+     - B3 新增 ``sam``/``face_rec``：Agent（HEAD e6a4556）已如实上报。
+     - **在途族清单已删除**：跨仓对拍（test_scene_edge_support.py）现要求云契约族集合与
+       Agent capability.cpp 上报集合严格相等；后续新增族须两侧同步落地。
 
 2. ``AGENT_EVENT_FEATURES``（事件特性）：Agent 事件载荷是否携带某类结果。
    - ``classification``：纯分类/属性分类结果写入事件并进入 sink。
@@ -68,15 +68,15 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
         "face_attr",
         "face_as",
         "depth",
-        # B2b 语义分割/人脸关键点/文档/条码：事件契约复用既有字段（attributes/keypoints/text），
-        # Agent 侧 capability 上报并行落地中（见 test_scene_edge_support.py 的在途族清单）。
+        # B2b 语义分割/人脸关键点/文档/条码：事件契约复用既有字段（attributes/keypoints/text）。
+        # Agent（HEAD e6a4556）已在 capability.cpp 如实上报。
         "sem",
         "face_landmark",
         "doc",
         "barcode",
         # B3 交互分割（sam）/ 人脸特征（face_rec）：sam 以普通 bbox 对象（label="segment"）
         # 承载分割结果；face_rec 新增 objects[].embedding（L2 归一化 512/1024 维）。
-        # 两者 Agent 侧 capability 上报并行落地中（同样按「在途族」放行）。
+        # Agent 已如实上报，跨仓对拍改为严格相等（不再有「在途族」放行清单）。
         "sam",
         "face_rec",
     }
