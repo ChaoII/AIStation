@@ -52,8 +52,9 @@ _AGENT_NORMALIZE = {
 
 # Agent 侧以「单条复合模型条目」承载多阶段子模型的家族（目录可能声明多角色）。
 # pedestrian_attribute：目录 [_DET,_CLS] → 单条 pedestrian_attribute；
-# ocr/lpr：目录本身单角色且 type 即复合类型。
-_COMPOUND_FAMILIES = {"pedestrian_attribute", "ocr", "lpr"}
+# ocr/lpr：目录本身单角色且 type 即复合类型；
+# face_rec：目录 [face_detection, face_rec]，云端整体构造两条显式条目（face_rec 携带 det_url）。
+_COMPOUND_FAMILIES = {"pedestrian_attribute", "ocr", "lpr", "face_rec"}
 
 # 依赖 keypoints 事件契约的姿态场景：目录 pipeline 为 [_DET, _POSE]
 _POSE_SCENES = ("FALL", "CLIMB", "SMOKE_PHONE")
@@ -262,3 +263,40 @@ def test_existing_scene_configs_are_byte_identical(code):
     expected = _BACKWARD_COMPAT[code]
     assert cfg["scene_type"] == expected["scene_type"]
     assert cfg["models"] == expected["models"], f"{code} 下发模型与修复前不一致"
+
+
+# ── face_rec 复合编排显式化（B3 遗留修复）──────────────────────────────────
+_FACE_REC_SCENES = ("FACE_REC", "STRANGER")
+
+
+@pytest.mark.parametrize("code", _FACE_REC_SCENES)
+def test_face_rec_scenes_dispatch_explicit_compound_models(code):
+    """FACE_REC/STRANGER 必须显式下发 face_detection + face_rec，且 face_rec 自带 det_url。
+
+    修复前 face_rec 条目不携带检测器路径，依赖 Agent 从「同任务 face_detection 兄弟条目」
+    补齐（隐式约定）；此处锁定显式构造，避免该隐式依赖回归。
+    """
+    algo = _algo(code, face_rec_path="/models/w600k_r50.onnx")
+    det_primary = algo.model_path
+    cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
+    by_type = {m["type"]: m for m in cfg["models"]}
+    assert set(by_type) == {"face_detection", "face_rec"}, by_type.keys()
+
+    # 检测器：face_detection 条目取算法主模型（未显式 face_det_path 时的既有口径）
+    assert by_type["face_detection"]["url"] == det_primary
+    # face_rec 复合条目：检测器显式 + 嵌入模型显式（不再依赖兄弟条目 / 主模型回退）
+    assert by_type["face_rec"]["det_url"] == det_primary
+    assert by_type["face_rec"]["url"] == "/models/w600k_r50.onnx"
+    assert by_type["face_rec"]["rec_url"] == "/models/w600k_r50.onnx"
+
+
+@pytest.mark.parametrize("code", _FACE_REC_SCENES)
+def test_face_rec_explicit_det_path_override(code):
+    """显式 face_det_path 必须同时落到 face_detection.url 与 face_rec.det_url。"""
+    algo = _algo(
+        code, face_det_path="/models/scrfd.onnx", face_rec_path="/models/w600k.onnx"
+    )
+    cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
+    by_type = {m["type"]: m for m in cfg["models"]}
+    assert by_type["face_detection"]["url"] == "/models/scrfd.onnx"
+    assert by_type["face_rec"]["det_url"] == "/models/scrfd.onnx"

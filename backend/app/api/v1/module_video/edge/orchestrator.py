@@ -262,6 +262,61 @@ _COMPOUND_FAMILY_BUILDERS = {
     "pedestrian_attribute": _build_pedestrian_attribute_model,
 }
 
+
+def _build_face_rec_models(
+    base_model: dict, algorithm, merged_params: dict, merged_runtime: dict
+) -> list[dict]:
+    """FACE_REC/STRANGER：显式产出 ``face_detection`` + ``face_rec`` 两条复合管线模型。
+
+    背景（B3 遗留）：Agent 的 face_rec 是「检测（SCRFD）+ 嵌入」复合模型，原先依赖
+    「同任务中另有一条 face_detection 条目」自动补齐检测器（``config_adapter.cpp`` 的
+    `shared_face_det` 回退）。云端这里把该关系**显式化**：face_rec 条目直接携带
+    ``det_url``（检测器）与 ``url``/``rec_url``（嵌入模型），不再依赖兄弟条目。
+
+    - 检测器：``face_det_path``/``face_det_url``/``det_path``/``det_url``，缺省算法主模型；
+    - 嵌入：``face_rec_path``/``face_rec_url``/``embedding_path``/``embedding_url``/
+      ``rec_path``/``rec_url``，缺省算法主模型（与既有 ``_resolve_role_model_url`` 口径一致）。
+    兼容性：两 url 均缺省时与原「face_detection=主模型 + face_rec=主模型」一致；
+    Agent 对 face_rec 条目的 ``det_url`` 解析已支持，故行为不变。
+    """
+    primary = algorithm.model_path or ""
+    det_url = (
+        _first_present(merged_params, "face_det_path", "face_det_url", "det_path", "det_url")
+        or _first_present(merged_runtime, "face_det_path", "face_det_url", "det_path", "det_url")
+        or primary
+    )
+    rec_url = (
+        _first_present(
+            merged_params,
+            "face_rec_path", "face_rec_url", "embedding_path", "embedding_url",
+            "rec_path", "rec_url",
+        )
+        or _first_present(
+            merged_runtime,
+            "face_rec_path", "face_rec_url", "embedding_path", "embedding_url",
+            "rec_path", "rec_url",
+        )
+        or primary
+    )
+    return [
+        {**base_model, "type": "face_detection", "url": det_url},
+        {
+            **base_model,
+            "type": "face_rec",
+            "url": rec_url,
+            "det_url": det_url,
+            "rec_url": rec_url,
+        },
+    ]
+
+
+# 「多角色 pipeline → 多条显式模型条目」的复合族构造器（返回值即完整 models 列表）。
+# face_rec：目录 pipeline 为 [face_detection, face_rec]，Agent 侧 face_rec 为复合类型，
+# 但需显式携带检测器路径，故在此整体构造（而非逐角色展开）。
+_COMPOUND_PIPELINE_BUILDERS = {
+    "face_rec": _build_face_rec_models,
+}
+
 # 单条 pipeline 条目本身即「Agent 复合模型类型」的 type → 构造器（子模型 url 需展开）。
 _SINGLE_MODEL_BUILDERS = {
     "ocr": _build_ocr_model,
@@ -299,10 +354,15 @@ def _build_scene_models(scene, algorithm, merged_params: dict, merged_runtime: d
     if scene is None:
         return [{**base_model, "type": _resolve_model_type(algorithm), "url": primary_url}]
 
-    compound = next(
-        (f for f in contract.canonical_families(scene.model_families) if f in _COMPOUND_FAMILY_BUILDERS),
-        None,
-    )
+    families = contract.canonical_families(scene.model_families)
+    # 复合管线族（face_rec）：整体构造多条显式模型条目（优先于单条复合族判定）
+    compound_pipeline = next((f for f in families if f in _COMPOUND_PIPELINE_BUILDERS), None)
+    if compound_pipeline is not None:
+        return _COMPOUND_PIPELINE_BUILDERS[compound_pipeline](
+            base_model, algorithm, merged_params, merged_runtime
+        )
+
+    compound = next((f for f in families if f in _COMPOUND_FAMILY_BUILDERS), None)
     if compound is not None:
         return [_COMPOUND_FAMILY_BUILDERS[compound](base_model, algorithm, merged_params, merged_runtime)]
 
