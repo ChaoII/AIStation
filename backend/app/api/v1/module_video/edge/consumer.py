@@ -66,6 +66,10 @@ def normalize_edge_event(payload: dict) -> dict:
                     det["text"] = obj["text"]
                 if obj.get("text_score") is not None:
                     det["text_score"] = obj["text_score"]
+                # 姿态关键点（事件 v2 objects[].keypoints=[[x,y,score],...]，归一化 0~1）
+                # 需保留，供 keypoint_geometry 叶子做几何判定（fall/climb/smoke_phone）
+                if obj.get("keypoints") is not None:
+                    det["keypoints"] = obj["keypoints"]
                 dets.append(det)
             normalized["detections"] = dets
         else:
@@ -85,6 +89,9 @@ def normalize_edge_event(payload: dict) -> dict:
                     dets[i]["text"] = obj["text"]
                 if "text_score" not in dets[i] and obj.get("text_score") is not None:
                     dets[i]["text_score"] = obj["text_score"]
+                # 关键点同样按索引并入 detections，避免随 objects 一起丢失
+                if "keypoints" not in dets[i] and obj.get("keypoints") is not None:
+                    dets[i]["keypoints"] = obj["keypoints"]
     return normalized
 
 

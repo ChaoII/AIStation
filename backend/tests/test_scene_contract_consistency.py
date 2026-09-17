@@ -34,6 +34,9 @@ from app.api.v1.module_video.scene.leaves import LEAF_CAPABILITIES
 # 依赖「分类结果进入边缘事件」契约的三个场景（B2a 契约已落地，现应可配置）
 _CLASSIFICATION_SCENES = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK"}
 
+# 依赖「姿态关键点进入边缘事件」契约的三个场景（姿态切片契约已声明，现应可配置）
+_KEYPOINT_SCENES = {"FALL", "CLIMB", "SMOKE_PHONE"}
+
 
 def _iter_leaves(rule: dict):
     """深度遍历规则条件树，产出所有叶子节点（非逻辑算子节点）。"""
@@ -66,11 +69,15 @@ def test_configurable_scenes_compile_default_rule():
         compile_rule(code, _default_params(scene), scene.default_rule)
         checked.append(code)
     # static/track 叶子实现后 ABANDON/DEPLOY_TRACK 可选；B1 接线后 OBB_DET/I_SEG 可选；
-    # B2a 分类事件契约落地后 SCENE_CLS/DEFECT_CLS/NO_MASK 亦转为可配置。
+    # B2a 分类事件契约落地后 SCENE_CLS/DEFECT_CLS/NO_MASK 亦转为可配置；
+    # 姿态切片 keypoint_geometry 落地后 FALL/CLIMB/SMOKE_PHONE 亦转为可配置
+    # （HAND_GESTURE 因 hand 族未上报 + gesture 规则未实现，仍置灰）。
     assert {"ABANDON", "DEPLOY_TRACK", "OBB_DET", "I_SEG"} <= set(checked)
     assert _CLASSIFICATION_SCENES <= set(checked)
+    assert _KEYPOINT_SCENES <= set(checked)
+    assert "HAND_GESTURE" not in set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 23
+    assert len(checked) == 26
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -91,6 +98,9 @@ def test_unconfigurable_scenes_reason_mentions_cause():
         gated = scene.requires_classification and not contract.supports_event_feature(
             "classification"
         )
+        keypoint_gated = scene.requires_keypoints and not contract.supports_event_feature(
+            "keypoints"
+        )
         bad = unimplemented_default_leaves(scene)
         # 每个原因类别都必须落在 reason 文本中，保证前端提示可操作
         if missing_fams:
@@ -99,6 +109,8 @@ def test_unconfigurable_scenes_reason_mentions_cause():
             assert any(contract.asset_label(a) in reason for a in missing_assets), f"{code}: {reason}"
         if gated:
             assert "分类" in reason, f"{code}: {reason}"
+        if keypoint_gated:
+            assert "关键点" in reason, f"{code}: {reason}"
         if bad:
             assert any(leaf in reason for leaf in bad), f"{code}: {reason}"
 
@@ -135,6 +147,80 @@ def test_classification_scenes_re_gate_without_contract(monkeypatch):
             assert "分类" in reason, f"{code}: {reason}"
     finally:
         monkeypatch.undo()
+
+
+def test_keypoint_scenes_configurable_after_contract_lands():
+    """姿态契约已声明：FALL/CLIMB/SMOKE_PHONE 必须可配置且默认规则可编译为 keypoint_geometry。"""
+    assert contract.supports_event_feature("keypoints") is True
+    assert "pose" in contract.AGENT_MODEL_FAMILIES
+    for code in _KEYPOINT_SCENES:
+        scene = SCENES[code]
+        assert scene.requires_keypoints is True, code
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 姿态契约已声明却仍置灰：{reason}"
+        out = compile_rule(code, _default_params(scene), scene.default_rule)
+        leaves = list(_iter_leaves(out))
+        assert leaves and all(leaf["subject"] == "keypoint_geometry" for leaf in leaves), code
+
+
+def test_keypoint_scenes_re_gate_without_contract(monkeypatch):
+    """机制锁定：撤下 keypoints 事件特性后，三个姿态场景必须重新按「关键点」原因置灰。"""
+    monkeypatch.setattr(contract, "AGENT_EVENT_FEATURES", frozenset())
+    try:
+        for code in _KEYPOINT_SCENES:
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 关键点契约撤销后不应仍可配置"
+            assert "关键点" in reason, f"{code}: {reason}"
+    finally:
+        monkeypatch.undo()
+
+
+def test_hand_gesture_stays_gated_with_honest_reason():
+    """gesture 规则未实现 + hand 族未上报 → HAND_GESTURE 必须置灰并说明原因（不假装可用）。"""
+    scene = SCENES["HAND_GESTURE"]
+    ok, reason = scene_configurability(scene)
+    assert ok is False
+    blockers = scene_blockers(scene)
+    assert any("hand" in b for b in blockers), blockers
+    assert any("gesture" in b for b in blockers), blockers
+    assert "gesture" in reason and "hand" in reason, reason
+
+
+def test_fall_default_rule_injects_angle_threshold_and_roi():
+    """FALL 的 angle_threshold → keypoint_geometry.value，roi → region（界面可填即生效）。"""
+    scene = get_scene("FALL")
+    roi = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]
+    out = compile_rule("FALL", {"roi": roi, "angle_threshold": 45.0}, scene.default_rule)
+    leaf = out["children"][0]
+    assert leaf["subject"] == "keypoint_geometry"
+    assert leaf["rule"] == "fall"
+    assert leaf["op"] == ">="
+    assert leaf["value"] == 45.0
+    assert leaf["region"] == roi
+
+
+def test_climb_default_rule_injects_line():
+    """CLIMB 的 line → keypoint_geometry.line（绊线由任务参数运行时注入）。"""
+    scene = get_scene("CLIMB")
+    line = [[0.0, 0.5], [1.0, 0.5]]
+    out = compile_rule("CLIMB", {"line": line}, scene.default_rule)
+    leaf = out["children"][0]
+    assert leaf["subject"] == "keypoint_geometry"
+    assert leaf["rule"] == "climb"
+    assert leaf["line"] == line
+
+
+def test_smoke_phone_default_rule_injects_min_sec_and_distance():
+    """SMOKE_PHONE 的 min_sec / hand_head_distance 必须注入叶子（否则界面可填但无效）。"""
+    scene = get_scene("SMOKE_PHONE")
+    out = compile_rule(
+        "SMOKE_PHONE", {"min_sec": 8, "hand_head_distance": 0.1}, scene.default_rule
+    )
+    leaf = out["children"][0]
+    assert leaf["subject"] == "keypoint_geometry"
+    assert leaf["rule"] == "smoke_phone"
+    assert leaf["min_sec"] == 8
+    assert leaf["value"] == 0.1
 
 
 def test_obb_iseg_use_canonical_pipeline_types():

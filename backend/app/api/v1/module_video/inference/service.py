@@ -1,5 +1,6 @@
 import base64
 import logging
+import math
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +32,28 @@ TEMPORAL_SUBJECTS = (
 
 # static 叶子缺省最大位移阈值（归一化坐标下的欧氏距离）
 _DEFAULT_MAX_MOVE = 0.02
+
+# ── 关键点几何（keypoint_geometry 叶子）──────────────────────────────────────
+# 事件契约：Agent 对姿态模型输出 objects[].keypoints = [[x, y, score], ...]（归一化 0~1）。
+# 索引按 Ultralytics/COCO-17 人体姿态顺序（本叶子对「多出的点」容忍，只取所需索引）：
+#   0 鼻 ｜ 1/2 左/右眼 ｜ 3/4 左/右耳 ｜ 5/6 左/右肩 ｜ 7/8 左/右肘 ｜ 9/10 左/右腕
+#   11/12 左/右髋 ｜ 13/14 左/右膝 ｜ 15/16 左/右踝
+_KP_NOSE = 0
+_KP_EYES = (1, 2)
+_KP_EARS = (3, 4)
+_KP_SHOULDERS = (5, 6)
+_KP_WRISTS = (9, 10)
+_KP_HIPS = (11, 12)
+# 关键点最低可见分数：低于该值视为未检出（避免 (0,0) 伪点污染几何）
+_KP_MIN_SCORE = 0.3
+# fall：躯干与竖直方向夹角缺省阈值（度；0=直立，90=水平）
+_DEFAULT_FALL_ANGLE = 60.0
+# climb：未提供 line 时的缺省高度阈值（归一化 y，越小越高）
+_DEFAULT_CLIMB_Y = 0.5
+# smoke_phone：腕-头归一化距离缺省阈值
+_DEFAULT_HAND_HEAD_DIST = 0.15
+# 需要时序轨迹状态的 keypoint 规则（smoke_phone 的 min_sec 持续性抑制）
+_KEYPOINT_STATEFUL_RULES = frozenset({"smoke_phone"})
 
 
 def pick_alarm_rule(rules: list, algorithm_type: str):
@@ -198,8 +221,25 @@ def _in_region(d: dict, leaf: dict) -> bool:
     return _point_in_polygon(center[0], center[1], pts)
 
 
+def _leaf_needs_state(node: dict) -> bool:
+    """叶子是否需要跨事件时序状态（决定是否写入观测）。
+
+    - TEMPORAL_SUBJECTS 中的时序叶子恒为真；
+    - keypoint_geometry 中带 ``min_sec`` 的持续性规则（smoke_phone）亦需轨迹状态。
+    """
+    subject = node.get("subject")
+    if subject in TEMPORAL_SUBJECTS:
+        return True
+    if subject != "keypoint_geometry":
+        return False
+    rule = node.get("rule")
+    if not isinstance(rule, str) or rule.strip().lower() not in _KEYPOINT_STATEFUL_RULES:
+        return False
+    return node.get("min_sec") is not None
+
+
 def _iter_temporal_leaves(node) -> list[dict]:
-    """遍历条件树，收集所有时序叶子（dwell/count_window/absence）；脏节点安全跳过。"""
+    """遍历条件树，收集所有需要时序状态的叶子；脏节点安全跳过。"""
     found: list[dict] = []
     if not isinstance(node, dict):
         return found
@@ -209,7 +249,7 @@ def _iter_temporal_leaves(node) -> list[dict]:
             for k in kids:
                 found.extend(_iter_temporal_leaves(k))
         return found
-    if node.get("subject") in TEMPORAL_SUBJECTS:
+    if _leaf_needs_state(node):
         found.append(node)
     return found
 
@@ -334,6 +374,284 @@ def _compare_count(value: float, op: str, target: float) -> bool:
     if op == "<":
         return value < target
     return value == target
+
+
+# ── 关键点几何工具 ──────────────────────────────────────────────────────────
+def _keypoints_of(d) -> list:
+    """取检测的关键点列表；缺失/非列表返回空列表（fail-closed）。"""
+    if not isinstance(d, dict):
+        return []
+    kps = d.get("keypoints")
+    if not isinstance(kps, (list, tuple)):
+        return []
+    return list(kps)
+
+
+def _kp_point(kps, idx, min_score: float = _KP_MIN_SCORE):
+    """取第 idx 个关键点 (x, y)；越界/非数值/分数不足返回 None。
+
+    容忍 2 元素点（缺 score 视为可见）；若给出 score 则必须为数值且 >= min_score。
+    """
+    if not isinstance(idx, int) or idx < 0 or idx >= len(kps):
+        return None
+    kp = kps[idx]
+    if not isinstance(kp, (list, tuple)) or len(kp) < 2:
+        return None
+    x = _as_float(kp[0])
+    y = _as_float(kp[1])
+    if x is None or y is None or not (math.isfinite(x) and math.isfinite(y)):
+        return None
+    if len(kp) >= 3:
+        score = _as_float(kp[2])
+        if score is None or score < min_score:
+            return None
+    return (x, y)
+
+
+def _kp_mid(kps, idxs, min_score: float = _KP_MIN_SCORE):
+    """取若干关键点的均值点；全部缺失返回 None。"""
+    pts = [p for p in (_kp_point(kps, i, min_score) for i in idxs) if p is not None]
+    if not pts:
+        return None
+    return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+def _kp_head_point(kps):
+    """头部参照点：鼻 → 双耳中点 → 双眼中点；均缺失返回 None。"""
+    return (
+        _kp_point(kps, _KP_NOSE)
+        or _kp_mid(kps, _KP_EARS)
+        or _kp_mid(kps, _KP_EYES)
+    )
+
+
+def _kp_torso(kps):
+    """躯干两端点 (肩中点, 髋中点)；任一缺失返回 None。"""
+    sh = _kp_mid(kps, _KP_SHOULDERS)
+    hip = _kp_mid(kps, _KP_HIPS)
+    if sh is None or hip is None:
+        return None
+    return sh, hip
+
+
+def _kp_torso_angle(sh, hip):
+    """躯干相对竖直方向夹角（度）：0=直立，90=水平；退化（零长度）返回 None。"""
+    dx = sh[0] - hip[0]
+    dy = sh[1] - hip[1]
+    if math.hypot(dx, dy) <= 1e-9:
+        return None
+    return math.degrees(math.atan2(abs(dx), abs(dy)))
+
+
+def _is_above_line(l0, l1, pt) -> bool:
+    """点是否位于线段所在直线的「上方」（图像坐标 y 向下，越小越高）。
+
+    线段竖直（首尾 x 相同）时上下无定义；点恰好落线上亦不判为上方（均 fail-closed）。
+    """
+    dx = l1[0] - l0[0]
+    if abs(dx) <= 1e-9:
+        return False
+    orient = _orient(l0, l1, pt)
+    if orient == 0:
+        return False
+    # 直线上方 = 法向 y 分量为负的一侧：dx>0 时左侧为上，dx<0 时右侧为上
+    return orient < 0 if dx > 0 else orient > 0
+
+
+def _climb_body_center(kps):
+    """攀爬判定用躯干中心（肩中点与髋中点的均值）；两者均缺失返回 None。"""
+    pts = [p for p in (_kp_mid(kps, _KP_SHOULDERS), _kp_mid(kps, _KP_HIPS)) if p is not None]
+    if not pts:
+        return None
+    return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+def _climb_threshold(leaf) -> tuple[float, bool]:
+    """高度阈值解析：缺省 0.5；给出但非法（非数值/越界 0~1）返回 (0.0, False)。"""
+    raw = leaf.get("value")
+    if raw is None:
+        return _DEFAULT_CLIMB_Y, True
+    val = _as_float(raw)
+    if val is None or val < 0 or val > 1:
+        return 0.0, False
+    return val, True
+
+
+def _hand_head_distance(kps):
+    """腕（9/10）到头参照的最小归一化距离；头或腕缺失返回 None。"""
+    head = _kp_head_point(kps)
+    if head is None:
+        return None
+    hands = [p for p in (_kp_point(kps, i) for i in _KP_WRISTS) if p is not None]
+    if not hands:
+        return None
+    return min(math.hypot(h[0] - head[0], h[1] - head[1]) for h in hands)
+
+
+def _kp_compare(value: float, op, target: float, default_op: str):
+    """按 op（缺省 default_op）比较；op 非法返回 None（fail-closed）。"""
+    if op is None:
+        op = default_op
+    if op not in (">=", ">", "<=", "<", "=="):
+        return None
+    return _compare_count(value, op, target)
+
+
+def _smoke_phone_threshold(leaf) -> tuple[float, bool]:
+    """手-头距离阈值解析：缺省 0.15；给出但非法（非数值/负数）返回 (0.0, False)。"""
+    raw = leaf.get("value")
+    if raw is None:
+        return _DEFAULT_HAND_HEAD_DIST, True
+    val = _as_float(raw)
+    if val is None or val < 0:
+        return 0.0, False
+    return val, True
+
+
+def _fall_hit(kps, leaf) -> bool:
+    """跌倒：躯干与竖直方向夹角按 op（缺省 >=）与阈值（value，缺省 60°）比较。"""
+    torso = _kp_torso(kps)
+    if torso is None:
+        return False
+    angle = _kp_torso_angle(*torso)
+    if angle is None:
+        return False
+    raw = leaf.get("value")
+    if raw is None:
+        threshold = _DEFAULT_FALL_ANGLE
+    else:
+        threshold = _as_float(raw)
+        if threshold is None or threshold < 0 or threshold > 180:
+            return False
+    return _kp_compare(angle, leaf.get("op"), threshold, ">=") is True
+
+
+def _climb_hit(kps, leaf) -> bool:
+    """攀爬：有 line 时判躯干中心是否位于绊线上方；否则按高度阈值比较（缺省 <=）。"""
+    center = _climb_body_center(kps)
+    if center is None:
+        return False
+    if leaf.get("line") is not None:
+        line = _parse_line(leaf)
+        if line is None:
+            return False
+        return _is_above_line(line[0], line[1], center)
+    threshold, ok = _climb_threshold(leaf)
+    if not ok:
+        return False
+    return _kp_compare(center[1], leaf.get("op"), threshold, "<=") is True
+
+
+def _smoke_phone_sustained(
+    leaf, *, temporal, camera_id, alarm_type, now: float | None, alarm_interval
+) -> bool:
+    """min_sec 持续性：存在已持续 >= min_sec 且未过期（idle <= grace）的活跃轨迹。
+
+    未配置 min_sec → True（单帧判定）；配置但非法/缺时序状态 → False（fail-closed）。
+    """
+    raw_min = leaf.get("min_sec")
+    if raw_min is None:
+        return True
+    min_sec = _as_float(raw_min)
+    if min_sec is None or min_sec < 0:
+        return False
+    if temporal is None or camera_id is None or now is None:
+        return False
+    scope, ok = _leaf_scope(leaf)
+    if not ok:
+        return False
+    entries = _query_temporal(temporal, camera_id, alarm_type, leaf, scope)
+    grace = max(min_sec, _as_float(alarm_interval) or 0.0)
+    for _field, (first, last) in entries.items():
+        if (now - first) >= min_sec and (now - last) <= grace:
+            return True
+    return False
+
+
+def _smoke_phone_hit(
+    kps, leaf, *, temporal, camera_id, alarm_type, now: float | None, alarm_interval
+) -> bool:
+    """抽烟/打电话：腕-头距离 <= 阈值（缺省 0.15），可选要求轨迹持续 >= min_sec。"""
+    dist = _hand_head_distance(kps)
+    if dist is None:
+        return False
+    threshold, ok = _smoke_phone_threshold(leaf)
+    if not ok:
+        return False
+    if _kp_compare(dist, leaf.get("op"), threshold, "<=") is not True:
+        return False
+    return _smoke_phone_sustained(
+        leaf,
+        temporal=temporal,
+        camera_id=camera_id,
+        alarm_type=alarm_type,
+        now=now,
+        alarm_interval=alarm_interval,
+    )
+
+
+def _keypoint_geometry_hit(
+    leaf: dict,
+    detections: list,
+    *,
+    temporal=None,
+    camera_id=None,
+    alarm_type=None,
+    now: float | None = None,
+    alarm_interval=0,
+) -> bool:
+    """评估 keypoint_geometry 叶子（姿态几何）；异常/缺失输入一律不命中，绝不抛异常。
+
+    契约：``{"subject":"keypoint_geometry","rule":"fall|climb|smoke_phone|gesture",
+    "region"?,"min_sec"?,"line"?,"op"?,"value"?}``；区域过滤按检测框中心（与既有叶子一致）。
+
+    规则语义（COCO-17 索引，关键点分数 < 0.3 视为未检出）：
+    - fall：躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
+    - climb：躯干中心位于 line 上方（图像 y 向下，越小越高）；无 line 时与高度阈值
+      value（缺省 0.5，op 缺省 <=）比较；line 竖直/非法 → 不命中；
+    - smoke_phone：腕（9/10）到头参照（鼻→双耳中点→双眼中点）的最小归一化距离
+      <= 阈值（value 缺省 0.15，op 缺省 <=）；配置 min_sec 时还要求存在已持续
+      >= min_sec 的活跃轨迹（复用时序轨迹状态做持续性抑制）；
+    - gesture：已声明但未实现（缺 21 点手部关键点模型），恒不命中（见 leaves.py 说明）。
+    """
+    if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
+        return False
+    rule = leaf.get("rule")
+    if not isinstance(rule, str):
+        return False
+    rule = rule.strip().lower()
+    if rule == "gesture":
+        # 诚实的桩实现：不支持即不命中，绝不用几何近似冒充手势识别
+        return False
+    if rule not in ("fall", "climb", "smoke_phone"):
+        return False
+    try:
+        for d in detections:
+            if not isinstance(d, dict):
+                continue
+            if not _in_region(d, leaf):
+                continue
+            kps = _keypoints_of(d)
+            if not kps:
+                continue
+            if rule == "fall" and _fall_hit(kps, leaf):
+                return True
+            if rule == "climb" and _climb_hit(kps, leaf):
+                return True
+            if rule == "smoke_phone" and _smoke_phone_hit(
+                kps,
+                leaf,
+                temporal=temporal,
+                camera_id=camera_id,
+                alarm_type=alarm_type,
+                now=now,
+                alarm_interval=alarm_interval,
+            ):
+                return True
+    except Exception:
+        # 脏规则/脏关键点绝不向上抛异常（与 _match_conditions 同约定）
+        return False
+    return False
 
 
 def _eval_temporal(
@@ -586,6 +904,13 @@ def _match_conditions(
       "track_id"?} 某真实轨迹存在 >= min_sec、仍活跃，且相对首帧最大位移 <= max_move。
     - track：{"subject":"track","label"?,"labels"?,"region"?,"min_sec"?}
       存在至少一条活跃的真实轨迹（可选要求时长 >= min_sec）。
+    关键点几何叶子（读取 detection.keypoints，姿态模型输出 [[x,y,score],...] 归一化）：
+    - keypoint_geometry：{"subject":"keypoint_geometry","rule":"fall|climb|smoke_phone|gesture",
+      "region"?,"min_sec"?,"line"?,"op"?,"value"?}
+      fall=躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
+      climb=躯干中心位于 line 上方，无 line 时与高度阈值 value（缺省 0.5，op 缺省 <=）比较；
+      smoke_phone=腕到头参照的最小距离 <= 阈值（value 缺省 0.15），min_sec 可选持续性抑制；
+      gesture=已声明但未实现（缺手部关键点模型），恒不命中。区域过滤按检测框中心。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -718,6 +1043,17 @@ def explain_conditions(
                         continue
                 return True
             return False
+        if subject == "keypoint_geometry":
+            # 姿态几何叶子（fall/climb/smoke_phone；gesture 为已声明桩实现）
+            return _keypoint_geometry_hit(
+                leaf,
+                dets,
+                temporal=temporal,
+                camera_id=camera_id,
+                alarm_type=alarm_type,
+                now=now,
+                alarm_interval=alarm_interval,
+            )
         if subject == "count":
             op = leaf.get("op")
             if op not in (">=", ">", "<=", "<", "=="):
@@ -909,6 +1245,66 @@ def explain_conditions(
             return f"track {count}"
         return str(subject)
 
+    def _keypoint_detail(leaf: dict) -> str:
+        """关键点几何叶子的关键量说明；无法测量时给出可读回退。"""
+        rule = leaf.get("rule")
+        rule = rule.strip().lower() if isinstance(rule, str) else ""
+        if rule == "gesture":
+            return "gesture 未实现(缺 21 点手部关键点)"
+        if rule not in ("fall", "climb", "smoke_phone"):
+            return str(leaf.get("subject"))
+        op = leaf.get("op") or ("<=" if rule in ("climb", "smoke_phone") else ">=")
+        for d in dets:
+            if not _in_region(d, leaf):
+                continue
+            kps = _keypoints_of(d)
+            if not kps:
+                continue
+            if rule == "fall":
+                torso = _kp_torso(kps)
+                angle = _kp_torso_angle(*torso) if torso is not None else None
+                if angle is None:
+                    continue
+                raw = leaf.get("value")
+                threshold = _DEFAULT_FALL_ANGLE if raw is None else _as_float(raw)
+                if threshold is None:
+                    return "fall -"
+                return f"fall {angle:.0f}°{op}{_fmt_num(threshold)}°"
+            if rule == "climb":
+                center = _climb_body_center(kps)
+                if center is None:
+                    continue
+                if leaf.get("line") is not None:
+                    line = _parse_line(leaf)
+                    if line is None:
+                        return "climb line=?"
+                    above = _is_above_line(line[0], line[1], center)
+                    return "climb 位于绊线上方" if above else "climb 未越线"
+                threshold, ok = _climb_threshold(leaf)
+                if not ok:
+                    return "climb -"
+                return f"climb y={center[1]:.2f}{op}{_fmt_num(threshold)}"
+            if rule == "smoke_phone":
+                dist = _hand_head_distance(kps)
+                if dist is None:
+                    continue
+                threshold, ok = _smoke_phone_threshold(leaf)
+                if not ok:
+                    return "smoke_phone -"
+                suffix = ""
+                if leaf.get("min_sec") is not None:
+                    sustained = _smoke_phone_sustained(
+                        leaf,
+                        temporal=temporal,
+                        camera_id=camera_id,
+                        alarm_type=alarm_type,
+                        now=now,
+                        alarm_interval=alarm_interval,
+                    )
+                    suffix = f" sust={'Y' if sustained else 'N'}"
+                return f"smoke_phone d={dist:.2f}{op}{threshold:.2f}{suffix}"
+        return f"{rule} -"
+
     def leaf_detail(leaf: dict) -> str:
         """生成叶子说明；任何异常都回退为 subject 名，绝不影响判定结果。"""
         subject = leaf.get("subject")
@@ -925,6 +1321,8 @@ def explain_conditions(
                 return f"text~{leaf.get('regex')}"
             if subject == "ocr_label":
                 return f"text⊃{leaf.get('contains')}"
+            if subject == "keypoint_geometry":
+                return _keypoint_detail(leaf)
             if subject in TEMPORAL_SUBJECTS:
                 return _temporal_detail(subject, leaf)
         except Exception:

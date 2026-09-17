@@ -9,15 +9,22 @@
 1. ``AGENT_MODEL_FAMILIES``（模型族）：对齐 ModelDeploy
    ``application/aistation_agent/capability.cpp:detect_capabilities`` 上报的族集合。
    - B1 已接线 obb/iseg，故默认纳入；二者未落地时 OBB_DET/I_SEG 会自动置灰。
-   - 后续每落地一族（pose/face_rec/...）在此加入，或在 Agent 改为按编译开关上报后
+   - ``pose``：姿态切片新增。云侧契约已定稿（关键点事件 + keypoint_geometry 叶子），
+     Agent 侧 capability.cpp 上报由并行姿态切片补齐；补齐前本集合比 Agent 实际上报多
+     ``pose`` 一项，跨仓对拍测试按显式「在途族」清单放行（见 test_scene_edge_support.py）。
+   - 后续每落地一族（face_rec/...）在此加入，或在 Agent 改为按编译开关上报后
      改为运行时读取设备能力。
 
 2. ``AGENT_EVENT_FEATURES``（事件特性）：Agent 事件载荷是否携带某类结果。
    - ``classification``：纯分类/属性分类结果写入事件并进入 sink。
-   - **已落地（B2a）**：Agent 让分类结果（整帧框 + top-1 label_name + 类别分数 attributes）
+     **已落地（B2a）**：Agent 让分类结果（整帧框 + top-1 label_name + 类别分数 attributes）
      进入事件 sink（ModelDeploy ``ff0650c``，见 ``tests/test_classification_event.cpp``），
      故此处声明 ``"classification"``，SCENE_CLS/DEFECT_CLS/NO_MASK 自动转为可配置。
-   - 若 Agent 侧回退该契约，撤下本能力位即会重新按原因置灰（见契约一致性测试）。
+   - ``keypoints``：姿态模型的关键点写入事件（``objects[].keypoints=[[x,y,score],...]``，
+     归一化 0~1）。**已声明（姿态切片）**：Agent 姿态事件契约定稿（键名与归一化口径见
+     ``edge/consumer.py::normalize_edge_event``），云端侧据此刻画 FALL/CLIMB/SMOKE_PHONE/
+     HAND_GESTURE 的依赖；Agent 侧接线在并行切片中落地。
+   - 若 Agent 侧回退某契约，撤下对应能力位即会重新按原因置灰（见契约一致性测试）。
 
 3. ``AGENT_ASSETS``（外部资产）：云端底库等非代码资产。
    - ``face_gallery``：人脸底库（FACE_REC/STRANGER）；``reid_gallery``：跨镜底库（REID_TRACK）。
@@ -45,12 +52,15 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
         # B1 纯接线：Agent 已支持 obb/iseg pipeline
         "obb",
         "iseg",
+        # 姿态切片：关键点事件 + keypoint_geometry 叶子（Agent 侧上报并行落地中）
+        "pose",
     }
 )
 
 # Agent 事件载荷特性（见模块 docstring 的翻转条件）。
 # B2a：分类结果（整帧框 + label_name + attributes）已进入边缘事件 sink，故声明 classification。
-AGENT_EVENT_FEATURES: frozenset[str] = frozenset({"classification"})
+# 姿态切片：姿态关键点已进入事件契约（objects[].keypoints，归一化 0~1），故声明 keypoints。
+AGENT_EVENT_FEATURES: frozenset[str] = frozenset({"classification", "keypoints"})
 
 # 云端外部资产（见模块 docstring 的翻转条件）。
 AGENT_ASSETS: frozenset[str] = frozenset()

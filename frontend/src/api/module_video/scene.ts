@@ -28,6 +28,10 @@ export interface SceneDefinition {
   description: string;
   /** 是否依赖边缘把分类结果写入事件（未落地时置灰，见后端 scene/contract.py） */
   requires_classification?: boolean;
+  /** 是否依赖边缘把姿态关键点写入事件（未落地时置灰） */
+  requires_keypoints?: boolean;
+  /** 已知限制说明（如叶子规则未实现），与 blockers 一并展示 */
+  limitations?: string[];
   /** 所需云端外部资产（如 face_gallery 人脸底库 / reid_gallery 跨镜底库） */
   required_assets?: string[];
   /** 边缘 Agent 是否已实现该场景（false 时前端置灰，避免「选了必失败」） */

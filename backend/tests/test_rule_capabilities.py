@@ -11,6 +11,7 @@ _EVALUABLE_NON_TEMPORAL = {
     "object_present",
     "zone_enter",
     "count",
+    "keypoint_geometry",
 }
 
 
@@ -35,10 +36,21 @@ def test_implemented_flags_consistent():
 
 
 def test_unimplemented_leaves_listed_for_ui():
-    """未实现叶子必须列出（供前端置灰），至少覆盖人脸/姿态类。"""
-    assert {"face_match", "liveness", "keypoint_geometry"} <= set(LEAF_CAPABILITIES)
-    for s in ("face_match", "liveness", "keypoint_geometry"):
+    """未实现叶子必须列出（供前端置灰），至少覆盖人脸/活体类。"""
+    assert {"face_match", "liveness"} <= set(LEAF_CAPABILITIES)
+    for s in ("face_match", "liveness"):
         assert LEAF_CAPABILITIES[s]["implemented"] is False
+
+
+def test_keypoint_geometry_leaf_registered_as_implemented():
+    """姿态切片：keypoint_geometry 已实现（fall/climb/smoke_phone），必须与求值器对拍。"""
+    cap = LEAF_CAPABILITIES["keypoint_geometry"]
+    assert cap["implemented"] is True
+    assert "keypoint_geometry" in IMPLEMENTED_LEAVES
+    keys = {p["key"] for p in cap["params"]}
+    assert {"rule", "region", "line", "min_sec", "op", "value"} <= keys
+    # op 不登记为该叶子的受限算子集：缺省由 rule 决定，声明非空会强制所有规则带 op
+    assert cap["ops"] == []
 
 
 def test_group_leaves_registered():

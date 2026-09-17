@@ -26,6 +26,11 @@ class SceneDef:
     # 是否依赖「边缘把分类结果写入事件」这一事件契约（SCENE_CLS/DEFECT_CLS/NO_MASK）。
     # 契约未落地时默认规则永不命中，故据实置灰（见 scene/contract.py）。
     requires_classification: bool = False
+    # 是否依赖「边缘把姿态关键点写入事件」这一事件契约（FALL/CLIMB/SMOKE_PHONE/HAND_GESTURE）。
+    # 契约未落地时 keypoint_geometry 叶子读不到关键点，故据实置灰（见 scene/contract.py）。
+    requires_keypoints: bool = False
+    # 已知限制说明（如叶子规则未实现）：与阻断原因一并展示，避免「选了却不知为何不命中」。
+    limitations: list[str] = field(default_factory=list)
     # 依赖的云端外部资产（如 face_gallery/reid_gallery）；缺失时据实置灰并给原因。
     required_assets: list[str] = field(default_factory=list)
 
@@ -40,6 +45,10 @@ _LABELS = {"key": "labels", "type": "list", "label": "目标标签"}
 _COUNT = {"key": "count", "type": "int", "default": 5, "label": "数量阈值"}
 _SECONDS = {"key": "dwell_sec", "type": "int", "default": 10, "label": "停留时长(秒)"}
 _MIN_SEC = {"key": "min_sec", "type": "int", "default": 5, "label": "最短时长(秒)"}
+# 姿态几何：fall 的倾斜角阈值（度，0=直立 90=水平）→ keypoint_geometry.value（rule=fall）
+_ANGLE_THRESHOLD = {"key": "angle_threshold", "type": "float", "default": 60.0, "label": "倾斜角阈值(度)"}
+# 姿态几何：smoke_phone 的腕-头归一化距离阈值 → keypoint_geometry.value（rule=smoke_phone）
+_HAND_DIST = {"key": "hand_head_distance", "type": "float", "default": 0.15, "label": "手-头距离阈值"}
 _MAX_MOVE = {"key": "max_move", "type": "float", "default": 0.02, "label": "最大位移(归一化)"}
 _GAP_SEC = {"key": "gap_sec", "type": "int", "default": 30, "label": "无目标时长(秒)"}
 _DIRECTION = {"key": "direction", "type": "str", "default": "A2B", "label": "越线方向"}
@@ -212,26 +221,38 @@ _add(SceneDef(
 # ── §3.3 姿态/行为 ──────────────────────────────
 _add(SceneDef(
     "FALL", "跌倒", "pose", "FALL", ["pose"], [_DET, _POSE],
-    [_POLY, _CONF, {"key": "angle_threshold", "type": "float", "default": 60.0, "label": "倾斜角阈值"}],
-    # TODO(SP4): keypoint_geometry(fall) 依赖姿态时序，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "fall", "region": "roi"}]},
+    [_POLY, _CONF, _ANGLE_THRESHOLD],
+    # keypoint_geometry(rule=fall) 已实现：躯干（肩中点↔髋中点）与竖直方向夹角
+    # >= angle_threshold（默认 60°）判为跌倒。region 由 roi 参数运行时注入，
+    # 默认规则不写符号化占位（符号引用无法被求值器解析）。
+    {"op": "and", "children": [
+        {"subject": "keypoint_geometry", "rule": "fall", "op": ">=", "value": 60.0}
+    ]},
     True, "关键点几何判定跌倒",
+    requires_keypoints=True,
 ))
 
 _add(SceneDef(
     "SMOKE_PHONE", "抽烟/打电话", "pose", "SMOKE_PHONE", ["pose"], [_DET, _POSE],
-    [_POLY, _CONF, _MIN_SEC],
-    # TODO(SP4): keypoint_geometry(hand_head) 依赖姿态时序，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "hand_head", "op": "gte", "value": "min_sec"}]},
-    True, "手-头/手-耳几何 + 持续时长",
+    [_POLY, _CONF, _MIN_SEC, _HAND_DIST],
+    # keypoint_geometry(rule=smoke_phone) 已实现：腕（9/10）到头参照（鼻→双耳→双眼）
+    # 最小归一化距离 <= hand_head_distance（默认 0.15）；min_sec 为可选持续性抑制
+    # （要求存在已持续 >= min_sec 的活跃轨迹，复用时序轨迹状态）。
+    {"op": "and", "children": [
+        {"subject": "keypoint_geometry", "rule": "smoke_phone", "min_sec": 5}
+    ]},
+    True, "手-头几何 + 持续时长",
+    requires_keypoints=True,
 ))
 
 _add(SceneDef(
     "CLIMB", "攀爬/翻越", "pose", "CLIMB", ["pose"], [_DET, _POSE],
     [_POLY, _LINE, _CONF],
-    # TODO(SP4): keypoint_geometry(climb) 依赖姿态/越线时序，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "climb", "line": "line"}]},
+    # keypoint_geometry(rule=climb) 已实现：躯干中心位于绊线（line 参数运行时注入）上方
+    # 判为攀爬；无 line 时回退高度阈值 value（缺省 0.5，越小越高）。
+    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "climb"}]},
     True, "关键点高度/越线判定攀爬",
+    requires_keypoints=True,
 ))
 
 _add(SceneDef(
@@ -245,9 +266,13 @@ _add(SceneDef(
 _add(SceneDef(
     "HAND_GESTURE", "手势", "pose", "HAND_GESTURE", ["hand"], [_DET, _POSE],
     [_POLY, _CONF, _LABELS],
-    # TODO(SP4): 手势依赖手部关键点时序跟踪，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "gesture", "region": "roi"}]},
+    # keypoint_geometry(rule=gesture) 为「已声明但未实现」的桩：缺 21 点手部关键点模型
+    # （hand 族权重未补齐），恒不命中 —— 保留默认规则以便契约就绪后直接生效，
+    # 同时用 limitations 明确告知用户「本场景当前不会命中」。
+    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "gesture"}]},
     True, "21 手部关键点手势识别",
+    requires_keypoints=True,
+    limitations=["gesture 规则未实现（缺 21 点手部关键点模型/权重），当前不会命中"],
 ))
 
 # ── §3.4 分割/旋转框 ──────────────────────────────
@@ -469,7 +494,7 @@ def unimplemented_default_leaves(scene: SceneDef) -> list[str]:
 
 
 def scene_blockers(scene: SceneDef) -> list[str]:
-    """数据驱动的不可配置原因清单（按 模型族 → 外部资产 → 分类契约 → 叶子 顺序）。
+    """数据驱动的不可配置原因清单（按 模型族 → 外部资产 → 事件契约 → 叶子 → 已知限制）。
 
     每个原因均由「场景声明 vs 契约/实现状态」推导，新增能力位后自动收敛；前端可逐条展示。
     """
@@ -483,9 +508,13 @@ def scene_blockers(scene: SceneDef) -> list[str]:
         blockers.append(f"缺外部资产：{labels}")
     if scene.requires_classification and not contract.supports_event_feature("classification"):
         blockers.append("分类结果未进入边缘事件（等待 Agent 分类契约落地）")
+    if scene.requires_keypoints and not contract.supports_event_feature("keypoints"):
+        blockers.append("关键点未进入边缘事件（等待 Agent 姿态契约落地）")
     unimplemented = unimplemented_default_leaves(scene)
     if unimplemented:
         blockers.append(f"缺求值器叶子：{', '.join(unimplemented)}")
+    if scene.limitations:
+        blockers.append(f"已知限制：{'；'.join(scene.limitations)}")
     return blockers
 
 
@@ -495,7 +524,7 @@ def scene_configurability(scene: SceneDef) -> tuple[bool, str]:
     四类硬性条件缺一不可（均由 ``scene_blockers`` 数据驱动推导）：
     1. 所需模型族均已由边缘 Agent 上报（否则下发必被拒）；
     2. 所需外部资产已具备（如人脸/跨镜底库）；
-    3. 依赖分类事件契约的场景，Agent 已把分类结果写入事件；
+    3. 依赖分类/关键点事件契约的场景，Agent 已把对应结果写入事件；
     4. 默认规则引用的求值器叶子均已实现（否则编译层必 400）。
 
     返回 ``(可配置, 原因)``；可配置时原因为空串。不可配置的原因直接展示给用户，

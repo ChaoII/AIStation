@@ -13,7 +13,7 @@ LOGIC_OPS: list[str] = ["and", "or", "not"]
 _CMP_OPS = [">=", ">", "<=", "<", "=="]
 _ATTR_OPS = ["lt", "gt", "le", "ge", "eq"]
 
-# 已实现 12 个叶子（对拍求值器）
+# 已实现 13 个叶子（对拍求值器）
 LEAF_CAPABILITIES: dict[str, dict] = {
     "object_present": {
         "label": "存在目标",
@@ -155,6 +155,25 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         ],
         "ops": [],
     },
+    # 姿态关键点几何叶子：读取 detection.keypoints（[[x,y,score],...] 归一化，COCO-17）
+    # rule 语义见 inference/service.py `_keypoint_geometry_hit`：
+    #   fall=躯干倾角、climb=越线/高度、smoke_phone=腕-头距离（可选 min_sec 持续）
+    #   gesture=已声明但未实现（缺 21 点手部关键点模型），恒不命中。
+    # op 不登记（空 ops）：缺省由 rule 决定（fall 用 >=，climb/smoke_phone 用 <=），
+    # 声明非空 ops 会强制所有规则的叶子都必须带 op，反而不便。
+    "keypoint_geometry": {
+        "label": "关键点几何",
+        "implemented": True,
+        "params": [
+            {"key": "rule", "type": "str"},
+            {"key": "region", "type": "polygon"},
+            {"key": "line", "type": "polyline"},
+            {"key": "min_sec", "type": "int"},
+            {"key": "op", "type": "str"},
+            {"key": "value", "type": "float"},
+        ],
+        "ops": [],
+    },
     # ── 以下叶子求值器尚未实现，仅列出供前端置灰展示 ──
     "face_match": {
         "label": "人脸比对",
@@ -172,17 +191,6 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         "label": "活体检测",
         "implemented": False,
         "params": [{"key": "value", "type": "float"}],
-        "ops": _CMP_OPS,
-    },
-    "keypoint_geometry": {
-        "label": "关键点几何",
-        "implemented": False,
-        "params": [
-            {"key": "rule", "type": "str"},
-            {"key": "region", "type": "polygon"},
-            {"key": "line", "type": "polyline"},
-            {"key": "value", "type": "float"},
-        ],
         "ops": _CMP_OPS,
     },
     "region_ratio": {

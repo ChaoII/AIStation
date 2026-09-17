@@ -16,7 +16,7 @@ LOGIC_OPS = ("and", "or", "not")
 # 参数键 -> (叶子键, 适用 subject 集合 | 单个 subject | None=所有声明该键的叶子)
 PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "roi": ("region", None),
-    "line": ("line", "line_cross"),
+    "line": ("line", {"line_cross", "keypoint_geometry"}),
     "direction": ("dir", "line_cross"),
     "labels": (
         "labels",
@@ -35,8 +35,12 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "count": ("value", {"count", "count_window"}),
     "window_sec": ("window_sec", "count_window"),
     "dwell_sec": ("min_sec", {"dwell", "static", "track"}),
-    "min_sec": ("min_sec", {"dwell", "static", "track"}),
+    "min_sec": ("min_sec", {"dwell", "static", "track", "keypoint_geometry"}),
     "max_move": ("max_move", "static"),
+    # 姿态几何阈值：fall 的倾斜角阈值 / smoke_phone 的手-头距离阈值均落在叶子 value 上
+    # （同一场景只会出现其中一个参数，语义由 rule 决定，见 service.py 的规则说明）。
+    "angle_threshold": ("value", "keypoint_geometry"),
+    "hand_head_distance": ("value", "keypoint_geometry"),
     "gap_sec": ("gap_sec", "absence"),
     "pattern": ("regex", "text_match"),
     # 分类阈值：注入 attribute 叶子的判定阈值（PED_ATTR 等按属性分数判定的场景）
@@ -73,6 +77,8 @@ _REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "absence": ("gap_sec",),
     "group_count": ("window_sec", "value"),
     "group_coverage": ("window_sec", "value"),
+    # 姿态几何规则必须声明 rule（fall/climb/smoke_phone/gesture），否则不可求值
+    "keypoint_geometry": ("rule",),
 }
 
 # 跨相机聚合叶子：仅允许相机组作用域规则使用（相机作用域误用 → 编译报错）
