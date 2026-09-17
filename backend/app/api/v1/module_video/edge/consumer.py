@@ -16,6 +16,19 @@ from urllib.parse import urlparse
 from app.config.setting import settings
 from app.core.logger import logger
 
+from .embedding_codec import decode_embedding
+
+
+def _decode_obj_embedding(obj: dict) -> list[float] | None:
+    """解析 objects[] 单条对象的人脸嵌入（兼容 f16b64 紧凑编码与原始 float 数组）。
+
+    返回 float 向量；缺失/非法/未知编码返回 None（不写入 detections，叶子 fail-closed）。
+    """
+    raw = obj.get("embedding")
+    if raw is None:
+        return None
+    return decode_embedding(raw, obj.get("embedding_encoding"))
+
 
 def normalize_edge_event(payload: dict) -> dict:
     """把 Agent 事件（spec §7）归一化为检测回调兼容结构。
@@ -74,9 +87,12 @@ def normalize_edge_event(payload: dict) -> dict:
                 if obj.get("depth") is not None:
                     det["depth"] = obj["depth"]
                 # 人脸特征向量（事件 v2 objects[].embedding，L2 归一化 512/1024 维）：
-                # 供 face_match/stranger 叶子做底库比对（face_rec 模型族新增字段）
-                if obj.get("embedding") is not None:
-                    det["embedding"] = obj["embedding"]
+                # 供 face_match/stranger 叶子做底库比对（face_rec 模型族新增字段）。
+                # Agent 现在以 f16b64（base64 float16）压缩上报，此处解码回 float 向量；
+                # 旧格式原始 float 数组（无 embedding_encoding）原样透传。
+                decoded = _decode_obj_embedding(obj)
+                if decoded is not None:
+                    det["embedding"] = decoded
                 dets.append(det)
             normalized["detections"] = dets
         else:
@@ -102,9 +118,12 @@ def normalize_edge_event(payload: dict) -> dict:
                 # 深度同样按索引并入 detections，避免随 objects 一起丢失
                 if "depth" not in dets[i] and obj.get("depth") is not None:
                     dets[i]["depth"] = obj["depth"]
-                # 人脸特征向量同样按索引并入 detections（face_match/stranger 叶子依赖）
-                if "embedding" not in dets[i] and obj.get("embedding") is not None:
-                    dets[i]["embedding"] = obj["embedding"]
+                # 人脸特征向量同样按索引并入 detections（face_match/stranger 叶子依赖），
+                # f16b64 紧凑编码在此解码回 float 向量
+                if "embedding" not in dets[i]:
+                    decoded = _decode_obj_embedding(obj)
+                    if decoded is not None:
+                        dets[i]["embedding"] = decoded
     return normalized
 
 
