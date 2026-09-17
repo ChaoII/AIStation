@@ -339,6 +339,12 @@ class Settings(BaseSettings):
     EDGE_HEARTBEAT_TIMEOUT_SEC: int = 90  # 超过该秒数未心跳判定离线
     EDGE_CONTROL_TOKEN: str = ""  # 边缘控制面共享密钥（空=不校验）
     EDGE_LOCAL_CONTROL_URL: str = ""  # 纯云端本机 Agent 控制面地址
+    # control_url SSRF 防护（审计 #12）。协议/元数据/链路本地始终拒绝；
+    # 默认放行内网与环回以兼容局域网边缘设备与本机 Agent（向后兼容）。
+    # - EDGE_CONTROL_URL_BLOCK_PRIVATE=True：严格模式，额外拒绝环回/私有地址
+    # - EDGE_CONTROL_URL_ALLOWED_HOSTS 非空：仅允许其中的主机（显式白名单）
+    EDGE_CONTROL_URL_BLOCK_PRIVATE: bool = False
+    EDGE_CONTROL_URL_ALLOWED_HOSTS: list[str] = []
     # 未显式指定后端/设备时的协商回退值（设备上报 capabilities 时优先取上报值）
     EDGE_DEFAULT_BACKEND: str = "ort"
     EDGE_DEFAULT_DEVICE: str = "cpu"

@@ -3,7 +3,9 @@ from typing import Any
 
 import httpx
 
+from app.config.setting import settings
 from app.core.exceptions import CustomException
+from app.utils.url_guard import UnsafeUrlError, validate_outbound_url
 
 
 class EdgeAgentClient:
@@ -18,6 +20,18 @@ class EdgeAgentClient:
 
     def __init__(self, control_url: str, secret: str | None = None, timeout: float = 10.0) -> None:
         self.control_url = (control_url or "").rstrip("/")
+        # SSRF 防护（审计 #12）：所有出站 Agent 请求共用此入口，构造即拦截危险地址
+        if self.control_url:
+            try:
+                validate_outbound_url(
+                    self.control_url,
+                    block_private=settings.EDGE_CONTROL_URL_BLOCK_PRIVATE,
+                    allowed_hosts=set(settings.EDGE_CONTROL_URL_ALLOWED_HOSTS) or None,
+                )
+            except UnsafeUrlError as e:
+                raise CustomException(
+                    msg=f"边缘控制面地址不安全：{e}", code=400, status_code=400
+                ) from e
         self.secret = (secret or "").strip()
         self.timeout = timeout
 

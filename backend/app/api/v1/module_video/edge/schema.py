@@ -1,9 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from app.config.setting import settings
 from app.core.base_schema import BaseSchema
 from app.core.validator import DateTimeStr
+from app.utils.url_guard import UnsafeUrlError, validate_outbound_url
 
 
 class EdgeDeviceCreateSchema(BaseModel):
@@ -16,6 +18,21 @@ class EdgeDeviceCreateSchema(BaseModel):
     status: str = Field(default="offline", max_length=16, description="状态: online/offline/busy/error")
     last_heartbeat: datetime | None = Field(default=None, description="最后心跳时间")
     description: str | None = Field(default=None, max_length=255, description="描述")
+
+    @field_validator("control_url")
+    @classmethod
+    def _validate_control_url(cls, value: str | None) -> str | None:
+        """拒绝指向非 http(s)/元数据/链路本地的控制面地址（审计 #12）。"""
+        if value:
+            try:
+                validate_outbound_url(
+                    value,
+                    block_private=settings.EDGE_CONTROL_URL_BLOCK_PRIVATE,
+                    allowed_hosts=set(settings.EDGE_CONTROL_URL_ALLOWED_HOSTS) or None,
+                )
+            except UnsafeUrlError as e:
+                raise ValueError(f"control_url 不安全：{e}") from e
+        return value
 
 
 class EdgeDeviceUpdateSchema(EdgeDeviceCreateSchema):

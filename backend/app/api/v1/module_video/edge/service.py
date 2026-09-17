@@ -4,8 +4,10 @@ from typing import Any
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.api.v1.module_video.inference.snapshot import resolve_snapshot_url
+from app.config.setting import settings
 from app.core.base_crud import CRUDBase
 from app.core.exceptions import CustomException
+from app.utils.url_guard import UnsafeUrlError, validate_outbound_url
 
 from .model import EdgeDeviceModel, EdgeEventModel
 from .schema import EdgeDeviceCreateSchema, EdgeDeviceOutSchema, EdgeDeviceUpdateSchema
@@ -323,6 +325,18 @@ class EdgeService:
         capabilities = body.get("capabilities")
         metrics = body.get("metrics")
         control_url = body.get("control_url")
+        # SSRF 防护（审计 #12）：心跳可写 control_url，落库前先校验，阻止内网探测/元数据访问
+        if control_url:
+            try:
+                validate_outbound_url(
+                    control_url,
+                    block_private=settings.EDGE_CONTROL_URL_BLOCK_PRIVATE,
+                    allowed_hosts=set(settings.EDGE_CONTROL_URL_ALLOWED_HOSTS) or None,
+                )
+            except UnsafeUrlError as e:
+                raise CustomException(
+                    msg=f"控制面地址不安全：{e}", code=400, status_code=400
+                ) from e
 
         def _apply(existing: EdgeDeviceModel) -> None:
             # 将本次心跳写入已存在的设备行
