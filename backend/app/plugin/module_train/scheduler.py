@@ -200,8 +200,28 @@ _ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
 }
 
 
+# 基础模型文件名白名单：必须以字母/数字/下划线/中文等 word 字符开头，
+# 后续仅允许 word 字符、点、连字符；拒绝路径分隔符与 shell 元字符（审计 #14）。
+_BASE_MODEL_NAME_RE = re.compile(r"^[\w][\w.\-]*$")
+
+
+def safe_base_model_name(name: str) -> str:
+    """校验基础模型文件名，拒绝 shell 元字符与路径语义（审计 #14）。
+
+    名称来自上传权重的 ``storage_path`` basename，会被拼入 PaddleX 的 ``bash -c``
+    命令；含 ``;``/``$()``/空格/换行等可造成容器内命令注入。非法即抛 ``ValueError``，
+    使训练任务快速失败且不执行危险命令。中文等 Unicode word 字符仍被允许。
+    """
+    value = (name or "").strip()
+    if not value or value in (".", "..") or not _BASE_MODEL_NAME_RE.match(value):
+        raise ValueError(f"非法的 base_model 文件名：{name!r}")
+    return value
+
+
 def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None, base_model_name: str | None = None) -> list[str]:
     hp = dict(hp)
+    if base_model_name:
+        base_model_name = safe_base_model_name(base_model_name)
     # 兼容旧任务：前端曾发 `lr`，但白名单 key 是 `lr0`（否则 lr 被静默丢弃）
     if "lr" in hp and "lr0" not in hp:
         hp["lr0"] = hp.pop("lr")
@@ -282,6 +302,9 @@ def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str =
     （覆盖官方预训练权重）。
     """
     hp = dict(hp)
+    if base_model_name:
+        # 该名称会经 `bash -c` 拼入训练命令，必须先做白名单校验（审计 #14）
+        base_model_name = safe_base_model_name(base_model_name)
     size = hp.get("model_size") or "tiny"
     if size not in _PADDLEX_WEIGHTS[mode]:
         size = "tiny"
