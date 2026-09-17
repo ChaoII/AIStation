@@ -19,6 +19,7 @@ from .schema import (
     AlgorithmTaskOutSchema,
     AlgorithmTaskUpdateSchema,
     AlgorithmUpdateSchema,
+    restore_redacted_secrets,
 )
 
 
@@ -75,6 +76,12 @@ class AlgorithmService:
             values["previous_model_path"] = item.model_path
         if "version" in values and values["version"] != item.version:
             values["previous_version"] = item.version
+        # 出参已对 model_file_config 脱敏；前端回传的占位符在此还原为库中真实密钥，
+        # 避免编辑保存把加密密钥抹成占位符（审计 #13）。
+        if values.get("model_file_config") is not None:
+            values["model_file_config"] = restore_redacted_secrets(
+                values["model_file_config"], item.model_file_config or {}
+            )
 
         updated = await AlgorithmCRUD(auth).update(id=id, data=values)
         return AlgorithmOutSchema.model_validate(updated).model_dump()

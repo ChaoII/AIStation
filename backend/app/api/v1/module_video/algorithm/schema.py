@@ -1,7 +1,95 @@
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from app.core.base_schema import BaseSchema, CommonSchema
+
+# 出参密钥脱敏占位符（审计 #13）：键名命中密钥语义的标量值一律替换为它
+REDACTED_VALUE = "******"
+
+_SECRET_KEY_EXACT: frozenset[str] = frozenset(
+    {
+        "key",
+        "iv",
+        "nonce",
+        "salt",
+        "secret",
+        "password",
+        "passwd",
+        "pwd",
+        "passphrase",
+        "token",
+        "credential",
+    }
+)
+_SECRET_KEY_FRAGMENTS: tuple[str, ...] = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "credential",
+    "api_key",
+    "apikey",
+    "private_key",
+    "privatekey",
+    "encrypt_key",
+    "decrypt_key",
+    "aes_key",
+    "access_key",
+    "secret_key",
+    "sign_key",
+    "signing_key",
+)
+
+
+def _is_secret_key(key: object) -> bool:
+    """键名是否表达密钥语义（用于出参脱敏与更新还原）。"""
+    if not isinstance(key, str):
+        return False
+    lowered = key.strip().lower()
+    if lowered in _SECRET_KEY_EXACT:
+        return True
+    return any(frag in lowered for frag in _SECRET_KEY_FRAGMENTS)
+
+
+def redact_model_file_config(value, *, _depth: int = 0):
+    """递归脱敏 ``model_file_config`` 中密钥类字段的值（保留结构与非敏感字段）。"""
+    if _depth > 6:
+        return value
+    if isinstance(value, dict):
+        out: dict = {}
+        for key, item in value.items():
+            if _is_secret_key(key):
+                out[key] = item if item in (None, "", [], {}) else REDACTED_VALUE
+            else:
+                out[key] = redact_model_file_config(item, _depth=_depth + 1)
+        return out
+    if isinstance(value, list):
+        return [redact_model_file_config(item, _depth=_depth + 1) for item in value]
+    return value
+
+
+def restore_redacted_secrets(new_value, old_value):
+    """把回传的脱敏占位符还原为库中真实值。
+
+    前端编辑表单会原样回传（已脱敏的）``model_file_config``；若不在写库前还原，
+    真实密钥会被占位符覆盖。仅当新值与占位符一致且旧值存在时才还原。
+    """
+    if isinstance(new_value, dict):
+        old_dict = old_value if isinstance(old_value, dict) else {}
+        out: dict = {}
+        for key, item in new_value.items():
+            if _is_secret_key(key) and item == REDACTED_VALUE:
+                out[key] = old_dict.get(key, item)
+            else:
+                out[key] = restore_redacted_secrets(item, old_dict.get(key))
+        return out
+    if isinstance(new_value, list):
+        old_list = old_value if isinstance(old_value, list) else []
+        return [
+            restore_redacted_secrets(item, old_list[i] if i < len(old_list) else None)
+            for i, item in enumerate(new_value)
+        ]
+    return new_value
 
 
 def _validate_model_name(value: str | None) -> str | None:
@@ -59,6 +147,11 @@ class AlgorithmOutSchema(BaseSchema):
     output_schema: dict | None = None
     status: bool = True
     description: str | None = None
+
+    @field_serializer("model_file_config")
+    def _serialize_model_file_config(self, value):
+        """出参脱敏：不回显模型配置中的加密/解密密钥（审计 #13）。"""
+        return redact_model_file_config(value)
 
 
 class AlgorithmTaskCreateSchema(BaseModel):
