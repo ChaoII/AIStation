@@ -84,9 +84,16 @@
           </template>
           <template v-else>{{ sceneUnsupportedReason }}</template>
         </div>
-        <!-- 可配置但需注意的运行期提示（如「人脸底库为空」），非阻断 -->
+        <!-- 可配置但需注意的运行期提示（如「人脸底库为空」），非阻断但需醒目 -->
         <div v-else-if="sceneHints.length" class="rule-editor__hint">
-          <div v-for="(hint, i) in sceneHints" :key="i">{{ hint }}</div>
+          <el-alert
+            v-for="(hint, i) in sceneHints"
+            :key="i"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="hint"
+          />
         </div>
       </el-form-item>
 

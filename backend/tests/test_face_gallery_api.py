@@ -107,6 +107,37 @@ def test_face_gallery_enroll_validation(test_client, auth_headers):
     assert resp.status_code == 422, resp.text
 
 
+def test_face_gallery_create_requires_embedding(test_client, auth_headers):
+    """新增（无 id）时 embedding 必填 → 422。"""
+    resp = test_client.post(f"{BASE}/enroll", json={"name": "无特征"}, headers=auth_headers)
+    assert resp.status_code == 422, resp.text
+
+
+def test_face_gallery_update_name_without_embedding(test_client, auth_headers):
+    """按 id 更新可只改名（省略 embedding，特征保持不变）。"""
+    ids: list[int] = []
+    try:
+        resp = _enroll(test_client, auth_headers, name="B3 待改名")
+        item = resp.json()["data"]
+        ids.append(item["id"])
+        resp = test_client.post(
+            f"{BASE}/enroll",
+            json={"id": item["id"], "name": "B3 已改名", "person_no": "B3-001", "model_key": "w600k_r50"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["name"] == "B3 已改名"
+        # 特征未变：原向量仍可命中
+        resp = test_client.post(
+            f"{BASE}/match", json={"embedding": E_A, "threshold": 0.6}, headers=auth_headers
+        )
+        assert resp.json()["data"]["items"][0]["name"] == "B3 已改名"
+    finally:
+        if ids:
+            test_client.request("DELETE", f"{BASE}/delete", json=ids, headers=auth_headers)
+        face_gallery_store.clear()
+
+
 def test_face_gallery_enroll_refreshes_leaf_cache(test_client, auth_headers):
     """录入/删除必须同步刷新进程内底库缓存（规则叶子立即可用）。"""
     ids: list[int] = []

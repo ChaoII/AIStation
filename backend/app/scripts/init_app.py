@@ -473,6 +473,93 @@ async def _ensure_edge_event_page_menu() -> None:
             log.info("✅ 边缘事件菜单已注册")
 
 
+FACE_GALLERY_BUTTON_PERMS: list[tuple[str, str]] = [
+    ("module_video:face_gallery:query", "查询人脸底库"),
+    ("module_video:face_gallery:create", "录入/编辑人脸底库"),
+    ("module_video:face_gallery:delete", "删除人脸底库"),
+]
+
+
+async def _ensure_face_gallery_menus() -> None:
+    """确保『人脸底库』页面菜单与按钮权限存在（挂在视频监控父菜单下，分配 admin；幂等）。
+
+    页面路由 `/video/face-gallery` 对应前端 `module_video/face_gallery/index`，
+    用于维护 FACE_REC/STRANGER 规则所依赖的人脸特征底库。
+    """
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel, RoleModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            parent = await db.scalar(
+                select(MenuModel).where(MenuModel.name == "视频监控", MenuModel.type == 1)
+            )
+            if not parent:
+                log.warning("⚠️  未找到视频监控父菜单，跳过人脸底库菜单注册")
+                return
+
+            page = await db.scalar(
+                select(MenuModel).where(MenuModel.route_name == "VideoFaceGallery")
+            )
+            if not page:
+                page = MenuModel(
+                    name="人脸底库",
+                    type=2,
+                    icon="el-icon-Postcard",
+                    order=12,
+                    route_name="VideoFaceGallery",
+                    route_path="/video/face-gallery",
+                    component_path="module_video/face_gallery/index",
+                    permission="module_video:face_gallery:query",
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title="人脸底库",
+                )
+                db.add(page)
+                await db.flush()
+                admin = await db.scalar(select(RoleModel).where(RoleModel.id == 1))
+                if admin:
+                    db.add(RoleMenusModel(role_id=admin.id, menu_id=page.id))
+                log.info("✅ 人脸底库菜单已注册")
+
+            existing = set(
+                (
+                    await db.execute(
+                        select(MenuModel.permission).where(
+                            MenuModel.permission.like("module_video:face_gallery:%")
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for order, (perm_code, perm_name) in enumerate(FACE_GALLERY_BUTTON_PERMS, start=1):
+                if perm_code in existing:
+                    continue
+                menu = MenuModel(
+                    name=perm_name,
+                    type=3,
+                    icon=None,
+                    order=order,
+                    route_name="",
+                    route_path="",
+                    component_path="",
+                    permission=perm_code,
+                    parent_id=parent.id,
+                    status="0",
+                    is_deleted=False,
+                    title=perm_name,
+                )
+                db.add(menu)
+                await db.flush()
+                db.add(RoleMenusModel(role_id=1, menu_id=menu.id))
+            log.info("✅ 人脸底库按钮权限已注册")
+
+
 AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:model:query", "查询大模型配置"),
     ("module_ai:model:create", "新增大模型配置"),
@@ -1058,6 +1145,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_edge_button_menus()
         await _ensure_edge_page_menu()
         await _ensure_edge_event_page_menu()
+        await _ensure_face_gallery_menus()
         await _ensure_ai_menus()
         await _ensure_ai_tools()
         await _ensure_agno_tools()
