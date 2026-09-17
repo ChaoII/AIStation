@@ -9,7 +9,18 @@ from starlette.responses import JSONResponse
 
 from app.common.constant import RET
 from app.common.response import ErrorResponse
+from app.config.setting import settings
 from app.core.logger import log
+
+
+def _safe_error_data(value: Any) -> Any:
+    """异常响应附加数据脱敏（审计 #8）。
+
+    仅 dev（``DEBUG=True``）返回原始明细，便于联调；生产返回 ``None``，
+    避免把数据库错误文本、请求体（可能含口令）等内部细节回显给客户端。
+    完整细节仍写入服务端日志。
+    """
+    return value if settings.DEBUG else None
 
 
 class CustomException(Exception):
@@ -140,7 +151,7 @@ def handle_exception(app: FastAPI) -> None:
         return ErrorResponse(
             msg=str(msg),
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            data=exc.body,
+            data=_safe_error_data(exc.body),
         )
 
     @app.exception_handler(ResponseValidationError)
@@ -163,7 +174,7 @@ def handle_exception(app: FastAPI) -> None:
         return ErrorResponse(
             msg="服务器响应格式错误",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            data=exc.body,
+            data=_safe_error_data(exc.body),
         )
 
     @app.exception_handler(SQLAlchemyError)
@@ -188,7 +199,7 @@ def handle_exception(app: FastAPI) -> None:
         return ErrorResponse(
             msg=f"{error_msg}: {exc_type}",
             status_code=status.HTTP_400_BAD_REQUEST,
-            data=str(exc),
+            data=_safe_error_data(str(exc)),
         )
 
     @app.exception_handler(ValueError)
