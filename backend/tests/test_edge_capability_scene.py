@@ -113,3 +113,23 @@ def test_obb_iseg_scene_cls_dispatch_uses_canonical_model_type():
         assert cfg["scene_type"] == scene_code
         types = [m["type"] for m in cfg["models"]]
         assert expected_type in types, f"{scene_code} 下发模型 type={types}，期望 {expected_type}"
+
+
+def test_fall_task_config_dispatches_det_and_pose_end_to_end():
+    """FALL 端到端：设备上报 pose 时能力校验通过，且 TaskConfig 真正下发 det+pose。
+
+    修复前 FALL 为多角色管线 [_DET,_POSE]，会退回单 det（pose 永不下发）——本用例锁定
+    「能力校验通过 ⇔ 模型确实下发」两段链路一致。
+    """
+    algo = _scene_algo("FALL")
+    ok, reason = EdgeOrchestrator._check_capability(_AGENT_CAPS, algo, running_channels=0)
+    assert ok is True, f"FALL 能力校验失败：{reason}"
+
+    algo.preset_params = {"pose_path": "/models/fall_pose.onnx"}
+    cfg = build_agent_task_config(_Task(), _Cam(), algo, events={}, capabilities=_AGENT_CAPS)
+    assert cfg["scene_type"] == "FALL"
+    types = [m["type"] for m in cfg["models"]]
+    assert "detection" in types, f"FALL 未下发 det：{types}"
+    assert "pose" in types, f"FALL 未下发 pose：{types}"
+    pose = next(m for m in cfg["models"] if m["type"] == "pose")
+    assert pose["url"] == "/models/fall_pose.onnx"

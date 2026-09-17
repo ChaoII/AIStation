@@ -214,6 +214,115 @@ def normalize_broker_scheme(url: str) -> str:
     return raw
 
 
+# pipeline 中不产生 models[] 条目的角色：跟踪由顶层 tracking 配置承载（见 build_agent_task_config）
+_TRACKING_ROLE = "tracking"
+
+
+def _build_pedestrian_attribute_model(base_model: dict, algorithm, merged_params: dict, merged_runtime: dict) -> dict:
+    """PED_ATTR：目录 pipeline 声明 det+cls 两角色，Agent 侧合并为单条 pedestrian_attribute。"""
+    return {
+        **base_model,
+        "type": "pedestrian_attribute",
+        "det_url": algorithm.model_path or "",
+        "cls_url": merged_params.get("cls_path") or merged_runtime.get("cls_path") or "",
+        "attributes": merged_params.get("attributes") or [],
+        "cls_threshold": merged_params.get("cls_threshold", 0.5),
+        "password": merged_runtime.get("model_password") or "",
+    }
+
+
+def _build_ocr_model(base_model: dict, algorithm, merged_params: dict, merged_runtime: dict) -> dict:
+    """OCR：单条 ocr 条目展开 det/cls/rec/dict 子模型路径（Agent config_adapter 的 ocr 分支）。"""
+    return {
+        **base_model,
+        "type": "ocr",
+        "det_url": algorithm.model_path or "",
+        "cls_url": merged_params.get("cls_path") or merged_runtime.get("cls_path") or "",
+        "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
+        "dict_url": merged_params.get("dict_path") or merged_runtime.get("dict_path") or "",
+        "password": merged_runtime.get("model_password") or "",
+    }
+
+
+def _build_lpr_model(base_model: dict, algorithm, merged_params: dict, merged_runtime: dict) -> dict:
+    """LPR：单条 lpr 条目展开 det/rec 两子模型路径（Agent config_adapter 的 lpr 分支）。"""
+    return {
+        **base_model,
+        "type": "lpr",
+        "det_url": algorithm.model_path or "",
+        "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
+        "password": merged_runtime.get("model_password") or "",
+    }
+
+
+# 目录 model_families 中「Agent 单条复合模型」的家族 → 构造器。
+# 与 pipeline 角色解耦：PED_ATTR 的 pipeline 是 [det, cls]，但 Agent 模型 type 为 pedestrian_attribute，
+# 故必须按家族显式登记，避免逐角色展开成两条而与 Agent 契约不符。
+_COMPOUND_FAMILY_BUILDERS = {
+    "pedestrian_attribute": _build_pedestrian_attribute_model,
+}
+
+# 单条 pipeline 条目本身即「Agent 复合模型类型」的 type → 构造器（子模型 url 需展开）。
+_SINGLE_MODEL_BUILDERS = {
+    "ocr": _build_ocr_model,
+    "lpr": _build_lpr_model,
+}
+
+
+def _resolve_role_model_url(
+    model_type: str, role: str, merged_params: dict, merged_runtime: dict, primary_url: str
+) -> str:
+    """解析次级角色的模型路径：显式 `<type>_path`/`<type>_url` 或 `<role>_path`/`<role>_url`。
+
+    缺省回退算法主模型路径（而非空串）：保证该角色始终被下发，不静默丢弃；权重不适配时
+    由 Agent 加载阶段显式报错，而非云端少下一个模型导致场景「看似可配置、实际不生效」。
+    """
+    for key in (f"{model_type}_path", f"{model_type}_url", f"{role}_path", f"{role}_url"):
+        value = _first_present(merged_params, key) or _first_present(merged_runtime, key)
+        if value:
+            return str(value)
+    return primary_url
+
+
+def _build_scene_models(scene, algorithm, merged_params: dict, merged_runtime: dict, base_model: dict) -> list[dict]:
+    """按目录 pipeline **逐角色**下发模型（复合家族合并为单条）。
+
+    - 无场景：保持既有「按算法类型关键词推断单模型」行为（INTRUSION 等保持 det）；
+    - 复合家族（pedestrian_attribute）：pipeline 的 det+cls 合并为单条复合模型；
+    - 其余：遍历 pipeline 每个条目产出模型，`tracking` 角色由顶层 tracking 承载不产出条目。
+
+    关键不变量：目录声明的任何非 tracking 角色都不会被丢弃（type 取目录已规范化的
+    pipeline[].type，Agent `normalize_model_type` 可识别）；新增家族（obb/iseg/sem/depth/
+    face_*/doc/barcode）无需新增分支即自动下发，杜绝「多角色管线退回单 det」的静默缺陷。
+    """
+    primary_url = algorithm.model_path or ""
+    if scene is None:
+        return [{**base_model, "type": _resolve_model_type(algorithm), "url": primary_url}]
+
+    compound = next(
+        (f for f in contract.canonical_families(scene.model_families) if f in _COMPOUND_FAMILY_BUILDERS),
+        None,
+    )
+    if compound is not None:
+        return [_COMPOUND_FAMILY_BUILDERS[compound](base_model, algorithm, merged_params, merged_runtime)]
+
+    models: list[dict] = []
+    for entry in scene.pipeline:
+        model_type = contract.canonical_pipeline_type(entry["type"])
+        if model_type == _TRACKING_ROLE:
+            continue
+        builder = _SINGLE_MODEL_BUILDERS.get(model_type)
+        if builder is not None:
+            models.append(builder(base_model, algorithm, merged_params, merged_runtime))
+            continue
+        # 管线首条为主模型（url=algorithm.model_path）；次级角色按约定键解析，缺省回退主模型路径。
+        url = primary_url if not models else _resolve_role_model_url(
+            model_type, entry.get("role") or "", merged_params, merged_runtime, primary_url
+        )
+        models.append({**base_model, "type": model_type, "url": url})
+    return models
+
+
 def build_agent_task_config(task, camera, algorithm, events: dict | None = None, capabilities: dict | None = None) -> dict:
     """把 task/camera/algorithm 编译为 spec §6 的 Agent TaskConfig（纯函数）。
 
@@ -246,7 +355,7 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None,
         "algorithm": tracking_cfg.get("algorithm") or "bytetrack",
     }
 
-    # 场景目录：PED_ATTR 编译为 det+cls pipeline，其余保持单模型条目
+    # 场景目录驱动：按 pipeline 逐角色下发模型（复合家族合并为单条），不再逐场景硬编码分支
     scene = get_scene(getattr(algorithm, "scene_type", "") or "")
     base_model = {
         "name": algorithm.name,
@@ -256,47 +365,7 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None,
         "input_size": input_size,
         "confidence_threshold": confidence,
     }
-    if scene is not None and scene.code == "PED_ATTR":
-        models = [{
-            **base_model,
-            "type": "pedestrian_attribute",
-            "det_url": algorithm.model_path or "",
-            "cls_url": merged_params.get("cls_path") or merged_runtime.get("cls_path") or "",
-            "attributes": merged_params.get("attributes") or [],
-            "cls_threshold": merged_params.get("cls_threshold", 0.5),
-            "password": merged_runtime.get("model_password") or "",
-        }]
-    elif scene is not None and scene.code in ("OCR_TEXT", "METER_OCR"):
-        # OCR 场景编译为 det+cls+rec 三模型 pipeline，路径取覆盖合并后的参数/运行配置
-        models = [{
-            **base_model,
-            "type": "ocr",
-            "det_url": algorithm.model_path or "",
-            "cls_url": merged_params.get("cls_path") or merged_runtime.get("cls_path") or "",
-            "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
-            "dict_url": merged_params.get("dict_path") or merged_runtime.get("dict_path") or "",
-            "password": merged_runtime.get("model_password") or "",
-        }]
-    elif scene is not None and scene.code in ("LPR", "LPR_LIST"):
-        # 车牌场景编译为 det+rec 两模型 pipeline，识别模型路径取 rec_path 覆盖合并值
-        models = [{
-            **base_model,
-            "type": "lpr",
-            "det_url": algorithm.model_path or "",
-            "rec_url": merged_params.get("rec_path") or merged_runtime.get("rec_path") or "",
-            "password": merged_runtime.get("model_password") or "",
-        }]
-    elif scene is not None and scene.code == "FACE_DET":
-        # 人脸检测场景编译为单条 face_detection 模型，url 取算法主模型路径
-        models = [{**base_model, "type": "face_detection", "url": algorithm.model_path or ""}]
-    else:
-        # 有场景目录且为单模型管线时，模型 type 以目录 pipeline 规范名（Agent 侧可识别）为准；
-        # 否则退回算法类型关键词推断（INTRUSION 等无场景算法保持 det）。
-        if scene is not None and len(scene.pipeline) == 1:
-            model_type = contract.canonical_pipeline_type(scene.pipeline[0]["type"])
-        else:
-            model_type = _resolve_model_type(algorithm)
-        models = [{**base_model, "type": model_type, "url": algorithm.model_path or ""}]
+    models = _build_scene_models(scene, algorithm, merged_params, merged_runtime, base_model)
 
     return {
         "task_id": task.id,

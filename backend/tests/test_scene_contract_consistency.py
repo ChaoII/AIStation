@@ -376,3 +376,45 @@ def test_meter_ocr_numeric_range_params_removed():
     """METER_OCR 的读数上下限（无求值器支持）必须从参数表移除，避免误导。"""
     keys = {p["key"] for p in get_scene("METER_OCR").param_schema}
     assert "min_value" not in keys and "max_value" not in keys
+
+
+def test_keypoint_scenes_configurable_and_dispatch_pose():
+    """可配置 ⇔ 可下发一致：FALL/CLIMB/SMOKE_PHONE 必须可配置且编排层真正下发 pose。
+
+    修复前这三个场景「可配置/可编译」但多角色管线退回单 det，pose 永不下发（姿态切片遗留
+    「假可配置」）。本用例把「可配置」与「确实下发 pose」绑定，防止二者再次脱节。
+    """
+    from types import SimpleNamespace
+
+    from app.api.v1.module_video.edge.orchestrator import build_agent_task_config
+
+    class _Cam:
+        id = 7
+        name = "北门"
+        rtsp_url_sub = "rtsp://cam/7"
+        stream_id = "cam7"
+
+    class _Task:
+        id = 321
+        camera_id = 7
+        algorithm_id = 11
+        stream_type = "SUB"
+        detect_region = None
+        sensitivity = 50
+        schedule_json = None
+        runtime_overrides = None
+        params_overrides = None
+
+    for code in _KEYPOINT_SCENES:
+        scene = SCENES[code]
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 应可配置：{reason}"
+        algo = SimpleNamespace(
+            name=code, algorithm_type=code, scene_type=code,
+            model_path=f"/models/{code.lower()}_primary.onnx",
+            runtime_config={"backend": "ort", "device": "cpu"},
+            preset_params={"pose_path": "/models/pose.onnx"},
+        )
+        cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
+        types = {m["type"] for m in cfg["models"]}
+        assert {"detection", "pose"} <= types, f"{code} 未下发 det+pose：{types}"
