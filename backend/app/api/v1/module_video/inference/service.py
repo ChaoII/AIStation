@@ -1,6 +1,5 @@
 import base64
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from app.api.v1.module_video.inference.temporal import (
     to_epoch,
 )
 from app.config.setting import settings
+from app.utils.re_util import safe_regex_search
 
 log = logging.getLogger(__name__)
 
@@ -586,12 +586,9 @@ def explain_conditions(
             pattern = leaf.get("regex")
             if not isinstance(pattern, str):
                 return False
-            try:
-                compiled = re.compile(pattern)
-            except re.error:
-                # 非法正则视为不命中，避免单条脏规则导致告警事件被丢弃
-                return False
-            return any(compiled.search(text) for text in _texts())
+            # 安全执行：模式长度/灾难性回溯静态校验 + 编译缓存 + 文本截断（审计 #10）。
+            # 不安全/非法模式视为不命中，避免单条脏规则拖垮事件循环。
+            return any(safe_regex_search(pattern, text) for text in _texts())
         if subject == "ocr_label":
             needle = leaf.get("contains")
             if not isinstance(needle, str):

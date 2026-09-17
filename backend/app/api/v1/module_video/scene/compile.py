@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.api.v1.module_video.scene.leaves import LEAF_CAPABILITIES
+from app.utils.re_util import RegexSafetyError, validate_regex_pattern
 
 LOGIC_OPS = ("and", "or", "not")
 
@@ -27,13 +29,24 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "min_sec": ("min_sec", "dwell"),
     "gap_sec": ("gap_sec", "absence"),
     "pattern": ("regex", "text_match"),
+    # 分类阈值：注入 attribute 叶子的判定阈值（PED_ATTR 等按属性分数判定的场景）
+    "cls_threshold": ("value", "attribute"),
     # 组叶子走独立参数键（group_* 前缀），避免破坏既有的 window_sec→count_window 等绑定
     "group_window_sec": ("window_sec", {"group_count", "group_coverage"}),
     "group_count": ("value", {"group_count", "group_coverage"}),
     "group_labels": ("labels", {"group_count"}),
-    # 仅作 UI 选项、不注入叶子的参数：attributes / cls_threshold / topk / plate_pattern
-    # / min_value / max_value
 }
+
+# 文本类参数：需要组合后派生成 text_match 的 regex（求值器只认 regex），
+# 故不走 PARAM_TO_LEAF 的一一映射，由 `_derive_text_regex` 统一处理。
+TEXT_MATCH_DERIVED_PARAMS: frozenset[str] = frozenset(
+    {"plate_pattern", "plate_list", "list_type"}
+)
+
+# 仅由「边缘任务配置构造」消费、不影响规则求值的参数（见 edge/orchestrator.py
+# build_agent_task_config 的 PED_ATTR 分支：attributes 下发为模型 attributes）。
+# 单独登记以便一致性测试区分「有意设计」与「遗漏未消费」。
+MODEL_CONFIG_PARAMS: frozenset[str] = frozenset({"attributes"})
 
 _NUMERIC_TYPES = {"int", "float"}
 _POINT_LIST_TYPES = {"polygon", "polyline", "point"}
@@ -111,6 +124,38 @@ def _validate_leaf(subject: str, leaf: dict) -> None:
     for key in _REQUIRED_KEYS.get(subject, ()):
         if key not in leaf:
             raise RuleCompileError(f"叶子 {subject} 缺少必填键 {key}")
+    if subject == "text_match":
+        # 保存即校验用户正则：长度上限 + 灾难性回溯结构（审计 #10）
+        pattern = leaf.get("regex")
+        if isinstance(pattern, str):
+            try:
+                validate_regex_pattern(pattern)
+            except RegexSafetyError as e:
+                raise RuleCompileError(f"text_match 正则不安全：{e}") from e
+
+
+def _derive_text_regex(params: dict) -> str | None:
+    """把「车牌正则 / 车牌名单」参数派生为 text_match 的 regex（求值器只认 regex）。
+
+    - ``plate_pattern``：直接作为正则使用（LPR）；
+    - ``plate_list`` + ``list_type``：名单转正则（LPR_LIST）——
+      ``black``（默认）命中名单内车牌即告警（正向交替）；
+      ``white`` 仅非名单车牌告警（用负向前瞻排除名单内车牌）。
+      更细的车牌字符校验求值器未提供，按名单字面量转义后透传。
+    无有效文本参数时返回 None（保留默认规则里的 regex）。
+    """
+    plates = params.get("plate_list")
+    if isinstance(plates, (list, tuple)):
+        cleaned = [str(x).strip() for x in plates if str(x).strip()]
+        if cleaned:
+            alts = "|".join(re.escape(p) for p in cleaned)
+            if str(params.get("list_type") or "black").lower() == "white":
+                return f"^(?!(?:{alts})$).*"
+            return f"(?:{alts})"
+    pattern = params.get("plate_pattern")
+    if isinstance(pattern, str) and pattern:
+        return pattern
+    return None
 
 
 def _compile_node(node: Any, params: dict, scope: str | None = None) -> dict:
@@ -142,6 +187,11 @@ def _compile_node(node: Any, params: dict, scope: str | None = None) -> dict:
             # 该叶子未声明此键，不注入（roi=region 只给声明了 region 的叶子）
             continue
         out[leafkey] = params[pkey]
+    if subject == "text_match":
+        # 车牌正则/名单参数优先于叶子自身 regex（与 roi/置信度注入语义一致）
+        derived = _derive_text_regex(params)
+        if derived is not None:
+            out["regex"] = derived
     _validate_leaf(subject, out)
     return out
 
