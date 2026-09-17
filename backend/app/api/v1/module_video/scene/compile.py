@@ -31,12 +31,14 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
             "track",
             # 语义区域占比：labels 选定参与比较的类别（省略则对全部类别取最大占比）
             "region_ratio",
+            # 跨镜重识别：labels 过滤参与比对的检测
+            "reid_match",
         },
     ),
-    # 置信度阈值：object_present 与 B3 的人脸比对/交互分割叶子共用（界面可填即生效）
+    # 置信度阈值：object_present 与 B3 的人脸比对/交互分割/跨镜比对叶子共用（界面可填即生效）
     "confidence_threshold": (
         "min_confidence",
-        {"object_present", "face_match", "stranger", "prompt_segment"},
+        {"object_present", "face_match", "stranger", "prompt_segment", "reid_match"},
     ),
     "count": ("value", {"count", "count_window"}),
     "window_sec": ("window_sec", "count_window"),
@@ -62,10 +64,13 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "min_keypoints": ("value", "keypoint_geometry"),
     # 码值名单：BARCODE 的 code_list → code_match.code_list（精确比对解码文本）
     "code_list": ("code_list", "code_match"),
-    # 人脸比对阈值：FACE_REC/STRANGER 的 similarity_threshold → face_match/stranger.value
-    "similarity_threshold": ("value", {"face_match", "stranger"}),
+    # 人脸比对阈值：FACE_REC/STRANGER 的 similarity_threshold → face_match/stranger.value；
+    # 跨镜重识别 REID_TRACK 复用同一参数键 → reid_match.value
+    "similarity_threshold": ("value", {"face_match", "stranger", "reid_match"}),
     # 交互分割提示点：SAM_SEG 的 prompt_point → prompt_segment.point
     "prompt_point": ("point", "prompt_segment"),
+    # 手势目标类型：HAND_GESTURE 的 gesture → keypoint_geometry.gesture（rule=gesture）
+    "gesture": ("gesture", "keypoint_geometry"),
     # 组叶子走独立参数键（group_* 前缀），避免破坏既有的 window_sec→count_window 等绑定
     "group_window_sec": ("window_sec", {"group_count", "group_coverage"}),
     "group_count": ("value", {"group_count", "group_coverage"}),
@@ -108,6 +113,8 @@ _REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     # 人脸底库比对必须有相似度阈值（value）与算子 op（gte/lte/...，见 face_match 叶子 ops）
     "face_match": ("value",),
     "stranger": ("value",),
+    # 跨镜底库比对（reid_match）与人脸同口径：必须有相似度阈值 value
+    "reid_match": ("value",),
     # prompt_segment 无必填键：point 省略=仅要求存在分割目标
 }
 

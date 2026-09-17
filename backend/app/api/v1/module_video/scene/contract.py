@@ -14,6 +14,8 @@
      - B2b 新增 ``sem``/``face_landmark``/``doc``/``barcode``：均复用既有事件字段
        （``attributes``/``keypoints``/``text``），Agent 侧已如实上报。
      - B3 新增 ``sam``/``face_rec``：Agent（HEAD e6a4556）已如实上报。
+     - B4 新增 ``hand``/``reid``：Agent 侧并行落地并如实上报（hand 复用 keypoints 21 点；
+       reid 复用 embedding 256 维）。
      - **在途族清单已删除**：跨仓对拍（test_scene_edge_support.py）现要求云契约族集合与
        Agent capability.cpp 上报集合严格相等；后续新增族须两侧同步落地。
 
@@ -38,7 +40,9 @@
    - ``face_gallery``：人脸底库（FACE_REC/STRANGER）；``reid_gallery``：跨镜底库（REID_TRACK）。
    - **已落地（B3）**：``face_gallery`` 底库表（``video_face_gallery``）+ 录入/列表/删除/比对
      API + 规则叶子求值链路均已就绪，故已加入；底库为空时不再置灰，改由场景 ``hints`` 提示。
-   - **仍待**：``reid_gallery`` 跨镜底库（REID_TRACK，B5）。
+   - **已落地（B4）**：``video_face_gallery`` 新增 ``kind`` 判别列（face/reid），跨镜底库
+     （``reid_gallery``）复用同一表/API 与 ``reid_match`` 叶子就绪；同样以 ``hints``
+     提示「跨镜底库为空」，不作为硬阻断。
 """
 from __future__ import annotations
 
@@ -79,6 +83,11 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
         # Agent 已如实上报，跨仓对拍改为严格相等（不再有「在途族」放行清单）。
         "sam",
         "face_rec",
+        # B4 手部手势（hand）/ 跨镜重识别（reid）：hand 复用 objects[].keypoints
+        # （21 点/手，MediaPipe Hands 索引）；reid 复用 objects[].embedding
+        # （256 维，L2 归一化，f16b64）。Agent 侧并行落地并如实上报。
+        "hand",
+        "reid",
     }
 )
 
@@ -93,7 +102,9 @@ AGENT_EVENT_FEATURES: frozenset[str] = frozenset(
 # 云端外部资产（见模块 docstring 的翻转条件）。
 # B3：人脸底库表 + 录入/查询/比对 API 已就绪（``video_face_gallery``），故声明 face_gallery；
 # 底库「为空」不再是硬阻断，而是由场景目录以 ``hints``（「底库为空」）提示运维先录入。
-AGENT_ASSETS: frozenset[str] = frozenset({"face_gallery"})
+# B4：同一张底库表新增 ``kind`` 判别列（face/reid），跨镜底库（reid_gallery）随之就绪；
+# REID_TRACK 的 reid_match 只查 kind=reid 条目，与人脸底库严格隔离。
+AGENT_ASSETS: frozenset[str] = frozenset({"face_gallery", "reid_gallery"})
 
 # 外部资产中文名（用于生成面向用户的置灰原因）
 _ASSET_LABELS: dict[str, str] = {

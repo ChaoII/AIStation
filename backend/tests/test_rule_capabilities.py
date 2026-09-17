@@ -20,6 +20,8 @@ _EVALUABLE_NON_TEMPORAL = {
     "face_match",
     "stranger",
     "prompt_segment",
+    # B4：跨镜重识别底库比对
+    "reid_match",
 }
 
 
@@ -44,14 +46,17 @@ def test_implemented_flags_consistent():
 
 
 def test_unimplemented_leaves_listed_for_ui():
-    """未实现叶子必须列出（供前端置灰）；B3 后仅剩活体/版面/重识别/分类等。"""
+    """未实现叶子必须列出（供前端置灰）；B4 后仅剩活体/版面/分类等。"""
     assert {"liveness", "structure", "reid_match", "classification"} <= set(LEAF_CAPABILITIES)
-    for s in ("liveness", "structure", "reid_match", "classification"):
+    for s in ("liveness", "structure", "classification"):
         assert LEAF_CAPABILITIES[s]["implemented"] is False
     # B3 已实现：人脸比对/陌生人/交互分割
     for s in ("face_match", "stranger", "prompt_segment"):
         assert LEAF_CAPABILITIES[s]["implemented"] is True
         assert s in IMPLEMENTED_LEAVES
+    # B4 已实现：跨镜重识别底库比对
+    assert LEAF_CAPABILITIES["reid_match"]["implemented"] is True
+    assert "reid_match" in IMPLEMENTED_LEAVES
 
 
 def test_face_match_ops_use_contract_vocabulary():

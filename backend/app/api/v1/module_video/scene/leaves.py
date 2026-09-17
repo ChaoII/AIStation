@@ -157,10 +157,12 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         ],
         "ops": [],
     },
-    # 姿态关键点几何叶子：读取 detection.keypoints（[[x,y,score],...] 归一化，COCO-17）
+    # 姿态关键点几何叶子：读取 detection.keypoints（[[x,y,score],...] 归一化）。
     # rule 语义见 inference/service.py `_keypoint_geometry_hit`：
-    #   fall=躯干倾角、climb=越线/高度、smoke_phone=腕-头距离（可选 min_sec 持续）
-    #   gesture=已声明但未实现（缺 21 点手部关键点模型），恒不命中。
+    #   fall=躯干倾角（COCO-17 人体）、climb=越线/高度、smoke_phone=腕-头距离（可选 min_sec 持续）、
+    #   face_landmark=有效关键点数、
+    #   gesture=21 点手部关键点手指伸展模式（MediaPipe Hands 索引，见 service.py 常量）；
+    #   非 21 点（如 17 点人体姿态）输入对 gesture 恒不命中（按手部索引 fail-closed）。
     # op 不登记（空 ops）：缺省由 rule 决定（fall 用 >=，climb/smoke_phone 用 <=），
     # 声明非空 ops 会强制所有规则的叶子都必须带 op，反而不便。
     "keypoint_geometry": {
@@ -171,6 +173,8 @@ LEAF_CAPABILITIES: dict[str, dict] = {
             {"key": "region", "type": "polygon"},
             {"key": "line", "type": "polyline"},
             {"key": "min_sec", "type": "int"},
+            # gesture 规则的目标手势名（open_palm/fist/point/victory/thumb_up/any）
+            {"key": "gesture", "type": "str"},
             {"key": "op", "type": "str"},
             {"key": "value", "type": "float"},
         ],
@@ -257,9 +261,17 @@ LEAF_CAPABILITIES: dict[str, dict] = {
     },
     "reid_match": {
         "label": "跨镜重识别",
-        "implemented": False,
-        "params": [{"key": "value", "type": "float"}],
-        "ops": _CMP_OPS,
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "region", "type": "polygon"},
+            {"key": "min_confidence", "type": "float"},
+            {"key": "value", "type": "float"},
+        ],
+        # 与 face_match 同源（余弦相似度按 op 比较），但只查 kind="reid" 的跨镜底库，
+        # 与人脸底库严格隔离；底库为空/无 embedding/维度不可比一律不命中（fail-closed）。
+        "ops": _FACE_OPS,
     },
     # 交互分割叶子（B3）：sam 以普通归一化 bbox 对象承载分割结果（label 缺省 "segment"），
     # 无新增事件字段；配置 point（提示点，画布产出点列）时要求点落在分割框内。

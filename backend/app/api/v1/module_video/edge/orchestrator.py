@@ -146,10 +146,10 @@ _MAX_EMBEDDINGS_LIMIT = 64
 
 
 def resolve_max_embeddings(params: dict | None, runtime: dict | None, scene) -> int | None:
-    """协商单事件人脸嵌入 Top-N 上限；无需下发的场景返回 None（保持既有 TaskConfig 不变）。
+    """协商单事件嵌入 Top-N 上限；无需下发的场景返回 None（保持既有 TaskConfig 不变）。
 
     - 显式 `max_embeddings`（params 优先于 runtime）→ 取整并夹到 [0, 64]（0=禁用嵌入）；
-    - 未显式配置、但场景声明 ``face_rec`` 模型族（FACE_REC/STRANGER）→ 下发缺省 8；
+    - 未显式配置、但场景声明携带嵌入的模型族（``face_rec`` 人脸 / ``reid`` 跨镜）→ 下发缺省 8；
     - 其余场景不产生该键（Agent 缺省 8，行为等价），保证既有任务配置逐字段兼容。
     """
     # 注意：0 是合法值（禁用嵌入），不能用 `or` 串联（会把 0 当作缺省丢弃）
@@ -158,7 +158,7 @@ def resolve_max_embeddings(params: dict | None, runtime: dict | None, scene) -> 
         raw = _first_present(runtime or {}, "max_embeddings")
     if raw is None:
         families = contract.canonical_families(getattr(scene, "model_families", []) or []) if scene else []
-        if "face_rec" not in families:
+        if not ({"face_rec", "reid"} & set(families)):
             return None
         return _DEFAULT_MAX_EMBEDDINGS
     try:

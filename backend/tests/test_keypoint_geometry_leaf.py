@@ -300,15 +300,93 @@ def test_face_landmark_detail_is_explainable():
 
 
 # -------------------------------------------------------------------- gesture
-def test_gesture_is_documented_stub_and_always_false():
-    """gesture 规则为已声明的桩实现：任何输入均不命中（缺 21 点手部关键点模型）。"""
+# 21 点手部关键点（MediaPipe Hands 索引）：0 腕 / 1-4 拇指 / 5-8 食指 / 9-12 中指 /
+# 13-16 无名指 / 17-20 小指；判据为「指尖离腕是否比参考关节更远」（见 service.py）。
+_HAND_X = {"thumb": 0.35, "index": 0.45, "middle": 0.5, "ring": 0.55, "pinky": 0.62}
+_HAND_IDX = {
+    "thumb": [1, 2, 3, 4],
+    "index": [5, 6, 7, 8],
+    "middle": [9, 10, 11, 12],
+    "ring": [13, 14, 15, 16],
+    "pinky": [17, 18, 19, 20],
+}
+
+
+def _hand(extended: set[str], score: float = 0.9):
+    """构造 21 点手部关键点：``extended`` 中的手指伸直，其余弯曲（确定性几何）。"""
+    arr = [[0.0, 0.0, 0.0] for _ in range(21)]
+    arr[0] = [0.5, 0.9, score]
+    for finger, xs in _HAND_X.items():
+        ys = [0.72, 0.55, 0.42, 0.32] if finger in extended else [0.72, 0.55, 0.68, 0.78]
+        if finger == "thumb":
+            # 拇指伸展判据用 IP(3) 作参考：尖端(4) 需比 IP 离腕更远
+            ys = [0.75, 0.72, 0.42, 0.32] if finger in extended else [0.75, 0.72, 0.68, 0.78]
+        for j, y in zip(_HAND_IDX[finger], ys, strict=True):
+            arr[j] = [xs, y, score]
+    return arr
+
+
+_ALL_FIVE = {"thumb", "index", "middle", "ring", "pinky"}
+
+
+def test_gesture_any_matches_recognized_postures():
+    """缺省目标 any=任一已识别手势：张开手掌/握拳/仅食指 均命中。"""
     leaf = {"subject": "keypoint_geometry", "rule": "gesture"}
-    kps = _pose({0: (0.5, 0.2), 9: (0.5, 0.2), 10: (0.5, 0.25)})
-    assert _eval(leaf, [_det(kps)]) is False
-    ok, hits = explain_conditions(leaf, [_det(kps)])
-    assert ok is False and hits == []
-    ok2, hits2 = explain_conditions(leaf, [_det(kps)], temporal=None)
-    assert ok2 is False
+    assert _eval(leaf, [_det(_hand(_ALL_FIVE), label="hand")]) is True  # open_palm
+    assert _eval(leaf, [_det(_hand(set()), label="hand")]) is True  # fist
+    assert _eval(leaf, [_det(_hand({"index"}), label="hand")]) is True  # point
+
+
+def test_gesture_target_filters_specific_posture():
+    """指定目标手势时只命中该手势。"""
+    leaf = {"subject": "keypoint_geometry", "rule": "gesture", "gesture": "victory"}
+    assert _eval(leaf, [_det(_hand({"index", "middle"}), label="hand")]) is True
+    assert _eval(leaf, [_det(_hand(_ALL_FIVE), label="hand")]) is False
+    assert _eval(leaf, [_det(_hand(set()), label="hand")]) is False
+    open_leaf = {"subject": "keypoint_geometry", "rule": "gesture", "gesture": "open_palm"}
+    assert _eval(open_leaf, [_det(_hand(_ALL_FIVE), label="hand")]) is True
+    assert _eval(open_leaf, [_det(_hand({"index"}), label="hand")]) is False
+
+
+def test_gesture_thumb_up_and_point_classification():
+    """仅拇指伸=thumb_up、仅食指伸=point（分类互斥）。"""
+    up = {"subject": "keypoint_geometry", "rule": "gesture", "gesture": "thumb_up"}
+    assert _eval(up, [_det(_hand({"thumb"}), label="hand")]) is True
+    assert _eval(up, [_det(_hand({"index"}), label="hand")]) is False
+    point = {"subject": "keypoint_geometry", "rule": "gesture", "gesture": "point"}
+    assert _eval(point, [_det(_hand({"index"}), label="hand")]) is True
+    assert _eval(point, [_det(_hand({"index", "middle"}), label="hand")]) is False
+
+
+def test_gesture_fails_closed_on_non_hand_or_low_score_or_bad_target():
+    """非 21 点（人体姿态）/ 低分关键点 / 未知目标 / 旧桩输入一律不命中。"""
+    leaf = {"subject": "keypoint_geometry", "rule": "gesture"}
+    # COCO-17 人体姿态（不足 21 点）→ fail-closed
+    assert _eval(leaf, [_det(_pose({0: (0.5, 0.2), 9: (0.5, 0.2)}))]) is False
+    # 21 点但分数不足（<0.3 视为未检出）→ 无法分类
+    assert _eval(leaf, [_det(_hand(_ALL_FIVE, score=0.1), label="hand")]) is False
+    # 未知目标手势
+    assert _eval({**leaf, "gesture": "dance"}, [_det(_hand(_ALL_FIVE), label="hand")]) is False
+    # 非字符串目标
+    assert _eval({**leaf, "gesture": 123}, [_det(_hand(_ALL_FIVE), label="hand")]) is False
+    # 未识别姿态（食指+无名指伸）→ any 也不命中
+    assert _eval(leaf, [_det(_hand({"index", "ring"}), label="hand")]) is False
+
+
+def test_gesture_detail_is_explainable():
+    ok, hits = explain_conditions(
+        {"subject": "keypoint_geometry", "rule": "gesture", "gesture": "any"},
+        [_det(_hand(_ALL_FIVE), label="hand")],
+    )
+    assert ok is True
+    assert hits[0]["subject"] == "keypoint_geometry"
+    assert "gesture" in hits[0]["detail"] and "open_palm" in hits[0]["detail"]
+
+
+def test_gesture_region_filter_uses_bbox_center():
+    leaf = {"subject": "keypoint_geometry", "rule": "gesture", "region": SQUARE}
+    assert _eval(leaf, [_det(_hand(_ALL_FIVE), label="hand", cx=0.5, cy=0.5)]) is True
+    assert _eval(leaf, [_det(_hand(_ALL_FIVE), label="hand", cx=0.05, cy=0.05)]) is False
 
 
 # ------------------------------------------------------------- 非法输入与说明

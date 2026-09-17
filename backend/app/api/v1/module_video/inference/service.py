@@ -7,6 +7,8 @@ from pathlib import Path
 from starlette.concurrency import run_in_threadpool
 
 from app.api.v1.module_video.face_gallery.store import (
+    KIND_FACE,
+    KIND_REID,
     best_similarity,
     face_gallery_store,
     is_valid_embedding,
@@ -61,6 +63,101 @@ _DEFAULT_HAND_HEAD_DIST = 0.15
 _DEFAULT_FACE_LANDMARK_MIN_KP = 5
 # 需要时序轨迹状态的 keypoint 规则（smoke_phone 的 min_sec 持续性抑制）
 _KEYPOINT_STATEFUL_RULES = frozenset({"smoke_phone"})
+
+# ── 手部 21 点手势（keypoint_geometry rule=gesture）──────────────────────────
+# 事件契约：hand 模型输出 objects[].keypoints = [[x,y,score], ...]（21 点/手），
+# 索引按 MediaPipe Hands 手部关键点顺序：
+#   0 腕 ｜ 1-4 拇指(CMC/MCP/IP/TIP) ｜ 5-8 食指(MCP/PIP/DIP/TIP)
+#   9-12 中指 ｜ 13-16 无名指 ｜ 17-20 小指（各 MCP/PIP/DIP/TIP）
+# 与 COCO-17 人体姿态共用 objects[].keypoints 字段，靠**点数**区分：本规则要求
+# >= 21 个有效点，人体 17 点输入按手部索引取点必然越界 → 恒不命中（fail-closed）。
+_HAND_MIN_POINTS = 21
+_HAND_WRIST = 0
+# 各手指「尖端 vs 远端参考关节」的索引：伸直的手指，尖端离腕更远；弯曲则更近。
+# 拇指用 IP(3) 作参考，其余四指用 PIP(6/10/14/18)。
+_HAND_FINGER_REFS: dict[str, tuple[int, int]] = {
+    "thumb": (4, 3),
+    "index": (8, 6),
+    "middle": (12, 10),
+    "ring": (16, 14),
+    "pinky": (20, 18),
+}
+# 支持的命名手势（确定性分类，见 `_classify_hand_gesture`）：
+#   open_palm 五指全伸 ｜ fist 五指全屈 ｜ point 仅食指伸
+#   victory 食指+中指伸 ｜ thumb_up 仅拇指伸
+_HAND_GESTURES: frozenset[str] = frozenset(
+    {"open_palm", "fist", "point", "victory", "thumb_up"}
+)
+# 目标手势缺省值：任一已识别手势（既非未识别姿态，也不假设某个特定手势）。
+_HAND_GESTURE_ANY = "any"
+
+
+def _hand_finger_states(kps) -> dict[str, bool] | None:
+    """计算五指伸展状态 ``{finger: bool}``；任一所需关键点缺失/分数不足返回 None。
+
+    判定：指尖到腕的归一化距离 > 参考关节到腕的距离 → 该指伸直。该判据对整体缩放、
+    平移与旋转不敏感（仅依赖相对距离），是确定性且可解释的近似几何。
+    """
+    if len(kps) < _HAND_MIN_POINTS:
+        return None
+    wrist = _kp_point(kps, _HAND_WRIST)
+    if wrist is None:
+        return None
+    states: dict[str, bool] = {}
+    for finger, (tip, ref) in _HAND_FINGER_REFS.items():
+        p_tip = _kp_point(kps, tip)
+        p_ref = _kp_point(kps, ref)
+        if p_tip is None or p_ref is None:
+            return None
+        d_tip = math.hypot(p_tip[0] - wrist[0], p_tip[1] - wrist[1])
+        d_ref = math.hypot(p_ref[0] - wrist[0], p_ref[1] - wrist[1])
+        states[finger] = d_tip > d_ref
+    return states
+
+
+def _classify_hand_gesture(kps) -> str | None:
+    """把 21 点手部关键点分类为命名手势；无法可靠分类返回 None（fail-closed）。
+
+    分类互斥（按优先级）：open_palm（五指全伸）→ fist（五指全屈）→ point（仅食指伸）
+    → victory（食指+中指伸）→ thumb_up（仅拇指伸）；其余组合返回 None。
+    """
+    states = _hand_finger_states(kps)
+    if states is None:
+        return None
+    if all(states.values()):
+        return "open_palm"
+    if not any(states.values()):
+        return "fist"
+    four = (states["index"], states["middle"], states["ring"], states["pinky"])
+    if states["index"] and not any(four[1:]):
+        return "point"
+    if states["index"] and states["middle"] and not states["ring"] and not states["pinky"]:
+        return "victory"
+    if states["thumb"] and not any(four):
+        return "thumb_up"
+    return None
+
+
+def _gesture_hit(kps, leaf) -> bool:
+    """手势判定：手部关键点分类结果与目标手势比较（缺省 ``any``=任一已识别手势）。
+
+    - 目标取 ``leaf["gesture"]``（字符串，大小写不敏感）；未知目标 / 非字符串 → 不命中；
+    - 点数不足 21、关键点分数不足、无法归入命名手势 → 不命中（fail-closed）。
+    """
+    target = leaf.get("gesture")
+    if target is None:
+        target = _HAND_GESTURE_ANY
+    if not isinstance(target, str):
+        return False
+    target = target.strip().lower()
+    if target != _HAND_GESTURE_ANY and target not in _HAND_GESTURES:
+        return False
+    gesture = _classify_hand_gesture(kps)
+    if gesture is None:
+        return False
+    if target == _HAND_GESTURE_ANY:
+        return True
+    return gesture == target
 
 
 def pick_alarm_rule(rules: list, algorithm_type: str):
@@ -654,8 +751,10 @@ def _keypoint_geometry_hit(
 ) -> bool:
     """评估 keypoint_geometry 叶子（姿态/人脸几何）；异常/缺失输入一律不命中，绝不抛异常。
 
-    契约：``{"subject":"keypoint_geometry","rule":"fall|climb|smoke_phone|face_landmark|gesture",
-    "region"?,"min_sec"?,"line"?,"op"?,"value"?}``；区域过滤按检测框中心（与既有叶子一致）。
+    契约：``{"subject":"keypoint_geometry",
+    "rule":"fall|climb|smoke_phone|face_landmark|gesture",
+    "region"?,"min_sec"?,"line"?,"gesture"?,"op"?,"value"?}``；区域过滤按检测框中心
+    （与既有叶子一致）。
 
     规则语义（人体用 COCO-17 索引；关键点分数 < 0.3 视为未检出）：
     - fall：躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
@@ -666,7 +765,11 @@ def _keypoint_geometry_hit(
       >= min_sec 的活跃轨迹（复用时序轨迹状态做持续性抑制）；
     - face_landmark：有效关键点数（2 元素点视为可见；分数 < 0.3 不计）与 value
       （缺省 5，op 缺省 >=）比较——「至少 N 个有效关键点」= 检出人脸关键点；
-    - gesture：已声明但未实现（缺 21 点手部关键点模型），恒不命中（见 leaves.py 说明）。
+    - gesture：21 点手部关键点（MediaPipe Hands 索引）的手指伸展分类与目标手势
+      比较（``gesture`` 键，缺省 any=任一已识别手势）；点数不足 21 或无法分类 → 不命中。
+
+    完整规则语义见 ``inference/service.py`` 对应私有函数；本函数对异常输入一律
+    fail-closed，绝不抛异常。
     """
     if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
         return False
@@ -674,10 +777,7 @@ def _keypoint_geometry_hit(
     if not isinstance(rule, str):
         return False
     rule = rule.strip().lower()
-    if rule == "gesture":
-        # 诚实的桩实现：不支持即不命中，绝不用几何近似冒充手势识别
-        return False
-    if rule not in ("fall", "climb", "smoke_phone", "face_landmark"):
+    if rule not in ("fall", "climb", "smoke_phone", "face_landmark", "gesture"):
         return False
     try:
         for d in detections:
@@ -693,6 +793,8 @@ def _keypoint_geometry_hit(
             if rule == "climb" and _climb_hit(kps, leaf):
                 return True
             if rule == "face_landmark" and _face_landmark_hit(kps, leaf):
+                return True
+            if rule == "gesture" and _gesture_hit(kps, leaf):
                 return True
             if rule == "smoke_phone" and _smoke_phone_hit(
                 kps,
@@ -880,10 +982,21 @@ def _code_match_hit(leaf: dict, detections: list) -> bool:
     return any(t in wanted for t in texts)
 
 
-# ── 人脸底库比对（face_match / stranger 叶子）────────────────────────────────
-# 事件契约：face_rec 模型输出 objects[].embedding = [float, ...]（L2 归一化，512/1024 维）。
+# ── 底库比对（face_match / stranger / reid_match 叶子）──────────────────────
+# 事件契约：
+# - face_rec 模型输出 objects[].embedding = [float, ...]（L2 归一化，512/1024 维）
+#   → face_match / stranger 只与人脸底库（kind="face"）比对；
+# - reid 模型输出 objects[].embedding（256 维，L2 归一化，f16b64 上报）
+#   → reid_match 只与跨镜底库（kind="reid"）比对。
+# 二者共用 objects[].embedding 字段，靠**场景/底库 kind** 解耦（而非字段），
 # 相似度在 Python 侧算余弦（无 pgvector 依赖，见 face_gallery/store.py 的性能说明）。
 _FACE_MATCH_OPS = ("gte", "gt", "lte", "lt", "eq")
+# subject → 使用的底库类型
+_EMBEDDING_LEAF_KINDS: dict[str, str] = {
+    "face_match": KIND_FACE,
+    "stranger": KIND_FACE,
+    "reid_match": KIND_REID,
+}
 
 
 def _face_op_hit(sim: float, op: str, target: float) -> bool:
@@ -910,11 +1023,12 @@ def _min_confidence(leaf: dict) -> tuple[float | None, bool]:
     return val, True
 
 
-def _face_similarity_hit(leaf: dict, detections: list, gallery: list | None) -> bool:
-    """评估 face_match / stranger 叶子：任一检测的特征与底库最大相似度满足比较即命中。
+def _embedding_match_hit(leaf: dict, detections: list, gallery: list | None, kind: str) -> bool:
+    """评估 face_match / stranger / reid_match 叶子：任一检测特征与**同类**底库最大相似度满足比较即命中。
 
-    契约：``{"subject":"face_match"|"stranger","op":"gte|gt|lte|lt|eq","value":<相似度阈值>,
-    "label"?,"labels"?,"region"?,"min_confidence"?}``。
+    契约：``{"subject":"face_match"|"stranger"|"reid_match","op":"gte|gt|lte|lt|eq",
+    "value":<相似度阈值>,"label"?,"labels"?,"region"?,"min_confidence"?}``。
+    - ``kind`` 决定比对哪一类底库（face/reid），两类严格隔离，避免跨类型误命中；
     - 底库为空 / 检测无合法 embedding / 维度不可比 → 跳过，整体不命中（fail-closed）；
     - op 非法、value 非数值、min_confidence 非法 → 整体不命中；
     - 底库来源为进程内缓存（``face_gallery_store``），由底库接口与启动流程刷新。
@@ -927,7 +1041,7 @@ def _face_similarity_hit(leaf: dict, detections: list, gallery: list | None) -> 
     value = _as_float(leaf.get("value"))
     if value is None:
         return False
-    entries = gallery if gallery is not None else face_gallery_store.snapshot()
+    entries = gallery if gallery is not None else face_gallery_store.snapshot(kind=kind)
     if not entries:
         return False
     min_conf, ok = _min_confidence(leaf)
@@ -1262,6 +1376,7 @@ def _match_conditions(
     alarm_interval=0,
     group_camera_ids: list[int] | None = None,
     face_gallery: list | None = None,
+    reid_gallery: list | None = None,
 ) -> bool:
     """评估规则条件树；空/None 视为命中。
 
@@ -1292,14 +1407,15 @@ def _match_conditions(
     - track：{"subject":"track","label"?,"labels"?,"region"?,"min_sec"?}
       存在至少一条活跃的真实轨迹（可选要求时长 >= min_sec）。
     关键点几何叶子（读取 detection.keypoints，姿态/人脸模型输出 [[x,y,score],...] 归一化）：
-    - keypoint_geometry：{"subject":"keypoint_geometry",
-      "rule":"fall|climb|smoke_phone|face_landmark|gesture",
-      "region"?,"min_sec"?,"line"?,"op"?,"value"?}
-      fall=躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
-      climb=躯干中心位于 line 上方，无 line 时与高度阈值 value（缺省 0.5，op 缺省 <=）比较；
-      smoke_phone=腕到头参照的最小距离 <= 阈值（value 缺省 0.15），min_sec 可选持续性抑制；
-      face_landmark=有效关键点数（分数 >= 0.3）与阈值 value（缺省 5，op 缺省 >=）比较；
-      gesture=已声明但未实现（缺手部关键点模型），恒不命中。区域过滤按检测框中心。
+     - keypoint_geometry：{"subject":"keypoint_geometry",
+       "rule":"fall|climb|smoke_phone|face_landmark|gesture",
+       "region"?,"min_sec"?,"line"?,"gesture"?,"op"?,"value"?}
+       fall=躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
+       climb=躯干中心位于 line 上方，无 line 时与高度阈值 value（缺省 0.5，op 缺省 <=）比较；
+       smoke_phone=腕到头参照的最小距离 <= 阈值（value 缺省 0.15），min_sec 可选持续性抑制；
+       face_landmark=有效关键点数（分数 >= 0.3）与阈值 value（缺省 5，op 缺省 >=）比较；
+       gesture=21 点手部关键点（MediaPipe Hands）手指伸展分类与 gesture（缺省 any）比较。
+       区域过滤按检测框中心。
     深度安全距离叶子（读取 detection.depth，深度模型输出，单位米）：
     - distance：{"subject":"distance","op":"lt|gt|le|ge|eq","value":<米>,"label"?,"region"?}
       任一检测的数值 depth 满足比较即命中；depth 缺失/非数值/非有限值一律跳过（fail-closed）。
@@ -1309,11 +1425,12 @@ def _match_conditions(
     码值匹配叶子（读取 detection.text，barcode 解码结果）：
     - code_match：{"subject":"code_match","op":"in|regex","code_list"?,"regex"?}
       op=in 与名单精确比对（名单空=识别到任意非空码值）；op=regex 按正则匹配。
-    人脸底库比对叶子（读取 detection.embedding，face_rec 模型输出；底库为进程内缓存）：
+    底库比对叶子（读取 detection.embedding；底库为进程内缓存，按 kind 隔离）：
     - face_match：{"subject":"face_match","op":"gte|gt|lte|lt|eq","value":<相似度阈值>,
       "label"?,"labels"?,"region"?,"min_confidence"?}
-      任一检测与底库的最大余弦相似度满足比较即命中；
+      任一检测与人脸底库（kind=face）的最大余弦相似度满足比较即命中；
     - stranger：同 face_match（配 op=lt 即「低于阈值＝未命中底库」）。
+    - reid_match：同 face_match 语义，但只与跨镜底库（kind=reid）比对。
       底库为空/检测无合法 embedding/维度不可比 → 不命中（fail-closed）。
     交互分割叶子（读取 sam 输出 label="segment" 的归一化 bbox 对象）：
     - prompt_segment：{"subject":"prompt_segment","label"?,"labels"?,"region"?,
@@ -1333,6 +1450,7 @@ def _match_conditions(
         alarm_interval=alarm_interval,
         group_camera_ids=group_camera_ids,
         face_gallery=face_gallery,
+        reid_gallery=reid_gallery,
     )[0]
 
 
@@ -1347,6 +1465,7 @@ def explain_conditions(
     alarm_interval=0,
     group_camera_ids: list[int] | None = None,
     face_gallery: list | None = None,
+    reid_gallery: list | None = None,
 ) -> tuple[bool, list[dict]]:
     """在与 _match_conditions 完全相同的语义下求值，并额外返回命中叶子说明。
 
@@ -1430,8 +1549,11 @@ def explain_conditions(
             # 码值匹配叶子（读取 detection.text，条码/二维码解码结果）
             return _code_match_hit(leaf, dets)
         if subject in ("face_match", "stranger"):
-            # 人脸底库比对叶子（读取 detection.embedding，face_rec 模型输出）
-            return _face_similarity_hit(leaf, dets, face_gallery)
+            # 人脸底库比对叶子（读取 detection.embedding，face_rec 模型输出；仅 kind=face）
+            return _embedding_match_hit(leaf, dets, face_gallery, KIND_FACE)
+        if subject == "reid_match":
+            # 跨镜底库比对叶子（读取 detection.embedding，reid 模型输出；仅 kind=reid）
+            return _embedding_match_hit(leaf, dets, reid_gallery, KIND_REID)
         if subject == "prompt_segment":
             # 交互式分割叶子（读取 sam 输出的 label="segment" bbox 对象）
             return _prompt_segment_hit(leaf, dets)
@@ -1468,7 +1590,7 @@ def explain_conditions(
                 return True
             return False
         if subject == "keypoint_geometry":
-            # 姿态几何叶子（fall/climb/smoke_phone；gesture 为已声明桩实现）
+            # 关键点几何叶子（fall/climb/smoke_phone/face_landmark/gesture）
             return _keypoint_geometry_hit(
                 leaf,
                 dets,
@@ -1616,10 +1738,17 @@ def explain_conditions(
         return f"code {texts[0]}" if texts else "code -"
 
     def _face_match_detail(leaf: dict) -> str:
-        """face_match/stranger 叶子的关键量说明；无有效相似度时给出可读回退。"""
+        """face_match/stranger/reid_match 叶子的关键量说明；无有效相似度时给出可读回退。"""
+        subject = leaf.get("subject")
+        kind = _EMBEDDING_LEAF_KINDS.get(subject, KIND_FACE)
+        prefix = "reid" if kind == KIND_REID else "face"
         op = leaf.get("op")
         value = _as_float(leaf.get("value"))
-        entries = face_gallery if face_gallery is not None else face_gallery_store.snapshot()
+        if kind == KIND_REID:
+            explicit = reid_gallery
+        else:
+            explicit = face_gallery
+        entries = explicit if explicit is not None else face_gallery_store.snapshot(kind=kind)
         best = None
         for d in dets:
             if not isinstance(d, dict):
@@ -1635,8 +1764,8 @@ def explain_conditions(
             if best is None or sim > best:
                 best = sim
         if best is None:
-            return f"face sim ?{op}{_fmt_num(value)}"
-        return f"face sim {best:.2f}{op}{_fmt_num(value)}"
+            return f"{prefix} sim ?{op}{_fmt_num(value)}"
+        return f"{prefix} sim {best:.2f}{op}{_fmt_num(value)}"
 
     def _prompt_segment_detail(leaf: dict) -> str:
         """prompt_segment 叶子的可读说明（label + 提示点数）。"""
@@ -1761,9 +1890,7 @@ def explain_conditions(
         """关键点几何叶子的关键量说明；无法测量时给出可读回退。"""
         rule = leaf.get("rule")
         rule = rule.strip().lower() if isinstance(rule, str) else ""
-        if rule == "gesture":
-            return "gesture 未实现(缺 21 点手部关键点)"
-        if rule not in ("fall", "climb", "smoke_phone", "face_landmark"):
+        if rule not in ("fall", "climb", "smoke_phone", "face_landmark", "gesture"):
             return str(leaf.get("subject"))
         op = leaf.get("op") or ("<=" if rule in ("climb", "smoke_phone") else ">=")
         for d in dets:
@@ -1772,6 +1899,14 @@ def explain_conditions(
             kps = _keypoints_of(d)
             if not kps:
                 continue
+            if rule == "gesture":
+                # 手部 21 点：给出识别到的命名手势（未识别/点数不足回退可读说明）
+                target = leaf.get("gesture")
+                target = target.strip().lower() if isinstance(target, str) else _HAND_GESTURE_ANY
+                gesture = _classify_hand_gesture(kps)
+                if gesture is None:
+                    continue
+                return f"gesture {gesture} target={target}"
             if rule == "fall":
                 torso = _kp_torso(kps)
                 angle = _kp_torso_angle(*torso) if torso is not None else None
@@ -1840,7 +1975,7 @@ def explain_conditions(
                 return _region_ratio_detail(leaf)
             if subject == "code_match":
                 return _code_match_detail(leaf)
-            if subject in ("face_match", "stranger"):
+            if subject in ("face_match", "stranger", "reid_match"):
                 return _face_match_detail(leaf)
             if subject == "prompt_segment":
                 return _prompt_segment_detail(leaf)

@@ -34,8 +34,8 @@ from app.api.v1.module_video.scene.leaves import LEAF_CAPABILITIES
 # 依赖「分类结果进入边缘事件」契约的三个场景（B2a 契约已落地，现应可配置）
 _CLASSIFICATION_SCENES = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK"}
 
-# 依赖「姿态关键点进入边缘事件」契约的三个场景（姿态切片契约已声明，现应可配置）
-_KEYPOINT_SCENES = {"FALL", "CLIMB", "SMOKE_PHONE"}
+# 依赖「姿态关键点进入边缘事件」契约的场景（姿态切片 + 手部 21 点手势，现应可配置）
+_KEYPOINT_SCENES = {"FALL", "CLIMB", "SMOKE_PHONE", "HAND_GESTURE"}
 
 # 依赖「人脸属性/活体分数进入边缘事件」契约的场景（B2a 契约已声明，现应可配置）
 _ATTRIBUTE_SCENES = {"FACE_ATTR", "FACE_ANTISPOOF"}
@@ -54,6 +54,8 @@ _LANDMARK_SCENES = {"FACE_LANDMARK"}
 _FACE_MATCH_SCENES = {"FACE_REC", "STRANGER"}
 # B3：交互分割（sam 族 + prompt_segment 叶子）
 _SAM_SCENES = {"SAM_SEG"}
+# B4：跨镜重识别（reid 族 + reid_gallery 资产 + reid_match 叶子）
+_REID_SCENES = {"REID_TRACK"}
 
 
 def _iter_leaves(rule: dict):
@@ -97,11 +99,13 @@ def test_configurable_scenes_compile_default_rule():
     assert _ATTRIBUTE_SCENES <= set(checked)
     assert _DEPTH_SCENES <= set(checked)
     assert (_RATIO_SCENES | _CODE_SCENES | _TEXT_SCENES | _LANDMARK_SCENES) <= set(checked)
-    # B3：B3 B3 人脸底库/交互分割场景转为可配置
+    # B3：B3 人脸底库/交互分割场景转为可配置
     assert (_FACE_MATCH_SCENES | _SAM_SCENES) <= set(checked)
-    assert "HAND_GESTURE" not in set(checked)
+    # B4：hand/reid 族 + reid_gallery 资产就绪 → HAND_GESTURE/REID_TRACK 转为可配置
+    assert _KEYPOINT_SCENES <= set(checked)
+    assert _REID_SCENES <= set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 36
+    assert len(checked) == 38
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -354,15 +358,34 @@ def test_depth_safe_injects_distance_threshold_and_roi():
     assert leaf["region"] == roi
 
 
-def test_hand_gesture_stays_gated_with_honest_reason():
-    """gesture 规则未实现 + hand 族未上报 → HAND_GESTURE 必须置灰并说明原因（不假装可用）。"""
+def test_hand_gesture_configurable_after_hand_family_and_gesture():
+    """hand 族 + 21 点 gesture 规则落地 → HAND_GESTURE 可配置且默认规则可编译。"""
     scene = SCENES["HAND_GESTURE"]
+    assert contract.has_model_family("hand") is True
+    assert scene.requires_keypoints is True
     ok, reason = scene_configurability(scene)
-    assert ok is False
-    blockers = scene_blockers(scene)
-    assert any("hand" in b for b in blockers), blockers
-    assert any("gesture" in b for b in blockers), blockers
-    assert "gesture" in reason and "hand" in reason, reason
+    assert ok is True, f"HAND_GESTURE 契约已就绪却仍置灰：{reason}"
+    assert scene_blockers(scene) == []
+    out = compile_rule("HAND_GESTURE", _default_params(scene), scene.default_rule)
+    leaf = out["children"][0]
+    assert leaf["subject"] == "keypoint_geometry"
+    assert leaf["rule"] == "gesture"
+    # gesture 参数必须可注入（界面可填即生效）
+    out2 = compile_rule("HAND_GESTURE", {"gesture": "victory"}, scene.default_rule)
+    assert out2["children"][0]["gesture"] == "victory"
+
+
+def test_hand_gesture_re_gates_without_hand_family(monkeypatch):
+    """机制锁定：撤下 hand 族后 HAND_GESTURE 必须重新按「缺模型族」置灰。"""
+    monkeypatch.setattr(
+        contract, "AGENT_MODEL_FAMILIES", contract.AGENT_MODEL_FAMILIES - {"hand"}
+    )
+    try:
+        ok, reason = scene_configurability(SCENES["HAND_GESTURE"])
+        assert ok is False
+        assert "hand" in reason, reason
+    finally:
+        monkeypatch.undo()
 
 
 def test_fall_default_rule_injects_angle_threshold_and_roi():
@@ -445,12 +468,13 @@ def test_face_family_is_canonical_with_legacy_alias():
 
 
 def test_required_assets_gate_scenes_with_reason():
-    """缺底库场景必须据实置灰并在原因中标注资产（缺底库，而非静默失败）。
+    """底库资产就绪时对应场景转为可配置；撤下资产后据实按「缺外部资产」置灰。
 
     B3 后人脸底库（face_gallery）已具备，FACE_REC/STRANGER 转为可配置；
-    跨镜底库（reid_gallery）仍未具备，REID_TRACK 继续按「缺外部资产」置灰。
+    B4 后跨镜底库（reid_gallery）随 ``kind`` 列复用同一张表，REID_TRACK 亦转为可配置。
     """
     assert contract.has_asset("face_gallery") is True
+    assert contract.has_asset("reid_gallery") is True
     for code in ("FACE_REC", "STRANGER"):
         scene = SCENES[code]
         assert scene.required_assets == ["face_gallery"], code
@@ -459,9 +483,19 @@ def test_required_assets_gate_scenes_with_reason():
 
     reid = SCENES["REID_TRACK"]
     assert reid.required_assets == ["reid_gallery"]
-    assert contract.has_asset("reid_gallery") is False
-    blockers = "；".join(scene_blockers(reid))
-    assert "缺外部资产" in blockers and "跨镜底库" in blockers, blockers
+    assert scene_configurability(reid)[0] is True
+    assert "缺外部资产" not in "；".join(scene_blockers(reid))
+
+
+def test_reid_track_re_gates_without_asset(monkeypatch):
+    """机制锁定：撤下 reid_gallery 资产后 REID_TRACK 重新按「跨镜底库」置灰。"""
+    monkeypatch.setattr(contract, "AGENT_ASSETS", contract.AGENT_ASSETS - {"reid_gallery"})
+    try:
+        ok, reason = scene_configurability(SCENES["REID_TRACK"])
+        assert ok is False
+        assert "跨镜底库" in reason, reason
+    finally:
+        monkeypatch.undo()
 
 
 def test_face_gallery_empty_is_hint_not_blocker():
@@ -476,8 +510,16 @@ def test_face_gallery_empty_is_hint_not_blocker():
         # 底库非空 / 未查库时不产生提示
         assert scene_hints(scene, face_gallery_count=3) == []
         assert scene_hints(scene, face_gallery_count=None) == []
+    # B4：跨镜底库为空同样只提示（非阻断）
+    reid = SCENES["REID_TRACK"]
+    assert scene_hints(reid, reid_gallery_count=0) == [
+        "跨镜底库为空：启用本场景后不会命中，请先录入跨镜底库特征"
+    ]
+    assert scene_hints(reid, reid_gallery_count=2) == []
+    assert scene_hints(reid, reid_gallery_count=None) == []
     # 不依赖底库的场景恒无提示
     assert scene_hints(SCENES["DET_ZONE"], face_gallery_count=0) == []
+    assert scene_hints(SCENES["DET_ZONE"], reid_gallery_count=0) == []
 
 
 def test_face_and_sam_scenes_configurable_after_b3():
@@ -505,6 +547,37 @@ def test_face_and_sam_scenes_configurable_after_b3():
         SCENES["SAM_SEG"].default_rule,
     )
     assert out["children"][0]["point"] == [[0.5, 0.5], [0.6, 0.6]]
+
+
+def test_reid_track_configurable_after_b4():
+    """B4：reid 族 + reid_gallery 资产 + reid_match 叶子就绪 → REID_TRACK 可配置且可编译。
+
+    底库类型 kind 将跨镜底库与人脸底库隔离；similarity_threshold 必须注入 reid_match.value。
+    """
+    assert "reid" in contract.AGENT_MODEL_FAMILIES
+    assert contract.has_asset("reid_gallery") is True
+    scene = SCENES["REID_TRACK"]
+    ok, reason = scene_configurability(scene)
+    assert ok is True, f"REID_TRACK 契约已就绪却仍置灰：{reason}"
+    out = compile_rule("REID_TRACK", _default_params(scene), scene.default_rule)
+    leaves = list(_iter_leaves(out))
+    assert leaves and all(leaf["subject"] == "reid_match" for leaf in leaves)
+    # 相似度阈值可注入
+    out2 = compile_rule("REID_TRACK", {"similarity_threshold": 0.75}, scene.default_rule)
+    assert out2["children"][0]["value"] == 0.75
+
+
+def test_reid_track_re_gates_without_family(monkeypatch):
+    """机制锁定：撤下 reid 族后 REID_TRACK 必须重新按「缺模型族」置灰。"""
+    monkeypatch.setattr(
+        contract, "AGENT_MODEL_FAMILIES", contract.AGENT_MODEL_FAMILIES - {"reid"}
+    )
+    try:
+        ok, reason = scene_configurability(SCENES["REID_TRACK"])
+        assert ok is False
+        assert "reid" in reason, reason
+    finally:
+        monkeypatch.undo()
 
 
 def test_face_match_scenes_re_gate_without_family_or_asset(monkeypatch):
@@ -636,12 +709,17 @@ def test_catalog_api_exposes_configurability(test_client, auth_headers):
     for code in ("FACE_REC", "STRANGER", "SAM_SEG"):
         assert by_code[code]["configurable"] is True, code
         assert by_code[code]["blockers"] == [], code
+    # B4：hand/reid 族 + 跨镜底库就绪 → HAND_GESTURE/REID_TRACK 转为可配置
+    for code in ("HAND_GESTURE", "REID_TRACK"):
+        assert by_code[code]["configurable"] is True, code
+        assert by_code[code]["blockers"] == [], code
     # 底库为空时给出运行期提示（非阻断）；本条 e2e 库底库为空
     assert any("底库为空" in h for h in by_code["FACE_REC"]["hints"])
-    # 仍不可配置的场景：模型族/资产未就绪 → 必须给出置灰原因
-    assert by_code["REID_TRACK"]["configurable"] is False
-    assert by_code["REID_TRACK"]["unsupported_reason"]
-    assert any("跨镜底库" in b for b in by_code["REID_TRACK"]["blockers"])
+    assert any("跨镜底库为空" in h for h in by_code["REID_TRACK"]["hints"])
+    # 仍不可配置的场景：模型族未就绪 → 必须给出置灰原因
+    assert by_code["ACTION_CLS"]["configurable"] is False
+    assert by_code["ACTION_CLS"]["unsupported_reason"]
+    assert any("action" in b for b in by_code["ACTION_CLS"]["blockers"])
     assert all("configurable" in s and "blockers" in s and "hints" in s for s in items)
 
 
@@ -726,7 +804,8 @@ def test_keypoint_scenes_configurable_and_dispatch_pose():
         runtime_overrides = None
         params_overrides = None
 
-    for code in _KEYPOINT_SCENES:
+    # 仅人体姿态三场景走 det+pose 管线（HAND_GESTURE 用 hand 管线，见 B4 用例）
+    for code in ("FALL", "CLIMB", "SMOKE_PHONE"):
         scene = SCENES[code]
         ok, reason = scene_configurability(scene)
         assert ok is True, f"{code} 应可配置：{reason}"
@@ -739,3 +818,17 @@ def test_keypoint_scenes_configurable_and_dispatch_pose():
         cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
         types = {m["type"] for m in cfg["models"]}
         assert {"detection", "pose"} <= types, f"{code} 未下发 det+pose：{types}"
+
+    # B4：HAND_GESTURE 可配置且真正下发 det+hand（不再退回单 det）
+    scene = SCENES["HAND_GESTURE"]
+    ok, reason = scene_configurability(scene)
+    assert ok is True, f"HAND_GESTURE 应可配置：{reason}"
+    algo = SimpleNamespace(
+        name="HAND_GESTURE", algorithm_type="HAND_GESTURE", scene_type="HAND_GESTURE",
+        model_path="/models/hand_primary.onnx",
+        runtime_config={"backend": "ort", "device": "cpu"},
+        preset_params={"hand_path": "/models/hand.onnx"},
+    )
+    cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
+    types = {m["type"] for m in cfg["models"]}
+    assert {"detection", "hand"} <= types, f"HAND_GESTURE 未下发 det+hand：{types}"

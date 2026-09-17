@@ -55,6 +55,9 @@ _MIN_SEC = {"key": "min_sec", "type": "int", "default": 5, "label": "最短时�
 _ANGLE_THRESHOLD = {"key": "angle_threshold", "type": "float", "default": 60.0, "label": "倾斜角阈值(度)"}
 # 姿态几何：smoke_phone 的腕-头归一化距离阈值 → keypoint_geometry.value（rule=smoke_phone）
 _HAND_DIST = {"key": "hand_head_distance", "type": "float", "default": 0.15, "label": "手-头距离阈值"}
+# 手部手势（HAND_GESTURE）：21 点手指伸展分类的目标手势名 → keypoint_geometry.gesture
+# 可选值：any（任一已识别手势，默认）/ open_palm / fist / point / victory / thumb_up
+_GESTURE = {"key": "gesture", "type": "str", "default": "any", "label": "手势类型(any/open_palm/fist/point/victory/thumb_up)"}
 # 人脸关键点：face_landmark 的最少有效关键点数（分数 >= 0.3 视为有效）
 _MIN_KP = {"key": "min_keypoints", "type": "int", "default": 5, "label": "最少关键点数"}
 _MAX_MOVE = {"key": "max_move", "type": "float", "default": 0.02, "label": "最大位移(归一化)"}
@@ -79,6 +82,8 @@ _OBB = {"role": "obb", "type": "obb"}
 _DEPTH = {"role": "depth", "type": "depth"}
 _TRACK = {"role": "track", "type": "tracking"}
 _REID = {"role": "reid", "type": "reid"}
+# 手部关键点模型（HAND_GESTURE）：输出 objects[].keypoints=21 点/手
+_HAND = {"role": "hand", "type": "hand"}
 _FACE_DET = {"role": "face_det", "type": "face_detection"}
 _FACE_REC = {"role": "face_rec", "type": "face_rec"}
 _FACE_ATTR = {"role": "face_attr", "type": "face_attr"}
@@ -275,15 +280,17 @@ _add(SceneDef(
 ))
 
 _add(SceneDef(
-    "HAND_GESTURE", "手势", "pose", "HAND_GESTURE", ["hand"], [_DET, _POSE],
-    [_POLY, _CONF, _LABELS],
-    # keypoint_geometry(rule=gesture) 为「已声明但未实现」的桩：缺 21 点手部关键点模型
-    # （hand 族权重未补齐），恒不命中 —— 保留默认规则以便契约就绪后直接生效，
-    # 同时用 limitations 明确告知用户「本场景当前不会命中」。
-    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "gesture"}]},
+    "HAND_GESTURE", "手势", "pose", "HAND_GESTURE", ["hand"], [_DET, _HAND],
+    [_POLY, _CONF, _GESTURE],
+    # keypoint_geometry(rule=gesture)：读取 21 点手部关键点（MediaPipe Hands 索引），
+    # 按「指尖离腕是否比参考关节更远」判定五指伸展，再归类为命名手势
+    # （open_palm/fist/point/victory/thumb_up）；gesture 参数指定目标手势，
+    # 缺省 any=任一已识别手势。点数不足 21 或无法分类 → 不命中（fail-closed）。
+    {"op": "and", "children": [
+        {"subject": "keypoint_geometry", "rule": "gesture", "gesture": "any"}
+    ]},
     True, "21 手部关键点手势识别",
     requires_keypoints=True,
-    limitations=["gesture 规则未实现（缺 21 点手部关键点模型/权重），当前不会命中"],
 ))
 
 # ── §3.4 分割/旋转框 ──────────────────────────────
@@ -470,8 +477,11 @@ _add(SceneDef(
 _add(SceneDef(
     "REID_TRACK", "跨镜重识别", "tracking", "REID_TRACK", ["reid"], [_DET, _REID],
     [_POLY, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
-    # TODO(SP4): reid_match 依赖跨镜轨迹/时序关联，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "reid_match", "op": "gte", "value": "similarity_threshold"}]},
+    # reid_match 叶子（B4）：检测的 objects[].embedding（256 维，L2 归一化）与跨镜底库
+    # （kind="reid"）的最大余弦相似度 >= similarity_threshold 判为命中；底库为空 /
+    # 无 embedding / 维度不可比一律不命中（fail-closed）。默认写数值阈值，运行时由
+    # similarity_threshold 参数经编译层注入覆盖。
+    {"op": "and", "children": [{"subject": "reid_match", "op": "gte", "value": 0.6}]},
     True, "跨相机行人重识别关联",
     required_assets=["reid_gallery"],
 ))
@@ -587,20 +597,26 @@ def scene_configurability(scene: SceneDef) -> tuple[bool, str]:
     return (not blockers), "；".join(blockers)
 
 
-def scene_hints(scene: SceneDef, *, face_gallery_count: int | None = None) -> list[str]:
+def scene_hints(
+    scene: SceneDef,
+    *,
+    face_gallery_count: int | None = None,
+    reid_gallery_count: int | None = None,
+) -> list[str]:
     """场景的「可配置但需注意」操作提示（非阻断，与 ``scene_blockers`` 互补）。
 
     与阻断原因的区别：这些场景可正常选中并保存成功，但运行期存在前置条件。
-    当前仅人脸底库：底库为空时 FACE_REC/STRANGER 恒不命中，需在 UI 提示先录入底库
-    （底库即使为空也不再是硬阻断——表与 API 已就绪，属数据就绪型依赖）。
-    缺省 ``face_gallery_count=None``（未查库）时不产生提示，避免误导。
+    当前覆盖人脸/跨镜底库：对应底库为空时 FACE_REC/STRANGER 或 REID_TRACK 恒不命中，
+    需在 UI 提示先录入底库（底库即使为空也不再是硬阻断——表与 API 已就绪，属数据就绪型依赖）。
+    缺省计数为 ``None``（未查库）时不产生提示，避免误导。
     """
     assets = {str(a).strip().lower() for a in (scene.required_assets or [])}
-    if "face_gallery" not in assets or face_gallery_count is None:
-        return []
-    if face_gallery_count <= 0:
-        return ["人脸底库为空：启用本场景后不会命中，请先录入底库特征"]
-    return []
+    hints: list[str] = []
+    if "face_gallery" in assets and face_gallery_count is not None and face_gallery_count <= 0:
+        hints.append("人脸底库为空：启用本场景后不会命中，请先录入底库特征")
+    if "reid_gallery" in assets and reid_gallery_count is not None and reid_gallery_count <= 0:
+        hints.append("跨镜底库为空：启用本场景后不会命中，请先录入跨镜底库特征")
+    return hints
 
 
 def configurable_scene_codes() -> list[str]:

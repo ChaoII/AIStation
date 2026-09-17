@@ -280,9 +280,32 @@ def test_max_embeddings_explicit_override_and_clamp():
 
 
 def test_non_face_scene_omits_max_embeddings():
-    """非 face_rec 场景不产生该键（既有任务配置逐字段兼容）。"""
+    """非 face_rec/reid 场景不产生该键（既有任务配置逐字段兼容）。"""
     cfg = build_agent_task_config(_Task(), _Cam(), _Alg(), events={})
     assert "max_embeddings" not in cfg
+
+
+class _AlgReid:
+    name = "跨镜重识别"
+    algorithm_type = "REID_TRACK"
+    scene_type = "REID_TRACK"
+    model_path = "/models/yolov8_person.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {"reid_path": "/models/osnet_x1_0.onnx"}
+
+
+class _TaskReid(_Task):
+    algorithm_id = 9
+
+
+def test_reid_scene_emits_default_max_embeddings():
+    """REID_TRACK（reid 族）同样携带 objects[].embedding → 必须下发缺省 max_embeddings=8。"""
+    cfg = build_agent_task_config(_TaskReid(), _Cam(), _AlgReid(), events={})
+    assert cfg["max_embeddings"] == 8
+    # reid 模型条目按目录管线下发（detection + reid）
+    types = {m["type"] for m in cfg["models"]}
+    assert types == {"detection", "reid"}, types
+    assert {m["type"]: m for m in cfg["models"]}["reid"]["url"] == "/models/osnet_x1_0.onnx"
 
 
 def test_max_embeddings_contract_key_name_and_type():
