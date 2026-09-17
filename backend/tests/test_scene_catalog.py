@@ -98,6 +98,9 @@ _IMPLEMENTED_LEAF_KEYS = {
     "count_window": "window_sec",
     "absence": "gap_sec",
     "line_cross": None,
+    # SP4-b 扩展：静止判定 / 通用跟踪（读取轨迹存在时长与最大位移）
+    "static": "min_sec",
+    "track": None,
 }
 
 # 各叶子受求值器支持的比较算子（与 inference/service.py 保持一致）
@@ -172,7 +175,7 @@ def test_default_rules_implemented_leaves_are_evaluable():
                 )
     # 非空守卫：核心叶子（含时序叶子）至少各有场景覆盖，避免测试空跑
     assert {"object_present", "count", "attribute", "text_match"} <= checked
-    assert {"dwell", "count_window", "absence", "line_cross"} <= checked
+    assert {"dwell", "count_window", "absence", "line_cross", "static", "track"} <= checked
 
 
 def test_line_cross_default_rule_uses_line_cross_leaf():
@@ -191,7 +194,9 @@ def test_temporal_default_rules_use_temporal_leaves():
 
     - LOITER / ILLEGAL_PARK → dwell；
     - ABSENT → absence；
-    - GATHER → count_window（滑窗去重计数）。
+    - GATHER → count_window（滑窗去重计数）；
+    - ABANDON → static（静止判定）；
+    - DEPLOY_TRACK → track（存在被跟踪目标）。
     时序叶子依赖跨事件状态（需检测携带 track_id 形成轨迹），因此默认规则不得再写
     符号化 region（如 "roi"）或字符串阈值（如 "min_sec"）——评估器只认数值键。
     """
@@ -200,6 +205,8 @@ def test_temporal_default_rules_use_temporal_leaves():
         "ILLEGAL_PARK": "dwell",
         "ABSENT": "absence",
         "GATHER": "count_window",
+        "ABANDON": "static",
+        "DEPLOY_TRACK": "track",
     }
     for code, subject in expected.items():
         scene = get_scene(code)

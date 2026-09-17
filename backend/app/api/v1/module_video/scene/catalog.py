@@ -34,6 +34,7 @@ _LABELS = {"key": "labels", "type": "list", "label": "目标标签"}
 _COUNT = {"key": "count", "type": "int", "default": 5, "label": "数量阈值"}
 _SECONDS = {"key": "dwell_sec", "type": "int", "default": 10, "label": "停留时长(秒)"}
 _MIN_SEC = {"key": "min_sec", "type": "int", "default": 5, "label": "最短时长(秒)"}
+_MAX_MOVE = {"key": "max_move", "type": "float", "default": 0.02, "label": "最大位移(归一化)"}
 _GAP_SEC = {"key": "gap_sec", "type": "int", "default": 30, "label": "无目标时长(秒)"}
 _DIRECTION = {"key": "direction", "type": "str", "default": "A2B", "label": "越线方向"}
 # 组聚合参数：仅相机组作用域展示并注入 group_* 叶子（编译层 PARAM_TO_LEAF 消费）。
@@ -134,10 +135,11 @@ _add(SceneDef(
 
 _add(SceneDef(
     "ABANDON", "遗留/抛洒物", "tracking", "ABANDON", ["det"], [_DET, _TRACK],
-    [_POLY, _SECONDS, _CONF],
-    # static 静止判定依赖时序跟踪，求值器未实现；无等价已实现叶子可退化（dwell 会对
-    # 任意滞留目标误报，改变语义），故本场景由 scene_configurability 标记为不可配置（置灰）。
-    {"op": "and", "children": [{"subject": "static", "region": "roi", "op": "gte", "value": "dwell_sec"}]},
+    [_POLY, _SECONDS, _MAX_MOVE, _CONF],
+    # static 时序叶子（已实现）：某真实轨迹存在 >= min_sec（取 dwell_sec 默认 10）且
+    # 相对首帧最大位移 <= max_move（默认 0.02）→ 判定为遗留/静止物。
+    # region 由任务参数在运行时注入，默认规则不写符号化占位。
+    {"op": "and", "children": [{"subject": "static", "min_sec": 10}]},
     True, "目标静止超过阈值",
 ))
 
@@ -390,9 +392,9 @@ _add(SceneDef(
 _add(SceneDef(
     "DEPLOY_TRACK", "通用跟踪", "tracking", "DEPLOY_TRACK", ["det"], [_DET, _TRACK],
     [_POLY, _CONF, _LABELS],
-    # track 轨迹生命周期叶子求值器未实现，且无等价已实现叶子可退化（object_present 只是
-    # 「出现」判定，无法表达跟踪语义），故本场景由 scene_configurability 标记为不可配置（置灰）。
-    {"op": "and", "children": [{"subject": "track", "region": "roi"}]},
+    # track 时序叶子（已实现）：存在至少一条活跃的真实轨迹（携带有效 track_id）即命中；
+    # region 由任务参数在运行时注入，默认规则不写符号化占位。
+    {"op": "and", "children": [{"subject": "track"}]},
     True, "通用多目标跟踪",
 ))
 

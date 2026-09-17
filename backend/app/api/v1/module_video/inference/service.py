@@ -25,7 +25,12 @@ TEMPORAL_SUBJECTS = (
     "line_cross",
     "group_count",
     "group_coverage",
+    "static",
+    "track",
 )
+
+# static 叶子缺省最大位移阈值（归一化坐标下的欧氏距离）
+_DEFAULT_MAX_MOVE = 0.02
 
 
 def pick_alarm_rule(rules: list, algorithm_type: str):
@@ -263,6 +268,61 @@ def _query_positions(temporal, camera_id, alarm_type: str, leaf: dict, scope: st
     return merged
 
 
+def _query_moves(temporal, camera_id, alarm_type: str, leaf: dict, scope: str):
+    """读取轨迹最大位移状态；无标签限制时聚合全部标签（与 _query_temporal 同构）。"""
+    labels = _leaf_labels(leaf)
+    if not labels:
+        return temporal.query_moves(camera_id, alarm_type, None, scope)
+    merged: dict = {}
+    for lab in labels:
+        merged.update(temporal.query_moves(camera_id, alarm_type, lab, scope))
+    return merged
+
+
+def _track_id_of(field) -> int | None:
+    """从轨迹键 ``t:{id}`` 解析有效 track_id（>=0）；非轨迹键/非法/负数返回 None。
+
+    事件按 ``e:{ts}`` 成键（无 track_id 时按事件计数），不具有轨迹身份，故不视为轨迹。
+    """
+    if not isinstance(field, str) or not field.startswith("t:"):
+        return None
+    num = _as_float(field[2:])
+    if num is None or num < 0:
+        return None
+    return int(num)
+
+
+def _active_tracks(entries: dict, now: float, grace: float, min_sec: float = 0.0):
+    """活跃轨迹列表 ``[(field, elapsed, idle)]``。
+
+    仅保留携带有效 track_id（>=0）的轨迹；要求存在时长 >= min_sec 且距最近出现 <= grace。
+    """
+    out: list[tuple[str, float, float]] = []
+    for field, (first, last) in entries.items():
+        if _track_id_of(field) is None:
+            continue
+        elapsed = now - first
+        if elapsed < min_sec:
+            continue
+        idle = now - last
+        if idle > grace:
+            continue
+        out.append((field, elapsed, idle))
+    return out
+
+
+def _static_tracks(
+    entries: dict, moves: dict, now: float, grace: float, min_sec: float, max_move: float
+):
+    """静止轨迹列表 ``[(field, elapsed, moved)]``：活跃且相对首帧最大位移 <= max_move。"""
+    out: list[tuple[str, float, float]] = []
+    for field, elapsed, _idle in _active_tracks(entries, now, grace, min_sec):
+        moved = moves.get(field, 0.0)
+        if moved <= max_move:
+            out.append((field, elapsed, moved))
+    return out
+
+
 def _compare_count(value: float, op: str, target: float) -> bool:
     """计数比较：支持 >= / > / <= / < / ==。"""
     if op == ">=":
@@ -292,6 +352,9 @@ def _eval_temporal(
       （grace = max(min_sec, alarm_interval)）；可选 track_id 限定具体轨迹。
     - count_window：窗口 window_sec 内最近出现的去重目标数与 value 按 op 比较。
     - absence：距最近一次出现 >= gap_sec；无历史视为未过期 → 不命中。
+    - static：某真实轨迹（有效 track_id）存在 >= min_sec、仍活跃，且相对首帧最大位移
+      <= max_move（缺省 0.02）→ 命中；可选 track_id 限定具体轨迹。
+    - track：存在至少一条活跃的真实轨迹（可选要求时长 >= min_sec）→ 命中。
     - group_count：跨相机窗口内去重目标数（键含 camera_id，跨相机同 track 不合并）。
     - group_coverage：窗口内有目标的相机数 / 组内相机总数（含离线，分母为组规模）。
       组聚合叶子无组上下文（group_camera_ids 为空）→ fail-closed 不命中。
@@ -407,6 +470,43 @@ def _eval_temporal(
             return False
         return True
 
+    if subject == "static":
+        min_sec = _as_float(leaf.get("min_sec"))
+        if min_sec is None or min_sec < 0:
+            return False
+        raw_max_move = leaf.get("max_move")
+        if raw_max_move is None:
+            max_move = _DEFAULT_MAX_MOVE
+        else:
+            max_move = _as_float(raw_max_move)
+            if max_move is None or max_move < 0:
+                return False
+        want_field = None
+        if leaf.get("track_id") is not None:
+            num = _as_float(leaf.get("track_id"))
+            if num is None:
+                return False
+            want_field = f"t:{int(num)}"
+        grace = max(min_sec, _as_float(alarm_interval) or 0.0)
+        moves = _query_moves(temporal, camera_id, alarm_type, leaf, scope)
+        for field, _elapsed, _moved in _static_tracks(
+            entries, moves, now, grace, min_sec, max_move
+        ):
+            if want_field is not None and field != want_field:
+                continue
+            return True
+        return False
+
+    if subject == "track":
+        min_sec = 0.0
+        raw_min = leaf.get("min_sec")
+        if raw_min is not None:
+            min_sec = _as_float(raw_min)
+            if min_sec is None or min_sec < 0:
+                return False
+        grace = max(min_sec, _as_float(alarm_interval) or 0.0)
+        return bool(_active_tracks(entries, now, grace, min_sec))
+
     return False
 
 
@@ -482,6 +582,10 @@ def _match_conditions(
       距最近一次出现 >= gap_sec（无历史视为未过期）。
     - line_cross：{"subject":"line_cross","line":[[x,y],…],"dir":"A2B|B2A|both","region"?}
       轨迹上一帧中心与当前帧中心连线是否真正穿越绊线（首尾两点），并按方向命中。
+    - static：{"subject":"static","label"?,"labels"?,"region"?,"min_sec":s,"max_move"?,
+      "track_id"?} 某真实轨迹存在 >= min_sec、仍活跃，且相对首帧最大位移 <= max_move。
+    - track：{"subject":"track","label"?,"labels"?,"region"?,"min_sec"?}
+      存在至少一条活跃的真实轨迹（可选要求时长 >= min_sec）。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -762,6 +866,47 @@ def explain_conditions(
                         f"({cur[0]:.2f},{cur[1]:.2f}) dir={direction}"
                     )
             return f"cross dir={direction}"
+        if subject == "static":
+            min_sec = _as_float(leaf.get("min_sec"))
+            max_move = _DEFAULT_MAX_MOVE
+            raw_max_move = leaf.get("max_move")
+            if raw_max_move is not None:
+                parsed = _as_float(raw_max_move)
+                if parsed is not None:
+                    max_move = parsed
+            if min_sec is None or min_sec < 0:
+                return "static -"
+            grace = max(min_sec, _as_float(alarm_interval) or 0.0)
+            best_static = None
+            best_any = None
+            if ok and temporal is not None and camera_id is not None and now is not None:
+                moves = _query_moves(temporal, camera_id, alarm_type, leaf, scope)
+                for field, (first, last) in entries.items():
+                    if _track_id_of(field) is None:
+                        continue
+                    elapsed = now - first
+                    moved = moves.get(field, 0.0)
+                    if best_any is None or elapsed > best_any[0]:
+                        best_any = (elapsed, moved)
+                    if elapsed >= min_sec and (now - last) <= grace and moved <= max_move:
+                        if best_static is None or elapsed > best_static[0]:
+                            best_static = (elapsed, moved)
+            pick = best_static or best_any
+            if pick is None:
+                return "static -"
+            return f"static {pick[0]:.0f}s move={pick[1]:.3f}"
+        if subject == "track":
+            min_sec = 0.0
+            raw_min = leaf.get("min_sec")
+            if raw_min is not None:
+                parsed = _as_float(raw_min)
+                if parsed is not None and parsed >= 0:
+                    min_sec = parsed
+            grace = max(min_sec, _as_float(alarm_interval) or 0.0)
+            count = 0
+            if ok and now is not None:
+                count = len(_active_tracks(entries, now, grace, min_sec))
+            return f"track {count}"
         return str(subject)
 
     def leaf_detail(leaf: dict) -> str:

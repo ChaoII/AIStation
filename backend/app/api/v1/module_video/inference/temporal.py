@@ -13,6 +13,7 @@
 import hashlib
 import json
 import logging
+import math
 import threading
 import time
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ _FIRST = "first"
 _LAST = "last"
 _POS_P = "pos_p"  # 上一次观测中心 "x,y"
 _POS_C = "pos_c"  # 当前观测中心 "x,y"
+_POS_F = "pos_f"  # 首次观测中心 "x,y"（stationary/static 判定的基准点）
+_MOVE = "move"  # 相对首次观测中心的最大位移（归一化欧氏距离）
 _ABSENT_MARK = "__absent__"
 # 无 label（或仅给 labels 列表）时 absence 标记使用的聚合标签
 ABSENT_ALL = "__all__"
@@ -268,7 +271,12 @@ class TemporalStore:
 
     def _observe_locked(self, key: str, fields: dict[str, float],
                         positions: dict[str, tuple[float, float]] | None = None) -> None:
-        """在同一把锁内完成读-改-写；位置推进 prev <- 旧 cur，cur <- 新中心。"""
+        """在同一把锁内完成读-改-写；位置推进 prev <- 旧 cur，cur <- 新中心。
+
+        同时维护静止判定所需的两项状态：
+        - ``pos_f``：轨迹首次观测中心（基准点，只写一次）；
+        - ``move``：相对基准点的最大位移（仅随更新观测时间戳单调不减）。
+        """
         positions = positions or {}
         with self._lock:
             current = self._read_hash_nolock(key)
@@ -288,6 +296,15 @@ class TemporalStore:
                     old_cur = _parse_pos(current.get(field + _SEP + _POS_C))
                     if old_cur is not None:
                         mapping[field + _SEP + _POS_P] = _ser_pos(old_cur)
+                    first_pos = _parse_pos(current.get(field + _SEP + _POS_F))
+                    if first_pos is None:
+                        first_pos = pos
+                        mapping[field + _SEP + _POS_F] = _ser_pos(pos)
+                    prev_move = _to_float(current.get(field + _SEP + _MOVE))
+                    moved = math.hypot(pos[0] - first_pos[0], pos[1] - first_pos[1])
+                    mapping[field + _SEP + _MOVE] = (
+                        moved if prev_move is None else max(prev_move, moved)
+                    )
                     mapping[field + _SEP + _POS_C] = _ser_pos(pos)
             self._write_hash_nolock(key, mapping)
 
@@ -373,6 +390,24 @@ class TemporalStore:
                         prevs[k[: -len(_SEP + _POS_P)]] = p
             for field, cur in curs.items():
                 out[field] = (prevs.get(field), cur)
+        return out
+
+    def query_moves(self, camera_id, alarm_type, label=None, scope: str = _SCOPE_ALL):
+        """返回 ``{track_key: 相对首帧的最大位移}``；无位置记录的轨迹不出现。
+
+        位移为归一化坐标下的欧氏距离，仅随更新的观测推进（单调不减），供
+        ``static``（静止判定）叶子使用；缺省阈值由求值器决定。
+        """
+        scope = scope or _SCOPE_ALL
+        out: dict[str, float] = {}
+        for key in self._keys(camera_id, alarm_type, label, scope):
+            h = self._read_hash(key)
+            for k, v in h.items():
+                if not isinstance(k, str) or not k.endswith(_SEP + _MOVE):
+                    continue
+                val = _to_float(v)
+                if val is not None:
+                    out[k[: -len(_SEP + _MOVE)]] = val
         return out
 
     # ------------------------------------------------------------- absence 标记

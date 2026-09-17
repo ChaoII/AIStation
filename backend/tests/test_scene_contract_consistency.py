@@ -12,10 +12,12 @@
 import re
 
 from app.api.v1.module_video.scene.catalog import (
+    EDGE_ADVERTISED_MODEL_FAMILIES,
     SCENES,
     configurable_scene_codes,
     get_scene,
     scene_configurability,
+    unimplemented_default_leaves,
 )
 from app.api.v1.module_video.scene.compile import (
     MODEL_CONFIG_PARAMS,
@@ -58,19 +60,35 @@ def test_configurable_scenes_compile_default_rule():
         compile_rule(code, _default_params(scene), scene.default_rule)
         checked.append(code)
     # 4 个「族够但叶子缺」场景的两条修复路径都收敛：
-    # SCENE_CLS/DEFECT_CLS 改为可编译默认规则 → 可选；ABANDON/DEPLOY_TRACK → 置灰
-    assert {"SCENE_CLS", "DEFECT_CLS"} <= set(checked)
-    assert "ABANDON" not in checked and "DEPLOY_TRACK" not in checked
+    # SCENE_CLS/DEFECT_CLS 改为可编译默认规则 → 可选；ABANDON/DEPLOY_TRACK 的
+    # static/track 叶子实现后 → 可选（不再置灰）。
+    assert {"SCENE_CLS", "DEFECT_CLS", "ABANDON", "DEPLOY_TRACK"} <= set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) >= 19
+    assert len(checked) >= 21
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
-    """置灰场景必须给出可操作原因（命中缺失叶子名）。"""
-    for code, needle in {"ABANDON": "static", "DEPLOY_TRACK": "track"}.items():
+    """置灰场景必须给出可操作原因（指明缺失模型族或缺实现叶子）。"""
+    for code, scene in SCENES.items():
+        ok, reason = scene_configurability(scene)
+        if ok:
+            continue
+        assert reason, code
+        missing_fams = [
+            f for f in scene.model_families if f not in EDGE_ADVERTISED_MODEL_FAMILIES
+        ]
+        if missing_fams:
+            assert any(f in reason for f in missing_fams), f"{code}: {reason}"
+        else:
+            bad = unimplemented_default_leaves(scene)
+            assert bad and any(leaf in reason for leaf in bad), f"{code}: {reason}"
+
+
+def test_abandon_and_deploy_track_are_configurable_now():
+    """static/track 叶子实现后，ABANDON/DEPLOY_TRACK 必须可配置（不再置灰）。"""
+    for code in ("ABANDON", "DEPLOY_TRACK"):
         ok, reason = scene_configurability(SCENES[code])
-        assert ok is False, code
-        assert needle in reason, f"{code} 原因未指明缺失叶子：{reason}"
+        assert ok is True, f"{code} 仍不可配置：{reason}"
 
 
 def test_configurable_scene_params_are_consumed():
@@ -107,8 +125,11 @@ def test_catalog_api_exposes_configurability(test_client, auth_headers):
     items = resp.json()["data"]["items"]
     by_code = {s["code"]: s for s in items}
     assert by_code["SCENE_CLS"]["configurable"] is True
-    assert by_code["ABANDON"]["configurable"] is False
-    assert by_code["ABANDON"]["unsupported_reason"]
+    assert by_code["ABANDON"]["configurable"] is True
+    assert by_code["DEPLOY_TRACK"]["configurable"] is True
+    # 仍不可配置的场景：模型族未实现 → 必须给出置灰原因
+    assert by_code["FACE_REC"]["configurable"] is False
+    assert by_code["FACE_REC"]["unsupported_reason"]
     assert all("configurable" in s for s in items)
 
 

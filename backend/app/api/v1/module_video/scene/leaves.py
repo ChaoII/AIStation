@@ -130,6 +130,31 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         ],
         "ops": _CMP_OPS,
     },
+    # 跟踪/静止时序叶子：读取 TemporalStore 的轨迹状态（存在时长 + 最大位移）
+    "static": {
+        "label": "静止判定",
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "region", "type": "polygon"},
+            {"key": "min_sec", "type": "int"},
+            {"key": "max_move", "type": "float"},
+            {"key": "track_id", "type": "int"},
+        ],
+        "ops": [],
+    },
+    "track": {
+        "label": "目标跟踪",
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "region", "type": "polygon"},
+            {"key": "min_sec", "type": "int"},
+        ],
+        "ops": [],
+    },
     # ── 以下叶子求值器尚未实现，仅列出供前端置灰展示 ──
     "face_match": {
         "label": "人脸比对",
@@ -195,21 +220,6 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         "implemented": False,
         "params": [{"key": "value", "type": "float"}],
         "ops": _CMP_OPS,
-    },
-    "static": {
-        "label": "静止判定",
-        "implemented": False,
-        "params": [
-            {"key": "region", "type": "polygon"},
-            {"key": "value", "type": "int"},
-        ],
-        "ops": _CMP_OPS,
-    },
-    "track": {
-        "label": "目标跟踪",
-        "implemented": False,
-        "params": [{"key": "region", "type": "polygon"}],
-        "ops": [],
     },
     "prompt_segment": {
         "label": "交互分割",
