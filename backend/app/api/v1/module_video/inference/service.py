@@ -6,6 +6,11 @@ from pathlib import Path
 
 from starlette.concurrency import run_in_threadpool
 
+from app.api.v1.module_video.face_gallery.store import (
+    best_similarity,
+    face_gallery_store,
+    is_valid_embedding,
+)
 from app.api.v1.module_video.inference.gating import rule_active_now
 from app.api.v1.module_video.inference.temporal import (
     ABSENT_ALL,
@@ -875,6 +880,166 @@ def _code_match_hit(leaf: dict, detections: list) -> bool:
     return any(t in wanted for t in texts)
 
 
+# ── 人脸底库比对（face_match / stranger 叶子）────────────────────────────────
+# 事件契约：face_rec 模型输出 objects[].embedding = [float, ...]（L2 归一化，512/1024 维）。
+# 相似度在 Python 侧算余弦（无 pgvector 依赖，见 face_gallery/store.py 的性能说明）。
+_FACE_MATCH_OPS = ("gte", "gt", "lte", "lt", "eq")
+
+
+def _face_op_hit(sim: float, op: str, target: float) -> bool:
+    """相似度比较：gte/gt/lte/lt/eq（算子非法应由调用方提前拒绝）。"""
+    if op == "gte":
+        return sim >= target
+    if op == "gt":
+        return sim > target
+    if op == "lte":
+        return sim <= target
+    if op == "lt":
+        return sim < target
+    return sim == target
+
+
+def _min_confidence(leaf: dict) -> tuple[float | None, bool]:
+    """解析 min_confidence：缺省 (None, True)；给出但非数值 → (0.0, False)（fail-closed）。"""
+    raw = leaf.get("min_confidence")
+    if raw is None:
+        return None, True
+    val = _as_float(raw)
+    if val is None:
+        return 0.0, False
+    return val, True
+
+
+def _face_similarity_hit(leaf: dict, detections: list, gallery: list | None) -> bool:
+    """评估 face_match / stranger 叶子：任一检测的特征与底库最大相似度满足比较即命中。
+
+    契约：``{"subject":"face_match"|"stranger","op":"gte|gt|lte|lt|eq","value":<相似度阈值>,
+    "label"?,"labels"?,"region"?,"min_confidence"?}``。
+    - 底库为空 / 检测无合法 embedding / 维度不可比 → 跳过，整体不命中（fail-closed）；
+    - op 非法、value 非数值、min_confidence 非法 → 整体不命中；
+    - 底库来源为进程内缓存（``face_gallery_store``），由底库接口与启动流程刷新。
+    """
+    if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
+        return False
+    op = leaf.get("op")
+    if op not in _FACE_MATCH_OPS:
+        return False
+    value = _as_float(leaf.get("value"))
+    if value is None:
+        return False
+    entries = gallery if gallery is not None else face_gallery_store.snapshot()
+    if not entries:
+        return False
+    min_conf, ok = _min_confidence(leaf)
+    if not ok:
+        return False
+    for d in detections:
+        if not isinstance(d, dict):
+            continue
+        if not _matches_label(d, leaf):
+            continue
+        if not _in_region(d, leaf):
+            continue
+        if min_conf is not None:
+            conf = _as_float(d.get("confidence"))
+            if conf is None or conf < min_conf:
+                continue
+        emb = d.get("embedding")
+        if not is_valid_embedding(emb):
+            continue
+        sim = best_similarity(emb, entries)
+        if sim is None:
+            continue
+        if _face_op_hit(sim, op, value):
+            return True
+    return False
+
+
+# ── 交互式分割（prompt_segment 叶子）────────────────────────────────────────
+# 事件契约：sam 模型输出「归一化 bbox 对象 + label='segment'」，无新增事件字段。
+def _prompt_points(leaf: dict) -> list[tuple[float, float]] | None:
+    """解析提示点列：缺失返回 None；非法（非点列/坐标非数值）返回空列表（fail-closed）。
+
+    同时容忍 ``[[x,y],...]``（画布产出的点列）与 ``[x,y]``（扁平单点）两种写法。
+    """
+    raw = leaf.get("point")
+    if raw is None:
+        return None
+    if not isinstance(raw, (list, tuple)) or not raw:
+        return []
+    if len(raw) == 2 and all(_as_float(v) is not None for v in raw):
+        return [(_as_float(raw[0]), _as_float(raw[1]))]  # type: ignore[list-item]
+    pts: list[tuple[float, float]] = []
+    for p in raw:
+        if not isinstance(p, (list, tuple)) or len(p) < 2:
+            return []
+        x = _as_float(p[0])
+        y = _as_float(p[1])
+        if x is None or y is None:
+            return []
+        pts.append((x, y))
+    return pts
+
+
+def _bbox_of(d: dict) -> tuple[float, float, float, float] | None:
+    """取检测框 (x, y, w, h)；缺失/非法返回 None。"""
+    if not isinstance(d, dict):
+        return None
+    bbox = d.get("bbox")
+    if not isinstance(bbox, dict):
+        return None
+    x = _as_float(bbox.get("x"))
+    y = _as_float(bbox.get("y"))
+    w = _as_float(bbox.get("width"))
+    h = _as_float(bbox.get("height"))
+    if None in (x, y, w, h):
+        return None
+    x, y, w, h = float(x), float(y), float(w), float(h)
+    return (min(x, x + w), min(y, y + h), max(x, x + w), max(y, y + h))
+
+
+def _point_in_bbox(px: float, py: float, box: tuple[float, float, float, float]) -> bool:
+    """点是否落在轴对齐框内（含边界）。"""
+    x1, y1, x2, y2 = box
+    return x1 <= px <= x2 and y1 <= py <= y2
+
+
+def _prompt_segment_hit(leaf: dict, detections: list) -> bool:
+    """评估 prompt_segment 叶子：存在满足条件的分割目标即命中。
+
+    契约：``{"subject":"prompt_segment","label"?,"labels"?,"region"?,"point"?,
+    "min_confidence"?}``。sam 以普通 bbox 对象承载分割结果（label 缺省 "segment"）。
+    - 配置 point 时要求该点落在分割框内（提示点交互分割的确定性近似）；
+    - point 非法（非点列）→ 不命中；未配置 point → 仅要求分割目标存在；
+    - label/region/min_confidence 过滤与 object_present 同口径，缺省/非法一律 fail-closed。
+    """
+    if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
+        return False
+    points = _prompt_points(leaf)
+    if points == []:  # 显式配置但非法
+        return False
+    min_conf, ok = _min_confidence(leaf)
+    if not ok:
+        return False
+    for d in detections:
+        if not isinstance(d, dict):
+            continue
+        if not _matches_label(d, leaf):
+            continue
+        if not _in_region(d, leaf):
+            continue
+        if min_conf is not None:
+            conf = _as_float(d.get("confidence"))
+            if conf is None or conf < min_conf:
+                continue
+        if points:
+            box = _bbox_of(d)
+            if box is None or not any(_point_in_bbox(px, py, box) for px, py in points):
+                continue
+        return True
+    return False
+
+
 def _eval_temporal(
     subject: str,
     leaf: dict,
@@ -1096,6 +1261,7 @@ def _match_conditions(
     now: float | None = None,
     alarm_interval=0,
     group_camera_ids: list[int] | None = None,
+    face_gallery: list | None = None,
 ) -> bool:
     """评估规则条件树；空/None 视为命中。
 
@@ -1143,6 +1309,15 @@ def _match_conditions(
     码值匹配叶子（读取 detection.text，barcode 解码结果）：
     - code_match：{"subject":"code_match","op":"in|regex","code_list"?,"regex"?}
       op=in 与名单精确比对（名单空=识别到任意非空码值）；op=regex 按正则匹配。
+    人脸底库比对叶子（读取 detection.embedding，face_rec 模型输出；底库为进程内缓存）：
+    - face_match：{"subject":"face_match","op":"gte|gt|lte|lt|eq","value":<相似度阈值>,
+      "label"?,"labels"?,"region"?,"min_confidence"?}
+      任一检测与底库的最大余弦相似度满足比较即命中；
+    - stranger：同 face_match（配 op=lt 即「低于阈值＝未命中底库」）。
+      底库为空/检测无合法 embedding/维度不可比 → 不命中（fail-closed）。
+    交互分割叶子（读取 sam 输出 label="segment" 的归一化 bbox 对象）：
+    - prompt_segment：{"subject":"prompt_segment","label"?,"labels"?,"region"?,
+      "point"?,"min_confidence"?} 存在满足过滤、且配置的提示点落在框内的分割目标即命中。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -1157,6 +1332,7 @@ def _match_conditions(
         now=now,
         alarm_interval=alarm_interval,
         group_camera_ids=group_camera_ids,
+        face_gallery=face_gallery,
     )[0]
 
 
@@ -1170,6 +1346,7 @@ def explain_conditions(
     now: float | None = None,
     alarm_interval=0,
     group_camera_ids: list[int] | None = None,
+    face_gallery: list | None = None,
 ) -> tuple[bool, list[dict]]:
     """在与 _match_conditions 完全相同的语义下求值，并额外返回命中叶子说明。
 
@@ -1252,6 +1429,12 @@ def explain_conditions(
         if subject == "code_match":
             # 码值匹配叶子（读取 detection.text，条码/二维码解码结果）
             return _code_match_hit(leaf, dets)
+        if subject in ("face_match", "stranger"):
+            # 人脸底库比对叶子（读取 detection.embedding，face_rec 模型输出）
+            return _face_similarity_hit(leaf, dets, face_gallery)
+        if subject == "prompt_segment":
+            # 交互式分割叶子（读取 sam 输出的 label="segment" bbox 对象）
+            return _prompt_segment_hit(leaf, dets)
         if subject == "text_match":
             pattern = leaf.get("regex")
             if not isinstance(pattern, str):
@@ -1431,6 +1614,39 @@ def explain_conditions(
             hit = next((t for t in texts if t in wanted), None)
             return f"code {hit or '?'} in list({len(wanted)})"
         return f"code {texts[0]}" if texts else "code -"
+
+    def _face_match_detail(leaf: dict) -> str:
+        """face_match/stranger 叶子的关键量说明；无有效相似度时给出可读回退。"""
+        op = leaf.get("op")
+        value = _as_float(leaf.get("value"))
+        entries = face_gallery if face_gallery is not None else face_gallery_store.snapshot()
+        best = None
+        for d in dets:
+            if not isinstance(d, dict):
+                continue
+            if not _matches_label(d, leaf) or not _in_region(d, leaf):
+                continue
+            emb = d.get("embedding")
+            if not is_valid_embedding(emb):
+                continue
+            sim = best_similarity(emb, entries)
+            if sim is None:
+                continue
+            if best is None or sim > best:
+                best = sim
+        if best is None:
+            return f"face sim ?{op}{_fmt_num(value)}"
+        return f"face sim {best:.2f}{op}{_fmt_num(value)}"
+
+    def _prompt_segment_detail(leaf: dict) -> str:
+        """prompt_segment 叶子的可读说明（label + 提示点数）。"""
+        label = _label_text(leaf)
+        pts = _prompt_points(leaf)
+        if pts == []:
+            return "segment point=?"
+        if pts:
+            return f"segment {label} pt={len(pts)}"
+        return f"segment {label}"
 
     def _temporal_detail(subject: str, leaf: dict) -> str:
         """时序叶子的关键量说明；缺状态时给出可读回退。"""
@@ -1624,6 +1840,10 @@ def explain_conditions(
                 return _region_ratio_detail(leaf)
             if subject == "code_match":
                 return _code_match_detail(leaf)
+            if subject in ("face_match", "stranger"):
+                return _face_match_detail(leaf)
+            if subject == "prompt_segment":
+                return _prompt_segment_detail(leaf)
             if subject == "text_match":
                 return f"text~{leaf.get('regex')}"
             if subject == "ocr_label":

@@ -191,6 +191,38 @@ async def _ensure_missing_columns() -> None:
             f"video_edge_devices.{col} 索引",
         )
 
+    # 人脸底库表兜底（旧库无 Alembic 迁移时直接建表，做法同 video_edge_devices）
+    # DDL 与 FaceGalleryModel / 迁移 b3c1d2e3f4a5 对齐；外键依赖 create_all（此处省略，仅保数据）
+    await _exec_ddl(
+        """
+        CREATE TABLE IF NOT EXISTS video_face_gallery (
+            id SERIAL PRIMARY KEY,
+            uuid VARCHAR(64) NOT NULL UNIQUE,
+            status VARCHAR(10) NOT NULL DEFAULT '0',
+            description TEXT,
+            created_time TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_time TIMESTAMP NOT NULL DEFAULT NOW(),
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_time TIMESTAMP,
+            created_id INTEGER,
+            updated_id INTEGER,
+            deleted_id INTEGER,
+            name VARCHAR(128) NOT NULL,
+            person_no VARCHAR(64),
+            model_key VARCHAR(64) NOT NULL DEFAULT 'unknown',
+            embedding JSONB NOT NULL,
+            dimension INTEGER NOT NULL,
+            face_image_url VARCHAR(512)
+        )
+        """,
+        "video_face_gallery 建表",
+    )
+    for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time", "name", "person_no"):
+        await _exec_ddl(
+            f"CREATE INDEX IF NOT EXISTS ix_video_face_gallery_{col} ON video_face_gallery ({col})",
+            f"video_face_gallery.{col} 索引",
+        )
+
     await _ensure_camera_group_parent_fk()
 
 
@@ -1033,6 +1065,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
         await _ensure_train_menus()
+        # 人脸底库进程内缓存（face_match/stranger 叶子求值依赖）；表缺失时告警不阻断启动
+        try:
+            from app.api.v1.module_video.face_gallery.service import FaceGalleryService
+
+            loaded = await FaceGalleryService.refresh_cache()
+            log.info(f"✅ 人脸底库缓存已加载（{loaded} 条）")
+        except Exception as e:
+            log.warning(f"⚠️  人脸底库缓存加载失败（底库为空或表未迁移）: {e}")
         await import_modules_async(
             modules=settings.EVENT_LIST, desc="全局事件", app=app, status=True
         )

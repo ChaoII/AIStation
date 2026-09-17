@@ -12,8 +12,10 @@ LOGIC_OPS: list[str] = ["and", "or", "not"]
 
 _CMP_OPS = [">=", ">", "<=", "<", "=="]
 _ATTR_OPS = ["lt", "gt", "le", "ge", "eq"]
+# 人脸底库相似度算子：对齐契约里的 gte/lt 写法（与 attribute 的 ge/lt 同义但命名不同）
+_FACE_OPS = ["gte", "gt", "lte", "lt", "eq"]
 
-# 已实现 18 个叶子（对拍求值器）
+# 已实现 21 个叶子（对拍求值器）
 LEAF_CAPABILITIES: dict[str, dict] = {
     "object_present": {
         "label": "存在目标",
@@ -213,18 +215,33 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         ],
         "ops": ["in", "regex"],
     },
-    # ── 以下叶子求值器尚未实现，仅列出供前端置灰展示 ──
+    # 人脸底库比对叶子（B3）：读取 detection.embedding（face_rec 模型输出，L2 归一化），
+    # 与进程内人脸底库的最大余弦相似度按 op 比较。底库为空/无 embedding/维度不可比
+    # 一律不命中（fail-closed）；底库维护见 module_video/face_gallery。
     "face_match": {
         "label": "人脸比对",
-        "implemented": False,
-        "params": [{"key": "value", "type": "float"}],
-        "ops": _CMP_OPS,
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "region", "type": "polygon"},
+            {"key": "min_confidence", "type": "float"},
+            {"key": "value", "type": "float"},
+        ],
+        "ops": _FACE_OPS,
     },
     "stranger": {
         "label": "陌生人",
-        "implemented": False,
-        "params": [{"key": "value", "type": "float"}],
-        "ops": _CMP_OPS,
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "region", "type": "polygon"},
+            {"key": "min_confidence", "type": "float"},
+            {"key": "value", "type": "float"},
+        ],
+        # stranger = face_match 的「低于阈值」用法（配 op=lt），算子集与之一致
+        "ops": _FACE_OPS,
     },
     "liveness": {
         "label": "活体检测",
@@ -244,10 +261,19 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         "params": [{"key": "value", "type": "float"}],
         "ops": _CMP_OPS,
     },
+    # 交互分割叶子（B3）：sam 以普通归一化 bbox 对象承载分割结果（label 缺省 "segment"），
+    # 无新增事件字段；配置 point（提示点，画布产出点列）时要求点落在分割框内。
+    # 见 inference/service.py `_prompt_segment_hit`。
     "prompt_segment": {
         "label": "交互分割",
-        "implemented": False,
-        "params": [{"key": "point", "type": "point"}],
+        "implemented": True,
+        "params": [
+            {"key": "point", "type": "point"},
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "region", "type": "polygon"},
+            {"key": "min_confidence", "type": "float"},
+        ],
         "ops": [],
     },
     "classification": {

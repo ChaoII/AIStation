@@ -57,8 +57,23 @@ def test_rejects_unknown_subject():
 
 
 def test_rejects_unimplemented_subject():
+    # liveness 至今未实现（无活体评估器），编译层应拒绝
     with pytest.raises(RuleCompileError):
-        compile_rule("FACE_REC", {}, _and({"subject": "face_match", "op": "gte", "value": 0.6}))
+        compile_rule("FACE_REC", {}, _and({"subject": "liveness", "op": "gte", "value": 0.6}))
+
+
+def test_accepts_face_match_after_b3_implementation():
+    """B3 落地后 face_match/stranger/prompt_segment 均可编译，且阈值经参数注入。"""
+    out = compile_rule(
+        "FACE_REC", {"similarity_threshold": 0.7}, _and({"subject": "face_match", "op": "gte", "value": 0.6})
+    )
+    leaf = out["children"][0]
+    assert leaf["subject"] == "face_match" and leaf["op"] == "gte" and leaf["value"] == 0.7
+    out2 = compile_rule(
+        "SAM_SEG", {"prompt_point": [[0.5, 0.5], [0.6, 0.6]]},
+        _and({"subject": "prompt_segment", "label": "segment"}),
+    )
+    assert out2["children"][0]["point"] == [[0.5, 0.5], [0.6, 0.6]]
 
 
 def test_rejects_missing_required_key():

@@ -305,7 +305,10 @@ _add(SceneDef(
 _add(SceneDef(
     "SAM_SEG", "交互分割", "seg", "SAM_SEG", ["sam"], [_ISEG],
     [{"key": "prompt_point", "type": "point", "label": "提示点"}, _CONF],
-    {"op": "and", "children": [{"subject": "prompt_segment", "point": "prompt_point"}]},
+    # prompt_segment 叶子（B3）：sam 以归一化 bbox 对象承载分割结果（label="segment"，
+    # 无新增事件字段）。提示点（prompt_point 参数）在运行时由编译层注入 point，
+    # 要求点落在分割框内；缺省只要求存在分割目标。默认规则不写符号化 point。
+    {"op": "and", "children": [{"subject": "prompt_segment", "label": "segment"}]},
     False, "提示点交互式分割",
 ))
 
@@ -327,7 +330,10 @@ _add(SceneDef(
 _add(SceneDef(
     "FACE_REC", "人脸识别", "face", "FACE_REC", ["face", "face_rec"], [_FACE_DET, _FACE_REC],
     [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
-    {"op": "and", "children": [{"subject": "face_match", "op": "gte", "value": "similarity_threshold"}]},
+    # face_match 叶子（B3）：检测特征与云端人脸底库的最大余弦相似度 >= similarity_threshold
+    # 判为命中；底库为空/无 embedding 时不命中（fail-closed），默认规则写数值阈值，
+    # 运行时由 similarity_threshold 参数经编译层注入覆盖。
+    {"op": "and", "children": [{"subject": "face_match", "op": "gte", "value": 0.6}]},
     False, "人脸检测 + 特征比对识别",
     required_assets=["face_gallery"],
 ))
@@ -335,7 +341,9 @@ _add(SceneDef(
 _add(SceneDef(
     "STRANGER", "陌生人", "face", "STRANGER", ["face", "face_rec"], [_FACE_DET, _FACE_REC],
     [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
-    {"op": "and", "children": [{"subject": "face_match", "op": "lt", "value": "similarity_threshold"}]},
+    # stranger 叶子（B3）：与 face_match 同源相似度、配 op=lt —— 低于阈值即未命中底库；
+    # 底库为空时同样不命中（fail-closed：无底库无法判定陌生人）。
+    {"op": "and", "children": [{"subject": "stranger", "op": "lt", "value": 0.6}]},
     False, "未命中底库判定陌生人",
     required_assets=["face_gallery"],
 ))
@@ -569,6 +577,22 @@ def scene_configurability(scene: SceneDef) -> tuple[bool, str]:
     """
     blockers = scene_blockers(scene)
     return (not blockers), "；".join(blockers)
+
+
+def scene_hints(scene: SceneDef, *, face_gallery_count: int | None = None) -> list[str]:
+    """场景的「可配置但需注意」操作提示（非阻断，与 ``scene_blockers`` 互补）。
+
+    与阻断原因的区别：这些场景可正常选中并保存成功，但运行期存在前置条件。
+    当前仅人脸底库：底库为空时 FACE_REC/STRANGER 恒不命中，需在 UI 提示先录入底库
+    （底库即使为空也不再是硬阻断——表与 API 已就绪，属数据就绪型依赖）。
+    缺省 ``face_gallery_count=None``（未查库）时不产生提示，避免误导。
+    """
+    assets = {str(a).strip().lower() for a in (scene.required_assets or [])}
+    if "face_gallery" not in assets or face_gallery_count is None:
+        return []
+    if face_gallery_count <= 0:
+        return ["人脸底库为空：启用本场景后不会命中，请先录入底库特征"]
+    return []
 
 
 def configurable_scene_codes() -> list[str]:

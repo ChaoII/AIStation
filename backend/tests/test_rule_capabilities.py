@@ -16,6 +16,10 @@ _EVALUABLE_NON_TEMPORAL = {
     # B2b：语义区域占比 / 码值匹配
     "region_ratio",
     "code_match",
+    # B3：人脸底库比对 / 陌生人 / 交互分割
+    "face_match",
+    "stranger",
+    "prompt_segment",
 }
 
 
@@ -40,10 +44,21 @@ def test_implemented_flags_consistent():
 
 
 def test_unimplemented_leaves_listed_for_ui():
-    """未实现叶子必须列出（供前端置灰），至少覆盖人脸/活体类。"""
-    assert {"face_match", "liveness"} <= set(LEAF_CAPABILITIES)
-    for s in ("face_match", "liveness"):
+    """未实现叶子必须列出（供前端置灰）；B3 后仅剩活体/版面/重识别/分类等。"""
+    assert {"liveness", "structure", "reid_match", "classification"} <= set(LEAF_CAPABILITIES)
+    for s in ("liveness", "structure", "reid_match", "classification"):
         assert LEAF_CAPABILITIES[s]["implemented"] is False
+    # B3 已实现：人脸比对/陌生人/交互分割
+    for s in ("face_match", "stranger", "prompt_segment"):
+        assert LEAF_CAPABILITIES[s]["implemented"] is True
+        assert s in IMPLEMENTED_LEAVES
+
+
+def test_face_match_ops_use_contract_vocabulary():
+    """face_match/stranger 算子须接受契约写法 gte/lt（与 catalog 默认规则一致）。"""
+    for s in ("face_match", "stranger"):
+        ops = LEAF_CAPABILITIES[s]["ops"]
+        assert "gte" in ops and "lt" in ops
 
 
 def test_keypoint_geometry_leaf_registered_as_implemented():

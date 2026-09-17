@@ -73,6 +73,10 @@ def normalize_edge_event(payload: dict) -> dict:
                 # 深度（事件 v2 objects[].depth，单位米）：供 distance 叶子判定安全距离
                 if obj.get("depth") is not None:
                     det["depth"] = obj["depth"]
+                # 人脸特征向量（事件 v2 objects[].embedding，L2 归一化 512/1024 维）：
+                # 供 face_match/stranger 叶子做底库比对（face_rec 模型族新增字段）
+                if obj.get("embedding") is not None:
+                    det["embedding"] = obj["embedding"]
                 dets.append(det)
             normalized["detections"] = dets
         else:
@@ -98,6 +102,9 @@ def normalize_edge_event(payload: dict) -> dict:
                 # 深度同样按索引并入 detections，避免随 objects 一起丢失
                 if "depth" not in dets[i] and obj.get("depth") is not None:
                     dets[i]["depth"] = obj["depth"]
+                # 人脸特征向量同样按索引并入 detections（face_match/stranger 叶子依赖）
+                if "embedding" not in dets[i] and obj.get("embedding") is not None:
+                    dets[i]["embedding"] = obj["embedding"]
     return normalized
 
 

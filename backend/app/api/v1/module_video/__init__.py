@@ -9,6 +9,7 @@ def _register_video_routers():
     from .camera.controller import CameraRouter
     from .edge.controller import EdgeRouter
     from .event.controller import EventRouter
+    from .face_gallery.controller import FaceGalleryRouter
     from .inference.controller import SnapshotRouter
     from .layout.controller import LayoutRouter
     from .preview.controller import PreviewRouter
@@ -19,6 +20,7 @@ def _register_video_routers():
     video_router.include_router(CameraRouter)
     video_router.include_router(EdgeRouter)
     video_router.include_router(EventRouter)
+    video_router.include_router(FaceGalleryRouter)
     video_router.include_router(LayoutRouter)
     video_router.include_router(PreviewRouter)
     video_router.include_router(RecordRouter)

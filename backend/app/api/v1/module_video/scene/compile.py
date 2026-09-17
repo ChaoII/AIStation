@@ -33,7 +33,11 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
             "region_ratio",
         },
     ),
-    "confidence_threshold": ("min_confidence", "object_present"),
+    # 置信度阈值：object_present 与 B3 的人脸比对/交互分割叶子共用（界面可填即生效）
+    "confidence_threshold": (
+        "min_confidence",
+        {"object_present", "face_match", "stranger", "prompt_segment"},
+    ),
     "count": ("value", {"count", "count_window"}),
     "window_sec": ("window_sec", "count_window"),
     "dwell_sec": ("min_sec", {"dwell", "static", "track"}),
@@ -58,6 +62,10 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "min_keypoints": ("value", "keypoint_geometry"),
     # 码值名单：BARCODE 的 code_list → code_match.code_list（精确比对解码文本）
     "code_list": ("code_list", "code_match"),
+    # 人脸比对阈值：FACE_REC/STRANGER 的 similarity_threshold → face_match/stranger.value
+    "similarity_threshold": ("value", {"face_match", "stranger"}),
+    # 交互分割提示点：SAM_SEG 的 prompt_point → prompt_segment.point
+    "prompt_point": ("point", "prompt_segment"),
     # 组叶子走独立参数键（group_* 前缀），避免破坏既有的 window_sec→count_window 等绑定
     "group_window_sec": ("window_sec", {"group_count", "group_coverage"}),
     "group_count": ("value", {"group_count", "group_coverage"}),
@@ -97,6 +105,10 @@ _REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     # 语义区域占比必须有比较阈值（value，类别占比 0~1；op 见 region_ratio 叶子 ops）
     "region_ratio": ("value",),
     # code_match 无必填键：code_list 省略=识别到任意非空码值即命中
+    # 人脸底库比对必须有相似度阈值（value）与算子 op（gte/lte/...，见 face_match 叶子 ops）
+    "face_match": ("value",),
+    "stranger": ("value",),
+    # prompt_segment 无必填键：point 省略=仅要求存在分割目标
 }
 
 # 跨相机聚合叶子：仅允许相机组作用域规则使用（相机作用域误用 → 编译报错）
