@@ -3,17 +3,20 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
-from app.core.dependencies import get_current_user
+from app.core.dependencies import AuthPermission
 
 from .service import PreviewService
 
 PreviewRouter = APIRouter(prefix="/preview", tags=["实时预览"])
 
+# 复用摄像机查询权限点（与 /video/camera/stream/urls 一致），并启用数据范围过滤（审计 #9）
+_PREVIEW_PERMISSION = ["module_video:camera:query"]
+
 
 @PreviewRouter.get("/urls/{camera_id}", summary="获取摄像机播放地址")
 async def get_play_urls_controller(
     camera_id: int = Path(..., description="摄像机ID"),
-    auth: AuthSchema = Depends(get_current_user),
+    auth: AuthSchema = Depends(AuthPermission(_PREVIEW_PERMISSION)),
 ) -> JSONResponse:
     result = await PreviewService.get_play_urls_service(camera_id=camera_id, auth=auth)
     return SuccessResponse(data=result, msg="获取成功")
@@ -22,7 +25,7 @@ async def get_play_urls_controller(
 @PreviewRouter.get("/snap/{camera_id}", summary="获取摄像机截图")
 async def get_snap_controller(
     camera_id: int = Path(..., description="摄像机ID"),
-    auth: AuthSchema = Depends(get_current_user),
+    auth: AuthSchema = Depends(AuthPermission(_PREVIEW_PERMISSION)),
 ) -> JSONResponse:
     from fastapi.responses import Response
     snap_data = await PreviewService.get_snap_service(camera_id=camera_id, auth=auth)
