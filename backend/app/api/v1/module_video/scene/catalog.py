@@ -5,6 +5,7 @@
 """
 from dataclasses import dataclass, field
 
+from . import contract
 from .leaves import LEAF_CAPABILITIES
 
 
@@ -22,6 +23,11 @@ class SceneDef:
     default_rule: dict = field(default_factory=dict)
     needs_tracking: bool = False
     description: str = ""
+    # 是否依赖「边缘把分类结果写入事件」这一事件契约（SCENE_CLS/DEFECT_CLS/NO_MASK）。
+    # 契约未落地时默认规则永不命中，故据实置灰（见 scene/contract.py）。
+    requires_classification: bool = False
+    # 依赖的云端外部资产（如 face_gallery/reid_gallery）；缺失时据实置灰并给原因。
+    required_assets: list[str] = field(default_factory=list)
 
 
 # ── 参数 schema 片段 ──────────────────────────────
@@ -171,18 +177,21 @@ _add(SceneDef(
 _add(SceneDef(
     "SCENE_CLS", "场景/状态分类", "classification", "SCENE_CLS", ["cls"], [_CLS],
     [_POLY, _LABELS],
-    # 分类叶子（classification）求值器未实现，暂退化为 object_present（区域内目标出现判定），
-    # 保证 UI 选中后可保存；labels 参数经编译层注入该叶子，语义见 description。
+    # 分类叶子（classification）求值器未实现，暂退化为 object_present（区域内目标出现判定）；
+    # labels 参数经编译层注入该叶子。但纯分类结果当前被 Agent 丢弃（不进入事件），
+    # 故据实置灰（requires_classification），待分类事件契约落地后自动解锁。
     {"op": "and", "children": [{"subject": "object_present"}]},
-    False, "整图/区域场景分类（分类叶子未实现，暂退化为区域内目标出现判定）",
+    False, "整图/区域场景分类（依赖边缘分类结果进入事件，当前暂不可配置）",
+    requires_classification=True,
 ))
 
 _add(SceneDef(
     "DEFECT_CLS", "缺陷/异常分类", "classification", "DEFECT_CLS", ["cls"], [_CLS],
     [_POLY, _LABELS],
-    # 同 SCENE_CLS：分类叶子未实现，退化为 object_present，避免「选中必 400」。
+    # 同 SCENE_CLS：分类叶子未实现，退化为 object_present，且依赖分类结果进入事件。
     {"op": "and", "children": [{"subject": "object_present"}]},
-    False, "缺陷/异常类别判定（分类叶子未实现，暂退化为区域内目标出现判定）",
+    False, "缺陷/异常类别判定（依赖边缘分类结果进入事件，当前暂不可配置）",
+    requires_classification=True,
 ))
 
 _add(SceneDef(
@@ -229,7 +238,8 @@ _add(SceneDef(
     "NO_MASK", "未戴口罩", "classification", "NO_MASK", ["det", "cls"], [_DET, _CLS],
     [_POLY, _CONF, _LABELS],
     {"op": "and", "children": [{"subject": "object_present", "label": "no_mask"}]},
-    False, "人体/人脸口罩佩戴判定",
+    False, "人体/人脸口罩佩戴判定（依赖边缘分类结果进入事件，当前暂不可配置）",
+    requires_classification=True,
 ))
 
 _add(SceneDef(
@@ -279,21 +289,23 @@ _add(SceneDef(
 ))
 
 _add(SceneDef(
-    "FACE_REC", "人脸识别", "face", "FACE_REC", ["face_detection", "face_rec"], [_FACE_DET, _FACE_REC],
+    "FACE_REC", "人脸识别", "face", "FACE_REC", ["face", "face_rec"], [_FACE_DET, _FACE_REC],
     [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
     {"op": "and", "children": [{"subject": "face_match", "op": "gte", "value": "similarity_threshold"}]},
     False, "人脸检测 + 特征比对识别",
+    required_assets=["face_gallery"],
 ))
 
 _add(SceneDef(
-    "STRANGER", "陌生人", "face", "STRANGER", ["face_detection", "face_rec"], [_FACE_DET, _FACE_REC],
+    "STRANGER", "陌生人", "face", "STRANGER", ["face", "face_rec"], [_FACE_DET, _FACE_REC],
     [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
     {"op": "and", "children": [{"subject": "face_match", "op": "lt", "value": "similarity_threshold"}]},
     False, "未命中底库判定陌生人",
+    required_assets=["face_gallery"],
 ))
 
 _add(SceneDef(
-    "FACE_ATTR", "性别/年龄", "face", "FACE_ATTR", ["face_detection", "face_attr"], [_FACE_DET, _FACE_ATTR],
+    "FACE_ATTR", "性别/年龄", "face", "FACE_ATTR", ["face", "face_attr"], [_FACE_DET, _FACE_ATTR],
     [_POLY, _CONF, _LABELS],
     # 评估器尚未实现性别/年龄专用叶子；暂按人脸出现判定（region 缺省全画面）。
     {"op": "and", "children": [{"subject": "object_present"}]},
@@ -301,14 +313,14 @@ _add(SceneDef(
 ))
 
 _add(SceneDef(
-    "FACE_ANTISPOOF", "活体", "face", "FACE_ANTISPOOF", ["face_detection", "face_as"], [_FACE_DET, _FACE_AS],
+    "FACE_ANTISPOOF", "活体", "face", "FACE_ANTISPOOF", ["face", "face_as"], [_FACE_DET, _FACE_AS],
     [_POLY, _CONF, {"key": "liveness_threshold", "type": "float", "default": 0.5, "label": "活体阈值"}],
     {"op": "and", "children": [{"subject": "liveness", "op": "lt", "value": "liveness_threshold"}]},
     False, "人脸活体检测（非活体告警）",
 ))
 
 _add(SceneDef(
-    "FACE_LANDMARK", "人脸关键点", "face", "FACE_LANDMARK", ["face_detection", "face_landmark"],
+    "FACE_LANDMARK", "人脸关键点", "face", "FACE_LANDMARK", ["face", "face_landmark"],
     [_FACE_DET, _FACE_LMK],
     [_POLY, _CONF],
     {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "face_landmark"}]},
@@ -387,6 +399,7 @@ _add(SceneDef(
     # TODO(SP4): reid_match 依赖跨镜轨迹/时序关联，求值器尚未实现，保留占位规则。
     {"op": "and", "children": [{"subject": "reid_match", "op": "gte", "value": "similarity_threshold"}]},
     True, "跨相机行人重识别关联",
+    required_assets=["reid_gallery"],
 ))
 
 _add(SceneDef(
@@ -404,18 +417,31 @@ def get_scene(code: str) -> SceneDef | None:
     return SCENES.get(code)
 
 
-# 边缘 Agent 默认构建上报的模型族（对齐 ModelDeploy `application/aistation_agent/
-# capability.cpp: detect_capabilities`：det/cls/face/pedestrian_attribute/ocr/lpr/tracking）。
-# 仅由这些族构成的场景才能在边缘落地；其余场景（pose/obb/face_rec/...）Agent 端尚无实现，
+# 边缘 Agent 默认构建上报的模型族（规范名）。真实来源为 ``scene/contract.py`` 的
+# ``AGENT_MODEL_FAMILIES``（对齐 ModelDeploy `application/aistation_agent/capability.cpp`）。
+# 仅由这些族构成的场景才能在边缘落地；其余场景（pose/face_rec/...）Agent 端尚无实现，
 # 目录对用户可见但「选了必失败」，故据此标记 `edge_supported` 供前端置灰。
-EDGE_ADVERTISED_MODEL_FAMILIES: frozenset[str] = frozenset(
-    {"det", "cls", "face", "pedestrian_attribute", "ocr", "lpr", "tracking"}
-)
+EDGE_ADVERTISED_MODEL_FAMILIES: frozenset[str] = contract.AGENT_MODEL_FAMILIES
+
+
+def scene_missing_families(scene: SceneDef) -> list[str]:
+    """场景所需、但 Agent 契约未声明的规范模型族（去重、稳定顺序）。"""
+    return [f for f in contract.canonical_families(scene.model_families) if f not in contract.AGENT_MODEL_FAMILIES]
+
+
+def scene_missing_assets(scene: SceneDef) -> list[str]:
+    """场景所需、但云端尚未具备的外部资产（去重、稳定顺序）。"""
+    out: list[str] = []
+    for asset in scene.required_assets or []:
+        key = str(asset).strip().lower()
+        if key and not contract.has_asset(key) and key not in out:
+            out.append(key)
+    return out
 
 
 def is_edge_implementable(scene: SceneDef) -> bool:
-    """场景所需模型族是否全部为边缘 Agent 默认构建上报的族。"""
-    return all(fam in EDGE_ADVERTISED_MODEL_FAMILIES for fam in scene.model_families)
+    """场景所需模型族是否全部为边缘 Agent 契约声明的族。"""
+    return not scene_missing_families(scene)
 
 
 def _iter_rule_leaves(rule: dict):
@@ -442,23 +468,41 @@ def unimplemented_default_leaves(scene: SceneDef) -> list[str]:
     return sorted(bad)
 
 
-def scene_configurability(scene: SceneDef) -> tuple[bool, str]:
-    """场景在当前云端 + 边缘 Agent 能力下是否「可配置（选中即可保存成功）」。
+def scene_blockers(scene: SceneDef) -> list[str]:
+    """数据驱动的不可配置原因清单（按 模型族 → 外部资产 → 分类契约 → 叶子 顺序）。
 
-    两条硬性条件缺一不可：
+    每个原因均由「场景声明 vs 契约/实现状态」推导，新增能力位后自动收敛；前端可逐条展示。
+    """
+    blockers: list[str] = []
+    missing_families = scene_missing_families(scene)
+    if missing_families:
+        blockers.append(f"缺模型族：{', '.join(missing_families)}")
+    missing_assets = scene_missing_assets(scene)
+    if missing_assets:
+        labels = "、".join(contract.asset_label(a) for a in missing_assets)
+        blockers.append(f"缺外部资产：{labels}")
+    if scene.requires_classification and not contract.supports_event_feature("classification"):
+        blockers.append("分类结果未进入边缘事件（等待 Agent 分类契约落地）")
+    unimplemented = unimplemented_default_leaves(scene)
+    if unimplemented:
+        blockers.append(f"缺求值器叶子：{', '.join(unimplemented)}")
+    return blockers
+
+
+def scene_configurability(scene: SceneDef) -> tuple[bool, str]:
+    """场景在当前云端 + 边缘 Agent 契约下是否「可配置（选中即可保存成功）」。
+
+    四类硬性条件缺一不可（均由 ``scene_blockers`` 数据驱动推导）：
     1. 所需模型族均已由边缘 Agent 上报（否则下发必被拒）；
-    2. 默认规则引用的求值器叶子均已实现（否则编译层必 400）。
+    2. 所需外部资产已具备（如人脸/跨镜底库）；
+    3. 依赖分类事件契约的场景，Agent 已把分类结果写入事件；
+    4. 默认规则引用的求值器叶子均已实现（否则编译层必 400）。
 
     返回 ``(可配置, 原因)``；可配置时原因为空串。不可配置的原因直接展示给用户，
     避免出现「界面上能选、点保存必然失败」的误导陷阱。
     """
-    if not is_edge_implementable(scene):
-        missing = [f for f in scene.model_families if f not in EDGE_ADVERTISED_MODEL_FAMILIES]
-        return False, f"边缘 Agent 未实现模型族：{', '.join(missing)}"
-    bad = unimplemented_default_leaves(scene)
-    if bad:
-        return False, f"默认规则所用求值器叶子未实现：{', '.join(bad)}"
-    return True, ""
+    blockers = scene_blockers(scene)
+    return (not blockers), "；".join(blockers)
 
 
 def configurable_scene_codes() -> list[str]:

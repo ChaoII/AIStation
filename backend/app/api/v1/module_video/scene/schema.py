@@ -15,6 +15,10 @@ class SceneOutSchema(BaseModel):
     default_rule: dict = Field(default_factory=dict, description="默认规则")
     needs_tracking: bool = Field(default=False, description="是否需要跟踪")
     description: str = Field(default="", description="场景说明")
+    requires_classification: bool = Field(
+        default=False, description="是否依赖边缘把分类结果写入事件（未落地时置灰）"
+    )
+    required_assets: list[str] = Field(default_factory=list, description="所需云端外部资产")
     edge_supported: bool = Field(
         default=True, description="所需模型族是否已由边缘 Agent 上报（历史字段）"
     )
@@ -22,3 +26,6 @@ class SceneOutSchema(BaseModel):
         default=True, description="是否可配置（模型族 + 默认规则叶子均已就绪，选中即可保存成功）"
     )
     unsupported_reason: str = Field(default="", description="不可配置原因（可配置时为空）")
+    blockers: list[str] = Field(
+        default_factory=list, description="不可配置的数据驱动原因清单（缺族/缺资产/缺叶子，可配置时为空）"
+    )

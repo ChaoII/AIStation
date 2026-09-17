@@ -11,7 +11,13 @@ from app.core.dependencies import AuthPermission
 from app.core.exceptions import CustomException
 from app.core.router_class import OperationLogRoute
 
-from .catalog import get_scene, is_edge_implementable, list_scenes, scene_configurability
+from .catalog import (
+    get_scene,
+    is_edge_implementable,
+    list_scenes,
+    scene_blockers,
+    scene_configurability,
+)
 from .leaves import get_capabilities
 
 SceneRouter = APIRouter(route_class=OperationLogRoute, prefix="/scene", tags=["场景目录"])
@@ -21,14 +27,16 @@ def _scene_dict(scene) -> dict:
     """场景序列化：附加前端置灰所需的诚实标记。
 
     - ``edge_supported``：所需模型族是否由边缘 Agent 上报（历史字段，语义不变）；
-    - ``configurable``：综合「模型族 + 默认规则叶子」后可选中并保存成功（前端据此禁用）；
-    - ``unsupported_reason``：不可配置的中文原因（置灰时提示用户，而非静默失败）。
+    - ``configurable``：综合「模型族 + 外部资产 + 分类契约 + 默认规则叶子」后可选中并保存成功；
+    - ``unsupported_reason``：不可配置的中文原因（置灰时提示用户，而非静默失败）；
+    - ``blockers``：结构化原因清单（缺族/缺资产/缺叶子），前端逐条展示。
     """
     data = asdict(scene)
     data["edge_supported"] = is_edge_implementable(scene)
     configurable, reason = scene_configurability(scene)
     data["configurable"] = configurable
     data["unsupported_reason"] = reason
+    data["blockers"] = scene_blockers(scene)
     return data
 
 
