@@ -27,6 +27,25 @@ def _error_text(exc: Exception) -> str:
     return getattr(exc, "msg", None) or str(exc) or exc.__class__.__name__
 
 
+# URL 路径段中会改变请求语义的保留字符与控制字符（审计 #15）
+_PATH_UNSAFE_CHARS: frozenset[str] = frozenset("/\\?#%") | {
+    chr(c) for c in range(0x20)
+} | {chr(0x7F)}
+
+
+def _encode_path_segment(segment: str) -> str:
+    """仅对会改变路径语义的字符做百分号编码，保留中文等非 ASCII（向后兼容）。
+
+    新写入的算法名已在 schema 层被拒绝包含 ``/``/``\\``/控制字符；本函数用于
+    防御历史遗留非法名称，确保拼入 Agent 请求路径时语义不变。
+    """
+    if not segment:
+        return ""
+    return "".join(
+        f"%{ord(ch):02X}" if ch in _PATH_UNSAFE_CHARS else ch for ch in segment
+    )
+
+
 class AlgorithmService:
 
     @classmethod
@@ -187,9 +206,11 @@ class AlgorithmService:
         secret = device.secret if device is not None else settings.EDGE_CONTROL_TOKEN
         client = EdgeAgentClient(control_url, secret)
         # Agent 控制面：POST /api/v1/tasks/{task_id}/models/{name}/update（SP6-c 契约）
+        # 名称作为路径段做编码，避免 / ? # 等改变请求语义（审计 #15）
+        safe_name = _encode_path_segment(algorithm.name or "")
         result = await client._request(
             "POST",
-            f"/api/v1/tasks/{task.id}/models/{algorithm.name}/update",
+            f"/api/v1/tasks/{task.id}/models/{safe_name}/update",
             json=model_entry,
         )
         if isinstance(result, dict) and result.get("ok") is False:

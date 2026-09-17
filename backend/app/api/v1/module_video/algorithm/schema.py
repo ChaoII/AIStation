@@ -1,7 +1,15 @@
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.base_schema import BaseSchema, CommonSchema
+
+
+def _validate_model_name(value: str | None) -> str | None:
+    """算法名会被拼入 Agent 请求路径，禁止路径分隔符/控制字符（审计 #15）。"""
+    if value:
+        if "/" in value or "\\" in value or any(ord(ch) < 0x20 for ch in value):
+            raise ValueError("算法名称不能包含路径分隔符或控制字符")
+    return value
 
 
 class AlgorithmCreateSchema(BaseModel):
@@ -20,6 +28,11 @@ class AlgorithmCreateSchema(BaseModel):
     output_schema: dict | None = Field(default=None, description="输出数据格式")
     status: bool = Field(default=True, description="是否启用")
     description: str | None = Field(default=None, max_length=255, description="描述")
+
+    @field_validator("name")
+    @classmethod
+    def _check_name(cls, value: str | None) -> str | None:
+        return _validate_model_name(value)
 
 
 class AlgorithmUpdateSchema(AlgorithmCreateSchema):
