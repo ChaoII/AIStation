@@ -72,11 +72,15 @@
           <el-option
             v-for="s in scenes"
             :key="s.code"
-            :label="`${s.name}（${s.code}）${s.edge_supported === false ? ' · 边缘未实现' : ''}`"
+            :label="sceneOptionLabel(s)"
             :value="s.code"
-            :disabled="s.edge_supported === false"
+            :title="s.configurable === false ? s.unsupported_reason || '' : ''"
+            :disabled="s.configurable === false"
           />
         </el-select>
+        <div v-if="sceneUnsupportedReason" class="rule-editor__field-error">
+          {{ sceneUnsupportedReason }}
+        </div>
       </el-form-item>
 
       <el-form-item label="场景参数">
@@ -483,6 +487,22 @@ function handleGroupChange(v: number | undefined) {
 }
 
 const currentScene = computed(() => scenes.value.find((s) => s.code === props.sceneType) ?? null);
+
+/** 场景下拉标签：不可配置时直接标注原因，避免「能看见却选不了」的困惑 */
+function sceneOptionLabel(s: SceneDefinition): string {
+  const base = `${s.name}（${s.code}）`;
+  if (s.configurable === false) {
+    return `${base} · 不可配置：${s.unsupported_reason || "求值器/模型族未就绪"}`;
+  }
+  if (s.edge_supported === false) return `${base} · 边缘未实现`;
+  return base;
+}
+
+/** 当前场景不可配置的原因（编辑历史规则时可见；不可配置场景已在下拉中禁用） */
+const sceneUnsupportedReason = computed(() => {
+  const s = currentScene.value;
+  return s && s.configurable === false ? s.unsupported_reason || "该场景暂不可配置" : "";
+});
 
 /** 按作用域过滤参数 schema：未声明 scope 的为通用参数，声明 scope="group" 的仅在相机组作用域展示 */
 function paramSchemaFor(def: SceneDefinition | null, scope: AlarmRuleScope): SceneParamSchema[] {

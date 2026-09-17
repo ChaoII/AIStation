@@ -191,6 +191,12 @@
               {{ drawer.detail.matched ? "（无叶子明细）" : "未命中任何条件" }}
             </span>
           </div>
+          <!-- 反向不一致说明：后端 rule_error_list 只存在于内部推理回调响应，不落库、无事件级入口，
+               在此显式说明，避免运维误以为「规则评估失败」可从事件详情排查。 -->
+          <div class="event-detail__hint">
+            规则评估失败清单（rule_error_list）仅随内部推理回调响应返回，不随事件落库；若怀疑某规则未生效，
+            请在后端日志中按规则名/rule_id 排查。
+          </div>
         </div>
 
         <div class="event-detail__section">
@@ -743,6 +749,13 @@ onBeforeUnmount(() => {
 .event-detail__leaf-neg {
   margin-right: 4px;
   font-weight: 700;
+}
+
+.event-detail__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 
 .text-muted {
