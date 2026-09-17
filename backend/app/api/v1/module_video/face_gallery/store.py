@@ -1,10 +1,16 @@
-"""人脸底库的进程内缓存与余弦相似度（供 ``face_match`` / ``stranger`` 叶子求值）。
+"""底库（人脸 / 跨镜）的进程内缓存与余弦相似度。
+
+同时服务 ``face_match`` / ``stranger``（人脸，``kind="face"``）与 ``reid_match``
+（跨镜重识别，``kind="reid"``）两类叶子：
 
 设计要点：
-- ``face_match`` / ``stranger`` 在 ``inference/service.py`` 的同步求值器里执行，
-  不能直接做异步 DB 查询，故底库特征维护在进程内缓存中（同 ``temporal_store`` 思路）；
+- 底库比对在 ``inference/service.py`` 的同步求值器里执行，不能直接做异步 DB 查询，
+  故特征维护在进程内缓存中（同 ``temporal_store`` 思路）；
+- **人脸 / 跨镜通过条目的 ``kind`` 列隔离**：两类嵌入维度/语义不同，必须按 kind
+  分别比对——人脸叶子只查 ``kind="face"``，跨镜叶子只查 ``kind="reid"``，
+  从根本上杜绝「人脸特征误匹配跨镜底库」；
 - 缓存由启动生命周期 + 底库增删改接口刷新（``service.py``），跨进程不共享，
-  多 worker 部署下存在最终一致延迟（见 ``refresh_face_gallery_cache`` 说明）；
+  多 worker 部署下存在最终一致延迟（见 ``sync_cache`` 说明）；
 - 相似度在 Python 侧算余弦（无 pgvector 依赖），复杂度 O(底库条数 × 检测数)，
   底库规模上限约数千条；升级路径见 ``docs`` 报告（pgvector 向量列 + ivfflat/hnsw 索引）。
 """
@@ -14,14 +20,25 @@ import math
 import time
 from typing import Any
 
+#: 底库类型判别列（模型/迁移/API 共用）：人脸 vs 跨镜重识别。
+KIND_FACE = "face"
+KIND_REID = "reid"
+KNOWN_KINDS: frozenset[str] = frozenset({KIND_FACE, KIND_REID})
+
 #: 进程内缓存的兜底新鲜度上界（秒）。
 #: 多 worker 场景优先用 Redis 版本号近实时失效；Redis 不可用或「enroll 与事务提交之间」的
 #: 竞态窗口内，事件热路径最多每 TTL 秒回读一次 DB，保证跨进程变更**最终可见**（有界延迟）。
 DEFAULT_CACHE_TTL_SEC = 10.0
 
 
+def normalize_kind(raw: Any) -> str:
+    """把底库类型归一化为 ``face`` / ``reid``；未知/缺省一律按人脸（向后兼容旧数据）。"""
+    key = str(raw or "").strip().lower()
+    return key if key in KNOWN_KINDS else KIND_FACE
+
+
 class FaceGalleryStore:
-    """进程内人脸底库缓存：持有若干 ``{id, name, person_no, model_key, embedding, dimension}``。
+    """进程内底库缓存：持有若干 ``{id, name, person_no, model_key, kind, embedding, dimension}``。
 
     多 worker 一致性：缓存自带 ``version``（对应 Redis 全局版本号）与 ``loaded_at``。
     ``sync_cache``（见 service.py）在事件热路径按「版本号变化 或 缓存超过 TTL」触发重读，
@@ -38,6 +55,7 @@ class FaceGalleryStore:
         """整体替换缓存（仅保留结构合法且向量非空的条目）。
 
         传 ``version`` 时同步记录全局版本号；``loaded_at`` 恒更新为当前单调时钟。
+        条目缺 ``kind`` 时按人脸处理（兼容既有调用点与旧数据）。
         """
         cleaned: list[dict] = []
         for e in entries or []:
@@ -46,7 +64,14 @@ class FaceGalleryStore:
             emb = _as_vector(e.get("embedding"))
             if emb is None:
                 continue
-            cleaned.append({**e, "embedding": emb, "dimension": len(emb)})
+            cleaned.append(
+                {
+                    **e,
+                    "kind": normalize_kind(e.get("kind")),
+                    "embedding": emb,
+                    "dimension": len(emb),
+                }
+            )
         self._entries = cleaned
         self._loaded_at = time.monotonic()
         if version is not None:
@@ -74,13 +99,23 @@ class FaceGalleryStore:
             return False
         return (time.monotonic() - self._loaded_at) > self._ttl
 
-    def snapshot(self) -> list[dict]:
-        """返回当前缓存快照（只读用途，勿原地修改）。"""
-        return list(self._entries)
+    def snapshot(self, kind: str | None = None) -> list[dict]:
+        """返回当前缓存快照（只读用途，勿原地修改）。
 
-    def size(self) -> int:
-        """当前底库条目数。"""
-        return len(self._entries)
+        传 ``kind`` 时仅返回该类型条目（如 ``"face"`` / ``"reid"``），保证两类底库
+        在规则求值层面严格隔离；缺省返回全部（兼容既有调用点）。
+        """
+        if kind is None:
+            return list(self._entries)
+        want = normalize_kind(kind)
+        return [e for e in self._entries if e.get("kind") == want]
+
+    def size(self, kind: str | None = None) -> int:
+        """当前底库条目数（可选按类型统计）。"""
+        if kind is None:
+            return len(self._entries)
+        want = normalize_kind(kind)
+        return sum(1 for e in self._entries if e.get("kind") == want)
 
 
 # 进程级单例（与 temporal_store 同思路）

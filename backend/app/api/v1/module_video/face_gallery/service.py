@@ -26,7 +26,13 @@ from app.core.logger import logger
 from .crud import FaceGalleryCRUD
 from .model import FaceGalleryModel
 from .schema import FaceGalleryEnrollSchema, FaceGalleryMatchSchema, FaceGalleryOutSchema
-from .store import best_similarity, face_gallery_store, is_valid_embedding
+from .store import (
+    KIND_FACE,
+    best_similarity,
+    face_gallery_store,
+    is_valid_embedding,
+    normalize_kind,
+)
 
 #: 底库全局版本号键（跨 worker 失效信号）
 _VERSION_KEY = "ai:face_gallery:version"
@@ -107,12 +113,13 @@ def _bump_version() -> None:
 
 
 def _to_entry(row: FaceGalleryModel) -> dict:
-    """ORM 行 → 缓存条目（含特征向量）。"""
+    """ORM 行 → 缓存条目（含特征向量与底库类型）。"""
     emb = list(row.embedding or [])
     return {
         "id": row.id,
         "name": row.name,
         "person_no": row.person_no,
+        "kind": normalize_kind(getattr(row, "kind", None)),
         "model_key": row.model_key,
         "embedding": emb,
         "dimension": len(emb),
@@ -122,12 +129,14 @@ def _to_entry(row: FaceGalleryModel) -> dict:
 class FaceGalleryService:
 
     @classmethod
-    async def _fetch_entries(cls, db: AsyncSession) -> list[dict]:
-        """从数据库读取全部有效底库条目（未删除且启用）。"""
+    async def _fetch_entries(cls, db: AsyncSession, kind: str | None = None) -> list[dict]:
+        """从数据库读取有效底库条目（未删除且启用）；可选按 kind 过滤。"""
         stmt = select(FaceGalleryModel).where(
             FaceGalleryModel.is_deleted.is_(False),
             FaceGalleryModel.status == "0",
         )
+        if kind is not None:
+            stmt = stmt.where(FaceGalleryModel.kind == normalize_kind(kind))
         rows = (await db.execute(stmt)).scalars().all()
         return [_to_entry(r) for r in rows if is_valid_embedding(r.embedding)]
 
@@ -176,20 +185,28 @@ class FaceGalleryService:
             return True
 
     @classmethod
-    async def count_active_service(cls) -> int:
-        """有效底库条目数（供场景目录给出「底库为空」提示）。"""
+    async def count_active_service(cls, kind: str | None = None) -> int:
+        """有效底库条目数（供场景目录给出「底库为空」提示）；可选按 kind 统计。"""
+        stmt = select(func.count(FaceGalleryModel.id)).where(
+            FaceGalleryModel.is_deleted.is_(False),
+            FaceGalleryModel.status == "0",
+        )
+        if kind is not None:
+            stmt = stmt.where(FaceGalleryModel.kind == normalize_kind(kind))
         async with async_db_session() as session:
-            stmt = select(func.count(FaceGalleryModel.id)).where(
-                FaceGalleryModel.is_deleted.is_(False),
-                FaceGalleryModel.status == "0",
-            )
             return int((await session.execute(stmt)).scalar() or 0)
 
     @classmethod
     async def enroll_service(cls, data: FaceGalleryEnrollSchema, auth: AuthSchema) -> dict:
-        """录入或更新底库条目（提供 id 且存在时更新，否则新增）。"""
+        """录入或更新底库条目（提供 id 且存在时更新，否则新增）。
+
+        ``kind`` 缺省时：新增按 ``face``（模型默认），更新保持原类型不变
+        （避免「仅改名」误把 reid 条目改成 face）。
+        """
         crud = FaceGalleryCRUD(auth)
         payload = data.model_dump(exclude={"id"})
+        if data.kind is None:
+            payload.pop("kind", None)
         if data.embedding is not None:
             payload["dimension"] = data.dimension or len(data.embedding)
         else:
@@ -230,9 +247,13 @@ class FaceGalleryService:
 
     @classmethod
     async def match_service(cls, data: FaceGalleryMatchSchema) -> list[dict]:
-        """按余弦相似度返回 top-k 命中条目；空底库/非法向量返回空列表（fail-closed）。"""
+        """按余弦相似度返回**同类底库** top-k 命中条目；空底库/非法向量返回空列表（fail-closed）。
+
+        ``kind`` 用于隔离人脸与跨镜底库：人脸特征只与人脸底库比、跨镜特征只与跨镜底库比，
+        避免两类嵌入互相误命中。
+        """
         async with async_db_session() as session:
-            entries = await cls._fetch_entries(session)
+            entries = await cls._fetch_entries(session, kind=data.kind)
         scored: list[dict] = []
         dim = len(data.embedding)
         for entry in entries:
@@ -247,6 +268,7 @@ class FaceGalleryService:
                     "id": entry["id"],
                     "name": entry["name"],
                     "person_no": entry.get("person_no"),
+                    "kind": entry.get("kind", KIND_FACE),
                     "model_key": entry.get("model_key"),
                     "score": round(sim, 6),
                 }

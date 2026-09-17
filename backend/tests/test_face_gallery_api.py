@@ -150,3 +150,77 @@ def test_face_gallery_enroll_refreshes_leaf_cache(test_client, auth_headers):
             test_client.request("DELETE", f"{BASE}/delete", json=ids, headers=auth_headers)
         # 删除后缓存应回到空（该库中无其他底库行）
         assert face_gallery_store.size() == 0
+
+
+# ── B4：kind 底库类型（face/reid 复用同一张表，API/匹配严格隔离）──────────────
+def test_gallery_kind_lifecycle_and_isolation(test_client, auth_headers):
+    """录入跨镜底库（kind=reid）后可列表过滤、按 kind 比对，且不与人脸底库串味。"""
+    ids: list[int] = []
+    try:
+        # 1) 录入 cross（reid）与 face，默认 kind=face
+        resp = test_client.post(
+            f"{BASE}/enroll",
+            json={"name": "B4 跨镜", "kind": "reid", "model_key": "osnet_x1_0", "embedding": E_A},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        reid_item = resp.json()["data"]
+        ids.append(reid_item["id"])
+        assert reid_item["kind"] == "reid"
+
+        resp = _enroll(test_client, auth_headers, name="B4 人脸")
+        face_item = resp.json()["data"]
+        ids.append(face_item["id"])
+        assert face_item["kind"] == "face"
+
+        # 2) 列表按 kind 过滤
+        resp = test_client.get(
+            f"{BASE}/list", headers=auth_headers, params={"kind": "reid", "name": "B4"}
+        )
+        names = {i["name"] for i in resp.json()["data"]["items"]}
+        assert names == {"B4 跨镜"}
+        resp = test_client.get(
+            f"{BASE}/list", headers=auth_headers, params={"kind": "face", "name": "B4"}
+        )
+        names = {i["name"] for i in resp.json()["data"]["items"]}
+        assert names == {"B4 人脸"}
+
+        # 3) 比对按 kind 隔离：reid 向量只命中 reid 底库
+        resp = test_client.post(
+            f"{BASE}/match", json={"embedding": E_A, "kind": "reid"}, headers=auth_headers
+        )
+        matched = resp.json()["data"]["items"]
+        assert len(matched) == 1 and matched[0]["kind"] == "reid"
+        assert matched[0]["name"] == "B4 跨镜"
+        # 同一向量在 face 底库也有一条（B4 人脸用 E_A），face 查询只返回 face 条目
+        resp = test_client.post(
+            f"{BASE}/match", json={"embedding": E_A, "kind": "face"}, headers=auth_headers
+        )
+        matched = resp.json()["data"]["items"]
+        assert all(m["kind"] == "face" for m in matched)
+        assert {m["name"] for m in matched} == {"B4 人脸"}
+
+        # 4) kind 非法 → 422
+        resp = test_client.post(
+            f"{BASE}/enroll",
+            json={"name": "坏类型", "kind": "car", "embedding": E_A},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422, resp.text
+        resp = test_client.post(
+            f"{BASE}/match", json={"embedding": E_A, "kind": "car"}, headers=auth_headers
+        )
+        assert resp.status_code == 422, resp.text
+
+        # 5) 按 id 仅改名时 kind 不变
+        resp = test_client.post(
+            f"{BASE}/enroll",
+            json={"id": reid_item["id"], "name": "B4 跨镜改名", "model_key": "osnet_x1_0"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["kind"] == "reid"
+    finally:
+        if ids:
+            test_client.request("DELETE", f"{BASE}/delete", json=ids, headers=auth_headers)
+        face_gallery_store.clear()

@@ -78,6 +78,10 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("source", "VARCHAR(16) DEFAULT 'system'"),
         ("config", "JSONB"),
     ],
+    # B4：底库表新增 kind 判别列（face/reid，复用同一张表；与迁移 c1d2e3f4a5b6 对齐）
+    "video_face_gallery": [
+        ("kind", "VARCHAR(16) NOT NULL DEFAULT 'face'"),
+    ],
 }
 
 
@@ -209,6 +213,7 @@ async def _ensure_missing_columns() -> None:
             deleted_id INTEGER,
             name VARCHAR(128) NOT NULL,
             person_no VARCHAR(64),
+            kind VARCHAR(16) NOT NULL DEFAULT 'face',
             model_key VARCHAR(64) NOT NULL DEFAULT 'unknown',
             embedding JSONB NOT NULL,
             dimension INTEGER NOT NULL,
@@ -217,7 +222,7 @@ async def _ensure_missing_columns() -> None:
         """,
         "video_face_gallery 建表",
     )
-    for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time", "name", "person_no"):
+    for col in ("uuid", "status", "created_time", "updated_time", "is_deleted", "deleted_time", "name", "person_no", "kind"):
         await _exec_ddl(
             f"CREATE INDEX IF NOT EXISTS ix_video_face_gallery_{col} ON video_face_gallery ({col})",
             f"video_face_gallery.{col} 索引",
