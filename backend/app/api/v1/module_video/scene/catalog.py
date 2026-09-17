@@ -294,10 +294,13 @@ _add(SceneDef(
 
 _add(SceneDef(
     "SEM_AREA", "语义区域", "seg", "SEM_AREA", ["sem"], [_SEM],
-    [_POLY, {"key": "ratio", "type": "float", "default": 0.5, "label": "占比阈值"}, _LABELS],
+    # 不再声明 `roi`（scene 参数）：region_ratio 叶子不支持 `region`，场景参数里的 ROI 会被
+    # 编译层静默忽略（「界面可填但无效」）。SEM_AREA 的 ROI 走**任务级** `detect_region`：
+    # 编排器把它编译为 TaskConfig.roi → Agent `infer_group.effective_roi` 裁剪推理帧 →
+    # sem 占比即在 ROI 内统计（端到端生效，已实测）。占比阈值/labels 仍为场景参数。
+    [{"key": "ratio", "type": "float", "default": 0.5, "label": "占比阈值"}, _LABELS],
     # region_ratio 叶子（B2b）：sem 模型输出整帧对象 attributes={类别: 面积占比}，
-    # 默认规则判「某类别占比 >= 0.5」。区域由任务 ROI 在边缘侧参与占比计算，云端不重算，
-    # 故默认规则不写符号化 region（符号引用无法被求值器解析）。
+    # 默认规则判「某类别占比 >= 0.5」。默认规则不写符号化 region（符号引用无法被求值器解析）。
     {"op": "and", "children": [{"subject": "region_ratio", "op": "ge", "value": 0.5}]},
     False, "区域类别占比判定",
 ))

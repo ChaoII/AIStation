@@ -569,6 +569,54 @@ def test_default_rule_leaves_registered_and_flag_consistent():
             )
 
 
+def test_sem_area_roi_uses_task_level_detect_region():
+    """SEM_AREA 的 ROI 走任务级 detect_region（Agent 裁剪推理帧后算占比），不声明场景 roi 参数。
+
+    逐项验证（端到端）：
+    - 目录不再声明 `roi` 场景参数（region_ratio 叶子不支持 region，声明了会被编译层静默忽略）；
+    - region_ratio 叶子参数里确实没有 `region`；
+    - `task.detect_region` 仍被编译进 TaskConfig.roi（Agent `infer_group.effective_roi` 据此裁剪）。
+    """
+    from types import SimpleNamespace
+
+    from app.api.v1.module_video.edge.orchestrator import build_agent_task_config
+    from app.api.v1.module_video.scene.leaves import LEAF_CAPABILITIES
+
+    scene = get_scene("SEM_AREA")
+    assert "roi" not in {p["key"] for p in scene.param_schema}
+    assert "region" not in {p["key"] for p in LEAF_CAPABILITIES["region_ratio"]["params"]}
+
+    roi = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]
+
+    class _Cam:
+        id = 7
+        name = "北门"
+        rtsp_url_sub = "rtsp://cam/7"
+        stream_id = "cam7"
+
+    class _Task:
+        id = 321
+        camera_id = 7
+        algorithm_id = 11
+        stream_type = "SUB"
+        detect_region = {"points": roi}
+        sensitivity = 60
+        schedule_json = None
+        runtime_overrides = None
+        params_overrides = None
+
+    algo = SimpleNamespace(
+        name="SEM_AREA",
+        algorithm_type="SEM_AREA",
+        scene_type="SEM_AREA",
+        model_path="/models/sem.onnx",
+        runtime_config={"backend": "ort", "device": "cpu"},
+        preset_params={"ratio": 0.5},
+    )
+    cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
+    assert cfg["roi"] == roi
+
+
 def test_catalog_api_exposes_configurability(test_client, auth_headers):
     """目录接口必须同时暴露 `configurable`、结构化 `blockers` 与置灰原因。"""
     resp = test_client.get("/api/v1/video/scene/catalog", headers=auth_headers)
