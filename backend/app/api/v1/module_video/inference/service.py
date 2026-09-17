@@ -654,6 +654,51 @@ def _keypoint_geometry_hit(
     return False
 
 
+# ── 深度距离（distance 叶子）────────────────────────────────────────────────
+# 事件契约：Agent depth 模型输出 objects[].depth = 深度（米，float）。
+# 比较算子与 attribute 叶子一致（lt/gt/le/ge/eq）；depth 缺失/非法一律 fail-closed。
+_DISTANCE_OPS = ("lt", "gt", "le", "ge", "eq")
+
+
+def _distance_hit(leaf: dict, detections: list) -> bool:
+    """评估 distance 叶子：任一 detection 的数值 depth 满足比较即命中。
+
+    契约：``{"subject":"distance","op":"lt|gt|le|ge|eq","value":<米>,"label"?,"region"?}``。
+    - depth 缺失/非数值/非有限值（NaN/Inf）→ 跳过该检测（fail-closed）；
+    - value 非数值、op 非合法算子 → 整体不命中；
+    - label/region 过滤与既有叶子同口径（region 按检测框中心）。
+    """
+    if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
+        return False
+    op = leaf.get("op")
+    if op not in _DISTANCE_OPS:
+        return False
+    value = _as_float(leaf.get("value"))
+    if value is None:
+        return False
+    for d in detections:
+        if not isinstance(d, dict):
+            continue
+        if not _matches_label(d, leaf):
+            continue
+        if not _in_region(d, leaf):
+            continue
+        depth = _as_float(d.get("depth"))
+        if depth is None or not math.isfinite(depth):
+            continue
+        if op == "lt" and depth < value:
+            return True
+        if op == "gt" and depth > value:
+            return True
+        if op == "le" and depth <= value:
+            return True
+        if op == "ge" and depth >= value:
+            return True
+        if op == "eq" and depth == value:
+            return True
+    return False
+
+
 def _eval_temporal(
     subject: str,
     leaf: dict,
@@ -911,6 +956,9 @@ def _match_conditions(
       climb=躯干中心位于 line 上方，无 line 时与高度阈值 value（缺省 0.5，op 缺省 <=）比较；
       smoke_phone=腕到头参照的最小距离 <= 阈值（value 缺省 0.15），min_sec 可选持续性抑制；
       gesture=已声明但未实现（缺手部关键点模型），恒不命中。区域过滤按检测框中心。
+    深度安全距离叶子（读取 detection.depth，深度模型输出，单位米）：
+    - distance：{"subject":"distance","op":"lt|gt|le|ge|eq","value":<米>,"label"?,"region"?}
+      任一检测的数值 depth 满足比较即命中；depth 缺失/非数值/非有限值一律跳过（fail-closed）。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -1011,6 +1059,9 @@ def explain_conditions(
                 if op == "eq" and score == value:
                     return True
             return False
+        if subject == "distance":
+            # 深度安全距离叶子（读取 detection.depth，单位米）
+            return _distance_hit(leaf, dets)
         if subject == "text_match":
             pattern = leaf.get("regex")
             if not isinstance(pattern, str):
@@ -1135,6 +1186,21 @@ def explain_conditions(
             if hit:
                 return f"{field}={score:.2f}{op}{_fmt_num(value)}"
         return f"{field}=?{op}{_fmt_num(leaf.get('value'))}"
+
+    def _distance_detail(leaf: dict) -> str:
+        """distance 叶子的关键量说明；无有效 depth 时给出可读回退。"""
+        op = leaf.get("op")
+        value = _as_float(leaf.get("value"))
+        for d in dets:
+            if not isinstance(d, dict):
+                continue
+            if not _matches_label(d, leaf) or not _in_region(d, leaf):
+                continue
+            depth = _as_float(d.get("depth"))
+            if depth is None or not math.isfinite(depth):
+                continue
+            return f"depth {depth:.2f}{op}{_fmt_num(value)}"
+        return f"depth ?{op}{_fmt_num(leaf.get('value'))}"
 
     def _temporal_detail(subject: str, leaf: dict) -> str:
         """时序叶子的关键量说明；缺状态时给出可读回退。"""
@@ -1317,6 +1383,8 @@ def explain_conditions(
                 return f"{matched}{op}{_fmt_num(leaf.get('value'))}"
             if subject == "attribute":
                 return _attribute_detail(leaf)
+            if subject == "distance":
+                return _distance_detail(leaf)
             if subject == "text_match":
                 return f"text~{leaf.get('regex')}"
             if subject == "ocr_label":

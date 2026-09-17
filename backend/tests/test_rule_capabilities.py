@@ -12,6 +12,7 @@ _EVALUABLE_NON_TEMPORAL = {
     "zone_enter",
     "count",
     "keypoint_geometry",
+    "distance",
 }
 
 

@@ -45,6 +45,10 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "pattern": ("regex", "text_match"),
     # 分类阈值：注入 attribute 叶子的判定阈值（PED_ATTR 等按属性分数判定的场景）
     "cls_threshold": ("value", "attribute"),
+    # 活体阈值：FACE_ANTISPOOF 的 liveness_threshold → attribute.value（field=liveness）
+    "liveness_threshold": ("value", "attribute"),
+    # 安全距离阈值：DEPTH_SAFE 的 distance_threshold → distance.value（单位：米）
+    "distance_threshold": ("value", "distance"),
     # 组叶子走独立参数键（group_* 前缀），避免破坏既有的 window_sec→count_window 等绑定
     "group_window_sec": ("window_sec", {"group_count", "group_coverage"}),
     "group_count": ("value", {"group_count", "group_coverage"}),
@@ -79,6 +83,8 @@ _REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "group_coverage": ("window_sec", "value"),
     # 姿态几何规则必须声明 rule（fall/climb/smoke_phone/gesture），否则不可求值
     "keypoint_geometry": ("rule",),
+    # 深度安全距离必须有比较阈值（value，单位米）与算子 op（见 distance 叶子 ops）
+    "distance": ("value",),
 }
 
 # 跨相机聚合叶子：仅允许相机组作用域规则使用（相机作用域误用 → 编译报错）

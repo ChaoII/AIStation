@@ -30,6 +30,10 @@ export interface SceneDefinition {
   requires_classification?: boolean;
   /** 是否依赖边缘把姿态关键点写入事件（未落地时置灰） */
   requires_keypoints?: boolean;
+  /** 是否依赖边缘把人脸属性/活体分数写入事件（未落地时置灰） */
+  requires_attributes?: boolean;
+  /** 是否依赖边缘把深度值写入事件（未落地时置灰） */
+  requires_depth?: boolean;
   /** 已知限制说明（如叶子规则未实现），与 blockers 一并展示 */
   limitations?: string[];
   /** 所需云端外部资产（如 face_gallery 人脸底库 / reid_gallery 跨镜底库） */

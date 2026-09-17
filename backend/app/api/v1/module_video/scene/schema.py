@@ -21,6 +21,12 @@ class SceneOutSchema(BaseModel):
     requires_keypoints: bool = Field(
         default=False, description="是否依赖边缘把姿态关键点写入事件（未落地时置灰）"
     )
+    requires_attributes: bool = Field(
+        default=False, description="是否依赖边缘把人脸属性/活体分数写入事件（未落地时置灰）"
+    )
+    requires_depth: bool = Field(
+        default=False, description="是否依赖边缘把深度值写入事件（未落地时置灰）"
+    )
     limitations: list[str] = Field(
         default_factory=list, description="已知限制说明（如叶子规则未实现），与阻断原因一并展示"
     )

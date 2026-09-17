@@ -70,6 +70,9 @@ def normalize_edge_event(payload: dict) -> dict:
                 # 需保留，供 keypoint_geometry 叶子做几何判定（fall/climb/smoke_phone）
                 if obj.get("keypoints") is not None:
                     det["keypoints"] = obj["keypoints"]
+                # 深度（事件 v2 objects[].depth，单位米）：供 distance 叶子判定安全距离
+                if obj.get("depth") is not None:
+                    det["depth"] = obj["depth"]
                 dets.append(det)
             normalized["detections"] = dets
         else:
@@ -92,6 +95,9 @@ def normalize_edge_event(payload: dict) -> dict:
                 # 关键点同样按索引并入 detections，避免随 objects 一起丢失
                 if "keypoints" not in dets[i] and obj.get("keypoints") is not None:
                     dets[i]["keypoints"] = obj["keypoints"]
+                # 深度同样按索引并入 detections，避免随 objects 一起丢失
+                if "depth" not in dets[i] and obj.get("depth") is not None:
+                    dets[i]["depth"] = obj["depth"]
     return normalized
 
 

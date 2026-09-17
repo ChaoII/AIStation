@@ -29,6 +29,12 @@ class SceneDef:
     # 是否依赖「边缘把姿态关键点写入事件」这一事件契约（FALL/CLIMB/SMOKE_PHONE/HAND_GESTURE）。
     # 契约未落地时 keypoint_geometry 叶子读不到关键点，故据实置灰（见 scene/contract.py）。
     requires_keypoints: bool = False
+    # 是否依赖「边缘把人脸属性/活体分数写入事件」（FACE_ATTR/FACE_ANTISPOOF）。
+    # 契约未落地时 attribute 叶子读不到分数，故据实置灰（见 scene/contract.py）。
+    requires_attributes: bool = False
+    # 是否依赖「边缘把深度值写入事件」（DEPTH_SAFE）。契约未落地时 distance 叶子读不到
+    # depth，故据实置灰（见 scene/contract.py）。
+    requires_depth: bool = False
     # 已知限制说明（如叶子规则未实现）：与阻断原因一并展示，避免「选了却不知为何不命中」。
     limitations: list[str] = field(default_factory=list)
     # 依赖的云端外部资产（如 face_gallery/reid_gallery）；缺失时据实置灰并给原因。
@@ -331,17 +337,26 @@ _add(SceneDef(
 
 _add(SceneDef(
     "FACE_ATTR", "性别/年龄", "face", "FACE_ATTR", ["face", "face_attr"], [_FACE_DET, _FACE_ATTR],
-    [_POLY, _CONF, _LABELS],
-    # 评估器尚未实现性别/年龄专用叶子；暂按人脸出现判定（region 缺省全画面）。
-    {"op": "and", "children": [{"subject": "object_present"}]},
+    [_CLS_THR],
+    # 复用 attribute 叶子（B2a）：Agent face_attr 事件发射 {"gender_male":..,"age_young":..}，
+    # 默认按 gender_male >= cls_threshold（默认 0.5）判定；field 名必须与 Agent 发射名一致。
+    {"op": "and", "children": [
+        {"subject": "attribute", "field": "gender_male", "op": "ge", "value": 0.5}
+    ]},
     False, "人脸性别/年龄属性识别",
+    requires_attributes=True,
 ))
 
 _add(SceneDef(
     "FACE_ANTISPOOF", "活体", "face", "FACE_ANTISPOOF", ["face", "face_as"], [_FACE_DET, _FACE_AS],
-    [_POLY, _CONF, {"key": "liveness_threshold", "type": "float", "default": 0.5, "label": "活体阈值"}],
-    {"op": "and", "children": [{"subject": "liveness", "op": "lt", "value": "liveness_threshold"}]},
+    [{"key": "liveness_threshold", "type": "float", "default": 0.5, "label": "活体阈值"}],
+    # 复用 attribute 叶子（B2a）：Agent face_as 事件发射 {"liveness":..}；
+    # 分数低于 liveness_threshold → 判为非活体并告警（fail-closed：缺分数不命中）。
+    {"op": "and", "children": [
+        {"subject": "attribute", "field": "liveness", "op": "lt", "value": 0.5}
+    ]},
     False, "人脸活体检测（非活体告警）",
+    requires_attributes=True,
 ))
 
 _add(SceneDef(
@@ -414,8 +429,11 @@ _add(SceneDef(
 _add(SceneDef(
     "DEPTH_SAFE", "安全距离", "other", "DEPTH_SAFE", ["depth"], [_DEPTH],
     [_POLY, {"key": "distance_threshold", "type": "float", "default": 1.0, "label": "距离阈值(米)"}],
-    {"op": "and", "children": [{"subject": "distance", "op": "lt", "value": "distance_threshold"}]},
+    # distance 叶子（B2a）：任一检测的 depth（米）< distance_threshold → 过近告警；
+    # region 由 roi 参数运行时注入，默认规则不写符号化占位。
+    {"op": "and", "children": [{"subject": "distance", "op": "lt", "value": 1.0}]},
     False, "深度估计安全距离判定",
+    requires_depth=True,
 ))
 
 _add(SceneDef(
@@ -510,6 +528,10 @@ def scene_blockers(scene: SceneDef) -> list[str]:
         blockers.append("分类结果未进入边缘事件（等待 Agent 分类契约落地）")
     if scene.requires_keypoints and not contract.supports_event_feature("keypoints"):
         blockers.append("关键点未进入边缘事件（等待 Agent 姿态契约落地）")
+    if scene.requires_attributes and not contract.supports_event_feature("face_attributes"):
+        blockers.append("人脸属性分数未进入边缘事件（等待 Agent face_attr/face_as 契约落地）")
+    if scene.requires_depth and not contract.supports_event_feature("depth"):
+        blockers.append("深度值未进入边缘事件（等待 Agent depth 契约落地）")
     unimplemented = unimplemented_default_leaves(scene)
     if unimplemented:
         blockers.append(f"缺求值器叶子：{', '.join(unimplemented)}")

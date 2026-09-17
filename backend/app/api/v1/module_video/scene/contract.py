@@ -20,11 +20,17 @@
      **已落地（B2a）**：Agent 让分类结果（整帧框 + top-1 label_name + 类别分数 attributes）
      进入事件 sink（ModelDeploy ``ff0650c``，见 ``tests/test_classification_event.cpp``），
      故此处声明 ``"classification"``，SCENE_CLS/DEFECT_CLS/NO_MASK 自动转为可配置。
-   - ``keypoints``：姿态模型的关键点写入事件（``objects[].keypoints=[[x,y,score],...]``，
-     归一化 0~1）。**已声明（姿态切片）**：Agent 姿态事件契约定稿（键名与归一化口径见
-     ``edge/consumer.py::normalize_edge_event``），云端侧据此刻画 FALL/CLIMB/SMOKE_PHONE/
-     HAND_GESTURE 的依赖；Agent 侧接线在并行切片中落地。
-   - 若 Agent 侧回退某契约，撤下对应能力位即会重新按原因置灰（见契约一致性测试）。
+    - ``keypoints``：姿态模型的关键点写入事件（``objects[].keypoints=[[x,y,score],...]``，
+      归一化 0~1）。**已声明（姿态切片）**：Agent 姿态事件契约定稿（键名与归一化口径见
+      ``edge/consumer.py::normalize_edge_event``），云端侧据此刻画 FALL/CLIMB/SMOKE_PHONE/
+      HAND_GESTURE 的依赖；Agent 侧接线在并行切片中落地。
+    - ``face_attributes``：人脸属性/活体分数写入事件 ``objects[].attributes``
+      （face_attr 发射 ``{"gender_male":..,"age_young":..}``；face_as 发射 ``{"liveness":..}``）。
+      **已声明（B2a）**：云端复用既有 ``attribute`` 叶子判分；Agent 侧 face_attr/face_as
+      接线并行落地（模型族 ``face_attr``/``face_as`` 在途）。
+    - ``depth``：深度模型输出写入事件 ``objects[].depth``（float，米）。**已声明（B2a）**：
+      云端以 ``distance`` 叶子判定 DEPTH_SAFE；Agent 侧 depth 接线并行落地（族 ``depth`` 在途）。
+    - 若 Agent 侧回退某契约，撤下对应能力位即会重新按原因置灰（见契约一致性测试）。
 
 3. ``AGENT_ASSETS``（外部资产）：云端底库等非代码资产。
    - ``face_gallery``：人脸底库（FACE_REC/STRANGER）；``reid_gallery``：跨镜底库（REID_TRACK）。
@@ -54,13 +60,20 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
         "iseg",
         # 姿态切片：关键点事件 + keypoint_geometry 叶子（Agent 侧上报并行落地中）
         "pose",
+        # B2a 人脸属性/活体/深度：云侧契约先行声明，Agent 侧接线并行落地中
+        "face_attr",
+        "face_as",
+        "depth",
     }
 )
 
 # Agent 事件载荷特性（见模块 docstring 的翻转条件）。
 # B2a：分类结果（整帧框 + label_name + attributes）已进入边缘事件 sink，故声明 classification。
 # 姿态切片：姿态关键点已进入事件契约（objects[].keypoints，归一化 0~1），故声明 keypoints。
-AGENT_EVENT_FEATURES: frozenset[str] = frozenset({"classification", "keypoints"})
+# B2a：人脸属性/活体分数（objects[].attributes）与深度（objects[].depth，米）已定稿。
+AGENT_EVENT_FEATURES: frozenset[str] = frozenset(
+    {"classification", "keypoints", "face_attributes", "depth"}
+)
 
 # 云端外部资产（见模块 docstring 的翻转条件）。
 AGENT_ASSETS: frozenset[str] = frozenset()

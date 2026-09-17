@@ -37,6 +37,12 @@ _CLASSIFICATION_SCENES = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK"}
 # 依赖「姿态关键点进入边缘事件」契约的三个场景（姿态切片契约已声明，现应可配置）
 _KEYPOINT_SCENES = {"FALL", "CLIMB", "SMOKE_PHONE"}
 
+# 依赖「人脸属性/活体分数进入边缘事件」契约的场景（B2a 契约已声明，现应可配置）
+_ATTRIBUTE_SCENES = {"FACE_ATTR", "FACE_ANTISPOOF"}
+
+# 依赖「深度值进入边缘事件」契约的场景（B2a 契约已声明，现应可配置）
+_DEPTH_SCENES = {"DEPTH_SAFE"}
+
 
 def _iter_leaves(rule: dict):
     """深度遍历规则条件树，产出所有叶子节点（非逻辑算子节点）。"""
@@ -75,9 +81,11 @@ def test_configurable_scenes_compile_default_rule():
     assert {"ABANDON", "DEPLOY_TRACK", "OBB_DET", "I_SEG"} <= set(checked)
     assert _CLASSIFICATION_SCENES <= set(checked)
     assert _KEYPOINT_SCENES <= set(checked)
+    assert _ATTRIBUTE_SCENES <= set(checked)
+    assert _DEPTH_SCENES <= set(checked)
     assert "HAND_GESTURE" not in set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 26
+    assert len(checked) == 29
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -101,6 +109,10 @@ def test_unconfigurable_scenes_reason_mentions_cause():
         keypoint_gated = scene.requires_keypoints and not contract.supports_event_feature(
             "keypoints"
         )
+        attr_gated = scene.requires_attributes and not contract.supports_event_feature(
+            "face_attributes"
+        )
+        depth_gated = scene.requires_depth and not contract.supports_event_feature("depth")
         bad = unimplemented_default_leaves(scene)
         # 每个原因类别都必须落在 reason 文本中，保证前端提示可操作
         if missing_fams:
@@ -111,6 +123,10 @@ def test_unconfigurable_scenes_reason_mentions_cause():
             assert "分类" in reason, f"{code}: {reason}"
         if keypoint_gated:
             assert "关键点" in reason, f"{code}: {reason}"
+        if attr_gated:
+            assert "属性" in reason, f"{code}: {reason}"
+        if depth_gated:
+            assert "深度" in reason, f"{code}: {reason}"
         if bad:
             assert any(leaf in reason for leaf in bad), f"{code}: {reason}"
 
@@ -173,6 +189,90 @@ def test_keypoint_scenes_re_gate_without_contract(monkeypatch):
             assert "关键点" in reason, f"{code}: {reason}"
     finally:
         monkeypatch.undo()
+
+
+def test_face_and_depth_scenes_configurable_after_contract_lands():
+    """B2a：人脸属性/活体/深度契约已声明 → FACE_ATTR/FACE_ANTISPOOF/DEPTH_SAFE 可配置且可编译。
+
+    - FACE_ATTR/FACE_ANTISPOOF 复用既有 attribute 叶子（field 取 Agent 实际发射的属性名）；
+    - DEPTH_SAFE 使用新增 distance 叶子（读取 detection.depth）。
+    """
+    assert contract.supports_event_feature("face_attributes") is True
+    assert contract.supports_event_feature("depth") is True
+    assert {"face_attr", "face_as", "depth"} <= contract.AGENT_MODEL_FAMILIES
+    for code in _ATTRIBUTE_SCENES:
+        scene = SCENES[code]
+        assert scene.requires_attributes is True, code
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 人脸属性契约已声明却仍置灰：{reason}"
+        out = compile_rule(code, _default_params(scene), scene.default_rule)
+        leaves = list(_iter_leaves(out))
+        assert leaves and all(leaf["subject"] == "attribute" for leaf in leaves), code
+    for code in _DEPTH_SCENES:
+        scene = SCENES[code]
+        assert scene.requires_depth is True, code
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 深度契约已声明却仍置灰：{reason}"
+        out = compile_rule(code, _default_params(scene), scene.default_rule)
+        leaves = list(_iter_leaves(out))
+        assert leaves and all(leaf["subject"] == "distance" for leaf in leaves), code
+
+
+def test_face_and_depth_scenes_re_gate_without_contract(monkeypatch):
+    """机制锁定：撤下属性/深度事件特性后，对应场景必须重新按原因置灰。"""
+    monkeypatch.setattr(contract, "AGENT_EVENT_FEATURES", frozenset())
+    try:
+        for code in _ATTRIBUTE_SCENES:
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 属性契约撤销后不应仍可配置"
+            assert "属性" in reason, f"{code}: {reason}"
+        for code in _DEPTH_SCENES:
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 深度契约撤销后不应仍可配置"
+            assert "深度" in reason, f"{code}: {reason}"
+    finally:
+        monkeypatch.undo()
+
+
+def test_face_attr_uses_agent_emitted_attribute_names():
+    """默认规则 field 必须与 Agent 实际发射的属性名一致（gender_male / liveness）。"""
+    attr_leaf = SCENES["FACE_ATTR"].default_rule["children"][0]
+    assert attr_leaf["subject"] == "attribute"
+    assert attr_leaf["field"] == "gender_male"
+    # attribute 叶子登记算子为 ge/le（非 gte/lte），默认规则必须可编译
+    assert attr_leaf["op"] == "ge"
+    compile_rule("FACE_ATTR", {}, SCENES["FACE_ATTR"].default_rule)
+
+    as_leaf = SCENES["FACE_ANTISPOOF"].default_rule["children"][0]
+    assert as_leaf["subject"] == "attribute"
+    assert as_leaf["field"] == "liveness"
+    assert as_leaf["op"] == "lt"
+    compile_rule("FACE_ANTISPOOF", {}, SCENES["FACE_ANTISPOOF"].default_rule)
+
+
+def test_face_antispoof_injects_liveness_threshold():
+    """FACE_ANTISPOOF 的 liveness_threshold → attribute.value（界面可填即生效）。"""
+    scene = get_scene("FACE_ANTISPOOF")
+    out = compile_rule("FACE_ANTISPOOF", {"liveness_threshold": 0.7}, scene.default_rule)
+    leaf = out["children"][0]
+    assert leaf["subject"] == "attribute"
+    assert leaf["field"] == "liveness"
+    assert leaf["op"] == "lt"
+    assert leaf["value"] == 0.7
+
+
+def test_depth_safe_injects_distance_threshold_and_roi():
+    """DEPTH_SAFE 的 distance_threshold → distance.value，roi → region（界面可填即生效）。"""
+    scene = get_scene("DEPTH_SAFE")
+    roi = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]]
+    out = compile_rule(
+        "DEPTH_SAFE", {"roi": roi, "distance_threshold": 2.5}, scene.default_rule
+    )
+    leaf = out["children"][0]
+    assert leaf["subject"] == "distance"
+    assert leaf["op"] == "lt"
+    assert leaf["value"] == 2.5
+    assert leaf["region"] == roi
 
 
 def test_hand_gesture_stays_gated_with_honest_reason():

@@ -13,7 +13,7 @@ LOGIC_OPS: list[str] = ["and", "or", "not"]
 _CMP_OPS = [">=", ">", "<=", "<", "=="]
 _ATTR_OPS = ["lt", "gt", "le", "ge", "eq"]
 
-# 已实现 13 个叶子（对拍求值器）
+# 已实现 14 个叶子（对拍求值器）
 LEAF_CAPABILITIES: dict[str, dict] = {
     "object_present": {
         "label": "存在目标",
@@ -174,6 +174,20 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         ],
         "ops": [],
     },
+    # 深度安全距离叶子：读取 detection.depth（米，float；B2a 事件新增字段）。
+    # op 用 lt/gt/le/ge/eq（与 attribute 叶子一致）；region 按检测框中心过滤；
+    # 语义见 inference/service.py `_distance_hit`：任一检测的数值 depth 满足比较即命中，
+    # depth 缺失/非法一律跳过（fail-closed）。
+    "distance": {
+        "label": "安全距离",
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "region", "type": "polygon"},
+            {"key": "value", "type": "float"},
+        ],
+        "ops": _ATTR_OPS,
+    },
     # ── 以下叶子求值器尚未实现，仅列出供前端置灰展示 ──
     "face_match": {
         "label": "人脸比对",
@@ -195,15 +209,6 @@ LEAF_CAPABILITIES: dict[str, dict] = {
     },
     "region_ratio": {
         "label": "区域占比",
-        "implemented": False,
-        "params": [
-            {"key": "region", "type": "polygon"},
-            {"key": "value", "type": "float"},
-        ],
-        "ops": _CMP_OPS,
-    },
-    "distance": {
-        "label": "安全距离",
         "implemented": False,
         "params": [
             {"key": "region", "type": "polygon"},
