@@ -20,6 +20,13 @@ from typing import Any
 #: 紧凑编码标识：base64(小端 IEEE-754 float16)
 F16_B64 = "f16b64"
 
+#: 单条嵌入维度上限（云侧二次防御）：覆盖 512/1024/2048，拒绝异常/恶意超大数组，
+#: 避免单事件解析出数百 MB 的向量拖垮内存或 DB（Agent 正常产出远小于此）。
+MAX_EMBEDDING_DIM = 4096
+#: 单事件携带嵌入的对象数上限（云侧二次防御）：Agent 侧另有 Top-N 默认 8，
+#: 此处对「旧固件/手工上报/buggy 边缘」兜底，超出部分按置信度保留 Top-N。
+MAX_EMBEDDINGS_PER_EVENT = 64
+
 
 def encode_embedding_f16_b64(vec: Any) -> str:
     """把 float 序列编码为 ``f16b64``（base64 小端 float16）；空序列返回空串。"""

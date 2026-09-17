@@ -20,6 +20,8 @@ import pytest
 from app.api.v1.module_video.edge.consumer import normalize_edge_event
 from app.api.v1.module_video.edge.embedding_codec import (
     F16_B64,
+    MAX_EMBEDDING_DIM,
+    MAX_EMBEDDINGS_PER_EVENT,
     decode_embedding,
     encode_embedding_f16_b64,
 )
@@ -165,6 +167,50 @@ def test_decoded_embedding_reaches_face_match_leaf():
     dets = normalize_edge_event(ev)["detections"]
     leaf = {"subject": "face_match", "op": "gte", "value": 0.6}
     assert _match_conditions(leaf, dets, face_gallery=GALLERY) is True
+
+
+# ------------------------------------------------- 云侧二次上限（防御性）
+def test_normalize_rejects_oversize_embedding_dimension():
+    """超过维度上限的嵌入必须被丢弃（不信任 Agent 载荷大小）。"""
+    huge = [0.1] * (MAX_EMBEDDING_DIM + 1)
+    ev = {
+        "event_id": "huge-dim",
+        "objects": [{"label": "face", "confidence": 0.9, "bbox": {}, "embedding": huge}],
+    }
+    det = normalize_edge_event(ev)["detections"][0]
+    assert "embedding" not in det
+    # 上限内的向量仍正常保留
+    ok = [0.1] * MAX_EMBEDDING_DIM
+    ev2 = {
+        "event_id": "ok-dim",
+        "objects": [{"label": "face", "confidence": 0.9, "bbox": {}, "embedding": ok}],
+    }
+    assert "embedding" in normalize_edge_event(ev2)["detections"][0]
+
+
+def test_normalize_caps_embeddings_per_event_by_confidence():
+    """单事件嵌入对象数超上限时按置信度保留 Top-N，其余仅丢弃嵌入字段。"""
+    total = MAX_EMBEDDINGS_PER_EVENT + 5
+    objects = [
+        {"label": "face", "confidence": i / 100.0, "bbox": {}, "embedding": E_X}
+        for i in range(total)
+    ]
+    dets = normalize_edge_event({"event_id": "many", "objects": objects})["detections"]
+    assert len(dets) == total  # 检测对象本身不得被删除
+    kept = [d for d in dets if "embedding" in d]
+    assert len(kept) == MAX_EMBEDDINGS_PER_EVENT
+    # 保留的是置信度最高的那些（丢弃了最低的 5 个）
+    assert min(d["confidence"] for d in kept) == pytest.approx(5 / 100.0)
+
+
+def test_normalize_small_event_embeddings_untouched():
+    """未超限的正常事件不受二次上限影响。"""
+    objects = [
+        {"label": "face", "confidence": 0.9, "bbox": {}, "embedding": E_X}
+        for _ in range(3)
+    ]
+    dets = normalize_edge_event({"event_id": "small", "objects": objects})["detections"]
+    assert all("embedding" in d for d in dets)
 
 
 # ------------------------------------------------------------- 体积上界

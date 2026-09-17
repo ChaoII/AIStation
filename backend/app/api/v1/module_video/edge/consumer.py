@@ -16,18 +16,64 @@ from urllib.parse import urlparse
 from app.config.setting import settings
 from app.core.logger import logger
 
-from .embedding_codec import decode_embedding
+from .embedding_codec import (
+    MAX_EMBEDDING_DIM,
+    MAX_EMBEDDINGS_PER_EVENT,
+    decode_embedding,
+)
 
 
 def _decode_obj_embedding(obj: dict) -> list[float] | None:
     """解析 objects[] 单条对象的人脸嵌入（兼容 f16b64 紧凑编码与原始 float 数组）。
 
-    返回 float 向量；缺失/非法/未知编码返回 None（不写入 detections，叶子 fail-closed）。
+    返回 float 向量；缺失/非法/未知编码/超过维度上限返回 None（不写入 detections，叶子 fail-closed）。
+    云侧不信任 Agent 的载荷大小，故对单条维度做二次防御（见 ``MAX_EMBEDDING_DIM``）。
     """
     raw = obj.get("embedding")
     if raw is None:
         return None
-    return decode_embedding(raw, obj.get("embedding_encoding"))
+    vec = decode_embedding(raw, obj.get("embedding_encoding"))
+    if vec is None:
+        return None
+    if len(vec) > MAX_EMBEDDING_DIM:
+        logger.warning(
+            f"拒绝超大人脸嵌入：dim={len(vec)} 超过上限 {MAX_EMBEDDING_DIM}"
+            "（异常/恶意上报，已丢弃该嵌入）"
+        )
+        return None
+    return vec
+
+
+def _cap_event_embeddings(dets: list, max_n: int = MAX_EMBEDDINGS_PER_EVENT) -> int:
+    """云侧二次上限：单事件嵌入对象数超限时按置信度保留 Top-N，其余丢弃嵌入。
+
+    与 Agent 侧 Top-N 正交（防御旧固件/手工上报/buggy 边缘）。返回被丢弃的嵌入数。
+    仅移除 ``embedding`` 键，保留其余检测字段（告警判定不受影响）。
+    """
+    idx = [
+        i
+        for i, d in enumerate(dets)
+        if isinstance(d, dict) and d.get("embedding") is not None
+    ]
+    if len(idx) <= max_n:
+        return 0
+
+    def _conf(i: int) -> float:
+        try:
+            return float(dets[i].get("confidence"))
+        except (TypeError, ValueError):
+            return 0.0
+
+    keep = set(sorted(idx, key=_conf, reverse=True)[:max_n])
+    dropped = 0
+    for i in idx:
+        if i not in keep:
+            dets[i].pop("embedding", None)
+            dropped += 1
+    logger.warning(
+        f"边缘事件人脸嵌入数超上限 {max_n}，已按置信度截断：保留 {max_n}，丢弃 {dropped}"
+    )
+    return dropped
 
 
 def normalize_edge_event(payload: dict) -> dict:
@@ -124,6 +170,11 @@ def normalize_edge_event(payload: dict) -> dict:
                     decoded = _decode_obj_embedding(obj)
                     if decoded is not None:
                         dets[i]["embedding"] = decoded
+
+    # 云侧二次上限：单事件嵌入对象数超限则按置信度截断（不信任 Agent 载荷大小）
+    out_dets = normalized.get("detections")
+    if isinstance(out_dets, list):
+        _cap_event_embeddings(out_dets)
     return normalized
 
 
