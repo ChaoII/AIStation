@@ -8,6 +8,7 @@ from app.api.v1.module_video.algorithm.model import AlgorithmTaskModel
 from app.api.v1.module_video.edge.agent_client import EdgeAgentClient
 from app.api.v1.module_video.edge.model import EdgeDeviceModel
 from app.api.v1.module_video.edge.service import capability_satisfies
+from app.api.v1.module_video.scene import contract
 from app.api.v1.module_video.scene.catalog import get_scene
 from app.config.setting import settings
 from app.core.database import async_db_session
@@ -22,7 +23,8 @@ _MODEL_TYPE_KEYWORDS: dict[str, str] = {
     "PLATE": "lpr",
     "POSE": "pose",
     "BEHAVIOR": "pose",
-    "SEG": "seg",
+    # 与 Agent 上报族名对齐：细分实例分割规范名为 iseg（Agent normalize_model_type 兼容 seg/iseg）
+    "SEG": "iseg",
     "CLASSIFY": "cls",
     "CLASS": "cls",
     "OBB": "obb",
@@ -288,7 +290,13 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None,
         # 人脸检测场景编译为单条 face_detection 模型，url 取算法主模型路径
         models = [{**base_model, "type": "face_detection", "url": algorithm.model_path or ""}]
     else:
-        models = [{**base_model, "type": _resolve_model_type(algorithm), "url": algorithm.model_path or ""}]
+        # 有场景目录且为单模型管线时，模型 type 以目录 pipeline 规范名（Agent 侧可识别）为准；
+        # 否则退回算法类型关键词推断（INTRUSION 等无场景算法保持 det）。
+        if scene is not None and len(scene.pipeline) == 1:
+            model_type = contract.canonical_pipeline_type(scene.pipeline[0]["type"])
+        else:
+            model_type = _resolve_model_type(algorithm)
+        models = [{**base_model, "type": model_type, "url": algorithm.model_path or ""}]
 
     return {
         "task_id": task.id,

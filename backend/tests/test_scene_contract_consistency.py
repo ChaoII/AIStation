@@ -31,8 +31,8 @@ from app.api.v1.module_video.scene.compile import (
 )
 from app.api.v1.module_video.scene.leaves import LEAF_CAPABILITIES
 
-# 因「分类结果未进入边缘事件」而暂不可配置的三个场景（契约翻转后自动解锁）
-_CLASSIFICATION_GATED = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK"}
+# 依赖「分类结果进入边缘事件」契约的三个场景（B2a 契约已落地，现应可配置）
+_CLASSIFICATION_SCENES = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK"}
 
 
 def _iter_leaves(rule: dict):
@@ -66,11 +66,11 @@ def test_configurable_scenes_compile_default_rule():
         compile_rule(code, _default_params(scene), scene.default_rule)
         checked.append(code)
     # static/track 叶子实现后 ABANDON/DEPLOY_TRACK 可选；B1 接线后 OBB_DET/I_SEG 可选；
-    # SCENE_CLS/DEFECT_CLS/NO_MASK 因分类事件契约未落地而据实置灰（不再「假可配置」）。
+    # B2a 分类事件契约落地后 SCENE_CLS/DEFECT_CLS/NO_MASK 亦转为可配置。
     assert {"ABANDON", "DEPLOY_TRACK", "OBB_DET", "I_SEG"} <= set(checked)
-    assert _CLASSIFICATION_GATED.isdisjoint(checked)
+    assert _CLASSIFICATION_SCENES <= set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 20
+    assert len(checked) == 23
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -110,24 +110,29 @@ def test_abandon_and_deploy_track_are_configurable_now():
         assert ok is True, f"{code} 仍不可配置：{reason}"
 
 
-def test_classification_scenes_gated_until_agent_event_contract():
-    """SCENE_CLS/DEFECT_CLS/NO_MASK 必须显式声明依赖分类事件并据实置灰。"""
-    for code in _CLASSIFICATION_GATED:
+def test_classification_scenes_configurable_after_contract_lands():
+    """B2a 分类事件契约已落地：三个分类场景必须可配置且默认规则可编译。
+
+    与 Agent 侧 ``tests/test_classification_event.cpp`` 对拍——该测试证明分类模型产出的
+    整帧框 + top-1 label 事件能被云端 ``object_present`` 叶子命中（无 label 命中 / label 相等命中）。
+    """
+    assert contract.supports_event_feature("classification") is True
+    for code in _CLASSIFICATION_SCENES:
         scene = SCENES[code]
         assert scene.requires_classification is True, code
         ok, reason = scene_configurability(scene)
-        assert ok is False, f"{code} 在分类契约未落地时不应可配置"
-        assert "分类" in reason, f"{code}: {reason}"
+        assert ok is True, f"{code} 分类契约已落地却仍置灰：{reason}"
+        compile_rule(code, _default_params(scene), scene.default_rule)
 
 
-def test_classification_scenes_flip_when_contract_lands(monkeypatch):
-    """模拟 Agent 分类事件契约落地：三个场景应自动转为可配置（锁定翻转行为）。"""
-    monkeypatch.setattr(contract, "AGENT_EVENT_FEATURES", frozenset({"classification"}))
+def test_classification_scenes_re_gate_without_contract(monkeypatch):
+    """机制锁定：撤下分类契定位后，三个场景必须重新按「分类」原因置灰。"""
+    monkeypatch.setattr(contract, "AGENT_EVENT_FEATURES", frozenset())
     try:
-        for code in _CLASSIFICATION_GATED:
+        for code in _CLASSIFICATION_SCENES:
             ok, reason = scene_configurability(SCENES[code])
-            assert ok is True, f"{code} 契约落地后仍不可配置：{reason}"
-            compile_rule(code, _default_params(SCENES[code]), SCENES[code].default_rule)
+            assert ok is False, f"{code} 分类契约撤销后不应仍可配置"
+            assert "分类" in reason, f"{code}: {reason}"
     finally:
         monkeypatch.undo()
 
@@ -217,11 +222,11 @@ def test_catalog_api_exposes_configurability(test_client, auth_headers):
     assert resp.status_code == 200
     items = resp.json()["data"]["items"]
     by_code = {s["code"]: s for s in items}
-    # 分类契约未落地 → 三个分类场景须置灰并给原因
-    for code in _CLASSIFICATION_GATED:
-        assert by_code[code]["configurable"] is False, code
-        assert by_code[code]["unsupported_reason"], code
-        assert by_code[code]["blockers"], code
+    # B2a 分类契约已落地 → 三个分类场景须转为可配置且无置灰原因
+    for code in _CLASSIFICATION_SCENES:
+        assert by_code[code]["configurable"] is True, code
+        assert by_code[code]["unsupported_reason"] == "", code
+        assert by_code[code]["blockers"] == [], code
     assert by_code["ABANDON"]["configurable"] is True
     assert by_code["DEPLOY_TRACK"]["configurable"] is True
     assert by_code["OBB_DET"]["configurable"] is True

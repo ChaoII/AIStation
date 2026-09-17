@@ -14,10 +14,10 @@
 
 2. ``AGENT_EVENT_FEATURES``（事件特性）：Agent 事件载荷是否携带某类结果。
    - ``classification``：纯分类/属性分类结果写入事件并进入 sink。
-   - 当前不声明：Agent 明确丢弃纯 classification 结果（``pipeline.cpp:419-430``），
-     分类结果无 label_name/attributes/text，故 SCENE_CLS/DEFECT_CLS/NO_MASK 永不命中。
-   - **翻转条件（B2）**：Agent 让分类结果（label_name/attributes）进入事件 sink 后，
-     在此加入 ``"classification"``，上述三个场景即自动转为可配置。
+   - **已落地（B2a）**：Agent 让分类结果（整帧框 + top-1 label_name + 类别分数 attributes）
+     进入事件 sink（ModelDeploy ``ff0650c``，见 ``tests/test_classification_event.cpp``），
+     故此处声明 ``"classification"``，SCENE_CLS/DEFECT_CLS/NO_MASK 自动转为可配置。
+   - 若 Agent 侧回退该契约，撤下本能力位即会重新按原因置灰（见契约一致性测试）。
 
 3. ``AGENT_ASSETS``（外部资产）：云端底库等非代码资产。
    - ``face_gallery``：人脸底库（FACE_REC/STRANGER）；``reid_gallery``：跨镜底库（REID_TRACK）。
@@ -49,7 +49,8 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
 )
 
 # Agent 事件载荷特性（见模块 docstring 的翻转条件）。
-AGENT_EVENT_FEATURES: frozenset[str] = frozenset()
+# B2a：分类结果（整帧框 + label_name + attributes）已进入边缘事件 sink，故声明 classification。
+AGENT_EVENT_FEATURES: frozenset[str] = frozenset({"classification"})
 
 # 云端外部资产（见模块 docstring 的翻转条件）。
 AGENT_ASSETS: frozenset[str] = frozenset()

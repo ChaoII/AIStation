@@ -4,6 +4,7 @@ from typing import Any
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.api.v1.module_video.inference.snapshot import resolve_snapshot_url
+from app.api.v1.module_video.scene import contract
 from app.config.setting import settings
 from app.core.base_crud import CRUDBase
 from app.core.exceptions import CustomException
@@ -25,16 +26,18 @@ def capability_satisfies(capabilities: dict, requirement: dict) -> tuple[bool, s
     - tuple[bool, str]: `(是否满足, 不满足原因)`；满足时原因为空串。
     """
     cap = capabilities or {}
-    available = cap.get("model_families") or []
+    raw_available = cap.get("model_families") or []
+    # 双侧按规范族名归一（如设备上报旧名 face_detection → face），避免同族异名导致误拒
+    available = [contract.canonical_family(x) for x in raw_available]
     # 支持一次要求多个模型族（场景目录 pipeline 可能依赖多个），必须全部具备
     for fam in requirement.get("model_families") or []:
-        if fam not in available:
-            have = "、".join(str(x) for x in available) or "无"
+        if contract.canonical_family(fam) not in available:
+            have = "、".join(str(x) for x in raw_available) or "无"
             return False, f"缺少所需模型族 {fam}（设备仅支持：{have}）"
     # 兼容旧的单模型族用法
     fam = requirement.get("model_family")
-    if fam and fam not in available:
-        have = "、".join(str(x) for x in available) or "无"
+    if fam and contract.canonical_family(fam) not in available:
+        have = "、".join(str(x) for x in raw_available) or "无"
         return False, f"缺少所需模型族 {fam}（设备仅支持：{have}）"
     be = requirement.get("backend")
     if be:
