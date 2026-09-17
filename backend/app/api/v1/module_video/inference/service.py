@@ -52,6 +52,8 @@ _DEFAULT_FALL_ANGLE = 60.0
 _DEFAULT_CLIMB_Y = 0.5
 # smoke_phone：腕-头归一化距离缺省阈值
 _DEFAULT_HAND_HEAD_DIST = 0.15
+# face_landmark：缺省最少有效关键点数（分数 >= _KP_MIN_SCORE 视为有效）
+_DEFAULT_FACE_LANDMARK_MIN_KP = 5
 # 需要时序轨迹状态的 keypoint 规则（smoke_phone 的 min_sec 持续性抑制）
 _KEYPOINT_STATEFUL_RULES = frozenset({"smoke_phone"})
 
@@ -590,6 +592,51 @@ def _smoke_phone_hit(
     )
 
 
+def _kp_visible_count(kps, min_score: float = _KP_MIN_SCORE) -> int:
+    """统计有效关键点数：2 元素点视为可见；给出 score 时必须为数值且 >= min_score。
+
+    与 ``_kp_point`` 同口径（坐标非数值/非有限值一律不计），保证「计数」与「取点」一致。
+    """
+    count = 0
+    for kp in kps:
+        if not isinstance(kp, (list, tuple)) or len(kp) < 2:
+            continue
+        x = _as_float(kp[0])
+        y = _as_float(kp[1])
+        if x is None or y is None or not (math.isfinite(x) and math.isfinite(y)):
+            continue
+        if len(kp) >= 3:
+            score = _as_float(kp[2])
+            if score is None or score < min_score:
+                continue
+        count += 1
+    return count
+
+
+def _face_landmark_threshold(leaf) -> tuple[float, bool]:
+    """人脸关键点最少有效点数解析：缺省 5；给出但非法（非数值/负数）返回 (0, False)。"""
+    raw = leaf.get("value")
+    if raw is None:
+        return _DEFAULT_FACE_LANDMARK_MIN_KP, True
+    val = _as_float(raw)
+    if val is None or val < 0:
+        return 0.0, False
+    return val, True
+
+
+def _face_landmark_hit(kps, leaf) -> bool:
+    """人脸关键点（face_landmark）：有效点数（分数 >= 0.3）按 op 与阈值比较。
+
+    契约：``{"subject":"keypoint_geometry","rule":"face_landmark","op"?,"value"?}``；
+    value 语义为「最少有效关键点数」（缺省 5，op 缺省 >=）；阈值非法/op 非法 → 不命中。
+    """
+    min_count, ok = _face_landmark_threshold(leaf)
+    if not ok:
+        return False
+    count = _kp_visible_count(kps)
+    return _kp_compare(count, leaf.get("op"), min_count, ">=") is True
+
+
 def _keypoint_geometry_hit(
     leaf: dict,
     detections: list,
@@ -600,18 +647,20 @@ def _keypoint_geometry_hit(
     now: float | None = None,
     alarm_interval=0,
 ) -> bool:
-    """评估 keypoint_geometry 叶子（姿态几何）；异常/缺失输入一律不命中，绝不抛异常。
+    """评估 keypoint_geometry 叶子（姿态/人脸几何）；异常/缺失输入一律不命中，绝不抛异常。
 
-    契约：``{"subject":"keypoint_geometry","rule":"fall|climb|smoke_phone|gesture",
+    契约：``{"subject":"keypoint_geometry","rule":"fall|climb|smoke_phone|face_landmark|gesture",
     "region"?,"min_sec"?,"line"?,"op"?,"value"?}``；区域过滤按检测框中心（与既有叶子一致）。
 
-    规则语义（COCO-17 索引，关键点分数 < 0.3 视为未检出）：
+    规则语义（人体用 COCO-17 索引；关键点分数 < 0.3 视为未检出）：
     - fall：躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
     - climb：躯干中心位于 line 上方（图像 y 向下，越小越高）；无 line 时与高度阈值
       value（缺省 0.5，op 缺省 <=）比较；line 竖直/非法 → 不命中；
     - smoke_phone：腕（9/10）到头参照（鼻→双耳中点→双眼中点）的最小归一化距离
       <= 阈值（value 缺省 0.15，op 缺省 <=）；配置 min_sec 时还要求存在已持续
       >= min_sec 的活跃轨迹（复用时序轨迹状态做持续性抑制）；
+    - face_landmark：有效关键点数（2 元素点视为可见；分数 < 0.3 不计）与 value
+      （缺省 5，op 缺省 >=）比较——「至少 N 个有效关键点」= 检出人脸关键点；
     - gesture：已声明但未实现（缺 21 点手部关键点模型），恒不命中（见 leaves.py 说明）。
     """
     if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
@@ -623,7 +672,7 @@ def _keypoint_geometry_hit(
     if rule == "gesture":
         # 诚实的桩实现：不支持即不命中，绝不用几何近似冒充手势识别
         return False
-    if rule not in ("fall", "climb", "smoke_phone"):
+    if rule not in ("fall", "climb", "smoke_phone", "face_landmark"):
         return False
     try:
         for d in detections:
@@ -637,6 +686,8 @@ def _keypoint_geometry_hit(
             if rule == "fall" and _fall_hit(kps, leaf):
                 return True
             if rule == "climb" and _climb_hit(kps, leaf):
+                return True
+            if rule == "face_landmark" and _face_landmark_hit(kps, leaf):
                 return True
             if rule == "smoke_phone" and _smoke_phone_hit(
                 kps,
@@ -697,6 +748,131 @@ def _distance_hit(leaf: dict, detections: list) -> bool:
         if op == "eq" and depth == value:
             return True
     return False
+
+
+# ── 语义区域占比（region_ratio 叶子）────────────────────────────────────────
+# 事件契约：sem 模型输出「整帧对象 + attributes={类别: 面积占比}」；占比由边缘在任务 ROI
+# 内算好，云端只做数值比较（不重算多边形，故本叶子不登记 region）。
+_RATIO_OPS = ("lt", "gt", "le", "ge", "eq")
+
+
+def _ratio_categories(leaf: dict) -> list[str] | None:
+    """解析参与比较的类别名：labels 列表优先，其次单个 label；都缺省返回 None（全部类别）。"""
+    labels = leaf.get("labels")
+    if isinstance(labels, (list, tuple)) and labels:
+        return [str(x) for x in labels]
+    label = leaf.get("label")
+    if isinstance(label, str) and label:
+        return [label]
+    return None
+
+
+def _ratio_compare(ratio: float, op: str, target: float) -> bool:
+    """占比比较：支持 lt/gt/le/ge/eq（与 attribute/distance 叶子同算子名）。"""
+    if op == "lt":
+        return ratio < target
+    if op == "gt":
+        return ratio > target
+    if op == "le":
+        return ratio <= target
+    if op == "ge":
+        return ratio >= target
+    return ratio == target
+
+
+def _region_ratio_hit(leaf: dict, detections: list) -> bool:
+    """评估 region_ratio 叶子：任一对象的某个类别占比满足比较即命中。
+
+    契约：``{"subject":"region_ratio","op":"lt|gt|le|ge|eq","value":<占比0~1>,
+    "label"?,"labels"?}``。
+    - 类别来源：labels 列表 > label > attributes 全部键（任一满足即命中）；
+    - 占比缺失/非数值/非有限值 → 跳过该项（fail-closed）；value 非数值、op 非法 → 不命中。
+    """
+    if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
+        return False
+    op = leaf.get("op")
+    if op not in _RATIO_OPS:
+        return False
+    value = _as_float(leaf.get("value"))
+    if value is None:
+        return False
+    categories = _ratio_categories(leaf)
+    for d in detections:
+        if not isinstance(d, dict):
+            continue
+        attrs = d.get("attributes")
+        if not isinstance(attrs, dict):
+            continue
+        if categories is None:
+            raw_items = list(attrs.values())
+        else:
+            raw_items = [attrs.get(k) for k in categories]
+        for raw in raw_items:
+            ratio = _as_float(raw)
+            if ratio is None or not math.isfinite(ratio):
+                continue
+            if _ratio_compare(ratio, op, value):
+                return True
+    return False
+
+
+# ── 码值匹配（code_match 叶子）──────────────────────────────────────────────
+# 事件契约：barcode 解码结果复用 objects[].text 承载（与 OCR 同字段）。
+_CODE_MATCH_OPS = ("in", "regex")
+
+
+def _texts_of(detections: list) -> list[str]:
+    """收集检测上的非空文本（去首尾空白后保序）；非字符串一律跳过。"""
+    out: list[str] = []
+    for d in detections:
+        if not isinstance(d, dict):
+            continue
+        text = d.get("text")
+        if isinstance(text, str) and text.strip():
+            out.append(text.strip())
+    return out
+
+
+def _code_match_hit(leaf: dict, detections: list) -> bool:
+    """评估 code_match 叶子：解码文本与码值名单/正则匹配。
+
+    契约：``{"subject":"code_match","op":"in|regex","code_list"?:[...],"regex"?:str}``。
+    - op=in（缺省）：与 code_list 逐项精确比对；名单为空/缺失 → 识别到任意非空码值即命中；
+    - op=regex：任一文本命中正则即命中（安全执行，非法/危险模式不命中）；
+    - 无有效文本 / op 非法 / 名单类型非法 → 不命中（fail-closed）。
+    """
+    if not isinstance(leaf, dict) or not isinstance(detections, (list, tuple)):
+        return False
+    op = leaf.get("op")
+    if op is None:
+        op = "in"
+    if not isinstance(op, str) or op.strip().lower() not in _CODE_MATCH_OPS:
+        return False
+    op = op.strip().lower()
+    texts = _texts_of(detections)
+    if not texts:
+        return False
+    if op == "regex":
+        pattern = leaf.get("regex")
+        if not isinstance(pattern, str) or not pattern:
+            return False
+        return any(safe_regex_search(pattern, t) for t in texts)
+    codes = leaf.get("code_list")
+    if codes is None or (isinstance(codes, (list, tuple)) and not codes):
+        # 未配置名单：识别到任意非空码值即命中（默认「检测到条码」语义）
+        return True
+    if not isinstance(codes, (list, tuple)):
+        return False
+    wanted = {
+        str(c).strip()
+        for c in codes
+        if isinstance(c, (str, int, float))
+        and not isinstance(c, bool)
+        and str(c).strip()
+    }
+    if not wanted:
+        return True
+    return any(t in wanted for t in texts)
 
 
 def _eval_temporal(
@@ -949,16 +1125,24 @@ def _match_conditions(
       "track_id"?} 某真实轨迹存在 >= min_sec、仍活跃，且相对首帧最大位移 <= max_move。
     - track：{"subject":"track","label"?,"labels"?,"region"?,"min_sec"?}
       存在至少一条活跃的真实轨迹（可选要求时长 >= min_sec）。
-    关键点几何叶子（读取 detection.keypoints，姿态模型输出 [[x,y,score],...] 归一化）：
-    - keypoint_geometry：{"subject":"keypoint_geometry","rule":"fall|climb|smoke_phone|gesture",
+    关键点几何叶子（读取 detection.keypoints，姿态/人脸模型输出 [[x,y,score],...] 归一化）：
+    - keypoint_geometry：{"subject":"keypoint_geometry",
+      "rule":"fall|climb|smoke_phone|face_landmark|gesture",
       "region"?,"min_sec"?,"line"?,"op"?,"value"?}
       fall=躯干（肩中点↔髋中点）与竖直方向夹角 >= 阈值（value 缺省 60°，op 缺省 >=）；
       climb=躯干中心位于 line 上方，无 line 时与高度阈值 value（缺省 0.5，op 缺省 <=）比较；
       smoke_phone=腕到头参照的最小距离 <= 阈值（value 缺省 0.15），min_sec 可选持续性抑制；
+      face_landmark=有效关键点数（分数 >= 0.3）与阈值 value（缺省 5，op 缺省 >=）比较；
       gesture=已声明但未实现（缺手部关键点模型），恒不命中。区域过滤按检测框中心。
     深度安全距离叶子（读取 detection.depth，深度模型输出，单位米）：
     - distance：{"subject":"distance","op":"lt|gt|le|ge|eq","value":<米>,"label"?,"region"?}
       任一检测的数值 depth 满足比较即命中；depth 缺失/非数值/非有限值一律跳过（fail-closed）。
+    语义区域占比叶子（读取 detection.attributes={类别: 面积占比}，sem 模型输出）：
+    - region_ratio：{"subject":"region_ratio","op":"lt|gt|le|ge|eq","value":<占比>,
+      "label"?,"labels"?} 任一对象的某个类别占比满足比较即命中，缺省对全部类别取任一满足。
+    码值匹配叶子（读取 detection.text，barcode 解码结果）：
+    - code_match：{"subject":"code_match","op":"in|regex","code_list"?,"regex"?}
+      op=in 与名单精确比对（名单空=识别到任意非空码值）；op=regex 按正则匹配。
     其它叶子后续扩展；未知叶子不命中。
     本函数对异常输入（JSON null / 非数值 / 非 dict）一律按不命中处理，绝不向上抛异常，
     避免单条脏规则导致整个告警事件被丢弃。
@@ -1062,6 +1246,12 @@ def explain_conditions(
         if subject == "distance":
             # 深度安全距离叶子（读取 detection.depth，单位米）
             return _distance_hit(leaf, dets)
+        if subject == "region_ratio":
+            # 语义区域占比叶子（读取 detection.attributes={类别: 占比}）
+            return _region_ratio_hit(leaf, dets)
+        if subject == "code_match":
+            # 码值匹配叶子（读取 detection.text，条码/二维码解码结果）
+            return _code_match_hit(leaf, dets)
         if subject == "text_match":
             pattern = leaf.get("regex")
             if not isinstance(pattern, str):
@@ -1202,6 +1392,46 @@ def explain_conditions(
             return f"depth {depth:.2f}{op}{_fmt_num(value)}"
         return f"depth ?{op}{_fmt_num(leaf.get('value'))}"
 
+    def _region_ratio_detail(leaf: dict) -> str:
+        """region_ratio 叶子的关键量说明；无有效占比时给出可读回退。"""
+        op = leaf.get("op")
+        value = _as_float(leaf.get("value"))
+        categories = _ratio_categories(leaf)
+        for d in dets:
+            attrs = d.get("attributes") if isinstance(d, dict) else None
+            if not isinstance(attrs, dict):
+                continue
+            pairs = (
+                [(k, attrs.get(k)) for k in categories]
+                if categories is not None
+                else list(attrs.items())
+            )
+            for key, raw in pairs:
+                ratio = _as_float(raw)
+                if ratio is None or not math.isfinite(ratio):
+                    continue
+                return f"ratio {key}={ratio:.2f}{op}{_fmt_num(value)}"
+        return f"ratio ?{op}{_fmt_num(leaf.get('value'))}"
+
+    def _code_match_detail(leaf: dict) -> str:
+        """code_match 叶子的关键量说明；无有效码值时给出可读回退。"""
+        op = leaf.get("op") or "in"
+        texts = _texts_of(dets)
+        if op == "regex":
+            pattern = leaf.get("regex")
+            hit = next((t for t in texts if isinstance(pattern, str) and safe_regex_search(pattern, t)), None)
+            return f"code {hit}~{pattern}" if hit else f"code ~{pattern}"
+        codes = leaf.get("code_list")
+        wanted = (
+            {str(c).strip() for c in codes if isinstance(c, (str, int, float)) and not isinstance(c, bool)}
+            if isinstance(codes, (list, tuple))
+            else set()
+        )
+        if wanted:
+            hit = next((t for t in texts if t in wanted), None)
+            return f"code {hit or '?'} in list({len(wanted)})"
+        return f"code {texts[0]}" if texts else "code -"
+
     def _temporal_detail(subject: str, leaf: dict) -> str:
         """时序叶子的关键量说明；缺状态时给出可读回退。"""
         scope, ok = _leaf_scope(leaf)
@@ -1317,7 +1547,7 @@ def explain_conditions(
         rule = rule.strip().lower() if isinstance(rule, str) else ""
         if rule == "gesture":
             return "gesture 未实现(缺 21 点手部关键点)"
-        if rule not in ("fall", "climb", "smoke_phone"):
+        if rule not in ("fall", "climb", "smoke_phone", "face_landmark"):
             return str(leaf.get("subject"))
         op = leaf.get("op") or ("<=" if rule in ("climb", "smoke_phone") else ">=")
         for d in dets:
@@ -1336,6 +1566,11 @@ def explain_conditions(
                 if threshold is None:
                     return "fall -"
                 return f"fall {angle:.0f}°{op}{_fmt_num(threshold)}°"
+            if rule == "face_landmark":
+                min_count, ok = _face_landmark_threshold(leaf)
+                if not ok:
+                    return "face_landmark -"
+                return f"face_kp {_kp_visible_count(kps)}{op}{_fmt_num(min_count)}"
             if rule == "climb":
                 center = _climb_body_center(kps)
                 if center is None:
@@ -1385,6 +1620,10 @@ def explain_conditions(
                 return _attribute_detail(leaf)
             if subject == "distance":
                 return _distance_detail(leaf)
+            if subject == "region_ratio":
+                return _region_ratio_detail(leaf)
+            if subject == "code_match":
+                return _code_match_detail(leaf)
             if subject == "text_match":
                 return f"text~{leaf.get('regex')}"
             if subject == "ocr_label":

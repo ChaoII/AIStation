@@ -29,6 +29,8 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
             "line_cross",
             "static",
             "track",
+            # 语义区域占比：labels 选定参与比较的类别（省略则对全部类别取最大占比）
+            "region_ratio",
         },
     ),
     "confidence_threshold": ("min_confidence", "object_present"),
@@ -49,6 +51,13 @@ PARAM_TO_LEAF: dict[str, tuple[str, Any]] = {
     "liveness_threshold": ("value", "attribute"),
     # 安全距离阈值：DEPTH_SAFE 的 distance_threshold → distance.value（单位：米）
     "distance_threshold": ("value", "distance"),
+    # 语义区域占比阈值：SEM_AREA 的 ratio → region_ratio.value（见 catalog 默认规则 op=ge）
+    "ratio": ("value", "region_ratio"),
+    # 人脸关键点最少有效点数：FACE_LANDMARK 的 min_keypoints → keypoint_geometry.value
+    # （rule=face_landmark 时 value 语义为「最少有效关键点数」，缺省 5）
+    "min_keypoints": ("value", "keypoint_geometry"),
+    # 码值名单：BARCODE 的 code_list → code_match.code_list（精确比对解码文本）
+    "code_list": ("code_list", "code_match"),
     # 组叶子走独立参数键（group_* 前缀），避免破坏既有的 window_sec→count_window 等绑定
     "group_window_sec": ("window_sec", {"group_count", "group_coverage"}),
     "group_count": ("value", {"group_count", "group_coverage"}),
@@ -85,6 +94,9 @@ _REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "keypoint_geometry": ("rule",),
     # 深度安全距离必须有比较阈值（value，单位米）与算子 op（见 distance 叶子 ops）
     "distance": ("value",),
+    # 语义区域占比必须有比较阈值（value，类别占比 0~1；op 见 region_ratio 叶子 ops）
+    "region_ratio": ("value",),
+    # code_match 无必填键：code_list 省略=识别到任意非空码值即命中
 }
 
 # 跨相机聚合叶子：仅允许相机组作用域规则使用（相机作用域误用 → 编译报错）

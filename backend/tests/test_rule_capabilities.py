@@ -13,6 +13,9 @@ _EVALUABLE_NON_TEMPORAL = {
     "count",
     "keypoint_geometry",
     "distance",
+    # B2b：语义区域占比 / 码值匹配
+    "region_ratio",
+    "code_match",
 }
 
 

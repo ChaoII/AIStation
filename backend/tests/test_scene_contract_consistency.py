@@ -43,6 +43,13 @@ _ATTRIBUTE_SCENES = {"FACE_ATTR", "FACE_ANTISPOOF"}
 # 依赖「深度值进入边缘事件」契约的场景（B2a 契约已声明，现应可配置）
 _DEPTH_SCENES = {"DEPTH_SAFE"}
 
+# B2b：语义区域占比 / 码值匹配 走新叶子或既有 text_match
+_RATIO_SCENES = {"SEM_AREA"}
+_CODE_SCENES = {"BARCODE"}
+_TEXT_SCENES = {"DOC_TABLE"}
+# B2b：人脸关键点复用 keypoint_geometry（rule=face_landmark）+ keypoints 事件契约
+_LANDMARK_SCENES = {"FACE_LANDMARK"}
+
 
 def _iter_leaves(rule: dict):
     """深度遍历规则条件树，产出所有叶子节点（非逻辑算子节点）。"""
@@ -78,14 +85,16 @@ def test_configurable_scenes_compile_default_rule():
     # B2a 分类事件契约落地后 SCENE_CLS/DEFECT_CLS/NO_MASK 亦转为可配置；
     # 姿态切片 keypoint_geometry 落地后 FALL/CLIMB/SMOKE_PHONE 亦转为可配置
     # （HAND_GESTURE 因 hand 族未上报 + gesture 规则未实现，仍置灰）。
+    # B2b sem/face_landmark/doc/barcode 族声明后 SEM_AREA/FACE_LANDMARK/DOC_TABLE/BARCODE 亦可选。
     assert {"ABANDON", "DEPLOY_TRACK", "OBB_DET", "I_SEG"} <= set(checked)
     assert _CLASSIFICATION_SCENES <= set(checked)
     assert _KEYPOINT_SCENES <= set(checked)
     assert _ATTRIBUTE_SCENES <= set(checked)
     assert _DEPTH_SCENES <= set(checked)
+    assert (_RATIO_SCENES | _CODE_SCENES | _TEXT_SCENES | _LANDMARK_SCENES) <= set(checked)
     assert "HAND_GESTURE" not in set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 29
+    assert len(checked) == 33
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -230,6 +239,69 @@ def test_face_and_depth_scenes_re_gate_without_contract(monkeypatch):
             ok, reason = scene_configurability(SCENES[code])
             assert ok is False, f"{code} 深度契约撤销后不应仍可配置"
             assert "深度" in reason, f"{code}: {reason}"
+    finally:
+        monkeypatch.undo()
+
+
+def test_sem_landmark_doc_barcode_configurable_after_contract_lands():
+    """B2b：sem/face_landmark/doc/barcode 族已声明 → 四个场景可配置且默认规则可编译。
+
+    - SEM_AREA 用 region_ratio 叶子（读取 sem 整帧对象的 attributes 占比）；
+    - FACE_LANDMARK 用 keypoint_geometry(rule=face_landmark) + keypoints 事件契约；
+    - DOC_TABLE 复用 text_match（doc 结构摘要走 objects[].text）；
+    - BARCODE 用 code_match（解码结果走 objects[].text）。
+    """
+    assert {"sem", "face_landmark", "doc", "barcode"} <= contract.AGENT_MODEL_FAMILIES
+    expected = {
+        "SEM_AREA": "region_ratio",
+        "FACE_LANDMARK": "keypoint_geometry",
+        "DOC_TABLE": "text_match",
+        "BARCODE": "code_match",
+    }
+    for code, subject in expected.items():
+        scene = SCENES[code]
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 契约已声明却仍置灰：{reason}"
+        out = compile_rule(code, _default_params(scene), scene.default_rule)
+        leaves = list(_iter_leaves(out))
+        assert leaves and all(leaf["subject"] == subject for leaf in leaves), code
+    # FACE_LANDMARK 依赖关键点事件契约，须显式声明，才能在契约回退时重新置灰
+    assert SCENES["FACE_LANDMARK"].requires_keypoints is True
+    assert contract.supports_event_feature("keypoints") is True
+    # FACE_LANDMARK 的 min_keypoints 必须注入 keypoint_geometry.value（界面可填即生效）
+    out = compile_rule("FACE_LANDMARK", {"min_keypoints": 8}, SCENES["FACE_LANDMARK"].default_rule)
+    assert out["children"][0]["value"] == 8
+    # SEM_AREA 的 ratio 必须注入 region_ratio.value
+    out = compile_rule("SEM_AREA", {"ratio": 0.2}, SCENES["SEM_AREA"].default_rule)
+    assert out["children"][0]["value"] == 0.2
+    # BARCODE 的 code_list 必须注入 code_match.code_list
+    out = compile_rule("BARCODE", {"code_list": ["QR-1"]}, SCENES["BARCODE"].default_rule)
+    assert out["children"][0]["code_list"] == ["QR-1"]
+
+
+def test_face_landmark_re_gates_without_keypoint_contract(monkeypatch):
+    """机制锁定：撤下 keypoints 事件特性后，FACE_LANDMARK 必须重新按「关键点」原因置灰。"""
+    monkeypatch.setattr(contract, "AGENT_EVENT_FEATURES", frozenset())
+    try:
+        ok, reason = scene_configurability(SCENES["FACE_LANDMARK"])
+        assert ok is False
+        assert "关键点" in reason, reason
+    finally:
+        monkeypatch.undo()
+
+
+def test_sem_doc_barcode_stay_grayed_without_families(monkeypatch):
+    """机制锁定：撤下 B2b 模型族后，三个场景必须重新按「缺模型族」置灰。"""
+    monkeypatch.setattr(
+        contract,
+        "AGENT_MODEL_FAMILIES",
+        contract.AGENT_MODEL_FAMILIES - {"sem", "doc", "barcode"},
+    )
+    try:
+        for code, fam in (("SEM_AREA", "sem"), ("DOC_TABLE", "doc"), ("BARCODE", "barcode")):
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 撤下族后不应仍可配置"
+            assert fam in reason, f"{code}: {reason}"
     finally:
         monkeypatch.undo()
 

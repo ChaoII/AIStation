@@ -241,6 +241,64 @@ def test_smoke_phone_min_sec_invalid_is_false():
     assert _eval(leaf, [_det(_hand_near_head())], store=store, now=1006) is False
 
 
+# -------------------------------------------------------------- face_landmark
+def _face_kps(n: int, score: float = 0.9):
+    """构造 n 个有效人脸关键点（坐标为归一化值，互不重叠）。"""
+    return [[(i + 1) / (n + 1), (i + 1) / (n + 1), score] for i in range(n)]
+
+
+def test_face_landmark_hit_when_enough_valid_points():
+    leaf = {"subject": "keypoint_geometry", "rule": "face_landmark"}
+    assert _eval(leaf, [_det(_face_kps(5))]) is True
+    assert _eval(leaf, [_det(_face_kps(6))]) is True
+
+
+def test_face_landmark_miss_when_too_few_valid_points():
+    """缺省最少 5 个有效点：4 个有效点不命中（fail-closed）。"""
+    leaf = {"subject": "keypoint_geometry", "rule": "face_landmark"}
+    assert _eval(leaf, [_det(_face_kps(4))]) is False
+    assert _eval(leaf, [_det()]) is False
+    assert _eval(leaf, [_det([])]) is False
+
+
+def test_face_landmark_low_score_points_not_counted():
+    """分数低于 0.3 的关键点视为未检出，不计入有效点数。"""
+    leaf = {"subject": "keypoint_geometry", "rule": "face_landmark", "value": 3}
+    kps = _face_kps(2, score=0.9) + _face_kps(4, score=0.1)
+    assert _eval(leaf, [_det(kps)]) is False
+
+
+def test_face_landmark_threshold_and_op_are_configurable():
+    leaf = {"subject": "keypoint_geometry", "rule": "face_landmark", "op": ">=", "value": 3}
+    assert _eval(leaf, [_det(_face_kps(3))]) is True
+    assert _eval(leaf, [_det(_face_kps(2))]) is False
+    strict = {"subject": "keypoint_geometry", "rule": "face_landmark", "op": ">", "value": 3}
+    assert _eval(strict, [_det(_face_kps(3))]) is False
+
+
+def test_face_landmark_invalid_threshold_or_op_fails_closed():
+    bad_value = {"subject": "keypoint_geometry", "rule": "face_landmark", "value": "x"}
+    assert _eval(bad_value, [_det(_face_kps(9))]) is False
+    neg = {"subject": "keypoint_geometry", "rule": "face_landmark", "value": -1}
+    assert _eval(neg, [_det(_face_kps(9))]) is False
+    bad_op = {"subject": "keypoint_geometry", "rule": "face_landmark", "op": "~", "value": 1}
+    assert _eval(bad_op, [_det(_face_kps(9))]) is False
+
+
+def test_face_landmark_region_filter_uses_bbox_center():
+    leaf = {"subject": "keypoint_geometry", "rule": "face_landmark", "region": SQUARE}
+    assert _eval(leaf, [_det(_face_kps(9), cx=0.5, cy=0.5)]) is True
+    assert _eval(leaf, [_det(_face_kps(9), cx=0.05, cy=0.05)]) is False
+
+
+def test_face_landmark_detail_is_explainable():
+    leaf = {"subject": "keypoint_geometry", "rule": "face_landmark", "op": ">=", "value": 5}
+    ok, hits = explain_conditions(leaf, [_det(_face_kps(7))])
+    assert ok is True
+    assert hits[0]["subject"] == "keypoint_geometry"
+    assert "face_kp" in hits[0]["detail"] and "7" in hits[0]["detail"]
+
+
 # -------------------------------------------------------------------- gesture
 def test_gesture_is_documented_stub_and_always_false():
     """gesture 规则为已声明的桩实现：任何输入均不命中（缺 21 点手部关键点模型）。"""

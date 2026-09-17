@@ -13,7 +13,7 @@ LOGIC_OPS: list[str] = ["and", "or", "not"]
 _CMP_OPS = [">=", ">", "<=", "<", "=="]
 _ATTR_OPS = ["lt", "gt", "le", "ge", "eq"]
 
-# 已实现 14 个叶子（对拍求值器）
+# 已实现 18 个叶子（对拍求值器）
 LEAF_CAPABILITIES: dict[str, dict] = {
     "object_present": {
         "label": "存在目标",
@@ -188,6 +188,31 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         ],
         "ops": _ATTR_OPS,
     },
+    # 语义区域占比叶子（B2b）：sem 模型输出「整帧对象 + attributes={类别: 面积占比}」，
+    # 本叶子对占比按 op 与阈值比较（任一类别满足即命中）。region 不登记：占比由边缘在
+    # 任务 ROI 内算好，云端无法按多边形重算（见 inference/service.py `_region_ratio_hit`）。
+    "region_ratio": {
+        "label": "区域占比",
+        "implemented": True,
+        "params": [
+            {"key": "label", "type": "str"},
+            {"key": "labels", "type": "list"},
+            {"key": "value", "type": "float"},
+        ],
+        "ops": _ATTR_OPS,
+    },
+    # 码值匹配叶子（B2b）：条码/二维码解码结果复用 detection.text 承载。
+    # op=in 时与 code_list 逐项精确比对（名单为空=识别到任意非空码值即命中）；
+    # op=regex 时按正则匹配（安全执行，非法/危险模式不命中）。见 `_code_match_hit`。
+    "code_match": {
+        "label": "码值匹配",
+        "implemented": True,
+        "params": [
+            {"key": "code_list", "type": "list"},
+            {"key": "regex", "type": "str"},
+        ],
+        "ops": ["in", "regex"],
+    },
     # ── 以下叶子求值器尚未实现，仅列出供前端置灰展示 ──
     "face_match": {
         "label": "人脸比对",
@@ -207,25 +232,10 @@ LEAF_CAPABILITIES: dict[str, dict] = {
         "params": [{"key": "value", "type": "float"}],
         "ops": _CMP_OPS,
     },
-    "region_ratio": {
-        "label": "区域占比",
-        "implemented": False,
-        "params": [
-            {"key": "region", "type": "polygon"},
-            {"key": "value", "type": "float"},
-        ],
-        "ops": _CMP_OPS,
-    },
     "structure": {
         "label": "版面结构",
         "implemented": False,
         "params": [{"key": "op", "type": "str"}],
-        "ops": [],
-    },
-    "code_match": {
-        "label": "码值匹配",
-        "implemented": False,
-        "params": [{"key": "code_list", "type": "list"}],
         "ops": [],
     },
     "reid_match": {

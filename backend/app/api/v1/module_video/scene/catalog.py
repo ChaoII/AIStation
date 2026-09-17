@@ -55,6 +55,8 @@ _MIN_SEC = {"key": "min_sec", "type": "int", "default": 5, "label": "最短时�
 _ANGLE_THRESHOLD = {"key": "angle_threshold", "type": "float", "default": 60.0, "label": "倾斜角阈值(度)"}
 # 姿态几何：smoke_phone 的腕-头归一化距离阈值 → keypoint_geometry.value（rule=smoke_phone）
 _HAND_DIST = {"key": "hand_head_distance", "type": "float", "default": 0.15, "label": "手-头距离阈值"}
+# 人脸关键点：face_landmark 的最少有效关键点数（分数 >= 0.3 视为有效）
+_MIN_KP = {"key": "min_keypoints", "type": "int", "default": 5, "label": "最少关键点数"}
 _MAX_MOVE = {"key": "max_move", "type": "float", "default": 0.02, "label": "最大位移(归一化)"}
 _GAP_SEC = {"key": "gap_sec", "type": "int", "default": 30, "label": "无目标时长(秒)"}
 _DIRECTION = {"key": "direction", "type": "str", "default": "A2B", "label": "越线方向"}
@@ -293,7 +295,10 @@ _add(SceneDef(
 _add(SceneDef(
     "SEM_AREA", "语义区域", "seg", "SEM_AREA", ["sem"], [_SEM],
     [_POLY, {"key": "ratio", "type": "float", "default": 0.5, "label": "占比阈值"}, _LABELS],
-    {"op": "and", "children": [{"subject": "region_ratio", "region": "roi", "op": "gte", "value": "ratio"}]},
+    # region_ratio 叶子（B2b）：sem 模型输出整帧对象 attributes={类别: 面积占比}，
+    # 默认规则判「某类别占比 >= 0.5」。区域由任务 ROI 在边缘侧参与占比计算，云端不重算，
+    # 故默认规则不写符号化 region（符号引用无法被求值器解析）。
+    {"op": "and", "children": [{"subject": "region_ratio", "op": "ge", "value": 0.5}]},
     False, "区域类别占比判定",
 ))
 
@@ -362,9 +367,14 @@ _add(SceneDef(
 _add(SceneDef(
     "FACE_LANDMARK", "人脸关键点", "face", "FACE_LANDMARK", ["face", "face_landmark"],
     [_FACE_DET, _FACE_LMK],
-    [_POLY, _CONF],
-    {"op": "and", "children": [{"subject": "keypoint_geometry", "rule": "face_landmark"}]},
+    [_POLY, _MIN_KP],
+    # keypoint_geometry(rule=face_landmark)（B2b）：对象关键点中「分数 >= 0.3 的有效点数」
+    # >= min_keypoints（默认 5）判为检出人脸关键点；region 由 roi 参数运行时注入。
+    {"op": "and", "children": [
+        {"subject": "keypoint_geometry", "rule": "face_landmark", "op": ">=", "value": 5}
+    ]},
     False, "人脸 106 关键点检测",
+    requires_keypoints=True,
 ))
 
 _add(SceneDef(
@@ -413,15 +423,20 @@ _add(SceneDef(
 
 _add(SceneDef(
     "DOC_TABLE", "文档/表格", "doc", "DOC_TABLE", ["doc"], [_OCR, _CLS],
-    [_POLY, {"key": "extract_table", "type": "bool", "default": True, "label": "提取表格"}],
-    {"op": "and", "children": [{"subject": "structure", "op": "exists"}]},
+    [_POLY],
+    # 事件契约（B2b）：doc 模型把版式/表格结构摘要写入 objects[].text；云端复用已实现的
+    # text_match 叶子判「识别到任意非空文本」。原 extract_table 参数无求值器/边缘消费方，
+    # 已移除（避免「界面可填但无效」，同 METER_OCR 读数上下限处理）。
+    {"op": "and", "children": [{"subject": "text_match", "regex": ".+"}]},
     False, "文档版式/表格结构解析",
 ))
 
 _add(SceneDef(
     "BARCODE", "条码/二维码", "other", "BARCODE", ["barcode"], [_OCR],
     [_POLY, {"key": "code_list", "type": "list", "label": "码值名单"}],
-    {"op": "and", "children": [{"subject": "code_match", "op": "in", "value": "code_list"}]},
+    # code_match 叶子（B2b）：解码结果复用 objects[].text；op=in 与 code_list 精确比对，
+    # 名单为空（默认）时识别到任意非空码值即命中。
+    {"op": "and", "children": [{"subject": "code_match", "op": "in"}]},
     False, "条码/二维码识别",
 ))
 
