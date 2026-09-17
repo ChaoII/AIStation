@@ -5,6 +5,8 @@
 """
 from dataclasses import dataclass, field
 
+from .leaves import LEAF_CAPABILITIES
+
 
 @dataclass(frozen=True)
 class SceneDef:
@@ -133,7 +135,8 @@ _add(SceneDef(
 _add(SceneDef(
     "ABANDON", "遗留/抛洒物", "tracking", "ABANDON", ["det"], [_DET, _TRACK],
     [_POLY, _SECONDS, _CONF],
-    # TODO(SP4): static 静止判定依赖时序跟踪，求值器尚未实现，保留占位规则。
+    # static 静止判定依赖时序跟踪，求值器未实现；无等价已实现叶子可退化（dwell 会对
+    # 任意滞留目标误报，改变语义），故本场景由 scene_configurability 标记为不可配置（置灰）。
     {"op": "and", "children": [{"subject": "static", "region": "roi", "op": "gte", "value": "dwell_sec"}]},
     True, "目标静止超过阈值",
 ))
@@ -165,16 +168,19 @@ _add(SceneDef(
 # ── §3.2 分类类 ──────────────────────────────
 _add(SceneDef(
     "SCENE_CLS", "场景/状态分类", "classification", "SCENE_CLS", ["cls"], [_CLS],
-    [_POLY, _TOPK, _CLS_THR],
-    {"op": "and", "children": [{"subject": "classification", "op": "in", "value": "labels"}]},
-    False, "整图/区域场景分类",
+    [_POLY, _LABELS],
+    # 分类叶子（classification）求值器未实现，暂退化为 object_present（区域内目标出现判定），
+    # 保证 UI 选中后可保存；labels 参数经编译层注入该叶子，语义见 description。
+    {"op": "and", "children": [{"subject": "object_present"}]},
+    False, "整图/区域场景分类（分类叶子未实现，暂退化为区域内目标出现判定）",
 ))
 
 _add(SceneDef(
     "DEFECT_CLS", "缺陷/异常分类", "classification", "DEFECT_CLS", ["cls"], [_CLS],
-    [_POLY, _CLS_THR, _LABELS],
-    {"op": "and", "children": [{"subject": "classification", "op": "in", "value": "labels"}]},
-    False, "缺陷/异常类别判定",
+    [_POLY, _LABELS],
+    # 同 SCENE_CLS：分类叶子未实现，退化为 object_present，避免「选中必 400」。
+    {"op": "and", "children": [{"subject": "object_present"}]},
+    False, "缺陷/异常类别判定（分类叶子未实现，暂退化为区域内目标出现判定）",
 ))
 
 _add(SceneDef(
@@ -219,7 +225,7 @@ _add(SceneDef(
 
 _add(SceneDef(
     "NO_MASK", "未戴口罩", "classification", "NO_MASK", ["det", "cls"], [_DET, _CLS],
-    [_POLY, _CONF, _CLS_THR, _LABELS],
+    [_POLY, _CONF, _LABELS],
     {"op": "and", "children": [{"subject": "object_present", "label": "no_mask"}]},
     False, "人体/人脸口罩佩戴判定",
 ))
@@ -343,12 +349,12 @@ _add(SceneDef(
 
 _add(SceneDef(
     "METER_OCR", "仪表读数", "ocr", "METER_OCR", ["ocr"], [_OCR],
-    [_POLY, {"key": "min_value", "type": "float", "label": "读数下限"},
-     {"key": "max_value", "type": "float", "label": "读数上限"}],
-    # 评估器尚未实现数值比较叶子；暂用 text_match 匹配数字文本（含小数）作为默认规则。
-    # TODO: 后续新增专用数值比较叶子（如 subject="numeric"，支持 min/max 参数）后再切换。
+    # 数值上下限（原 min_value/max_value）求值器无对应叶子，已从参数表移除，避免「界面可填但无效」；
+    # 恢复条件：新增支持 min/max 的数值比较叶子后，按本目录参数键重新登记。
+    [_POLY, _CONF],
+    # 求值器只识别 text_match 叶子的 regex：默认匹配数字文本（含小数）。
     {"op": "and", "children": [{"subject": "text_match", "regex": "[0-9]+(?:\\.[0-9]+)?"}]},
-    False, "仪表数字读数判定",
+    False, "仪表数字读数判定（读数上下限未实现，默认仅识别数字文本）",
 ))
 
 _add(SceneDef(
@@ -384,7 +390,8 @@ _add(SceneDef(
 _add(SceneDef(
     "DEPLOY_TRACK", "通用跟踪", "tracking", "DEPLOY_TRACK", ["det"], [_DET, _TRACK],
     [_POLY, _CONF, _LABELS],
-    # TODO(SP4): track 依赖多目标轨迹/时序跟踪，求值器尚未实现，保留占位规则。
+    # track 轨迹生命周期叶子求值器未实现，且无等价已实现叶子可退化（object_present 只是
+    # 「出现」判定，无法表达跟踪语义），故本场景由 scene_configurability 标记为不可配置（置灰）。
     {"op": "and", "children": [{"subject": "track", "region": "roi"}]},
     True, "通用多目标跟踪",
 ))
@@ -407,6 +414,54 @@ EDGE_ADVERTISED_MODEL_FAMILIES: frozenset[str] = frozenset(
 def is_edge_implementable(scene: SceneDef) -> bool:
     """场景所需模型族是否全部为边缘 Agent 默认构建上报的族。"""
     return all(fam in EDGE_ADVERTISED_MODEL_FAMILIES for fam in scene.model_families)
+
+
+def _iter_rule_leaves(rule: dict):
+    """深度遍历条件树，产出所有叶子节点（含 subject 的节点）。"""
+    stack = [rule]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, dict):
+            continue
+        if node.get("op") in ("and", "or", "not"):
+            stack.extend(node.get("children") or [])
+            continue
+        if "subject" in node:
+            yield node
+
+
+def unimplemented_default_leaves(scene: SceneDef) -> list[str]:
+    """默认规则里引用了、但求值器尚未实现的叶子 subject（去重排序）。"""
+    bad = {
+        leaf["subject"]
+        for leaf in _iter_rule_leaves(scene.default_rule)
+        if not (LEAF_CAPABILITIES.get(leaf["subject"]) or {}).get("implemented")
+    }
+    return sorted(bad)
+
+
+def scene_configurability(scene: SceneDef) -> tuple[bool, str]:
+    """场景在当前云端 + 边缘 Agent 能力下是否「可配置（选中即可保存成功）」。
+
+    两条硬性条件缺一不可：
+    1. 所需模型族均已由边缘 Agent 上报（否则下发必被拒）；
+    2. 默认规则引用的求值器叶子均已实现（否则编译层必 400）。
+
+    返回 ``(可配置, 原因)``；可配置时原因为空串。不可配置的原因直接展示给用户，
+    避免出现「界面上能选、点保存必然失败」的误导陷阱。
+    """
+    if not is_edge_implementable(scene):
+        missing = [f for f in scene.model_families if f not in EDGE_ADVERTISED_MODEL_FAMILIES]
+        return False, f"边缘 Agent 未实现模型族：{', '.join(missing)}"
+    bad = unimplemented_default_leaves(scene)
+    if bad:
+        return False, f"默认规则所用求值器叶子未实现：{', '.join(bad)}"
+    return True, ""
+
+
+def configurable_scene_codes() -> list[str]:
+    """当前可配置（前端可选中并保存成功）的场景码列表。"""
+    return [code for code, scene in SCENES.items() if scene_configurability(scene)[0]]
 
 
 def unsupported_scene_codes() -> list[str]:

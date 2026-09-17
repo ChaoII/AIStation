@@ -15,3 +15,10 @@ class SceneOutSchema(BaseModel):
     default_rule: dict = Field(default_factory=dict, description="默认规则")
     needs_tracking: bool = Field(default=False, description="是否需要跟踪")
     description: str = Field(default="", description="场景说明")
+    edge_supported: bool = Field(
+        default=True, description="所需模型族是否已由边缘 Agent 上报（历史字段）"
+    )
+    configurable: bool = Field(
+        default=True, description="是否可配置（模型族 + 默认规则叶子均已就绪，选中即可保存成功）"
+    )
+    unsupported_reason: str = Field(default="", description="不可配置原因（可配置时为空）")
