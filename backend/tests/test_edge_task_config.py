@@ -285,6 +285,20 @@ def test_non_face_scene_omits_max_embeddings():
     assert "max_embeddings" not in cfg
 
 
+def test_max_embeddings_contract_key_name_and_type():
+    """契约：顶层键名 `max_embeddings`、类型 int（非 bool），且不落在 models[] 条目内。
+
+    与 Agent 侧 `config_adapter.cpp` 的 `j.value("max_embeddings", 8)` 读取口径一致；
+    Agent 读取的是**顶层**键（与 alarm_interval_sec/heartbeat_sec 同层）。
+    """
+    cfg = build_agent_task_config(_TaskFaceRec(), _Cam(), _AlgFaceRec(), events={})
+    assert "max_embeddings" in cfg, "顶层键名必须为 max_embeddings"
+    value = cfg["max_embeddings"]
+    # bool 是 int 的子类，必须显式排除（JSON 布尔被 Agent 当整数解析会失真）
+    assert isinstance(value, int) and not isinstance(value, bool)
+    assert all("max_embeddings" not in m for m in cfg["models"])
+
+
 # ── SAM_SEG 提示点透传（prompt_point）──────────────────────────────────────
 class _AlgSam:
     name = "交互分割"
