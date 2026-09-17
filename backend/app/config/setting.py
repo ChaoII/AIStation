@@ -149,11 +149,18 @@ class Settings(BaseSettings):
     DATABASE_ECHO: bool | Literal["debug"] = False  # 是否显示SQL日志
     ECHO_POOL: bool | Literal["debug"] = False  # 是否显示连接池日志
     POOL_SIZE: int = 20  # 连接池大小
-    MAX_OVERFLOW: int = 40  # 最大溢出连接数
+    # 溢出连接会在归还时被关闭，因此 >0 会在并发突发时反复「建连→关闭」；
+    # 而本机 PG 建连（SCRAM-SHA-256 的 PBKDF2 为同步 CPU）实测约 0.7s/条，会阻塞事件循环，
+    # 导致接入吞吐随并发下降（审计·并发 #11）。默认置 0：用 POOL_SIZE 条保留连接服务突发，
+    # 超出者排队等待（短会话下 20 条连接即可服务 90 并发），避免建连风暴。
+    MAX_OVERFLOW: int = 0  # 最大溢出连接数（默认 0，避免建连风暴）
     POOL_TIMEOUT: int = 30  # 连接超时时间(秒)
     POOL_RECYCLE: int = 1800  # 连接回收时间(秒)
     POOL_USE_LIFO: bool = True  # 是否使用LIFO连接池
     POOL_PRE_PING: bool = True  # 是否开启连接预检
+    # 启动期并发预热异步连接池：把「一次性建连」代价放到启动阶段，
+    # 让首个接入突发只复用已建好的保留连接（审计·并发 #11）。
+    DB_POOL_WARMUP: bool = True
     FUTURE: bool = True  # 是否使用SQLAlchemy 2.0特性
     AUTOCOMMIT: bool = False  # 是否自动提交
     AUTOFETCH: bool = False  # 是否自动刷新
@@ -509,6 +516,7 @@ class Settings(BaseSettings):
         """
         EVENTS: list[str | None] = [
             "app.core.database.redis_connect" if self.REDIS_ENABLE else None,
+            "app.core.database.async_pool_warmup" if self.SQL_DB_ENABLE else None,
         ]
         return EVENTS
 

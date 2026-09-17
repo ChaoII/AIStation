@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI
 from redis import exceptions
 from redis.asyncio import Redis
@@ -108,6 +110,45 @@ def create_async_engine_and_session(
 
 engine, db_session = create_engine_and_session(settings.DB_URI)
 async_engine, async_db_session = create_async_engine_and_session(settings.ASYNC_DB_URI)
+
+
+async def async_pool_warmup(app: FastAPI, status: bool) -> None:
+    """启动期并发预热异步 DB 连接池（审计·并发 #11）。
+
+    DB 建连（含 SCRAM-SHA-256 的 PBKDF2，属同步 CPU 计算）在事件循环内串行执行，
+    实测约 0.7s/条：若留到首个接入突发再按需建连，会长时间阻塞事件循环，使吞吐
+    随并发下降。这里在启动阶段并发签出 ``POOL_SIZE`` 条连接（并发签出才能建出多条；
+    顺序复用只会命中同一条）并立即归还，使保留连接一次性建好，请求路径只做复用。
+
+    参数:
+    - app (FastAPI): FastAPI 应用实例（事件加载器统一签名，此处不直接使用）。
+    - status (bool): True 为启动期执行；False（关停）不处理。
+
+    返回:
+    - None
+    """
+    if not status or not settings.SQL_DB_ENABLE or settings.TESTING:
+        return
+    if settings.DATABASE_TYPE == "sqlite" or not getattr(settings, "DB_POOL_WARMUP", True):
+        return
+
+    target = max(1, int(settings.POOL_SIZE))
+    acquired: list = []
+
+    async def _acquire() -> None:
+        acquired.append(await async_engine.connect())
+
+    try:
+        await asyncio.gather(*[_acquire() for _ in range(target)])
+        log.info(f"✅ 数据库连接池预热完成：{len(acquired)} 条保留连接")
+    except Exception as e:  # noqa: BLE001 - 预热失败不阻断启动，后续按需建连
+        log.warning(f"⚠️ 数据库连接池预热失败（不影响启动，后续按需建连）: {e}")
+    finally:
+        for conn in acquired:
+            try:
+                await conn.close()
+            except Exception:  # noqa: BLE001 - 归还失败不影响启动
+                pass
 
 
 async def create_tables() -> None:
