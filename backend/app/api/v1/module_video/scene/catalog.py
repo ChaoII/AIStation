@@ -58,6 +58,9 @@ _HAND_DIST = {"key": "hand_head_distance", "type": "float", "default": 0.15, "la
 # 人脸关键点：face_landmark 的最少有效关键点数（分数 >= 0.3 视为有效）
 _MIN_KP = {"key": "min_keypoints", "type": "int", "default": 5, "label": "最少关键点数"}
 _MAX_MOVE = {"key": "max_move", "type": "float", "default": 0.02, "label": "最大位移(归一化)"}
+# 人脸嵌入上限：单事件最多携带多少人脸特征（Top-N，按置信度保留）。
+# 云端下发给 Agent 顶层 `max_embeddings`（对齐 EventMeta::max_embeddings，缺省 8；<=0 禁用嵌入）。
+_MAX_EMBEDDINGS = {"key": "max_embeddings", "type": "int", "default": 8, "label": "每事件最大人脸特征数"}
 _GAP_SEC = {"key": "gap_sec", "type": "int", "default": 30, "label": "无目标时长(秒)"}
 _DIRECTION = {"key": "direction", "type": "str", "default": "A2B", "label": "越线方向"}
 # 组聚合参数：仅相机组作用域展示并注入 group_* 叶子（编译层 PARAM_TO_LEAF 消费）。
@@ -332,7 +335,8 @@ _add(SceneDef(
 
 _add(SceneDef(
     "FACE_REC", "人脸识别", "face", "FACE_REC", ["face", "face_rec"], [_FACE_DET, _FACE_REC],
-    [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
+    [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"},
+     _MAX_EMBEDDINGS],
     # face_match 叶子（B3）：检测特征与云端人脸底库的最大余弦相似度 >= similarity_threshold
     # 判为命中；底库为空/无 embedding 时不命中（fail-closed），默认规则写数值阈值，
     # 运行时由 similarity_threshold 参数经编译层注入覆盖。
@@ -343,7 +347,8 @@ _add(SceneDef(
 
 _add(SceneDef(
     "STRANGER", "陌生人", "face", "STRANGER", ["face", "face_rec"], [_FACE_DET, _FACE_REC],
-    [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
+    [_POLY, _CONF, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"},
+     _MAX_EMBEDDINGS],
     # stranger 叶子（B3）：与 face_match 同源相似度、配 op=lt —— 低于阈值即未命中底库；
     # 底库为空时同样不命中（fail-closed：无底库无法判定陌生人）。
     {"op": "and", "children": [{"subject": "stranger", "op": "lt", "value": 0.6}]},

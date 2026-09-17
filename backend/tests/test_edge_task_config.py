@@ -240,3 +240,93 @@ def test_tracking_default_disabled():
     cfg = build_agent_task_config(_Task(), _Cam(), _Alg(), events={})
     assert cfg["tracking"]["enabled"] is False
     assert cfg["tracking"]["algorithm"] == "bytetrack"
+
+
+# ── 人脸嵌入 Top-N 上限（max_embeddings）────────────────────────────────────
+class _AlgFaceRec:
+    name = "人脸识别"
+    algorithm_type = "FACE_REC"
+    scene_type = "FACE_REC"
+    model_path = "/models/scrfd.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {"face_rec_path": "/models/w600k_r50.onnx"}
+
+
+class _TaskFaceRec(_Task):
+    algorithm_id = 7
+
+
+def test_face_rec_emits_default_max_embeddings():
+    """FACE_REC 场景必须下发顶层 `max_embeddings`（缺省 8，对齐 Agent EventMeta）。"""
+    cfg = build_agent_task_config(_TaskFaceRec(), _Cam(), _AlgFaceRec(), events={})
+    assert cfg["max_embeddings"] == 8
+
+
+def test_max_embeddings_explicit_override_and_clamp():
+    """显式配置优先，并以 [0, 64] 夹紧（0 表示禁用嵌入）。"""
+
+    class _Alg4(_AlgFaceRec):
+        preset_params = {"face_rec_path": "/models/w600k_r50.onnx", "max_embeddings": 4}
+
+    class _Alg0(_AlgFaceRec):
+        preset_params = {"max_embeddings": 0}
+
+    class _AlgHuge(_AlgFaceRec):
+        preset_params = {"max_embeddings": 999}
+
+    assert build_agent_task_config(_TaskFaceRec(), _Cam(), _Alg4(), events={})["max_embeddings"] == 4
+    assert build_agent_task_config(_TaskFaceRec(), _Cam(), _Alg0(), events={})["max_embeddings"] == 0
+    assert build_agent_task_config(_TaskFaceRec(), _Cam(), _AlgHuge(), events={})["max_embeddings"] == 64
+
+
+def test_non_face_scene_omits_max_embeddings():
+    """非 face_rec 场景不产生该键（既有任务配置逐字段兼容）。"""
+    cfg = build_agent_task_config(_Task(), _Cam(), _Alg(), events={})
+    assert "max_embeddings" not in cfg
+
+
+# ── SAM_SEG 提示点透传（prompt_point）──────────────────────────────────────
+class _AlgSam:
+    name = "交互分割"
+    algorithm_type = "SAM_SEG"
+    scene_type = "SAM_SEG"
+    model_path = "/models/fastsam_s.onnx"
+    runtime_config = {"backend": "ort", "device": "cpu"}
+    preset_params = {"prompt_point": [[0.25, 0.75]], "confidence_threshold": 0.4}
+
+
+class _TaskSam(_Task):
+    algorithm_id = 8
+
+
+def test_sam_prompt_point_passthrough_from_scene_params():
+    """prompt_point（画布点列）必须下发为 Agent 顶层 [x, y]。"""
+    cfg = build_agent_task_config(_TaskSam(), _Cam(), _AlgSam(), events={})
+    assert cfg["prompt_point"] == [0.25, 0.75]
+    # 模型条目仍需下发 sam（提示点由 Agent 回退到该条目）
+    assert cfg["models"][0]["type"] == "iseg"
+
+
+def test_prompt_point_absent_when_not_configured():
+    class _AlgNoPoint(_AlgSam):
+        preset_params = {}
+
+    cfg = build_agent_task_config(_TaskSam(), _Cam(), _AlgNoPoint(), events={})
+    assert "prompt_point" not in cfg
+
+
+def test_prompt_point_accepts_flat_and_object_forms_with_clamp():
+    """提示点兼容 [x,y] / {"x","y"} 两种写法，并钳制到 [0,1]。"""
+
+    class _AlgFlat(_AlgSam):
+        preset_params = {"prompt_point": [1.5, -0.2]}
+
+    class _AlgObj(_AlgSam):
+        preset_params = {"prompt_point": {"x": 0.3, "y": 0.4}}
+
+    class _AlgBad(_AlgSam):
+        preset_params = {"prompt_point": ["a", "b"]}
+
+    assert build_agent_task_config(_TaskSam(), _Cam(), _AlgFlat(), events={})["prompt_point"] == [1.0, 0.0]
+    assert build_agent_task_config(_TaskSam(), _Cam(), _AlgObj(), events={})["prompt_point"] == [0.3, 0.4]
+    assert "prompt_point" not in build_agent_task_config(_TaskSam(), _Cam(), _AlgBad(), events={})

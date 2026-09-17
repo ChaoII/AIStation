@@ -2,6 +2,8 @@
 
 spec: docs/superpowers/specs/2026-09-12-cloud-edge-visual-analysis-design.md §5/§6
 """
+import math
+
 from sqlalchemy import func, select
 
 from app.api.v1.module_video.algorithm.model import AlgorithmTaskModel
@@ -133,6 +135,65 @@ def resolve_input_size(params: dict | None, runtime: dict | None) -> list[int]:
     except (TypeError, ValueError):
         pass
     return [640, 640]
+
+
+# 单事件人脸嵌入对象数上限：与 Agent `EventMeta::max_embeddings`
+# （`application/aistation_agent/event_bus.hpp`，常量 kMaxEmbeddingsPerEvent=8）缺省对齐。
+# Agent 读顶层键 `max_embeddings`（与 alarm_interval_sec/heartbeat_sec 同层），<=0 表示禁用嵌入。
+_DEFAULT_MAX_EMBEDDINGS = 8
+# 云侧允许下发的上限（防御异常配置把上行事件放大；Agent 侧还有自身 Top-N 兜底）
+_MAX_EMBEDDINGS_LIMIT = 64
+
+
+def resolve_max_embeddings(params: dict | None, runtime: dict | None, scene) -> int | None:
+    """协商单事件人脸嵌入 Top-N 上限；无需下发的场景返回 None（保持既有 TaskConfig 不变）。
+
+    - 显式 `max_embeddings`（params 优先于 runtime）→ 取整并夹到 [0, 64]（0=禁用嵌入）；
+    - 未显式配置、但场景声明 ``face_rec`` 模型族（FACE_REC/STRANGER）→ 下发缺省 8；
+    - 其余场景不产生该键（Agent 缺省 8，行为等价），保证既有任务配置逐字段兼容。
+    """
+    # 注意：0 是合法值（禁用嵌入），不能用 `or` 串联（会把 0 当作缺省丢弃）
+    raw = _first_present(params or {}, "max_embeddings")
+    if raw is None:
+        raw = _first_present(runtime or {}, "max_embeddings")
+    if raw is None:
+        families = contract.canonical_families(getattr(scene, "model_families", []) or []) if scene else []
+        if "face_rec" not in families:
+            return None
+        return _DEFAULT_MAX_EMBEDDINGS
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return _DEFAULT_MAX_EMBEDDINGS
+    return max(0, min(_MAX_EMBEDDINGS_LIMIT, value))
+
+
+def resolve_prompt_point(params: dict | None, runtime: dict | None) -> list[float] | None:
+    """解析 SAM_SEG 提示点（归一化 ``[x, y]``）；未配置/非法返回 None。
+
+    兼容编排/画布可能给出的三种写法：``[[x,y], ...]``（取首点）、``[x,y]``、``{"x":..,"y":..}``。
+    Agent 侧读**顶层** `prompt_point`（`config_adapter.cpp`）并回退给 sam/iseg 模型条目；
+    坐标钳制到 [0,1]（与 Agent 侧一致）。
+    """
+    raw = _first_present(params or {}, "prompt_point") or _first_present(runtime or {}, "prompt_point")
+    if raw is None:
+        return None
+    x = y = None
+    if isinstance(raw, dict):
+        x, y = raw.get("x"), raw.get("y")
+    elif isinstance(raw, (list, tuple)) and raw:
+        first = raw[0]
+        if isinstance(first, (list, tuple)) and len(first) >= 2:
+            x, y = first[0], first[1]
+        elif len(raw) >= 2:
+            x, y = raw[0], raw[1]
+    try:
+        fx, fy = float(x), float(y)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(fx) and math.isfinite(fy)):
+        return None
+    return [max(0.0, min(1.0, fx)), max(0.0, min(1.0, fy))]
 
 
 def sensitivity_to_conf(sensitivity, base: float = 0.5) -> float:
@@ -427,7 +488,7 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None,
     }
     models = _build_scene_models(scene, algorithm, merged_params, merged_runtime, base_model)
 
-    return {
+    config = {
         "task_id": task.id,
         "tenant": merged_runtime.get("tenant") or "default",
         "algorithm_type": getattr(algorithm, "algorithm_type", "") or "",
@@ -453,6 +514,16 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None,
             "format": "snapshot",
         },
     }
+
+    # 人脸嵌入 Top-N 上限（仅 face_rec 场景或显式配置时下发；键名对齐 Agent 顶层读取）
+    max_embeddings = resolve_max_embeddings(merged_params, merged_runtime, scene)
+    if max_embeddings is not None:
+        config["max_embeddings"] = max_embeddings
+    # 交互分割提示点（SAM_SEG 的 prompt_point → Agent 顶层；模型条目缺省回退使用）
+    prompt_point = resolve_prompt_point(merged_params, merged_runtime)
+    if prompt_point is not None:
+        config["prompt_point"] = prompt_point
+    return config
 
 
 def build_events(camera_id: int, edge_code: str) -> dict:

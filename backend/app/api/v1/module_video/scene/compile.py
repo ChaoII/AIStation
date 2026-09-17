@@ -81,7 +81,7 @@ TEXT_MATCH_DERIVED_PARAMS: frozenset[str] = frozenset(
 # 仅由「边缘任务配置构造」消费、不影响规则求值的参数（见 edge/orchestrator.py
 # build_agent_task_config 的 PED_ATTR 分支：attributes 下发为模型 attributes）。
 # 单独登记以便一致性测试区分「有意设计」与「遗漏未消费」。
-MODEL_CONFIG_PARAMS: frozenset[str] = frozenset({"attributes"})
+MODEL_CONFIG_PARAMS: frozenset[str] = frozenset({"attributes", "max_embeddings"})
 
 _NUMERIC_TYPES = {"int", "float"}
 _POINT_LIST_TYPES = {"polygon", "polyline", "point"}
