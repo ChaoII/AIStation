@@ -16,18 +16,23 @@ def test_delete_prefix_paginates(monkeypatch):
         "t1": {"Contents": [{"Key": f"z{i}"} for i in range(3)], "IsTruncated": False},
     }
     deleted: list[str] = []
+    batch_calls = 0
 
     class _FakeBoto:
         def list_objects_v2(self, **kwargs):
             return pages[kwargs.get("ContinuationToken")]
 
-        def delete_object(self, **kwargs):
-            deleted.append(kwargs["Key"])
+        def delete_objects(self, **kwargs):
+            nonlocal batch_calls
+            batch_calls += 1
+            deleted.extend(o["Key"] for o in kwargs["Delete"]["Objects"])
 
     client.client = _FakeBoto()
     count = client.delete_prefix("k")
     assert count == 1003
     assert len(deleted) == 1003
+    # 每页一次批量删除，而非逐对象
+    assert batch_calls == 2
 
 
 def test_upload_fileobj_passes_content_type(monkeypatch):

@@ -67,7 +67,12 @@ class S3Client:
         self.client.delete_object(Bucket=self._bucket(env), Key=object_key)
 
     def delete_prefix(self, prefix: str, env: str | None = None) -> int:
-        """删除该前缀下所有对象（分页直至 IsTruncated=False），返回删除数量。"""
+        """删除该前缀下所有对象。
+
+        分页列举（每页 ≤1000）并用 ``delete_objects`` 批量删除，避免逐个
+        ``delete_object`` 造成上千次请求（大前缀下会远超前端超时）。
+        返回删除数量。
+        """
         bucket = self._bucket(env)
         removed = 0
         token: str | None = None
@@ -76,9 +81,12 @@ class S3Client:
             if token:
                 kwargs["ContinuationToken"] = token
             resp = self.client.list_objects_v2(**kwargs)
-            for obj in resp.get("Contents", []) or []:
-                self.client.delete_object(Bucket=bucket, Key=obj["Key"])
-                removed += 1
+            keys = [{"Key": obj["Key"]} for obj in (resp.get("Contents") or [])]
+            if keys:
+                self.client.delete_objects(
+                    Bucket=bucket, Delete={"Objects": keys, "Quiet": True}
+                )
+                removed += len(keys)
             if not resp.get("IsTruncated"):
                 break
             token = resp.get("NextContinuationToken")

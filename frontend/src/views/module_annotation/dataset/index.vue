@@ -164,7 +164,7 @@
                         type="success"
                         @click="router.push(`/annotation/workbench/${rowImport(scope.row)?.taskId}`)"
                       >
-                        去任务
+                        打开任务
                       </el-button>
                       <el-button
                         v-if="['failed', 'cancelled'].includes(rowImport(scope.row)?.phase || '')"
@@ -330,13 +330,13 @@
       :before-close="handleImportDialogClose"
       @closed="onImportDialogClosed"
     >
-      <el-steps :active="importStep" simple style="margin-bottom: 14px">
+      <el-steps :active="importStep" simple class="import-steps">
         <el-step title="上传 ZIP" />
         <el-step title="服务端解析" />
         <el-step title="导入图片" />
       </el-steps>
 
-      <div v-if="!dialogImport">
+      <div v-if="!dialogImport" class="import-picker">
         <el-upload
           ref="importUploadRef"
           :auto-upload="false"
@@ -344,16 +344,15 @@
           :limit="1"
           :on-change="onImportFileChange"
         >
-          <el-button size="small" type="primary">选择 ZIP 文件</el-button>
-          <template #tip>
-            <div style="font-size: 12px; color: #909399; margin-top: 4px">
-              含图片与同名 .json 的 ZIP 压缩包，上限 {{ importMaxMb }}MB
-            </div>
-          </template>
+          <el-button type="primary" icon="Upload">选择 ZIP 文件</el-button>
         </el-upload>
-        <div v-if="importFile" style="font-size: 12px; color: #606266; margin-top: 6px">
-          已选：{{ importFile.name }}（{{ importFileMb }} MB）
-        </div>
+        <p class="import-hint">
+          压缩包需包含图片与同名 .json 标注文件，大小不超过 {{ importMaxMb }}MB。
+        </p>
+        <p v-if="importFile" class="import-file">
+          已选：<span class="import-file-name">{{ importFile.name }}</span>
+          <span class="import-file-size">{{ importFileMb }} MB</span>
+        </p>
       </div>
 
       <div v-else class="import-progress">
@@ -363,11 +362,9 @@
           :indeterminate="dialogIndeterminate"
           :stroke-width="14"
         />
-        <div class="import-phase">
-          <span>{{ dialogPhaseText }}</span>
-          <span>{{ dialogDetailText }}</span>
-        </div>
-        <div class="import-phase">
+        <div class="import-line import-line--primary">{{ dialogPhaseText }}</div>
+        <div v-if="dialogDetailText" class="import-line">{{ dialogDetailText }}</div>
+        <div class="import-line import-line--muted">
           <span>已用 {{ fmtDuration(dialogElapsed) }}</span>
           <span>{{ dialogEtaText }}</span>
         </div>
@@ -377,14 +374,14 @@
           type="error"
           :closable="false"
           show-icon
-          style="margin-top: 8px"
+          class="import-alert"
         />
         <el-alert
-          v-if="dialogImport?.phase === 'done'"
+          v-else-if="dialogImport?.phase === 'done'"
           type="success"
           :closable="false"
           show-icon
-          style="margin-top: 8px"
+          class="import-alert"
         >
           <template #title>
             导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注
@@ -393,32 +390,34 @@
       </div>
 
       <template #footer>
-        <el-button
-          v-if="['uploading', 'scanning'].includes(dialogImport?.phase || '')"
-          type="danger"
-          plain
-          @click="cancelImport"
-        >
-          取消导入
-        </el-button>
-        <el-button @click="requestCloseImport">
-          {{ isRunningImport ? "后台运行" : "关闭" }}
-        </el-button>
-        <el-button
-          v-if="!isRunningImport && dialogImport?.phase !== 'done'"
-          type="warning"
-          :disabled="!importFile"
-          @click="handleImportSubmit"
-        >
-          {{ dialogImport ? "重试" : "开始导入" }}
-        </el-button>
-        <el-button
-          v-else-if="dialogImport?.phase === 'done' && dialogImport.taskId"
-          type="primary"
-          @click="goImportTask"
-        >
-          去任务
-        </el-button>
+        <div class="import-footer">
+          <el-button
+            v-if="['uploading', 'scanning'].includes(dialogImport?.phase || '')"
+            type="danger"
+            plain
+            @click="cancelImport"
+          >
+            取消上传
+          </el-button>
+          <el-button @click="requestCloseImport">
+            {{ isRunningImport ? "后台继续" : "关闭" }}
+          </el-button>
+          <el-button
+            v-if="!isRunningImport && dialogImport?.phase !== 'done'"
+            type="warning"
+            :disabled="!importFile"
+            @click="handleImportSubmit"
+          >
+            {{ dialogImport ? "重试" : "开始导入" }}
+          </el-button>
+          <el-button
+            v-else-if="dialogImport?.phase === 'done' && dialogImport.taskId"
+            type="primary"
+            @click="goImportTask"
+          >
+            打开标注任务
+          </el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -478,7 +477,7 @@ import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue
 import CleanDrawer from "@/components/Annotation/CleanDrawer.vue";
 import DatasetImageGrid from "@/components/Annotation/DatasetImageGrid.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
 
 const router = useRouter();
@@ -615,9 +614,19 @@ async function handlePurge(row: any) {
   } catch {
     return;
   }
-  await AnnotationAPI.purgeDataset([row.id]);
-  ElMessage.success("已彻底删除");
-  refreshList();
+  const loading = ElLoading.service({
+    text: "正在彻底删除（含对象存储）…",
+    background: "rgba(0, 0, 0, 0.5)",
+  });
+  try {
+    await AnnotationAPI.purgeDataset([row.id]);
+    ElMessage.success("已彻底删除");
+    refreshList();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "彻底删除失败");
+  } finally {
+    loading.close();
+  }
 }
 
 const dialogVisible = reactive({
@@ -1340,15 +1349,57 @@ async function handleExportSubmit() {
 .upload-alert {
   margin-bottom: 16px;
 }
-.import-progress {
-  margin-top: 8px;
+.import-steps {
+  margin-bottom: 16px;
 }
-.import-phase {
+.import-picker {
+  padding: 2px 0;
+}
+.import-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+}
+.import-file {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+}
+.import-file-name {
+  font-weight: 600;
+}
+.import-file-size {
+  margin-left: 6px;
+  color: var(--el-text-color-secondary);
+}
+.import-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 0;
+}
+.import-line {
   display: flex;
   justify-content: space-between;
-  margin-top: 4px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.import-line--primary {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.import-line--muted {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.import-alert {
+  margin-top: 2px;
+}
+.import-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .import-pop {
   display: flex;

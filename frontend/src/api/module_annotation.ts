@@ -25,7 +25,14 @@ export const AnnotationAPI = {
     return request<ApiResponse>({ url: `${API_PATH}/dataset/delete`, method: "delete", data: ids });
   },
   purgeDataset(ids: number[]) {
-    return request<ApiResponse>({ url: `${API_PATH}/dataset/purge`, method: "delete", data: ids });
+    return request<ApiResponse>({
+      url: `${API_PATH}/dataset/purge`,
+      method: "delete",
+      data: ids,
+      // 大对象前缀删除耗时较长，不设超时，由调用方展示加载态
+      timeout: 0,
+      headers: { _silent: "true" },
+    });
   },
   getExportHistory(datasetId: number) {
     return request<ApiResponse<any[]>>({
