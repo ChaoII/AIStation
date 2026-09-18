@@ -947,7 +947,18 @@
             <div class="section-title-row">
               <span class="section-title">图片列表</span>
               <span v-if="imagesLoading" class="loading-chip">加载中...</span>
-              <span v-else class="count-chip">{{ store.images.length }}</span>
+              <span v-else-if="imagePrefetching" class="loading-chip">
+                已加载 {{ store.images.length }}/{{ imageTotal }}
+              </span>
+              <span v-else class="count-chip">
+                {{ store.images.length }}<template v-if="imageTotal">/{{ imageTotal }}</template>
+              </span>
+            </div>
+            <div v-if="imagePrefetchFailed" class="prefetch-retry">
+              <span>部分图片加载失败</span>
+              <el-button link type="primary" size="small" @click="resumePrefetch">
+                继续加载
+              </el-button>
             </div>
             <div class="filter-row">
               <el-radio-group v-model="imageFilter" size="small" @change="scrollToTop">
@@ -1388,8 +1399,9 @@ const imagesLoading = ref(false);
 // 图片列表渐进式加载状态（避免一次性并发拉取全部页导致“加载超时”）
 const imagePageSize = 100;
 const imageTotal = ref(0);
+const imagePrefetching = ref(false);
+const imagePrefetchFailed = ref(false);
 let imageLoadedPages = 0;
-let imagePrefetching = false;
 const cw = ref(1);
 const ch = ref(1);
 const cursorX = ref(0);
@@ -3664,36 +3676,48 @@ function onKey(e: KeyboardEvent) {
 }
 
 // ===== 生命周期 =====
-async function loadImagePage(datasetId: number, tid: number, p: number): Promise<any[]> {
-  const r = await AnnotationAPI.getImages(datasetId, tid, p, imagePageSize);
+async function loadImagePage(
+  datasetId: number,
+  tid: number,
+  p: number,
+  silent = false
+): Promise<any[]> {
+  const r = await AnnotationAPI.getImages(datasetId, tid, p, imagePageSize, { silent });
   imageTotal.value = r.data?.data?.total ?? imageTotal.value;
   return r.data?.data?.items || [];
 }
 
 // 首屏后按页顺序渐进加载剩余图片（每页间隔 800ms），避免一次性并发拉全表造成超时
 async function prefetchRemainingImages(datasetId: number, tid: number) {
-  if (imagePrefetching) return;
-  imagePrefetching = true;
+  if (imagePrefetching.value) return;
+  imagePrefetching.value = true;
+  imagePrefetchFailed.value = false;
   try {
     const totalPages = Math.ceil(imageTotal.value / imagePageSize);
     for (let p = imageLoadedPages + 1; p <= totalPages; p++) {
       try {
-        const items = await loadImagePage(datasetId, tid, p);
+        const items = await loadImagePage(datasetId, tid, p, true);
         if (items.length) store.images.push(...items);
         imageLoadedPages = p;
       } catch {
-        return; // 失败即停止；用户翻到末尾时再按需加载
+        imagePrefetchFailed.value = true; // 静默失败：改为局部提示，可手动重试
+        return;
       }
       await new Promise((res) => setTimeout(res, 800));
     }
   } finally {
-    imagePrefetching = false;
+    imagePrefetching.value = false;
   }
+}
+
+function resumePrefetch() {
+  const dsId = task.value?.dataset_id;
+  if (dsId) prefetchRemainingImages(dsId, store.taskId);
 }
 
 // 翻到接近已加载末尾时按需补一页
 async function ensureMoreImages(datasetId: number | undefined, tid: number, idx: number) {
-  if (!datasetId || imagePrefetching) return;
+  if (!datasetId || imagePrefetching.value) return;
   const totalPages = Math.ceil(imageTotal.value / imagePageSize);
   if (imageLoadedPages >= totalPages) return;
   if (idx < store.images.length - 10) return;
@@ -4050,6 +4074,14 @@ onBeforeUnmount(() => {
   font-size: 10px;
   color: #409eff;
   animation: pulse 1.5s infinite;
+}
+.prefetch-retry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 @keyframes pulse {
   0%,

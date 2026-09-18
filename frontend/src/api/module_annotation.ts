@@ -80,12 +80,20 @@ export const AnnotationAPI = {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
-  getImages(id: number, taskId?: number, pageNo?: number, pageSize?: number) {
+  getImages(
+    id: number,
+    taskId?: number,
+    pageNo?: number,
+    pageSize?: number,
+    opts?: { silent?: boolean }
+  ) {
     return request<ApiResponse<{ items: any[]; total: number; page: number }>>({
       url: `${API_PATH}/dataset/${id}/images`,
       method: "get",
       params: { task_id: taskId, page_no: pageNo, page_size: pageSize },
       timeout: 60000,
+      // 后台渐进预取时静默，避免"请求超时"弹窗刷屏；失败改由局部提示承载
+      headers: opts?.silent ? { _silent: "true" } : undefined,
     });
   },
   getPresignedUrl(imageId: number, taskId?: number) {

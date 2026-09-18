@@ -868,6 +868,7 @@ const importUploadRef = ref<any>(null);
 const importFile = ref<File | null>(null);
 const importMaxMb = 1024;
 const importClearExisting = ref(true);
+const importExistingCount = ref(0);
 const activeImports = reactive<Record<number, ActiveImport>>({});
 const nowTick = ref(Date.now());
 let tickTimer: number | null = null;
@@ -1060,7 +1061,6 @@ function rowImportIndeterminate(row: any): boolean {
 const dialogImport = computed<ActiveImport | null>(() =>
   importDatasetId.value != null ? activeImports[importDatasetId.value] ?? null : null
 );
-const isRunningImport = computed(() => isRunning(dialogImport.value));
 const importStep = computed(() => {
   const p = dialogImport.value?.phase;
   if (!p || p === "uploading") return p ? 1 : 0;
@@ -1116,6 +1116,7 @@ const dialogEtaText = computed(() => {
 function handleOpenImport(row: any) {
   importDatasetId.value = row.id;
   importDatasetName.value = row.name;
+  importExistingCount.value = row.image_count ?? 0;
   importFile.value = null;
   importUploadRef.value?.clearFiles?.();
   if (!activeImports[row.id] && row.import) seedImport(row.id, row.import, row.name);
@@ -1147,6 +1148,30 @@ async function handleImportSubmit() {
   if (!importFile.value) {
     ElMessage.warning("请选择 ZIP 文件");
     return;
+  }
+  // 安全确认：清空（覆盖）为破坏性操作；取消勾选则可能重复
+  if (importExistingCount.value > 0) {
+    if (importClearExisting.value) {
+      try {
+        await ElMessageBox.confirm(
+          `将先删除现有 ${importExistingCount.value} 张图片及其标注，再导入本次 ZIP。是否继续？`,
+          "覆盖导入",
+          { type: "warning", confirmButtonText: "覆盖导入", cancelButtonText: "取消" }
+        );
+      } catch {
+        return;
+      }
+    } else {
+      try {
+        await ElMessageBox.confirm(
+          `将追加到现有 ${importExistingCount.value} 张图片之后，可能与已有图片重复。是否继续？`,
+          "追加导入",
+          { type: "info", confirmButtonText: "继续追加", cancelButtonText: "取消" }
+        );
+      } catch {
+        return;
+      }
+    }
   }
   const file = importFile.value;
   importAbort = new AbortController();
