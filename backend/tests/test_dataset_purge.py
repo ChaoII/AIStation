@@ -10,12 +10,17 @@ def test_annotation_image_has_thumbnail_key(test_client, auth_headers, monkeypat
 
 
 def test_purge_removes_db_rows_and_s3(test_client, auth_headers, monkeypatch):
+    deleted_keys: list[str] = []
     prefixes: list[str] = []
     monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
     monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
     monkeypatch.setattr(
+        "app.utils.s3_client.s3_client.delete_objects",
+        lambda keys, *a, **k: deleted_keys.extend(keys) or len(keys),
+    )
+    monkeypatch.setattr(
         "app.utils.s3_client.s3_client.delete_prefix",
-        lambda prefix, *a, **k: prefixes.append(prefix) or 1,
+        lambda prefix, *a, **k: prefixes.append(prefix) or 0,
     )
     from uuid import uuid4 as _uuid
 
@@ -23,24 +28,36 @@ def test_purge_removes_db_rows_and_s3(test_client, auth_headers, monkeypatch):
     ds = test_client.post("/api/v1/annotation/dataset/create",
                           json={"name": name}, headers=auth_headers).json()["data"]
     ds_id = ds["id"]
-    test_client.post(
+    up = test_client.post(
         f"/api/v1/annotation/dataset/{ds_id}/upload",
         files={"files": ("a.png", b"\x89PNG\r\n\x1a\n" + b"0" * 64, "image/png")},
         headers=auth_headers,
-    )
-    # 先软删，再彻底删除
+    ).json()["data"]
+    object_key = up["uploaded"][0]["object_key"]
+    # 先软删，再彻底删除（后台任务）
     test_client.request("DELETE", "/api/v1/annotation/dataset/delete",
                         json=[ds_id], headers=auth_headers)
     r = test_client.request("DELETE", "/api/v1/annotation/dataset/purge",
                             json=[ds_id], headers=auth_headers)
     assert r.status_code == 200, r.text
-    assert f"datasets/{ds_id}/" in prefixes
-    assert f"annotations/dataset_{ds_id}/" in prefixes
+    job_id = r.json()["data"]["job_id"]
+    assert job_id
+    import time
+
+    job = None
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        job = test_client.get(
+            f"/api/v1/annotation/dataset/import/{job_id}", headers=auth_headers
+        ).json()["data"]
+        if job["status"] in ("done", "failed"):
+            break
+        time.sleep(0.2)
+    assert job and job["status"] == "done", job
+    assert job["kind"] == "purge"
+    # 按 DB 记录的 key 批量删除（不依赖列举前缀）
+    assert object_key in deleted_keys
     assert any(p.startswith(f"train/exports/dataset_{ds_id}_") for p in prefixes)
-    # 幂等：再 purge 不报错
-    r2 = test_client.request("DELETE", "/api/v1/annotation/dataset/purge",
-                             json=[ds_id], headers=auth_headers)
-    assert r2.status_code == 200, r2.text
 
 
 def test_purge_expired_selects_soft_deleted_older_than(test_client, auth_headers, monkeypatch):

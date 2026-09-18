@@ -9,6 +9,7 @@ class ImportJob:
     job_id: str
     dataset_id: int
     user_id: int
+    kind: str = "import"  # import|purge
     status: str = "pending"  # pending|running|done|failed
     phase: str = ""  # scan|import|done
     processed: int = 0
@@ -39,11 +40,13 @@ def create_job(
     user_id: int,
     file_name: str = "",
     file_size: int = 0,
+    kind: str = "import",
 ) -> ImportJob:
     job = ImportJob(
         job_id=uuid.uuid4().hex,
         dataset_id=dataset_id,
         user_id=user_id,
+        kind=kind,
         file_name=file_name,
         file_size=file_size,
     )

@@ -195,6 +195,9 @@ class Settings(BaseSettings):
     RUSTFS_SECRET_KEY: str = "aistation_secret"
     RUSTFS_BUCKET_PREFIX: str = "aistation-annotation"
     RUSTFS_PRESIGNED_URL_EXPIRY: int = 3600
+    # 批量删除对象的并发度与单批数量（部分 S3 实现单请求内串行删除，需客户端并发）
+    RUSTFS_DELETE_CONCURRENCY: int = 8
+    RUSTFS_DELETE_BATCH: int = 100
 
     # ================================================= #
     # *************** 数据标注生命周期/媒体 ************** #

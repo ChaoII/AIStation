@@ -30,9 +30,11 @@ def test_delete_prefix_paginates(monkeypatch):
     client.client = _FakeBoto()
     count = client.delete_prefix("k")
     assert count == 1003
-    assert len(deleted) == 1003
-    # 每页一次批量删除，而非逐对象
-    assert batch_calls == 2
+    assert sorted(deleted) == sorted(
+        [f"k{i}" for i in range(1000)] + [f"z{i}" for i in range(3)]
+    )
+    # 分片并发批量删除（非逐对象）
+    assert batch_calls >= 2
 
 
 def test_upload_fileobj_passes_content_type(monkeypatch):

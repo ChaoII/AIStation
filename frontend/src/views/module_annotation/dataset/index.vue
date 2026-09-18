@@ -171,7 +171,7 @@
                         size="small"
                         link
                         type="warning"
-                        @click="retryImport(scope.row)"
+                        @click="retryRow(scope.row)"
                       >
                         重试
                       </el-button>
@@ -331,9 +331,9 @@
       @closed="onImportDialogClosed"
     >
       <el-steps :active="importStep" simple class="import-steps">
-        <el-step title="上传 ZIP" />
-        <el-step title="服务端解析" />
-        <el-step title="导入图片" />
+        <el-step title="上传" />
+        <el-step title="解析" />
+        <el-step title="导入" />
       </el-steps>
 
       <div v-if="!dialogImport" class="import-picker">
@@ -477,7 +477,7 @@ import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue
 import CleanDrawer from "@/components/Annotation/CleanDrawer.vue";
 import DatasetImageGrid from "@/components/Annotation/DatasetImageGrid.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
-import { ElLoading, ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
 
 const router = useRouter();
@@ -614,18 +614,44 @@ async function handlePurge(row: any) {
   } catch {
     return;
   }
-  const loading = ElLoading.service({
-    text: "正在彻底删除（含对象存储）…",
-    background: "rgba(0, 0, 0, 0.5)",
-  });
   try {
-    await AnnotationAPI.purgeDataset([row.id]);
-    ElMessage.success("已彻底删除");
-    refreshList();
+    const r = await AnnotationAPI.purgeDataset([row.id]);
+    const jobId = r.data?.data?.job_id;
+    if (!jobId) {
+      ElMessage.warning("没有需要删除的数据集");
+      return;
+    }
+    activeImports[row.id] = {
+      jobId,
+      kind: "purge",
+      phase: "importing",
+      uploadLoaded: 0,
+      uploadTotal: 0,
+      processed: 0,
+      total: 0,
+      imported: 0,
+      totalAnnotations: 0,
+      taskId: null,
+      taskName: "",
+      error: "",
+      startedAt: Date.now(),
+      fileName: "",
+      fileSize: 0,
+    };
+    startTicker();
+    ensurePolling();
+    ElMessage.info("已开始删除，可在「导入状态」查看进度");
   } catch (e: any) {
     ElMessage.error(e?.message || "彻底删除失败");
-  } finally {
-    loading.close();
+  }
+}
+
+function retryRow(row: any) {
+  if (rowImport(row)?.kind === "purge") {
+    delete activeImports[row.id];
+    handlePurge(row);
+  } else {
+    retryImport(row);
   }
 }
 
@@ -801,6 +827,7 @@ type ImportPhase =
 
 interface ActiveImport {
   jobId: string | null;
+  kind: "import" | "purge";
   phase: ImportPhase;
   uploadLoaded: number;
   uploadTotal: number;
@@ -844,7 +871,7 @@ function phaseFromJob(job: any): ImportPhase {
   if (job.status === "done") return "done";
   if (job.status === "failed") return "failed";
   if (job.status === "cancelled") return "cancelled";
-  if (job.phase === "import") return "importing";
+  if (job.phase === "import" || job.phase === "delete") return "importing";
   return "scanning";
 }
 function elapsedSec(a: any): number {
@@ -876,6 +903,7 @@ function stopTickerIfIdle() {
 function seedImport(dsId: number, job: any) {
   activeImports[dsId] = {
     jobId: job.job_id,
+    kind: job.kind === "purge" ? "purge" : "import",
     phase: phaseFromJob(job),
     uploadLoaded: job.file_size || 0,
     uploadTotal: job.file_size || 0,
@@ -900,6 +928,7 @@ function rowImport(row: any): ActiveImport | null {
     const j = row.import;
     return {
       jobId: j.job_id,
+      kind: j.kind === "purge" ? "purge" : "import",
       phase: phaseFromJob(j),
       uploadLoaded: j.file_size || 0,
       uploadTotal: j.file_size || 0,
@@ -928,17 +957,18 @@ function percentOf(a: ActiveImport | null): number {
 function importTagText(row: any): string {
   const a = rowImport(row);
   if (!a) return "已就绪";
+  const purge = a.kind === "purge";
   switch (a.phase) {
     case "uploading":
       return `上传中 ${percentOf(a)}%`;
     case "scanning":
-      return "初始化中";
+      return purge ? "准备删除…" : "初始化中";
     case "importing":
-      return `导入中 ${a.processed}/${a.total || "?"}`;
+      return purge ? `删除中 ${a.processed}/${a.total || "?"}` : `导入中 ${a.processed}/${a.total || "?"}`;
     case "done":
-      return "已完成";
+      return purge ? "已删除" : "已完成";
     case "failed":
-      return "失败";
+      return purge ? "删除失败" : "失败";
     case "cancelled":
       return "已取消";
     default:
@@ -1064,6 +1094,7 @@ async function handleImportSubmit() {
   importAbort = new AbortController();
   activeImports[dsId] = {
     jobId: null,
+    kind: "import",
     phase: "uploading",
     uploadLoaded: 0,
     uploadTotal: file.size,
@@ -1160,6 +1191,10 @@ function applyJob(dsId: number, job: any) {
   a.phase = phaseFromJob(job);
   if (a.phase === "done" && !a.refreshed) {
     a.refreshed = true;
+    if (a.kind === "purge") {
+      ElMessage.success("已彻底删除");
+      delete activeImports[dsId];
+    }
     refreshList();
   }
 }

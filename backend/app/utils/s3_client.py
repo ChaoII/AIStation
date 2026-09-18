@@ -1,4 +1,5 @@
 import io
+from concurrent.futures import ThreadPoolExecutor
 from typing import BinaryIO
 
 import boto3
@@ -66,31 +67,56 @@ class S3Client:
     def delete_object(self, object_key: str, env: str | None = None) -> None:
         self.client.delete_object(Bucket=self._bucket(env), Key=object_key)
 
-    def delete_prefix(self, prefix: str, env: str | None = None) -> int:
-        """删除该前缀下所有对象。
+    def delete_objects(
+        self,
+        keys: list[str],
+        env: str | None = None,
+        progress_cb=None,
+    ) -> int:
+        """按 key 批量删除（分片 + 并发），返回请求删除的数量。
 
-        分页列举（每页 ≤1000）并用 ``delete_objects`` 批量删除，避免逐个
-        ``delete_object`` 造成上千次请求（大前缀下会远超前端超时）。
-        返回删除数量。
+        - 不列举前缀：避免大前缀下 ListObjects 超时。
+        - 客户端并发：部分 S3 实现（如 RustFS）单请求内串行删除，实测
+          并发可提升删除吞吐；``progress_cb(done, total)`` 每完成一片回调。
         """
+        if not keys:
+            return 0
         bucket = self._bucket(env)
-        removed = 0
+        batch = max(1, settings.RUSTFS_DELETE_BATCH)
+        parts = [keys[i:i + batch] for i in range(0, len(keys), batch)]
+        workers = max(1, min(settings.RUSTFS_DELETE_CONCURRENCY, len(parts)))
+        total = len(keys)
+        done = 0
+
+        def _del(part: list[str]) -> int:
+            self.client.delete_objects(
+                Bucket=bucket,
+                Delete={"Objects": [{"Key": k} for k in part], "Quiet": True},
+            )
+            return len(part)
+
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for n in ex.map(_del, parts):
+                done += n
+                if progress_cb:
+                    progress_cb(done, total)
+        return total
+
+    def delete_prefix(self, prefix: str, env: str | None = None) -> int:
+        """删除该前缀下所有对象（列举全部后批量并发删除），返回删除数量。"""
+        bucket = self._bucket(env)
+        keys: list[str] = []
         token: str | None = None
         while True:
             kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
             if token:
                 kwargs["ContinuationToken"] = token
             resp = self.client.list_objects_v2(**kwargs)
-            keys = [{"Key": obj["Key"]} for obj in (resp.get("Contents") or [])]
-            if keys:
-                self.client.delete_objects(
-                    Bucket=bucket, Delete={"Objects": keys, "Quiet": True}
-                )
-                removed += len(keys)
+            keys += [obj["Key"] for obj in (resp.get("Contents") or [])]
             if not resp.get("IsTruncated"):
                 break
             token = resp.get("NextContinuationToken")
-        return removed
+        return self.delete_objects(keys, env)
 
     def object_exists(self, object_key: str, env: str | None = None) -> bool:
         """判断对象是否存在（head_object；不存在或无权访问均视为 False）。"""

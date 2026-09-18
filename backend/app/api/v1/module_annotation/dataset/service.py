@@ -10,6 +10,7 @@ from app.config.setting import settings
 from app.core.audit import set_create_audit
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
+from app.core.logger import log
 from app.utils.s3_client import s3_client
 
 from .crud import DatasetCRUD
@@ -65,16 +66,51 @@ class DatasetService:
         await DatasetCRUD(auth=auth).delete(ids=ids)
 
     @classmethod
-    async def purge_datasets(cls, ids: list[int]) -> dict:
-        """彻底删除数据集：先删 S3 对象，再物理删 DB 行（不可逆）。"""
+    async def purge_datasets(cls, ids: list[int], progress_cb=None) -> dict:
+        """彻底删除数据集：先按 DB 记录的 key 删对象，再物理删 DB 行（不可逆）。
+
+        ``progress_cb(processed, total, phase)`` 可空；``total`` 为待删对象数，
+        ``phase`` 取 ``delete`` / ``db`` / ``done``。
+        """
+        # 0) 从 DB 收集所有待删对象的 key（用于进度总数；不列举前缀以避免超时）
+        keys_by_ds: dict[int, list[str]] = {}
+        all_keys: list[str] = []
+        async with async_db_session() as db:
+            for dataset_id in ids:
+                rows = (
+                    await db.execute(
+                        select(
+                            AnnotationImageModel.object_key,
+                            AnnotationImageModel.thumbnail_key,
+                        ).where(AnnotationImageModel.dataset_id == dataset_id)
+                    )
+                ).fetchall()
+                ks = [k for pair in rows for k in pair if k]
+                keys_by_ds[dataset_id] = ks
+                all_keys += ks
+
+        total = len(all_keys)
+        if total and progress_cb:
+            progress_cb(0, total, "delete")
+        if total:
+            s3_client.delete_objects(
+                all_keys,
+                progress_cb=(
+                    (lambda done, _t: progress_cb(done, total, "delete"))
+                    if progress_cb
+                    else None
+                ),
+            )
+
         purged = 0
         for dataset_id in ids:
-            # 1) 先删对象存储，失败则抛出，DB 不提交，避免留下不可恢复态
-            s3_client.delete_prefix(f"datasets/{dataset_id}/")
-            s3_client.delete_prefix(f"annotations/dataset_{dataset_id}/")
-            s3_client.delete_prefix(f"train/exports/dataset_{dataset_id}_")
+            # 导出产物数量少，尽力而为；失败不影响 DB 清理
+            try:
+                s3_client.delete_prefix(f"train/exports/dataset_{dataset_id}_")
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[数据集彻底删除] 导出产物清理失败 dataset={dataset_id}: {e}")
 
-            # 2) 物理删除 DB（含软删行）
+            # 物理删除 DB（含软删行）
             async with async_db_session.begin() as db:
                 img_ids = (
                     await db.execute(
@@ -108,6 +144,8 @@ class DatasetService:
                     delete(DatasetModel).where(DatasetModel.id == dataset_id)
                 )
             purged += 1
+        if progress_cb:
+            progress_cb(total or 1, total or 1, "done")
         return {"purged": purged}
 
     @classmethod

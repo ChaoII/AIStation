@@ -66,13 +66,47 @@ async def delete_dataset(
     return SuccessResponse(msg="删除成功")
 
 
-@DatasetRouter.delete("/purge", summary="彻底删除数据集（含对象存储，不可恢复）")
+async def _run_purge_job(job_id: str, ids: list[int]) -> None:
+    """后台彻底删除数据集并更新任务进度。"""
+    from app.api.v1.module_annotation.dataset.import_jobs import get_job
+    from app.core.logger import log
+
+    job = get_job(job_id)
+    if not job:
+        return
+    job.status = "running"
+    job.phase = "delete"
+
+    def _cb(processed: int, total: int, phase: str) -> None:
+        job.processed = processed
+        job.total = total
+        job.phase = phase
+        job.touch()
+
+    try:
+        await DatasetService.purge_datasets(ids=ids, progress_cb=_cb)
+        job.status, job.phase = "done", "done"
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[彻底删除] 失败 job={job_id}: {e}")
+        job.status, job.error = "failed", str(e)
+    finally:
+        job.touch()
+
+
+@DatasetRouter.delete("/purge", summary="彻底删除数据集（后台任务，含对象存储，不可恢复）")
 async def purge_dataset(
     ids: list[int],
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:purge"])),
 ) -> JSONResponse:
-    result = await DatasetService.purge_datasets(ids=ids)
-    return SuccessResponse(data=result, msg="已彻底删除")
+    import asyncio
+
+    from app.api.v1.module_annotation.dataset.import_jobs import create_job
+
+    if not ids:
+        return SuccessResponse(data={"job_id": None}, msg="没有需要删除的数据集")
+    job = create_job(ids[0], auth.user.id, kind="purge")
+    asyncio.create_task(_run_purge_job(job.job_id, ids))
+    return SuccessResponse(data={"job_id": job.job_id}, msg="已开始删除")
 
 
 @DatasetRouter.post("/{id}/upload", summary="上传图片")
