@@ -584,13 +584,11 @@ function startPoll() {
       const res = await TrainAPI.getPredictList(params, { silent: true });
       const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
       const old = contentRef.value.pageData as any[];
-      for (const f of fresh) {
-        const o = old.find((x: any) => x.id === f.id);
-        if (o) {
-          o.progress = f.progress;
-          o.status = f.status;
-        }
-      }
+      const merged = old.map((x: any) => {
+        const f = fresh.find((y: any) => y.id === x.id);
+        return f ? { ...x, progress: f.progress, status: f.status } : x;
+      });
+      contentRef.value.pageData = merged;
     } catch {
       /* ignore poll errors */
     }

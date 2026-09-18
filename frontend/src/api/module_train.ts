@@ -211,11 +211,12 @@ export const TrainAPI = {
   renewDeployKey(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/deploy/${id}/renew-key`, method: "put" });
   },
-  getDeployList(params?: Record<string, any>) {
+  getDeployList(params?: Record<string, any>, opts?: { silent?: boolean }) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
       url: `${API_PATH}/deploy/list`,
       method: "get",
       params,
+      headers: opts?.silent ? { _silent: "true" } : undefined,
     });
   },
   getDeployDetail(id: number) {

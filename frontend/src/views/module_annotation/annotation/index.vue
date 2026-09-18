@@ -3170,6 +3170,21 @@ function getCurrentUserName(): string {
   return "";
 }
 
+function getCurrentUserId(): number {
+  const curUser = useUserStoreHook().getBasicInfo;
+  const id = (curUser as any)?.id;
+  if (typeof id === "number") return id;
+  try {
+    const token = Auth.getAccessToken();
+    if (token) {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      const uid = payload?.sub?.id ?? payload?.user_id ?? payload?.id;
+      if (typeof uid === "number") return uid;
+    }
+  } catch {}
+  return 0;
+}
+
 function annotKey(anns: any[]) {
   return anns
     .map((a: any) => {
@@ -3412,7 +3427,7 @@ async function goToImage(idx: number) {
       const updated = { ...store.images[curIdx] };
       updated.status = "annotated";
       updated.annotation_count = store.annotations.length;
-      updated.updated_by = { id: 0, name: getCurrentUserName() };
+      updated.updated_by = { id: getCurrentUserId(), name: getCurrentUserName() };
       updated.updated_time = new Date().toISOString();
       store.images[curIdx] = updated;
       lastSavedKey = annotKey(store.annotations);
@@ -3479,7 +3494,7 @@ async function saveAnn() {
     updated.status = "annotated";
     updated.annotation_count = store.annotations.length;
     updated.updated_by = {
-      id: 0,
+      id: getCurrentUserId(),
       name: uname,
     };
     updated.updated_time = now;

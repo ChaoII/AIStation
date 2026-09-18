@@ -49,6 +49,19 @@ async def collaboration_ws(ws: WebSocket, task_id: int, token: str | None = Quer
         return
     user_id, user_name = parsed
 
+    # 任务级鉴权：允许超管、任务创建者或被分配者进入工作台；否则拒绝（4403）
+    from app.api.v1.module_annotation.task.service import TaskService
+    from app.api.v1.module_system.user.model import UserModel
+    from app.core.database import async_db_session
+
+    is_superuser = False
+    async with async_db_session() as db:
+        u = await db.get(UserModel, user_id)
+        is_superuser = bool(u and u.is_superuser)
+    if not await TaskService.check_workbench_access(task_id, user_id, is_superuser):
+        await ws.close(code=4403)
+        return
+
     try:
         _rooms.setdefault(task_id, {})[user_id] = {"ws": ws, "name": user_name}
         # 向新用户下发在线列表

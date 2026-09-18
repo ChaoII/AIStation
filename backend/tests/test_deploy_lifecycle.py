@@ -104,6 +104,7 @@ class _ServiceSession:
 
     async def execute(self, stmt):
         self.writes.append(stmt)
+        return SimpleNamespace(rowcount=1)
 
 
 class _ServiceDB:

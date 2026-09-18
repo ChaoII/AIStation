@@ -47,8 +47,12 @@ def test_progress_persisted_after_save(test_client: TestClient, auth_headers: di
     )
     assert put.status_code == 200, put.text
 
-    # trigger update_progress (list endpoint calls it)
-    test_client.get("/api/v1/annotation/task/list", params={"page_no": 1, "page_size": 50}, headers=auth_headers)
+    # 任务列表已改为只读（不再写库）。进度落库通过 update_progress 显式触发。
+    import asyncio
+
+    from app.api.v1.module_annotation.task.service import TaskService
+
+    asyncio.run(TaskService.update_progress(task_id))
 
     con = _db()
     progress, status = con.execute(

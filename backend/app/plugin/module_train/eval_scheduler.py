@@ -10,12 +10,27 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .concurrency import get_train_semaphore
 from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
+
+# 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
+# 而留下半成品；任务完成/取消后自动丢弃引用。
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """创建后台任务并持有引用，完成/取消时自动丢弃。"""
+    task = asyncio.create_task(coro)
+    if task is not None:
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+    return task
+
 
 # PaddleX OCR 独立 eval 脚本（挂载容器 /scripts/paddlex_eval.py，det/rec 通用）。
 # 加载 best.pdparams + Eval dataset，跑 program.eval，输出 EVAL_METRIC_JSON。
@@ -54,15 +69,24 @@ async def start_evaluation_scheduler():
 
 
 async def start_evaluation(eval_id: int):
+    # 原子守卫：单条条件 UPDATE 抢占，避免并发 start 的 TOCTOU 重复入队
     async with async_db_session.begin() as db:
-        await db.execute(
-            update(TrainEval).where(TrainEval.id == eval_id).values(
+        result = await db.execute(
+            update(TrainEval)
+            .where(TrainEval.id == eval_id, TrainEval.status != TrainStatus.RUNNING)
+            .values(
                 status=TrainStatus.RUNNING, started_at=datetime.now(), progress=10,
                 metrics=None, metrics_log=None, best_metrics=None, last_metrics=None,
                 log=None, error_log=None, finished_at=None,
             )
         )
-    asyncio.create_task(EvalExecutor.run(eval_id))
+        if result.rowcount == 0:
+            # 影响 0 行：要么不存在，要么已在运行
+            row = await db.get(TrainEval, eval_id)
+            if row:
+                raise Exception("评估任务正在运行，请勿重复启动")
+            raise Exception(f"评估任务 {eval_id} 不存在")
+    _spawn(EvalExecutor.run(eval_id))
 
 
 async def resolve_eval_context(model_id: int) -> tuple[int | None, str, str]:
@@ -154,6 +178,7 @@ class EvalExecutor(TaskExecutor):
     @classmethod
     async def _execute(cls, eval_id: int):
         container_id = None
+        data_dir = None
         try:
             async with async_db_session() as db:
                 eval_rec = await db.get(TrainEval, eval_id)
@@ -250,42 +275,47 @@ class EvalExecutor(TaskExecutor):
                 volumes[export_dir] = {"bind": "/scripts", "mode": "ro"}
                 volumes[os.path.join(export_dir, "output")] = {"bind": "/output", "mode": "rw"}
                 os.makedirs(os.path.join(export_dir, "output"), exist_ok=True)
-            container = await run_container(
-                docker_image, cmd,
-                volumes=volumes,
-                gpu_id=device,
-                shm_size="4g" if framework == TrainFramework.PADDLEX else None,
-                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
-            )
-            container_id = container.id
-            entry = cls._registry.get(eval_id) or {}
-            entry.update({"container_id": container_id})
-            cls._registry[eval_id] = entry
+            # 全局 GPU 并发上限：与训练/预测共享同一信号量，避免同一张卡被并发抢占
+            async with get_train_semaphore():
+                # 等待信号量期间可能被取消：启动容器前再检查一次
+                if cls._registry.get(eval_id, {}).get("cancel"):
+                    return
+                container = await run_container(
+                    docker_image, cmd,
+                    volumes=volumes,
+                    gpu_id=device,
+                    shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
+                )
+                container_id = container.id
+                entry = cls._registry.get(eval_id) or {}
+                entry.update({"container_id": container_id})
+                cls._registry[eval_id] = entry
 
-            metrics: dict = {}
+                metrics: dict = {}
 
-            def _parse_paddlex_metrics(line: str) -> dict | None:
-                """解析 PaddleX eval 脚本输出的 EVAL_METRIC_JSON 行。"""
-                if "EVAL_METRIC_JSON" in line:
-                    try:
-                        data = json.loads(line.split("EVAL_METRIC_JSON", 1)[1].strip())
-                        metrics.update(data)
-                        return dict(metrics)
-                    except Exception:
-                        return None
-                return None
+                def _parse_paddlex_metrics(line: str) -> dict | None:
+                    """解析 PaddleX eval 脚本输出的 EVAL_METRIC_JSON 行。"""
+                    if "EVAL_METRIC_JSON" in line:
+                        try:
+                            data = json.loads(line.split("EVAL_METRIC_JSON", 1)[1].strip())
+                            metrics.update(data)
+                            return dict(metrics)
+                        except Exception:
+                            return None
+                    return None
 
-            def _parse_val_metrics(line: str) -> dict | None:
-                """解析 YOLO val 输出：分类 top1/top5 与检测汇总/per-class 均累积到 metrics。"""
-                return _accumulate_yolo_metrics(line, metrics)
+                def _parse_val_metrics(line: str) -> dict | None:
+                    """解析 YOLO val 输出：分类 top1/top5 与检测汇总/per-class 均累积到 metrics。"""
+                    return _accumulate_yolo_metrics(line, metrics)
 
-            await cls.follow_logs(
-                container_id,
-                os.path.join(export_dir, "eval.log"),
-                lambda line: broadcast_eval_log(eval_id, line),
-                _parse_paddlex_metrics if framework == TrainFramework.PADDLEX else _parse_val_metrics,
-            )
-            exit_code = await cls._get_exit_code(container)
+                await cls.follow_logs(
+                    container_id,
+                    os.path.join(export_dir, "eval.log"),
+                    lambda line: broadcast_eval_log(eval_id, line),
+                    _parse_paddlex_metrics if framework == TrainFramework.PADDLEX else _parse_val_metrics,
+                )
+                exit_code = await cls._get_exit_code(container)
 
             current_metrics = metrics or None
 
@@ -312,6 +342,10 @@ class EvalExecutor(TaskExecutor):
         except Exception as e:
             log.error(f"eval task {eval_id} failed: {e}")
             await cls._mark_status(eval_id, TrainStatus.FAILED, log=str(e), finished_at=datetime.now())
+            # 失败后清理本次导出的 data 半成品目录（保留日志文件供排查）
+            if data_dir:
+                import shutil
+                shutil.rmtree(data_dir, ignore_errors=True)
         finally:
             cls._registry.pop(eval_id, None)
             if container_id:

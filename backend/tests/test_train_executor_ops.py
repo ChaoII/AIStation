@@ -42,6 +42,10 @@ class _FakeSessionMaker:
     def __init__(self, task):
         self._task = task
 
+    def __call__(self):
+        # 兼容 start_training 现在的 `async with async_db_session() as db` 用法
+        return self.begin()
+
     def begin(self):
         return _FakeBegin(self._task)
 

@@ -119,6 +119,7 @@ class PaddleXOCRExecutor(TaskExecutor):
     @classmethod
     async def _execute(cls, task_id: int):
         container_id = None
+        data_dir = None
         try:
             async with async_db_session() as db:
                 task = await db.get(TrainTask, task_id)
@@ -246,6 +247,10 @@ class PaddleXOCRExecutor(TaskExecutor):
                 TrainStatus.CANCELLED if cancelled else TrainStatus.FAILED,
                 error_log=str(e), finished_at=datetime.now(),
             )
+            # 失败后清理本次导出的 data 半成品目录（保留日志文件供排查）
+            if data_dir and not cancelled:
+                import shutil
+                shutil.rmtree(data_dir, ignore_errors=True)
         finally:
             cls._registry.pop(task_id, None)
             if container_id:

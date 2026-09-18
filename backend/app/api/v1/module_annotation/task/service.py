@@ -95,6 +95,72 @@ class TaskService:
         }
 
     @classmethod
+    async def _calc_progress_bulk(cls, db, items: list[dict]) -> dict[int, dict]:
+        """批量计算本页任务的进度与状态（只读，单次聚合，不写库）。
+
+        输入 ``items`` 为本页任务字典（含 ``id`` / ``dataset_id``），返回
+        ``{task_id: {"progress": int, "status": str}}``。沿用 ``enrich_dataset_list``
+        的 max(version) join 逻辑，避免逐条 ``_calc_progress`` 的 N+1 查询。
+        """
+        if not items:
+            return {}
+        ds_ids = {it["dataset_id"] for it in items}
+        total_rows = await db.execute(
+            select(AnnotationImageModel.dataset_id, func.count(AnnotationImageModel.id))
+            .where(
+                AnnotationImageModel.dataset_id.in_(ds_ids),
+                AnnotationImageModel.is_deleted == False,  # noqa: E712
+            )
+            .group_by(AnnotationImageModel.dataset_id)
+        )
+        totals = dict(total_rows.fetchall())
+
+        task_ids = [it["id"] for it in items]
+        ann: dict[int, int] = {}
+        if task_ids:
+            max_v = (
+                select(
+                    AnnotationRecordModel.task_id.label("task_id"),
+                    AnnotationRecordModel.image_id.label("image_id"),
+                    func.max(AnnotationRecordModel.version).label("mv"),
+                )
+                .where(AnnotationRecordModel.task_id.in_(task_ids))
+                .group_by(AnnotationRecordModel.task_id, AnnotationRecordModel.image_id)
+                .subquery()
+            )
+            json_length = (
+                func.json_array_length
+                if settings.DATABASE_TYPE == "sqlite"
+                else func.jsonb_array_length
+            )
+            ann_rows = await db.execute(
+                select(AnnotationRecordModel.task_id, func.count())
+                .select_from(AnnotationRecordModel)
+                .join(
+                    max_v,
+                    and_(
+                        AnnotationRecordModel.task_id == max_v.c.task_id,
+                        AnnotationRecordModel.image_id == max_v.c.image_id,
+                        AnnotationRecordModel.version == max_v.c.mv,
+                    ),
+                )
+                .where(
+                    AnnotationRecordModel.annotation_data.isnot(None),
+                    json_length(AnnotationRecordModel.annotation_data) > 0,
+                )
+                .group_by(AnnotationRecordModel.task_id)
+            )
+            ann = dict(ann_rows.fetchall())
+
+        out: dict[int, dict] = {}
+        for item in items:
+            total = totals.get(item["dataset_id"], 0)
+            pct = int(ann.get(item["id"], 0) / total * 100) if total > 0 else 0
+            status = "completed" if pct >= 100 else "in_progress" if pct > 0 else "pending"
+            out[item["id"]] = {"progress": pct, "status": status}
+        return out
+
+    @classmethod
     async def ensure_annotation_access(cls, user_ids: list[int]) -> None:
         """Grant annotation menu permissions to users (task assignees)."""
         if not user_ids:

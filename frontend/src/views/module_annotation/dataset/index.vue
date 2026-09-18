@@ -249,7 +249,7 @@
                   </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item command="import">导入标注</el-dropdown-item>
+                      <el-dropdown-item v-hasPerm="['module_annotation:dataset:upload']" command="import">导入标注</el-dropdown-item>
                       <el-dropdown-item command="export">导出</el-dropdown-item>
                       <el-dropdown-item command="exportHistory">导出历史</el-dropdown-item>
                       <el-dropdown-item command="clean">数据清洗</el-dropdown-item>
@@ -716,6 +716,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   dialogVisible.type = type;
   if (id && type === "update") {
     dialogVisible.title = "编辑数据集";
+    // 无独立「详情」接口，列表接口 /dataset/list 支持按 id 过滤，用 page_size=1 + id 取单条
     const res = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 1, id });
     const items = res.data.data.items;
     if (items && items.length > 0) {

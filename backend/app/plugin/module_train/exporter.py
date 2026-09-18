@@ -12,6 +12,29 @@ from app.core.logger import log
 from .model import TrainModelRepo
 
 
+async def _load_latest_anns_by_image(db, image_ids: list[int], annotation_task_id: int | None) -> dict[int, list]:
+    """一次性查出所有图片的最新版本标注，返回 ``image_id -> annotation_data`` 映射。
+
+    原实现逐图 ``select(...).where(image_id == img.id).order_by(version desc).limit(1)``
+    造成逐图 N+1 查询；此处改为 ``image_id IN (...)`` 一次查出全部记录后按版本降序
+    排序，每图仅取第一条（即最新版本），把 N 次查询收敛为 1 次。
+    """
+    if not image_ids:
+        return {}
+    query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id.in_(image_ids))
+    if annotation_task_id:
+        query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
+    query = query.order_by(AnnotationRecordModel.image_id, desc(AnnotationRecordModel.version))
+    rows = (await db.execute(query)).scalars().all()
+    anns_by_img: dict[int, list] = {}
+    for rec in rows:
+        if rec.image_id in anns_by_img:
+            # 已取到该图最新版本（按 version desc 排最前），跳过旧版本
+            continue
+        anns_by_img[rec.image_id] = rec.annotation_data if rec.annotation_data else []
+    return anns_by_img
+
+
 async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, ocr_rec: bool = False) -> str:
     """Export dataset for training — unified with download, just different YAML path."""
     return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec)
@@ -119,14 +142,9 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
     anns_by_img: dict[int, list] = {}
     used_ids: set[int] = set()
     async with async_db_session() as db:
-        for img in images:
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            record = (await db.execute(query)).scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
-            anns_by_img[img.id] = anns
+        # 批量 IN 查出全部图片标注，避免逐图 N+1
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
+        for anns in anns_by_img.values():
             for ann in anns:
                 cid = ann.get("class_id")
                 if cid is not None and cid != -1:
@@ -432,15 +450,11 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
     # Collect per-image labels: {img_id: [class_id, ...]} (multi) or {img_id: class_id} (single)
     img_labels: dict[int, list[int]] = {}
     async with async_db_session() as db:
-        for img in images:
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
+        # 批量 IN 查出全部图片标注，避免逐图 N+1
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
+        for img_id, anns in anns_by_img.items():
             ids: list[int] = []
-            for ann in (record.annotation_data if record and record.annotation_data else []):
+            for ann in anns:
                 cid = ann.get("class_id")
                 if cid is not None and cid != -1:
                     ids.append(cid)
@@ -452,7 +466,7 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                 # 去重保持顺序
                 seen = set()
                 ids = [c for c in ids if not (c in seen or seen.add(c))]
-                img_labels[img.id] = ids
+                img_labels[img_id] = ids
 
     if multi_label:
         # Multi-label: flat train/val dirs + labels/*.txt (one class id per line)
@@ -521,6 +535,8 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
     from app.utils.s3_client import s3_client
 
     async with async_db_session() as db:
+        # 批量 IN 查出全部图片标注，避免逐图 N+1
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
         for img in images:
             img_path = os.path.join(img_dir, img.filename)
             if not os.path.exists(img_path):
@@ -533,14 +549,8 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
                     log.warning(f"skip image {img.filename}: {e}")
                     continue
 
-            # Get annotation record
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
+            # 用批量映射取标注，避免逐图查询
+            anns = anns_by_img.get(img.id, [])
 
             # Convert to x-anylabeling format（归一化 → 像素；支持全部形状；使用真实类名）
             shapes = xany_shapes(anns, img.width or 0, img.height or 0, class_names or {})
@@ -776,6 +786,8 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
     # 收集所有图像 + 标注（det 条目统一由 paddle_ocr_det_entries 生成，含矩形）
     records = []  # (img_name, det_entries, rec_entries[(points, text)])
     async with async_db_session() as db:
+        # 批量 IN 查出全部图片标注，避免逐图 N+1
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
         for img in images:
             img_path = os.path.join(det_img_dir, img.filename)
             try:
@@ -786,13 +798,7 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
             except Exception:
                 continue
 
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
+            anns = anns_by_img.get(img.id, [])
 
             det_entries = paddle_ocr_det_entries(anns, img.width or 1, img.height or 1)
             rec_entries = [(e["points"], e["transcription"])
@@ -891,6 +897,8 @@ async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, outp
     lines = []
 
     async with async_db_session() as db:
+        # 批量 IN 查出全部图片标注，避免逐图 N+1
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
         for img in images:
             img_path = os.path.join(img_dir, img.filename)
             try:
@@ -901,13 +909,7 @@ async def _export_paddle_mlcls(dataset_id: int, task_id: int, images: list, outp
             except Exception:
                 continue
 
-            query = select(AnnotationRecordModel).where(AnnotationRecordModel.image_id == img.id)
-            if annotation_task_id:
-                query = query.where(AnnotationRecordModel.task_id == annotation_task_id)
-            query = query.order_by(desc(AnnotationRecordModel.version)).limit(1)
-            rec = await db.execute(query)
-            record = rec.scalar_one_or_none()
-            anns = record.annotation_data if record and record.annotation_data else []
+            anns = anns_by_img.get(img.id, [])
 
             class_ids = []
             for ann in anns:

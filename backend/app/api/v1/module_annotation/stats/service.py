@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import bindparam, func, select, text
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.dataset.model import AnnotationImageModel, DatasetModel
 from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+from app.config.setting import settings
 from app.core.database import async_db_session
 
 
@@ -149,44 +150,53 @@ class StatsService:
                 )
             )
             tasks_list = tasks.scalars().all()
+            task_ids = [t.id for t in tasks_list]
 
-            # Class distribution and user contributions across all tasks
+            # Class distribution and user contributions：SQL 聚合（跨方言 json 展开），
+            # 避免对每个任务拉全部 annotation_data 再在 Python 逐条展开大 JSON。
+            # 仅统计带 class_id 的条目（与旧口径一致）。
             class_counter: dict[int, int] = {}
             user_counter: dict[int, int] = {}
             total_annotations = 0
 
-            for task in tasks_list:
-                # class name lookup from task.classes
-                if task.classes:
-                    for cls_def in task.classes if isinstance(task.classes, list) else task.classes.get("classes", []):
-                        cid = cls_def.get("id") if isinstance(cls_def, dict) else None
-                        if cid is not None and cid not in class_counter:
-                            class_counter[cid] = 0  # ensure all defined classes appear
-
-                # Query annotation records for this task
-                ann_rows = await db.execute(
-                    select(AnnotationRecordModel.annotation_data, AnnotationRecordModel.created_id)
-                    .where(
-                        AnnotationRecordModel.task_id == task.id,
-                        AnnotationRecordModel.is_deleted == False,  # noqa: E712
+            if task_ids:
+                if settings.DATABASE_TYPE == "sqlite":
+                    agg_sql = text(
+                        """
+                        SELECT json_extract(elem.value, '$.class_id') AS class_id,
+                               ar.created_id AS created_id,
+                               COUNT(*) AS cnt
+                        FROM annotation_record ar, json_each(ar.annotation_data) AS elem
+                        WHERE ar.task_id IN :task_ids AND ar.is_deleted = 0
+                          AND json_extract(elem.value, '$.class_id') IS NOT NULL
+                        GROUP BY class_id, ar.created_id
+                        """
                     )
-                )
-                for row in ann_rows:
-                    ann_data = row[0]
-                    created_id = row[1]
-                    if isinstance(ann_data, list):
-                        valid_count = 0
-                        for item in ann_data:
-                            cid = item.get("class_id") if isinstance(item, dict) else None
-                            if cid is not None:
-                                class_counter[cid] = class_counter.get(cid, 0) + 1
-                                total_annotations += 1
-                                valid_count += 1
-                        # 贡献口径与 total_annotations 对齐：仅统计带 class_id 的条目
-                        if created_id and valid_count:
-                            user_counter[created_id] = user_counter.get(created_id, 0) + valid_count
+                else:
+                    agg_sql = text(
+                        """
+                        SELECT elem.value ->> 'class_id' AS class_id,
+                               ar.created_id AS created_id,
+                               COUNT(*) AS cnt
+                        FROM annotation_record ar, jsonb_array_elements(ar.annotation_data) AS elem
+                        WHERE ar.task_id IN :task_ids AND ar.is_deleted = false
+                          AND (elem.value ->> 'class_id') IS NOT NULL
+                        GROUP BY class_id, ar.created_id
+                        """
+                    )
+                agg_sql = agg_sql.bindparams(bindparam("task_ids", expanding=True))
+                rows = (await db.execute(agg_sql, {"task_ids": task_ids})).fetchall()
+                for class_id, created_id, cnt in rows:
+                    total_annotations += cnt
+                    try:
+                        cid = int(class_id)
+                    except (TypeError, ValueError):
+                        cid = class_id
+                    class_counter[cid] = class_counter.get(cid, 0) + cnt
+                    if created_id:
+                        user_counter[created_id] = user_counter.get(created_id, 0) + cnt
 
-            # Build class name map from all tasks
+            # Build class name map from all tasks（同时把已定义但未出现的类补 0）
             class_name_map: dict[int, str] = {}
             for task in tasks_list:
                 if task.classes:
@@ -195,13 +205,19 @@ class StatsService:
                             cid = cls_def.get("id")
                             if cid is not None:
                                 class_name_map.setdefault(cid, cls_def.get("name", f"class_{cid}"))
+                                class_counter.setdefault(cid, 0)
                     elif isinstance(task.classes, dict):
                         for cid_str, cls_def in task.classes.items():
                             try:
                                 cid = int(cid_str)
-                                class_name_map.setdefault(cid, cls_def.get("name", f"class_{cid}") if isinstance(cls_def, dict) else str(cls_def))
                             except ValueError:
-                                pass
+                                continue
+                            class_name_map.setdefault(
+                                cid,
+                                cls_def.get("name", f"class_{cid}")
+                                if isinstance(cls_def, dict) else str(cls_def),
+                            )
+                            class_counter.setdefault(cid, 0)
 
             class_distribution = [
                 {"class_id": cid, "class_name": class_name_map.get(cid, f"class_{cid}"), "count": cnt}

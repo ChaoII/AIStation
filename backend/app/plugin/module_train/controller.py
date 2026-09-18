@@ -31,7 +31,7 @@ router = APIRouter(tags=["模型训练"])
 
 
 @router.get("/system/tempdir", summary="系统临时目录路径", include_in_schema=False)
-async def get_tempdir():
+async def get_tempdir(auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
     return SuccessResponse(data={"tempdir": tempfile.gettempdir().replace("\\", "/")})
 
 
@@ -425,7 +425,7 @@ async def delete_schedule(
 async def export_model(
     model_id: int,
     data: ModelExportSchema = Body(...),
-    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     from .export_service import export_model_to_format
     from .service import TrainService
@@ -486,7 +486,7 @@ async def update_model(
 @router.post("/deploy/create", summary="创建模型部署")
 async def create_deploy(
     data: TrainDeployCreateSchema = Body(...),
-    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     from .service import TrainService
     result = await TrainService.create_deploy(data, auth)
@@ -496,7 +496,7 @@ async def create_deploy(
 @router.post("/deploy/{deploy_id}/start", summary="启动部署")
 async def start_deploy(
     deploy_id: int,
-    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     try:
         from .deploy_executor import start_deployment
@@ -510,7 +510,7 @@ async def start_deploy(
 @router.post("/deploy/{deploy_id}/stop", summary="停止部署")
 async def stop_deploy(
     deploy_id: int,
-    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     from .deploy_executor import stop_deployment
     await stop_deployment(deploy_id)
@@ -520,7 +520,7 @@ async def stop_deploy(
 @router.put("/deploy/{deploy_id}/renew-key", summary="重新生成API Key")
 async def renew_deploy_key(
     deploy_id: int,
-    auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:model:update"])),
 ):
     from .service import TrainService
     result = await TrainService.renew_deploy_key(deploy_id)

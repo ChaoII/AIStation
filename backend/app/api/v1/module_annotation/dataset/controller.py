@@ -1,6 +1,7 @@
 import asyncio as _asyncio
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -159,7 +160,7 @@ async def get_images(
     status: str | None = None,
     task_id: int | None = None,
     page_no: int = 1,
-    page_size: int = 100,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 100,
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
 ) -> JSONResponse:
     images = await DatasetService.get_images(id, task_id, page_no, page_size)

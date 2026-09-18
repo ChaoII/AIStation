@@ -596,53 +596,67 @@ async def import_x_anylabeling_bytes(
 
             results = await asyncio.gather(*[_proc(e, b) for e, b, _ in prepared])
 
-            async with async_db_session.begin() as db:
-                for (e, _b, meta), r in zip(prepared, results, strict=True):
-                    processed += 1
-                    if r.get("duplicate"):
-                        skipped_duplicate += 1
+            # 本批成功上传到对象存储的 key（用于 DB 失败时补偿删除，避免孤儿）
+            batch_keys = [
+                k for r in results if not r.get("duplicate")
+                for k in (r.get("key"), r.get("tkey")) if k
+            ]
+            try:
+                async with async_db_session.begin() as db:
+                    for (e, _b, meta), r in zip(prepared, results, strict=True):
+                        processed += 1
+                        if r.get("duplicate"):
+                            skipped_duplicate += 1
+                            if progress_cb:
+                                progress_cb(processed, total, "import")
+                            continue
+                        mw = (meta or {}).get("imageWidth") or 0
+                        mh = (meta or {}).get("imageHeight") or 0
+                        img_rec = AnnotationImageModel(
+                            dataset_id=dataset_id,
+                            filename=e["filename"],
+                            object_key=r["key"],
+                            thumbnail_key=r["tkey"],
+                            content_hash=r.get("hash"),
+                            status=ImageStatus.ANNOTATED,
+                            width=mw or r["w"],
+                            height=mh or r["h"],
+                            created_id=user_id,
+                        )
+                        db.add(img_rec)
+                        await db.flush()
+
+                        anns = []
+                        for shape in ((meta or {}).get("shapes") or []):
+                            ann = _shape_to_annotation(
+                                shape, class_mapping, mw or r["w"], mh or r["h"]
+                            )
+                            if ann:
+                                anns.append(ann)
+                        names = _classification_names((meta or {}).get("flags"))
+                        class_ids = [class_mapping[n] for n in names if n in class_mapping]
+                        if class_ids:
+                            anns.append({"id": uuid.uuid4().hex, "type": "Classification",
+                                         "class_id": class_ids[0], "class_ids": class_ids,
+                                         "label": names[0]})
+                        if anns:
+                            total_annotations += len(anns)
+                            db.add(AnnotationRecordModel(
+                                task_id=task_id, image_id=img_rec.id,
+                                annotation_data=anns, version=1, created_id=user_id,
+                            ))
+                        imported += 1
+                        # 每张图片回调一次，前端 1s 轮询即可看到数字持续增长
                         if progress_cb:
                             progress_cb(processed, total, "import")
-                        continue
-                    mw = (meta or {}).get("imageWidth") or 0
-                    mh = (meta or {}).get("imageHeight") or 0
-                    img_rec = AnnotationImageModel(
-                        dataset_id=dataset_id,
-                        filename=e["filename"],
-                        object_key=r["key"],
-                        thumbnail_key=r["tkey"],
-                        content_hash=r.get("hash"),
-                        status=ImageStatus.ANNOTATED,
-                        width=mw or r["w"],
-                        height=mh or r["h"],
-                        created_id=user_id,
-                    )
-                    db.add(img_rec)
-                    await db.flush()
-
-                    anns = []
-                    for shape in ((meta or {}).get("shapes") or []):
-                        ann = _shape_to_annotation(
-                            shape, class_mapping, mw or r["w"], mh or r["h"]
-                        )
-                        if ann:
-                            anns.append(ann)
-                    names = _classification_names((meta or {}).get("flags"))
-                    class_ids = [class_mapping[n] for n in names if n in class_mapping]
-                    if class_ids:
-                        anns.append({"id": uuid.uuid4().hex, "type": "Classification",
-                                     "class_id": class_ids[0], "class_ids": class_ids,
-                                     "label": names[0]})
-                    if anns:
-                        total_annotations += len(anns)
-                        db.add(AnnotationRecordModel(
-                            task_id=task_id, image_id=img_rec.id,
-                            annotation_data=anns, version=1, created_id=user_id,
-                        ))
-                    imported += 1
-                    # 每张图片回调一次，前端 1s 轮询即可看到数字持续增长
-                    if progress_cb:
-                        progress_cb(processed, total, "import")
+            except Exception:
+                # 本批 DB 事务失败：尽力删除已上传对象，避免留孤儿
+                if batch_keys:
+                    try:
+                        await asyncio.to_thread(s3_client.delete_objects, batch_keys)
+                    except Exception as e2:  # noqa: BLE001
+                        log.warning(f"[导入] 补偿删除孤儿对象失败: {e2}")
+                raise
 
         # 收尾：重算数据集计数
         async with async_db_session.begin() as db:

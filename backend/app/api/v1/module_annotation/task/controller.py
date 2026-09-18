@@ -37,33 +37,45 @@ async def get_task_list(
         offset=offset, limit=page.page_size, order_by=page.order_by,
         search=search, out_schema=TaskOutSchema,
     )
-    # Enrich each task with per-task calculated progress and assignee names
-    if result.get("items"):
+    # 本页任务：单次聚合算进度/状态，一次查询用户与数据集名（只读不写，避免 N+1）
+    items = result.get("items")
+    if items:
         async with async_db_session() as db:
             from sqlalchemy import select
 
+            from app.api.v1.module_annotation.dataset.model import DatasetModel
             from app.api.v1.module_system.user.model import UserModel
-            for item in result["items"]:
-                prog = await TaskService._calc_progress(db, item["id"], item["dataset_id"])
-                item["progress"] = prog["progress"]
-                item["status"] = prog["status"]
-                # Cache to DB
-                try:
-                    await TaskService.update_progress(item["id"])
-                except Exception:
-                    pass
-                # Resolve assignee IDs to display names
+
+            prog_map = await TaskService._calc_progress_bulk(db, items)
+
+            # 一次查询本页所有 assignees 用户 → id→name 映射
+            all_aids = {uid for it in items for uid in (it.get("assignees") or [])}
+            name_map: dict[int, str] = {}
+            if all_aids:
+                users = await db.execute(
+                    select(UserModel.id, UserModel.name).where(UserModel.id.in_(all_aids))
+                )
+                name_map = dict(users.fetchall())
+
+            # 一次查询本页所有数据集名 → id→name 映射
+            all_ds = {it["dataset_id"] for it in items}
+            ds_name_map: dict[int, str] = {}
+            if all_ds:
+                ds_rows = await db.execute(
+                    select(DatasetModel.id, DatasetModel.name)
+                    .where(DatasetModel.id.in_(all_ds))
+                )
+                ds_name_map = dict(ds_rows.fetchall())
+
+            for item in items:
+                prog = prog_map.get(item["id"], {})
+                item["progress"] = prog.get("progress", 0)
+                item["status"] = prog.get("status", "pending")
                 aids = item.get("assignees") or []
-                if aids:
-                    users = await db.execute(
-                        select(UserModel).where(UserModel.id.in_(aids))
-                    )
-                    name_map = {u.id: u.name for u in users.scalars()}
-                    item["assignees"] = [name_map.get(uid, f"用户{uid}") for uid in aids]
-                # Populate dataset name
-                from app.api.v1.module_annotation.dataset.model import DatasetModel
-                ds = await db.get(DatasetModel, item["dataset_id"])
-                item["dataset_name"] = ds.name if ds else f"数据集#{item['dataset_id']}"
+                item["assignees"] = [name_map.get(uid, f"用户{uid}") for uid in aids]
+                item["dataset_name"] = ds_name_map.get(
+                    item["dataset_id"], f"数据集#{item['dataset_id']}"
+                )
     return SuccessResponse(data=result)
 
 
@@ -99,6 +111,22 @@ async def delete_task(
     ids: list[int],
     auth: AuthSchema = Depends(AuthPermission(["annotation:task:delete"])),
 ) -> JSONResponse:
+    from datetime import datetime
+
+    from sqlalchemy import update
+
+    from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
+    from app.core.database import async_db_session
+
+    # CRUDBase.delete 仅软删任务行，这里补级联软删该任务下的标注记录
+    actor_id = getattr(getattr(auth, "user", None), "id", None)
+    async with async_db_session.begin() as db:
+        await db.execute(
+            update(AnnotationRecordModel)
+            .where(AnnotationRecordModel.task_id.in_(ids))
+            .values(is_deleted=True, deleted_time=datetime.now(), deleted_id=actor_id)
+        )
+
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
     await crud.delete(ids=ids)

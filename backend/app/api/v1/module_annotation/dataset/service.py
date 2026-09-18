@@ -166,6 +166,7 @@ class DatasetService:
 
         import asyncio
 
+        keys: list[str] = []
         async with async_db_session.begin() as db:
             stmt = select(AnnotationImageModel).where(
                 AnnotationImageModel.dataset_id == dataset_id,
@@ -183,10 +184,8 @@ class DatasetService:
                 return {"deleted": 0, "skipped_locked": len(locked)}
 
             ids = [r.id for r in targets]
+            # 先收集待删对象 key 并在 DB 事务内删除行（对象与 DB 非同源事务，先 DB 后对象）
             keys = [k for r in targets for k in (r.object_key, r.thumbnail_key) if k]
-            if keys:
-                # 并发批量删除对象（不阻塞事件循环）
-                await asyncio.to_thread(s3_client.delete_objects, keys)
 
             await db.execute(
                 delete(AnnotationRecordModel).where(AnnotationRecordModel.image_id.in_(ids))
@@ -215,6 +214,13 @@ class DatasetService:
                         AnnotationRecordModel.is_deleted == False,  # noqa: E712
                     )
                 ) or 0
+
+        # DB 已提交，再删对象存储；失败仅告警，不阻断删除结果
+        if keys:
+            try:
+                await asyncio.to_thread(s3_client.delete_objects, keys)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[删除图片] 对象删除失败 dataset={dataset_id}: {e}")
 
         # 重算该数据集下所有任务的进度（图片总数变化）
         from app.api.v1.module_annotation.task.service import TaskService
@@ -322,39 +328,53 @@ class DatasetService:
         uploaded: list[dict] = []
         failed: list[dict] = []
         duplicates: list[str] = []
-        async with async_db_session.begin() as db:
-            for r in results:
-                if not r["ok"]:
-                    if r.get("duplicate"):
-                        duplicates.append(r["filename"])
-                    else:
-                        failed.append({"filename": r["filename"], "reason": r["reason"]})
-                    continue
-                img = AnnotationImageModel(
-                    dataset_id=dataset_id,
-                    filename=r["filename"],
-                    object_key=r["object_key"],
-                    thumbnail_key=r["thumbnail_key"],
-                    content_hash=r["content_hash"],
-                    width=r["width"],
-                    height=r["height"],
-                    status=ImageStatus.UNANNOTATED,
+        # 本次成功上传到对象存储的所有 key（用于 DB 失败时补偿删除，避免孤儿）
+        uploaded_keys = [
+            k for r in results if r.get("ok")
+            for k in (r.get("object_key"), r.get("thumbnail_key")) if k
+        ]
+        try:
+            async with async_db_session.begin() as db:
+                for r in results:
+                    if not r["ok"]:
+                        if r.get("duplicate"):
+                            duplicates.append(r["filename"])
+                        else:
+                            failed.append({"filename": r["filename"], "reason": r["reason"]})
+                        continue
+                    img = AnnotationImageModel(
+                        dataset_id=dataset_id,
+                        filename=r["filename"],
+                        object_key=r["object_key"],
+                        thumbnail_key=r["thumbnail_key"],
+                        content_hash=r["content_hash"],
+                        width=r["width"],
+                        height=r["height"],
+                        status=ImageStatus.UNANNOTATED,
+                    )
+                    set_create_audit(img, auth)
+                    db.add(img)
+                    await db.flush()
+                    uploaded.append({"id": img.id, "filename": r["filename"],
+                                     "object_key": r["object_key"],
+                                     "thumbnail_key": r["thumbnail_key"]})
+                total = await db.scalar(
+                    select(func.count(AnnotationImageModel.id))
+                    .where(AnnotationImageModel.dataset_id == dataset_id)
                 )
-                set_create_audit(img, auth)
-                db.add(img)
-                await db.flush()
-                uploaded.append({"id": img.id, "filename": r["filename"],
-                                 "object_key": r["object_key"],
-                                 "thumbnail_key": r["thumbnail_key"]})
-            total = await db.scalar(
-                select(func.count(AnnotationImageModel.id))
-                .where(AnnotationImageModel.dataset_id == dataset_id)
-            )
-            await db.execute(
-                update(DatasetModel)
-                .where(DatasetModel.id == dataset_id)
-                .values(image_count=total or 0)
-            )
+                await db.execute(
+                    update(DatasetModel)
+                    .where(DatasetModel.id == dataset_id)
+                    .values(image_count=total or 0)
+                )
+        except Exception:
+            # DB 事务失败：尽力删除本次已上传的对象，避免留孤儿
+            if uploaded_keys:
+                try:
+                    await asyncio.to_thread(s3_client.delete_objects, uploaded_keys)
+                except Exception as e2:  # noqa: BLE001
+                    log.warning(f"[上传] 补偿删除孤儿对象失败: {e2}")
+            raise
         return {"uploaded": uploaded, "failed": failed, "skipped_duplicate": duplicates,
                 "uploaded_count": len(uploaded), "failed_count": len(failed),
                 "skipped_duplicate_count": len(duplicates)}
@@ -362,6 +382,8 @@ class DatasetService:
     @classmethod
     async def get_images(cls, dataset_id: int, task_id: int | None = None,
                          page_no: int = 1, page_size: int = 100) -> dict:
+        # 服务端限制 page_size 上限，避免一次全表拉取
+        page_size = max(1, min(page_size, 200))
         offset = (page_no - 1) * page_size
         async with async_db_session() as db:
             # Count
@@ -407,7 +429,6 @@ class DatasetService:
             # Build image_id → latest annotation record map
             from app.api.v1.module_system.user.model import UserModel
             ann_map: dict[int, dict] = {}
-            user_cache: dict[int, str] = {}
             for r in rec_rows:
                 iid = r[1]
                 if iid not in ann_map:
@@ -416,10 +437,14 @@ class DatasetService:
                         "created_id": r[4],
                         "created_time": r[5],
                     }
-            for uid in {a["created_id"] for a in ann_map.values() if a["created_id"]}:
-                u = await db.get(UserModel, uid)
-                if u:
-                    user_cache[uid] = u.name
+            # 一次查询所有创建人 → id→name 映射，避免逐条 db.get(UserModel)
+            user_cache: dict[int, str] = {}
+            creator_ids = {a["created_id"] for a in ann_map.values() if a["created_id"]}
+            if creator_ids:
+                users = await db.execute(
+                    select(UserModel.id, UserModel.name).where(UserModel.id.in_(creator_ids))
+                )
+                user_cache = dict(users.fetchall())
 
             items = []
             for img in images:

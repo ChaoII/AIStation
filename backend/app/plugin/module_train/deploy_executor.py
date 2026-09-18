@@ -30,6 +30,28 @@ _deploy_running: dict[int, dict] = {}
 # 压制后续新一次启动的状态写入。
 _deploy_cancelled: dict[int, datetime] = {}
 
+# 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
+# 而留下半成品；任务完成/取消后自动丢弃引用。
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """创建后台任务并持有引用，完成/取消时自动丢弃。"""
+    task = asyncio.create_task(coro)
+    if task is not None:
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+def _cleanup_deploy_half_products(model_dir: str | None, server_dir: str | None) -> None:
+    """失败后清理部署的半成品目录（下载的模型权重与服务脚本），保留 deploy.log 供排查。"""
+    import shutil
+    for d in (model_dir, server_dir):
+        if d:
+            shutil.rmtree(d, ignore_errors=True)
+
+
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 PADDLEX_IMAGE = "paddlex:latest"
 
@@ -357,18 +379,19 @@ if __name__ == "__main__":
 
 
 async def start_deployment(deploy_id: int):
+    # 原子守卫：单条条件 UPDATE 抢占，避免并发 start 的 TOCTOU 重复入队
     async with async_db_session.begin() as db:
-        row = await db.get(TrainDeploy, deploy_id)
-        if not row or row.status in ("deploying", "running"):
-            return
-        await db.execute(
-            update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                status="deploying", started_at=datetime.now()
-            )
+        result = await db.execute(
+            update(TrainDeploy)
+            .where(TrainDeploy.id == deploy_id, TrainDeploy.status.notin_(("deploying", "running")))
+            .values(status="deploying", started_at=datetime.now())
         )
+        if result.rowcount == 0:
+            # 影响 0 行：要么不存在，要么已在部署/运行中
+            return
     # 全新启动前清掉该 id 的历史取消墓碑，避免新一次运行被旧记录压制。
     _deploy_cancelled.pop(deploy_id, None)
-    asyncio.create_task(_execute_deployment(deploy_id))
+    _spawn(_execute_deployment(deploy_id))
 
 
 async def stop_deployment(deploy_id: int):
@@ -565,6 +588,8 @@ async def start_deploy_recovery() -> None:
 async def _execute_deployment(deploy_id: int):
     container_id = None
     export_dir = None
+    model_dir = None
+    server_dir = None
     try:
         async with async_db_session() as db:
             deploy = await db.get(TrainDeploy, deploy_id)
@@ -775,6 +800,8 @@ async def _execute_deployment(deploy_id: int):
                         status="failed", error_log=str(e), finished_at=datetime.now()
                     )
                 )
+            # 失败后清理部署半成品（模型权重/服务脚本），保留 deploy.log
+            _cleanup_deploy_half_products(model_dir, server_dir)
     finally:
         _deploy_running.pop(deploy_id, None)
         _deploy_cancelled.pop(deploy_id, None)

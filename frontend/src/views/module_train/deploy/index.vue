@@ -139,6 +139,7 @@
               <template #default="scope">
                 <el-button
                   v-if="scope.row.status === 'pending'"
+                  v-hasPerm="['module_train:model:update']"
                   size="small"
                   type="primary"
                   link
@@ -149,6 +150,7 @@
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'running'"
+                  v-hasPerm="['module_train:model:update']"
                   size="small"
                   type="danger"
                   link
@@ -159,6 +161,7 @@
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'running'"
+                  v-hasPerm="['module_train:model:update']"
                   size="small"
                   link
                   icon="Key"
@@ -187,6 +190,7 @@
                 </el-button>
                 <el-button
                   v-if="scope.row.status === 'failed' || scope.row.status === 'stopped'"
+                  v-hasPerm="['module_train:model:update']"
                   size="small"
                   link
                   type="primary"
@@ -195,24 +199,16 @@
                 >
                   重新部署
                 </el-button>
-                <el-popconfirm
-                  title="确定删除该部署？"
-                  confirm-button-text="删除"
-                  cancel-button-text="取消"
-                  @confirm="handleDelete([scope.row.id])"
-                  width="180"
+                <el-button
+                  v-hasPerm="['module_train:model:delete']"
+                  size="small"
+                  type="danger"
+                  link
+                  icon="Delete"
+                  @click="handleDelete([scope.row.id])"
                 >
-                  <template #reference>
-                    <el-button
-                      size="small"
-                      type="danger"
-                      link
-                      icon="Delete"
-                    >
-                      删除
-                    </el-button>
-                  </template>
-                </el-popconfirm>
+                  删除
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -274,7 +270,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from "vue";
+import { ref, reactive, watch, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled, Link } from "@element-plus/icons-vue";
@@ -458,7 +454,11 @@ async function handleDeploy(row: any) {
 
 async function handleStop(id: number) {
   try {
-    await ElMessageBox.confirm("确定停止该部署？", "提示", { type: "warning" });
+    await ElMessageBox.confirm(
+      "确定停止该部署？停止后正在运行的服务将中断，且不会自动恢复。",
+      "提示",
+      { type: "warning", confirmButtonText: "停止", cancelButtonText: "取消" }
+    );
     await TrainAPI.stopDeploy(id);
     refreshList();
   } catch { /* */ }
@@ -485,7 +485,52 @@ function copyText(t: string) {
 }
 
 async function handleDelete(ids: number[]) {
-  await TrainAPI.deleteDeploy(ids);
-  refreshList();
+  try {
+    await ElMessageBox.confirm(
+      "确定删除所选部署？删除后部署实例与运行中的服务将被移除，且不可恢复。",
+      "提示",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+    await TrainAPI.deleteDeploy(ids);
+    refreshList();
+  } catch { /* */ }
 }
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(async () => {
+    if (!contentRef.value?.pageData) return;
+    try {
+      // 只拉当前页刷新状态（静默避免弹错），并整体替换 pageData 触发行重渲染
+      const pg = (contentRef.value as any)?.pagination;
+      const params = {
+        page_no: pg?.currentPage ?? 1,
+        page_size: pg?.pageSize ?? 10,
+        ...(((contentRef.value as any)?.getFilterParams?.() as Record<string, any>) || {}),
+      };
+      const res = await TrainAPI.getDeployList(params, { silent: true });
+      const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
+      const old = contentRef.value.pageData as any[];
+      const merged = old.map((x: any) => {
+        const f = fresh.find((y: any) => y.id === x.id);
+        return f ? { ...x, status: f.status, api_url: f.api_url } : x;
+      });
+      contentRef.value.pageData = merged;
+    } catch {
+      /* ignore poll errors */
+    }
+  }, 5000);
+}
+
+function stopPoll() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+onMounted(() => startPoll());
+onBeforeUnmount(() => stopPoll());
 </script>

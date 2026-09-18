@@ -27,6 +27,20 @@ from .ws import broadcast_log
 
 _scheduler_task: asyncio.Task | None = None
 
+# 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
+# 而留下半成品；任务完成/取消后自动丢弃引用。
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """创建后台任务并持有引用，完成/取消时自动丢弃。"""
+    task = asyncio.create_task(coro)
+    if task is not None:
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
 MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "train_output", ".models_cache").replace("\\", "/")
 _MODEL_DOWNLOAD_BASE = "https://github.com/ultralytics/assets/releases/latest/download"
 _MODEL_MIRROR = os.environ.get("MODEL_MIRROR", "")  # e.g. https://ghproxy.com/
@@ -141,6 +155,18 @@ async def _build_export_dir(task_id: int) -> str:
     export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
     os.makedirs(export_dir, exist_ok=True)
     return export_dir
+
+
+def _cleanup_export_data(data_dir: str | None) -> None:
+    """失败后清理本次导出的 data 临时目录（保留日志文件供排查）。
+
+    目录由框架在 temp 下统一管理（cleanup_loop 兜底），此处仅清理失败的
+    半成品导出数据，避免占留大量图片。
+    """
+    if not data_dir:
+        return
+    import shutil
+    shutil.rmtree(data_dir, ignore_errors=True)
 
 
 async def resolve_base_model(task, export_dir: str) -> str | None:
@@ -451,6 +477,7 @@ class TrainExecutor(TaskExecutor):
     @classmethod
     async def _execute(cls, task_id: int):
         container_id = None
+        data_dir = None
         try:
             async with async_db_session() as db:
                 task = await db.get(TrainTask, task_id)
@@ -508,6 +535,8 @@ class TrainExecutor(TaskExecutor):
             log.error(f"training task {task_id} failed: {e}")
             await cls._mark_status(task_id, TrainStatus.FAILED,
                                    error_log=str(e), finished_at=datetime.now())
+            # 失败后清理本次导出的 data 半成品目录（保留日志文件供排查）
+            _cleanup_export_data(data_dir)
         finally:
             cls._registry.pop(task_id, None)
             if container_id:
@@ -614,7 +643,9 @@ class TrainExecutor(TaskExecutor):
 
 
 async def start_training(task_id: int):
-    async with async_db_session.begin() as db:
+    # 预检（在原子抢占前执行，避免把未完成任务置为 RUNNING）：
+    # 任务存在 + 非运行中 + 标注任务已完成。
+    async with async_db_session() as db:
         task = await db.get(TrainTask, task_id)
         if not task:
             raise Exception(f"训练任务 {task_id} 不存在")
@@ -637,22 +668,29 @@ async def start_training(task_id: int):
                         f"标注任务「{ann_task.name}」尚未完成"
                     )
 
-        await db.execute(
-            update(TrainTask).where(TrainTask.id == task_id).values(
+    # 原子守卫：单条条件 UPDATE 抢占，避免并发 start 的 TOCTOU 重复入队
+    async with async_db_session.begin() as db:
+        result = await db.execute(
+            update(TrainTask)
+            .where(TrainTask.id == task_id, TrainTask.status != TrainStatus.RUNNING)
+            .values(
                 status=TrainStatus.RUNNING, started_at=datetime.now(),
                 progress=0, error_log=None,
                 metrics_log=None, best_metrics=None, last_metrics=None,
                 finished_at=None,
             )
         )
+        if result.rowcount == 0:
+            # 影响 0 行：已运行（读到的状态过期），拒绝重复启动
+            raise Exception("任务正在运行，请勿重复启动")
     if task.framework == TrainFramework.PADDLEX:
         from .paddlex_executor import PaddleXOCRDetExecutor, PaddleXOCRRecExecutor
         hp = task.hyperparams or {}
         mode = str(hp.get("mode", "det")).lower()
         exec_cls = PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
-        asyncio.create_task(exec_cls.run(task_id))
+        _spawn(exec_cls.run(task_id))
     else:
-        asyncio.create_task(TrainExecutor.run(task_id))
+        _spawn(TrainExecutor.run(task_id))
 
 
 async def stop_training(task_id: int) -> None:

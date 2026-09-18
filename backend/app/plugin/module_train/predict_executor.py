@@ -9,12 +9,34 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .concurrency import get_train_semaphore
 from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainFramework, TrainModel, TrainPredict, TrainStatus
 from .task_executor import TaskExecutor
 from .ws import broadcast_predict_log
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
+
+# 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
+# 而留下半成品；任务完成/取消后自动丢弃引用。
+_bg_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """创建后台任务并持有引用，完成/取消时自动丢弃。"""
+    task = asyncio.create_task(coro)
+    if task is not None:
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+def _cleanup_export_dir(export_dir: str | None) -> None:
+    """失败后清理本次导出的临时输出目录（保留日志文件供排查）。"""
+    if not export_dir:
+        return
+    import shutil
+    shutil.rmtree(export_dir, ignore_errors=True)
 
 
 def predict_gpu_id(device) -> str | None:
@@ -89,7 +111,7 @@ async def start_prediction(predict_id: int):
             if row:
                 raise Exception("预测任务正在运行，请勿重复启动")
             raise Exception(f"预测任务 {predict_id} 不存在")
-    asyncio.create_task(PredictExecutor.run(predict_id))
+    _spawn(PredictExecutor.run(predict_id))
 
 
 async def stop_prediction(predict_id: int):
@@ -106,6 +128,7 @@ class PredictExecutor(TaskExecutor):
     @classmethod
     async def _execute(cls, predict_id: int):
         container_id = None
+        export_dir = None
         try:
             async with async_db_session() as db:
                 pred = await db.get(TrainPredict, predict_id)
@@ -178,28 +201,33 @@ class PredictExecutor(TaskExecutor):
 
             await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
             await pull_image(docker_image)
-            container = await run_container(
-                docker_image, cmd,
-                volumes={
-                    source_dir: {"bind": "/data", "mode": "ro"},
-                    model_dir: {"bind": "/model", "mode": "ro"},
-                    output_dir: {"bind": "/output", "mode": "rw"},
-                },
-                gpu_id=predict_gpu_id(device),
-                shm_size="4g" if framework == TrainFramework.PADDLEX else None,
-                labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
-            )
-            container_id = container.id
-            entry = cls._registry.get(predict_id) or {}
-            entry.update({"container_id": container_id})
-            cls._registry[predict_id] = entry
+            # 全局 GPU 并发上限：与训练/评估共享同一信号量，避免同一张卡被并发抢占
+            async with get_train_semaphore():
+                # 等待信号量期间可能被取消：启动容器前再检查一次
+                if cls._registry.get(predict_id, {}).get("cancel"):
+                    return
+                container = await run_container(
+                    docker_image, cmd,
+                    volumes={
+                        source_dir: {"bind": "/data", "mode": "ro"},
+                        model_dir: {"bind": "/model", "mode": "ro"},
+                        output_dir: {"bind": "/output", "mode": "rw"},
+                    },
+                    gpu_id=predict_gpu_id(device),
+                    shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
+                )
+                container_id = container.id
+                entry = cls._registry.get(predict_id) or {}
+                entry.update({"container_id": container_id})
+                cls._registry[predict_id] = entry
 
-            await cls.follow_logs(
-                container_id,
-                os.path.join(export_dir, "predict.log"),
-                lambda line: broadcast_predict_log(predict_id, line),
-            )
-            exit_code = await cls._get_exit_code(container)
+                await cls.follow_logs(
+                    container_id,
+                    os.path.join(export_dir, "predict.log"),
+                    lambda line: broadcast_predict_log(predict_id, line),
+                )
+                exit_code = await cls._get_exit_code(container)
 
             result_images = []
             result_zip_path = None
@@ -261,6 +289,8 @@ class PredictExecutor(TaskExecutor):
         except Exception as e:
             log.error(f"predict task {predict_id} failed: {e}")
             await cls._mark_status(predict_id, TrainStatus.FAILED, log=str(e), finished_at=datetime.now())
+            # 失败后清理本次导出的临时输出目录（保留日志文件供排查）
+            _cleanup_export_dir(export_dir)
         finally:
             cls._registry.pop(predict_id, None)
             if container_id:
