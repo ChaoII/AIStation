@@ -127,6 +127,15 @@
             >
               <template #default="scope">
                 <el-button
+                  type="primary"
+                  size="small"
+                  link
+                  icon="Picture"
+                  @click="handleOpenImages(scope.row)"
+                >
+                  图片
+                </el-button>
+                <el-button
                   v-hasPerm="['module_annotation:dataset:upload']"
                   type="success"
                   size="small"
@@ -183,6 +192,16 @@
                   @click="handleRowDelete(scope.row.id)"
                 >
                   删除
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_annotation:dataset:purge']"
+                  type="danger"
+                  size="small"
+                  link
+                  icon="DeleteFilled"
+                  @click="handlePurge(scope.row)"
+                >
+                  彻底删除
                 </el-button>
               </template>
             </el-table-column>
@@ -319,6 +338,11 @@
 
     <ExportHistoryDrawer ref="exportHistoryRef" />
     <CleanDrawer ref="cleanRef" />
+    <DatasetImageGrid
+      v-model="gridVisible"
+      :dataset-id="gridDatasetId"
+      @open-workbench="handleOpenWorkbench"
+    />
   </div>
 </template>
 
@@ -334,8 +358,9 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue";
 import CleanDrawer from "@/components/Annotation/CleanDrawer.vue";
+import DatasetImageGrid from "@/components/Annotation/DatasetImageGrid.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { WarningFilled } from "@element-plus/icons-vue";
 
 const router = useRouter();
@@ -431,14 +456,49 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
     );
   },
   deleteConfirm: {
-    title: "警告",
-    message: "确认删除所选数据集? 图片和标注数据将一并删除。",
+    title: "提示",
+    message: "确认删除所选数据集？可在保留期内恢复。",
     type: "warning",
   },
 });
 
 function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
+}
+
+// ── 图片网格 ──
+const gridVisible = ref(false);
+const gridDatasetId = ref<number | null>(null);
+const gridRowTasks = ref<any[]>([]);
+
+function handleOpenImages(row: any) {
+  gridDatasetId.value = row.id;
+  gridRowTasks.value = row.tasks || [];
+  gridVisible.value = true;
+}
+
+function handleOpenWorkbench() {
+  const task = gridRowTasks.value?.[0];
+  if (!task) {
+    ElMessage.warning("该数据集还没有标注任务，请先创建任务");
+    return;
+  }
+  router.push(`/annotation/workbench/${task.id}`);
+}
+
+async function handlePurge(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确认彻底删除数据集「${row.name}」？将删除全部图片、标注与导出产物，且不可恢复。`,
+      "危险操作",
+      { type: "error", confirmButtonText: "彻底删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  await AnnotationAPI.purgeDataset([row.id]);
+  ElMessage.success("已彻底删除");
+  refreshList();
 }
 
 const dialogVisible = reactive({
