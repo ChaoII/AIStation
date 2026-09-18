@@ -86,3 +86,75 @@ def test_content_type_mapping():
     assert content_type_for(".png") == "image/png"
     assert content_type_for(".JPG") == "image/jpeg"
     assert content_type_for(".unknown") == "application/octet-stream"
+
+
+def test_upload_generates_thumbnail_and_content_type(test_client, auth_headers, monkeypatch):
+    from uuid import uuid4
+
+    uploaded: list[tuple[str, dict]] = []
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+
+    def _capture(fileobj, object_key, env=None, content_type=None):
+        uploaded.append((object_key, {"content_type": content_type}))
+        return object_key
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", _capture)
+
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"media-{uuid4().hex[:8]}"},
+                          headers=auth_headers).json()["data"]
+    ds_id = ds["id"]
+    png = _png_bytes(800, 400)
+    r = test_client.post(
+        f"/api/v1/annotation/dataset/{ds_id}/upload",
+        files={"files": ("a.png", png, "image/png")},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["uploaded_count"] == 1
+    keys = [k for k, _ in uploaded]
+    assert any(k.startswith(f"datasets/{ds_id}/images/") for k in keys)
+    assert any(k.startswith(f"datasets/{ds_id}/thumbnails/") for k in keys)
+    thumb = [meta for k, meta in uploaded if "/thumbnails/" in k][0]
+    assert thumb["content_type"] == "image/jpeg"
+
+
+def test_upload_rejects_bad_extension(test_client, auth_headers, monkeypatch):
+    from uuid import uuid4
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"bad-{uuid4().hex[:8]}"},
+                          headers=auth_headers).json()["data"]
+    r = test_client.post(
+        f"/api/v1/annotation/dataset/{ds['id']}/upload",
+        files={"files": ("a.exe", b"MZ", "application/octet-stream")},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_upload_broken_image_registers_without_thumbnail(test_client, auth_headers, monkeypatch):
+    from uuid import uuid4
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"part-{uuid4().hex[:8]}"},
+                          headers=auth_headers).json()["data"]
+    r = test_client.post(
+        f"/api/v1/annotation/dataset/{ds['id']}/upload",
+        files=[
+            ("files", ("good.png", _png_bytes(10, 10), "image/png")),
+            ("files", ("bad.png", b"broken", "image/png")),
+        ],
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["uploaded_count"] == 2   # 坏图仍登记（无缩略图），不阻断
+    assert data["failed_count"] == 0
+    by_name = {u["filename"]: u for u in data["uploaded"]}
+    assert by_name["good.png"]["thumbnail_key"]
+    assert by_name["bad.png"]["thumbnail_key"] is None

@@ -6,8 +6,10 @@ from sqlalchemy import and_, delete, func, select, update
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+from app.config.setting import settings
 from app.core.audit import set_create_audit
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
 from app.utils.s3_client import s3_client
 
 from .crud import DatasetCRUD
@@ -108,52 +110,104 @@ class DatasetService:
         return {"purged": purged}
 
     @classmethod
-    async def upload_images(cls, dataset_id: int, files: list, auth) -> list[dict]:
+    async def upload_images(cls, dataset_id: int, files: list, auth) -> dict:
+        import asyncio
         import io
 
-        from PIL import Image
+        from .media import (
+            ALLOWED_IMAGE_EXTENSIONS,
+            content_type_for,
+            process_image,
+        )
 
-        from .model import AnnotationImageModel
+        # 1) 整批校验（不写任何对象/行）
+        if len(files) > settings.ANNOTATION_UPLOAD_MAX_FILES:
+            raise CustomException(
+                msg=f"单次最多上传 {settings.ANNOTATION_UPLOAD_MAX_FILES} 张图片",
+                code=400, status_code=400,
+            )
+        max_bytes = settings.ANNOTATION_UPLOAD_MAX_MB * 1024 * 1024
+        for file in files:
+            ext = Path(file.filename or "").suffix.lower()
+            if ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise CustomException(
+                    msg=f"不支持的图片格式: {file.filename}", code=400, status_code=400
+                )
+            size = getattr(file, "size", None)
+            if size is not None and size > max_bytes:
+                raise CustomException(
+                    msg=f"文件过大（>{settings.ANNOTATION_UPLOAD_MAX_MB}MB）: {file.filename}",
+                    code=400, status_code=400,
+                )
 
-        async with async_db_session.begin() as db:
-            result = await db.execute(select(DatasetModel).where(DatasetModel.id == dataset_id))
-            dataset = result.scalar_one_or_none()
+        async with async_db_session() as db:
+            dataset = await db.get(DatasetModel, dataset_id)
             if not dataset:
                 raise ValueError("数据集不存在")
 
-            results = []
-            for file in files:
-                content = await file.read()
-                ext = Path(file.filename).suffix.lower()
-                object_key = f"datasets/{dataset_id}/images/{uuid.uuid4().hex}{ext}"
+        sem = asyncio.Semaphore(max(1, settings.ANNOTATION_UPLOAD_CONCURRENCY))
 
-                s3_client.upload_fileobj(io.BytesIO(content), object_key)
-
+        async def _process(file) -> dict:
+            filename = file.filename or "unnamed"
+            async with sem:
                 try:
-                    img = Image.open(io.BytesIO(content))
-                    width, height = img.size
-                except Exception:
-                    width, height = 0, 0
+                    content = await file.read()
+                    ext = Path(filename).suffix.lower()
+                    token = uuid.uuid4().hex
+                    object_key = f"datasets/{dataset_id}/images/{token}{ext}"
+                    thumb_key = f"datasets/{dataset_id}/thumbnails/{token}.jpg"
+                    width, height, thumb = await asyncio.to_thread(process_image, content)
+                    await asyncio.to_thread(
+                        s3_client.upload_fileobj, io.BytesIO(content), object_key,
+                        None, content_type_for(ext),
+                    )
+                    if thumb:
+                        await asyncio.to_thread(
+                            s3_client.upload_fileobj, io.BytesIO(thumb), thumb_key,
+                            None, "image/jpeg",
+                        )
+                    else:
+                        thumb_key = None
+                    return {"ok": True, "filename": filename, "object_key": object_key,
+                            "thumbnail_key": thumb_key, "width": width, "height": height}
+                except Exception as e:
+                    return {"ok": False, "filename": filename, "reason": str(e)}
 
-                img_record = AnnotationImageModel(
+        results = await asyncio.gather(*[_process(f) for f in files])
+
+        uploaded: list[dict] = []
+        failed: list[dict] = []
+        async with async_db_session.begin() as db:
+            for r in results:
+                if not r["ok"]:
+                    failed.append({"filename": r["filename"], "reason": r["reason"]})
+                    continue
+                img = AnnotationImageModel(
                     dataset_id=dataset_id,
-                    filename=file.filename,
-                    object_key=object_key,
-                    width=width,
-                    height=height,
+                    filename=r["filename"],
+                    object_key=r["object_key"],
+                    thumbnail_key=r["thumbnail_key"],
+                    width=r["width"],
+                    height=r["height"],
                     status=ImageStatus.UNANNOTATED,
                 )
-                set_create_audit(img_record, auth)
-                db.add(img_record)
+                set_create_audit(img, auth)
+                db.add(img)
                 await db.flush()
-                results.append({"id": img_record.id, "filename": file.filename, "object_key": object_key})
-
+                uploaded.append({"id": img.id, "filename": r["filename"],
+                                 "object_key": r["object_key"],
+                                 "thumbnail_key": r["thumbnail_key"]})
             total = await db.scalar(
                 select(func.count(AnnotationImageModel.id))
                 .where(AnnotationImageModel.dataset_id == dataset_id)
             )
-            dataset.image_count = total or 0
-            return results
+            await db.execute(
+                update(DatasetModel)
+                .where(DatasetModel.id == dataset_id)
+                .values(image_count=total or 0)
+            )
+        return {"uploaded": uploaded, "failed": failed,
+                "uploaded_count": len(uploaded), "failed_count": len(failed)}
 
     @classmethod
     async def get_images(cls, dataset_id: int, task_id: int | None = None,

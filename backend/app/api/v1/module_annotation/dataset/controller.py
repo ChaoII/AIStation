@@ -107,8 +107,11 @@ async def upload_images(
     files: list[UploadFile] = File(...),
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:create"])),
 ) -> JSONResponse:
-    results = await DatasetService.upload_images(id, files, auth)
-    return SuccessResponse(data=results, msg=f"成功上传 {len(results)} 张图片")
+    result = await DatasetService.upload_images(id, files, auth)
+    msg = f"成功上传 {result['uploaded_count']} 张图片"
+    if result["failed_count"]:
+        msg += f"，{result['failed_count']} 张失败"
+    return SuccessResponse(data=result, msg=msg)
 
 
 @DatasetRouter.get("/{id}/images", summary="图片列表")
