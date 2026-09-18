@@ -33,6 +33,8 @@ export interface ImageInfo {
   status: string;
   locked_by: number | null;
   annotation_count: number;
+  thumbnail_key?: string | null;
+  thumbnail_url?: string | null;
   updated_by?: { id: number; name: string };
   updated_time?: string;
 }

@@ -972,6 +972,15 @@
                   class="dot"
                   :class="img.status === 'annotated' ? 'dot-done' : 'dot-pending'"
                 />
+                <img
+                  v-if="img.thumbnail_url"
+                  class="img-thumb"
+                  :src="img.thumbnail_url"
+                  loading="lazy"
+                  alt=""
+                  @error="($event.target as HTMLImageElement).style.display = 'none'"
+                />
+                <span v-else class="img-thumb img-thumb--placeholder" />
                 <div class="img-info">
                   <span class="img-name">{{ img.filename }}</span>
                   <span class="img-meta">
@@ -4075,6 +4084,17 @@ onBeforeUnmount(() => {
 }
 .dot-pending {
   background: #f56c6c;
+}
+.img-thumb {
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex: none;
+  background: var(--el-fill-color-light);
+}
+.img-thumb--placeholder {
+  display: inline-block;
 }
 .img-info {
   display: flex;
