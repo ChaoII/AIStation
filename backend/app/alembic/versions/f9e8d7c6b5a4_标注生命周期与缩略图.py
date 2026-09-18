@@ -16,7 +16,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-from app.alembic.dialect_compat import portable_add_column
+from app.alembic.dialect_compat import portable_add_column, portable_drop_column
 
 # revision identifiers, used by Alembic.
 revision: str = "f9e8d7c6b5a4"
@@ -38,17 +38,16 @@ def upgrade() -> None:
         "CREATE INDEX IF NOT EXISTS ix_annotation_record_task_image_version "
         "ON annotation_record (task_id, image_id, version)"
     )
-    op.execute(
-        "ALTER TABLE annotation_dataset DROP COLUMN IF EXISTS bucket_name"
-    )
+    portable_drop_column("annotation_dataset", "bucket_name")
 
 
 def downgrade() -> None:
     """回滚：恢复 bucket_name，删除索引与缩略图列。"""
-    op.execute(
-        "ALTER TABLE annotation_dataset ADD COLUMN IF NOT EXISTS "
-        "bucket_name VARCHAR(64) NOT NULL DEFAULT 'aistation-annotation-dev'"
+    portable_add_column(
+        "annotation_dataset",
+        "bucket_name",
+        "VARCHAR(64) NOT NULL DEFAULT 'aistation-annotation-dev'",
     )
     op.execute("DROP INDEX IF EXISTS ix_annotation_record_task_image_version")
     op.execute("DROP INDEX IF EXISTS ix_annotation_image_dataset_status")
-    op.execute("ALTER TABLE annotation_image DROP COLUMN IF EXISTS thumbnail_key")
+    portable_drop_column("annotation_image", "thumbnail_key")

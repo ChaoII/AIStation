@@ -89,3 +89,33 @@ def portable_add_column(
     if column_name in existing:
         return
     op.execute(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_type}")
+
+
+def portable_drop_column(
+    table: str,
+    column_name: str,
+    *,
+    schema: str | None = None,
+) -> None:
+    """跨方言「删列」：SQLite 先探测删除，PostgreSQL 用 ``IF EXISTS``。
+
+    参数:
+    - table (str): 表名。
+    - column_name (str): 列名。
+    - schema (str | None): 模式名，默认 None。
+    """
+    import sqlalchemy as sa
+    from alembic import op
+
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if not insp.has_table(table, schema=schema):
+        return
+    existing = {col["name"] for col in insp.get_columns(table, schema=schema)}
+    if column_name not in existing:
+        return
+    if is_postgres(bind):
+        op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {column_name}")
+        return
+    # SQLite(≥3.35) / MySQL：不支持 DROP COLUMN IF EXISTS，已探测存在性
+    op.execute(f"ALTER TABLE {table} DROP COLUMN {column_name}")
