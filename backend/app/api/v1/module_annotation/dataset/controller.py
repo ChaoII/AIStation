@@ -1,3 +1,5 @@
+import asyncio as _asyncio
+
 from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -71,8 +73,17 @@ async def delete_dataset(
     return SuccessResponse(msg="删除成功")
 
 
+# 限制并发彻底删除数量，避免批量提交时大量并发对象删除拖垮服务
+_PURGE_SEM = _asyncio.Semaphore(4)
+
+
 async def _run_purge_job(job_id: str, ids: list[int]) -> None:
-    """后台彻底删除数据集并更新任务进度。"""
+    """后台彻底删除数据集（受并发上限约束）。"""
+    async with _PURGE_SEM:
+        await _do_purge_job(job_id, ids)
+
+
+async def _do_purge_job(job_id: str, ids: list[int]) -> None:
     from app.api.v1.module_annotation.dataset.import_jobs import get_job
     from app.core.logger import log
 
