@@ -10,7 +10,6 @@
     />
     <div class="ann-header">
       <div class="ann-title">
-        <el-button size="small" text :icon="ArrowLeft" @click="handleBack" />
         <el-tag :type="taskTypeTag" size="small">{{ taskTypeLabel }}</el-tag>
         <span class="task-name">{{ task?.name }}</span>
       </div>
@@ -3528,44 +3527,6 @@ function openHistory() {
 
 async function onHistoryRestored() {
   if (store.currentImage) await loadImg(store.currentImage.id);
-}
-async function handleBack() {
-  // 只读模式不尝试保存（避免 409），直接退出
-  if (unsaved.value && store.currentImage && !lockedByOther.value) {
-    try {
-      await ElMessageBox.confirm("当前图片有未保存的标注，是否保存后退出？", "提示", {
-        confirmButtonText: "保存并退出",
-        cancelButtonText: "不保存",
-        type: "warning",
-      });
-    } catch {
-      // 用户点"不保存"：放弃本次标注，继续退出
-      unsaved.value = false;
-      router.push("/annotation/task");
-      return;
-    }
-    try {
-      await AnnotationAPI.saveAnnotations(store.currentImage.id, {
-        task_id: store.taskId,
-        image_id: store.currentImage.id,
-        annotation_data: store.annotations,
-      });
-      const idx = store.currentImageIndex;
-      const updated = { ...store.images[idx] };
-      updated.status = "annotated";
-      updated.annotation_count = store.annotations.length;
-      updated.updated_by = { id: 0, name: getCurrentUserName() };
-      updated.updated_time = new Date().toISOString();
-      store.images[idx] = updated;
-      updateProgress();
-    } catch {
-      // 保存失败：拦截器已提示，留在当前页，不静默丢弃
-      return;
-    }
-  }
-  // 无论保存与否都清除 unsaved，防止 onBeforeUnmount 再次静默保存（产生冗余版本）
-  unsaved.value = false;
-  router.push("/annotation/task");
 }
 function fmtTime(t?: string) {
   if (!t) return "";
