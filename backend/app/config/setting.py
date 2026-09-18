@@ -197,6 +197,22 @@ class Settings(BaseSettings):
     RUSTFS_PRESIGNED_URL_EXPIRY: int = 3600
 
     # ================================================= #
+    # *************** 数据标注生命周期/媒体 ************** #
+    # ================================================= #
+    # 软删数据集在保留期后由定时任务彻底删除（含 S3 对象）
+    ANNOTATION_PURGE_RETENTION_DAYS: int = 30
+    # 彻底删除清理循环间隔（秒）
+    ANNOTATION_PURGE_INTERVAL_SEC: int = 86400
+    # 标注版本保留：每个 (task_id, image_id) 保留首版 + 最近 N 版
+    ANNOTATION_VERSION_KEEP: int = 20
+    # 单张图片上传大小上限（MB）
+    ANNOTATION_UPLOAD_MAX_MB: int = 20
+    # 单次上传图片数量上限
+    ANNOTATION_UPLOAD_MAX_FILES: int = 200
+    # 上传时处理（PIL + S3）的并发度
+    ANNOTATION_UPLOAD_CONCURRENCY: int = 4
+
+    # ================================================= #
     # ******************** 验证码配置 ******************* #
     # ================================================= #
     CAPTCHA_ENABLE: bool = True  # 是否启用验证码
