@@ -7,6 +7,24 @@
       @reset-click="handleResetClick"
     />
 
+    <!-- 进行中的导入/删除任务（页面级实时进度，关闭弹窗后仍可见） -->
+    <div v-if="activeTaskList.length" class="task-banner">
+      <div v-for="t in activeTaskList" :key="t.id" class="task-banner-item">
+        <span class="task-banner-title" :title="t.name">{{ t.name }}</span>
+        <el-tag size="small" :type="t.tagType" effect="plain">{{ t.text }}</el-tag>
+        <el-progress
+          class="task-banner-bar"
+          :percentage="t.percent"
+          :status="t.progressStatus"
+          :indeterminate="t.indeterminate"
+        />
+        <span class="task-banner-meta">已用 {{ t.elapsed }}</span>
+        <el-button v-if="t.kind !== 'purge'" size="small" link type="primary" @click="openTaskBanner(t.id, t.name)">
+          查看
+        </el-button>
+      </div>
+    </div>
+
     <PageContent ref="contentRef" :content-config="contentConfig">
       <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
         <div class="data-table__toolbar--left">
@@ -133,7 +151,7 @@
                     <el-progress
                       :percentage="rowImportPercent(scope.row)"
                       :status="rowImportStatus(scope.row)"
-                      :indeterminate="rowImport(scope.row)?.phase === 'scanning'"
+                      :indeterminate="rowImportIndeterminate(scope.row)"
                     />
                     <div class="import-pop-row">
                       已用 {{ fmtDuration(elapsedSec(rowImport(scope.row))) }}
@@ -624,6 +642,7 @@ async function handlePurge(row: any) {
     activeImports[row.id] = {
       jobId,
       kind: "purge",
+      datasetName: row.name,
       phase: "importing",
       uploadLoaded: 0,
       uploadTotal: 0,
@@ -638,6 +657,7 @@ async function handlePurge(row: any) {
       fileName: "",
       fileSize: 0,
     };
+    rebuildActiveJobs();
     startTicker();
     ensurePolling();
     ElMessage.info("已开始删除，可在「导入状态」查看进度");
@@ -828,6 +848,7 @@ type ImportPhase =
 interface ActiveImport {
   jobId: string | null;
   kind: "import" | "purge";
+  datasetName: string;
   phase: ImportPhase;
   uploadLoaded: number;
   uploadTotal: number;
@@ -855,6 +876,7 @@ const nowTick = ref(Date.now());
 let tickTimer: number | null = null;
 let pollTimer: number | null = null;
 let importAbort: AbortController | null = null;
+let lastListRefresh = 0;
 
 const importFileMb = computed(() =>
   importFile.value ? (importFile.value.size / 1024 / 1024).toFixed(1) : "0"
@@ -900,10 +922,11 @@ function stopTickerIfIdle() {
   }
 }
 
-function seedImport(dsId: number, job: any) {
+function seedImport(dsId: number, job: any, name = "") {
   activeImports[dsId] = {
     jobId: job.job_id,
     kind: job.kind === "purge" ? "purge" : "import",
+    datasetName: name || job.dataset_name || `#${dsId}`,
     phase: phaseFromJob(job),
     uploadLoaded: job.file_size || 0,
     uploadTotal: job.file_size || 0,
@@ -922,13 +945,18 @@ function seedImport(dsId: number, job: any) {
 
 // 列表行统一取状态：优先本会话实时态，其次后端快照
 function rowImport(row: any): ActiveImport | null {
+  // 依赖秒级 tick：活动期间每秒重算，确保单元格（标签/进度）跟随刷新
+  void nowTick.value;
   if (!row) return null;
-  if (activeImports[row.id]) return activeImports[row.id];
+  const live = activeImports[row.id];
+  // 进行中的任务以前端实时态为准（后端快照可能是上一次已完成的旧任务）
+  if (live && isRunningPhase(live.phase)) return live;
   if (row.import) {
     const j = row.import;
     return {
       jobId: j.job_id,
       kind: j.kind === "purge" ? "purge" : "import",
+      datasetName: row.name || `#${row.id}`,
       phase: phaseFromJob(j),
       uploadLoaded: j.file_size || 0,
       uploadTotal: j.file_size || 0,
@@ -944,7 +972,7 @@ function rowImport(row: any): ActiveImport | null {
       fileSize: j.file_size || 0,
     };
   }
-  return null;
+  return live ?? null;
 }
 function percentOf(a: ActiveImport | null): number {
   if (!a) return 0;
@@ -964,7 +992,8 @@ function importTagText(row: any): string {
     case "scanning":
       return purge ? "准备删除…" : "初始化中";
     case "importing":
-      return purge ? `删除中 ${a.processed}/${a.total || "?"}` : `导入中 ${a.processed}/${a.total || "?"}`;
+      if (!a.total) return purge ? "删除中…" : "导入中…";
+      return purge ? `删除中 ${a.processed}/${a.total}` : `导入中 ${a.processed}/${a.total}`;
     case "done":
       return purge ? "已删除" : "已完成";
     case "failed":
@@ -989,6 +1018,33 @@ function importTagType(row: any): any {
     } as Record<string, string>
   )[a.phase];
 }
+
+// 页面级「进行中任务」列表：普通 ref 数组，每次变更整体重新赋值，确保必触发渲染
+const activeTaskList = ref<any[]>([]);
+
+function rebuildActiveJobs() {
+  const out: any[] = [];
+  for (const [idStr, a] of Object.entries(activeImports)) {
+    const running = isRunningPhase(a.phase);
+    if (!running && a.phase !== "failed" && a.phase !== "cancelled") continue;
+    out.push({
+      id: Number(idStr),
+      kind: a.kind,
+      name: a.datasetName || `#${idStr}`,
+      text: importTagText({ id: Number(idStr) } as any),
+      tagType: importTagType({ id: Number(idStr) } as any),
+      percent: percentOf(a),
+      indeterminate: a.phase === "scanning" || (running && !a.total),
+      progressStatus: a.phase === "failed" ? "exception" : a.phase === "done" ? "success" : "",
+      elapsed: fmtDuration(elapsedSec(a)),
+    });
+  }
+  activeTaskList.value = out;
+}
+
+function openTaskBanner(id: number, name: string) {
+  handleOpenImport({ id, name });
+}
 function rowImportPercent(row: any): number {
   return percentOf(rowImport(row));
 }
@@ -997,6 +1053,11 @@ function rowImportStatus(row: any): any {
   if (p === "done") return "success";
   if (p === "failed") return "exception";
   return "";
+}
+function rowImportIndeterminate(row: any): boolean {
+  const a = rowImport(row);
+  if (!a) return false;
+  return a.phase === "scanning" || (isRunningPhase(a.phase) && !a.total);
 }
 
 // 弹窗（当前数据集）
@@ -1061,9 +1122,10 @@ function handleOpenImport(row: any) {
   importDatasetName.value = row.name;
   importFile.value = null;
   importUploadRef.value?.clearFiles?.();
-  if (!activeImports[row.id] && row.import) seedImport(row.id, row.import);
+  if (!activeImports[row.id] && row.import) seedImport(row.id, row.import, row.name);
   importDialogVisible.value = true;
   if (isRunning(activeImports[row.id])) {
+    rebuildActiveJobs();
     startTicker();
     ensurePolling();
   }
@@ -1095,6 +1157,7 @@ async function handleImportSubmit() {
   activeImports[dsId] = {
     jobId: null,
     kind: "import",
+    datasetName: importDatasetName.value,
     phase: "uploading",
     uploadLoaded: 0,
     uploadTotal: file.size,
@@ -1111,13 +1174,14 @@ async function handleImportSubmit() {
   };
   startTicker();
   try {
-    const r = await AnnotationAPI.importXAnyLabeling(dsId, file, {
+  const r = await AnnotationAPI.importXAnyLabeling(dsId, file, {
       signal: importAbort.signal,
       onUploadProgress: (e: any) => {
         const a = activeImports[dsId];
         if (!a) return;
         a.uploadLoaded = e?.loaded || 0;
         a.uploadTotal = e?.total || file.size;
+        rebuildActiveJobs();
       },
     });
     const jobId = r.data?.data?.job_id;
@@ -1127,6 +1191,7 @@ async function handleImportSubmit() {
       a.jobId = jobId;
       a.phase = "scanning";
     }
+    rebuildActiveJobs();
     importAbort = null;
     ensurePolling();
   } catch (e: any) {
@@ -1140,6 +1205,7 @@ async function handleImportSubmit() {
         a.error = e?.message || "导入失败";
       }
     }
+    rebuildActiveJobs();
     importAbort = null;
     stopTickerIfIdle();
   }
@@ -1170,12 +1236,21 @@ async function pollActiveImports() {
       /* 忽略单次轮询失败 */
     }
   }
+  // 定时刷新列表，使行状态与后端快照同步（el-table 随行数据变化重渲染）
+  if (entries.length) {
+    const now = Date.now();
+    if (now - lastListRefresh > 1500) {
+      lastListRefresh = now;
+      refreshList();
+    }
+  }
   if (!Object.values(activeImports).some((a) => a.jobId && isRunningPhase(a.phase))) {
     if (pollTimer !== null) {
       window.clearInterval(pollTimer);
       pollTimer = null;
     }
   }
+  rebuildActiveJobs();
   stopTickerIfIdle();
 }
 function applyJob(dsId: number, job: any) {
@@ -1189,12 +1264,13 @@ function applyJob(dsId: number, job: any) {
   a.taskName = job.task_name || a.taskName;
   a.error = job.error || "";
   a.phase = phaseFromJob(job);
+  rebuildActiveJobs();
   if (a.phase === "done" && !a.refreshed) {
     a.refreshed = true;
     if (a.kind === "purge") {
       ElMessage.success("已彻底删除");
       delete activeImports[dsId];
-    }
+      }
     refreshList();
   }
 }
@@ -1258,7 +1334,7 @@ watch(
       if (!j?.job_id || !row?.id) continue;
       if (activeImports[row.id]) continue;
       if (!isRunningPhase(phaseFromJob(j))) continue;
-      seedImport(row.id, j);
+      seedImport(row.id, j, row.name);
       seeded = true;
     }
     if (seeded) {
@@ -1381,6 +1457,38 @@ async function handleExportSubmit() {
 </script>
 
 <style scoped>
+.task-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.task-banner-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--el-color-primary-light-7);
+  background: var(--el-color-primary-light-9);
+  border-radius: 4px;
+  font-size: 13px;
+}
+.task-banner-title {
+  font-weight: 600;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-banner-bar {
+  flex: 1;
+  min-width: 160px;
+}
+.task-banner-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
 .upload-alert {
   margin-bottom: 16px;
 }
