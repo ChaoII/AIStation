@@ -1104,8 +1104,9 @@
               <span class="section-title">标注列表</span>
               <ElBadge :value="store.annotations.length" :max="999" />
             </div>
-            <!-- 选中标注编辑区：改类别 / 编辑OCR文本 -->
+            <!-- 选中标注编辑区：改类别 / 编辑OCR文本 / 删除该标注 -->
             <div v-if="selectedAnn" class="selected-ann-edit panel-section-inner">
+              <div class="selected-ann-title">选中标注（点击下方列表项可切换）</div>
               <el-select
                 v-model="selectedAnn.class_id"
                 size="small"
@@ -1123,7 +1124,7 @@
                 @change="onAnnEdit"
               />
               <el-button size="small" type="danger" text @click="deleteSelected">
-                删除选中
+                删除该标注
               </el-button>
             </div>
             <div class="scroll-area">
@@ -3988,6 +3989,10 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+.selected-ann-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .selected-ann-edit {
   display: flex;

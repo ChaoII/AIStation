@@ -428,7 +428,7 @@
           <template v-else>
             <el-button @click="requestCloseImport">关闭</el-button>
             <el-button type="warning" :disabled="!importFile" @click="handleImportSubmit">
-              重试
+              {{ dialogImport ? "重试" : "开始导入" }}
             </el-button>
           </template>
         </div>
