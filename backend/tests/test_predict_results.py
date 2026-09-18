@@ -48,14 +48,16 @@ def test_delete_prefix_lists_and_deletes(monkeypatch):
                 ]
             }
 
-        def delete_object(self, Bucket, Key):
-            deleted.append((Bucket, Key))
+        def delete_objects(self, Bucket, Delete):
+            # delete_prefix 现走批量删除（分片并发）
+            for obj in Delete["Objects"]:
+                deleted.append((Bucket, obj["Key"]))
 
     fake = FakeS3()
     monkeypatch.setattr(s3mod.s3_client, "client", fake)
     n = s3mod.s3_client.delete_prefix("train/predict/7/")
     assert n == 2
-    assert deleted == [
+    assert sorted(deleted) == sorted([
         (s3mod.s3_client._bucket(), "train/predict/7/a.png"),
         (s3mod.s3_client._bucket(), "train/predict/7/results.zip"),
-    ]
+    ])
