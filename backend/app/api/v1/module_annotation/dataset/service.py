@@ -466,7 +466,10 @@ class DatasetService:
 
         task_rows = (
             await db.execute(
-                select(AnnotationTaskModel).where(AnnotationTaskModel.dataset_id.in_(ids))
+                select(AnnotationTaskModel).where(
+                    AnnotationTaskModel.dataset_id.in_(ids),
+                    AnnotationTaskModel.is_deleted == False,  # noqa: E712
+                )
             )
         ).scalars().all()
         task_ids = [t.id for t in task_rows]
