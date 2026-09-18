@@ -109,9 +109,14 @@ async def follow_container_logs(container_id: str) -> asyncio.Queue:
     loop = asyncio.get_event_loop()
 
     def _stream():
-        for line in container.logs(stream=True, follow=True, timestamps=False):
-            loop.call_soon_threadsafe(queue.put_nowait, line.decode("utf-8", errors="replace").rstrip("\n"))
-        loop.call_soon_threadsafe(queue.put_nowait, "__EOF__")
+        try:
+            for line in container.logs(stream=True, follow=True, timestamps=False):
+                loop.call_soon_threadsafe(
+                    queue.put_nowait, line.decode("utf-8", errors="replace").rstrip("\n")
+                )
+        finally:
+            # 容器被移除/日志流异常时也务必推送 EOF，否则 follow_logs 永久挂起
+            loop.call_soon_threadsafe(queue.put_nowait, "__EOF__")
 
     loop.run_in_executor(None, _stream)
     return queue

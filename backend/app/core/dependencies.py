@@ -287,8 +287,18 @@ class AuthPermission:
             if role.status == "0" and menu.permission and menu.status == "0"
         }
 
+        # 统一「数据标注」权限命名：后端用 annotation:X，前端按钮/种子菜单用
+        # module_annotation:X，二者互为别名；「上传」按钮权限同时满足「创建」。
+        # （仅放宽，不收紧，保证 admin/既有角色不受影响。）
+        expanded: set[str] = set(self.permissions)
+        for p in self.permissions:
+            if p.startswith("annotation:"):
+                expanded.add("module_annotation:" + p[len("annotation:"):])
+            if p == "annotation:dataset:create":
+                expanded.add("module_annotation:dataset:upload")
+
         # 权限验证 - 满足任一权限即可
-        if not any(perm in user_permissions for perm in self.permissions):
+        if not any(perm in user_permissions for perm in expanded):
             log.warning(
                 f"权限拒绝 user={auth.user.id} name={auth.user.name} "
                 f"required={self.permissions} actual={sorted(user_permissions)}"
