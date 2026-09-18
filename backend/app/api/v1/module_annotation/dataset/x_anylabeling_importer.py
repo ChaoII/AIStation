@@ -21,9 +21,12 @@ JSON structure:
 导入时还原为内部 ``Classification`` 标注。
 """
 
+import asyncio
+import io
 import json
 import math
 import os
+import posixpath
 import tempfile
 import uuid
 import zipfile
@@ -33,6 +36,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
+from app.api.v1.module_annotation.dataset.media import content_type_for, process_image
 from app.api.v1.module_annotation.dataset.model import (
     AnnotationImageModel,
     AnnotationType,
@@ -40,6 +44,7 @@ from app.api.v1.module_annotation.dataset.model import (
     ImageStatus,
 )
 from app.api.v1.module_annotation.task.model import AnnotationTaskModel, TaskStatus
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 from app.utils.s3_client import s3_client
@@ -398,3 +403,207 @@ def _get_image_size(img_path: str) -> tuple[int, int]:
             return img.height, img.width
     except Exception:
         return 0, 0
+
+
+async def import_x_anylabeling_bytes(
+    data: bytes,
+    dataset_id: int,
+    user_id: int,
+    progress_cb=None,
+) -> dict:
+    """从 ZIP 字节导入：流式读成员、分批并发上传（含缩略图）、分事务落库。
+
+    ``progress_cb(processed, total, phase)`` 可为 None；不写盘，故无 zip-slip 风险。
+    """
+    image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        json_files: dict[tuple[str, str], str] = {}
+        entries: list[dict] = []
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename.replace("\\", "/")
+            reldir, base = posixpath.split(name)
+            stem, ext = posixpath.splitext(base)
+            el = ext.lower()
+            if el == ".json":
+                json_files[(reldir, stem)] = name
+            elif el in image_extensions:
+                entries.append({"zip_name": name, "reldir": reldir, "stem": stem,
+                                "ext": ext, "basename": base})
+
+        if not entries:
+            return {"imported": 0, "total_images": 0, "total_annotations": 0,
+                    "class_mapping": {}, "task_id": None,
+                    "error": "ZIP 中未找到图片文件"}
+
+        # filename 消歧（重复 basename 用相对目录前缀）
+        basename_counts = Counter(e["basename"] for e in entries)
+        used: set[str] = set()
+        for e in entries:
+            if basename_counts[e["basename"]] == 1:
+                cand = e["basename"]
+            else:
+                prefix = e["reldir"].replace("/", "__")
+                cand = f"{prefix}__{e['basename']}" if prefix else e["basename"]
+            final, idx = cand, 1
+            while final in used:
+                s, x = os.path.splitext(cand)
+                idx += 1
+                final = f"{s}_{idx}{x}"
+            used.add(final)
+            e["filename"] = final
+
+        # 扫描 JSON：类映射 + 形状集合
+        all_labels: set[str] = set()
+        all_shapes: list[dict] = []
+        jsons_cache: dict[str, dict] = {}
+        for _key, zname in json_files.items():
+            try:
+                meta = json.loads(zf.read(zname).decode("utf-8"))
+            except Exception:
+                continue
+            jsons_cache[zname] = meta
+            shapes = meta.get("shapes") or []
+            all_shapes.extend(shapes)
+            for s in shapes:
+                lb = (s.get("label") or "").strip()
+                if lb:
+                    all_labels.add(lb)
+            for nm in _classification_names(meta.get("flags")):
+                all_labels.add(nm)
+
+        class_mapping = {lb: i for i, lb in enumerate(sorted(all_labels))}
+        task_type = AnnotationType(_infer_task_type(all_shapes))
+        total = len(entries)
+
+        async with async_db_session.begin() as db:
+            ds = await db.get(DatasetModel, dataset_id)
+            ann_task = AnnotationTaskModel(
+                dataset_id=dataset_id,
+                name=f"[导入] {ds.name if ds else 'dataset_' + str(dataset_id)} - x-anylabeling",
+                task_type=task_type,
+                status=TaskStatus.COMPLETED,
+                classes=[{"id": cid, "name": lb, "color": _class_color(cid)}
+                         for lb, cid in sorted(class_mapping.items(), key=lambda x: x[1])],
+                progress=100,
+                completed_at=datetime.now(),
+                created_id=user_id,
+            )
+            db.add(ann_task)
+            await db.flush()
+            task_id = ann_task.id
+            task_name = ann_task.name
+
+        sem = asyncio.Semaphore(max(1, settings.ANNOTATION_IMPORT_CONCURRENCY))
+        batch_size = max(1, settings.ANNOTATION_IMPORT_BATCH_SIZE)
+        imported = 0
+        total_annotations = 0
+
+        for start in range(0, total, batch_size):
+            batch = entries[start:start + batch_size]
+            prepared: list[tuple[dict, bytes, dict | None]] = []
+            for e in batch:
+                img_bytes = zf.read(e["zip_name"])
+                jname = json_files.get((e["reldir"], e["stem"]))
+                prepared.append((e, img_bytes, jsons_cache.get(jname) if jname else None))
+
+            async def _proc(e: dict, img_bytes: bytes) -> dict:
+                async with sem:
+                    w, h, thumb = await asyncio.to_thread(process_image, img_bytes)
+                    token = uuid.uuid4().hex
+                    key = f"annotations/dataset_{dataset_id}/{token}{e['ext']}"
+                    await asyncio.to_thread(
+                        s3_client.upload_fileobj, io.BytesIO(img_bytes), key,
+                        None, content_type_for(e["ext"]),
+                    )
+                    tkey = None
+                    if thumb:
+                        tkey = f"datasets/{dataset_id}/thumbnails/{token}.jpg"
+                        await asyncio.to_thread(
+                            s3_client.upload_fileobj, io.BytesIO(thumb), tkey,
+                            None, "image/jpeg",
+                        )
+                    return {"key": key, "tkey": tkey, "w": w, "h": h}
+
+            results = await asyncio.gather(*[_proc(e, b) for e, b, _ in prepared])
+
+            async with async_db_session.begin() as db:
+                for (e, _b, meta), r in zip(prepared, results):
+                    mw = (meta or {}).get("imageWidth") or 0
+                    mh = (meta or {}).get("imageHeight") or 0
+                    img_rec = AnnotationImageModel(
+                        dataset_id=dataset_id,
+                        filename=e["filename"],
+                        object_key=r["key"],
+                        thumbnail_key=r["tkey"],
+                        status=ImageStatus.ANNOTATED,
+                        width=mw or r["w"],
+                        height=mh or r["h"],
+                        created_id=user_id,
+                    )
+                    db.add(img_rec)
+                    await db.flush()
+
+                    anns = []
+                    for shape in ((meta or {}).get("shapes") or []):
+                        ann = _shape_to_annotation(
+                            shape, class_mapping, mw or r["w"], mh or r["h"]
+                        )
+                        if ann:
+                            anns.append(ann)
+                    names = _classification_names((meta or {}).get("flags"))
+                    class_ids = [class_mapping[n] for n in names if n in class_mapping]
+                    if class_ids:
+                        anns.append({"id": uuid.uuid4().hex, "type": "Classification",
+                                     "class_id": class_ids[0], "class_ids": class_ids,
+                                     "label": names[0]})
+                    if anns:
+                        total_annotations += len(anns)
+                        db.add(AnnotationRecordModel(
+                            task_id=task_id, image_id=img_rec.id,
+                            annotation_data=anns, version=1, created_id=user_id,
+                        ))
+                    imported += 1
+
+            if progress_cb:
+                progress_cb(imported, total, "import")
+
+        # 收尾：重算数据集计数
+        async with async_db_session.begin() as db:
+            ds = await db.get(DatasetModel, dataset_id)
+            if ds:
+                ds.image_count = await db.scalar(
+                    select(func.count(AnnotationImageModel.id)).where(
+                        AnnotationImageModel.dataset_id == dataset_id,
+                        AnnotationImageModel.is_deleted == False,  # noqa: E712
+                    )
+                ) or 0
+                ds.annotated_count = await db.scalar(
+                    select(func.count(func.distinct(AnnotationRecordModel.image_id)))
+                    .select_from(AnnotationRecordModel)
+                    .join(AnnotationImageModel,
+                          AnnotationImageModel.id == AnnotationRecordModel.image_id)
+                    .where(
+                        AnnotationImageModel.dataset_id == dataset_id,
+                        AnnotationImageModel.is_deleted == False,  # noqa: E712
+                        AnnotationRecordModel.is_deleted == False,  # noqa: E712
+                    )
+                ) or 0
+
+    if task_id:
+        from app.api.v1.module_annotation.task.service import TaskService
+        try:
+            await TaskService.update_progress(task_id)
+        except Exception as e:
+            log.warning(f"update_progress failed: {e}")
+
+    return {
+        "imported": imported,
+        "total_images": total,
+        "total_annotations": total_annotations,
+        "class_mapping": class_mapping,
+        "task_id": task_id,
+        "task_name": task_name,
+    }
