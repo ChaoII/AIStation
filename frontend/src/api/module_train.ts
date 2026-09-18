@@ -60,11 +60,12 @@ export const TrainAPI = {
       data,
     });
   },
-  getTaskList(params?: Record<string, any>) {
+  getTaskList(params?: Record<string, any>, opts?: { silent?: boolean }) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
       url: `${API_PATH}/task/list`,
       method: "get",
       params,
+      headers: opts?.silent ? { _silent: "true" } : undefined,
     });
   },
   getTaskDetail(id: number) {
@@ -89,11 +90,12 @@ export const TrainAPI = {
   createEval(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/eval/create`, method: "post", data });
   },
-  getEvalList(params?: Record<string, any>) {
+  getEvalList(params?: Record<string, any>, opts?: { silent?: boolean }) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
       url: `${API_PATH}/eval/list`,
       method: "get",
       params,
+      headers: opts?.silent ? { _silent: "true" } : undefined,
     });
   },
   deleteEval(ids: number[]) {
@@ -134,11 +136,12 @@ export const TrainAPI = {
   createPredict(data: any) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/predict/create`, method: "post", data });
   },
-  getPredictList(params?: Record<string, any>) {
+  getPredictList(params?: Record<string, any>, opts?: { silent?: boolean }) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
       url: `${API_PATH}/predict/list`,
       method: "get",
       params,
+      headers: opts?.silent ? { _silent: "true" } : undefined,
     });
   },
   getPredictDetail(id: number) {

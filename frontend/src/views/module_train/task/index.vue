@@ -1,6 +1,6 @@
 <template>
   <div class="app-container">
-    <el-tabs v-model="activeTab">
+    <el-tabs v-model="activeTab" type="border-card" class="train-task-tabs">
       <el-tab-pane label="训练任务" name="task">
     <PageSearch
       ref="searchRef"
@@ -884,8 +884,14 @@ function startPoll() {
   pollTimer = setInterval(async () => {
     if (!contentRef.value?.pageData) return;
     try {
-      const params = { page_no: 1, page_size: 200 };
-      const res = await TrainAPI.getTaskList(params);
+      // 只拉当前页用于刷新状态（后端 page_size 上限 100），并静默避免弹错
+      const pg = (contentRef.value as any)?.pagination;
+      const params = {
+        page_no: pg?.currentPage ?? 1,
+        page_size: pg?.pageSize ?? 10,
+        ...(((contentRef.value as any)?.getFilterParams?.() as Record<string, any>) || {}),
+      };
+      const res = await TrainAPI.getTaskList(params, { silent: true });
       const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
       const old = contentRef.value.pageData as any[];
       for (const f of fresh) {
@@ -942,6 +948,36 @@ onBeforeUnmount(() => stopPoll());
 </script>
 
 <style scoped>
+/* Tab 容器撑满高度，使列表分页沉到页面底部（与 cache 等 tabbed 列表页一致） */
+.train-task-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+}
+.train-task-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+}
+.train-task-tabs :deep(.el-tabs__content) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.train-task-tabs :deep(.el-tab-pane) {
+  box-sizing: border-box;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+/* 搜索区固定高度，列表卡片占满剩余高度（分页据此沉底） */
+.train-task-tabs :deep(.el-tab-pane > *:not(.data-table)) {
+  flex-shrink: 0;
+}
 .docker-preview {
   padding: 0 20px;
 }

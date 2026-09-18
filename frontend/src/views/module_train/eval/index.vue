@@ -562,8 +562,14 @@ function startPoll() {
   pollTimer = setInterval(async () => {
     if (!contentRef.value?.pageData) return;
     try {
-      const params = { page_no: 1, page_size: 200 };
-      const res = await TrainAPI.getEvalList(params);
+      // 只拉当前页用于刷新状态（后端 page_size 上限 100），并静默避免弹错
+      const pg = (contentRef.value as any)?.pagination;
+      const params = {
+        page_no: pg?.currentPage ?? 1,
+        page_size: pg?.pageSize ?? 10,
+        ...(((contentRef.value as any)?.getFilterParams?.() as Record<string, any>) || {}),
+      };
+      const res = await TrainAPI.getEvalList(params, { silent: true });
       const fresh = (res.data?.data?.items || res.data?.data || []) as any[];
       const old = contentRef.value.pageData as any[];
       for (const f of fresh) {

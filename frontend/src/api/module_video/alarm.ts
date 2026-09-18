@@ -71,8 +71,13 @@ export interface AlarmRulePayload {
   [key: string]: unknown;
 }
 
-export function getAlarmRuleList(data?: any) {
-  return request({ url: "/video/alarm/rule/list", method: "get", params: data });
+export function getAlarmRuleList(data?: any, opts?: { silent?: boolean }) {
+  return request({
+    url: "/video/alarm/rule/list",
+    method: "get",
+    params: data,
+    headers: opts?.silent ? { _silent: "true" } : undefined,
+  });
 }
 
 /** 按 id 精确查询单条规则（编辑回填；避免只取前 N 条导致编辑变新建） */

@@ -966,9 +966,20 @@ function ruleScopeLabel(row: any): string {
 async function ensureRuleLookup() {
   if (ruleLookupLoaded) return;
   try {
-    const res = await getAlarmRuleList({ page_no: 1, page_size: 200 });
+    // 分页静默拉取（后端 page_size 上限 100），避免一次性加载大量数据
     const map: Record<number, any> = {};
-    for (const item of res.data?.data?.items ?? []) map[item.id] = item;
+    let pageNo = 1;
+    const pageSize = 100;
+    for (;;) {
+      const res = await getAlarmRuleList(
+        { page_no: pageNo, page_size: pageSize },
+        { silent: true }
+      );
+      const items = res.data?.data?.items ?? [];
+      for (const item of items) map[item.id] = item;
+      if (!res.data?.data?.has_next || items.length === 0) break;
+      pageNo += 1;
+    }
     ruleLookup.value = map;
     ruleLookupLoaded = true;
   } catch {
