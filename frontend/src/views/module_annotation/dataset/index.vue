@@ -17,7 +17,6 @@
             @add="handleOpenDialog('create')"
             @delete="onToolbar('delete')"
           />
-          <el-button type="primary" @click="openImportDialog" style="margin-left:4px">X-AnyLabeling 导入</el-button>
         </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -123,7 +122,7 @@
               fixed="right"
               label="操作"
               align="center"
-              min-width="220"
+              min-width="240"
             >
               <template #default="scope">
                 <el-button
@@ -146,26 +145,6 @@
                   上传
                 </el-button>
                 <el-button
-                  type="warning"
-                  size="small"
-                  link
-                  icon="Download"
-                  @click="handleOpenExport(scope.row)"
-                >
-                  导出
-                </el-button>
-                <el-button
-                  size="small"
-                  link
-                  type="info"
-                  @click="exportHistoryRef.open(scope.row.id)"
-                >
-                  导出历史
-                </el-button>
-                <el-button size="small" link type="warning" @click="cleanRef.open(scope.row.id)">
-                  数据清洗
-                </el-button>
-                <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
                   type="primary"
                   size="small"
@@ -175,34 +154,22 @@
                 >
                   编辑
                 </el-button>
-                <el-button
-                  size="small"
-                  type="success"
-                  link
-                  @click="router.push(`/train/task?dataset_id=${scope.row.id}&autoCreate=1`)"
-                >
-                  去训练
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_annotation:dataset:delete']"
-                  type="danger"
-                  size="small"
-                  link
-                  icon="delete"
-                  @click="handleRowDelete(scope.row.id)"
-                >
-                  删除
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_annotation:dataset:purge']"
-                  type="danger"
-                  size="small"
-                  link
-                  icon="DeleteFilled"
-                  @click="handlePurge(scope.row)"
-                >
-                  彻底删除
-                </el-button>
+                <el-dropdown trigger="click" @command="(cmd: string) => handleMoreCommand(cmd, scope.row)">
+                  <el-button size="small" link>
+                    更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="import">导入标注</el-dropdown-item>
+                      <el-dropdown-item command="export">导出</el-dropdown-item>
+                      <el-dropdown-item command="exportHistory">导出历史</el-dropdown-item>
+                      <el-dropdown-item command="clean">数据清洗</el-dropdown-item>
+                      <el-dropdown-item command="train">去训练</el-dropdown-item>
+                      <el-dropdown-item v-hasPerm="['module_annotation:dataset:delete']" command="delete" divided>删除</el-dropdown-item>
+                      <el-dropdown-item v-hasPerm="['module_annotation:dataset:purge']" command="purge" divided>彻底删除</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -283,24 +250,77 @@
       </template>
     </EnhancedDialog>
 
-    <!-- x-anylabeling Import Dialog -->
-    <el-dialog v-model="importDialogVisible" title="导入 x-anylabeling 标注" width="500px">
-      <el-form label-width="100px">
-        <el-form-item label="目标数据集" required>
-          <el-select v-model="importDatasetId" filterable placeholder="选择数据集" style="width:100%">
-            <el-option v-for="ds in datasetOptions" :key="ds.id" :label="ds.name" :value="ds.id" />
-          </el-select>
-        </el-form-item>
+    <!-- X-AnyLabeling 导入（后台任务 + 进度） -->
+    <el-dialog
+      v-model="importDialogVisible"
+      :title="`导入标注到「${importDatasetName}」`"
+      width="520px"
+      :close-on-click-modal="!importing"
+      :show-close="!importing"
+      @close="closeImportDialog"
+    >
+      <el-form label-width="90px">
         <el-form-item label="ZIP 文件" required>
-          <el-upload ref="importUploadRef" :auto-upload="false" accept=".zip" :limit="1" :on-change="onImportFileChange">
-            <el-button size="small" type="primary">选择 ZIP 文件</el-button>
-            <template #tip><div style="font-size:12px;color:#909399;margin-top:4px">包含图片和同名 .json 标注文件的 ZIP 压缩包</div></template>
+          <el-upload
+            ref="importUploadRef"
+            :auto-upload="false"
+            accept=".zip"
+            :limit="1"
+            :disabled="importing"
+            :on-change="onImportFileChange"
+          >
+            <el-button size="small" type="primary" :disabled="importing">选择 ZIP 文件</el-button>
+            <template #tip>
+              <div style="font-size:12px;color:#909399;margin-top:4px">
+                含图片与同名 .json 的 ZIP 压缩包，上限 {{ importMaxMb }}MB
+              </div>
+            </template>
           </el-upload>
+          <div v-if="importFile" style="font-size:12px;color:#606266;margin-top:4px">
+            已选：{{ importFile.name }}（{{ importFileMb }} MB）
+          </div>
         </el-form-item>
       </el-form>
+
+      <div v-if="importing || importJob" class="import-progress">
+        <el-progress :percentage="importPercent" :status="importStatus" />
+        <div class="import-phase">
+          <span>{{ importPhaseText }}</span>
+          <span v-if="importJob?.total">{{ importJob.processed }}/{{ importJob.total }}</span>
+        </div>
+      </div>
+      <el-alert
+        v-if="importError"
+        :title="importError"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-top:8px"
+      />
+      <el-alert
+        v-if="importResult"
+        type="success"
+        :closable="false"
+        show-icon
+        style="margin-top:8px"
+      >
+        <template #title>
+          导入完成：{{ importResult.imported }} 张图片，{{ importResult.total_annotations }} 个标注
+        </template>
+      </el-alert>
+
       <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="importing" @click="handleImportSubmit">导入</el-button>
+        <el-button :disabled="importing" @click="closeImportDialog">关闭</el-button>
+        <el-button v-if="importResult?.task_id" type="primary" @click="goImportTask">去任务</el-button>
+        <el-button
+          v-else
+          type="warning"
+          :loading="importing"
+          :disabled="!importFile"
+          @click="handleImportSubmit"
+        >
+          开始导入
+        </el-button>
       </template>
     </el-dialog>
 
@@ -347,7 +367,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from "vue";
+import { ref, reactive, computed, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
@@ -635,53 +655,152 @@ async function handleUploadSubmit() {
   }
 }
 
-// ── x-anylabeling Import ──
+// ── 行内「更多」菜单 ──
+function handleMoreCommand(cmd: string, row: any) {
+  switch (cmd) {
+    case "import":
+      handleOpenImport(row);
+      break;
+    case "export":
+      handleOpenExport(row);
+      break;
+    case "exportHistory":
+      exportHistoryRef.value?.open(row.id);
+      break;
+    case "clean":
+      cleanRef.value?.open(row.id);
+      break;
+    case "train":
+      router.push(`/train/task?dataset_id=${row.id}&autoCreate=1`);
+      break;
+    case "delete":
+      handleRowDelete(row.id);
+      break;
+    case "purge":
+      handlePurge(row);
+      break;
+  }
+}
+
+// ── X-AnyLabeling 导入（后台任务 + 进度轮询） ──
 const importDialogVisible = ref(false);
-const importDatasetId = ref<number | undefined>(undefined);
+const importDatasetId = ref<number | null>(null);
+const importDatasetName = ref("");
 const importing = ref(false);
 const importUploadRef = ref<any>(null);
 const importFile = ref<File | null>(null);
-const datasetOptions = ref<any[]>([]);
+const importJob = ref<any>(null);
+const importError = ref("");
+const importResult = ref<any>(null);
+const importMaxMb = 1024;
+let importTimer: number | null = null;
+
+const importFileMb = computed(() =>
+  importFile.value ? (importFile.value.size / 1024 / 1024).toFixed(1) : "0"
+);
+const importPercent = computed(() => {
+  const j = importJob.value;
+  if (!j || !j.total) return importResult.value ? 100 : 0;
+  return Math.min(100, Math.round((j.processed / j.total) * 100));
+});
+const importStatus = computed<"" | "success" | "exception">(() => {
+  if (importError.value) return "exception";
+  if (importResult.value) return "success";
+  return "";
+});
+const importPhaseText = computed(() => {
+  const p = importJob.value?.phase;
+  return (
+    ({ scan: "扫描文件中…", import: "导入中…", done: "完成" } as Record<string, string>)[p] ||
+    "处理中…"
+  );
+});
+
+function handleOpenImport(row: any) {
+  importDatasetId.value = row.id;
+  importDatasetName.value = row.name;
+  importFile.value = null;
+  importJob.value = null;
+  importError.value = "";
+  importResult.value = null;
+  importUploadRef.value?.clearFiles?.();
+  importDialogVisible.value = true;
+}
 
 function onImportFileChange(_file: any, fileList: any[]) {
   importFile.value = fileList.length > 0 ? fileList[0].raw : null;
 }
 
 async function handleImportSubmit() {
-  if (!importDatasetId.value) { ElMessage.warning("请选择目标数据集"); return; }
-  if (!importFile.value) { ElMessage.warning("请选择 ZIP 文件"); return; }
+  if (!importDatasetId.value) {
+    ElMessage.warning("缺少目标数据集");
+    return;
+  }
+  if (!importFile.value) {
+    ElMessage.warning("请选择 ZIP 文件");
+    return;
+  }
   importing.value = true;
+  importError.value = "";
+  importResult.value = null;
+  importJob.value = null;
   try {
-    await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
-    importDialogVisible.value = false;
-    importFile.value = null;
-    importDatasetId.value = undefined;
-    if (importUploadRef.value) importUploadRef.value.uploadFiles = [];
-    refreshList();
-  } catch {
-    /* 提示由请求拦截器统一处理 */
-  } finally {
+    const r = await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
+    const jobId = r.data?.data?.job_id;
+    if (!jobId) throw new Error("未获取到导入任务ID");
+    pollImportJob(jobId);
+  } catch (e: any) {
+    importError.value = e?.message || "导入启动失败";
     importing.value = false;
   }
 }
 
-// 数据集选项仅在打开导入弹窗时懒加载，避免每次进入页面都多拉一次列表
-let datasetOptionsLoaded = false;
-async function loadDatasetOptions() {
-  if (datasetOptionsLoaded) return;
-  try {
-    const r = await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 });
-    datasetOptions.value = r.data?.data?.items || [];
-    datasetOptionsLoaded = true;
-  } catch {
-    /* 提示由请求拦截器统一处理 */
+function pollImportJob(jobId: string) {
+  stopImportPolling();
+  importTimer = window.setInterval(async () => {
+    try {
+      const r = await AnnotationAPI.getImportJob(jobId);
+      const j = r.data?.data;
+      importJob.value = j;
+      if (j?.status === "done") {
+        importResult.value = j;
+        stopImportPolling();
+        importing.value = false;
+        refreshList();
+      } else if (j?.status === "failed") {
+        importError.value = j?.error || "导入失败";
+        stopImportPolling();
+        importing.value = false;
+      }
+    } catch {
+      /* 忽略单次轮询失败 */
+    }
+  }, 1000);
+}
+
+function stopImportPolling() {
+  if (importTimer !== null) {
+    window.clearInterval(importTimer);
+    importTimer = null;
   }
 }
 
-function openImportDialog() {
-  loadDatasetOptions();
-  importDialogVisible.value = true;
+function closeImportDialog() {
+  stopImportPolling();
+  importDialogVisible.value = false;
+  importing.value = false;
+  importFile.value = null;
+  importJob.value = null;
+  importError.value = "";
+  importResult.value = null;
 }
+
+function goImportTask() {
+  const tid = importResult.value?.task_id;
+  if (tid) router.push(`/annotation/workbench/${tid}`);
+}
+
+onBeforeUnmount(stopImportPolling);
 
 // ── Export ──
 const exportDialogVisible = ref(false);
@@ -793,6 +912,16 @@ async function handleExportSubmit() {
 <style scoped>
 .upload-alert {
   margin-bottom: 16px;
+}
+.import-progress {
+  margin-top: 8px;
+}
+.import-phase {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .task-badge {
   position: relative; display: inline-flex; align-items: center; gap: 4px;

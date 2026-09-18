@@ -147,13 +147,18 @@ export const AnnotationAPI = {
   importXAnyLabeling(datasetId: number, file: File) {
     const formData = new FormData();
     formData.append("file", file);
-    return request<ApiResponse<any>>({
-      url: `${API_PATH}/dataset/import/x-anylabeling`,
+    return request<ApiResponse<{ job_id: string }>>({
+      url: `${API_PATH}/dataset/${datasetId}/import/x-anylabeling`,
       method: "post",
-      params: { dataset_id: datasetId },
       data: formData,
       headers: { "Content-Type": "multipart/form-data" },
-      timeout: 120000,
+      timeout: 300000,
+    });
+  },
+  getImportJob(jobId: string) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/import/${jobId}`,
+      method: "get",
     });
   },
 
