@@ -298,6 +298,86 @@ class DatasetService:
             return {"items": items, "total": total, "page": page_no}
 
     @classmethod
+    async def enrich_dataset_list(cls, db, items: list[dict]) -> None:
+        """为本页数据集就地填充任务列表与进度（单次聚合、只读不写）。"""
+        if not items:
+            return
+        ids = [i["id"] for i in items]
+
+        total_rows = await db.execute(
+            select(AnnotationImageModel.dataset_id, func.count(AnnotationImageModel.id))
+            .where(
+                AnnotationImageModel.dataset_id.in_(ids),
+                AnnotationImageModel.is_deleted == False,  # noqa: E712
+            )
+            .group_by(AnnotationImageModel.dataset_id)
+        )
+        totals = {d: c for d, c in total_rows.fetchall()}
+
+        task_rows = (
+            await db.execute(
+                select(AnnotationTaskModel).where(AnnotationTaskModel.dataset_id.in_(ids))
+            )
+        ).scalars().all()
+        task_ids = [t.id for t in task_rows]
+
+        ann: dict[int, int] = {}
+        if task_ids:
+            max_v = (
+                select(
+                    AnnotationRecordModel.task_id.label("task_id"),
+                    AnnotationRecordModel.image_id.label("image_id"),
+                    func.max(AnnotationRecordModel.version).label("mv"),
+                )
+                .where(AnnotationRecordModel.task_id.in_(task_ids))
+                .group_by(AnnotationRecordModel.task_id, AnnotationRecordModel.image_id)
+                .subquery()
+            )
+            json_length = (
+                func.json_array_length
+                if settings.DATABASE_TYPE == "sqlite"
+                else func.jsonb_array_length
+            )
+            ann_rows = await db.execute(
+                select(AnnotationRecordModel.task_id, func.count())
+                .select_from(AnnotationRecordModel)
+                .join(
+                    max_v,
+                    and_(
+                        AnnotationRecordModel.task_id == max_v.c.task_id,
+                        AnnotationRecordModel.image_id == max_v.c.image_id,
+                        AnnotationRecordModel.version == max_v.c.mv,
+                    ),
+                )
+                .where(
+                    AnnotationRecordModel.annotation_data.isnot(None),
+                    json_length(AnnotationRecordModel.annotation_data) > 0,
+                )
+                .group_by(AnnotationRecordModel.task_id)
+            )
+            ann = {t: c for t, c in ann_rows.fetchall()}
+
+        by_ds: dict[int, list] = {}
+        for t in task_rows:
+            by_ds.setdefault(t.dataset_id, []).append(t)
+
+        for item in items:
+            ds_tasks = by_ds.get(item["id"], [])
+            total = totals.get(item["id"], 0)
+            out_tasks = []
+            for t in ds_tasks:
+                pct = int(ann.get(t.id, 0) / total * 100) if total > 0 else 0
+                out_tasks.append({
+                    "id": t.id,
+                    "name": t.name,
+                    "task_type": t.task_type,
+                    "status": "completed" if pct >= 100 else "in_progress" if pct > 0 else "pending",
+                    "progress": pct,
+                })
+            item["task_count"] = len(ds_tasks)
+            item["tasks"] = out_tasks
+
+    @classmethod
     async def get_presigned_url(cls, image_id: int) -> str:
         async with async_db_session() as db:
             result = await db.execute(select(AnnotationImageModel).where(AnnotationImageModel.id == image_id))

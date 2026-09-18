@@ -20,11 +20,8 @@ async def get_dataset_list(
     search: DatasetQueryParam = Depends(),
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
 ) -> JSONResponse:
-    from sqlalchemy import select
-
     from app.core.database import async_db_session
 
-    from ..task.model import AnnotationTaskModel
     from .crud import DatasetCRUD
     crud = DatasetCRUD(auth=auth)
     offset = (page.page_no - 1) * page.page_size
@@ -32,33 +29,10 @@ async def get_dataset_list(
         offset=offset, limit=page.page_size, order_by=page.order_by,
         search=search.get_conditions(), out_schema=DatasetOutSchema,
     )
-    # Populate task_count and task list for each dataset
+    # 本页任务与进度：单次聚合查询，只读不写
     if result.get("items"):
         async with async_db_session() as db:
-            for item in result["items"]:
-                tasks_result = await db.execute(
-                    select(AnnotationTaskModel).where(AnnotationTaskModel.dataset_id == item["id"])
-                )
-                task_rows = tasks_result.scalars().all()
-                item["task_count"] = len(task_rows)
-                item["tasks"] = []
-                for t in task_rows:
-                    from app.api.v1.module_annotation.task.service import TaskService
-                    try:
-                        prog = await TaskService._calc_progress(db, t.id, t.dataset_id)
-                        t.progress = prog["progress"]
-                        t.status = prog["status"]
-                        # Cache to DB
-                        try:
-                            await TaskService.update_progress(t.id)
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                    item["tasks"].append({
-                        "id": t.id, "name": t.name, "task_type": t.task_type,
-                        "status": t.status, "progress": t.progress,
-                    })
+            await DatasetService.enrich_dataset_list(db, result["items"])
     return SuccessResponse(data=result)
 
 
