@@ -961,11 +961,17 @@
               </el-button>
             </div>
             <div class="filter-row">
-              <el-radio-group v-model="imageFilter" size="small" @change="scrollToTop">
-                <el-radio-button value="all">全部</el-radio-button>
-                <el-radio-button value="annotated">已标注</el-radio-button>
-                <el-radio-button value="unannotated">未标注</el-radio-button>
-              </el-radio-group>
+              <el-segmented
+                v-model="imageFilter"
+                :options="[
+                  { label: '全部', value: 'all' },
+                  { label: '已标注', value: 'annotated' },
+                  { label: '未标注', value: 'unannotated' },
+                ]"
+                size="small"
+                block
+                @change="scrollToTop"
+              />
             </div>
             <div class="scroll-area">
               <div
@@ -1346,11 +1352,16 @@ import {
   Delete,
   Check,
   Pointer,
+  Rank,
+  ZoomIn,
+  Crop,
   Refresh,
   RefreshLeft,
   RefreshRight,
   Grid,
   CirclePlus,
+  Document,
+  Collection,
   QuestionFilled,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
@@ -1567,17 +1578,17 @@ const taskClassificationMode = computed(() => task.value?.classification_mode ||
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
-  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: "Pointer" },
-  { name: "pan", label: "平移", tip: "拖拽平移画布", icon: "Rank" },
-  { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: "ZoomIn" },
+  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: Pointer },
+  { name: "pan", label: "平移", tip: "拖拽平移画布", icon: Rank },
+  { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: ZoomIn },
 ];
 const taskToolMap: Record<string, { name: ToolName; label: string; tip: string; icon: any }[]> = {
-  detection: [{ name: "box", label: "矩形", tip: "拖拽创建矩形框", icon: "FullScreen" }],
-  rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: "Refresh" }],
-  segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: "Grid" }],
-  keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: "CirclePlus" }],
-  ocr: [{ name: "ocr", label: "OCR", tip: "文本标注", icon: "Document" }],
-  classification: [{ name: "classification", label: "分类", tip: "图像分类", icon: "Collection" }],
+  detection: [{ name: "box", label: "矩形", tip: "拖拽创建矩形框", icon: Crop }],
+  rotated_detection: [{ name: "rotated_box", label: "旋转框", tip: "旋转框", icon: Refresh }],
+  segmentation: [{ name: "polygon", label: "多边形", tip: "点击创建多边形", icon: Grid }],
+  keypoint: [{ name: "keypoint", label: "关键点", tip: "放置关键点", icon: CirclePlus }],
+  ocr: [{ name: "ocr", label: "OCR", tip: "文本标注", icon: Document }],
+  classification: [{ name: "classification", label: "分类", tip: "图像分类", icon: Collection }],
 };
 const displayTools = computed(() => [...baseTools, ...(taskToolMap[taskType.value] || [])]);
 const taskTypeLabel = computed(
@@ -4226,6 +4237,12 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   gap: 6px;
   flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+.collab-online {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .hint {
   flex: 1;
