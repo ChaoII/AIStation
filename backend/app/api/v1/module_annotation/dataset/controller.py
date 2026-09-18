@@ -110,17 +110,79 @@ async def get_presigned_url(
     return SuccessResponse(data={"url": url})
 
 
-@DatasetRouter.post("/import/x-anylabeling", summary="导入 x-anylabeling 格式标注")
+async def _run_import_job(job_id: str, data: bytes, dataset_id: int, user_id: int) -> None:
+    """后台执行 x-anylabeling 导入并更新任务进度。"""
+    from app.api.v1.module_annotation.dataset.import_jobs import get_job
+    from app.api.v1.module_annotation.dataset.x_anylabeling_importer import (
+        import_x_anylabeling_bytes,
+    )
+    from app.core.logger import log
+
+    job = get_job(job_id)
+    if not job:
+        return
+    job.status = "running"
+    job.phase = "scan"
+
+    def _cb(processed: int, total: int, phase: str) -> None:
+        job.processed = processed
+        job.total = total
+        job.phase = phase
+
+    try:
+        result = await import_x_anylabeling_bytes(data, dataset_id, user_id, progress_cb=_cb)
+        job.imported = result.get("imported", 0)
+        job.total_annotations = result.get("total_annotations", 0)
+        job.task_id = result.get("task_id")
+        job.task_name = result.get("task_name", "") or ""
+        if result.get("error"):
+            job.status, job.error = "failed", result["error"]
+        else:
+            job.status, job.phase = "done", "done"
+    except Exception as e:  # noqa: BLE001 - 后台任务需吞掉异常并记录
+        log.warning(f"[导入任务] 失败 job={job_id}: {e}")
+        job.status, job.error = "failed", str(e)
+
+
+@DatasetRouter.post("/{id}/import/x-anylabeling", summary="导入 x-anylabeling 标注（后台任务）")
 async def import_x_anylabeling(
-    dataset_id: int,
+    id: int,
     file: UploadFile = File(...),
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:create"])),
 ) -> JSONResponse:
-    from .x_anylabeling_importer import import_x_anylabeling_zip
-    result = await import_x_anylabeling_zip(file.file, dataset_id, auth.user.id)
-    if result.get("error"):
-        return SuccessResponse(data=result, msg=result["error"])
-    return SuccessResponse(
-        data=result,
-        msg=f"导入完成：{result['imported']} 张图片，{result['total_annotations']} 个标注"
-    )
+    import asyncio
+
+    from app.api.v1.module_annotation.dataset.import_jobs import create_job
+    from app.config.setting import settings
+    from app.core.exceptions import CustomException
+
+    filename = file.filename or ""
+    if not filename.lower().endswith(".zip"):
+        raise CustomException(msg="仅支持 .zip 文件", code=400, status_code=400)
+    # 先物化上传字节，避免请求结束后 UploadFile 失效
+    data = await file.read()
+    max_bytes = settings.ANNOTATION_IMPORT_MAX_MB * 1024 * 1024
+    if len(data) > max_bytes:
+        raise CustomException(
+            msg=f"文件过大（>{settings.ANNOTATION_IMPORT_MAX_MB}MB）",
+            code=400, status_code=400,
+        )
+    job = create_job(id, auth.user.id)
+    asyncio.create_task(_run_import_job(job.job_id, data, id, auth.user.id))
+    return SuccessResponse(data={"job_id": job.job_id}, msg="已开始导入")
+
+
+@DatasetRouter.get("/import/{job_id}", summary="查询导入任务进度")
+async def get_import_job(
+    job_id: str,
+    auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:query"])),
+) -> JSONResponse:
+    from dataclasses import asdict
+
+    from app.api.v1.module_annotation.dataset.import_jobs import get_job
+    from app.core.exceptions import CustomException
+
+    job = get_job(job_id)
+    if not job:
+        raise CustomException(msg="导入任务不存在", code=404, status_code=404)
+    return SuccessResponse(data=asdict(job))
