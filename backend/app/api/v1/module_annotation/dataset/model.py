@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import ModelMixin, UserMixin
@@ -26,7 +26,6 @@ class DatasetModel(ModelMixin, UserMixin):
 
     name: Mapped[str] = mapped_column(String(128), comment="数据集名称")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")
-    bucket_name: Mapped[str] = mapped_column(String(64), default="aistation-annotation-dev", comment="RustFS bucket 名")
     image_count: Mapped[int] = mapped_column(Integer, default=0, comment="图片总数")
     annotated_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注图片数")
 
@@ -46,6 +45,9 @@ class AnnotationImageModel(ModelMixin, UserMixin):
     dataset_id: Mapped[int] = mapped_column(ForeignKey("annotation_dataset.id"), comment="数据集ID")
     filename: Mapped[str] = mapped_column(String(255), comment="原文件名")
     object_key: Mapped[str] = mapped_column(String(512), comment="RustFS 中的 key")
+    thumbnail_key: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="RustFS 缩略图 key"
+    )
     width: Mapped[int] = mapped_column(Integer, default=0, comment="图片宽度")
     height: Mapped[int] = mapped_column(Integer, default=0, comment="图片高度")
     status: Mapped[ImageStatus] = mapped_column(
@@ -56,3 +58,7 @@ class AnnotationImageModel(ModelMixin, UserMixin):
     annotation_count: Mapped[int] = mapped_column(Integer, default=0, comment="标注数量")
 
     dataset = relationship("DatasetModel", back_populates="images")
+
+    __table_args__ = (
+        Index("ix_annotation_image_dataset_status", "dataset_id", "status"),
+    )

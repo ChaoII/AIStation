@@ -1,5 +1,5 @@
 
-from sqlalchemy import ForeignKey, Integer
+from sqlalchemy import ForeignKey, Index, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,5 +13,9 @@ class AnnotationRecordModel(ModelMixin, UserMixin):
     image_id: Mapped[int] = mapped_column(ForeignKey("annotation_image.id"), comment="图片ID")
     annotation_data: Mapped[dict] = mapped_column(JSONB, comment="标注 JSON 数据")
     version: Mapped[int] = mapped_column(Integer, default=1, comment="版本号")
+
+    __table_args__ = (
+        Index("ix_annotation_record_task_image_version", "task_id", "image_id", "version"),
+    )
 
     __mapper_args__ = {"eager_defaults": True}
