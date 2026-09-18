@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import delete, desc, func, select, update
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
@@ -40,6 +41,22 @@ class AnnotationService:
                 img.locked_at = None
 
     @classmethod
+    async def _prune_versions(cls, db, task_id: int, image_id: int,
+                              latest_version: int, keep: int) -> None:
+        """保留首版（v1）与最近 keep 版，删除中间旧版本。"""
+        if keep <= 0 or latest_version <= keep + 1:
+            return
+        upper = latest_version - keep  # 删除 version ∈ [2, upper]
+        await db.execute(
+            delete(AnnotationRecordModel).where(
+                AnnotationRecordModel.task_id == task_id,
+                AnnotationRecordModel.image_id == image_id,
+                AnnotationRecordModel.version >= 2,
+                AnnotationRecordModel.version <= upper,
+            )
+        )
+
+    @classmethod
     async def save_annotations(cls, task_id: int, image_id: int, annotation_data: list[dict], auth) -> dict:
         async with async_db_session.begin() as db:
             # Verify lock
@@ -63,6 +80,9 @@ class AnnotationService:
                 task_id=task_id, image_id=image_id, annotation_data=annotation_data,
                 version=version, created_id=auth.user.id,
             ))
+            await db.flush()
+            await cls._prune_versions(db, task_id, image_id, version,
+                                      settings.ANNOTATION_VERSION_KEEP)
 
             # Update image status and annotation count
             if img:
