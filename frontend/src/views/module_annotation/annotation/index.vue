@@ -10,7 +10,7 @@
     />
     <div class="ann-header">
       <div class="ann-title">
-        <el-button text :icon="ArrowLeft" @click="handleBack" />
+        <el-button size="small" text :icon="ArrowLeft" @click="handleBack" />
         <el-tag :type="taskTypeTag" size="small">{{ taskTypeLabel }}</el-tag>
         <span class="task-name">{{ task?.name }}</span>
       </div>
@@ -36,20 +36,20 @@
             :title="t.tip"
             @click="setTool(t.name)"
           >
-            <el-icon :size="18"><component :is="t.icon" /></el-icon>
+            <el-icon :size="16"><component :is="t.icon" /></el-icon>
             <span class="tool-label">{{ t.label }}</span>
           </div>
           <div class="tool-sep" />
           <div class="tool-btn" title="撤销 (Ctrl+Z)" @click="undo">
-            <el-icon :size="18"><RefreshLeft /></el-icon>
+            <el-icon :size="16"><RefreshLeft /></el-icon>
             <span class="tool-label">撤销</span>
           </div>
           <div class="tool-btn" title="重做 (Ctrl+Y)" @click="redo">
-            <el-icon :size="18"><RefreshRight /></el-icon>
+            <el-icon :size="16"><RefreshRight /></el-icon>
             <span class="tool-label">重做</span>
           </div>
           <div class="tool-btn danger" title="删除选中标注 (Delete)" @click="deleteSelected">
-            <el-icon :size="18"><Delete /></el-icon>
+            <el-icon :size="16"><Delete /></el-icon>
             <span class="tool-label">删除</span>
           </div>
         </div>
@@ -961,17 +961,11 @@
               </el-button>
             </div>
             <div class="filter-row">
-              <el-segmented
-                v-model="imageFilter"
-                :options="[
-                  { label: '全部', value: 'all' },
-                  { label: '已标注', value: 'annotated' },
-                  { label: '未标注', value: 'unannotated' },
-                ]"
-                size="small"
-                block
-                @change="scrollToTop"
-              />
+              <el-radio-group v-model="imageFilter" size="small" @change="scrollToTop">
+                <el-radio-button value="all">全部</el-radio-button>
+                <el-radio-button value="annotated">已标注</el-radio-button>
+                <el-radio-button value="unannotated">未标注</el-radio-button>
+              </el-radio-group>
             </div>
             <div class="scroll-area">
               <div
@@ -4059,18 +4053,9 @@ onBeforeUnmount(() => {
   padding: 4px 0;
   flex-shrink: 0;
 }
-.filter-row .el-radio-group {
-  display: flex;
-  width: 100%;
-}
-.filter-row .el-radio-button {
-  flex: 1;
-}
 .filter-row .el-radio-button__inner {
-  font-size: 11px;
-  padding: 4px 8px;
-  width: 100%;
-  justify-content: center;
+  font-size: 12px;
+  padding: 4px 10px;
 }
 .count-chip {
   font-size: 10px;
