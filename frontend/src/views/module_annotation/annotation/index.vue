@@ -35,20 +35,20 @@
             :title="t.tip"
             @click="setTool(t.name)"
           >
-            <el-icon :size="16"><component :is="t.icon" /></el-icon>
+            <el-icon :size="20"><component :is="t.icon" /></el-icon>
             <span class="tool-label">{{ t.label }}</span>
           </div>
           <div class="tool-sep" />
           <div class="tool-btn" title="撤销 (Ctrl+Z)" @click="undo">
-            <el-icon :size="16"><RefreshLeft /></el-icon>
+            <el-icon :size="20"><RefreshLeft /></el-icon>
             <span class="tool-label">撤销</span>
           </div>
           <div class="tool-btn" title="重做 (Ctrl+Y)" @click="redo">
-            <el-icon :size="16"><RefreshRight /></el-icon>
+            <el-icon :size="20"><RefreshRight /></el-icon>
             <span class="tool-label">重做</span>
           </div>
           <div class="tool-btn danger" title="删除选中标注 (Delete)" @click="deleteSelected">
-            <el-icon :size="16"><Delete /></el-icon>
+            <el-icon :size="20"><Delete /></el-icon>
             <span class="tool-label">删除</span>
           </div>
         </div>
@@ -3943,9 +3943,13 @@ onBeforeUnmount(() => {
   height: 44px;
   border-radius: 6px;
   cursor: pointer;
-  color: #606266;
+  color: #303133;
   transition: all 0.12s;
   border: 1px solid transparent;
+}
+/* Element Plus 线描图标默认 stroke 较细，加粗避免「发虚」 */
+.tool-btn :deep(svg path) {
+  stroke-width: 2;
 }
 .tool-btn:hover {
   background: #f0f2f5;
