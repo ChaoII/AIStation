@@ -8,12 +8,11 @@ import json
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.core.logger import log
-from app.core.router_class import OperationLogRoute
 from app.core.security import decode_access_token
 
 from ..annotation.service import AnnotationService
 
-CollaborationRouter = APIRouter(route_class=OperationLogRoute, prefix="/collab", tags=["数据标注-实时协作"])
+CollaborationRouter = APIRouter(prefix="/collab", tags=["数据标注-实时协作"])
 
 # 房间: {task_id: {user_id: {"ws": WebSocket, "name": str}}}
 _rooms: dict[int, dict[int, dict]] = {}

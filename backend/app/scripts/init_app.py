@@ -1488,9 +1488,16 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(monitor_router, dependencies=[_rate_limit("monitor")])
     app.include_router(video_router, dependencies=[_rate_limit("video")])
 
-    from app.api.v1.module_annotation import _register_annotation_routers, annotation_router
+    from app.api.v1.module_annotation import (
+        _register_annotation_routers,
+        annotation_router,
+        get_collaboration_router,
+    )
     _register_annotation_routers()
     app.include_router(annotation_router, dependencies=[_rate_limit("annotation")])
+    # 协作 WebSocket 单独注册：避免 HTTP 形态的限流依赖在 WS 握手时报错，
+    # 并保留 /annotation 前缀以匹配前端连接的 /annotation/collab/ws/{id}
+    app.include_router(get_collaboration_router(), prefix="/annotation")
 
     from app.plugin.module_ai.chat.ws import WS_AI
 
