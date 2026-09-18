@@ -211,6 +211,12 @@ class Settings(BaseSettings):
     ANNOTATION_UPLOAD_MAX_FILES: int = 200
     # 上传时处理（PIL + S3）的并发度
     ANNOTATION_UPLOAD_CONCURRENCY: int = 4
+    # 单次 x-anylabeling 导入 ZIP 大小上限（MB）
+    ANNOTATION_IMPORT_MAX_MB: int = 1024
+    # 导入时图片处理（PIL + 缩略图 + S3）并发度
+    ANNOTATION_IMPORT_CONCURRENCY: int = 8
+    # 导入每批处理数量（每批一个 DB 事务）
+    ANNOTATION_IMPORT_BATCH_SIZE: int = 50
 
     # ================================================= #
     # ******************** 验证码配置 ******************* #
