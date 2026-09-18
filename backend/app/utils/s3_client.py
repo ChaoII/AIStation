@@ -35,12 +35,26 @@ class S3Client:
         except ClientError:
             self.client.create_bucket(Bucket=bucket)
 
-    def upload_fileobj(self, fileobj: BinaryIO, object_key: str, env: str | None = None) -> str:
-        self.client.upload_fileobj(fileobj, self._bucket(env), object_key)
+    def upload_fileobj(
+        self,
+        fileobj: BinaryIO,
+        object_key: str,
+        env: str | None = None,
+        content_type: str | None = None,
+    ) -> str:
+        extra = {"ContentType": content_type} if content_type else None
+        self.client.upload_fileobj(fileobj, self._bucket(env), object_key, ExtraArgs=extra)
         return object_key
 
-    def upload_file(self, file_path: str, object_key: str, env: str | None = None) -> str:
-        self.client.upload_file(file_path, self._bucket(env), object_key)
+    def upload_file(
+        self,
+        file_path: str,
+        object_key: str,
+        env: str | None = None,
+        content_type: str | None = None,
+    ) -> str:
+        extra = {"ContentType": content_type} if content_type else None
+        self.client.upload_file(file_path, self._bucket(env), object_key, ExtraArgs=extra)
         return object_key
 
     def download_fileobj(self, object_key: str, env: str | None = None) -> io.BytesIO:
@@ -53,13 +67,22 @@ class S3Client:
         self.client.delete_object(Bucket=self._bucket(env), Key=object_key)
 
     def delete_prefix(self, prefix: str, env: str | None = None) -> int:
-        """删除该前缀下所有对象，返回删除数量。"""
+        """删除该前缀下所有对象（分页直至 IsTruncated=False），返回删除数量。"""
         bucket = self._bucket(env)
-        resp = self.client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        keys = [o["Key"] for o in resp.get("Contents", [])]
-        for k in keys:
-            self.client.delete_object(Bucket=bucket, Key=k)
-        return len(keys)
+        removed = 0
+        token: str | None = None
+        while True:
+            kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
+            if token:
+                kwargs["ContinuationToken"] = token
+            resp = self.client.list_objects_v2(**kwargs)
+            for obj in resp.get("Contents", []) or []:
+                self.client.delete_object(Bucket=bucket, Key=obj["Key"])
+                removed += 1
+            if not resp.get("IsTruncated"):
+                break
+            token = resp.get("NextContinuationToken")
+        return removed
 
     def object_exists(self, object_key: str, env: str | None = None) -> bool:
         """判断对象是否存在（head_object；不存在或无权访问均视为 False）。"""
