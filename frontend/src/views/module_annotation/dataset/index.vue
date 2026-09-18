@@ -110,6 +110,77 @@
               </template>
             </el-table-column>
             <el-table-column
+              v-if="contentCols.find((col) => col.prop === 'import_status')?.show"
+              key="import_status"
+              label="导入状态"
+              width="130"
+              align="center"
+            >
+              <template #default="scope">
+                <el-popover
+                  placement="left"
+                  trigger="hover"
+                  :width="270"
+                  :disabled="!rowImport(scope.row)"
+                >
+                  <template #reference>
+                    <el-tag :type="importTagType(scope.row)" size="small" effect="plain">
+                      {{ importTagText(scope.row) }}
+                    </el-tag>
+                  </template>
+                  <div class="import-pop">
+                    <div class="import-pop-title">{{ importTagText(scope.row) }}</div>
+                    <el-progress
+                      :percentage="rowImportPercent(scope.row)"
+                      :status="rowImportStatus(scope.row)"
+                      :indeterminate="rowImport(scope.row)?.phase === 'scanning'"
+                    />
+                    <div class="import-pop-row">
+                      已用 {{ fmtDuration(elapsedSec(rowImport(scope.row))) }}
+                      <span v-if="rowImport(scope.row)?.total">
+                        · {{ rowImport(scope.row)?.processed }}/{{ rowImport(scope.row)?.total }}
+                      </span>
+                    </div>
+                    <div v-if="rowImport(scope.row)?.taskName" class="import-pop-row">
+                      任务：{{ rowImport(scope.row)?.taskName }}
+                    </div>
+                    <div v-if="rowImport(scope.row)?.error" class="import-pop-row import-pop-err">
+                      {{ rowImport(scope.row)?.error }}
+                    </div>
+                    <div class="import-pop-actions">
+                      <el-button
+                        v-if="isRunning(rowImport(scope.row))"
+                        size="small"
+                        link
+                        type="primary"
+                        @click="openImportFor(scope.row)"
+                      >
+                        查看进度
+                      </el-button>
+                      <el-button
+                        v-if="rowImport(scope.row)?.taskId"
+                        size="small"
+                        link
+                        type="success"
+                        @click="router.push(`/annotation/workbench/${rowImport(scope.row)?.taskId}`)"
+                      >
+                        去任务
+                      </el-button>
+                      <el-button
+                        v-if="['failed', 'cancelled'].includes(rowImport(scope.row)?.phase || '')"
+                        size="small"
+                        link
+                        type="warning"
+                        @click="retryImport(scope.row)"
+                      >
+                        重试
+                      </el-button>
+                    </div>
+                  </div>
+                </el-popover>
+              </template>
+            </el-table-column>
+            <el-table-column
               v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
               key="created_time"
               label="创建时间"
@@ -250,76 +321,103 @@
       </template>
     </EnhancedDialog>
 
-    <!-- X-AnyLabeling 导入（后台任务 + 进度） -->
+    <!-- X-AnyLabeling 导入（三段进度 + 可关闭后台继续） -->
     <el-dialog
       v-model="importDialogVisible"
       :title="`导入标注到「${importDatasetName}」`"
-      width="520px"
-      :close-on-click-modal="!importing"
-      :show-close="!importing"
-      @close="closeImportDialog"
+      width="560px"
+      :close-on-click-modal="false"
+      :before-close="handleImportDialogClose"
+      @closed="onImportDialogClosed"
     >
-      <el-form label-width="90px">
-        <el-form-item label="ZIP 文件" required>
-          <el-upload
-            ref="importUploadRef"
-            :auto-upload="false"
-            accept=".zip"
-            :limit="1"
-            :disabled="importing"
-            :on-change="onImportFileChange"
-          >
-            <el-button size="small" type="primary" :disabled="importing">选择 ZIP 文件</el-button>
-            <template #tip>
-              <div style="font-size:12px;color:#909399;margin-top:4px">
-                含图片与同名 .json 的 ZIP 压缩包，上限 {{ importMaxMb }}MB
-              </div>
-            </template>
-          </el-upload>
-          <div v-if="importFile" style="font-size:12px;color:#606266;margin-top:4px">
-            已选：{{ importFile.name }}（{{ importFileMb }} MB）
-          </div>
-        </el-form-item>
-      </el-form>
+      <el-steps :active="importStep" simple style="margin-bottom: 14px">
+        <el-step title="上传 ZIP" />
+        <el-step title="服务端解析" />
+        <el-step title="导入图片" />
+      </el-steps>
 
-      <div v-if="importing || importJob" class="import-progress">
-        <el-progress :percentage="importPercent" :status="importStatus" />
-        <div class="import-phase">
-          <span>{{ importPhaseText }}</span>
-          <span v-if="importJob?.total">{{ importJob.processed }}/{{ importJob.total }}</span>
+      <div v-if="!dialogImport">
+        <el-upload
+          ref="importUploadRef"
+          :auto-upload="false"
+          accept=".zip"
+          :limit="1"
+          :on-change="onImportFileChange"
+        >
+          <el-button size="small" type="primary">选择 ZIP 文件</el-button>
+          <template #tip>
+            <div style="font-size: 12px; color: #909399; margin-top: 4px">
+              含图片与同名 .json 的 ZIP 压缩包，上限 {{ importMaxMb }}MB
+            </div>
+          </template>
+        </el-upload>
+        <div v-if="importFile" style="font-size: 12px; color: #606266; margin-top: 6px">
+          已选：{{ importFile.name }}（{{ importFileMb }} MB）
         </div>
       </div>
-      <el-alert
-        v-if="importError"
-        :title="importError"
-        type="error"
-        :closable="false"
-        show-icon
-        style="margin-top:8px"
-      />
-      <el-alert
-        v-if="importResult"
-        type="success"
-        :closable="false"
-        show-icon
-        style="margin-top:8px"
-      >
-        <template #title>
-          导入完成：{{ importResult.imported }} 张图片，{{ importResult.total_annotations }} 个标注
-        </template>
-      </el-alert>
+
+      <div v-else class="import-progress">
+        <el-progress
+          :percentage="dialogPercent"
+          :status="dialogProgressStatus"
+          :indeterminate="dialogIndeterminate"
+          :stroke-width="14"
+        />
+        <div class="import-phase">
+          <span>{{ dialogPhaseText }}</span>
+          <span>{{ dialogDetailText }}</span>
+        </div>
+        <div class="import-phase">
+          <span>已用 {{ fmtDuration(dialogElapsed) }}</span>
+          <span>{{ dialogEtaText }}</span>
+        </div>
+        <el-alert
+          v-if="dialogImport?.error"
+          :title="dialogImport.error"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-top: 8px"
+        />
+        <el-alert
+          v-if="dialogImport?.phase === 'done'"
+          type="success"
+          :closable="false"
+          show-icon
+          style="margin-top: 8px"
+        >
+          <template #title>
+            导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注
+          </template>
+        </el-alert>
+      </div>
 
       <template #footer>
-        <el-button :disabled="importing" @click="closeImportDialog">关闭</el-button>
-        <el-button v-if="importResult?.task_id" type="primary" @click="goImportTask">去任务</el-button>
         <el-button
-          v-else
+          v-if="['uploading', 'scanning'].includes(dialogImport?.phase || '')"
+          type="danger"
+          plain
+          @click="cancelImport"
+        >
+          取消导入
+        </el-button>
+        <el-button @click="requestCloseImport">
+          {{ isRunningImport ? "后台运行" : "关闭" }}
+        </el-button>
+        <el-button
+          v-if="!isRunningImport && dialogImport?.phase !== 'done'"
           type="warning"
-          :loading="importing"
           :disabled="!importFile"
           @click="handleImportSubmit"
         >
-          开始导入
+          {{ dialogImport ? "重试" : "开始导入" }}
+        </el-button>
+        <el-button
+          v-else-if="dialogImport?.phase === 'done' && dialogImport.taskId"
+          type="primary"
+          @click="goImportTask"
+        >
+          去任务
         </el-button>
       </template>
     </el-dialog>
@@ -367,7 +465,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onBeforeUnmount } from "vue";
+import { ref, reactive, computed, watch, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { AnnotationAPI } from "@/api/module_annotation";
 import type { ISearchConfig, IContentConfig, IObject } from "@/components/CURD/types";
@@ -440,6 +538,7 @@ const contentCols = reactive<
   { prop: "description", label: "描述", show: true },
   { prop: "image_count", label: "图片数", show: true },
   { prop: "tasks", label: "关联标注任务", show: true },
+  { prop: "import_status", label: "导入状态", show: true },
   { prop: "created_time", label: "创建时间", show: true },
   { prop: "operation", label: "操作", show: true },
 ]);
@@ -682,49 +781,260 @@ function handleMoreCommand(cmd: string, row: any) {
   }
 }
 
-// ── X-AnyLabeling 导入（后台任务 + 进度轮询） ──
+// ── X-AnyLabeling 导入：页面级状态（弹窗关闭后仍在）+ 三段进度 ──
+type ImportPhase =
+  | "uploading"
+  | "scanning"
+  | "importing"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+interface ActiveImport {
+  jobId: string | null;
+  phase: ImportPhase;
+  uploadLoaded: number;
+  uploadTotal: number;
+  processed: number;
+  total: number;
+  imported: number;
+  totalAnnotations: number;
+  taskId: number | null;
+  taskName: string;
+  error: string;
+  startedAt: number;
+  fileName: string;
+  fileSize: number;
+  refreshed?: boolean;
+}
+
 const importDialogVisible = ref(false);
 const importDatasetId = ref<number | null>(null);
 const importDatasetName = ref("");
-const importing = ref(false);
 const importUploadRef = ref<any>(null);
 const importFile = ref<File | null>(null);
-const importJob = ref<any>(null);
-const importError = ref("");
-const importResult = ref<any>(null);
 const importMaxMb = 1024;
-let importTimer: number | null = null;
+const activeImports = reactive<Record<number, ActiveImport>>({});
+const nowTick = ref(Date.now());
+let tickTimer: number | null = null;
+let pollTimer: number | null = null;
+let importAbort: AbortController | null = null;
 
 const importFileMb = computed(() =>
   importFile.value ? (importFile.value.size / 1024 / 1024).toFixed(1) : "0"
 );
-const importPercent = computed(() => {
-  const j = importJob.value;
-  if (!j || !j.total) return importResult.value ? 100 : 0;
-  return Math.min(100, Math.round((j.processed / j.total) * 100));
+
+function isRunningPhase(p?: string): boolean {
+  return p === "uploading" || p === "scanning" || p === "importing";
+}
+function isRunning(a: any): boolean {
+  return !!a && isRunningPhase(a.phase);
+}
+function phaseFromJob(job: any): ImportPhase {
+  if (!job) return "failed";
+  if (job.status === "done") return "done";
+  if (job.status === "failed") return "failed";
+  if (job.status === "cancelled") return "cancelled";
+  if (job.phase === "import") return "importing";
+  return "scanning";
+}
+function elapsedSec(a: any): number {
+  if (!a?.startedAt) return 0;
+  return Math.max(0, Math.floor((nowTick.value - a.startedAt) / 1000));
+}
+function fmtDuration(sec: number): string {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const m = Math.floor(s / 60);
+  return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+function fmtMB(bytes: number): string {
+  return (Math.max(0, bytes || 0) / 1024 / 1024).toFixed(1);
+}
+function startTicker() {
+  if (tickTimer !== null) return;
+  tickTimer = window.setInterval(() => {
+    nowTick.value = Date.now();
+  }, 1000);
+}
+function stopTickerIfIdle() {
+  if (Object.values(activeImports).some((a) => isRunningPhase(a.phase))) return;
+  if (tickTimer !== null) {
+    window.clearInterval(tickTimer);
+    tickTimer = null;
+  }
+}
+
+function seedImport(dsId: number, job: any) {
+  activeImports[dsId] = {
+    jobId: job.job_id,
+    phase: phaseFromJob(job),
+    uploadLoaded: job.file_size || 0,
+    uploadTotal: job.file_size || 0,
+    processed: job.processed || 0,
+    total: job.total || 0,
+    imported: job.imported || 0,
+    totalAnnotations: job.total_annotations || 0,
+    taskId: job.task_id ?? null,
+    taskName: job.task_name || "",
+    error: job.error || "",
+    startedAt: job.started_at ? job.started_at * 1000 : Date.now(),
+    fileName: job.file_name || "",
+    fileSize: job.file_size || 0,
+  };
+}
+
+// 列表行统一取状态：优先本会话实时态，其次后端快照
+function rowImport(row: any): ActiveImport | null {
+  if (!row) return null;
+  if (activeImports[row.id]) return activeImports[row.id];
+  if (row.import) {
+    const j = row.import;
+    return {
+      jobId: j.job_id,
+      phase: phaseFromJob(j),
+      uploadLoaded: j.file_size || 0,
+      uploadTotal: j.file_size || 0,
+      processed: j.processed || 0,
+      total: j.total || 0,
+      imported: j.imported || 0,
+      totalAnnotations: j.total_annotations || 0,
+      taskId: j.task_id ?? null,
+      taskName: j.task_name || "",
+      error: j.error || "",
+      startedAt: j.started_at ? j.started_at * 1000 : Date.now(),
+      fileName: j.file_name || "",
+      fileSize: j.file_size || 0,
+    };
+  }
+  return null;
+}
+function percentOf(a: ActiveImport | null): number {
+  if (!a) return 0;
+  if (a.phase === "uploading")
+    return a.uploadTotal ? Math.min(100, Math.round((a.uploadLoaded / a.uploadTotal) * 100)) : 0;
+  if (a.phase === "importing")
+    return a.total ? Math.min(100, Math.round((a.processed / a.total) * 100)) : 0;
+  return a.phase === "done" ? 100 : 0;
+}
+function importTagText(row: any): string {
+  const a = rowImport(row);
+  if (!a) return "已就绪";
+  switch (a.phase) {
+    case "uploading":
+      return `上传中 ${percentOf(a)}%`;
+    case "scanning":
+      return "初始化中";
+    case "importing":
+      return `导入中 ${a.processed}/${a.total || "?"}`;
+    case "done":
+      return "已完成";
+    case "failed":
+      return "失败";
+    case "cancelled":
+      return "已取消";
+    default:
+      return "已就绪";
+  }
+}
+function importTagType(row: any): any {
+  const a = rowImport(row);
+  if (!a) return "info";
+  return (
+    {
+      uploading: "primary",
+      scanning: "warning",
+      importing: "warning",
+      done: "success",
+      failed: "danger",
+      cancelled: "info",
+    } as Record<string, string>
+  )[a.phase];
+}
+function rowImportPercent(row: any): number {
+  return percentOf(rowImport(row));
+}
+function rowImportStatus(row: any): any {
+  const p = rowImport(row)?.phase;
+  if (p === "done") return "success";
+  if (p === "failed") return "exception";
+  return "";
+}
+
+// 弹窗（当前数据集）
+const dialogImport = computed<ActiveImport | null>(() =>
+  importDatasetId.value != null ? activeImports[importDatasetId.value] ?? null : null
+);
+const isRunningImport = computed(() => isRunning(dialogImport.value));
+const importStep = computed(() => {
+  const p = dialogImport.value?.phase;
+  if (!p || p === "uploading") return p ? 1 : 0;
+  if (p === "scanning") return 2;
+  return 3;
 });
-const importStatus = computed<"" | "success" | "exception">(() => {
-  if (importError.value) return "exception";
-  if (importResult.value) return "success";
+const dialogPercent = computed(() => percentOf(dialogImport.value));
+const dialogIndeterminate = computed(() => dialogImport.value?.phase === "scanning");
+const dialogProgressStatus = computed<any>(() => {
+  const p = dialogImport.value?.phase;
+  if (p === "done") return "success";
+  if (p === "failed") return "exception";
   return "";
 });
-const importPhaseText = computed(() => {
-  const p = importJob.value?.phase;
+const dialogPhaseText = computed(() => {
+  const p = dialogImport.value?.phase;
   return (
-    ({ scan: "扫描文件中…", import: "导入中…", done: "完成" } as Record<string, string>)[p] ||
-    "处理中…"
+    ({
+      uploading: "正在上传 ZIP…",
+      scanning: "服务端解析中…",
+      importing: "正在导入图片…",
+      done: "导入完成",
+      failed: "导入失败",
+      cancelled: "已取消",
+    } as Record<string, string>)[p || ""] || ""
   );
+});
+const dialogDetailText = computed(() => {
+  const a = dialogImport.value;
+  if (!a) return "";
+  if (a.phase === "uploading") return `已发送 ${fmtMB(a.uploadLoaded)} / ${fmtMB(a.uploadTotal)} MB`;
+  if (a.phase === "importing") return `已导入 ${a.processed} / ${a.total}`;
+  if (a.phase === "done") return `共 ${a.imported} 张 · ${a.totalAnnotations} 个标注`;
+  return "";
+});
+const dialogElapsed = computed(() => elapsedSec(dialogImport.value));
+const dialogEtaText = computed(() => {
+  const a = dialogImport.value;
+  if (!a) return "";
+  const el = elapsedSec(a);
+  if (el < 3) return "";
+  if (a.phase === "uploading" && a.uploadTotal > 0 && a.uploadLoaded > 0) {
+    const total = (el * a.uploadTotal) / a.uploadLoaded;
+    return `预计还需 ${fmtDuration(total - el)}`;
+  }
+  if (a.phase === "importing" && a.total > 0 && a.processed > 0) {
+    const total = (el * a.total) / a.processed;
+    return `预计还需 ${fmtDuration(total - el)}`;
+  }
+  return "";
 });
 
 function handleOpenImport(row: any) {
   importDatasetId.value = row.id;
   importDatasetName.value = row.name;
   importFile.value = null;
-  importJob.value = null;
-  importError.value = "";
-  importResult.value = null;
   importUploadRef.value?.clearFiles?.();
+  if (!activeImports[row.id] && row.import) seedImport(row.id, row.import);
   importDialogVisible.value = true;
+  if (isRunning(activeImports[row.id])) {
+    startTicker();
+    ensurePolling();
+  }
+}
+function openImportFor(row: any) {
+  handleOpenImport(row);
+}
+function retryImport(row: any) {
+  delete activeImports[row.id];
+  handleOpenImport(row);
 }
 
 function onImportFileChange(_file: any, fileList: any[]) {
@@ -732,7 +1042,8 @@ function onImportFileChange(_file: any, fileList: any[]) {
 }
 
 async function handleImportSubmit() {
-  if (!importDatasetId.value) {
+  const dsId = importDatasetId.value;
+  if (!dsId) {
     ElMessage.warning("缺少目标数据集");
     return;
   }
@@ -740,67 +1051,183 @@ async function handleImportSubmit() {
     ElMessage.warning("请选择 ZIP 文件");
     return;
   }
-  importing.value = true;
-  importError.value = "";
-  importResult.value = null;
-  importJob.value = null;
+  const file = importFile.value;
+  importAbort = new AbortController();
+  activeImports[dsId] = {
+    jobId: null,
+    phase: "uploading",
+    uploadLoaded: 0,
+    uploadTotal: file.size,
+    processed: 0,
+    total: 0,
+    imported: 0,
+    totalAnnotations: 0,
+    taskId: null,
+    taskName: "",
+    error: "",
+    startedAt: Date.now(),
+    fileName: file.name,
+    fileSize: file.size,
+  };
+  startTicker();
   try {
-    const r = await AnnotationAPI.importXAnyLabeling(importDatasetId.value, importFile.value);
+    const r = await AnnotationAPI.importXAnyLabeling(dsId, file, {
+      signal: importAbort.signal,
+      onUploadProgress: (e: any) => {
+        const a = activeImports[dsId];
+        if (!a) return;
+        a.uploadLoaded = e?.loaded || 0;
+        a.uploadTotal = e?.total || file.size;
+      },
+    });
     const jobId = r.data?.data?.job_id;
     if (!jobId) throw new Error("未获取到导入任务ID");
-    pollImportJob(jobId);
+    const a = activeImports[dsId];
+    if (a) {
+      a.jobId = jobId;
+      a.phase = "scanning";
+    }
+    importAbort = null;
+    ensurePolling();
   } catch (e: any) {
-    importError.value = e?.message || "导入启动失败";
-    importing.value = false;
+    const a = activeImports[dsId];
+    if (a) {
+      if (e?.name === "CanceledError" || e?.code === "ERR_CANCELED") {
+        a.phase = "cancelled";
+        a.error = "已取消";
+      } else {
+        a.phase = "failed";
+        a.error = e?.message || "导入失败";
+      }
+    }
+    importAbort = null;
+    stopTickerIfIdle();
   }
 }
 
-function pollImportJob(jobId: string) {
-  stopImportPolling();
-  importTimer = window.setInterval(async () => {
+function cancelImport() {
+  if (importAbort) {
+    importAbort.abort();
+    importAbort = null;
+  }
+}
+
+function ensurePolling() {
+  if (pollTimer !== null) return;
+  pollTimer = window.setInterval(pollActiveImports, 1000);
+}
+async function pollActiveImports() {
+  const entries = Object.entries(activeImports).filter(
+    ([, a]) => a.jobId && isRunningPhase(a.phase)
+  );
+  for (const [dsIdStr, a] of entries) {
     try {
-      const r = await AnnotationAPI.getImportJob(jobId);
-      const j = r.data?.data;
-      importJob.value = j;
-      if (j?.status === "done") {
-        importResult.value = j;
-        stopImportPolling();
-        importing.value = false;
-        refreshList();
-      } else if (j?.status === "failed") {
-        importError.value = j?.error || "导入失败";
-        stopImportPolling();
-        importing.value = false;
-      }
+      const r = await AnnotationAPI.getImportJob(a.jobId as string);
+      const job = r.data?.data;
+      if (!job) continue;
+      applyJob(Number(dsIdStr), job);
     } catch {
       /* 忽略单次轮询失败 */
     }
-  }, 1000);
+  }
+  if (!Object.values(activeImports).some((a) => a.jobId && isRunningPhase(a.phase))) {
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+  stopTickerIfIdle();
 }
-
-function stopImportPolling() {
-  if (importTimer !== null) {
-    window.clearInterval(importTimer);
-    importTimer = null;
+function applyJob(dsId: number, job: any) {
+  const a = activeImports[dsId];
+  if (!a) return;
+  a.processed = job.processed || 0;
+  a.total = job.total || 0;
+  a.imported = job.imported || 0;
+  a.totalAnnotations = job.total_annotations || 0;
+  a.taskId = job.task_id ?? null;
+  a.taskName = job.task_name || a.taskName;
+  a.error = job.error || "";
+  a.phase = phaseFromJob(job);
+  if (a.phase === "done" && !a.refreshed) {
+    a.refreshed = true;
+    refreshList();
   }
 }
 
-function closeImportDialog() {
-  stopImportPolling();
-  importDialogVisible.value = false;
-  importing.value = false;
-  importFile.value = null;
-  importJob.value = null;
-  importError.value = "";
-  importResult.value = null;
+async function handleImportDialogClose(done: () => void) {
+  const a = dialogImport.value;
+  if (!a || !isRunningPhase(a.phase)) {
+    done();
+    return;
+  }
+  if (a.phase === "importing") {
+    try {
+      await ElMessageBox.confirm(
+        "导入将在后台继续，关闭后可在数据集列表的「导入状态」查看进度。",
+        "提示",
+        { type: "info", confirmButtonText: "关闭", cancelButtonText: "继续查看" }
+      );
+    } catch {
+      return;
+    }
+    done();
+    return;
+  }
+  // uploading / scanning：关闭即取消
+  try {
+    await ElMessageBox.confirm("上传/解析尚未完成，关闭将取消本次导入。", "提示", {
+      type: "warning",
+      confirmButtonText: "取消导入",
+      cancelButtonText: "继续",
+    });
+  } catch {
+    return;
+  }
+  cancelImport();
+  a.phase = "cancelled";
+  a.error = "已取消";
+  done();
 }
-
+function requestCloseImport() {
+  handleImportDialogClose(() => {
+    importDialogVisible.value = false;
+  });
+}
+function onImportDialogClosed() {
+  importFile.value = null;
+  importUploadRef.value?.clearFiles?.();
+}
 function goImportTask() {
-  const tid = importResult.value?.task_id;
+  const tid = dialogImport.value?.taskId;
   if (tid) router.push(`/annotation/workbench/${tid}`);
 }
 
-onBeforeUnmount(stopImportPolling);
+// 列表数据变化时，为后端仍在进行的导入播种并开始轮询（刷新页面后进度继续）
+watch(
+  () => contentRef.value?.pageData,
+  (rows) => {
+    if (!Array.isArray(rows)) return;
+    let seeded = false;
+    for (const row of rows as any[]) {
+      const j = row?.import;
+      if (!j?.job_id || !row?.id) continue;
+      if (activeImports[row.id]) continue;
+      if (!isRunningPhase(phaseFromJob(j))) continue;
+      seedImport(row.id, j);
+      seeded = true;
+    }
+    if (seeded) {
+      startTicker();
+      ensurePolling();
+    }
+  }
+);
+
+onBeforeUnmount(() => {
+  if (pollTimer !== null) window.clearInterval(pollTimer);
+  if (tickTimer !== null) window.clearInterval(tickTimer);
+});
 
 // ── Export ──
 const exportDialogVisible = ref(false);
@@ -922,6 +1349,27 @@ async function handleExportSubmit() {
   margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.import-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-pop-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.import-pop-row {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.import-pop-err {
+  color: var(--el-color-danger);
+  word-break: break-all;
+}
+.import-pop-actions {
+  display: flex;
+  gap: 8px;
 }
 .task-badge {
   position: relative; display: inline-flex; align-items: center; gap: 4px;

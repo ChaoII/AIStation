@@ -144,15 +144,22 @@ export const AnnotationAPI = {
     });
   },
 
-  importXAnyLabeling(datasetId: number, file: File) {
+  importXAnyLabeling(
+    datasetId: number,
+    file: File,
+    opts?: { onUploadProgress?: (e: any) => void; signal?: AbortSignal }
+  ) {
     const formData = new FormData();
     formData.append("file", file);
     return request<ApiResponse<{ job_id: string }>>({
       url: `${API_PATH}/dataset/${datasetId}/import/x-anylabeling`,
       method: "post",
       data: formData,
-      headers: { "Content-Type": "multipart/form-data" },
-      timeout: 300000,
+      headers: { "Content-Type": "multipart/form-data", _silent: "true" },
+      // 大文件不设超时，改由调用方 AbortController 取消
+      timeout: 0,
+      onUploadProgress: opts?.onUploadProgress,
+      signal: opts?.signal,
     });
   },
   getImportJob(jobId: string) {
