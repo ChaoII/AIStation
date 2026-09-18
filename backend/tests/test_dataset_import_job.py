@@ -109,6 +109,29 @@ def test_list_includes_latest_import_snapshot(test_client, auth_headers, monkeyp
     assert row["import"]["file_size"] == 749000000
 
 
+def test_import_clear_existing_replaces(test_client, auth_headers, monkeypatch):
+    """clear_existing=True 时重复导入不叠加（旧图片/任务被清空）。"""
+    import asyncio
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.delete_objects", lambda *a, **k: 0)
+
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"clr-{uuid4().hex[:8]}"}, headers=auth_headers).json()["data"]
+    from app.api.v1.module_annotation.dataset.x_anylabeling_importer import (
+        import_x_anylabeling_bytes,
+    )
+
+    asyncio.run(import_x_anylabeling_bytes(_make_zip(), ds["id"], 1, clear_existing=True))
+    asyncio.run(import_x_anylabeling_bytes(_make_zip(), ds["id"], 1, clear_existing=True))
+
+    items = test_client.get(
+        f"/api/v1/annotation/dataset/{ds['id']}/images", headers=auth_headers
+    ).json()["data"]
+    assert items["total"] == 3  # 仍是 3 张，而非 6 张叠加
+
+
 def test_import_endpoint_rejects_non_zip(test_client, auth_headers, monkeypatch):
     monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
     ds = test_client.post("/api/v1/annotation/dataset/create",

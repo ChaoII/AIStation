@@ -33,7 +33,7 @@ import zipfile
 from collections import Counter
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.dataset.media import content_type_for, process_image
@@ -410,10 +410,12 @@ async def import_x_anylabeling_bytes(
     dataset_id: int,
     user_id: int,
     progress_cb=None,
+    clear_existing: bool = False,
 ) -> dict:
     """从 ZIP 字节导入：流式读成员、分批并发上传（含缩略图）、分事务落库。
 
     ``progress_cb(processed, total, phase)`` 可为 None；不写盘，故无 zip-slip 风险。
+    ``clear_existing=True`` 时先清空该数据集现有图片/标注/任务（避免重复叠加）。
     """
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -479,6 +481,45 @@ async def import_x_anylabeling_bytes(
         total = len(entries)
         if progress_cb:
             progress_cb(0, total, "scan")
+
+        # 可选：导入前清空该数据集现有图片/标注/任务（避免重复导入叠加）
+        if clear_existing:
+            async with async_db_session() as db:
+                old_rows = (
+                    await db.execute(
+                        select(
+                            AnnotationImageModel.object_key,
+                            AnnotationImageModel.thumbnail_key,
+                        ).where(AnnotationImageModel.dataset_id == dataset_id)
+                    )
+                ).fetchall()
+            old_keys = [k for pair in old_rows for k in pair if k]
+            if old_keys:
+                s3_client.delete_objects(old_keys)
+            async with async_db_session.begin() as db:
+                old_img_ids = (
+                    await db.execute(
+                        select(AnnotationImageModel.id).where(
+                            AnnotationImageModel.dataset_id == dataset_id
+                        )
+                    )
+                ).scalars().all()
+                if old_img_ids:
+                    await db.execute(
+                        delete(AnnotationRecordModel).where(
+                            AnnotationRecordModel.image_id.in_(old_img_ids)
+                        )
+                    )
+                await db.execute(
+                    delete(AnnotationImageModel).where(
+                        AnnotationImageModel.dataset_id == dataset_id
+                    )
+                )
+                await db.execute(
+                    delete(AnnotationTaskModel).where(
+                        AnnotationTaskModel.dataset_id == dataset_id
+                    )
+                )
 
         async with async_db_session.begin() as db:
             ds = await db.get(DatasetModel, dataset_id)

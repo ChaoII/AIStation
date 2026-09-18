@@ -144,7 +144,9 @@ async def get_presigned_url(
     return SuccessResponse(data={"url": url})
 
 
-async def _run_import_job(job_id: str, data: bytes, dataset_id: int, user_id: int) -> None:
+async def _run_import_job(
+    job_id: str, data: bytes, dataset_id: int, user_id: int, clear_existing: bool = False
+) -> None:
     """后台执行 x-anylabeling 导入并更新任务进度。"""
     from app.api.v1.module_annotation.dataset.import_jobs import get_job
     from app.api.v1.module_annotation.dataset.x_anylabeling_importer import (
@@ -165,7 +167,9 @@ async def _run_import_job(job_id: str, data: bytes, dataset_id: int, user_id: in
         job.touch()
 
     try:
-        result = await import_x_anylabeling_bytes(data, dataset_id, user_id, progress_cb=_cb)
+        result = await import_x_anylabeling_bytes(
+            data, dataset_id, user_id, progress_cb=_cb, clear_existing=clear_existing
+        )
         job.imported = result.get("imported", 0)
         job.total_annotations = result.get("total_annotations", 0)
         job.task_id = result.get("task_id")
@@ -185,6 +189,7 @@ async def _run_import_job(job_id: str, data: bytes, dataset_id: int, user_id: in
 async def import_x_anylabeling(
     id: int,
     file: UploadFile = File(...),
+    clear_existing: bool = False,
     auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:create"])),
 ) -> JSONResponse:
     import asyncio
@@ -205,7 +210,7 @@ async def import_x_anylabeling(
             code=400, status_code=400,
         )
     job = create_job(id, auth.user.id, file_name=filename, file_size=len(data))
-    asyncio.create_task(_run_import_job(job.job_id, data, id, auth.user.id))
+    asyncio.create_task(_run_import_job(job.job_id, data, id, auth.user.id, clear_existing))
     return SuccessResponse(data={"job_id": job.job_id}, msg="已开始导入")
 
 

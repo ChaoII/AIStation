@@ -343,15 +343,15 @@
     <el-dialog
       v-model="importDialogVisible"
       :title="`导入标注到「${importDatasetName}」`"
-      width="560px"
+      width="520px"
       :close-on-click-modal="false"
       :before-close="handleImportDialogClose"
       @closed="onImportDialogClosed"
     >
-      <el-steps :active="importStep" simple class="import-steps">
-        <el-step title="上传" />
-        <el-step title="解析" />
-        <el-step title="导入" />
+      <el-steps :active="importStep" align-center class="import-steps">
+        <el-step title="上传 ZIP" />
+        <el-step title="解析标注" />
+        <el-step title="写入图片" />
       </el-steps>
 
       <div v-if="!dialogImport" class="import-picker">
@@ -371,6 +371,9 @@
           已选：<span class="import-file-name">{{ importFile.name }}</span>
           <span class="import-file-size">{{ importFileMb }} MB</span>
         </p>
+        <el-checkbox v-model="importClearExisting" class="import-clear">
+          导入前清空该数据集现有图片与标注（避免重复叠加）
+        </el-checkbox>
       </div>
 
       <div v-else class="import-progress">
@@ -409,32 +412,25 @@
 
       <template #footer>
         <div class="import-footer">
-          <el-button
-            v-if="['uploading', 'scanning'].includes(dialogImport?.phase || '')"
-            type="danger"
-            plain
-            @click="cancelImport"
-          >
-            取消上传
-          </el-button>
-          <el-button @click="requestCloseImport">
-            {{ isRunningImport ? "后台继续" : "关闭" }}
-          </el-button>
-          <el-button
-            v-if="!isRunningImport && dialogImport?.phase !== 'done'"
-            type="warning"
-            :disabled="!importFile"
-            @click="handleImportSubmit"
-          >
-            {{ dialogImport ? "重试" : "开始导入" }}
-          </el-button>
-          <el-button
-            v-else-if="dialogImport?.phase === 'done' && dialogImport.taskId"
-            type="primary"
-            @click="goImportTask"
-          >
-            打开标注任务
-          </el-button>
+          <template v-if="['uploading', 'scanning'].includes(dialogImport?.phase || '')">
+            <el-button @click="requestCloseImport">继续导入</el-button>
+            <el-button type="danger" plain @click="cancelImportAndClose">取消导入</el-button>
+          </template>
+          <template v-else-if="dialogImport?.phase === 'importing'">
+            <el-button type="primary" @click="requestCloseImport">后台继续</el-button>
+          </template>
+          <template v-else-if="dialogImport?.phase === 'done'">
+            <el-button @click="requestCloseImport">关闭</el-button>
+            <el-button v-if="dialogImport.taskId" type="primary" @click="goImportTask">
+              打开标注任务
+            </el-button>
+          </template>
+          <template v-else>
+            <el-button @click="requestCloseImport">关闭</el-button>
+            <el-button type="warning" :disabled="!importFile" @click="handleImportSubmit">
+              重试
+            </el-button>
+          </template>
         </div>
       </template>
     </el-dialog>
@@ -871,12 +867,12 @@ const importDatasetName = ref("");
 const importUploadRef = ref<any>(null);
 const importFile = ref<File | null>(null);
 const importMaxMb = 1024;
+const importClearExisting = ref(true);
 const activeImports = reactive<Record<number, ActiveImport>>({});
 const nowTick = ref(Date.now());
 let tickTimer: number | null = null;
 let pollTimer: number | null = null;
 let importAbort: AbortController | null = null;
-let lastListRefresh = 0;
 
 const importFileMb = computed(() =>
   importFile.value ? (importFile.value.size / 1024 / 1024).toFixed(1) : "0"
@@ -1176,6 +1172,7 @@ async function handleImportSubmit() {
   try {
   const r = await AnnotationAPI.importXAnyLabeling(dsId, file, {
       signal: importAbort.signal,
+      clearExisting: importClearExisting.value,
       onUploadProgress: (e: any) => {
         const a = activeImports[dsId];
         if (!a) return;
@@ -1236,14 +1233,8 @@ async function pollActiveImports() {
       /* 忽略单次轮询失败 */
     }
   }
-  // 定时刷新列表，使行状态与后端快照同步（el-table 随行数据变化重渲染）
-  if (entries.length) {
-    const now = Date.now();
-    if (now - lastListRefresh > 1500) {
-      lastListRefresh = now;
-      refreshList();
-    }
-  }
+  // 注：不做周期性整体刷新（会造成列表闪烁）；实时进度由顶部横幅体现，
+  // 列表仅在任务结束（applyJob 中）刷新一次。
   if (!Object.values(activeImports).some((a) => a.jobId && isRunningPhase(a.phase))) {
     if (pollTimer !== null) {
       window.clearInterval(pollTimer);
@@ -1282,11 +1273,12 @@ async function handleImportDialogClose(done: () => void) {
     return;
   }
   if (a.phase === "importing") {
+    // 已在处理图片：关闭只是把进度挪到后台，任务不会中断
     try {
       await ElMessageBox.confirm(
-        "导入将在后台继续，关闭后可在数据集列表的「导入状态」查看进度。",
-        "提示",
-        { type: "info", confirmButtonText: "关闭", cancelButtonText: "继续查看" }
+        "导入会在后台继续，关闭后进度显示在数据集列表顶部。",
+        "后台继续导入",
+        { type: "info", confirmButtonText: "后台继续", cancelButtonText: "留在此页" }
       );
     } catch {
       return;
@@ -1294,25 +1286,36 @@ async function handleImportDialogClose(done: () => void) {
     done();
     return;
   }
-  // uploading / scanning：关闭即取消
+  // 尚未开始处理（上传/解析中）：关闭＝取消
   try {
-    await ElMessageBox.confirm("上传/解析尚未完成，关闭将取消本次导入。", "提示", {
-      type: "warning",
-      confirmButtonText: "取消导入",
-      cancelButtonText: "继续",
-    });
+    await ElMessageBox.confirm(
+      "上传/解析尚未完成，关闭会取消本次导入。是否取消？",
+      "取消导入",
+      { type: "warning", confirmButtonText: "取消导入", cancelButtonText: "继续导入" }
+    );
   } catch {
     return;
   }
   cancelImport();
   a.phase = "cancelled";
   a.error = "已取消";
+  rebuildActiveJobs();
   done();
 }
 function requestCloseImport() {
   handleImportDialogClose(() => {
     importDialogVisible.value = false;
   });
+}
+function cancelImportAndClose() {
+  cancelImport();
+  const a = dialogImport.value;
+  if (a) {
+    a.phase = "cancelled";
+    a.error = "已取消";
+    rebuildActiveJobs();
+  }
+  importDialogVisible.value = false;
 }
 function onImportDialogClosed() {
   importFile.value = null;

@@ -1384,6 +1384,11 @@ const lockedByOther = ref(false);
 const lockedByUser = ref<number | null>(null);
 const imageFilter = ref("all");
 const imagesLoading = ref(false);
+// 图片列表渐进式加载状态（避免一次性并发拉取全部页导致“加载超时”）
+const imagePageSize = 100;
+const imageTotal = ref(0);
+let imageLoadedPages = 0;
+let imagePrefetching = false;
 const cw = ref(1);
 const ch = ref(1);
 const cursorX = ref(0);
@@ -3295,6 +3300,8 @@ async function loadImg(imageId: number) {
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
+  // 接近已加载末尾时按需补页（渐进加载）
+  ensureMoreImages(task.value?.dataset_id, store.taskId, idx);
   const curImage = store.currentImage;
   // 只读模式（他人锁定）不尝试保存，避免 409 丢稿；直接切图
   if (unsaved.value && curImage && !lockedByOther.value) {
@@ -3656,6 +3663,48 @@ function onKey(e: KeyboardEvent) {
 }
 
 // ===== 生命周期 =====
+async function loadImagePage(datasetId: number, tid: number, p: number): Promise<any[]> {
+  const r = await AnnotationAPI.getImages(datasetId, tid, p, imagePageSize);
+  imageTotal.value = r.data?.data?.total ?? imageTotal.value;
+  return r.data?.data?.items || [];
+}
+
+// 首屏后按页顺序渐进加载剩余图片（每页间隔 800ms），避免一次性并发拉全表造成超时
+async function prefetchRemainingImages(datasetId: number, tid: number) {
+  if (imagePrefetching) return;
+  imagePrefetching = true;
+  try {
+    const totalPages = Math.ceil(imageTotal.value / imagePageSize);
+    for (let p = imageLoadedPages + 1; p <= totalPages; p++) {
+      try {
+        const items = await loadImagePage(datasetId, tid, p);
+        if (items.length) store.images.push(...items);
+        imageLoadedPages = p;
+      } catch {
+        return; // 失败即停止；用户翻到末尾时再按需加载
+      }
+      await new Promise((res) => setTimeout(res, 800));
+    }
+  } finally {
+    imagePrefetching = false;
+  }
+}
+
+// 翻到接近已加载末尾时按需补一页
+async function ensureMoreImages(datasetId: number | undefined, tid: number, idx: number) {
+  if (!datasetId || imagePrefetching) return;
+  const totalPages = Math.ceil(imageTotal.value / imagePageSize);
+  if (imageLoadedPages >= totalPages) return;
+  if (idx < store.images.length - 10) return;
+  try {
+    const items = await loadImagePage(datasetId, tid, imageLoadedPages + 1);
+    if (items.length) store.images.push(...items);
+    imageLoadedPages += 1;
+  } catch {
+    /* 忽略单次失败 */
+  }
+}
+
 onMounted(async () => {
   const tid = Number(route.params.id || route.query.id || 0);
   if (!tid) return;
@@ -3676,47 +3725,21 @@ onMounted(async () => {
     store.images = [];
     store.currentImageIndex = 0;
     // Load first page of images + load remaining in background
+    // 首屏只加载第一页；其余按页**顺序渐进**加载（不再一次性并发拉全部页）
     imagesLoading.value = true;
-    const pageSize = 50;
-    AnnotationAPI.getImages(t.dataset_id, tid, 1, pageSize)
-      .then((r) => {
-        const data = r.data?.data;
-        if (!data) {
-          imagesLoading.value = false;
-          return;
-        }
-        const imgs = data.items || [];
+    imageLoadedPages = 0;
+    imageTotal.value = 0;
+    loadImagePage(t.dataset_id, tid, 1)
+      .then((imgs) => {
         store.images = imgs;
-        const total = data.total || 0;
-        // 始终加载新任务第一页的首张图（不保留上一任务的索引）
+        imageLoadedPages = 1;
         if (imgs.length > 0) {
           store.currentImageIndex = 0;
           loadImg(imgs[0].id);
         }
         fetchTaskProgress();
-        // Load remaining pages in background（按页序拼接，避免乱序）
-        const totalPages = Math.ceil(total / pageSize);
-        if (totalPages > 1) {
-          const pages: Record<number, any[]> = {};
-          const promises = [];
-          for (let p = 2; p <= totalPages; p++) {
-            promises.push(
-              AnnotationAPI.getImages(t.dataset_id, tid, p, pageSize)
-                .then((r2) => {
-                  pages[p] = r2.data?.data?.items || [];
-                })
-                .catch(() => {})
-            );
-          }
-          Promise.all(promises).finally(() => {
-            for (let p = 2; p <= totalPages; p++) {
-              if (pages[p]?.length) store.images.push(...pages[p]);
-            }
-            imagesLoading.value = false;
-          });
-        } else {
-          imagesLoading.value = false;
-        }
+        imagesLoading.value = false;
+        prefetchRemainingImages(t.dataset_id, tid);
       })
       .catch(() => {
         imagesLoading.value = false;
