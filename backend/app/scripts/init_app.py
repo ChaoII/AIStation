@@ -879,6 +879,13 @@ async def _ensure_annotation_button_menus() -> None:
                     select(MenuModel.permission).where(MenuModel.permission.like("module_annotation:%"))
                 )).scalars().all()
             )
+            existing |= set(
+                (await db.execute(
+                    select(MenuModel.permission).where(
+                        MenuModel.permission.in_(["annotation:dataset:purge"])
+                    )
+                )).scalars().all()
+            )
 
             buttons = [
                 (dataset_menu.id, "查询数据集", 1, "module_annotation:dataset:query"),
@@ -893,6 +900,8 @@ async def _ensure_annotation_button_menus() -> None:
                 (task_menu.id, "批量操作", 5, "module_annotation:task:patch"),
                 (task_menu.id, "进入标注", 6, "module_annotation:task:workbench"),
                 (stats_menu.id, "查询统计", 1, "module_annotation:stats:query"),
+                (dataset_menu.id, "彻底删除数据集", 6, "annotation:dataset:purge"),
+                (dataset_menu.id, "彻底删除按钮", 7, "module_annotation:dataset:purge"),
             ]
 
             for parent_id, name, order, perm in buttons:

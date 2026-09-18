@@ -2,7 +2,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, delete, func, select, update
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
 from app.api.v1.module_annotation.task.model import AnnotationTaskModel
@@ -11,6 +11,7 @@ from app.core.database import async_db_session
 from app.utils.s3_client import s3_client
 
 from .crud import DatasetCRUD
+from .export_model import DatasetExportModel
 from .model import AnnotationImageModel, DatasetModel, ImageStatus
 from .schema import DatasetCreateSchema
 
@@ -59,6 +60,52 @@ class DatasetService:
                 )
         from .crud import DatasetCRUD
         await DatasetCRUD(auth=auth).delete(ids=ids)
+
+    @classmethod
+    async def purge_datasets(cls, ids: list[int]) -> dict:
+        """彻底删除数据集：先删 S3 对象，再物理删 DB 行（不可逆）。"""
+        purged = 0
+        for dataset_id in ids:
+            # 1) 先删对象存储，失败则抛出，DB 不提交，避免留下不可恢复态
+            s3_client.delete_prefix(f"datasets/{dataset_id}/")
+            s3_client.delete_prefix(f"annotations/dataset_{dataset_id}/")
+            s3_client.delete_prefix(f"train/exports/dataset_{dataset_id}_")
+
+            # 2) 物理删除 DB（含软删行）
+            async with async_db_session.begin() as db:
+                img_ids = (
+                    await db.execute(
+                        select(AnnotationImageModel.id).where(
+                            AnnotationImageModel.dataset_id == dataset_id
+                        )
+                    )
+                ).scalars().all()
+                if img_ids:
+                    await db.execute(
+                        delete(AnnotationRecordModel).where(
+                            AnnotationRecordModel.image_id.in_(img_ids)
+                        )
+                    )
+                await db.execute(
+                    delete(DatasetExportModel).where(
+                        DatasetExportModel.dataset_id == dataset_id
+                    )
+                )
+                await db.execute(
+                    delete(AnnotationImageModel).where(
+                        AnnotationImageModel.dataset_id == dataset_id
+                    )
+                )
+                await db.execute(
+                    delete(AnnotationTaskModel).where(
+                        AnnotationTaskModel.dataset_id == dataset_id
+                    )
+                )
+                await db.execute(
+                    delete(DatasetModel).where(DatasetModel.id == dataset_id)
+                )
+            purged += 1
+        return {"purged": purged}
 
     @classmethod
     async def upload_images(cls, dataset_id: int, files: list, auth) -> list[dict]:

@@ -92,6 +92,15 @@ async def delete_dataset(
     return SuccessResponse(msg="删除成功")
 
 
+@DatasetRouter.delete("/purge", summary="彻底删除数据集（含对象存储，不可恢复）")
+async def purge_dataset(
+    ids: list[int],
+    auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:purge"])),
+) -> JSONResponse:
+    result = await DatasetService.purge_datasets(ids=ids)
+    return SuccessResponse(data=result, msg="已彻底删除")
+
+
 @DatasetRouter.post("/{id}/upload", summary="上传图片")
 async def upload_images(
     id: int,
