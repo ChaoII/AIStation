@@ -137,9 +137,14 @@ def resolve_input_size(params: dict | None, runtime: dict | None) -> list[int]:
     return [640, 640]
 
 
-# 单事件人脸嵌入对象数上限：与 Agent `EventMeta::max_embeddings`
-# （`application/aistation_agent/event_bus.hpp`，常量 kMaxEmbeddingsPerEvent=8）缺省对齐。
-# Agent 读顶层键 `max_embeddings`（与 alarm_interval_sec/heartbeat_sec 同层），<=0 表示禁用嵌入。
+# 单事件嵌入对象数上限：人脸（face_rec）与跨镜（reid）共用。与 Agent
+# `EventMeta::max_embeddings`（`application/aistation_agent/event_bus.hpp`，
+# 常量 kMaxEmbeddingsPerEvent=8）缺省对齐。
+# **两侧约定语义（跨仓一致，勿单方漂移）**：
+#   - 顶层键名 `max_embeddings`（与 alarm_interval_sec/heartbeat_sec 同层）；
+#   - 缺省 8；夹紧到 [0, 64]；`<= 0` 表示**禁用嵌入**（对象仍上报，只是不带 embedding）；
+#   - Agent `config_adapter.cpp: out->max_embeddings = clamp(j.value("max_embeddings", 8), 0, 64)`
+#     与本函数逐字同口径；`EventBus::apply_embedding_cap` 按 `<=0` 直接清空嵌入。
 _DEFAULT_MAX_EMBEDDINGS = 8
 # 云侧允许下发的上限（防御异常配置把上行事件放大；Agent 侧还有自身 Top-N 兜底）
 _MAX_EMBEDDINGS_LIMIT = 64
@@ -515,7 +520,8 @@ def build_agent_task_config(task, camera, algorithm, events: dict | None = None,
         },
     }
 
-    # 人脸嵌入 Top-N 上限（仅 face_rec 场景或显式配置时下发；键名对齐 Agent 顶层读取）
+    # 嵌入 Top-N 上限（face_rec 人脸 / reid 跨镜共用；仅这两类场景或显式配置时下发；
+    # 键名对齐 Agent 顶层读取，语义见 resolve_max_embeddings 的约定）
     max_embeddings = resolve_max_embeddings(merged_params, merged_runtime, scene)
     if max_embeddings is not None:
         config["max_embeddings"] = max_embeddings

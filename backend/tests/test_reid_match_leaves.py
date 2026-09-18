@@ -160,6 +160,40 @@ def test_normalize_edge_event_decodes_reid_f16b64_embedding():
     assert abs(det["embedding"][1]) < 1e-3
 
 
+# ------------------------------------------------ 维度无关（Agent 实测 512-d）
+# Agent 报告：提供的 OSNet x0.25 实测输出 **512 维**（非下载方案预估的 256 维）。
+# 云侧 reid_match / 底库必须**维度无关**：只要求两向量等长，按实际长度比对/存储。
+REID_512_A = [1.0] + [0.0] * 511
+REID_512_B = [0.0, 1.0] + [0.0] * 510
+REID_GALLERY_512 = [
+    {"id": 31, "name": "512维行人", "kind": "reid", "embedding": REID_512_A},
+]
+
+
+def test_reid_match_is_dimension_agnostic_for_512d():
+    """512 维向量（OSNet 实测维度）必须与 3 维用例同语义命中/不命中。"""
+    assert len(REID_512_A) == 512
+    assert _eval(REID_MATCH, [_det(REID_512_A)], REID_GALLERY_512) is True  # cos=1
+    assert _eval(REID_MATCH, [_det(REID_512_B)], REID_GALLERY_512) is False  # cos=0
+    # 512 维检测 vs 3 维底库 → 维度不可比，fail-closed（不得因维度差异误命中或抛异常）
+    assert _eval(REID_MATCH, [_det(REID_512_A)], REID_GALLERY) is False
+
+
+def test_reid_gallery_stores_actual_512_dimension():
+    """底库按实际向量长度记录 dimension（512），不硬编码 256。"""
+    try:
+        face_gallery_store.replace(
+            [{"id": 31, "name": "512维行人", "kind": "reid", "embedding": REID_512_A}]
+        )
+        entries = face_gallery_store.snapshot(kind="reid")
+        assert len(entries) == 1
+        assert entries[0]["dimension"] == 512
+        # 未显式传底库时，reid 叶子读取缓存亦维度无关
+        assert _match_conditions(REID_MATCH, [_det(REID_512_A)]) is True
+    finally:
+        face_gallery_store.clear()
+
+
 def test_reid_track_default_rule_matches_edge_emitted_shape():
     """REID_TRACK 默认规则须命中 reid 事件实际形态（bbox + embedding）。"""
     from app.api.v1.module_video.scene.catalog import get_scene

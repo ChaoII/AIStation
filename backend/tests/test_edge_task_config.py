@@ -308,6 +308,25 @@ def test_reid_scene_emits_default_max_embeddings():
     assert {m["type"]: m for m in cfg["models"]}["reid"]["url"] == "/models/osnet_x1_0.onnx"
 
 
+def test_reid_scene_max_embeddings_explicit_semantics():
+    """REID_TRACK 显式 max_embeddings 语义与 Agent 逐字一致：`<=0` 禁用、上界夹 64。
+
+    约定（跨仓）：顶层键 `max_embeddings`，缺省 8，夹紧 [0, 64]，`<=0` 表示禁用嵌入。
+    """
+
+    class _AlgReid0(_AlgReid):
+        preset_params = {"reid_path": "/models/osnet_x1_0.onnx", "max_embeddings": 0}
+
+    class _AlgReidHuge(_AlgReid):
+        preset_params = {"reid_path": "/models/osnet_x1_0.onnx", "max_embeddings": 999}
+
+    assert build_agent_task_config(_TaskReid(), _Cam(), _AlgReid0(), events={})["max_embeddings"] == 0
+    assert (
+        build_agent_task_config(_TaskReid(), _Cam(), _AlgReidHuge(), events={})["max_embeddings"]
+        == 64
+    )
+
+
 def test_max_embeddings_contract_key_name_and_type():
     """契约：顶层键名 `max_embeddings`、类型 int（非 bool），且不落在 models[] 条目内。
 
