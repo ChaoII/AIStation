@@ -128,6 +128,7 @@ async def _run_import_job(job_id: str, data: bytes, dataset_id: int, user_id: in
         job.processed = processed
         job.total = total
         job.phase = phase
+        job.touch()
 
     try:
         result = await import_x_anylabeling_bytes(data, dataset_id, user_id, progress_cb=_cb)
@@ -142,6 +143,8 @@ async def _run_import_job(job_id: str, data: bytes, dataset_id: int, user_id: in
     except Exception as e:  # noqa: BLE001 - 后台任务需吞掉异常并记录
         log.warning(f"[导入任务] 失败 job={job_id}: {e}")
         job.status, job.error = "failed", str(e)
+    finally:
+        job.touch()
 
 
 @DatasetRouter.post("/{id}/import/x-anylabeling", summary="导入 x-anylabeling 标注（后台任务）")
@@ -167,7 +170,7 @@ async def import_x_anylabeling(
             msg=f"文件过大（>{settings.ANNOTATION_IMPORT_MAX_MB}MB）",
             code=400, status_code=400,
         )
-    job = create_job(id, auth.user.id)
+    job = create_job(id, auth.user.id, file_name=filename, file_size=len(data))
     asyncio.create_task(_run_import_job(job.job_id, data, id, auth.user.id))
     return SuccessResponse(data={"job_id": job.job_id}, msg="已开始导入")
 

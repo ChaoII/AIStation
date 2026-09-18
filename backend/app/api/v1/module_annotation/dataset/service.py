@@ -14,6 +14,7 @@ from app.utils.s3_client import s3_client
 
 from .crud import DatasetCRUD
 from .export_model import DatasetExportModel
+from .import_jobs import get_latest_job, job_snapshot
 from .model import AnnotationImageModel, DatasetModel, ImageStatus
 from .schema import DatasetCreateSchema
 
@@ -376,6 +377,8 @@ class DatasetService:
                 })
             item["task_count"] = len(ds_tasks)
             item["tasks"] = out_tasks
+            # 附带最近一次导入任务快照（进程内），供列表展示导入状态
+            item["import"] = job_snapshot(get_latest_job(item["id"]))
 
     @classmethod
     async def get_presigned_url(cls, image_id: int) -> str:

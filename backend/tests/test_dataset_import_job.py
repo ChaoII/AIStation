@@ -72,6 +72,43 @@ def test_import_endpoint_returns_job_and_progress(test_client, auth_headers, mon
     ).status_code == 404
 
 
+def test_get_latest_job_returns_newest():
+    from app.api.v1.module_annotation.dataset.import_jobs import (
+        create_job,
+        get_latest_job,
+        job_snapshot,
+    )
+
+    create_job(99001, 1, file_name="a.zip", file_size=1)
+    newest = create_job(99001, 1, file_name="b.zip", file_size=2)
+    assert get_latest_job(99001).job_id == newest.job_id
+    snap = job_snapshot(get_latest_job(99001))
+    assert snap["file_name"] == "b.zip"
+    assert snap["file_size"] == 2
+    assert "elapsed_sec" in snap
+
+
+def test_list_includes_latest_import_snapshot(test_client, auth_headers, monkeypatch):
+    from uuid import uuid4
+
+    from app.api.v1.module_annotation.dataset.import_jobs import create_job
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    name = f"imp-list-{uuid4().hex[:8]}"
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": name}, headers=auth_headers).json()["data"]
+    job = create_job(ds["id"], 1, file_name="plate.zip", file_size=749000000)
+
+    items = test_client.get(
+        "/api/v1/annotation/dataset/list",
+        params={"page_no": 1, "page_size": 100, "name": name}, headers=auth_headers,
+    ).json()["data"]["items"]
+    row = next(i for i in items if i["id"] == ds["id"])
+    assert row["import"]["job_id"] == job.job_id
+    assert row["import"]["file_name"] == "plate.zip"
+    assert row["import"]["file_size"] == 749000000
+
+
 def test_import_endpoint_rejects_non_zip(test_client, auth_headers, monkeypatch):
     monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
     ds = test_client.post("/api/v1/annotation/dataset/create",

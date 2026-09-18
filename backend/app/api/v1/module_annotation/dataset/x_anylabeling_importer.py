@@ -477,6 +477,8 @@ async def import_x_anylabeling_bytes(
         class_mapping = {lb: i for i, lb in enumerate(sorted(all_labels))}
         task_type = AnnotationType(_infer_task_type(all_shapes))
         total = len(entries)
+        if progress_cb:
+            progress_cb(0, total, "scan")
 
         async with async_db_session.begin() as db:
             ds = await db.get(DatasetModel, dataset_id)
@@ -566,9 +568,9 @@ async def import_x_anylabeling_bytes(
                             annotation_data=anns, version=1, created_id=user_id,
                         ))
                     imported += 1
-
-            if progress_cb:
-                progress_cb(imported, total, "import")
+                    # 每张图片回调一次，前端 1s 轮询即可看到数字持续增长
+                    if progress_cb:
+                        progress_cb(imported, total, "import")
 
         # 收尾：重算数据集计数
         async with async_db_session.begin() as db:
