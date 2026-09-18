@@ -678,6 +678,10 @@ _LAYOUT_MIGRATION: list[str] = [
     "ALTER TABLE video_layouts ALTER COLUMN status SET NOT NULL;",
     "ALTER TABLE video_layouts ADD COLUMN IF NOT EXISTS created_time TIMESTAMP;",
     "ALTER TABLE video_layouts ADD COLUMN IF NOT EXISTS updated_time TIMESTAMP;",
+    # 表可能由模型 create_all 建立（无遗留 created_at/updated_at）：先按需补齐，
+    # 使下面的回填 UPDATE 在两种来源（旧迁移 / create_all）下都可用，末尾再删除。
+    "ALTER TABLE video_layouts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP;",
+    "ALTER TABLE video_layouts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP;",
     "UPDATE video_layouts SET created_time = COALESCE(created_time, created_at, NOW()) WHERE created_time IS NULL;",
     "UPDATE video_layouts SET updated_time = COALESCE(updated_time, updated_at, created_time, NOW()) WHERE updated_time IS NULL;",
     "ALTER TABLE video_layouts ALTER COLUMN created_time SET NOT NULL;",

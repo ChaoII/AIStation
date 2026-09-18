@@ -81,6 +81,55 @@ def test_sqlite_upgrade_head_from_empty(tmp_path):
     con.close()
 
 
+def _run_alembic(db_stem: str, *args: str) -> subprocess.CompletedProcess:
+    """在指定临时 SQLite 库上跑 alembic（真实子进程）。"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "ENVIRONMENT": "dev",
+            "DATABASE_TYPE": "sqlite",
+            "DATABASE_NAME": db_stem,
+        }
+    )
+    env.pop("TESTING", None)
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        cwd=str(BACKEND_DIR),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+
+
+def test_sqlite_upgrade_tolerates_missing_legacy_created_at(tmp_path):
+    """复现 dev 库漂移：video_layouts 无遗留 created_at 时补列迁移不得崩溃。
+
+    场景：表由模型 create_all 建立（有 created_time、无 created_at），
+    alembic 版本停在 ``b2c3d4e5f6a7``，随后 upgrade head 需跑
+    ``a3f3956bb77b`` 的 ``UPDATE ... COALESCE(created_time, created_at, NOW())``。
+    """
+    db_stem = (tmp_path / "drift_replay").as_posix()
+    db_file = Path(f"{db_stem}.db")
+
+    p1 = _run_alembic(db_stem, "upgrade", "b2c3d4e5f6a7")
+    assert p1.returncode == 0, p1.stdout[-2000:] + "\n" + p1.stderr[-3000:]
+
+    con = sqlite3.connect(db_file)
+    con.execute("ALTER TABLE video_layouts DROP COLUMN created_at")
+    con.execute("ALTER TABLE video_layouts DROP COLUMN updated_at")
+    con.commit()
+    con.close()
+
+    p2 = _run_alembic(db_stem, "upgrade", "head")
+    assert p2.returncode == 0, p2.stdout[-2000:] + "\n" + p2.stderr[-4000:]
+
+    con = sqlite3.connect(db_file)
+    version = con.execute("select version_num from alembic_version").fetchone()[0]
+    con.close()
+    assert version == _head_revision()
+
+
 def _head_revision() -> str:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
