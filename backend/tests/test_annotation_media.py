@@ -158,3 +158,27 @@ def test_upload_broken_image_registers_without_thumbnail(test_client, auth_heade
     by_name = {u["filename"]: u for u in data["uploaded"]}
     assert by_name["good.png"]["thumbnail_key"]
     assert by_name["bad.png"]["thumbnail_key"] is None
+
+
+def test_get_images_includes_thumbnail_url(test_client, auth_headers, monkeypatch):
+    from uuid import uuid4
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "app.utils.s3_client.s3_client.presigned_url",
+        lambda key, *a, **k: f"http://fake/{key}",
+    )
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"url-{uuid4().hex[:8]}"},
+                          headers=auth_headers).json()["data"]
+    test_client.post(
+        f"/api/v1/annotation/dataset/{ds['id']}/upload",
+        files={"files": ("a.png", _png_bytes(20, 20), "image/png")},
+        headers=auth_headers,
+    )
+    items = test_client.get(
+        f"/api/v1/annotation/dataset/{ds['id']}/images", headers=auth_headers
+    ).json()["data"]["items"]
+    assert items[0]["thumbnail_key"]
+    assert items[0]["thumbnail_url"].startswith("http://fake/")

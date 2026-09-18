@@ -287,6 +287,11 @@ class DatasetService:
                     "height": img.height,
                     "status": status,
                     "locked_by": img.locked_by,
+                    "thumbnail_key": img.thumbnail_key,
+                    "thumbnail_url": (
+                        s3_client.presigned_url(img.thumbnail_key)
+                        if img.thumbnail_key else None
+                    ),
                     "updated_by": {"id": (info or {}).get("created_id"), "name": updater_name} if info and has_data else None,
                     "updated_time": update_time.isoformat() if update_time else None,
                 })
@@ -312,4 +317,8 @@ def _img_minimal(img) -> dict:
         "height": img.height,
         "status": img.status.value if hasattr(img.status, "value") else img.status,
         "locked_by": img.locked_by,
+        "thumbnail_key": img.thumbnail_key,
+        "thumbnail_url": (
+            s3_client.presigned_url(img.thumbnail_key) if img.thumbnail_key else None
+        ),
     }
