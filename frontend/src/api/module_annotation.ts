@@ -178,6 +178,15 @@ export const AnnotationAPI = {
       signal: opts?.signal,
     });
   },
+  deleteDatasetImages(datasetId: number, payload: { image_ids?: number[]; status?: string }) {
+    return request<ApiResponse<{ deleted: number; skipped_locked: number }>>({
+      url: `${API_PATH}/dataset/${datasetId}/images/delete`,
+      method: "post",
+      data: payload,
+      // 删除可能涉及大量对象，不设超时
+      timeout: 0,
+    });
+  },
   getImportJob(jobId: string) {
     return request<ApiResponse<any>>({
       url: `${API_PATH}/dataset/import/${jobId}`,

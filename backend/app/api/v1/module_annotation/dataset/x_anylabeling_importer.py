@@ -36,7 +36,11 @@ from datetime import datetime
 from sqlalchemy import delete, func, select
 
 from app.api.v1.module_annotation.annotation.model import AnnotationRecordModel
-from app.api.v1.module_annotation.dataset.media import content_type_for, process_image
+from app.api.v1.module_annotation.dataset.media import (
+    content_hash,
+    content_type_for,
+    process_image,
+)
 from app.api.v1.module_annotation.dataset.model import (
     AnnotationImageModel,
     AnnotationType,
@@ -539,9 +543,25 @@ async def import_x_anylabeling_bytes(
             task_id = ann_task.id
             task_name = ann_task.name
 
+        # 已存在的内容哈希（用于去重）
+        async with async_db_session() as db:
+            seen: set[str] = set(
+                (
+                    await db.execute(
+                        select(AnnotationImageModel.content_hash).where(
+                            AnnotationImageModel.dataset_id == dataset_id,
+                            AnnotationImageModel.is_deleted == False,  # noqa: E712
+                            AnnotationImageModel.content_hash.isnot(None),
+                        )
+                    )
+                ).scalars().all()
+            )
+
         sem = asyncio.Semaphore(max(1, settings.ANNOTATION_IMPORT_CONCURRENCY))
         batch_size = max(1, settings.ANNOTATION_IMPORT_BATCH_SIZE)
         imported = 0
+        processed = 0
+        skipped_duplicate = 0
         total_annotations = 0
 
         for start in range(0, total, batch_size):
@@ -554,6 +574,10 @@ async def import_x_anylabeling_bytes(
 
             async def _proc(e: dict, img_bytes: bytes) -> dict:
                 async with sem:
+                    digest = content_hash(img_bytes)
+                    if digest in seen:
+                        return {"duplicate": True}
+                    seen.add(digest)
                     w, h, thumb = await asyncio.to_thread(process_image, img_bytes)
                     token = uuid.uuid4().hex
                     key = f"annotations/dataset_{dataset_id}/{token}{e['ext']}"
@@ -568,12 +592,18 @@ async def import_x_anylabeling_bytes(
                             s3_client.upload_fileobj, io.BytesIO(thumb), tkey,
                             None, "image/jpeg",
                         )
-                    return {"key": key, "tkey": tkey, "w": w, "h": h}
+                    return {"key": key, "tkey": tkey, "w": w, "h": h, "hash": digest}
 
             results = await asyncio.gather(*[_proc(e, b) for e, b, _ in prepared])
 
             async with async_db_session.begin() as db:
                 for (e, _b, meta), r in zip(prepared, results, strict=True):
+                    processed += 1
+                    if r.get("duplicate"):
+                        skipped_duplicate += 1
+                        if progress_cb:
+                            progress_cb(processed, total, "import")
+                        continue
                     mw = (meta or {}).get("imageWidth") or 0
                     mh = (meta or {}).get("imageHeight") or 0
                     img_rec = AnnotationImageModel(
@@ -581,6 +611,7 @@ async def import_x_anylabeling_bytes(
                         filename=e["filename"],
                         object_key=r["key"],
                         thumbnail_key=r["tkey"],
+                        content_hash=r.get("hash"),
                         status=ImageStatus.ANNOTATED,
                         width=mw or r["w"],
                         height=mh or r["h"],
@@ -611,7 +642,7 @@ async def import_x_anylabeling_bytes(
                     imported += 1
                     # 每张图片回调一次，前端 1s 轮询即可看到数字持续增长
                     if progress_cb:
-                        progress_cb(imported, total, "import")
+                        progress_cb(processed, total, "import")
 
         # 收尾：重算数据集计数
         async with async_db_session.begin() as db:
@@ -644,6 +675,7 @@ async def import_x_anylabeling_bytes(
 
     return {
         "imported": imported,
+        "skipped_duplicate": skipped_duplicate,
         "total_images": total,
         "total_annotations": total_annotations,
         "class_mapping": class_mapping,

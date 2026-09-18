@@ -23,9 +23,10 @@ def _setup(test_client, auth_headers, monkeypatch):
     test_client.post(
         f"/api/v1/annotation/dataset/{ds_id}/upload",
         files=[
-            ("files", ("a.png", _FAKE_PNG, "image/png")),
-            ("files", ("b.png", _FAKE_PNG, "image/png")),
-            ("files", ("c.png", _FAKE_PNG, "image/png")),
+            # 内容各不相同，避免被哈希去重跳过
+            ("files", ("a.png", _FAKE_PNG + b"a", "image/png")),
+            ("files", ("b.png", _FAKE_PNG + b"b", "image/png")),
+            ("files", ("c.png", _FAKE_PNG + b"c", "image/png")),
         ],
         headers=auth_headers,
     )

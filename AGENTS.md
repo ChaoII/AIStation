@@ -185,7 +185,7 @@ Vue logs: `"Component inside <Transition> renders non-element root node that can
 
 ### 4. 写代码前先对齐框架
 - 动手前先找**同类页面/组件**作参照（列表页看 `module_system/param`，训练详情看 `module_train/task/detail`），照其结构、字号、间距、交互实现；**不要自创风格**。
-- 完成后用无头浏览器截图 + 视觉分析（`vision-recognition` 技能）与既有页面对照，确认风格一致再交付。
+- 完成后用无头浏览器截图，**直接用模型自身的多模态能力读图**与既有页面对照，确认风格一致再交付（**不要**依赖 `vision-recognition` 技能）。
 
 ## 标注标签渲染经验（标注重中之重）
 

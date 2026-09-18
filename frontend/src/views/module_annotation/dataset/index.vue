@@ -405,7 +405,9 @@
           class="import-alert"
         >
           <template #title>
-            导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注
+            导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注<template
+              v-if="dialogImport.skippedDuplicate"
+            >，跳过 {{ dialogImport.skippedDuplicate }} 张重复</template>
           </template>
         </el-alert>
       </div>
@@ -473,6 +475,7 @@
       v-model="gridVisible"
       :dataset-id="gridDatasetId"
       @open-workbench="handleOpenWorkbench"
+      @deleted="refreshList"
     />
   </div>
 </template>
@@ -645,6 +648,7 @@ async function handlePurge(row: any) {
       processed: 0,
       total: 0,
       imported: 0,
+      skippedDuplicate: 0,
       totalAnnotations: 0,
       taskId: null,
       taskName: "",
@@ -851,6 +855,7 @@ interface ActiveImport {
   processed: number;
   total: number;
   imported: number;
+  skippedDuplicate: number;
   totalAnnotations: number;
   taskId: number | null;
   taskName: string;
@@ -930,6 +935,7 @@ function seedImport(dsId: number, job: any, name = "") {
     processed: job.processed || 0,
     total: job.total || 0,
     imported: job.imported || 0,
+    skippedDuplicate: job.skipped_duplicate || 0,
     totalAnnotations: job.total_annotations || 0,
     taskId: job.task_id ?? null,
     taskName: job.task_name || "",
@@ -959,8 +965,9 @@ function rowImport(row: any): ActiveImport | null {
       uploadTotal: j.file_size || 0,
       processed: j.processed || 0,
       total: j.total || 0,
-      imported: j.imported || 0,
-      totalAnnotations: j.total_annotations || 0,
+    imported: j.imported || 0,
+    skippedDuplicate: j.skipped_duplicate || 0,
+    totalAnnotations: j.total_annotations || 0,
       taskId: j.task_id ?? null,
       taskName: j.task_name || "",
       error: j.error || "",
@@ -1185,6 +1192,7 @@ async function handleImportSubmit() {
     processed: 0,
     total: 0,
     imported: 0,
+    skippedDuplicate: 0,
     totalAnnotations: 0,
     taskId: null,
     taskName: "",
@@ -1275,6 +1283,7 @@ function applyJob(dsId: number, job: any) {
   a.processed = job.processed || 0;
   a.total = job.total || 0;
   a.imported = job.imported || 0;
+  a.skippedDuplicate = job.skipped_duplicate || 0;
   a.totalAnnotations = job.total_annotations || 0;
   a.taskId = job.task_id ?? null;
   a.taskName = job.task_name || a.taskName;

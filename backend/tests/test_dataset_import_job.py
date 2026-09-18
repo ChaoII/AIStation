@@ -12,7 +12,8 @@ def _make_zip() -> bytes:
     with zipfile.ZipFile(buf, "w") as z:
         for i in range(3):
             im = io.BytesIO()
-            Image.new("RGB", (40, 20), (10, 10, 10)).save(im, format="PNG")
+            # 每张颜色不同 -> 内容哈希不同，避免被去重跳过
+            Image.new("RGB", (40, 20), (10 + i * 40, 10, 10)).save(im, format="PNG")
             z.writestr(f"d/frame_{i}.png", im.getvalue())
             z.writestr(f"d/frame_{i}.json", json.dumps({
                 "imageWidth": 40, "imageHeight": 20,
@@ -107,6 +108,31 @@ def test_list_includes_latest_import_snapshot(test_client, auth_headers, monkeyp
     assert row["import"]["job_id"] == job.job_id
     assert row["import"]["file_name"] == "plate.zip"
     assert row["import"]["file_size"] == 749000000
+
+
+def test_import_dedup_skips_existing(test_client, auth_headers, monkeypatch):
+    """同一数据集重复导入相同内容 → 按内容哈希去重（不叠加）。"""
+    import asyncio
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"dedup-{uuid4().hex[:8]}"}, headers=auth_headers).json()["data"]
+    from app.api.v1.module_annotation.dataset.x_anylabeling_importer import (
+        import_x_anylabeling_bytes,
+    )
+
+    first = asyncio.run(import_x_anylabeling_bytes(_make_zip(), ds["id"], 1))
+    assert first["imported"] == 3
+    second = asyncio.run(import_x_anylabeling_bytes(_make_zip(), ds["id"], 1))
+    assert second["imported"] == 0
+    assert second["skipped_duplicate"] == 3
+
+    total = test_client.get(
+        f"/api/v1/annotation/dataset/{ds['id']}/images", headers=auth_headers
+    ).json()["data"]["total"]
+    assert total == 3
 
 
 def test_import_clear_existing_replaces(test_client, auth_headers, monkeypatch):

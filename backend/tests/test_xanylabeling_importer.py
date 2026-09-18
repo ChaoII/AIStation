@@ -78,7 +78,8 @@ def _make_zip_bytes() -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for d in ("d1", "d2"):
-            zf.writestr(f"{d}/img.png", _FAKE_PNG)
+            # 内容不同，避免被哈希去重跳过
+            zf.writestr(f"{d}/img.png", _FAKE_PNG + d.encode())
             zf.writestr(
                 f"{d}/img.json",
                 json.dumps(
@@ -172,7 +173,8 @@ def _make_zip_bytes_same_stem_diff_ext() -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         for ext in ("jpg", "png"):
-            zf.writestr(f"img.{ext}", _FAKE_PNG)
+            # 内容不同，避免被哈希去重跳过
+            zf.writestr(f"img.{ext}", _FAKE_PNG + ext.encode())
         zf.writestr(
             "img.json",
             json.dumps(

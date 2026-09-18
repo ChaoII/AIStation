@@ -1,4 +1,5 @@
 """标注图片处理：尺寸探测、缩略图生成与 Content-Type 映射。"""
+import hashlib
 import io
 
 from PIL import Image, ImageOps
@@ -19,6 +20,11 @@ _EXT_CONTENT_TYPE: dict[str, str] = {
 
 THUMBNAIL_MAX_SIDE = 512
 THUMBNAIL_QUALITY = 85
+
+
+def content_hash(content: bytes) -> str:
+    """图片内容 sha256（十六进制），用于上传/导入去重。"""
+    return hashlib.sha256(content).hexdigest()
 
 
 def content_type_for(ext: str) -> str:

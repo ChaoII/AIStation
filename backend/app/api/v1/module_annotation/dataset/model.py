@@ -48,6 +48,9 @@ class AnnotationImageModel(ModelMixin, UserMixin):
     thumbnail_key: Mapped[str | None] = mapped_column(
         String(512), nullable=True, comment="RustFS 缩略图 key"
     )
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="图片内容哈希(sha256)，用于去重"
+    )
     width: Mapped[int] = mapped_column(Integer, default=0, comment="图片宽度")
     height: Mapped[int] = mapped_column(Integer, default=0, comment="图片高度")
     status: Mapped[ImageStatus] = mapped_column(
@@ -61,4 +64,5 @@ class AnnotationImageModel(ModelMixin, UserMixin):
 
     __table_args__ = (
         Index("ix_annotation_image_dataset_status", "dataset_id", "status"),
+        Index("ix_annotation_image_dataset_hash", "dataset_id", "content_hash"),
     )

@@ -173,7 +173,7 @@ class DatasetService:
             )
             if image_ids:
                 stmt = stmt.where(AnnotationImageModel.id.in_(image_ids))
-            elif status:
+            elif status and status != "all":
                 stmt = stmt.where(AnnotationImageModel.status == status)
             rows = (await db.execute(stmt)).scalars().all()
 
@@ -242,6 +242,7 @@ class DatasetService:
 
         from .media import (
             ALLOWED_IMAGE_EXTENSIONS,
+            content_hash,
             content_type_for,
             process_image,
         )
@@ -270,6 +271,18 @@ class DatasetService:
             dataset = await db.get(DatasetModel, dataset_id)
             if not dataset:
                 raise ValueError("数据集不存在")
+            # 已存在的内容哈希（用于去重）
+            seen: set[str] = set(
+                (
+                    await db.execute(
+                        select(AnnotationImageModel.content_hash).where(
+                            AnnotationImageModel.dataset_id == dataset_id,
+                            AnnotationImageModel.is_deleted == False,  # noqa: E712
+                            AnnotationImageModel.content_hash.isnot(None),
+                        )
+                    )
+                ).scalars().all()
+            )
 
         sem = asyncio.Semaphore(max(1, settings.ANNOTATION_UPLOAD_CONCURRENCY))
 
@@ -278,6 +291,10 @@ class DatasetService:
             async with sem:
                 try:
                     content = await file.read()
+                    digest = content_hash(content)
+                    if digest in seen:
+                        return {"ok": False, "duplicate": True, "filename": filename}
+                    seen.add(digest)
                     ext = Path(filename).suffix.lower()
                     token = uuid.uuid4().hex
                     object_key = f"datasets/{dataset_id}/images/{token}{ext}"
@@ -295,7 +312,8 @@ class DatasetService:
                     else:
                         thumb_key = None
                     return {"ok": True, "filename": filename, "object_key": object_key,
-                            "thumbnail_key": thumb_key, "width": width, "height": height}
+                            "thumbnail_key": thumb_key, "width": width, "height": height,
+                            "content_hash": digest}
                 except Exception as e:
                     return {"ok": False, "filename": filename, "reason": str(e)}
 
@@ -303,16 +321,21 @@ class DatasetService:
 
         uploaded: list[dict] = []
         failed: list[dict] = []
+        duplicates: list[str] = []
         async with async_db_session.begin() as db:
             for r in results:
                 if not r["ok"]:
-                    failed.append({"filename": r["filename"], "reason": r["reason"]})
+                    if r.get("duplicate"):
+                        duplicates.append(r["filename"])
+                    else:
+                        failed.append({"filename": r["filename"], "reason": r["reason"]})
                     continue
                 img = AnnotationImageModel(
                     dataset_id=dataset_id,
                     filename=r["filename"],
                     object_key=r["object_key"],
                     thumbnail_key=r["thumbnail_key"],
+                    content_hash=r["content_hash"],
                     width=r["width"],
                     height=r["height"],
                     status=ImageStatus.UNANNOTATED,
@@ -332,8 +355,9 @@ class DatasetService:
                 .where(DatasetModel.id == dataset_id)
                 .values(image_count=total or 0)
             )
-        return {"uploaded": uploaded, "failed": failed,
-                "uploaded_count": len(uploaded), "failed_count": len(failed)}
+        return {"uploaded": uploaded, "failed": failed, "skipped_duplicate": duplicates,
+                "uploaded_count": len(uploaded), "failed_count": len(failed),
+                "skipped_duplicate_count": len(duplicates)}
 
     @classmethod
     async def get_images(cls, dataset_id: int, task_id: int | None = None,

@@ -167,6 +167,45 @@ def test_upload_broken_image_registers_without_thumbnail(test_client, auth_heade
     assert by_name["bad.png"]["thumbnail_key"] is None
 
 
+def test_upload_dedup_by_content(test_client, auth_headers, monkeypatch):
+    """同一数据集按内容哈希去重：重复内容跳过。"""
+    from uuid import uuid4
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.upload_fileobj", lambda *a, **k: None)
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"dedup-{uuid4().hex[:8]}"},
+                          headers=auth_headers).json()["data"]
+    png = _png_bytes(30, 30)
+
+    r = test_client.post(
+        f"/api/v1/annotation/dataset/{ds['id']}/upload",
+        files=[
+            ("files", ("a.png", png, "image/png")),
+            ("files", ("b.png", png, "image/png")),  # 内容相同
+        ],
+        headers=auth_headers,
+    )
+    d = r.json()["data"]
+    assert d["uploaded_count"] == 1
+    assert d["skipped_duplicate_count"] == 1
+
+    # 再次上传同样内容 → 全部跳过
+    r2 = test_client.post(
+        f"/api/v1/annotation/dataset/{ds['id']}/upload",
+        files=[("files", ("a.png", png, "image/png"))],
+        headers=auth_headers,
+    )
+    d2 = r2.json()["data"]
+    assert d2["uploaded_count"] == 0
+    assert d2["skipped_duplicate_count"] == 1
+
+    total = test_client.get(
+        f"/api/v1/annotation/dataset/{ds['id']}/images", headers=auth_headers
+    ).json()["data"]["total"]
+    assert total == 1
+
+
 def test_get_images_includes_thumbnail_url(test_client, auth_headers, monkeypatch):
     from uuid import uuid4
 

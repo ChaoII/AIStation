@@ -122,6 +122,8 @@ async def upload_images(
 ) -> JSONResponse:
     result = await DatasetService.upload_images(id, files, auth)
     msg = f"成功上传 {result['uploaded_count']} 张图片"
+    if result.get("skipped_duplicate_count"):
+        msg += f"，{result['skipped_duplicate_count']} 张重复已跳过"
     if result["failed_count"]:
         msg += f"，{result['failed_count']} 张失败"
     return SuccessResponse(data=result, msg=msg)
@@ -189,6 +191,7 @@ async def _run_import_job(
             data, dataset_id, user_id, progress_cb=_cb, clear_existing=clear_existing
         )
         job.imported = result.get("imported", 0)
+        job.skipped_duplicate = result.get("skipped_duplicate", 0)
         job.total_annotations = result.get("total_annotations", 0)
         job.task_id = result.get("task_id")
         job.task_name = result.get("task_name", "") or ""

@@ -15,6 +15,7 @@ class ImportJob:
     processed: int = 0
     total: int = 0
     imported: int = 0
+    skipped_duplicate: int = 0
     total_annotations: int = 0
     task_id: int | None = None
     task_name: str = ""
