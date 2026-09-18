@@ -149,6 +149,93 @@ class DatasetService:
         return {"purged": purged}
 
     @classmethod
+    async def delete_images(
+        cls,
+        dataset_id: int,
+        image_ids: list[int] | None = None,
+        status: str | None = None,
+    ) -> dict:
+        """硬删除数据集图片（对象存储 + DB），锁定中的图片跳过。
+
+        - ``image_ids``：删除指定图片
+        - ``status``：删除该数据集下该状态的图片（unannotated/in_progress/annotated）
+        - 两者至少提供一个
+        """
+        if not image_ids and not status:
+            raise CustomException(msg="请指定要删除的图片或筛选条件", code=400, status_code=400)
+
+        import asyncio
+
+        async with async_db_session.begin() as db:
+            stmt = select(AnnotationImageModel).where(
+                AnnotationImageModel.dataset_id == dataset_id,
+                AnnotationImageModel.is_deleted == False,  # noqa: E712
+            )
+            if image_ids:
+                stmt = stmt.where(AnnotationImageModel.id.in_(image_ids))
+            elif status:
+                stmt = stmt.where(AnnotationImageModel.status == status)
+            rows = (await db.execute(stmt)).scalars().all()
+
+            locked = [r for r in rows if r.locked_by]
+            targets = [r for r in rows if not r.locked_by]
+            if not targets:
+                return {"deleted": 0, "skipped_locked": len(locked)}
+
+            ids = [r.id for r in targets]
+            keys = [k for r in targets for k in (r.object_key, r.thumbnail_key) if k]
+            if keys:
+                # 并发批量删除对象（不阻塞事件循环）
+                await asyncio.to_thread(s3_client.delete_objects, keys)
+
+            await db.execute(
+                delete(AnnotationRecordModel).where(AnnotationRecordModel.image_id.in_(ids))
+            )
+            await db.execute(delete(AnnotationImageModel).where(AnnotationImageModel.id.in_(ids)))
+
+            # 重算数据集计数
+            ds = await db.get(DatasetModel, dataset_id)
+            if ds:
+                ds.image_count = await db.scalar(
+                    select(func.count(AnnotationImageModel.id)).where(
+                        AnnotationImageModel.dataset_id == dataset_id,
+                        AnnotationImageModel.is_deleted == False,  # noqa: E712
+                    )
+                ) or 0
+                ds.annotated_count = await db.scalar(
+                    select(func.count(func.distinct(AnnotationRecordModel.image_id)))
+                    .select_from(AnnotationRecordModel)
+                    .join(
+                        AnnotationImageModel,
+                        AnnotationImageModel.id == AnnotationRecordModel.image_id,
+                    )
+                    .where(
+                        AnnotationImageModel.dataset_id == dataset_id,
+                        AnnotationImageModel.is_deleted == False,  # noqa: E712
+                        AnnotationRecordModel.is_deleted == False,  # noqa: E712
+                    )
+                ) or 0
+
+        # 重算该数据集下所有任务的进度（图片总数变化）
+        from app.api.v1.module_annotation.task.service import TaskService
+
+        async with async_db_session() as db:
+            task_ids = (
+                await db.execute(
+                    select(AnnotationTaskModel.id).where(
+                        AnnotationTaskModel.dataset_id == dataset_id
+                    )
+                )
+            ).scalars().all()
+        for tid in task_ids:
+            try:
+                await TaskService.update_progress(tid)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[删除图片] 重算任务进度失败 task={tid}: {e}")
+
+        return {"deleted": len(targets), "skipped_locked": len(locked)}
+
+    @classmethod
     async def upload_images(cls, dataset_id: int, files: list, auth) -> dict:
         import asyncio
         import io

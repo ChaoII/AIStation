@@ -882,7 +882,9 @@ async def _ensure_annotation_button_menus() -> None:
             existing |= set(
                 (await db.execute(
                     select(MenuModel.permission).where(
-                        MenuModel.permission.in_(["annotation:dataset:purge"])
+                        MenuModel.permission.in_(
+                            ["annotation:dataset:purge", "annotation:dataset:image:delete"]
+                        )
                     )
                 )).scalars().all()
             )
@@ -902,6 +904,8 @@ async def _ensure_annotation_button_menus() -> None:
                 (stats_menu.id, "查询统计", 1, "module_annotation:stats:query"),
                 (dataset_menu.id, "彻底删除数据集", 6, "annotation:dataset:purge"),
                 (dataset_menu.id, "彻底删除按钮", 7, "module_annotation:dataset:purge"),
+                (dataset_menu.id, "删除图片", 8, "annotation:dataset:image:delete"),
+                (dataset_menu.id, "删除图片按钮", 9, "module_annotation:dataset:image:delete"),
             ]
 
             for parent_id, name, order, perm in buttons:

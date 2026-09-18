@@ -13,6 +13,13 @@ class DatasetUpdateSchema(BaseModel):
     description: str | None = None
 
 
+class DeleteImagesSchema(BaseModel):
+    """删除图片：按 id 或按状态筛选（两者至少一个）。"""
+
+    image_ids: list[int] | None = None
+    status: str | None = None
+
+
 class DatasetOutSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -8,7 +8,12 @@ from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 
 from .param import DatasetQueryParam
-from .schema import DatasetCreateSchema, DatasetOutSchema, DatasetUpdateSchema
+from .schema import (
+    DatasetCreateSchema,
+    DatasetOutSchema,
+    DatasetUpdateSchema,
+    DeleteImagesSchema,
+)
 from .service import DatasetService
 
 DatasetRouter = APIRouter(route_class=OperationLogRoute, prefix="/dataset", tags=["数据标注-数据集"])
@@ -119,6 +124,19 @@ async def upload_images(
     msg = f"成功上传 {result['uploaded_count']} 张图片"
     if result["failed_count"]:
         msg += f"，{result['failed_count']} 张失败"
+    return SuccessResponse(data=result, msg=msg)
+
+
+@DatasetRouter.post("/{id}/images/delete", summary="删除数据集图片（硬删除）")
+async def delete_dataset_images(
+    id: int,
+    data: DeleteImagesSchema,
+    auth: AuthSchema = Depends(AuthPermission(["annotation:dataset:image:delete"])),
+) -> JSONResponse:
+    result = await DatasetService.delete_images(id, data.image_ids, data.status)
+    msg = f"已删除 {result['deleted']} 张图片"
+    if result.get("skipped_locked"):
+        msg += f"，{result['skipped_locked']} 张因被锁定已跳过"
     return SuccessResponse(data=result, msg=msg)
 
 
