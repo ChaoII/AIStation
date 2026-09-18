@@ -48,3 +48,41 @@ def test_upload_fileobj_passes_content_type(monkeypatch):
     client.client = _FakeBoto()
     client.upload_fileobj(io.BytesIO(b"x"), "a/b.png", content_type="image/png")
     assert captured["extra"] == {"ContentType": "image/png"}
+
+
+def _png_bytes(w: int, h: int) -> bytes:
+    import io as _io
+    from PIL import Image
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (w, h), (200, 30, 30)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_process_image_returns_dims_and_thumbnail():
+    from app.api.v1.module_annotation.dataset.media import process_image
+
+    w, h, thumb = process_image(_png_bytes(1200, 600))
+    assert (w, h) == (1200, 600)
+    assert thumb is not None
+    from PIL import Image
+    import io as _io
+
+    with Image.open(_io.BytesIO(thumb)) as t:
+        assert t.format == "JPEG"
+        assert max(t.size) <= 512
+
+
+def test_process_image_bad_bytes_returns_none_thumb():
+    from app.api.v1.module_annotation.dataset.media import process_image
+
+    w, h, thumb = process_image(b"not-an-image")
+    assert (w, h, thumb) == (0, 0, None)
+
+
+def test_content_type_mapping():
+    from app.api.v1.module_annotation.dataset.media import content_type_for
+
+    assert content_type_for(".png") == "image/png"
+    assert content_type_for(".JPG") == "image/jpeg"
+    assert content_type_for(".unknown") == "application/octet-stream"
