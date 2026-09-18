@@ -36,9 +36,13 @@ class SceneDef:
     # depth，故据实置灰（见 scene/contract.py）。
     requires_depth: bool = False
     # 已知限制说明（如叶子规则未实现）：与阻断原因一并展示，避免「选了却不知为何不命中」。
+    # 注意：进入 ``limitations`` 会**阻断**场景配置（见 ``scene_blockers``）。
     limitations: list[str] = field(default_factory=list)
     # 依赖的云端外部资产（如 face_gallery/reid_gallery）；缺失时据实置灰并给原因。
     required_assets: list[str] = field(default_factory=list)
+    # 非阻断的「使用限制」提示：场景**可配置**但运行期精度/前提受限（如 HAND_GESTURE 缺
+    # palm 检测器），经 ``scene_hints`` 下发为 UI 警告，不作为硬阻断（与 ``limitations`` 区分）。
+    usage_notes: list[str] = field(default_factory=list)
 
 
 # ── 参数 schema 片段 ──────────────────────────────
@@ -46,7 +50,6 @@ _POLY = {"key": "roi", "type": "polygon", "label": "检测区域"}
 _LINE = {"key": "line", "type": "polyline", "label": "绊线"}
 _CONF = {"key": "confidence_threshold", "type": "float", "default": 0.4, "label": "置信度"}
 _CLS_THR = {"key": "cls_threshold", "type": "float", "default": 0.5, "label": "分类阈值"}
-_TOPK = {"key": "topk", "type": "int", "default": 5, "label": "Top-K"}
 _LABELS = {"key": "labels", "type": "list", "label": "目标标签"}
 _COUNT = {"key": "count", "type": "int", "default": 5, "label": "数量阈值"}
 _SECONDS = {"key": "dwell_sec", "type": "int", "default": 10, "label": "停留时长(秒)"}
@@ -61,9 +64,11 @@ _GESTURE = {"key": "gesture", "type": "str", "default": "any", "label": "手势�
 # 人脸关键点：face_landmark 的最少有效关键点数（分数 >= 0.3 视为有效）
 _MIN_KP = {"key": "min_keypoints", "type": "int", "default": 5, "label": "最少关键点数"}
 _MAX_MOVE = {"key": "max_move", "type": "float", "default": 0.02, "label": "最大位移(归一化)"}
-# 人脸嵌入上限：单事件最多携带多少人脸特征（Top-N，按置信度保留）。
-# 云端下发给 Agent 顶层 `max_embeddings`（对齐 EventMeta::max_embeddings，缺省 8；<=0 禁用嵌入）。
-_MAX_EMBEDDINGS = {"key": "max_embeddings", "type": "int", "default": 8, "label": "每事件最大人脸特征数"}
+# 嵌入上限：单事件最多携带多少个嵌入对象（Top-N，按置信度保留）。人脸（face_rec）与
+# 跨镜（reid）共用同一顶层键 `max_embeddings`（对齐 Agent `config_adapter.cpp` 的
+# `j.value("max_embeddings", 8)` / `EventMeta::max_embeddings`）。
+# **约定语义（两侧一致）**：缺省 8；夹紧到 [0, 64]；`<= 0` 表示禁用嵌入（对象仍上报，只是不带特征）。
+_MAX_EMBEDDINGS = {"key": "max_embeddings", "type": "int", "default": 8, "label": "每事件最大特征数"}
 _GAP_SEC = {"key": "gap_sec", "type": "int", "default": 30, "label": "无目标时长(秒)"}
 _DIRECTION = {"key": "direction", "type": "str", "default": "A2B", "label": "越线方向"}
 # 组聚合参数：仅相机组作用域展示并注入 group_* 叶子（编译层 PARAM_TO_LEAF 消费）。
@@ -219,19 +224,32 @@ _add(SceneDef(
     requires_classification=True,
 ))
 
+_ACTION = {"role": "action", "type": "action"}
+
 _add(SceneDef(
-    "ACTION_CLS", "视频动作", "classification", "ACTION_CLS", ["action"], [_CLS],
-    [_POLY, {"key": "clip", "type": "int", "default": 16, "label": "片段帧数"}, _TOPK, _LABELS],
-    {"op": "and", "children": [{"subject": "classification", "op": "in", "value": "labels"}]},
-    False, "视频片段动作分类",
+    "ACTION_CLS", "视频动作", "classification", "ACTION_CLS", ["action"], [_ACTION],
+    # 注：片段帧数(16)/Top-K 由 Agent 侧按模型声明与事件契约固定（topk 可由模型条目覆盖），
+    # 云侧未接线为场景参数 → 不声明，避免「界面可填但无效」（同 METER_OCR 读数上下限处理）。
+    [_POLY, _LABELS],
+    # 动作分类事件形态与 B2a 分类同构：Agent 输出「整帧框 + label=top-1 Kinetics-400 类别 +
+    # attributes={类别: 分数}」，故默认规则用已实现的 object_present（按 top-1 label 命中，
+    # labels 参数经编译层注入）。requires_classification 锁定对分类事件契约的依赖。
+    {"op": "and", "children": [{"subject": "object_present"}]},
+    False, "视频片段动作分类（PP-TSMv2，16 帧）",
+    requires_classification=True,
 ))
 
 _add(SceneDef(
-    "ACTION_SKELETON", "骨架动作", "pose", "ACTION_SKELETON", ["action_skeleton"], [_DET, _POSE, _CLS],
-    [_POLY, {"key": "window", "type": "int", "default": 30, "label": "骨架窗口"}, _CONF, _LABELS],
-    # TODO(SP4): 骨架序列动作依赖姿态时序跟踪，求值器尚未实现，保留占位规则。
-    {"op": "and", "children": [{"subject": "classification", "op": "in", "value": "labels"}]},
-    True, "骨架序列动作分类",
+    "ACTION_SKELETON", "骨架动作", "pose", "ACTION_SKELETON", ["action_skeleton"],
+    [_DET, _POSE, {"role": "action_skeleton", "type": "action_skeleton"}],
+    # 骨架窗口取模型声明的 T=300（Agent 侧），云侧不声明 window 参数（避免界面可填但无效）。
+    [_POLY, _CONF, _LABELS],
+    # 结果同样以「整帧框 + label=top-1 NTU-60 类别 + attributes」事件形态承载（classification
+    # 契约），默认规则用 object_present；pipeline 为 [det, pose, action_skeleton]，Agent 侧
+    # action_skeleton 复用同任务 pose 条目的关键点模型。
+    {"op": "and", "children": [{"subject": "object_present"}]},
+    True, "骨架序列动作分类（ST-GCN）",
+    requires_classification=True,
 ))
 
 # ── §3.3 姿态/行为 ──────────────────────────────
@@ -291,6 +309,13 @@ _add(SceneDef(
     ]},
     True, "21 手部关键点手势识别",
     requires_keypoints=True,
+    # 非阻断使用限制：Agent 侧 hand 为纯 landmark 模型（MediaPipe handpose），仓库无
+    # palm 检测器，只能把整帧（或任务 ROI）直送推理并以 handflag 门控；仅当手掌主导
+    # 画面时可靠。此处如实提示运维，避免「选了却以为逐手精确」。
+    usage_notes=[
+        "手部模型缺少 palm 检测器：当前整帧直送仅在手掌主导画面时可靠；"
+        "建议为任务配置手部 ROI（检测区域），或待补充 palm_detection 权重后再依赖逐手精度"
+    ],
 ))
 
 # ── §3.4 分割/旋转框 ──────────────────────────────
@@ -477,10 +502,12 @@ _add(SceneDef(
 _add(SceneDef(
     "REID_TRACK", "跨镜重识别", "tracking", "REID_TRACK", ["reid"], [_DET, _REID],
     [_POLY, {"key": "similarity_threshold", "type": "float", "default": 0.6, "label": "相似度阈值"}],
-    # reid_match 叶子（B4）：检测的 objects[].embedding（256 维，L2 归一化）与跨镜底库
+    # reid_match 叶子（B4）：检测的 objects[].embedding（L2 归一化）与跨镜底库
     # （kind="reid"）的最大余弦相似度 >= similarity_threshold 判为命中；底库为空 /
     # 无 embedding / 维度不可比一律不命中（fail-closed）。默认写数值阈值，运行时由
     # similarity_threshold 参数经编译层注入覆盖。
+    # 维度无关：比对只要求两向量等长（cosine_similarity 按长度校验），不硬编码任何维度；
+    # 实测 OSNet x0.25 输出 512 维（非下载方案预估的 256 维），底库按实际向量长度存储 dimension。
     {"op": "and", "children": [{"subject": "reid_match", "op": "gte", "value": 0.6}]},
     True, "跨相机行人重识别关联",
     required_assets=["reid_gallery"],
@@ -612,6 +639,8 @@ def scene_hints(
     """
     assets = {str(a).strip().lower() for a in (scene.required_assets or [])}
     hints: list[str] = []
+    # 场景声明的非阻断使用限制（如 HAND_GESTURE 缺 palm 检测器）：可配置但需运维知悉。
+    hints.extend(scene.usage_notes or [])
     if "face_gallery" in assets and face_gallery_count is not None and face_gallery_count <= 0:
         hints.append("人脸底库为空：启用本场景后不会命中，请先录入底库特征")
     if "reid_gallery" in assets and reid_gallery_count is not None and reid_gallery_count <= 0:

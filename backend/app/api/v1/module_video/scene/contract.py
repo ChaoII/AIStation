@@ -85,9 +85,17 @@ AGENT_MODEL_FAMILIES: frozenset[str] = frozenset(
         "face_rec",
         # B4 手部手势（hand）/ 跨镜重识别（reid）：hand 复用 objects[].keypoints
         # （21 点/手，MediaPipe Hands 索引）；reid 复用 objects[].embedding
-        # （256 维，L2 归一化，f16b64）。Agent 侧并行落地并如实上报。
+        # （L2 归一化，f16b64）。**维度无关**：Agent 实测 OSNet x0.25 为 512 维（非预估
+        # 256 维），云侧按实际长度存储/比对，不硬编码维度。Agent 已如实上报（HEAD 6b5c524）。
         "hand",
         "reid",
+        # B5 视频动作分类（action，PP-TSMv2 16 帧）/ 骨架动作（action_skeleton，ST-GCN）：
+        # 均为「整帧框 + label=top-1 类别 + attributes 类别分数」分类事件（复用 B2a 契约）。
+        # Agent 侧已接线并如实上报（capability.cpp：normalize_model_type 接受 action/
+        # action_skeleton 及其别名，pipeline/inference_engine 新增加载与推理）。
+        # 注意：Agent 仓库该接线当前为工作区改动（HEAD 6b5c524 之上），对拍以实际文件为准。
+        "action",
+        "action_skeleton",
     }
 )
 

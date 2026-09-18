@@ -30,19 +30,19 @@ from app.api.v1.module_video.scene.contract import (
 # 若工作区可读 ModelDeploy 仓库，下方对拍测试会直接解析该文件，防止本常量与 Agent 漂移。
 # 姿态切片：Agent 侧已上报 pose。
 # B2a 人脸属性/活体/深度、B2b 语义分割/人脸关键点/文档/条码、B3 交互分割/人脸特征：
-# Agent（HEAD e6a4556）均已如实上报，故「在途族」放行清单已删除，对拍改为严格相等。
-# B4 手部/跨镜：Agent 侧并行落地并如实上报（hand/reid）。
+# Agent 均已如实上报。
+# B4 手部/跨镜：Agent（HEAD 6b5c524）已接线并如实上报 hand/reid。
+# B5 视频动作/骨架动作：Agent 工作区已接线 action/action_skeleton（normalize_model_type、
+# pipeline/inference_engine、capability.cpp 均更新）。
+# **严格对拍**：B5 已删除临时「在途族」放行清单，云契约族集合必须与 Agent 实际上报**逐一相等**。
 _AGENT_REPORTED_FAMILIES = {
     "det", "cls", "face", "pedestrian_attribute", "ocr", "lpr", "tracking", "obb", "iseg",
     "pose", "face_attr", "face_as", "depth",
     "sem", "face_landmark", "doc", "barcode",
     "sam", "face_rec",
     "hand", "reid",
+    "action", "action_skeleton",
 }
-
-# B4「在途族」：云契约已定稿（hand/reid 的事件字段与叶子），Agent 侧并行落地中。
-# 跨仓对拍要求 Agent 已上报除在途族外的全部族；在途族落地后应删除本清单并改为严格相等。
-_IN_FLIGHT_FAMILIES = {"hand", "reid"}
 
 
 def _read_agent_capability_families() -> set[str] | None:
@@ -61,7 +61,11 @@ def _read_agent_capability_families() -> set[str] | None:
 
 
 def test_agent_capability_reported_families_match_contract():
-    """跨仓一致：云契约族集合 = Agent 上报族集合（含 B1、姿态、B2a、B2b 各族）。"""
+    """跨仓一致：云契约族集合 = Agent 上报族集合（含 B1~B5 各族）。
+
+    严格相等（无在途放行清单）。B5 的 action/action_skeleton 已由 Agent 接线并上报，
+    故 ACTION_CLS/ACTION_SKELETON 一并转为可落地（40/40）。
+    """
     assert AGENT_MODEL_FAMILIES == _AGENT_REPORTED_FAMILIES
     assert {"obb", "iseg"} <= AGENT_MODEL_FAMILIES
     assert "pose" in AGENT_MODEL_FAMILIES
@@ -69,24 +73,28 @@ def test_agent_capability_reported_families_match_contract():
     assert {"sem", "face_landmark", "doc", "barcode"} <= AGENT_MODEL_FAMILIES
     assert {"sam", "face_rec"} <= AGENT_MODEL_FAMILIES
     assert {"hand", "reid"} <= AGENT_MODEL_FAMILIES
+    assert {"action", "action_skeleton"} <= AGENT_MODEL_FAMILIES
 
 
 def test_agent_capability_cpp_has_no_family_drift():
     """直接解析 Agent capability.cpp 对拍（无该仓库时跳过，CI 亦安全）。
 
-    B4 的 ``hand``/``reid`` 为在途族（Agent 侧并行落地）：要求 Agent 已如实上报
-    其余全部族，且实际上报集 ∪ 在途族 == 云契约集，避免云契约私自扩族。
-    在途族落地后删除 ``_IN_FLIGHT_FAMILIES`` 并恢复严格相等。
+    B5 恢复**严格相等**：已无「在途族」放行清单，Agent 实际上报集必须与本测试枚举
+    逐项相等，且等于云契约 ``AGENT_MODEL_FAMILIES``。任一方向多出/缺少都会失败，
+    从而阻止云契约私自扩族或 Agent 静默漏报。
     """
     actual = _read_agent_capability_families()
     if actual is None:
         pytest.skip("ModelDeploy 仓库不可读，跳过 capability.cpp 对拍")
-    assert actual == _AGENT_REPORTED_FAMILIES - _IN_FLIGHT_FAMILIES, (
+    assert actual == _AGENT_REPORTED_FAMILIES, (
         f"Agent 上报族与本测试枚举不一致：AgentOnly="
-        f"{sorted(actual - (_AGENT_REPORTED_FAMILIES - _IN_FLIGHT_FAMILIES))}, "
-        f"EnumOnly={sorted((_AGENT_REPORTED_FAMILIES - _IN_FLIGHT_FAMILIES) - actual)}"
+        f"{sorted(actual - _AGENT_REPORTED_FAMILIES)}, "
+        f"EnumOnly={sorted(_AGENT_REPORTED_FAMILIES - actual)}"
     )
-    assert actual | _IN_FLIGHT_FAMILIES == set(AGENT_MODEL_FAMILIES)
+    assert actual == set(AGENT_MODEL_FAMILIES), (
+        f"Agent 上报族与云契约不一致：AgentOnly={sorted(actual - set(AGENT_MODEL_FAMILIES))}, "
+        f"ContractOnly={sorted(set(AGENT_MODEL_FAMILIES) - actual)}"
+    )
 
 
 def test_pipeline_type_aliases_cover_agent_normalization():
@@ -122,16 +130,15 @@ def test_unsupported_scene_list_is_enumerated():
     B2a 声明 face_attr/face_as/depth 后 FACE_ATTR/FACE_ANTISPOOF/DEPTH_SAFE 亦转为可落地；
     B2b 声明 sem/face_landmark/doc/barcode 后 SEM_AREA/FACE_LANDMARK/DOC_TABLE/BARCODE 亦转为可落地；
     B3 声明 sam/face_rec 后 SAM_SEG/FACE_REC/STRANGER 亦转为可落地；
-    B4 声明 hand/reid 后 HAND_GESTURE/REID_TRACK 亦转为可落地，
-    故不可落地清单收敛为 2 项，下表为逐项枚举后的权威清单。
+    B4 声明 hand/reid 后 HAND_GESTURE/REID_TRACK 亦转为可落地；
+    B5 声明 action/action_skeleton 后 ACTION_CLS/ACTION_SKELETON 亦转为可落地，
+    故不可落地清单清空（**40/40 全部可落地**）。
     """
-    expected = {
-        "ACTION_CLS", "ACTION_SKELETON",
-    }
+    expected: set[str] = set()
     assert set(unsupported_scene_codes()) == expected
-    assert len(unsupported_scene_codes()) == 2
+    assert len(unsupported_scene_codes()) == 0
     assert len(SCENES) == 40
-    assert len([c for c, s in SCENES.items() if is_edge_implementable(s)]) == 38
+    assert len([c for c, s in SCENES.items() if is_edge_implementable(s)]) == 40
     # B1 明确解锁：obb/iseg 场景不再被能力校验拒绝
     assert "OBB_DET" not in unsupported_scene_codes()
     assert "I_SEG" not in unsupported_scene_codes()
@@ -150,6 +157,9 @@ def test_unsupported_scene_list_is_enumerated():
     # B4：hand/reid 族已声明 → 手势/跨镜重识别可落地
     assert "HAND_GESTURE" not in unsupported_scene_codes()
     assert "REID_TRACK" not in unsupported_scene_codes()
+    # B5：action/action_skeleton 族已上报 → 视频动作/骨架动作可落地（全部 40 个）
+    assert "ACTION_CLS" not in unsupported_scene_codes()
+    assert "ACTION_SKELETON" not in unsupported_scene_codes()
 
 
 def test_scene_capability_failure_is_actionable():
@@ -187,4 +197,7 @@ def test_scene_catalog_api_marks_edge_support(test_client, auth_headers):
         assert by_code[code]["edge_supported"] is True, code
     # B4：reid 族已声明 → REID_TRACK 可落地
     assert by_code["REID_TRACK"]["edge_supported"] is True
+    # B5：action/action_skeleton 族已上报 → 两个动作场景可落地
+    assert by_code["ACTION_CLS"]["edge_supported"] is True
+    assert by_code["ACTION_SKELETON"]["edge_supported"] is True
     assert all("edge_supported" in s for s in items)

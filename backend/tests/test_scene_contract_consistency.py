@@ -31,8 +31,10 @@ from app.api.v1.module_video.scene.compile import (
 )
 from app.api.v1.module_video.scene.leaves import LEAF_CAPABILITIES
 
-# 依赖「分类结果进入边缘事件」契约的三个场景（B2a 契约已落地，现应可配置）
-_CLASSIFICATION_SCENES = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK"}
+# 依赖「分类结果进入边缘事件」契约的场景（B2a 契约已落地，现应可配置）。
+# B5：ACTION_CLS/ACTION_SKELETON 同样以「整帧框 + top-1 label + attributes」分类事件承载，
+# 故一并纳入（requires_classification=True），契约回退时应同样重新置灰。
+_CLASSIFICATION_SCENES = {"SCENE_CLS", "DEFECT_CLS", "NO_MASK", "ACTION_CLS", "ACTION_SKELETON"}
 
 # 依赖「姿态关键点进入边缘事件」契约的场景（姿态切片 + 手部 21 点手势，现应可配置）
 _KEYPOINT_SCENES = {"FALL", "CLIMB", "SMOKE_PHONE", "HAND_GESTURE"}
@@ -56,6 +58,9 @@ _FACE_MATCH_SCENES = {"FACE_REC", "STRANGER"}
 _SAM_SCENES = {"SAM_SEG"}
 # B4：跨镜重识别（reid 族 + reid_gallery 资产 + reid_match 叶子）
 _REID_SCENES = {"REID_TRACK"}
+
+# B5：动作分类场景（action/action_skeleton 族已上报 → 转为可配置；默认规则 object_present）
+_ACTION_SCENES = {"ACTION_CLS", "ACTION_SKELETON"}
 
 
 def _iter_leaves(rule: dict):
@@ -91,8 +96,10 @@ def test_configurable_scenes_compile_default_rule():
     # static/track 叶子实现后 ABANDON/DEPLOY_TRACK 可选；B1 接线后 OBB_DET/I_SEG 可选；
     # B2a 分类事件契约落地后 SCENE_CLS/DEFECT_CLS/NO_MASK 亦转为可配置；
     # 姿态切片 keypoint_geometry 落地后 FALL/CLIMB/SMOKE_PHONE 亦转为可配置
-    # （HAND_GESTURE 因 hand 族未上报 + gesture 规则未实现，仍置灰）。
+    # （HAND_GESTURE 由 B4 的 hand 族 + gesture 规则落地后一并转为可配置）。
     # B2b sem/face_landmark/doc/barcode 族声明后 SEM_AREA/FACE_LANDMARK/DOC_TABLE/BARCODE 亦可选。
+    # B5：Agent 上报 action/action_skeleton 族，且 ACTION_CLS/ACTION_SKELETON 默认规则改为
+    # 可编译的 object_present → 二者转为可配置，故可配置数达到 **40**。
     assert {"ABANDON", "DEPLOY_TRACK", "OBB_DET", "I_SEG"} <= set(checked)
     assert _CLASSIFICATION_SCENES <= set(checked)
     assert _KEYPOINT_SCENES <= set(checked)
@@ -105,7 +112,8 @@ def test_configurable_scenes_compile_default_rule():
     assert _KEYPOINT_SCENES <= set(checked)
     assert _REID_SCENES <= set(checked)
     assert set(checked) == set(configurable_scene_codes())
-    assert len(checked) == 38
+    # B5：40/40 全部可配置（无置灰场景）
+    assert len(checked) == 40
 
 
 def test_unconfigurable_scenes_reason_mentions_cause():
@@ -716,10 +724,16 @@ def test_catalog_api_exposes_configurability(test_client, auth_headers):
     # 底库为空时给出运行期提示（非阻断）；本条 e2e 库底库为空
     assert any("底库为空" in h for h in by_code["FACE_REC"]["hints"])
     assert any("跨镜底库为空" in h for h in by_code["REID_TRACK"]["hints"])
-    # 仍不可配置的场景：模型族未就绪 → 必须给出置灰原因
-    assert by_code["ACTION_CLS"]["configurable"] is False
-    assert by_code["ACTION_CLS"]["unsupported_reason"]
-    assert any("action" in b for b in by_code["ACTION_CLS"]["blockers"])
+    # B5：action/action_skeleton 族已上报 → ACTION_CLS/ACTION_SKELETON 转为可配置，无置灰原因
+    for code in _ACTION_SCENES:
+        assert by_code[code]["configurable"] is True, code
+        assert by_code[code]["unsupported_reason"] == "", code
+        assert by_code[code]["blockers"] == [], code
+    # B5：HAND_GESTURE 可配置，但 palm 检测器缺口以非阻断 hints 明示
+    assert any("palm" in h for h in by_code["HAND_GESTURE"]["hints"])
+    assert by_code["HAND_GESTURE"]["blockers"] == []
+    # 40/40 全部可配置（无任何置灰场景）
+    assert all(s["configurable"] is True for s in items)
     assert all("configurable" in s and "blockers" in s and "hints" in s for s in items)
 
 
@@ -832,3 +846,102 @@ def test_keypoint_scenes_configurable_and_dispatch_pose():
     cfg = build_agent_task_config(_Task(), _Cam(), algo, events={})
     types = {m["type"] for m in cfg["models"]}
     assert {"detection", "hand"} <= types, f"HAND_GESTURE 未下发 det+hand：{types}"
+
+
+def test_action_scenes_configurable_with_classification_contract():
+    """B5：action/action_skeleton 族已上报 → ACTION_CLS/ACTION_SKELETON 可配置。
+
+    默认规则退化为 object_present（分类事件形态：整帧框 + top-1 label + attributes），
+    labels 参数经编译层注入；无未实现叶子阻断。
+    """
+    assert {"action", "action_skeleton"} <= contract.AGENT_MODEL_FAMILIES
+    for code in _ACTION_SCENES:
+        scene = SCENES[code]
+        assert scene.requires_classification is True, code
+        assert unimplemented_default_leaves(scene) == [], code
+        ok, reason = scene_configurability(scene)
+        assert ok is True, f"{code} 族已上报却仍置灰：{reason}"
+        assert scene_blockers(scene) == [], f"{code}: {scene_blockers(scene)}"
+        out = compile_rule(code, _default_params(scene), scene.default_rule)
+        leaves = list(_iter_leaves(out))
+        assert leaves and all(leaf["subject"] == "object_present" for leaf in leaves), code
+    # labels 参数注入 object_present.labels（界面可填即生效）
+    out = compile_rule("ACTION_CLS", {"labels": ["running"]}, SCENES["ACTION_CLS"].default_rule)
+    assert out["children"][0]["labels"] == ["running"]
+
+
+def test_action_scenes_re_gate_without_families(monkeypatch):
+    """机制锁定：撤下 action/action_skeleton 族后，两个动作场景必须重新按「缺模型族」置灰。"""
+    monkeypatch.setattr(
+        contract,
+        "AGENT_MODEL_FAMILIES",
+        contract.AGENT_MODEL_FAMILIES - {"action", "action_skeleton"},
+    )
+    try:
+        for code in _ACTION_SCENES:
+            ok, reason = scene_configurability(SCENES[code])
+            assert ok is False, f"{code} 撤下族后不应仍可配置"
+            assert "action" in reason, f"{code}: {reason}"
+    finally:
+        monkeypatch.undo()
+
+
+def test_action_scenes_dispatch_action_models():
+    """可配置 ⇔ 可下发一致：ACTION_CLS 下发 type=action；ACTION_SKELETON 下发 det+pose+action_skeleton。
+
+    防止「可配置但模型类型错」的假可配置——Agent 按 type 分派加载（见其 test_inference_action.cpp）。
+    """
+    from types import SimpleNamespace
+
+    from app.api.v1.module_video.edge.orchestrator import build_agent_task_config
+
+    class _Cam:
+        id = 7
+        name = "北门"
+        rtsp_url_sub = "rtsp://cam/7"
+        stream_id = "cam7"
+
+    class _Task:
+        id = 321
+        camera_id = 7
+        algorithm_id = 11
+        stream_type = "SUB"
+        detect_region = None
+        sensitivity = 50
+        schedule_json = None
+        runtime_overrides = None
+        params_overrides = None
+
+    algo_cls = SimpleNamespace(
+        name="ACTION_CLS", algorithm_type="ACTION_CLS", scene_type="ACTION_CLS",
+        model_path="/models/pptsm_v2.onnx",
+        runtime_config={"backend": "ort", "device": "cpu"},
+        preset_params={},
+    )
+    cfg = build_agent_task_config(_Task(), _Cam(), algo_cls, events={})
+    assert [m["type"] for m in cfg["models"]] == ["action"], cfg["models"]
+    assert cfg["models"][0]["url"] == "/models/pptsm_v2.onnx"
+
+    algo_sk = SimpleNamespace(
+        name="ACTION_SKELETON", algorithm_type="ACTION_SKELETON", scene_type="ACTION_SKELETON",
+        model_path="/models/stgcn.onnx",
+        runtime_config={"backend": "ort", "device": "cpu"},
+        preset_params={"det_path": "/models/yolo.onnx", "pose_path": "/models/pose.onnx"},
+    )
+    cfg2 = build_agent_task_config(_Task(), _Cam(), algo_sk, events={})
+    types = {m["type"] for m in cfg2["models"]}
+    assert {"detection", "pose", "action_skeleton"} <= types, types
+
+
+def test_hand_gesture_palm_detector_gap_is_nonblocking_hint():
+    """B5：HAND_GESTURE 缺 palm 检测器的限制必须以非阻断 hints 明示（不静默、不置灰）。"""
+    from app.api.v1.module_video.scene.catalog import scene_hints
+
+    scene = SCENES["HAND_GESTURE"]
+    assert scene.usage_notes, "HAND_GESTURE 必须声明 palm 检测器使用限制"
+    assert any("palm" in note for note in scene.usage_notes)
+    # 非阻断：blockers 仍为空、场景仍可配置
+    assert scene_blockers(scene) == []
+    assert scene_configurability(scene)[0] is True
+    hints = scene_hints(scene)
+    assert any("palm" in h for h in hints)
