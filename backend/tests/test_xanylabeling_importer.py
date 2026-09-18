@@ -99,6 +99,30 @@ def _make_zip_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _post_import_and_wait(test_client, auth_headers, ds_id, zip_bytes, timeout=30.0) -> dict:
+    """投递导入后台任务并轮询至完成，返回 job 快照。"""
+    import time
+
+    resp = test_client.post(
+        f"/api/v1/annotation/dataset/{ds_id}/import/x-anylabeling",
+        files={"file": ("labels.zip", zip_bytes, "application/zip")},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    job_id = resp.json()["data"]["job_id"]
+    deadline = time.time() + timeout
+    job = None
+    while time.time() < deadline:
+        job = test_client.get(
+            f"/api/v1/annotation/dataset/import/{job_id}", headers=auth_headers
+        ).json()["data"]
+        if job["status"] in ("done", "failed"):
+            break
+        time.sleep(0.2)
+    assert job and job["status"] == "done", job
+    return job
+
+
 def test_import_zip_no_collision_and_counts(
     test_client: TestClient, auth_headers: dict, monkeypatch
 ):
@@ -113,18 +137,10 @@ def test_import_zip_no_collision_and_counts(
     assert created.status_code == 200, created.text
     ds_id = created.json()["data"]["id"]
 
-    resp = test_client.post(
-        "/api/v1/annotation/dataset/import/x-anylabeling",
-        params={"dataset_id": ds_id},
-        files={"file": ("labels.zip", _make_zip_bytes(), "application/zip")},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200, resp.text
-    result = resp.json()["data"]
+    result = _post_import_and_wait(test_client, auth_headers, ds_id, _make_zip_bytes())
     assert result["imported"] == 2
-    assert result["total_images"] == 2
+    assert result["total"] == 2
     assert result["total_annotations"] == 2
-    assert result["class_mapping"] == {"cat": 0}
 
     con = _db()
     img_total = con.execute(
@@ -191,16 +207,11 @@ def test_import_zip_same_stem_diff_ext(
     assert created.status_code == 200, created.text
     ds_id = created.json()["data"]["id"]
 
-    resp = test_client.post(
-        "/api/v1/annotation/dataset/import/x-anylabeling",
-        params={"dataset_id": ds_id},
-        files={"file": ("labels.zip", _make_zip_bytes_same_stem_diff_ext(), "application/zip")},
-        headers=auth_headers,
+    result = _post_import_and_wait(
+        test_client, auth_headers, ds_id, _make_zip_bytes_same_stem_diff_ext()
     )
-    assert resp.status_code == 200, resp.text
-    result = resp.json()["data"]
     assert result["imported"] == 2
-    assert result["total_images"] == 2
+    assert result["total"] == 2
 
     con = _db()
     img_total = con.execute(

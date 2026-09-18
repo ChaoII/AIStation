@@ -530,7 +530,7 @@ async def import_x_anylabeling_bytes(
             results = await asyncio.gather(*[_proc(e, b) for e, b, _ in prepared])
 
             async with async_db_session.begin() as db:
-                for (e, _b, meta), r in zip(prepared, results):
+                for (e, _b, meta), r in zip(prepared, results, strict=True):
                     mw = (meta or {}).get("imageWidth") or 0
                     mh = (meta or {}).get("imageHeight") or 0
                     img_rec = AnnotationImageModel(

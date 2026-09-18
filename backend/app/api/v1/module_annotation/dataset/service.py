@@ -312,7 +312,7 @@ class DatasetService:
             )
             .group_by(AnnotationImageModel.dataset_id)
         )
-        totals = {d: c for d, c in total_rows.fetchall()}
+        totals = dict(total_rows.fetchall())
 
         task_rows = (
             await db.execute(
@@ -355,7 +355,7 @@ class DatasetService:
                 )
                 .group_by(AnnotationRecordModel.task_id)
             )
-            ann = {t: c for t, c in ann_rows.fetchall()}
+            ann = dict(ann_rows.fetchall())
 
         by_ds: dict[int, list] = {}
         for t in task_rows:
