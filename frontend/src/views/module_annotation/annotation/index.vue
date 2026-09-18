@@ -106,6 +106,7 @@
               :key="ann.id"
               :data-ann-id="ann.id"
               @mousedown.left.stop.prevent="onAnnMouseDown($event, ann)"
+              @contextmenu.prevent.stop="openAnnMenu($event, ann)"
             >
               <template v-if="ann.type === 'AxisAlignedBox'">
                 <rect
@@ -1115,29 +1116,6 @@
               <span class="section-title">标注列表</span>
               <ElBadge :value="store.annotations.length" :max="999" />
             </div>
-            <!-- 选中标注编辑区：改类别 / 编辑OCR文本 / 删除该标注 -->
-            <div v-if="selectedAnn" class="selected-ann-edit panel-section-inner">
-              <div class="selected-ann-title">选中标注（点击下方列表项可切换）</div>
-              <el-select
-                v-model="selectedAnn.class_id"
-                size="small"
-                placeholder="更改类别"
-                style="width: 100%; margin-bottom: 6px"
-                @change="onAnnClassChange"
-              >
-                <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
-              </el-select>
-              <el-input
-                v-if="selectedAnn.type === 'Ocr'"
-                v-model="selectedAnn.text"
-                size="small"
-                placeholder="编辑OCR文本"
-                @change="onAnnEdit"
-              />
-              <el-button size="small" type="danger" text @click="deleteSelected">
-                删除该标注
-              </el-button>
-            </div>
             <div class="scroll-area">
               <div
                 v-for="ann in store.annotations"
@@ -1145,6 +1123,8 @@
                 class="ann-item"
                 :class="{ active: store.selectedAnnotationId === ann.id }"
                 @click="store.selectedAnnotationId = ann.id"
+                @contextmenu.prevent.stop="openAnnMenu($event, ann)"
+                @dblclick="openEditDialog(ann)"
               >
                 <span class="dot-color" :style="{ background: clsColor(ann.class_id) }" />
                 <span class="flex-1 text-sm">{{ getCls(ann.class_id)?.name || "?" }}</span>
@@ -1218,6 +1198,32 @@
         <el-icon><QuestionFilled /></el-icon>
       </el-button>
     </footer>
+    <!-- 标注右键菜单 / 编辑模态框 -->
+    <div v-if="annMenu.visible" class="ctx-backdrop" @click="closeAnnMenu" />
+    <div
+      v-if="annMenu.visible"
+      class="ann-context-menu"
+      :style="{ left: annMenu.x + 'px', top: annMenu.y + 'px' }"
+    >
+      <div class="ctx-item" @click.stop="menuEdit">编辑标注</div>
+      <div class="ctx-item ctx-danger" @click.stop="menuDelete">删除标注</div>
+    </div>
+    <el-dialog v-model="editAnnVisible" title="编辑标注" width="420px" append-to-body>
+      <el-form label-width="72px">
+        <el-form-item label="类别">
+          <el-select v-model="editForm.class_id" size="small" style="width: 100%" @change="editClassChange">
+            <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="editForm.ann?.type === 'Ocr'" label="OCR文本">
+          <el-input v-model="editForm.text" size="small" placeholder="编辑OCR文本" @change="editTextChange" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editAnnVisible = false">关闭</el-button>
+        <el-button type="danger" @click="editDelete">删除该标注</el-button>
+      </template>
+    </el-dialog>
     <!-- 快捷键帮助弹窗 -->
     <AnnotationHistoryDrawer ref="historyRef" @restored="onHistoryRestored" />
     <el-dialog v-model="showHelpModal" title="快捷键" width="420px">
@@ -1345,7 +1351,7 @@ import {
   ArrowRight,
   Delete,
   Check,
-  Pointer,
+  Mouse,
   Rank,
   ZoomIn,
   Crop,
@@ -1572,7 +1578,7 @@ const taskClassificationMode = computed(() => task.value?.classification_mode ||
 
 // ===== Tools =====
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
-  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: Pointer },
+  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: Mouse },
   { name: "pan", label: "平移", tip: "拖拽平移画布", icon: Rank },
   { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: ZoomIn },
 ];
@@ -3041,6 +3047,57 @@ function deleteSelected() {
   }
 }
 
+// ===== 右键菜单 / 编辑模态框 =====
+const annMenu = reactive({ visible: false, x: 0, y: 0, ann: null as any });
+const editAnnVisible = ref(false);
+const editForm = reactive({ ann: null as any, class_id: 0, text: "" });
+
+function openAnnMenu(e: MouseEvent, ann: any) {
+  if (lockedByOther.value) return;
+  store.selectedAnnotationId = ann.id;
+  annMenu.ann = ann;
+  annMenu.x = e.clientX;
+  annMenu.y = e.clientY;
+  annMenu.visible = true;
+}
+function closeAnnMenu() {
+  annMenu.visible = false;
+}
+function openEditDialog(ann: any) {
+  if (lockedByOther.value) return;
+  store.selectedAnnotationId = ann.id;
+  editForm.ann = ann;
+  editForm.class_id = ann.class_id;
+  editForm.text = ann.text || "";
+  editAnnVisible.value = true;
+}
+function menuEdit() {
+  const ann = annMenu.ann;
+  closeAnnMenu();
+  if (ann) openEditDialog(ann);
+}
+function menuDelete() {
+  const ann = annMenu.ann;
+  closeAnnMenu();
+  if (ann) {
+    store.selectedAnnotationId = ann.id;
+    deleteSelected();
+  }
+}
+function editClassChange() {
+  if (editForm.ann) editForm.ann.class_id = editForm.class_id;
+  onAnnClassChange();
+}
+function editTextChange() {
+  if (editForm.ann) editForm.ann.text = editForm.text;
+  onAnnEdit();
+}
+function editDelete() {
+  if (editForm.ann) store.selectedAnnotationId = editForm.ann.id;
+  editAnnVisible.value = false;
+  deleteSelected();
+}
+
 // ===== 复制 / 粘贴标注 =====
 let annClipboard: any = null;
 function copySelected() {
@@ -4228,6 +4285,34 @@ onBeforeUnmount(() => {
 .collab-online {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+.ann-context-menu {
+  position: fixed;
+  z-index: 3001;
+  min-width: 120px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  box-shadow: var(--el-box-shadow-light);
+  padding: 4px;
+}
+.ctx-item {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+}
+.ctx-item:hover {
+  background: var(--el-fill-color-light);
+}
+.ctx-danger {
+  color: var(--el-color-danger);
 }
 .hint {
   flex: 1;
