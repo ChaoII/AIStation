@@ -1256,6 +1256,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         start_alarm_record_retention()
         log.info("✅ 告警记录 TTL 清理已启动")
 
+        from app.api.v1.module_annotation.dataset.retention import (
+            start_annotation_purge_retention,
+        )
+        start_annotation_purge_retention()
+        log.info("✅ 标注数据集过期清理已启动")
+
         try:
             from app.core.database import async_engine as _train_engine
             from app.plugin.module_train.schema_check import ensure_train_columns

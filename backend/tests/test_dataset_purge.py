@@ -41,3 +41,41 @@ def test_purge_removes_db_rows_and_s3(test_client, auth_headers, monkeypatch):
     r2 = test_client.request("DELETE", "/api/v1/annotation/dataset/purge",
                              json=[ds_id], headers=auth_headers)
     assert r2.status_code == 200, r2.text
+
+
+def test_purge_expired_selects_soft_deleted_older_than(test_client, auth_headers, monkeypatch):
+    import asyncio
+    from datetime import datetime, timedelta
+    from uuid import uuid4 as _uuid
+
+    monkeypatch.setattr("app.utils.s3_client.s3_client.ensure_bucket", lambda *a, **k: None)
+    monkeypatch.setattr("app.utils.s3_client.s3_client.delete_prefix", lambda *a, **k: 0)
+
+    ds = test_client.post("/api/v1/annotation/dataset/create",
+                          json={"name": f"exp-{_uuid().hex[:8]}"},
+                          headers=auth_headers).json()["data"]
+    ds_id = ds["id"]
+    test_client.request("DELETE", "/api/v1/annotation/dataset/delete",
+                        json=[ds_id], headers=auth_headers)
+
+    from app.core.database import async_db_session
+    from app.api.v1.module_annotation.dataset.model import DatasetModel
+    from app.api.v1.module_annotation.dataset.retention import purge_expired_datasets
+
+    async def _backdate():
+        async with async_db_session.begin() as db:
+            row = await db.get(DatasetModel, ds_id)
+            row.deleted_time = datetime.now() - timedelta(days=99)
+
+    asyncio.run(_backdate())
+
+    async def _purge():
+        return await purge_expired_datasets(30)
+
+    assert asyncio.run(_purge()) >= 1
+
+    async def _gone():
+        async with async_db_session() as db:
+            return await db.get(DatasetModel, ds_id)
+
+    assert asyncio.run(_gone()) is None
