@@ -1342,7 +1342,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { defineComponent, ref, computed, watch, onMounted, onBeforeUnmount, nextTick, h } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
 import {
@@ -1350,7 +1350,6 @@ import {
   ArrowRight,
   Delete,
   Check,
-  Mouse,
   Rank,
   ZoomIn,
   Crop,
@@ -1576,8 +1575,27 @@ let ocrBoxStart = { x: 0, y: 0 };
 const taskClassificationMode = computed(() => task.value?.classification_mode || "single");
 
 // ===== Tools =====
+// macOS 风格箭头光标（Element Plus 无此图标，内联 SVG）
+const CursorIcon = defineComponent({
+  name: "CursorIcon",
+  render() {
+    return h(
+      "svg",
+      { viewBox: "0 0 16 16", width: 16, height: 16 },
+      [
+        h("path", {
+          d: "M4 1 v13 l2.9-3 2.1 4.5 1.8-.8-2.1-4.5 3.8-.3 Z",
+          fill: "#000",
+          stroke: "#fff",
+          "stroke-width": 1,
+        }),
+      ]
+    );
+  },
+});
+
 const baseTools: { name: ToolName; label: string; tip: string; icon: any }[] = [
-  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: Mouse },
+  { name: "select", label: "选择", tip: "点击选择标注，拖拽移动", icon: CursorIcon },
   { name: "pan", label: "平移", tip: "拖拽平移画布", icon: Rank },
   { name: "zoom", label: "缩放", tip: "滚轮缩放", icon: ZoomIn },
 ];
