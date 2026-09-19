@@ -1395,6 +1395,20 @@ onMounted(() => {
   window.addEventListener("mouseup", onUp);
   window.addEventListener("beforeunload", onBeforeUnload);
   document.addEventListener("keydown", onKey);
+  watch(
+    () => props.collab?.lockDeniedTick?.value ?? 0,
+    () => {
+      if (props.collab?.lockDeniedTick?.value) ElMessage.warning("保存被拒绝：图片已被其他用户锁定");
+    }
+  );
+  watch(
+    () => props.collab?.remoteAnnotationTick?.value ?? 0,
+    () => {
+      if (props.collab?.remoteAnnotationTick?.value) {
+        loadCurrentImage(store.currentImageId!).catch(() => {});
+      }
+    }
+  );
   init();
 });
 onBeforeUnmount(() => {

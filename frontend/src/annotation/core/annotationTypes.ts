@@ -22,4 +22,6 @@ export interface CollabAdapter {
   focus(imageId: number): void;
   close(): void;
   onlineUsers: { value: any[] };
+  lockDeniedTick?: { value: number };
+  remoteAnnotationTick?: { value: number };
 }
