@@ -16,3 +16,10 @@ export interface WorkbenchConfig {
   classes: { id: number; name: string; color: string; keypoint_names?: string[] }[];
   classificationMode: "single" | "multi";
 }
+
+export interface CollabAdapter {
+  connect(taskId: number): void;
+  focus(imageId: number): void;
+  close(): void;
+  onlineUsers: { value: any[] };
+}

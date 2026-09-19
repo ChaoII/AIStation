@@ -6,6 +6,7 @@
       :api="api"
       :config="config"
       :task-id="taskId"
+      :collab="collab"
       @open-history="openHistory"
     />
     <AnnotationHistoryDrawer ref="historyRef" @restored="onHistoryRestored" />
@@ -26,12 +27,14 @@ import {
 } from "@/annotation";
 import type { WorkbenchApi, WorkbenchConfig } from "@/annotation/core/annotationTypes";
 import { AnnotationAPI } from "@/api/module_annotation";
+import { useCollab } from "@/composables/useCollab";
 import AnnotationHistoryDrawer from "@/components/Annotation/AnnotationHistoryDrawer.vue";
 
 const route = useRoute();
 const taskId = Number(route.params.id || route.query.id || 0);
 const wbRef = ref();
 const historyRef = ref();
+const collab = useCollab();
 
 const plugins = [
   detectionPlugin,

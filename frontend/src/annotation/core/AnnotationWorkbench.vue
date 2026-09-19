@@ -14,6 +14,7 @@
         <span class="task-name">{{ store.task?.name }}</span>
       </div>
       <div class="header-right">
+        <span v-if="props.collab" class="collab-online">在线 {{ props.collab.onlineUsers.value.length }}</span>
         <span class="progress-text">{{ store.annotatedCount }}/{{ store.totalCount }}</span>
         <el-progress
           :percentage="store.progress"
@@ -240,13 +241,14 @@ import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
 import { useOcrTool } from "../tasks/ocr/useOcrTool";
 import type { Annotation, AnnotationTaskPlugin } from "./types";
-import type { WorkbenchApi, WorkbenchConfig } from "./annotationTypes";
+import type { WorkbenchApi, WorkbenchConfig, CollabAdapter } from "./annotationTypes";
 
 const props = defineProps<{
   plugins: AnnotationTaskPlugin[];
   api: WorkbenchApi;
   config: WorkbenchConfig;
   taskId: number;
+  collab?: CollabAdapter;
 }>();
 
 const store = useAnnotationStore();
@@ -453,6 +455,7 @@ async function loadCurrentImage(imageId: number) {
     if (myToken !== loadImgToken) return;
     store.annotations = ar?.data?.data || [];
     lockedImageId = imageId;
+    props.collab?.focus(imageId);
     // 锁定当前图 + 定期续期（后端 5 分钟过期）
     props.api
       .lockImage(imageId, store.taskId)
@@ -542,6 +545,7 @@ async function init() {
     const t = dr?.data?.data;
     if (!t) return;
     store.task = t;
+    props.collab?.connect(store.taskId);
     imageTotal.value = 0;
     imageLoadedPages = 0;
     const imgs = await loadImagePage(1);
@@ -898,6 +902,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
   unlockCurrent();
+  props.collab?.close();
 });
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (store.unsaved) {
@@ -943,6 +948,10 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.collab-online {
+  color: var(--el-color-success);
+  font-size: 12px;
 }
 .ann-body {
   flex: 1;
