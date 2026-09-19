@@ -1784,6 +1784,8 @@ function onImgLoad() {
     store.setPan(0, 0);
   };
   nextTick(tryFit);
+  // 图片真正加载完成、标注已渲染后再测量标签尺寸，确保背景框一开始就是正确大小
+  nextTick(() => measureLabelRects());
 }
 
 // ===== Crosshair =====
@@ -3414,12 +3416,23 @@ async function loadImg(imageId: number) {
         }, 180000);
       })
       .catch(() => {});
-    await nextTick();
-    if (myToken === loadImgToken) measureLabelRects();
+    // 注意：标签尺寸测量改在图片真正加载完成、标注渲染出来之后（onImgLoad）触发，
+    // 避免在此处（图片尚未加载、SVG 未渲染标注）过早测量导致回退到小尺寸。
   } catch {
     if (myToken === loadImgToken) imgUrl.value = "";
   }
   if (myToken === loadImgToken) updateProgress();
+  // 兜底：图片加载与标注拉取是并行的，等图片真正加载完成后再次测量，
+  // 覆盖 onImgLoad 早于标注数据返回导致的漏测（竞态）。
+  if (myToken === loadImgToken) measureAfterReady();
+}
+async function measureAfterReady(token = loadImgToken) {
+  for (let i = 0; i < 40; i++) {
+    if (imageLoaded.value) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  await nextTick();
+  if (token === loadImgToken) measureLabelRects();
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
