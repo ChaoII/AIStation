@@ -772,9 +772,6 @@ function confirmOcr() {
   pendingOcr = null;
   ocrInputVisible.value = false;
 }
-    }
-  }
-}
 function onAnnDown(e: MouseEvent, ann: Annotation) {
   if (lockedByOther.value) return;
   store.selectedAnnotationId = ann.id;
