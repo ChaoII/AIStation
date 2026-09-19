@@ -54,6 +54,16 @@
         </div>
       </aside>
       <main class="ann-canvas-area">
+        <div
+          v-if="crossVisible"
+          class="crosshair-x"
+          :style="{ left: crosshair.x + 'px', top: crosshair.y + 'px' }"
+        />
+        <div
+          v-if="crossVisible"
+          class="crosshair-y"
+          :style="{ left: crosshair.x + 'px', top: crosshair.y + 'px' }"
+        />
         <AnnotationCanvas
           ref="canvasRef"
           :img-url="imgUrl"
@@ -247,11 +257,19 @@
         <el-button type="primary" @click="addClass">添加</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="ocrInputVisible" title="输入 OCR 文本" width="380px" append-to-body>
+      <el-input v-model="ocrInput" placeholder="OCR 文本" @keydown.enter="confirmOcr" />
+      <template #footer>
+        <el-button @click="ocrInputVisible = false; pendingOcr = null">取消</el-button>
+        <el-button type="primary" @click="confirmOcr">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
+import { ElMessageBox } from "element-plus";
 import { RefreshLeft, RefreshRight, Delete, Select, FullScreen, ZoomIn, Box, Refresh } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
@@ -291,6 +309,8 @@ const kp = useKeypointTool();
 const ocr = useOcrTool();
 const rbPreview = ref<{ cx: number; cy: number; width: number; height: number; angle: number } | null>(null);
 const kpBoxDrafting = ref(false);
+const showCrosshair = ref(false);
+const crosshair = reactive({ x: 0, y: 0 });
 const fontSize = 6;
 const tagH = Math.max(8, fontSize + 6);
 
@@ -311,6 +331,9 @@ const dw = computed(() => canvas.dw.value);
 const dh = computed(() => canvas.dh.value);
 const toolCursor = computed(() =>
   currentTool.value === "box" || currentTool.value === "rotated_box" ? "crosshair" : "default"
+);
+const crossVisible = computed(() =>
+  ["box", "rotated_box", "polygon", "keypoint", "ocr"].includes(currentTool.value)
 );
 
 const TOOL_ICONS: Record<string, any> = { box: Box, rotated_box: Refresh };
@@ -385,12 +408,22 @@ function restoreHistory() {
 }
 function deleteSelected() {
   if (lockedByOther.value) return;
-  const before = store.annotations.length;
-  store.annotations = store.annotations.filter((a) => a.id !== store.selectedAnnotationId);
-  if (store.annotations.length !== before) {
-    store.markUnsaved();
-    pushHistory();
-  }
+  const target = store.annotations.find((a) => a.id === store.selectedAnnotationId);
+  if (!target) return;
+  ElMessageBox.confirm(`将删除 1 个${target.type}标注，且不可恢复。`, "删除标注", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  })
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter((a) => a.id !== store.selectedAnnotationId);
+      if (store.annotations.length !== before) {
+        store.markUnsaved();
+        pushHistory();
+      }
+    })
+    .catch(() => {});
 }
 
 const taskClasses = ref<any[]>([...(props.config.classes || [])]);
@@ -403,6 +436,9 @@ watch(
 );
 const showClassModal = ref(false);
 const clsForm = reactive({ name: "", color: "#409eff" });
+const ocrInputVisible = ref(false);
+const ocrInput = ref("");
+let pendingOcr: Annotation | null = null;
 
 async function addClass() {
   if (!clsForm.name.trim()) return;
@@ -718,13 +754,24 @@ function onCanvasDown(e: MouseEvent) {
   } else if (currentTool.value === "ocr") {
     const created = ocr.onPoint(p);
     if (created) {
-      const text = window.prompt("输入 OCR 文本", "") || "";
-      created.text = text;
-      if (plugin.value.create(created)) {
-        store.annotations.push(created);
-        store.markUnsaved();
-        pushHistory();
-      }
+      pendingOcr = created;
+      ocrInput.value = "";
+      ocrInputVisible.value = true;
+    }
+  }
+}
+function confirmOcr() {
+  if (pendingOcr) {
+    pendingOcr.text = ocrInput.value;
+    if (plugin.value.create(pendingOcr)) {
+      store.annotations.push(pendingOcr);
+      store.markUnsaved();
+      pushHistory();
+    }
+  }
+  pendingOcr = null;
+  ocrInputVisible.value = false;
+}
     }
   }
 }
@@ -766,6 +813,12 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
 }
 function onMove(e: MouseEvent) {
   if (lockedByOther.value) return;
+  const cc = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  if (cc) {
+    const r = cc.getBoundingClientRect();
+    crosshair.x = e.clientX - r.left;
+    crosshair.y = e.clientY - r.top;
+  }
   if (panState) {
     canvas.setPan(panState.px + (e.clientX - panState.startX), panState.py + (e.clientY - panState.startY));
     return;
@@ -1183,5 +1236,26 @@ defineExpose({
 }
 .ctx-danger {
   color: var(--el-color-danger);
+}
+.crosshair-x,
+.crosshair-y {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+}
+.crosshair-x {
+  height: 1px;
+  width: 100%;
+  border-top: 1px dashed #909399;
+}
+.crosshair-y {
+  width: 1px;
+  height: 100%;
+  border-left: 1px dashed #909399;
+}
+.empty-hint {
+  color: #c0c4cc;
+  font-size: 12px;
+  padding: 4px;
 }
 </style>
