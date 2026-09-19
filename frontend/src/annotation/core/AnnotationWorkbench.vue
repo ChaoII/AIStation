@@ -269,7 +269,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
-import { ElMessageBox } from "element-plus";
+import { ElMessageBox, ElMessage } from "element-plus";
 import { RefreshLeft, RefreshRight, Delete, Select, FullScreen, ZoomIn, Box, Refresh } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
@@ -433,6 +433,42 @@ function deleteSelected() {
       }
     })
     .catch(() => {});
+}
+
+// 复制 / 粘贴标注
+let annClipboard: any = null;
+function copySelected() {
+  const ann = store.annotations.find((a) => a.id === store.selectedAnnotationId);
+  if (!ann) {
+    ElMessage.info("请先选中一个标注");
+    return;
+  }
+  annClipboard = JSON.parse(JSON.stringify(ann));
+  ElMessage.success("已复制标注");
+}
+function pasteCopied() {
+  if (lockedByOther.value) return;
+  if (!annClipboard) {
+    ElMessage.info("剪贴板为空，先 Ctrl+C 复制标注");
+    return;
+  }
+  const copy = JSON.parse(JSON.stringify(annClipboard));
+  copy.id = crypto.randomUUID();
+  if (copy.x1 !== undefined) {
+    copy.x1 += 0.01;
+    copy.x2 += 0.01;
+    copy.y1 += 0.01;
+    copy.y2 += 0.01;
+  } else if (copy.cx !== undefined) {
+    copy.cx += 0.01;
+    copy.cy += 0.01;
+  } else if (copy.points) {
+    copy.points = copy.points.map((p: any) => ({ x: p.x + 0.01, y: p.y + 0.01 }));
+  }
+  store.annotations.push(copy);
+  store.selectedAnnotationId = copy.id;
+  store.markUnsaved();
+  pushHistory();
 }
 
 const taskClasses = ref<any[]>([...(props.config.classes || [])]);
@@ -718,7 +754,17 @@ function openHistory() {
 }
 
 // ==== 绘制/编辑（同阶段0-5a 逻辑） ====
-function onDblClick() {
+function onDblClick(e: MouseEvent) {
+  // 双击已有标注 → 打开编辑弹窗
+  const hit = (e.target as Element)?.closest?.("[data-ann-id]");
+  if (hit) {
+    const id = hit.getAttribute("data-ann-id");
+    const ann = store.annotations.find((a) => a.id === id);
+    if (ann) {
+      openEditDialog(ann);
+      return;
+    }
+  }
   if (currentTool.value === "polygon") {
     const created = seg.closePolygon();
     if (created && plugin.value.create(created)) {
@@ -940,15 +986,18 @@ function openContextMenu(e: MouseEvent, ann: Annotation) {
 function closeMenu() {
   annMenu.visible = false;
 }
-function menuEdit() {
-  const ann = annMenu.ann;
-  closeMenu();
+function openEditDialog(ann: any) {
   if (!ann) return;
   editForm.ann = ann;
   editForm.class_id = ann.class_id;
   editForm.text = ann.text || "";
   editForm.keypoints = ann.type === "Keypoint" ? JSON.parse(JSON.stringify(ann.keypoints || [])) : [];
   editAnnVisible.value = true;
+}
+function menuEdit() {
+  const ann = annMenu.ann;
+  closeMenu();
+  openEditDialog(ann);
 }
 function menuDelete() {
   const ann = annMenu.ann;
@@ -976,6 +1025,8 @@ function editDelete() {
 function onKey(e: KeyboardEvent) {
   if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
   else if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === "v") { e.preventDefault(); pasteCopied(); }
   else if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); }
   else if (["1", "s"].includes(e.key)) setTool("select");
   else if (["2", "b"].includes(e.key)) setTool("box");
