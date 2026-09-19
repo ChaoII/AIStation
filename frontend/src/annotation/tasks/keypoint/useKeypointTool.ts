@@ -97,11 +97,11 @@ export function useKeypointTool(kpNames: string[] = []) {
     });
   }
 
-  // 包围盒缩放：按 handle 调整 bbox，并按比例缩放/约束绝顶关键点
-  function resizeBBox(ann: Annotation, handle: string, dx: number, dy: number) {
+  // 包围盒缩放：按 handle 调整 bbox，并按比例缩放/约束绝顶关键点（基于 orig 快照）
+  function resizeBBox(ann: Annotation, orig: any, handle: string, dx: number, dy: number) {
     const b = ann.bounding_box;
     if (!b) return;
-    const o = JSON.parse(JSON.stringify(b));
+    const o = orig.bounding_box;
     let x1 = o.cx - o.width / 2,
       y1 = o.cy - o.height / 2,
       x2 = o.cx + o.width / 2,
@@ -115,11 +115,13 @@ export function useKeypointTool(kpNames: string[] = []) {
     const oW = o.width || 1;
     const oH = o.height || 1;
     // 以包围盒左上为基准，把关键点按比例映射到新 bbox
-    (ann.keypoints || []).forEach((k: any) => {
+    (orig.keypoints || []).forEach((k: any, i: number) => {
       const rx = ((k.x - (o.cx - oW / 2)) / oW + 1) / 2; // 0..1 within old box
       const ry = ((k.y - (o.cy - oH / 2)) / oH + 1) / 2;
-      k.x = Math.max(0, Math.min(1, x1 + rx * nw));
-      k.y = Math.max(0, Math.min(1, y1 + ry * nh));
+      if (ann.keypoints?.[i]) {
+        ann.keypoints[i].x = Math.max(0, Math.min(1, x1 + rx * nw));
+        ann.keypoints[i].y = Math.max(0, Math.min(1, y1 + ry * nh));
+      }
     });
     b.cx = (x1 + x2) / 2;
     b.cy = (y1 + y2) / 2;

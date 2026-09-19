@@ -65,9 +65,9 @@ export function useRotatedTool() {
     return null;
   }
 
-  // 角点缩放：固定对角，按鼠标移动重算宽高/中心
-  function onDragResize(ann: Annotation, handle: string, mouse: Point, cw: number, ch: number, aspect: number) {
-    const o = JSON.parse(JSON.stringify(ann));
+  // 角点缩放：固定对角，按鼠标移动重算宽高/中心（基于 orig 快照，避免累积）
+  function onDragResize(ann: Annotation, orig: any, handle: string, mouse: Point, cw: number, ch: number, aspect: number) {
+    const o = orig;
     const cos = Math.cos(o.angle);
     const sin = Math.sin(o.angle);
     const fx = handle.includes("l") ? 1 : handle.includes("r") ? -1 : 1;

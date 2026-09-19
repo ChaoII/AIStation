@@ -1144,13 +1144,24 @@ function onMove(e: MouseEvent) {
     return;
   }
   if (dragState) {
+    const o = dragState.orig;
+    const ann = dragState.ann;
+    const dx = (e.clientX - dragState.startX) / dw.value;
+    const dy = (e.clientY - dragState.startY) / dh.value;
+    const nc = (v: number) => Math.max(0, Math.min(1, v));
+    const movePoints = (pts: any[]) => pts.map((p: any) => ({ ...p, x: nc(p.x + dx), y: nc(p.y + dy) }));
+
     if (dragState.type === "kp-move") {
-      kp.moveBBox(dragState.ann, (e.clientX - dragState.startX) / dw.value, (e.clientY - dragState.startY) / dh.value);
+      if (ann.bounding_box) {
+        ann.bounding_box.cx = nc(o.bounding_box.cx + dx);
+        ann.bounding_box.cy = nc(o.bounding_box.cy + dy);
+      }
+      ann.keypoints = (o.keypoints || []).map((k: any) => ({ ...k, x: nc(k.x + dx), y: nc(k.y + dy) }));
       store.markUnsaved();
       return;
     }
     if (dragState.type === "kp-resize") {
-      kp.resizeBBox(dragState.ann, dragState.handle, (e.clientX - dragState.startX) / dw.value, (e.clientY - dragState.startY) / dh.value);
+      kp.resizeBBox(ann, o, dragState.handle, dx, dy);
       store.markUnsaved();
       return;
     }
@@ -1176,19 +1187,42 @@ function onMove(e: MouseEvent) {
       store.markUnsaved();
       return;
     }
-    const dx = (e.clientX - dragState.startX) / dw.value;
-    const dy = (e.clientY - dragState.startY) / dh.value;
-    if (dragState.type === "resize") {
-      if (dragState.ann.type === "RotatedBox") {
-        const p = toImagePoint(e);
-        if (p) rot.onDragResize(dragState.ann, dragState.handle, p, cw.value, ch.value, ch.value / cw.value);
-      } else {
-        det.onDrag(dragState.ann, dragState.handle, dx, dy);
+    if (dragState.type === "move") {
+      if (ann.type === "AxisAlignedBox") {
+        ann.x1 = nc(o.x1 + dx); ann.x2 = nc(o.x2 + dx);
+        ann.y1 = nc(o.y1 + dy); ann.y2 = nc(o.y2 + dy);
+      } else if (ann.type === "RotatedBox") {
+        ann.cx = nc(o.cx + dx); ann.cy = nc(o.cy + dy);
+      } else if (ann.type === "Polygon") {
+        ann.points = movePoints(o.points);
+      } else if (ann.type === "Ocr") {
+        ann.points = movePoints(o.points);
       }
-    } else {
-      det.onDragMove(dragState.ann, dx, dy);
+      store.markUnsaved();
+      return;
     }
-    store.markUnsaved();
+    if (dragState.type === "resize") {
+      if (ann.type === "RotatedBox") {
+        const p = toImagePoint(e);
+        if (p) rot.onDragResize(ann, o, dragState.handle, p, cw.value, ch.value, ch.value / cw.value);
+      } else if (ann.type === "AxisAlignedBox") {
+        if (dragState.handle.includes("l")) ann.x1 = nc(Math.min(o.x2 - 0.01, o.x1 + dx));
+        if (dragState.handle.includes("r")) ann.x2 = nc(Math.max(o.x1 + 0.01, o.x2 + dx));
+        if (dragState.handle.includes("t")) ann.y1 = nc(Math.min(o.y2 - 0.01, o.y1 + dy));
+        if (dragState.handle.includes("b")) ann.y2 = nc(Math.max(o.y1 + 0.01, o.y2 + dy));
+      } else if (ann.type === "Ocr") {
+        const ox = { x1: Math.min(...o.points.map((p: any) => p.x)), x2: Math.max(...o.points.map((p: any) => p.x)) };
+        const oy = { y1: Math.min(...o.points.map((p: any) => p.y)), y2: Math.max(...o.points.map((p: any) => p.y)) };
+        let x1 = ox.x1, y1 = oy.y1, x2 = ox.x2, y2 = oy.y2;
+        if (dragState.handle.includes("l")) x1 = nc(Math.min(x2 - 0.01, x1 + dx));
+        if (dragState.handle.includes("r")) x2 = nc(Math.max(x1 + 0.01, x2 + dx));
+        if (dragState.handle.includes("t")) y1 = nc(Math.min(y2 - 0.01, y1 + dy));
+        if (dragState.handle.includes("b")) y2 = nc(Math.max(y1 + 0.01, y2 + dy));
+        ann.points = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+      }
+      store.markUnsaved();
+      return;
+    }
   }
 }
 function onUp() {
