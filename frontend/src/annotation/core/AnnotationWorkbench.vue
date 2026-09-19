@@ -264,6 +264,9 @@
       :style="{ left: annMenu.x + 'px', top: annMenu.y + 'px' }"
     >
       <div class="ctx-item" @click.stop="menuEdit">编辑标注</div>
+      <div class="ctx-item" @click.stop="menuCopy">复制标注</div>
+      <div class="ctx-item" @click.stop="menuLayerTop">置顶</div>
+      <div class="ctx-item" @click.stop="menuLayerBottom">置底</div>
       <div class="ctx-item ctx-danger" @click.stop="menuDelete">删除标注</div>
     </div>
 
@@ -1385,6 +1388,31 @@ function menuDelete() {
   if (!ann) return;
   store.selectedAnnotationId = ann.id;
   deleteSelected();
+}
+function menuCopy() {
+  const ann = annMenu.ann;
+  closeMenu();
+  if (!ann) return;
+  store.selectedAnnotationId = ann.id;
+  copySelected();
+}
+function layerMove(ann: any, toTop: boolean) {
+  if (!ann) return;
+  store.selectedAnnotationId = ann.id;
+  const rest = store.annotations.filter((a) => a.id !== ann.id);
+  store.annotations = toTop ? [ann, ...rest] : [...rest, ann];
+  store.markUnsaved();
+  pushHistory();
+}
+function menuLayerTop() {
+  const ann = annMenu.ann;
+  closeMenu();
+  layerMove(ann, true);
+}
+function menuLayerBottom() {
+  const ann = annMenu.ann;
+  closeMenu();
+  layerMove(ann, false);
 }
 function deleteById(id: string) {
   deleteAnnotation(id);
