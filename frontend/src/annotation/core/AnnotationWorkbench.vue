@@ -174,18 +174,28 @@
         </div>
         <div class="panel-section">
           <div class="section-title-row">图片列表</div>
+          <el-radio-group v-model="imageFilter" size="small" class="img-filter">
+            <el-radio-button value="all">全部</el-radio-button>
+            <el-radio-button value="annotated">已标</el-radio-button>
+            <el-radio-button value="unannotated">未标</el-radio-button>
+          </el-radio-group>
           <div class="scroll-area img-list">
             <div
-              v-for="(img, idx) in store.images"
+              v-for="(img, idx) in filteredImages"
               :key="img.id"
               class="image-item"
               :class="{ active: idx === store.currentImageIndex }"
-              @click="goToImage(idx)"
+              @click="goToImage(store.images.findIndex((x) => x.id === img.id))"
             >
+              <img v-if="img.thumbnail_url" :src="img.thumbnail_url" class="img-thumb" alt="" />
+              <span v-else class="img-thumb img-thumb--placeholder" />
+              <div class="img-info">
+                <span class="img-name">{{ img.filename }}</span>
+                <span class="img-meta">{{ img.updated_by?.name || "--" }}</span>
+              </div>
               <span class="dot" :class="img.status === 'annotated' ? 'dot-done' : 'dot-pending'" />
-              <span class="img-name">{{ img.filename }}</span>
-              <span class="img-meta">{{ img.updated_by?.name || "--" }}</span>
             </div>
+            <div v-if="filteredImages.length === 0" class="empty-hint">暂无图片</div>
           </div>
         </div>
         <div class="panel-section">
@@ -400,6 +410,11 @@ const showCrosshair = ref(false);
 const crosshair = reactive({ x: 0, y: 0 });
 const pendingKpVisibility = ref("Visible");
 const cursorPos = reactive({ x: 0, y: 0 });
+const imageFilter = ref<"all" | "annotated" | "unannotated">("all");
+const filteredImages = computed(() => {
+  if (imageFilter.value === "all") return store.images;
+  return store.images.filter((i) => (imageFilter.value === "annotated") === (i.status === "annotated"));
+});
 const showHelpModal = ref(false);
 const shortcutList = [
   { keys: "1-7 / s b r p k o c", desc: "切换标注工具" },
@@ -1442,6 +1457,26 @@ defineExpose({
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.img-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  flex-shrink: 0;
+}
+.img-thumb--placeholder {
+  display: block;
+}
+.img-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.img-filter {
+  margin-bottom: 6px;
 }
 .img-meta {
   color: #c0c4cc;
