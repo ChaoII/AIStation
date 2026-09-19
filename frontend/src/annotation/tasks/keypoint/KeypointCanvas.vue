@@ -55,7 +55,7 @@
     >{{ kp.name }}</text>
     <AnnotationLabelRenderer
       :label-x="bb(ann).x1 * cw"
-      :base-y="bb(ann).y1 * ch - 2"
+      :base-y="bb(ann).y1 * ch"
       :label="clsName(ann)"
       :color="color(ann)"
       :font-size="fontSize"

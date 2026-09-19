@@ -42,7 +42,7 @@
     </template>
     <AnnotationLabelRenderer
       :label-x="bbox(ann).x"
-      :base-y="bbox(ann).y - 2"
+      :base-y="bbox(ann).y"
       :label="clsName(ann)"
       :color="color(ann)"
       :font-size="fontSize"

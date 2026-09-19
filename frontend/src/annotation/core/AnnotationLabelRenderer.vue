@@ -2,9 +2,9 @@
   <g class="ann-label">
     <rect
       :x="labelX"
-      :y="baseY - (h || tagH) - 4"
+      :y="baseY - tagH - 4"
       :width="w + 8"
-      :height="(h || tagH) + 4"
+      :height="tagH + 4"
       :fill="color"
       :stroke="color"
       stroke-width="0.5"
@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from "vue";
+import { ref, watch, onMounted } from "vue";
 
 const props = defineProps<{
   labelX: number;
@@ -39,29 +39,22 @@ const props = defineProps<{
 
 const textRef = ref<SVGTextElement | null>(null);
 const w = ref(0);
-const h = ref(0);
 
+// 高度用确定性的 tagH（随字号线性），宽度用同步 getComputedTextLength——无异步跳变
 function measure() {
   const el = textRef.value;
   if (!el) return;
   try {
-    const b = el.getBBox();
-    if (b.width > 0 && b.height > 0) {
-      w.value = b.width;
-      h.value = b.height;
-    }
+    const len = el.getComputedTextLength();
+    if (len > 0) w.value = len;
   } catch {
     /* ignore */
   }
 }
 
-function remeasure() {
-  nextTick(() => measure());
-}
-
-onMounted(remeasure);
-watch(() => props.label, remeasure);
-watch(() => props.fontSize, remeasure);
+onMounted(measure);
+watch(() => props.label, measure);
+watch(() => props.fontSize, measure);
 
 defineExpose({ measure });
 </script>

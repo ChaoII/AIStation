@@ -52,7 +52,7 @@
     </template>
     <AnnotationLabelRenderer
       :label-x="handlePos(ann, 'tl').x"
-      :base-y="handlePos(ann, 'tl').y - 2"
+      :base-y="handlePos(ann, 'tl').y"
       :label="clsName(ann)"
       :color="color(ann)"
       :font-size="fontSize"

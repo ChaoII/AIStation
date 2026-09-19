@@ -32,7 +32,7 @@
     </template>
     <AnnotationLabelRenderer
       :label-x="ann.x1 * cw"
-      :base-y="ann.y1 * ch - 2"
+      :base-y="ann.y1 * ch"
       :label="clsName(ann)"
       :color="color(ann)"
       :font-size="fontSize"
