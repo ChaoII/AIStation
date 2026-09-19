@@ -76,18 +76,25 @@
           </el-tab-pane>
           <el-tab-pane label="Remix 图标" name="remix">
             <el-scrollbar height="300px" @scroll="onRemixScroll">
-              <ul class="icon-grid">
-                <li
-                  v-for="icon in visibleRemixIcons"
-                  :key="'ri-' + icon"
-                  class="icon-grid-item"
-                  @click="selectIcon(icon)"
+              <div class="remix-spacer" :style="{ height: remixTotalRows * ROW_H + 'px' }">
+                <div
+                  class="remix-window"
+                  :style="{ transform: `translateY(${remixStart * ROW_H}px)` }"
                 >
-                  <el-tooltip :content="'ri-' + icon" placement="bottom" effect="light">
-                    <i :class="'ri-' + icon" style="font-size: 16px" />
-                  </el-tooltip>
-                </li>
-              </ul>
+                  <div v-for="(row, ri) in renderedRemixRows" :key="'row-' + ri" class="remix-row">
+                    <div
+                      v-for="icon in row"
+                      :key="'ri-' + icon"
+                      class="icon-grid-item remix-cell"
+                      @click="selectIcon(icon)"
+                    >
+                      <el-tooltip :content="'ri-' + icon" placement="bottom" effect="light">
+                        <i :class="'ri-' + icon" style="font-size: 16px" />
+                      </el-tooltip>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </el-scrollbar>
           </el-tab-pane>
         </el-tabs>
@@ -140,9 +147,6 @@ const filterText = ref("");
 const filteredSvgIcons = ref<string[]>([]);
 const filteredElementIcons = ref<string[]>(elementIcons.value);
 const filteredRemixIcons = ref<string[]>([]);
-// 分批懒加载：避免一次性渲染 3000+ 图标卡顿；滚动近底再追加
-const REMIX_BATCH = 160;
-const visibleRemixIcons = ref<string[]>([]);
 const isElementIcon = computed(() => {
   return selectedIcon.value && selectedIcon.value.startsWith("el-icon");
 });
@@ -150,23 +154,28 @@ const isRemixIcon = computed(() => {
   return selectedIcon.value && selectedIcon.value.startsWith("ri-");
 });
 
-function resetRemixVisible() {
-  visibleRemixIcons.value = filteredRemixIcons.value.slice(0, REMIX_BATCH);
-}
-
+// 窗口化虚拟滚动：只渲染视窗附近的几行，滚出即销毁，DOM 恒定在窗口大小附近。
+// 说明：本版本 element-plus 未暴露 el-virtual-list，自实现窗口化以杜绝 DOM 无限累积。
+const REMIX_COLS = 12;
+const ROW_H = 36; // 每行高度（px），与 .remix-row 高度一致
+const VIEW_H = 300; // 可视区高度（px）
+const OVERSCAN = 2; // 视窗上下额外多渲染的行（缓冲区）
+const remixRows = computed<string[][]>(() => {
+  const out: string[][] = [];
+  const arr = filteredRemixIcons.value;
+  for (let i = 0; i < arr.length; i += REMIX_COLS) out.push(arr.slice(i, i + REMIX_COLS));
+  return out;
+});
+const remixScrollTop = ref(0);
+const remixTotalRows = computed(() => remixRows.value.length);
+const remixStart = computed(() => Math.max(0, Math.floor(remixScrollTop.value / ROW_H) - OVERSCAN));
+const remixVisibleCount = computed(() => Math.ceil(VIEW_H / ROW_H) + OVERSCAN * 2);
+const renderedRemixRows = computed(() =>
+  remixRows.value.slice(remixStart.value, remixStart.value + remixVisibleCount.value)
+);
 function onRemixScroll(e: any) {
-  const st = e?.scrollTop ?? 0;
-  const sh = e?.scrollHeight ?? 0;
-  const vh = e?.offsetHeight ?? 0;
-  if (st + vh >= sh - 240) {
-    const next = filteredRemixIcons.value.slice(
-      visibleRemixIcons.value.length,
-      visibleRemixIcons.value.length + REMIX_BATCH
-    );
-    if (next.length) {
-      visibleRemixIcons.value = [...visibleRemixIcons.value, ...next];
-    }
-  }
+  const top = e?.scrollTop ?? e?.currentTarget?.scrollTop ?? e?.target?.scrollTop ?? 0;
+  remixScrollTop.value = top;
 }
 
 function loadIcons() {
@@ -193,7 +202,6 @@ function filterIcons() {
     filteredRemixIcons.value = kw
       ? remixIcons.value.filter((i) => i.toLowerCase().includes(kw))
       : remixIcons.value;
-    resetRemixVisible();
   } else {
     filteredElementIcons.value = kw
       ? elementIcons.value.filter((i) => i.toLowerCase().includes(kw))
@@ -232,7 +240,7 @@ onMounted(() => {
   if (selectedIcon.value) {
     if (selectedIcon.value.startsWith("ri-")) {
       activeTab.value = "remix";
-      filterIcons(); // 初始化 remix 可见批次
+      filterIcons(); // 填充 remix 图标列表供虚拟列表渲染
     } else if (elementIcons.value.includes(selectedIcon.value.replace("el-icon-", ""))) {
       activeTab.value = "element";
     } else {
@@ -268,5 +276,31 @@ onMounted(() => {
 .icon-grid-item:hover {
   border-color: var(--el-color-primary);
   transform: scale(1.2);
+}
+
+/* 窗口化虚拟滚动：spacer 撑起总高（保证滚动条正确），window 内只渲染视窗附近的行 */
+.remix-spacer {
+  position: relative;
+  width: 100%;
+}
+.remix-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+/* 虚拟行：固定 12 列，行高与 ROW_H 对齐 */
+.remix-row {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  align-items: center;
+  height: 36px;
+  box-sizing: border-box;
+}
+.remix-cell {
+  margin: 2px;
+  padding: 6px 4px;
+  height: 30px;
+  box-sizing: border-box;
 }
 </style>
