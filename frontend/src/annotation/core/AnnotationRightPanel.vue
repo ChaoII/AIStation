@@ -225,11 +225,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ann-rightbar {
-  width: 240px;
+  width: 200px;
   border-left: 1px solid var(--el-border-color-light);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .right-collapse {
   border-bottom: 1px solid var(--el-border-color-light);
@@ -237,12 +238,26 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 .right-collapse :deep(.el-collapse-item__header) {
-  padding: 0 10px;
-  height: 38px;
+  padding: 0 8px;
+  height: 30px;
+  line-height: 30px;
   color: #606266;
 }
 .right-collapse :deep(.el-collapse-item__content) {
-  padding: 6px 10px 10px;
+  padding: 4px 8px 6px;
+}
+.right-collapse :deep(.setting-row) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 0;
+  padding: 1px 0;
+}
+.right-collapse :deep(.setting-label) {
+  width: 44px;
+  font-size: 12px;
+  color: #606266;
+  white-space: nowrap;
 }
 .right-split {
   flex: 1;
@@ -308,8 +323,8 @@ onBeforeUnmount(() => {
 .image-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px;
+  gap: 5px;
+  padding: 3px 2px;
   cursor: pointer;
   font-size: 12px;
 }
@@ -332,8 +347,8 @@ onBeforeUnmount(() => {
   background: var(--el-color-info);
 }
 .img-thumb {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   object-fit: cover;
   border-radius: 4px;
   background: var(--el-fill-color-light);
@@ -347,6 +362,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  line-height: 1.2;
 }
 .img-name {
   overflow: hidden;
@@ -355,7 +371,10 @@ onBeforeUnmount(() => {
 }
 .img-meta {
   color: #c0c4cc;
-  font-size: 11px;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .class-item,
 .ann-item {
