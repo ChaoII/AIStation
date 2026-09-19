@@ -25,34 +25,14 @@
       </div>
     </div>
     <div class="ann-body">
-      <aside class="ann-leftbar">
-        <div class="tool-list">
-          <div
-            v-for="t in displayTools"
-            :key="t.name"
-            class="tool-btn"
-            :class="{ active: currentTool === t.name }"
-            :title="titleOf(t)"
-            @click="setTool(t.name)"
-          >
-            <el-icon :size="20"><component :is="iconOf(t)" /></el-icon>
-            <span class="tool-label">{{ t.label }}</span>
-          </div>
-          <div class="tool-sep" />
-          <div class="tool-btn" title="撤销 (Ctrl+Z)" @click="undo">
-            <el-icon :size="20"><RefreshLeft /></el-icon>
-            <span class="tool-label">撤销</span>
-          </div>
-          <div class="tool-btn" title="重做 (Ctrl+Y)" @click="redo">
-            <el-icon :size="20"><RefreshRight /></el-icon>
-            <span class="tool-label">重做</span>
-          </div>
-          <div class="tool-btn danger" title="删除选中标注 (Delete)" @click="deleteSelected">
-            <el-icon :size="20"><Delete /></el-icon>
-            <span class="tool-label">删除</span>
-          </div>
-        </div>
-      </aside>
+      <AnnotationToolbar
+        :tools="displayTools"
+        :current-tool="currentTool"
+        @select="setTool"
+        @undo="undo"
+        @redo="redo"
+        @delete="deleteSelected"
+      />
       <main class="ann-canvas-area">
         <div
           v-if="crossVisible"
@@ -429,9 +409,10 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
-import { RefreshLeft, RefreshRight, Delete, Select, FullScreen, ZoomIn, Box, Refresh } from "@element-plus/icons-vue";
+import { Select, FullScreen, ZoomIn } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
+import AnnotationToolbar from "./AnnotationToolbar.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import {
@@ -562,15 +543,6 @@ const polyPts = computed(() =>
 const ocrQuadPts = computed(() =>
   ocr.quadPoints.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
 );
-
-const TOOL_ICONS: Record<string, any> = { box: Box, rotated_box: Refresh };
-
-function iconOf(t: any) {
-  return t.icon || TOOL_ICONS[t.name] || Box;
-}
-function titleOf(t: any) {
-  return t.title || t.label;
-}
 
 let drawStart: { x: number; y: number } | null = null;
 let rbLast: { x: number; y: number } | null = null;
@@ -1536,41 +1508,6 @@ defineExpose({
   flex: 1;
   display: flex;
   min-height: 0;
-}
-.ann-leftbar {
-  width: 56px;
-  border-right: 1px solid var(--el-border-color-light);
-  padding: 8px 0;
-}
-.tool-list {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.tool-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 48px;
-  padding: 6px 0;
-  cursor: pointer;
-  color: #606266;
-}
-.tool-btn.active {
-  color: var(--el-color-primary);
-}
-.tool-btn.danger:hover {
-  color: var(--el-color-danger);
-}
-.tool-label {
-  font-size: 11px;
-}
-.tool-sep {
-  height: 1px;
-  width: 32px;
-  background: var(--el-border-color-light);
-  margin: 6px 0;
 }
 .ann-canvas-area {
   flex: 1;
