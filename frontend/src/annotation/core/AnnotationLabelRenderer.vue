@@ -2,7 +2,7 @@
   <g class="ann-label">
     <rect
       :x="labelX"
-      :y="labelY"
+      :y="baseY - (h || tagH) - 4"
       :width="w + 8"
       :height="(h || tagH) + 4"
       :fill="color"
