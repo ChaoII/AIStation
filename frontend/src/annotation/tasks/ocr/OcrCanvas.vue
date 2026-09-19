@@ -60,8 +60,8 @@ const emit = defineEmits<{
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
 }>();
 
-const stroke = props.stroke ?? 1.5;
-const selStroke = props.selStroke ?? 2;
+const stroke = computed(() => props.stroke ?? 1.5);
+const selStroke = computed(() => props.selStroke ?? 2);
 const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 
 function pts(a: Annotation) {

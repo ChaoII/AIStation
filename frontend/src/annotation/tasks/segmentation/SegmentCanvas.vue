@@ -77,9 +77,9 @@ const emit = defineEmits<{
 }>();
 
 const seg = useSegmentTool();
-const stroke = props.stroke ?? 1.5;
+const stroke = computed(() => props.stroke ?? 1.5);
 const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
-const selStroke = props.selStroke ?? 2;
+const selStroke = computed(() => props.selStroke ?? 2);
 
 function path(a: Annotation) {
   return seg.polygonPath(a, props.cw, props.ch);

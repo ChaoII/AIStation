@@ -87,8 +87,8 @@ const emit = defineEmits<{
 }>();
 
 const handles = ["tl", "tr", "bl", "br"];
-const stroke = props.stroke ?? 1.5;
-const selStroke = props.selStroke ?? 2;
+const stroke = computed(() => props.stroke ?? 1.5);
+const selStroke = computed(() => props.selStroke ?? 2);
 const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 
 function handlePos(a: Annotation, key: string) {

@@ -265,6 +265,10 @@ function fmtTime(ts: any) {
   gap: 6px;
   padding: 1px 0;
 }
+.setting-row :deep(.el-slider) {
+  flex: 1;
+  min-width: 0;
+}
 .setting-label {
   width: 44px;
   font-size: 12px;
