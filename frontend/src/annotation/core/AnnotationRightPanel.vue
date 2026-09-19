@@ -1,20 +1,21 @@
 <template>
   <aside class="ann-rightbar">
-    <div class="panel-section">
-      <div class="section-title-row">设置</div>
-      <div class="setting-row">
-        <span class="setting-label">标签字号</span>
-        <el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" size="small" />
-      </div>
-      <div class="setting-row">
-        <span class="setting-label">框线</span>
-        <el-slider v-model="annSettings.strokeWidth" :min="0.5" :max="4" :step="0.5" size="small" />
-      </div>
-      <div class="setting-row">
-        <span class="setting-label">选中框线</span>
-        <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
-      </div>
-    </div>
+    <el-collapse v-model="settingsOpen" class="right-collapse">
+      <el-collapse-item title="设置" name="settings">
+        <div class="setting-row">
+          <span class="setting-label">标签字号</span>
+          <el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" size="small" />
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">框线</span>
+          <el-slider v-model="annSettings.strokeWidth" :min="0.5" :max="4" :step="0.5" size="small" />
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">选中框线</span>
+          <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
+        </div>
+      </el-collapse-item>
+    </el-collapse>
     <div class="panel-section">
       <div class="section-title-row">图片列表</div>
       <el-radio-group :model-value="imageFilter" size="small" class="img-filter" @update:model-value="$emit('update-image-filter', $event)">
@@ -112,7 +113,10 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import type { Annotation } from "./types";
+
+const settingsOpen = ref<string[]>([]);
 
 const props = defineProps<{
   annSettings: any;
@@ -156,6 +160,10 @@ function imagesIdx(id: number) {
   border-left: 1px solid var(--el-border-color-light);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+}
+.right-collapse {
+  border-bottom: 1px solid var(--el-border-color-light);
 }
 .panel-section {
   border-bottom: 1px solid var(--el-border-color-light);
@@ -167,11 +175,11 @@ function imagesIdx(id: number) {
   margin-bottom: 6px;
 }
 .scroll-area {
-  max-height: 240px;
   overflow: auto;
+  padding-right: 4px;
 }
 .img-list {
-  max-height: 320px;
+  max-height: 280px;
 }
 .img-filter {
   margin-bottom: 6px;
@@ -248,6 +256,10 @@ function imagesIdx(id: number) {
 }
 .flex-1 {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .count-chip {
   color: #c0c4cc;
