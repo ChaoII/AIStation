@@ -533,6 +533,7 @@ let loadImgToken = 0;
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
 let unmounted = false;
+let _resizeObserver: ResizeObserver | null = null;
 
 function clearLockRenewal() {
   if (lockRenewTimer) {
@@ -772,10 +773,24 @@ function getCanvasEl(): HTMLElement | null {
   return _canvasEl;
 }
 
-function toImagePoint(e: MouseEvent): { x: number; y: number } | null {
+const canvasRect = { left: 0, top: 0, width: 0, height: 0 };
+const rectTick = ref(0);
+function measureCanvas() {
   const el = getCanvasEl();
-  if (!el) return null;
+  if (!el) return;
   const r = el.getBoundingClientRect();
+  canvasRect.left = r.left;
+  canvasRect.top = r.top;
+  canvasRect.width = r.width;
+  canvasRect.height = r.height;
+}
+function canvasR() {
+  return canvasRect;
+}
+
+function toImagePoint(e: MouseEvent): { x: number; y: number } | null {
+  const r = canvasR();
+  if (!r.width || !r.height) return null;
   return canvas.containerToImage(e.clientX - r.left, e.clientY - r.top, r.width, r.height);
 }
 
@@ -819,25 +834,19 @@ function onImgLoad() {
 
 function onWheel(e: WheelEvent) {
   if (!cw.value || !ch.value) return;
-  const el = getCanvasEl();
-  if (!el) return;
-  const r = el.getBoundingClientRect();
+  const r = canvasR();
   const cx = e.clientX - r.left;
   const cy = e.clientY - r.top;
   const factor = e.deltaY < 0 ? 1.1 : 0.9;
   zoomAt(factor, cx, cy);
 }
 function boxZoom(factor: number, clientX: number, clientY: number) {
-  const el = getCanvasEl();
-  if (!el) return;
-  const r = el.getBoundingClientRect();
+  const r = canvasR();
   zoomAt(factor, clientX - r.left, clientY - r.top);
 }
 function zoomAt(factor: number, cx: number, cy: number) {
   if (!cw.value || !ch.value) return;
-  const el = getCanvasEl();
-  if (!el) return;
-  const r = el.getBoundingClientRect();
+  const r = canvasR();
   const newZoom = Math.min(3, Math.max(0.1, canvas.zoom.value * factor));
   // 光标下的图像点（归一化）
   const off = canvas.imageOffset(r.width, r.height);
@@ -1329,14 +1338,11 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "rotate") {
-      const c = getCanvasEl();
-      if (c) {
-        const r = c.getBoundingClientRect();
-        const off = canvas.imageOffset(r.width, r.height);
-        const centerX = r.left + off.left + dragState.ann.cx * dw.value;
-        const centerY = r.top + off.top + dragState.ann.cy * dh.value;
-        rot.onRotate(dragState.ann, centerX, centerY, dragState.startX, dragState.startY, e.clientX, e.clientY);
-      }
+      const r = canvasR();
+      const off = canvas.imageOffset(r.width, r.height);
+      const centerX = r.left + off.left + dragState.ann.cx * dw.value;
+      const centerY = r.top + off.top + dragState.ann.cy * dh.value;
+      rot.onRotate(dragState.ann, centerX, centerY, dragState.startX, dragState.startY, e.clientX, e.clientY);
       store.markUnsaved();
       return;
     }
@@ -1431,9 +1437,9 @@ function openContextMenu(e: MouseEvent, ann: Annotation) {
 function closeMenu() {
   annMenu.visible = false;
 }
-function annScreenPos(ann: any) {  const el = getCanvasEl();
-  if (!el || !dw.value || !dh.value) return { x: 0, y: 0 };
-  const r = el.getBoundingClientRect();
+function annScreenPos(ann: any) {
+  if (!dw.value || !dh.value) return { x: 0, y: 0 };
+  const r = canvasR();
   const off = canvas.imageOffset(r.width, r.height);
   let nx = 0.5, ny = 0.5;
   if (ann.x1 !== undefined) { nx = (ann.x1 + ann.x2) / 2; ny = (ann.y1 + ann.y2) / 2; }
@@ -1448,11 +1454,11 @@ function annScreenPos(ann: any) {  const el = getCanvasEl();
 
 // HTML 标签覆盖层：用固定屏幕像素字号，不随 zoom 缩放，背景 span 自动贴合文字
 function tagStyle(ann: any): any {
-  const el = getCanvasEl();
   let lx = 0, ty = 0;
   // 标签层 .ann-label-layer 位于画布容器内（absolute inset:0），坐标相对画布容器，不含浏览器视口偏移
-  if (el && dw.value && dh.value) {
-    const r = el.getBoundingClientRect();
+  if (dw.value && dh.value) {
+    void rectTick.value;
+    const r = canvasR();
     const off = canvas.imageOffset(r.width, r.height);
     let nx = 0, ny = 0;
     if (ann.x1 !== undefined) { nx = ann.x1; ny = ann.y1; }
@@ -1627,6 +1633,14 @@ onMounted(() => {
   document.addEventListener("keyup", onKeyUp);
   document.addEventListener("click", onDocClick);
   init();
+  measureCanvas();
+  if (getCanvasEl()) {
+    _resizeObserver = new ResizeObserver(() => {
+      measureCanvas();
+      rectTick.value++;
+    });
+    _resizeObserver.observe(getCanvasEl()!);
+  }
 });
 onBeforeUnmount(() => {
   unmounted = true;
@@ -1638,6 +1652,7 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey);
   document.removeEventListener("keyup", onKeyUp);
   document.removeEventListener("click", onDocClick);
+  if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
   if (store.unsaved && store.currentImageId && !lockedByOther.value) {
     props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations).catch(() => {});
   }
