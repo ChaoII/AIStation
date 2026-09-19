@@ -48,7 +48,7 @@
         >
           <component
             :is="plugin.renderer"
-            :annotations="store.annotations"
+            :annotations="displayAnnotations"
             :cw="cw"
             :ch="ch"
             :selected-id="store.selectedAnnotationId"
@@ -203,7 +203,7 @@
         </AnnotationCanvas>
         <div class="ann-label-layer">
           <div
-            v-for="a in store.annotations"
+            v-for="a in displayAnnotations"
             :key="a.id"
             class="ann-tag"
             :style="tagStyle(a)"
@@ -374,7 +374,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, computed, shallowRef, triggerRef, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 import { Select, FullScreen, ZoomIn, Close, Edit, CopyDocument, ArrowUp, ArrowDown, Delete } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
@@ -529,6 +529,17 @@ let panState: { startX: number; startY: number; px: number; py: number } | null 
 let dragState:
   | { type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex" | "kp-move" | "kp-resize"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
   | null = null;
+const draftAnn = shallowRef<Annotation | null>(null);
+const displayAnnotations = computed<Annotation[]>(() => {
+  const d = draftAnn.value;
+  if (!d) return store.annotations;
+  return store.annotations.map((a) => (a.id === d.id ? d : a));
+});
+function draftOf(ann: Annotation): Annotation {
+  const d = JSON.parse(JSON.stringify(ann));
+  draftAnn.value = d;
+  return d;
+}
 let loadImgToken = 0;
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
@@ -799,6 +810,7 @@ function setTool(t: string) {
   resetDrawingState();
 }
 function resetDrawingState() {
+  draftAnn.value = null;
   preview.value = null;
   drawStart = null;
   rbPreview.value = null;
@@ -1179,7 +1191,7 @@ function onAnnDown(e: MouseEvent, ann: Annotation) {
     return;
   }
   store.selectedAnnotationId = ann.id;
-  dragState = { type: "move", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+  dragState = { type: "move", ann: draftOf(ann), handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (e.button !== 0 || lockedByOther.value) return;
@@ -1191,9 +1203,9 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (handle.startsWith("kpb-")) {
     const h = handle.replace("kpb-", "");
     if (h === "move") {
-      dragState = { type: "kp-move", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+      dragState = { type: "kp-move", ann: draftOf(ann), handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     } else {
-      dragState = { type: "kp-resize", ann, handle: h, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+      dragState = { type: "kp-resize", ann: draftOf(ann), handle: h, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     }
     return;
   }
@@ -1205,7 +1217,7 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       pushHistory();
       return;
     }
-    dragState = { type: "kp-vertex", ann, handle: idx, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    dragState = { type: "kp-vertex", ann: draftOf(ann), handle: idx, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     return;
   }
   if (handle.startsWith("ocr-")) {
@@ -1218,7 +1230,7 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       }
       return;
     }
-    dragState = { type: "poly-vertex", ann, handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    dragState = { type: "poly-vertex", ann: draftOf(ann), handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     return;
   }
   if (handle.startsWith("poly-ins-")) {
@@ -1240,10 +1252,10 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       }
       return;
     }
-    dragState = { type: "poly-vertex", ann, handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    dragState = { type: "poly-vertex", ann: draftOf(ann), handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     return;
   }
-  dragState = { type: "resize", ann, handle, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+  dragState = { type: "resize", ann: draftOf(ann), handle, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 function onRotateDown(e: MouseEvent, ann: Annotation) {
   if (e.button !== 0 || lockedByOther.value) return;
@@ -1252,7 +1264,7 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
     return;
   }
   store.selectedAnnotationId = ann.id;
-  dragState = { type: "rotate", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+  dragState = { type: "rotate", ann: draftOf(ann), handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 let pendingMove: MouseEvent | null = null;
 let moveRafId = 0;
@@ -1319,22 +1331,22 @@ function onMove(e: MouseEvent) {
         ann.bounding_box.cy = nc(o.bounding_box.cy + dy);
       }
       ann.keypoints = (o.keypoints || []).map((k: any) => ({ ...k, x: nc(k.x + dx), y: nc(k.y + dy) }));
-      store.markUnsaved();
+      triggerRef(draftAnn);
       return;
     }
     if (dragState.type === "kp-resize") {
       kp.resizeBBox(ann, o, dragState.handle, dx, dy);
-      store.markUnsaved();
+      triggerRef(draftAnn);
       return;
     }
     if (dragState.type === "kp-vertex") {
       const p = toImagePoint(e);
-      if (p) { kp.moveKeypoint(dragState.ann, Number(dragState.handle), p); store.markUnsaved(); }
+      if (p) { kp.moveKeypoint(dragState.ann, Number(dragState.handle), p); triggerRef(draftAnn); }
       return;
     }
     if (dragState.type === "poly-vertex") {
       const p = toImagePoint(e);
-      if (p) { seg.moveVertex(dragState.ann, Number(dragState.handle), p); store.markUnsaved(); }
+      if (p) { seg.moveVertex(dragState.ann, Number(dragState.handle), p); triggerRef(draftAnn); }
       return;
     }
     if (dragState.type === "rotate") {
@@ -1343,7 +1355,7 @@ function onMove(e: MouseEvent) {
       const centerX = r.left + off.left + dragState.ann.cx * dw.value;
       const centerY = r.top + off.top + dragState.ann.cy * dh.value;
       rot.onRotate(dragState.ann, centerX, centerY, dragState.startX, dragState.startY, e.clientX, e.clientY);
-      store.markUnsaved();
+      triggerRef(draftAnn);
       return;
     }
     if (dragState.type === "move") {
@@ -1357,7 +1369,7 @@ function onMove(e: MouseEvent) {
       } else if (ann.type === "Ocr") {
         ann.points = movePoints(o.points);
       }
-      store.markUnsaved();
+      triggerRef(draftAnn);
       return;
     }
     if (dragState.type === "resize") {
@@ -1379,7 +1391,7 @@ function onMove(e: MouseEvent) {
         if (dragState.handle.includes("b")) y2 = nc(Math.max(y1 + 0.01, y2 + dy));
         ann.points = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
       }
-      store.markUnsaved();
+      triggerRef(draftAnn);
       return;
     }
   }
@@ -1417,7 +1429,16 @@ function onUp() {
     }
     return;
   }
-  if (dragState) pushHistory();
+  if (dragState) {
+    const d = draftAnn.value;
+    if (d) {
+      const target = store.annotations.find((a) => a.id === d.id);
+      if (target) Object.assign(target, d);
+      store.markUnsaved();
+      pushHistory();
+    }
+    draftAnn.value = null;
+  }
   dragState = null;
 }
 
