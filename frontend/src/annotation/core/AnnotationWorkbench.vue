@@ -842,6 +842,7 @@ function onDocClick(e: MouseEvent) {
 }
 function onImgLoad() {
   imageLoaded.value = true;
+  measureCanvas();
 }
 
 function onWheel(e: WheelEvent) {
@@ -1433,9 +1434,11 @@ function onUp() {
     const d = draftAnn.value;
     if (d) {
       const target = store.annotations.find((a) => a.id === d.id);
-      if (target) Object.assign(target, d);
-      store.markUnsaved();
-      pushHistory();
+      if (target) {
+        Object.assign(target, d);
+        store.markUnsaved();
+        pushHistory();
+      }
     }
     draftAnn.value = null;
   }
