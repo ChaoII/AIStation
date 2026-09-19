@@ -320,6 +320,7 @@ const rbPreview = ref<{ cx: number; cy: number; width: number; height: number; a
 const kpBoxDrafting = ref(false);
 const showCrosshair = ref(false);
 const crosshair = reactive({ x: 0, y: 0 });
+const pendingKpVisibility = ref("Visible");
 const fontSize = 6;
 const tagH = Math.max(8, fontSize + 6);
 
@@ -806,7 +807,7 @@ function onCanvasDown(e: MouseEvent) {
     } else {
       const kpNames = taskClasses.value.find((c) => c.id === selectedClassId.value)?.keypoint_names || [];
       kp.setNames(kpNames);
-      kp.addPoint(p);
+      kp.addPoint(p, pendingKpVisibility.value);
     }
   } else if (currentTool.value === "ocr") {
     const created = ocr.onPoint(p);
@@ -838,11 +839,27 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (lockedByOther.value) return;
   store.selectedAnnotationId = ann.id;
   if (handle.startsWith("kp-")) {
-    dragState = { type: "kp-vertex", ann, handle: handle.replace("kp-", ""), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    const idx = handle.replace("kp-", "");
+    if (e.altKey) {
+      kp.removeKeypoint(ann, Number(idx));
+      store.markUnsaved();
+      pushHistory();
+      return;
+    }
+    dragState = { type: "kp-vertex", ann, handle: idx, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     return;
   }
   if (handle.startsWith("ocr-")) {
-    dragState = { type: "poly-vertex", ann, handle: handle.replace("ocr-", ""), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    const idx = Number(handle.replace("ocr-", ""));
+    if (e.altKey) {
+      if (ann.points?.length > 4) {
+        ann.points.splice(idx, 1);
+        store.markUnsaved();
+        pushHistory();
+      }
+      return;
+    }
+    dragState = { type: "poly-vertex", ann, handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     return;
   }
   if (handle.startsWith("poly-ins-")) {
@@ -855,7 +872,16 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
     return;
   }
   if (handle.startsWith("poly-")) {
-    dragState = { type: "poly-vertex", ann, handle: handle.replace("poly-", ""), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    const idx = Number(handle.replace("poly-", ""));
+    if (e.altKey) {
+      if (ann.points?.length > 3) {
+        ann.points.splice(idx, 1);
+        store.markUnsaved();
+        pushHistory();
+      }
+      return;
+    }
+    dragState = { type: "poly-vertex", ann, handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
     return;
   }
   dragState = { type: "resize", ann, handle, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
@@ -1036,6 +1062,9 @@ function onKey(e: KeyboardEvent) {
   else if (["5", "k"].includes(e.key)) setTool("keypoint");
   else if (["6", "o"].includes(e.key)) setTool("ocr");
   else if (["7", "c"].includes(e.key)) setTool("classification");
+  else if (["0"].includes(e.key)) { if (currentTool.value === "keypoint") pendingKpVisibility.value = "Hidden"; }
+  else if (["1"].includes(e.key)) { if (currentTool.value === "keypoint") pendingKpVisibility.value = "Occluded"; }
+  else if (["2"].includes(e.key)) { if (currentTool.value === "keypoint") pendingKpVisibility.value = "Visible"; }
 }
 function toggleClassification(clsId: number) {
   if (lockedByOther.value) return;

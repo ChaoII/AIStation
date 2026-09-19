@@ -19,13 +19,19 @@ export function useKeypointTool(kpNames: string[] = []) {
     currentNames = names;
   }
 
-  function addPoint(p: Point) {
+  function addPoint(p: Point, visibility = "Visible") {
     pending.value.push({
       x: p.x,
       y: p.y,
       name: currentNames[pending.value.length] || `kp${pending.value.length + 1}`,
-      visibility: "Visible",
+      visibility,
     });
+  }
+
+  function removeKeypoint(ann: Annotation, idx: number) {
+    if (!ann.keypoints?.length) return;
+    if (ann.keypoints.length <= 1) return;
+    ann.keypoints.splice(idx, 1);
   }
 
   function beginBox() {
@@ -79,5 +85,5 @@ export function useKeypointTool(kpNames: string[] = []) {
     kp.y = p.y;
   }
 
-  return { pending, boxMode, boxStart, boxEnd, setNames, addPoint, beginBox, setBoxStart, updateBox, build, moveKeypoint };
+  return { pending, boxMode, boxStart, boxEnd, setNames, addPoint, beginBox, setBoxStart, updateBox, build, moveKeypoint, removeKeypoint };
 }
