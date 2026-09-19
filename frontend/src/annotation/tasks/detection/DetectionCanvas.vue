@@ -61,13 +61,13 @@ const emit = defineEmits<{
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
 }>();
 
-const handles = ["tl", "tr", "bl", "br"];
+const handles = ["tl", "tr", "bl", "br", "tc", "bc", "ml", "mr"];
 const stroke = props.stroke ?? 1.5;
 const selStroke = props.selStroke ?? 2;
 
 function handlePos(a: Annotation, h: string) {
-  const x = h.includes("l") ? a.x1 : a.x2;
-  const y = h.includes("t") ? a.y1 : a.y2;
+  const x = h.includes("l") ? a.x1 : h.includes("r") ? a.x2 : (a.x1 + a.x2) / 2;
+  const y = h.includes("t") ? a.y1 : h.includes("b") ? a.y2 : (a.y1 + a.y2) / 2;
   return { x: x * props.cw, y: y * props.ch };
 }
 </script>

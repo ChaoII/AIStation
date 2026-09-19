@@ -1023,7 +1023,8 @@ function editDelete() {
   deleteSelected();
 }
 function onKey(e: KeyboardEvent) {
-  if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
+  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveAnn(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
   else if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
   else if (e.ctrlKey && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); }
   else if (e.ctrlKey && e.key.toLowerCase() === "v") { e.preventDefault(); pasteCopied(); }
