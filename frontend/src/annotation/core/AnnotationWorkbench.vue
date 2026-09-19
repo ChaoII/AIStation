@@ -134,12 +134,21 @@
           </div>
         </div>
         <div class="panel-section">
-          <div class="section-title-row">类别</div>
+          <div class="section-title-row">
+            <span>类别</span>
+            <el-button link type="primary" size="small" @click="showClassModal = true">+ 添加</el-button>
+          </div>
           <div class="scroll-area">
-            <div class="class-item" v-for="c in config.classes" :key="c.id">
+            <div class="class-item" v-for="c in taskClasses" :key="c.id">
               <span class="dot-color" :style="{ background: c.color }" />
               <span class="flex-1">{{ c.name }}</span>
+              <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="removeClass(c.id)">
+                <template #reference>
+                  <el-button text size="small">×</el-button>
+                </template>
+              </el-popconfirm>
             </div>
+            <div v-if="taskClasses.length === 0" class="empty-hint">请添加类别</div>
           </div>
         </div>
         <div
@@ -151,7 +160,7 @@
           </div>
           <div class="scroll-area">
             <div
-              v-for="c in config.classes"
+              v-for="c in taskClasses"
               :key="c.id"
               class="class-item"
               :class="{ active: isClsSelected(c.id) }"
@@ -202,7 +211,7 @@
       <el-form label-width="72px">
         <el-form-item label="类别">
           <el-select v-model="editForm.class_id" size="small" style="width: 100%" @change="editClassChange">
-            <el-option v-for="c in config.classes" :key="c.id" :label="c.name" :value="c.id" />
+            <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="editForm.ann?.type === 'Ocr'" label="OCR文本">
@@ -222,6 +231,20 @@
       <template #footer>
         <el-button @click="editAnnVisible = false">关闭</el-button>
         <el-button type="danger" @click="editDelete">删除该标注</el-button>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="showClassModal" title="添加类别" width="380px" append-to-body>
+      <el-form :model="clsForm" label-width="60px">
+        <el-form-item label="名称">
+          <el-input v-model="clsForm.name" placeholder="类别名称" />
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-color-picker v-model="clsForm.color" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showClassModal = false">取消</el-button>
+        <el-button type="primary" @click="addClass">添加</el-button>
       </template>
     </el-dialog>
   </div>
@@ -370,11 +393,59 @@ function deleteSelected() {
   }
 }
 
+const taskClasses = ref<any[]>([...(props.config.classes || [])]);
+watch(
+  () => props.config.classes,
+  (val) => {
+    taskClasses.value = [...(val || [])];
+  },
+  { deep: true }
+);
+const showClassModal = ref(false);
+const clsForm = reactive({ name: "", color: "#409eff" });
+
+async function addClass() {
+  if (!clsForm.name.trim()) return;
+  const id =
+    taskClasses.value.length > 0
+      ? Math.max(...taskClasses.value.map((c) => c.id)) + 1
+      : 0;
+  taskClasses.value.push({ id, name: clsForm.name.trim(), color: clsForm.color });
+  clsForm.name = "";
+  showClassModal.value = false;
+  await saveClasses();
+}
+async function removeClass(id: number) {
+  taskClasses.value = taskClasses.value.filter((c) => c.id !== id);
+  store.annotations.forEach((a: any) => {
+    if (a.class_id === id) a.class_id = -1;
+    if (Array.isArray(a.class_ids)) a.class_ids = a.class_ids.filter((cid: number) => cid !== id);
+  });
+  await saveClasses();
+}
+async function saveClasses() {
+  if (!store.taskId) return;
+  try {
+    await props.api.updateTask(store.taskId, { classes: taskClasses.value });
+  } catch {
+    /* ignore */
+  }
+}
+
 function clsName(a: Annotation) {
-  return props.config.classes.find((c) => c.id === a.class_id)?.name || "";
+  const c = taskClasses.value.find((c) => c.id === a.class_id);
+  if (c) return c.name;
+  // 多标签聚合并集显示
+  if (Array.isArray(a.class_ids) && a.class_ids.length) {
+    return a.class_ids
+      .map((id) => taskClasses.value.find((c) => c.id === id)?.name)
+      .filter(Boolean)
+      .join(" / ");
+  }
+  return "";
 }
 function clsColor(a: Annotation) {
-  return props.config.classes.find((c) => c.id === a.class_id)?.color || "#3b82f6";
+  return taskClasses.value.find((c) => c.id === a.class_id)?.color || "#3b82f6";
 }
 
 function toImagePoint(e: MouseEvent): { x: number; y: number } | null {
