@@ -34,16 +34,6 @@
         @delete="deleteSelected"
       />
       <main class="ann-canvas-area">
-        <div
-          v-if="crossVisible"
-          class="crosshair-x"
-          :style="{ left: crosshair.x + 'px', top: crosshair.y + 'px' }"
-        />
-        <div
-          v-if="crossVisible"
-          class="crosshair-y"
-          :style="{ left: crosshair.x + 'px', top: crosshair.y + 'px' }"
-        />
         <AnnotationCanvas
           ref="canvasRef"
           :img-url="imgUrl"
@@ -67,10 +57,33 @@
             :tag-h="tagH"
             :stroke="strokeW"
             :sel-stroke="selStrokeW"
+            :pointer-none="crossVisible"
             @ann-down="onAnnDown"
             @handle-down="onHandleDown"
             @rotate-down="onRotateDown"
             @contextmenu.prevent="onRootContextmenu"
+          />
+          <line
+            v-if="crossVisible"
+            :x1="crosshair.x * cw"
+            :y1="0"
+            :x2="crosshair.x * cw"
+            :y2="ch"
+            stroke="#909399"
+            stroke-width="1"
+            stroke-dasharray="3 3"
+            class="cross-svg"
+          />
+          <line
+            v-if="crossVisible"
+            :x1="0"
+            :y1="crosshair.y * ch"
+            :x2="cw"
+            :y2="crosshair.y * ch"
+            stroke="#909399"
+            stroke-width="1"
+            stroke-dasharray="3 3"
+            class="cross-svg"
           />
           <rect
             v-if="preview"
@@ -1106,11 +1119,10 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
 }
 function onMove(e: MouseEvent) {
   if (lockedByOther.value) return;
-  const cc = getCanvasEl();
-  if (cc) {
-    const r = cc.getBoundingClientRect();
-    crosshair.x = e.clientX - r.left;
-    crosshair.y = e.clientY - r.top;
+  const crossPt = toImagePoint(e);
+  if (crossPt) {
+    crosshair.x = crossPt.x;
+    crosshair.y = crossPt.y;
   }
   if (panState) {
     canvas.setPan(panState.px + (e.clientX - panState.startX), panState.py + (e.clientY - panState.startY));
@@ -1489,21 +1501,8 @@ defineExpose({
 .ctx-danger {
   color: var(--el-color-danger);
 }
-.crosshair-x,
-.crosshair-y {
-  position: absolute;
-  z-index: 5;
+.cross-svg {
   pointer-events: none;
-}
-.crosshair-x {
-  height: 1px;
-  width: 100%;
-  border-top: 1px dashed #909399;
-}
-.crosshair-y {
-  width: 1px;
-  height: 100%;
-  border-left: 1px dashed #909399;
 }
 .empty-hint {
   color: #c0c4cc;

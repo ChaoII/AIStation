@@ -8,6 +8,7 @@
       :stroke="color(ann)"
       :stroke-width="ann.id === selectedId ? selStroke : stroke"
       :fill="ann.id === selectedId ? color(ann) + '28' : 'none'"
+      :style="peStyle"
       vector-effect="non-scaling-stroke"
       :transform="`rotate(${(ann.angle * 180) / Math.PI} ${ann.cx * cw} ${ann.cy * ch})`"
       @mousedown.stop.prevent="$emit('ann-down', $event, ann)"
@@ -29,6 +30,7 @@
         :stroke="color(ann)"
         stroke-width="1.5"
         class="handle"
+        :style="peStyle"
         @mousedown.stop.prevent="$emit('rotate-down', $event, ann)"
       />
       <rect
@@ -43,6 +45,7 @@
         stroke-width="1.5"
         :data-handle="h"
         class="handle"
+        :style="peStyle"
         vector-effect="non-scaling-stroke"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, h)"
       />
@@ -59,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import type { Annotation } from "../../core/types";
 import AnnotationLabelRenderer from "../../core/AnnotationLabelRenderer.vue";
 
@@ -73,6 +77,7 @@ const props = defineProps<{
   tagH: number;
   stroke?: number;
   selStroke?: number;
+  pointerNone?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -84,6 +89,7 @@ const emit = defineEmits<{
 const handles = ["tl", "tr", "bl", "br"];
 const stroke = props.stroke ?? 1.5;
 const selStroke = props.selStroke ?? 2;
+const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 
 function handlePos(a: Annotation, key: string) {
   const hw = (a.width * props.cw) / 2;

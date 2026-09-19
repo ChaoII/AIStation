@@ -6,6 +6,7 @@
       :stroke-width="ann.id === selectedId ? selStroke : stroke"
       fill-rule="evenodd"
       :fill="color(ann) + '20'"
+      :style="peStyle"
       vector-effect="non-scaling-stroke"
       @mousedown.stop.prevent="$emit('ann-down', $event, ann)"
     />
@@ -20,6 +21,7 @@
         stroke="#1a1a1a"
         stroke-width="1.5"
         class="handle"
+        :style="peStyle"
         :data-handle="'poly-' + i"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-' + i)"
       />
@@ -33,6 +35,7 @@
         stroke="#3b82f6"
         stroke-width="1"
         class="handle"
+        :style="peStyle"
         :data-handle="'poly-ins-' + i"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-ins-' + i)"
       />
@@ -65,6 +68,7 @@ const props = defineProps<{
   tagH: number;
   stroke?: number;
   selStroke?: number;
+  pointerNone?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -74,6 +78,7 @@ const emit = defineEmits<{
 
 const seg = useSegmentTool();
 const stroke = props.stroke ?? 1.5;
+const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 const selStroke = props.selStroke ?? 2;
 
 function path(a: Annotation) {

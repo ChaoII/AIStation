@@ -5,6 +5,7 @@
       :stroke="color(ann)"
       :stroke-width="ann.id === selectedId ? selStroke : stroke"
       :fill="ann.id === selectedId ? color(ann) + '28' : 'none'"
+      :style="peStyle"
       vector-effect="non-scaling-stroke"
       @mousedown.stop.prevent="$emit('ann-down', $event, ann)"
     />
@@ -19,6 +20,7 @@
         stroke="#1a1a1a"
         stroke-width="1.5"
         class="handle"
+        :style="peStyle"
         :data-handle="'ocr-' + i"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'ocr-' + i)"
       />
@@ -35,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import type { Annotation } from "../../core/types";
 import AnnotationLabelRenderer from "../../core/AnnotationLabelRenderer.vue";
 
@@ -49,6 +52,7 @@ const props = defineProps<{
   tagH: number;
   stroke?: number;
   selStroke?: number;
+  pointerNone?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -58,6 +62,7 @@ const emit = defineEmits<{
 
 const stroke = props.stroke ?? 1.5;
 const selStroke = props.selStroke ?? 2;
+const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 
 function pts(a: Annotation) {
   return (a.points || []).map((p: any) => `${p.x * props.cw},${p.y * props.ch}`).join(" ");

@@ -9,6 +9,7 @@
       :stroke="color(ann)"
       :stroke-width="ann.id === selectedId ? selStroke : stroke"
       :fill="ann.id === selectedId ? color(ann) + '28' : 'none'"
+      :style="peStyle"
       vector-effect="non-scaling-stroke"
       @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'kpb-move')"
     />
@@ -24,6 +25,7 @@
         stroke="#1a1a1a"
         stroke-width="1.5"
         class="handle"
+        :style="peStyle"
         :data-handle="'kpb-' + h"
         vector-effect="non-scaling-stroke"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'kpb-' + h)"
@@ -39,6 +41,7 @@
       :stroke="color(ann)"
       stroke-width="1.5"
       class="handle"
+      :style="peStyle"
       :data-handle="'kp-' + i"
       @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'kp-' + i)"
     />
@@ -62,6 +65,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import type { Annotation } from "../../core/types";
 import AnnotationLabelRenderer from "../../core/AnnotationLabelRenderer.vue";
 
@@ -76,6 +80,7 @@ const props = defineProps<{
   tagH: number;
   stroke?: number;
   selStroke?: number;
+  pointerNone?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -86,6 +91,7 @@ const emit = defineEmits<{
 const handles = ["tl", "tr", "bl", "br", "tc", "bc", "ml", "mr"];
 const stroke = props.stroke ?? 1.5;
 const selStroke = props.selStroke ?? 2;
+const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 
 function bb(a: Annotation) {
   const b = a.bounding_box;
