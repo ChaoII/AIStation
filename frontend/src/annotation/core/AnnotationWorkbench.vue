@@ -298,6 +298,21 @@ let dragState:
   | null = null;
 let loadImgToken = 0;
 let lockRenewTimer: number | null = null;
+let lockedImageId: number | null = null;
+
+function clearLockRenewal() {
+  if (lockRenewTimer) {
+    clearInterval(lockRenewTimer);
+    lockRenewTimer = null;
+  }
+}
+function unlockCurrent() {
+  clearLockRenewal();
+  if (lockedImageId) {
+    props.api.unlockImage(lockedImageId, store.taskId).catch(() => {});
+    lockedImageId = null;
+  }
+}
 
 // ==== 历史（undo/redo）====
 const MAX_HISTORY = 50;
@@ -391,11 +406,15 @@ function onRootContextmenu(e: MouseEvent) {
 
 async function loadCurrentImage(imageId: number) {
   const myToken = ++loadImgToken;
+  // 切图：先释放上一张锁
+  if (lockedImageId && lockedImageId !== imageId) unlockCurrent();
   imgUrl.value = "";
   imageLoaded.value = false;
   store.selectedAnnotationId = "";
   store.annotations = [];
   store.unsaved = false;
+  lockedByOther.value = false;
+  lockedByUser.value = null;
   try {
     const r = await props.api.getPresignedUrl(imageId, store.taskId);
     if (myToken !== loadImgToken) return;
@@ -403,8 +422,85 @@ async function loadCurrentImage(imageId: number) {
     const ar = await props.api.loadAnnotations(store.taskId, imageId);
     if (myToken !== loadImgToken) return;
     store.annotations = ar?.data?.data || [];
+    lockedImageId = imageId;
+    // 锁定当前图 + 定期续期（后端 5 分钟过期）
+    props.api
+      .lockImage(imageId, store.taskId)
+      .then((lr: any) => {
+        if (myToken !== loadImgToken) return;
+        const d = lr?.data?.data;
+        if (d?.locked) {
+          lockedByOther.value = true;
+          lockedByUser.value = d.locked_by ?? null;
+        } else {
+          lockedByOther.value = false;
+          lockedByUser.value = null;
+        }
+        clearLockRenewal();
+        lockRenewTimer = window.setInterval(() => {
+          props.api.lockImage(imageId, store.taskId).catch(() => {});
+        }, 180000);
+      })
+      .catch(() => {});
   } catch {
     /* handled by interceptor */
+  }
+}
+
+const IMAGE_PAGE_SIZE = 200;
+const imageTotal = ref(0);
+const imagePrefetching = ref(false);
+let imageLoadedPages = 0;
+
+async function loadImagePage(p: number, silent = false): Promise<any[]> {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId) return [];
+  const r = await props.api.getImages(datasetId, store.taskId, p, IMAGE_PAGE_SIZE, { silent });
+  const d = r?.data?.data;
+  imageTotal.value = d?.total ?? imageTotal.value;
+  return d?.items || [];
+}
+
+async function prefetchRemainingImages() {
+  if (imagePrefetching.value) return;
+  imagePrefetching.value = true;
+  try {
+    const totalPages = Math.ceil(imageTotal.value / IMAGE_PAGE_SIZE);
+    for (let p = imageLoadedPages + 1; p <= totalPages; p++) {
+      try {
+        const items = await loadImagePage(p, true);
+        if (items.length) store.images.push(...items);
+        imageLoadedPages = p;
+      } catch {
+        return;
+      }
+      await new Promise((res) => setTimeout(res, 800));
+    }
+  } finally {
+    imagePrefetching.value = false;
+  }
+}
+
+async function ensureMoreImages(idx: number) {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId || imagePrefetching.value) return;
+  const totalPages = Math.ceil(imageTotal.value / IMAGE_PAGE_SIZE);
+  if (imageLoadedPages >= totalPages) return;
+  if (idx < store.images.length - 10) return;
+  try {
+    const items = await loadImagePage(imageLoadedPages + 1);
+    if (items.length) store.images.push(...items);
+    imageLoadedPages += 1;
+  } catch {
+    /* ignore */
+  }
+}
+
+async function fetchTaskProgress() {
+  try {
+    await props.api.getTaskProgress(store.taskId);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -416,14 +512,19 @@ async function init() {
     const t = dr?.data?.data;
     if (!t) return;
     store.task = t;
-    const imgs = await props.api.listImages({ task_id: props.taskId, page_no: 1, page_size: 1000 });
-    store.images = imgs?.data?.data?.items || imgs?.data?.data || [];
-    store.totalCount = store.images.length;
+    imageTotal.value = 0;
+    imageLoadedPages = 0;
+    const imgs = await loadImagePage(1);
+    store.images = imgs;
+    imageLoadedPages = 1;
+    store.totalCount = imageTotal.value;
     store.annotatedCount = store.images.filter((i) => i.status === "annotated").length;
     if (store.images.length) {
       store.currentImageIndex = 0;
       await loadCurrentImage(store.images[0].id);
     }
+    fetchTaskProgress();
+    prefetchRemainingImages();
   } catch {
     /* handled */
   } finally {
@@ -434,6 +535,7 @@ async function init() {
 function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
   store.currentImageIndex = idx;
+  ensureMoreImages(idx);
   loadCurrentImage(store.images[idx].id);
 }
 function prevImg() {
@@ -445,6 +547,9 @@ function nextImg() {
 
 async function saveAnn() {
   if (!store.currentImageId || !store.taskId) return;
+  if (lockedByOther.value) {
+    return;
+  }
   await props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations);
   store.unsaved = false;
   lastSavedKey = annotKey();
@@ -749,7 +854,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
-  if (lockRenewTimer) clearInterval(lockRenewTimer);
+  unlockCurrent();
 });
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (store.unsaved) {

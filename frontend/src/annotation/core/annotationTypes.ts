@@ -1,6 +1,7 @@
 export interface WorkbenchApi {
   getTaskDetail(taskId: number): Promise<any>;
   listImages(params: any): Promise<any>;
+  getImages(datasetId: number, taskId: number, page: number, pageSize: number, opts?: { silent?: boolean }): Promise<any>;
   getPresignedUrl(imageId: number, taskId: number): Promise<any>;
   loadAnnotations(taskId: number, imageId: number): Promise<any>;
   saveAnnotations(taskId: number, imageId: number, data: any[]): Promise<any>;
