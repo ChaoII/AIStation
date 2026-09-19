@@ -50,7 +50,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Annotation } from "../../core/types";
+import type { Annotation, Point } from "../../core/types";
 import { useSegmentTool } from "./useSegmentTool";
 import AnnotationLabelRenderer from "../../core/AnnotationLabelRenderer.vue";
 
@@ -84,7 +84,7 @@ function bbox(a: Annotation) {
 }
 function midpoints(a: Annotation) {
   const pts = a.points || [];
-  return pts.map((p, i) => {
+  return pts.map((p: Point, i: number) => {
     const n = pts[(i + 1) % pts.length];
     return { x: ((p.x + n.x) / 2) * props.cw, y: ((p.y + n.y) / 2) * props.ch };
   });

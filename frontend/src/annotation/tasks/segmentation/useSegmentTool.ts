@@ -44,15 +44,15 @@ export function useSegmentTool() {
     const pts = ann.points || [];
     if (pts.length === 0) return "";
     return (
-      pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x * cw},${p.y * ch}`).join(" ") + " Z"
+      pts.map((p: Point, i: number) => `${i === 0 ? "M" : "L"}${p.x * cw},${p.y * ch}`).join(" ") + " Z"
     );
   }
 
   // 外接 bbox
   function polyBBox(ann: Annotation, cw: number, ch: number) {
     const pts = ann.points || [];
-    const xs = pts.map((p) => p.x * cw);
-    const ys = pts.map((p) => p.y * ch);
+    const xs = pts.map((p: Point) => p.x * cw);
+    const ys = pts.map((p: Point) => p.y * ch);
     return {
       x: Math.min(...xs),
       y: Math.min(...ys),
