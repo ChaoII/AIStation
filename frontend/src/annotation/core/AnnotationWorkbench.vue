@@ -235,6 +235,53 @@ let dragState:
 let loadImgToken = 0;
 let lockRenewTimer: number | null = null;
 
+// ==== 历史（undo/redo）====
+const MAX_HISTORY = 50;
+let historyStack: string[] = [];
+let historyIndex = -1;
+let lastSavedKey = "";
+function annotKey() {
+  return JSON.stringify(store.annotations);
+}
+function pushHistory() {
+  const key = annotKey();
+  if (historyIndex >= 0 && historyStack[historyIndex] === key) return;
+  historyStack = historyStack.slice(0, historyIndex + 1);
+  historyStack.push(key);
+  if (historyStack.length > MAX_HISTORY) historyStack.shift();
+  historyIndex = historyStack.length - 1;
+}
+function undo() {
+  if (lockedByOther.value) return;
+  if (historyIndex <= 0) return;
+  historyIndex--;
+  restoreHistory();
+}
+function redo() {
+  if (lockedByOther.value) return;
+  if (historyIndex >= historyStack.length - 1) return;
+  historyIndex++;
+  restoreHistory();
+}
+function restoreHistory() {
+  const key = historyStack[historyIndex];
+  try {
+    store.annotations = key ? JSON.parse(key) : [];
+  } catch {
+    store.annotations = [];
+  }
+  if (annotKey() !== lastSavedKey && historyIndex < historyStack.length - 1) store.markUnsaved();
+}
+function deleteSelected() {
+  if (lockedByOther.value) return;
+  const before = store.annotations.length;
+  store.annotations = store.annotations.filter((a) => a.id !== store.selectedAnnotationId);
+  if (store.annotations.length !== before) {
+    store.markUnsaved();
+    pushHistory();
+  }
+}
+
 function clsName(a: Annotation) {
   return props.config.classes.find((c) => c.id === a.class_id)?.name || "";
 }
@@ -326,6 +373,9 @@ async function saveAnn() {
   if (!store.currentImageId || !store.taskId) return;
   await props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations);
   store.unsaved = false;
+  lastSavedKey = annotKey();
+  historyStack = [lastSavedKey];
+  historyIndex = 0;
   const img = store.images[store.currentImageIndex];
   if (img) {
     img.status = store.annotations.length ? "annotated" : "unannotated";
@@ -344,6 +394,7 @@ function onDblClick() {
     if (created && props.plugin.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
+      pushHistory();
     }
   } else if (currentTool.value === "keypoint") {
     kp.beginBox();
@@ -364,6 +415,7 @@ function onCanvasDown(e: MouseEvent) {
     if (created && props.plugin.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
+      pushHistory();
     }
   } else if (currentTool.value === "polygon") {
     seg.addPoint(p);
@@ -382,6 +434,7 @@ function onCanvasDown(e: MouseEvent) {
       if (props.plugin.create(created)) {
         store.annotations.push(created);
         store.markUnsaved();
+        pushHistory();
       }
     }
   }
@@ -492,6 +545,7 @@ function onUp() {
     if (created && props.plugin.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
+      pushHistory();
     }
     return;
   }
@@ -505,17 +559,15 @@ function onUp() {
     if (created && props.plugin.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
+      pushHistory();
     }
     return;
   }
+  if (dragState) pushHistory();
   dragState = null;
 }
 
-// ==== 历史（占位，Task E 完整接入）====
-function undo() {}
-function redo() {}
-function deleteSelected() {}
-
+// ==== 历史（undo/redo）====
 onMounted(() => {
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
