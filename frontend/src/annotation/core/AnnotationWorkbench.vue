@@ -201,7 +201,7 @@
         <div class="panel-section">
           <div class="section-title-row">
             <span>类别</span>
-            <el-button link type="primary" size="small" @click="showClassModal = true">+ 添加</el-button>
+            <el-button link type="primary" size="small" @click="showClassModal = true; clsForm.kpNames = []; clsForm.kpColors = []">+ 添加</el-button>
           </div>
           <div class="scroll-area">
             <div
@@ -330,6 +330,20 @@
         </el-form-item>
         <el-form-item label="颜色">
           <el-color-picker v-model="clsForm.color" />
+        </el-form-item>
+        <el-form-item v-if="plugin.name === 'keypoint'" label="关键点">
+          <div style="width:100%">
+            <div
+              v-for="(kp, i) in clsForm.kpNames"
+              :key="i"
+              style="display:flex;gap:6px;align-items:center;margin-bottom:4px"
+            >
+              <el-input v-model="clsForm.kpNames[i]" size="small" placeholder="关键点名称" />
+              <el-color-picker v-model="clsForm.kpColors[i]" size="small" />
+              <el-button text size="small" type="danger" @click="clsForm.kpNames.splice(i,1); clsForm.kpColors.splice(i,1)">×</el-button>
+            </div>
+            <el-button size="small" @click="clsForm.kpNames.push(''); clsForm.kpColors.push('#409eff')">+ 关键点</el-button>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -609,7 +623,7 @@ watch(
   { deep: true }
 );
 const showClassModal = ref(false);
-const clsForm = reactive({ name: "", color: "#409eff" });
+const clsForm = reactive({ name: "", color: "#409eff", kpNames: [] as string[], kpColors: [] as string[] });
 const ocrInputVisible = ref(false);
 const ocrInput = ref("");
 let pendingOcr: Annotation | null = null;
@@ -620,8 +634,17 @@ async function addClass() {
     taskClasses.value.length > 0
       ? Math.max(...taskClasses.value.map((c) => c.id)) + 1
       : 0;
-  taskClasses.value.push({ id, name: clsForm.name.trim(), color: clsForm.color });
+  const kpNames = clsForm.kpNames.filter((n) => n.trim());
+  taskClasses.value.push({
+    id,
+    name: clsForm.name.trim(),
+    color: clsForm.color,
+    keypoint_names: kpNames.length ? kpNames : undefined,
+    keypoint_colors: kpNames.length ? clsForm.kpColors.slice(0, kpNames.length) : undefined,
+  });
   clsForm.name = "";
+  clsForm.kpNames = [];
+  clsForm.kpColors = [];
   showClassModal.value = false;
   await saveClasses();
 }
@@ -702,9 +725,21 @@ function onWheel(e: WheelEvent) {
   const cx = e.clientX - r.left;
   const cy = e.clientY - r.top;
   const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  zoomAt(factor, cx, cy);
+}
+function boxZoom(factor: number, clientX: number, clientY: number) {
+  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  zoomAt(factor, clientX - r.left, clientY - r.top);
+}
+function zoomAt(factor: number, cx: number, cy: number) {
+  if (!cw.value || !ch.value) return;
+  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
   const newZoom = Math.min(3, Math.max(0.1, canvas.zoom.value * factor));
   const scale = newZoom / canvas.zoom.value;
-  // 保持光标下的图像点不动
   const off = canvas.imageOffset(r.width, r.height);
   const ix = (cx - off.left) / dw.value;
   const iy = (cy - off.top) / dh.value;
@@ -941,6 +976,10 @@ function onCanvasDown(e: MouseEvent) {
   store.selectedAnnotationId = "";
   if (currentTool.value === "pan") {
     panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    return;
+  }
+  if (currentTool.value === "zoom") {
+    boxZoom(e.altKey ? 0.8 : 1.25, e.clientX, e.clientY);
     return;
   }
   if (currentTool.value === "box") {
