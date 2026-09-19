@@ -58,9 +58,11 @@
           :img-url="imgUrl"
           :image-loaded="imageLoaded"
           :cursor="toolCursor"
+          :canvas="canvas"
           @img-load="onImgLoad"
           @mousedown="onCanvasDown"
           @dblclick="onDblClick"
+          @wheel="onWheel"
         >
           <component
             :is="plugin.renderer"
@@ -293,6 +295,7 @@ function titleOf(t: any) {
 
 let drawStart: { x: number; y: number } | null = null;
 let rbLast: { x: number; y: number } | null = null;
+let panState: { startX: number; startY: number; px: number; py: number } | null = null;
 let dragState:
   | { type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
   | null = null;
@@ -392,6 +395,29 @@ function resetDrawingState() {
 
 function onImgLoad() {
   imageLoaded.value = true;
+}
+
+function onWheel(e: WheelEvent) {
+  if (!cw.value || !ch.value) return;
+  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const cx = e.clientX - r.left;
+  const cy = e.clientY - r.top;
+  const factor = e.deltaY < 0 ? 1.1 : 0.9;
+  const newZoom = Math.min(3, Math.max(0.1, canvas.zoom.value * factor));
+  const scale = newZoom / canvas.zoom.value;
+  // 保持光标下的图像点不动
+  const off = canvas.imageOffset(r.width, r.height);
+  const ix = (cx - off.left) / dw.value;
+  const iy = (cy - off.top) / dh.value;
+  canvas.zoom.value = newZoom;
+  canvas.dw.value = cw.value * newZoom;
+  canvas.dh.value = ch.value * newZoom;
+  canvas.setPan(
+    r.width / 2 - ix * dw.value - dw.value / 2,
+    r.height / 2 - iy * dh.value - dh.value / 2
+  );
 }
 
 function onRootContextmenu(e: MouseEvent) {
@@ -584,6 +610,10 @@ function onCanvasDown(e: MouseEvent) {
   const p = toImagePoint(e);
   if (!p) return;
   store.selectedAnnotationId = "";
+  if (currentTool.value === "pan") {
+    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    return;
+  }
   if (currentTool.value === "box") {
     det.onStart(p);
     drawStart = p;
@@ -656,6 +686,10 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
 }
 function onMove(e: MouseEvent) {
   if (lockedByOther.value) return;
+  if (panState) {
+    canvas.setPan(panState.px + (e.clientX - panState.startX), panState.py + (e.clientY - panState.startY));
+    return;
+  }
   if (currentTool.value === "box" && drawStart) {
     const p = toImagePoint(e);
     if (!p) return;
@@ -716,6 +750,10 @@ function onMove(e: MouseEvent) {
   }
 }
 function onUp() {
+  if (panState) {
+    panState = null;
+    return;
+  }
   if (currentTool.value === "box" && drawStart) {
     const p = preview.value;
     const created = det.onMoveEnd(p ? { x: p.x + p.w, y: p.y + p.h } : ({ x: 0, y: 0 } as any));

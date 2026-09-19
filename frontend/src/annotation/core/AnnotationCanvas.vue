@@ -1,5 +1,5 @@
 <template>
-  <div ref="wrap" class="annotation-canvas" :style="{ cursor }" @mousedown="onMousedown">
+  <div ref="wrap" class="annotation-canvas" :style="{ cursor }" @mousedown="onMousedown" @wheel.prevent="onWheel">
     <img
       v-if="imgUrl"
       ref="imgRef"
@@ -27,16 +27,18 @@ const props = defineProps<{
   imgUrl: string;
   imageLoaded: boolean;
   cursor?: string;
+  canvas?: ReturnType<typeof useAnnotationCanvas>;
 }>();
 
 const emit = defineEmits<{
   (e: "img-load", w: number, h: number): void;
   (e: "mousedown", ev: MouseEvent): void;
+  (e: "wheel", ev: WheelEvent): void;
 }>();
 
 const wrap = ref<HTMLElement | null>(null);
 const imgRef = ref<HTMLImageElement | null>(null);
-const canvas = useAnnotationCanvas();
+const canvas = props.canvas ?? useAnnotationCanvas();
 
 function onImgLoad(e: Event) {
   const el = e.target as HTMLImageElement;
@@ -48,6 +50,10 @@ function onImgLoad(e: Event) {
 
 function onMousedown(e: MouseEvent) {
   emit("mousedown", e);
+}
+
+function onWheel(e: WheelEvent) {
+  emit("wheel", e);
 }
 
 defineExpose({ canvas });
