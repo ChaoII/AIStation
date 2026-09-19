@@ -75,10 +75,10 @@
             </el-scrollbar>
           </el-tab-pane>
           <el-tab-pane label="Remix 图标" name="remix">
-            <el-scrollbar height="300px">
+            <el-scrollbar height="300px" @scroll="onRemixScroll">
               <ul class="icon-grid">
                 <li
-                  v-for="icon in filteredRemixIcons"
+                  v-for="icon in visibleRemixIcons"
                   :key="'ri-' + icon"
                   class="icon-grid-item"
                   @click="selectIcon(icon)"
@@ -139,13 +139,35 @@ const selectedIcon = defineModel("modelValue", {
 const filterText = ref("");
 const filteredSvgIcons = ref<string[]>([]);
 const filteredElementIcons = ref<string[]>(elementIcons.value);
-const filteredRemixIcons = ref<string[]>(remixIcons.value);
+const filteredRemixIcons = ref<string[]>([]);
+// 分批懒加载：避免一次性渲染 3000+ 图标卡顿；滚动近底再追加
+const REMIX_BATCH = 160;
+const visibleRemixIcons = ref<string[]>([]);
 const isElementIcon = computed(() => {
   return selectedIcon.value && selectedIcon.value.startsWith("el-icon");
 });
 const isRemixIcon = computed(() => {
   return selectedIcon.value && selectedIcon.value.startsWith("ri-");
 });
+
+function resetRemixVisible() {
+  visibleRemixIcons.value = filteredRemixIcons.value.slice(0, REMIX_BATCH);
+}
+
+function onRemixScroll(e: any) {
+  const st = e?.scrollTop ?? 0;
+  const sh = e?.scrollHeight ?? 0;
+  const vh = e?.offsetHeight ?? 0;
+  if (st + vh >= sh - 240) {
+    const next = filteredRemixIcons.value.slice(
+      visibleRemixIcons.value.length,
+      visibleRemixIcons.value.length + REMIX_BATCH
+    );
+    if (next.length) {
+      visibleRemixIcons.value = [...visibleRemixIcons.value, ...next];
+    }
+  }
+}
 
 function loadIcons() {
   const icons = import.meta.glob("../../assets/icons/*.svg");
@@ -171,6 +193,7 @@ function filterIcons() {
     filteredRemixIcons.value = kw
       ? remixIcons.value.filter((i) => i.toLowerCase().includes(kw))
       : remixIcons.value;
+    resetRemixVisible();
   } else {
     filteredElementIcons.value = kw
       ? elementIcons.value.filter((i) => i.toLowerCase().includes(kw))
@@ -209,6 +232,7 @@ onMounted(() => {
   if (selectedIcon.value) {
     if (selectedIcon.value.startsWith("ri-")) {
       activeTab.value = "remix";
+      filterIcons(); // 初始化 remix 可见批次
     } else if (elementIcons.value.includes(selectedIcon.value.replace("el-icon-", ""))) {
       activeTab.value = "element";
     } else {
