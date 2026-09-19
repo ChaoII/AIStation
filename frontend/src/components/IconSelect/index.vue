@@ -98,6 +98,16 @@
 
 <script setup lang="ts">
 import * as ElementPlusIconsVue from "@element-plus/icons-vue";
+import remixCss from "remixicon/fonts/remixicon.css?raw";
+
+// 从 remixicon.css 提取全部图标类名（避免手写清单，覆盖 3000+ 图标）
+function extractRemixNames(css: string): string[] {
+  const names = new Set<string>();
+  const re = /\.ri-([a-z0-9-]+):before/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(css))) names.add(m[1]);
+  return Array.from(names).sort();
+}
 
 const props = defineProps({
   modelValue: {
@@ -119,19 +129,7 @@ const activeTab = ref("svg");
 
 const svgIcons = ref<string[]>([]);
 const elementIcons = ref<string[]>(Object.keys(ElementPlusIconsVue));
-const remixIcons = ref<string[]>([
-  "home-line", "dashboard-line", "folder-line", "folder-open-line", "database-line",
-  "user-line", "users-line", "settings-line", "tools-line", "menu-line",
-  "list-check", "file-list-line", "file-line", "folder-2-line", "play-circle-line",
-  "play-line", "stop-line", "video-line", "camera-line", "radar-line",
-  "cpu-line", "box-line", "package-line", "lock-line", "unlock-line",
-  "link", "global-line", "book-open-line", "book-line", "calculator-line",
-  "lightbulb-line", "bell-line", "search-line", "filter-line", "map-line",
-  "map-pin-line", "calendar-line", "image-line", "images-line", "team-line",
-  "user-star-line", "bug-line", "terminal-line", "task-line", "flow-chart",
-  "git-branch-line", "save-line", "swap-line", "upload-line", "download-line",
-  "refresh-line", "notification-3-line", "shield-line", "key-line",
-]);
+const remixIcons = ref<string[]>(extractRemixNames(remixCss));
 const selectedIcon = defineModel("modelValue", {
   type: String,
   required: true,
@@ -166,9 +164,13 @@ function handleTabClick(tabPane: any) {
 function filterIcons() {
   const kw = filterText.value.toLowerCase();
   if (activeTab.value === "svg") {
-    filteredSvgIcons.value = kw ? svgIcons.value.filter((i) => i.toLowerCase().includes(kw)) : svgIcons.value;
+    filteredSvgIcons.value = kw
+      ? svgIcons.value.filter((i) => i.toLowerCase().includes(kw))
+      : svgIcons.value;
   } else if (activeTab.value === "remix") {
-    filteredRemixIcons.value = kw ? remixIcons.value.filter((i) => i.toLowerCase().includes(kw)) : remixIcons.value;
+    filteredRemixIcons.value = kw
+      ? remixIcons.value.filter((i) => i.toLowerCase().includes(kw))
+      : remixIcons.value;
   } else {
     filteredElementIcons.value = kw
       ? elementIcons.value.filter((i) => i.toLowerCase().includes(kw))
