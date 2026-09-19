@@ -75,6 +75,7 @@
             @ann-down="onAnnDown"
             @handle-down="onHandleDown"
             @rotate-down="onRotateDown"
+            @contextmenu.prevent="onRootContextmenu"
           />
           <rect
             v-if="preview"
@@ -138,6 +139,27 @@
             </div>
           </div>
         </div>
+        <div
+          v-if="plugin.name === 'classification'"
+          class="panel-section"
+        >
+          <div class="section-title-row">
+            分类（{{ config.classificationMode === "multi" ? "多标签" : "单标签" }}）
+          </div>
+          <div class="scroll-area">
+            <div
+              v-for="c in config.classes"
+              :key="c.id"
+              class="class-item"
+              :class="{ active: isClsSelected(c.id) }"
+              @click="toggleClassification(c.id)"
+            >
+              <span class="dot-color" :style="{ background: c.color }" />
+              <span class="flex-1">{{ c.name }}</span>
+              <el-checkbox :model-value="isClsSelected(c.id)" @click.stop />
+            </div>
+          </div>
+        </div>
         <div class="panel-section">
           <div class="section-title-row">标注列表</div>
           <div class="scroll-area">
@@ -157,11 +179,53 @@
       <el-button size="small" @click="prevImg">上一张</el-button>
       <el-button size="small" @click="nextImg">下一张</el-button>
     </div>
+
+    <div
+      v-if="annMenu.visible"
+      class="ctx-backdrop"
+      @click="closeMenu"
+      @contextmenu.prevent="closeMenu"
+    />
+    <div
+      v-if="annMenu.visible"
+      class="ctx-menu"
+      :style="{ left: annMenu.x + 'px', top: annMenu.y + 'px' }"
+    >
+      <div class="ctx-item" @click.stop="menuEdit">编辑标注</div>
+      <div class="ctx-item ctx-danger" @click.stop="menuDelete">删除标注</div>
+    </div>
+
+    <el-dialog v-model="editAnnVisible" title="编辑标注" width="420px" append-to-body>
+      <el-form label-width="72px">
+        <el-form-item label="类别">
+          <el-select v-model="editForm.class_id" size="small" style="width: 100%" @change="editClassChange">
+            <el-option v-for="c in config.classes" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="editForm.ann?.type === 'Ocr'" label="OCR文本">
+          <el-input v-model="editForm.text" size="small" placeholder="编辑OCR文本" @change="editTextChange" />
+        </el-form-item>
+        <el-form-item v-if="editForm.ann?.type === 'Keypoint'" label="关键点">
+          <div style="width:100%">
+            <div v-for="(kp, i) in editForm.keypoints" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+              <el-input v-model="kp.name" size="small" placeholder="名称" style="flex:1" @change="editKpChange" />
+              <el-select v-model="kp.visibility" size="small" style="width:110px" @change="editKpChange">
+                <el-option v-for="v in KP_VISIBILITY" :key="v" :label="v" :value="v" />
+              </el-select>
+            </div>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editAnnVisible = false">关闭</el-button>
+        <el-button type="danger" @click="editDelete">删除该标注</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { RefreshLeft, RefreshRight, Delete, Select, FullScreen, ZoomIn, Box, Refresh } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
@@ -313,6 +377,16 @@ function resetDrawingState() {
 
 function onImgLoad() {
   imageLoaded.value = true;
+}
+
+function onRootContextmenu(e: MouseEvent) {
+  const el = (e.target as Element).closest?.("[data-ann-id]");
+  if (!el) return;
+  const id = el.getAttribute("data-ann-id");
+  if (!id) return;
+  const ann = store.annotations.find((a) => a.id === id);
+  if (!ann) return;
+  openContextMenu(e, ann);
 }
 
 async function loadCurrentImage(imageId: number) {
@@ -568,16 +642,113 @@ function onUp() {
 }
 
 // ==== 历史（undo/redo）====
+const editAnnVisible = ref(false);
+const editForm = reactive({ ann: null as any, class_id: 0, text: "", keypoints: [] as any[] });
+const KP_VISIBILITY = ["Visible", "Occluded", "Hidden"];
+const annMenu = reactive({ visible: false, ann: null as any, x: 0, y: 0 });
+
+function openContextMenu(e: MouseEvent, ann: Annotation) {
+  annMenu.ann = ann;
+  annMenu.x = e.clientX;
+  annMenu.y = e.clientY;
+  annMenu.visible = true;
+}
+function closeMenu() {
+  annMenu.visible = false;
+}
+function menuEdit() {
+  const ann = annMenu.ann;
+  closeMenu();
+  if (!ann) return;
+  editForm.ann = ann;
+  editForm.class_id = ann.class_id;
+  editForm.text = ann.text || "";
+  editForm.keypoints = ann.type === "Keypoint" ? JSON.parse(JSON.stringify(ann.keypoints || [])) : [];
+  editAnnVisible.value = true;
+}
+function menuDelete() {
+  const ann = annMenu.ann;
+  closeMenu();
+  if (!ann) return;
+  store.selectedAnnotationId = ann.id;
+  deleteSelected();
+}
+function editClassChange() {
+  if (editForm.ann) editForm.ann.class_id = editForm.class_id;
+}
+function editTextChange() {
+  if (editForm.ann) editForm.ann.text = editForm.text;
+}
+function editKpChange() {
+  if (editForm.ann?.type === "Keypoint") {
+    editForm.ann.keypoints = JSON.parse(JSON.stringify(editForm.keypoints));
+  }
+}
+function editDelete() {
+  if (editForm.ann) store.selectedAnnotationId = editForm.ann.id;
+  editAnnVisible.value = false;
+  deleteSelected();
+}
+function onKey(e: KeyboardEvent) {
+  if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
+  else if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); }
+  else if (["1", "s"].includes(e.key)) setTool("select");
+  else if (["2", "b"].includes(e.key)) setTool("box");
+  else if (["3", "r"].includes(e.key)) setTool("rotated_box");
+  else if (["4", "p"].includes(e.key)) setTool("polygon");
+  else if (["5", "k"].includes(e.key)) setTool("keypoint");
+  else if (["6", "o"].includes(e.key)) setTool("ocr");
+  else if (["7", "c"].includes(e.key)) setTool("classification");
+}
+function toggleClassification(clsId: number) {
+  if (lockedByOther.value) return;
+  if (props.config.classificationMode === "single") {
+    const existing = store.annotations.find((a) => a.type === "Classification");
+    if (existing && existing.class_id === clsId) {
+      store.annotations = store.annotations.filter((a) => a.id !== existing.id);
+    } else {
+      store.annotations = store.annotations.filter((a) => a.type !== "Classification");
+      store.annotations.push({ id: crypto.randomUUID(), type: "Classification", class_id: clsId });
+    }
+  } else {
+    const existing = store.annotations.find((a) => a.type === "Classification");
+    if (existing) {
+      const ids = (existing.class_ids || []) as number[];
+      if (ids.includes(clsId)) {
+        existing.class_ids = ids.filter((id) => id !== clsId);
+        if (existing.class_ids.length === 0) {
+          store.annotations = store.annotations.filter((a) => a.id !== existing.id);
+        }
+      } else {
+        existing.class_ids = [...ids, clsId];
+      }
+    } else {
+      store.annotations.push({ id: crypto.randomUUID(), type: "Classification", class_id: clsId, class_ids: [clsId] });
+    }
+  }
+  store.markUnsaved();
+  pushHistory();
+}
+function isClsSelected(clsId: number) {
+  const a = store.annotations.find((x) => x.type === "Classification");
+  if (!a) return false;
+  if (Array.isArray(a.class_ids)) return a.class_ids.includes(clsId);
+  return a.class_id === clsId;
+}
+
 onMounted(() => {
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
   window.addEventListener("beforeunload", onBeforeUnload);
+  document.addEventListener("keydown", onKey);
   init();
 });
 onBeforeUnmount(() => {
   window.removeEventListener("mousemove", onMove);
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
+  document.removeEventListener("keydown", onKey);
   if (lockRenewTimer) clearInterval(lockRenewTimer);
 });
 function onBeforeUnload(e: BeforeUnloadEvent) {
@@ -746,5 +917,34 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
 .nav-text {
   color: #909399;
   font-size: 13px;
+}
+.class-item.active {
+  background: var(--el-color-primary-light-9);
+}
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 1001;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  box-shadow: var(--el-box-shadow-light);
+  padding: 4px 0;
+  min-width: 120px;
+}
+.ctx-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.ctx-item:hover {
+  background: var(--el-fill-color-light);
+}
+.ctx-danger {
+  color: var(--el-color-danger);
 }
 </style>
