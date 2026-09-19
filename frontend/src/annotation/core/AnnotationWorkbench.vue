@@ -232,9 +232,13 @@
     <div class="ann-footer">
       <el-button size="small" :disabled="!store.currentImage" @click="saveAnn">保存</el-button>
       <span class="nav-text">{{ store.currentImageIndex + 1 }}/{{ store.images.length }}</span>
-      <el-button size="small" :disabled="!store.currentImage" @click="openHistory">历史</el-button>
       <el-button size="small" @click="prevImg">上一张</el-button>
       <el-button size="small" @click="nextImg">下一张</el-button>
+      <el-button size="small" :disabled="!store.currentImage" @click="openHistory">历史</el-button>
+      <el-button size="small" circle @click="showHelpModal = true">?</el-button>
+      <span class="footer-spacer" />
+      <span v-if="store.unsaved" class="unsaved-dot" title="有未保存的修改" />
+      <span class="footer-meta">X:{{ cursorPos.x }} Y:{{ cursorPos.y }} | Z:{{ Math.round(canvas.zoom.value * 100) }}%</span>
     </div>
 
     <div
@@ -299,6 +303,14 @@
         <el-button type="primary" @click="confirmOcr">确定</el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="showHelpModal" title="快捷键" width="420px" append-to-body>
+      <div class="shortcut-grid">
+        <div v-for="s in shortcutList" :key="s.keys" class="shortcut-row">
+          <span class="shortcut-keys">{{ s.keys }}</span>
+          <span class="shortcut-desc">{{ s.desc }}</span>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -356,6 +368,18 @@ const kpBoxDrafting = ref(false);
 const showCrosshair = ref(false);
 const crosshair = reactive({ x: 0, y: 0 });
 const pendingKpVisibility = ref("Visible");
+const cursorPos = reactive({ x: 0, y: 0 });
+const showHelpModal = ref(false);
+const shortcutList = [
+  { keys: "1-7 / s b r p k o c", desc: "切换标注工具" },
+  { keys: "Ctrl+S", desc: "保存当前图" },
+  { keys: "Ctrl+Z / Ctrl+Y", desc: "撤销 / 重做" },
+  { keys: "Ctrl+C / Ctrl+V", desc: "复制 / 粘贴标注" },
+  { keys: "Delete / Backspace", desc: "删除选中标注" },
+  { keys: "0/1/2", desc: "关键点可见性 Hidden/Occluded/Visible" },
+  { keys: "Esc", desc: "取消绘制" },
+  { keys: "←→ / a d", desc: "上一张 / 下一张" },
+];
 const fontSize = 6;
 const tagH = Math.max(8, fontSize + 6);
 
@@ -972,6 +996,11 @@ function onMove(e: MouseEvent) {
     canvas.setPan(panState.px + (e.clientX - panState.startX), panState.py + (e.clientY - panState.startY));
     return;
   }
+  const ip = toImagePoint(e);
+  if (ip) {
+    cursorPos.x = Math.round(ip.x * (canvas.cw.value || 0));
+    cursorPos.y = Math.round(ip.y * (canvas.ch.value || 0));
+  }
   if (currentTool.value === "box" && drawStart) {
     const p = toImagePoint(e);
     if (!p) return;
@@ -1120,22 +1149,33 @@ function editDelete() {
   deleteSelected();
 }
 function onKey(e: KeyboardEvent) {
-  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveAnn(); }
-  else if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); }
-  else if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); }
-  else if (e.ctrlKey && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); }
-  else if (e.ctrlKey && e.key.toLowerCase() === "v") { e.preventDefault(); pasteCopied(); }
-  else if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); }
-  else if (["1", "s"].includes(e.key)) setTool("select");
+  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveAnn(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); return; }
+  if (e.ctrlKey && e.key.toLowerCase() === "v") { e.preventDefault(); pasteCopied(); return; }
+  if (e.key === "Escape") { resetDrawingState(); return; }
+  // 方向键 / a d ：上一下一张（select 工具下）
+  if (currentTool.value === "select") {
+    if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") { nextImg(); return; }
+    if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") { prevImg(); return; }
+  }
+  if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
+  // 关键点工具下：0/1/2 设可见性（优先于切工具，避免冲突）
+  if (currentTool.value === "keypoint") {
+    if (["0", "1", "2"].includes(e.key)) {
+      const map: Record<string, string> = { "0": "Hidden", "1": "Occluded", "2": "Visible" };
+      pendingKpVisibility.value = map[e.key];
+      return;
+    }
+  }
+  if (["1", "s"].includes(e.key)) setTool("select");
   else if (["2", "b"].includes(e.key)) setTool("box");
   else if (["3", "r"].includes(e.key)) setTool("rotated_box");
   else if (["4", "p"].includes(e.key)) setTool("polygon");
   else if (["5", "k"].includes(e.key)) setTool("keypoint");
   else if (["6", "o"].includes(e.key)) setTool("ocr");
   else if (["7", "c"].includes(e.key)) setTool("classification");
-  else if (["0"].includes(e.key)) { if (currentTool.value === "keypoint") pendingKpVisibility.value = "Hidden"; }
-  else if (["1"].includes(e.key)) { if (currentTool.value === "keypoint") pendingKpVisibility.value = "Occluded"; }
-  else if (["2"].includes(e.key)) { if (currentTool.value === "keypoint") pendingKpVisibility.value = "Visible"; }
 }
 function toggleClassification(clsId: number) {
   if (lockedByOther.value) return;
@@ -1420,5 +1460,36 @@ defineExpose({
   color: #c0c4cc;
   font-size: 12px;
   padding: 4px;
+}
+.footer-spacer {
+  flex: 1;
+}
+.unsaved-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+}
+.footer-meta {
+  color: #c0c4cc;
+  font-size: 12px;
+}
+.shortcut-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shortcut-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.shortcut-keys {
+  min-width: 160px;
+  color: var(--el-color-primary);
+  font-weight: 500;
+}
+.shortcut-desc {
+  color: #606266;
 }
 </style>
