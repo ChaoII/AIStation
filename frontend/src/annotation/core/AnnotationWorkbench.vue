@@ -56,7 +56,7 @@ import AnnotationCanvas from "./AnnotationCanvas.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import { useDetectionTool } from "../tasks/detection/useDetectionTool";
-import type { Annotation, AnnotationTaskPlugin } from "../types";
+import type { Annotation, AnnotationTaskPlugin } from "./types";
 
 const props = defineProps<{
   plugin: AnnotationTaskPlugin;
