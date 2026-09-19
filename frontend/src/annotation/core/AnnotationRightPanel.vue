@@ -1,6 +1,7 @@
 <template>
   <aside class="ann-rightbar">
-    <el-collapse v-model="settingsOpen" class="right-collapse">
+    <el-collapse v-model="openSections" class="right-collapse">
+      <!-- 设置 -->
       <el-collapse-item title="设置" name="settings">
         <div class="setting-row">
           <span class="setting-label">标签字号</span>
@@ -15,20 +16,20 @@
           <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
         </div>
       </el-collapse-item>
-    </el-collapse>
 
-    <div class="right-split">
       <!-- 图片列表 -->
-      <div class="right-sec" :style="{ flexBasis: imgH + '%' }">
-        <div class="sec-head">
-          <span>图片列表</span>
-          <el-radio-group :model-value="imageFilter" size="small" @update:model-value="$emit('update-image-filter', $event)">
-            <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button value="annotated">已标</el-radio-button>
-            <el-radio-button value="unannotated">未标</el-radio-button>
-          </el-radio-group>
-        </div>
-        <div class="sec-body">
+      <el-collapse-item name="images">
+        <template #title>
+          <div class="fold-title">
+            <span>图片列表</span>
+            <el-radio-group :model-value="imageFilter" size="small" @update:model-value="$emit('update-image-filter', $event)">
+              <el-radio-button value="all">全部</el-radio-button>
+              <el-radio-button value="annotated">已标</el-radio-button>
+              <el-radio-button value="unannotated">未标</el-radio-button>
+            </el-radio-group>
+          </div>
+        </template>
+        <div class="fold-body">
           <div
             v-for="img in filteredImages"
             :key="img.id"
@@ -46,16 +47,17 @@
           </div>
           <div v-if="filteredImages.length === 0" class="empty-hint">暂无图片</div>
         </div>
-      </div>
-      <div class="right-resizer" @mousedown="startResize('img', 'cls', $event)" />
+      </el-collapse-item>
 
       <!-- 类别 -->
-      <div class="right-sec" :style="{ flexBasis: clsH + '%' }">
-        <div class="sec-head">
-          <span>类别</span>
-          <el-button link type="primary" size="small" @click="$emit('add-class')">+ 添加</el-button>
-        </div>
-        <div class="sec-body">
+      <el-collapse-item name="classes">
+        <template #title>
+          <div class="fold-title">
+            <span>类别</span>
+            <el-button link type="primary" size="small" @click="$emit('add-class')">+ 添加</el-button>
+          </div>
+        </template>
+        <div class="fold-body">
           <div
             class="class-item"
             :class="{ active: selectedClassId === c.id }"
@@ -74,15 +76,16 @@
           </div>
           <div v-if="taskClasses.length === 0" class="empty-hint">请添加类别</div>
         </div>
-      </div>
-      <div class="right-resizer" @mousedown="startResize('cls', 'ann', $event)" />
+      </el-collapse-item>
 
       <!-- 分类 (仅分类任务) -->
-      <div v-if="pluginName === 'classification'" class="right-sec" :style="{ flexBasis: clsH + '%' }">
-        <div class="sec-head">
-          <span>分类（{{ classificationMode === "multi" ? "多标签" : "单标签" }}）</span>
-        </div>
-        <div class="sec-body">
+      <el-collapse-item v-if="pluginName === 'classification'" name="classification">
+        <template #title>
+          <div class="fold-title">
+            <span>分类（{{ classificationMode === "multi" ? "多标签" : "单标签" }}）</span>
+          </div>
+        </template>
+        <div class="fold-body">
           <div
             v-for="c in taskClasses"
             :key="c.id"
@@ -95,15 +98,14 @@
             <el-checkbox :model-value="isClsSelected(c.id)" @click.stop />
           </div>
         </div>
-      </div>
-      <div v-if="pluginName === 'classification'" class="right-resizer" @mousedown="startResize('cls', 'ann', $event)" />
+      </el-collapse-item>
 
       <!-- 标注列表 -->
-      <div class="right-sec" :style="{ flexBasis: annH + '%' }">
-        <div class="sec-head">
-          <span>标注列表</span>
-        </div>
-        <div class="sec-body">
+      <el-collapse-item name="annotations">
+        <template #title>
+          <div class="fold-title"><span>标注列表</span></div>
+        </template>
+        <div class="fold-body">
           <div
             v-for="a in annotations"
             :key="a.id"
@@ -124,13 +126,13 @@
           </div>
           <div v-if="annotations.length === 0" class="empty-hint">暂无标注</div>
         </div>
-      </div>
-    </div>
+      </el-collapse-item>
+    </el-collapse>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref } from "vue";
 import type { Annotation } from "./types";
 
 const props = defineProps<{
@@ -164,12 +166,8 @@ const emit = defineEmits<{
   (e: "delete-annotation", id: string): void;
 }>();
 
-const settingsOpen = ref<string[]>([]);
-const imgH = ref(33.33);
-const clsH = ref(33.33);
-const annH = ref(33.34);
-
-let activeResize: { a: string; b: string; startY: number; a0: number; b0: number } | null = null;
+// 默认只展开图片列表，其余（设置/类别/标注）收起成一行
+const openSections = ref<string[]>(["images"]);
 
 function imagesIdx(id: number) {
   return props.images.findIndex((x) => x.id === id);
@@ -178,7 +176,7 @@ function imagesIdx(id: number) {
 function fmtTime(ts: any) {
   if (!ts) return "";
   try {
-    const d = new Date(ts.endsWith("Z") || ts.includes("+") ? ts : ts);
+    const d = new Date(ts);
     if (isNaN(d.getTime())) return "";
     const p = (n: number) => String(n).padStart(2, "0");
     return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -186,41 +184,6 @@ function fmtTime(ts: any) {
     return "";
   }
 }
-
-function startResize(a: string, b: string, e: MouseEvent) {
-  e.preventDefault();
-  activeResize = {
-    a,
-    b,
-    startY: e.clientY,
-    a0: a === "img" ? imgH.value : clsH.value,
-    b0: b === "cls" ? clsH.value : annH.value,
-  };
-}
-function onMove(e: MouseEvent) {
-  if (!activeResize) return;
-  const panel = document.querySelector(".right-split") as HTMLElement | null;
-  if (!panel) return;
-  const h = panel.clientHeight || 1;
-  const dy = ((e.clientY - activeResize.startY) / h) * 100;
-  let na = activeResize.a0 + dy;
-  let nb = activeResize.b0 - dy;
-  if (na < 10 || nb < 10) return;
-  if (activeResize.a === "img") imgH.value = na; else clsH.value = na;
-  if (activeResize.b === "cls") clsH.value = nb; else annH.value = nb;
-}
-function onUp() {
-  activeResize = null;
-}
-
-onMounted(() => {
-  window.addEventListener("mousemove", onMove);
-  window.addEventListener("mouseup", onUp);
-});
-onBeforeUnmount(() => {
-  window.removeEventListener("mousemove", onMove);
-  window.removeEventListener("mouseup", onUp);
-});
 </script>
 
 <style scoped>
@@ -233,89 +196,57 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .right-collapse {
-  border-bottom: 1px solid var(--el-border-color-light);
-  flex: none;
-  font-size: 13px;
-}
-.right-collapse :deep(.el-collapse-item__header) {
-  padding: 0 8px;
-  height: 30px;
-  line-height: 30px;
-  color: #606266;
-}
-.right-collapse :deep(.el-collapse-item__content) {
-  padding: 4px 8px 6px;
-}
-.right-collapse :deep(.setting-row) {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 0;
-  padding: 1px 0;
-}
-.right-collapse :deep(.setting-label) {
-  width: 44px;
-  font-size: 12px;
-  color: #606266;
-  white-space: nowrap;
-}
-.right-split {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-.right-sec {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-.sec-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  font-size: 13px;
-  color: #909399;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.sec-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
   scrollbar-width: thin;
 }
-.sec-body::-webkit-scrollbar {
+.right-collapse::v-deep(.el-collapse) {
+  width: 100%;
+}
+.right-collapse :deep(.el-collapse-item) {
+  flex-shrink: 0;
+}
+.right-collapse :deep(.el-collapse-item__header) {
+  height: 30px;
+  line-height: 30px;
+  padding: 0 8px;
+  color: #606266;
+  font-size: 13px;
+}
+.right-collapse :deep(.el-collapse-item__content) {
+  padding: 0;
+}
+.fold-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: 4px;
+}
+.fold-body {
+  padding: 2px 6px 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+.fold-body::-webkit-scrollbar {
   width: 6px;
 }
-.sec-body::-webkit-scrollbar-thumb {
+.fold-body::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
-}
-.right-resizer {
-  flex: none;
-  height: 5px;
-  cursor: row-resize;
-  background: var(--el-border-color-extra-light);
-  border-top: 1px solid var(--el-border-color-lighter);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.right-resizer:hover {
-  background: var(--el-color-primary-light-7);
 }
 .setting-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 6px;
+  padding: 1px 0;
 }
 .setting-label {
-  width: 60px;
+  width: 44px;
   font-size: 12px;
   color: #606266;
   white-space: nowrap;
@@ -381,7 +312,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px;
+  padding: 4px 2px;
   font-size: 12px;
   cursor: pointer;
 }
