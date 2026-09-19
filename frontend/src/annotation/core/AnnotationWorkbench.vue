@@ -199,7 +199,7 @@
         </template>
         <!-- 多边形首点提示 -->
         <circle
-          v-if="currentTool === 'polygon' && seg.points.value.length && rbLast"
+          v-if="currentTool === 'polygon' && seg.points.value.length"
           :cx="seg.points.value[0].x * cw"
           :cy="seg.points.value[0].y * ch"
           r="4"
@@ -234,10 +234,10 @@
           </el-radio-group>
           <div class="scroll-area img-list">
             <div
-              v-for="(img, idx) in filteredImages"
+              v-for="img in filteredImages"
               :key="img.id"
               class="image-item"
-              :class="{ active: idx === store.currentImageIndex }"
+              :class="{ active: img.id === store.currentImage?.id }"
               @click="goToImage(store.images.findIndex((x) => x.id === img.id))"
             >
               <img v-if="img.thumbnail_url" :src="img.thumbnail_url" class="img-thumb" alt="" />
@@ -505,8 +505,7 @@ function loadSettings(): any {
     return {};
   }
 }
-const annSettings = reactive({ labelFontSize: 6, strokeWidth: 1.5, selStrokeWidth: 2, ...loadSettings() });
-fontSize.value = annSettings.labelFontSize;
+const annSettings = reactive({ labelFontSize: 6, strokeWidth: 1.5, selStrokeWidth: 2, ...loadSettings() });fontSize.value = annSettings.labelFontSize;
 strokeW.value = annSettings.strokeWidth;
 selStrokeW.value = annSettings.selStrokeWidth;
 watch(annSettings, () => {
@@ -515,6 +514,21 @@ watch(annSettings, () => {
   selStrokeW.value = annSettings.selStrokeWidth;
   localStorage.setItem(settingsKey, JSON.stringify(annSettings));
 }, { deep: true });
+// 协作：锁定被拒提示 + 远程标注同步刷新（顶层 watch，随组件卸载自动清理）
+watch(
+  () => props.collab?.lockDeniedTick?.value ?? 0,
+  () => {
+    if (props.collab?.lockDeniedTick?.value) ElMessage.warning("保存被拒绝：图片已被其他用户锁定");
+  }
+);
+watch(
+  () => props.collab?.remoteAnnotationTick?.value ?? 0,
+  () => {
+    if (props.collab?.remoteAnnotationTick?.value && store.currentImageId) {
+      loadCurrentImage(store.currentImageId).catch(() => {});
+    }
+  }
+);
 
 const baseTools = [
   { name: "select", label: "选择", icon: Select },
@@ -614,9 +628,9 @@ function restoreHistory() {
   }
   if (annotKey() !== lastSavedKey && historyIndex < historyStack.length - 1) store.markUnsaved();
 }
-function deleteSelected() {
+function deleteAnnotation(id: string) {
   if (lockedByOther.value) return;
-  const target = store.annotations.find((a) => a.id === store.selectedAnnotationId);
+  const target = store.annotations.find((a) => a.id === id);
   if (!target) return;
   ElMessageBox.confirm(`将删除 1 个${target.type}标注，且不可恢复。`, "删除标注", {
     confirmButtonText: "删除",
@@ -625,13 +639,16 @@ function deleteSelected() {
   })
     .then(() => {
       const before = store.annotations.length;
-      store.annotations = store.annotations.filter((a) => a.id !== store.selectedAnnotationId);
+      store.annotations = store.annotations.filter((a) => a.id !== id);
       if (store.annotations.length !== before) {
         store.markUnsaved();
         pushHistory();
       }
     })
     .catch(() => {});
+}
+function deleteSelected() {
+  deleteAnnotation(store.selectedAnnotationId);
 }
 
 // 复制 / 粘贴标注
@@ -685,6 +702,7 @@ const ocrInput = ref("");
 let pendingOcr: Annotation | null = null;
 
 async function addClass() {
+  if (lockedByOther.value) return;
   if (!clsForm.name.trim()) return;
   const id =
     taskClasses.value.length > 0
@@ -705,13 +723,13 @@ async function addClass() {
   await saveClasses();
 }
 async function removeClass(id: number) {
+  if (lockedByOther.value) return;
   taskClasses.value = taskClasses.value.filter((c) => c.id !== id);
   const before = store.annotations.length;
-  store.annotations.forEach((a: any) => {
-    if (a.class_id === id) a.class_id = -1;
-    if (Array.isArray(a.class_ids)) a.class_ids = a.class_ids.filter((cid: number) => cid !== id);
+  store.annotations = store.annotations.filter((a: any) => {
+    const uses = a.class_id === id || (Array.isArray(a.class_ids) && a.class_ids.includes(id));
+    return !uses;
   });
-  store.annotations = store.annotations.filter((a: any) => !(a.class_id === -1 && a.class_id === id));
   if (store.annotations.length !== before) {
     store.markUnsaved();
     pushHistory();
@@ -723,7 +741,7 @@ function clsCount(classId: number) {
   return store.annotations.filter((a) => a.class_id === classId).length;
 }
 async function saveClasses() {
-  if (!store.taskId) return;
+  if (!store.taskId || lockedByOther.value) return;
   try {
     await props.api.updateTask(store.taskId, { classes: taskClasses.value });
   } catch {
@@ -764,8 +782,16 @@ function resetDrawingState() {
   rbPreview.value = null;
   kpBoxDrafting.value = false;
   dragState = null;
+  rbLast = null;
   seg.points.value = [];
-  kp.beginBox();
+  rot.step.value = 0;
+  rot.pt1.value = null;
+  rot.pt2.value = null;
+  kp.pending.value = [];
+  kp.boxMode.value = false;
+  kp.boxStart.value = null;
+  kp.boxEnd.value = null;
+  det.drawing.value = false;
   ocr.reset();
 }
 
@@ -820,6 +846,7 @@ function onRootContextmenu(e: MouseEvent) {
 
 async function loadCurrentImage(imageId: number) {
   const myToken = ++loadImgToken;
+  resetDrawingState();
   // 切图：先释放上一张锁
   if (lockedImageId && lockedImageId !== imageId) unlockCurrent();
   imgUrl.value = "";
@@ -920,6 +947,7 @@ async function fetchTaskProgress() {
 }
 
 async function init() {
+  store.reset();
   store.taskId = props.taskId;
   store.loading = true;
   try {
@@ -956,18 +984,21 @@ function goToImage(idx: number) {
     loadCurrentImage(store.images[idx].id);
   };
   if (store.unsaved) {
-    ElMessageBox.confirm("当前图有未保存的修改，是否先保存？", "未保存", {
+    ElMessageBox({
+      title: "未保存",
+      message: "当前图有未保存的修改，是否先保存？",
       confirmButtonText: "保存并切换",
       cancelButtonText: "不保存",
+      distinguishCancelAndClose: true,
+      closeOnClickModal: false,
       type: "warning",
     })
-      .then(async () => {
-        await saveAnn();
-        doSwitch();
+      .then(async (action: any) => {
+        if (action === "confirm") await saveAnn();
+        if (action === "confirm" || action === "cancel") doSwitch();
+        // action === 'close' => 留在当前图，不切换
       })
-      .catch(() => {
-        doSwitch();
-      });
+      .catch(() => {});
     return;
   }
   doSwitch();
@@ -1229,8 +1260,9 @@ function onMove(e: MouseEvent) {
       const c = document.querySelector(".annotation-canvas") as HTMLElement | null;
       if (c) {
         const r = c.getBoundingClientRect();
-        const centerX = r.left + r.width / 2 - dw.value / 2 + dragState.ann.cx * dw.value;
-        const centerY = r.top + r.height / 2 - dh.value / 2 + dragState.ann.cy * dh.value;
+        const off = canvas.imageOffset(r.width, r.height);
+        const centerX = r.left + off.left + dragState.ann.cx * dw.value;
+        const centerY = r.top + off.top + dragState.ann.cy * dh.value;
         rot.onRotate(dragState.ann, centerX, centerY, dragState.startX, dragState.startY, e.clientX, e.clientY);
       }
       store.markUnsaved();
@@ -1324,21 +1356,7 @@ function menuDelete() {
   deleteSelected();
 }
 function deleteById(id: string) {
-  if (lockedByOther.value) return;
-  ElMessageBox.confirm("将删除 1 个标注，且不可恢复。", "删除标注", {
-    confirmButtonText: "删除",
-    cancelButtonText: "取消",
-    type: "warning",
-  })
-    .then(() => {
-      const before = store.annotations.length;
-      store.annotations = store.annotations.filter((a) => a.id !== id);
-      if (store.annotations.length !== before) {
-        store.markUnsaved();
-        pushHistory();
-      }
-    })
-    .catch(() => {});
+  deleteAnnotation(id);
 }
 function editClassChange() {
   if (editForm.ann) editForm.ann.class_id = editForm.class_id;
@@ -1430,20 +1448,6 @@ onMounted(() => {
   window.addEventListener("mouseup", onUp);
   window.addEventListener("beforeunload", onBeforeUnload);
   document.addEventListener("keydown", onKey);
-  watch(
-    () => props.collab?.lockDeniedTick?.value ?? 0,
-    () => {
-      if (props.collab?.lockDeniedTick?.value) ElMessage.warning("保存被拒绝：图片已被其他用户锁定");
-    }
-  );
-  watch(
-    () => props.collab?.remoteAnnotationTick?.value ?? 0,
-    () => {
-      if (props.collab?.remoteAnnotationTick?.value) {
-        loadCurrentImage(store.currentImageId!).catch(() => {});
-      }
-    }
-  );
   init();
 });
 onBeforeUnmount(() => {
@@ -1451,7 +1455,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
-  if (store.unsaved && store.currentImageId) {
+  if (store.unsaved && store.currentImageId && !lockedByOther.value) {
     props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations).catch(() => {});
   }
   unlockCurrent();
