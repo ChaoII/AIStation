@@ -59,6 +59,17 @@
           stroke-dasharray="4 3"
           :transform="`rotate(${(rbPreview.angle * 180) / Math.PI} ${rbPreview.cx * cw} ${rbPreview.cy * ch})`"
         />
+        <rect
+          v-if="kpBoxDrafting && kp.boxStart.value && kp.boxEnd.value"
+          :x="Math.min(kp.boxStart.value.x, kp.boxEnd.value.x) * cw"
+          :y="Math.min(kp.boxStart.value.y, kp.boxEnd.value.y) * ch"
+          :width="Math.abs(kp.boxEnd.value.x - kp.boxStart.value.x) * cw"
+          :height="Math.abs(kp.boxEnd.value.y - kp.boxStart.value.y) * ch"
+          fill="none"
+          stroke="#e6a23c"
+          stroke-width="1.5"
+          stroke-dasharray="4 3"
+        />
       </AnnotationCanvas>
     </div>
   </div>
@@ -72,6 +83,7 @@ import { useAnnotationStore } from "./useAnnotationStore";
 import { useDetectionTool } from "../tasks/detection/useDetectionTool";
 import { useRotatedTool, rotatedBoxFromEdgeAndPoint } from "../tasks/rotatedBox/useRotatedTool";
 import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
+import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
 import type { Annotation, AnnotationTaskPlugin } from "./types";
 
 const props = defineProps<{
@@ -92,7 +104,9 @@ const preview = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 const det = useDetectionTool();
 const rot = useRotatedTool();
 const seg = useSegmentTool();
+const kp = useKeypointTool();
 const rbPreview = ref<{ cx: number; cy: number; width: number; height: number; angle: number } | null>(null);
+const kpBoxDrafting = ref(false);
 
 const allTools = computed(() => [
   { name: "select", label: "选择", title: "选择" },
@@ -111,7 +125,7 @@ const tagH = Math.max(8, fontSize + 6);
 let drawStart: { x: number; y: number } | null = null;
 let rbLast: { x: number; y: number } | null = null;
 let dragState:
-  | { type: "move" | "resize" | "rotate" | "poly-vertex"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
+  | { type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
   | null = null;
 
 function clsName(a: Annotation) {
@@ -139,6 +153,8 @@ function onDblClick() {
       store.annotations.push(created);
       store.markUnsaved();
     }
+  } else if (currentTool.value === "keypoint") {
+    kp.beginBox();
   }
 }
 
@@ -160,6 +176,13 @@ function onCanvasDown(e: MouseEvent) {
     }
   } else if (currentTool.value === "polygon") {
     seg.addPoint(p);
+  } else if (currentTool.value === "keypoint") {
+    if (kp.boxMode.value) {
+      kp.setBoxStart(p);
+      kpBoxDrafting.value = true;
+    } else {
+      kp.addPoint(p);
+    }
   }
 }
 
@@ -177,6 +200,17 @@ function onAnnDown(e: MouseEvent, ann: Annotation) {
 
 function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   store.selectedAnnotationId = ann.id;
+  if (handle.startsWith("kp-")) {
+    dragState = {
+      type: "kp-vertex",
+      ann,
+      handle: handle.replace("kp-", ""),
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: JSON.parse(JSON.stringify(ann)),
+    };
+    return;
+  }
   if (handle.startsWith("poly-ins-")) {
     const idx = parseInt(handle.replace("poly-ins-", ""), 10);
     if (!isNaN(idx) && ann.points?.length) {
@@ -234,7 +268,7 @@ function onMove(e: MouseEvent) {
     };
     return;
   }
-  if (currentTool.value === "rotated_box" && rot.step.value > 0) {
+  if (currentTool.value === "rotated_box") {
     const p = toImagePoint(e);
     if (p) {
       rbLast = p;
@@ -245,7 +279,20 @@ function onMove(e: MouseEvent) {
     }
     return;
   }
+  if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
+    const p = toImagePoint(e);
+    if (p) kp.updateBox(p);
+    return;
+  }
   if (dragState) {
+    if (dragState.type === "kp-vertex") {
+      const p = toImagePoint(e);
+      if (p) {
+        kp.moveKeypoint(dragState.ann, Number(dragState.handle), p);
+        store.markUnsaved();
+      }
+      return;
+    }
     if (dragState.type === "poly-vertex") {
       const p = toImagePoint(e);
       if (p) {
@@ -312,6 +359,15 @@ function onUp() {
   }
   if (currentTool.value === "rotated_box") {
     rbPreview.value = null;
+    return;
+  }
+  if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
+    kpBoxDrafting.value = false;
+    const created = kp.build();
+    if (created && props.plugin.create(created)) {
+      store.annotations.push(created);
+      store.markUnsaved();
+    }
     return;
   }
   dragState = null;
