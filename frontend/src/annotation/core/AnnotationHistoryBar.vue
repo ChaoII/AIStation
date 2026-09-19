@@ -17,8 +17,6 @@
       保存
     </el-button>
     <div class="sep" />
-    <span v-if="online > 0" class="collab-online">在线 {{ online }}</span>
-    <div class="sep" />
     <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">历史</el-button>
     <div class="sep" />
     <el-button size="small" circle @click="$emit('help')">
@@ -40,7 +38,6 @@ defineProps<{
   zoom: number;
   cw: number;
   hint: string;
-  online: number;
   canPrev: boolean;
   canNext: boolean;
   locked?: boolean;

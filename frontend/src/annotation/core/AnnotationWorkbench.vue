@@ -240,7 +240,6 @@
       :zoom="canvas.zoom.value"
       :cw="canvas.cw.value"
       :hint="hintText"
-      :online="props.collab?.onlineUsers?.value?.length ?? 0"
       :can-prev="store.currentImageIndex > 0"
       :can-next="store.currentImageIndex < store.images.length - 1"
       :locked="lockedByOther"
@@ -402,16 +401,21 @@ const filteredImages = computed(() => {
   return store.images.filter((i) => (imageFilter.value === "annotated") === (i.status === "annotated"));
 });
 const showHelpModal = ref(false);
-const shortcutList = [
-  { keys: "1-7 / s b r p k o c", desc: "切换标注工具" },
-  { keys: "Ctrl+S", desc: "保存当前图" },
-  { keys: "Ctrl+Z / Ctrl+Y", desc: "撤销 / 重做" },
-  { keys: "Ctrl+C / Ctrl+V", desc: "复制 / 粘贴标注" },
-  { keys: "Delete / Backspace", desc: "删除选中标注" },
-  { keys: "0/1/2", desc: "关键点可见性 Hidden/Occluded/Visible" },
-  { keys: "Esc", desc: "取消绘制" },
-  { keys: "←→ / a d", desc: "上一张 / 下一张" },
-];
+const shortcutList = computed(() => {
+  const base = [
+    { keys: "1-7 / s b r p k o c", desc: "切换标注工具" },
+    { keys: "Ctrl+S", desc: "保存当前图" },
+    { keys: "Ctrl+Z / Ctrl+Y", desc: "撤销 / 重做" },
+    { keys: "Ctrl+C / Ctrl+V", desc: "复制 / 粘贴标注" },
+    { keys: "Delete / Backspace", desc: "删除选中标注" },
+    { keys: "Esc", desc: "取消绘制" },
+    { keys: "←→ / a d", desc: "上一张 / 下一张" },
+  ];
+  const extra: any[] = [];
+  if (plugin.value.name === "keypoint") extra.push({ keys: "0/1/2", desc: "关键点可见性 Hidden/Occluded/Visible" });
+  if (plugin.value.name === "ocr") extra.push({ keys: "t", desc: "矩形 / 四边形模式切换" });
+  return [...base, ...extra];
+});
 const fontSize = ref(6);
 const strokeW = ref(1.5);
 const selStrokeW = ref(2);
