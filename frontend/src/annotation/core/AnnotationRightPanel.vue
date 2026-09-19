@@ -1,8 +1,12 @@
 <template>
   <aside class="ann-rightbar">
-    <el-collapse v-model="openSections" class="right-collapse">
-      <!-- 设置 -->
-      <el-collapse-item title="设置" name="settings">
+    <!-- 设置 -->
+    <div class="acc" :class="{ open: open === 'settings' }">
+      <div class="acc-head" @click="toggle('settings')">
+        <span>设置</span>
+        <el-icon :size="13"><component :is="open === 'settings' ? ArrowDown : ArrowRight" /></el-icon>
+      </div>
+      <div v-show="open === 'settings'" class="acc-body">
         <div class="setting-row">
           <span class="setting-label">标签字号</span>
           <el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" size="small" />
@@ -15,124 +19,125 @@
           <span class="setting-label">选中框线</span>
           <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
         </div>
-      </el-collapse-item>
+      </div>
+    </div>
 
-      <!-- 图片列表 -->
-      <el-collapse-item name="images">
-        <template #title>
-          <div class="fold-title">
-            <span>图片列表</span>
-            <el-radio-group :model-value="imageFilter" size="small" @update:model-value="$emit('update-image-filter', $event)">
-              <el-radio-button value="all">全部</el-radio-button>
-              <el-radio-button value="annotated">已标</el-radio-button>
-              <el-radio-button value="unannotated">未标</el-radio-button>
-            </el-radio-group>
+    <!-- 图片列表 -->
+    <div class="acc" :class="{ open: open === 'images' }">
+      <div class="acc-head" @click="toggle('images')">
+        <span>图片列表</span>
+        <el-icon :size="13"><component :is="open === 'images' ? ArrowDown : ArrowRight" /></el-icon>
+      </div>
+      <div v-show="open === 'images'" class="acc-body">
+        <el-radio-group :model-value="imageFilter" size="small" class="img-filter" @update:model-value="$emit('update-image-filter', $event)">
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="annotated">已标</el-radio-button>
+          <el-radio-button value="unannotated">未标</el-radio-button>
+        </el-radio-group>
+        <div
+          v-for="img in filteredImages"
+          :key="img.id"
+          class="image-item"
+          :class="{ active: img.id === currentImageId }"
+          @click="$emit('go-image', imagesIdx(img.id))"
+        >
+          <img v-if="img.thumbnail_url" :src="img.thumbnail_url" class="img-thumb" alt="" />
+          <span v-else class="img-thumb img-thumb--placeholder" />
+          <div class="img-info">
+            <span class="img-name">{{ img.filename }}</span>
+            <span class="img-meta">{{ img.updated_by?.name || "--" }}<template v-if="img.updated_time"> · {{ fmtTime(img.updated_time) }}</template></span>
           </div>
-        </template>
-        <div class="fold-body">
-          <div
-            v-for="img in filteredImages"
-            :key="img.id"
-            class="image-item"
-            :class="{ active: img.id === currentImageId }"
-            @click="$emit('go-image', imagesIdx(img.id))"
-          >
-            <img v-if="img.thumbnail_url" :src="img.thumbnail_url" class="img-thumb" alt="" />
-            <span v-else class="img-thumb img-thumb--placeholder" />
-            <div class="img-info">
-              <span class="img-name">{{ img.filename }}</span>
-              <span class="img-meta">{{ img.updated_by?.name || "--" }}<template v-if="img.updated_time"> · {{ fmtTime(img.updated_time) }}</template></span>
-            </div>
-            <span class="dot" :class="img.status === 'annotated' ? 'dot-done' : 'dot-pending'" />
-          </div>
-          <div v-if="filteredImages.length === 0" class="empty-hint">暂无图片</div>
+          <span class="dot" :class="img.status === 'annotated' ? 'dot-done' : 'dot-pending'" />
         </div>
-      </el-collapse-item>
+        <div v-if="filteredImages.length === 0" class="empty-hint">暂无图片</div>
+      </div>
+    </div>
 
-      <!-- 类别 -->
-      <el-collapse-item name="classes">
-        <template #title>
-          <div class="fold-title">
-            <span>类别</span>
-            <el-button link type="primary" size="small" @click="$emit('add-class')">+ 添加</el-button>
-          </div>
-        </template>
-        <div class="fold-body">
-          <div
-            class="class-item"
-            :class="{ active: selectedClassId === c.id }"
-            v-for="c in taskClasses"
-            :key="c.id"
-            @click="$emit('select-class', c.id)"
-          >
-            <span class="dot-color" :style="{ background: c.color }" />
-            <span class="flex-1">{{ c.name }}</span>
-            <span class="count-chip">{{ clsCount(c.id) }}</span>
-            <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('remove-class', c.id)">
-              <template #reference>
-                <el-button text size="small">×</el-button>
-              </template>
-            </el-popconfirm>
-          </div>
-          <div v-if="taskClasses.length === 0" class="empty-hint">请添加类别</div>
+    <!-- 类别 -->
+    <div class="acc" :class="{ open: open === 'classes' }">
+      <div class="acc-head" @click="toggle('classes')">
+        <span>类别</span>
+        <span class="head-actions" @click.stop>
+          <el-button link type="primary" size="small" @click="$emit('add-class')">+ 添加</el-button>
+          <el-icon :size="13"><component :is="open === 'classes' ? ArrowDown : ArrowRight" /></el-icon>
+        </span>
+      </div>
+      <div v-show="open === 'classes'" class="acc-body">
+        <div
+          class="class-item"
+          :class="{ active: selectedClassId === c.id }"
+          v-for="c in taskClasses"
+          :key="c.id"
+          @click="$emit('select-class', c.id)"
+        >
+          <span class="dot-color" :style="{ background: c.color }" />
+          <span class="flex-1">{{ c.name }}</span>
+          <span class="count-chip">{{ clsCount(c.id) }}</span>
+          <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('remove-class', c.id)">
+            <template #reference>
+              <el-button text size="small">×</el-button>
+            </template>
+          </el-popconfirm>
         </div>
-      </el-collapse-item>
+        <div v-if="taskClasses.length === 0" class="empty-hint">请添加类别</div>
+      </div>
+    </div>
 
-      <!-- 分类 (仅分类任务) -->
-      <el-collapse-item v-if="pluginName === 'classification'" name="classification">
-        <template #title>
-          <div class="fold-title">
-            <span>分类（{{ classificationMode === "multi" ? "多标签" : "单标签" }}）</span>
-          </div>
-        </template>
-        <div class="fold-body">
-          <div
-            v-for="c in taskClasses"
-            :key="c.id"
-            class="class-item"
-            :class="{ active: isClsSelected(c.id) }"
-            @click="$emit('toggle-classification', c.id)"
-          >
-            <span class="dot-color" :style="{ background: c.color }" />
-            <span class="flex-1">{{ c.name }}</span>
-            <el-checkbox :model-value="isClsSelected(c.id)" @click.stop />
-          </div>
+    <!-- 分类 (仅分类任务) -->
+    <div v-if="pluginName === 'classification'" class="acc" :class="{ open: open === 'classification' }">
+      <div class="acc-head" @click="toggle('classification')">
+        <span>分类（{{ classificationMode === "multi" ? "多标签" : "单标签" }}）</span>
+        <el-icon :size="13"><component :is="open === 'classification' ? ArrowDown : ArrowRight" /></el-icon>
+      </div>
+      <div v-show="open === 'classification'" class="acc-body">
+        <div
+          v-for="c in taskClasses"
+          :key="c.id"
+          class="class-item"
+          :class="{ active: isClsSelected(c.id) }"
+          @click="$emit('toggle-classification', c.id)"
+        >
+          <span class="dot-color" :style="{ background: c.color }" />
+          <span class="flex-1">{{ c.name }}</span>
+          <el-checkbox :model-value="isClsSelected(c.id)" @click.stop />
         </div>
-      </el-collapse-item>
+      </div>
+    </div>
 
-      <!-- 标注列表 -->
-      <el-collapse-item name="annotations">
-        <template #title>
-          <div class="fold-title"><span>标注列表</span></div>
-        </template>
-        <div class="fold-body">
-          <div
-            v-for="a in annotations"
-            :key="a.id"
-            class="ann-item"
-            :class="{ active: a.id === selectedAnnotationId }"
-            @click="$emit('select-annotation', a.id)"
-            @dblclick="$emit('edit-annotation', a)"
-            @contextmenu.prevent.stop="$emit('contextmenu-annotation', $event, a)"
-          >
-            <span class="dot-color" :style="{ background: clsColor(a) }" />
-            <span class="flex-1">{{ clsName(a) }}</span>
-            <span class="tag-type">{{ a.type }}</span>
-            <el-popconfirm title="确定删除该标注？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('delete-annotation', a.id)">
-              <template #reference>
-                <el-button text size="small">×</el-button>
-              </template>
-            </el-popconfirm>
-          </div>
-          <div v-if="annotations.length === 0" class="empty-hint">暂无标注</div>
+    <!-- 标注列表 -->
+    <div class="acc" :class="{ open: open === 'annotations' }">
+      <div class="acc-head" @click="toggle('annotations')">
+        <span>标注列表</span>
+        <el-icon :size="13"><component :is="open === 'annotations' ? ArrowDown : ArrowRight" /></el-icon>
+      </div>
+      <div v-show="open === 'annotations'" class="acc-body">
+        <div
+          v-for="a in annotations"
+          :key="a.id"
+          class="ann-item"
+          :class="{ active: a.id === selectedAnnotationId }"
+          @click="$emit('select-annotation', a.id)"
+          @dblclick="$emit('edit-annotation', a)"
+          @contextmenu.prevent.stop="$emit('contextmenu-annotation', $event, a)"
+        >
+          <span class="dot-color" :style="{ background: clsColor(a) }" />
+          <span class="flex-1">{{ clsName(a) }}</span>
+          <span class="tag-type">{{ a.type }}</span>
+          <el-popconfirm title="确定删除该标注？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('delete-annotation', a.id)">
+            <template #reference>
+              <el-button text size="small">×</el-button>
+            </template>
+          </el-popconfirm>
         </div>
-      </el-collapse-item>
-    </el-collapse>
+        <div v-if="annotations.length === 0" class="empty-hint">暂无标注</div>
+      </div>
+    </div>
   </aside>
 </template>
 
 <script setup lang="ts">
 import { ref } from "vue";
+import { ArrowDown, ArrowRight } from "@element-plus/icons-vue";
 import type { Annotation } from "./types";
 
 const props = defineProps<{
@@ -166,8 +171,12 @@ const emit = defineEmits<{
   (e: "delete-annotation", id: string): void;
 }>();
 
-// 默认只展开图片列表，其余（设置/类别/标注）收起成一行
-const openSections = ref<string[]>(["images"]);
+// 手风琴：同一时间只展开一个，展开项占满剩余高度
+const open = ref<string | null>("images");
+
+function toggle(name: string) {
+  open.value = open.value === name ? null : name;
+}
 
 function imagesIdx(id: number) {
   return props.images.findIndex((x) => x.id === id);
@@ -195,49 +204,52 @@ function fmtTime(ts: any) {
   overflow: hidden;
   flex-shrink: 0;
 }
-.right-collapse {
-  flex: 1;
+.acc {
+  flex: none;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  scrollbar-width: thin;
+  border-bottom: 1px solid var(--el-border-color-light);
 }
-.right-collapse::v-deep(.el-collapse) {
-  width: 100%;
+.acc.open {
+  flex: 1;
 }
-.right-collapse :deep(.el-collapse-item) {
-  flex-shrink: 0;
-}
-.right-collapse :deep(.el-collapse-item__header) {
-  height: 30px;
-  line-height: 30px;
-  padding: 0 8px;
-  color: #606266;
-  font-size: 13px;
-}
-.right-collapse :deep(.el-collapse-item__content) {
-  padding: 0;
-}
-.fold-title {
+.acc-head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex: 1;
+  height: 30px;
+  padding: 0 8px;
+  cursor: pointer;
+  color: #606266;
+  font-size: 13px;
+  user-select: none;
+}
+.acc-head:hover {
+  background: var(--el-fill-color-light);
+}
+.head-actions {
+  display: flex;
+  align-items: center;
   gap: 4px;
 }
-.fold-body {
-  padding: 2px 6px 6px;
-  max-height: 240px;
+.acc-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 4px 6px;
   scrollbar-width: thin;
 }
-.fold-body::-webkit-scrollbar {
+.acc-body::-webkit-scrollbar {
   width: 6px;
 }
-.fold-body::-webkit-scrollbar-thumb {
+.acc-body::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
+}
+.img-filter {
+  margin-bottom: 4px;
 }
 .setting-row {
   display: flex;
