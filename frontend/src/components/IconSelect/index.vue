@@ -11,9 +11,8 @@
                 <el-icon v-if="isElementIcon">
                   <component :is="selectedIcon.replace('el-icon-', '')" />
                 </el-icon>
-                <template v-else>
-                  <div :class="`i-svg:${selectedIcon}`" />
-                </template>
+                <i v-else-if="isRemixIcon" :class="selectedIcon" />
+                <div v-else :class="`i-svg:${selectedIcon}`" />
               </template>
               <template #suffix>
                 <!-- 清空按钮 -->
@@ -75,6 +74,22 @@
               </ul>
             </el-scrollbar>
           </el-tab-pane>
+          <el-tab-pane label="Remix 图标" name="remix">
+            <el-scrollbar height="300px">
+              <ul class="icon-grid">
+                <li
+                  v-for="icon in filteredRemixIcons"
+                  :key="'ri-' + icon"
+                  class="icon-grid-item"
+                  @click="selectIcon(icon)"
+                >
+                  <el-tooltip :content="'ri-' + icon" placement="bottom" effect="light">
+                    <i :class="'ri-' + icon" style="font-size: 16px" />
+                  </el-tooltip>
+                </li>
+              </ul>
+            </el-scrollbar>
+          </el-tab-pane>
         </el-tabs>
       </div>
     </el-popover>
@@ -104,6 +119,19 @@ const activeTab = ref("svg");
 
 const svgIcons = ref<string[]>([]);
 const elementIcons = ref<string[]>(Object.keys(ElementPlusIconsVue));
+const remixIcons = ref<string[]>([
+  "home-line", "dashboard-line", "folder-line", "folder-open-line", "database-line",
+  "user-line", "users-line", "settings-line", "tools-line", "menu-line",
+  "list-check", "file-list-line", "file-line", "folder-2-line", "play-circle-line",
+  "play-line", "stop-line", "video-line", "camera-line", "radar-line",
+  "cpu-line", "box-line", "package-line", "lock-line", "unlock-line",
+  "link", "global-line", "book-open-line", "book-line", "calculator-line",
+  "lightbulb-line", "bell-line", "search-line", "filter-line", "map-line",
+  "map-pin-line", "calendar-line", "image-line", "images-line", "team-line",
+  "user-star-line", "bug-line", "terminal-line", "task-line", "flow-chart",
+  "git-branch-line", "save-line", "swap-line", "upload-line", "download-line",
+  "refresh-line", "notification-3-line", "shield-line", "key-line",
+]);
 const selectedIcon = defineModel("modelValue", {
   type: String,
   required: true,
@@ -113,8 +141,12 @@ const selectedIcon = defineModel("modelValue", {
 const filterText = ref("");
 const filteredSvgIcons = ref<string[]>([]);
 const filteredElementIcons = ref<string[]>(elementIcons.value);
+const filteredRemixIcons = ref<string[]>(remixIcons.value);
 const isElementIcon = computed(() => {
   return selectedIcon.value && selectedIcon.value.startsWith("el-icon");
+});
+const isRemixIcon = computed(() => {
+  return selectedIcon.value && selectedIcon.value.startsWith("ri-");
 });
 
 function loadIcons() {
@@ -132,21 +164,25 @@ function handleTabClick(tabPane: any) {
 }
 
 function filterIcons() {
+  const kw = filterText.value.toLowerCase();
   if (activeTab.value === "svg") {
-    filteredSvgIcons.value = filterText.value
-      ? svgIcons.value.filter((icon) => icon.toLowerCase().includes(filterText.value.toLowerCase()))
-      : svgIcons.value;
+    filteredSvgIcons.value = kw ? svgIcons.value.filter((i) => i.toLowerCase().includes(kw)) : svgIcons.value;
+  } else if (activeTab.value === "remix") {
+    filteredRemixIcons.value = kw ? remixIcons.value.filter((i) => i.toLowerCase().includes(kw)) : remixIcons.value;
   } else {
-    filteredElementIcons.value = filterText.value
-      ? elementIcons.value.filter((icon) =>
-          icon.toLowerCase().includes(filterText.value.toLowerCase())
-        )
+    filteredElementIcons.value = kw
+      ? elementIcons.value.filter((i) => i.toLowerCase().includes(kw))
       : elementIcons.value;
   }
 }
 
 function selectIcon(icon: string) {
-  const iconName = activeTab.value === "element" ? "el-icon-" + icon : icon;
+  const iconName =
+    activeTab.value === "element"
+      ? "el-icon-" + icon
+      : activeTab.value === "remix"
+        ? "ri-" + icon
+        : icon;
   emit("update:modelValue", iconName);
   popoverVisible.value = false;
 }
@@ -169,7 +205,9 @@ function clearSelectedIcon() {
 onMounted(() => {
   loadIcons();
   if (selectedIcon.value) {
-    if (elementIcons.value.includes(selectedIcon.value.replace("el-icon-", ""))) {
+    if (selectedIcon.value.startsWith("ri-")) {
+      activeTab.value = "remix";
+    } else if (elementIcons.value.includes(selectedIcon.value.replace("el-icon-", ""))) {
       activeTab.value = "element";
     } else {
       activeTab.value = "svg";

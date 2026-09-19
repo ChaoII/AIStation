@@ -4,6 +4,7 @@
     <el-icon v-if="isElIcon" class="menu-icon">
       <component :is="iconComponent" />
     </el-icon>
+    <i v-else-if="isRemixIcon" :class="icon" class="menu-icon" />
     <div v-else :class="`i-svg:${icon}`" class="menu-icon" />
   </template>
   <template v-else>
@@ -22,6 +23,7 @@ const props = defineProps<{
 }>();
 
 const isElIcon = computed(() => props.icon?.startsWith("el-icon"));
+const isRemixIcon = computed(() => props.icon?.startsWith("ri-"));
 const iconComponent = computed(() => props.icon?.replace("el-icon-", ""));
 </script>
 
