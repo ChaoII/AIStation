@@ -1581,7 +1581,7 @@ const CursorIcon = defineComponent({
   render() {
     return h(
       "svg",
-      { viewBox: "0 0 16 16", width: 16, height: 16 },
+      { viewBox: "0 0 16 16", width: 20, height: 20, class: "cursor-icon" },
       [
         h("path", {
           d: "M4 1 v13 l2.9-3 2.1 4.5 1.8-.8-2.1-4.5 3.8-.3 Z",
@@ -3947,9 +3947,13 @@ onBeforeUnmount(() => {
   transition: all 0.12s;
   border: 1px solid transparent;
 }
-/* Element Plus 线描图标默认 stroke 较细，加粗避免「发虚」 */
+/* Element Plus 线描图标默认 stroke 较细，加粗避免「发虚」；
+   但自定义光标箭头保持 1px 白描边，避免出现粗白光环 */
 .tool-btn :deep(svg path) {
   stroke-width: 2;
+}
+.tool-btn :deep(svg.cursor-icon path) {
+  stroke-width: 1;
 }
 .tool-btn:hover {
   background: #f0f2f5;
