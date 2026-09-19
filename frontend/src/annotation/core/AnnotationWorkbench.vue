@@ -953,6 +953,7 @@ function openHistory() {
 
 // ==== 绘制/编辑（同阶段0-5a 逻辑） ====
 function onDblClick(e: MouseEvent) {
+  e.preventDefault();
   // 双击已有标注 → 打开编辑弹窗
   const hit = (e.target as Element)?.closest?.("[data-ann-id]");
   if (hit) {
@@ -983,6 +984,7 @@ function onDblClick(e: MouseEvent) {
   }
 }
 function onCanvasDown(e: MouseEvent) {
+  e.preventDefault();
   if (e.button !== 0 || lockedByOther.value) return;
   const p = toImagePoint(e);
   if (!p) return;
@@ -1118,6 +1120,7 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
   dragState = { type: "rotate", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 function onMove(e: MouseEvent) {
+  e.preventDefault();
   if (lockedByOther.value) return;
   const crossPt = toImagePoint(e);
   if (crossPt) {
@@ -1440,6 +1443,8 @@ defineExpose({
   width: 100%;
   height: 100%;
   background: #fff;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .ann-lock-banner {
   margin: 8px;

@@ -65,6 +65,9 @@ defineExpose({ canvas });
   width: 100%;
   height: 100%;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .ann-img,
 .ann-svg {
@@ -73,7 +76,13 @@ defineExpose({ canvas });
   left: 50%;
   pointer-events: none;
 }
+.ann-img {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
 .ann-svg {
   pointer-events: all;
+  user-select: none;
+  -webkit-user-select: none;
 }
 </style>
