@@ -42,9 +42,6 @@ const canvas = props.canvas ?? useAnnotationCanvas();
 
 function onImgLoad(e: Event) {
   const el = e.target as HTMLImageElement;
-  canvas.setImageSize(el.naturalWidth, el.naturalHeight);
-  const r = wrap.value?.getBoundingClientRect();
-  if (r) canvas.fitZoom(r.width, r.height);
   emit("img-load", el.naturalWidth, el.naturalHeight);
 }
 

@@ -541,6 +541,7 @@ function draftOf(ann: Annotation): Annotation {
   return d;
 }
 let loadImgToken = 0;
+let fittedForImage = false;
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
 let unmounted = false;
@@ -840,9 +841,17 @@ function onDocClick(e: MouseEvent) {
     editAnnVisible.value = false;
   }
 }
-function onImgLoad() {
+function onImgLoad(w: number, h: number) {
   imageLoaded.value = true;
   measureCanvas();
+  if (!canvas.cw.value && w && h) canvas.setImageSize(w, h);
+  if (!fittedForImage) {
+    const r = canvasR();
+    if (r.width && r.height && canvas.cw.value && canvas.ch.value) {
+      canvas.fitZoom(r.width, r.height);
+      fittedForImage = true;
+    }
+  }
 }
 
 function onWheel(e: WheelEvent) {
@@ -894,15 +903,20 @@ async function loadCurrentImage(imageId: number) {
   if (lockedImageId && lockedImageId !== imageId) unlockCurrent();
   imgUrl.value = "";
   imageLoaded.value = false;
+  fittedForImage = false;
   store.selectedAnnotationId = "";
   store.annotations = [];
   store.unsaved = false;
   lockedByOther.value = false;
   lockedByUser.value = null;
+  const imgInfo = store.images.find((i) => i.id === imageId);
+  if (imgInfo?.width && imgInfo?.height) canvas.setImageSize(imgInfo.width, imgInfo.height);
+  // 先显示缩略图（秒开）；无缩略图则留空，由后续全图填充
+  imgUrl.value = imgInfo?.thumbnail_url || "";
   try {
     const r = await props.api.getPresignedUrl(imageId, store.taskId);
     if (myToken !== loadImgToken) return;
-    imgUrl.value = r?.data?.data?.url || "";
+    imgUrl.value = r?.data?.data?.url || imgUrl.value;
     const ar = await props.api.loadAnnotations(store.taskId, imageId);
     if (myToken !== loadImgToken) return;
     store.annotations = ar?.data?.data || [];
