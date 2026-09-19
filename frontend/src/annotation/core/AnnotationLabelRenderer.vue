@@ -2,9 +2,9 @@
   <g class="ann-label">
     <rect
       :x="labelX"
-      :y="baseY - tagH - 4"
-      :width="w + 8"
-      :height="tagH + 4"
+      :y="baseY - (h || tagH) - 4"
+      :width="(w > 0 ? w : 24) + 8"
+      :height="(h || tagH) + 4"
       :fill="color"
       :stroke="color"
       stroke-width="0.5"
@@ -39,22 +39,27 @@ const props = defineProps<{
 
 const textRef = ref<SVGTextElement | null>(null);
 const w = ref(0);
+const h = ref(0);
 
-// 高度用确定性的 tagH（随字号线性），宽度用同步 getComputedTextLength——无异步跳变
+// 直接用文字真实渲染 bbox 同步测量背景宽高，保证背景始终贴合文字、随字号平滑（无跳变）
 function measure() {
-  const el = textRef.value;
-  if (!el) return;
-  try {
-    const len = el.getComputedTextLength();
-    if (len > 0) w.value = len;
-  } catch {
-    /* ignore */
-  }
+  requestAnimationFrame(() => {
+    const el = textRef.value;
+    if (!el) return;
+    try {
+      const b = el.getBBox();
+      if (b.width > 0 && b.height > 0) {
+        w.value = b.width;
+        h.value = b.height;
+      }
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 onMounted(measure);
-watch(() => props.label, measure);
-watch(() => props.fontSize, measure);
+watch(() => [props.label, props.fontSize], measure);
 
 defineExpose({ measure });
 </script>
