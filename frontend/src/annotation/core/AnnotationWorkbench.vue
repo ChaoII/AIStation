@@ -306,6 +306,15 @@ const det = useDetectionTool();
 const rot = useRotatedTool();
 const seg = useSegmentTool();
 const kp = useKeypointTool();
+const selectedClassId = ref<number | null>(null);
+watch(
+  () => [...taskClasses.value],
+  (arr) => {
+    if (!arr.length) selectedClassId.value = null;
+    else if (!arr.some((c) => c.id === selectedClassId.value)) selectedClassId.value = arr[0].id;
+  },
+  { immediate: true }
+);
 const ocr = useOcrTool();
 const rbPreview = ref<{ cx: number; cy: number; width: number; height: number; angle: number } | null>(null);
 const kpBoxDrafting = ref(false);
@@ -749,6 +758,8 @@ function onCanvasDown(e: MouseEvent) {
       kp.setBoxStart(p);
       kpBoxDrafting.value = true;
     } else {
+      const kpNames = taskClasses.value.find((c) => c.id === selectedClassId.value)?.keypoint_names || [];
+      kp.setNames(kpNames);
       kp.addPoint(p);
     }
   } else if (currentTool.value === "ocr") {

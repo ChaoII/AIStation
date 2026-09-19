@@ -13,12 +13,17 @@ export function useKeypointTool(kpNames: string[] = []) {
   const boxMode = ref(false);
   const boxStart = ref<Point | null>(null);
   const boxEnd = ref<Point | null>(null);
+  let currentNames = kpNames;
+
+  function setNames(names: string[]) {
+    currentNames = names;
+  }
 
   function addPoint(p: Point) {
     pending.value.push({
       x: p.x,
       y: p.y,
-      name: kpNames[pending.value.length] || `kp${pending.value.length + 1}`,
+      name: currentNames[pending.value.length] || `kp${pending.value.length + 1}`,
       visibility: "Visible",
     });
   }
@@ -74,5 +79,5 @@ export function useKeypointTool(kpNames: string[] = []) {
     kp.y = p.y;
   }
 
-  return { pending, boxMode, boxStart, boxEnd, addPoint, beginBox, setBoxStart, updateBox, build, moveKeypoint };
+  return { pending, boxMode, boxStart, boxEnd, setNames, addPoint, beginBox, setBoxStart, updateBox, build, moveKeypoint };
 }
