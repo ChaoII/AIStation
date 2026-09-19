@@ -85,6 +85,8 @@
             :cls-name="clsName"
             :font-size="fontSize"
             :tag-h="tagH"
+            :stroke="strokeW"
+            :sel-stroke="selStrokeW"
             @ann-down="onAnnDown"
             @handle-down="onHandleDown"
             @rotate-down="onRotateDown"
@@ -155,6 +157,21 @@
         </AnnotationCanvas>
       </main>
       <aside class="ann-rightbar">
+        <div class="panel-section">
+          <div class="section-title-row">设置</div>
+          <div class="setting-row">
+            <span class="setting-label">标签字号</span>
+            <el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" size="small" />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">框线</span>
+            <el-slider v-model="annSettings.strokeWidth" :min="0.5" :max="4" :step="0.5" size="small" />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">选中框线</span>
+            <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
+          </div>
+        </div>
         <div class="panel-section">
           <div class="section-title-row">图片列表</div>
           <div class="scroll-area img-list">
@@ -394,8 +411,28 @@ const shortcutList = [
   { keys: "Esc", desc: "取消绘制" },
   { keys: "←→ / a d", desc: "上一张 / 下一张" },
 ];
-const fontSize = 6;
-const tagH = Math.max(8, fontSize + 6);
+const fontSize = ref(6);
+const strokeW = ref(1.5);
+const selStrokeW = ref(2);
+const tagH = computed(() => Math.max(8, fontSize.value + 6));
+const settingsKey = "annotation-workbench-settings";
+function loadSettings(): any {
+  try {
+    return JSON.parse(localStorage.getItem(settingsKey) || "{}");
+  } catch {
+    return {};
+  }
+}
+const annSettings = reactive({ labelFontSize: 6, strokeWidth: 1.5, selStrokeWidth: 2, ...loadSettings() });
+fontSize.value = annSettings.labelFontSize;
+strokeW.value = annSettings.strokeWidth;
+selStrokeW.value = annSettings.selStrokeWidth;
+watch(annSettings, () => {
+  fontSize.value = annSettings.labelFontSize;
+  strokeW.value = annSettings.strokeWidth;
+  selStrokeW.value = annSettings.selStrokeWidth;
+  localStorage.setItem(settingsKey, JSON.stringify(annSettings));
+}, { deep: true });
 
 const baseTools = [
   { name: "select", label: "选择", icon: Select },
@@ -1502,6 +1539,18 @@ defineExpose({
 }
 .footer-spacer {
   flex: 1;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.setting-label {
+  width: 60px;
+  font-size: 12px;
+  color: #606266;
+  white-space: nowrap;
 }
 .unsaved-dot {
   width: 8px;
