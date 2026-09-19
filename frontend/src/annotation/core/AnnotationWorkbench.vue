@@ -1157,11 +1157,19 @@ function confirmOcr() {
 }
 function onAnnDown(e: MouseEvent, ann: Annotation) {
   if (e.button !== 0 || lockedByOther.value) return;
+  if (spaceHeld.value) {
+    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    return;
+  }
   store.selectedAnnotationId = ann.id;
   dragState = { type: "move", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (e.button !== 0 || lockedByOther.value) return;
+  if (spaceHeld.value) {
+    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    return;
+  }
   store.selectedAnnotationId = ann.id;
   if (handle.startsWith("kpb-")) {
     const h = handle.replace("kpb-", "");
@@ -1222,6 +1230,10 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
 }
 function onRotateDown(e: MouseEvent, ann: Annotation) {
   if (e.button !== 0 || lockedByOther.value) return;
+  if (spaceHeld.value) {
+    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    return;
+  }
   store.selectedAnnotationId = ann.id;
   dragState = { type: "rotate", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
