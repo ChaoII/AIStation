@@ -1438,6 +1438,7 @@ function annScreenPos(ann: any) {  const el = getCanvasEl();
 function tagStyle(ann: any): any {
   const el = getCanvasEl();
   let lx = 0, ty = 0;
+  // 标签层 .ann-label-layer 位于画布容器内（absolute inset:0），坐标相对画布容器，不含浏览器视口偏移
   if (el && dw.value && dh.value) {
     const r = el.getBoundingClientRect();
     const off = canvas.imageOffset(r.width, r.height);
@@ -1450,8 +1451,8 @@ function tagStyle(ann: any): any {
       const ys = ann.points.map((p: any) => p.y);
       nx = Math.min(...xs); ny = Math.min(...ys);
     }
-    lx = r.left + off.left + nx * dw.value;
-    ty = r.top + off.top + ny * dh.value;
+    lx = off.left + nx * dw.value;
+    ty = off.top + ny * dh.value;
   }
   return {
     left: lx + "px",
