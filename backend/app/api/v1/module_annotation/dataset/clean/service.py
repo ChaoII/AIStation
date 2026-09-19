@@ -156,20 +156,60 @@ class CleanService:
                         ann_id = item.get("id", "")
                         ann_type = item.get("type", "")
 
-                        # Check for empty annotation data
-                        if "points" in item and (not item["points"] or len(item["points"]) == 0):
-                            issues.append("空点数据")
-                        if "polygon" in item and (not item["polygon"] or len(item["polygon"]) == 0):
-                            issues.append("空多边形")
-
-                        # Check for out-of-bounds (only for box type with points)
-                        if ann_type == "box" and "points" in item and len(item.get("points", [])) == 2:
+                        # 旧格式（box + 像素 points）兼容检测
+                        if ann_type == "box" and isinstance(item.get("points"), list) and len(item["points"]) == 2:
                             pts = item["points"]
                             x1, y1 = pts[0]
                             x2, y2 = pts[1]
                             if x2 <= x1 or y2 <= y1:
                                 issues.append("零面积框")
                             if img_w > 0 and (x1 < 0 or x2 > img_w or y1 < 0 or y2 > img_h):
+                                issues.append("越界框")
+
+                        # 工作台格式（归一化 0~1）检测
+                        if ann_type in ("AxisAlignedBox", "RotatedBox"):
+                            if ann_type == "AxisAlignedBox":
+                                x1, y1 = item.get("x1", 0), item.get("y1", 0)
+                                x2, y2 = item.get("x2", 0), item.get("y2", 0)
+                                if x2 <= x1 or y2 <= y1:
+                                    issues.append("零面积框")
+                                if x1 < 0 or y1 < 0 or x2 > 1 or y2 > 1:
+                                    issues.append("越界框")
+                            else:  # RotatedBox（cx,cy,width,height 归一化）
+                                w = item.get("width", 0)
+                                h = item.get("height", 0)
+                                if w <= 0 or h <= 0:
+                                    issues.append("零面积框")
+                                cx, cy = item.get("cx", 0.5), item.get("cy", 0.5)
+                                half = (w * w + h * h) ** 0.5 / 2
+                                if cx - half < 0 or cx + half > 1 or cy - half < 0 or cy + half > 1:
+                                    issues.append("越界框")
+                        elif ann_type == "Polygon":
+                            pts = item.get("points") or []
+                            if len(pts) < 3:
+                                issues.append("空多边形")
+                            elif any(
+                                not (0 <= p.get("x", 0) <= 1 and 0 <= p.get("y", 0) <= 1)
+                                for p in pts
+                            ):
+                                issues.append("越界框")
+                        elif ann_type == "Ocr":
+                            pts = item.get("points") or []
+                            if len(pts) < 4:
+                                issues.append("点不足(需≥4)")
+                            elif any(
+                                not (0 <= p.get("x", 0) <= 1 and 0 <= p.get("y", 0) <= 1)
+                                for p in pts
+                            ):
+                                issues.append("越界框")
+                        elif ann_type == "Keypoint":
+                            kps = item.get("keypoints") or []
+                            if not kps:
+                                issues.append("空关键点")
+                            elif any(
+                                not (0 <= k.get("x", 0) <= 1 and 0 <= k.get("y", 0) <= 1)
+                                for k in kps
+                            ):
                                 issues.append("越界框")
 
                         if issues:
