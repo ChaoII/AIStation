@@ -189,119 +189,33 @@
         />
         </AnnotationCanvas>
       </main>
-      <aside class="ann-rightbar">
-        <div class="panel-section">
-          <div class="section-title-row">设置</div>
-          <div class="setting-row">
-            <span class="setting-label">标签字号</span>
-            <el-slider v-model="annSettings.labelFontSize" :min="4" :max="16" size="small" />
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">框线</span>
-            <el-slider v-model="annSettings.strokeWidth" :min="0.5" :max="4" :step="0.5" size="small" />
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">选中框线</span>
-            <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
-          </div>
-        </div>
-        <div class="panel-section">
-          <div class="section-title-row">图片列表</div>
-          <el-radio-group v-model="imageFilter" size="small" class="img-filter">
-            <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button value="annotated">已标</el-radio-button>
-            <el-radio-button value="unannotated">未标</el-radio-button>
-          </el-radio-group>
-          <div class="scroll-area img-list">
-            <div
-              v-for="img in filteredImages"
-              :key="img.id"
-              class="image-item"
-              :class="{ active: img.id === store.currentImage?.id }"
-              @click="goToImage(store.images.findIndex((x) => x.id === img.id))"
-            >
-              <img v-if="img.thumbnail_url" :src="img.thumbnail_url" class="img-thumb" alt="" />
-              <span v-else class="img-thumb img-thumb--placeholder" />
-              <div class="img-info">
-                <span class="img-name">{{ img.filename }}</span>
-                <span class="img-meta">{{ img.updated_by?.name || "--" }}</span>
-              </div>
-              <span class="dot" :class="img.status === 'annotated' ? 'dot-done' : 'dot-pending'" />
-            </div>
-            <div v-if="filteredImages.length === 0" class="empty-hint">暂无图片</div>
-          </div>
-        </div>
-        <div class="panel-section">
-          <div class="section-title-row">
-            <span>类别</span>
-            <el-button link type="primary" size="small" @click="showClassModal = true; clsForm.kpNames = []; clsForm.kpColors = []">+ 添加</el-button>
-          </div>
-          <div class="scroll-area">
-            <div
-              class="class-item"
-              :class="{ active: selectedClassId === c.id }"
-              v-for="c in taskClasses"
-              :key="c.id"
-              @click="selectedClassId = c.id"
-            >
-              <span class="dot-color" :style="{ background: c.color }" />
-              <span class="flex-1">{{ c.name }}</span>
-              <span class="count-chip">{{ clsCount(c.id) }}</span>
-              <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="removeClass(c.id)">
-                <template #reference>
-                  <el-button text size="small">×</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
-            <div v-if="taskClasses.length === 0" class="empty-hint">请添加类别</div>
-          </div>
-        </div>
-        <div
-          v-if="plugin.name === 'classification'"
-          class="panel-section"
-        >
-          <div class="section-title-row">
-            分类（{{ config.classificationMode === "multi" ? "多标签" : "单标签" }}）
-          </div>
-          <div class="scroll-area">
-            <div
-              v-for="c in taskClasses"
-              :key="c.id"
-              class="class-item"
-              :class="{ active: isClsSelected(c.id) }"
-              @click="toggleClassification(c.id)"
-            >
-              <span class="dot-color" :style="{ background: c.color }" />
-              <span class="flex-1">{{ c.name }}</span>
-              <el-checkbox :model-value="isClsSelected(c.id)" @click.stop />
-            </div>
-          </div>
-        </div>
-        <div class="panel-section">
-          <div class="section-title-row">标注列表</div>
-          <div class="scroll-area">
-            <div
-              v-for="a in store.annotations"
-              :key="a.id"
-              class="ann-item"
-              :class="{ active: a.id === store.selectedAnnotationId }"
-              @click="store.selectedAnnotationId = a.id"
-              @dblclick="openEditDialog(a)"
-              @contextmenu.prevent.stop="openContextMenu($event, a)"
-            >
-              <span class="dot-color" :style="{ background: clsColor(a) }" />
-              <span class="flex-1">{{ clsName(a) }}</span>
-              <span class="tag-type">{{ a.type }}</span>
-              <el-popconfirm title="确定删除该标注？" confirm-button-text="删除" cancel-button-text="取消" @confirm="deleteById(a.id)">
-                <template #reference>
-                  <el-button text size="small">×</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
-            <div v-if="store.annotations.length === 0" class="empty-hint">暂无标注</div>
-          </div>
-        </div>
-      </aside>
+      <AnnotationRightPanel
+        :ann-settings="annSettings"
+        :image-filter="imageFilter"
+        :filtered-images="filteredImages"
+        :images="store.images"
+        :current-image-id="store.currentImage?.id ?? null"
+        :task-classes="taskClasses"
+        :selected-class-id="selectedClassId"
+        :plugin-name="plugin.name"
+        :classification-mode="config.classificationMode"
+        :annotations="store.annotations"
+        :selected-annotation-id="store.selectedAnnotationId"
+        :cls-color="clsColor"
+        :cls-name="clsName"
+        :cls-count="clsCount"
+        :is-cls-selected="isClsSelected"
+        @update-image-filter="imageFilter = $event"
+        @go-image="goToImage"
+        @add-class="showClassModal = true; clsForm.kpNames = []; clsForm.kpColors = []"
+        @select-class="selectedClassId = $event"
+        @remove-class="removeClass"
+        @toggle-classification="toggleClassification"
+        @select-annotation="store.selectedAnnotationId = $event"
+        @edit-annotation="openEditDialog"
+        @contextmenu-annotation="openContextMenu"
+        @delete-annotation="deleteById"
+      />
     </div>
     <AnnotationHistoryBar
       :has-current-image="!!store.currentImage"
@@ -413,6 +327,7 @@ import { Select, FullScreen, ZoomIn } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import AnnotationToolbar from "./AnnotationToolbar.vue";
+import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import {
@@ -1514,112 +1429,6 @@ defineExpose({
   min-width: 0;
   position: relative;
 }
-.ann-rightbar {
-  width: 240px;
-  border-left: 1px solid var(--el-border-color-light);
-  display: flex;
-  flex-direction: column;
-}
-.panel-section {
-  border-bottom: 1px solid var(--el-border-color-light);
-  padding: 8px;
-}
-.section-title-row {
-  font-size: 13px;
-  color: #909399;
-  margin-bottom: 6px;
-}
-.scroll-area {
-  max-height: 240px;
-  overflow: auto;
-}
-.img-list {
-  max-height: 320px;
-}
-.image-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px;
-  cursor: pointer;
-  font-size: 12px;
-}
-.image-item.active {
-  background: var(--el-color-primary-light-9);
-}
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.dot-done {
-  background: var(--el-color-success);
-}
-.dot-pending {
-  background: var(--el-color-info);
-}
-.img-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.img-thumb {
-  width: 32px;
-  height: 32px;
-  object-fit: cover;
-  border-radius: 4px;
-  background: var(--el-fill-color-light);
-  flex-shrink: 0;
-}
-.img-thumb--placeholder {
-  display: block;
-}
-.img-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.img-filter {
-  margin-bottom: 6px;
-}
-.img-meta {
-  color: #c0c4cc;
-  font-size: 11px;
-}
-.class-item,
-.ann-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.class-item:hover,
-.ann-item:hover {
-  background: var(--el-fill-color-light);
-}
-.ann-item.active,
-.class-item.active {
-  background: var(--el-color-primary-light-9);
-}
-.dot-color {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-}
-.flex-1 {
-  flex: 1;
-}
-.tag-type {
-  color: #c0c4cc;
-  font-size: 11px;
-}
-.class-item.active {
-  background: var(--el-color-primary-light-9);
-}
 .ctx-backdrop {
   position: fixed;
   inset: 0;
@@ -1666,21 +1475,6 @@ defineExpose({
   color: #c0c4cc;
   font-size: 12px;
   padding: 4px;
-}
-.footer-spacer {
-  flex: 1;
-}
-.setting-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.setting-label {
-  width: 60px;
-  font-size: 12px;
-  color: #606266;
-  white-space: nowrap;
 }
 .shortcut-grid {
   display: flex;
