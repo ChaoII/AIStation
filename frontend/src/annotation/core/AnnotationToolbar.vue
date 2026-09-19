@@ -30,7 +30,8 @@
 </template>
 
 <script setup lang="ts">
-import { RefreshLeft, RefreshRight, Delete, Box, Refresh } from "@element-plus/icons-vue";
+import { h, defineComponent } from "vue";
+import { Rank, ZoomIn, Crop, Refresh, Grid, CirclePlus, Document, Collection, RefreshLeft, RefreshRight, Delete } from "@element-plus/icons-vue";
 
 defineProps<{
   tools: { name: string; label: string; icon?: any; title?: string }[];
@@ -43,9 +44,27 @@ defineEmits<{
   (e: "delete"): void;
 }>();
 
-const TOOL_ICONS: Record<string, any> = { box: Box, rotated_box: Refresh };
+const CursorIcon = defineComponent({
+  name: "CursorIcon",
+  render() {
+    return h("i", { class: "ri-cursor-fill" });
+  },
+});
+
+const ICONS: Record<string, any> = {
+  select: CursorIcon,
+  pan: Rank,
+  zoom: ZoomIn,
+  box: Crop,
+  rotated_box: Refresh,
+  polygon: Grid,
+  keypoint: CirclePlus,
+  ocr: Document,
+  classification: Collection,
+};
+
 function iconOf(t: any) {
-  return t.icon || TOOL_ICONS[t.name] || Box;
+  return ICONS[t.name] || t.icon || Grid;
 }
 function titleOf(t: any) {
   return t.title || t.label;
@@ -54,38 +73,62 @@ function titleOf(t: any) {
 
 <style scoped>
 .ann-leftbar {
-  width: 56px;
-  border-right: 1px solid var(--el-border-color-light);
-  padding: 8px 0;
+  width: 52px;
+  background: #fff;
+  border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 2px;
+  gap: 2px;
+  flex-shrink: 0;
 }
 .tool-list {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 1px;
 }
 .tool-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 48px;
-  padding: 6px 0;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
   cursor: pointer;
-  color: #606266;
+  color: #303133;
+  transition: all 0.12s;
+  border: 1px solid transparent;
+}
+.tool-btn :deep(svg path) {
+  stroke-width: 2;
+}
+.tool-btn :deep(.ri-cursor-fill) {
+  font-size: 18px;
+}
+.tool-btn:hover {
+  background: #f0f2f5;
 }
 .tool-btn.active {
-  color: var(--el-color-primary);
+  background: #ecf5ff;
+  border-color: #409eff;
+  color: #409eff;
 }
 .tool-btn.danger:hover {
-  color: var(--el-color-danger);
-}
-.tool-label {
-  font-size: 11px;
+  background: #fef0f0;
+  color: #f56c6c;
 }
 .tool-sep {
+  width: 28px;
   height: 1px;
-  width: 32px;
-  background: var(--el-border-color-light);
-  margin: 6px 0;
+  margin: 4px 0;
+  background: #e4e7ed;
+}
+.tool-label {
+  font-size: 9px;
+  margin-top: 1px;
+  line-height: 1;
 }
 </style>

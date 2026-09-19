@@ -161,6 +161,20 @@ function imagesIdx(id: number) {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.ann-rightbar:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.3) rgba(0, 0, 0, 0.05);
+}
+.ann-rightbar::-webkit-scrollbar {
+  width: 6px;
+}
+.ann-rightbar::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.ann-rightbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
 }
 .right-collapse {
   border-bottom: 1px solid var(--el-border-color-light);
@@ -175,11 +189,10 @@ function imagesIdx(id: number) {
   margin-bottom: 6px;
 }
 .scroll-area {
-  overflow: auto;
-  padding-right: 4px;
+  overflow: visible;
 }
 .img-list {
-  max-height: 280px;
+  max-height: none;
 }
 .img-filter {
   margin-bottom: 6px;
