@@ -143,9 +143,9 @@
                 <g class="ann-label">
                   <rect
                     :x="ann.x1 * cw"
-                    :y="ann.y1 * ch - labelTagH - 4"
-                    :width="labelWidthForClass(ann.class_id) + 4"
-                    :height="labelTagH + 4"
+                    :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 8"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -187,9 +187,13 @@
                 <g class="ann-label">
                   <rect
                     :x="rbHandlePos(ann, 'tl', cw, ch).x"
-                    :y="rbHandlePos(ann, 'tl', cw, ch).y - labelTagH - 4"
-                    :width="labelWidthForClass(ann.class_id) + 4"
-                    :height="labelTagH + 4"
+                    :y="
+                      rbHandlePos(ann, 'tl', cw, ch).y -
+                      (labelTextRects.get(ann.id)?.h ?? labelTagH) -
+                      4
+                    "
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 8"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -290,9 +294,9 @@
                 <g v-for="B in [polyBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.x"
-                    :y="B.y - labelTagH - 4"
-                    :width="labelWidthForClass(ann.class_id) + 4"
-                    :height="labelTagH + 4"
+                    :y="B.y - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 8"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -365,10 +369,13 @@
                   <rect
                     :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2"
                     :y="
-                      ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2 - labelTagH - 4
+                      ann.bounding_box.cy * ch -
+                      (ann.bounding_box.height * ch) / 2 -
+                      (labelTextRects.get(ann.id)?.h ?? labelTagH) -
+                      4
                     "
-                    :width="labelWidthForClass(ann.class_id) + 4"
-                    :height="labelTagH + 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 8"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -544,9 +551,9 @@
                 <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.minX"
-                    :y="B.minY - labelTagH - 4"
-                    :width="labelWidthForClass(ann.class_id) + 4"
-                    :height="labelTagH + 4"
+                    :y="B.minY - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
+                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 8"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -1464,11 +1471,36 @@ const annSettings = ref({
   ...loadSettings(),
 });
 watch(annSettings, saveSettings, { deep: true });
+// 字号变化后重新读取文字实际长度，保证背景始终包住文字（同步测量）
+watch(
+  () => annSettings.value.labelFontSize,
+  () => nextTick(() => measureLabelRects())
+);
 
 // ---- Constants (matching EasyLabelTauri) ----
 const LABEL_TAG_H = 8;
 // 标签背景高度随字号联动：测量未命中回退时也能包住文字，避免“文字大背景小”
 const labelTagH = computed(() => Math.max(LABEL_TAG_H, annSettings.value.labelFontSize + 6));
+// 标签背景宽高 = 文字实际渲染 bbox（同步 getBBox）+ 边距。
+// 同步读取文字自身渲染尺寸，任何缩放/字体下背景都与文字一致，必然包住，且稳定无异步跳变。
+const labelTextRects = ref(new Map<string, { w: number; h: number }>());
+function measureLabelRects() {
+  const annSvg = document.querySelector(".ann-svg");
+  if (!annSvg) return;
+  const map = new Map<string, { w: number; h: number }>();
+  annSvg.querySelectorAll<SVGTextElement>(".ann-label text").forEach((t) => {
+    const annEl = t.closest<SVGGElement>("[data-ann-id]");
+    const id = annEl?.getAttribute("data-ann-id");
+    if (!id) return;
+    try {
+      const b = t.getBBox();
+      if (b.width > 0 && b.height > 0) map.set(id, { w: b.width, h: b.height });
+    } catch {
+      /* ignore */
+    }
+  });
+  labelTextRects.value = map;
+}
 
 // ---- Drag state (single object, matching EasyLabelTauri pattern) ----
 interface DragState {
@@ -1752,6 +1784,8 @@ function onImgLoad() {
     store.setPan(0, 0);
   };
   nextTick(tryFit);
+  // 图片真正加载完成、标注渲染后，同步读取文字实际长度设置背景宽度
+  nextTick(() => measureLabelRects());
 }
 
 // ===== Crosshair =====
@@ -3311,6 +3345,8 @@ watch(
       unsaved.value = true;
       pushHistory();
     }
+    // 标注增删/切图后，标注已渲染，同步读取文字长度设置背景宽度
+    nextTick(() => measureLabelRects());
   }
 );
 
