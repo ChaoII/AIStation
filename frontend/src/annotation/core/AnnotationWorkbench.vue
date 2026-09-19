@@ -172,6 +172,41 @@
           stroke="#e6a23c"
           stroke-width="1"
         />
+        <!-- 旋转框三步绘制引导 -->
+        <template v-if="currentTool === 'rotated_box' && rot.step.value > 0">
+          <line
+            v-if="rot.pt1.value && rbLast"
+            :x1="rot.pt1.value.x * cw"
+            :y1="rot.pt1.value.y * ch"
+            :x2="rbLast.x * cw"
+            :y2="rbLast.y * ch"
+            stroke="#f56c6c"
+            stroke-width="1.5"
+            stroke-dasharray="4 3"
+          />
+          <line
+            v-if="rot.pt1.value && rot.pt2.value && rbLast"
+            :x1="rot.pt2.value.x * cw"
+            :y1="rot.pt2.value.y * ch"
+            :x2="rbLast.x * cw"
+            :y2="rbLast.y * ch"
+            stroke="#f56c6c"
+            stroke-width="1"
+            stroke-dasharray="2 2"
+          />
+          <circle :cx="rot.pt1.value.x * cw" :cy="rot.pt1.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
+          <circle v-if="rot.pt2.value" :cx="rot.pt2.value.x * cw" :cy="rot.pt2.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
+        </template>
+        <!-- 多边形首点提示 -->
+        <circle
+          v-if="currentTool === 'polygon' && seg.points.value.length && rbLast"
+          :cx="seg.points.value[0].x * cw"
+          :cy="seg.points.value[0].y * ch"
+          r="4"
+          fill="none"
+          stroke="#3b82f6"
+          stroke-width="1.5"
+        />
         </AnnotationCanvas>
       </main>
       <aside class="ann-rightbar">
