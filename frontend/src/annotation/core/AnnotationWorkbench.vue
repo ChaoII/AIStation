@@ -263,11 +263,11 @@
       class="ctx-menu"
       :style="{ left: annMenu.x + 'px', top: annMenu.y + 'px' }"
     >
-      <div class="ctx-item" @click.stop="menuEdit">编辑标注</div>
-      <div class="ctx-item" @click.stop="menuCopy">复制标注</div>
-      <div class="ctx-item" @click.stop="menuLayerTop">置顶</div>
-      <div class="ctx-item" @click.stop="menuLayerBottom">置底</div>
-      <div class="ctx-item ctx-danger" @click.stop="menuDelete">删除标注</div>
+      <div class="ctx-item" @click.stop="menuEdit"><el-icon :size="14"><Edit /></el-icon><span>编辑标注</span></div>
+      <div class="ctx-item" @click.stop="menuCopy"><el-icon :size="14"><CopyDocument /></el-icon><span>复制标注</span></div>
+      <div class="ctx-item" @click.stop="menuLayerTop"><el-icon :size="14"><ArrowUp /></el-icon><span>置顶</span></div>
+      <div class="ctx-item" @click.stop="menuLayerBottom"><el-icon :size="14"><ArrowDown /></el-icon><span>置底</span></div>
+      <div class="ctx-item ctx-danger" @click.stop="menuDelete"><el-icon :size="14"><Delete /></el-icon><span>删除标注</span></div>
     </div>
 
     <div
@@ -368,7 +368,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
-import { Select, FullScreen, ZoomIn, Close } from "@element-plus/icons-vue";
+import { Select, FullScreen, ZoomIn, Close, Edit, CopyDocument, ArrowUp, ArrowDown, Delete } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import AnnotationToolbar from "./AnnotationToolbar.vue";
@@ -429,6 +429,7 @@ const filteredImages = computed(() => {
   return store.images.filter((i) => (imageFilter.value === "annotated") === (i.status === "annotated"));
 });
 const showHelpModal = ref(false);
+const spaceHeld = ref(false);
 const shortcutList = computed(() => {
   const base = [
     { keys: "1-7 / s b r p k o c", desc: "切换标注工具" },
@@ -496,9 +497,10 @@ const cw = computed(() => canvas.cw.value);
 const ch = computed(() => canvas.ch.value);
 const dw = computed(() => canvas.dw.value);
 const dh = computed(() => canvas.dh.value);
-const toolCursor = computed(() =>
-  currentTool.value === "box" || currentTool.value === "rotated_box" ? "crosshair" : "default"
-);
+const toolCursor = computed(() => {
+  if (spaceHeld.value) return "grab";
+  return currentTool.value === "box" || currentTool.value === "rotated_box" ? "crosshair" : "default";
+});
 const crossVisible = computed(() =>
   ["box", "rotated_box", "polygon", "keypoint", "ocr"].includes(currentTool.value)
 );
@@ -792,6 +794,9 @@ function resetDrawingState() {
   ocr.reset();
 }
 
+function onKeyUp(e: KeyboardEvent) {
+  if (e.code === "Space") spaceHeld.value = false;
+}
 function onDocClick(e: MouseEvent) {
   // 点击编辑气泡外部 → 自动关闭气泡
   if (editAnnVisible.value && !(e.target as Element)?.closest?.(".edit-bubble")) {
@@ -1085,6 +1090,11 @@ function onCanvasDown(e: MouseEvent) {
   const p = toImagePoint(e);
   if (!p) return;
   store.selectedAnnotationId = "";
+  // 按住空格 = 平移（类似 PS 抓手），无需切到平移工具
+  if (spaceHeld.value) {
+    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    return;
+  }
   if (currentTool.value === "pan") {
     panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
     return;
@@ -1472,6 +1482,7 @@ function editDelete() {
   deleteSelected();
 }
 function onKey(e: KeyboardEvent) {
+  if (e.code === "Space") { e.preventDefault(); spaceHeld.value = true; return; }
   if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveAnn(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); return; }
   if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
@@ -1545,6 +1556,7 @@ onMounted(() => {
   window.addEventListener("mouseup", onUp);
   window.addEventListener("beforeunload", onBeforeUnload);
   document.addEventListener("keydown", onKey);
+  document.addEventListener("keyup", onKeyUp);
   document.addEventListener("click", onDocClick);
   init();
 });
@@ -1554,6 +1566,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
+  document.removeEventListener("keyup", onKeyUp);
   document.removeEventListener("click", onDocClick);
   if (store.unsaved && store.currentImageId && !lockedByOther.value) {
     props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations).catch(() => {});
@@ -1642,9 +1655,12 @@ defineExpose({
   min-width: 120px;
 }
 .ctx-item {
-  padding: 8px 16px;
+  padding: 8px 12px;
   cursor: pointer;
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .ctx-item:hover {
   background: var(--el-fill-color-light);
