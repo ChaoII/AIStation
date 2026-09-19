@@ -270,7 +270,18 @@
       <div class="ctx-item ctx-danger" @click.stop="menuDelete">删除标注</div>
     </div>
 
-    <el-dialog v-model="editAnnVisible" title="编辑标注" width="420px" append-to-body>
+    <div
+      v-if="editAnnVisible"
+      class="edit-bubble"
+      :style="{ left: editPos.x + 'px', top: editPos.y + 'px' }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <div class="bubble-arrow" />
+      <div class="bubble-head">
+        <span>编辑标注</span>
+        <el-icon :size="14" class="bubble-close" @click="editAnnVisible = false"><Close /></el-icon>
+      </div>
       <el-form label-width="72px">
         <el-form-item label="类别">
           <el-select v-model="editForm.class_id" size="small" style="width: 100%" @change="editClassChange">
@@ -291,11 +302,11 @@
           </div>
         </el-form-item>
       </el-form>
-      <template #footer>
-        <el-button @click="editAnnVisible = false">关闭</el-button>
-        <el-button type="danger" @click="editDelete">删除该标注</el-button>
-      </template>
-    </el-dialog>
+      <div class="bubble-footer">
+        <el-button size="small" @click="editAnnVisible = false">关闭</el-button>
+        <el-button size="small" type="danger" @click="editDelete">删除该标注</el-button>
+      </div>
+    </div>
     <el-dialog v-model="showClassModal" :title="editingClassId !== null ? '编辑类别' : '添加类别'" width="400px" append-to-body>
       <el-form :model="clsForm" label-width="60px">
         <el-form-item label="名称">
@@ -357,7 +368,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
-import { Select, FullScreen, ZoomIn } from "@element-plus/icons-vue";
+import { Select, FullScreen, ZoomIn, Close } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import AnnotationToolbar from "./AnnotationToolbar.vue";
@@ -1356,6 +1367,7 @@ function onUp() {
 
 // ==== 历史（undo/redo）====
 const editAnnVisible = ref(false);
+const editPos = reactive({ x: 0, y: 0 });
 const editForm = reactive({ ann: null as any, class_id: 0, text: "", keypoints: [] as any[] });
 const KP_VISIBILITY = ["Visible", "Occluded", "Hidden"];
 const annMenu = reactive({ visible: false, ann: null as any, x: 0, y: 0 });
@@ -1369,12 +1381,30 @@ function openContextMenu(e: MouseEvent, ann: Annotation) {
 function closeMenu() {
   annMenu.visible = false;
 }
+function annScreenPos(ann: any) {
+  const el = getCanvasEl();
+  if (!el || !dw.value || !dh.value) return { x: 0, y: 0 };
+  const r = el.getBoundingClientRect();
+  const off = canvas.imageOffset(r.width, r.height);
+  let nx = 0.5, ny = 0.5;
+  if (ann.x1 !== undefined) { nx = (ann.x1 + ann.x2) / 2; ny = (ann.y1 + ann.y2) / 2; }
+  else if (ann.cx !== undefined) { nx = ann.cx; ny = ann.cy; }
+  else if (ann.bounding_box) { nx = ann.bounding_box.cx; ny = ann.bounding_box.cy; }
+  else if (Array.isArray(ann.points) && ann.points.length) {
+    nx = ann.points.reduce((s: number, p: any) => s + p.x, 0) / ann.points.length;
+    ny = ann.points.reduce((s: number, p: any) => s + p.y, 0) / ann.points.length;
+  }
+  return { x: r.left + off.left + nx * dw.value, y: r.top + off.top + ny * dh.value };
+}
 function openEditDialog(ann: any) {
   if (!ann) return;
   editForm.ann = ann;
   editForm.class_id = ann.class_id;
   editForm.text = ann.text || "";
   editForm.keypoints = ann.type === "Keypoint" ? JSON.parse(JSON.stringify(ann.keypoints || [])) : [];
+  const pos = annScreenPos(ann);
+  editPos.x = pos.x;
+  editPos.y = pos.y;
   editAnnVisible.value = true;
 }
 function menuEdit() {
@@ -1657,5 +1687,49 @@ defineExpose({
 }
 .custom-color {
   vertical-align: middle;
+}
+.edit-bubble {
+  position: fixed;
+  z-index: 2000;
+  transform: translate(-50%, calc(-100% - 14px));
+  width: 300px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+  padding: 10px 12px;
+}
+.bubble-arrow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--el-border-color-light);
+}
+.bubble-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+  margin-bottom: 8px;
+}
+.bubble-close {
+  cursor: pointer;
+  color: #909399;
+}
+.bubble-close:hover {
+  color: #303133;
+}
+.bubble-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 </style>
