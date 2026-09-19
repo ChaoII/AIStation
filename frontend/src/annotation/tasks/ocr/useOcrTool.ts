@@ -3,7 +3,15 @@ import type { Annotation, Point } from "../../core/types";
 
 export function useOcrTool() {
   const first = ref<Point | null>(null);
+  const mode = ref<"rect" | "quad">("rect");
+  const quadPoints = ref<Point[]>([]);
 
+  function toggleMode() {
+    mode.value = mode.value === "rect" ? "quad" : "rect";
+    reset();
+  }
+
+  // 矩形：两次点击对角
   function onPoint(p: Point): Annotation | null {
     if (!first.value) {
       first.value = p;
@@ -32,8 +40,30 @@ export function useOcrTool() {
     return ann;
   }
 
+  // 四边形：逐点收集，双击闭合
+  function addQuadPoint(p: Point) {
+    quadPoints.value.push(p);
+  }
+  function closeQuad(): Annotation | null {
+    if (quadPoints.value.length < 4) {
+      quadPoints.value = [];
+      return null;
+    }
+    const ann: Annotation = {
+      id: crypto.randomUUID(),
+      type: "Ocr",
+      class_id: 0,
+      points: [...quadPoints.value],
+      text: "",
+      source: "quad",
+    };
+    quadPoints.value = [];
+    return ann;
+  }
+
   function reset() {
     first.value = null;
+    quadPoints.value = [];
   }
 
   function moveVertex(ann: Annotation, idx: number, p: Point) {
@@ -41,5 +71,5 @@ export function useOcrTool() {
     ann.points[idx] = p;
   }
 
-  return { first, onPoint, reset, moveVertex };
+  return { first, mode, quadPoints, toggleMode, onPoint, addQuadPoint, closeQuad, reset, moveVertex };
 }

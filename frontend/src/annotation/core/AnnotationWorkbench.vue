@@ -154,6 +154,24 @@
           stroke="#e6a23c"
           stroke-width="1.5"
         />
+        <polyline
+          v-if="currentTool === 'ocr' && ocr.mode.value === 'quad' && ocr.quadPoints.value.length"
+          :points="ocrQuadPts"
+          fill="none"
+          stroke="#e6a23c"
+          stroke-width="1.5"
+          stroke-dasharray="4 3"
+        />
+        <circle
+          v-for="(pt, i) in (currentTool === 'ocr' && ocr.mode.value === 'quad' ? ocr.quadPoints.value : [])"
+          :key="'oq' + i"
+          :cx="pt.x * cw"
+          :cy="pt.y * ch"
+          r="3"
+          fill="#fff"
+          stroke="#e6a23c"
+          stroke-width="1"
+        />
         </AnnotationCanvas>
       </main>
       <aside class="ann-rightbar">
@@ -486,6 +504,9 @@ const crossVisible = computed(() =>
 );
 const polyPts = computed(() =>
   seg.points.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
+);
+const ocrQuadPts = computed(() =>
+  ocr.quadPoints.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
 );
 
 const TOOL_ICONS: Record<string, any> = { box: Box, rotated_box: Refresh };
@@ -967,6 +988,13 @@ function onDblClick(e: MouseEvent) {
     }
   } else if (currentTool.value === "keypoint") {
     kp.beginBox();
+  } else if (currentTool.value === "ocr" && ocr.mode.value === "quad") {
+    const created = ocr.closeQuad();
+    if (created) {
+      pendingOcr = created;
+      ocrInput.value = "";
+      ocrInputVisible.value = true;
+    }
   }
 }
 function onCanvasDown(e: MouseEvent) {
@@ -1007,11 +1035,15 @@ function onCanvasDown(e: MouseEvent) {
       kp.addPoint(p, pendingKpVisibility.value);
     }
   } else if (currentTool.value === "ocr") {
-    const created = ocr.onPoint(p);
-    if (created) {
-      pendingOcr = created;
-      ocrInput.value = "";
-      ocrInputVisible.value = true;
+    if (ocr.mode.value === "quad") {
+      ocr.addQuadPoint(p);
+    } else {
+      const created = ocr.onPoint(p);
+      if (created) {
+        pendingOcr = created;
+        ocrInput.value = "";
+        ocrInputVisible.value = true;
+      }
     }
   }
 }
@@ -1309,6 +1341,10 @@ function onKey(e: KeyboardEvent) {
       pendingKpVisibility.value = map[e.key];
       return;
     }
+  }
+  if (currentTool.value === "ocr" && e.key.toLowerCase() === "t") {
+    ocr.toggleMode();
+    return;
   }
   if (["1", "s"].includes(e.key)) setTool("select");
   else if (["2", "b"].includes(e.key)) setTool("box");
