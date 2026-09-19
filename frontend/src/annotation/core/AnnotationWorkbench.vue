@@ -243,7 +243,7 @@ import type { Annotation, AnnotationTaskPlugin } from "./types";
 import type { WorkbenchApi, WorkbenchConfig } from "./annotationTypes";
 
 const props = defineProps<{
-  plugin: AnnotationTaskPlugin;
+  plugins: AnnotationTaskPlugin[];
   api: WorkbenchApi;
   config: WorkbenchConfig;
   taskId: number;
@@ -274,9 +274,12 @@ const baseTools = [
   { name: "pan", label: "平移", icon: FullScreen },
   { name: "zoom", label: "缩放", icon: ZoomIn },
 ];
-const displayTools = computed(() => [...baseTools, ...props.plugin.tools]);
-const taskTypeLabel = computed(() => props.plugin.label);
-const taskTagType = computed(() => (props.plugin.color as any) || "primary");
+const plugin = computed(
+  () => props.plugins.find((p) => p.name === (store.task?.task_type || "")) ?? props.plugins[0]
+);
+const displayTools = computed(() => [...baseTools, ...plugin.value.tools]);
+const taskTypeLabel = computed(() => plugin.value.label);
+const taskTagType = computed(() => (plugin.value.color as any) || "primary");
 const cw = computed(() => canvas.cw.value);
 const ch = computed(() => canvas.ch.value);
 const dw = computed(() => canvas.dw.value);
@@ -598,7 +601,7 @@ function openHistory() {
 function onDblClick() {
   if (currentTool.value === "polygon") {
     const created = seg.closePolygon();
-    if (created && props.plugin.create(created)) {
+    if (created && plugin.value.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -623,7 +626,7 @@ function onCanvasDown(e: MouseEvent) {
   } else if (currentTool.value === "rotated_box") {
     rbLast = p;
     const created = rot.onStep(p);
-    if (created && props.plugin.create(created)) {
+    if (created && plugin.value.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -642,7 +645,7 @@ function onCanvasDown(e: MouseEvent) {
     if (created) {
       const text = window.prompt("输入 OCR 文本", "") || "";
       created.text = text;
-      if (props.plugin.create(created)) {
+      if (plugin.value.create(created)) {
         store.annotations.push(created);
         store.markUnsaved();
         pushHistory();
@@ -761,7 +764,7 @@ function onUp() {
     const created = det.onMoveEnd(p ? { x: p.x + p.w, y: p.y + p.h } : ({ x: 0, y: 0 } as any));
     preview.value = null;
     drawStart = null;
-    if (created && props.plugin.create(created)) {
+    if (created && plugin.value.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -775,7 +778,7 @@ function onUp() {
   if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
     kpBoxDrafting.value = false;
     const created = kp.build();
-    if (created && props.plugin.create(created)) {
+    if (created && plugin.value.create(created)) {
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
