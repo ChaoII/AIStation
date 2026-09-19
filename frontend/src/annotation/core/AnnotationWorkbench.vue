@@ -194,7 +194,7 @@
             stroke-width="1"
             stroke-dasharray="2 2"
           />
-          <circle :cx="rot.pt1.value.x * cw" :cy="rot.pt1.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
+          <circle v-if="rot.pt1.value" :cx="rot.pt1.value.x * cw" :cy="rot.pt1.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
           <circle v-if="rot.pt2.value" :cx="rot.pt2.value.x * cw" :cy="rot.pt2.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
         </template>
         <!-- 多边形首点提示 -->
