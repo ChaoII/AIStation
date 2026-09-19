@@ -1462,11 +1462,12 @@ function tagStyle(ann: any): any {
     color: "#fff",
     fontSize: annSettings.labelFontSize + "px",
     lineHeight: "1.2",
-    padding: "1px 4px",
+    padding: "1px 5px",
     borderRadius: "2px",
     cursor: "default",
     pointerEvents: "none",
     whiteSpace: "nowrap" as const,
+    border: "1px solid " + clsColor(ann),
   };
 }
 function openEditDialog(ann: any) {
@@ -1780,7 +1781,6 @@ defineExpose({
   font-family: "Microsoft YaHei", sans-serif;
   user-select: none;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.55);
 }
 .edit-bubble {
   position: fixed;
