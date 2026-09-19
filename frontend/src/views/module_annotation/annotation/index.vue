@@ -143,9 +143,9 @@
                 <g class="ann-label">
                   <rect
                     :x="ann.x1 * cw"
-                    :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -189,11 +189,11 @@
                     :x="rbHandlePos(ann, 'tl', cw, ch).x"
                     :y="
                       rbHandlePos(ann, 'tl', cw, ch).y -
-                      (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) -
+                      (labelTextRects.get(ann.id)?.h ?? labelTagH) -
                       4
                     "
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -294,9 +294,9 @@
                 <g v-for="B in [polyBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.x"
-                    :y="B.y - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :y="B.y - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -371,11 +371,11 @@
                     :y="
                       ann.bounding_box.cy * ch -
                       (ann.bounding_box.height * ch) / 2 -
-                      (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) -
+                      (labelTextRects.get(ann.id)?.h ?? labelTagH) -
                       4
                     "
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -551,9 +551,9 @@
                 <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.minX"
-                    :y="B.minY - (labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) - 4"
+                    :y="B.minY - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
                     :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? LABEL_TAG_H) + 4"
+                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -951,7 +951,8 @@
                 已加载 {{ store.images.length }}/{{ imageTotal }}
               </span>
               <span v-else class="count-chip">
-                {{ store.images.length }}<template v-if="imageTotal">/{{ imageTotal }}</template>
+                {{ store.images.length }}
+                <template v-if="imageTotal">/{{ imageTotal }}</template>
               </span>
             </div>
             <div v-if="imagePrefetchFailed" class="prefetch-retry">
@@ -1210,12 +1211,22 @@
     <el-dialog v-model="editAnnVisible" title="编辑标注" width="420px" append-to-body>
       <el-form label-width="72px">
         <el-form-item label="类别">
-          <el-select v-model="editForm.class_id" size="small" style="width: 100%" @change="editClassChange">
+          <el-select
+            v-model="editForm.class_id"
+            size="small"
+            style="width: 100%"
+            @change="editClassChange"
+          >
             <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="editForm.ann?.type === 'Ocr'" label="OCR文本">
-          <el-input v-model="editForm.text" size="small" placeholder="编辑OCR文本" @change="editTextChange" />
+          <el-input
+            v-model="editForm.text"
+            size="small"
+            placeholder="编辑OCR文本"
+            @change="editTextChange"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1342,7 +1353,16 @@
 </template>
 
 <script setup lang="ts">
-import { defineComponent, ref, computed, watch, onMounted, onBeforeUnmount, nextTick, h } from "vue";
+import {
+  defineComponent,
+  ref,
+  computed,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+  h,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox, ElBadge, ElSlider, ElSwitch, ElCheckbox } from "element-plus";
 import {
@@ -1458,6 +1478,8 @@ watch(
 
 // ---- Constants (matching EasyLabelTauri) ----
 const LABEL_TAG_H = 8;
+// 标签背景高度随字号联动：测量未命中回退时也能包住文字，避免“文字大背景小”
+const labelTagH = computed(() => Math.max(LABEL_TAG_H, annSettings.value.labelFontSize + 4));
 
 // ---- Drag state (single object, matching EasyLabelTauri pattern) ----
 interface DragState {
@@ -1513,6 +1535,8 @@ const labelTextRects = ref(new Map<string, { w: number; h: number; y: number }>(
 async function measureLabelRects() {
   await nextTick();
   await new Promise((r) => setTimeout(r, 100));
+  // 等字体加载完成，避免 getBBox 在 fallback 字体下量出偏小值导致“文字大背景小”
+  if (document.fonts?.ready) await document.fonts.ready;
   const annSvg = document.querySelector(".ann-svg");
   if (!annSvg) return;
   const texts = annSvg.querySelectorAll<SVGTextElement>(".ann-label text");
@@ -1803,9 +1827,12 @@ function clsCount(id: number) {
   return store.annotations.filter((a) => a.class_id === id).length;
 }
 function textPixelWidth(text: string): number {
+  // 基准按 font-size=6（中文每字 6、其他 3），再随 labelFontSize 等比缩放，
+  // 使测量未命中回退时的背景宽度也能包住文字
+  const base = annSettings.value.labelFontSize / 6;
   let w = 0;
   for (const ch of text) {
-    w += /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/.test(ch) ? 6 : 3;
+    w += (/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/.test(ch) ? 6 : 3) * base;
   }
   return Math.round(w);
 }
