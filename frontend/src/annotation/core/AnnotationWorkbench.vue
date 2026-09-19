@@ -323,17 +323,21 @@
         </div>
       </aside>
     </div>
-    <div class="ann-footer">
-      <el-button size="small" :disabled="!store.currentImage" @click="saveAnn">保存</el-button>
-      <span class="nav-text">{{ store.currentImageIndex + 1 }}/{{ store.images.length }}</span>
-      <el-button size="small" @click="prevImg">上一张</el-button>
-      <el-button size="small" @click="nextImg">下一张</el-button>
-      <el-button size="small" :disabled="!store.currentImage" @click="openHistory">历史</el-button>
-      <el-button size="small" circle @click="showHelpModal = true">?</el-button>
-      <span class="footer-spacer" />
-      <span v-if="store.unsaved" class="unsaved-dot" title="有未保存的修改" />
-      <span class="footer-meta">X:{{ cursorPos.x }} Y:{{ cursorPos.y }} | Z:{{ Math.round(canvas.zoom.value * 100) }}%</span>
-    </div>
+    <AnnotationHistoryBar
+      :has-current-image="!!store.currentImage"
+      :current-index="store.currentImageIndex"
+      :total="store.images.length"
+      :unsaved="store.unsaved"
+      :cursor-x="cursorPos.x"
+      :cursor-y="cursorPos.y"
+      :zoom="canvas.zoom.value"
+      :locked="lockedByOther"
+      @save="saveAnn"
+      @prev="prevImg"
+      @next="nextImg"
+      @history="openHistory"
+      @help="showHelpModal = true"
+    />
 
     <div
       v-if="annMenu.visible"
@@ -427,6 +431,7 @@ import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from "vue"
 import { ElMessageBox, ElMessage } from "element-plus";
 import { RefreshLeft, RefreshRight, Delete, Select, FullScreen, ZoomIn, Box, Refresh } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
+import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import {
@@ -1675,17 +1680,6 @@ defineExpose({
   color: #c0c4cc;
   font-size: 11px;
 }
-.ann-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--el-border-color-light);
-}
-.nav-text {
-  color: #909399;
-  font-size: 13px;
-}
 .class-item.active {
   background: var(--el-color-primary-light-9);
 }
@@ -1750,16 +1744,6 @@ defineExpose({
   font-size: 12px;
   color: #606266;
   white-space: nowrap;
-}
-.unsaved-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--el-color-warning);
-}
-.footer-meta {
-  color: #c0c4cc;
-  font-size: 12px;
 }
 .shortcut-grid {
   display: flex;
