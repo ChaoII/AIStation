@@ -84,6 +84,7 @@ import { useDetectionTool } from "../tasks/detection/useDetectionTool";
 import { useRotatedTool, rotatedBoxFromEdgeAndPoint } from "../tasks/rotatedBox/useRotatedTool";
 import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
+import { useOcrTool } from "../tasks/ocr/useOcrTool";
 import type { Annotation, AnnotationTaskPlugin } from "./types";
 
 const props = defineProps<{
@@ -105,6 +106,7 @@ const det = useDetectionTool();
 const rot = useRotatedTool();
 const seg = useSegmentTool();
 const kp = useKeypointTool();
+const ocr = useOcrTool();
 const rbPreview = ref<{ cx: number; cy: number; width: number; height: number; angle: number } | null>(null);
 const kpBoxDrafting = ref(false);
 
@@ -183,6 +185,16 @@ function onCanvasDown(e: MouseEvent) {
     } else {
       kp.addPoint(p);
     }
+  } else if (currentTool.value === "ocr") {
+    const created = ocr.onPoint(p);
+    if (created) {
+      const text = window.prompt("输入 OCR 文本", "") || "";
+      created.text = text;
+      if (props.plugin.create(created)) {
+        store.annotations.push(created);
+        store.markUnsaved();
+      }
+    }
   }
 }
 
@@ -205,6 +217,17 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       type: "kp-vertex",
       ann,
       handle: handle.replace("kp-", ""),
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: JSON.parse(JSON.stringify(ann)),
+    };
+    return;
+  }
+  if (handle.startsWith("ocr-")) {
+    dragState = {
+      type: "poly-vertex",
+      ann,
+      handle: handle.replace("ocr-", ""),
       startX: e.clientX,
       startY: e.clientY,
       orig: JSON.parse(JSON.stringify(ann)),
