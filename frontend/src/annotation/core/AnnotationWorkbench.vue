@@ -1779,6 +1779,8 @@ defineExpose({
   position: absolute;
   font-family: "Microsoft YaHei", sans-serif;
   user-select: none;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
 .edit-bubble {
   position: fixed;
