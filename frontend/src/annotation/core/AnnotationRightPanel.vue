@@ -225,7 +225,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .ann-rightbar {
-  width: 200px;
+  width: 240px;
   border-left: 1px solid var(--el-border-color-light);
   display: flex;
   flex-direction: column;
