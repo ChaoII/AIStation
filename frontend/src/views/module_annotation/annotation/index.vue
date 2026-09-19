@@ -143,9 +143,9 @@
                 <g class="ann-label">
                   <rect
                     :x="ann.x1 * cw"
-                    :y="ann.y1 * ch - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
-                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
+                    :y="ann.y1 * ch - labelTagH - 4"
+                    :width="labelWidthForClass(ann.class_id) + 4"
+                    :height="labelTagH + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -187,13 +187,9 @@
                 <g class="ann-label">
                   <rect
                     :x="rbHandlePos(ann, 'tl', cw, ch).x"
-                    :y="
-                      rbHandlePos(ann, 'tl', cw, ch).y -
-                      (labelTextRects.get(ann.id)?.h ?? labelTagH) -
-                      4
-                    "
-                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
+                    :y="rbHandlePos(ann, 'tl', cw, ch).y - labelTagH - 4"
+                    :width="labelWidthForClass(ann.class_id) + 4"
+                    :height="labelTagH + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -294,9 +290,9 @@
                 <g v-for="B in [polyBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.x"
-                    :y="B.y - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
-                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
+                    :y="B.y - labelTagH - 4"
+                    :width="labelWidthForClass(ann.class_id) + 4"
+                    :height="labelTagH + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -369,13 +365,10 @@
                   <rect
                     :x="ann.bounding_box.cx * cw - (ann.bounding_box.width * cw) / 2"
                     :y="
-                      ann.bounding_box.cy * ch -
-                      (ann.bounding_box.height * ch) / 2 -
-                      (labelTextRects.get(ann.id)?.h ?? labelTagH) -
-                      4
+                      ann.bounding_box.cy * ch - (ann.bounding_box.height * ch) / 2 - labelTagH - 4
                     "
-                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
+                    :width="labelWidthForClass(ann.class_id) + 4"
+                    :height="labelTagH + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -551,9 +544,9 @@
                 <g v-for="B in [ocrBBox(ann)]" :key="ann.id + '-bb'" class="ann-label">
                   <rect
                     :x="B.minX"
-                    :y="B.minY - (labelTextRects.get(ann.id)?.h ?? labelTagH) - 4"
-                    :width="(labelTextRects.get(ann.id)?.w ?? labelWidthForClass(ann.class_id)) + 4"
-                    :height="(labelTextRects.get(ann.id)?.h ?? labelTagH) + 4"
+                    :y="B.minY - labelTagH - 4"
+                    :width="labelWidthForClass(ann.class_id) + 4"
+                    :height="labelTagH + 4"
                     :fill="clsColor(ann.class_id)"
                     :stroke="clsColor(ann.class_id)"
                     stroke-width="0.5"
@@ -1471,15 +1464,11 @@ const annSettings = ref({
   ...loadSettings(),
 });
 watch(annSettings, saveSettings, { deep: true });
-watch(
-  () => annSettings.value.labelFontSize,
-  () => nextTick(() => measureLabelRects())
-);
 
 // ---- Constants (matching EasyLabelTauri) ----
 const LABEL_TAG_H = 8;
 // 标签背景高度随字号联动：测量未命中回退时也能包住文字，避免“文字大背景小”
-const labelTagH = computed(() => Math.max(LABEL_TAG_H, annSettings.value.labelFontSize + 4));
+const labelTagH = computed(() => Math.max(LABEL_TAG_H, annSettings.value.labelFontSize + 6));
 
 // ---- Drag state (single object, matching EasyLabelTauri pattern) ----
 interface DragState {
@@ -1530,29 +1519,8 @@ const drag = ref<DragState>({
   handle: "",
 });
 
-// ---- 测量文字实际宽高 ----
-const labelTextRects = ref(new Map<string, { w: number; h: number; y: number }>());
-async function measureLabelRects() {
-  await nextTick();
-  await new Promise((r) => setTimeout(r, 100));
-  // 等字体加载完成，避免 getBBox 在 fallback 字体下量出偏小值导致“文字大背景小”
-  if (document.fonts?.ready) await document.fonts.ready;
-  const annSvg = document.querySelector(".ann-svg");
-  if (!annSvg) return;
-  const texts = annSvg.querySelectorAll<SVGTextElement>(".ann-label text");
-  const map = new Map<string, { w: number; h: number; y: number }>();
-  texts.forEach((t) => {
-    const annEl = t.closest<SVGGElement>("[data-ann-id]");
-    if (!annEl) return;
-    const id = annEl.getAttribute("data-ann-id");
-    if (!id) return;
-    const bbox = t.getBBox();
-    if (bbox.width > 0 && bbox.height > 0) {
-      map.set(id, { w: bbox.width, h: bbox.height, y: bbox.y });
-    }
-  });
-  labelTextRects.value = map;
-}
+// 标签背景尺寸采用确定性估算（按字号/字数计算），渲染时同步得到，无需异步 getBBox 测量。
+// 宽度见 labelWidthForClass()，高度见 labelTagH()。
 
 // ---- Box drawing (div overlay in container-relative coords) ----
 const drawing = ref(false);
@@ -1784,8 +1752,6 @@ function onImgLoad() {
     store.setPan(0, 0);
   };
   nextTick(tryFit);
-  // 图片真正加载完成、标注已渲染后再测量标签尺寸，确保背景框一开始就是正确大小
-  nextTick(() => measureLabelRects());
 }
 
 // ===== Crosshair =====
@@ -1818,29 +1784,26 @@ const selectedAnn = computed(() =>
 function onAnnClassChange() {
   markUnsaved();
   pushHistory();
-  nextTick(() => measureLabelRects());
 }
 function onAnnEdit() {
   markUnsaved();
   pushHistory();
-  nextTick(() => measureLabelRects());
 }
 function clsCount(id: number) {
   return store.annotations.filter((a) => a.class_id === id).length;
 }
-function textPixelWidth(text: string): number {
-  // 基准按 font-size=6（中文每字 6、其他 3），再随 labelFontSize 等比缩放，
-  // 使测量未命中回退时的背景宽度也能包住文字
-  const base = annSettings.value.labelFontSize / 6;
-  let w = 0;
-  for (const ch of text) {
-    w += (/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/.test(ch) ? 6 : 3) * base;
-  }
-  return Math.round(w);
+// 确定性文字宽度：用 canvas.measureText 按当前字号同步度量（基于真实字体度量，
+// 与 SVG 文字渲染一致），结果稳定、无异步跳变。缓存 ctx 避免反复创建。
+let _labelCtx: CanvasRenderingContext2D | null = null;
+function labelTextWidth(text: string): number {
+  if (!_labelCtx) _labelCtx = document.createElement("canvas").getContext("2d");
+  if (!_labelCtx) return 0;
+  _labelCtx.font = `${annSettings.value.labelFontSize}px "Microsoft YaHei", sans-serif`;
+  return _labelCtx.measureText(text).width;
 }
 function labelWidthForClass(classId: number): number {
   const name = getCls(classId)?.name || "";
-  return Math.max(14, textPixelWidth(name) + 6);
+  return Math.max(16, Math.ceil(labelTextWidth(name)) + 8);
 }
 function addClass() {
   if (!clsForm.value.name.trim()) return;
@@ -2096,7 +2059,6 @@ function confirmOcrText() {
     ocrDrawingPoints.value = [];
     ocrTextInput.value = "";
     ocrTextInputVisible.value = false;
-    nextTick(() => measureLabelRects());
   }
 }
 
@@ -2980,7 +2942,6 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
           ann.points.splice(idx + 1, 0, mid);
           markUnsaved();
           pushHistory();
-          nextTick(() => measureLabelRects());
           return;
         }
       }
@@ -2996,7 +2957,6 @@ function onAnnMouseDown(e: MouseEvent, ann: any) {
               ann.points = pts.filter((_p: any, i: number) => i !== idx);
               markUnsaved();
               pushHistory();
-              nextTick(() => measureLabelRects());
             } else {
               ElMessage.warning(`至少保留 ${min} 个顶点`);
             }
@@ -3422,17 +3382,6 @@ async function loadImg(imageId: number) {
     if (myToken === loadImgToken) imgUrl.value = "";
   }
   if (myToken === loadImgToken) updateProgress();
-  // 兜底：图片加载与标注拉取是并行的，等图片真正加载完成后再次测量，
-  // 覆盖 onImgLoad 早于标注数据返回导致的漏测（竞态）。
-  if (myToken === loadImgToken) measureAfterReady();
-}
-async function measureAfterReady(token = loadImgToken) {
-  for (let i = 0; i < 40; i++) {
-    if (imageLoaded.value) break;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  await nextTick();
-  if (token === loadImgToken) measureLabelRects();
 }
 async function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
@@ -3863,10 +3812,6 @@ onMounted(async () => {
   window.addEventListener("mouseup", onWindowMouseUp);
   window.addEventListener("mousemove", onMouseMove);
   window.addEventListener("beforeunload", onBeforeUnload);
-  watch(
-    () => store.annotations.length,
-    () => measureLabelRects()
-  );
 });
 function onBeforeUnload(e: BeforeUnloadEvent) {
   if (unsaved.value) {
