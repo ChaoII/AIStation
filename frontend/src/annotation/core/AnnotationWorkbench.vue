@@ -542,6 +542,50 @@ function draftOf(ann: Annotation): Annotation {
 }
 let loadImgToken = 0;
 let fittedForImage = false;
+const FULL_CACHE_MAX = 20;
+const fullUrlCache = new Map<number, string>();
+function addToCache(id: number, url: string) {
+  if (fullUrlCache.has(id)) fullUrlCache.delete(id);
+  fullUrlCache.set(id, url);
+  if (fullUrlCache.size > FULL_CACHE_MAX) {
+    const first = fullUrlCache.keys().next().value;
+    if (first !== undefined) fullUrlCache.delete(first);
+  }
+}
+function warmFull(id: number, url: string) {
+  const img = new Image();
+  img.onload = () => { if (img.decode) img.decode().catch(() => {}); };
+  img.onerror = () => {};
+  img.src = url;
+}
+function preloadFull(fullUrl: string, imageId: number, myToken: number) {
+  const img = new Image();
+  const done = () => {
+    if (myToken !== loadImgToken) return;
+    addToCache(imageId, fullUrl);
+    if (imgUrl.value !== fullUrl) imgUrl.value = fullUrl;
+  };
+  img.onload = () => { if (img.decode) img.decode().catch(() => {}).finally(done); else done(); };
+  img.onerror = () => {};
+  img.src = fullUrl;
+}
+function prefetchNeighbors() {
+  const idx = store.currentImageIndex;
+  const targets: number[] = [];
+  if (idx > 0) targets.push(store.images[idx - 1]?.id);
+  if (idx < store.images.length - 1) targets.push(store.images[idx + 1]?.id);
+  for (const id of targets) {
+    if (!id) continue;
+    if (fullUrlCache.has(id)) { warmFull(id, fullUrlCache.get(id)!); continue; }
+    props.api
+      .getPresignedUrl(id, store.taskId)
+      .then((r: any) => {
+        const u = r?.data?.data?.url;
+        if (u) { addToCache(id, u); warmFull(id, u); }
+      })
+      .catch(() => {});
+  }
+}
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
 let unmounted = false;
@@ -914,9 +958,27 @@ async function loadCurrentImage(imageId: number) {
   // 先显示缩略图（秒开）；无缩略图则留空，由后续全图填充
   imgUrl.value = imgInfo?.thumbnail_url || "";
   try {
-    const r = await props.api.getPresignedUrl(imageId, store.taskId);
-    if (myToken !== loadImgToken) return;
-    imgUrl.value = r?.data?.data?.url || imgUrl.value;
+    // 已缓存的全图 URL：直接显示，秒开
+    const cachedUrl = fullUrlCache.get(imageId);
+    if (cachedUrl) {
+      imgUrl.value = cachedUrl;
+    } else if (!imgInfo?.thumbnail_url) {
+      // 无缩略图：去请求全图
+      const r = await props.api.getPresignedUrl(imageId, store.taskId);
+      if (myToken !== loadImgToken) return;
+      const fu = r?.data?.data?.url || "";
+      if (fu) { addToCache(imageId, fu); imgUrl.value = fu; }
+    } else {
+      // 有缩略图（已显示）：后台请求全图并渐进替换
+      props.api
+        .getPresignedUrl(imageId, store.taskId)
+        .then((r: any) => {
+          if (myToken !== loadImgToken) return;
+          const fu = r?.data?.data?.url || "";
+          if (fu) preloadFull(fu, imageId, myToken);
+        })
+        .catch(() => {});
+    }
     const ar = await props.api.loadAnnotations(store.taskId, imageId);
     if (myToken !== loadImgToken) return;
     store.annotations = ar?.data?.data || [];
@@ -1030,6 +1092,7 @@ async function init() {
     if (store.images.length) {
       store.currentImageIndex = 0;
       await loadCurrentImage(store.images[0].id);
+      prefetchNeighbors();
     }
     fetchTaskProgress();
     prefetchRemainingImages();
@@ -1046,6 +1109,7 @@ function goToImage(idx: number) {
     store.currentImageIndex = idx;
     ensureMoreImages(idx);
     loadCurrentImage(store.images[idx].id);
+    prefetchNeighbors();
   };
   if (store.unsaved) {
     ElMessageBox({
@@ -1682,6 +1746,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   unmounted = true;
+  fullUrlCache.clear();
   if (moveRafId) { cancelAnimationFrame(moveRafId); moveRafId = 0; }
   pendingMove = null;
   window.removeEventListener("mousemove", scheduleMove);
