@@ -10,8 +10,25 @@
       :stroke-width="ann.id === selectedId ? selStroke : stroke"
       :fill="ann.id === selectedId ? color(ann) + '28' : 'none'"
       vector-effect="non-scaling-stroke"
-      @mousedown.stop.prevent="$emit('ann-down', $event, ann)"
+      @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'kpb-move')"
     />
+    <template v-if="ann.id === selectedId && ann.bounding_box">
+      <rect
+        v-for="h in handles"
+        :key="h"
+        :x="hbPos(ann, h).x - 4"
+        :y="hbPos(ann, h).y - 4"
+        width="8"
+        height="8"
+        fill="#fff"
+        stroke="#1a1a1a"
+        stroke-width="1.5"
+        class="handle"
+        :data-handle="'kpb-' + h"
+        vector-effect="non-scaling-stroke"
+        @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'kpb-' + h)"
+      />
+    </template>
     <circle
       v-for="(kp, i) in ann.keypoints"
       :key="i"
@@ -66,6 +83,7 @@ const emit = defineEmits<{
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
 }>();
 
+const handles = ["tl", "tr", "bl", "br", "tc", "bc", "ml", "mr"];
 const stroke = props.stroke ?? 1.5;
 const selStroke = props.selStroke ?? 2;
 
@@ -78,5 +96,12 @@ function bb(a: Annotation) {
     x2: b.cx + b.width / 2,
     y2: b.cy + b.height / 2,
   };
+}
+
+function hbPos(a: Annotation, h: string) {
+  const b = bb(a);
+  const x = h.includes("l") ? b.x1 : h.includes("r") ? b.x2 : (b.x1 + b.x2) / 2;
+  const y = h.includes("t") ? b.y1 : h.includes("b") ? b.y2 : (b.y1 + b.y2) / 2;
+  return { x: x * props.cw, y: y * props.ch };
 }
 </script>

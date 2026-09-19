@@ -501,7 +501,7 @@ let drawStart: { x: number; y: number } | null = null;
 let rbLast: { x: number; y: number } | null = null;
 let panState: { startX: number; startY: number; px: number; py: number } | null = null;
 let dragState:
-  | { type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
+  | { type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex" | "kp-move" | "kp-resize"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
   | null = null;
 let loadImgToken = 0;
 let lockRenewTimer: number | null = null;
@@ -1036,6 +1036,15 @@ function onAnnDown(e: MouseEvent, ann: Annotation) {
 function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (lockedByOther.value) return;
   store.selectedAnnotationId = ann.id;
+  if (handle.startsWith("kpb-")) {
+    const h = handle.replace("kpb-", "");
+    if (h === "move") {
+      dragState = { type: "kp-move", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    } else {
+      dragState = { type: "kp-resize", ann, handle: h, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    }
+    return;
+  }
   if (handle.startsWith("kp-")) {
     const idx = handle.replace("kp-", "");
     if (e.altKey) {
@@ -1129,6 +1138,16 @@ function onMove(e: MouseEvent) {
     return;
   }
   if (dragState) {
+    if (dragState.type === "kp-move") {
+      kp.moveBBox(dragState.ann, (e.clientX - dragState.startX) / dw.value, (e.clientY - dragState.startY) / dh.value);
+      store.markUnsaved();
+      return;
+    }
+    if (dragState.type === "kp-resize") {
+      kp.resizeBBox(dragState.ann, dragState.handle, (e.clientX - dragState.startX) / dw.value, (e.clientY - dragState.startY) / dh.value);
+      store.markUnsaved();
+      return;
+    }
     if (dragState.type === "kp-vertex") {
       const p = toImagePoint(e);
       if (p) { kp.moveKeypoint(dragState.ann, Number(dragState.handle), p); store.markUnsaved(); }
