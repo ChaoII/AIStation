@@ -905,6 +905,15 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
     e.returnValue = "";
   }
 }
+
+defineExpose({
+  refreshCurrent() {
+    if (store.currentImageId) loadCurrentImage(store.currentImageId);
+  },
+  getCurrentImageId() {
+    return store.currentImageId;
+  },
+});
 </script>
 
 <style scoped>
