@@ -110,6 +110,7 @@
     "pinia": "^3.0.3",
     "pinia-plugin-persistedstate": "^4.4.1",
     "qs": "^6.16.0",
+    "remixicon": "^4.9.1",
     "vue": "^3.5.17",
     "vue-draggable-plus": "^0.6.0",
     "vue-echarts": "^8.2.0",

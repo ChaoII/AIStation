@@ -1575,22 +1575,11 @@ let ocrBoxStart = { x: 0, y: 0 };
 const taskClassificationMode = computed(() => task.value?.classification_mode || "single");
 
 // ===== Tools =====
-// macOS 风格箭头光标（Element Plus 无此图标，内联 SVG）
+// 选择工具：使用 Remix Icon 的箭头指针（官方图标集，替代手绘 SVG）
 const CursorIcon = defineComponent({
   name: "CursorIcon",
   render() {
-    return h(
-      "svg",
-      { viewBox: "0 0 16 16", width: 20, height: 20, class: "cursor-icon" },
-      [
-        h("path", {
-          d: "M4 1 v13 l2.9-3 2.1 4.5 1.8-.8-2.1-4.5 3.8-.3 Z",
-          fill: "#000",
-          stroke: "#fff",
-          "stroke-width": 1,
-        }),
-      ]
-    );
+    return h("i", { class: "ri-cursor-fill" });
   },
 });
 
@@ -3947,13 +3936,12 @@ onBeforeUnmount(() => {
   transition: all 0.12s;
   border: 1px solid transparent;
 }
-/* Element Plus 线描图标默认 stroke 较细，加粗避免「发虚」；
-   但自定义光标箭头保持 1px 白描边，避免出现粗白光环 */
+/* Element Plus 线描图标默认 stroke 较细，加粗避免「发虚」 */
 .tool-btn :deep(svg path) {
   stroke-width: 2;
 }
-.tool-btn :deep(svg.cursor-icon path) {
-  stroke-width: 1;
+.tool-btn :deep(.ri-cursor-fill) {
+  font-size: 18px;
 }
 .tool-btn:hover {
   background: #f0f2f5;
