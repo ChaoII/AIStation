@@ -234,6 +234,15 @@ onBeforeUnmount(() => {
 .right-collapse {
   border-bottom: 1px solid var(--el-border-color-light);
   flex: none;
+  font-size: 13px;
+}
+.right-collapse :deep(.el-collapse-item__header) {
+  padding: 0 10px;
+  height: 38px;
+  color: #606266;
+}
+.right-collapse :deep(.el-collapse-item__content) {
+  padding: 6px 10px 10px;
 }
 .right-split {
   flex: 1;

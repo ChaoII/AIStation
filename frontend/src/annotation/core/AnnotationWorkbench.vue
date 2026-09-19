@@ -238,6 +238,11 @@
       :cursor-x="cursorPos.x"
       :cursor-y="cursorPos.y"
       :zoom="canvas.zoom.value"
+      :cw="canvas.cw.value"
+      :hint="hintText"
+      :online="props.collab?.onlineUsers?.value?.length ?? 0"
+      :can-prev="store.currentImageIndex > 0"
+      :can-next="store.currentImageIndex < store.images.length - 1"
       :locked="lockedByOther"
       @save="saveAnn"
       @prev="prevImg"
@@ -465,6 +470,10 @@ const toolCursor = computed(() =>
 const crossVisible = computed(() =>
   ["box", "rotated_box", "polygon", "keypoint", "ocr"].includes(currentTool.value)
 );
+const hintText = computed(() => {
+  const t = displayTools.value.find((x) => x.name === currentTool.value);
+  return (t as any)?.title || (t as any)?.tip || "";
+});
 const polyPts = computed(() =>
   seg.points.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
 );
@@ -738,16 +747,19 @@ function zoomAt(factor: number, cx: number, cy: number) {
   if (!el) return;
   const r = el.getBoundingClientRect();
   const newZoom = Math.min(3, Math.max(0.1, canvas.zoom.value * factor));
-  const scale = newZoom / canvas.zoom.value;
+  // 光标下的图像点（归一化）
   const off = canvas.imageOffset(r.width, r.height);
   const ix = (cx - off.left) / dw.value;
   const iy = (cy - off.top) / dh.value;
   canvas.zoom.value = newZoom;
   canvas.dw.value = cw.value * newZoom;
   canvas.dh.value = ch.value * newZoom;
+  // 缩放后让该图像点仍落在光标位置（修正 pan）
+  const newLeft = cx - ix * canvas.dw.value;
+  const newTop = cy - iy * canvas.dh.value;
   canvas.setPan(
-    r.width / 2 - ix * dw.value - dw.value / 2,
-    r.height / 2 - iy * dh.value - dh.value / 2
+    newLeft - r.width / 2 + canvas.dw.value / 2,
+    newTop - r.height / 2 + canvas.dh.value / 2
   );
 }
 
@@ -1470,6 +1482,10 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.progress-text {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
 }
 .collab-online {
   color: var(--el-color-success);

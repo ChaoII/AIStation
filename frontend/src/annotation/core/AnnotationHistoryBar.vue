@@ -1,21 +1,35 @@
 <template>
-  <div class="ann-footer">
-    <div class="footer-left">
-      <el-button size="small" :disabled="!hasCurrentImage || locked" @click="$emit('save')">保存</el-button>
-      <span class="nav-text">{{ currentIndex + 1 }}/{{ total }}</span>
-      <el-button size="small" @click="$emit('prev')">上一张</el-button>
-      <el-button size="small" @click="$emit('next')">下一张</el-button>
-      <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">历史</el-button>
-      <el-button size="small" circle @click="$emit('help')">?</el-button>
-    </div>
-    <div class="footer-right">
-      <span v-if="unsaved" class="unsaved-dot" title="有未保存的修改" />
-      <span class="footer-meta">X:{{ cursorX }} Y:{{ cursorY }} Z:{{ Math.round(zoom * 100) }}%</span>
-    </div>
-  </div>
+  <footer class="ann-footer">
+    <span v-if="hint" class="hint">{{ hint }}</span>
+    <span v-if="unsaved" class="unsaved-dot" title="未保存" />
+    <span class="mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
+    <span class="mono">Z:{{ Math.round(zoom * 100) }}% | cw:{{ cw }}</span>
+    <div class="sep" />
+    <el-button size="small" :disabled="!canPrev" circle @click="$emit('prev')">
+      <el-icon><ArrowLeft /></el-icon>
+    </el-button>
+    <span class="nav-text">{{ currentIndex + 1 }}/{{ total }}</span>
+    <el-button size="small" :disabled="!canNext" circle @click="$emit('next')">
+      <el-icon><ArrowRight /></el-icon>
+    </el-button>
+    <div class="sep" />
+    <el-button size="small" type="primary" :disabled="!hasCurrentImage || locked" @click="$emit('save')">
+      保存
+    </el-button>
+    <div class="sep" />
+    <span v-if="online > 0" class="collab-online">在线 {{ online }}</span>
+    <div class="sep" />
+    <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">历史</el-button>
+    <div class="sep" />
+    <el-button size="small" circle @click="$emit('help')">
+      <el-icon><QuestionFilled /></el-icon>
+    </el-button>
+  </footer>
 </template>
 
 <script setup lang="ts">
+import { ArrowLeft, ArrowRight, QuestionFilled } from "@element-plus/icons-vue";
+
 defineProps<{
   hasCurrentImage: boolean;
   currentIndex: number;
@@ -24,6 +38,11 @@ defineProps<{
   cursorX: number;
   cursorY: number;
   zoom: number;
+  cw: number;
+  hint: string;
+  online: number;
+  canPrev: boolean;
+  canNext: boolean;
   locked?: boolean;
 }>();
 defineEmits<{
@@ -39,36 +58,41 @@ defineEmits<{
 .ann-footer {
   display: flex;
   align-items: center;
-  gap: 6px;
-  justify-content: space-between;
+  gap: 8px;
   padding: 6px 10px;
   border-top: 1px solid var(--el-border-color-light);
+  font-size: 12px;
 }
-.footer-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.hint {
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.footer-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.mono {
+  color: #909399;
+  font-family: monospace;
+  white-space: nowrap;
 }
-.footer-spacer {
-  flex: 1;
+.collab-online {
+  color: var(--el-color-success);
+  font-size: 12px;
+}
+.nav-text {
+  color: #909399;
+  font-size: 13px;
 }
 .unsaved-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--el-color-warning);
+  flex-shrink: 0;
 }
-.footer-meta {
-  color: #c0c4cc;
-  font-size: 12px;
-}
-.nav-text {
-  color: #909399;
-  font-size: 13px;
+.sep {
+  width: 1px;
+  height: 16px;
+  background: var(--el-border-color-lighter);
+  flex-shrink: 0;
 }
 </style>
