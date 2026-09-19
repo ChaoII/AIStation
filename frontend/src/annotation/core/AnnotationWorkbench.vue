@@ -124,6 +124,34 @@
             stroke-width="1.5"
             stroke-dasharray="4 3"
           />
+        <polyline
+          v-if="currentTool === 'polygon' && seg.points.value.length"
+          :points="polyPts"
+          fill="none"
+          stroke="#3b82f6"
+          stroke-width="1.5"
+          stroke-dasharray="4 3"
+        />
+        <circle
+          v-for="(pt, i) in (currentTool === 'polygon' ? seg.points.value : [])"
+          :key="'pp' + i"
+          :cx="pt.x * cw"
+          :cy="pt.y * ch"
+          r="3"
+          fill="#fff"
+          stroke="#3b82f6"
+          stroke-width="1"
+        />
+        <circle
+          v-for="(pt, i) in (currentTool === 'keypoint' ? kp.pending.value : [])"
+          :key="'kp' + i"
+          :cx="pt.x * cw"
+          :cy="pt.y * ch"
+          r="4"
+          fill="none"
+          stroke="#e6a23c"
+          stroke-width="1.5"
+        />
         </AnnotationCanvas>
       </main>
       <aside class="ann-rightbar">
@@ -149,9 +177,16 @@
             <el-button link type="primary" size="small" @click="showClassModal = true">+ 添加</el-button>
           </div>
           <div class="scroll-area">
-            <div class="class-item" v-for="c in taskClasses" :key="c.id">
+            <div
+              class="class-item"
+              :class="{ active: selectedClassId === c.id }"
+              v-for="c in taskClasses"
+              :key="c.id"
+              @click="selectedClassId = c.id"
+            >
               <span class="dot-color" :style="{ background: c.color }" />
               <span class="flex-1">{{ c.name }}</span>
+              <span class="count-chip">{{ clsCount(c.id) }}</span>
               <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="removeClass(c.id)">
                 <template #reference>
                   <el-button text size="small">×</el-button>
@@ -345,6 +380,9 @@ const toolCursor = computed(() =>
 const crossVisible = computed(() =>
   ["box", "rotated_box", "polygon", "keypoint", "ocr"].includes(currentTool.value)
 );
+const polyPts = computed(() =>
+  seg.points.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
+);
 
 const TOOL_ICONS: Record<string, any> = { box: Box, rotated_box: Refresh };
 
@@ -499,11 +537,21 @@ async function addClass() {
 }
 async function removeClass(id: number) {
   taskClasses.value = taskClasses.value.filter((c) => c.id !== id);
+  const before = store.annotations.length;
   store.annotations.forEach((a: any) => {
     if (a.class_id === id) a.class_id = -1;
     if (Array.isArray(a.class_ids)) a.class_ids = a.class_ids.filter((cid: number) => cid !== id);
   });
+  store.annotations = store.annotations.filter((a: any) => !(a.class_id === -1 && a.class_id === id));
+  if (store.annotations.length !== before) {
+    store.markUnsaved();
+    pushHistory();
+  }
+  if (selectedClassId.value === id) selectedClassId.value = taskClasses.value[0]?.id ?? null;
   await saveClasses();
+}
+function clsCount(classId: number) {
+  return store.annotations.filter((a) => a.class_id === classId).length;
 }
 async function saveClasses() {
   if (!store.taskId) return;
@@ -721,9 +769,27 @@ async function init() {
 
 function goToImage(idx: number) {
   if (idx < 0 || idx >= store.images.length) return;
-  store.currentImageIndex = idx;
-  ensureMoreImages(idx);
-  loadCurrentImage(store.images[idx].id);
+  const doSwitch = () => {
+    store.currentImageIndex = idx;
+    ensureMoreImages(idx);
+    loadCurrentImage(store.images[idx].id);
+  };
+  if (store.unsaved) {
+    ElMessageBox.confirm("当前图有未保存的修改，是否先保存？", "未保存", {
+      confirmButtonText: "保存并切换",
+      cancelButtonText: "不保存",
+      type: "warning",
+    })
+      .then(async () => {
+        await saveAnn();
+        doSwitch();
+      })
+      .catch(() => {
+        doSwitch();
+      });
+    return;
+  }
+  doSwitch();
 }
 function prevImg() {
   if (store.currentImageIndex > 0) goToImage(store.currentImageIndex - 1);
@@ -769,6 +835,7 @@ function onDblClick(e: MouseEvent) {
   if (currentTool.value === "polygon") {
     const created = seg.closePolygon();
     if (created && plugin.value.create(created)) {
+      created.class_id = selectedClassId.value ?? created.class_id;
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -794,6 +861,7 @@ function onCanvasDown(e: MouseEvent) {
     rbLast = p;
     const created = rot.onStep(p);
     if (created && plugin.value.create(created)) {
+      created.class_id = selectedClassId.value ?? created.class_id;
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -821,6 +889,7 @@ function onCanvasDown(e: MouseEvent) {
 function confirmOcr() {
   if (pendingOcr) {
     pendingOcr.text = ocrInput.value;
+    pendingOcr.class_id = selectedClassId.value ?? pendingOcr.class_id;
     if (plugin.value.create(pendingOcr)) {
       store.annotations.push(pendingOcr);
       store.markUnsaved();
@@ -973,6 +1042,7 @@ function onUp() {
     preview.value = null;
     drawStart = null;
     if (created && plugin.value.create(created)) {
+      created.class_id = selectedClassId.value ?? created.class_id;
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -987,6 +1057,7 @@ function onUp() {
     kpBoxDrafting.value = false;
     const created = kp.build();
     if (created && plugin.value.create(created)) {
+      created.class_id = selectedClassId.value ?? created.class_id;
       store.annotations.push(created);
       store.markUnsaved();
       pushHistory();
@@ -1114,6 +1185,9 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
+  if (store.unsaved && store.currentImageId) {
+    props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations).catch(() => {});
+  }
   unlockCurrent();
   props.collab?.close();
 });
