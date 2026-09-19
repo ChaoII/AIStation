@@ -5,5 +5,6 @@ export { rotatedBoxPlugin } from "./tasks/rotatedBox";
 export { segmentationPlugin } from "./tasks/segmentation";
 export { keypointPlugin } from "./tasks/keypoint";
 export { ocrPlugin } from "./tasks/ocr";
+export { classificationPlugin } from "./tasks/classification";
 export { useAnnotationCanvas } from "./core/useAnnotationCanvas";
 export { useAnnotationStore } from "./core/useAnnotationStore";
