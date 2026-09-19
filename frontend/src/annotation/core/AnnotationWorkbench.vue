@@ -1245,6 +1245,18 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
   store.selectedAnnotationId = ann.id;
   dragState = { type: "rotate", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
+let pendingMove: MouseEvent | null = null;
+let moveRafId = 0;
+function scheduleMove(e: MouseEvent) {
+  pendingMove = e;
+  if (moveRafId) return;
+  moveRafId = requestAnimationFrame(() => {
+    moveRafId = 0;
+    const ev = pendingMove;
+    pendingMove = null;
+    if (ev) onMove(ev);
+  });
+}
 function onMove(e: MouseEvent) {
   e.preventDefault();
   if (lockedByOther.value) return;
@@ -1608,7 +1620,7 @@ function isClsSelected(clsId: number) {
 }
 
 onMounted(() => {
-  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mousemove", scheduleMove);
   window.addEventListener("mouseup", onUp);
   window.addEventListener("beforeunload", onBeforeUnload);
   document.addEventListener("keydown", onKey);
@@ -1618,7 +1630,9 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   unmounted = true;
-  window.removeEventListener("mousemove", onMove);
+  if (moveRafId) { cancelAnimationFrame(moveRafId); moveRafId = 0; }
+  pendingMove = null;
+  window.removeEventListener("mousemove", scheduleMove);
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
