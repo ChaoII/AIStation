@@ -223,6 +223,7 @@
         @add-class="showClassModal = true; clsForm.kpNames = []; clsForm.kpColors = []"
         @select-class="selectedClassId = $event"
         @remove-class="removeClass"
+        @change-class-color="changeClassColor"
         @toggle-classification="toggleClassification"
         @select-annotation="store.selectedAnnotationId = $event"
         @edit-annotation="openEditDialog"
@@ -661,6 +662,13 @@ async function removeClass(id: number) {
 }
 function clsCount(classId: number) {
   return store.annotations.filter((a) => a.class_id === classId).length;
+}
+async function changeClassColor(id: number, color: string) {
+  const c = taskClasses.value.find((x) => x.id === id);
+  if (!c) return;
+  c.color = color;
+  // 颜色为响应式，标注框颜色（clsColor）会自动联动更新
+  await saveClasses();
 }
 async function saveClasses() {
   if (!store.taskId || lockedByOther.value) return;

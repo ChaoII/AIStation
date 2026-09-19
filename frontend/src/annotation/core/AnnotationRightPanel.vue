@@ -70,7 +70,12 @@
           :key="c.id"
           @click="$emit('select-class', c.id)"
         >
-          <span class="dot-color" :style="{ background: c.color }" />
+          <el-color-picker
+            :model-value="c.color"
+            size="small"
+            class="cls-color"
+            @change="(v: any) => $emit('change-class-color', c.id, v)"
+          />
           <span class="flex-1">{{ c.name }}</span>
           <span class="count-chip">{{ clsCount(c.id) }}</span>
           <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('remove-class', c.id)">
@@ -164,6 +169,7 @@ const emit = defineEmits<{
   (e: "add-class"): void;
   (e: "select-class", id: number): void;
   (e: "remove-class", id: number): void;
+  (e: "change-class-color", id: number, color: string): void;
   (e: "toggle-classification", id: number): void;
   (e: "select-annotation", id: string): void;
   (e: "edit-annotation", ann: Annotation): void;
@@ -271,11 +277,30 @@ function fmtTime(ts: any) {
   cursor: pointer;
   font-size: 12px;
 }
-.image-item:hover {
-  background: var(--el-fill-color-light);
-}
-.image-item.active {
+.image-item:hover,
+.class-item:hover,
+.ann-item:hover {
   background: var(--el-color-primary-light-9);
+}
+.image-item.active,
+.class-item.active,
+.ann-item.active {
+  background: var(--el-color-primary-light-8);
+}
+.class-item.active .flex-1,
+.ann-item.active .flex-1 {
+  color: var(--el-color-primary);
+  font-weight: 500;
+}
+.cls-color :deep(.el-color-picker__trigger) {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  padding: 0;
+  border: none;
+}
+.cls-color :deep(.el-color-picker__color) {
+  border-radius: 50%;
 }
 .dot {
   width: 8px;
@@ -327,14 +352,6 @@ function fmtTime(ts: any) {
   padding: 4px 2px;
   font-size: 12px;
   cursor: pointer;
-}
-.class-item:hover,
-.ann-item:hover {
-  background: var(--el-fill-color-light);
-}
-.class-item.active,
-.ann-item.active {
-  background: var(--el-color-primary-light-9);
 }
 .dot-color {
   width: 8px;
