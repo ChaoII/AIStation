@@ -220,11 +220,25 @@
         <div class="panel-section">
           <div class="section-title-row">标注列表</div>
           <div class="scroll-area">
-            <div v-for="a in store.annotations" :key="a.id" class="ann-item" @click="store.selectedAnnotationId = a.id">
+            <div
+              v-for="a in store.annotations"
+              :key="a.id"
+              class="ann-item"
+              :class="{ active: a.id === store.selectedAnnotationId }"
+              @click="store.selectedAnnotationId = a.id"
+              @dblclick="openEditDialog(a)"
+              @contextmenu.prevent.stop="openContextMenu($event, a)"
+            >
               <span class="dot-color" :style="{ background: clsColor(a) }" />
               <span class="flex-1">{{ clsName(a) }}</span>
               <span class="tag-type">{{ a.type }}</span>
+              <el-popconfirm title="确定删除该标注？" confirm-button-text="删除" cancel-button-text="取消" @confirm="deleteById(a.id)">
+                <template #reference>
+                  <el-button text size="small">×</el-button>
+                </template>
+              </el-popconfirm>
             </div>
+            <div v-if="store.annotations.length === 0" class="empty-hint">暂无标注</div>
           </div>
         </div>
       </aside>
@@ -1132,6 +1146,23 @@ function menuDelete() {
   store.selectedAnnotationId = ann.id;
   deleteSelected();
 }
+function deleteById(id: string) {
+  if (lockedByOther.value) return;
+  ElMessageBox.confirm("将删除 1 个标注，且不可恢复。", "删除标注", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  })
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter((a) => a.id !== id);
+      if (store.annotations.length !== before) {
+        store.markUnsaved();
+        pushHistory();
+      }
+    })
+    .catch(() => {});
+}
 function editClassChange() {
   if (editForm.ann) editForm.ann.class_id = editForm.class_id;
 }
@@ -1387,6 +1418,14 @@ defineExpose({
   padding: 4px;
   font-size: 12px;
   cursor: pointer;
+}
+.class-item:hover,
+.ann-item:hover {
+  background: var(--el-fill-color-light);
+}
+.ann-item.active,
+.class-item.active {
+  background: var(--el-color-primary-light-9);
 }
 .dot-color {
   width: 8px;
