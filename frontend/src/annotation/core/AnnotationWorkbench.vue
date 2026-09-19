@@ -859,7 +859,12 @@ async function ensureMoreImages(idx: number) {
 
 async function fetchTaskProgress() {
   try {
-    await props.api.getTaskProgress(store.taskId);
+    const r = await props.api.getTaskProgress(store.taskId);
+    const d = r?.data?.data;
+    if (d) {
+      store.totalCount = d.total_images ?? store.totalCount;
+      store.annotatedCount = d.annotated_images ?? store.annotatedCount;
+    }
   } catch {
     /* ignore */
   }
@@ -942,8 +947,8 @@ async function saveAnn() {
   const img = store.images[store.currentImageIndex];
   if (img) {
     img.status = store.annotations.length ? "annotated" : "unannotated";
-    store.annotatedCount = store.images.filter((i) => i.status === "annotated").length;
   }
+  fetchTaskProgress();
 }
 
 function openHistory() {

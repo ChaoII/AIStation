@@ -98,7 +98,7 @@ function titleOf(t: any) {
   height: 44px;
   border-radius: 6px;
   cursor: pointer;
-  color: #303133;
+  color: var(--el-text-color-regular);
   transition: all 0.12s;
   border: 1px solid transparent;
 }

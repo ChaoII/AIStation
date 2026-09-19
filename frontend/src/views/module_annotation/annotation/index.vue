@@ -55,7 +55,7 @@ const api: WorkbenchApi = {
   getPresignedUrl: (imageId, taskId) => AnnotationAPI.getPresignedUrl(imageId, taskId),
   loadAnnotations: (taskId, imageId) => AnnotationAPI.getAnnotations(taskId, imageId),
   saveAnnotations: (taskId, imageId, data) =>
-    AnnotationAPI.saveAnnotations(imageId, { task_id: taskId, annotation_data: data }),
+    AnnotationAPI.saveAnnotations(imageId, { task_id: taskId, image_id: imageId, annotation_data: data }),
   lockImage: (imageId, taskId) => AnnotationAPI.lockImage(imageId, taskId),
   unlockImage: (imageId, taskId) => AnnotationAPI.unlockImage(imageId, taskId),
   updateTask: (id, patch) => AnnotationAPI.updateTask(id, patch),
