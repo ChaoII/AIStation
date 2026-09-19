@@ -41,6 +41,7 @@
           :cursor="toolCursor"
           :canvas="canvas"
           @img-load="onImgLoad"
+          @img-error="onImgError"
           @mousedown="onCanvasDown"
           @dblclick="onDblClick"
           @wheel="onWheel"
@@ -560,12 +561,18 @@ function warmFull(id: number, url: string) {
 }
 function preloadFull(fullUrl: string, imageId: number, myToken: number) {
   const img = new Image();
-  const done = () => {
+  const cache = () => {
     if (myToken !== loadImgToken) return;
     addToCache(imageId, fullUrl);
+  };
+  const swap = () => {
+    if (myToken !== loadImgToken) return;
     if (imgUrl.value !== fullUrl) imgUrl.value = fullUrl;
   };
-  img.onload = () => { if (img.decode) img.decode().catch(() => {}).finally(done); else done(); };
+  img.onload = () => {
+    if (!img.decode) { cache(); swap(); return; }
+    img.decode().then(cache).then(swap).catch(cache);
+  };
   img.onerror = () => {};
   img.src = fullUrl;
 }
@@ -938,6 +945,26 @@ function onRootContextmenu(e: MouseEvent) {
   const ann = store.annotations.find((a) => a.id === id);
   if (!ann) return;
   openContextMenu(e, ann);
+}
+
+async function onImgError() {
+  const imageId = store.currentImageId;
+  if (!imageId) return;
+  if (!fullUrlCache.has(imageId)) {
+    imageLoaded.value = false;
+    return;
+  }
+  fullUrlCache.delete(imageId);
+  try {
+    const r = await props.api.getPresignedUrl(imageId, store.taskId);
+    const fu = r?.data?.data?.url || "";
+    if (fu) {
+      addToCache(imageId, fu);
+      imgUrl.value = fu;
+    }
+  } catch {
+    /* handled by interceptor */
+  }
 }
 
 async function loadCurrentImage(imageId: number) {

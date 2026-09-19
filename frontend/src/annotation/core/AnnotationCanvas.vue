@@ -7,6 +7,7 @@
       class="ann-img"
       :style="canvas.svgStyle()"
       @load="onImgLoad"
+      @error="onImgError"
     />
     <svg
       v-if="imageLoaded"
@@ -32,6 +33,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "img-load", w: number, h: number): void;
+  (e: "img-error"): void;
   (e: "mousedown", ev: MouseEvent): void;
   (e: "wheel", ev: WheelEvent): void;
 }>();
@@ -43,6 +45,10 @@ const canvas = props.canvas ?? useAnnotationCanvas();
 function onImgLoad(e: Event) {
   const el = e.target as HTMLImageElement;
   emit("img-load", el.naturalWidth, el.naturalHeight);
+}
+
+function onImgError() {
+  emit("img-error");
 }
 
 function onMousedown(e: MouseEvent) {
