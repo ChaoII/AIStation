@@ -1228,6 +1228,31 @@
             @change="editTextChange"
           />
         </el-form-item>
+        <el-form-item v-if="editForm.ann?.type === 'Keypoint'" label="关键点">
+          <div style="width: 100%">
+            <div
+              v-for="(kp, i) in editForm.keypoints"
+              :key="i"
+              style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px"
+            >
+              <el-input
+                v-model="kp.name"
+                size="small"
+                placeholder="名称"
+                style="flex: 1"
+                @change="editKpChange"
+              />
+              <el-select
+                v-model="kp.visibility"
+                size="small"
+                style="width: 110px"
+                @change="editKpChange"
+              >
+                <el-option v-for="v in KP_VISIBILITY" :key="v" :label="v" :value="v" />
+              </el-select>
+            </div>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editAnnVisible = false">关闭</el-button>
@@ -2100,12 +2125,18 @@ function toggleClassification(clsId: number) {
   // 只读模式：禁止修改分类标注
   if (lockedByOther.value) return;
   if (taskClassificationMode.value === "single") {
-    store.annotations = store.annotations.filter((a) => a.type !== "Classification");
-    store.annotations.push({
-      id: crypto.randomUUID(),
-      type: "Classification",
-      class_id: clsId,
-    });
+    const existing = store.annotations.find((a) => a.type === "Classification");
+    if (existing && existing.class_id === clsId) {
+      // 再次点击当前已选类别 => 取消选择，清空单标签分类
+      store.annotations = store.annotations.filter((a) => a.id !== existing.id);
+    } else {
+      store.annotations = store.annotations.filter((a) => a.type !== "Classification");
+      store.annotations.push({
+        id: crypto.randomUUID(),
+        type: "Classification",
+        class_id: clsId,
+      });
+    }
   } else {
     const existing = store.annotations.find((a) => a.type === "Classification");
     if (existing) {
@@ -3079,7 +3110,8 @@ function deleteSelected() {
 // ===== 右键菜单 / 编辑模态框 =====
 const annMenu = reactive({ visible: false, x: 0, y: 0, ann: null as any });
 const editAnnVisible = ref(false);
-const editForm = reactive({ ann: null as any, class_id: 0, text: "" });
+const editForm = reactive({ ann: null as any, class_id: 0, text: "", keypoints: [] as any[] });
+const KP_VISIBILITY = ["Visible", "Occluded", "Hidden"];
 
 function openAnnMenu(e: MouseEvent, ann: any) {
   if (lockedByOther.value) return;
@@ -3098,6 +3130,8 @@ function openEditDialog(ann: any) {
   editForm.ann = ann;
   editForm.class_id = ann.class_id;
   editForm.text = ann.text || "";
+  editForm.keypoints =
+    ann.type === "Keypoint" ? JSON.parse(JSON.stringify(ann.keypoints || [])) : [];
   editAnnVisible.value = true;
 }
 function menuEdit() {
@@ -3120,6 +3154,12 @@ function editClassChange() {
 function editTextChange() {
   if (editForm.ann) editForm.ann.text = editForm.text;
   onAnnEdit();
+}
+function editKpChange() {
+  if (editForm.ann?.type === "Keypoint") {
+    editForm.ann.keypoints = JSON.parse(JSON.stringify(editForm.keypoints));
+    onAnnEdit();
+  }
 }
 function editDelete() {
   if (editForm.ann) store.selectedAnnotationId = editForm.ann.id;
@@ -3333,7 +3373,10 @@ function restoreHistory() {
         .filter(Boolean)
     : [];
   store.annotations = items as any;
-  markUnsaved();
+  // 仅当恢复到与已保存状态不一致时才标记未保存，避免误提示
+  if (annotKey(store.annotations) !== lastSavedKey) {
+    markUnsaved();
+  }
 }
 
 // 标注变更时记录历史
@@ -3378,6 +3421,8 @@ async function loadImg(imageId: number) {
   unsaved.value = false;
   lockedByOther.value = false;
   lockedByUser.value = null;
+  // 清理进行中的绘制状态，避免切图后残留影响新图
+  resetDrawingState();
   const idx = store.images.findIndex((i) => i.id === imageId);
   if (idx >= 0) store.currentImageIndex = idx;
   try {
@@ -3524,10 +3569,8 @@ async function saveAnn() {
   }
 }
 
-function setTool(t: ToolName) {
-  currentTool.value = t;
-  store.setTool(t);
-  // 工具切换时清理残留状态（十字光标、进行中的绘制/拖拽）
+// 清理进行中的绘制/拖拽状态（工具切换、切图时复用）
+function resetDrawingState() {
   showCrosshair.value = false;
   drawing.value = false;
   removeBoxPreview();
@@ -3546,6 +3589,13 @@ function setTool(t: ToolName) {
   kpBoxDragStart = null;
   ocrRectMode.value = false;
   ocrBoxStart = { x: 0, y: 0 };
+}
+
+function setTool(t: ToolName) {
+  currentTool.value = t;
+  store.setTool(t);
+  // 工具切换时清理残留状态（十字光标、进行中的绘制/拖拽）
+  resetDrawingState();
 }
 
 // ===== 快捷键帮助 =====
