@@ -44,6 +44,7 @@
           @mousedown="onCanvasDown"
           @dblclick="onDblClick"
           @wheel="onWheel"
+          @contextmenu.prevent="onRootContextmenu"
         >
           <component
             :is="plugin.renderer"
@@ -61,7 +62,6 @@
             @ann-down="onAnnDown"
             @handle-down="onHandleDown"
             @rotate-down="onRotateDown"
-            @contextmenu.prevent="onRootContextmenu"
           />
           <line
             v-if="crossVisible"
@@ -792,6 +792,14 @@ function resetDrawingState() {
   ocr.reset();
 }
 
+function onDocClick(e: MouseEvent) {
+  // 点击编辑气泡外部 → 自动关闭气泡
+  if (editAnnVisible.value && !(e.target as Element)?.closest?.(".edit-bubble")) {
+    // 若点击的是右键菜单/气泡自身则忽略
+    if ((e.target as Element)?.closest?.(".edit-bubble") || (e.target as Element)?.closest?.(".ctx-menu")) return;
+    editAnnVisible.value = false;
+  }
+}
 function onImgLoad() {
   imageLoaded.value = true;
 }
@@ -1138,12 +1146,12 @@ function confirmOcr() {
   ocrInputVisible.value = false;
 }
 function onAnnDown(e: MouseEvent, ann: Annotation) {
-  if (lockedByOther.value) return;
+  if (e.button !== 0 || lockedByOther.value) return;
   store.selectedAnnotationId = ann.id;
   dragState = { type: "move", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
-  if (lockedByOther.value) return;
+  if (e.button !== 0 || lockedByOther.value) return;
   store.selectedAnnotationId = ann.id;
   if (handle.startsWith("kpb-")) {
     const h = handle.replace("kpb-", "");
@@ -1203,7 +1211,7 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   dragState = { type: "resize", ann, handle, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
 function onRotateDown(e: MouseEvent, ann: Annotation) {
-  if (lockedByOther.value) return;
+  if (e.button !== 0 || lockedByOther.value) return;
   store.selectedAnnotationId = ann.id;
   dragState = { type: "rotate", ann, handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
 }
@@ -1537,6 +1545,7 @@ onMounted(() => {
   window.addEventListener("mouseup", onUp);
   window.addEventListener("beforeunload", onBeforeUnload);
   document.addEventListener("keydown", onKey);
+  document.addEventListener("click", onDocClick);
   init();
 });
 onBeforeUnmount(() => {
@@ -1545,6 +1554,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
   document.removeEventListener("keydown", onKey);
+  document.removeEventListener("click", onDocClick);
   if (store.unsaved && store.currentImageId && !lockedByOther.value) {
     props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations).catch(() => {});
   }
