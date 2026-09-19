@@ -250,6 +250,7 @@ const props = defineProps<{
 }>();
 
 const store = useAnnotationStore();
+const emit = defineEmits<{ (e: "open-history"): void }>();
 const canvasRef = ref<InstanceType<typeof AnnotationCanvas> | null>(null);
 const canvas = useAnnotationCanvas();
 const currentTool = ref("select");
@@ -589,7 +590,8 @@ async function saveAnn() {
 }
 
 function openHistory() {
-  // 历史抽屉在后续 Task E 接入；先占位提示
+  // 历史抽屉由外层路由包装层承载（保持组件库解耦），此处仅触发事件
+  emit("open-history");
 }
 
 // ==== 绘制/编辑（同阶段0-5a 逻辑） ====
