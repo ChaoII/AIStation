@@ -69,6 +69,7 @@
           v-for="c in taskClasses"
           :key="c.id"
           @click="$emit('select-class', c.id)"
+          @dblclick="$emit('edit-class', c)"
         >
           <el-color-picker
             :model-value="c.color"
@@ -170,6 +171,7 @@ const emit = defineEmits<{
   (e: "select-class", id: number): void;
   (e: "remove-class", id: number): void;
   (e: "change-class-color", id: number, color: string): void;
+  (e: "edit-class", c: any): void;
   (e: "toggle-classification", id: number): void;
   (e: "select-annotation", id: string): void;
   (e: "edit-annotation", ann: Annotation): void;

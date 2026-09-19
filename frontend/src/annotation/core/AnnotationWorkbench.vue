@@ -220,7 +220,8 @@
         :is-cls-selected="isClsSelected"
         @update-image-filter="imageFilter = $event"
         @go-image="goToImage"
-        @add-class="showClassModal = true; clsForm.kpNames = []; clsForm.kpColors = []"
+        @add-class="openAddClass"
+        @edit-class="openEditClass"
         @select-class="selectedClassId = $event"
         @remove-class="removeClass"
         @change-class-color="changeClassColor"
@@ -292,13 +293,25 @@
         <el-button type="danger" @click="editDelete">删除该标注</el-button>
       </template>
     </el-dialog>
-    <el-dialog v-model="showClassModal" title="添加类别" width="380px" append-to-body>
+    <el-dialog v-model="showClassModal" :title="editingClassId !== null ? '编辑类别' : '添加类别'" width="400px" append-to-body>
       <el-form :model="clsForm" label-width="60px">
         <el-form-item label="名称">
           <el-input v-model="clsForm.name" placeholder="类别名称" />
         </el-form-item>
         <el-form-item label="颜色">
-          <el-color-picker v-model="clsForm.color" />
+          <div style="width:100%">
+            <div class="preset-palette">
+              <span
+                v-for="col in PRESET_COLORS"
+                :key="col"
+                class="preset-dot"
+                :class="{ active: clsForm.color === col }"
+                :style="{ background: col }"
+                @click="clsForm.color = col"
+              />
+            </div>
+            <el-color-picker v-model="clsForm.color" size="small" class="custom-color" />
+          </div>
         </el-form-item>
         <el-form-item v-if="plugin.name === 'keypoint'" label="关键点">
           <div style="width:100%">
@@ -317,7 +330,7 @@
       </el-form>
       <template #footer>
         <el-button @click="showClassModal = false">取消</el-button>
-        <el-button type="primary" @click="addClass">添加</el-button>
+        <el-button type="primary" @click="addClass">{{ editingClassId !== null ? '保存' : '添加' }}</el-button>
       </template>
     </el-dialog>
     <el-dialog v-model="ocrInputVisible" title="输入 OCR 文本" width="380px" append-to-body>
@@ -619,7 +632,29 @@ watch(
   { deep: true }
 );
 const showClassModal = ref(false);
+const editingClassId = ref<number | null>(null);
+const PRESET_COLORS = [
+  "#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#909399", "#9b59b6",
+  "#00bcd4", "#ff9800", "#795548", "#607d8b", "#e91e63", "#8bc34a",
+];
 const clsForm = reactive({ name: "", color: "#409eff", kpNames: [] as string[], kpColors: [] as string[] });
+
+function openAddClass() {
+  editingClassId.value = null;
+  clsForm.name = "";
+  clsForm.color = PRESET_COLORS[0];
+  clsForm.kpNames = [];
+  clsForm.kpColors = [];
+  showClassModal.value = true;
+}
+function openEditClass(c: any) {
+  editingClassId.value = c.id;
+  clsForm.name = c.name || "";
+  clsForm.color = c.color || PRESET_COLORS[0];
+  clsForm.kpNames = [...(c.keypoint_names || [])];
+  clsForm.kpColors = [...(c.keypoint_colors || [])];
+  showClassModal.value = true;
+}
 const ocrInputVisible = ref(false);
 const ocrInput = ref("");
 let pendingOcr: Annotation | null = null;
@@ -627,18 +662,28 @@ let pendingOcr: Annotation | null = null;
 async function addClass() {
   if (lockedByOther.value) return;
   if (!clsForm.name.trim()) return;
-  const id =
-    taskClasses.value.length > 0
-      ? Math.max(...taskClasses.value.map((c) => c.id)) + 1
-      : 0;
   const kpNames = clsForm.kpNames.filter((n) => n.trim());
-  taskClasses.value.push({
-    id,
-    name: clsForm.name.trim(),
-    color: clsForm.color,
-    keypoint_names: kpNames.length ? kpNames : undefined,
-    keypoint_colors: kpNames.length ? clsForm.kpColors.slice(0, kpNames.length) : undefined,
-  });
+  if (editingClassId.value !== null) {
+    const c = taskClasses.value.find((x) => x.id === editingClassId.value);
+    if (c) {
+      c.name = clsForm.name.trim();
+      c.color = clsForm.color;
+      c.keypoint_names = kpNames.length ? kpNames : undefined;
+      c.keypoint_colors = kpNames.length ? clsForm.kpColors.slice(0, kpNames.length) : undefined;
+    }
+  } else {
+    const id =
+      taskClasses.value.length > 0
+        ? Math.max(...taskClasses.value.map((c) => c.id)) + 1
+        : 0;
+    taskClasses.value.push({
+      id,
+      name: clsForm.name.trim(),
+      color: clsForm.color,
+      keypoint_names: kpNames.length ? kpNames : undefined,
+      keypoint_colors: kpNames.length ? clsForm.kpColors.slice(0, kpNames.length) : undefined,
+    });
+  }
   clsForm.name = "";
   clsForm.kpNames = [];
   clsForm.kpColors = [];
@@ -1564,5 +1609,25 @@ defineExpose({
 }
 .shortcut-desc {
   color: #606266;
+}
+.preset-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.preset-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+.preset-dot.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--el-color-primary);
+}
+.custom-color {
+  vertical-align: middle;
 }
 </style>
