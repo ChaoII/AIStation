@@ -664,7 +664,7 @@ function clsColor(a: Annotation) {
 let _canvasEl: HTMLElement | null = null;
 function getCanvasEl(): HTMLElement | null {
   if (!_canvasEl || !document.contains(_canvasEl)) {
-    _canvasEl = getCanvasEl();
+    _canvasEl = document.querySelector(".annotation-canvas") as HTMLElement | null;
   }
   return _canvasEl;
 }
