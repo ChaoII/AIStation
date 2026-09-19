@@ -576,6 +576,7 @@ let dragState:
 let loadImgToken = 0;
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
+let unmounted = false;
 
 function clearLockRenewal() {
   if (lockRenewTimer) {
@@ -670,16 +671,19 @@ function pasteCopied() {
   }
   const copy = JSON.parse(JSON.stringify(annClipboard));
   copy.id = crypto.randomUUID();
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
   if (copy.x1 !== undefined) {
-    copy.x1 += 0.01;
-    copy.x2 += 0.01;
-    copy.y1 += 0.01;
-    copy.y2 += 0.01;
+    copy.x1 = clamp(copy.x1 + 0.01);
+    copy.x2 = clamp(copy.x2 + 0.01);
+    copy.y1 = clamp(copy.y1 + 0.01);
+    copy.y2 = clamp(copy.y2 + 0.01);
   } else if (copy.cx !== undefined) {
-    copy.cx += 0.01;
-    copy.cy += 0.01;
+    copy.cx = clamp(copy.cx + 0.01);
+    copy.cy = clamp(copy.cy + 0.01);
   } else if (copy.points) {
-    copy.points = copy.points.map((p: any) => ({ x: p.x + 0.01, y: p.y + 0.01 }));
+    copy.points = copy.points.map((p: any) => ({ x: clamp(p.x + 0.01), y: clamp(p.y + 0.01) }));
+  } else if (copy.keypoints) {
+    copy.keypoints = copy.keypoints.map((k: any) => ({ ...k, x: clamp(k.x + 0.01), y: clamp(k.y + 0.01) }));
   }
   store.annotations.push(copy);
   store.selectedAnnotationId = copy.id;
@@ -765,8 +769,16 @@ function clsColor(a: Annotation) {
   return taskClasses.value.find((c) => c.id === a.class_id)?.color || "#3b82f6";
 }
 
+let _canvasEl: HTMLElement | null = null;
+function getCanvasEl(): HTMLElement | null {
+  if (!_canvasEl || !document.contains(_canvasEl)) {
+    _canvasEl = getCanvasEl();
+  }
+  return _canvasEl;
+}
+
 function toImagePoint(e: MouseEvent): { x: number; y: number } | null {
-  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  const el = getCanvasEl();
   if (!el) return null;
   const r = el.getBoundingClientRect();
   return canvas.containerToImage(e.clientX - r.left, e.clientY - r.top, r.width, r.height);
@@ -801,7 +813,7 @@ function onImgLoad() {
 
 function onWheel(e: WheelEvent) {
   if (!cw.value || !ch.value) return;
-  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  const el = getCanvasEl();
   if (!el) return;
   const r = el.getBoundingClientRect();
   const cx = e.clientX - r.left;
@@ -810,14 +822,14 @@ function onWheel(e: WheelEvent) {
   zoomAt(factor, cx, cy);
 }
 function boxZoom(factor: number, clientX: number, clientY: number) {
-  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  const el = getCanvasEl();
   if (!el) return;
   const r = el.getBoundingClientRect();
   zoomAt(factor, clientX - r.left, clientY - r.top);
 }
 function zoomAt(factor: number, cx: number, cy: number) {
   if (!cw.value || !ch.value) return;
-  const el = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  const el = getCanvasEl();
   if (!el) return;
   const r = el.getBoundingClientRect();
   const newZoom = Math.min(3, Math.max(0.1, canvas.zoom.value * factor));
@@ -909,8 +921,10 @@ async function prefetchRemainingImages() {
   try {
     const totalPages = Math.ceil(imageTotal.value / IMAGE_PAGE_SIZE);
     for (let p = imageLoadedPages + 1; p <= totalPages; p++) {
+      if (unmounted) return;
       try {
         const items = await loadImagePage(p, true);
+        if (unmounted) return;
         if (items.length) store.images.push(...items);
         imageLoadedPages = p;
       } catch {
@@ -925,7 +939,7 @@ async function prefetchRemainingImages() {
 
 async function ensureMoreImages(idx: number) {
   const datasetId = store.task?.dataset_id;
-  if (!datasetId || imagePrefetching.value) return;
+  if (!datasetId || imagePrefetching.value || unmounted) return;
   const totalPages = Math.ceil(imageTotal.value / IMAGE_PAGE_SIZE);
   if (imageLoadedPages >= totalPages) return;
   if (idx < store.images.length - 10) return;
@@ -1121,6 +1135,8 @@ function confirmOcr() {
       store.annotations.push(pendingOcr);
       store.markUnsaved();
       pushHistory();
+    } else {
+      ElMessage.warning("OCR 区域无效，未创建标注");
     }
   }
   pendingOcr = null;
@@ -1198,7 +1214,7 @@ function onRotateDown(e: MouseEvent, ann: Annotation) {
 }
 function onMove(e: MouseEvent) {
   if (lockedByOther.value) return;
-  const cc = document.querySelector(".annotation-canvas") as HTMLElement | null;
+  const cc = getCanvasEl();
   if (cc) {
     const r = cc.getBoundingClientRect();
     crosshair.x = e.clientX - r.left;
@@ -1257,7 +1273,7 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "rotate") {
-      const c = document.querySelector(".annotation-canvas") as HTMLElement | null;
+      const c = getCanvasEl();
       if (c) {
         const r = c.getBoundingClientRect();
         const off = canvas.imageOffset(r.width, r.height);
@@ -1451,6 +1467,7 @@ onMounted(() => {
   init();
 });
 onBeforeUnmount(() => {
+  unmounted = true;
   window.removeEventListener("mousemove", onMove);
   window.removeEventListener("mouseup", onUp);
   window.removeEventListener("beforeunload", onBeforeUnload);
