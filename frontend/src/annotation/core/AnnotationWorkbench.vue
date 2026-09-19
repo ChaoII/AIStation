@@ -201,6 +201,14 @@
           stroke-width="1.5"
         />
         </AnnotationCanvas>
+        <div class="ann-label-layer">
+          <div
+            v-for="a in store.annotations"
+            :key="a.id"
+            class="ann-tag"
+            :style="tagStyle(a)"
+          >{{ clsName(a) }}</div>
+        </div>
       </main>
       <AnnotationRightPanel
         :ann-settings="annSettings"
@@ -1411,8 +1419,7 @@ function openContextMenu(e: MouseEvent, ann: Annotation) {
 function closeMenu() {
   annMenu.visible = false;
 }
-function annScreenPos(ann: any) {
-  const el = getCanvasEl();
+function annScreenPos(ann: any) {  const el = getCanvasEl();
   if (!el || !dw.value || !dh.value) return { x: 0, y: 0 };
   const r = el.getBoundingClientRect();
   const off = canvas.imageOffset(r.width, r.height);
@@ -1425,6 +1432,41 @@ function annScreenPos(ann: any) {
     ny = ann.points.reduce((s: number, p: any) => s + p.y, 0) / ann.points.length;
   }
   return { x: r.left + off.left + nx * dw.value, y: r.top + off.top + ny * dh.value };
+}
+
+// HTML 标签覆盖层：用固定屏幕像素字号，不随 zoom 缩放，背景 span 自动贴合文字
+function tagStyle(ann: any): any {
+  const el = getCanvasEl();
+  let lx = 0, ty = 0;
+  if (el && dw.value && dh.value) {
+    const r = el.getBoundingClientRect();
+    const off = canvas.imageOffset(r.width, r.height);
+    let nx = 0, ny = 0;
+    if (ann.x1 !== undefined) { nx = ann.x1; ny = ann.y1; }
+    else if (ann.cx !== undefined) { nx = ann.cx; ny = ann.cy; }
+    else if (ann.bounding_box) { nx = ann.bounding_box.cx - ann.bounding_box.width / 2; ny = ann.bounding_box.cy - ann.bounding_box.height / 2; }
+    else if (Array.isArray(ann.points) && ann.points.length) {
+      const xs = ann.points.map((p: any) => p.x);
+      const ys = ann.points.map((p: any) => p.y);
+      nx = Math.min(...xs); ny = Math.min(...ys);
+    }
+    lx = r.left + off.left + nx * dw.value;
+    ty = r.top + off.top + ny * dh.value;
+  }
+  return {
+    left: lx + "px",
+    top: ty + "px",
+    transform: "translateY(-100%)",
+    background: clsColor(ann),
+    color: "#fff",
+    fontSize: annSettings.labelFontSize + "px",
+    lineHeight: "1.2",
+    padding: "1px 4px",
+    borderRadius: "2px",
+    cursor: "default",
+    pointerEvents: "none",
+    whiteSpace: "nowrap" as const,
+  };
 }
 function openEditDialog(ann: any) {
   if (!ann) return;
@@ -1725,6 +1767,17 @@ defineExpose({
 }
 .custom-color {
   vertical-align: middle;
+}
+.ann-label-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.ann-tag {
+  position: absolute;
+  font-family: "Microsoft YaHei", sans-serif;
+  user-select: none;
 }
 .edit-bubble {
   position: fixed;

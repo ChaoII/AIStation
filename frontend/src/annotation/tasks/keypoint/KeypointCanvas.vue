@@ -53,21 +53,12 @@
       fill="#606266"
       font-size="5"
     >{{ kp.name }}</text>
-    <AnnotationLabelRenderer
-      :label-x="bb(ann).x1 * cw"
-      :base-y="bb(ann).y1 * ch"
-      :label="clsName(ann)"
-      :color="color(ann)"
-      :font-size="fontSize"
-      :tag-h="tagH"
-    />
   </g>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Annotation } from "../../core/types";
-import AnnotationLabelRenderer from "../../core/AnnotationLabelRenderer.vue";
 
 const props = defineProps<{
   annotations: Annotation[];

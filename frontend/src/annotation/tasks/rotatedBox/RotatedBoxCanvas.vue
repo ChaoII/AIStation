@@ -50,21 +50,12 @@
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, h)"
       />
     </template>
-    <AnnotationLabelRenderer
-      :label-x="handlePos(ann, 'tl').x"
-      :base-y="handlePos(ann, 'tl').y"
-      :label="clsName(ann)"
-      :color="color(ann)"
-      :font-size="fontSize"
-      :tag-h="tagH"
-    />
   </g>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Annotation } from "../../core/types";
-import AnnotationLabelRenderer from "../../core/AnnotationLabelRenderer.vue";
 
 const props = defineProps<{
   annotations: Annotation[];
