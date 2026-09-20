@@ -1,5 +1,12 @@
 <template>
-  <div ref="wrap" class="annotation-canvas" :style="{ cursor }" @mousedown="onMousedown" @wheel.prevent="onWheel" @contextmenu.prevent>
+  <div
+    ref="wrap"
+    class="annotation-canvas"
+    :style="{ cursor }"
+    @mousedown="onMousedown"
+    @wheel.prevent="onWheel"
+    @contextmenu.prevent
+  >
     <img
       v-if="imgUrl"
       ref="imgRef"

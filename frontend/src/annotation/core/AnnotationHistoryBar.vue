@@ -13,7 +13,12 @@
       <el-icon><ArrowRight /></el-icon>
     </el-button>
     <div class="sep" />
-    <el-button size="small" type="primary" :disabled="!hasCurrentImage || locked" @click="$emit('save')">
+    <el-button
+      size="small"
+      type="primary"
+      :disabled="!hasCurrentImage || locked"
+      @click="$emit('save')"
+    >
       保存
     </el-button>
     <div class="sep" />

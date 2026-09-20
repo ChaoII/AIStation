@@ -71,5 +71,15 @@ export function useOcrTool() {
     ann.points[idx] = p;
   }
 
-  return { first, mode, quadPoints, toggleMode, onPoint, addQuadPoint, closeQuad, reset, moveVertex };
+  return {
+    first,
+    mode,
+    quadPoints,
+    toggleMode,
+    onPoint,
+    addQuadPoint,
+    closeQuad,
+    reset,
+    moveVertex,
+  };
 }

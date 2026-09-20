@@ -21,7 +21,9 @@
       font-family="Microsoft YaHei,sans-serif"
       :font-size="fontSize"
       dominant-baseline="text-after-edge"
-    >{{ label }}</text>
+    >
+      {{ label }}
+    </text>
   </g>
 </template>
 

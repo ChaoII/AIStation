@@ -44,7 +44,8 @@ export function useSegmentTool() {
     const pts = ann.points || [];
     if (pts.length === 0) return "";
     return (
-      pts.map((p: Point, i: number) => `${i === 0 ? "M" : "L"}${p.x * cw},${p.y * ch}`).join(" ") + " Z"
+      pts.map((p: Point, i: number) => `${i === 0 ? "M" : "L"}${p.x * cw},${p.y * ch}`).join(" ") +
+      " Z"
     );
   }
 
@@ -61,5 +62,14 @@ export function useSegmentTool() {
     };
   }
 
-  return { points, addPoint, closePolygon, moveVertex, insertVertex, deleteVertex, polygonPath, polyBBox };
+  return {
+    points,
+    addPoint,
+    closePolygon,
+    moveVertex,
+    insertVertex,
+    deleteVertex,
+    polygonPath,
+    polyBBox,
+  };
 }

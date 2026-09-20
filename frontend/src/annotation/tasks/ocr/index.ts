@@ -30,7 +30,7 @@ export const ocrPlugin: AnnotationTaskPlugin = {
         }
         return ocr.onPoint(p);
       },
-      dblclick(ctx) {
+      dblclick() {
         if (ocr.mode.value === "quad") return ocr.closeQuad();
         return null;
       },

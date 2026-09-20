@@ -62,7 +62,7 @@ const props = defineProps<{
   pointerNone?: boolean;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (e: "ann-down", ev: MouseEvent, ann: Annotation): void;
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
 }>();
@@ -74,9 +74,6 @@ const selStroke = computed(() => props.selStroke ?? 2);
 
 function path(a: Annotation) {
   return seg.polygonPath(a, props.cw, props.ch);
-}
-function bbox(a: Annotation) {
-  return seg.polyBBox(a, props.cw, props.ch);
 }
 function midpoints(a: Annotation) {
   const pts = a.points || [];

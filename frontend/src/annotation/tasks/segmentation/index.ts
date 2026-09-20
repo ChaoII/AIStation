@@ -25,7 +25,7 @@ export const segmentationPlugin: AnnotationTaskPlugin = {
         if (p) seg.addPoint(p);
         return null;
       },
-      dblclick(ctx) {
+      dblclick() {
         return seg.closePolygon();
       },
       reset() {

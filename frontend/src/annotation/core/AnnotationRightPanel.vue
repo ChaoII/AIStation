@@ -4,7 +4,9 @@
     <div class="acc" :class="{ open: open === 'settings' }">
       <div class="acc-head" @click="toggle('settings')">
         <span>设置</span>
-        <el-icon :size="13"><component :is="open === 'settings' ? ArrowDown : ArrowRight" /></el-icon>
+        <el-icon :size="13">
+          <component :is="open === 'settings' ? ArrowDown : ArrowRight" />
+        </el-icon>
       </div>
       <div v-show="open === 'settings'" class="acc-body">
         <div class="setting-row">
@@ -13,11 +15,23 @@
         </div>
         <div class="setting-row">
           <span class="setting-label">框线</span>
-          <el-slider v-model="annSettings.strokeWidth" :min="0.5" :max="4" :step="0.5" size="small" />
+          <el-slider
+            v-model="annSettings.strokeWidth"
+            :min="0.5"
+            :max="4"
+            :step="0.5"
+            size="small"
+          />
         </div>
         <div class="setting-row">
           <span class="setting-label">选中框线</span>
-          <el-slider v-model="annSettings.selStrokeWidth" :min="0.5" :max="5" :step="0.5" size="small" />
+          <el-slider
+            v-model="annSettings.selStrokeWidth"
+            :min="0.5"
+            :max="5"
+            :step="0.5"
+            size="small"
+          />
         </div>
       </div>
     </div>
@@ -29,7 +43,12 @@
         <el-icon :size="13"><component :is="open === 'images' ? ArrowDown : ArrowRight" /></el-icon>
       </div>
       <div v-show="open === 'images'" class="acc-body">
-        <el-radio-group :model-value="imageFilter" size="small" class="img-filter" @update:model-value="$emit('update-image-filter', $event)">
+        <el-radio-group
+          :model-value="imageFilter"
+          size="small"
+          class="img-filter"
+          @update:model-value="$emit('update-image-filter', $event)"
+        >
           <el-radio-button value="all">全部</el-radio-button>
           <el-radio-button value="annotated">已标</el-radio-button>
           <el-radio-button value="unannotated">未标</el-radio-button>
@@ -45,7 +64,10 @@
           <span v-else class="img-thumb img-thumb--placeholder" />
           <div class="img-info">
             <span class="img-name">{{ img.filename }}</span>
-            <span class="img-meta">{{ img.updated_by?.name || "--" }}<template v-if="img.updated_time"> · {{ fmtTime(img.updated_time) }}</template></span>
+            <span class="img-meta">
+              {{ img.updated_by?.name || "--" }}
+              <template v-if="img.updated_time">· {{ fmtTime(img.updated_time) }}</template>
+            </span>
           </div>
           <span class="dot" :class="img.status === 'annotated' ? 'dot-done' : 'dot-pending'" />
         </div>
@@ -59,15 +81,17 @@
         <span>类别</span>
         <span class="head-actions" @click.stop>
           <el-button link type="primary" size="small" @click="$emit('add-class')">+ 添加</el-button>
-          <el-icon :size="13"><component :is="open === 'classes' ? ArrowDown : ArrowRight" /></el-icon>
+          <el-icon :size="13">
+            <component :is="open === 'classes' ? ArrowDown : ArrowRight" />
+          </el-icon>
         </span>
       </div>
       <div v-show="open === 'classes'" class="acc-body">
         <div
-          class="class-item"
-          :class="{ active: selectedClassId === c.id }"
           v-for="c in taskClasses"
           :key="c.id"
+          class="class-item"
+          :class="{ active: selectedClassId === c.id }"
           @click="$emit('select-class', c.id)"
           @dblclick="$emit('edit-class', c)"
         >
@@ -79,7 +103,12 @@
           />
           <span class="flex-1">{{ c.name }}</span>
           <span class="count-chip">{{ clsCount(c.id) }}</span>
-          <el-popconfirm title="确定删除该类别？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('remove-class', c.id)">
+          <el-popconfirm
+            title="确定删除该类别？"
+            confirm-button-text="删除"
+            cancel-button-text="取消"
+            @confirm="$emit('remove-class', c.id)"
+          >
             <template #reference>
               <el-button text size="small">×</el-button>
             </template>
@@ -90,10 +119,16 @@
     </div>
 
     <!-- 分类 (仅分类任务) -->
-    <div v-if="pluginName === 'classification'" class="acc" :class="{ open: open === 'classification' }">
+    <div
+      v-if="pluginName === 'classification'"
+      class="acc"
+      :class="{ open: open === 'classification' }"
+    >
       <div class="acc-head" @click="toggle('classification')">
         <span>分类（{{ classificationMode === "multi" ? "多标签" : "单标签" }}）</span>
-        <el-icon :size="13"><component :is="open === 'classification' ? ArrowDown : ArrowRight" /></el-icon>
+        <el-icon :size="13">
+          <component :is="open === 'classification' ? ArrowDown : ArrowRight" />
+        </el-icon>
       </div>
       <div v-show="open === 'classification'" class="acc-body">
         <div
@@ -114,7 +149,9 @@
     <div class="acc" :class="{ open: open === 'annotations' }">
       <div class="acc-head" @click="toggle('annotations')">
         <span>标注列表</span>
-        <el-icon :size="13"><component :is="open === 'annotations' ? ArrowDown : ArrowRight" /></el-icon>
+        <el-icon :size="13">
+          <component :is="open === 'annotations' ? ArrowDown : ArrowRight" />
+        </el-icon>
       </div>
       <div v-show="open === 'annotations'" class="acc-body">
         <div
@@ -129,7 +166,12 @@
           <span class="dot-color" :style="{ background: clsColor(a) }" />
           <span class="flex-1">{{ clsName(a) }}</span>
           <span class="tag-type">{{ a.type }}</span>
-          <el-popconfirm title="确定删除该标注？" confirm-button-text="删除" cancel-button-text="取消" @confirm="$emit('delete-annotation', a.id)">
+          <el-popconfirm
+            title="确定删除该标注？"
+            confirm-button-text="删除"
+            cancel-button-text="取消"
+            @confirm="$emit('delete-annotation', a.id)"
+          >
             <template #reference>
               <el-button text size="small">×</el-button>
             </template>
@@ -164,7 +206,7 @@ const props = defineProps<{
   isClsSelected: (id: number) => boolean;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (e: "update-image-filter", v: any): void;
   (e: "go-image", index: number): void;
   (e: "add-class"): void;

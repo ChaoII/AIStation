@@ -71,7 +71,7 @@ const props = defineProps<{
   pointerNone?: boolean;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (e: "ann-down", ev: MouseEvent, ann: Annotation): void;
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
   (e: "rotate-down", ev: MouseEvent, ann: Annotation): void;

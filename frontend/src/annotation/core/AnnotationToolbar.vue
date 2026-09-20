@@ -31,7 +31,19 @@
 
 <script setup lang="ts">
 import { h, defineComponent } from "vue";
-import { Rank, ZoomIn, Crop, Refresh, Grid, CirclePlus, Document, Collection, RefreshLeft, RefreshRight, Delete } from "@element-plus/icons-vue";
+import {
+  Rank,
+  ZoomIn,
+  Crop,
+  Refresh,
+  Grid,
+  CirclePlus,
+  Document,
+  Collection,
+  RefreshLeft,
+  RefreshRight,
+  Delete,
+} from "@element-plus/icons-vue";
 
 defineProps<{
   tools: { name: string; label: string; icon?: any; title?: string }[];

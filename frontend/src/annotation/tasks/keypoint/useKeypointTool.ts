@@ -129,5 +129,20 @@ export function useKeypointTool(kpNames: string[] = []) {
     b.height = nh;
   }
 
-  return { pending, boxMode, boxStart, boxEnd, setNames, addPoint, beginBox, setBoxStart, updateBox, build, moveKeypoint, moveBBox, resizeBBox, removeKeypoint };
+  return {
+    pending,
+    boxMode,
+    boxStart,
+    boxEnd,
+    setNames,
+    addPoint,
+    beginBox,
+    setBoxStart,
+    updateBox,
+    build,
+    moveKeypoint,
+    moveBBox,
+    resizeBBox,
+    removeKeypoint,
+  };
 }

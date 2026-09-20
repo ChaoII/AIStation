@@ -46,7 +46,7 @@ const props = defineProps<{
   pointerNone?: boolean;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (e: "ann-down", ev: MouseEvent, ann: Annotation): void;
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
 }>();
@@ -57,10 +57,5 @@ const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as c
 
 function pts(a: Annotation) {
   return (a.points || []).map((p: any) => `${p.x * props.cw},${p.y * props.ch}`).join(" ");
-}
-function bbox(a: Annotation) {
-  const xs = (a.points || []).map((p: any) => p.x);
-  const ys = (a.points || []).map((p: any) => p.y);
-  return { x1: Math.min(...xs), y1: Math.min(...ys) };
 }
 </script>

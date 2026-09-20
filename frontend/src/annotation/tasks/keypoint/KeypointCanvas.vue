@@ -52,7 +52,9 @@
       :y="kp.y * ch - 4"
       fill="#606266"
       font-size="5"
-    >{{ kp.name }}</text>
+    >
+      {{ kp.name }}
+    </text>
   </g>
 </template>
 
@@ -74,7 +76,7 @@ const props = defineProps<{
   pointerNone?: boolean;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   (e: "ann-down", ev: MouseEvent, ann: Annotation): void;
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
 }>();
