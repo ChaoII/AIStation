@@ -117,26 +117,6 @@
             stroke="#e6a23c"
             stroke-width="1.5"
           />
-          <polyline
-            v-if="currentTool === 'ocr' && ocr.mode.value === 'quad' && ocr.quadPoints.value.length"
-            :points="ocrQuadPts"
-            fill="none"
-            stroke="#e6a23c"
-            stroke-width="1.5"
-            stroke-dasharray="4 3"
-          />
-          <circle
-            v-for="(pt, i) in currentTool === 'ocr' && ocr.mode.value === 'quad'
-              ? ocr.quadPoints.value
-              : []"
-            :key="'oq' + i"
-            :cx="pt.x * cw"
-            :cy="pt.y * ch"
-            r="3"
-            fill="#fff"
-            stroke="#e6a23c"
-            stroke-width="1"
-          />
         </AnnotationCanvas>
         <div class="ann-label-layer">
           <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
@@ -409,7 +389,6 @@ import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
-import { useOcrTool } from "../tasks/ocr/useOcrTool";
 import type { Annotation, AnnotationTaskPlugin } from "./types";
 import type { WorkbenchApi, WorkbenchConfig, CollabAdapter } from "./annotationTypes";
 
@@ -441,7 +420,6 @@ watch(
   },
   { immediate: true }
 );
-const ocr = useOcrTool();
 const kpBoxDrafting = ref(false);
 
 const crosshair = reactive({ x: 0, y: 0 });
@@ -547,9 +525,6 @@ const hintText = computed(() => {
   const t = displayTools.value.find((x) => x.name === currentTool.value);
   return (t as any)?.title || (t as any)?.tip || "";
 });
-const ocrQuadPts = computed(() =>
-  ocr.quadPoints.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
-);
 
 let panState: { startX: number; startY: number; px: number; py: number } | null = null;
 let dragState: {
@@ -930,7 +905,6 @@ function resetDrawingState() {
   kp.boxMode.value = false;
   kp.boxStart.value = null;
   kp.boxEnd.value = null;
-  ocr.reset();
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -1288,13 +1262,6 @@ function onDblClick(e: MouseEvent) {
   }
   if (currentTool.value === "keypoint") {
     kp.beginBox();
-  } else if (currentTool.value === "ocr" && ocr.mode.value === "quad") {
-    const created = ocr.closeQuad();
-    if (created) {
-      pendingOcr = created;
-      ocrInput.value = "";
-      ocrInputVisible.value = true;
-    }
   }
 }
 function onCanvasDown(e: MouseEvent) {
@@ -1347,17 +1314,6 @@ function onCanvasDown(e: MouseEvent) {
         taskClasses.value.find((c) => c.id === selectedClassId.value)?.keypoint_names || [];
       kp.setNames(kpNames);
       kp.addPoint(p, pendingKpVisibility.value);
-    }
-  } else if (currentTool.value === "ocr") {
-    if (ocr.mode.value === "quad") {
-      ocr.addQuadPoint(p);
-    } else {
-      const created = ocr.onPoint(p);
-      if (created) {
-        pendingOcr = created;
-        ocrInput.value = "";
-        ocrInputVisible.value = true;
-      }
     }
   }
 }
@@ -2064,7 +2020,10 @@ function onKey(e: KeyboardEvent) {
     }
   }
   if (currentTool.value === "ocr" && e.key.toLowerCase() === "t") {
-    ocr.toggleMode();
+    const tool = plugin.value.tool;
+    const st = tool?.state;
+    if (st) st.mode.value = st.mode.value === "rect" ? "quad" : "rect";
+    tool?.reset?.();
     return;
   }
   if (["1", "s"].includes(e.key)) setTool("select");

@@ -1,5 +1,7 @@
 import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
 import OcrCanvas from "./OcrCanvas.vue";
+import OcrPreview from "./OcrPreview.vue";
+import { useOcrTool } from "./useOcrTool";
 
 export const ocrPlugin: AnnotationTaskPlugin = {
   name: "ocr",
@@ -13,6 +15,30 @@ export const ocrPlugin: AnnotationTaskPlugin = {
     if (pts.length < 4) return false;
     return pts.every((p: any) => 0 <= p.x && p.x <= 1 && 0 <= p.y && p.y <= 1);
   },
+  tool: (() => {
+    const ocr = useOcrTool();
+    return {
+      name: "ocr",
+      preview: OcrPreview,
+      state: { mode: ocr.mode, quadPoints: ocr.quadPoints },
+      down(ctx) {
+        const p = ctx.point;
+        if (!p) return null;
+        if (ocr.mode.value === "quad") {
+          ocr.addQuadPoint(p);
+          return null;
+        }
+        return ocr.onPoint(p);
+      },
+      dblclick(ctx) {
+        if (ocr.mode.value === "quad") return ocr.closeQuad();
+        return null;
+      },
+      reset() {
+        ocr.reset();
+      },
+    };
+  })(),
   interaction: {
     move(ctx: DragContext): void {
       const movePoints = (pts: any[]) =>
