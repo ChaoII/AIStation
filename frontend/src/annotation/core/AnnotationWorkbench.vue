@@ -383,7 +383,6 @@ const emit = defineEmits<{ (e: "open-history"): void }>();
 const canvasRef = ref<InstanceType<typeof AnnotationCanvas> | null>(null);
 const canvas = useAnnotationCanvas();
 const currentTool = ref("select");
-watch(currentTool, () => plugin.value.tool?.reset?.());
 const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
@@ -488,15 +487,12 @@ const cw = computed(() => canvas.cw.value);
 const ch = computed(() => canvas.ch.value);
 const dw = computed(() => canvas.dw.value);
 const dh = computed(() => canvas.dh.value);
+const isDrawing = computed(() => currentTool.value === plugin.value.tool?.name);
 const toolCursor = computed(() => {
   if (spaceHeld.value) return "grab";
-  return currentTool.value === "box" || currentTool.value === "rotated_box"
-    ? "crosshair"
-    : "default";
+  return isDrawing.value ? "crosshair" : "default";
 });
-const crossVisible = computed(() =>
-  ["box", "rotated_box", "polygon", "keypoint", "ocr"].includes(currentTool.value)
-);
+const crossVisible = computed(() => isDrawing.value);
 const hintText = computed(() => {
   const t = displayTools.value.find((x) => x.name === currentTool.value);
   return (t as any)?.title || (t as any)?.tip || "";
@@ -1948,10 +1944,7 @@ function onKey(e: KeyboardEvent) {
     }
   }
   if (currentTool.value === "ocr" && e.key.toLowerCase() === "t") {
-    const tool = plugin.value.tool;
-    const st = tool?.state;
-    if (st) st.mode.value = st.mode.value === "rect" ? "quad" : "rect";
-    tool?.reset?.();
+    plugin.value.tool?.toggleMode?.();
     return;
   }
   if (["1", "s"].includes(e.key)) setTool("select");

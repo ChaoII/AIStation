@@ -177,6 +177,8 @@ export interface PluginTool {
   dblclick?(ctx: DrawContext): Annotation | null;
   /** 切换工具/换图/清空时重置绘制状态 */
   reset?(): void;
+  /** 切换工具内部模式（如 OCR rect/quad 切换），实现内自带 reset */
+  toggleMode?(): void;
 }
 
 export interface AnnotationTaskPlugin {
