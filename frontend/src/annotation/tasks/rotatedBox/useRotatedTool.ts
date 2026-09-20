@@ -45,7 +45,7 @@ export function useRotatedTool() {
       step.value = 2;
       return null;
     }
-    if (step.value === 3) {
+    if (step.value === 2) {
       const geom = rotatedBoxFromEdgeAndPoint(pt1.value!, pt2.value!, p);
       step.value = 0;
       pt1.value = null;

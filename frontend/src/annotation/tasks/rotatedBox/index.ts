@@ -1,5 +1,8 @@
-import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
+import { ref } from "vue";
+import type { AnnotationTaskPlugin, Annotation, DragContext, Point } from "../../core/types";
 import RotatedBoxCanvas from "./RotatedBoxCanvas.vue";
+import RotatedBoxPreview from "./RotatedBoxPreview.vue";
+import { useRotatedTool, rotatedBoxFromEdgeAndPoint } from "./useRotatedTool";
 
 export const rotatedBoxPlugin: AnnotationTaskPlugin = {
   name: "rotated_detection",
@@ -16,6 +19,37 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
       return false;
     return true;
   },
+  tool: (() => {
+    const rot = useRotatedTool();
+    const last = ref<Point | null>(null);
+    const preview = ref<any>(null);
+    return {
+      name: "rotated_box",
+      preview: RotatedBoxPreview,
+      state: { step: rot.step, pt1: rot.pt1, pt2: rot.pt2, last, preview },
+      down(ctx) {
+        const p = ctx.point;
+        if (!p) return null;
+        last.value = p;
+        const created = rot.onStep(p);
+        if (created) preview.value = null;
+        return created;
+      },
+      move(ctx) {
+        const p = ctx.point;
+        if (!p) return;
+        last.value = p;
+        if (rot.pt1.value && rot.pt2.value) {
+          const g = rotatedBoxFromEdgeAndPoint(rot.pt1.value, rot.pt2.value, p);
+          if (g) preview.value = { ...g };
+        }
+      },
+      reset() {
+        last.value = null;
+        preview.value = null;
+      },
+    };
+  })(),
   interaction: {
     move(ctx: DragContext): void {
       const nc = (v: number) => Math.max(0, Math.min(1, v));

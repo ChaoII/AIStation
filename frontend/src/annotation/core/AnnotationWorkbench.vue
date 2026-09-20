@@ -97,18 +97,6 @@
             class="cross-svg"
           />
           <rect
-            v-if="rbPreview"
-            :x="rbPreview.cx * cw - (rbPreview.width * cw) / 2"
-            :y="rbPreview.cy * ch - (rbPreview.height * ch) / 2"
-            :width="rbPreview.width * cw"
-            :height="rbPreview.height * ch"
-            fill="none"
-            stroke="#f56c6c"
-            stroke-width="1.5"
-            stroke-dasharray="4 3"
-            :transform="`rotate(${(rbPreview.angle * 180) / Math.PI} ${rbPreview.cx * cw} ${rbPreview.cy * ch})`"
-          />
-          <rect
             v-if="kpBoxDrafting && kp.boxStart.value && kp.boxEnd.value"
             :x="Math.min(kp.boxStart.value.x, kp.boxEnd.value.x) * cw"
             :y="Math.min(kp.boxStart.value.y, kp.boxEnd.value.y) * ch"
@@ -167,47 +155,6 @@
             stroke="#e6a23c"
             stroke-width="1"
           />
-          <!-- 旋转框三步绘制引导 -->
-          <template v-if="currentTool === 'rotated_box' && rot.step.value > 0">
-            <line
-              v-if="rot.pt1.value && rbLast"
-              :x1="rot.pt1.value.x * cw"
-              :y1="rot.pt1.value.y * ch"
-              :x2="rbLast.x * cw"
-              :y2="rbLast.y * ch"
-              stroke="#f56c6c"
-              stroke-width="1.5"
-              stroke-dasharray="4 3"
-            />
-            <line
-              v-if="rot.pt1.value && rot.pt2.value && rbLast"
-              :x1="rot.pt2.value.x * cw"
-              :y1="rot.pt2.value.y * ch"
-              :x2="rbLast.x * cw"
-              :y2="rbLast.y * ch"
-              stroke="#f56c6c"
-              stroke-width="1"
-              stroke-dasharray="2 2"
-            />
-            <circle
-              v-if="rot.pt1.value"
-              :cx="rot.pt1.value.x * cw"
-              :cy="rot.pt1.value.y * ch"
-              r="4"
-              fill="#fff"
-              stroke="#f56c6c"
-              stroke-width="1.5"
-            />
-            <circle
-              v-if="rot.pt2.value"
-              :cx="rot.pt2.value.x * cw"
-              :cy="rot.pt2.value.y * ch"
-              r="4"
-              fill="#fff"
-              stroke="#f56c6c"
-              stroke-width="1.5"
-            />
-          </template>
           <!-- 多边形首点提示 -->
           <circle
             v-if="currentTool === 'polygon' && seg.points.value.length"
@@ -489,7 +436,6 @@ import AnnotationToolbar from "./AnnotationToolbar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
-import { useRotatedTool, rotatedBoxFromEdgeAndPoint } from "../tasks/rotatedBox/useRotatedTool";
 import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
 import { useOcrTool } from "../tasks/ocr/useOcrTool";
@@ -514,7 +460,6 @@ const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
 const imgUrl = ref("");
-const rot = useRotatedTool();
 const seg = useSegmentTool();
 const kp = useKeypointTool();
 const selectedClassId = ref<number | null>(null);
@@ -527,13 +472,6 @@ watch(
   { immediate: true }
 );
 const ocr = useOcrTool();
-const rbPreview = ref<{
-  cx: number;
-  cy: number;
-  width: number;
-  height: number;
-  angle: number;
-} | null>(null);
 const kpBoxDrafting = ref(false);
 
 const crosshair = reactive({ x: 0, y: 0 });
@@ -646,7 +584,6 @@ const ocrQuadPts = computed(() =>
   ocr.quadPoints.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
 );
 
-let rbLast: { x: number; y: number } | null = null;
 let panState: { startX: number; startY: number; px: number; py: number } | null = null;
 let dragState: {
   type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex" | "kp-move" | "kp-resize";
@@ -1019,15 +956,10 @@ function setTool(t: string) {
 }
 function resetDrawingState() {
   draftAnn.value = null;
-  rbPreview.value = null;
   kpBoxDrafting.value = false;
   dragState = null;
-  rbLast = null;
   plugin.value.tool?.reset?.();
   seg.points.value = [];
-  rot.step.value = 0;
-  rot.pt1.value = null;
-  rot.pt2.value = null;
   kp.pending.value = [];
   kp.boxMode.value = false;
   kp.boxStart.value = null;
@@ -1448,16 +1380,7 @@ function onCanvasDown(e: MouseEvent) {
     if (created) commitCreated(created);
     return;
   }
-  if (currentTool.value === "rotated_box") {
-    rbLast = p;
-    const created = rot.onStep(p);
-    if (created && plugin.value.create(created)) {
-      created.class_id = selectedClassId.value ?? created.class_id;
-      store.annotations.push(created);
-      store.markUnsaved();
-      pushHistory();
-    }
-  } else if (currentTool.value === "polygon") {
+  if (currentTool.value === "polygon") {
     seg.addPoint(p);
   } else if (currentTool.value === "keypoint") {
     if (kp.boxMode.value) {
@@ -1721,17 +1644,6 @@ function onMove(e: MouseEvent) {
     });
     return;
   }
-  if (currentTool.value === "rotated_box") {
-    const p = toImagePoint(e);
-    if (p) {
-      rbLast = p;
-      if (rot.pt1.value && rot.pt2.value) {
-        const g = rotatedBoxFromEdgeAndPoint(rot.pt1.value, rot.pt2.value, p);
-        if (g) rbPreview.value = { ...g };
-      }
-    }
-    return;
-  }
   if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
     const p = toImagePoint(e);
     if (p) kp.updateBox(p);
@@ -1861,21 +1773,6 @@ function onMove(e: MouseEvent) {
         });
         return;
       }
-      const r = canvasR();
-      const off = canvas.imageOffset(r.width, r.height);
-      const centerX = r.left + off.left + dragState.ann.cx * dw.value;
-      const centerY = r.top + off.top + dragState.ann.cy * dh.value;
-      rot.onRotate(
-        dragState.ann,
-        centerX,
-        centerY,
-        dragState.startX,
-        dragState.startY,
-        e.clientX,
-        e.clientY
-      );
-      triggerRef(draftAnn);
-      return;
     }
     if (dragState.type === "move") {
       const interaction = plugin.value.interaction;
@@ -1925,11 +1822,7 @@ function onMove(e: MouseEvent) {
         });
         return;
       }
-      if (ann.type === "RotatedBox") {
-        const p = toImagePoint(e);
-        if (p)
-          rot.onDragResize(ann, o, dragState.handle, p, cw.value, ch.value, ch.value / cw.value);
-      } else if (ann.type === "AxisAlignedBox") {
+      if (ann.type === "AxisAlignedBox") {
         if (dragState.handle.includes("l")) ann.x1 = nc(Math.min(o.x2 - 0.01, o.x1 + dx));
         if (dragState.handle.includes("r")) ann.x2 = nc(Math.max(o.x1 + 0.01, o.x2 + dx));
         if (dragState.handle.includes("t")) ann.y1 = nc(Math.min(o.y2 - 0.01, o.y1 + dy));
@@ -1972,10 +1865,6 @@ function onUp(e: MouseEvent) {
   if (tool && currentTool.value === tool.name) {
     const created = tool.up?.({ event: e });
     if (created) commitCreated(created);
-    return;
-  }
-  if (currentTool.value === "rotated_box") {
-    rbPreview.value = null;
     return;
   }
   if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
