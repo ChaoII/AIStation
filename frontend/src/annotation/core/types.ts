@@ -179,6 +179,8 @@ export interface PluginTool {
   reset?(): void;
   /** 切换工具内部模式（如 OCR rect/quad 切换），实现内自带 reset */
   toggleMode?(): void;
+  /** 工具专属键盘快捷键（返回 true 表示已处理，壳不再继续执行通用/切工具逻辑） */
+  keydown?(e: KeyboardEvent): boolean;
 }
 
 export interface AnnotationTaskPlugin {

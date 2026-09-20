@@ -19,6 +19,7 @@ export const keypointPlugin: AnnotationTaskPlugin = {
   tool: (() => {
     const kp = useKeypointTool();
     const boxDrafting = ref(false);
+    const visibility = ref("Visible");
     return {
       name: "keypoint",
       preview: KeypointPreview,
@@ -34,8 +35,16 @@ export const keypointPlugin: AnnotationTaskPlugin = {
         const kpNames =
           ctx.classes?.find((c) => c.id === ctx.selectedClassId)?.keypoint_names || [];
         kp.setNames(kpNames);
-        kp.addPoint(p, ctx.visibility ?? "Visible");
+        kp.addPoint(p, visibility.value);
         return null;
+      },
+      keydown(e) {
+        if (["0", "1", "2"].includes(e.key)) {
+          const map: Record<string, string> = { "0": "Hidden", "1": "Occluded", "2": "Visible" };
+          visibility.value = map[e.key];
+          return true;
+        }
+        return false;
       },
       move(ctx) {
         const p = ctx.point;

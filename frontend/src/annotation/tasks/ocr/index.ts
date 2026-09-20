@@ -34,8 +34,12 @@ export const ocrPlugin: AnnotationTaskPlugin = {
         if (ocr.mode.value === "quad") return ocr.closeQuad();
         return null;
       },
-      toggleMode() {
-        ocr.toggleMode();
+      keydown(e) {
+        if (e.key.toLowerCase() === "t") {
+          ocr.toggleMode();
+          return true;
+        }
+        return false;
       },
       reset() {
         ocr.reset();

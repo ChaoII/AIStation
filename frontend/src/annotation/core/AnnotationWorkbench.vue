@@ -397,7 +397,6 @@ watch(
   { immediate: true }
 );
 const crosshair = reactive({ x: 0, y: 0 });
-const pendingKpVisibility = ref("Visible");
 
 const cursorPos = reactive({ x: 0, y: 0 });
 const imageFilter = ref<"all" | "annotated" | "unannotated">("all");
@@ -1222,7 +1221,6 @@ function onDblClick(e: MouseEvent) {
       event: e,
       classes: taskClasses.value,
       selectedClassId: selectedClassId.value,
-      visibility: pendingKpVisibility.value,
     });
     if (created) commitCreated(created);
     return;
@@ -1264,7 +1262,6 @@ function onCanvasDown(e: MouseEvent) {
       event: e,
       classes: taskClasses.value,
       selectedClassId: selectedClassId.value,
-      visibility: pendingKpVisibility.value,
     });
     if (created) commitCreated(created);
     return;
@@ -1501,7 +1498,6 @@ function onMove(e: MouseEvent) {
       event: e,
       classes: taskClasses.value,
       selectedClassId: selectedClassId.value,
-      visibility: pendingKpVisibility.value,
     });
     return;
   }
@@ -1935,17 +1931,9 @@ function onKey(e: KeyboardEvent) {
     deleteSelected();
     return;
   }
-  // 关键点工具下：0/1/2 设可见性（优先于切工具，避免冲突）
-  if (currentTool.value === "keypoint") {
-    if (["0", "1", "2"].includes(e.key)) {
-      const map: Record<string, string> = { "0": "Hidden", "1": "Occluded", "2": "Visible" };
-      pendingKpVisibility.value = map[e.key];
-      return;
-    }
-  }
-  if (currentTool.value === "ocr" && e.key.toLowerCase() === "t") {
-    plugin.value.tool?.toggleMode?.();
-    return;
+  // 当前绘制工具专属快捷键（如 keypoint 0/1/2 可见性、ocr t 切换），优先于切工具
+  if (plugin.value.tool && currentTool.value === plugin.value.tool.name) {
+    if (plugin.value.tool.keydown?.(e)) return;
   }
   if (["1", "s"].includes(e.key)) setTool("select");
   else if (["2", "b"].includes(e.key)) setTool("box");
