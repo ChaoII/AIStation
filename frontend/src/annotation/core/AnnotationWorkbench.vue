@@ -205,6 +205,7 @@
         <div class="ann-label-layer">
           <div
             v-for="a in displayAnnotations"
+            v-if="a.type !== 'Classification'"
             :key="a.id"
             class="ann-tag"
             :style="tagStyle(a)"
@@ -1591,6 +1592,12 @@ function tagStyle(ann: any): any {
     const off = canvas.imageOffset(r.width, r.height);
     let nx = 0, ny = 0;
     if (ann.x1 !== undefined) { nx = ann.x1; ny = ann.y1; }
+    else if (ann.type === "RotatedBox" && ann.cx !== undefined) {
+      const hw = ann.width / 2, hh = ann.height / 2;
+      const cos = Math.cos(ann.angle), sin = Math.sin(ann.angle);
+      nx = ann.cx + (-hw) * cos - (-hh) * sin;
+      ny = ann.cy + (-hw) * sin + (-hh) * cos;
+    }
     else if (ann.cx !== undefined) { nx = ann.cx; ny = ann.cy; }
     else if (ann.bounding_box) { nx = ann.bounding_box.cx - ann.bounding_box.width / 2; ny = ann.bounding_box.cy - ann.bounding_box.height / 2; }
     else if (Array.isArray(ann.points) && ann.points.length) {
