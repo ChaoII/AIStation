@@ -219,3 +219,38 @@ else if (Array.isArray(ann.points)) {...}// Polygon / Ocr
 - `vue-tsc --noEmit` 通过（新增类型不破坏存量）。
 - `eslint` 无新增错误。
 - 六类任务 e2e 回归通过。
+
+---
+
+## 八、阶段 B 执行记录（2026-09-20 已完成）
+
+### 范围决策
+- **只下沉标注级交互**（移动/缩放/顶点/旋转/标签锚点）：用户确认。工具绘制（box/polygon 创建流程）保持现状（已高度复用 `use*Tool`，强行下沉收益低、风险高）。
+- 保留「按任务组织」，每个任务的交互归其插件，壳变派发器。
+
+### 接口设计（`types.ts`）
+- 新增 `DragContext`：拖拽上下文（ann/orig/handle/dx/dy/cw/ch/point/center/start/client/trigger）。
+- 新增 `AnnotationInteraction` 接口：`move` / `resize` / `rotate` / `vertexMove` / `vertexInsert` / `vertexDelete` / `tagAnchor`。
+- `AnnotationTaskPlugin` 增加 `interaction?: AnnotationInteraction`；原 `onDrag` 标记 deprecated。
+
+### 各插件下沉结果
+| 插件 | 下沉的 interaction 方法 |
+|------|------------------------|
+| detection | move / resize / tagAnchor |
+| rotatedBox | move / resize / rotate / tagAnchor |
+| segmentation | move / vertexMove / vertexInsert / vertexDelete / tagAnchor |
+| ocr | move / resize / vertexMove / vertexDelete / tagAnchor |
+| keypoint | move / resize / vertexMove / vertexDelete / tagAnchor |
+| classification | 无几何，无需 interaction |
+
+### 壳改造（`AnnotationWorkbench.vue`）
+- `onMove` / `onHandleDown` / `tagStyle` 中按交互类型优先派发给 `plugin.value.interaction?.xxx`，未声明时回退到原默认实现。**壳保留默认回退**，任何插件缺失方法不影响既有行为。
+
+### 验证
+- `vue-tsc --noEmit` annotation 全部通过。
+- `eslint` 无新增功能性错误（存量 prettier 未格式化项与非本次引入的 no-unused-vars 保留）。
+- 核心工作台 e2e（workbench / annotation-history / annotation-task-classes / collaboration）全部通过。
+
+### 达到的效果
+- 新增/修改某任务类型的移动、缩放、顶点、标签锚点，现在只改其插件 `interaction`，无需动核心壳。
+- 核心壳的 `if (ann.type === ...)` 交互分支已改为统一派发，职责归属清晰（"按任务组织"名副其实）。

@@ -1529,6 +1529,13 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (handle.startsWith("kp-")) {
     const idx = handle.replace("kp-", "");
     if (e.altKey) {
+      const interaction = plugin.value.interaction;
+      if (interaction?.vertexDelete) {
+        interaction.vertexDelete(ann, idx);
+        store.markUnsaved();
+        pushHistory();
+        return;
+      }
       kp.removeKeypoint(ann, Number(idx));
       store.markUnsaved();
       pushHistory();
@@ -1547,6 +1554,13 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (handle.startsWith("ocr-")) {
     const idx = Number(handle.replace("ocr-", ""));
     if (e.altKey) {
+      const interaction = plugin.value.interaction;
+      if (interaction?.vertexDelete) {
+        interaction.vertexDelete(ann, String(idx));
+        store.markUnsaved();
+        pushHistory();
+        return;
+      }
       if (ann.points?.length > 4) {
         ann.points.splice(idx, 1);
         store.markUnsaved();
@@ -1565,6 +1579,12 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
     return;
   }
   if (handle.startsWith("poly-ins-")) {
+    const interaction = plugin.value.interaction;
+    if (interaction?.vertexInsert) {
+      interaction.vertexInsert(ann, handle.replace("poly-ins-", ""));
+      store.markUnsaved();
+      return;
+    }
     const idx = parseInt(handle.replace("poly-ins-", ""), 10);
     if (!isNaN(idx) && ann.points?.length) {
       const a = ann.points[idx],
@@ -1577,6 +1597,13 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (handle.startsWith("poly-")) {
     const idx = Number(handle.replace("poly-", ""));
     if (e.altKey) {
+      const interaction = plugin.value.interaction;
+      if (interaction?.vertexDelete) {
+        interaction.vertexDelete(ann, String(idx));
+        store.markUnsaved();
+        pushHistory();
+        return;
+      }
       if (ann.points?.length > 3) {
         ann.points.splice(idx, 1);
         store.markUnsaved();
@@ -1693,6 +1720,20 @@ function onMove(e: MouseEvent) {
       pts.map((p: any) => ({ ...p, x: nc(p.x + dx), y: nc(p.y + dy) }));
 
     if (dragState.type === "kp-move") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.move) {
+        interaction.move({
+          ann,
+          orig: o,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
       if (ann.bounding_box) {
         ann.bounding_box.cx = nc(o.bounding_box.cx + dx);
         ann.bounding_box.cy = nc(o.bounding_box.cy + dy);
@@ -1706,11 +1747,40 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "kp-resize") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.resize) {
+        interaction.resize({
+          ann,
+          orig: o,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
       kp.resizeBBox(ann, o, dragState.handle, dx, dy);
       triggerRef(draftAnn);
       return;
     }
     if (dragState.type === "kp-vertex") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.vertexMove) {
+        interaction.vertexMove({
+          ann: dragState.ann,
+          orig: dragState.orig,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          point: toImagePoint(e) ?? undefined,
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
       const p = toImagePoint(e);
       if (p) {
         kp.moveKeypoint(dragState.ann, Number(dragState.handle), p);
@@ -1719,6 +1789,21 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "poly-vertex") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.vertexMove) {
+        interaction.vertexMove({
+          ann: dragState.ann,
+          orig: dragState.orig,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          point: toImagePoint(e) ?? undefined,
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
       const p = toImagePoint(e);
       if (p) {
         seg.moveVertex(dragState.ann, Number(dragState.handle), p);
@@ -1727,6 +1812,28 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "rotate") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.rotate) {
+        const r = canvasR();
+        const off = canvas.imageOffset(r.width, r.height);
+        interaction.rotate({
+          ann: dragState.ann,
+          orig: dragState.orig,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          center: {
+            x: r.left + off.left + dragState.ann.cx * dw.value,
+            y: r.top + off.top + dragState.ann.cy * dh.value,
+          },
+          start: { x: dragState.startX, y: dragState.startY },
+          client: { x: e.clientX, y: e.clientY },
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
       const r = canvasR();
       const off = canvas.imageOffset(r.width, r.height);
       const centerX = r.left + off.left + dragState.ann.cx * dw.value;
@@ -1744,6 +1851,21 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "move") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.move) {
+        interaction.move({
+          ann,
+          orig: o,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
+      // 默认（无插件交互）
       if (ann.type === "AxisAlignedBox") {
         ann.x1 = nc(o.x1 + dx);
         ann.x2 = nc(o.x2 + dx);
@@ -1761,6 +1883,21 @@ function onMove(e: MouseEvent) {
       return;
     }
     if (dragState.type === "resize") {
+      const interaction = plugin.value.interaction;
+      if (interaction?.resize) {
+        interaction.resize({
+          ann,
+          orig: o,
+          handle: dragState.handle,
+          dx,
+          dy,
+          cw: cw.value,
+          ch: ch.value,
+          point: toImagePoint(e) ?? undefined,
+          trigger: () => triggerRef(draftAnn),
+        });
+        return;
+      }
       if (ann.type === "RotatedBox") {
         const p = toImagePoint(e);
         if (p)
@@ -1896,7 +2033,11 @@ function tagStyle(ann: any): any {
     const off = canvas.imageOffset(r.width, r.height);
     let nx = 0,
       ny = 0;
-    if (ann.x1 !== undefined) {
+    const anchor = plugin.value.interaction?.tagAnchor?.(ann);
+    if (anchor) {
+      nx = anchor.x;
+      ny = anchor.y;
+    } else if (ann.x1 !== undefined) {
       nx = ann.x1;
       ny = ann.y1;
     } else if (ann.type === "RotatedBox" && ann.cx !== undefined) {

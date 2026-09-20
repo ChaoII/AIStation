@@ -101,6 +101,50 @@ export interface TaskCanvasEmits {
 /** 任务渲染组件（SVG 层）：任意 Vue 组件，props/emits 由运行时交互契约约束 */
 export type TaskCanvasRenderer = any;
 
+/** 标注级拖拽交互上下文（壳派发时传入，插件据此更新草稿标注） */
+export interface DragContext {
+  /** 当前草稿标注（draft，可能已由插件修改） */
+  ann: Annotation;
+  /** 拖拽起点快照 */
+  orig: Annotation;
+  /** 当前激活 handle（移动/缩放/顶点标识） */
+  handle: string;
+  /** 归一化位移 */
+  dx: number;
+  dy: number;
+  /** 画布尺寸 */
+  cw: number;
+  ch: number;
+  /** 鼠标在图像坐标的点（归一化） */
+  point?: { x: number; y: number };
+  /** 屏幕坐标：作用中心（旋转框中心等） */
+  center?: { x: number; y: number };
+  /** 屏幕坐标：拖拽起点 */
+  start?: { x: number; y: number };
+  /** 屏幕坐标：当前鼠标端点 */
+  client?: { x: number; y: number };
+  /** 触发一次重绘（draft 更新后通知壳刷新） */
+  trigger: () => void;
+}
+
+/** 标注级交互能力（可选）。插件声明后，壳在 onMove/onHandleDown/tagStyle 中优先派发。 */
+export interface AnnotationInteraction {
+  /** 整体移动标注 */
+  move?(ctx: DragContext): void;
+  /** 缩放（8 向手柄 / 角点） */
+  resize?(ctx: DragContext): void;
+  /** 旋转（RotatedBox） */
+  rotate?(ctx: DragContext): void;
+  /** 顶点级移动（polygon/ocr/keypoint） */
+  vertexMove?(ctx: DragContext): void;
+  /** 顶点插入（polygon 中点） */
+  vertexInsert?(ann: Annotation, handle: string): void;
+  /** 顶点删除（alt+点击） */
+  vertexDelete?(ann: Annotation, handle: string): void;
+  /** 标签锚点（相对图像左上角的归一化坐标，返回 null 则用默认） */
+  tagAnchor?(ann: Annotation): { x: number; y: number } | null;
+}
+
 export interface AnnotationTaskPlugin {
   name: string;
   label: string;
@@ -108,5 +152,8 @@ export interface AnnotationTaskPlugin {
   renderer: TaskCanvasRenderer;
   tools: ToolDefinition[];
   create(shape: Annotation): boolean;
+  /** 标注级交互（阶段 B 下沉，默认无则走壳的默认实现） */
+  interaction?: AnnotationInteraction;
+  /** @deprecated 旧拖拽扩展，逐步替换为 interaction */
   onDrag?(ctx: any, handle: string): void;
 }
