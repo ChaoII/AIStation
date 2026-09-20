@@ -367,7 +367,6 @@ import AnnotationToolbar from "./AnnotationToolbar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
-import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
 import type { Annotation, AnnotationTaskPlugin } from "./types";
 import type { WorkbenchApi, WorkbenchConfig, CollabAdapter } from "./annotationTypes";
 
@@ -389,7 +388,6 @@ const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
 const imgUrl = ref("");
-const kp = useKeypointTool();
 const selectedClassId = ref<number | null>(null);
 watch(
   () => [...taskClasses.value],
@@ -1357,10 +1355,6 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
         pushHistory();
         return;
       }
-      kp.removeKeypoint(ann, Number(idx));
-      store.markUnsaved();
-      pushHistory();
-      return;
     }
     dragState = {
       type: "kp-vertex",
@@ -1566,9 +1560,6 @@ function onMove(e: MouseEvent) {
         });
         return;
       }
-      kp.resizeBBox(ann, o, dragState.handle, dx, dy);
-      triggerRef(draftAnn);
-      return;
     }
     if (dragState.type === "kp-vertex") {
       const interaction = plugin.value.interaction;
@@ -1586,12 +1577,6 @@ function onMove(e: MouseEvent) {
         });
         return;
       }
-      const p = toImagePoint(e);
-      if (p) {
-        kp.moveKeypoint(dragState.ann, Number(dragState.handle), p);
-        triggerRef(draftAnn);
-      }
-      return;
     }
     if (dragState.type === "poly-vertex") {
       const interaction = plugin.value.interaction;

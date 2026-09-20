@@ -135,3 +135,42 @@ if (isDrawing) {
 - 不重构「任务特有面板」的 UI 位置（keypoint/OCR/分类面板仍按需在壳或弹窗内）。
 - 不改造 `currentTool` 的选择列表来源（仍由插件 `tools` 驱动）。
 - 不引入新的状态管理框架。
+
+---
+
+## 阶段 C 执行记录（2026-09-21）
+
+### 各任务下沉
+
+六类插件均已实现各自的 `plugin.tool`（绘制运行时）与 `interaction`（已存在标注的编辑交互），并在 `core/types.ts` 的 `PluginTool` 接口下自洽：
+
+| 插件 | tool 名称 | tool 文件（新增） | 绘制流程 | preview 组件 |
+|------|-----------|------------------|----------|--------------|
+| detection | `box` | `tasks/detection/useDetectionTool.ts` | 框选拖拽 | `DetectionPreview.vue` |
+| rotatedBox | `rotated_box` | `tasks/rotatedBox/useRotatedTool.ts` | 三步绘制 | `RotatedBoxPreview.vue` |
+| segmentation | `polygon` | `tasks/segmentation/useSegmentTool.ts` | 逐点 + 双击闭合 | `SegmentPreview.vue` |
+| ocr | `ocr` | `tasks/ocr/useOcrTool.ts` | 矩形 / 四边形模式 | `OcrPreview.vue` |
+| keypoint | `keypoint` | `tasks/keypoint/useKeypointTool.ts` | 依次放点 + 双击拉框 | `KeypointPreview.vue` |
+
+壳的通用派发（`if (plugin.value.tool && currentTool === plugin.value.tool.name)`）已覆盖全部五类工具的 `down`/`move`/`up`/`dblclick`/`reset`；classification 无 `tool`，`isDrawing` 恒为 false，不派发。
+
+### onStep 既有 bug 修复（Task 2 顺带修复）
+
+`tasks/rotatedBox/useRotatedTool.ts` 的 `onStep` 创建分支条件原为 `step.value === 3`，但 `step` 只经 0→1→2→0 变化，`=== 3` 永不可达，导致 rotated_box 三步绘制**永远无法生成标注**。已最小修复为 `step.value === 2`，并用脚本复现验证：修复前三次点击无标注生成，修复后第三次点击正确生成 `{type:"RotatedBox", cx, cy, width, height, angle}`。
+
+### 壳清理（Task 6）
+
+`AnnotationWorkbench.vue` 已删除全部死代码：
+
+- 删除 `useKeypointTool` import 与 `const kp = useKeypointTool();`。
+- 删除 `onMove` 中 `kp-resize`/`kp-vertex` 分支的 `kp.resizeBBox`/`kp.moveKeypoint` 死 fallback（`interaction?.resize`/`interaction?.vertexMove` 分支保留）。
+- 删除 `onHandleDown` 中 `kp-` alt 删除分支的 `kp.removeKeypoint` 死 fallback（`interaction?.vertexDelete` 分支保留）。
+- 校验无 `det.`/`rot.`/`seg.`/`ocr.`/`kp.` 残留引用、无 `use*Tool` import、无 `drawStart`/`rbLast`/`rbPreview`/`polyPts`/`ocrQuadPts`/`kpBoxDrafting` 等仅绘制状态。
+
+保留：`selectedClassId`、`pendingOcr`/`ocrInput`/`ocrInputVisible`/`confirmOcr`、编辑弹窗（含 `kp.name`/`kp.visibility` 编辑态，属模板局部 v-for 变量非工具实例）、`pendingKpVisibility`。`dragState` 的编辑/顶点交互逻辑仅删除了引用 `use*Tool` 实例的死 `else` fallback，活路径未改动。
+
+### 验证结果
+
+- `vue-tsc --noEmit --skipLibCheck`：`src/annotation` 无新增类型错误（其余为 `src/views/*` 预先存在错误，与本阶段无关）。
+- `eslint src/annotation`：`AnnotationWorkbench.vue` 本身零 lint 错误；报告的全部为未触碰文件的预先存在 prettier/未使用变量问题，非本次引入。
+- 标注工作台 e2e 全量回归（`workbench`、`annotation-history`、`annotation-task-classes`、`collaboration`、`_det_create`）共 **7 用例全部通过**（1.1m），无回归、无新增 flaky。
