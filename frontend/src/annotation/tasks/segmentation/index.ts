@@ -1,5 +1,7 @@
 import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
 import SegmentCanvas from "./SegmentCanvas.vue";
+import SegmentPreview from "./SegmentPreview.vue";
+import { useSegmentTool } from "./useSegmentTool";
 
 export const segmentationPlugin: AnnotationTaskPlugin = {
   name: "segmentation",
@@ -12,6 +14,25 @@ export const segmentationPlugin: AnnotationTaskPlugin = {
     if (!Array.isArray(shape.points) || shape.points.length < 3) return false;
     return shape.points.every((p: any) => 0 <= p.x && p.x <= 1 && 0 <= p.y && p.y <= 1);
   },
+  tool: (() => {
+    const seg = useSegmentTool();
+    return {
+      name: "polygon",
+      preview: SegmentPreview,
+      state: { points: seg.points },
+      down(ctx) {
+        const p = ctx.point;
+        if (p) seg.addPoint(p);
+        return null;
+      },
+      dblclick(ctx) {
+        return seg.closePolygon();
+      },
+      reset() {
+        seg.points.value = [];
+      },
+    };
+  })(),
   interaction: {
     move(ctx: DragContext): void {
       const movePoints = (pts: any[]) =>

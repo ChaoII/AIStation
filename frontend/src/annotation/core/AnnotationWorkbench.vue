@@ -107,24 +107,6 @@
             stroke-width="1.5"
             stroke-dasharray="4 3"
           />
-          <polyline
-            v-if="currentTool === 'polygon' && seg.points.value.length"
-            :points="polyPts"
-            fill="none"
-            stroke="#3b82f6"
-            stroke-width="1.5"
-            stroke-dasharray="4 3"
-          />
-          <circle
-            v-for="(pt, i) in currentTool === 'polygon' ? seg.points.value : []"
-            :key="'pp' + i"
-            :cx="pt.x * cw"
-            :cy="pt.y * ch"
-            r="3"
-            fill="#fff"
-            stroke="#3b82f6"
-            stroke-width="1"
-          />
           <circle
             v-for="(pt, i) in currentTool === 'keypoint' ? kp.pending.value : []"
             :key="'kp' + i"
@@ -154,16 +136,6 @@
             fill="#fff"
             stroke="#e6a23c"
             stroke-width="1"
-          />
-          <!-- 多边形首点提示 -->
-          <circle
-            v-if="currentTool === 'polygon' && seg.points.value.length"
-            :cx="seg.points.value[0].x * cw"
-            :cy="seg.points.value[0].y * ch"
-            r="4"
-            fill="none"
-            stroke="#3b82f6"
-            stroke-width="1.5"
           />
         </AnnotationCanvas>
         <div class="ann-label-layer">
@@ -436,7 +408,6 @@ import AnnotationToolbar from "./AnnotationToolbar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
-import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
 import { useOcrTool } from "../tasks/ocr/useOcrTool";
 import type { Annotation, AnnotationTaskPlugin } from "./types";
@@ -460,7 +431,6 @@ const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
 const imgUrl = ref("");
-const seg = useSegmentTool();
 const kp = useKeypointTool();
 const selectedClassId = ref<number | null>(null);
 watch(
@@ -577,9 +547,6 @@ const hintText = computed(() => {
   const t = displayTools.value.find((x) => x.name === currentTool.value);
   return (t as any)?.title || (t as any)?.tip || "";
 });
-const polyPts = computed(() =>
-  seg.points.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
-);
 const ocrQuadPts = computed(() =>
   ocr.quadPoints.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
 );
@@ -959,7 +926,6 @@ function resetDrawingState() {
   kpBoxDrafting.value = false;
   dragState = null;
   plugin.value.tool?.reset?.();
-  seg.points.value = [];
   kp.pending.value = [];
   kp.boxMode.value = false;
   kp.boxStart.value = null;
@@ -1320,15 +1286,7 @@ function onDblClick(e: MouseEvent) {
     if (created) commitCreated(created);
     return;
   }
-  if (currentTool.value === "polygon") {
-    const created = seg.closePolygon();
-    if (created && plugin.value.create(created)) {
-      created.class_id = selectedClassId.value ?? created.class_id;
-      store.annotations.push(created);
-      store.markUnsaved();
-      pushHistory();
-    }
-  } else if (currentTool.value === "keypoint") {
+  if (currentTool.value === "keypoint") {
     kp.beginBox();
   } else if (currentTool.value === "ocr" && ocr.mode.value === "quad") {
     const created = ocr.closeQuad();
@@ -1380,9 +1338,7 @@ function onCanvasDown(e: MouseEvent) {
     if (created) commitCreated(created);
     return;
   }
-  if (currentTool.value === "polygon") {
-    seg.addPoint(p);
-  } else if (currentTool.value === "keypoint") {
+  if (currentTool.value === "keypoint") {
     if (kp.boxMode.value) {
       kp.setBoxStart(p);
       kpBoxDrafting.value = true;
@@ -1743,12 +1699,6 @@ function onMove(e: MouseEvent) {
         });
         return;
       }
-      const p = toImagePoint(e);
-      if (p) {
-        seg.moveVertex(dragState.ann, Number(dragState.handle), p);
-        triggerRef(draftAnn);
-      }
-      return;
     }
     if (dragState.type === "rotate") {
       const interaction = plugin.value.interaction;
