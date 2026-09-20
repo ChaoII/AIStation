@@ -1,5 +1,8 @@
+import { ref } from "vue";
 import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
 import DetectionCanvas from "./DetectionCanvas.vue";
+import DetectionPreview from "./DetectionPreview.vue";
+import { useDetectionTool } from "./useDetectionTool";
 
 export const detectionPlugin: AnnotationTaskPlugin = {
   name: "detection",
@@ -13,6 +16,43 @@ export const detectionPlugin: AnnotationTaskPlugin = {
     if (shape.x1 < 0 || shape.y1 < 0 || shape.x2 > 1 || shape.y2 > 1) return false;
     return true;
   },
+  tool: (() => {
+    const det = useDetectionTool();
+    const preview = ref<{ x: number; y: number; w: number; h: number } | null>(null);
+    const s = det.startImg;
+    return {
+      name: "box",
+      preview: DetectionPreview,
+      state: { preview },
+      down(ctx) {
+        const p = ctx.point;
+        if (!p) return null;
+        det.onStart(p);
+        preview.value = { x: p.x, y: p.y, w: 0, h: 0 };
+        return null;
+      },
+      move(ctx) {
+        const p = ctx.point;
+        if (!p || !det.drawing.value || !s.value) return;
+        preview.value = {
+          x: Math.min(s.value.x, p.x),
+          y: Math.min(s.value.y, p.y),
+          w: Math.abs(p.x - s.value.x),
+          h: Math.abs(p.y - s.value.y),
+        };
+      },
+      up() {
+        const pr = preview.value;
+        const created = det.onMoveEnd(pr ? { x: pr.x + pr.w, y: pr.y + pr.h } : { x: 0, y: 0 });
+        preview.value = null;
+        return created;
+      },
+      reset() {
+        det.drawing.value = false;
+        preview.value = null;
+      },
+    };
+  })(),
   interaction: {
     move(ctx: DragContext): void {
       const { ann, orig, dx, dy } = ctx;

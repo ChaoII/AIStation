@@ -41,5 +41,5 @@ export function useDetectionTool() {
     ann.y2 = Math.max(0, Math.min(1, ann.y2 + dy));
   }
 
-  return { drawing, onStart, onMoveEnd, onDrag, onDragMove };
+  return { drawing, startImg, onStart, onMoveEnd, onDrag, onDragMove };
 }

@@ -97,17 +97,6 @@
             class="cross-svg"
           />
           <rect
-            v-if="preview"
-            :x="preview.x * cw"
-            :y="preview.y * ch"
-            :width="preview.w * cw"
-            :height="preview.h * ch"
-            fill="none"
-            stroke="#3b82f6"
-            stroke-width="1.5"
-            stroke-dasharray="4 3"
-          />
-          <rect
             v-if="rbPreview"
             :x="rbPreview.cx * cw - (rbPreview.width * cw) / 2"
             :y="rbPreview.cy * ch - (rbPreview.height * ch) / 2"
@@ -500,7 +489,6 @@ import AnnotationToolbar from "./AnnotationToolbar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
-import { useDetectionTool } from "../tasks/detection/useDetectionTool";
 import { useRotatedTool, rotatedBoxFromEdgeAndPoint } from "../tasks/rotatedBox/useRotatedTool";
 import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
@@ -526,8 +514,6 @@ const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
 const imgUrl = ref("");
-const preview = ref<{ x: number; y: number; w: number; h: number } | null>(null);
-const det = useDetectionTool();
 const rot = useRotatedTool();
 const seg = useSegmentTool();
 const kp = useKeypointTool();
@@ -660,7 +646,6 @@ const ocrQuadPts = computed(() =>
   ocr.quadPoints.value.map((p) => `${p.x * cw.value},${p.y * ch.value}`).join(" ")
 );
 
-let drawStart: { x: number; y: number } | null = null;
 let rbLast: { x: number; y: number } | null = null;
 let panState: { startX: number; startY: number; px: number; py: number } | null = null;
 let dragState: {
@@ -1034,8 +1019,6 @@ function setTool(t: string) {
 }
 function resetDrawingState() {
   draftAnn.value = null;
-  preview.value = null;
-  drawStart = null;
   rbPreview.value = null;
   kpBoxDrafting.value = false;
   dragState = null;
@@ -1049,7 +1032,6 @@ function resetDrawingState() {
   kp.boxMode.value = false;
   kp.boxStart.value = null;
   kp.boxEnd.value = null;
-  det.drawing.value = false;
   ocr.reset();
 }
 
@@ -1466,11 +1448,7 @@ function onCanvasDown(e: MouseEvent) {
     if (created) commitCreated(created);
     return;
   }
-  if (currentTool.value === "box") {
-    det.onStart(p);
-    drawStart = p;
-    preview.value = { x: p.x, y: p.y, w: 0, h: 0 };
-  } else if (currentTool.value === "rotated_box") {
+  if (currentTool.value === "rotated_box") {
     rbLast = p;
     const created = rot.onStep(p);
     if (created && plugin.value.create(created)) {
@@ -1743,17 +1721,6 @@ function onMove(e: MouseEvent) {
     });
     return;
   }
-  if (currentTool.value === "box" && drawStart) {
-    const p = toImagePoint(e);
-    if (!p) return;
-    preview.value = {
-      x: Math.min(drawStart.x, p.x),
-      y: Math.min(drawStart.y, p.y),
-      w: Math.abs(p.x - drawStart.x),
-      h: Math.abs(p.y - drawStart.y),
-    };
-    return;
-  }
   if (currentTool.value === "rotated_box") {
     const p = toImagePoint(e);
     if (p) {
@@ -2005,19 +1972,6 @@ function onUp(e: MouseEvent) {
   if (tool && currentTool.value === tool.name) {
     const created = tool.up?.({ event: e });
     if (created) commitCreated(created);
-    return;
-  }
-  if (currentTool.value === "box" && drawStart) {
-    const p = preview.value;
-    const created = det.onMoveEnd(p ? { x: p.x + p.w, y: p.y + p.h } : ({ x: 0, y: 0 } as any));
-    preview.value = null;
-    drawStart = null;
-    if (created && plugin.value.create(created)) {
-      created.class_id = selectedClassId.value ?? created.class_id;
-      store.annotations.push(created);
-      store.markUnsaved();
-      pushHistory();
-    }
     return;
   }
   if (currentTool.value === "rotated_box") {
