@@ -145,6 +145,40 @@ export interface AnnotationInteraction {
   tagAnchor?(ann: Annotation): { x: number; y: number } | null;
 }
 
+/** 绘制运行上下文（壳在画布事件时传入） */
+export interface DrawContext {
+  /** 归一化图像坐标 */
+  point?: Point | null;
+  /** 原始鼠标事件 */
+  event: MouseEvent;
+  /** 当前任务类别（含 keypoint_names） */
+  classes?: any[];
+  /** 当前选中类别 id */
+  selectedClassId?: number | null;
+  /** 新增关键点的可见性（keypoint） */
+  visibility?: string;
+}
+
+/** 任务绘制工具运行时（阶段 C 下沉） */
+export interface PluginTool {
+  /** 工具名（= tools[0].name），壳据此判断绘制模式 */
+  name: string;
+  /** 绘制激活时挂载的临时预览组件（SVG 根，用 <g>） */
+  preview?: TaskCanvasRenderer;
+  /** 绘制状态（字段为 ref），供 preview 读取 */
+  state?: Record<string, any>;
+  /** 按下：返回合法标注则壳 push（如 rotated_box 第 3 步 / ocr 第 2 点） */
+  down?(ctx: DrawContext): Annotation | null;
+  /** 移动：更新预览 */
+  move?(ctx: DrawContext): void;
+  /** 抬起：返回合法标注则壳 push */
+  up?(ctx: DrawContext): Annotation | null;
+  /** 双击：闭合多边形 / 进入包围盒 / OCR 闭合，返回标注则壳 push */
+  dblclick?(ctx: DrawContext): Annotation | null;
+  /** 切换工具/换图/清空时重置绘制状态 */
+  reset?(): void;
+}
+
 export interface AnnotationTaskPlugin {
   name: string;
   label: string;
@@ -154,6 +188,8 @@ export interface AnnotationTaskPlugin {
   create(shape: Annotation): boolean;
   /** 标注级交互（阶段 B 下沉，默认无则走壳的默认实现） */
   interaction?: AnnotationInteraction;
+  /** 绘制工具运行时（阶段 C 下沉） */
+  tool?: PluginTool;
   /** @deprecated 旧拖拽扩展，逐步替换为 interaction */
   onDrag?(ctx: any, handle: string): void;
 }

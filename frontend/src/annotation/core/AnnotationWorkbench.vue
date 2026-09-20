@@ -66,6 +66,14 @@
             @handle-down="onHandleDown"
             @rotate-down="onRotateDown"
           />
+          <component
+            :is="plugin.tool.preview"
+            v-if="plugin.tool && currentTool === plugin.tool.name && plugin.tool.preview"
+            :state="plugin.tool.state"
+            :cw="cw"
+            :ch="ch"
+            :zoom="canvas.zoom.value"
+          />
           <line
             v-if="crossVisible"
             :x1="crosshair.x * cw"
@@ -513,6 +521,7 @@ const emit = defineEmits<{ (e: "open-history"): void }>();
 const canvasRef = ref<InstanceType<typeof AnnotationCanvas> | null>(null);
 const canvas = useAnnotationCanvas();
 const currentTool = ref("select");
+watch(currentTool, () => plugin.value.tool?.reset?.());
 const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
@@ -1031,6 +1040,7 @@ function resetDrawingState() {
   kpBoxDrafting.value = false;
   dragState = null;
   rbLast = null;
+  plugin.value.tool?.reset?.();
   seg.points.value = [];
   rot.step.value = 0;
   rot.pt1.value = null;
@@ -1060,6 +1070,7 @@ function onDocClick(e: MouseEvent) {
 }
 function onImgLoad(w: number, h: number) {
   imageLoaded.value = true;
+  plugin.value.tool?.reset?.();
   measureCanvas();
   if (!canvas.cw.value && w && h) canvas.setImageSize(w, h);
   if (!fittedForImage) {
@@ -1357,6 +1368,19 @@ function openHistory() {
 }
 
 // ==== 绘制/编辑（同阶段0-5a 逻辑） ====
+function commitCreated(created: Annotation | null): void {
+  if (!created || !plugin.value.create(created)) return;
+  created.class_id = selectedClassId.value ?? created.class_id;
+  if (created.type === "Ocr") {
+    pendingOcr = created;
+    ocrInput.value = "";
+    ocrInputVisible.value = true;
+    return;
+  }
+  store.annotations.push(created);
+  store.markUnsaved();
+  pushHistory();
+}
 function onDblClick(e: MouseEvent) {
   e.preventDefault();
   // 双击已有标注 → 打开编辑弹窗
@@ -1368,6 +1392,19 @@ function onDblClick(e: MouseEvent) {
       openEditDialog(ann);
       return;
     }
+  }
+  const tool = plugin.value.tool;
+  if (tool && currentTool.value === tool.name) {
+    const p = toImagePoint(e);
+    const created = tool.dblclick?.({
+      point: p ?? undefined,
+      event: e,
+      classes: taskClasses.value,
+      selectedClassId: selectedClassId.value,
+      visibility: pendingKpVisibility.value,
+    });
+    if (created) commitCreated(created);
+    return;
   }
   if (currentTool.value === "polygon") {
     const created = seg.closePolygon();
@@ -1415,6 +1452,18 @@ function onCanvasDown(e: MouseEvent) {
   }
   if (currentTool.value === "zoom") {
     boxZoom(e.altKey ? 0.8 : 1.25, e.clientX, e.clientY);
+    return;
+  }
+  const tool = plugin.value.tool;
+  if (tool && currentTool.value === tool.name) {
+    const created = tool.down?.({
+      point: p,
+      event: e,
+      classes: taskClasses.value,
+      selectedClassId: selectedClassId.value,
+      visibility: pendingKpVisibility.value,
+    });
+    if (created) commitCreated(created);
     return;
   }
   if (currentTool.value === "box") {
@@ -1683,6 +1732,17 @@ function onMove(e: MouseEvent) {
     cursorPos.x = Math.round(ip.x * (canvas.cw.value || 0));
     cursorPos.y = Math.round(ip.y * (canvas.ch.value || 0));
   }
+  const tool = plugin.value.tool;
+  if (tool && currentTool.value === tool.name) {
+    tool.move?.({
+      point: ip,
+      event: e,
+      classes: taskClasses.value,
+      selectedClassId: selectedClassId.value,
+      visibility: pendingKpVisibility.value,
+    });
+    return;
+  }
   if (currentTool.value === "box" && drawStart) {
     const p = toImagePoint(e);
     if (!p) return;
@@ -1936,9 +1996,15 @@ function onMove(e: MouseEvent) {
     }
   }
 }
-function onUp() {
+function onUp(e: MouseEvent) {
   if (panState) {
     panState = null;
+    return;
+  }
+  const tool = plugin.value.tool;
+  if (tool && currentTool.value === tool.name) {
+    const created = tool.up?.({ event: e });
+    if (created) commitCreated(created);
     return;
   }
   if (currentTool.value === "box" && drawStart) {
