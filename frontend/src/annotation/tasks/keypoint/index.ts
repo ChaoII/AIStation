@@ -1,5 +1,8 @@
+import { ref } from "vue";
 import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
 import KeypointCanvas from "./KeypointCanvas.vue";
+import KeypointPreview from "./KeypointPreview.vue";
+import { useKeypointTool } from "./useKeypointTool";
 
 export const keypointPlugin: AnnotationTaskPlugin = {
   name: "keypoint",
@@ -13,6 +16,49 @@ export const keypointPlugin: AnnotationTaskPlugin = {
     if (kps.length === 0) return false;
     return kps.every((k: any) => 0 <= k.x && k.x <= 1 && 0 <= k.y && k.y <= 1);
   },
+  tool: (() => {
+    const kp = useKeypointTool();
+    const boxDrafting = ref(false);
+    return {
+      name: "keypoint",
+      preview: KeypointPreview,
+      state: { pending: kp.pending, boxStart: kp.boxStart, boxEnd: kp.boxEnd, boxDrafting },
+      down(ctx) {
+        const p = ctx.point;
+        if (!p) return null;
+        if (kp.boxMode.value) {
+          kp.setBoxStart(p);
+          boxDrafting.value = true;
+          return null;
+        }
+        const kpNames =
+          ctx.classes?.find((c) => c.id === ctx.selectedClassId)?.keypoint_names || [];
+        kp.setNames(kpNames);
+        kp.addPoint(p, ctx.visibility ?? "Visible");
+        return null;
+      },
+      move(ctx) {
+        const p = ctx.point;
+        if (boxDrafting.value && p) kp.updateBox(p);
+      },
+      up() {
+        if (!boxDrafting.value) return null;
+        boxDrafting.value = false;
+        return kp.build();
+      },
+      dblclick() {
+        kp.beginBox();
+        return null;
+      },
+      reset() {
+        boxDrafting.value = false;
+        kp.pending.value = [];
+        kp.boxMode.value = false;
+        kp.boxStart.value = null;
+        kp.boxEnd.value = null;
+      },
+    };
+  })(),
   interaction: {
     move(ctx: DragContext): void {
       const { ann, orig, dx, dy } = ctx;

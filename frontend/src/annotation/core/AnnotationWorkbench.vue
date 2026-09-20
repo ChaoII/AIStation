@@ -96,27 +96,6 @@
             stroke-dasharray="3 3"
             class="cross-svg"
           />
-          <rect
-            v-if="kpBoxDrafting && kp.boxStart.value && kp.boxEnd.value"
-            :x="Math.min(kp.boxStart.value.x, kp.boxEnd.value.x) * cw"
-            :y="Math.min(kp.boxStart.value.y, kp.boxEnd.value.y) * ch"
-            :width="Math.abs(kp.boxEnd.value.x - kp.boxStart.value.x) * cw"
-            :height="Math.abs(kp.boxEnd.value.y - kp.boxStart.value.y) * ch"
-            fill="none"
-            stroke="#e6a23c"
-            stroke-width="1.5"
-            stroke-dasharray="4 3"
-          />
-          <circle
-            v-for="(pt, i) in currentTool === 'keypoint' ? kp.pending.value : []"
-            :key="'kp' + i"
-            :cx="pt.x * cw"
-            :cy="pt.y * ch"
-            r="4"
-            fill="none"
-            stroke="#e6a23c"
-            stroke-width="1.5"
-          />
         </AnnotationCanvas>
         <div class="ann-label-layer">
           <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
@@ -420,10 +399,9 @@ watch(
   },
   { immediate: true }
 );
-const kpBoxDrafting = ref(false);
-
 const crosshair = reactive({ x: 0, y: 0 });
 const pendingKpVisibility = ref("Visible");
+
 const cursorPos = reactive({ x: 0, y: 0 });
 const imageFilter = ref<"all" | "annotated" | "unannotated">("all");
 const filteredImages = computed(() => {
@@ -898,13 +876,8 @@ function setTool(t: string) {
 }
 function resetDrawingState() {
   draftAnn.value = null;
-  kpBoxDrafting.value = false;
   dragState = null;
   plugin.value.tool?.reset?.();
-  kp.pending.value = [];
-  kp.boxMode.value = false;
-  kp.boxStart.value = null;
-  kp.boxEnd.value = null;
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -1260,9 +1233,6 @@ function onDblClick(e: MouseEvent) {
     if (created) commitCreated(created);
     return;
   }
-  if (currentTool.value === "keypoint") {
-    kp.beginBox();
-  }
 }
 function onCanvasDown(e: MouseEvent) {
   e.preventDefault();
@@ -1304,17 +1274,6 @@ function onCanvasDown(e: MouseEvent) {
     });
     if (created) commitCreated(created);
     return;
-  }
-  if (currentTool.value === "keypoint") {
-    if (kp.boxMode.value) {
-      kp.setBoxStart(p);
-      kpBoxDrafting.value = true;
-    } else {
-      const kpNames =
-        taskClasses.value.find((c) => c.id === selectedClassId.value)?.keypoint_names || [];
-      kp.setNames(kpNames);
-      kp.addPoint(p, pendingKpVisibility.value);
-    }
   }
 }
 function confirmOcr() {
@@ -1556,11 +1515,6 @@ function onMove(e: MouseEvent) {
     });
     return;
   }
-  if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
-    const p = toImagePoint(e);
-    if (p) kp.updateBox(p);
-    return;
-  }
   if (dragState) {
     const o = dragState.orig;
     const ann = dragState.ann;
@@ -1771,17 +1725,6 @@ function onUp(e: MouseEvent) {
   if (tool && currentTool.value === tool.name) {
     const created = tool.up?.({ event: e });
     if (created) commitCreated(created);
-    return;
-  }
-  if (currentTool.value === "keypoint" && kpBoxDrafting.value) {
-    kpBoxDrafting.value = false;
-    const created = kp.build();
-    if (created && plugin.value.create(created)) {
-      created.class_id = selectedClassId.value ?? created.class_id;
-      store.annotations.push(created);
-      store.markUnsaved();
-      pushHistory();
-    }
     return;
   }
   if (dragState) {
