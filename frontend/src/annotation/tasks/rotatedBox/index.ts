@@ -45,6 +45,9 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
         }
       },
       reset() {
+        rot.step.value = 0;
+        rot.pt1.value = null;
+        rot.pt2.value = null;
         last.value = null;
         preview.value = null;
       },
