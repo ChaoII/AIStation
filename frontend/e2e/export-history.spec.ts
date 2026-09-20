@@ -12,9 +12,12 @@ test("数据集页可打开导出历史抽屉", async ({ page }) => {
   await page.goto("/#/annotation/dataset", { waitUntil: "domcontentloaded" });
   await expect(page.locator(".app-main .app-container").first()).toBeVisible({ timeout: 15_000 });
   await dismissTour(page);
-  // 固定列克隆层会拦截指针事件：直接派发原生 click 到绑定元素
-  const btn = page.locator(".el-table__body-wrapper button:has-text('导出历史')").first();
-  await btn.waitFor({ state: "visible", timeout: 15_000 });
-  await btn.evaluate((el) => (el as HTMLElement).click());
+  // 「导出历史」已收入行内「更多」下拉：先点第一行的「更多」，再选「导出历史」
+  const moreBtn = page.locator(".el-table__body-wrapper tr").first().getByRole("button", { name: "更多" });
+  await moreBtn.waitFor({ state: "visible", timeout: 15_000 });
+  await moreBtn.evaluate((el) => (el as HTMLElement).click());
+  const item = page.getByRole("menuitem", { name: "导出历史", exact: true }).first();
+  await item.waitFor({ state: "visible", timeout: 10_000 });
+  await item.evaluate((el) => (el as HTMLElement).click());
   await expect(page.locator(".el-drawer:visible")).toHaveCount(1);
 });

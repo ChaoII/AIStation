@@ -14,7 +14,9 @@
         <span class="task-name">{{ store.task?.name }}</span>
       </div>
       <div class="header-right">
-        <span v-if="props.collab" class="collab-online">在线 {{ props.collab.onlineUsers.value.length }}</span>
+        <span v-if="props.collab" class="collab-online">
+          在线 {{ props.collab.onlineUsers.value.length }}
+        </span>
         <span class="progress-text">{{ store.annotatedCount }}/{{ store.totalCount }}</span>
         <el-progress
           :percentage="store.progress"
@@ -90,8 +92,8 @@
             v-if="preview"
             :x="preview.x * cw"
             :y="preview.y * ch"
-            :width="(preview.w) * cw"
-            :height="(preview.h) * ch"
+            :width="preview.w * cw"
+            :height="preview.h * ch"
             fill="none"
             stroke="#3b82f6"
             stroke-width="1.5"
@@ -120,96 +122,110 @@
             stroke-width="1.5"
             stroke-dasharray="4 3"
           />
-        <polyline
-          v-if="currentTool === 'polygon' && seg.points.value.length"
-          :points="polyPts"
-          fill="none"
-          stroke="#3b82f6"
-          stroke-width="1.5"
-          stroke-dasharray="4 3"
-        />
-        <circle
-          v-for="(pt, i) in (currentTool === 'polygon' ? seg.points.value : [])"
-          :key="'pp' + i"
-          :cx="pt.x * cw"
-          :cy="pt.y * ch"
-          r="3"
-          fill="#fff"
-          stroke="#3b82f6"
-          stroke-width="1"
-        />
-        <circle
-          v-for="(pt, i) in (currentTool === 'keypoint' ? kp.pending.value : [])"
-          :key="'kp' + i"
-          :cx="pt.x * cw"
-          :cy="pt.y * ch"
-          r="4"
-          fill="none"
-          stroke="#e6a23c"
-          stroke-width="1.5"
-        />
-        <polyline
-          v-if="currentTool === 'ocr' && ocr.mode.value === 'quad' && ocr.quadPoints.value.length"
-          :points="ocrQuadPts"
-          fill="none"
-          stroke="#e6a23c"
-          stroke-width="1.5"
-          stroke-dasharray="4 3"
-        />
-        <circle
-          v-for="(pt, i) in (currentTool === 'ocr' && ocr.mode.value === 'quad' ? ocr.quadPoints.value : [])"
-          :key="'oq' + i"
-          :cx="pt.x * cw"
-          :cy="pt.y * ch"
-          r="3"
-          fill="#fff"
-          stroke="#e6a23c"
-          stroke-width="1"
-        />
-        <!-- 旋转框三步绘制引导 -->
-        <template v-if="currentTool === 'rotated_box' && rot.step.value > 0">
-          <line
-            v-if="rot.pt1.value && rbLast"
-            :x1="rot.pt1.value.x * cw"
-            :y1="rot.pt1.value.y * ch"
-            :x2="rbLast.x * cw"
-            :y2="rbLast.y * ch"
-            stroke="#f56c6c"
+          <polyline
+            v-if="currentTool === 'polygon' && seg.points.value.length"
+            :points="polyPts"
+            fill="none"
+            stroke="#3b82f6"
             stroke-width="1.5"
             stroke-dasharray="4 3"
           />
-          <line
-            v-if="rot.pt1.value && rot.pt2.value && rbLast"
-            :x1="rot.pt2.value.x * cw"
-            :y1="rot.pt2.value.y * ch"
-            :x2="rbLast.x * cw"
-            :y2="rbLast.y * ch"
-            stroke="#f56c6c"
+          <circle
+            v-for="(pt, i) in currentTool === 'polygon' ? seg.points.value : []"
+            :key="'pp' + i"
+            :cx="pt.x * cw"
+            :cy="pt.y * ch"
+            r="3"
+            fill="#fff"
+            stroke="#3b82f6"
             stroke-width="1"
-            stroke-dasharray="2 2"
           />
-          <circle v-if="rot.pt1.value" :cx="rot.pt1.value.x * cw" :cy="rot.pt1.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
-          <circle v-if="rot.pt2.value" :cx="rot.pt2.value.x * cw" :cy="rot.pt2.value.y * ch" r="4" fill="#fff" stroke="#f56c6c" stroke-width="1.5" />
-        </template>
-        <!-- 多边形首点提示 -->
-        <circle
-          v-if="currentTool === 'polygon' && seg.points.value.length"
-          :cx="seg.points.value[0].x * cw"
-          :cy="seg.points.value[0].y * ch"
-          r="4"
-          fill="none"
-          stroke="#3b82f6"
-          stroke-width="1.5"
-        />
+          <circle
+            v-for="(pt, i) in currentTool === 'keypoint' ? kp.pending.value : []"
+            :key="'kp' + i"
+            :cx="pt.x * cw"
+            :cy="pt.y * ch"
+            r="4"
+            fill="none"
+            stroke="#e6a23c"
+            stroke-width="1.5"
+          />
+          <polyline
+            v-if="currentTool === 'ocr' && ocr.mode.value === 'quad' && ocr.quadPoints.value.length"
+            :points="ocrQuadPts"
+            fill="none"
+            stroke="#e6a23c"
+            stroke-width="1.5"
+            stroke-dasharray="4 3"
+          />
+          <circle
+            v-for="(pt, i) in currentTool === 'ocr' && ocr.mode.value === 'quad'
+              ? ocr.quadPoints.value
+              : []"
+            :key="'oq' + i"
+            :cx="pt.x * cw"
+            :cy="pt.y * ch"
+            r="3"
+            fill="#fff"
+            stroke="#e6a23c"
+            stroke-width="1"
+          />
+          <!-- 旋转框三步绘制引导 -->
+          <template v-if="currentTool === 'rotated_box' && rot.step.value > 0">
+            <line
+              v-if="rot.pt1.value && rbLast"
+              :x1="rot.pt1.value.x * cw"
+              :y1="rot.pt1.value.y * ch"
+              :x2="rbLast.x * cw"
+              :y2="rbLast.y * ch"
+              stroke="#f56c6c"
+              stroke-width="1.5"
+              stroke-dasharray="4 3"
+            />
+            <line
+              v-if="rot.pt1.value && rot.pt2.value && rbLast"
+              :x1="rot.pt2.value.x * cw"
+              :y1="rot.pt2.value.y * ch"
+              :x2="rbLast.x * cw"
+              :y2="rbLast.y * ch"
+              stroke="#f56c6c"
+              stroke-width="1"
+              stroke-dasharray="2 2"
+            />
+            <circle
+              v-if="rot.pt1.value"
+              :cx="rot.pt1.value.x * cw"
+              :cy="rot.pt1.value.y * ch"
+              r="4"
+              fill="#fff"
+              stroke="#f56c6c"
+              stroke-width="1.5"
+            />
+            <circle
+              v-if="rot.pt2.value"
+              :cx="rot.pt2.value.x * cw"
+              :cy="rot.pt2.value.y * ch"
+              r="4"
+              fill="#fff"
+              stroke="#f56c6c"
+              stroke-width="1.5"
+            />
+          </template>
+          <!-- 多边形首点提示 -->
+          <circle
+            v-if="currentTool === 'polygon' && seg.points.value.length"
+            :cx="seg.points.value[0].x * cw"
+            :cy="seg.points.value[0].y * ch"
+            r="4"
+            fill="none"
+            stroke="#3b82f6"
+            stroke-width="1.5"
+          />
         </AnnotationCanvas>
         <div class="ann-label-layer">
-          <div
-            v-for="a in displayAnnotations"
-            v-if="a.type !== 'Classification'"
-            :key="a.id"
-            class="ann-tag"
-            :style="tagStyle(a)"
-          >{{ clsName(a) }}</div>
+          <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
+            {{ clsName(a) }}
+          </div>
         </div>
       </main>
       <AnnotationRightPanel
@@ -273,11 +289,26 @@
       class="ctx-menu"
       :style="{ left: annMenu.x + 'px', top: annMenu.y + 'px' }"
     >
-      <div class="ctx-item" @click.stop="menuEdit"><el-icon :size="14"><Edit /></el-icon><span>编辑标注</span></div>
-      <div class="ctx-item" @click.stop="menuCopy"><el-icon :size="14"><CopyDocument /></el-icon><span>复制标注</span></div>
-      <div class="ctx-item" @click.stop="menuLayerTop"><el-icon :size="14"><ArrowUp /></el-icon><span>置顶</span></div>
-      <div class="ctx-item" @click.stop="menuLayerBottom"><el-icon :size="14"><ArrowDown /></el-icon><span>置底</span></div>
-      <div class="ctx-item ctx-danger" @click.stop="menuDelete"><el-icon :size="14"><Delete /></el-icon><span>删除标注</span></div>
+      <div class="ctx-item" @click.stop="menuEdit">
+        <el-icon :size="14"><Edit /></el-icon>
+        <span>编辑标注</span>
+      </div>
+      <div class="ctx-item" @click.stop="menuCopy">
+        <el-icon :size="14"><CopyDocument /></el-icon>
+        <span>复制标注</span>
+      </div>
+      <div class="ctx-item" @click.stop="menuLayerTop">
+        <el-icon :size="14"><ArrowUp /></el-icon>
+        <span>置顶</span>
+      </div>
+      <div class="ctx-item" @click.stop="menuLayerBottom">
+        <el-icon :size="14"><ArrowDown /></el-icon>
+        <span>置底</span>
+      </div>
+      <div class="ctx-item ctx-danger" @click.stop="menuDelete">
+        <el-icon :size="14"><Delete /></el-icon>
+        <span>删除标注</span>
+      </div>
     </div>
 
     <div
@@ -294,18 +325,43 @@
       </div>
       <el-form label-width="72px">
         <el-form-item label="类别">
-          <el-select v-model="editForm.class_id" size="small" style="width: 100%" @change="editClassChange">
+          <el-select
+            v-model="editForm.class_id"
+            size="small"
+            style="width: 100%"
+            @change="editClassChange"
+          >
             <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="editForm.ann?.type === 'Ocr'" label="OCR文本">
-          <el-input v-model="editForm.text" size="small" placeholder="编辑OCR文本" @change="editTextChange" />
+          <el-input
+            v-model="editForm.text"
+            size="small"
+            placeholder="编辑OCR文本"
+            @change="editTextChange"
+          />
         </el-form-item>
         <el-form-item v-if="editForm.ann?.type === 'Keypoint'" label="关键点">
-          <div style="width:100%">
-            <div v-for="(kp, i) in editForm.keypoints" :key="i" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-              <el-input v-model="kp.name" size="small" placeholder="名称" style="flex:1" @change="editKpChange" />
-              <el-select v-model="kp.visibility" size="small" style="width:110px" @change="editKpChange">
+          <div style="width: 100%">
+            <div
+              v-for="(kp, i) in editForm.keypoints"
+              :key="i"
+              style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px"
+            >
+              <el-input
+                v-model="kp.name"
+                size="small"
+                placeholder="名称"
+                style="flex: 1"
+                @change="editKpChange"
+              />
+              <el-select
+                v-model="kp.visibility"
+                size="small"
+                style="width: 110px"
+                @change="editKpChange"
+              >
                 <el-option v-for="v in KP_VISIBILITY" :key="v" :label="v" :value="v" />
               </el-select>
             </div>
@@ -317,13 +373,18 @@
         <el-button size="small" type="danger" @click="editDelete">删除该标注</el-button>
       </div>
     </div>
-    <el-dialog v-model="showClassModal" :title="editingClassId !== null ? '编辑类别' : '添加类别'" width="400px" append-to-body>
+    <el-dialog
+      v-model="showClassModal"
+      :title="editingClassId !== null ? '编辑类别' : '添加类别'"
+      width="400px"
+      append-to-body
+    >
       <el-form :model="clsForm" label-width="60px">
         <el-form-item label="名称">
           <el-input v-model="clsForm.name" placeholder="类别名称" />
         </el-form-item>
         <el-form-item label="颜色">
-          <div style="width:100%">
+          <div style="width: 100%">
             <div class="preset-palette">
               <span
                 v-for="col in PRESET_COLORS"
@@ -338,29 +399,56 @@
           </div>
         </el-form-item>
         <el-form-item v-if="plugin.name === 'keypoint'" label="关键点">
-          <div style="width:100%">
+          <div style="width: 100%">
             <div
               v-for="(kp, i) in clsForm.kpNames"
               :key="i"
-              style="display:flex;gap:6px;align-items:center;margin-bottom:4px"
+              style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px"
             >
               <el-input v-model="clsForm.kpNames[i]" size="small" placeholder="关键点名称" />
               <el-color-picker v-model="clsForm.kpColors[i]" size="small" />
-              <el-button text size="small" type="danger" @click="clsForm.kpNames.splice(i,1); clsForm.kpColors.splice(i,1)">×</el-button>
+              <el-button
+                text
+                size="small"
+                type="danger"
+                @click="
+                  clsForm.kpNames.splice(i, 1);
+                  clsForm.kpColors.splice(i, 1);
+                "
+              >
+                ×
+              </el-button>
             </div>
-            <el-button size="small" @click="clsForm.kpNames.push(''); clsForm.kpColors.push('#409eff')">+ 关键点</el-button>
+            <el-button
+              size="small"
+              @click="
+                clsForm.kpNames.push('');
+                clsForm.kpColors.push('#409eff');
+              "
+            >
+              + 关键点
+            </el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showClassModal = false">取消</el-button>
-        <el-button type="primary" @click="addClass">{{ editingClassId !== null ? '保存' : '添加' }}</el-button>
+        <el-button type="primary" @click="addClass">
+          {{ editingClassId !== null ? "保存" : "添加" }}
+        </el-button>
       </template>
     </el-dialog>
     <el-dialog v-model="ocrInputVisible" title="输入 OCR 文本" width="380px" append-to-body>
       <el-input v-model="ocrInput" placeholder="OCR 文本" @keydown.enter="confirmOcr" />
       <template #footer>
-        <el-button @click="ocrInputVisible = false; pendingOcr = null">取消</el-button>
+        <el-button
+          @click="
+            ocrInputVisible = false;
+            pendingOcr = null;
+          "
+        >
+          取消
+        </el-button>
         <el-button type="primary" @click="confirmOcr">确定</el-button>
       </template>
     </el-dialog>
@@ -376,18 +464,35 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, shallowRef, triggerRef, reactive, onMounted, onBeforeUnmount, watch } from "vue";
+import {
+  ref,
+  computed,
+  shallowRef,
+  triggerRef,
+  reactive,
+  onMounted,
+  onBeforeUnmount,
+  watch,
+} from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
-import { Select, FullScreen, ZoomIn, Close, Edit, CopyDocument, ArrowUp, ArrowDown, Delete } from "@element-plus/icons-vue";
+import {
+  Select,
+  FullScreen,
+  ZoomIn,
+  Close,
+  Edit,
+  CopyDocument,
+  ArrowUp,
+  ArrowDown,
+  Delete,
+} from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import AnnotationToolbar from "./AnnotationToolbar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
-import {
-  useDetectionTool,
-} from "../tasks/detection/useDetectionTool";
+import { useDetectionTool } from "../tasks/detection/useDetectionTool";
 import { useRotatedTool, rotatedBoxFromEdgeAndPoint } from "../tasks/rotatedBox/useRotatedTool";
 import { useSegmentTool } from "../tasks/segmentation/useSegmentTool";
 import { useKeypointTool } from "../tasks/keypoint/useKeypointTool";
@@ -427,16 +532,24 @@ watch(
   { immediate: true }
 );
 const ocr = useOcrTool();
-const rbPreview = ref<{ cx: number; cy: number; width: number; height: number; angle: number } | null>(null);
+const rbPreview = ref<{
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+  angle: number;
+} | null>(null);
 const kpBoxDrafting = ref(false);
-const showCrosshair = ref(false);
+
 const crosshair = reactive({ x: 0, y: 0 });
 const pendingKpVisibility = ref("Visible");
 const cursorPos = reactive({ x: 0, y: 0 });
 const imageFilter = ref<"all" | "annotated" | "unannotated">("all");
 const filteredImages = computed(() => {
   if (imageFilter.value === "all") return store.images;
-  return store.images.filter((i) => (imageFilter.value === "annotated") === (i.status === "annotated"));
+  return store.images.filter(
+    (i) => (imageFilter.value === "annotated") === (i.status === "annotated")
+  );
 });
 const showHelpModal = ref(false);
 const spaceHeld = ref(false);
@@ -451,7 +564,8 @@ const shortcutList = computed(() => {
     { keys: "←→ / a d", desc: "上一张 / 下一张" },
   ];
   const extra: any[] = [];
-  if (plugin.value.name === "keypoint") extra.push({ keys: "0/1/2", desc: "关键点可见性 Hidden/Occluded/Visible" });
+  if (plugin.value.name === "keypoint")
+    extra.push({ keys: "0/1/2", desc: "关键点可见性 Hidden/Occluded/Visible" });
   if (plugin.value.name === "ocr") extra.push({ keys: "t", desc: "矩形 / 四边形模式切换" });
   return [...base, ...extra];
 });
@@ -467,15 +581,25 @@ function loadSettings(): any {
     return {};
   }
 }
-const annSettings = reactive({ labelFontSize: 6, strokeWidth: 1.5, selStrokeWidth: 2, ...loadSettings() });fontSize.value = annSettings.labelFontSize;
+const annSettings = reactive({
+  labelFontSize: 6,
+  strokeWidth: 1.5,
+  selStrokeWidth: 2,
+  ...loadSettings(),
+});
+fontSize.value = annSettings.labelFontSize;
 strokeW.value = annSettings.strokeWidth;
 selStrokeW.value = annSettings.selStrokeWidth;
-watch(annSettings, () => {
-  fontSize.value = annSettings.labelFontSize;
-  strokeW.value = annSettings.strokeWidth;
-  selStrokeW.value = annSettings.selStrokeWidth;
-  localStorage.setItem(settingsKey, JSON.stringify(annSettings));
-}, { deep: true });
+watch(
+  annSettings,
+  () => {
+    fontSize.value = annSettings.labelFontSize;
+    strokeW.value = annSettings.strokeWidth;
+    selStrokeW.value = annSettings.selStrokeWidth;
+    localStorage.setItem(settingsKey, JSON.stringify(annSettings));
+  },
+  { deep: true }
+);
 // 协作：锁定被拒提示 + 远程标注同步刷新（顶层 watch，随组件卸载自动清理）
 watch(
   () => props.collab?.lockDeniedTick?.value ?? 0,
@@ -509,7 +633,9 @@ const dw = computed(() => canvas.dw.value);
 const dh = computed(() => canvas.dh.value);
 const toolCursor = computed(() => {
   if (spaceHeld.value) return "grab";
-  return currentTool.value === "box" || currentTool.value === "rotated_box" ? "crosshair" : "default";
+  return currentTool.value === "box" || currentTool.value === "rotated_box"
+    ? "crosshair"
+    : "default";
 });
 const crossVisible = computed(() =>
   ["box", "rotated_box", "polygon", "keypoint", "ocr"].includes(currentTool.value)
@@ -528,14 +654,20 @@ const ocrQuadPts = computed(() =>
 let drawStart: { x: number; y: number } | null = null;
 let rbLast: { x: number; y: number } | null = null;
 let panState: { startX: number; startY: number; px: number; py: number } | null = null;
-let dragState:
-  | { type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex" | "kp-move" | "kp-resize"; ann: Annotation; handle: string; startX: number; startY: number; orig: Annotation }
-  | null = null;
+let dragState: {
+  type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex" | "kp-move" | "kp-resize";
+  ann: Annotation;
+  handle: string;
+  startX: number;
+  startY: number;
+  orig: Annotation;
+} | null = null;
 const draftAnn = shallowRef<Annotation | null>(null);
 const displayAnnotations = computed<Annotation[]>(() => {
   const d = draftAnn.value;
-  if (!d) return store.annotations;
-  return store.annotations.map((a) => (a.id === d.id ? d : a));
+  const list = d ? store.annotations.map((a) => (a.id === d.id ? d : a)) : store.annotations;
+  // 分类无几何，标签由 ClassificationCanvas 渲染，跳过 HTML 标签层避免左上角重复
+  return list.filter((a) => a.type !== "Classification");
 });
 function draftOf(ann: Annotation): Annotation {
   const d = JSON.parse(JSON.stringify(ann));
@@ -556,7 +688,9 @@ function addToCache(id: number, url: string) {
 }
 function warmFull(id: number, url: string) {
   const img = new Image();
-  img.onload = () => { if (img.decode) img.decode().catch(() => {}); };
+  img.onload = () => {
+    if (img.decode) img.decode().catch(() => {});
+  };
   img.onerror = () => {};
   img.src = url;
 }
@@ -571,7 +705,11 @@ function preloadFull(fullUrl: string, imageId: number, myToken: number) {
     if (imgUrl.value !== fullUrl) imgUrl.value = fullUrl;
   };
   img.onload = () => {
-    if (!img.decode) { cache(); swap(); return; }
+    if (!img.decode) {
+      cache();
+      swap();
+      return;
+    }
     img.decode().then(cache).then(swap).catch(cache);
   };
   img.onerror = () => {};
@@ -584,12 +722,18 @@ function prefetchNeighbors() {
   if (idx < store.images.length - 1) targets.push(store.images[idx + 1]?.id);
   for (const id of targets) {
     if (!id) continue;
-    if (fullUrlCache.has(id)) { warmFull(id, fullUrlCache.get(id)!); continue; }
+    if (fullUrlCache.has(id)) {
+      warmFull(id, fullUrlCache.get(id)!);
+      continue;
+    }
     props.api
       .getPresignedUrl(id, store.taskId)
       .then((r: any) => {
         const u = r?.data?.data?.url;
-        if (u) { addToCache(id, u); warmFull(id, u); }
+        if (u) {
+          addToCache(id, u);
+          warmFull(id, u);
+        }
       })
       .catch(() => {});
   }
@@ -704,7 +848,11 @@ function pasteCopied() {
   } else if (copy.points) {
     copy.points = copy.points.map((p: any) => ({ x: clamp(p.x + 0.01), y: clamp(p.y + 0.01) }));
   } else if (copy.keypoints) {
-    copy.keypoints = copy.keypoints.map((k: any) => ({ ...k, x: clamp(k.x + 0.01), y: clamp(k.y + 0.01) }));
+    copy.keypoints = copy.keypoints.map((k: any) => ({
+      ...k,
+      x: clamp(k.x + 0.01),
+      y: clamp(k.y + 0.01),
+    }));
   }
   store.annotations.push(copy);
   store.selectedAnnotationId = copy.id;
@@ -723,10 +871,25 @@ watch(
 const showClassModal = ref(false);
 const editingClassId = ref<number | null>(null);
 const PRESET_COLORS = [
-  "#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#909399", "#9b59b6",
-  "#00bcd4", "#ff9800", "#795548", "#607d8b", "#e91e63", "#8bc34a",
+  "#409eff",
+  "#67c23a",
+  "#e6a23c",
+  "#f56c6c",
+  "#909399",
+  "#9b59b6",
+  "#00bcd4",
+  "#ff9800",
+  "#795548",
+  "#607d8b",
+  "#e91e63",
+  "#8bc34a",
 ];
-const clsForm = reactive({ name: "", color: "#409eff", kpNames: [] as string[], kpColors: [] as string[] });
+const clsForm = reactive({
+  name: "",
+  color: "#409eff",
+  kpNames: [] as string[],
+  kpColors: [] as string[],
+});
 
 function openAddClass() {
   editingClassId.value = null;
@@ -762,9 +925,7 @@ async function addClass() {
     }
   } else {
     const id =
-      taskClasses.value.length > 0
-        ? Math.max(...taskClasses.value.map((c) => c.id)) + 1
-        : 0;
+      taskClasses.value.length > 0 ? Math.max(...taskClasses.value.map((c) => c.id)) + 1 : 0;
     taskClasses.value.push({
       id,
       name: clsForm.name.trim(),
@@ -889,7 +1050,11 @@ function onDocClick(e: MouseEvent) {
   // 点击编辑气泡外部 → 自动关闭气泡
   if (editAnnVisible.value && !(e.target as Element)?.closest?.(".edit-bubble")) {
     // 若点击的是右键菜单/气泡自身则忽略
-    if ((e.target as Element)?.closest?.(".edit-bubble") || (e.target as Element)?.closest?.(".ctx-menu")) return;
+    if (
+      (e.target as Element)?.closest?.(".edit-bubble") ||
+      (e.target as Element)?.closest?.(".ctx-menu")
+    )
+      return;
     editAnnVisible.value = false;
   }
 }
@@ -995,7 +1160,10 @@ async function loadCurrentImage(imageId: number) {
       const r = await props.api.getPresignedUrl(imageId, store.taskId);
       if (myToken !== loadImgToken) return;
       const fu = r?.data?.data?.url || "";
-      if (fu) { addToCache(imageId, fu); imgUrl.value = fu; }
+      if (fu) {
+        addToCache(imageId, fu);
+        imgUrl.value = fu;
+      }
     } else {
       // 有缩略图（已显示）：后台请求全图并渐进替换
       props.api
@@ -1228,11 +1396,21 @@ function onCanvasDown(e: MouseEvent) {
   store.selectedAnnotationId = "";
   // 按住空格 = 平移（类似 PS 抓手），无需切到平移工具
   if (spaceHeld.value) {
-    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      px: canvas.panX.value,
+      py: canvas.panY.value,
+    };
     return;
   }
   if (currentTool.value === "pan") {
-    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      px: canvas.panX.value,
+      py: canvas.panY.value,
+    };
     return;
   }
   if (currentTool.value === "zoom") {
@@ -1259,7 +1437,8 @@ function onCanvasDown(e: MouseEvent) {
       kp.setBoxStart(p);
       kpBoxDrafting.value = true;
     } else {
-      const kpNames = taskClasses.value.find((c) => c.id === selectedClassId.value)?.keypoint_names || [];
+      const kpNames =
+        taskClasses.value.find((c) => c.id === selectedClassId.value)?.keypoint_names || [];
       kp.setNames(kpNames);
       kp.addPoint(p, pendingKpVisibility.value);
     }
@@ -1294,25 +1473,56 @@ function confirmOcr() {
 function onAnnDown(e: MouseEvent, ann: Annotation) {
   if (e.button !== 0 || lockedByOther.value) return;
   if (spaceHeld.value) {
-    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      px: canvas.panX.value,
+      py: canvas.panY.value,
+    };
     return;
   }
   store.selectedAnnotationId = ann.id;
-  dragState = { type: "move", ann: draftOf(ann), handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+  dragState = {
+    type: "move",
+    ann: draftOf(ann),
+    handle: "",
+    startX: e.clientX,
+    startY: e.clientY,
+    orig: JSON.parse(JSON.stringify(ann)),
+  };
 }
 function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
   if (e.button !== 0 || lockedByOther.value) return;
   if (spaceHeld.value) {
-    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      px: canvas.panX.value,
+      py: canvas.panY.value,
+    };
     return;
   }
   store.selectedAnnotationId = ann.id;
   if (handle.startsWith("kpb-")) {
     const h = handle.replace("kpb-", "");
     if (h === "move") {
-      dragState = { type: "kp-move", ann: draftOf(ann), handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+      dragState = {
+        type: "kp-move",
+        ann: draftOf(ann),
+        handle: "",
+        startX: e.clientX,
+        startY: e.clientY,
+        orig: JSON.parse(JSON.stringify(ann)),
+      };
     } else {
-      dragState = { type: "kp-resize", ann: draftOf(ann), handle: h, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+      dragState = {
+        type: "kp-resize",
+        ann: draftOf(ann),
+        handle: h,
+        startX: e.clientX,
+        startY: e.clientY,
+        orig: JSON.parse(JSON.stringify(ann)),
+      };
     }
     return;
   }
@@ -1324,7 +1534,14 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       pushHistory();
       return;
     }
-    dragState = { type: "kp-vertex", ann: draftOf(ann), handle: idx, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    dragState = {
+      type: "kp-vertex",
+      ann: draftOf(ann),
+      handle: idx,
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: JSON.parse(JSON.stringify(ann)),
+    };
     return;
   }
   if (handle.startsWith("ocr-")) {
@@ -1337,13 +1554,21 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       }
       return;
     }
-    dragState = { type: "poly-vertex", ann: draftOf(ann), handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    dragState = {
+      type: "poly-vertex",
+      ann: draftOf(ann),
+      handle: String(idx),
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: JSON.parse(JSON.stringify(ann)),
+    };
     return;
   }
   if (handle.startsWith("poly-ins-")) {
     const idx = parseInt(handle.replace("poly-ins-", ""), 10);
     if (!isNaN(idx) && ann.points?.length) {
-      const a = ann.points[idx], b = ann.points[(idx + 1) % ann.points.length];
+      const a = ann.points[idx],
+        b = ann.points[(idx + 1) % ann.points.length];
       ann.points.splice(idx + 1, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
       store.markUnsaved();
     }
@@ -1359,19 +1584,45 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       }
       return;
     }
-    dragState = { type: "poly-vertex", ann: draftOf(ann), handle: String(idx), startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+    dragState = {
+      type: "poly-vertex",
+      ann: draftOf(ann),
+      handle: String(idx),
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: JSON.parse(JSON.stringify(ann)),
+    };
     return;
   }
-  dragState = { type: "resize", ann: draftOf(ann), handle, startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+  dragState = {
+    type: "resize",
+    ann: draftOf(ann),
+    handle,
+    startX: e.clientX,
+    startY: e.clientY,
+    orig: JSON.parse(JSON.stringify(ann)),
+  };
 }
 function onRotateDown(e: MouseEvent, ann: Annotation) {
   if (e.button !== 0 || lockedByOther.value) return;
   if (spaceHeld.value) {
-    panState = { startX: e.clientX, startY: e.clientY, px: canvas.panX.value, py: canvas.panY.value };
+    panState = {
+      startX: e.clientX,
+      startY: e.clientY,
+      px: canvas.panX.value,
+      py: canvas.panY.value,
+    };
     return;
   }
   store.selectedAnnotationId = ann.id;
-  dragState = { type: "rotate", ann: draftOf(ann), handle: "", startX: e.clientX, startY: e.clientY, orig: JSON.parse(JSON.stringify(ann)) };
+  dragState = {
+    type: "rotate",
+    ann: draftOf(ann),
+    handle: "",
+    startX: e.clientX,
+    startY: e.clientY,
+    orig: JSON.parse(JSON.stringify(ann)),
+  };
 }
 let pendingMove: MouseEvent | null = null;
 let moveRafId = 0;
@@ -1394,7 +1645,10 @@ function onMove(e: MouseEvent) {
     crosshair.y = crossPt.y;
   }
   if (panState) {
-    canvas.setPan(panState.px + (e.clientX - panState.startX), panState.py + (e.clientY - panState.startY));
+    canvas.setPan(
+      panState.px + (e.clientX - panState.startX),
+      panState.py + (e.clientY - panState.startY)
+    );
     return;
   }
   const ip = toImagePoint(e);
@@ -1405,7 +1659,12 @@ function onMove(e: MouseEvent) {
   if (currentTool.value === "box" && drawStart) {
     const p = toImagePoint(e);
     if (!p) return;
-    preview.value = { x: Math.min(drawStart.x, p.x), y: Math.min(drawStart.y, p.y), w: Math.abs(p.x - drawStart.x), h: Math.abs(p.y - drawStart.y) };
+    preview.value = {
+      x: Math.min(drawStart.x, p.x),
+      y: Math.min(drawStart.y, p.y),
+      w: Math.abs(p.x - drawStart.x),
+      h: Math.abs(p.y - drawStart.y),
+    };
     return;
   }
   if (currentTool.value === "rotated_box") {
@@ -1430,14 +1689,19 @@ function onMove(e: MouseEvent) {
     const dx = (e.clientX - dragState.startX) / dw.value;
     const dy = (e.clientY - dragState.startY) / dh.value;
     const nc = (v: number) => Math.max(0, Math.min(1, v));
-    const movePoints = (pts: any[]) => pts.map((p: any) => ({ ...p, x: nc(p.x + dx), y: nc(p.y + dy) }));
+    const movePoints = (pts: any[]) =>
+      pts.map((p: any) => ({ ...p, x: nc(p.x + dx), y: nc(p.y + dy) }));
 
     if (dragState.type === "kp-move") {
       if (ann.bounding_box) {
         ann.bounding_box.cx = nc(o.bounding_box.cx + dx);
         ann.bounding_box.cy = nc(o.bounding_box.cy + dy);
       }
-      ann.keypoints = (o.keypoints || []).map((k: any) => ({ ...k, x: nc(k.x + dx), y: nc(k.y + dy) }));
+      ann.keypoints = (o.keypoints || []).map((k: any) => ({
+        ...k,
+        x: nc(k.x + dx),
+        y: nc(k.y + dy),
+      }));
       triggerRef(draftAnn);
       return;
     }
@@ -1448,12 +1712,18 @@ function onMove(e: MouseEvent) {
     }
     if (dragState.type === "kp-vertex") {
       const p = toImagePoint(e);
-      if (p) { kp.moveKeypoint(dragState.ann, Number(dragState.handle), p); triggerRef(draftAnn); }
+      if (p) {
+        kp.moveKeypoint(dragState.ann, Number(dragState.handle), p);
+        triggerRef(draftAnn);
+      }
       return;
     }
     if (dragState.type === "poly-vertex") {
       const p = toImagePoint(e);
-      if (p) { seg.moveVertex(dragState.ann, Number(dragState.handle), p); triggerRef(draftAnn); }
+      if (p) {
+        seg.moveVertex(dragState.ann, Number(dragState.handle), p);
+        triggerRef(draftAnn);
+      }
       return;
     }
     if (dragState.type === "rotate") {
@@ -1461,16 +1731,27 @@ function onMove(e: MouseEvent) {
       const off = canvas.imageOffset(r.width, r.height);
       const centerX = r.left + off.left + dragState.ann.cx * dw.value;
       const centerY = r.top + off.top + dragState.ann.cy * dh.value;
-      rot.onRotate(dragState.ann, centerX, centerY, dragState.startX, dragState.startY, e.clientX, e.clientY);
+      rot.onRotate(
+        dragState.ann,
+        centerX,
+        centerY,
+        dragState.startX,
+        dragState.startY,
+        e.clientX,
+        e.clientY
+      );
       triggerRef(draftAnn);
       return;
     }
     if (dragState.type === "move") {
       if (ann.type === "AxisAlignedBox") {
-        ann.x1 = nc(o.x1 + dx); ann.x2 = nc(o.x2 + dx);
-        ann.y1 = nc(o.y1 + dy); ann.y2 = nc(o.y2 + dy);
+        ann.x1 = nc(o.x1 + dx);
+        ann.x2 = nc(o.x2 + dx);
+        ann.y1 = nc(o.y1 + dy);
+        ann.y2 = nc(o.y2 + dy);
       } else if (ann.type === "RotatedBox") {
-        ann.cx = nc(o.cx + dx); ann.cy = nc(o.cy + dy);
+        ann.cx = nc(o.cx + dx);
+        ann.cy = nc(o.cy + dy);
       } else if (ann.type === "Polygon") {
         ann.points = movePoints(o.points);
       } else if (ann.type === "Ocr") {
@@ -1482,21 +1763,36 @@ function onMove(e: MouseEvent) {
     if (dragState.type === "resize") {
       if (ann.type === "RotatedBox") {
         const p = toImagePoint(e);
-        if (p) rot.onDragResize(ann, o, dragState.handle, p, cw.value, ch.value, ch.value / cw.value);
+        if (p)
+          rot.onDragResize(ann, o, dragState.handle, p, cw.value, ch.value, ch.value / cw.value);
       } else if (ann.type === "AxisAlignedBox") {
         if (dragState.handle.includes("l")) ann.x1 = nc(Math.min(o.x2 - 0.01, o.x1 + dx));
         if (dragState.handle.includes("r")) ann.x2 = nc(Math.max(o.x1 + 0.01, o.x2 + dx));
         if (dragState.handle.includes("t")) ann.y1 = nc(Math.min(o.y2 - 0.01, o.y1 + dy));
         if (dragState.handle.includes("b")) ann.y2 = nc(Math.max(o.y1 + 0.01, o.y2 + dy));
       } else if (ann.type === "Ocr") {
-        const ox = { x1: Math.min(...o.points.map((p: any) => p.x)), x2: Math.max(...o.points.map((p: any) => p.x)) };
-        const oy = { y1: Math.min(...o.points.map((p: any) => p.y)), y2: Math.max(...o.points.map((p: any) => p.y)) };
-        let x1 = ox.x1, y1 = oy.y1, x2 = ox.x2, y2 = oy.y2;
+        const ox = {
+          x1: Math.min(...o.points.map((p: any) => p.x)),
+          x2: Math.max(...o.points.map((p: any) => p.x)),
+        };
+        const oy = {
+          y1: Math.min(...o.points.map((p: any) => p.y)),
+          y2: Math.max(...o.points.map((p: any) => p.y)),
+        };
+        let x1 = ox.x1,
+          y1 = oy.y1,
+          x2 = ox.x2,
+          y2 = oy.y2;
         if (dragState.handle.includes("l")) x1 = nc(Math.min(x2 - 0.01, x1 + dx));
         if (dragState.handle.includes("r")) x2 = nc(Math.max(x1 + 0.01, x2 + dx));
         if (dragState.handle.includes("t")) y1 = nc(Math.min(y2 - 0.01, y1 + dy));
         if (dragState.handle.includes("b")) y2 = nc(Math.max(y1 + 0.01, y2 + dy));
-        ann.points = [{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 }];
+        ann.points = [
+          { x: x1, y: y1 },
+          { x: x2, y: y1 },
+          { x: x2, y: y2 },
+          { x: x1, y: y2 },
+        ];
       }
       triggerRef(draftAnn);
       return;
@@ -1571,11 +1867,18 @@ function annScreenPos(ann: any) {
   if (!dw.value || !dh.value) return { x: 0, y: 0 };
   const r = canvasR();
   const off = canvas.imageOffset(r.width, r.height);
-  let nx = 0.5, ny = 0.5;
-  if (ann.x1 !== undefined) { nx = (ann.x1 + ann.x2) / 2; ny = (ann.y1 + ann.y2) / 2; }
-  else if (ann.cx !== undefined) { nx = ann.cx; ny = ann.cy; }
-  else if (ann.bounding_box) { nx = ann.bounding_box.cx; ny = ann.bounding_box.cy; }
-  else if (Array.isArray(ann.points) && ann.points.length) {
+  let nx = 0.5,
+    ny = 0.5;
+  if (ann.x1 !== undefined) {
+    nx = (ann.x1 + ann.x2) / 2;
+    ny = (ann.y1 + ann.y2) / 2;
+  } else if (ann.cx !== undefined) {
+    nx = ann.cx;
+    ny = ann.cy;
+  } else if (ann.bounding_box) {
+    nx = ann.bounding_box.cx;
+    ny = ann.bounding_box.cy;
+  } else if (Array.isArray(ann.points) && ann.points.length) {
     nx = ann.points.reduce((s: number, p: any) => s + p.x, 0) / ann.points.length;
     ny = ann.points.reduce((s: number, p: any) => s + p.y, 0) / ann.points.length;
   }
@@ -1584,26 +1887,36 @@ function annScreenPos(ann: any) {
 
 // HTML 标签覆盖层：用固定屏幕像素字号，不随 zoom 缩放，背景 span 自动贴合文字
 function tagStyle(ann: any): any {
-  let lx = 0, ty = 0;
+  let lx = 0,
+    ty = 0;
   // 标签层 .ann-label-layer 位于画布容器内（absolute inset:0），坐标相对画布容器，不含浏览器视口偏移
   if (dw.value && dh.value) {
     void rectTick.value;
     const r = canvasR();
     const off = canvas.imageOffset(r.width, r.height);
-    let nx = 0, ny = 0;
-    if (ann.x1 !== undefined) { nx = ann.x1; ny = ann.y1; }
-    else if (ann.type === "RotatedBox" && ann.cx !== undefined) {
-      const hw = ann.width / 2, hh = ann.height / 2;
-      const cos = Math.cos(ann.angle), sin = Math.sin(ann.angle);
-      nx = ann.cx + (-hw) * cos - (-hh) * sin;
-      ny = ann.cy + (-hw) * sin + (-hh) * cos;
-    }
-    else if (ann.cx !== undefined) { nx = ann.cx; ny = ann.cy; }
-    else if (ann.bounding_box) { nx = ann.bounding_box.cx - ann.bounding_box.width / 2; ny = ann.bounding_box.cy - ann.bounding_box.height / 2; }
-    else if (Array.isArray(ann.points) && ann.points.length) {
+    let nx = 0,
+      ny = 0;
+    if (ann.x1 !== undefined) {
+      nx = ann.x1;
+      ny = ann.y1;
+    } else if (ann.type === "RotatedBox" && ann.cx !== undefined) {
+      const hw = ann.width / 2,
+        hh = ann.height / 2;
+      const cos = Math.cos(ann.angle),
+        sin = Math.sin(ann.angle);
+      nx = ann.cx + -hw * cos - -hh * sin;
+      ny = ann.cy + -hw * sin + -hh * cos;
+    } else if (ann.cx !== undefined) {
+      nx = ann.cx;
+      ny = ann.cy;
+    } else if (ann.bounding_box) {
+      nx = ann.bounding_box.cx - ann.bounding_box.width / 2;
+      ny = ann.bounding_box.cy - ann.bounding_box.height / 2;
+    } else if (Array.isArray(ann.points) && ann.points.length) {
       const xs = ann.points.map((p: any) => p.x);
       const ys = ann.points.map((p: any) => p.y);
-      nx = Math.min(...xs); ny = Math.min(...ys);
+      nx = Math.min(...xs);
+      ny = Math.min(...ys);
     }
     lx = off.left + nx * dw.value;
     ty = off.top + ny * dh.value;
@@ -1629,7 +1942,8 @@ function openEditDialog(ann: any) {
   editForm.ann = ann;
   editForm.class_id = ann.class_id;
   editForm.text = ann.text || "";
-  editForm.keypoints = ann.type === "Keypoint" ? JSON.parse(JSON.stringify(ann.keypoints || [])) : [];
+  editForm.keypoints =
+    ann.type === "Keypoint" ? JSON.parse(JSON.stringify(ann.keypoints || [])) : [];
   const pos = annScreenPos(ann);
   editPos.x = pos.x;
   editPos.y = pos.y;
@@ -1692,19 +2006,55 @@ function editDelete() {
   deleteSelected();
 }
 function onKey(e: KeyboardEvent) {
-  if (e.code === "Space") { e.preventDefault(); spaceHeld.value = true; return; }
-  if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); saveAnn(); return; }
-  if (e.ctrlKey && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); return; }
-  if (e.ctrlKey && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
-  if (e.ctrlKey && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); return; }
-  if (e.ctrlKey && e.key.toLowerCase() === "v") { e.preventDefault(); pasteCopied(); return; }
-  if (e.key === "Escape") { resetDrawingState(); return; }
+  if (e.code === "Space") {
+    e.preventDefault();
+    spaceHeld.value = true;
+    return;
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    saveAnn();
+    return;
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    undo();
+    return;
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "y") {
+    e.preventDefault();
+    redo();
+    return;
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "c") {
+    e.preventDefault();
+    copySelected();
+    return;
+  }
+  if (e.ctrlKey && e.key.toLowerCase() === "v") {
+    e.preventDefault();
+    pasteCopied();
+    return;
+  }
+  if (e.key === "Escape") {
+    resetDrawingState();
+    return;
+  }
   // 方向键 / a d ：上一下一张（select 工具下）
   if (currentTool.value === "select") {
-    if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") { nextImg(); return; }
-    if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") { prevImg(); return; }
+    if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") {
+      nextImg();
+      return;
+    }
+    if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") {
+      prevImg();
+      return;
+    }
   }
-  if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
+  if (e.key === "Delete" || e.key === "Backspace") {
+    deleteSelected();
+    return;
+  }
   // 关键点工具下：0/1/2 设可见性（优先于切工具，避免冲突）
   if (currentTool.value === "keypoint") {
     if (["0", "1", "2"].includes(e.key)) {
@@ -1748,7 +2098,12 @@ function toggleClassification(clsId: number) {
         existing.class_ids = [...ids, clsId];
       }
     } else {
-      store.annotations.push({ id: crypto.randomUUID(), type: "Classification", class_id: clsId, class_ids: [clsId] });
+      store.annotations.push({
+        id: crypto.randomUUID(),
+        type: "Classification",
+        class_id: clsId,
+        class_ids: [clsId],
+      });
     }
   }
   store.markUnsaved();
@@ -1781,7 +2136,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   unmounted = true;
   fullUrlCache.clear();
-  if (moveRafId) { cancelAnimationFrame(moveRafId); moveRafId = 0; }
+  if (moveRafId) {
+    cancelAnimationFrame(moveRafId);
+    moveRafId = 0;
+  }
   pendingMove = null;
   window.removeEventListener("mousemove", scheduleMove);
   window.removeEventListener("mouseup", onUp);
@@ -1789,9 +2147,14 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKey);
   document.removeEventListener("keyup", onKeyUp);
   document.removeEventListener("click", onDocClick);
-  if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
+  if (_resizeObserver) {
+    _resizeObserver.disconnect();
+    _resizeObserver = null;
+  }
   if (store.unsaved && store.currentImageId && !lockedByOther.value) {
-    props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations).catch(() => {});
+    props.api
+      .saveAnnotations(store.taskId, store.currentImageId, store.annotations)
+      .catch(() => {});
   }
   unlockCurrent();
   props.collab?.close();

@@ -193,3 +193,29 @@ else if (Array.isArray(ann.points)) {...}// Polygon / Ocr
 - **最终目标**：壳变"纯壳"，插件真正接管渲染 + 编辑行为。
 
 是否立项执行？若执行，建议**从阶段 A（类型加固）开始**，它是阶段 B 的前置，且无行为回归风险。
+
+---
+
+## 七、阶段 A 执行记录（2026-09-20 已立项）
+
+### 共识决策
+- **保留按任务组织**（不学竞品形状层）：任务决定开放哪些工具，检测任务不开放旋转矩形工具——针对性强、是正确产品取舍。
+- 阶段 B 目标调整为"交互下沉到各任务插件"而非"重构成形状层"，让"按任务组织"名副其实。
+
+### 已落地改动（`frontend/src/annotation/core/types.ts`）
+1. **新增各形状判别联合类型**（非破坏性）：
+   - `AxisAlignedBoxShape` / `RotatedBoxShape` / `PolygonShape` / `OcrShape` / `KeypointShape` / `ClassificationShape`
+   - `ShapeAnnotation` 判别联合，供新增代码引用。
+   - 保留 `Annotation` 为兼容接口（`[key:string]:any`），**不强制改造存量访问**。
+2. **定义 Canvas 契约**：
+   - `TaskCanvasProps` / `TaskCanvasEmits`（六个 Canvas 高度一致的 props/emits）。
+   - `TaskCanvasRenderer` 泛型替代 `renderer: any`，`AnnotationTaskPlugin.renderer` 引用该契约。
+
+### 未做（务实权衡，记录原因）
+- **未将 `WorkbenchApi` 的 `any` 强制收成强类型**：workbench 统一经 `r?.data?.data` 访问后端包裹结构，收紧需与后端响应精确对齐，会牵动 13+ 处调用；且 `updateTask`/`saveAnnotations` 载荷结构后端不定，保留 `any` 是合理选择。
+- **未将 `Annotation` 改为严格判别联合**：workbench 内字段访问（points/cx/cy/bounding_box/keypoints/angle/text/width/height 等）约 50+ 处，强制收窄会全部报错、需逐一加守卫，工作量和回归风险远高于收益。当前以"补全类型别名 + 新代码优先判别联合"渐进推进。
+
+### 阶段 A 完成定义
+- `vue-tsc --noEmit` 通过（新增类型不破坏存量）。
+- `eslint` 无新增错误。
+- 六类任务 e2e 回归通过。
