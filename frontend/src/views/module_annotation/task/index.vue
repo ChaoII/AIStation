@@ -102,7 +102,7 @@
               </template>
             </el-table-column>
             <el-table-column label="创建时间" prop="created_time" min-width="170" />
-            <el-table-column label="操作" fixed="right" align="center" min-width="200">
+            <el-table-column label="操作" fixed="right" align="center" min-width="250">
               <template #default="scope">
                 <el-button
                   v-hasPerm="['module_annotation:task:workbench']"

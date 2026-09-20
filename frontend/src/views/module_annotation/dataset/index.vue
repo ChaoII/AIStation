@@ -224,16 +224,6 @@
                   图片
                 </el-button>
                 <el-button
-                  v-hasPerm="['module_annotation:dataset:upload']"
-                  type="success"
-                  size="small"
-                  link
-                  icon="Upload"
-                  @click="handleOpenUpload(scope.row)"
-                >
-                  上传
-                </el-button>
-                <el-button
                   v-hasPerm="['module_annotation:dataset:update']"
                   type="primary"
                   size="small"
@@ -243,19 +233,43 @@
                 >
                   编辑
                 </el-button>
-                <el-dropdown trigger="click" @command="(cmd: string) => handleMoreCommand(cmd, scope.row)">
-                  <el-button size="small" link>
-                    更多<el-icon class="el-icon--right"><ArrowDown /></el-icon>
-                  </el-button>
+                <el-button
+                  v-hasPerm="['module_annotation:dataset:delete']"
+                  type="danger"
+                  size="small"
+                  link
+                  icon="delete"
+                  @click="handleRowDelete(scope.row.id)"
+                >
+                  删除
+                </el-button>
+                <el-dropdown
+                  trigger="click"
+                  @command="(cmd: string) => handleMoreCommand(cmd, scope.row)"
+                >
+                  <el-button size="small" type="info" link icon="MoreFilled">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item v-hasPerm="['module_annotation:dataset:upload']" command="import">导入标注</el-dropdown-item>
-                      <el-dropdown-item command="export">导出</el-dropdown-item>
-                      <el-dropdown-item command="exportHistory">导出历史</el-dropdown-item>
-                      <el-dropdown-item command="clean">数据清洗</el-dropdown-item>
-                      <el-dropdown-item command="train">去训练</el-dropdown-item>
-                      <el-dropdown-item v-hasPerm="['module_annotation:dataset:delete']" command="delete" divided>删除</el-dropdown-item>
-                      <el-dropdown-item v-hasPerm="['module_annotation:dataset:purge']" command="purge" divided>彻底删除</el-dropdown-item>
+                      <el-dropdown-item
+                        v-hasPerm="['module_annotation:dataset:upload']"
+                        command="upload"
+                        icon="Upload"
+                      >上传图片</el-dropdown-item>
+                      <el-dropdown-item
+                        v-hasPerm="['module_annotation:dataset:upload']"
+                        command="import"
+                        icon="Upload"
+                      >导入标注</el-dropdown-item>
+                      <el-dropdown-item command="export" icon="Download">导出</el-dropdown-item>
+                      <el-dropdown-item command="exportHistory" icon="Clock">导出历史</el-dropdown-item>
+                      <el-dropdown-item command="clean" icon="Brush">数据清洗</el-dropdown-item>
+                      <el-dropdown-item command="train" icon="Aim">去训练</el-dropdown-item>
+                      <el-dropdown-item
+                        v-hasPerm="['module_annotation:dataset:purge']"
+                        command="purge"
+                        icon="Delete"
+                        divided
+                      >彻底删除</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -813,6 +827,9 @@ async function handleUploadSubmit() {
 // ── 行内「更多」菜单 ──
 function handleMoreCommand(cmd: string, row: any) {
   switch (cmd) {
+    case "upload":
+      handleOpenUpload(row);
+      break;
     case "import":
       handleOpenImport(row);
       break;
