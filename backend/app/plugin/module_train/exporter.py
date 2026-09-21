@@ -269,6 +269,27 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
                                             reorder=False)
             pts = [[px[i], px[i + 1]] for i in range(0, 8, 2)]
             shapes.append({**base, "points": pts, "shape_type": "rotation"})
+        elif t in ("Cuboid", "cuboid"):
+            # 底部旋转矩形 4 顶点（像素坐标），顶面仅用参数表达（不额外产出面）
+            px = rotated_box_to_obb_corners(ann["cx"] * img_w, ann["cy"] * img_h,
+                                            ann["w"] * img_w, ann["h"] * img_h,
+                                            float(ann.get("yaw", 0) or 0),
+                                            reorder=False)
+            pts = [[px[i], px[i + 1]] for i in range(0, 8, 2)]
+            shapes.append({
+                **base,
+                "points": pts,
+                "shape_type": "cuboid",
+                "attributes": {
+                    "cx": ann.get("cx", 0),
+                    "cy": ann.get("cy", 0),
+                    "w": ann.get("w", 0),
+                    "h": ann.get("h", 0),
+                    "yaw": ann.get("yaw", 0),
+                    "depth": ann.get("depth", 0),
+                    "top_cy": ann.get("top_cy", 0),
+                },
+            })
         elif t in ("Polygon", "polygon"):
             pts = [[_px(p["x"] if isinstance(p, dict) else p[0], img_w),
                     _px(p["y"] if isinstance(p, dict) else p[1], img_h)] for p in ann.get("points", [])]
