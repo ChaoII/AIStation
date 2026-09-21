@@ -3,6 +3,7 @@ export { default as AnnotationWorkbench } from "./core/AnnotationWorkbench.vue";
 export { detectionPlugin } from "./tasks/detection";
 export { rotatedBoxPlugin } from "./tasks/rotatedBox";
 export { segmentationPlugin } from "./tasks/segmentation";
+export { semanticSegmentationPlugin } from "./tasks/semanticSegmentation";
 export { keypointPlugin } from "./tasks/keypoint";
 export { ocrPlugin } from "./tasks/ocr";
 export { classificationPlugin } from "./tasks/classification";
