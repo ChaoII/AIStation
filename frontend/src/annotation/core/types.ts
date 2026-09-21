@@ -1,7 +1,7 @@
 import type { Component } from "vue";
 
 export type TaskShapeType =
-  "AxisAlignedBox" | "RotatedBox" | "Polygon" | "Polyline" | "Keypoint" | "Ocr" | "Classification";
+  "AxisAlignedBox" | "RotatedBox" | "Polygon" | "Polyline" | "Keypoint" | "Ocr" | "Classification" | "Cuboid";
 
 export interface Point {
   x: number;
@@ -61,6 +61,25 @@ export interface ClassificationShape {
   class_id: number;
   class_ids?: number[];
 }
+export interface CuboidShape {
+  id: string;
+  type: "Cuboid";
+  class_id: number;
+  /** 底部矩形中心 x（归一化 [0,1]） */
+  cx: number;
+  /** 底部矩形中心 y（归一化 [0,1]） */
+  cy: number;
+  /** 底部矩形宽（归一化，按图像宽） */
+  w: number;
+  /** 底部矩形高（归一化，按图像高） */
+  h: number;
+  /** 底部矩形朝向角（弧度，绕中心，参照 rotatedBox） */
+  yaw: number;
+  /** 图像深度（归一化 [0,1]，由侧边面板填写） */
+  depth: number;
+  /** 高度投影线在画布上的垂直偏移（归一化，顶面=底部矩形沿 y 平移 -top_cy 的投影） */
+  top_cy: number;
+}
 
 export type ShapeAnnotation =
   | AxisAlignedBoxShape
@@ -69,7 +88,8 @@ export type ShapeAnnotation =
   | PolylineShape
   | OcrShape
   | KeypointShape
-  | ClassificationShape;
+  | ClassificationShape
+  | CuboidShape;
 
 /** 兼容接口：存量访问仍可用松散字段；新代码优先用 ShapeAnnotation 判别联合 */
 export interface Annotation {
