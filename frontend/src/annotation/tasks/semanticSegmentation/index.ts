@@ -1,6 +1,7 @@
 import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
 import SemanticSegCanvas from "./SemanticSegCanvas.vue";
 import SemanticSegPanel from "./SemanticSegPanel.vue";
+import SegmentPreview from "../segmentation/SegmentPreview.vue";
 import { useSegmentTool } from "../segmentation/useSegmentTool";
 
 export const semanticSegmentationPlugin: AnnotationTaskPlugin = {
@@ -19,6 +20,8 @@ export const semanticSegmentationPlugin: AnnotationTaskPlugin = {
     const seg = useSegmentTool();
     return {
       name: "polygon",
+      preview: SegmentPreview,
+      state: { points: seg.points },
       down(ctx) {
         const p = ctx.point;
         if (p) seg.addPoint(p);
@@ -65,6 +68,7 @@ export const semanticSegmentationPlugin: AnnotationTaskPlugin = {
       if (ann.points.length > 3) ann.points.splice(idx, 1);
     },
     tagAnchor(ann: Annotation): { x: number; y: number } {
+      if (!ann.points?.length) return { x: 0, y: 0 };
       const xs = ann.points.map((p: any) => p.x);
       const ys = ann.points.map((p: any) => p.y);
       return { x: Math.min(...xs), y: Math.min(...ys) };

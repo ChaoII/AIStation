@@ -193,6 +193,10 @@ export interface PluginPanelContext {
   selectedClassId: number | null;
   /** 提交一个新标注（壳会对齐 create 校验 + push + 历史） */
   commit: (ann: Annotation) => void;
+  /** 当前全部标注（只读），供面板查询已有背景等 */
+  annotations?: Annotation[];
+  /** 按 id 移除标注（面板替换/清理已有背景用） */
+  remove?: (ids: string[]) => void;
 }
 
 export interface AnnotationTaskPlugin {

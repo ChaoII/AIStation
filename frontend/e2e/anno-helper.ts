@@ -25,7 +25,8 @@ export async function createAnnotationTask(
   request: APIRequestContext,
   auth: Record<string, string>,
   taskType: string,
-  prefix: string
+  prefix: string,
+  classes: any[] = []
 ): Promise<number> {
   const name = `${prefix}-${Date.now()}`;
   const dsRes = await request.post(`${API}/annotation/dataset/create`, {
@@ -42,7 +43,7 @@ export async function createAnnotationTask(
   expect(upRes.ok()).toBeTruthy();
 
   const taskRes = await request.post(`${API}/annotation/task/create`, {
-    data: { dataset_id: dsId, name: `t-${name}`, task_type: taskType },
+    data: { dataset_id: dsId, name: `t-${name}`, task_type: taskType, classes },
     headers: auth,
   });
   expect(taskRes.ok()).toBeTruthy();

@@ -717,6 +717,17 @@ const panelCtx = computed<PluginPanelContext>(() => ({
   classes: taskClasses.value,
   selectedClassId: selectedClassId.value,
   commit: (ann: Annotation) => commitCreated(ann),
+  annotations: store.annotations,
+  remove: (ids: string[]) => {
+    if (!ids.length) return;
+    const before = store.annotations.length;
+    store.annotations = store.annotations.filter((a) => !ids.includes(a.id));
+    if (store.annotations.length !== before) {
+      store.selectedAnnotationId = "";
+      store.markUnsaved();
+      pushHistory();
+    }
+  },
 }));
 const showClassModal = ref(false);
 const editingClassId = ref<number | null>(null);
@@ -1196,7 +1207,9 @@ function openHistory() {
 // ==== 绘制/编辑（同阶段0-5a 逻辑） ====
 function commitCreated(created: Annotation | null): void {
   if (!created || !plugin.value.create(created)) return;
-  created.class_id = selectedClassId.value ?? created.class_id;
+  // 仅当标注尚未有真实类别（绘制工具以 class_id:0 占位）时才用当前选中类别补齐，
+  // 避免覆盖面板等已写入的（如背景）真实类 id。
+  if (!created.class_id && selectedClassId.value != null) created.class_id = selectedClassId.value;
   if (created.type === "Ocr") {
     pendingOcr = created;
     ocrInput.value = "";
