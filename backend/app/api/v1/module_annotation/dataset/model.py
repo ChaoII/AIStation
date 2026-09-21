@@ -13,6 +13,7 @@ class AnnotationType(str, enum.Enum):
     SEGMENTATION = "segmentation"
     SEMANTIC_SEGMENTATION = "semantic_segmentation"
     POLYLINE = "polyline"
+    PANOPTIC_SEGMENTATION = "panoptic_segmentation"
     KEYPOINT = "keypoint"
     OCR = "ocr"
     CLASSIFICATION = "classification"
