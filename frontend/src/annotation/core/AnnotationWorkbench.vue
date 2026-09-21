@@ -26,6 +26,7 @@
         />
       </div>
     </div>
+    <component :is="plugin.panel" v-if="plugin.panel" :ctx="panelCtx" class="ann-plugin-panel" />
     <div class="ann-body">
       <AnnotationToolbar
         :tools="displayTools"
@@ -367,7 +368,7 @@ import AnnotationToolbar from "./AnnotationToolbar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
-import type { Annotation, AnnotationTaskPlugin } from "./types";
+import type { Annotation, AnnotationTaskPlugin, PluginPanelContext } from "./types";
 import type { WorkbenchApi, WorkbenchConfig, CollabAdapter } from "./annotationTypes";
 
 const props = defineProps<{
@@ -712,6 +713,11 @@ watch(
   },
   { deep: true }
 );
+const panelCtx = computed<PluginPanelContext>(() => ({
+  classes: taskClasses.value,
+  selectedClassId: selectedClassId.value,
+  commit: (ann: Annotation) => commitCreated(ann),
+}));
 const showClassModal = ref(false);
 const editingClassId = ref<number | null>(null);
 const PRESET_COLORS = [

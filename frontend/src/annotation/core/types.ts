@@ -1,3 +1,5 @@
+import type { Component } from "vue";
+
 export type TaskShapeType =
   "AxisAlignedBox" | "RotatedBox" | "Polygon" | "Keypoint" | "Ocr" | "Classification";
 
@@ -183,6 +185,16 @@ export interface PluginTool {
   keydown?(e: KeyboardEvent): boolean;
 }
 
+/** 插件级自定义面板的运行时上下文（壳渲染 panel 组件时注入，不 import 业务） */
+export interface PluginPanelContext {
+  /** 任务类别列表 */
+  classes: any[];
+  /** 当前选中类别 id */
+  selectedClassId: number | null;
+  /** 提交一个新标注（壳会对齐 create 校验 + push + 历史） */
+  commit: (ann: Annotation) => void;
+}
+
 export interface AnnotationTaskPlugin {
   name: string;
   label: string;
@@ -194,6 +206,8 @@ export interface AnnotationTaskPlugin {
   interaction?: AnnotationInteraction;
   /** 绘制工具运行时（阶段 C 下沉） */
   tool?: PluginTool;
+  /** 插件级自定义面板组件（如「填充背景」等操作），由壳渲染并注入 ctx，不 import 业务 */
+  panel?: Component;
   /** @deprecated 旧拖拽扩展，逐步替换为 interaction */
   onDrag?(ctx: any, handle: string): void;
 }
