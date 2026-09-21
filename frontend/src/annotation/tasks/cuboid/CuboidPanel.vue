@@ -26,10 +26,16 @@ const props = defineProps<{ ctx: PluginPanelContext }>();
 const depthVal = ref<number>(0.5);
 
 function selectedCuboid(): Annotation | null {
-  const sel = props.ctx.selectedClassId;
   const cands = (props.ctx.annotations ?? []).filter((a) => a.type === "Cuboid");
   if (cands.length === 0) return null;
-  // 取最后选中的 cuboid（简化：当前选中类别下最后一个）
+  // 优先按当前选中标注 id 精确查找
+  const selId = props.ctx.selectedAnnotationId;
+  if (selId) {
+    const hit = cands.find((a) => a.id === selId);
+    if (hit) return hit;
+  }
+  // 找不到时回落到当前选中类别下最后绘制的 cuboid（兜底）
+  const sel = props.ctx.selectedClassId;
   const cls = cands.filter((a) => a.class_id === sel);
   return cls[cls.length - 1] ?? cands[cands.length - 1];
 }
@@ -37,8 +43,12 @@ function selectedCuboid(): Annotation | null {
 function applyDepth() {
   const cub = selectedCuboid();
   if (!cub) return;
-  cub.depth = depthVal.value;
-  (cub as any).__depthDirty = true;
+  // 深度同步映射为高度投影 top_cy，使面板改深度实时反映到画面高度
+  props.ctx.update?.({
+    ...cub,
+    depth: depthVal.value,
+    top_cy: depthVal.value,
+  });
 }
 
 const yawText = ref("");

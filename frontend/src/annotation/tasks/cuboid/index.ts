@@ -94,7 +94,7 @@ export const cuboidPlugin: AnnotationTaskPlugin = {
       if (!center || !start || !client) return;
       const prev = Math.atan2(start.y - center.y, start.x - center.x);
       const cur = Math.atan2(client.y - center.y, client.x - center.x);
-      ann.yaw = JSON.parse(JSON.stringify(ann)).yaw + (cur - prev);
+      ann.yaw = ann.yaw + (cur - prev);
       ctx.trigger();
     },
     tagAnchor(ann: Annotation): { x: number; y: number } {

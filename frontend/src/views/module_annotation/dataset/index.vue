@@ -520,7 +520,7 @@ function taskTagColor(t: string) {
   return ({ detection: "#409eff", rotated_detection: "#e6a23c", segmentation: "#67c23a", keypoint: "#f56c6c", ocr: "#909399", classification: "#b37feb", cuboid: "#f56c6c" } as any)[t] || "#909399";
 }
 function taskTypeLabel(t: string) {
-  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类", cuboid: "3D" } as any)[t] || t;
+  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类", cuboid: "3D 目标检测" } as any)[t] || t;
 }
 
 defineOptions({

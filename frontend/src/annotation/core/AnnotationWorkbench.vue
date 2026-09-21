@@ -728,6 +728,14 @@ const panelCtx = computed<PluginPanelContext>(() => ({
       pushHistory();
     }
   },
+  selectedAnnotationId: store.selectedAnnotationId,
+  update: (ann: Annotation) => {
+    const idx = store.annotations.findIndex((a) => a.id === ann.id);
+    if (idx < 0) return;
+    store.annotations = store.annotations.map((a) => (a.id === ann.id ? ann : a));
+    store.markUnsaved();
+    pushHistory();
+  },
 }));
 const showClassModal = ref(false);
 const editingClassId = ref<number | null>(null);

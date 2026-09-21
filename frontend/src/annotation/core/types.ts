@@ -1,7 +1,14 @@
 import type { Component } from "vue";
 
 export type TaskShapeType =
-  "AxisAlignedBox" | "RotatedBox" | "Polygon" | "Polyline" | "Keypoint" | "Ocr" | "Classification" | "Cuboid";
+  | "AxisAlignedBox"
+  | "RotatedBox"
+  | "Polygon"
+  | "Polyline"
+  | "Keypoint"
+  | "Ocr"
+  | "Classification"
+  | "Cuboid";
 
 export interface Point {
   x: number;
@@ -224,6 +231,10 @@ export interface PluginPanelContext {
   annotations?: Annotation[];
   /** 按 id 移除标注（面板替换/清理已有背景用） */
   remove?: (ids: string[]) => void;
+  /** 当前选中标注 id（面板据此精确锁定要编辑的标注） */
+  selectedAnnotationId?: string;
+  /** 更新一个已有标注（替换同 id 标注并标记未保存 + 入撤销历史） */
+  update?: (ann: Annotation) => void;
 }
 
 export interface AnnotationTaskPlugin {
