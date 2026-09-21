@@ -440,3 +440,60 @@ AIv2 Task 7: complete (报告增强 app_id/session_id + 全量回归 + 视觉验
   - 前端: vue-tsc 16 条 pre-existing 错误(module_generator/monitor/system/task + 旧 module_ai/memory)，report 页 0 错误; pnpm e2e 33 passed / 2 failed(dataset-to-train 单跑通过属 flaky; smoke 为 pre-existing 429 限流, 仅覆盖 train/annotation 页)
   - 视觉: 无头截图 7 张 C:\Users\aichao\AppData\Local\Temp\opencode\ai-v2-shots\；vision-recognition 六页(overview/playground/prompt/tool/app/logs)全部判定与标准 Element Plus 后台高度一致(浅色卡片/默认蓝/无自定义深色指标卡/无遮挡)
   - 提交: 见 Task 7 报告
+
+# SDD 执行记录：全景分割 panoptic (feat/panoptic-segmentation)
+任务前：用户确认 stash 无关格式化改动后再干净实现；已 stash（wip-unrelated-formatting-before-panoptic）。
+Task 1: complete (commit 5f1d646, review clean)
+Task 2: complete (commit a65f202, review clean; Approved)
+  Important(t2,跨任务): is_instance 数据来源由 Task 3/4 补齐; 导出 class_meta 默认 is_instance=False
+  Minor(t2): pid0 '未标注背景'与'stuff-0'歧义(非全图时并入段0); annotations 带非标准 segment_id; _export_coco_panoptic 无直接测试; _pts/_flat 重复; int32+模式I保存超2^31溢出(非阻塞)
+Task 3: complete (commit 39246df, review clean; Approved)
+  Task2-Important(is_instance来源) 已闭环: handleAddClass默认false + normalizeClasses透传 + 保存classes提交后端
+  Minor(t3): 模板内联display:flex为plan-mandated; el-switch active-text可用字面量; :key含index(既有模式)
+Task 4: complete (commit a1adb38, review clean; Approved)
+  Minor(t4): rendered不按类别排padding,填充background stuff绘制在thing之上(plan-mandated垫底设计); 标签<text>未设dominant-baseline(plan-mandated); (p:any)类型宽松与segmentation一致
+  三处适配均合理: canvas(p:any)防noImplicitAny; panel删除自赋值onBgChange正确; tag映射类型加primary合法
+Task 5: complete (commit c155ea9, review clean; Approved)
+  Important(t5,plan-mandated): 保存后expectAnnotation仅断言至少一个标注,无法证明填充背景产生第二条stuff标注并持久化; 已在e2e验证核心创建流程(画thing+填充+保存), 交最终评审决定是否强化断言
+  修正: brief用expect未导入,已补import {test, expect}
+  Minor(t5): 可抽公共helper(选类别+填充+确认)减少重复
+Task 6: complete (verify, no new code)
+  backend pytest 20 passed (panoptic+xanylabeling 无回归); e2e 4 passed (panoptic+polyline+semantic); type-check 本模块无报错; eslint 仅annotation/index.vue:17 computed 未用(既有reasing,非本次引入); alembic heads d4e5f6a7b8c9; 注册四类映射+导出+plugins齐全
+
+最终整分支评审: 无Critical; 2个Important
+  Important#1(stuff-0与void合并) 用户决策: 修复. 已修 812ac13 (哨兵_PANOPTIC_VOID=-1隔离未标注像素, 导出PNG前int32映射回0, 补test_panoptic_mask_partial_stuff_not_merged_with_void). re-review Approved.
+  Important#2(panoptic.json非标准schema) 用户决策: 按计划保留扁平结构, 不改标准segments_info
+  Minor(t5 plan-mandated弱断言), 其余Minor已列此前, 均不阻塞
+
+# SDD 执行记录：3D目标检测 cuboid (feat/cuboid)
+Task 1: complete (commit 85c8800, review clean; Approved)
+  修正: brief示例revision e5f6a7b8c9d0被既有迁移占用,改用唯一9a8b7c6d5e4f
+  Minor(t1): 迁移目录存在孤立head revision(既有状态,非本任务引入),整分支评审确认
+Task 2: complete (commit f6a7401, review clean; Approved)
+  Minor(t2): test仅断言attributes 3/7字段(cx/depth/top_cy), plan-mandated; F821 np为_panoptic_mask既有问题(非本次引入)
+Task 3: complete (commit 7b083e4, review clean; Approved)
+  Minor(t3): yaw/w/h 与 rotatedBox 的 angle/width/height 命名差异, plan-mandated(brief规定)
+Task 4: complete (commit aa07afb, 评审Needs fixes, 用户定:三Importants都修)
+  Important#1: 新标注top_cy=0致顶面与底重合, depth不参与绘制, 3D高度不可视
+  Important#2: CuboidPanel.applyDepth直接mutate,绕过壳markUnsaved/pushHistory
+  Important#3: selectedCuboid回落取最后类别cuboid,无视实际选中,多cuboid会编错对象
+  Minor(t4): rotate用JSON克隆, canvas未用props, __depthDirty死码, taskTypeLabel用3D与task的3D目标检测不一致, preview缺step1实时虚线
+  用户允许最小core类型+通道扩展: PluginPanelContext加update+selectedAnnotationId, AnnotationWorkbench.vue panelCtx注入(同remove同类)
+Task4 fix: 3 Important 已修 (commit 613d349->剥离report/格式污染后 4fce28e, 只含6文件)
+  #1: useCuboidTool top_cy默认0.15; CuboidPanel applyDepth同步top_cy; CuboidCanvas随top_cy渲染顶面+竖棱
+  #2: PluginPanelContext加update回调, panelCtx按id替换+markUnsaved+pushHistory; CuboidPanel改调ctx.update,移除__depthDirty
+  #3: PluginPanelContext加selectedAnnotationId, panelCtx注入store.selectedAnnotationId; CuboidPanel按选中id精确find
+  修复后re-review Approved (仅Minor: report误提交(已剥离), CuboidPanel watch仅切选中不触发为既有)
+  type-check: annotation/Cuboid 无新增报错, 其余为既有无关模块
+Task5: complete (commit f3de01b e2e create-cuboid 2passed; 评审1重要depth效果未断言->933c5ff修复补topFirstY断言, re-review Approved)
+Task6: 完成 (后端9passed, e2e 4passed(cuboid+rotatedbox+polygon), type-check无annotation新增, lint无本次引入(taskTagType底af679fb既有, index.vue:17 computed既有), alembic head=9a8b7c6d5e4f单头, xany_shapes含cuboid:272/282)
+评审补充修复(首轮整分支 review 后):
+Fix A (commit 548e6f8): 导入器支持 cuboid 往返识别 — x_anylabeling_importer._infer_task_type 加 cuboid 分支 + _shape_to_annotation 支持 cuboid(attributes 还原/角点反推, depth/top_cy 缺省 0.5/0.15); test_export_cuboid 新增 2 往返用例(attributes/from-points)
+Fix B (commit 12bc999): 修复初始深度与创建校验/update守卫/top选择器 —
+  - useCuboidTool 初始 depth 0.5->0.15(与 top_cy 对齐, 顶面可见)
+  - cuboidPlugin.create 改为按 yaw 实际旋转投影半宽/半高校验(不再笼统 hypot(w,h)/2, 避免宽高比大+近边缘合法框被误拒)
+  - AnnotationWorkbench.vue panelCtx.update 加 shallowEqual「值未变」守卫(blur 无变化不推 history/不标未保存; 与 CuboidPanel 展开新对象调用方式匹配)
+  - CuboidCanvas 顶面 polygon 加 data-role="top" 供 e2e 精确断言; create-cuboid e2e 顶面读取改用 data-role
+最终评审验证(本次已重跑): backend test_export_cuboid+test_export_xanylabeling 11 passed; e2e create-cuboid/rotatedbox/polygon 4 passed; type-check 仅 pre-existing 无关模块(module_generator/monitor/system_user/task)报错, annotation/cuboid 0 新增; alembic head 单头 9a8b7c6d5e4f
+CUBOID 整分支最终评审: 功能提交区间 85c8800..12bc999 (8 commits, 17 files, +742/-7), 无 Critical/Important 遗留, Ready to merge = YES
+备注: 工作区存在大量与 cuboid 无关的 prettier 格式化改动(28 文件, module_train/video/stats/Notification/useCollab/SchedulePanel 等, dataset/index.vue 亦仅被重排), 均为既有功能代码被格式化, 非 cuboid 功能改动, 未纳入本分支; 是否 stash/留存由用户决定。
