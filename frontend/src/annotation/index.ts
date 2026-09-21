@@ -7,5 +7,6 @@ export { semanticSegmentationPlugin } from "./tasks/semanticSegmentation";
 export { keypointPlugin } from "./tasks/keypoint";
 export { ocrPlugin } from "./tasks/ocr";
 export { classificationPlugin } from "./tasks/classification";
+export { polylinePlugin } from "./tasks/polyline";
 export { useAnnotationCanvas } from "./core/useAnnotationCanvas";
 export { useAnnotationStore } from "./core/useAnnotationStore";

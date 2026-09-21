@@ -182,6 +182,7 @@
             <el-option label="关键点" value="keypoint" />
             <el-option label="OCR文本" value="ocr" />
             <el-option label="图像分类" value="classification" />
+            <el-option label="折线" value="polyline" />
           </el-select>
         </el-form-item>
         <el-form-item
@@ -352,6 +353,7 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "关键点", value: "keypoint" },
         { label: "OCR文本", value: "ocr" },
         { label: "分类", value: "classification" },
+        { label: "折线", value: "polyline" },
       ],
       attrs: { placeholder: "请选择标注类型", clearable: true, style: { width: "167.5px" } },
     },
@@ -630,6 +632,7 @@ function annotationTypeLabel(type: string) {
     keypoint: "关键点",
     ocr: "OCR文本",
     classification: "图像分类",
+    polyline: "折线",
   };
   return map[type] || type;
 }
@@ -643,6 +646,7 @@ function annotationTypeTag(type: string) {
     keypoint: "warning",
     ocr: "info",
     classification: "info",
+    polyline: "warning",
   };
   return map[type];
 }

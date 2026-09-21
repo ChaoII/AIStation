@@ -26,6 +26,7 @@ import {
   ocrPlugin,
   classificationPlugin,
 } from "@/annotation";
+import { polylinePlugin } from "@/annotation";
 import type { WorkbenchApi, WorkbenchConfig } from "@/annotation/core/annotationTypes";
 import { AnnotationAPI } from "@/api/module_annotation";
 import { useCollab } from "@/composables/useCollab";
@@ -45,6 +46,7 @@ const plugins = [
   keypointPlugin,
   ocrPlugin,
   classificationPlugin,
+  polylinePlugin,
 ];
 
 // 极简 api 适配：把项目 AnnotationAPI 适配到组件库 WorkbenchApi 接口
@@ -57,14 +59,22 @@ const api: WorkbenchApi = {
   getPresignedUrl: (imageId, taskId) => AnnotationAPI.getPresignedUrl(imageId, taskId),
   loadAnnotations: (taskId, imageId) => AnnotationAPI.getAnnotations(taskId, imageId),
   saveAnnotations: (taskId, imageId, data) =>
-    AnnotationAPI.saveAnnotations(imageId, { task_id: taskId, image_id: imageId, annotation_data: data }),
+    AnnotationAPI.saveAnnotations(imageId, {
+      task_id: taskId,
+      image_id: imageId,
+      annotation_data: data,
+    }),
   lockImage: (imageId, taskId) => AnnotationAPI.lockImage(imageId, taskId),
   unlockImage: (imageId, taskId) => AnnotationAPI.unlockImage(imageId, taskId),
   updateTask: (id, patch) => AnnotationAPI.updateTask(id, patch),
   getTaskProgress: (id) => AnnotationAPI.getTaskProgress(id),
 };
 
-const config = ref<WorkbenchConfig>({ taskType: "detection", classes: [], classificationMode: "single" });
+const config = ref<WorkbenchConfig>({
+  taskType: "detection",
+  classes: [],
+  classificationMode: "single",
+});
 
 async function loadConfig() {
   try {
