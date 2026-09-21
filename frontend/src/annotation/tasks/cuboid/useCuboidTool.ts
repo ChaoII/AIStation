@@ -60,7 +60,7 @@ export function useCuboidTool() {
         w: geom.width,
         h: geom.height,
         yaw: geom.angle,
-        depth: 0.5,
+        depth: 0.15,
         top_cy: 0.15,
       };
     }

@@ -3,6 +3,7 @@
     <!-- 顶面平行四边形（底部矩形沿 y 平移 -top_cy） -->
     <polygon
       :points="topPoints(ann)"
+      data-role="top"
       fill="none"
       :stroke="color(ann)"
       :stroke-width="ann.id === selectedId ? selStroke : stroke"

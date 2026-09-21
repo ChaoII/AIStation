@@ -610,6 +610,13 @@ let lastSavedKey = "";
 function annotKey() {
   return JSON.stringify(store.annotations);
 }
+function shallowEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && Object.is(a[k], b[k]));
+}
 function pushHistory() {
   const key = annotKey();
   if (historyIndex >= 0 && historyStack[historyIndex] === key) return;
@@ -732,6 +739,8 @@ const panelCtx = computed<PluginPanelContext>(() => ({
   update: (ann: Annotation) => {
     const idx = store.annotations.findIndex((a) => a.id === ann.id);
     if (idx < 0) return;
+    // 「值未变」守卫：面板输入 blur 时若值未变化则不推 history / 不标记未保存
+    if (shallowEqual(store.annotations[idx], ann)) return;
     store.annotations = store.annotations.map((a) => (a.id === ann.id ? ann : a));
     store.markUnsaved();
     pushHistory();

@@ -18,9 +18,14 @@ export const cuboidPlugin: AnnotationTaskPlugin = {
     if (shape.type !== "Cuboid") return false;
     if (shape.w <= 0 || shape.h <= 0) return false;
     if (shape.cx < 0 || shape.cy < 0 || shape.cx > 1 || shape.cy > 1) return false;
-    const half = Math.hypot(shape.w, shape.h) / 2;
-    if (shape.cx - half < 0 || shape.cx + half > 1) return false;
-    if (shape.cy - half < 0 || shape.cy + half > 1) return false;
+    // 按含 yaw 的实际旋转投影半宽/半高校验（而非笼统的 Math.hypot(w,h)/2），
+    // 避免宽高比大 + 近边缘的合法旋转框被误拒。
+    const cos = Math.cos(shape.yaw || 0);
+    const sin = Math.sin(shape.yaw || 0);
+    const hx = (Math.abs(shape.w * cos) + Math.abs(shape.h * sin)) / 2;
+    const hy = (Math.abs(shape.w * sin) + Math.abs(shape.h * cos)) / 2;
+    if (shape.cx - hx < 0 || shape.cx + hx > 1) return false;
+    if (shape.cy - hy < 0 || shape.cy + hy > 1) return false;
     if (shape.depth < 0 || shape.depth > 1) return false;
     if (shape.top_cy < 0 || shape.top_cy > 1) return false;
     return true;

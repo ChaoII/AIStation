@@ -44,12 +44,12 @@ test("cuboid 三步拖底部旋转矩形生成标注并编辑深度", async ({ p
 });
 
 /**
- * 读取 cuboid 标注顶面多边形（该 plugin 画布 [data-ann-id] 下的第一个 <polygon>，即 topPoints）
+ * 读取 cuboid 标注顶面多边形（该 plugin 画布 [data-ann-id] 下 data-role="top" 的 <polygon>，即 topPoints）
  * 的首个顶点 y 值。top_cy 越大，顶面越靠上（y 越小），故可用该值证明深度编辑真正同步到画面。
  */
 async function topFirstY(page: Page): Promise<number | null> {
   const pts = await page
-    .locator(".ann-svg [data-ann-id] polygon")
+    .locator(".ann-svg [data-ann-id] polygon[data-role='top']")
     .first()
     .getAttribute("points");
   if (!pts) return null;
