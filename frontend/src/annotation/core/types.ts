@@ -1,7 +1,7 @@
 import type { Component } from "vue";
 
 export type TaskShapeType =
-  "AxisAlignedBox" | "RotatedBox" | "Polygon" | "Keypoint" | "Ocr" | "Classification";
+  "AxisAlignedBox" | "RotatedBox" | "Polygon" | "Polyline" | "Keypoint" | "Ocr" | "Classification";
 
 export interface Point {
   x: number;
@@ -34,6 +34,12 @@ export interface PolygonShape {
   class_id: number;
   points: Point[];
 }
+export interface PolylineShape {
+  id: string;
+  type: "Polyline";
+  class_id: number;
+  points: Point[];
+}
 export interface OcrShape {
   id: string;
   type: "Ocr";
@@ -60,6 +66,7 @@ export type ShapeAnnotation =
   | AxisAlignedBoxShape
   | RotatedBoxShape
   | PolygonShape
+  | PolylineShape
   | OcrShape
   | KeypointShape
   | ClassificationShape;
