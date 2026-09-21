@@ -266,6 +266,11 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
                     _px(p["y"] if isinstance(p, dict) else p[1], img_h)] for p in ann.get("points", [])]
             if len(pts) >= 3:
                 shapes.append({**base, "points": pts, "shape_type": "polygon"})
+        elif t in ("Polyline", "polyline", "line"):
+            pts = [[_px(p["x"] if isinstance(p, dict) else p[0], img_w),
+                    _px(p["y"] if isinstance(p, dict) else p[1], img_h)] for p in ann.get("points", [])]
+            if len(pts) >= 2:
+                shapes.append({**base, "points": pts, "shape_type": "line"})
         elif t in ("Keypoint", "keypoint"):
             for kp in ann.get("keypoints", []):
                 shapes.append({**base,

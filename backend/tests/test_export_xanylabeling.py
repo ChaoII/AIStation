@@ -50,6 +50,16 @@ def test_keypoint_and_ocr_and_polygon_present():
     assert any(s.get("description") == "hi" for s in shapes)
 
 
+def test_polyline_exported_as_line():
+    """折线标注须导出为 shape_type "line"，不得静默丢弃。"""
+    anns = [{"type": "Polyline", "class_id": 3,
+             "points": [{"x": 0.1, "y": 0.1}, {"x": 0.5, "y": 0.6}]}]
+    shapes = xany_shapes(anns, 100, 100, {3: "lane"})
+    assert shapes[0]["shape_type"] == "line"
+    assert shapes[0]["label"] == "lane"
+    assert shapes[0]["points"] == [[10.0, 10.0], [50.0, 60.0]]
+
+
 def test_classification_multi_label_flags_and_no_shape():
     """分类标注无几何形状，须以图像级 flags 承载，不能静默丢失。"""
     anns = [{"type": "Classification", "class_id": 2, "class_ids": [2, 5]}]
