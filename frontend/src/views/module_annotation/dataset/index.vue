@@ -514,13 +514,13 @@ import { WarningFilled } from "@element-plus/icons-vue";
 const router = useRouter();
 
 function taskTagType(t: string) {
-  return ({ detection: "primary", rotated_detection: "warning", segmentation: "success", keypoint: "danger", ocr: "info", classification: "" } as any)[t] || "";
+  return ({ detection: "primary", rotated_detection: "warning", segmentation: "success", keypoint: "danger", ocr: "info", classification: "", cuboid: "danger" } as any)[t] || "";
 }
 function taskTagColor(t: string) {
-  return ({ detection: "#409eff", rotated_detection: "#e6a23c", segmentation: "#67c23a", keypoint: "#f56c6c", ocr: "#909399", classification: "#b37feb" } as any)[t] || "#909399";
+  return ({ detection: "#409eff", rotated_detection: "#e6a23c", segmentation: "#67c23a", keypoint: "#f56c6c", ocr: "#909399", classification: "#b37feb", cuboid: "#f56c6c" } as any)[t] || "#909399";
 }
 function taskTypeLabel(t: string) {
-  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类" } as any)[t] || t;
+  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类", cuboid: "3D" } as any)[t] || t;
 }
 
 defineOptions({
@@ -1430,7 +1430,7 @@ const FORMAT_TASK_MAP: Record<string, string[]> = {
   "yolo-cls": ["classification"],
   "paddle-mlcls": ["classification"],
   "paddle-ocr": ["ocr"],
-  "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification"],
+  "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification", "cuboid"],
   "coco-panoptic": ["panoptic_segmentation"],
 };
 

@@ -184,6 +184,7 @@
             <el-option label="图像分类" value="classification" />
             <el-option label="折线" value="polyline" />
             <el-option label="全景分割" value="panoptic_segmentation" />
+            <el-option label="3D 目标检测" value="cuboid" />
           </el-select>
         </el-form-item>
         <el-form-item
@@ -365,6 +366,7 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "分类", value: "classification" },
         { label: "折线", value: "polyline" },
         { label: "全景分割", value: "panoptic_segmentation" },
+        { label: "3D 目标检测", value: "cuboid" },
       ],
       attrs: { placeholder: "请选择标注类型", clearable: true, style: { width: "167.5px" } },
     },
@@ -652,6 +654,7 @@ function annotationTypeLabel(type: string) {
     classification: "图像分类",
     polyline: "折线",
     panoptic_segmentation: "全景分割",
+    cuboid: "3D 目标检测",
   };
   return map[type] || type;
 }
@@ -667,6 +670,7 @@ function annotationTypeTag(type: string) {
     classification: "info",
     polyline: "warning",
     panoptic_segmentation: "primary",
+    cuboid: "danger",
   };
   return map[type];
 }
