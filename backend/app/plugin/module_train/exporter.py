@@ -84,6 +84,7 @@ async def _export_core(
     # Determine task_type and class names
     task_type = "detection"
     class_names: dict[int, str] = {}
+    class_meta: dict[int, dict] = {}
     classification_mode: str | None = None
     if annotation_task_id:
         from app.api.v1.module_annotation.task.model import AnnotationTaskModel
@@ -95,6 +96,10 @@ async def _export_core(
                 if ann_task.classes:
                     for c in (ann_task.classes if isinstance(ann_task.classes, list) else []):
                         class_names[c["id"]] = c.get("name", f"class_{c['id']}")
+                        class_meta[c["id"]] = {
+                            "name": c.get("name", f"class_{c['id']}"),
+                            "is_instance": bool(c.get("is_instance", False)),
+                        }
 
     if framework == "ultralytics" or framework.startswith("yolo-"):
         if framework.startswith("yolo-"):
@@ -120,6 +125,9 @@ async def _export_core(
         # PaddleX OCR：ocr_rec 区分 det(false) / rec(true)
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
                                  export_rec=ocr_rec, train_ratio=train_ratio, for_eval=for_eval)
+    elif framework == "coco-panoptic":
+        await _export_coco_panoptic(dataset_id, task_id, images, output_dir,
+                                    annotation_task_id, class_meta=class_meta)
     else:
         raise ValueError(f"不支持的导出框架: {framework}")
 
@@ -311,6 +319,92 @@ def xany_classification_flags(anns: list, class_names: dict[int, str]) -> dict:
     if not names:
         return {}
     return {"classification": ",".join(names)}
+
+
+def _panoptic_mask(anns: list, img_w: int, img_h: int,
+                   class_meta: dict[int, dict]) -> tuple["np.ndarray", list[dict]]:
+    """把多边形标注栅格化为 COCO Panoptic 掩码并返回每段元数据。
+
+    class_meta: {class_id: {"name": str, "is_instance": bool}}。
+    panoptic_id = category_id * 1000 + instance_id（thing 按类别内数组顺序从 1 编号；stuff 恒 0）。
+    先铺 stuff 垫底，再叠 thing（后画覆盖前画）；同类 stuff 因同 pid 自动合并为一段。
+    """
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    class_meta = class_meta or {}
+    if img_w <= 0 or img_h <= 0:
+        return np.zeros((max(img_h, 1), max(img_w, 1)), dtype=np.uint32), []
+
+    def _pts(a: dict) -> list[tuple[float, float]]:
+        return [
+            ((p["x"] if isinstance(p, dict) else p[0]) * img_w,
+             (p["y"] if isinstance(p, dict) else p[1]) * img_h)
+            for p in (a.get("points") or [])
+        ]
+
+    def _is_instance(a: dict) -> bool:
+        return bool(class_meta.get(a.get("class_id"), {}).get("is_instance"))
+
+    polys = [a for a in anns if a.get("type") in ("Polygon", "polygon")]
+    stuff = [a for a in polys if not _is_instance(a)]
+    things = [a for a in polys if _is_instance(a)]
+
+    # thing 实例号：类别分组、组内按数组顺序从 1 编号
+    counters: dict[int, int] = {}
+    thing_pids: dict[int, int] = {}
+    for a in things:
+        cid = a.get("class_id")
+        n = counters.get(cid, 0) + 1
+        counters[cid] = n
+        thing_pids[id(a)] = cid * 1000 + n
+
+    def _flat(a: dict) -> list[float]:
+        """多边形点集 -> 扁平像素坐标列表 [x0,y0,x1,y1,...]。"""
+        out: list[float] = []
+        for p in (a.get("points") or []):
+            out.append((p["x"] if isinstance(p, dict) else p[0]) * img_w)
+            out.append((p["y"] if isinstance(p, dict) else p[1]) * img_h)
+        return out
+
+    im = Image.new("I", (img_w, img_h), 0)
+    draw = ImageDraw.Draw(im)
+    # pid -> 贡献该段的全部多边形点集（COCO segmentation 为列表，元素为扁平点集）
+    pid_polys: dict[int, list[list[float]]] = {}
+    for a in stuff:
+        pid = int(a.get("class_id")) * 1000
+        pts = _pts(a)
+        if len(pts) >= 3:
+            draw.polygon(pts, fill=pid)
+            pid_polys.setdefault(pid, []).append(_flat(a))
+    for a in things:
+        pid = int(thing_pids[id(a)])
+        pts = _pts(a)
+        if len(pts) >= 3:
+            draw.polygon(pts, fill=pid)
+            pid_polys.setdefault(pid, []).append(_flat(a))
+
+    mask = np.array(im, dtype=np.uint32)
+    segments: list[dict] = []
+    for pid in pid_polys:
+        pid = int(pid)
+        region = mask == pid
+        ys, xs = np.nonzero(region)
+        if len(xs) == 0:
+            continue
+        x0, x1 = int(xs.min()), int(xs.max())
+        y0, y1 = int(ys.min()), int(ys.max())
+        category_id = pid // 1000
+        instance_id = pid % 1000
+        segments.append({
+            "id": pid,
+            "category_id": category_id,
+            "instance_id": instance_id,
+            "area": int(region.sum()),
+            "bbox": [x0, y0, x1 - x0 + 1, y1 - y0 + 1],
+            "segmentation": pid_polys.get(pid, []),
+        })
+    return mask, segments
 
 
 def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] | None = None, img_w: int = 1, img_h: int = 1) -> list[str]:
@@ -577,6 +671,76 @@ async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, out
                 json.dump(js, f, ensure_ascii=False, indent=2)
 
     log.info(f"exported {downloaded} images to x-anylabeling format in {output_dir}")
+
+
+async def _export_coco_panoptic(dataset_id: int, task_id: int, images: list,
+                                output_dir: str, annotation_task_id: int | None = None,
+                                class_meta: dict | None = None) -> None:
+    """导出为 COCO Panoptic：每图一张 panoptic PNG 掩码 + panoptic.json 段表。"""
+    import json
+
+    import numpy as np
+    from PIL import Image
+
+    class_meta = class_meta or {}
+    img_dir = os.path.join(output_dir, "images")
+    mask_dir = os.path.join(output_dir, "panoptic_masks")
+    os.makedirs(img_dir, exist_ok=True)
+    os.makedirs(mask_dir, exist_ok=True)
+    from app.utils.s3_client import s3_client
+
+    categories = [
+        {"id": cid, "name": meta.get("name", f"class_{cid}"),
+         "isthing": 1 if meta.get("is_instance") else 0}
+        for cid, meta in sorted(class_meta.items(), key=lambda kv: kv[0])
+    ]
+    images_json: list[dict] = []
+    annotations: list[dict] = []
+    ann_id = 1000000
+    downloaded = 0
+
+    async with async_db_session() as db:
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
+        for img in images:
+            img_path = os.path.join(img_dir, img.filename)
+            if not os.path.exists(img_path):
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+                    downloaded += 1
+                except Exception as e:
+                    log.warning(f"skip image {img.filename}: {e}")
+                    continue
+            w, h = img.width or 0, img.height or 0
+            anns = anns_by_img.get(img.id, [])
+            mask, segs = _panoptic_mask(anns, w, h, class_meta)
+            stem = img.filename.rsplit(".", 1)[0]
+            Image.fromarray(mask.astype(np.int32), mode="I").save(
+                os.path.join(mask_dir, f"{stem}.png"))
+            images_json.append({"id": img.id, "file_name": img.filename, "width": w, "height": h})
+            for seg in segs:
+                ann_id += 1
+                annotations.append({
+                    "id": ann_id,
+                    "image_id": img.id,
+                    "category_id": seg["category_id"],
+                    "segment_id": seg["id"],
+                    "iscrowd": 0,
+                    "area": seg["area"],
+                    "bbox": seg["bbox"],
+                    "segmentation": seg["segmentation"],
+                })
+
+    with open(os.path.join(output_dir, "panoptic.json"), "w", encoding="utf-8") as f:
+        json.dump({
+            "info": {"description": "AIStation panoptic segmentation"},
+            "categories": categories,
+            "images": images_json,
+            "annotations": annotations,
+        }, f, ensure_ascii=False, indent=2)
+
+    log.info(f"exported {downloaded} images to coco-panoptic format in {output_dir}")
 
 
 def paddle_ocr_det_entries(anns: list, img_w: int, img_h: int,

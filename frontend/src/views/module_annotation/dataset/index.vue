@@ -1431,6 +1431,7 @@ const FORMAT_TASK_MAP: Record<string, string[]> = {
   "paddle-mlcls": ["classification"],
   "paddle-ocr": ["ocr"],
   "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification"],
+  "coco-panoptic": ["panoptic_segmentation"],
 };
 
 const filteredExportFormats = computed(() => {
@@ -1455,6 +1456,7 @@ const exportFormatOptions = [
   { value: "paddle-mlcls", label: "Paddle MLCLS（多标签分类）" },
   { value: "paddle-ocr", label: "PaddleOCR" },
   { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
+  { value: "coco-panoptic", label: "COCO Panoptic（全景分割 PNG 掩码 + JSON）" },
 ];
 
 function handleOpenExport(row: any) {
