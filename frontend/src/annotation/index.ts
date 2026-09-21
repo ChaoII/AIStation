@@ -8,5 +8,6 @@ export { keypointPlugin } from "./tasks/keypoint";
 export { ocrPlugin } from "./tasks/ocr";
 export { classificationPlugin } from "./tasks/classification";
 export { polylinePlugin } from "./tasks/polyline";
+export { panopticSegmentationPlugin } from "./tasks/panopticSegmentation";
 export { useAnnotationCanvas } from "./core/useAnnotationCanvas";
 export { useAnnotationStore } from "./core/useAnnotationStore";

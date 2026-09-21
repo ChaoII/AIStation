@@ -183,6 +183,7 @@
             <el-option label="OCR文本" value="ocr" />
             <el-option label="图像分类" value="classification" />
             <el-option label="折线" value="polyline" />
+            <el-option label="全景分割" value="panoptic_segmentation" />
           </el-select>
         </el-form-item>
         <el-form-item
@@ -363,6 +364,7 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "OCR文本", value: "ocr" },
         { label: "分类", value: "classification" },
         { label: "折线", value: "polyline" },
+        { label: "全景分割", value: "panoptic_segmentation" },
       ],
       attrs: { placeholder: "请选择标注类型", clearable: true, style: { width: "167.5px" } },
     },
@@ -649,12 +651,13 @@ function annotationTypeLabel(type: string) {
     ocr: "OCR文本",
     classification: "图像分类",
     polyline: "折线",
+    panoptic_segmentation: "全景分割",
   };
   return map[type] || type;
 }
 
 function annotationTypeTag(type: string) {
-  const map: Record<string, "warning" | "danger" | "info" | undefined> = {
+  const map: Record<string, "warning" | "danger" | "info" | "primary" | undefined> = {
     detection: undefined,
     rotated_detection: "warning",
     segmentation: "danger",
@@ -663,6 +666,7 @@ function annotationTypeTag(type: string) {
     ocr: "info",
     classification: "info",
     polyline: "warning",
+    panoptic_segmentation: "primary",
   };
   return map[type];
 }
