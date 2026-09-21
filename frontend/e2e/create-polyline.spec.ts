@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test } from "@playwright/test";
 import { login, createAnnotationTask, gotoWorkbench, imageBox, expectAnnotation } from "./anno-helper";
 
 // 回归护栏：折线（开放点串，逐点 + 双击结束）创建流程。
