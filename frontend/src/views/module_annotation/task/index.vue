@@ -178,6 +178,7 @@
             <el-option label="目标检测" value="detection" />
             <el-option label="旋转框检测" value="rotated_detection" />
             <el-option label="实例分割" value="segmentation" />
+            <el-option label="语义分割" value="semantic_segmentation" />
             <el-option label="关键点" value="keypoint" />
             <el-option label="OCR文本" value="ocr" />
             <el-option label="图像分类" value="classification" />
@@ -347,6 +348,7 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "目标检测", value: "detection" },
         { label: "旋转框检测", value: "rotated_detection" },
         { label: "实例分割", value: "segmentation" },
+        { label: "语义分割", value: "semantic_segmentation" },
         { label: "关键点", value: "keypoint" },
         { label: "OCR文本", value: "ocr" },
         { label: "分类", value: "classification" },
@@ -624,6 +626,7 @@ function annotationTypeLabel(type: string) {
     detection: "目标检测",
     rotated_detection: "旋转框检测",
     segmentation: "实例分割",
+    semantic_segmentation: "语义分割",
     keypoint: "关键点",
     ocr: "OCR文本",
     classification: "图像分类",
@@ -636,6 +639,7 @@ function annotationTypeTag(type: string) {
     detection: undefined,
     rotated_detection: "warning",
     segmentation: "danger",
+    semantic_segmentation: "warning",
     keypoint: "warning",
     ocr: "info",
     classification: "info",
