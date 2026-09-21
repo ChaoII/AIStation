@@ -11,6 +11,7 @@ class AnnotationType(str, enum.Enum):
     DETECTION = "detection"
     ROTATED_DETECTION = "rotated_detection"
     SEGMENTATION = "segmentation"
+    SEMANTIC_SEGMENTATION = "semantic_segmentation"
     KEYPOINT = "keypoint"
     OCR = "ocr"
     CLASSIFICATION = "classification"
