@@ -1,5 +1,18 @@
 <template>
   <g v-for="ann in annotations" :key="ann.id" :data-ann-id="ann.id">
+    <rect
+      :x="bbox(ann).x"
+      :y="bbox(ann).y"
+      :width="bbox(ann).w"
+      :height="bbox(ann).h"
+      :stroke="color(ann)"
+      stroke-width="1"
+      fill="none"
+      stroke-dasharray="4 2"
+      class="seg-bbox-reference"
+      vector-effect="non-scaling-stroke"
+      style="pointer-events: none"
+    />
     <path
       :d="path(ann)"
       :stroke="color(ann)"
@@ -74,6 +87,10 @@ const selStroke = computed(() => props.selStroke ?? 2);
 
 function path(a: Annotation) {
   return seg.polygonPath(a, props.cw, props.ch);
+}
+function bbox(a: Annotation) {
+  if (!a.points || a.points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+  return seg.polyBBox(a, props.cw, props.ch);
 }
 function midpoints(a: Annotation) {
   const pts = a.points || [];

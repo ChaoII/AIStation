@@ -177,7 +177,7 @@
           <el-select v-model="formData.task_type" placeholder="请选择标注类型" style="width: 100%">
             <el-option label="目标检测" value="detection" />
             <el-option label="旋转框检测" value="rotated_detection" />
-            <el-option label="多边形分割" value="segmentation" />
+            <el-option label="实例分割" value="segmentation" />
             <el-option label="关键点" value="keypoint" />
             <el-option label="OCR文本" value="ocr" />
             <el-option label="图像分类" value="classification" />
@@ -346,7 +346,7 @@ const searchConfig = reactive<ISearchConfig>({
       options: [
         { label: "目标检测", value: "detection" },
         { label: "旋转框检测", value: "rotated_detection" },
-        { label: "多边形分割", value: "segmentation" },
+        { label: "实例分割", value: "segmentation" },
         { label: "关键点", value: "keypoint" },
         { label: "OCR文本", value: "ocr" },
         { label: "分类", value: "classification" },
@@ -623,7 +623,7 @@ function annotationTypeLabel(type: string) {
   const map: Record<string, string> = {
     detection: "目标检测",
     rotated_detection: "旋转框检测",
-    segmentation: "多边形分割",
+    segmentation: "实例分割",
     keypoint: "关键点",
     ocr: "OCR文本",
     classification: "图像分类",

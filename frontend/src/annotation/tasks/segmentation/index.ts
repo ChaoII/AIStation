@@ -5,10 +5,10 @@ import { useSegmentTool } from "./useSegmentTool";
 
 export const segmentationPlugin: AnnotationTaskPlugin = {
   name: "segmentation",
-  label: "多边形分割",
+  label: "实例分割",
   color: "success",
   renderer: SegmentCanvas,
-  tools: [{ name: "polygon", label: "多边形", title: "逐点绘制，双击闭合" }],
+  tools: [{ name: "polygon", label: "实例分割", title: "逐点绘制轮廓，双击闭合" }],
   create(shape: Annotation): boolean {
     if (shape.type !== "Polygon") return false;
     if (!Array.isArray(shape.points) || shape.points.length < 3) return false;
