@@ -89,6 +89,8 @@ def _infer_task_type(shapes_all: list[dict]) -> str:
     types = {s.get("shape_type") for s in shapes_all}
     if "rotation" in types:
         return "rotated_detection"
+    if "cuboid" in types:
+        return "cuboid"
     if types == {"point"}:
         return "keypoint"
     if types == {"polygon"}:
@@ -372,6 +374,44 @@ def _shape_to_annotation(shape: dict, class_mapping: dict, img_w: int, img_h: in
             "width": width,
             "height": height,
             "angle": angle,
+        }
+    elif shape_type == "cuboid" and len(points) >= 4:
+        # 与 exporter.xany_shapes 的 cuboid 分支保持一致，避免导出→导入往返几何损坏。
+        # 底部旋转矩形 4 角点（像素坐标）既可直接由 attributes 还原，也可从角点反推。
+        attrs = shape.get("attributes") or {}
+        if all(k in attrs for k in ("cx", "cy", "w", "h", "yaw")):
+            # 若 attributes 带底部矩形参数则直接使用（exporter 已按 [0,1] 归一化）
+            cx = float(attrs["cx"])
+            cy = float(attrs["cy"])
+            width = float(attrs["w"])
+            height = float(attrs["h"])
+            yaw = float(attrs["yaw"])
+        else:
+            # 否则从底部旋转矩形角点反推（与 rotated_box 分支一致的逆运算）
+            dx = points[1][0] - points[0][0]
+            dy = points[1][1] - points[0][1]
+            width = math.hypot(dx, dy) / img_w if img_w else 0
+            yaw = math.atan2(dy, dx)
+            ex = points[2][0] - points[1][0]
+            ey = points[2][1] - points[1][1]
+            height = math.hypot(ex, ey) / img_h if img_h else 0
+            cx = sum(p[0] for p in points[:4]) / 4 / img_w if img_w else 0
+            cy = sum(p[1] for p in points[:4]) / 4 / img_h if img_h else 0
+        # 3D 参数（深度 + 顶面垂直偏移），缺省用与 useCuboidTool 初始值对齐的默认值
+        depth = float(attrs["depth"]) if "depth" in attrs else 0.5
+        top_cy = float(attrs["top_cy"]) if "top_cy" in attrs else 0.15
+        return {
+            "id": uuid.uuid4().hex,
+            "type": "Cuboid",
+            "class_id": class_id,
+            "label": label,
+            "cx": cx,
+            "cy": cy,
+            "w": width,
+            "h": height,
+            "yaw": yaw,
+            "depth": depth,
+            "top_cy": top_cy,
         }
     elif shape_type == "polygon" and len(points) >= 3:
         return {
