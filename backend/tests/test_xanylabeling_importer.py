@@ -229,3 +229,21 @@ def test_import_zip_same_stem_diff_ext(
 
     assert img_total == 2
     assert filenames == {"img.jpg", "img.png"}
+
+
+def test_infer_task_type_line():
+    assert imp._infer_task_type([{"shape_type": "line"}]) == "polyline"
+
+
+def test_shape_line_to_polyline():
+    shape = {
+        "label": "t",
+        "shape_type": "line",
+        "points": [[10, 20], [30, 40], [50, 60]],
+    }
+    ann = imp._shape_to_annotation(shape, {"t": 0}, 100, 100)
+    assert ann["type"] == "Polyline"
+    assert len(ann["points"]) == 3
+    assert ann["points"][0] == {"x": 0.1, "y": 0.2}
+    assert ann["points"][1] == {"x": 0.3, "y": 0.4}
+    assert ann["points"][2] == {"x": 0.5, "y": 0.6}

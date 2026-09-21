@@ -1,0 +1,31 @@
+"""polyline enum
+
+Revision ID: c3d4e5f6a7b8
+Revises: bfda605e491e
+"""
+from collections.abc import Sequence
+
+from alembic import op
+
+from app.alembic.dialect_compat import is_postgres
+
+revision: str = "c3d4e5f6a7b8"
+down_revision: str | Sequence[str] | None = "bfda605e491e"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    """给 annotationtype 枚举增加 POLYLINE 值（仅 PostgreSQL）。
+
+    SQLAlchemy 以枚举成员 NAME（大写）存储，而非 .value（小写），
+    因此必须添加大写值 'POLYLINE'。
+    """
+    if is_postgres(op.get_bind()):
+        with op.get_context().autocommit_block():
+            op.execute("ALTER TYPE annotationtype ADD VALUE IF NOT EXISTS 'POLYLINE'")
+
+
+def downgrade() -> None:
+    """PG 不支持移除枚举值，downgrade 为空操作（保留该值）。"""
+    pass

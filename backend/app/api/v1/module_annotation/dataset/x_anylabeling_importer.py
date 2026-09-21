@@ -93,6 +93,8 @@ def _infer_task_type(shapes_all: list[dict]) -> str:
         return "keypoint"
     if types == {"polygon"}:
         return "segmentation"
+    if types == {"line"}:
+        return "polyline"
     return "detection"
 
 
@@ -395,6 +397,17 @@ def _shape_to_annotation(shape: dict, class_mapping: dict, img_w: int, img_h: in
             "y1": max(0, y - size),
             "x2": min(1, x + size),
             "y2": min(1, y + size),
+        }
+    elif shape_type == "line" and len(points) >= 2:
+        return {
+            "id": uuid.uuid4().hex,
+            "type": "Polyline",
+            "class_id": class_id,
+            "label": label,
+            "points": [
+                {"x": p[0] / img_w if img_w else 0, "y": p[1] / img_h if img_h else 0}
+                for p in points
+            ],
         }
     return None
 
