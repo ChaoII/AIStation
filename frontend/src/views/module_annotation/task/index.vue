@@ -221,17 +221,25 @@
               />
               <el-button type="primary" icon="plus" @click="handleAddClass">添加</el-button>
             </div>
-            <div v-if="formData.classes.length" style="display: flex; flex-wrap: wrap; gap: 6px">
-              <el-tag
+            <div
+              v-if="formData.classes.length"
+              style="display: flex; flex-direction: column; gap: 6px"
+            >
+              <div
                 v-for="(cls, index) in formData.classes"
                 :key="`${cls.id}-${index}`"
-                :color="cls.color"
-                effect="dark"
-                closable
-                @close="handleRemoveClass(index)"
+                style="display: flex; align-items: center; gap: 8px"
               >
-                {{ cls.name }}
-              </el-tag>
+                <el-tag :color="cls.color" effect="dark" closable @close="handleRemoveClass(index)">
+                  {{ cls.name }}
+                </el-tag>
+                <el-switch
+                  v-model="cls.is_instance"
+                  size="small"
+                  :active-text="'实例'"
+                  :inactive-text="'背景'"
+                />
+              </div>
             </div>
             <span v-else style="font-size: 12px; color: var(--el-text-color-secondary)">
               暂无类别，添加后可在标注工作台使用
@@ -280,6 +288,7 @@ interface TaskClass {
   id: number;
   name: string;
   color: string;
+  is_instance?: boolean;
 }
 
 const CLASS_COLORS = [
@@ -469,11 +478,12 @@ function normalizeClasses(raw: unknown): TaskClass[] {
     (!!raw && typeof raw === "object" && Object.keys(raw as Record<string, unknown>).length > 0);
 
   const result: TaskClass[] = [];
-  const pushClass = (id: number, name: string, color?: unknown) => {
+  const pushClass = (id: number, name: string, color?: unknown, isInstance?: unknown) => {
     result.push({
       id,
       name,
       color: (typeof color === "string" && color) || CLASS_COLORS[id % CLASS_COLORS.length],
+      ...(typeof isInstance === "boolean" ? { is_instance: isInstance } : {}),
     });
   };
 
@@ -485,7 +495,7 @@ function normalizeClasses(raw: unknown): TaskClass[] {
       } else if (entry && typeof entry === "object") {
         const def = entry as Record<string, unknown>;
         const id = typeof def.id === "number" ? def.id : index;
-        pushClass(id, String(def.name ?? `class_${id}`), def.color);
+        pushClass(id, String(def.name ?? `class_${id}`), def.color, def.is_instance);
       }
     });
   } else if (raw && typeof raw === "object") {
@@ -505,7 +515,12 @@ function normalizeClasses(raw: unknown): TaskClass[] {
       } else if (value && typeof value === "object") {
         const def = value as Record<string, unknown>;
         // 数字键：值是类别定义；name 键：键是类别名，值可含 color
-        pushClass(id, String(def.name ?? (isNameKey ? key : `class_${id}`)), def.color);
+        pushClass(
+          id,
+          String(def.name ?? (isNameKey ? key : `class_${id}`)),
+          def.color,
+          def.is_instance
+        );
       }
       autoId += 1;
     }
@@ -548,6 +563,7 @@ function handleAddClass() {
     id: nextId,
     name,
     color: CLASS_COLORS[nextId % CLASS_COLORS.length],
+    is_instance: false,
   });
   newClassName.value = "";
 }
