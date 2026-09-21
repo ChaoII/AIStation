@@ -321,6 +321,13 @@ def xany_classification_flags(anns: list, class_names: dict[int, str]) -> dict:
     return {"classification": ",".join(names)}
 
 
+# COCO Panoptic 约定掩码值 0 = void/ignore，但 stuff 类 id=0 的段（pid=0）也占用 0。
+# 为避免「未标注背景」像素与 stuff-0 段合并、被 COCO 消费方当作 void 丢弃，
+# 用负数哨兵 _PANOPTIC_VOID 标记未标注背景（"I" 模式是有符号 int32 可存 -1，
+# 且任何 category_id*1000+instance_id >= 0 都不会等于负数），保存 PNG 时再映射回 0。
+_PANOPTIC_VOID = -1
+
+
 def _panoptic_mask(anns: list, img_w: int, img_h: int,
                    class_meta: dict[int, dict]) -> tuple["np.ndarray", list[dict]]:
     """把多边形标注栅格化为 COCO Panoptic 掩码并返回每段元数据。
@@ -367,7 +374,7 @@ def _panoptic_mask(anns: list, img_w: int, img_h: int,
             out.append((p["y"] if isinstance(p, dict) else p[1]) * img_h)
         return out
 
-    im = Image.new("I", (img_w, img_h), 0)
+    im = Image.new("I", (img_w, img_h), _PANOPTIC_VOID)
     draw = ImageDraw.Draw(im)
     # pid -> 贡献该段的全部多边形点集（COCO segmentation 为列表，元素为扁平点集）
     pid_polys: dict[int, list[list[float]]] = {}
@@ -716,7 +723,10 @@ async def _export_coco_panoptic(dataset_id: int, task_id: int, images: list,
             anns = anns_by_img.get(img.id, [])
             mask, segs = _panoptic_mask(anns, w, h, class_meta)
             stem = img.filename.rsplit(".", 1)[0]
-            Image.fromarray(mask.astype(np.int32), mode="I").save(
+            # mask 为 uint32，写入的 -1 哨兵经转换后变为 0xFFFFFFFF；先转 int32 再按哨兵比对，
+            # 把未标注背景（哨兵）映射回 COCO void 0，避免其落入 stuff 段 0。
+            mask_png = np.where(mask.astype(np.int32) == _PANOPTIC_VOID, 0, mask)
+            Image.fromarray(mask_png.astype(np.int32), mode="I").save(
                 os.path.join(mask_dir, f"{stem}.png"))
             images_json.append({"id": img.id, "file_name": img.filename, "width": w, "height": h})
             for seg in segs:

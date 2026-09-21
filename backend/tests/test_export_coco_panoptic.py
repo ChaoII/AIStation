@@ -48,3 +48,31 @@ def test_panoptic_mask_stuff_merges_by_pid():
     assert segs[0]["id"] == 0
     assert segs[0]["category_id"] == 0
     assert segs[0]["area"] == 100 * 100
+
+
+def test_panoptic_mask_partial_stuff_not_merged_with_void():
+    """stuff 类 id=0 只局部覆盖时，未标注背景不得并入段 0（哨兵隔离）。"""
+    class_meta = {0: {"name": "wall", "is_instance": False}}
+    # 只覆盖左半 0..0.5（不做全图填充）
+    anns = [
+        {"type": "Polygon", "class_id": 0, "points": [
+            {"x": 0, "y": 0}, {"x": 0.5, "y": 0}, {"x": 0.5, "y": 1}, {"x": 0, "y": 1}]},
+    ]
+    mask, segs = _panoptic_mask(anns, 100, 100, class_meta)
+    assert len(segs) == 1
+    seg0 = segs[0]
+    assert seg0["id"] == 0
+    assert seg0["category_id"] == 0
+    # 段 0 area 仅等于该多边形覆盖的像素数（列 0..50 共 51 列 * 100 行 = 5100），而非整图 10000
+    assert seg0["area"] == 51 * 100
+    # bbox 只覆盖该多边形范围
+    assert seg0["bbox"] == [0, 0, 51, 100]
+    # 未标注背景像素以哨兵标记（uint32 位形 0xFFFFFFFF），不并入段 0
+    assert int(mask[0, 75]) == np.iinfo(np.uint32).max
+    assert int(mask[99, 99]) == np.iinfo(np.uint32).max
+    # 段 0 范围内像素值仍为 0
+    assert int(mask[0, 0]) == 0
+    assert int(mask[99, 50]) == 0
+    # 段 0 像素计数与 area 一致
+    region_area = int((mask == 0).sum())
+    assert region_area == seg0["area"]
