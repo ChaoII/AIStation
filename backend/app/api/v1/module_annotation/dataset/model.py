@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import ModelMixin, UserMixin
@@ -18,6 +18,7 @@ class AnnotationType(str, enum.Enum):
     KEYPOINT = "keypoint"
     OCR = "ocr"
     CLASSIFICATION = "classification"
+    VIDEO_DETECTION = "video_detection"
 
 
 class DatasetStatus(str, enum.Enum):
@@ -32,8 +33,10 @@ class DatasetModel(ModelMixin, UserMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")
     image_count: Mapped[int] = mapped_column(Integer, default=0, comment="图片总数")
     annotated_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注图片数")
+    video_count: Mapped[int] = mapped_column(Integer, default=0, comment="视频总数")
 
     images = relationship("AnnotationImageModel", back_populates="dataset", lazy="dynamic")
+    videos = relationship("AnnotationVideoModel", back_populates="dataset", lazy="dynamic")
     tasks = relationship("AnnotationTaskModel", back_populates="dataset", lazy="dynamic")
 
 
@@ -69,4 +72,30 @@ class AnnotationImageModel(ModelMixin, UserMixin):
     __table_args__ = (
         Index("ix_annotation_image_dataset_status", "dataset_id", "status"),
         Index("ix_annotation_image_dataset_hash", "dataset_id", "content_hash"),
+    )
+
+
+class AnnotationVideoModel(ModelMixin, UserMixin):
+    __tablename__ = "annotation_video"
+
+    dataset_id: Mapped[int] = mapped_column(ForeignKey("annotation_dataset.id"), comment="数据集ID")
+    name: Mapped[str] = mapped_column(String(255), comment="原文件名")
+    object_key: Mapped[str] = mapped_column(String(512), comment="RustFS key")
+    width: Mapped[int] = mapped_column(Integer, default=0, comment="宽度")
+    height: Mapped[int] = mapped_column(Integer, default=0, comment="高度")
+    duration: Mapped[float] = mapped_column(Float, default=0.0, comment="时长(秒)")
+    fps: Mapped[float] = mapped_column(Float, default=0.0, comment="帧率")
+    frame_count: Mapped[int] = mapped_column(Integer, default=0, comment="总帧数")
+    thumbnail_key: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="缩略图key")
+    status: Mapped[ImageStatus] = mapped_column(
+        Enum(ImageStatus), default=ImageStatus.UNANNOTATED, comment="标注状态"
+    )
+    locked_by: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="锁定用户ID")
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="锁定时间")
+    annotation_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注帧数")
+
+    dataset = relationship("DatasetModel", back_populates="videos")
+
+    __table_args__ = (
+        Index("ix_annotation_video_dataset_status", "dataset_id", "status"),
     )
