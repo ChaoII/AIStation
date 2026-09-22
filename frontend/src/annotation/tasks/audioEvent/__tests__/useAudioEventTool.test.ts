@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   createAudioSegment,
   hasAudioOverlap,
+  hasOverlapExcluding,
   findOverlappingSegment,
   clampAudioRange,
   segmentToRange,
@@ -97,5 +98,19 @@ describe("useAudioEventTool 音频事件工具", () => {
     // 空 / undefined segments 均返回 false
     expect(hasSegmentWithId([], "s1")).toBe(false);
     expect(hasSegmentWithId(undefined, "s1")).toBe(false);
+  });
+
+  it("hasOverlapExcluding 编辑时排除自身片段后判断与其它片段重叠", () => {
+    const segs = [
+      { id: "s1", start: 0, end: 2 } as AudioSegment,
+      { id: "s2", start: 4, end: 6 } as AudioSegment,
+    ];
+    // 排除自身后，区间落在其它片段间隙内不算重叠
+    expect(hasOverlapExcluding(segs, "s1", 0, 3)).toBe(false);
+    // 与其它片段相交则判定重叠
+    expect(hasOverlapExcluding(segs, "s1", 5, 7)).toBe(true);
+    expect(hasOverlapExcluding(segs, "s1", 4.5, 5.5)).toBe(true);
+    // 与不存在的 id 视为不排除任何片段
+    expect(hasOverlapExcluding(segs, "not-exist", 1, 1.5)).toBe(true);
   });
 });

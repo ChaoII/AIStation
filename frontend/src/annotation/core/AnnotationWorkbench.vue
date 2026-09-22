@@ -509,7 +509,7 @@
     <el-dialog
       v-model="audioDialogVisible"
       :title="audioDialogMode === 'create' ? '新建事件片段' : '编辑事件片段'"
-      width="480px"
+      width="500px"
       append-to-body
     >
       <el-form label-width="80px">
@@ -630,6 +630,7 @@ import {
 import {
   createAudioSegment,
   hasAudioOverlap,
+  hasOverlapExcluding,
   clampAudioRange,
 } from "../tasks/audioEvent/useAudioEventTool";
 import AudioEventPanel from "../tasks/audioEvent/AudioEventPanel.vue";
@@ -1060,6 +1061,11 @@ function confirmAudioDialog() {
     store.markUnsaved();
     pushHistory();
   } else {
+    // 编辑分支：先排除自身片段，校验调整后的区间是否与其它片段重叠
+    if (hasOverlapExcluding(audioSegments.value, audioDialogId.value, start, end)) {
+      ElMessage.warning("调整后的区间与已有事件片段重叠，无法保存");
+      return;
+    }
     const seg = store.annotations.find((a) => a.id === audioDialogId.value) as AudioSegment | undefined;
     if (seg && labelId != null) {
       seg.start = start;
@@ -1096,22 +1102,27 @@ async function initAudio() {
   const datasetId = store.task?.dataset_id;
   if (!datasetId) return;
   resetDrawingState();
-  const lr = await getAudioList(datasetId);
-  const items = lr?.data?.data?.items || [];
-  const audio = items[0];
-  if (!audio) return;
-  audioId.value = audio.id;
-  const dr = await getAudioDetail(audio.id);
-  const d = dr?.data?.data;
-  audioDuration.value = d?.duration || 0;
-  audioUrl.value = await getAudioPlayUrl(audio.id);
-  const ar = await loadAudioAnnotations({ task_id: store.taskId, audio_id: audio.id });
-  store.annotations = (ar?.data?.data?.annotation_data || []) as any;
-  store.selectedAnnotationId = "";
-  store.unsaved = false;
-  store.totalCount = 1;
-  store.annotatedCount = store.annotations.length ? 1 : 0;
-  lockCurrentAudio(audio.id);
+  try {
+    const lr = await getAudioList(datasetId);
+    const items = lr?.data?.data?.items || [];
+    const audio = items[0];
+    if (!audio) return;
+    audioId.value = audio.id;
+    const dr = await getAudioDetail(audio.id);
+    const d = dr?.data?.data;
+    audioDuration.value = d?.duration || 0;
+    audioUrl.value = await getAudioPlayUrl(audio.id);
+    const ar = await loadAudioAnnotations({ task_id: store.taskId, audio_id: audio.id });
+    store.annotations = (ar?.data?.data?.annotation_data || []) as any;
+    store.selectedAnnotationId = "";
+    store.unsaved = false;
+    store.totalCount = 1;
+    store.annotatedCount = store.annotations.length ? 1 : 0;
+    lockCurrentAudio(audio.id);
+  } catch (e) {
+    console.error("加载音频事件任务失败", e);
+    ElMessage.error("音频事件数据加载失败，请稍后重试");
+  }
 }
 const MAX_HISTORY = 50;
 let historyStack: string[] = [];

@@ -38,6 +38,23 @@ export function hasAudioOverlap(
 }
 
 /**
+ * 判断新区间 `[start, end)` 是否与「除 excludeId 之外」的其它片段重叠。
+ * 用于编辑片段时排除自身，避免「自身与自身重叠」的误判。
+ */
+export function hasOverlapExcluding(
+  segments: readonly Pick<AudioSegment, "id" | "start" | "end">[],
+  excludeId: string,
+  start: number,
+  end: number
+): boolean {
+  return hasAudioOverlap(
+    segments.filter((s) => s.id !== excludeId),
+    start,
+    end
+  );
+}
+
+/**
  * 返回与新区间 `[start, end)` 重叠的第一个片段（用于提示冲突来源）。
  */
 export function findOverlappingSegment(

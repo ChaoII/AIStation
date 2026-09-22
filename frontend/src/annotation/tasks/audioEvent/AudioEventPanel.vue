@@ -79,7 +79,7 @@ function formatTime(seconds: number): string {
   height: 32px;
   padding: 0 8px;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--el-font-size-base);
   border-bottom: 1px solid var(--el-border-color-light);
 }
 .aep-body {
@@ -129,7 +129,6 @@ function formatTime(seconds: number): string {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--el-color-info);
-  font-size: 11px;
 }
 .aep-actions {
   display: flex;

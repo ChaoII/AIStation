@@ -17,6 +17,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from "vue";
+import { ElMessage } from "element-plus";
 import { VideoPlay, VideoPause } from "@element-plus/icons-vue";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
@@ -184,6 +185,11 @@ onMounted(() => {
     color: "var(--el-color-primary-light-5)",
   });
   const subs: Array<() => void> = [];
+  subs.push(
+    ws.on("error", () => {
+      ElMessage.error("音频波形加载失败，请检查音频地址或网络后重试");
+    })
+  );
   subs.push(
     ws.on("ready", (dur) => {
       duration.value = dur;
