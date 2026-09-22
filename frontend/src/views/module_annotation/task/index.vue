@@ -185,6 +185,7 @@
             <el-option label="折线" value="polyline" />
             <el-option label="全景分割" value="panoptic_segmentation" />
             <el-option label="3D 目标检测" value="cuboid" />
+            <el-option label="文本NER" value="text_ner" />
           </el-select>
         </el-form-item>
         <el-form-item
@@ -215,37 +216,87 @@
         </el-form-item>
         <el-form-item label="类别">
           <div style="width: 100%">
-            <div style="display: flex; gap: 8px; margin-bottom: 8px">
-              <el-input
-                v-model="newClassName"
-                placeholder="输入类别名称，如 person"
-                @keyup.enter="handleAddClass"
-              />
-              <el-button type="primary" icon="plus" @click="handleAddClass">添加</el-button>
-            </div>
-            <div
-              v-if="formData.classes.length"
-              style="display: flex; flex-direction: column; gap: 6px"
-            >
-              <div
-                v-for="(cls, index) in formData.classes"
-                :key="`${cls.id}-${index}`"
-                style="display: flex; align-items: center; gap: 8px"
-              >
-                <el-tag :color="cls.color" effect="dark" closable @close="handleRemoveClass(index)">
-                  {{ cls.name }}
-                </el-tag>
-                <el-switch
-                  v-model="cls.is_instance"
-                  size="small"
-                  :active-text="'实例'"
-                  :inactive-text="'背景'"
+            <!-- 文本NER：实体 + 关系 类型配置（classes 为字典） -->
+            <template v-if="formData.task_type === 'text_ner'">
+              <div class="ner-sub-title">实体类型</div>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px">
+                <el-input
+                  v-model="newEntityName"
+                  placeholder="输入实体类型名称，如 人物"
+                  @keyup.enter="handleAddEntity"
                 />
+                <el-color-picker v-model="newEntityColor" />
+                <el-button type="primary" icon="plus" @click="handleAddEntity">添加</el-button>
               </div>
-            </div>
-            <span v-else style="font-size: 12px; color: var(--el-text-color-secondary)">
-              暂无类别，添加后可在标注工作台使用
-            </span>
+              <div v-if="entities.length" style="display: flex; flex-direction: column; gap: 6px">
+                <div
+                  v-for="(entity, index) in entities"
+                  :key="`${entity.id}-${index}`"
+                  style="display: flex; align-items: center; gap: 8px"
+                >
+                  <el-tag :color="entity.color" effect="dark" closable @close="handleRemoveEntity(index)">
+                    {{ entity.name }}
+                  </el-tag>
+                </div>
+              </div>
+              <div v-else class="ner-empty">暂无实体类型，添加后可在标注工作台使用</div>
+
+              <div class="ner-sub-title">关系类型</div>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px">
+                <el-input
+                  v-model="newRelationName"
+                  placeholder="输入关系类型名称，如 隶属"
+                  @keyup.enter="handleAddRelation"
+                />
+                <el-button type="primary" icon="plus" @click="handleAddRelation">添加</el-button>
+              </div>
+              <div v-if="relations.length" style="display: flex; flex-direction: column; gap: 6px">
+                <div
+                  v-for="(relation, index) in relations"
+                  :key="`${relation.id}-${index}`"
+                  style="display: flex; align-items: center; gap: 8px"
+                >
+                  <el-tag type="info" closable @close="handleRemoveRelation(index)">
+                    {{ relation.name }}
+                  </el-tag>
+                </div>
+              </div>
+              <div v-else class="ner-empty">暂无关系类型，添加后可在标注工作台使用</div>
+            </template>
+            <!-- 其他类型：类别列表（classes 为数组） -->
+            <template v-else>
+              <div style="display: flex; gap: 8px; margin-bottom: 8px">
+                <el-input
+                  v-model="newClassName"
+                  placeholder="输入类别名称，如 person"
+                  @keyup.enter="handleAddClass"
+                />
+                <el-button type="primary" icon="plus" @click="handleAddClass">添加</el-button>
+              </div>
+              <div
+                v-if="formData.classes.length"
+                style="display: flex; flex-direction: column; gap: 6px"
+              >
+                <div
+                  v-for="(cls, index) in formData.classes"
+                  :key="`${cls.id}-${index}`"
+                  style="display: flex; align-items: center; gap: 8px"
+                >
+                  <el-tag :color="cls.color" effect="dark" closable @close="handleRemoveClass(index)">
+                    {{ cls.name }}
+                  </el-tag>
+                  <el-switch
+                    v-model="cls.is_instance"
+                    size="small"
+                    :active-text="'实例'"
+                    :inactive-text="'背景'"
+                  />
+                </div>
+              </div>
+              <span v-else style="font-size: 12px; color: var(--el-text-color-secondary)">
+                暂无类别，添加后可在标注工作台使用
+              </span>
+            </template>
           </div>
         </el-form-item>
         <el-form-item label="备注" prop="description">
@@ -268,7 +319,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 import { AnnotationAPI } from "@/api/module_annotation";
 import UserAPI from "@/api/module_system/user";
@@ -319,6 +370,13 @@ const dataFormRef = ref();
 const datasetOptions = ref<any[]>([]);
 const userOptions = ref<any[]>([]);
 const newClassName = ref("");
+const newEntityName = ref("");
+const newEntityColor = ref(CLASS_COLORS[0]);
+const newRelationName = ref("");
+
+// text_ner 任务：实体/关系类型（classes 为 {entities:[], relations:[]} 字典）
+const entities = ref<Array<{ id: number; name: string; color: string }>>([]);
+const relations = ref<Array<{ id: number; name: string }>>([]);
 
 let optionsLoaded = false;
 // 数据集/用户选项仅在打开新建/编辑弹窗时懒加载，避免每次进入页面都多拉两次列表
@@ -367,6 +425,7 @@ const searchConfig = reactive<ISearchConfig>({
         { label: "折线", value: "polyline" },
         { label: "全景分割", value: "panoptic_segmentation" },
         { label: "3D 目标检测", value: "cuboid" },
+        { label: "文本NER", value: "text_ner" },
       ],
       attrs: { placeholder: "请选择标注类型", clearable: true, style: { width: "167.5px" } },
     },
@@ -550,6 +609,11 @@ async function resetForm() {
   }
   Object.assign(formData, makeInitialFormData());
   newClassName.value = "";
+  newEntityName.value = "";
+  newEntityColor.value = CLASS_COLORS[0];
+  newRelationName.value = "";
+  entities.value = [];
+  relations.value = [];
 }
 
 function handleAddClass() {
@@ -576,6 +640,62 @@ function handleRemoveClass(index: number) {
   formData.classes.splice(index, 1);
 }
 
+function handleAddEntity() {
+  const name = newEntityName.value.trim();
+  if (!name) {
+    ElMessage.warning("请输入实体类型名称");
+    return;
+  }
+  if (entities.value.some((e) => e.name === name)) {
+    ElMessage.warning("实体类型名称已存在");
+    return;
+  }
+  const nextId = entities.value.reduce((max, e) => Math.max(max, e.id + 1), 0);
+  entities.value.push({
+    id: nextId,
+    name,
+    color: newEntityColor.value || CLASS_COLORS[nextId % CLASS_COLORS.length],
+  });
+  newEntityName.value = "";
+}
+
+async function handleRemoveEntity(index: number) {
+  const entity = entities.value[index];
+  if (!entity) return;
+  await ElMessageBox.confirm(
+    `确认删除实体类型「${entity.name}」？该操作不可恢复。`,
+    "警告",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+  );
+  entities.value.splice(index, 1);
+}
+
+function handleAddRelation() {
+  const name = newRelationName.value.trim();
+  if (!name) {
+    ElMessage.warning("请输入关系类型名称");
+    return;
+  }
+  if (relations.value.some((r) => r.name === name)) {
+    ElMessage.warning("关系类型名称已存在");
+    return;
+  }
+  const nextId = relations.value.reduce((max, r) => Math.max(max, r.id + 1), 0);
+  relations.value.push({ id: nextId, name });
+  newRelationName.value = "";
+}
+
+async function handleRemoveRelation(index: number) {
+  const relation = relations.value[index];
+  if (!relation) return;
+  await ElMessageBox.confirm(
+    `确认删除关系类型「${relation.name}」？该操作不可恢复。`,
+    "警告",
+    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+  );
+  relations.value.splice(index, 1);
+}
+
 async function handleCloseDialog() {
   dialogVisible.visible = false;
   await resetForm();
@@ -596,7 +716,27 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
       formData.assignees = item.assignees || [];
       formData.description = item.description;
       formData.classification_mode = item.classification_mode;
-      formData.classes = normalizeClasses(item.classes);
+      if (item.task_type === "text_ner") {
+        // 文本NER：classes 为 {entities, relations} 字典
+        const classesObj = (item.classes || {}) as {
+          entities?: Array<{ id: number; name: string; color?: string }>;
+          relations?: Array<{ id: number; name: string }>;
+        };
+        entities.value = (classesObj.entities || []).map((e, i) => ({
+          id: typeof e.id === "number" ? e.id : i,
+          name: e.name,
+          color: (typeof e.color === "string" && e.color) || CLASS_COLORS[i % CLASS_COLORS.length],
+        }));
+        relations.value = (classesObj.relations || []).map((r, i) => ({
+          id: typeof r.id === "number" ? r.id : i,
+          name: r.name,
+        }));
+        formData.classes = [];
+      } else {
+        entities.value = [];
+        relations.value = [];
+        formData.classes = normalizeClasses(item.classes);
+      }
     }
   } else {
     dialogVisible.title = "新增任务";
@@ -610,6 +750,11 @@ async function handleSubmit() {
     if (valid) {
       submitLoading.value = true;
       const id = formData.id;
+      // text_ner 提交 classes 字典，其余类型提交数组
+      const classes =
+        formData.task_type === "text_ner"
+          ? { entities: entities.value, relations: relations.value }
+          : formData.classes;
       try {
         if (id) {
           await AnnotationAPI.updateTask(id, {
@@ -618,7 +763,7 @@ async function handleSubmit() {
             assignees: formData.assignees,
             classification_mode: formData.classification_mode,
             description: formData.description,
-            classes: formData.classes,
+            classes,
           });
         } else {
           await AnnotationAPI.createTask({
@@ -626,7 +771,7 @@ async function handleSubmit() {
             name: formData.name,
             task_type: formData.task_type,
             assignees: formData.assignees,
-            classes: formData.classes,
+            classes,
             classification_mode: formData.classification_mode,
             description: formData.description,
           });
@@ -655,6 +800,7 @@ function annotationTypeLabel(type: string) {
     polyline: "折线",
     panoptic_segmentation: "全景分割",
     cuboid: "3D 目标检测",
+    text_ner: "文本NER",
   };
   return map[type] || type;
 }
@@ -671,7 +817,22 @@ function annotationTypeTag(type: string) {
     polyline: "warning",
     panoptic_segmentation: "primary",
     cuboid: "danger",
+    text_ner: "info",
   };
   return map[type];
 }
 </script>
+
+<style lang="scss" scoped>
+.ner-sub-title {
+  margin-bottom: 8px;
+  color: var(--el-text-color-primary);
+  font-weight: var(--el-font-weight-semibold);
+}
+
+.ner-empty {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

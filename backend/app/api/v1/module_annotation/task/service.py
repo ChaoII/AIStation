@@ -1,7 +1,10 @@
+from typing import Any
+
 from sqlalchemy import and_, func, select
 
 from app.config.setting import settings
 from app.core.database import async_db_session
+from app.core.exceptions import CustomException
 from app.core.logger import log
 
 from ..annotation.model import AnnotationRecordModel
@@ -10,6 +13,33 @@ from .model import AnnotationTaskModel
 
 
 class TaskService:
+
+    @classmethod
+    def validate_classes(cls, task_type: str | None, classes: Any) -> None:
+        """按任务类型校验 classes 形状。
+
+        - ``text_ner``：classes 必须是 ``{"entities": [...], "relations": [...]}`` 字典。
+        - 其他类型：classes 必须是 ``list``。
+        - ``task_type`` 为 ``None``（无法确定时）宽松放行，由调用方保证正确性。
+        """
+        if classes is None:
+            return
+        if task_type == "text_ner":
+            if not isinstance(classes, dict):
+                raise CustomException(
+                    msg="文本NER任务的 classes 必须是 {entities: [...], relations: [...]} 字典",
+                    status_code=400,
+                )
+            if "entities" not in classes or "relations" not in classes:
+                raise CustomException(
+                    msg="文本NER任务的 classes 需包含 entities 与 relations 字段",
+                    status_code=400,
+                )
+        elif not isinstance(classes, list):
+            raise CustomException(
+                msg=f"任务类型 {task_type} 的 classes 必须是数组",
+                status_code=400,
+            )
 
     @classmethod
     async def update_progress(cls, task_id: int, auth=None) -> dict:

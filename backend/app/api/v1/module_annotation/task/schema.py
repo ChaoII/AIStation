@@ -11,7 +11,7 @@ class TaskCreateSchema(BaseModel):
     name: str = Field(max_length=128)
     task_type: AnnotationType
     assignees: list[int] = Field(default_factory=list)
-    classes: list[dict] = Field(default_factory=list)
+    classes: list[dict] | dict[str, Any] = Field(default_factory=list)
     classification_mode: str | None = None
     description: str | None = None
 
@@ -19,7 +19,7 @@ class TaskCreateSchema(BaseModel):
 class TaskUpdateSchema(BaseModel):
     name: str | None = Field(None, max_length=128)
     assignees: list[int] | None = None
-    classes: list[dict] | None = None
+    classes: list[dict] | dict[str, Any] | None = None
     classification_mode: str | None = None
     description: str | None = None
 

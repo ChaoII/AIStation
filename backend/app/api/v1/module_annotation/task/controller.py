@@ -86,6 +86,7 @@ async def create_task(
 ) -> JSONResponse:
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
+    TaskService.validate_classes(data.task_type, data.classes)
     task = await crud.create(data=data)
     if data.assignees:
         await TaskService.ensure_annotation_access(data.assignees)
@@ -100,6 +101,10 @@ async def update_task(
 ) -> JSONResponse:
     from .crud import TaskCRUD
     crud = TaskCRUD(auth=auth)
+    if data.classes is not None:
+        # 更新时 payload 不含 task_type，从已存在任务推断以校验 classes 形状
+        existing = await crud.get(id=id)
+        TaskService.validate_classes(existing.task_type if existing else None, data.classes)
     result = await crud.update(id=id, data=data)
     if data.assignees:
         await TaskService.ensure_annotation_access(data.assignees)
