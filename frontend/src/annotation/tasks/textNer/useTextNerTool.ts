@@ -66,3 +66,42 @@ export function findSpanAt(spans: readonly EntitySpan[], offset: number): Entity
 export function spanToRange(span: Pick<EntitySpan, "start" | "end">): SpanRange {
   return { from: span.start, to: span.end };
 }
+
+/**
+ * 按换行（`\n`）切分出每一行的起始偏移（含空行），用于「同一句」判断。
+ * 首行起点恒为 0，之后每遇一个 `\n` 记录下一个行起点。
+ */
+export function buildSentenceLineStarts(content: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content.charCodeAt(i) === 10) starts.push(i + 1);
+  }
+  return starts;
+}
+
+/** 二分查找：给定偏移落到第几行（0 起）。偏移落在行首时归属该行。 */
+export function lineIndexOf(lineStarts: readonly number[], offset: number): number {
+  let lo = 0,
+    hi = lineStarts.length - 1,
+    ans = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (lineStarts[mid] <= offset) {
+      ans = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return ans;
+}
+
+/** 判断两个实体是否位于同一句（同一行），按 `\n` 切分。 */
+export function sameSentence(
+  content: string,
+  a: Pick<EntitySpan, "start">,
+  b: Pick<EntitySpan, "start">
+): boolean {
+  const starts = buildSentenceLineStarts(content);
+  return lineIndexOf(starts, a.start) === lineIndexOf(starts, b.start);
+}

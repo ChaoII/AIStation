@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { createEntitySpan, hasOverlap, findSpanAt, spanToRange } from "../useTextNerTool";
+import {
+  createEntitySpan,
+  hasOverlap,
+  findSpanAt,
+  spanToRange,
+  buildSentenceLineStarts,
+  lineIndexOf,
+  sameSentence,
+} from "../useTextNerTool";
 import type { EntitySpan } from "../../../../api/module_annotation/document";
 
 describe("useTextNerTool 文本实体工具", () => {
@@ -56,5 +64,29 @@ describe("useTextNerTool 文本实体工具", () => {
   it("spanToRange 还原区间", () => {
     const span = { start: 1, end: 3 } as EntitySpan;
     expect(spanToRange(span)).toEqual({ from: 1, to: 3 });
+  });
+
+  it("buildSentenceLineStarts 按 \\n 切分并含空行", () => {
+    expect(buildSentenceLineStarts("ab\ncd\n\nef")).toEqual([0, 3, 6, 7]);
+    expect(buildSentenceLineStarts("")).toEqual([0]);
+    expect(buildSentenceLineStarts("abc")).toEqual([0]);
+  });
+
+  it("lineIndexOf 二分定位偏移所在行", () => {
+    const starts = buildSentenceLineStarts("ab\ncd\n\nef");
+    expect(lineIndexOf(starts, 0)).toBe(0);
+    expect(lineIndexOf(starts, 2)).toBe(0);
+    expect(lineIndexOf(starts, 3)).toBe(1);
+    expect(lineIndexOf(starts, 6)).toBe(2);
+    expect(lineIndexOf(starts, 7)).toBe(3);
+  });
+
+  it("sameSentence 同句为真、跨行为假、空行边界正确", () => {
+    const content = "今天天气不错\n上海是座大城市";
+    expect(sameSentence(content, { start: 0 }, { start: 4 })).toBe(true);
+    expect(sameSentence(content, { start: 1 }, { start: 7 })).toBe(false);
+    // 第 2 行开头 offset 6（"上海" 首字符），与第 1 行末尾实体不同句
+    expect(sameSentence(content, { start: 7 }, { start: 6 })).toBe(false);
+    expect(sameSentence(content, { start: 7 }, { start: 8 })).toBe(true);
   });
 });

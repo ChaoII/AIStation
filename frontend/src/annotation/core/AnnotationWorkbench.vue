@@ -28,6 +28,35 @@
     </div>
     <component :is="plugin.panel" v-if="plugin.panel" :ctx="panelCtx" class="ann-plugin-panel" />
     <div class="ann-body">
+      <template v-if="isTextTask">
+        <main class="ann-canvas-area text-ner-main">
+          <component
+            :is="plugin.renderer"
+            :content="docContent"
+            :entities="textEntities"
+            :selected-id="store.selectedAnnotationId"
+            :highlight-ids="activeRelationHighlightIds"
+            :classes="textEntityClasses"
+            :entity-color="textEntityColor"
+            @select="onTextSelect"
+            @span-click="onSpanClick"
+          />
+        </main>
+        <TextNerPanel
+          :entities="textEntities"
+          :relations="textRelations"
+          :entity-classes="textEntityClasses"
+          :relation-classes="textRelationClasses"
+          :selected-id="store.selectedAnnotationId"
+          :active-relation-id="activeRelationId"
+          @select-entity="store.selectedAnnotationId = $event"
+          @new-relation="openRelationDialog"
+          @delete-entity="deleteEntity"
+          @delete-relation="deleteRelation"
+          @click-relation="activeRelationId = $event"
+        />
+      </template>
+      <template v-else>
       <AnnotationToolbar
         :tools="displayTools"
         :current-tool="currentTool"
@@ -137,6 +166,7 @@
         @contextmenu-annotation="openContextMenu"
         @delete-annotation="deleteById"
       />
+      </template>
     </div>
     <VideoPlayerBar
       v-if="isVideoTask"
@@ -155,7 +185,7 @@
       @zoom-out="zoomStep(1 / 1.2)"
     />
     <AnnotationHistoryBar
-      :has-current-image="!!store.currentImage || isVideoTask"
+      :has-current-image="!!store.currentImage || isVideoTask || isTextTask"
       :current-index="store.currentImageIndex"
       :total="store.images.length"
       :unsaved="store.unsaved"
@@ -356,6 +386,86 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- 文本 NER：实体类型选择 -->
+    <el-dialog v-model="entityDialogVisible" title="选择实体类型" width="500px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="实体类型">
+          <el-select v-model="entityLabelId" size="small" style="width: 100%">
+            <el-option
+              v-for="c in textEntityClasses"
+              :key="c.id"
+              :label="c.name"
+              :value="c.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="entityDialogVisible = false; selRange = null">取消</el-button>
+        <el-button type="primary" @click="confirmEntity">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 文本 NER：编辑实体 -->
+    <el-dialog v-model="editSpanVisible" title="编辑实体" width="500px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="实体类型">
+          <el-select v-model="editSpanLabelId" size="small" style="width: 100%">
+            <el-option
+              v-for="c in textEntityClasses"
+              :key="c.id"
+              :label="c.name"
+              :value="c.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editSpanVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveEditSpan">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 文本 NER：新建关系 -->
+    <el-dialog v-model="relationDialogVisible" title="新建关系" width="520px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="起点实体">
+          <el-select v-model="relationForm.from" size="small" style="width: 100%" placeholder="选择起点实体">
+            <el-option
+              v-for="e in textEntities"
+              :key="e.id"
+              :label="`${e.text}（${entityLabelName(e)}）`"
+              :value="e.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="终点实体">
+          <el-select v-model="relationForm.to" size="small" style="width: 100%" placeholder="选择终点实体">
+            <el-option
+              v-for="e in textEntities"
+              :key="e.id"
+              :label="`${e.text}（${entityLabelName(e)}）`"
+              :value="e.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关系类型">
+          <el-select v-model="relationForm.relation_type" size="small" style="width: 100%" placeholder="选择关系类型">
+            <el-option
+              v-for="r in textRelationClasses"
+              :key="r.id"
+              :label="r.name"
+              :value="r.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relationDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmRelation">创建关系</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -401,6 +511,23 @@ import {
   saveVideoAnnotations,
   loadVideoAnnotations,
 } from "@/api/module_annotation/video";
+import {
+  getDocumentList,
+  getDocumentContent,
+  lockDocument,
+  unlockDocument,
+  saveTextAnnotations,
+  loadTextAnnotations,
+  type TextDocumentMeta,
+  type EntitySpan,
+  type Relation,
+} from "@/api/module_annotation/document";
+import {
+  createEntitySpan,
+  findOverlappingSpan,
+  sameSentence,
+} from "../tasks/textNer/useTextNerTool";
+import TextNerPanel from "../tasks/textNer/TextNerPanel.vue";
 
 const props = defineProps<{
   plugins: AnnotationTaskPlugin[];
@@ -523,6 +650,12 @@ const plugin = computed(
   () => props.plugins.find((p) => p.name === (store.task?.task_type || "")) ?? props.plugins[0]
 );
 const isVideoTask = computed(() => plugin.value.media === "video");
+const isTextTask = computed(() => plugin.value.media === "text");
+// ==== 文本 NER 文档状态 ====
+const documentId = ref<number | null>(null);
+const docContent = ref("");
+const docMeta = ref<TextDocumentMeta | null>(null);
+let lockedDocumentId: number | null = null;
 const displayTools = computed(() => [...baseTools, ...plugin.value.tools]);
 const taskTypeLabel = computed(() => plugin.value.label);
 const taskTagType = computed(() => (plugin.value.color as any) || "primary");
@@ -653,6 +786,10 @@ function unlockCurrent() {
     unlockVideo(lockedVideoId).catch(() => {});
     lockedVideoId = null;
   }
+  if (lockedDocumentId) {
+    unlockDocument(lockedDocumentId).catch(() => {});
+    lockedDocumentId = null;
+  }
 }
 function lockCurrentVideo(id: number) {
   lockVideo(id)
@@ -741,6 +878,151 @@ function deleteSelected() {
   deleteAnnotation(store.selectedAnnotationId);
 }
 
+// ==== 文本 NER：实体 / 关系编辑 ====
+const selRange = ref<{ from: number; to: number } | null>(null);
+const entityDialogVisible = ref(false);
+const entityLabelId = ref<number | null>(null);
+const editSpanVisible = ref(false);
+const editSpanId = ref("");
+const editSpanLabelId = ref<number | null>(null);
+const relationDialogVisible = ref(false);
+const relationForm = reactive({ from: "", to: "", relation_type: null as number | null });
+
+// 句子边界按 \n 切分；「同一句」判断交由 useTextNerTool 的同名工具函数（sameSentence）
+
+function entityLabelName(e: EntitySpan): string {
+  return textEntityClasses.value.find((c) => c.id === e.label_id)?.name ?? `#${e.label_id}`;
+}
+function onTextSelect(range: { from: number; to: number }) {  if (lockedByOther.value) return;
+  if (!range || range.to <= range.from) return;
+  const overlap = findOverlappingSpan(textEntities.value, range.from, range.to);
+  if (overlap) {
+    ElMessage.warning("该选区与已有实体重叠，无法创建实体");
+    return;
+  }
+  selRange.value = range;
+  entityLabelId.value = textEntityClasses.value[0]?.id ?? null;
+  entityDialogVisible.value = true;
+}
+function confirmEntity() {
+  const range = selRange.value;
+  if (!range || !entityLabelId.value) return;
+  const span = createEntitySpan(docContent.value, range, entityLabelId.value);
+  store.annotations.push(span as any);
+  store.selectedAnnotationId = span.id;
+  store.markUnsaved();
+  pushHistory();
+  entityDialogVisible.value = false;
+  selRange.value = null;
+}
+function onSpanClick(span: EntitySpan) {
+  if (lockedByOther.value) return;
+  editSpanId.value = span.id;
+  editSpanLabelId.value = span.label_id;
+  editSpanVisible.value = true;
+}
+function saveEditSpan() {
+  const s = store.annotations.find((a) => a.id === editSpanId.value) as EntitySpan | undefined;
+  if (s && editSpanLabelId.value) {
+    s.label_id = editSpanLabelId.value;
+    store.markUnsaved();
+    pushHistory();
+  }
+  editSpanVisible.value = false;
+}
+function deleteEntity(id: string) {
+  const ent = textEntities.value.find((e) => e.id === id);
+  if (!ent) return;
+  const relCount = textRelations.value.filter(
+    (r) => r.from === id || r.to === id
+  ).length;
+  ElMessageBox.confirm(
+    `将删除实体「${ent.text || "?"}」及关联的 ${relCount} 个关系，且不可恢复。`,
+    "删除实体",
+    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+  )
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter(
+        (a) =>
+          a.id !== id &&
+          !((a as any).type === "Relation" && ((a as any).from === id || (a as any).to === id))
+      );
+      if (store.annotations.length !== before) {
+        if (store.selectedAnnotationId === id) store.selectedAnnotationId = "";
+        store.markUnsaved();
+        pushHistory();
+      }
+    })
+    .catch(() => {});
+}
+function openRelationDialog() {
+  if (lockedByOther.value) return;
+  if (textEntities.value.length < 2) {
+    ElMessage.warning("至少需要两个实体才能创建关系");
+    return;
+  }
+  relationForm.from = "";
+  relationForm.to = "";
+  relationForm.relation_type = textRelationClasses.value[0]?.id ?? null;
+  relationDialogVisible.value = true;
+}
+function confirmRelation() {
+  const { from, to, relation_type } = relationForm;
+  if (!from || !to) {
+    ElMessage.warning("请选择关系两端的实体");
+    return;
+  }
+  if (from === to) {
+    ElMessage.warning("关系两端不能是同一实体");
+    return;
+  }
+  const a = textEntities.value.find((e) => e.id === from);
+  const b = textEntities.value.find((e) => e.id === to);
+  if (!a || !b) return;
+  if (!sameSentence(docContent.value, a, b)) {
+    ElMessage.warning("关系两端实体必须位于同一句（同一行）");
+    return;
+  }
+  if (!relation_type) {
+    ElMessage.warning("请选择关系类型");
+    return;
+  }
+  store.annotations.push({
+    id: crypto.randomUUID(),
+    type: "Relation",
+    from,
+    to,
+    relation_type,
+  } as any);
+  store.markUnsaved();
+  pushHistory();
+  relationDialogVisible.value = false;
+  relationForm.from = "";
+  relationForm.to = "";
+  relationForm.relation_type = null;
+}
+function deleteRelation(id: string) {
+  const rel = textRelations.value.find((r) => r.id === id);
+  if (!rel) return;
+  ElMessageBox.confirm("将删除该关系，且不可恢复。", "删除关系", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  })
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter((a) => a.id !== id);
+      if (store.annotations.length !== before) {
+        store.markUnsaved();
+        pushHistory();
+      }
+      if (activeRelationId.value === id) activeRelationId.value = "";
+    })
+    .catch(() => {});
+}
+
+
 // 复制 / 粘贴标注
 let annClipboard: any = null;
 function copySelected() {
@@ -784,14 +1066,45 @@ function pasteCopied() {
   pushHistory();
 }
 
-const taskClasses = ref<any[]>([...(props.config.classes || [])]);
+const taskClasses = ref<any[]>(Array.isArray(props.config.classes) ? [...(props.config.classes || [])] : []);
 watch(
   () => props.config.classes,
   (val) => {
-    taskClasses.value = [...(val || [])];
+    taskClasses.value = Array.isArray(val) ? [...(val || [])] : [];
   },
   { deep: true }
 );
+// ==== 文本 NER：classes 为字典 {entities, relations} ====
+const textEntityClasses = computed<any[]>(() => {
+  const c = store.task?.classes;
+  if (!isTextTask.value || !c || Array.isArray(c)) return [];
+  return c.entities || [];
+});
+const textRelationClasses = computed<any[]>(() => {
+  const c = store.task?.classes;
+  if (!isTextTask.value || !c || Array.isArray(c)) return [];
+  return c.relations || [];
+});
+const textEntities = computed<EntitySpan[]>(() =>
+  store.annotations.filter((a) => (a as any).type === "EntitySpan") as unknown as EntitySpan[]
+);
+const textRelations = computed<Relation[]>(() =>
+  store.annotations.filter((a) => (a as any).type === "Relation") as unknown as Relation[]
+);
+// 实体颜色：优先用类别 color，缺失回退固定色（避免与 Element 主色冲突）
+const TEXT_PRESET = ["#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#9b59b6", "#00bcd4"];
+const textEntityColor = (span: EntitySpan, _classes: any[]) => {
+  const c = textEntityClasses.value.find((x) => x.id === span.label_id);
+  if (c?.color) return c.color;
+  return TEXT_PRESET[Math.abs(span.label_id) % TEXT_PRESET.length];
+};
+// 关系两端实体高亮：由关系列表 hover/click 驱动
+const activeRelationId = ref("");
+const activeRelationHighlightIds = computed<string[]>(() => {
+  if (!activeRelationId.value) return [];
+  const rel = textRelations.value.find((r) => r.id === activeRelationId.value);
+  return rel ? [rel.from, rel.to] : [];
+});
 const panelCtx = computed<PluginPanelContext>(() => ({
   classes: taskClasses.value,
   selectedClassId: selectedClassId.value,
@@ -1352,6 +1665,10 @@ async function init() {
       await initVideo();
       return;
     }
+    if (isTextTask.value) {
+      await initText();
+      return;
+    }
     imageTotal.value = 0;
     imageLoadedPages = 0;
     const imgs = await loadImagePage(1);
@@ -1371,6 +1688,44 @@ async function init() {
   } finally {
     store.loading = false;
   }
+}
+
+async function initText() {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId) return;
+  resetDrawingState();
+  const lr = await getDocumentList(datasetId);
+  const items = lr?.data?.data?.items || [];
+  const doc = items[0];
+  if (!doc) return;
+  documentId.value = doc.id;
+  docMeta.value = doc;
+  const cr = await getDocumentContent(doc.id);
+  docContent.value = cr?.data ?? "";
+  const ar = await loadTextAnnotations(store.taskId, doc.id);
+  store.annotations = (ar?.data?.data?.annotation_data || []) as any;
+  store.selectedAnnotationId = "";
+  store.unsaved = false;
+  store.totalCount = 1;
+  store.annotatedCount = store.annotations.length ? 1 : 0;
+  // 按文档整体加锁 + 定期续期（后端 5 分钟过期）
+  lockDocument(doc.id)
+    .then((lr: any) => {
+      const d = lr?.data?.data;
+      if (d?.locked) {
+        lockedByOther.value = true;
+        lockedByUser.value = d.locked_by ?? null;
+      } else {
+        lockedByOther.value = false;
+        lockedByUser.value = null;
+      }
+      lockedDocumentId = doc.id;
+      clearLockRenewal();
+      lockRenewTimer = window.setInterval(() => {
+        lockDocument(doc.id).catch(() => {});
+      }, 180000);
+    })
+    .catch(() => {});
 }
 
 function goToImage(idx: number) {
@@ -1419,6 +1774,19 @@ async function saveAnn() {
       currentFrame.value,
       store.annotations as any
     );
+    store.unsaved = false;
+    lastSavedKey = annotKey();
+    historyStack = [lastSavedKey];
+    historyIndex = 0;
+    return;
+  }
+  if (isTextTask.value) {
+    if (!documentId.value) return;
+    await saveTextAnnotations({
+      task_id: store.taskId,
+      document_id: documentId.value,
+      annotations: store.annotations as any,
+    });
     store.unsaved = false;
     lastSavedKey = annotKey();
     historyStack = [lastSavedKey];
@@ -2297,6 +2665,12 @@ onBeforeUnmount(() => {
         currentFrame.value,
         store.annotations as any
       ).catch(() => {});
+    } else if (isTextTask.value && documentId.value) {
+      saveTextAnnotations({
+        task_id: store.taskId,
+        document_id: documentId.value,
+        annotations: store.annotations as any,
+      }).catch(() => {});
     } else if (store.currentImageId) {
       props.api
         .saveAnnotations(store.taskId, store.currentImageId, store.annotations)
@@ -2371,6 +2745,12 @@ defineExpose({
   flex: 1;
   min-width: 0;
   position: relative;
+}
+/* 文本模式：允许 CodeMirror 内部拖选文字 */
+.text-ner-main {
+  overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .ctx-backdrop {
   position: fixed;

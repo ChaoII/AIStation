@@ -25,6 +25,8 @@ const props = withDefaults(
     entities?: EntitySpan[];
     /** 当前选中实体 id（高亮描边）。 */
     selectedId?: string;
+    /** 需高亮描边的实体 id 集合（如关系两端实体）。 */
+    highlightIds?: string[];
     /** 实体颜色函数：入参 `(span, classes)`，返回 CSS 颜色。缺省用配色表。 */
     entityColor?: (span: EntitySpan, classes: any[]) => string;
     /** 任务类别（供颜色函数使用，可为空）。 */
@@ -33,6 +35,7 @@ const props = withDefaults(
   {
     entities: () => [],
     selectedId: "",
+    highlightIds: () => [],
     classes: () => [],
     entityColor: undefined,
   }
@@ -80,7 +83,7 @@ function buildDecorations(): DecorationSet {
   for (const span of sorted) {
     const color = entityColorOf(span, props.classes ?? []);
     const bg = isBaseColor(color) ? color : `color-mix(in srgb, ${color} 24%, transparent)`;
-    const isSelected = span.id === props.selectedId;
+    const isSelected = span.id === props.selectedId || props.highlightIds?.includes(span.id);
     ranges.push({
       from: span.start,
       to: span.end,
@@ -136,8 +139,9 @@ onMounted(() => {
     doc: props.content,
     extensions: [
       basicSetup,
+      // 只读：禁止任何修改（readOnly 由命令层拦截），但保留 contenteditable 以支持鼠标拖选。
+      // 切勿同时设置 EditorView.editable.of(false)——那会关闭 DOM 可编辑，鼠标拖选失效。
       EditorState.readOnly.of(true),
-      EditorView.editable.of(false),
       decorationField,
       EditorView.updateListener.of((update) => {
         if (update.selectionSet || update.docChanged) emit("selection", currentRange());
@@ -164,9 +168,20 @@ onUnmounted(() => {
 });
 
 watch(
-  () => [props.entities, props.selectedId] as const,
+  () => [props.entities, props.selectedId, props.highlightIds] as const,
   () => applyDecorations(),
   { deep: true }
+);
+
+// 内容异步加载：控件挂载时 content 可能为空，全文到位后替换文档并重建装饰。
+watch(
+  () => props.content,
+  (val) => {
+    if (!view) return;
+    if (val === view.state.doc.toString()) return;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: val } });
+    applyDecorations();
+  }
 );
 </script>
 
