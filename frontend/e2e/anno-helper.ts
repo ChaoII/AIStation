@@ -18,6 +18,8 @@ const PNG = Buffer.from(
 );
 // 文本 NER 测试用中文 fixture（多句，每行一句，供实体/关系标注与「同一句」校验）。
 const TEXT = readFileSync(fileURLToPath(new URL("./fixtures/sample.txt", import.meta.url)), "utf-8");
+// 音频事件 e2e 用测试音频（2s / 16kHz 单声道 wav，由 ffmpeg 生成），供上传与波形加载校验。
+const AUDIO = readFileSync(fileURLToPath(new URL("./fixtures/test-audio.wav", import.meta.url)));
 
 export async function login(request: APIRequestContext) {
   const loginRes = await request.post(`${API}/system/auth/login`, {
@@ -287,4 +289,80 @@ export async function createTextRelation(
   await pickSelectOption(page, items.nth(2).locator(".el-select"), relationType);
   await relDialog.locator("button", { hasText: "创建关系" }).click();
   await expect(relDialog).toBeHidden();
+}
+
+// ==== 音频事件（audio_event）标注专用步骤 ====
+
+/** 向指定数据集上传测试音频（multipart，字段名 file）。返回后端 audio 元数据。 */
+export async function uploadTestAudio(
+  request: APIRequestContext,
+  auth: Record<string, string>,
+  datasetId: number
+) {
+  const upRes = await request.post(`${API}/annotation/audio/upload?dataset_id=${datasetId}`, {
+    headers: auth,
+    multipart: { file: { name: "test-audio.wav", mimeType: "audio/wav", buffer: AUDIO } },
+  });
+  expect(upRes.ok()).toBeTruthy();
+  return (await upRes.json()).data;
+}
+
+/**
+ * 创建含一个测试音频的 audio_event 标注任务。
+ * `classes` 为事件类别列表（每项 `{id, name, color}`），与后端 audio_event 约定一致。
+ * 返回 { taskId, audioId, datasetId }。
+ */
+export async function createAudioEventTask(
+  request: APIRequestContext,
+  auth: Record<string, string>,
+  prefix: string,
+  classes: any[] = []
+): Promise<{ taskId: number; audioId: number; datasetId: number }> {
+  const name = `${prefix}-${Date.now()}`;
+  const dsRes = await request.post(`${API}/annotation/dataset/create`, {
+    data: { name },
+    headers: auth,
+  });
+  expect(dsRes.ok()).toBeTruthy();
+  const dsId = (await dsRes.json()).data.id;
+
+  const audio = await uploadTestAudio(request, auth, dsId);
+
+  const taskRes = await request.post(`${API}/annotation/task/create`, {
+    data: { dataset_id: dsId, name: `t-${name}`, task_type: "audio_event", classes },
+    headers: auth,
+  });
+  expect(taskRes.ok()).toBeTruthy();
+  const taskId = (await taskRes.json()).data.id;
+  return { taskId: Number(taskId), audioId: audio.id, datasetId: dsId };
+}
+
+/** 进入音频事件工作台：等待波形容器与事件面板挂载，并确认波形已解码（时间控件显示非 0 总时长）。 */
+export async function gotoAudioWorkbench(page: Page, taskId: number) {
+  await page.addInitScript(() => {
+    localStorage.setItem("guideVisible", "false");
+    localStorage.setItem("showGuide", "false");
+  });
+  await page.goto(`/#/annotation/workbench/${taskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".audio-timeline-canvas__waveform").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".audio-event-panel").first()).toBeVisible({ timeout: 20_000 });
+  // 波形就绪后时间控件会显示 `0:00 / 0:02`（总时长已解码），据此确认可拖选区间。
+  await expect(page.locator(".audio-timeline-canvas__time")).toContainText("/ 0:02", { timeout: 20_000 });
+}
+
+/** 在波形时间轴上按宽度百分比拖选一段区间，触发「新建事件片段」弹窗。 */
+export async function createAudioSegment(page: Page, fromFrac: number, toFrac: number) {
+  const wf = await page.locator(".audio-timeline-canvas__waveform").first().boundingBox();
+  expect(wf).not.toBeNull();
+  const y = wf!.y + wf!.height / 2;
+  await page.mouse.move(wf!.x + wf!.width * fromFrac, y, { steps: 5 });
+  await page.mouse.down();
+  await page.mouse.move(wf!.x + wf!.width * toFrac, y, { steps: 20 });
+  await page.mouse.up();
+}
+
+/** 在当前可见的音频事件弹窗中按类别名选择事件类别。 */
+export async function selectAudioLabel(page: Page, labelName: string) {
+  const dialog = page.locator(".el-dialog", { hasText: /事件片段/ }).filter({ visible: true }).first();
+  await pickSelectOption(page, dialog.locator(".el-select"), labelName);
 }
