@@ -33,14 +33,15 @@ async def upload_document(
     # DocumentService.upload_document 接受外部 db 会话，内部仅 flush 不 commit；
     # 由本控制器包裹 begin() 事务，保证提交正常收口；提交失败则补偿删除对象。
     async with async_db_session() as db:
-        document = None
+        object_key = None
         try:
             async with db.begin():
                 document = await DocumentService.upload_document(db, dataset_id, file, auth)
+                object_key = document.object_key
         except Exception:
-            if document is not None and document.object_key:
+            if object_key:
                 try:
-                    await asyncio.to_thread(s3_client.delete_object, document.object_key)
+                    await asyncio.to_thread(s3_client.delete_object, object_key)
                 except Exception as e2:  # noqa: BLE001
                     from app.core.logger import log
                     log.warning(f"[文档上传] 提交失败补偿删除对象失败: {e2}")
