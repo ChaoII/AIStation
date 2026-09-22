@@ -1,7 +1,7 @@
 <template>
   <g>
     <polyline
-      v-for="(stroke, si) in (state?.strokes || [])"
+      v-for="(stroke, si) in strokes"
       :key="si"
       :points="strokePts(stroke)"
       fill="none"
@@ -16,7 +16,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, unref } from "vue";
+import type { Point } from "./types";
 
 const props = defineProps<{
   state: any;
@@ -26,7 +27,10 @@ const props = defineProps<{
   brushSize?: number;
 }>();
 const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
-const strokeWidth = computed(() => props.brushSize ?? 8);
+// 状态下可能直接传 ref（如任务插件 `state: { strokes: brush.strokes }`），也可能传普通数组；
+// 用 unref 兼容两者，非响应式对象内嵌 ref 不会被 Vue 自动解包。
+const strokes = computed<Point[][]>(() => unref(props.state?.strokes) ?? []);
+const strokeWidth = computed(() => unref(props.brushSize) ?? 8);
 function strokePts(stroke: any[]): string {
   if (!stroke || stroke.length === 0) return "";
   return stroke
