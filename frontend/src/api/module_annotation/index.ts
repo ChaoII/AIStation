@@ -1,5 +1,7 @@
 import request from "@/utils/request";
 
+export * from "./video";
+
 const API_PATH = "/annotation";
 
 export const AnnotationAPI = {
