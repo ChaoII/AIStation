@@ -155,7 +155,7 @@
       @zoom-out="zoomStep(1 / 1.2)"
     />
     <AnnotationHistoryBar
-      :has-current-image="!!store.currentImage"
+      :has-current-image="!!store.currentImage || isVideoTask"
       :current-index="store.currentImageIndex"
       :total="store.images.length"
       :unsaved="store.unsaved"
