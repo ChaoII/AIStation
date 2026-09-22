@@ -188,3 +188,87 @@ class VideoService:
             "frame_count": probe["frame_count"],
             "play_url": s3_client.presigned_url(object_key),
         }
+
+    LOCK_TIMEOUT_MINUTES = 5
+
+    @classmethod
+    async def list_videos(cls, dataset_id: int) -> list[dict]:
+        """按数据集列出视频（不含已删除），附带对象存储的播放链接。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AnnotationVideoModel)
+                    .where(
+                        AnnotationVideoModel.dataset_id == dataset_id,
+                        AnnotationVideoModel.is_deleted == False,  # noqa: E712
+                    )
+                    .order_by(AnnotationVideoModel.id.desc())
+                )
+            ).scalars().all()
+            return [cls._video_out(v) for v in rows]
+
+    @classmethod
+    async def get_video(cls, video_id: int) -> dict:
+        """查询单个视频详情，不存在抛 404。"""
+        async with async_db_session() as db:
+            v = await db.get(AnnotationVideoModel, video_id)
+            if not v or v.is_deleted:
+                raise CustomException(msg=f"视频不存在: {video_id}", code=404, status_code=404)
+            return cls._video_out(v)
+
+    @classmethod
+    async def get_play_url(cls, video_id: int) -> str:
+        """返回视频对象存储的短时签名播放链接。"""
+        async with async_db_session() as db:
+            v = await db.get(AnnotationVideoModel, video_id)
+            if not v or v.is_deleted:
+                raise CustomException(msg=f"视频不存在: {video_id}", code=404, status_code=404)
+            return s3_client.presigned_url(v.object_key)
+
+    @classmethod
+    async def lock_video(cls, video_id: int, user_id: int) -> dict:
+        """按视频整体上锁（帧锁），被他人持有且未超时则返回冲突信息。"""
+        from datetime import datetime, timedelta
+
+        async with async_db_session.begin() as db:
+            v = await db.get(AnnotationVideoModel, video_id)
+            if not v or v.is_deleted:
+                raise CustomException(msg=f"视频不存在: {video_id}", code=404, status_code=404)
+            if v.locked_by and v.locked_at:
+                if datetime.utcnow() - v.locked_at > timedelta(minutes=cls.LOCK_TIMEOUT_MINUTES):
+                    v.locked_by = None
+                    v.locked_at = None
+            if v.locked_by and v.locked_by != user_id:
+                return {"locked": True, "locked_by": v.locked_by}
+            v.locked_by = user_id
+            v.locked_at = datetime.utcnow()
+            return {"locked": False, "locked_by": user_id}
+
+    @classmethod
+    async def unlock_video(cls, video_id: int, user_id: int) -> None:
+        """解锁视频，仅锁持有者可解除。"""
+
+        async with async_db_session.begin() as db:
+            v = await db.get(AnnotationVideoModel, video_id)
+            if v and not v.is_deleted and v.locked_by == user_id:
+                v.locked_by = None
+                v.locked_at = None
+
+    @classmethod
+    def _video_out(cls, v: AnnotationVideoModel) -> dict:
+        """视频行 → 输出 dict（含播放链接，status 序列化为字符串）。"""
+        return {
+            "id": v.id,
+            "dataset_id": v.dataset_id,
+            "name": v.name,
+            "object_key": v.object_key,
+            "width": v.width,
+            "height": v.height,
+            "duration": v.duration,
+            "fps": v.fps,
+            "frame_count": v.frame_count,
+            "status": v.status.value if hasattr(v.status, "value") else v.status,
+            "locked_by": v.locked_by,
+            "annotation_count": v.annotation_count,
+            "play_url": s3_client.presigned_url(v.object_key),
+        }
