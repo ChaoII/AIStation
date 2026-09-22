@@ -1,7 +1,7 @@
 import type { Component } from "vue";
 
-/** 任务媒体类型：图片任务按图像加载，视频任务按帧级加载与导航。 */
-export type TaskMedia = "image" | "video";
+/** 任务媒体类型：图片任务按图像加载，视频任务按帧级加载与导航，文本任务按文档全文渲染。 */
+export type TaskMedia = "image" | "video" | "text";
 
 export type TaskShapeType =
   | "AxisAlignedBox"

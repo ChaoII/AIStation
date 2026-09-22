@@ -1,0 +1,60 @@
+import { describe, it, expect } from "vitest";
+import { createEntitySpan, hasOverlap, findSpanAt, spanToRange } from "../useTextNerTool";
+import type { EntitySpan } from "../../../../api/module_annotation/document";
+
+describe("useTextNerTool 文本实体工具", () => {
+  it("createEntitySpan 用 UTF-16 偏移切片生成实体（中文安全）", () => {
+    const content = "你好世界，文本NER";
+    const span = createEntitySpan(content, { from: 1, to: 3 }, 7, "id-1");
+    expect(span).toEqual({
+      id: "id-1",
+      type: "EntitySpan",
+      start: 1,
+      end: 3,
+      label_id: 7,
+      text: "好世",
+    });
+  });
+
+  it("createEntitySpan 未传 id 时自动生成", () => {
+    const span = createEntitySpan("hello", { from: 0, to: 2 }, 1);
+    expect(span.id).toBeTruthy();
+    expect(span.type).toBe("EntitySpan");
+  });
+
+  it("createEntitySpan 对越界区间做钳制", () => {
+    const content = "abcd";
+    expect(createEntitySpan(content, { from: -2, to: 100 }, 1, "a").start).toBe(0);
+    expect(createEntitySpan(content, { from: -2, to: 100 }, 1, "a").end).toBe(4);
+    expect(createEntitySpan(content, { from: 3, to: 1 }, 1, "b").end).toBe(3);
+  });
+
+  it("hasOverlap 相邻（仅接触端点）区间不算重叠", () => {
+    const spans = [{ start: 0, end: 4, id: "s1" } as EntitySpan];
+    expect(hasOverlap(spans, 4, 6)).toBe(false);
+    expect(hasOverlap(spans, -2, 0)).toBe(false);
+  });
+
+  it("hasOverlap 真正相交的区间判定为重叠", () => {
+    const spans = [{ start: 0, end: 4, id: "s1" } as EntitySpan];
+    expect(hasOverlap(spans, 3, 5)).toBe(true);
+    expect(hasOverlap(spans, -1, 2)).toBe(true);
+    expect(hasOverlap(spans, 4, 6)).toBe(false);
+  });
+
+  it("findSpanAt 命中光标所在实体，区间外返回 null", () => {
+    const spans = [
+      { start: 1, end: 4, id: "s1" } as EntitySpan,
+      { start: 6, end: 9, id: "s2" } as EntitySpan,
+    ];
+    expect(findSpanAt(spans, 2)?.id).toBe("s1");
+    expect(findSpanAt(spans, 6)?.id).toBe("s2");
+    expect(findSpanAt(spans, 4)).toBeNull();
+    expect(findSpanAt(spans, 0)).toBeNull();
+  });
+
+  it("spanToRange 还原区间", () => {
+    const span = { start: 1, end: 3 } as EntitySpan;
+    expect(spanToRange(span)).toEqual({ from: 1, to: 3 });
+  });
+});
