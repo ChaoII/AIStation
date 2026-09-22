@@ -902,7 +902,26 @@ function toImagePoint(e: MouseEvent): { x: number; y: number } | null {
   return canvas.containerToImage(e.clientX - r.left, e.clientY - r.top, r.width, r.height);
 }
 
+function toolFor(name: string) {
+  return (
+    plugin.value.toolMap?.[name] ??
+    (name === plugin.value.tool?.name ? plugin.value.tool : undefined)
+  );
+}
+function resetAllDraftTools() {
+  const tm = plugin.value.toolMap;
+  if (tm) for (const k in tm) tm[k]?.reset?.();
+  if (plugin.value.tool) plugin.value.tool.reset?.();
+}
 function setTool(t: string) {
+  const prev = currentTool.value;
+  if (prev !== t) {
+    // 重置即将离开的工具，防止其部分绘制状态残留（如多边形半成品顶点）
+    const prevTool = toolFor(prev);
+    prevTool?.reset?.();
+    // 兼容旧版单工具插件：切换时同样重置其工具
+    if (plugin.value.tool && plugin.value.tool !== prevTool) plugin.value.tool.reset?.();
+  }
   currentTool.value = t;
   resetDrawingState();
 }
@@ -929,7 +948,7 @@ function onDocClick(e: MouseEvent) {
 }
 function onImgLoad(w: number, h: number) {
   imageLoaded.value = true;
-  activeTool.value?.reset?.();
+  resetAllDraftTools();
   measureCanvas();
   if (!canvas.cw.value && w && h) canvas.setImageSize(w, h);
   if (!fittedForImage) {

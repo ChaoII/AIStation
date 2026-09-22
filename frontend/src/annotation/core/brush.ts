@@ -205,7 +205,7 @@ export function useBrushTool() {
   /** 追加轨迹点。 */
   function move(p: Point) {
     const cur = strokes.value;
-    if (cur.length === 0) cur.push([]);
+    if (cur.length === 0) return;
     (cur[cur.length - 1] ||= []).push({ ...p });
   }
 
