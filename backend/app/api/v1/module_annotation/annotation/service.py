@@ -207,28 +207,24 @@ class AnnotationService:
             ]
 
     @classmethod
-    async def _resolve_video_task_id(cls, db, video_id: int) -> int:
-        """取视频所属任务的 task_id：视频 → 数据集 → VIDEO_DETECTION 任务。"""
+    async def _verify_video_task_relation(cls, db, task_id: int, video_id: int) -> AnnotationVideoModel:
+        """校验视频确实归属于指定任务（同为数据集下的 video_detection 任务），返回视频对象。"""
         video = await db.get(AnnotationVideoModel, video_id)
         if not video or video.is_deleted:
             raise CustomException(msg=f"视频不存在: {video_id}", code=404, status_code=404)
-        task = (
-            await db.execute(
-                select(AnnotationTaskModel)
-                .where(
-                    AnnotationTaskModel.dataset_id == video.dataset_id,
-                    AnnotationTaskModel.task_type == "video_detection",
-                    AnnotationTaskModel.is_deleted == False,  # noqa: E712
-                )
-                .order_by(AnnotationTaskModel.id.asc())
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if not task:
+        task = await db.get(AnnotationTaskModel, task_id)
+        if (
+            not task
+            or task.is_deleted
+            or task.dataset_id != video.dataset_id
+            or task.task_type != "video_detection"
+        ):
             raise CustomException(
-                msg="该视频所属数据集不存在视频检测任务", code=400, status_code=400
+                msg="任务与视频不存在有效归属关系，无法保存/读取标注",
+                code=400,
+                status_code=400,
             )
-        return task.id
+        return video
 
     @classmethod
     async def _prune_video_versions(cls, db, task_id: int, video_id: int,
@@ -249,13 +245,12 @@ class AnnotationService:
 
     @classmethod
     async def save_video_annotations(
-        cls, video_id: int, frame_index: int, annotation_data: list[dict], auth
+        cls, task_id: int, video_id: int, frame_index: int, annotation_data: list[dict], auth
     ) -> dict:
-        """按 (video_id, frame_index) 持久化一帧的视频标注；空列表时清除该帧记录。"""
+        """按 (task_id, video_id, frame_index) 持久化一帧的视频标注；空列表时清除该帧记录。"""
         async with async_db_session.begin() as db:
-            task_id = await cls._resolve_video_task_id(db, video_id)
-            video = await db.get(AnnotationVideoModel, video_id)
-            if video and video.locked_by and video.locked_by != auth.user.id:
+            video = await cls._verify_video_task_relation(db, task_id, video_id)
+            if video.locked_by and video.locked_by != auth.user.id:
                 raise CustomException(
                     msg="视频已被其他用户锁定，无法保存", code=409, status_code=409
                 )
@@ -303,10 +298,10 @@ class AnnotationService:
         return {"version": version, "annotation_count": len(annotation_data)}
 
     @classmethod
-    async def load_video_annotations(cls, video_id: int, frame_index: int) -> list[dict] | None:
+    async def load_video_annotations(cls, task_id: int, video_id: int, frame_index: int) -> list[dict] | None:
         """读取某视频帧的最新标注；无记录返回 None。"""
         async with async_db_session.begin() as db:
-            task_id = await cls._resolve_video_task_id(db, video_id)
+            await cls._verify_video_task_relation(db, task_id, video_id)
             record = (
                 await db.execute(
                     select(AnnotationRecordModel)

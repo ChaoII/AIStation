@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class AxisAlignedBoxSchema(BaseModel):
     """2D 目标检测矩形框（归一化 [0,1]，结构同 detection 导出）。"""
 
-    id: str
+    id: str | None = None
     type: str = "AxisAlignedBox"
     class_id: int
     x1: Annotated[float, Field(ge=0.0, le=1.0)]
@@ -23,6 +23,7 @@ class AnnotationSaveSchema(BaseModel):
 
 
 class VideoAnnotationSaveSchema(BaseModel):
+    task_id: int
     video_id: int
     frame_index: int = Field(ge=0, description="帧序号")
     annotations: list[AxisAlignedBoxSchema] = Field(default_factory=list)

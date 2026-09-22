@@ -107,18 +107,21 @@ async def save_video_annotations(
     data: VideoAnnotationSaveSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
 ) -> JSONResponse:
-    annotations = [a.model_dump() for a in data.annotations]
+    await _verify_task_access(data.task_id, auth)
+    annotations = [a.model_dump(exclude_none=True) for a in data.annotations]
     result = await AnnotationService.save_video_annotations(
-        data.video_id, data.frame_index, annotations, auth
+        data.task_id, data.video_id, data.frame_index, annotations, auth
     )
     return SuccessResponse(data=result, msg="保存成功")
 
 
 @AnnotationRouter.get("/video/load", summary="读取视频帧标注")
 async def load_video_annotations(
+    task_id: int,
     v_id: int,
     frame_index: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
 ) -> JSONResponse:
-    data = await AnnotationService.load_video_annotations(v_id, frame_index)
+    await _verify_task_access(task_id, auth)
+    data = await AnnotationService.load_video_annotations(task_id, v_id, frame_index)
     return SuccessResponse(data=data or [])
