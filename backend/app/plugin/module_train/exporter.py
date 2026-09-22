@@ -78,10 +78,6 @@ async def _export_core(
         )
         images = result.scalars().all()
 
-    if not images:
-        log.warning(f"export: dataset {dataset_id} has no images")
-        return
-
     # Determine task_type and class names
     task_type = "detection"
     class_names: dict[int, str] = {}
@@ -102,13 +98,20 @@ async def _export_core(
                             "is_instance": bool(c.get("is_instance", False)),
                         }
 
-    # 视频检测：按帧抽帧导出，复用既有检测格式器（YOLO / x-anylabeling）
+    # 视频检测：按帧抽帧导出，复用既有检测格式器（YOLO / x-anylabeling）。
+    # 必须放在 `if not images: return` 守卫之前：视频数据集的帧通过
+    # AnnotationVideoModel + frame_index 存储，可能没有任何 AnnotationImageModel 行，
+    # 若先按图片空集提前 return，视频导出永远不会执行（Critical 修复）。
     if task_type == "video_detection":
         await _export_video_detection(
             dataset_id, task_id, output_dir, framework,
             annotation_task_id=annotation_task_id, class_names=class_names,
             train_ratio=train_ratio, for_training=for_training, for_eval=for_eval,
         )
+        return
+
+    if not images:
+        log.warning(f"export: dataset {dataset_id} has no images")
         return
 
     if framework == "ultralytics" or framework.startswith("yolo-"):
@@ -831,6 +834,7 @@ async def _export_video_detection(
     samples: list[dict] = []
     frame_anns: dict[str, list] = {}
     used_ids: set[int] = set()
+    used_stems: set[str] = set()
     tmp_dirs: list[str] = []
 
     for video in videos:
@@ -848,6 +852,10 @@ async def _export_video_detection(
             frames_dir = os.path.join(tmp, "frames")
             frames = await asyncio.to_thread(_extract_frames, video_path, fps, frames_dir)
             stem = os.path.splitext(video.name)[0] or f"video_{video.id}"
+            # 同名视频会撞帧文件名（覆盖/标注错配），命名冲突时用 video.id 消除歧义
+            if stem in used_stems:
+                stem = f"{stem}_{video.id}"
+            used_stems.add(stem)
             for frame_index, frame_path in enumerate(frames):
                 fname = f"{stem}_frame_{frame_index:06d}.jpg"
                 anns = await AnnotationService.load_video_annotations(

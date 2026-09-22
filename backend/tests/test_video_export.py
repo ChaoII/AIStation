@@ -11,12 +11,14 @@ from io import BytesIO
 
 from app.api.v1.module_annotation.annotation.service import AnnotationService
 from app.api.v1.module_annotation.dataset.model import (
+    AnnotationType,
     AnnotationVideoModel,
     DatasetModel,
 )
+from app.api.v1.module_annotation.task.model import AnnotationTaskModel
 from app.core.database import async_db_session
 from app.plugin.module_train import exporter
-from app.plugin.module_train.exporter import _export_video_detection
+from app.plugin.module_train.exporter import _export_core, _export_video_detection
 
 
 def _make_video() -> tuple[int, int]:
@@ -41,6 +43,41 @@ def _make_video() -> tuple[int, int]:
             db.add(video)
             await db.flush()
             return ds.id, video.id
+
+    return asyncio.run(_run())
+
+
+def _make_video_with_task() -> tuple[int, int, int]:
+    """建数据集 + 视频 + video_detection 标注任务（无 AnnotationImageModel 行），
+    返回 (dataset_id, video_id, task_id)。"""
+
+    async def _run():
+        async with async_db_session.begin() as db:
+            ds = DatasetModel(name="视频导出入口集")
+            db.add(ds)
+            await db.flush()
+            video = AnnotationVideoModel(
+                dataset_id=ds.id,
+                name="demo.mp4",
+                object_key="demo.mp4",
+                width=1920,
+                height=1080,
+                duration=10.0,
+                fps=25.0,
+                frame_count=250,
+                status="unannotated",
+            )
+            db.add(video)
+            await db.flush()
+            task = AnnotationTaskModel(
+                dataset_id=ds.id,
+                name="视频检测任务",
+                task_type=AnnotationType.VIDEO_DETECTION,
+                classes=[{"id": 0, "name": "cat"}],
+            )
+            db.add(task)
+            await db.flush()
+            return ds.id, video.id, task.id
 
     return asyncio.run(_run())
 
@@ -166,6 +203,41 @@ def test_video_export_skips_unknown_fps_video(monkeypatch, tmp_path):
     # 无帧导出
     img_dir = os.path.join(out, "images", "train")
     assert not os.path.exists(img_dir) or not os.listdir(img_dir)
+
+
+def test_video_export_through_core_entry(monkeypatch, tmp_path):
+    """真实入口 `_export_core`：video-only 数据集（无 AnnotationImageModel 行）应走到视频导出。
+
+    回归 Critical：图片空集守卫若在视频分支之前 return，视频导出永远不会执行。
+    """
+    ds_id, video_id, task_id = _make_video_with_task()
+
+    async def _load(task_id, v_id, frame_index):
+        # 仅第 1 帧有标注，其余帧无标注
+        if frame_index == 1:
+            return [
+                {"type": "AxisAlignedBox", "class_id": 0,
+                 "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2},
+            ]
+        return []
+
+    monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
+    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    from app.utils.s3_client import s3_client
+    monkeypatch.setattr(s3_client, "download_fileobj",
+                        lambda key: BytesIO(b"fake-video"))
+
+    out = str(tmp_path / "outcore")
+    asyncio.run(_export_core(
+        ds_id, task_id, "ultralytics", out, annotation_task_id=task_id,
+    ))
+
+    img_dir = os.path.join(out, "images", "train")
+    lbl_dir = os.path.join(out, "labels", "train")
+    for n in (0, 1, 2):
+        assert os.path.exists(os.path.join(img_dir, f"demo_frame_{n:06d}.jpg"))
+    # 仅第 1 帧有标注 → 生成 label 文件（证明确实走了视频导出而非提前 return）
+    assert os.path.exists(os.path.join(lbl_dir, "demo_frame_000001.txt"))
 
 
 async def _async_noop():
