@@ -138,6 +138,22 @@
         @delete-annotation="deleteById"
       />
     </div>
+    <VideoPlayerBar
+      v-if="isVideoTask"
+      :current-frame="currentFrame"
+      :frame-count="frameCount"
+      :duration="videoDuration"
+      :current-time="videoCurrentTime"
+      :fps="videoFps"
+      :playing="videoPlaying"
+      :zoom="canvas.zoom.value"
+      @prev="goToFrame(currentFrame - 1)"
+      @next="goToFrame(currentFrame + 1)"
+      @seek="onSliderSeek"
+      @toggle-play="togglePlay"
+      @zoom-in="zoomStep(1.2)"
+      @zoom-out="zoomStep(1 / 1.2)"
+    />
     <AnnotationHistoryBar
       :has-current-image="!!store.currentImage"
       :current-index="store.currentImageIndex"
@@ -369,12 +385,13 @@ import {
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import AnnotationToolbar from "./AnnotationToolbar.vue";
+import VideoPlayerBar from "./VideoPlayerBar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import type { Annotation, AnnotationTaskPlugin, PluginPanelContext } from "./types";
 import type { WorkbenchApi, WorkbenchConfig, CollabAdapter } from "./annotationTypes";
-import { frameIndexToTime } from "./workbenchFrame";
+import { frameIndexToTime, timeToFrameIndex } from "./workbenchFrame";
 import {
   getVideoList,
   getVideoDetail,
@@ -409,6 +426,10 @@ const currentFrame = ref(0);
 const videoFps = ref(1);
 const frameCount = ref(0);
 const videoDuration = ref(0);
+const videoPlaying = ref(false);
+const videoCurrentTime = ref(0);
+// 待定位的目标帧：用于在 seeked 回调中过滤过期 seek，保证加载的标注与最终定位帧一致
+let pendingSeekFrame = -1;
 const selectedClassId = ref<number | null>(null);
 watch(
   () => [...taskClasses.value],
@@ -1009,6 +1030,7 @@ function onImgLoad(w: number, h: number) {
 function onVideoLoaded(e: Event) {
   const el = e.target as HTMLVideoElement;
   imageLoaded.value = true;
+  bindVideoEvents(el);
   resetAllDraftTools();
   measureCanvas();
   if (!canvas.cw.value && el.videoWidth && el.videoHeight) {
@@ -1034,14 +1056,62 @@ async function loadFrameAnnotations(idx: number) {
 
 async function onVideoSeeked() {
   if (!videoId.value) return;
-  await loadFrameAnnotations(currentFrame.value);
+  const ve = canvasRef.value?.getVideoEl?.();
+  const landed = ve ? timeToFrameIndex(ve.currentTime, videoFps.value) : pendingSeekFrame;
+  // 守卫：若实际定位到的帧仍不是最新目标帧，说明还有更晚的 seek 未完成，
+  // 跳过本次，等待最终 seeked 定位到目标帧后再加载（避免加载过期帧）。
+  if (pendingSeekFrame >= 0 && landed !== pendingSeekFrame) return;
+  pendingSeekFrame = -1;
+  currentFrame.value = landed;
+  await loadFrameAnnotations(landed);
 }
 
 function goToFrame(idx: number) {
   if (idx < 0 || (frameCount.value > 0 && idx >= frameCount.value)) return;
   currentFrame.value = idx;
+  pendingSeekFrame = idx;
   const ve = canvasRef.value?.getVideoEl?.();
   if (ve) ve.currentTime = frameIndexToTime(idx, videoFps.value);
+}
+
+// ==== 视频播放器控制 ====
+let boundVideoEl: HTMLVideoElement | null = null;
+function bindVideoEvents(el: HTMLVideoElement) {
+  if (boundVideoEl === el) return;
+  boundVideoEl = el;
+  el.addEventListener("play", onVideoPlay);
+  el.addEventListener("pause", onVideoPause);
+  el.addEventListener("timeupdate", onVideoTimeUpdate);
+}
+function onVideoPlay() {
+  videoPlaying.value = true;
+}
+function onVideoPause() {
+  videoPlaying.value = false;
+}
+function onVideoTimeUpdate() {
+  const ve = canvasRef.value?.getVideoEl?.();
+  if (ve) videoCurrentTime.value = ve.currentTime;
+}
+function togglePlay() {
+  const ve = canvasRef.value?.getVideoEl?.();
+  if (!ve) return;
+  if (ve.paused) ve.play().catch(() => {});
+  else ve.pause();
+}
+function onSliderSeek(time: number) {
+  const ve = canvasRef.value?.getVideoEl?.();
+  if (!ve) return;
+  let idx = timeToFrameIndex(time, videoFps.value);
+  if (frameCount.value > 0) idx = Math.max(0, Math.min(frameCount.value - 1, idx));
+  currentFrame.value = idx;
+  pendingSeekFrame = idx;
+  ve.currentTime = time;
+}
+function zoomStep(factor: number) {
+  const r = canvasR();
+  if (!r.width || !r.height) return;
+  zoomAt(factor, r.left + r.width / 2, r.top + r.height / 2);
 }
 
 function onWheel(e: WheelEvent) {
