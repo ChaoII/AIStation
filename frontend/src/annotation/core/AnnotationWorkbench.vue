@@ -1057,7 +1057,9 @@ async function loadFrameAnnotations(idx: number) {
 async function onVideoSeeked() {
   if (!videoId.value) return;
   const ve = canvasRef.value?.getVideoEl?.();
-  const landed = ve ? timeToFrameIndex(ve.currentTime, videoFps.value) : pendingSeekFrame;
+  let landed = ve ? timeToFrameIndex(ve.currentTime, videoFps.value) : pendingSeekFrame;
+  // 兜底：定位到末尾（currentTime==duration）时 round 可能越界到 frameCount，统一收口到最后一帧。
+  if (frameCount.value > 0) landed = Math.min(frameCount.value - 1, landed);
   // 守卫：若实际定位到的帧仍不是最新目标帧，说明还有更晚的 seek 未完成，
   // 跳过本次，等待最终 seeked 定位到目标帧后再加载（避免加载过期帧）。
   if (pendingSeekFrame >= 0 && landed !== pendingSeekFrame) return;
@@ -1106,7 +1108,7 @@ function onSliderSeek(time: number) {
   if (frameCount.value > 0) idx = Math.max(0, Math.min(frameCount.value - 1, idx));
   currentFrame.value = idx;
   pendingSeekFrame = idx;
-  ve.currentTime = time;
+  ve.currentTime = frameIndexToTime(idx, videoFps.value);
 }
 function zoomStep(factor: number) {
   const r = canvasR();
