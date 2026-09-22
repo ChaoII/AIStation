@@ -6,6 +6,7 @@ import {
   clampAudioRange,
   segmentToRange,
   isAudioSegment,
+  hasSegmentWithId,
 } from "../useAudioEventTool";
 import type { AudioSegment } from "../../../../api/module_annotation/audio";
 
@@ -81,5 +82,20 @@ describe("useAudioEventTool 音频事件工具", () => {
     expect(isAudioSegment({ ...seg, type: "EntitySpan" })).toBe(false);
     expect(isAudioSegment({ ...seg, end: "x" })).toBe(false);
     expect(isAudioSegment({ ...seg, start: null })).toBe(false);
+  });
+
+  it("hasSegmentWithId 判定 region id 是否已存在于外部 segments（同步产生）", () => {
+    const segs = [
+      { id: "s1", start: 0, end: 1 } as AudioSegment,
+      { id: "s2", start: 2, end: 3 } as AudioSegment,
+    ];
+    // 已存在的 id → 视为同步产生，不应触发 createRegion
+    expect(hasSegmentWithId(segs, "s1")).toBe(true);
+    expect(hasSegmentWithId(segs, "s2")).toBe(true);
+    // 新 id → 拖选产生，应移除并触发 createRegion
+    expect(hasSegmentWithId(segs, "region-x")).toBe(false);
+    // 空 / undefined segments 均返回 false
+    expect(hasSegmentWithId([], "s1")).toBe(false);
+    expect(hasSegmentWithId(undefined, "s1")).toBe(false);
   });
 });

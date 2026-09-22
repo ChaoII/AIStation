@@ -1,5 +1,5 @@
 <template>
-  <div ref="root" class="audio-timeline-canvas">
+  <div class="audio-timeline-canvas">
     <div ref="waveformRef" class="audio-timeline-canvas__waveform" />
     <div class="audio-timeline-canvas__controls">
       <el-button
@@ -21,7 +21,7 @@ import { VideoPlay, VideoPause } from "@element-plus/icons-vue";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
 import type { AudioSegment } from "../../../api/module_annotation/audio";
-import type { AudioRange } from "./useAudioEventTool";
+import { hasSegmentWithId, type AudioRange } from "./useAudioEventTool";
 
 /** 已创建区间（由用户拖选产生，尚未落入外部 segments）。 */
 export interface CreatedRegion extends AudioRange {
@@ -67,12 +67,12 @@ const emit = defineEmits<{
   (e: "ready", duration: number): void;
 }>();
 
-const root = ref<HTMLElement | null>(null);
 const waveformRef = ref<HTMLElement | null>(null);
-
 let ws: WaveSurfer | null = null;
 let regions: RegionsPlugin | null = null;
 let cleanup: (() => void) | null = null;
+/** 拖选监听的解绑函数（由 `enableDragSelection` 返回），组件卸载时调用。 */
+let dragSelectionCleanup: (() => void) | null = null;
 
 /** segment.id → region 映射，用于外部 segments 与 regions 高亮同步。 */
 const regionBySegmentId = new Map<string, Region>();
@@ -81,7 +81,14 @@ const playing = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
 
-const PALETTE = ["#409eff", "#e6a23c", "#67c23a", "#f56c6c", "#909399", "#c8c8c8"];
+/** 缺省取色板：使用 Element 语义色变量，避免写死主题色。 */
+const PALETTE = [
+  "var(--el-color-primary)",
+  "var(--el-color-success)",
+  "var(--el-color-warning)",
+  "var(--el-color-danger)",
+  "var(--el-color-info)",
+];
 
 function colorOf(segment: AudioSegment): string {
   if (props.colorFor) return props.colorFor(segment, props.classes);
@@ -169,12 +176,11 @@ onMounted(() => {
     url: props.url,
   });
   regions = ws.registerPlugin(RegionsPlugin.create());
-  regions.enableDragSelection({
+  dragSelectionCleanup = regions.enableDragSelection({
     drag: false,
     resize: false,
     color: "var(--el-color-primary-light-5)",
   });
-
   const subs: Array<() => void> = [];
   subs.push(
     ws.on("ready", (dur) => {
@@ -194,9 +200,11 @@ onMounted(() => {
   );
   subs.push(
     regions.on("region-created", (region) => {
+      // 若 region id 已存在于外部 segments，说明是 addRegion 同步产生，应保留且不触发 createRegion，
+      // 否则会因「回流 → addRegion → 再次 region-created」造成虚假 createRegion 与重复删除。
+      if (hasSegmentWithId(props.segments, region.id)) return;
       const created = { id: region.id, start: region.start, end: region.end };
-      // 拖选产生的临时 region 立即移除，交由父组件生成对应 AudioSegment 后经 props 重建，
-      // 避免与外部 segments 映射出的 region 重复。
+      // 仅对拖选产生的新 region 立即移除，交由父组件生成对应 AudioSegment 后经 props 重建。
       region.remove();
       emit("createRegion", created);
     }),
@@ -219,6 +227,8 @@ onMounted(() => {
 onUnmounted(() => {
   cleanup?.();
   cleanup = null;
+  dragSelectionCleanup?.();
+  dragSelectionCleanup = null;
   regionBySegmentId.clear();
   const instance = ws;
   ws = null;

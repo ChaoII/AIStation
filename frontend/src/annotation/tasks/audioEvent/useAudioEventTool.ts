@@ -63,6 +63,17 @@ export function segmentToRange(segment: Pick<AudioSegment, "start" | "end">): Au
   return { start: segment.start, end: segment.end };
 }
 
+/**
+ * 判断某 region id 是否已存在于外部 segments。
+ * 用于区分 wavesurfer `addRegion` 同步产生的 region（保留）与用户拖选产生的新 region（移除并交给父组件重建）。
+ */
+export function hasSegmentWithId(
+  segments: readonly Pick<AudioSegment, "id">[] | undefined,
+  id: string
+): boolean {
+  return (segments ?? []).some((s) => s.id === id);
+}
+
 /** 判别对象是否为一个合法音频片段（type 与必备数值字段）。 */
 export function isAudioSegment(value: unknown): value is AudioSegment {
   if (!value || typeof value !== "object") return false;
