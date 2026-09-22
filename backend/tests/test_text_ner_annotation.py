@@ -215,6 +215,21 @@ def test_text_save_relation_unknown_entity():
     assert exc.value.status_code == 400
 
 
+def test_text_save_relation_before_entity_accepted():
+    """Relation 出现在其引用 EntitySpan 之前时也应被接受（与输入顺序无关）。"""
+    document_id, task_id = _make_document_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    ann = [
+        {"id": "r1", "type": "Relation", "from": "e1", "to": "e2", "relation_type": 1},
+        {"id": "e1", "type": "EntitySpan", "start": 0, "end": 2, "label_id": 1, "text": "小明"},
+        {"id": "e2", "type": "EntitySpan", "start": 3, "end": 5, "label_id": 2, "text": "北京"},
+    ]
+
+    result = asyncio.run(AnnotationService.save_text_annotations(task_id, document_id, ann, auth))
+    assert result["version"] == 1
+    assert result["annotation_count"] == 3
+
+
 def test_text_save_overlap_rejected():
     document_id, task_id = _make_document_and_task()
     auth = SimpleNamespace(user=SimpleNamespace(id=1))

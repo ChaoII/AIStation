@@ -363,6 +363,7 @@ class AnnotationService:
 
         entity_ids: set[str] = set()
         spans: list[tuple[int, int]] = []
+        relations: list[dict] = []
         for item in annotations:
             if not isinstance(item, dict):
                 raise CustomException(msg="标注项必须为字典对象", code=400, status_code=400)
@@ -403,18 +404,22 @@ class AnnotationService:
                         code=400,
                         status_code=400,
                     )
-                from_id, to_id = item.get("from"), item.get("to")
-                if from_id not in entity_ids or to_id not in entity_ids:
-                    raise CustomException(
-                        msg="关系 from/to 必须引用同集合中的实体", code=400, status_code=400
-                    )
-                if from_id == to_id:
-                    raise CustomException(
-                        msg="关系 from/to 不能指向同一实体", code=400, status_code=400
-                    )
+                relations.append(item)
             else:
                 raise CustomException(
                     msg=f"未知标注类型: {itype}", code=400, status_code=400
+                )
+
+        # 关系校验与输入顺序无关：先收集完整实体集合，再对每个关系的 from/to 校验
+        for item in relations:
+            from_id, to_id = item.get("from"), item.get("to")
+            if from_id not in entity_ids or to_id not in entity_ids:
+                raise CustomException(
+                    msg="关系 from/to 必须引用同集合中的实体", code=400, status_code=400
+                )
+            if from_id == to_id:
+                raise CustomException(
+                    msg="关系 from/to 不能指向同一实体", code=400, status_code=400
                 )
 
         # 重叠校验：任意两个 [start, end) 区间不得相交（相邻不视为重叠）
