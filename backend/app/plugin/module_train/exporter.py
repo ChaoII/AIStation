@@ -736,15 +736,25 @@ def _extract_frames(video_path: str, fps: float, frames_dir: str) -> list[str]:
 
 def _write_video_yolo(output_dir: str, samples: list, frame_anns: dict,
                       used_ids: set[int], class_names: dict,
+                      train_ratio: float = 0.8,
                       for_training: bool = False, for_eval: bool = False) -> None:
-    """把抽帧样本（帧图 + 该帧 AxisAlignedBox）写入 YOLO 目录布局。"""
+    """把抽帧样本（帧图 + 该帧 AxisAlignedBox）写入 YOLO 目录布局。
+
+    复用图片导出的 train/val 切分逻辑：非评估模式按 ``train_ratio`` 随机切分并
+    shuffle，保证训练导出有一个非空的 val 子集（与图片导出行为一致）；
+    ``for_eval=True`` 时全量进 val、不 shuffle，保证评估全量可复现。
+    """
+    import random
     import shutil
 
     class_id_map = build_class_mapping(used_ids)
     if for_eval:
         train_imgs, val_imgs = [], samples
     else:
-        train_imgs, val_imgs = samples, []
+        random.shuffle(samples)
+        split_idx = max(1, int(len(samples) * train_ratio)) if samples else 0
+        train_imgs = samples[:split_idx]
+        val_imgs = samples[split_idx:]
 
     for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
         img_split = os.path.join(output_dir, "images", split_name)
@@ -858,8 +868,14 @@ async def _export_video_detection(
             used_stems.add(stem)
             for frame_index, frame_path in enumerate(frames):
                 fname = f"{stem}_frame_{frame_index:06d}.jpg"
+                # 关键：必须用「标注任务 id」而非训练任务 id 查帧标注。
+                # 训练/评估路径 `_export_core(task_id=训练任务id, annotation_task_id=标注任务id)`
+                # 传入的 ``task_id`` 是训练任务 id，其不在 ``annotation_task`` 中，
+                # 若传给 ``load_video_annotations`` 会被 ``_verify_video_task_relation``
+                # 拒绝并吞掉，导致训练/评估导出静默为空。
                 anns = await AnnotationService.load_video_annotations(
-                    task_id, video.id, frame_index
+                    annotation_task_id if annotation_task_id is not None else task_id,
+                    video.id, frame_index,
                 )
                 anns = anns or []
                 samples.append({
@@ -881,8 +897,8 @@ async def _export_video_detection(
             _write_video_xany(output_dir, samples, frame_anns, class_names or {})
         else:
             _write_video_yolo(output_dir, samples, frame_anns, used_ids,
-                              class_names or {}, for_training=for_training,
-                              for_eval=for_eval)
+                              class_names or {}, train_ratio=train_ratio,
+                              for_training=for_training, for_eval=for_eval)
         log.info(f"video-detection {framework}: exported {len(samples)} frames to {output_dir}")
     finally:
         for d in tmp_dirs:

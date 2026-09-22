@@ -125,7 +125,7 @@ def test_video_export_yolo_frames(monkeypatch, tmp_path):
 
     asyncio.run(_export_video_detection(
         ds_id, 5, out, "ultralytics",
-        annotation_task_id=5, class_names={0: "cat"},
+        annotation_task_id=5, class_names={0: "cat"}, train_ratio=1.0,
     ))
 
     img_dir = os.path.join(out, "images", "train")
@@ -230,6 +230,7 @@ def test_video_export_through_core_entry(monkeypatch, tmp_path):
     out = str(tmp_path / "outcore")
     asyncio.run(_export_core(
         ds_id, task_id, "ultralytics", out, annotation_task_id=task_id,
+        train_ratio=1.0,
     ))
 
     img_dir = os.path.join(out, "images", "train")
@@ -242,3 +243,109 @@ def test_video_export_through_core_entry(monkeypatch, tmp_path):
 
 async def _async_noop():
     return []
+
+
+def test_video_export_training_path_uses_annotation_task_id(monkeypatch, tmp_path):
+    """训练式路径回归：传入的训练任务 id 与标注任务 id 不同。
+
+    训练/评估 pipeline 通过 ``_export_core(task_id=训练任务id, annotation_task_id=标注任务id)``
+    进入；逐帧标注查询必须用「标注任务 id」，否则 ``_verify_video_task_relation`` 拒绝、
+    被逐视频 try/except 吞掉 → 静默空导出。断言实际传给 ``load_video_annotations``
+    的确实是标注任务 id，且帧确实被导出（非空）。
+    """
+    ds_id, video_id, ann_task_id = _make_video_with_task()
+    train_task_id = 9999  # 模拟训练任务 id，与标注任务 id 不同
+
+    seen_ids: list[int] = []
+
+    async def _load(task_id, v_id, frame_index):
+        seen_ids.append(task_id)
+        if frame_index == 1:
+            return [{"type": "AxisAlignedBox", "class_id": 0,
+                     "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}]
+        return []
+
+    monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
+    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    from app.utils.s3_client import s3_client
+    monkeypatch.setattr(s3_client, "download_fileobj",
+                        lambda key: BytesIO(b"fake-video"))
+
+    out = str(tmp_path / "outtrain")
+    asyncio.run(_export_video_detection(
+        ds_id, train_task_id, out, "ultralytics",
+        annotation_task_id=ann_task_id, class_names={0: "cat"},
+        train_ratio=1.0,
+    ))
+
+    # 逐帧标注查询必须命中标注任务 id
+    assert seen_ids and all(i == ann_task_id for i in seen_ids), seen_ids
+    # 帧确实被导出（否则 load 失败被吞掉会返回空）
+    img_dir = os.path.join(out, "images", "train")
+    for n in (0, 1, 2):
+        assert os.path.exists(os.path.join(img_dir, f"demo_frame_{n:06d}.jpg"))
+    assert os.path.exists(os.path.join(
+        out, "labels", "train", "demo_frame_000001.txt"))
+
+
+def test_video_export_training_split(monkeypatch, tmp_path):
+    """训练导出应用 train/val 切分（honor train_ratio），否则 val 目录为空。
+
+    回归：图片导出按 train_ratio 切分，而视频导出原先把帧全丢进 train，导致
+    ``val`` 目录为空、``dataset.yaml`` 指向空 val。现在应与图片行为一致。
+    """
+    ds_id, video_id = _make_video()
+
+    async def _load(task_id, v_id, frame_index):
+        if frame_index == 1:
+            return [{"type": "AxisAlignedBox", "class_id": 0,
+                     "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}]
+        return []
+
+    monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
+    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    from app.utils.s3_client import s3_client
+    monkeypatch.setattr(s3_client, "download_fileobj",
+                        lambda key: BytesIO(b"fake-video"))
+
+    out = str(tmp_path / "outsplit")
+    asyncio.run(_export_video_detection(
+        ds_id, 5, out, "ultralytics",
+        annotation_task_id=5, class_names={0: "cat"}, train_ratio=0.5,
+    ))
+
+    train_dir = os.path.join(out, "images", "train")
+    val_dir = os.path.join(out, "images", "val")
+    train_files = [f for f in os.listdir(train_dir) if f.endswith(".jpg")]
+    val_files = [f for f in os.listdir(val_dir) if f.endswith(".jpg")]
+    # train_ratio=0.5 且 3 帧 → split_idx = max(1, int(3*0.5)) = 1，两侧均有帧
+    assert train_files, "train 目录不应为空"
+    assert val_files, "val 目录不应为空（train/val 切分未生效）"
+    assert len(train_files) + len(val_files) == 3
+
+
+def test_video_export_eval_all_to_val(monkeypatch, tmp_path):
+    """评估导出（for_eval=True）应全量进 val，不 shuffle、不切分。"""
+    ds_id, video_id = _make_video()
+
+    async def _load(task_id, v_id, frame_index):
+        return [{"type": "AxisAlignedBox", "class_id": 0,
+                 "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}]
+
+    monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
+    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    from app.utils.s3_client import s3_client
+    monkeypatch.setattr(s3_client, "download_fileobj",
+                        lambda key: BytesIO(b"fake-video"))
+
+    out = str(tmp_path / "outeval")
+    asyncio.run(_export_video_detection(
+        ds_id, 5, out, "ultralytics",
+        annotation_task_id=5, class_names={0: "cat"},
+        train_ratio=0.5, for_eval=True,
+    ))
+
+    val_dir = os.path.join(out, "images", "val")
+    train_dir = os.path.join(out, "images", "train")
+    assert len([f for f in os.listdir(val_dir) if f.endswith(".jpg")]) == 3
+    assert not os.listdir(train_dir)
