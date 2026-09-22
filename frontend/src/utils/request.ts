@@ -57,6 +57,11 @@ httpRequest.interceptors.response.use(
       return response;
     }
 
+    // 纯文本响应（如文本文档全文）直接返回，交由调用方取 response.data 字符串
+    if (response.config.responseType === "text") {
+      return response;
+    }
+
     const data = response.data;
     const silent = response.config?.headers?._silent === "true";
 

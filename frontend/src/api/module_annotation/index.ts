@@ -1,6 +1,7 @@
 import request from "@/utils/request";
 
 export * from "./video";
+export * from "./document";
 
 const API_PATH = "/annotation";
 
