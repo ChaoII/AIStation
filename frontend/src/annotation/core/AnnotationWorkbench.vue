@@ -40,11 +40,15 @@
         <AnnotationCanvas
           ref="canvasRef"
           :img-url="imgUrl"
+          :video-url="videoUrl"
+          :media="isVideoTask ? 'video' : 'image'"
           :image-loaded="imageLoaded"
           :cursor="toolCursor"
           :canvas="canvas"
           @img-load="onImgLoad"
           @img-error="onImgError"
+          @video-loaded="onVideoLoaded"
+          @video-seeked="onVideoSeeked"
           @mousedown="onCanvasDown"
           @dblclick="onDblClick"
           @wheel="onWheel"
@@ -370,6 +374,16 @@ import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import type { Annotation, AnnotationTaskPlugin, PluginPanelContext } from "./types";
 import type { WorkbenchApi, WorkbenchConfig, CollabAdapter } from "./annotationTypes";
+import { frameIndexToTime } from "./workbenchFrame";
+import {
+  getVideoList,
+  getVideoDetail,
+  getVideoPlayUrl,
+  lockVideo,
+  unlockVideo,
+  saveVideoAnnotations,
+  loadVideoAnnotations,
+} from "@/api/module_annotation/video";
 
 const props = defineProps<{
   plugins: AnnotationTaskPlugin[];
@@ -388,6 +402,13 @@ const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
 const imgUrl = ref("");
+// ==== 视频帧级标注状态 ====
+const videoUrl = ref("");
+const videoId = ref<number | null>(null);
+const currentFrame = ref(0);
+const videoFps = ref(1);
+const frameCount = ref(0);
+const videoDuration = ref(0);
 const selectedClassId = ref<number | null>(null);
 watch(
   () => [...taskClasses.value],
@@ -480,6 +501,7 @@ const baseTools = [
 const plugin = computed(
   () => props.plugins.find((p) => p.name === (store.task?.task_type || "")) ?? props.plugins[0]
 );
+const isVideoTask = computed(() => plugin.value.media === "video");
 const displayTools = computed(() => [...baseTools, ...plugin.value.tools]);
 const taskTypeLabel = computed(() => plugin.value.label);
 const taskTagType = computed(() => (plugin.value.color as any) || "primary");
@@ -590,6 +612,7 @@ function prefetchNeighbors() {
 }
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
+let lockedVideoId: number | null = null;
 let unmounted = false;
 let _resizeObserver: ResizeObserver | null = null;
 
@@ -605,6 +628,29 @@ function unlockCurrent() {
     props.api.unlockImage(lockedImageId, store.taskId).catch(() => {});
     lockedImageId = null;
   }
+  if (lockedVideoId) {
+    unlockVideo(lockedVideoId).catch(() => {});
+    lockedVideoId = null;
+  }
+}
+function lockCurrentVideo(id: number) {
+  lockVideo(id)
+    .then((lr: any) => {
+      const d = lr?.data?.data;
+      if (d?.locked) {
+        lockedByOther.value = true;
+        lockedByUser.value = d.locked_by ?? null;
+      } else {
+        lockedByOther.value = false;
+        lockedByUser.value = null;
+      }
+      lockedVideoId = id;
+      clearLockRenewal();
+      lockRenewTimer = window.setInterval(() => {
+        lockVideo(id).catch(() => {});
+      }, 180000);
+    })
+    .catch(() => {});
 }
 
 // ==== 历史（undo/redo）====
@@ -960,6 +1006,44 @@ function onImgLoad(w: number, h: number) {
   }
 }
 
+function onVideoLoaded(e: Event) {
+  const el = e.target as HTMLVideoElement;
+  imageLoaded.value = true;
+  resetAllDraftTools();
+  measureCanvas();
+  if (!canvas.cw.value && el.videoWidth && el.videoHeight) {
+    canvas.setImageSize(el.videoWidth, el.videoHeight);
+  }
+  if (!fittedForImage) {
+    const r = canvasR();
+    if (r.width && r.height && canvas.cw.value && canvas.ch.value) {
+      canvas.fitZoom(r.width, r.height);
+      fittedForImage = true;
+    }
+  }
+}
+
+async function loadFrameAnnotations(idx: number) {
+  if (!videoId.value || !store.taskId) return;
+  resetDrawingState();
+  const vr = await loadVideoAnnotations(store.taskId, videoId.value, idx);
+  store.annotations = (vr?.data?.data || []) as Annotation[];
+  store.selectedAnnotationId = "";
+  store.unsaved = false;
+}
+
+async function onVideoSeeked() {
+  if (!videoId.value) return;
+  await loadFrameAnnotations(currentFrame.value);
+}
+
+function goToFrame(idx: number) {
+  if (idx < 0 || (frameCount.value > 0 && idx >= frameCount.value)) return;
+  currentFrame.value = idx;
+  const ve = canvasRef.value?.getVideoEl?.();
+  if (ve) ve.currentTime = frameIndexToTime(idx, videoFps.value);
+}
+
 function onWheel(e: WheelEvent) {
   if (!cw.value || !ch.value) return;
   const r = canvasR();
@@ -1157,6 +1241,29 @@ async function fetchTaskProgress() {
   }
 }
 
+async function initVideo() {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId) return;
+  const vr = await getVideoList(datasetId);
+  const items = vr?.data?.data?.items || [];
+  const vid = items[0];
+  if (!vid) return;
+  videoId.value = vid.id;
+  const dr = await getVideoDetail(vid.id);
+  const d = dr?.data?.data;
+  videoFps.value = d?.fps || 1;
+  frameCount.value = d?.frame_count || 0;
+  videoDuration.value = d?.duration || 0;
+  if (d?.width && d?.height) canvas.setImageSize(d.width, d.height);
+  const ur = await getVideoPlayUrl(vid.id);
+  videoUrl.value = ur?.data?.data?.play_url || "";
+  store.totalCount = 1;
+  store.annotatedCount = 0;
+  currentFrame.value = 0;
+  await loadFrameAnnotations(0);
+  lockCurrentVideo(vid.id);
+}
+
 async function init() {
   store.reset();
   store.taskId = props.taskId;
@@ -1167,6 +1274,12 @@ async function init() {
     if (!t) return;
     store.task = t;
     props.collab?.connect(store.taskId);
+    if (isVideoTask.value) {
+      imageTotal.value = 0;
+      imageLoadedPages = 0;
+      await initVideo();
+      return;
+    }
     imageTotal.value = 0;
     imageLoadedPages = 0;
     const imgs = await loadImagePage(1);
@@ -1224,10 +1337,23 @@ function nextImg() {
 }
 
 async function saveAnn() {
-  if (!store.currentImageId || !store.taskId) return;
-  if (lockedByOther.value) {
+  if (!store.taskId) return;
+  if (lockedByOther.value) return;
+  if (isVideoTask.value) {
+    if (!videoId.value) return;
+    await saveVideoAnnotations(
+      store.taskId,
+      videoId.value,
+      currentFrame.value,
+      store.annotations as any
+    );
+    store.unsaved = false;
+    lastSavedKey = annotKey();
+    historyStack = [lastSavedKey];
+    historyIndex = 0;
     return;
   }
+  if (!store.currentImageId) return;
   await props.api.saveAnnotations(store.taskId, store.currentImageId, store.annotations);
   store.unsaved = false;
   lastSavedKey = annotKey();
@@ -2091,10 +2217,19 @@ onBeforeUnmount(() => {
     _resizeObserver.disconnect();
     _resizeObserver = null;
   }
-  if (store.unsaved && store.currentImageId && !lockedByOther.value) {
-    props.api
-      .saveAnnotations(store.taskId, store.currentImageId, store.annotations)
-      .catch(() => {});
+  if (store.unsaved && !lockedByOther.value) {
+    if (isVideoTask.value && videoId.value) {
+      saveVideoAnnotations(
+        store.taskId,
+        videoId.value,
+        currentFrame.value,
+        store.annotations as any
+      ).catch(() => {});
+    } else if (store.currentImageId) {
+      props.api
+        .saveAnnotations(store.taskId, store.currentImageId, store.annotations)
+        .catch(() => {});
+    }
   }
   unlockCurrent();
   props.collab?.close();
@@ -2113,6 +2248,7 @@ defineExpose({
   getCurrentImageId() {
     return store.currentImageId;
   },
+  goToFrame,
 });
 </script>
 

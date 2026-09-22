@@ -1,5 +1,8 @@
 import type { Component } from "vue";
 
+/** 任务媒体类型：图片任务按图像加载，视频任务按帧级加载与导航。 */
+export type TaskMedia = "image" | "video";
+
 export type TaskShapeType =
   | "AxisAlignedBox"
   | "RotatedBox"
@@ -245,6 +248,8 @@ export interface AnnotationTaskPlugin {
   name: string;
   label: string;
   color: string;
+  /** 任务媒体类型（缺省视为图片任务） */
+  media?: TaskMedia;
   renderer: TaskCanvasRenderer;
   tools: ToolDefinition[];
   create(shape: Annotation): boolean;

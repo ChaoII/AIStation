@@ -26,7 +26,12 @@ import {
   ocrPlugin,
   classificationPlugin,
 } from "@/annotation";
-import { polylinePlugin, panopticSegmentationPlugin, cuboidPlugin } from "@/annotation";
+import {
+  polylinePlugin,
+  panopticSegmentationPlugin,
+  cuboidPlugin,
+  videoDetectionPlugin,
+} from "@/annotation";
 import type { WorkbenchApi, WorkbenchConfig } from "@/annotation/core/annotationTypes";
 import { AnnotationAPI } from "@/api/module_annotation";
 import { useCollab } from "@/composables/useCollab";
@@ -49,6 +54,7 @@ const plugins = [
   polylinePlugin,
   panopticSegmentationPlugin,
   cuboidPlugin,
+  videoDetectionPlugin,
 ];
 
 // 极简 api 适配：把项目 AnnotationAPI 适配到组件库 WorkbenchApi 接口
