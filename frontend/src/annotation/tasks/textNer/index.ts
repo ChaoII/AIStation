@@ -18,7 +18,7 @@ export const textNerPlugin: AnnotationTaskPlugin = {
     if ((shape as { type?: string }).type !== "EntitySpan") return false;
     if (!Number.isInteger(shape.start) || !Number.isInteger(shape.end)) return false;
     if (shape.end <= shape.start) return false;
-    if (!shape.label_id) return false;
+    if (shape.label_id == null) return false;
     return true;
   },
 };

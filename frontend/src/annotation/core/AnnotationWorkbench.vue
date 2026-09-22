@@ -931,7 +931,7 @@ function onTextSelect(range: { from: number; to: number }) {  if (lockedByOther.
 }
 function confirmEntity() {
   const range = selRange.value;
-  if (!range || !entityLabelId.value) return;
+  if (!range || entityLabelId.value == null) return;
   const span = createEntitySpan(docContent.value, range, entityLabelId.value);
   store.annotations.push(span as any);
   store.selectedAnnotationId = span.id;
@@ -948,7 +948,7 @@ function onSpanClick(span: EntitySpan) {
 }
 function saveEditSpan() {
   const s = store.annotations.find((a) => a.id === editSpanId.value) as EntitySpan | undefined;
-  if (s && editSpanLabelId.value) {
+  if (s && editSpanLabelId.value != null) {
     s.label_id = editSpanLabelId.value;
     store.markUnsaved();
     pushHistory();
@@ -1014,7 +1014,7 @@ function confirmRelation() {
     ElMessage.warning("关系两端实体必须位于同一句（同一行）");
     return;
   }
-  if (!relation_type) {
+  if (relation_type == null) {
     ElMessage.warning("请选择关系类型");
     return;
   }

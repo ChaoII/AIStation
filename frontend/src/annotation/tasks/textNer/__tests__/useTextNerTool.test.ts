@@ -30,6 +30,15 @@ describe("useTextNerTool 文本实体工具", () => {
     expect(span.type).toBe("EntitySpan");
   });
 
+  it("createEntitySpan 保留 label_id=0（实体类默认 id 从 0 起）", () => {
+    const span = createEntitySpan("你好世界", { from: 0, to: 2 }, 0, "id-0");
+    expect(span.label_id).toBe(0);
+    expect(span.type).toBe("EntitySpan");
+    expect(span.start).toBe(0);
+    expect(span.end).toBe(2);
+    expect(span.text).toBe("你好");
+  });
+
   it("createEntitySpan 对越界区间做钳制", () => {
     const content = "abcd";
     expect(createEntitySpan(content, { from: -2, to: 100 }, 1, "a").start).toBe(0);
