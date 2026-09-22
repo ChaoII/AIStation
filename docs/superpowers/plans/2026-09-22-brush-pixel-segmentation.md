@@ -214,17 +214,17 @@ git commit -m "feat(annotation): 新增Douglas-Peucker多边形简化纯函数"
 import { maskToPolygon } from "../brush";
 
 describe("maskToPolygon", () => {
-  // 4x4 掩码，前景为左上 2x2 方块
-  const mask = new Uint8Array(16);
-  for (let y = 0; y < 2; y++)
-    for (let x = 0; x < 2; x++) mask[y * 4 + x] = 1;
+  // 8x8 掩码，前景为居中 4x4 方块（col/row 2..5），其边界归一化中心约在 (0.5,0.5)
+  const mask = new Uint8Array(64);
+  for (let y = 2; y < 6; y++)
+    for (let x = 2; x < 6; x++) mask[y * 8 + x] = 1;
 
   it("为空掩码返回空数组", () => {
-    expect(maskToPolygon(new Uint8Array(16), 4, 4)).toEqual([]);
+    expect(maskToPolygon(new Uint8Array(64), 8, 8)).toEqual([]);
   });
 
-  it("对单个2x2方块提取外轮廓并归一化", () => {
-    const pts = maskToPolygon(mask, 4, 4);
+  it("对居中4x4方块提取外轮廓并归一化", () => {
+    const pts = maskToPolygon(mask, 8, 8);
     expect(pts.length).toBeGreaterThanOrEqual(3);
     for (const p of pts) {
       expect(p.x).toBeGreaterThanOrEqual(0);
@@ -232,7 +232,7 @@ describe("maskToPolygon", () => {
       expect(p.y).toBeGreaterThanOrEqual(0);
       expect(p.y).toBeLessThanOrEqual(1);
     }
-    // 中心约在 (0.5,0.5)
+    // 中心约在 (0.5,0.5)（居中块中心）
     const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
     const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
     expect(Math.abs(cx - 0.5)).toBeLessThan(0.1);
@@ -240,12 +240,12 @@ describe("maskToPolygon", () => {
   });
 
   it("两块前景取最大连通域（忽略小碎块）", () => {
-    // 大块在左上(3x3)，小块在右下(1x1)
-    const m = new Uint8Array(25);
-    for (let y = 0; y < 3; y++)
-      for (let x = 0; x < 3; x++) m[y * 5 + x] = 1;
-    m[4 * 5 + 4] = 1;
-    const pts = maskToPolygon(m, 5, 5);
+    // 7x7：大块在左上(col0..4,row0..4)，小碎块在右下(6,6)
+    const m = new Uint8Array(49);
+    for (let y = 0; y < 5; y++)
+      for (let x = 0; x < 5; x++) m[y * 7 + x] = 1;
+    m[6 * 7 + 6] = 1;
+    const pts = maskToPolygon(m, 7, 7);
     expect(pts.length).toBeGreaterThan(0);
     // 轮廓应落在左上大块附近（不含右下角）
     const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
@@ -263,7 +263,7 @@ Expected: FAIL（`maskToPolygon` 未定义）。
 
 `frontend/src/annotation/core/brush.ts`（追加）:
 ```ts
-/** 二值掩码(1=前景) → 最大连通域外边界 → 归一化折线。 */
+/** 二值掩码(1=前景) → 最大连通域外边界 → 简化(像素坐标) → 归一化折线。 */
 export function maskToPolygon(
   mask: Uint8Array,
   cw: number,
@@ -281,15 +281,12 @@ export function maskToPolygon(
   const boundary = traceBoundary(comp, cw, ch);
   if (boundary.length < 3) return [];
 
-  // 3) 简化 + 归一化
-  const pts = boundary.map((p) => ({
-    x: p.x / cw,
-    y: p.y / ch,
-  }));
-  const closed = [...pts, pts[0]];
+  // 3) 在像素坐标下简化（tol 以像素为单位），再归一化 [0,1]
+  const closed = [...boundary, boundary[0]];
   const simp = simplifyPolygon(closed, tol);
-  // 去掉重复首尾点
-  return simp.slice(0, simp.length - 1);
+  return simp
+    .slice(0, Math.max(simp.length - 1, 0))
+    .map((p) => ({ x: p.x / cw, y: p.y / ch }));
 }
 ```
 
