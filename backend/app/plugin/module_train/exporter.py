@@ -1084,6 +1084,10 @@ async def _export_audio_event(
     音频事件导出只依赖标注元数据，无需下载音频文件本身。
     """
 
+    if not annotation_task_id:
+        log.warning(f"audio-event export: dataset {dataset_id} has no annotation_task_id, skip")
+        return
+
     from app.api.v1.module_annotation.annotation.service import AnnotationService
     from app.api.v1.module_annotation.dataset.model import AnnotationAudioModel
     from app.api.v1.module_annotation.task.model import AnnotationTaskModel

@@ -631,6 +631,8 @@ import {
   createAudioSegment,
   hasAudioOverlap,
   hasOverlapExcluding,
+  findOverlappingSegment,
+  segmentToRange,
   clampAudioRange,
 } from "../tasks/audioEvent/useAudioEventTool";
 import AudioEventPanel from "../tasks/audioEvent/AudioEventPanel.vue";
@@ -993,6 +995,25 @@ function onAudioUpdateRegion(region: { id: string; start: number; end: number })
   const seg = store.annotations.find((a) => a.id === region.id) as AudioSegment | undefined;
   if (!seg) return;
   if (Math.abs(seg.start - region.start) < 0.001 && Math.abs(seg.end - region.end) < 0.001) return;
+  // 拖拽/拉伸路径与对话框编辑一致：排除自身，校验调整后的区间是否与其它片段重叠
+  if (hasOverlapExcluding(audioSegments.value, seg.id, region.start, region.end)) {
+    const conflicting = findOverlappingSegment(
+      audioSegments.value.filter((s) => s.id !== seg.id),
+      region.start,
+      region.end
+    );
+    const conflictText = conflicting
+      ? `（与 ${formatAudioTime(conflicting.start)} - ${formatAudioTime(conflicting.end)} 冲突）`
+      : "";
+    ElMessage.warning(`调整后的区间与已有事件片段重叠，无法保存${conflictText}`);
+    // 还原 region：先临时改为拖拽后的区间再恢复原始值，触发子组件 syncRegions 将波形区间落回原处
+    const original = segmentToRange(seg);
+    seg.start = region.start;
+    seg.end = region.end;
+    seg.start = original.start;
+    seg.end = original.end;
+    return;
+  }
   seg.start = region.start;
   seg.end = region.end;
   store.markUnsaved();
