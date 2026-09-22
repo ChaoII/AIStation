@@ -7,7 +7,8 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
 
-from ..dataset.model import AnnotationImageModel, DatasetModel
+from ..dataset.model import AnnotationImageModel, AnnotationVideoModel, DatasetModel
+from ..task.model import AnnotationTaskModel
 from .model import AnnotationRecordModel
 
 
@@ -204,3 +205,118 @@ class AnnotationService:
                 }
                 for r in records
             ]
+
+    @classmethod
+    async def _resolve_video_task_id(cls, db, video_id: int) -> int:
+        """取视频所属任务的 task_id：视频 → 数据集 → VIDEO_DETECTION 任务。"""
+        video = await db.get(AnnotationVideoModel, video_id)
+        if not video or video.is_deleted:
+            raise CustomException(msg=f"视频不存在: {video_id}", code=404, status_code=404)
+        task = (
+            await db.execute(
+                select(AnnotationTaskModel)
+                .where(
+                    AnnotationTaskModel.dataset_id == video.dataset_id,
+                    AnnotationTaskModel.task_type == "video_detection",
+                    AnnotationTaskModel.is_deleted == False,  # noqa: E712
+                )
+                .order_by(AnnotationTaskModel.id.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not task:
+            raise CustomException(
+                msg="该视频所属数据集不存在视频检测任务", code=400, status_code=400
+            )
+        return task.id
+
+    @classmethod
+    async def _prune_video_versions(cls, db, task_id: int, video_id: int,
+                                    frame_index: int, latest_version: int, keep: int) -> None:
+        """保留首版（v1）与最近 keep 版，删除中间旧版本（按视频帧粒度）。"""
+        if keep <= 0 or latest_version <= keep + 1:
+            return
+        upper = latest_version - keep
+        await db.execute(
+            delete(AnnotationRecordModel).where(
+                AnnotationRecordModel.task_id == task_id,
+                AnnotationRecordModel.video_id == video_id,
+                AnnotationRecordModel.frame_index == frame_index,
+                AnnotationRecordModel.version >= 2,
+                AnnotationRecordModel.version <= upper,
+            )
+        )
+
+    @classmethod
+    async def save_video_annotations(
+        cls, video_id: int, frame_index: int, annotation_data: list[dict], auth
+    ) -> dict:
+        """按 (video_id, frame_index) 持久化一帧的视频标注；空列表时清除该帧记录。"""
+        async with async_db_session.begin() as db:
+            task_id = await cls._resolve_video_task_id(db, video_id)
+            video = await db.get(AnnotationVideoModel, video_id)
+            if video and video.locked_by and video.locked_by != auth.user.id:
+                raise CustomException(
+                    msg="视频已被其他用户锁定，无法保存", code=409, status_code=409
+                )
+
+            existing = (
+                await db.execute(
+                    select(AnnotationRecordModel)
+                    .where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.video_id == video_id,
+                        AnnotationRecordModel.frame_index == frame_index,
+                    )
+                    .order_by(desc(AnnotationRecordModel.version))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            version = existing.version + 1 if existing else 1
+
+            if annotation_data:
+                db.add(AnnotationRecordModel(
+                    task_id=task_id, video_id=video_id, frame_index=frame_index,
+                    annotation_data=annotation_data, version=version,
+                    created_id=auth.user.id,
+                ))
+                await db.flush()
+                await cls._prune_video_versions(
+                    db, task_id, video_id, frame_index, version,
+                    settings.ANNOTATION_VERSION_KEEP,
+                )
+            else:
+                # 空列表：清除该帧已有的标注记录
+                await db.execute(
+                    delete(AnnotationRecordModel).where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.video_id == video_id,
+                        AnnotationRecordModel.frame_index == frame_index,
+                    )
+                )
+
+            if video:
+                video.status = "annotated" if annotation_data else "unannotated"
+                video.annotation_count = len(annotation_data)
+
+        log.info(f"save_video_annotations video={video_id} frame={frame_index} v={version}")
+        return {"version": version, "annotation_count": len(annotation_data)}
+
+    @classmethod
+    async def load_video_annotations(cls, video_id: int, frame_index: int) -> list[dict] | None:
+        """读取某视频帧的最新标注；无记录返回 None。"""
+        async with async_db_session.begin() as db:
+            task_id = await cls._resolve_video_task_id(db, video_id)
+            record = (
+                await db.execute(
+                    select(AnnotationRecordModel)
+                    .where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.video_id == video_id,
+                        AnnotationRecordModel.frame_index == frame_index,
+                    )
+                    .order_by(desc(AnnotationRecordModel.version))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            return record.annotation_data if record else None

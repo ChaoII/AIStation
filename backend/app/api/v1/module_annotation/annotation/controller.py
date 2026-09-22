@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -8,7 +10,7 @@ from app.core.router_class import OperationLogRoute
 
 from ..dataset.service import DatasetService
 from ..task.service import TaskService
-from .schema import AnnotationRollbackSchema, AnnotationSaveSchema
+from .schema import AnnotationRollbackSchema, AnnotationSaveSchema, VideoAnnotationSaveSchema
 from .service import AnnotationService
 
 AnnotationRouter = APIRouter(route_class=OperationLogRoute, prefix="/anno", tags=["数据标注-标注操作"])
@@ -98,3 +100,25 @@ async def unlock_image(
     await _verify_task_access(task_id, auth)
     await AnnotationService.unlock_image(image_id, auth.user.id)
     return SuccessResponse()
+
+
+@AnnotationRouter.post("/video/save", summary="保存视频帧标注")
+async def save_video_annotations(
+    data: VideoAnnotationSaveSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    annotations = [a.model_dump() for a in data.annotations]
+    result = await AnnotationService.save_video_annotations(
+        data.video_id, data.frame_index, annotations, auth
+    )
+    return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.get("/video/load", summary="读取视频帧标注")
+async def load_video_annotations(
+    v_id: int,
+    frame_index: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    data = await AnnotationService.load_video_annotations(v_id, frame_index)
+    return SuccessResponse(data=data or [])
