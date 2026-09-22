@@ -2,8 +2,11 @@
   <footer class="ann-footer">
     <span v-if="hint" class="hint">{{ hint }}</span>
     <span v-if="unsaved" class="unsaved-dot" title="未保存" />
-    <span class="mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
-    <span class="mono">Z:{{ Math.round(zoom * 100) }}% | cw:{{ cw }}</span>
+    <!-- 文本模式无栅格坐标系，隐藏光标坐标与缩放信息 -->
+    <template v-if="showCoordinate">
+      <span class="mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
+      <span class="mono">Z:{{ Math.round(zoom * 100) }}% | cw:{{ cw }}</span>
+    </template>
     <div class="sep" />
     <el-button size="small" :disabled="!canPrev" circle @click="$emit('prev')">
       <el-icon><ArrowLeft /></el-icon>
@@ -46,6 +49,7 @@ defineProps<{
   canPrev: boolean;
   canNext: boolean;
   locked?: boolean;
+  showCoordinate?: boolean;
 }>();
 defineEmits<{
   (e: "save"): void;

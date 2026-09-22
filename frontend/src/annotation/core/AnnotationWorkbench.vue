@@ -17,6 +17,9 @@
         <span v-if="props.collab" class="collab-online">
           在线 {{ props.collab.onlineUsers.value.length }}
         </span>
+        <span v-if="isTextTask && docMeta" class="doc-meta">
+          {{ docMeta.filename }} · {{ docMeta.character_count }} 字符
+        </span>
         <span class="progress-text">{{ store.annotatedCount }}/{{ store.totalCount }}</span>
         <el-progress
           :percentage="store.progress"
@@ -197,6 +200,7 @@
       :can-prev="store.currentImageIndex > 0"
       :can-next="store.currentImageIndex < store.images.length - 1"
       :locked="lockedByOther"
+      :show-coordinate="!isTextTask"
       @save="saveAnn"
       @prev="prevImg"
       @next="nextImg"
@@ -423,6 +427,7 @@
       </el-form>
       <template #footer>
         <el-button @click="editSpanVisible = false">取消</el-button>
+        <el-button type="danger" @click="deleteEditSpan">删除</el-button>
         <el-button type="primary" @click="saveEditSpan">保存</el-button>
       </template>
     </el-dialog>
@@ -431,7 +436,13 @@
     <el-dialog v-model="relationDialogVisible" title="新建关系" width="520px" append-to-body>
       <el-form label-width="80px">
         <el-form-item label="起点实体">
-          <el-select v-model="relationForm.from" size="small" style="width: 100%" placeholder="选择起点实体">
+          <el-select
+            v-model="relationForm.from"
+            size="small"
+            style="width: 100%"
+            placeholder="选择起点实体"
+            @change="onRelationFromChange"
+          >
             <el-option
               v-for="e in textEntities"
               :key="e.id"
@@ -443,7 +454,7 @@
         <el-form-item label="终点实体">
           <el-select v-model="relationForm.to" size="small" style="width: 100%" placeholder="选择终点实体">
             <el-option
-              v-for="e in textEntities"
+              v-for="e in relationToCandidates"
               :key="e.id"
               :label="`${e.text}（${entityLabelName(e)}）`"
               :value="e.id"
@@ -513,6 +524,7 @@ import {
 } from "@/api/module_annotation/video";
 import {
   getDocumentList,
+  getDocumentDetail,
   getDocumentContent,
   lockDocument,
   unlockDocument,
@@ -889,6 +901,19 @@ const relationDialogVisible = ref(false);
 const relationForm = reactive({ from: "", to: "", relation_type: null as number | null });
 
 // 句子边界按 \n 切分；「同一句」判断交由 useTextNerTool 的同名工具函数（sameSentence）
+// 新建关系时，终点候选限制为与起点实体同句的实体（按 \n 切分），提交时仍保留校验兜底。
+const relationToCandidates = computed<any[]>(() => {
+  if (!relationForm.from) return textEntities.value;
+  const from = textEntities.value.find((e) => e.id === relationForm.from);
+  if (!from) return textEntities.value;
+  return textEntities.value.filter((e) => e.id !== from.id && sameSentence(docContent.value, from, e));
+});
+function onRelationFromChange() {
+  if (!relationForm.to) return;
+  const from = textEntities.value.find((e) => e.id === relationForm.from);
+  const to = textEntities.value.find((e) => e.id === relationForm.to);
+  if (!from || !to || !sameSentence(docContent.value, from, to)) relationForm.to = "";
+}
 
 function entityLabelName(e: EntitySpan): string {
   return textEntityClasses.value.find((c) => c.id === e.label_id)?.name ?? `#${e.label_id}`;
@@ -929,6 +954,11 @@ function saveEditSpan() {
     pushHistory();
   }
   editSpanVisible.value = false;
+}
+function deleteEditSpan() {
+  const id = editSpanId.value;
+  editSpanVisible.value = false;
+  if (id) deleteEntity(id);
 }
 function deleteEntity(id: string) {
   const ent = textEntities.value.find((e) => e.id === id);
@@ -1699,7 +1729,9 @@ async function initText() {
   const doc = items[0];
   if (!doc) return;
   documentId.value = doc.id;
-  docMeta.value = doc;
+  // 按 spec「list → detail → content」：列表仅作筛选定位，文档元数据以 detail 为准
+  const dr = await getDocumentDetail(doc.id);
+  docMeta.value = dr?.data?.data ?? doc;
   const cr = await getDocumentContent(doc.id);
   docContent.value = cr?.data ?? "";
   const ar = await loadTextAnnotations(store.taskId, doc.id);
@@ -2731,6 +2763,10 @@ defineExpose({
 .progress-text {
   color: var(--el-text-color-regular);
   font-size: 13px;
+}
+.doc-meta {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
 }
 .collab-online {
   color: var(--el-color-success);
