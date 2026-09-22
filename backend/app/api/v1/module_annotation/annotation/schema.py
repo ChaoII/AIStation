@@ -29,6 +29,18 @@ class VideoAnnotationSaveSchema(BaseModel):
     annotations: list[AxisAlignedBoxSchema] = Field(default_factory=list)
 
 
+class TextAnnotationSaveSchema(BaseModel):
+    """文本 NER 文档标注保存请求。
+
+    ``annotations`` 为实体与关系混合列表，逐项结构在后端 service 层
+    结合任务 classes 与文档字符数做实体/关系/重叠校验。
+    """
+
+    task_id: int
+    document_id: int
+    annotations: list[dict] = Field(default_factory=list)
+
+
 class AnnotationRollbackSchema(BaseModel):
     task_id: int
     version: int

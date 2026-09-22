@@ -10,7 +10,12 @@ from app.core.router_class import OperationLogRoute
 
 from ..dataset.service import DatasetService
 from ..task.service import TaskService
-from .schema import AnnotationRollbackSchema, AnnotationSaveSchema, VideoAnnotationSaveSchema
+from .schema import (
+    AnnotationRollbackSchema,
+    AnnotationSaveSchema,
+    TextAnnotationSaveSchema,
+    VideoAnnotationSaveSchema,
+)
 from .service import AnnotationService
 
 AnnotationRouter = APIRouter(route_class=OperationLogRoute, prefix="/anno", tags=["数据标注-标注操作"])
@@ -125,3 +130,26 @@ async def load_video_annotations(
     await _verify_task_access(task_id, auth)
     data = await AnnotationService.load_video_annotations(task_id, v_id, frame_index)
     return SuccessResponse(data=data or [])
+
+
+@AnnotationRouter.post("/document/save", summary="保存文本标注")
+async def save_text_annotations(
+    data: TextAnnotationSaveSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(data.task_id, auth)
+    result = await AnnotationService.save_text_annotations(
+        data.task_id, data.document_id, data.annotations, auth
+    )
+    return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.get("/document/load", summary="读取文本标注")
+async def load_text_annotations(
+    task_id: int,
+    d_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(task_id, auth)
+    data = await AnnotationService.load_text_annotations(task_id, d_id)
+    return SuccessResponse(data=data)
