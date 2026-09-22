@@ -107,6 +107,11 @@ def upgrade() -> None:
         op.execute(part if is_postgres(bind) else _render_type(part, dialect))
     # 4) annotation_record 新增 document_id 列；PG 上补外键。
     portable_add_column("annotation_record", "document_id", "INTEGER")
+    op.create_index(
+        "ix_annotation_record_task_document_version",
+        "annotation_record",
+        ["task_id", "document_id", "version"],
+    )
     if is_postgres(bind):
         op.execute(
             "DO $$ BEGIN "
@@ -122,6 +127,12 @@ def downgrade() -> None:
     """回滚：删除 document_id/document_count 列与 annotation_document 表（枚举值 PG 不支持移除）。"""
     # 先删依赖 annotation_document 的外键，再删表，避免 DependentObjectsStillExist。
     op.execute("ALTER TABLE annotation_record DROP CONSTRAINT IF EXISTS fk_annotation_record_document_id")
+    # 先删索引再删列：PG 在 DROP COLUMN 时会级联删除依赖该列的索引，
+    # 若反过来会因索引已不存在而报错。
+    op.drop_index(
+        "ix_annotation_record_task_document_version",
+        table_name="annotation_record",
+    )
     portable_drop_column("annotation_record", "document_id")
     portable_drop_column("annotation_dataset", "document_count")
     op.execute("DROP INDEX IF EXISTS ix_annotation_document_dataset_hash")

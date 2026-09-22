@@ -31,6 +31,10 @@ class AnnotationRecordModel(ModelMixin, UserMixin):
             "ix_annotation_record_task_video_frame_version",
             "task_id", "video_id", "frame_index", "version",
         ),
+        Index(
+            "ix_annotation_record_task_document_version",
+            "task_id", "document_id", "version",
+        ),
     )
 
     __mapper_args__ = {"eager_defaults": True}
