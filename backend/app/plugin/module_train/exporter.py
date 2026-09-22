@@ -110,6 +110,13 @@ async def _export_core(
         )
         return
 
+    # 文本 NER：按文档导出字符级 BIO/BIESO + 关系 JSONL。
+    # 同理放在图片空集守卫之前：text_ner 数据集可能没有任何 AnnotationImageModel 行。
+    # 必须传「标注任务 id」而非训练任务 id（同视频导出修复，否则标注静默为空）。
+    if task_type == "text_ner":
+        await _export_text_ner(dataset_id, output_dir, annotation_task_id=annotation_task_id)
+        return
+
     if not images:
         log.warning(f"export: dataset {dataset_id} has no images")
         return
@@ -903,6 +910,152 @@ async def _export_video_detection(
     finally:
         for d in tmp_dirs:
             shutil.rmtree(d, ignore_errors=True)
+
+
+def _iter_sentence_spans(text: str):
+    """按换行切分句子，产出 ``(句子, 句首绝对 UTF-16 偏移)``。
+
+    偏移以 UTF-16 code unit 计（与前端/CodeMirror 一致）；每个换行符占 1 个
+    code unit，逐句累加得到全局偏移，用于把文档级实体 span 映射到句内。
+    """
+    pos = 0
+    for line in text.split("\n"):
+        yield line, pos
+        pos += len(line.encode("utf-16-le")) // 2 + 1
+
+
+def _line_bio_tags(line: str, entities: list[dict], mode: str) -> list[str]:
+    """对单个句子按句内 UTF-16 偏移计算逐字符 BIO/BIESO 标签。
+
+    ``entities`` 为该句内实体（``start/end`` 为句内 UTF-16 偏移，含 ``label`` 名称）。
+    每个字符（code point）产出一个标签，字符的 UTF-16 宽度按 BMP=1、代理对=2 累加，
+    因此多 code unit 字符也能与实体偏移精确对应。``mode`` 为 ``bio`` 或 ``bieso``：
+    - ``bio``：实体首字符 ``B-``，其余 ``I-``；
+    - ``bieso``：单字符实体 ``S-``，多字符首 ``B-``、尾 ``E-``、中间 ``I-``。
+    """
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    for ch in line:
+        width = len(ch.encode("utf-16-le")) // 2
+        spans.append((pos, pos + width))
+        pos += width
+
+    tags: list[str] = []
+    for cs, ce in spans:
+        tag = "O"
+        for ent in entities:
+            if ent["start"] <= cs and ce <= ent["end"]:
+                first = cs == ent["start"]
+                last = ce == ent["end"]
+                single = (ent["end"] - ent["start"]) == (ce - cs)
+                if first and last and single and mode == "bieso":
+                    tag = f"S-{ent['label']}"
+                elif first:
+                    tag = f"B-{ent['label']}"
+                elif last and mode == "bieso":
+                    tag = f"E-{ent['label']}"
+                else:
+                    tag = f"I-{ent['label']}"
+                break
+        tags.append(tag)
+    return tags
+
+
+async def _export_text_ner(
+    dataset_id: int, output_dir: str, annotation_task_id: int | None = None,
+    mode: str = "bio",
+) -> None:
+    """文本 NER 导出：字符级 BIO/BIESO 序列 + 关系 JSONL。
+
+    对数据集每个文档：读全文（RustFS，UTF-8）+ ``load_text_annotations`` 取标注，
+    生成 ``<stem>_{document_id}.txt``（按换行分句，每句逐字符 ``字符\\t标签``，句间空行）
+    与 ``<stem>_{document_id}.relations.jsonl``（每行一个关系）。
+    关键：必须用「标注任务 id」而非训练任务 id 读标注——训练/评估路径经
+    ``_export_core(task_id=训练任务id, annotation_task_id=标注任务id)`` 进入，误传
+    训练任务 id 会被 ``_verify_document_task_relation`` 拒绝、导致标注静默为空。
+    """
+    import asyncio
+
+    from app.api.v1.module_annotation.annotation.service import AnnotationService
+    from app.api.v1.module_annotation.dataset.model import AnnotationDocumentModel
+    from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+    from app.utils.s3_client import s3_client
+
+    os.makedirs(output_dir, exist_ok=True)
+    entity_names: dict[int, str] = {}
+    relation_names: dict[int, str] = {}
+    if annotation_task_id:
+        async with async_db_session() as db:
+            ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
+            if ann_task and isinstance(ann_task.classes, dict):
+                for e in ann_task.classes.get("entities", []):
+                    entity_names[int(e["id"])] = e.get("name", f"class_{e['id']}")
+                for r in ann_task.classes.get("relations", []):
+                    relation_names[int(r["id"])] = r.get("name", f"class_{r['id']}")
+
+    async with async_db_session() as db:
+        docs = (await db.execute(
+            select(AnnotationDocumentModel).where(
+                AnnotationDocumentModel.dataset_id == dataset_id,
+                AnnotationDocumentModel.is_deleted == False,  # noqa: E712
+            )
+        )).scalars().all()
+
+    if not docs:
+        log.warning(f"text-ner export: dataset {dataset_id} has no documents")
+        return
+
+    for doc in docs:
+        data = await asyncio.to_thread(s3_client.download_fileobj, doc.object_key)
+        text = data.read().decode("utf-8")
+        anns = await AnnotationService.load_text_annotations(annotation_task_id, doc.id)
+        ann_data = anns.get("annotation_data") or []
+        entities = [a for a in ann_data if a.get("type") == "EntitySpan"]
+        relations = [a for a in ann_data if a.get("type") == "Relation"]
+
+        stem = os.path.splitext(doc.filename)[0] or f"doc_{doc.id}"
+        # 构造 BIO/BIESO 序列：逐句映射文档级实体到句内偏移
+        blocks: list[list[str]] = []
+        for sentence, abs_start in _iter_sentence_spans(text):
+            if not sentence:
+                continue
+            line_len = len(sentence.encode("utf-16-le")) // 2
+            local_entities = [
+                {
+                    "start": e["start"] - abs_start,
+                    "end": e["end"] - abs_start,
+                    "label": entity_names.get(
+                        int(e["label_id"]), f"class_{e['label_id']}"
+                    ),
+                }
+                for e in entities
+                if e["start"] >= abs_start and e["end"] <= abs_start + line_len
+            ]
+            tags = _line_bio_tags(sentence, local_entities, mode)
+            blocks.append([f"{ch}\t{tag}" for ch, tag in zip(sentence, tags, strict=True)])
+
+        seq_lines: list[str] = []
+        for i, block in enumerate(blocks):
+            seq_lines.extend(block)
+            if i < len(blocks) - 1:
+                seq_lines.append("")
+        txt_path = os.path.join(output_dir, f"{stem}_{doc.id}.txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(seq_lines) + ("\n" if seq_lines else ""))
+
+        # 关系 JSONL：每行一个关系
+        rel_path = os.path.join(output_dir, f"{stem}_{doc.id}.relations.jsonl")
+        with open(rel_path, "w", encoding="utf-8") as f:
+            for rel in relations:
+                rt = rel.get("relation_type")
+                f.write(json.dumps({
+                    "from": rel.get("from"),
+                    "to": rel.get("to"),
+                    "relation_type": rt,
+                    "label": relation_names.get(
+                        int(rt), f"class_{rt}" if rt is not None else "class_None"
+                    ),
+                }, ensure_ascii=False) + "\n")
 
 
 async def _export_coco_panoptic(dataset_id: int, task_id: int, images: list,
