@@ -19,6 +19,7 @@ class AnnotationType(str, enum.Enum):
     OCR = "ocr"
     CLASSIFICATION = "classification"
     VIDEO_DETECTION = "video_detection"
+    TEXT_NER = "text_ner"
 
 
 class DatasetStatus(str, enum.Enum):
@@ -34,9 +35,11 @@ class DatasetModel(ModelMixin, UserMixin):
     image_count: Mapped[int] = mapped_column(Integer, default=0, comment="图片总数")
     annotated_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注图片数")
     video_count: Mapped[int] = mapped_column(Integer, default=0, comment="视频总数")
+    document_count: Mapped[int] = mapped_column(Integer, default=0, comment="文档总数")
 
     images = relationship("AnnotationImageModel", back_populates="dataset", lazy="dynamic")
     videos = relationship("AnnotationVideoModel", back_populates="dataset", lazy="dynamic")
+    documents = relationship("AnnotationDocumentModel", back_populates="dataset", lazy="dynamic")
     tasks = relationship("AnnotationTaskModel", back_populates="dataset", lazy="dynamic")
 
 
@@ -98,4 +101,29 @@ class AnnotationVideoModel(ModelMixin, UserMixin):
 
     __table_args__ = (
         Index("ix_annotation_video_dataset_status", "dataset_id", "status"),
+    )
+
+
+class AnnotationDocumentModel(ModelMixin, UserMixin):
+    __tablename__ = "annotation_document"
+
+    dataset_id: Mapped[int] = mapped_column(ForeignKey("annotation_dataset.id"), comment="数据集ID")
+    filename: Mapped[str] = mapped_column(String(255), comment="原文件名")
+    object_key: Mapped[str] = mapped_column(String(512), comment="RustFS key")
+    content_hash: Mapped[str] = mapped_column(String(64), comment="内容哈希(sha256)，用于去重")
+    encoding: Mapped[str] = mapped_column(String(32), comment="探测到的原始编码")
+    character_count: Mapped[int] = mapped_column(Integer, default=0, comment="解码后字符数(UTF-16 code unit)")
+    line_count: Mapped[int] = mapped_column(Integer, default=0, comment="行数")
+    status: Mapped[ImageStatus] = mapped_column(
+        Enum(ImageStatus), default=ImageStatus.UNANNOTATED, comment="标注状态"
+    )
+    locked_by: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="锁定用户ID")
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="锁定时间")
+    annotation_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注数量")
+
+    dataset = relationship("DatasetModel", back_populates="documents")
+
+    __table_args__ = (
+        Index("ix_annotation_document_dataset_status", "dataset_id", "status"),
+        Index("ix_annotation_document_dataset_hash", "dataset_id", "content_hash"),
     )

@@ -82,6 +82,13 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
     "video_face_gallery": [
         ("kind", "VARCHAR(16) NOT NULL DEFAULT 'face'"),
     ],
+    # 文本 NER 标注：新增强制列（与迁移 5a6b7c8d9e0f 对齐；annotation_document 整表由 create_all/迁移创建）
+    "annotation_dataset": [
+        ("document_count", "INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "annotation_record": [
+        ("document_id", "INTEGER"),
+    ],
 }
 
 
