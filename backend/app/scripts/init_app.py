@@ -85,9 +85,13 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
     # 文本 NER 标注：新增强制列（与迁移 5a6b7c8d9e0f 对齐；annotation_document 整表由 create_all/迁移创建）
     "annotation_dataset": [
         ("document_count", "INTEGER NOT NULL DEFAULT 0"),
+        # 音频事件标注：新增音频计数列（与迁移 6a7b8c9d0e1f 对齐）
+        ("audio_count", "INTEGER NOT NULL DEFAULT 0"),
     ],
     "annotation_record": [
         ("document_id", "INTEGER"),
+        # 音频事件标注：新增音频媒体引用列（与迁移 6a7b8c9d0e1f 对齐）
+        ("audio_id", "INTEGER"),
     ],
 }
 

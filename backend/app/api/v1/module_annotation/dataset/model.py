@@ -20,6 +20,7 @@ class AnnotationType(str, enum.Enum):
     CLASSIFICATION = "classification"
     VIDEO_DETECTION = "video_detection"
     TEXT_NER = "text_ner"
+    AUDIO_EVENT = "audio_event"
 
 
 class DatasetStatus(str, enum.Enum):
@@ -36,10 +37,12 @@ class DatasetModel(ModelMixin, UserMixin):
     annotated_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标注图片数")
     video_count: Mapped[int] = mapped_column(Integer, default=0, comment="视频总数")
     document_count: Mapped[int] = mapped_column(Integer, default=0, comment="文档总数")
+    audio_count: Mapped[int] = mapped_column(Integer, default=0, comment="音频总数")
 
     images = relationship("AnnotationImageModel", back_populates="dataset", lazy="dynamic")
     videos = relationship("AnnotationVideoModel", back_populates="dataset", lazy="dynamic")
     documents = relationship("AnnotationDocumentModel", back_populates="dataset", lazy="dynamic")
+    audios = relationship("AnnotationAudioModel", back_populates="dataset", lazy="dynamic")
     tasks = relationship("AnnotationTaskModel", back_populates="dataset", lazy="dynamic")
 
 
@@ -126,4 +129,29 @@ class AnnotationDocumentModel(ModelMixin, UserMixin):
     __table_args__ = (
         Index("ix_annotation_document_dataset_status", "dataset_id", "status"),
         Index("ix_annotation_document_dataset_hash", "dataset_id", "content_hash"),
+    )
+
+
+class AnnotationAudioModel(ModelMixin, UserMixin):
+    __tablename__ = "annotation_audio"
+
+    dataset_id: Mapped[int] = mapped_column(ForeignKey("annotation_dataset.id"), comment="所属数据集")
+    name: Mapped[str] = mapped_column(String(255), comment="原文件名")
+    object_key: Mapped[str] = mapped_column(String(512), comment="RustFS key")
+    duration: Mapped[float] = mapped_column(Float, default=0.0, comment="时长(秒)")
+    sample_rate: Mapped[int] = mapped_column(Integer, default=0, comment="采样率(Hz)")
+    channels: Mapped[int] = mapped_column(Integer, default=0, comment="声道数")
+    bitrate: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="码率(kbps)")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, comment="文件字节数")
+    status: Mapped[ImageStatus] = mapped_column(
+        Enum(ImageStatus), default=ImageStatus.UNANNOTATED, comment="标注状态"
+    )
+    locked_by: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="锁定用户ID")
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, comment="锁定时间")
+    annotation_count: Mapped[int] = mapped_column(Integer, default=0, comment="已标事件数")
+
+    dataset = relationship("DatasetModel", back_populates="audios")
+
+    __table_args__ = (
+        Index("ix_annotation_audio_dataset_status", "dataset_id", "status"),
     )
