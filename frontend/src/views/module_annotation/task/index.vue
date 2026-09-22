@@ -293,7 +293,7 @@
                   />
                 </div>
               </div>
-              <span v-else style="font-size: 12px; color: var(--el-text-color-secondary)">
+              <span v-else class="ner-empty">
                 暂无类别，添加后可在标注工作台使用
               </span>
             </template>
@@ -662,11 +662,15 @@ function handleAddEntity() {
 async function handleRemoveEntity(index: number) {
   const entity = entities.value[index];
   if (!entity) return;
-  await ElMessageBox.confirm(
-    `确认删除实体类型「${entity.name}」？该操作不可恢复。`,
-    "警告",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
-  );
+  try {
+    await ElMessageBox.confirm(
+      `确认删除实体类型「${entity.name}」？该操作不可恢复。`,
+      "警告",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
   entities.value.splice(index, 1);
 }
 
@@ -688,11 +692,15 @@ function handleAddRelation() {
 async function handleRemoveRelation(index: number) {
   const relation = relations.value[index];
   if (!relation) return;
-  await ElMessageBox.confirm(
-    `确认删除关系类型「${relation.name}」？该操作不可恢复。`,
-    "警告",
-    { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
-  );
+  try {
+    await ElMessageBox.confirm(
+      `确认删除关系类型「${relation.name}」？该操作不可恢复。`,
+      "警告",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
   relations.value.splice(index, 1);
 }
 
