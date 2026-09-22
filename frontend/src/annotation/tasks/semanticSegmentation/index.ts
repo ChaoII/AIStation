@@ -3,35 +3,44 @@ import SemanticSegCanvas from "./SemanticSegCanvas.vue";
 import SemanticSegPanel from "./SemanticSegPanel.vue";
 import SegmentPreview from "../segmentation/SegmentPreview.vue";
 import { useSegmentTool } from "../segmentation/useSegmentTool";
+import BrushPreview from "../../core/BrushPreview.vue";
+import { useBrushTool } from "../../core/brush";
 
 export const semanticSegmentationPlugin: AnnotationTaskPlugin = {
   name: "semantic_segmentation",
   label: "语义分割",
   color: "warning",
   renderer: SemanticSegCanvas,
-  tools: [{ name: "polygon", label: "语义分割", title: "逐点绘制轮廓，双击闭合" }],
+  tools: [
+    { name: "polygon", label: "语义分割", title: "逐点绘制，双击闭合" },
+    { name: "brush", label: "画笔分割", title: "按住自由描画，松手转多边形" },
+  ],
   panel: SemanticSegPanel,
   create(shape: Annotation): boolean {
     if (shape.type !== "Polygon") return false;
     if (!Array.isArray(shape.points) || shape.points.length < 3) return false;
     return shape.points.every((p: any) => 0 <= p.x && p.x <= 1 && 0 <= p.y && p.y <= 1);
   },
-  tool: (() => {
+  toolMap: (() => {
     const seg = useSegmentTool();
+    const brush = useBrushTool();
     return {
-      name: "polygon",
-      preview: SegmentPreview,
-      state: { points: seg.points },
-      down(ctx) {
-        const p = ctx.point;
-        if (p) seg.addPoint(p);
-        return null;
+      polygon: {
+        name: "polygon",
+        preview: SegmentPreview,
+        state: { points: seg.points },
+        down(ctx) { const p = ctx.point; if (p) seg.addPoint(p); return null; },
+        dblclick() { return seg.closePolygon(); },
+        reset() { seg.points.value = []; },
       },
-      dblclick() {
-        return seg.closePolygon();
-      },
-      reset() {
-        seg.points.value = [];
+      brush: {
+        name: "brush",
+        preview: BrushPreview,
+        state: { strokes: brush.strokes },
+        down(ctx) { const p = ctx.point; if (p) brush.start(p); return null; },
+        move(ctx) { const p = ctx.point; if (p) brush.move(p); },
+        up(ctx) { return brush.end(ctx.cw ?? 0, ctx.ch ?? 0); },
+        reset() { brush.reset(); },
       },
     };
   })(),

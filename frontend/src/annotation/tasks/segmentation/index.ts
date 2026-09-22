@@ -2,34 +2,43 @@ import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/t
 import SegmentCanvas from "./SegmentCanvas.vue";
 import SegmentPreview from "./SegmentPreview.vue";
 import { useSegmentTool } from "./useSegmentTool";
+import BrushPreview from "../../core/BrushPreview.vue";
+import { useBrushTool } from "../../core/brush";
 
 export const segmentationPlugin: AnnotationTaskPlugin = {
   name: "segmentation",
   label: "实例分割",
   color: "success",
   renderer: SegmentCanvas,
-  tools: [{ name: "polygon", label: "实例分割", title: "逐点绘制轮廓，双击闭合" }],
+  tools: [
+    { name: "polygon", label: "实例分割", title: "逐点绘制，双击闭合" },
+    { name: "brush", label: "画笔分割", title: "按住自由描画，松手转多边形" },
+  ],
   create(shape: Annotation): boolean {
     if (shape.type !== "Polygon") return false;
     if (!Array.isArray(shape.points) || shape.points.length < 3) return false;
     return shape.points.every((p: any) => 0 <= p.x && p.x <= 1 && 0 <= p.y && p.y <= 1);
   },
-  tool: (() => {
+  toolMap: (() => {
     const seg = useSegmentTool();
+    const brush = useBrushTool();
     return {
-      name: "polygon",
-      preview: SegmentPreview,
-      state: { points: seg.points },
-      down(ctx) {
-        const p = ctx.point;
-        if (p) seg.addPoint(p);
-        return null;
+      polygon: {
+        name: "polygon",
+        preview: SegmentPreview,
+        state: { points: seg.points },
+        down(ctx) { const p = ctx.point; if (p) seg.addPoint(p); return null; },
+        dblclick() { return seg.closePolygon(); },
+        reset() { seg.points.value = []; },
       },
-      dblclick() {
-        return seg.closePolygon();
-      },
-      reset() {
-        seg.points.value = [];
+      brush: {
+        name: "brush",
+        preview: BrushPreview,
+        state: { strokes: brush.strokes },
+        down(ctx) { const p = ctx.point; if (p) brush.start(p); return null; },
+        move(ctx) { const p = ctx.point; if (p) brush.move(p); },
+        up(ctx) { return brush.end(ctx.cw ?? 0, ctx.ch ?? 0); },
+        reset() { brush.reset(); },
       },
     };
   })(),

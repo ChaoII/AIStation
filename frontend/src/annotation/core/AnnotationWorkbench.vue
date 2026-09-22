@@ -1303,6 +1303,8 @@ function onCanvasDown(e: MouseEvent) {
       event: e,
       classes: taskClasses.value,
       selectedClassId: selectedClassId.value,
+      cw: cw.value,
+      ch: ch.value,
     });
     if (created) commitCreated(created);
     return;
@@ -1539,6 +1541,8 @@ function onMove(e: MouseEvent) {
       event: e,
       classes: taskClasses.value,
       selectedClassId: selectedClassId.value,
+      cw: cw.value,
+      ch: ch.value,
     });
     return;
   }
@@ -1741,7 +1745,14 @@ function onUp(e: MouseEvent) {
   }
   const tool = activeTool.value;
   if (tool) {
-    const created = tool.up?.({ event: e });
+    const created = tool.up?.({
+      event: e,
+      point: toImagePoint(e) ?? undefined,
+      classes: taskClasses.value,
+      selectedClassId: selectedClassId.value,
+      cw: cw.value,
+      ch: ch.value,
+    });
     if (created) commitCreated(created);
     return;
   }

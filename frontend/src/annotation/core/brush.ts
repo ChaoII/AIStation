@@ -1,4 +1,5 @@
-import type { Point } from "./types";
+import { ref } from "vue";
+import type { Annotation, Point } from "./types";
 
 /** Douglas-Peucker 折线简化（保留首尾点），返回新数组。 */
 export function simplifyPolygon(points: Point[], tolerance: number): Point[] {
@@ -154,4 +155,85 @@ function traceBoundary(
     out.push(b);
   }
   return out;
+}
+
+/** 画笔状态机：维护当前笔画轨迹与橡皮擦标记；end() 用位图掩码转 Polygon。 */
+export function useBrushTool() {
+  const strokes = ref<Point[][]>([]);
+  const brushSize = ref(8);
+  const erasing = ref(false);
+  let canvas: HTMLCanvasElement | null = null;
+
+  function ensureCanvas(cw: number, ch: number): HTMLCanvasElement {
+    if (!canvas) canvas = document.createElement("canvas");
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
+    return canvas;
+  }
+
+  function paintStroke(points: Point[], cw: number, ch: number, erase: boolean) {
+    const ctx = ensureCanvas(cw, ch).getContext("2d")!;
+    ctx.globalCompositeOperation = erase ? "destination-out" : "source-over";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = brushSize.value;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      const x = p.x * cw;
+      const y = p.y * ch;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  function clearCanvas() {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  /** 开始一笔：清空上一标注掩码，置首点。 */
+  function start(p: Point) {
+    clearCanvas();
+    strokes.value = [[{ ...p }]];
+  }
+
+  /** 追加轨迹点。 */
+  function move(p: Point) {
+    const cur = strokes.value;
+    if (cur.length === 0) cur.push([]);
+    (cur[cur.length - 1] ||= []).push({ ...p });
+  }
+
+  /** 结束一笔：把轨迹刷到画布 → 二值掩码 → 转 Polygon。 */
+  function end(cw: number, ch: number): Annotation | null {
+    if (strokes.value.length === 0) return null;
+    const all: Point[] = [];
+    strokes.value.forEach((s) => all.push(...s));
+    paintStroke(all, cw, ch, erasing.value);
+    const ctx = ensureCanvas(cw, ch).getContext("2d")!;
+    const imageData = ctx.getImageData(0, 0, cw, ch);
+    const mask = new Uint8Array(imageData.data.length / 4);
+    for (let i = 0; i < mask.length; i++) mask[i] = imageData.data[i * 4 + 3] > 0 ? 1 : 0;
+    const pts = maskToPolygon(mask, cw, ch);
+    strokes.value = [];
+    if (pts.length < 3) return null;
+    return {
+      id: crypto.randomUUID(),
+      type: "Polygon" as const,
+      class_id: 0,
+      points: pts,
+    };
+  }
+
+  function reset() {
+    strokes.value = [];
+    clearCanvas();
+  }
+
+  return { strokes, brushSize, erasing, start, move, end, reset };
 }

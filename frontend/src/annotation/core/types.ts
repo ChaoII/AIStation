@@ -193,6 +193,10 @@ export interface DrawContext {
   selectedClassId?: number | null;
   /** 新增关键点的可见性（keypoint） */
   visibility?: string;
+  /** 画布像素宽度（brush 等按位图掩码生成的工具使用） */
+  cw?: number;
+  /** 画布像素高度（brush 等按位图掩码生成的工具使用） */
+  ch?: number;
 }
 
 /** 任务绘制工具运行时（阶段 C 下沉） */
