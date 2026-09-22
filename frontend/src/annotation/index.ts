@@ -3,6 +3,7 @@ export { default as AnnotationWorkbench } from "./core/AnnotationWorkbench.vue";
 export { detectionPlugin } from "./tasks/detection";
 export { videoDetectionPlugin } from "./tasks/videoDetection";
 export { textNerPlugin } from "./tasks/textNer";
+export { audioEventPlugin } from "./tasks/audioEvent";
 export { rotatedBoxPlugin } from "./tasks/rotatedBox";
 export { segmentationPlugin } from "./tasks/segmentation";
 export { semanticSegmentationPlugin } from "./tasks/semanticSegmentation";

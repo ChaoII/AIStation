@@ -1,0 +1,85 @@
+import { describe, it, expect } from "vitest";
+import {
+  createAudioSegment,
+  hasAudioOverlap,
+  findOverlappingSegment,
+  clampAudioRange,
+  segmentToRange,
+  isAudioSegment,
+} from "../useAudioEventTool";
+import type { AudioSegment } from "../../../../api/module_annotation/audio";
+
+describe("useAudioEventTool 音频事件工具", () => {
+  it("createAudioSegment 用 start/end/label_id 生成 AudioSegment", () => {
+    const seg = createAudioSegment(1.5, 3.25, 7, "id-a");
+    expect(seg).toEqual({
+      id: "id-a",
+      type: "AudioSegment",
+      start: 1.5,
+      end: 3.25,
+      label_id: 7,
+    });
+    expect(seg.type).toBe("AudioSegment");
+  });
+
+  it("createAudioSegment 未传 id 时自动生成", () => {
+    const seg = createAudioSegment(0, 1.2, 0);
+    expect(seg.id).toBeTruthy();
+    expect(seg.type).toBe("AudioSegment");
+  });
+
+  it("createAudioSegment 保留 label_id=0（事件类别 id 从 0 起）", () => {
+    const seg = createAudioSegment(2, 4, 0, "id-0");
+    expect(seg.label_id).toBe(0);
+  });
+
+  it("hasAudioOverlap 相邻（仅接触端点）区间不算重叠", () => {
+    const segs = [{ start: 0, end: 4, id: "s1" } as AudioSegment];
+    expect(hasAudioOverlap(segs, 4, 6)).toBe(false);
+    expect(hasAudioOverlap(segs, -2, 0)).toBe(false);
+  });
+
+  it("hasAudioOverlap 真正相交的区间判定为重叠", () => {
+    const segs = [{ start: 0, end: 4, id: "s1" } as AudioSegment];
+    expect(hasAudioOverlap(segs, 3, 5)).toBe(true);
+    expect(hasAudioOverlap(segs, -1, 2)).toBe(true);
+    expect(hasAudioOverlap(segs, 4, 6)).toBe(false);
+  });
+
+  it("hasAudioOverlap 顺序无关（两个方向均检测）", () => {
+    const segs = [{ start: 2, end: 5, id: "s1" } as AudioSegment];
+    expect(hasAudioOverlap(segs, 4, 6)).toBe(true);
+    expect(hasAudioOverlap(segs, 1, 3)).toBe(true);
+    expect(hasAudioOverlap(segs, 5, 7)).toBe(false);
+  });
+
+  it("findOverlappingSegment 返回第一个相交片段，无则 null", () => {
+    const segs = [
+      { start: 0, end: 2, id: "s1" } as AudioSegment,
+      { start: 3, end: 5, id: "s2" } as AudioSegment,
+    ];
+    expect(findOverlappingSegment(segs, 3.5, 4.5)?.id).toBe("s2");
+    expect(findOverlappingSegment(segs, 9, 10)).toBeNull();
+  });
+
+  it("clampAudioRange 将区间钳制到 [0, duration]", () => {
+    expect(clampAudioRange(-1, 10, 8)).toEqual({ start: 0, end: 8 });
+    expect(clampAudioRange(5, 99, 8)).toEqual({ start: 5, end: 8 });
+    expect(clampAudioRange(3, 1, 8)).toEqual({ start: 1, end: 3 });
+  });
+
+  it("segmentToRange 还原 {start, end}", () => {
+    expect(segmentToRange({ start: 1.5, end: 3.5 } as AudioSegment)).toEqual({
+      start: 1.5,
+      end: 3.5,
+    });
+  });
+
+  it("isAudioSegment 判别 type 与必备数值字段", () => {
+    const seg = createAudioSegment(0, 1, 1, "a");
+    expect(isAudioSegment(seg)).toBe(true);
+    expect(isAudioSegment({ ...seg, type: "EntitySpan" })).toBe(false);
+    expect(isAudioSegment({ ...seg, end: "x" })).toBe(false);
+    expect(isAudioSegment({ ...seg, start: null })).toBe(false);
+  });
+});
