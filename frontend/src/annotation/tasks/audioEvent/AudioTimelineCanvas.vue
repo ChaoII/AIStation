@@ -61,6 +61,8 @@ const emit = defineEmits<{
   (e: "updateRegion", region: ChangedRegion): void;
   /** 用户删除已有区间（拖动到外部/双击等）。 */
   (e: "removeRegion", region: ChangedRegion): void;
+  /** 点击已有区间（选中）。 */
+  (e: "regionClick", region: ChangedRegion): void;
   /** 播放时间实时回调（当前秒）。 */
   (e: "timeupdate", seconds: number): void;
   /** 音频解码完成（总时长秒）。 */
@@ -218,6 +220,9 @@ onMounted(() => {
         regionBySegmentId.delete(region.id);
         emit("removeRegion", { id: region.id, start: region.start, end: region.end });
       }
+    }),
+    regions.on("region-clicked", (region) => {
+      emit("regionClick", { id: region.id, start: region.start, end: region.end });
     })
   );
 

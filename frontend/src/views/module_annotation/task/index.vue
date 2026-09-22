@@ -186,6 +186,7 @@
             <el-option label="全景分割" value="panoptic_segmentation" />
             <el-option label="3D 目标检测" value="cuboid" />
             <el-option label="文本NER" value="text_ner" />
+            <el-option label="音频事件" value="audio_event" />
           </el-select>
         </el-form-item>
         <el-form-item
@@ -809,6 +810,7 @@ function annotationTypeLabel(type: string) {
     panoptic_segmentation: "全景分割",
     cuboid: "3D 目标检测",
     text_ner: "文本NER",
+    audio_event: "音频事件",
   };
   return map[type] || type;
 }
@@ -826,6 +828,7 @@ function annotationTypeTag(type: string) {
     panoptic_segmentation: "primary",
     cuboid: "danger",
     text_ner: "info",
+    audio_event: "warning",
   };
   return map[type];
 }

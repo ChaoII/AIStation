@@ -55,8 +55,35 @@
           @select-entity="store.selectedAnnotationId = $event"
           @new-relation="openRelationDialog"
           @delete-entity="deleteEntity"
-          @delete-relation="deleteRelation"
-          @click-relation="activeRelationId = $event"
+        @delete-relation="deleteRelation"
+        @click-relation="activeRelationId = $event"
+      />
+      </template>
+      <template v-else-if="isAudioTask">
+        <main class="ann-canvas-area audio-main">
+          <component
+            :is="plugin.renderer"
+            :url="audioUrl"
+            :segments="audioSegments"
+            :classes="taskClasses"
+            :selected-id="store.selectedAnnotationId"
+            :color-for="audioSegmentColor"
+            @create-region="onAudioCreateRegion"
+            @update-region="onAudioUpdateRegion"
+            @remove-region="onAudioRemoveRegion"
+            @region-click="onAudioRegionClick"
+            @ready="audioDuration = $event"
+            @timeupdate="audioCurrentTime = $event"
+          />
+        </main>
+        <AudioEventPanel
+          :segments="audioSegments"
+          :classes="taskClasses"
+          :selected-id="store.selectedAnnotationId"
+          @select="store.selectedAnnotationId = $event"
+          @new="openAudioNewDialog"
+          @edit="openAudioEditDialog"
+          @delete="deleteAudioSegment"
         />
       </template>
       <template v-else>
@@ -188,7 +215,7 @@
       @zoom-out="zoomStep(1 / 1.2)"
     />
     <AnnotationHistoryBar
-      :has-current-image="!!store.currentImage || isVideoTask || isTextTask"
+      :has-current-image="!!store.currentImage || isVideoTask || isAudioTask || isTextTask"
       :current-index="store.currentImageIndex"
       :total="store.images.length"
       :unsaved="store.unsaved"
@@ -200,7 +227,7 @@
       :can-prev="store.currentImageIndex > 0"
       :can-next="store.currentImageIndex < store.images.length - 1"
       :locked="lockedByOther"
-      :show-coordinate="!isTextTask"
+      :show-coordinate="!isTextTask && !isAudioTask"
       @save="saveAnn"
       @prev="prevImg"
       @next="nextImg"
@@ -477,6 +504,56 @@
         <el-button type="primary" @click="confirmRelation">创建关系</el-button>
       </template>
     </el-dialog>
+
+    <!-- 音频事件：创建/编辑片段 -->
+    <el-dialog
+      v-model="audioDialogVisible"
+      :title="audioDialogMode === 'create' ? '新建事件片段' : '编辑事件片段'"
+      width="480px"
+      append-to-body
+    >
+      <el-form label-width="80px">
+        <el-form-item label="开始时间">
+          <el-input-number
+            v-model="audioDialogRange.start"
+            :min="0"
+            :max="audioDuration"
+            :step="0.1"
+            :precision="2"
+            size="small"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="结束时间">
+          <el-input-number
+            v-model="audioDialogRange.end"
+            :min="0"
+            :max="audioDuration"
+            :step="0.1"
+            :precision="2"
+            size="small"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="事件类别">
+          <el-select v-model="audioDialogLabelId" size="small" style="width: 100%" placeholder="选择事件类别">
+            <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="audioDialogVisible = false">取消</el-button>
+        <el-button
+          v-if="audioDialogMode === 'edit'"
+          type="danger"
+          @click="audioDialogVisible = false; deleteAudioSegment(audioDialogId)"
+        >
+          删除
+        </el-button>
+        <el-button v-if="audioDialogMode === 'edit'" type="primary" @click="confirmAudioDialog">保存</el-button>
+        <el-button v-else type="primary" @click="confirmAudioDialog">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -540,6 +617,22 @@ import {
   sameSentence,
 } from "../tasks/textNer/useTextNerTool";
 import TextNerPanel from "../tasks/textNer/TextNerPanel.vue";
+import {
+  getAudioList,
+  getAudioDetail,
+  getAudioPlayUrl,
+  lockAudio,
+  unlockAudio,
+  saveAudioAnnotations,
+  loadAudioAnnotations,
+  type AudioSegment,
+} from "@/api/module_annotation/audio";
+import {
+  createAudioSegment,
+  hasAudioOverlap,
+  clampAudioRange,
+} from "../tasks/audioEvent/useAudioEventTool";
+import AudioEventPanel from "../tasks/audioEvent/AudioEventPanel.vue";
 
 const props = defineProps<{
   plugins: AnnotationTaskPlugin[];
@@ -570,14 +663,6 @@ const videoCurrentTime = ref(0);
 // 待定位的目标帧：用于在 seeked 回调中过滤过期 seek，保证加载的标注与最终定位帧一致
 let pendingSeekFrame = -1;
 const selectedClassId = ref<number | null>(null);
-watch(
-  () => [...taskClasses.value],
-  (arr) => {
-    if (!arr.length) selectedClassId.value = null;
-    else if (!arr.some((c) => c.id === selectedClassId.value)) selectedClassId.value = arr[0].id;
-  },
-  { immediate: true }
-);
 const crosshair = reactive({ x: 0, y: 0 });
 
 const cursorPos = reactive({ x: 0, y: 0 });
@@ -663,6 +748,12 @@ const plugin = computed(
 );
 const isVideoTask = computed(() => plugin.value.media === "video");
 const isTextTask = computed(() => plugin.value.media === "text");
+const isAudioTask = computed(() => plugin.value.media === "audio");
+// ==== 音频事件标注状态 ====
+const audioId = ref<number | null>(null);
+const audioUrl = ref("");
+const audioDuration = ref(0);
+const audioCurrentTime = ref(0);
 // ==== 文本 NER 文档状态 ====
 const documentId = ref<number | null>(null);
 const docContent = ref("");
@@ -779,6 +870,7 @@ function prefetchNeighbors() {
 let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
 let lockedVideoId: number | null = null;
+let lockedAudioId: number | null = null;
 let unmounted = false;
 let _resizeObserver: ResizeObserver | null = null;
 
@@ -797,6 +889,10 @@ function unlockCurrent() {
   if (lockedVideoId) {
     unlockVideo(lockedVideoId).catch(() => {});
     lockedVideoId = null;
+  }
+  if (lockedAudioId) {
+    unlockAudio(lockedAudioId).catch(() => {});
+    lockedAudioId = null;
   }
   if (lockedDocumentId) {
     unlockDocument(lockedDocumentId).catch(() => {});
@@ -823,7 +919,200 @@ function lockCurrentVideo(id: number) {
     .catch(() => {});
 }
 
-// ==== 历史（undo/redo）====
+// ==== 音频事件：锁定（按音频整体加锁，定期续期）====
+function lockCurrentAudio(id: number) {
+  lockAudio(id)
+    .then((lr: any) => {
+      const d = lr?.data?.data;
+      if (d?.locked) {
+        lockedByOther.value = true;
+        lockedByUser.value = d.locked_by ?? null;
+      } else {
+        lockedByOther.value = false;
+        lockedByUser.value = null;
+      }
+      lockedAudioId = id;
+      clearLockRenewal();
+      lockRenewTimer = window.setInterval(() => {
+        lockAudio(id).catch(() => {});
+      }, 180000);
+    })
+    .catch(() => {});
+}
+
+const audioSegments = computed<AudioSegment[]>(() =>
+  store.annotations.filter((a) => (a as any).type === "AudioSegment") as unknown as AudioSegment[]
+);
+// 事件片段类别颜色：优先用户类别色，缺失回退 Element 主色变量
+function audioSegmentColor(segment: AudioSegment, classes: any[]): string {
+  const c = classes.find((x) => x.id === segment.label_id);
+  if (c?.color) return c.color;
+  return "var(--el-color-primary)";
+}
+
+// ==== 音频事件：创建/编辑/删除 ====
+const audioDialogVisible = ref(false);
+const audioDialogMode = ref<"create" | "edit">("create");
+const audioDialogId = ref("");
+const audioDialogRange = reactive({ start: 0, end: 0 });
+const audioDialogLabelId = ref<number | null>(null);
+
+function formatAudioTime(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = (seconds % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${s}`;
+}
+
+function openAudioCreateDialog(start: number, end: number) {
+  if (lockedByOther.value) return;
+  const range = clampAudioRange(start, end, audioDuration.value || end);
+  if (range.end <= range.start) {
+    ElMessage.warning("区间无效，请重新拖选");
+    return;
+  }
+  if (hasAudioOverlap(audioSegments.value, range.start, range.end)) {
+    ElMessage.warning("该区间与已有事件片段重叠，无法创建");
+    return;
+  }
+  audioDialogMode.value = "create";
+  audioDialogId.value = "";
+  audioDialogRange.start = range.start;
+  audioDialogRange.end = range.end;
+  audioDialogLabelId.value = taskClasses.value[0]?.id ?? null;
+  audioDialogVisible.value = true;
+}
+
+function onAudioCreateRegion(region: { id: string; start: number; end: number }) {
+  openAudioCreateDialog(region.start, region.end);
+}
+
+function onAudioUpdateRegion(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  const seg = store.annotations.find((a) => a.id === region.id) as AudioSegment | undefined;
+  if (!seg) return;
+  if (Math.abs(seg.start - region.start) < 0.001 && Math.abs(seg.end - region.end) < 0.001) return;
+  seg.start = region.start;
+  seg.end = region.end;
+  store.markUnsaved();
+}
+
+function onAudioRemoveRegion(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  if (!store.annotations.some((a) => a.id === region.id)) return;
+  deleteAudioSegment(region.id);
+}
+
+function onAudioRegionClick(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  store.selectedAnnotationId = region.id;
+  openAudioEditDialog(region.id);
+}
+
+function openAudioNewDialog() {
+  if (lockedByOther.value) return;
+  const start = Math.min(audioCurrentTime.value, audioDuration.value || audioCurrentTime.value);
+  const end = Math.min(audioDuration.value || start + 1, start + 1);
+  audioDialogMode.value = "create";
+  audioDialogId.value = "";
+  audioDialogRange.start = start;
+  audioDialogRange.end = end > start ? end : start + 1;
+  audioDialogLabelId.value = taskClasses.value[0]?.id ?? null;
+  audioDialogVisible.value = true;
+}
+
+function openAudioEditDialog(id: string) {
+  if (lockedByOther.value) return;
+  const seg = store.annotations.find((a) => a.id === id);
+  if (!seg) return;
+  audioDialogMode.value = "edit";
+  audioDialogId.value = id;
+  audioDialogRange.start = seg.start;
+  audioDialogRange.end = seg.end;
+  audioDialogLabelId.value = seg.label_id;
+  audioDialogVisible.value = true;
+}
+
+function confirmAudioDialog() {
+  const labelId = audioDialogLabelId.value;
+  if (audioDialogMode.value !== "edit" && labelId == null) {
+    ElMessage.warning("请选择事件类别");
+    return;
+  }
+  const start = audioDialogRange.start;
+  const end = audioDialogRange.end;
+  if (!(start < end)) {
+    ElMessage.warning("区间无效，结束时间需大于开始时间");
+    return;
+  }
+  if (audioDialogMode.value === "create") {
+    if (hasAudioOverlap(audioSegments.value, start, end)) {
+      ElMessage.warning("该区间与已有事件片段重叠，无法创建");
+      return;
+    }
+    if (labelId == null) {
+      ElMessage.warning("请选择事件类别");
+      return;
+    }
+    const seg = createAudioSegment(start, end, labelId);
+    store.annotations.push(seg as any);
+    store.selectedAnnotationId = seg.id;
+    store.markUnsaved();
+    pushHistory();
+  } else {
+    const seg = store.annotations.find((a) => a.id === audioDialogId.value) as AudioSegment | undefined;
+    if (seg && labelId != null) {
+      seg.start = start;
+      seg.end = end;
+      seg.label_id = labelId;
+      store.markUnsaved();
+      pushHistory();
+    }
+  }
+  audioDialogVisible.value = false;
+}
+
+function deleteAudioSegment(id: string) {
+  const seg = store.annotations.find((a) => a.id === id) as AudioSegment | undefined;
+  if (!seg) return;
+  ElMessageBox.confirm(
+    `将删除该音频事件片段（${formatAudioTime(seg.start)} - ${formatAudioTime(seg.end)}），且不可恢复。`,
+    "删除事件片段",
+    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+  )
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter((a) => a.id !== id);
+      if (store.annotations.length !== before) {
+        if (store.selectedAnnotationId === id) store.selectedAnnotationId = "";
+        store.markUnsaved();
+        pushHistory();
+      }
+    })
+    .catch(() => {});
+}
+
+async function initAudio() {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId) return;
+  resetDrawingState();
+  const lr = await getAudioList(datasetId);
+  const items = lr?.data?.data?.items || [];
+  const audio = items[0];
+  if (!audio) return;
+  audioId.value = audio.id;
+  const dr = await getAudioDetail(audio.id);
+  const d = dr?.data?.data;
+  audioDuration.value = d?.duration || 0;
+  audioUrl.value = await getAudioPlayUrl(audio.id);
+  const ar = await loadAudioAnnotations({ task_id: store.taskId, audio_id: audio.id });
+  store.annotations = (ar?.data?.data?.annotation_data || []) as any;
+  store.selectedAnnotationId = "";
+  store.unsaved = false;
+  store.totalCount = 1;
+  store.annotatedCount = store.annotations.length ? 1 : 0;
+  lockCurrentAudio(audio.id);
+}
 const MAX_HISTORY = 50;
 let historyStack: string[] = [];
 let historyIndex = -1;
@@ -1103,6 +1392,14 @@ watch(
     taskClasses.value = Array.isArray(val) ? [...(val || [])] : [];
   },
   { deep: true }
+);
+watch(
+  () => [...taskClasses.value],
+  (arr) => {
+    if (!arr.length) selectedClassId.value = null;
+    else if (!arr.some((c) => c.id === selectedClassId.value)) selectedClassId.value = arr[0].id;
+  },
+  { immediate: true }
 );
 // ==== 文本 NER：classes 为字典 {entities, relations} ====
 const textEntityClasses = computed<any[]>(() => {
@@ -1695,6 +1992,12 @@ async function init() {
       await initVideo();
       return;
     }
+    if (isAudioTask.value) {
+      imageTotal.value = 0;
+      imageLoadedPages = 0;
+      await initAudio();
+      return;
+    }
     if (isTextTask.value) {
       await initText();
       return;
@@ -1806,6 +2109,19 @@ async function saveAnn() {
       currentFrame.value,
       store.annotations as any
     );
+    store.unsaved = false;
+    lastSavedKey = annotKey();
+    historyStack = [lastSavedKey];
+    historyIndex = 0;
+    return;
+  }
+  if (isAudioTask.value) {
+    if (!audioId.value) return;
+    await saveAudioAnnotations({
+      task_id: store.taskId,
+      audio_id: audioId.value,
+      annotations: store.annotations as any,
+    });
     store.unsaved = false;
     lastSavedKey = annotKey();
     historyStack = [lastSavedKey];
@@ -2697,6 +3013,12 @@ onBeforeUnmount(() => {
         currentFrame.value,
         store.annotations as any
       ).catch(() => {});
+    } else if (isAudioTask.value && audioId.value) {
+      saveAudioAnnotations({
+        task_id: store.taskId,
+        audio_id: audioId.value,
+        annotations: store.annotations as any,
+      }).catch(() => {});
     } else if (isTextTask.value && documentId.value) {
       saveTextAnnotations({
         task_id: store.taskId,
@@ -2787,6 +3109,11 @@ defineExpose({
   overflow: hidden;
   user-select: text;
   -webkit-user-select: text;
+}
+/* 音频模式：波形渲染区留白 */
+.audio-main {
+  padding: 12px;
+  overflow: hidden;
 }
 .ctx-backdrop {
   position: fixed;
