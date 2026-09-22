@@ -5,6 +5,7 @@ annotation_router = APIRouter(prefix="/annotation")
 
 def _register_annotation_routers():
     from .annotation.controller import AnnotationRouter
+    from .dataset.audio_controller import AudioRouter
     from .dataset.clean.controller import CleanRouter
     from .dataset.controller import DatasetRouter
     from .dataset.document_controller import DocumentRouter
@@ -12,6 +13,7 @@ def _register_annotation_routers():
     from .dataset.video_controller import VideoRouter
     from .task.controller import TaskRouter
     annotation_router.include_router(DatasetRouter)
+    annotation_router.include_router(AudioRouter)
     annotation_router.include_router(VideoRouter)
     annotation_router.include_router(DocumentRouter)
     annotation_router.include_router(TaskRouter)
