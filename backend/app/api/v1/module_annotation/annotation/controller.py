@@ -13,6 +13,7 @@ from ..task.service import TaskService
 from .schema import (
     AnnotationRollbackSchema,
     AnnotationSaveSchema,
+    AudioAnnotationSaveSchema,
     TextAnnotationSaveSchema,
     VideoAnnotationSaveSchema,
 )
@@ -152,4 +153,27 @@ async def load_text_annotations(
 ) -> JSONResponse:
     await _verify_task_access(task_id, auth)
     data = await AnnotationService.load_text_annotations(task_id, d_id)
+    return SuccessResponse(data=data)
+
+
+@AnnotationRouter.post("/audio/save", summary="保存音频事件标注")
+async def save_audio_annotations(
+    data: AudioAnnotationSaveSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(data.task_id, auth)
+    result = await AnnotationService.save_audio_annotations(
+        data.task_id, data.audio_id, data.annotations, auth
+    )
+    return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.get("/audio/load", summary="读取音频事件标注")
+async def load_audio_annotations(
+    task_id: int,
+    a_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(task_id, auth)
+    data = await AnnotationService.load_audio_annotations(task_id, a_id)
     return SuccessResponse(data=data)

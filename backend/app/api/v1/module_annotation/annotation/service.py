@@ -8,6 +8,7 @@ from app.core.exceptions import CustomException
 from app.core.logger import log
 
 from ..dataset.model import (
+    AnnotationAudioModel,
     AnnotationDocumentModel,
     AnnotationImageModel,
     AnnotationVideoModel,
@@ -502,6 +503,171 @@ class AnnotationService:
                     .where(
                         AnnotationRecordModel.task_id == task_id,
                         AnnotationRecordModel.document_id == document_id,
+                    )
+                    .order_by(desc(AnnotationRecordModel.version))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            return {
+                "annotation_data": record.annotation_data if record else [],
+                "version": record.version if record else 0,
+            }
+
+    # ------------------------------------------------------------------
+    # 音频事件标注（按 audio_id 读写）
+    # ------------------------------------------------------------------
+
+    @classmethod
+    async def _verify_audio_task_relation(
+        cls, db, task_id: int, audio_id: int
+    ) -> AnnotationAudioModel:
+        """校验音频确实归属于指定任务（同为数据集下的 audio_event 任务），返回音频对象。"""
+        audio = await db.get(AnnotationAudioModel, audio_id)
+        if not audio or audio.is_deleted:
+            raise CustomException(msg=f"音频不存在: {audio_id}", code=404, status_code=404)
+        task = await db.get(AnnotationTaskModel, task_id)
+        if (
+            not task
+            or task.is_deleted
+            or task.dataset_id != audio.dataset_id
+            or task.task_type != "audio_event"
+        ):
+            raise CustomException(
+                msg="任务与音频不存在有效归属关系，无法保存/读取标注",
+                code=400,
+                status_code=400,
+            )
+        return audio
+
+    @classmethod
+    def _validate_audio_annotations(
+        cls, annotations: list[dict], classes: list, duration: float
+    ) -> None:
+        """校验 audio_event 标注：AudioSegment 字段合法性、区间边界、类别归属与重叠检测。
+
+        非法项一律抛 ``CustomException``（400）。``duration`` 为音频时长，区间
+        ``[start, end)`` 必须落在 ``[0, duration]``；label_id 必须属于任务 classes 列表。
+        """
+        if not isinstance(classes, list):
+            raise CustomException(msg="audio_event 任务 classes 必须为列表", code=400, status_code=400)
+        label_ids = {c.get("id") for c in classes}
+
+        intervals: list[tuple[float, float]] = []
+        for item in annotations:
+            if not isinstance(item, dict):
+                raise CustomException(msg="标注项必须为字典对象", code=400, status_code=400)
+            if item.get("type") != "AudioSegment":
+                raise CustomException(
+                    msg=f"未知标注类型: {item.get('type')}", code=400, status_code=400
+                )
+            start, end = item.get("start"), item.get("end")
+            # 接受 int/float 数字（排除 bool）；JSON 中整数值会解析为 int
+            if isinstance(start, bool) or not isinstance(start, (int, float)) or \
+               isinstance(end, bool) or not isinstance(end, (int, float)):
+                raise CustomException(
+                    msg="AudioSegment 的 start/end 必须为数字", code=400, status_code=400
+                )
+            start, end = float(start), float(end)
+            if end <= start:
+                raise CustomException(
+                    msg="AudioSegment 的 end 必须大于 start", code=400, status_code=400
+                )
+            if start < 0 or end > duration:
+                raise CustomException(
+                    msg=f"AudioSegment 超出音频范围 [0, {duration}]",
+                    code=400,
+                    status_code=400,
+                )
+            if item.get("label_id") not in label_ids:
+                raise CustomException(
+                    msg=f"AudioSegment label_id 非法: {item.get('label_id')}",
+                    code=400,
+                    status_code=400,
+                )
+            intervals.append((start, end))
+
+        # 重叠校验与输入顺序无关：先收集全部区间再排序两两检测（相邻 [0,2)/[2,4) 不视为重叠）
+        intervals.sort()
+        for i in range(1, len(intervals)):
+            if intervals[i][0] < intervals[i - 1][1]:
+                raise CustomException(
+                    msg="AudioSegment 区间存在重叠", code=400, status_code=400
+                )
+
+    @classmethod
+    async def _prune_audio_versions(
+        cls, db, task_id: int, audio_id: int, latest_version: int, keep: int
+    ) -> None:
+        """保留首版（v1）与最近 keep 版，删除中间旧版本（按音频粒度）。"""
+        if keep <= 0 or latest_version <= keep + 1:
+            return
+        upper = latest_version - keep
+        await db.execute(
+            delete(AnnotationRecordModel).where(
+                AnnotationRecordModel.task_id == task_id,
+                AnnotationRecordModel.audio_id == audio_id,
+                AnnotationRecordModel.version >= 2,
+                AnnotationRecordModel.version <= upper,
+            )
+        )
+
+    @classmethod
+    async def save_audio_annotations(
+        cls, task_id: int, audio_id: int, annotations: list[dict], auth
+    ) -> dict:
+        """按 (task_id, audio_id) 持久化音频事件标注；校验 AudioSegment 后 upsert。"""
+        async with async_db_session.begin() as db:
+            audio = await cls._verify_audio_task_relation(db, task_id, audio_id)
+            if audio.locked_by and audio.locked_by != auth.user.id:
+                raise CustomException(
+                    msg="音频已被其他用户锁定，无法保存", code=409, status_code=409
+                )
+            task = await db.get(AnnotationTaskModel, task_id)
+            cls._validate_audio_annotations(annotations, task.classes, audio.duration)
+
+            existing = (
+                await db.execute(
+                    select(AnnotationRecordModel)
+                    .where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.audio_id == audio_id,
+                    )
+                    .order_by(desc(AnnotationRecordModel.version))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            version = existing.version + 1 if existing else 1
+
+            db.add(AnnotationRecordModel(
+                task_id=task_id,
+                audio_id=audio_id,
+                annotation_data=annotations,
+                version=version,
+                created_id=auth.user.id,
+            ))
+            await db.flush()
+            await cls._prune_audio_versions(
+                db, task_id, audio_id, version, settings.ANNOTATION_VERSION_KEEP
+            )
+
+            if audio:
+                audio.status = "annotated" if annotations else "unannotated"
+                audio.annotation_count = len(annotations)
+
+        log.info(f"save_audio_annotations task={task_id} audio={audio_id} v={version}")
+        return {"version": version, "annotation_count": len(annotations)}
+
+    @classmethod
+    async def load_audio_annotations(cls, task_id: int, audio_id: int) -> dict:
+        """读取某音频的最新标注；无记录返回空列表与 version 0。"""
+        async with async_db_session.begin() as db:
+            await cls._verify_audio_task_relation(db, task_id, audio_id)
+            record = (
+                await db.execute(
+                    select(AnnotationRecordModel)
+                    .where(
+                        AnnotationRecordModel.task_id == task_id,
+                        AnnotationRecordModel.audio_id == audio_id,
                     )
                     .order_by(desc(AnnotationRecordModel.version))
                     .limit(1)

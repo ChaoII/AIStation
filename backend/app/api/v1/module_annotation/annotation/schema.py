@@ -41,6 +41,18 @@ class TextAnnotationSaveSchema(BaseModel):
     annotations: list[dict] = Field(default_factory=list)
 
 
+class AudioAnnotationSaveSchema(BaseModel):
+    """音频事件标注保存请求。
+
+    ``annotations`` 为 ``AudioSegment`` 列表，逐项结构（start/end/label_id）在后端
+    service 层结合任务 classes 与音频时长做区间/重叠/越界校验。
+    """
+
+    task_id: int
+    audio_id: int
+    annotations: list[dict] = Field(default_factory=list)
+
+
 class AnnotationRollbackSchema(BaseModel):
     task_id: int
     version: int
