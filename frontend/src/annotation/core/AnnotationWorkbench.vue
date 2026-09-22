@@ -68,9 +68,9 @@
             @rotate-down="onRotateDown"
           />
           <component
-            :is="plugin.tool.preview"
-            v-if="plugin.tool && currentTool === plugin.tool.name && plugin.tool.preview"
-            :state="plugin.tool.state"
+            :is="activeTool?.preview"
+            v-if="activeTool && activeTool.preview"
+            :state="activeTool.state"
             :cw="cw"
             :ch="ch"
             :zoom="canvas.zoom.value"
@@ -487,7 +487,12 @@ const cw = computed(() => canvas.cw.value);
 const ch = computed(() => canvas.ch.value);
 const dw = computed(() => canvas.dw.value);
 const dh = computed(() => canvas.dh.value);
-const isDrawing = computed(() => currentTool.value === plugin.value.tool?.name);
+const activeTool = computed(
+  () =>
+    plugin.value.toolMap?.[currentTool.value] ??
+    (currentTool.value === plugin.value.tool?.name ? plugin.value.tool : undefined)
+);
+const isDrawing = computed(() => !!activeTool.value);
 const toolCursor = computed(() => {
   if (spaceHeld.value) return "grab";
   return isDrawing.value ? "crosshair" : "default";
@@ -904,7 +909,7 @@ function setTool(t: string) {
 function resetDrawingState() {
   draftAnn.value = null;
   dragState = null;
-  plugin.value.tool?.reset?.();
+  activeTool.value?.reset?.();
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -924,7 +929,7 @@ function onDocClick(e: MouseEvent) {
 }
 function onImgLoad(w: number, h: number) {
   imageLoaded.value = true;
-  plugin.value.tool?.reset?.();
+  activeTool.value?.reset?.();
   measureCanvas();
   if (!canvas.cw.value && w && h) canvas.setImageSize(w, h);
   if (!fittedForImage) {
@@ -1249,8 +1254,8 @@ function onDblClick(e: MouseEvent) {
       return;
     }
   }
-  const tool = plugin.value.tool;
-  if (tool && currentTool.value === tool.name) {
+  const tool = activeTool.value;
+  if (tool) {
     const p = toImagePoint(e);
     const created = tool.dblclick?.({
       point: p ?? undefined,
@@ -1291,8 +1296,8 @@ function onCanvasDown(e: MouseEvent) {
     boxZoom(e.altKey ? 0.8 : 1.25, e.clientX, e.clientY);
     return;
   }
-  const tool = plugin.value.tool;
-  if (tool && currentTool.value === tool.name) {
+  const tool = activeTool.value;
+  if (tool) {
     const created = tool.down?.({
       point: p,
       event: e,
@@ -1527,8 +1532,8 @@ function onMove(e: MouseEvent) {
     cursorPos.x = Math.round(ip.x * (canvas.cw.value || 0));
     cursorPos.y = Math.round(ip.y * (canvas.ch.value || 0));
   }
-  const tool = plugin.value.tool;
-  if (tool && currentTool.value === tool.name) {
+  const tool = activeTool.value;
+  if (tool) {
     tool.move?.({
       point: ip,
       event: e,
@@ -1734,8 +1739,8 @@ function onUp(e: MouseEvent) {
     panState = null;
     return;
   }
-  const tool = plugin.value.tool;
-  if (tool && currentTool.value === tool.name) {
+  const tool = activeTool.value;
+  if (tool) {
     const created = tool.up?.({ event: e });
     if (created) commitCreated(created);
     return;
@@ -1968,8 +1973,9 @@ function onKey(e: KeyboardEvent) {
     return;
   }
   // 当前绘制工具专属快捷键（如 keypoint 0/1/2 可见性、ocr t 切换），优先于切工具
-  if (plugin.value.tool && currentTool.value === plugin.value.tool.name) {
-    if (plugin.value.tool.keydown?.(e)) return;
+  const tool = activeTool.value;
+  if (tool) {
+    if (tool.keydown?.(e)) return;
   }
   if (["1", "s"].includes(e.key)) setTool("select");
   else if (["2", "b"].includes(e.key)) setTool("box");

@@ -248,6 +248,8 @@ export interface AnnotationTaskPlugin {
   interaction?: AnnotationInteraction;
   /** 绘制工具运行时（阶段 C 下沉） */
   tool?: PluginTool;
+  /** 多工具分发：按 name 取对应绘制工具；缺省时回退单 `tool`（向后兼容）。 */
+  toolMap?: Record<string, PluginTool>;
   /** 插件级自定义面板组件（如「填充背景」等操作），由壳渲染并注入 ctx，不 import 业务 */
   panel?: Component;
   /** @deprecated 旧拖拽扩展，逐步替换为 interaction */
