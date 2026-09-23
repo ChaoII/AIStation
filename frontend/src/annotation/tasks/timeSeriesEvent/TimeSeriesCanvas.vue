@@ -77,10 +77,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   /** 用户拖选生成新区间（尚未落入外部 segments）。 */
   (e: "createRegion", region: CreatedRegion): void;
-  /** 用户修改已有区间（界面预留，由工作台驱动编辑）。 */
+  /** 用户在画布上拖拽移动已有区间（由工作台做重叠校验与还原）。 */
   (e: "updateRegion", region: ChangedRegion): void;
-  /** 用户删除已有区间（界面预留，由工作台驱动删除）。 */
-  (e: "removeRegion", region: ChangedRegion): void;
   /** 点击已有区间（选中）。 */
   (e: "regionClick", region: ChangedRegion): void;
 }>();
@@ -116,6 +114,14 @@ const rangeEnd = computed(() => {
 /** 拖选过程中的临时预览区间（以 markArea 渲染）。 */
 const previewRange = ref<TimeRange | null>(null);
 
+/** 拖拽移动已有区间的状态：目标区间 id、原始区间与起点像素。 */
+let moveRegionId: string | null = null;
+let moveOrigRange: TimeRange | null = null;
+let moveStartX = 0;
+let moveStartY = 0;
+/** 拖拽移动过程中的预览区间（ghost，以 markArea 渲染）。 */
+const movePreview = ref<TimeRange | null>(null);
+
 /** echarts 折线图 option：x 轴为时间（原始值），y 轴为数值；markArea 渲染区间高亮。 */
 const option = computed(() => {
   const markAreaData: any[] = props.segments.map((seg) => [
@@ -135,6 +141,16 @@ const option = computed(() => {
         label: { show: false },
       },
       { xAxis: previewRange.value.end },
+    ]);
+  }
+  if (movePreview.value) {
+    markAreaData.push([
+      {
+        xAxis: movePreview.value.start,
+        itemStyle: { color: "var(--el-color-warning)", opacity: 0.3 },
+        label: { show: false },
+      },
+      { xAxis: movePreview.value.end },
     ]);
   }
   return {
@@ -196,13 +212,20 @@ let dragStartY = 0;
 const CLICK_DISTANCE = 5;
 
 function onMouseDown(params: any) {
-  // 点在区间高亮上：记录起点像素供 click 判别，不启动拖选（避免与区间选中/编辑冲突）。
+  // 点在区间高亮上：记录起点像素供 click 判别；若命中已有区间则进入拖拽移动模式。
   if (params?.componentType === "markArea") {
     dragging = false;
     const evt = params?.event;
-    if (evt) {
-      dragStartX = evt.offsetX;
-      dragStartY = evt.offsetY;
+    if (!evt) return;
+    dragStartX = evt.offsetX;
+    dragStartY = evt.offsetY;
+    const id = (params.data as any)?.name as string | undefined;
+    const seg = props.segments.find((s) => s.id === id);
+    if (seg) {
+      moveRegionId = seg.id;
+      moveOrigRange = { start: seg.start, end: seg.end };
+      moveStartX = evt.offsetX;
+      moveStartY = evt.offsetY;
     }
     return;
   }
@@ -214,9 +237,23 @@ function onMouseDown(params: any) {
 }
 
 function onMouseMove(params: any) {
-  if (!dragging) return;
   const evt = params?.event;
   if (!evt) return;
+  // 拖拽移动已有区间：以像素位移换算时间增量，整体平移该区间并钳制到序列时间范围。
+  if (moveRegionId && moveOrigRange) {
+    const startT = toDataTime(moveStartX, moveStartY);
+    const endT = toDataTime(evt.offsetX, evt.offsetY);
+    if (startT == null || endT == null) return;
+    const delta = endT - startT;
+    movePreview.value = clampTimeRange(
+      moveOrigRange.start + delta,
+      moveOrigRange.end + delta,
+      rangeStart.value,
+      rangeEnd.value
+    );
+    return;
+  }
+  if (!dragging) return;
   const startT = toDataTime(dragStartX, dragStartY);
   const endT = toDataTime(evt.offsetX, evt.offsetY);
   if (startT == null || endT == null) return;
@@ -224,6 +261,24 @@ function onMouseMove(params: any) {
 }
 
 function onMouseUp(params: any) {
+  // 拖拽移动已有区间：释放时若区间发生变化则发出 updateRegion，由工作台做重叠校验与还原。
+  if (moveRegionId && moveOrigRange) {
+    const regionId = moveRegionId;
+    const origRange = moveOrigRange;
+    const finalRange = movePreview.value;
+    moveRegionId = null;
+    moveOrigRange = null;
+    movePreview.value = null;
+    if (
+      finalRange &&
+      finalRange.end - finalRange.start > 0 &&
+      (Math.abs(finalRange.start - origRange.start) > 0.001 ||
+        Math.abs(finalRange.end - origRange.end) > 0.001)
+    ) {
+      emit("updateRegion", { id: regionId, start: finalRange.start, end: finalRange.end });
+    }
+    return;
+  }
   if (!dragging) return;
   dragging = false;
   const evt = params?.event;
@@ -250,10 +305,13 @@ function onChartClick(params: any) {
   if (seg) emit("regionClick", { id: seg.id, start: seg.start, end: seg.end });
 }
 
-/** 卸载时清空拖选状态（避免跨实例残留）。 */
+/** 卸载时清空拖选/拖拽移动状态（避免跨实例残留）。 */
 function cleanup() {
   dragging = false;
   previewRange.value = null;
+  moveRegionId = null;
+  moveOrigRange = null;
+  movePreview.value = null;
 }
 
 watch(

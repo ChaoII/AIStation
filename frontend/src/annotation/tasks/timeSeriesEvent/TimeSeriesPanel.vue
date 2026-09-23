@@ -16,6 +16,20 @@
         <el-option v-for="c in valueColumns" :key="c" :label="c" :value="c" />
       </el-select>
     </div>
+    <div class="tsp-meta">
+      <div class="tsp-meta-item">
+        <span class="tsp-meta-label">行数</span>
+        <span class="tsp-meta-value">{{ rowCount }}</span>
+      </div>
+      <div class="tsp-meta-item">
+        <span class="tsp-meta-label">时间范围</span>
+        <span class="tsp-meta-value">{{ formatStart(rangeStart) }} - {{ formatStart(rangeEnd) }}</span>
+      </div>
+      <div class="tsp-meta-item">
+        <span class="tsp-meta-label">时间单位</span>
+        <span class="tsp-meta-value">{{ timeUnit || "-" }}</span>
+      </div>
+    </div>
     <div class="tsp-body">
       <div
         v-for="s in segments"
@@ -54,11 +68,17 @@ const props = withDefaults(
     valueColumns: string[];
     valueColumn: string;
     timeUnit: string;
+    rowCount: number;
+    rangeStart: number;
+    rangeEnd: number;
   }>(),
   {
     valueColumns: () => [],
     valueColumn: "",
     timeUnit: "",
+    rowCount: 0,
+    rangeStart: 0,
+    rangeEnd: 0,
   }
 );
 
@@ -115,6 +135,31 @@ function formatStart(value: number): string {
   flex-shrink: 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.tsp-meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+.tsp-meta-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.tsp-meta-label {
+  flex-shrink: 0;
+  color: var(--el-text-color-secondary);
+}
+.tsp-meta-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .tsp-body {
   flex: 1;

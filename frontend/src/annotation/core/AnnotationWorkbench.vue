@@ -98,7 +98,6 @@
             :range="seriesRange"
             @create-region="onTimeSeriesCreateRegion"
             @update-region="onTimeSeriesUpdateRegion"
-            @remove-region="onTimeSeriesRemoveRegion"
             @region-click="onTimeSeriesRegionClick"
           />
         </main>
@@ -109,6 +108,9 @@
           :value-columns="seriesMeta?.value_columns || []"
           :value-column="seriesValueColumn"
           :time-unit="seriesMeta?.time_unit || ''"
+          :row-count="seriesData.length"
+          :range-start="seriesMeta?.start_time ?? 0"
+          :range-end="seriesMeta?.end_time ?? 0"
           @select="store.selectedAnnotationId = $event"
           @new="openTimeSeriesNewDialog"
           @edit="openTimeSeriesEditDialog"
@@ -253,7 +255,6 @@
       :cursor-y="cursorPos.y"
       :zoom="canvas.zoom.value"
       :cw="canvas.cw.value"
-      :ch="canvas.ch.value"
       :hint="hintText"
       :can-prev="store.currentImageIndex > 0"
       :can-next="store.currentImageIndex < store.images.length - 1"
@@ -597,6 +598,8 @@
         <el-form-item label="开始时间">
           <el-input-number
             v-model="tsDialogRange.start"
+            :min="tsDialogRangeMin"
+            :max="tsDialogRangeMax"
             size="small"
             style="width: 100%"
           />
@@ -604,6 +607,8 @@
         <el-form-item label="结束时间">
           <el-input-number
             v-model="tsDialogRange.end"
+            :min="tsDialogRangeMin"
+            :max="tsDialogRangeMax"
             size="small"
             style="width: 100%"
           />
@@ -1267,6 +1272,9 @@ const tsDialogMode = ref<"create" | "edit">("create");
 const tsDialogId = ref("");
 const tsDialogRange = reactive({ start: 0, end: 0 });
 const tsDialogLabelId = ref<number | null>(null);
+/** 时间序列弹窗时间输入的范围（序列时间范围 [start_time, end_time]），越界钳制。 */
+const tsDialogRangeMin = computed(() => seriesRange.value?.start ?? 0);
+const tsDialogRangeMax = computed(() => seriesRange.value?.end ?? 1);
 
 function formatSeriesTimeValue(value: number): string {
   return formatSeriesTime(value, seriesMeta.value?.time_unit || "");
@@ -1332,12 +1340,6 @@ function onTimeSeriesUpdateRegion(region: { id: string; start: number; end: numb
   store.markUnsaved();
 }
 
-function onTimeSeriesRemoveRegion(region: { id: string; start: number; end: number }) {
-  if (lockedByOther.value) return;
-  if (!store.annotations.some((a) => a.id === region.id)) return;
-  deleteTimeSeriesSegment(region.id);
-}
-
 function onTimeSeriesRegionClick(region: { id: string; start: number; end: number }) {
   if (lockedByOther.value) return;
   store.selectedAnnotationId = region.id;
@@ -1378,8 +1380,15 @@ function confirmTimeSeriesDialog() {
     ElMessage.warning("请选择事件类别");
     return;
   }
-  const start = tsDialogRange.start;
-  const end = tsDialogRange.end;
+  // 弹窗录入的 start/end 钳制到序列时间范围 [start_time, end_time]，越界时按边界收口（与拖选路径一致）；
+  // 再校验 end > start，失败则拒绝保存。
+  let start = tsDialogRange.start;
+  let end = tsDialogRange.end;
+  const meta = seriesMeta.value;
+  if (meta) {
+    start = Math.max(meta.start_time, Math.min(meta.end_time, start));
+    end = Math.max(meta.start_time, Math.min(meta.end_time, end));
+  }
   if (!(start < end)) {
     ElMessage.warning("区间无效，结束时间需大于开始时间");
     return;
