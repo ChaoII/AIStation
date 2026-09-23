@@ -88,6 +88,15 @@ export async function getAudioPlayUrl(id: number): Promise<string> {
   return res.data.data.play_url;
 }
 
+/**
+ * 获取音频同源内容地址。
+ * 返回相对路径 `/annotation/audio/content/{id}`，仅构造 URL 不预先拉字节；
+ * wavesurfer 经 fetch 加载，由前端 Vite/nginx 对 `/api/v1` 的代理转发到后端，属同源，无需 CORS。
+ */
+export function getAudioContentUrl(id: number): string {
+  return `${API_PATH}/audio/content/${id}`;
+}
+
 /** 锁定音频（按音频整体加锁）。 */
 export function lockAudio(id: number) {
   return request<ApiResponse<{ locked: boolean; locked_by: number | null }>>({

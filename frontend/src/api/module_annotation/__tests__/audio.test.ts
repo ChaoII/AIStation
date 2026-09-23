@@ -8,6 +8,7 @@ import {
   getAudioList,
   getAudioDetail,
   getAudioPlayUrl,
+  getAudioContentUrl,
   lockAudio,
   unlockAudio,
   saveAudioAnnotations,
@@ -61,6 +62,13 @@ describe("音频事件标注 API", () => {
     const config = requestMock.mock.calls[0][0];
     expect(config.url).toBe(`${API_PATH}/audio/play-url/4`);
     expect(config.method).toBe("get");
+  });
+
+  it("getAudioContentUrl 返回同源相对路径 /annotation/audio/content/{id}，且不发起请求", () => {
+    const url = getAudioContentUrl(5);
+    expect(url).toBe(`${API_PATH}/audio/content/5`);
+    expect(url.startsWith("/")).toBe(true);
+    expect(requestMock).not.toHaveBeenCalled();
   });
 
   it("lockAudio POST /annotation/audio/lock/{id}", async () => {

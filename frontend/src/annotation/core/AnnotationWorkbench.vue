@@ -698,7 +698,7 @@ import TextNerPanel from "../tasks/textNer/TextNerPanel.vue";
 import {
   getAudioList,
   getAudioDetail,
-  getAudioPlayUrl,
+  getAudioContentUrl,
   lockAudio,
   unlockAudio,
   saveAudioAnnotations,
@@ -1495,7 +1495,7 @@ async function initAudio() {
     const dr = await getAudioDetail(audio.id);
     const d = dr?.data?.data;
     audioDuration.value = d?.duration || 0;
-    audioUrl.value = await getAudioPlayUrl(audio.id);
+    audioUrl.value = getAudioContentUrl(audio.id);
     const ar = await loadAudioAnnotations({ task_id: store.taskId, audio_id: audio.id });
     store.annotations = (ar?.data?.data?.annotation_data || []) as any;
     store.selectedAnnotationId = "";
