@@ -17,6 +17,7 @@ from .schema import (
     TextAnnotationSaveSchema,
     TimeSeriesAnnotationsSaveSchema,
     VideoAnnotationSaveSchema,
+    VideoInterpolateSchema,
 )
 from .service import AnnotationService
 
@@ -120,6 +121,31 @@ async def save_video_annotations(
         data.task_id, data.video_id, data.frame_index, annotations, auth
     )
     return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.post("/video/interpolate", summary="视频关键帧批量插值保存")
+async def save_video_interpolate(
+    data: VideoInterpolateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(data.task_id, auth)
+    frames_payload = [
+        {
+            "frame_index": f.frame_index,
+            "annotations": [a.model_dump(exclude_none=True) for a in f.annotations],
+        }
+        for f in data.frames
+    ]
+    result = await AnnotationService.save_video_interpolation(
+        data.task_id,
+        data.video_id,
+        data.track_id,
+        data.frame_a,
+        data.frame_b,
+        frames_payload,
+        auth,
+    )
+    return SuccessResponse(data=result, msg="插值保存成功")
 
 
 @AnnotationRouter.get("/video/load", summary="读取视频帧标注")

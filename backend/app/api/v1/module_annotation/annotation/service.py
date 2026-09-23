@@ -344,6 +344,145 @@ class AnnotationService:
             ).scalar_one_or_none()
             return record.annotation_data if record else None
 
+    @classmethod
+    async def _ensure_video_track_keyframe(
+        cls, db, task_id: int, video_id: int, frame_index: int, track_id: str
+    ) -> None:
+        """校验关键帧 ``frame_index`` 的最新标注确实含该 ``track_id`` 的框，否则拒绝（400）。
+
+        关键帧是插值的锚点，两个关键帧都必须实际存在对应轨迹的框，插值才有意义。
+        """
+        record = (
+            await db.execute(
+                select(AnnotationRecordModel).where(
+                    AnnotationRecordModel.task_id == task_id,
+                    AnnotationRecordModel.video_id == video_id,
+                    AnnotationRecordModel.frame_index == frame_index,
+                )
+                .order_by(desc(AnnotationRecordModel.version))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not record:
+            raise CustomException(
+                msg=f"关键帧 {frame_index} 不存在标注，无法插值",
+                code=400,
+                status_code=400,
+            )
+        has_track = any(
+            item.get("track_id") == track_id for item in (record.annotation_data or [])
+        )
+        if not has_track:
+            raise CustomException(
+                msg=f"关键帧 {frame_index} 不存在 track_id={track_id} 的框，无法插值",
+                code=400,
+                status_code=400,
+            )
+
+    @classmethod
+    async def save_video_interpolation(
+        cls,
+        task_id: int,
+        video_id: int,
+        track_id: str,
+        frame_a: int,
+        frame_b: int,
+        frames: list[dict],
+        auth,
+    ) -> dict:
+        """在同一个 ``track_id`` 的两个关键帧之间批量保存插值中间帧。
+
+        ``frames`` 为 ``[{"frame_index", "annotations"}]`` 列表，每个中间帧的框均
+        须携带顶层 ``track_id``。逐帧 upsert 新版本并 ``_prune_video_versions``；
+        任一帧非法则整批回滚（事务化）。关键帧（frame_a/frame_b）保持不动。
+        """
+        async with async_db_session.begin() as db:
+            video = await cls._verify_video_task_relation(db, task_id, video_id)
+            if video.locked_by and video.locked_by != auth.user.id:
+                raise CustomException(
+                    msg="视频已被其他用户锁定，无法保存",
+                    code=409,
+                    status_code=409,
+                )
+            if not isinstance(track_id, str) or not track_id.strip():
+                raise CustomException(
+                    msg="track_id 不能为空", code=400, status_code=400
+                )
+            if not isinstance(frame_a, int) or not isinstance(frame_b, int) or frame_a >= frame_b:
+                raise CustomException(
+                    msg="frame_a 必须小于 frame_b", code=400, status_code=400
+                )
+            if frame_a < 0 or frame_b < 0 or frame_b >= video.frame_count:
+                raise CustomException(
+                    msg=f"frame_a/frame_b 超出视频帧范围 [0, {video.frame_count})",
+                    code=400,
+                    status_code=400,
+                )
+            # 两个关键帧都必须实际存在该 track 的框
+            await cls._ensure_video_track_keyframe(db, task_id, video_id, frame_a, track_id)
+            await cls._ensure_video_track_keyframe(db, task_id, video_id, frame_b, track_id)
+
+            saved: list[dict] = []
+            seen_indices: set[int] = set()
+            for frame in frames:
+                frame_index = frame["frame_index"]
+                annotations = frame["annotations"]
+                # 中间帧必须严格落在 (frame_a, frame_b)，不含关键帧
+                if not isinstance(frame_index, int) or not (frame_a < frame_index < frame_b):
+                    raise CustomException(
+                        msg=f"中间帧 {frame_index} 必须严格落在 ({frame_a}, {frame_b}) 内",
+                        code=400,
+                        status_code=400,
+                    )
+                if frame_index in seen_indices:
+                    raise CustomException(
+                        msg=f"中间帧 {frame_index} 重复提交",
+                        code=400,
+                        status_code=400,
+                    )
+                seen_indices.add(frame_index)
+                # 复用同帧 track_id 去重校验
+                cls._validate_video_track_annotations(annotations)
+                # 每帧框必须归属顶层 track_id
+                for item in annotations:
+                    if item.get("track_id") != track_id:
+                        raise CustomException(
+                            msg=f"第 {frame_index} 帧存在非目标 track_id 的框",
+                            code=400,
+                            status_code=400,
+                        )
+
+                # 逐帧 upsert 新版本（版本递增 + 修剪旧版本）
+                existing = (
+                    await db.execute(
+                        select(AnnotationRecordModel).where(
+                            AnnotationRecordModel.task_id == task_id,
+                            AnnotationRecordModel.video_id == video_id,
+                            AnnotationRecordModel.frame_index == frame_index,
+                        )
+                        .order_by(desc(AnnotationRecordModel.version))
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                version = existing.version + 1 if existing else 1
+                db.add(AnnotationRecordModel(
+                    task_id=task_id,
+                    video_id=video_id,
+                    frame_index=frame_index,
+                    annotation_data=annotations,
+                    version=version,
+                    created_id=auth.user.id,
+                ))
+                await db.flush()
+                await cls._prune_video_versions(
+                    db, task_id, video_id, frame_index, version,
+                    settings.ANNOTATION_VERSION_KEEP,
+                )
+                saved.append({"frame_index": frame_index, "version": version})
+
+        log.info(f"save_video_interpolation video={video_id} track={track_id} frames={len(saved)}")
+        return {"saved": saved, "count": len(saved)}
+
     # ------------------------------------------------------------------
     # 文本 NER 文档标注（按 document_id 读写）
     # ------------------------------------------------------------------

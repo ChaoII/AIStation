@@ -30,6 +30,29 @@ class VideoAnnotationSaveSchema(BaseModel):
     annotations: list[AxisAlignedBoxSchema] = Field(default_factory=list)
 
 
+class VideoInterpolateFrameSchema(BaseModel):
+    """批量插值中的单个中间帧：帧序号 + 该帧插值好的框列表。"""
+
+    frame_index: int = Field(ge=0, description="中间帧序号")
+    annotations: list[AxisAlignedBoxSchema] = Field(default_factory=list)
+
+
+class VideoInterpolateSchema(BaseModel):
+    """视频关键帧批量插值保存请求。
+
+    ``frame_a``/``frame_b`` 为同一 track_id 的两个关键帧（均含该 track 的框），
+    ``frames`` 为中间帧（``frame_index`` 严格落在二者之间），每帧框均携带
+    ``track_id`` 与插值后的坐标。
+    """
+
+    task_id: int
+    video_id: int
+    track_id: str = Field(description="目标轨迹 ID")
+    frame_a: int = Field(ge=0, description="关键帧 A")
+    frame_b: int = Field(ge=0, description="关键帧 B")
+    frames: list[VideoInterpolateFrameSchema] = Field(default_factory=list)
+
+
 class TextAnnotationSaveSchema(BaseModel):
     """文本 NER 文档标注保存请求。
 
