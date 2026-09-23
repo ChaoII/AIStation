@@ -9,7 +9,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from starlette.types import ASGIApp
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.v1.module_system.params.service import ParamsService
 from app.common.response import ErrorResponse
@@ -210,9 +210,25 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
 class CustomGZipMiddleware(GZipMiddleware):
     """GZip压缩中间件"""
 
+    # 媒体内容流式端点不压缩：这类端点以 StreamingResponse 逐块返回原始字节，
+    # 若被 GZip 包裹会二次压缩（音频本身多有损压缩，压缩收益极低且浪费 CPU），
+    # 且中间件会删除 Content-Length 并缓冲流式响应，违背「流式 + Content-Length」
+    # 的设计。此处按路径前缀跳过 GZip。
+    _NO_COMPRESS_PREFIXES = (
+        "/api/v1/annotation/audio/content/",
+    )
+
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(
             app,
             minimum_size=settings.GZIP_MIN_SIZE,
             compresslevel=settings.GZIP_COMPRESS_LEVEL,
         )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if any(path.startswith(p) for p in self._NO_COMPRESS_PREFIXES):
+                await self.app(scope, receive, send)
+                return
+        await super().__call__(scope, receive, send)

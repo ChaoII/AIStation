@@ -199,6 +199,42 @@ class AudioService:
             return cls.audio_out(a)
 
     @classmethod
+    async def stream_audio_content(cls, audio_id: int):
+        """按 ``audio_id`` 取音频并返回其 RustFS 对象的流式内容。
+
+        返回 ``(chunks, size_bytes, content_type)``：
+        - ``chunks`` 为异步生成器，按 64KB 分块从 ``StreamingBody`` 读取，避免把
+          ≤100MB 的音频全量载入内存；
+        - ``size_bytes`` 取自已入库的模型字段（即上传时的字节数）；
+        - ``content_type`` 依文件名扩展名推断（见 ``_EXT_CONTENT_TYPE``）。
+
+        音频不存在或已删除时抛 404。
+        """
+        async with async_db_session() as db:
+            a = await db.get(AnnotationAudioModel, audio_id)
+            if not a or a.is_deleted:
+                raise CustomException(
+                    msg=f"音频不存在: {audio_id}", code=404, status_code=404
+                )
+            object_key = a.object_key
+            size_bytes = a.size_bytes
+            content_type = content_type_for(Path(a.name).suffix)
+
+        # boto3 get_object 走线程执行（HTTP 阻塞），返回的 Body 为流式可读对象
+        resp = await asyncio.to_thread(s3_client.get_object, object_key)
+        body = resp["Body"]
+
+        async def _chunks():
+            # 分块读取并在线程中执行阻塞 IO，避免堵塞事件循环
+            while True:
+                chunk = await asyncio.to_thread(body.read, 64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
+        return _chunks(), size_bytes, content_type
+
+    @classmethod
     async def get_play_url(cls, audio_id: int) -> str:
         """返回音频对象存储的短时签名播放链接。"""
         async with async_db_session() as db:

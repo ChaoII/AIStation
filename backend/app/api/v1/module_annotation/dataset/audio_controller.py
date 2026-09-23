@@ -7,7 +7,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
@@ -74,6 +74,28 @@ async def get_play_url(
 ) -> JSONResponse:
     url = await AudioService.get_play_url(audio_id)
     return SuccessResponse(data={"play_url": url})
+
+
+@AudioRouter.get("/content/{audio_id}", summary="获取音频原始内容（同源流式）")
+async def audio_content(
+    audio_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:dataset:query"]))],
+) -> StreamingResponse:
+    """从 RustFS 流式返回音频原始字节（供前端同源加载波形，无 CORS）。
+
+    以 ``StreamingResponse`` 逐块返回，``Content-Type`` 依扩展名（如 audio/wav、
+    audio/mpeg），``Content-Disposition: inline`` 指示内联展示，``Content-Length``
+    来自已入库的 ``size_bytes``。
+    """
+    chunks, size_bytes, content_type = await AudioService.stream_audio_content(audio_id)
+    return StreamingResponse(
+        chunks,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": "inline",
+            "Content-Length": str(size_bytes),
+        },
+    )
 
 
 @AudioRouter.post("/lock/{audio_id}", summary="锁定音频")

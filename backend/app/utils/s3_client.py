@@ -64,6 +64,13 @@ class S3Client:
         buf.seek(0)
         return buf
 
+    def get_object(self, object_key: str, env: str | None = None) -> dict:
+        """获取对象，返回 boto3 ``get_object`` 响应（``resp["Body"]`` 为流式 ``StreamingBody``）。
+
+        调用方应通过 ``Body.read(n)`` 分块读取，避免把大对象全量载入内存。
+        """
+        return self.client.get_object(Bucket=self._bucket(env), Key=object_key)
+
     def delete_object(self, object_key: str, env: str | None = None) -> None:
         self.client.delete_object(Bucket=self._bucket(env), Key=object_key)
 
