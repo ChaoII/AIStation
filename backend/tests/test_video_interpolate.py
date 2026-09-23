@@ -408,3 +408,119 @@ def test_interpolate_endpoint_http(test_client, auth_headers, monkeypatch):
     )
     assert load_resp.status_code == 200, load_resp.text
     assert load_resp.json()["data"][0]["track_id"] == track
+
+
+def _get_video(video_id: int) -> AnnotationVideoModel:
+    """读取视频对象，用于核对 status / annotation_count。"""
+
+    async def _run():
+        async with async_db_session.begin() as db:
+            video = await db.get(AnnotationVideoModel, video_id)
+            return video
+
+    return asyncio.run(_run())
+
+
+def test_interpolate_merges_existing_other_track_boxes():
+    """中间帧既含其它 track 的框时，插值后其它 track 保留、本 track 框为插值结果。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    track = "track-1"
+    _save_keyframes(task_id, video_id, track, 10, 20)
+    # 中间帧 15 已有另一个 track（track-2）的框
+    asyncio.run(
+        AnnotationService.save_video_annotations(
+            task_id, video_id, 15, [_box("track-2", 0.4, 0.4, 0.5, 0.5)], auth
+        )
+    )
+
+    interp_box = _box(track, 0.3, 0.3, 0.4, 0.4)
+    result = asyncio.run(
+        AnnotationService.save_video_interpolation(
+            task_id, video_id, track, 10, 20,
+            [{"frame_index": 15, "annotations": [interp_box]}],
+            auth,
+        )
+    )
+    assert result["saved"] == [{"frame_index": 15, "version": 2}]
+
+    loaded = asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 15))
+    track_ids = {b["track_id"] for b in loaded}
+    assert track_ids == {"track-1", "track-2"}
+    # 本 track 的框替换为插值框，其它 track 框保留
+    assert any(b is interp_box or b == interp_box for b in loaded if b["track_id"] == track)
+
+
+def test_interpolate_replaces_same_track_box_preserves_others():
+    """中间帧已含同 track_id 的框时，插值用新框替换该 track，其它 track 保留。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    track = "track-1"
+    _save_keyframes(task_id, video_id, track, 10, 20)
+    # 中间帧 15 已有该 track 的旧框 + 另一 track 的框
+    asyncio.run(
+        AnnotationService.save_video_annotations(
+            task_id, video_id, 15,
+            [_box(track, 0.2, 0.2, 0.3, 0.3), _box("track-2", 0.4, 0.4, 0.5, 0.5)],
+            auth,
+        )
+    )
+
+    interp_box = _box(track, 0.6, 0.6, 0.7, 0.7)
+    asyncio.run(
+        AnnotationService.save_video_interpolation(
+            task_id, video_id, track, 10, 20,
+            [{"frame_index": 15, "annotations": [interp_box]}],
+            auth,
+        )
+    )
+
+    loaded = asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 15))
+    track_ids = {b["track_id"] for b in loaded}
+    assert track_ids == {"track-1", "track-2"}
+    # 该 track 只剩一个框（被新插值框替换），坐标为新框
+    track_boxes = [b for b in loaded if b["track_id"] == track]
+    assert len(track_boxes) == 1
+    assert track_boxes[0]["x1"] == 0.6
+
+
+def test_interpolate_updates_video_status_and_count():
+    """插值写入中间帧后更新 video.status 与 annotation_count（已标注帧数）。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    track = "track-1"
+    _save_keyframes(task_id, video_id, track, 10, 20)
+
+    asyncio.run(
+        AnnotationService.save_video_interpolation(
+            task_id, video_id, track, 10, 20,
+            [
+                {"frame_index": 12, "annotations": [_box(track, 0.2, 0.2, 0.3, 0.3)]},
+                {"frame_index": 15, "annotations": [_box(track, 0.3, 0.3, 0.4, 0.4)]},
+            ],
+            auth,
+        )
+    )
+    video = _get_video(video_id)
+    assert video.status == "annotated"
+    # 关键帧 10/20 + 中间帧 12/15 共 4 个已标注帧
+    assert video.annotation_count == 4
+
+
+def test_interpolate_empty_middle_frame_skipped():
+    """中间帧无插值框时跳过，不写空版本，也不推进版本号。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    track = "track-1"
+    _save_keyframes(task_id, video_id, track, 10, 20)
+
+    result = asyncio.run(
+        AnnotationService.save_video_interpolation(
+            task_id, video_id, track, 10, 20,
+            [{"frame_index": 15, "annotations": []}],
+            auth,
+        )
+    )
+    assert result["count"] == 0
+    assert result["saved"] == []
+    assert asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 15)) is None

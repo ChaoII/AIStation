@@ -408,7 +408,9 @@ class AnnotationService:
                 raise CustomException(
                     msg="track_id 不能为空", code=400, status_code=400
                 )
-            if not isinstance(frame_a, int) or not isinstance(frame_b, int) or frame_a >= frame_b:
+            # int 校验需排除 bool（bool 是 int 的子类）
+            if (not isinstance(frame_a, int) or isinstance(frame_a, bool)) or \
+               (not isinstance(frame_b, int) or isinstance(frame_b, bool)) or frame_a >= frame_b:
                 raise CustomException(
                     msg="frame_a 必须小于 frame_b", code=400, status_code=400
                 )
@@ -428,7 +430,8 @@ class AnnotationService:
                 frame_index = frame["frame_index"]
                 annotations = frame["annotations"]
                 # 中间帧必须严格落在 (frame_a, frame_b)，不含关键帧
-                if not isinstance(frame_index, int) or not (frame_a < frame_index < frame_b):
+                if (not isinstance(frame_index, int) or isinstance(frame_index, bool)) or \
+                   not (frame_a < frame_index < frame_b):
                     raise CustomException(
                         msg=f"中间帧 {frame_index} 必须严格落在 ({frame_a}, {frame_b}) 内",
                         code=400,
@@ -452,10 +455,15 @@ class AnnotationService:
                             status_code=400,
                         )
 
-                # 逐帧 upsert 新版本（版本递增 + 修剪旧版本）
+                # 本帧无插值框：跳过，不写空版本（避免覆盖/清空该帧既存标注）
+                if not annotations:
+                    continue
+
+                # 读取该帧既存标注，仅替换本 track 的框，保留其它 track 的框
                 existing = (
                     await db.execute(
-                        select(AnnotationRecordModel).where(
+                        select(AnnotationRecordModel)
+                        .where(
                             AnnotationRecordModel.task_id == task_id,
                             AnnotationRecordModel.video_id == video_id,
                             AnnotationRecordModel.frame_index == frame_index,
@@ -465,11 +473,17 @@ class AnnotationService:
                     )
                 ).scalar_one_or_none()
                 version = existing.version + 1 if existing else 1
+                existing_data = existing.annotation_data if existing else []
+                # 保留既存框中与本 track 无关的部分（含无 track_id 的旧数据/独立目标）
+                merged = [
+                    item for item in existing_data if item.get("track_id") != track_id
+                ]
+                merged.extend(annotations)
                 db.add(AnnotationRecordModel(
                     task_id=task_id,
                     video_id=video_id,
                     frame_index=frame_index,
-                    annotation_data=annotations,
+                    annotation_data=merged,
                     version=version,
                     created_id=auth.user.id,
                 ))
@@ -479,6 +493,14 @@ class AnnotationService:
                     settings.ANNOTATION_VERSION_KEEP,
                 )
                 saved.append({"frame_index": frame_index, "version": version})
+
+            # 更新视频状态与已标注帧数（annotation_count 语义为「已标注帧数」）
+            annotated_frames = await db.scalar(
+                select(func.count(func.distinct(AnnotationRecordModel.frame_index)))
+                .where(AnnotationRecordModel.video_id == video_id)
+            )
+            video.status = "annotated" if annotated_frames else "unannotated"
+            video.annotation_count = annotated_frames or 0
 
         log.info(f"save_video_interpolation video={video_id} track={track_id} frames={len(saved)}")
         return {"saved": saved, "count": len(saved)}
