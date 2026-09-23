@@ -116,3 +116,31 @@ export function loadVideoAnnotations(taskId: number, videoId: number, frameIndex
     params: { task_id: taskId, v_id: videoId, frame_index: frameIndex },
   });
 }
+
+/** 视频关键帧批量插值保存请求参数。 */
+export interface InterpolateVideoPayload {
+  task_id: number;
+  video_id: number;
+  track_id: string;
+  frame_a: number;
+  frame_b: number;
+  frames: { frame_index: number; annotations: VideoFrameAnnotation[] }[];
+}
+
+/** 视频关键帧批量插值保存响应（后端 save_video_interpolation 出参）。 */
+export interface InterpolateVideoResult {
+  saved: { frame_index: number; version: number }[];
+  count: number;
+}
+
+/**
+ * 在同一个 track_id 的两个关键帧之间批量保存插值中间帧。
+ * 中间帧覆盖策略（同 track 覆盖、其它 track 保留）由后端合并保证，关键帧不动。
+ */
+export function interpolateVideoFrames(payload: InterpolateVideoPayload) {
+  return request<ApiResponse<InterpolateVideoResult>>({
+    url: `${API_PATH}/anno/video/interpolate`,
+    method: "post",
+    data: payload,
+  });
+}

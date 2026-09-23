@@ -212,6 +212,7 @@
           </el-select>
           <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(-1)">上一帧</el-button>
           <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(1)">下一帧</el-button>
+          <el-button size="small" :disabled="!selectedTrackId" @click="openInterpolateDialog">插值中间帧</el-button>
         </div>
         <div class="ann-label-layer">
           <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
@@ -512,6 +513,35 @@
       </template>
     </el-dialog>
 
+    <!-- 视频目标跟踪：关键帧线性插值 -->
+    <el-dialog v-model="interpolateDialogVisible" title="插值中间帧" width="460px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="轨迹">
+          <el-tag size="small">轨迹 {{ shortTrack(selectedTrackId) }}</el-tag>
+        </el-form-item>
+        <el-form-item label="关键帧 A">
+          <el-select v-model="interpolateFrameA" size="small" style="width: 100%" placeholder="选择关键帧 A">
+            <el-option v-for="f in interpolateFrameOptions" :key="f" :label="`第 ${f} 帧`" :value="f" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关键帧 B">
+          <el-select v-model="interpolateFrameB" size="small" style="width: 100%" placeholder="选择关键帧 B">
+            <el-option v-for="f in interpolateFrameOptions" :key="f" :label="`第 ${f} 帧`" :value="f" />
+          </el-select>
+        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="将在两个关键帧之间为该轨迹插值生成中间帧框（同轨迹覆盖、其它轨迹保留，关键帧不动）"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="interpolateDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="interpolateLoading" @click="confirmInterpolate">插值</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 文本 NER：实体类型选择 -->
     <el-dialog v-model="entityDialogVisible" title="选择实体类型" width="500px" append-to-body>
       <el-form label-width="80px">
@@ -733,7 +763,9 @@ import {
   nearestTrackFrame,
   trackPathFromFrames,
   trackColor,
+  findBoxByTrack,
 } from "../tasks/detection/track";
+import { interpolateBoxes } from "../tasks/detection/interpolate";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import type { Annotation, AnnotationTaskPlugin, PluginPanelContext } from "./types";
@@ -747,6 +779,7 @@ import {
   unlockVideo,
   saveVideoAnnotations,
   loadVideoAnnotations,
+  interpolateVideoFrames,
 } from "@/api/module_annotation/video";
 import {
   getDocumentList,
@@ -3463,9 +3496,103 @@ function menuClearTrack() {
     })
     .catch(() => {});
 }
+// ==== 视频目标跟踪：关键帧线性插值 ====
+const interpolateDialogVisible = ref(false);
+const interpolateLoading = ref(false);
+const interpolateFrameA = ref<number | null>(null);
+const interpolateFrameB = ref<number | null>(null);
+/** 关键帧候选：选中轨迹已访问的帧号（升序）。 */
+const interpolateFrameOptions = computed(() => framesOfTrack(selectedTrackId.value));
+/** 打开插值弹窗：默认取当前帧前后最近的两个该轨迹关键帧。 */
+function openInterpolateDialog() {
+  const tid = selectedTrackId.value;
+  if (!tid) return;
+  const frames = framesOfTrack(tid);
+  if (frames.length < 2) {
+    ElMessage.warning("该轨迹还没有两个已标注关键帧，请先标注两个关键帧");
+    return;
+  }
+  const cur = currentFrame.value;
+  const prev = nearestTrackFrame(frames, cur, -1);
+  const next = nearestTrackFrame(frames, cur, 1);
+  // 默认：A 取当前帧前一关键帧（无则首帧），B 取当前帧后一关键帧（无则末帧）
+  interpolateFrameA.value = prev ?? frames[0];
+  interpolateFrameB.value = next ?? frames[frames.length - 1];
+  interpolateDialogVisible.value = true;
+}
+/** 提交插值：生成中间帧框并调用后端批量插值接口，局部刷新。 */
+async function confirmInterpolate() {
+  const tid = selectedTrackId.value;
+  if (!tid || !videoId.value || !store.taskId) return;
+  const A = interpolateFrameA.value;
+  const B = interpolateFrameB.value;
+  if (A == null || B == null) {
+    ElMessage.warning("请选择关键帧 A 与关键帧 B");
+    return;
+  }
+  if (B <= A) {
+    ElMessage.warning("关键帧 B 必须大于关键帧 A");
+    return;
+  }
+  // 两个关键帧都必须含该轨迹的框（从已访问帧缓存读取）
+  const boxA = findBoxByTrack(frameCache.get(A) || [], tid);
+  const boxB = findBoxByTrack(frameCache.get(B) || [], tid);
+  if (!boxA || !boxB) {
+    ElMessage.warning(`关键帧 A(${A}) / B(${B}) 必须都含该轨迹的框`);
+    return;
+  }
+  // 计算 (A, B) 之间全部中间帧
+  const middle: number[] = [];
+  for (let k = A + 1; k < B; k++) middle.push(k);
+  const results = interpolateBoxes(
+    { frameIndex: A, box: boxA },
+    { frameIndex: B, box: boxB },
+    middle
+  );
+  if (!results.length) {
+    ElMessage.warning("两个关键帧之间没有中间帧");
+    return;
+  }
+  const frames = results.map((r) => ({
+    frame_index: r.frame_index,
+    annotations: r.annotations,
+  }));
+  await ElMessageBox.confirm(
+    `将在关键帧 ${A} 与 ${B} 之间为轨迹插值生成 ${results.length} 个中间帧框（同轨迹覆盖、其它轨迹保留，关键帧不动），且不可恢复。`,
+    "插值中间帧",
+    { confirmButtonText: "插值", cancelButtonText: "取消", type: "warning" }
+  )
+    .then(async () => {
+      interpolateLoading.value = true;
+      try {
+        await interpolateVideoFrames({
+          task_id: store.taskId,
+          video_id: videoId.value!,
+          track_id: tid,
+          frame_a: A,
+          frame_b: B,
+          frames,
+        });
+        // 局部刷新：仅更新被插值的中间帧缓存 + 轨迹层重算，不整表刷新
+        for (const r of results) frameCache.set(r.frame_index, r.annotations as any);
+        bumpTrack();
+        // 若当前帧恰为一个中间帧，刷新当前帧标注显示
+        if (middle.includes(currentFrame.value)) {
+          await loadFrameAnnotations(currentFrame.value);
+        }
+        ElMessage.success(`已插值生成 ${results.length} 个中间帧`);
+        interpolateDialogVisible.value = false;
+      } finally {
+        interpolateLoading.value = false;
+      }
+    })
+    .catch(() => {});
+}
+
 function editClassChange() {
   if (editForm.ann) editForm.ann.class_id = editForm.class_id;
 }
+
 function editTextChange() {
   if (editForm.ann) editForm.ann.text = editForm.text;
 }
