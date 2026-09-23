@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { simplifyPolygon, maskToPolygon } from "../brush";
-
 describe("simplifyPolygon", () => {
   it("保留首尾点并简化中间共线点", () => {
     const pts = [
@@ -65,5 +64,33 @@ describe("maskToPolygon", () => {
     // 轮廓应落在左上大块附近（不含右下角）
     const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
     expect(cx).toBeLessThan(0.8);
+  });
+
+  it("自交涂鸦（复杂连通域）不卡死且返回合法多边形", { timeout: 4000 }, () => {
+    // 回归：真实手绘高频移动产生的自交掩码会让旧的边界追踪陷入 O(cw*ch*4) 死循环。
+    // 修复后应快速返回（闭环或退化外接矩形），且坐标合法。
+    const cw = 1000, ch = 800;
+    const m = new Uint8Array(cw * ch);
+    const size = 8, r = size / 2;
+    for (let i = 0; i <= 120; i++) {
+      const t = i / 120;
+      const cx = (0.5 + Math.sin(t * Math.PI * 6) * 0.25) * cw;
+      const cy = (0.5 + Math.cos(t * Math.PI * 8) * 0.15) * ch;
+      const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(cw - 1, Math.ceil(cx + r));
+      const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(ch - 1, Math.ceil(cy + r));
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++) {
+          const dx = x - cx, dy = y - cy;
+          if (dx * dx + dy * dy <= r * r) m[y * cw + x] = 1;
+        }
+    }
+    const pts = maskToPolygon(m, cw, ch);
+    expect(pts.length).toBeGreaterThanOrEqual(4);
+    for (const p of pts) {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(1);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(1);
+    }
   });
 });

@@ -55,15 +55,40 @@ export function maskToPolygon(
   if (comp.size < 3) return [];
 
   // 2) Moore 邻域边界追踪，得到像素坐标外边界（闭环）
-  const boundary = traceBoundary(comp, cw, ch);
-  if (boundary.length < 3) return [];
+  const { points: boundary, closed } = traceBoundary(comp, cw, ch);
+  if (!closed || boundary.length < 3) {
+    // 自交/杂乱涂鸦等复杂形状可能导致边界追踪无法闭环；此时退化为该连通域的外接矩形，
+    // 保证快速返回一个可用多边形，避免主线程被 O(cw*ch*4) 的追踪卡死。
+    return bboxPolygon(comp, cw, ch);
+  }
 
   // 3) 在像素坐标下简化（tol 以像素为单位），再归一化 [0,1]
-  const closed = [...boundary, boundary[0]];
-  const simp = simplifyPolygon(closed, tol);
+  const closedLoop = [...boundary, boundary[0]];
+  const simp = simplifyPolygon(closedLoop, tol);
   return simp
     .slice(0, Math.max(simp.length - 1, 0))
     .map((p) => ({ x: p.x / cw, y: p.y / ch }));
+}
+
+/** 连通域的外接矩形（4 角），用于边界追踪无法闭环时的兜底多边形（归一化坐标）。 */
+function bboxPolygon(comp: Set<number>, cw: number, ch: number): Point[] {
+  if (comp.size === 0) return [];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const idx of comp) {
+    const x = idx % cw;
+    const y = (idx - x) / cw;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const corners = [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+  return corners.map((p) => ({ x: p.x / cw, y: p.y / ch }));
 }
 
 function largestComponent(
@@ -103,13 +128,17 @@ function largestComponent(
   return best;
 }
 
-/** Moore 邻域边界追踪：从连通域最左上前景像素出发，沿外边界走回起点。 */
+/**
+ * Moore 邻域边界追踪：从连通域最左上前景像素出发，沿外边界走回起点。
+ * 返回是否成功闭环；对自交/杂乱形状可能无法闭环，此时 `closed` 为 false，
+ * 由调用方退化为外接矩形，避免 O(cw*ch*4) 的循环阻塞主线程。
+ */
 function traceBoundary(
   comp: Set<number>,
   cw: number,
   ch: number
-): { x: number; y: number }[] {
-  if (comp.size === 0) return [];
+): { points: { x: number; y: number }[]; closed: boolean } {
+  if (comp.size === 0) return { points: [], closed: false };
   const has = (x: number, y: number) =>
     x >= 0 && x < cw && y >= 0 && y < ch && comp.has(y * cw + x);
 
@@ -121,7 +150,7 @@ function traceBoundary(
         start = y * cw + x;
         break;
       }
-  if (start < 0) return [];
+  if (start < 0) return { points: [], closed: false };
   const sx = start % cw;
   const sy = (start - sx) / cw;
 
@@ -133,10 +162,17 @@ function traceBoundary(
   // 起点西侧必为背景（b0 是最左列前景），作为初始背景邻域方向
   let b = { x: sx, y: sy };
   let cDir = 6; // West
-  const out: { x: number; y: number }[] = [b];
+  const points: { x: number; y: number }[] = [b];
+  // 用 (像素, 背景邻域方向) 状态去重检测循环：一旦重复说明当前追踪已陷入环路，
+  // 不会再回到起点，立即中止（返回 closed=false）；否则会循环到 maxSteps 上限。
+  const seen = new Set<string>();
+  // 步数硬上限 = 边界像素数上界（周长 ≤ 4*面积 + 常数），防止任何病态退化。
+  const maxSteps = 4 * comp.size + 100;
   let guard = 0;
-  const maxSteps = cw * ch * 4 + 100;
   while (guard++ < maxSteps) {
+    const stateKey = b.x + "," + b.y + "," + cDir;
+    if (seen.has(stateKey)) break;
+    seen.add(stateKey);
     // 自背景邻域 cDir 起，顺时针扫描 8 邻域，找第一个前景像素
     let found = -1;
     for (let k = 1; k <= 8; k++) {
@@ -149,12 +185,12 @@ function traceBoundary(
     }
     if (found < 0) break;
     const nb = { x: b.x + dirs[found][0], y: b.y + dirs[found][1] };
-    if (nb.x === sx && nb.y === sy) break; // 回到起点，闭环完成
+    if (nb.x === sx && nb.y === sy) return { points, closed: true }; // 回到起点，闭环完成
     b = nb;
     cDir = (found - 1 + 8) % 8; // 新背景邻域 = 找到的前景像素的前一个（顺时针）方向
-    out.push(b);
+    points.push(b);
   }
-  return out;
+  return { points, closed: false };
 }
 
 /** 画笔状态机：维护当前笔画轨迹与橡皮擦标记；end() 用位图掩码转 Polygon。 */
