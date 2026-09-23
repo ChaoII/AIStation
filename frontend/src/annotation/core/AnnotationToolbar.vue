@@ -41,7 +41,6 @@ import {
   Document,
   Collection,
   EditPen,
-  Brush,
   RefreshLeft,
   RefreshRight,
   Delete,
@@ -65,6 +64,13 @@ const CursorIcon = defineComponent({
   },
 });
 
+const BrushIcon = defineComponent({
+  name: "BrushIcon",
+  render() {
+    return h("i", { class: "ri-brush-fill" });
+  },
+});
+
 const ICONS: Record<string, any> = {
   select: CursorIcon,
   pan: Rank,
@@ -72,7 +78,7 @@ const ICONS: Record<string, any> = {
   box: Crop,
   rotated_box: Refresh,
   polygon: EditPen,
-  brush: Brush,
+  brush: BrushIcon,
   keypoint: CirclePlus,
   ocr: Document,
   classification: Collection,
@@ -121,6 +127,9 @@ function titleOf(t: any) {
   stroke-width: 2;
 }
 .tool-btn :deep(.ri-cursor-fill) {
+  font-size: 18px;
+}
+.tool-btn :deep(.ri-brush-fill) {
   font-size: 18px;
 }
 .tool-btn:hover {

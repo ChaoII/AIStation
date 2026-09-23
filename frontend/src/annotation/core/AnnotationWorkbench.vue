@@ -1166,9 +1166,9 @@ const toolCursor = computed(() => {
   return isDrawing.value ? "crosshair" : "default";
 });
 const crossVisible = computed(() => isDrawing.value && !isBrushTool.value);
-// 画笔光标：白色毛笔样式（data URI），hotspot 在笔尖
+// 画笔光标：ri-brush-fill 白色实心版（data URI），hotspot 在笔身
 const BRUSH_CURSOR =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23444444' stroke-width='1.5' d='M21.3 6.7 L17.3 2.7 C16.5 1.9 15.2 1.9 14.4 2.7 L4 13.1 L2 22 L10.9 20 L21.3 9.6 C22.1 8.8 22.1 7.5 21.3 6.7 Z M10 16.5 C9.6 16.9 9 17 8.5 16.9 L8 19 L5 19 L5 16 L7.1 15.5 C7 15 7.1 14.4 7.5 14 C8 13.5 8.8 13.5 9.2 14 C9.7 14.5 9.7 16 10 16.5 Z'/%3E%3C/svg%3E\") 4 20, crosshair";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23555555' stroke-width='1' d='M13.2886 6.21301L18.2278 2.37142C18.6259 2.0618 19.1922 2.09706 19.5488 2.45367L22.543 5.44787C22.8997 5.80448 22.9349 6.37082 22.6253 6.76891L18.7847 11.7068C19.0778 12.8951 19.0836 14.1721 18.7444 15.4379C17.8463 18.7897 14.8142 20.9986 11.5016 20.9986C8 20.9986 3.5 19.4967 1 17.9967C4.97978 14.9967 4.04722 13.1865 4.5 11.4967C5.55843 7.54658 9.34224 5.23935 13.2886 6.21301ZM16.7015 8.09161C16.7673 8.15506 16.8319 8.21964 16.8952 8.28533L18.0297 9.41984L20.5046 6.23786L18.7589 4.4921L15.5769 6.96698L16.7015 8.09161Z'/%3E%3C/svg%3E\") 10 14, crosshair";
 const hintText = computed(() => {
   const t = displayTools.value.find((x) => x.name === currentTool.value);
   return (t as any)?.title || (t as any)?.tip || "";
