@@ -4,6 +4,7 @@ export { detectionPlugin } from "./tasks/detection";
 export { videoDetectionPlugin } from "./tasks/videoDetection";
 export { textNerPlugin } from "./tasks/textNer";
 export { audioEventPlugin } from "./tasks/audioEvent";
+export { videoEventPlugin } from "./tasks/videoEvent";
 export { timeSeriesEventPlugin } from "./tasks/timeSeriesEvent";
 export { rotatedBoxPlugin } from "./tasks/rotatedBox";
 export { segmentationPlugin } from "./tasks/segmentation";

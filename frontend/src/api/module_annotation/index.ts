@@ -4,6 +4,7 @@ export * from "./video";
 export * from "./document";
 export * from "./audio";
 export * from "./timeSeries";
+export * from "./videoEvent";
 
 const API_PATH = "/annotation";
 
