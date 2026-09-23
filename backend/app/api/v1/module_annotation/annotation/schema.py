@@ -53,6 +53,33 @@ class AudioAnnotationSaveSchema(BaseModel):
     annotations: list[dict] = Field(default_factory=list)
 
 
+class TimeSeriesSegmentSchema(BaseModel):
+    """时间序列事件标注项：时间戳区间 + 事件类别。
+
+    ``start``/``end`` 为该序列时间列的时间戳值（``time_unit`` 决定的单位），
+    ``[start, end)`` 半开区间；逐项结构在后端 service 层结合任务 classes 与序列
+    时间范围做区间/重叠/越界校验。
+    """
+
+    id: str | None = None
+    type: str = "TimeSeriesSegment"
+    start: float
+    end: float
+    label_id: int
+
+
+class TimeSeriesAnnotationsSaveSchema(BaseModel):
+    """时间序列事件标注保存请求。
+
+    ``annotations`` 为 ``TimeSeriesSegment`` 列表，逐项结构在后端 service 层结合任务
+    classes 与序列时间范围做区间/重叠/越界校验。
+    """
+
+    task_id: int
+    time_series_id: int
+    annotations: list[dict] = Field(default_factory=list)
+
+
 class AnnotationRollbackSchema(BaseModel):
     task_id: int
     version: int

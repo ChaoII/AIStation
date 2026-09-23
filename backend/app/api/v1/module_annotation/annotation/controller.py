@@ -15,6 +15,7 @@ from .schema import (
     AnnotationSaveSchema,
     AudioAnnotationSaveSchema,
     TextAnnotationSaveSchema,
+    TimeSeriesAnnotationsSaveSchema,
     VideoAnnotationSaveSchema,
 )
 from .service import AnnotationService
@@ -176,4 +177,27 @@ async def load_audio_annotations(
 ) -> JSONResponse:
     await _verify_task_access(task_id, auth)
     data = await AnnotationService.load_audio_annotations(task_id, a_id)
+    return SuccessResponse(data=data)
+
+
+@AnnotationRouter.post("/timeseries/save", summary="保存时间序列事件标注")
+async def save_time_series_annotations(
+    data: TimeSeriesAnnotationsSaveSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(data.task_id, auth)
+    result = await AnnotationService.save_time_series_annotations(
+        data.task_id, data.time_series_id, data.annotations, auth.user.id
+    )
+    return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.get("/timeseries/load", summary="读取时间序列事件标注")
+async def load_time_series_annotations(
+    task_id: int,
+    t_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(task_id, auth)
+    data = await AnnotationService.load_time_series_annotations(task_id, t_id)
     return SuccessResponse(data=data)
