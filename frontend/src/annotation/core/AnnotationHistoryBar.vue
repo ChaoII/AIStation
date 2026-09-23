@@ -1,35 +1,40 @@
 <template>
   <footer class="ann-footer">
-    <span v-if="hint" class="hint">{{ hint }}</span>
-    <span v-if="unsaved" class="unsaved-dot" title="未保存" />
-    <!-- 文本模式无栅格坐标系，隐藏光标坐标与缩放信息 -->
-    <template v-if="showCoordinate">
-      <span class="mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
-      <span class="mono">Z:{{ Math.round(zoom * 100) }}% | cw:{{ cw }}</span>
-    </template>
-    <div class="sep" />
-    <el-button size="small" :disabled="!canPrev" circle @click="$emit('prev')">
-      <el-icon><ArrowLeft /></el-icon>
-    </el-button>
-    <span class="nav-text">{{ currentIndex + 1 }}/{{ total }}</span>
-    <el-button size="small" :disabled="!canNext" circle @click="$emit('next')">
-      <el-icon><ArrowRight /></el-icon>
-    </el-button>
-    <div class="sep" />
-    <el-button
-      size="small"
-      type="primary"
-      :disabled="!hasCurrentImage || locked"
-      @click="$emit('save')"
-    >
-      保存
-    </el-button>
-    <div class="sep" />
-    <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">历史</el-button>
-    <div class="sep" />
-    <el-button size="small" circle @click="$emit('help')">
-      <el-icon><QuestionFilled /></el-icon>
-    </el-button>
+    <div class="footer-hint">
+      <span v-if="hint" class="hint">{{ hint }}</span>
+      <span v-if="unsaved" class="unsaved-dot" title="未保存" />
+    </div>
+    <div class="footer-info">
+      <!-- 文本模式无栅格坐标系，隐藏光标坐标与缩放信息 -->
+      <template v-if="showCoordinate">
+        <span class="mono">X:{{ cursorX }} Y:{{ cursorY }}</span>
+        <span class="mono">Z:{{ Math.round(zoom * 100) }}%</span>
+        <span class="mono">宽度 {{ cw }}</span>
+      </template>
+      <div class="sep" />
+      <el-button size="small" :disabled="!canPrev" circle @click="$emit('prev')">
+        <el-icon><ArrowLeft /></el-icon>
+      </el-button>
+      <span class="nav-text">{{ currentIndex + 1 }}/{{ total }}</span>
+      <el-button size="small" :disabled="!canNext" circle @click="$emit('next')">
+        <el-icon><ArrowRight /></el-icon>
+      </el-button>
+      <div class="sep" />
+      <el-button
+        size="small"
+        type="primary"
+        :disabled="!hasCurrentImage || locked"
+        @click="$emit('save')"
+      >
+        保存
+      </el-button>
+      <div class="sep" />
+      <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">历史</el-button>
+      <div class="sep" />
+      <el-button size="small" circle @click="$emit('help')">
+        <el-icon><QuestionFilled /></el-icon>
+      </el-button>
+    </div>
   </footer>
 </template>
 
@@ -64,10 +69,23 @@ defineEmits<{
 .ann-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 12px;
+  padding: 6px 12px;
   border-top: 1px solid var(--el-border-color-light);
   font-size: 12px;
+}
+.footer-hint {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.footer-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .hint {
   color: var(--el-text-color-secondary);

@@ -152,24 +152,7 @@
         @redo="redo"
         @delete="deleteSelected"
       />
-      <div v-if="activeTool?.state?.brushSize" class="brush-opt-bar">
-        <span class="brush-opt-label">画笔</span>
-        <div
-          class="brush-cursor-preview"
-          :style="{ width: Math.max(brushSizeVal, 4) + 'px', height: Math.max(brushSizeVal, 4) + 'px' }"
-        />
-        <el-slider
-          :model-value="brushSizeVal"
-          @input="setBrushSize"
-          :min="1"
-          :max="80"
-          size="small"
-          class="brush-opt-slider"
-        />
-        <span class="brush-opt-val">{{ brushSizeVal }}px</span>
-        <span class="brush-opt-key">按 [ ] 调整</span>
-      </div>
-      <main class="ann-canvas-area">
+      <main ref="canvasAreaRef" class="ann-canvas-area">
         <AnnotationCanvas
           ref="canvasRef"
           :img-url="imgUrl"
@@ -260,6 +243,34 @@
           <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
             {{ clsName(a) }}
           </div>
+        </div>
+        <div
+          v-if="brushPopover.visible"
+          class="brush-popover"
+          :style="{ left: brushPopover.x + 'px', top: brushPopover.y + 'px' }"
+          @click.stop
+          @contextmenu.prevent
+        >
+          <div class="brush-popover-head">画笔大小</div>
+          <div class="brush-popover-body">
+            <div
+              class="brush-cursor-preview"
+              :style="{
+                width: Math.min(Math.max(brushSizeVal * (canvas.zoom.value || 1), 6), 120) + 'px',
+                height: Math.min(Math.max(brushSizeVal * (canvas.zoom.value || 1), 6), 120) + 'px'
+              }"
+            />
+            <el-slider
+              :model-value="brushSizeVal"
+              @input="setBrushSize"
+              :min="1"
+              :max="80"
+              size="small"
+              class="brush-popover-slider"
+            />
+            <span class="brush-popover-val">{{ brushSizeVal }}px</span>
+          </div>
+          <div class="brush-popover-tip">左键描画 · 按 [ ] 调整 · 右键再开</div>
         </div>
       </main>
       <AnnotationRightPanel
@@ -1134,15 +1145,30 @@ function setBrushSize(v: number | number[]) {
   if (!bs) return;
   bs.value = Math.max(1, Math.min(120, Math.round(val)));
 }
+const canvasAreaRef = ref<HTMLElement | null>(null);
+const brushPopover = reactive({ visible: false, x: 0, y: 0 });
+function openBrushPopover(e: MouseEvent) {
+  const area = canvasAreaRef.value;
+  if (!area) return;
+  const r = area.getBoundingClientRect();
+  const x = Math.max(4, Math.min(e.clientX - r.left + 8, r.width - 210));
+  const y = Math.max(4, Math.min(e.clientY - r.top + 8, r.height - 150));
+  brushPopover.x = x;
+  brushPopover.y = y;
+  brushPopover.visible = true;
+}
+function closeBrushPopover() {
+  brushPopover.visible = false;
+}
 const toolCursor = computed(() => {
   if (spaceHeld.value) return "grab";
   if (isBrushTool.value) return BRUSH_CURSOR;
   return isDrawing.value ? "crosshair" : "default";
 });
 const crossVisible = computed(() => isDrawing.value && !isBrushTool.value);
-// 画笔光标：SVG 画笔形状（data URI），hotspot 在笔尖
+// 画笔光标：白色毛笔样式（data URI），hotspot 在笔尖
 const BRUSH_CURSOR =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M21.3 6.7 L17.3 2.7 C16.5 1.9 15.2 1.9 14.4 2.7 L4 13.1 L2 22 L10.9 20 L21.3 9.6 C22.1 8.8 22.1 7.5 21.3 6.7 Z M10 16.5 C9.6 16.9 9 17 8.5 16.9 L8 19 L5 19 L5 16 L7.1 15.5 C7 15 7.1 14.4 7.5 14 C8 13.5 8.8 13.5 9.2 14 C9.7 14.5 9.7 16 10 16.5 Z'/%3E%3C/svg%3E\") 4 20, crosshair";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23444444' stroke-width='1.5' d='M21.3 6.7 L17.3 2.7 C16.5 1.9 15.2 1.9 14.4 2.7 L4 13.1 L2 22 L10.9 20 L21.3 9.6 C22.1 8.8 22.1 7.5 21.3 6.7 Z M10 16.5 C9.6 16.9 9 17 8.5 16.9 L8 19 L5 19 L5 16 L7.1 15.5 C7 15 7.1 14.4 7.5 14 C8 13.5 8.8 13.5 9.2 14 C9.7 14.5 9.7 16 10 16.5 Z'/%3E%3C/svg%3E\") 4 20, crosshair";
 const hintText = computed(() => {
   const t = displayTools.value.find((x) => x.name === currentTool.value);
   return (t as any)?.title || (t as any)?.tip || "";
@@ -2706,6 +2732,11 @@ function zoomAt(factor: number, cx: number, cy: number) {
 }
 
 function onRootContextmenu(e: MouseEvent) {
+  // 画笔工具下：右键弹出画笔大小设置
+  if (isBrushTool.value) {
+    openBrushPopover(e);
+    return;
+  }
   const el = (e.target as Element).closest?.("[data-ann-id]");
   if (!el) return;
   const id = el.getAttribute("data-ann-id");
@@ -3158,6 +3189,7 @@ function onDblClick(e: MouseEvent) {
 function onCanvasDown(e: MouseEvent) {
   e.preventDefault();
   if (e.button !== 0 || lockedByOther.value) return;
+  closeBrushPopover();
   const p = toImagePoint(e);
   if (!p) return;
   store.selectedAnnotationId = "";
@@ -4267,35 +4299,43 @@ defineExpose({
   min-width: 0;
   position: relative;
 }
-.brush-opt-bar {
+.brush-popover {
+  position: absolute;
+  z-index: 10;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--el-bg-color, #fff);
+  box-shadow: var(--el-box-shadow-light);
+  border: 1px solid var(--el-border-color-lighter);
+}
+.brush-popover-head {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  margin-bottom: 8px;
+}
+.brush-popover-body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  background: var(--el-fill-color-blank);
-}
-.brush-opt-label {
-  font-size: var(--el-font-size-base);
-  color: var(--el-text-color-regular);
-  white-space: nowrap;
 }
 .brush-cursor-preview {
   border-radius: 50%;
   background: var(--el-color-primary);
+  border: 1px solid var(--el-color-primary-light-9);
   flex-shrink: 0;
 }
-.brush-opt-slider {
+.brush-popover-slider {
   width: 160px;
 }
-.brush-opt-val {
+.brush-popover-val {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   min-width: 38px;
 }
-.brush-opt-key {
+.brush-popover-tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  margin-top: 8px;
   white-space: nowrap;
 }
 /* 文本模式：允许 CodeMirror 内部拖选文字 */
