@@ -86,7 +86,8 @@ def test_video_save_then_load_returns_same_batch():
         AnnotationService.save_video_annotations(task_id, video_id, 42, boxes, auth)
     )
     assert result["version"] == 1
-    assert result["annotation_count"] == 2
+    # 仅保存一帧 → 该视频已标注帧数为 1（返回口径与 DB 字段一致）
+    assert result["annotation_count"] == 1
 
     loaded = asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 42))
     assert loaded == boxes

@@ -72,7 +72,8 @@ def test_track_save_load_passes_track_id():
         AnnotationService.save_video_annotations(task_id, video_id, 10, boxes, auth)
     )
     assert result["version"] == 1
-    assert result["annotation_count"] == 2
+    # 仅保存一帧 → 已标注帧数为 1
+    assert result["annotation_count"] == 1
 
     loaded = asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 10))
     assert loaded == boxes
@@ -92,7 +93,7 @@ def test_track_without_track_id_still_works():
     result = asyncio.run(
         AnnotationService.save_video_annotations(task_id, video_id, 5, boxes, auth)
     )
-    assert result["annotation_count"] == 2
+    assert result["annotation_count"] == 1
     assert asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 5)) == boxes
 
 

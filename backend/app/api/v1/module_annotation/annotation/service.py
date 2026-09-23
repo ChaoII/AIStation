@@ -318,20 +318,21 @@ class AnnotationService:
                     )
                 )
 
+            # 已标注帧数 = count(distinct frame_index)，限定当前 task_id 与该视频，
+            # 与 save_video_interpolation 语义一致（清空该帧后其记录被删除，计数随之回落）。
+            annotated_frames = await db.scalar(
+                select(func.count(func.distinct(AnnotationRecordModel.frame_index)))
+                .where(AnnotationRecordModel.task_id == task_id)
+                .where(AnnotationRecordModel.video_id == video_id)
+            )
+            annotated = annotated_frames or 0
             if video:
-                # 已标注帧数 = count(distinct frame_index)，限定当前 task_id 与该视频，
-                # 与 save_video_interpolation 语义一致（清空该帧后其记录被删除，计数随之回落）。
-                annotated_frames = await db.scalar(
-                    select(func.count(func.distinct(AnnotationRecordModel.frame_index)))
-                    .where(AnnotationRecordModel.task_id == task_id)
-                    .where(AnnotationRecordModel.video_id == video_id)
-                )
-                annotated = annotated_frames or 0
                 video.status = "annotated" if annotated else "unannotated"
                 video.annotation_count = annotated
 
         log.info(f"save_video_annotations video={video_id} frame={frame_index} v={version}")
-        return {"version": version, "annotation_count": len(annotation_data)}
+        # 返回值与 DB 字段 annotation_count 口径一致：已标注帧数（与 save_video_interpolation 一致）
+        return {"version": version, "annotation_count": annotated}
 
     @classmethod
     async def load_video_annotations(cls, task_id: int, video_id: int, frame_index: int) -> list[dict] | None:
