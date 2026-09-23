@@ -10,7 +10,7 @@ export function useDetectionTool() {
     startImg.value = p;
   }
 
-  function onMoveEnd(p: Point): Annotation | null {
+  function onMoveEnd(p: Point, trackId?: string): Annotation | null {
     if (!drawing.value || !startImg.value) return null;
     drawing.value = false;
     const s = startImg.value;
@@ -23,6 +23,8 @@ export function useDetectionTool() {
       y1: Math.min(s.y, p.y),
       x2: Math.max(s.x, p.x),
       y2: Math.max(s.y, p.y),
+      // 新建框默认不带轨迹；关联到轨迹后再填入 track_id
+      ...(trackId ? { track_id: trackId } : {}),
     };
   }
 

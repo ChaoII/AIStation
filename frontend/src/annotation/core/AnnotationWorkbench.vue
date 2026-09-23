@@ -145,6 +145,12 @@
           @wheel="onWheel"
           @contextmenu.prevent="onRootContextmenu"
         >
+          <DetectionTrackOverlay
+            v-if="isVideoTask && trackShow"
+            :paths="trackPaths"
+            :cw="cw"
+            :ch="ch"
+          />
           <component
             :is="plugin.renderer"
             :annotations="displayAnnotations"
@@ -193,6 +199,20 @@
             class="cross-svg"
           />
         </AnnotationCanvas>
+        <div v-if="isVideoTask" class="track-bar">
+          <el-switch v-model="trackShow" size="small" active-text="显示轨迹" />
+          <el-select
+            v-model="selectedTrackId"
+            size="small"
+            clearable
+            placeholder="选择轨迹"
+            class="track-select"
+          >
+            <el-option v-for="tid in trackOptions" :key="tid" :label="`轨迹 ${shortTrack(tid)}`" :value="tid" />
+          </el-select>
+          <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(-1)">上一帧</el-button>
+          <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(1)">下一帧</el-button>
+        </div>
         <div class="ann-label-layer">
           <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
             {{ clsName(a) }}
@@ -293,6 +313,22 @@
       <div class="ctx-item" @click.stop="menuLayerBottom">
         <el-icon :size="14"><ArrowDown /></el-icon>
         <span>置底</span>
+      </div>
+      <div
+        v-if="isVideoTask && annMenu.ann?.type === 'AxisAlignedBox'"
+        class="ctx-item"
+        @click.stop="menuTrack"
+      >
+        <el-icon :size="14"><Connection /></el-icon>
+        <span>关联到轨迹</span>
+      </div>
+      <div
+        v-if="isVideoTask && annMenu.ann?.track_id"
+        class="ctx-item"
+        @click.stop="menuClearTrack"
+      >
+        <el-icon :size="14"><Close /></el-icon>
+        <span>取消轨迹关联</span>
       </div>
       <div class="ctx-item ctx-danger" @click.stop="menuDelete">
         <el-icon :size="14"><Delete /></el-icon>
@@ -448,6 +484,32 @@
           <span class="shortcut-desc">{{ s.desc }}</span>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 视频目标跟踪：关联到轨迹 -->
+    <el-dialog v-model="trackDialogVisible" title="关联到轨迹" width="460px" append-to-body>
+      <el-form label-width="80px">
+        <el-form-item label="关联方式">
+          <el-radio-group v-model="trackDialogMode">
+            <el-radio value="new">新建轨迹</el-radio>
+            <el-radio value="existing">选择已有轨迹</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="trackDialogMode === 'existing'" label="轨迹">
+          <el-select
+            v-model="trackDialogExisting"
+            size="small"
+            style="width: 100%"
+            placeholder="选择已有轨迹"
+          >
+            <el-option v-for="tid in trackOptions" :key="tid" :label="`轨迹 ${shortTrack(tid)}`" :value="tid" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="trackDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmTrack">确定</el-button>
+      </template>
     </el-dialog>
 
     <!-- 文本 NER：实体类型选择 -->
@@ -657,12 +719,21 @@ import {
   ArrowUp,
   ArrowDown,
   Delete,
+  Connection,
 } from "@element-plus/icons-vue";
 import AnnotationCanvas from "./AnnotationCanvas.vue";
 import AnnotationHistoryBar from "./AnnotationHistoryBar.vue";
 import AnnotationToolbar from "./AnnotationToolbar.vue";
 import VideoPlayerBar from "./VideoPlayerBar.vue";
 import AnnotationRightPanel from "./AnnotationRightPanel.vue";
+import DetectionTrackOverlay from "../tasks/detection/DetectionTrackOverlay.vue";
+import {
+  collectTrackIds,
+  newTrackId,
+  nearestTrackFrame,
+  trackPathFromFrames,
+  trackColor,
+} from "../tasks/detection/track";
 import { useAnnotationCanvas } from "./useAnnotationCanvas";
 import { useAnnotationStore } from "./useAnnotationStore";
 import type { Annotation, AnnotationTaskPlugin, PluginPanelContext } from "./types";
@@ -765,6 +836,15 @@ const videoPlaying = ref(false);
 const videoCurrentTime = ref(0);
 // 待定位的目标帧：用于在 seeked 回调中过滤过期 seek，保证加载的标注与最终定位帧一致
 let pendingSeekFrame = -1;
+// ==== 视频目标跟踪（track_id 关联 + 轨迹显示/导航）====
+const trackShow = ref(false); // 显示轨迹开关
+const selectedTrackId = ref(""); // 当前选中的轨迹（用于高亮与按轨迹导航）
+// 已访问帧的标注缓存：帧号 -> 该帧 AxisAlignedBox[]，供轨迹跨帧连线与按轨迹导航使用（局部刷新，不整表刷新）
+const frameCache = new Map<number, Annotation[]>();
+const trackTick = ref(0); // 轨迹数据变更计数器：缓存更新/关联轨迹后自增，强制轨迹层重算
+function bumpTrack() {
+  trackTick.value++;
+}
 const selectedClassId = ref<number | null>(null);
 const crosshair = reactive({ x: 0, y: 0 });
 
@@ -2087,6 +2167,67 @@ async function loadFrameAnnotations(idx: number) {
   store.annotations = (vr?.data?.data || []) as Annotation[];
   store.selectedAnnotationId = "";
   store.unsaved = false;
+  // 缓存该帧标注，供轨迹连线与按轨迹导航使用；并触发轨迹层重算
+  frameCache.set(idx, store.annotations);
+  bumpTrack();
+}
+
+// ==== 轨迹层计算（跨帧连线 / 轨迹列表 / 按轨迹导航）====
+/** 各轨迹出现的帧及框（按帧序），来自已访问帧缓存。 */
+const trackFrameMap = computed(() => {
+  void trackTick.value;
+  const map = new Map<string, { frameIndex: number; box: Annotation }[]>();
+  for (const [fi, anns] of frameCache) {
+    for (const a of anns) {
+      if (a.type !== "AxisAlignedBox" || !a.track_id) continue;
+      const arr = map.get(a.track_id);
+      if (arr) arr.push({ frameIndex: fi, box: a });
+      else map.set(a.track_id, [{ frameIndex: fi, box: a }]);
+    }
+  }
+  for (const arr of map.values()) arr.sort((x, y) => x.frameIndex - y.frameIndex);
+  return map;
+});
+/** 轨迹列表（用于「选择已有轨迹」与轨迹选择下拉）。 */
+const trackOptions = computed(() => {
+  void trackTick.value;
+  return [...trackFrameMap.value.keys()].sort();
+});
+/** 当前帧出现的轨迹 id 集合。 */
+const currentTrackIds = computed(() => {
+  void trackTick.value;
+  return new Set(collectTrackIds(store.annotations));
+});
+/** 待绘制轨迹路径：当前帧的轨迹 + 选中的轨迹（高亮），取其中心点跨帧连线。 */
+const trackPaths = computed(() => {
+  void trackTick.value;
+  const out: { trackId: string; points: { x: number; y: number }[]; color: string; selected: boolean }[] = [];
+  for (const [tid, frames] of trackFrameMap.value) {
+    if (!currentTrackIds.value.has(tid) && tid !== selectedTrackId.value) continue;
+    const path = trackPathFromFrames(frames);
+    out.push({
+      trackId: tid,
+      points: path.map((f) => f.point),
+      color: trackColor(tid),
+      selected: tid === selectedTrackId.value,
+    });
+  }
+  return out;
+});
+/** 某轨迹出现的帧号列表（用于前后跳转）。 */
+function framesOfTrack(trackId: string): number[] {
+  const frames = trackFrameMap.value.get(trackId);
+  return frames ? frames.map((f) => f.frameIndex) : [];
+}
+/** 按轨迹跳转到前/后一帧（该 track 出现的其它已访问帧）。 */
+function goTrackFrame(dir: 1 | -1) {
+  if (!selectedTrackId.value) return;
+  const target = nearestTrackFrame(framesOfTrack(selectedTrackId.value), currentFrame.value, dir);
+  if (target != null) goToFrame(target);
+}
+/** 轨迹 id 的简短展示。 */
+function shortTrack(trackId: string): string {
+  return trackId.length > 8 ? trackId.slice(0, 8) : trackId;
 }
 
 async function onVideoSeeked() {
@@ -3264,6 +3405,62 @@ function menuLayerBottom() {
 function deleteById(id: string) {
   deleteAnnotation(id);
 }
+// ==== 视频目标跟踪：关联到轨迹 / 取消关联 ====
+const trackDialogVisible = ref(false);
+const trackDialogMode = ref<"new" | "existing">("new");
+const trackDialogExisting = ref("");
+const trackDialogAnn = ref<Annotation | null>(null);
+function menuTrack() {
+  const ann = annMenu.ann;
+  closeMenu();
+  if (!ann || ann.type !== "AxisAlignedBox") return;
+  store.selectedAnnotationId = ann.id;
+  trackDialogAnn.value = ann;
+  trackDialogMode.value = ann.track_id ? "existing" : "new";
+  trackDialogExisting.value = ann.track_id || "";
+  trackDialogVisible.value = true;
+}
+function confirmTrack() {
+  const ann = trackDialogAnn.value;
+  if (!ann) return;
+  if (trackDialogMode.value === "new") {
+    // 新建轨迹：生成唯一 id 并赋给当前框
+    ann.track_id = newTrackId();
+  } else {
+    const tid = trackDialogExisting.value;
+    if (!tid) {
+      ElMessage.warning("请选择已有轨迹");
+      return;
+    }
+    // 一帧一框一目标：当前帧已含同轨迹的其它框则拒绝（与后端校验一致）
+    if (store.annotations.some((a) => a.id !== ann.id && a.track_id === tid)) {
+      ElMessage.warning("当前帧已有该轨迹的框，一帧一框一目标");
+      return;
+    }
+    ann.track_id = tid;
+  }
+  trackDialogVisible.value = false;
+  store.markUnsaved();
+  pushHistory();
+  bumpTrack();
+}
+function menuClearTrack() {
+  const ann = annMenu.ann;
+  closeMenu();
+  if (!ann) return;
+  ElMessageBox.confirm("将取消该框的轨迹关联，此操作只影响当前框，且不可恢复。", "取消轨迹关联", {
+    confirmButtonText: "取消关联",
+    cancelButtonText: "取消",
+    type: "warning",
+  })
+    .then(() => {
+      delete ann.track_id;
+      store.markUnsaved();
+      pushHistory();
+      bumpTrack();
+    })
+    .catch(() => {});
+}
 function editClassChange() {
   if (editForm.ann) editForm.ann.class_id = editForm.class_id;
 }
@@ -3620,6 +3817,23 @@ defineExpose({
   inset: 0;
   pointer-events: none;
   overflow: hidden;
+}
+.track-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  box-shadow: var(--el-box-shadow-light);
+}
+.track-select {
+  width: 150px;
 }
 .ann-tag {
   position: absolute;

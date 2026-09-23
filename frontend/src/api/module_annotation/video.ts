@@ -32,6 +32,8 @@ export interface VideoFrameAnnotation {
   y1: number;
   x2: number;
   y2: number;
+  /** 目标轨迹 id（与后端 AxisAlignedBoxSchema 一致；缺省视为独立目标） */
+  track_id?: string | null;
 }
 
 /**
