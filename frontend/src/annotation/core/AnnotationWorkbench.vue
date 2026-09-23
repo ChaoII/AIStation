@@ -3151,6 +3151,7 @@ function onCanvasDown(e: MouseEvent) {
       selectedClassId: selectedClassId.value,
       cw: cw.value,
       ch: ch.value,
+      zoom: canvas.zoom.value,
     });
     if (created) commitCreated(created);
     return;
@@ -3389,6 +3390,7 @@ function onMove(e: MouseEvent) {
       selectedClassId: selectedClassId.value,
       cw: cw.value,
       ch: ch.value,
+      zoom: canvas.zoom.value,
     });
     return;
   }

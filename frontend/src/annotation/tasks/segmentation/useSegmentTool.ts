@@ -3,9 +3,22 @@ import type { Annotation, Point } from "../../core/types";
 
 export function useSegmentTool() {
   const points = ref<Point[]>([]);
+  // 当前鼠标位置（归一化），用于绘制「末点→鼠标」的跟随预览线与首点闭合提示。
+  const cursor = ref<Point | null>(null);
+  // 判定「鼠标靠近首点可闭合」的半径（屏幕像素，视觉恒定）。
+  const closeRadiusPx = 16;
 
   function addPoint(p: Point) {
     points.value.push(p);
+  }
+
+  /** 鼠标（归一化）是否靠近首点（按屏幕像素距离判定，与闭合提示一致）。 */
+  function isNearFirst(p: Point | null | undefined, cw: number, ch: number, zoom = 1): boolean {
+    const first = points.value[0];
+    if (!p || !first || !cw || !ch) return false;
+    const dx = (p.x - first.x) * cw * zoom;
+    const dy = (p.y - first.y) * ch * zoom;
+    return Math.sqrt(dx * dx + dy * dy) <= closeRadiusPx;
   }
 
   function closePolygon(): Annotation | null {
@@ -64,6 +77,9 @@ export function useSegmentTool() {
 
   return {
     points,
+    cursor,
+    closeRadiusPx,
+    isNearFirst,
     addPoint,
     closePolygon,
     moveVertex,

@@ -200,6 +200,8 @@ export interface DrawContext {
   cw?: number;
   /** 画布像素高度（brush 等按位图掩码生成的工具使用） */
   ch?: number;
+  /** 当前缩放（显示尺寸/原始尺寸比），用于屏幕像素级判定（如多边形首点闭合半径） */
+  zoom?: number;
 }
 
 /** 任务绘制工具运行时（阶段 C 下沉） */
