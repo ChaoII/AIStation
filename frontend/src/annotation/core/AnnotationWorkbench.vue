@@ -3503,6 +3503,13 @@ const interpolateFrameA = ref<number | null>(null);
 const interpolateFrameB = ref<number | null>(null);
 /** 关键帧候选：选中轨迹已访问的帧号（升序）。 */
 const interpolateFrameOptions = computed(() => framesOfTrack(selectedTrackId.value));
+/** 切换选中轨迹时，清空残留的 A/B 选择，避免跨轨迹错配。 */
+watch(selectedTrackId, () => {
+  if (!interpolateDialogVisible.value) {
+    interpolateFrameA.value = null;
+    interpolateFrameB.value = null;
+  }
+});
 /** 打开插值弹窗：默认取当前帧前后最近的两个该轨迹关键帧。 */
 function openInterpolateDialog() {
   const tid = selectedTrackId.value;
@@ -3513,11 +3520,26 @@ function openInterpolateDialog() {
     return;
   }
   const cur = currentFrame.value;
-  const prev = nearestTrackFrame(frames, cur, -1);
-  const next = nearestTrackFrame(frames, cur, 1);
-  // 默认：A 取当前帧前一关键帧（无则首帧），B 取当前帧后一关键帧（无则末帧）
-  interpolateFrameA.value = prev ?? frames[0];
-  interpolateFrameB.value = next ?? frames[frames.length - 1];
+  // 当前帧本身是该轨迹关键帧时，以其为端点（A 或 B），避免该关键帧被包进 (A,B) 中间区间被插值覆盖
+  if (frames.includes(cur)) {
+    const next = nearestTrackFrame(frames, cur, 1);
+    const prev = nearestTrackFrame(frames, cur, -1);
+    if (next != null) {
+      // 向后插值：A=当前关键帧，B=其后一关键帧
+      interpolateFrameA.value = cur;
+      interpolateFrameB.value = next;
+    } else {
+      // 无后一关键帧则向前插值：A=其前一关键帧，B=当前关键帧
+      interpolateFrameA.value = prev ?? frames[0];
+      interpolateFrameB.value = cur;
+    }
+  } else {
+    // 当前帧非关键帧：A 取前一关键帧（无则首帧），B 取后一关键帧（无则末帧）
+    const prev = nearestTrackFrame(frames, cur, -1);
+    const next = nearestTrackFrame(frames, cur, 1);
+    interpolateFrameA.value = prev ?? frames[0];
+    interpolateFrameB.value = next ?? frames[frames.length - 1];
+  }
   interpolateDialogVisible.value = true;
 }
 /** 提交插值：生成中间帧框并调用后端批量插值接口，局部刷新。 */
@@ -3541,9 +3563,10 @@ async function confirmInterpolate() {
     ElMessage.warning(`关键帧 A(${A}) / B(${B}) 必须都含该轨迹的框`);
     return;
   }
-  // 计算 (A, B) 之间全部中间帧
+  // 计算 (A, B) 之间全部中间帧；排除该轨迹已占据（关键帧）的帧，确保关键帧不被覆盖
+  const ownedFrames = new Set(framesOfTrack(tid));
   const middle: number[] = [];
-  for (let k = A + 1; k < B; k++) middle.push(k);
+  for (let k = A + 1; k < B; k++) if (!ownedFrames.has(k)) middle.push(k);
   const results = interpolateBoxes(
     { frameIndex: A, box: boxA },
     { frameIndex: B, box: boxB },
@@ -3573,8 +3596,14 @@ async function confirmInterpolate() {
           frame_b: B,
           frames,
         });
-        // 局部刷新：仅更新被插值的中间帧缓存 + 轨迹层重算，不整表刷新
-        for (const r of results) frameCache.set(r.frame_index, r.annotations as any);
+        // 局部刷新：仅更新被插值的中间帧缓存，与后端合并语义一致——保留其它 track 框、仅替换本 track
+        for (const r of results) {
+          const existing = frameCache.get(r.frame_index) || [];
+          frameCache.set(r.frame_index, [
+            ...existing.filter((x) => x.track_id !== tid),
+            ...(r.annotations as unknown as Annotation[]),
+          ]);
+        }
         bumpTrack();
         // 若当前帧恰为一个中间帧，刷新当前帧标注显示
         if (middle.includes(currentFrame.value)) {
