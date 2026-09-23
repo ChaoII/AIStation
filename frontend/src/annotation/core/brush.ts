@@ -57,9 +57,10 @@ export function maskToPolygon(
   // 2) Moore 邻域边界追踪，得到像素坐标外边界（闭环）
   const { points: boundary, closed } = traceBoundary(comp, cw, ch);
   if (!closed || boundary.length < 3) {
-    // 自交/杂乱涂鸦等复杂形状可能导致边界追踪无法闭环；此时退化为该连通域的外接矩形，
-    // 保证快速返回一个可用多边形，避免主线程被 O(cw*ch*4) 的追踪卡死。
-    return bboxPolygon(comp, cw, ch);
+    // 细长/自交笔画在 8-连通粗边界上 Moore 追踪可能无法闭环（staircase 折返）。
+    // 退化为该连通域的凸包（monotone chain，必然终止、贴合外凸轮廓），
+    // 避免得到粗糙的外接矩形，也避免主线程被 O(cw*ch*4) 的追踪卡死。
+    return convexHull(comp, cw, ch);
   }
 
   // 3) 在像素坐标下简化（tol 以像素为单位），再归一化 [0,1]
@@ -70,25 +71,37 @@ export function maskToPolygon(
     .map((p) => ({ x: p.x / cw, y: p.y / ch }));
 }
 
-/** 连通域的外接矩形（4 角），用于边界追踪无法闭环时的兜底多边形（归一化坐标）。 */
-function bboxPolygon(comp: Set<number>, cw: number, ch: number): Point[] {
-  if (comp.size === 0) return [];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+/**
+ * 连通域像素集合的外凸包（monotone chain），归一化坐标。
+ * 用于边界追踪无法闭环时的兜底：比外接矩形贴合形状，且 O(n log n) 必然终止。
+ */
+function convexHull(comp: Set<number>, cw: number, ch: number): Point[] {
+  if (comp.size < 3) return [];
+  const pts: Point[] = [];
   for (const idx of comp) {
     const x = idx % cw;
     const y = (idx - x) / cw;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
+    pts.push({ x, y });
   }
-  const corners = [
-    { x: minX, y: minY },
-    { x: maxX, y: minY },
-    { x: maxX, y: maxY },
-    { x: minX, y: maxY },
-  ];
-  return corners.map((p) => ({ x: p.x / cw, y: p.y / ch }));
+  pts.sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o: Point, a: Point, b: Point) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Point[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0)
+      lower.pop();
+    lower.push(p);
+  }
+  const upper: Point[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0)
+      upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper).map((p) => ({ x: p.x / cw, y: p.y / ch }));
 }
 
 function largestComponent(
@@ -98,8 +111,10 @@ function largestComponent(
 ): Set<number> {
   const visited = new Uint8Array(grid.length);
   let best = new Set<number>();
+  // 用 8-连通（与 traceBoundary 的 8 邻域一致），避免细长/斜向笔画因连通性不一致
+  // 导致边界追踪陷入内环、无法走完整条外边界。
   const dirs = [
-    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1],
   ];
   for (let i = 0; i < grid.length; i++) {
     if (!grid[i] || visited[i]) continue;
