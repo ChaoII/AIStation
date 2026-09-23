@@ -39,14 +39,16 @@ export function parseSeriesCsv(
   }
   const points: SeriesPoint[] = [];
   if (headerIdx < 0) return { points, timeColumn, valueColumn: vc, valueColumns };
-  const header = lines[headerIdx].split(",").map((s) => s.trim());
+  // 依据内容判定分隔符：首行含制表符按 \t 分隔（兼容 .tsv），否则按逗号（.csv）
+  const delimiter = lines[headerIdx].includes("\t") ? "\t" : ",";
+  const header = lines[headerIdx].split(delimiter).map((s) => s.trim());
   const timeIdx = header.indexOf(timeColumn);
   const valueIdx = vc ? header.indexOf(vc) : -1;
   if (timeIdx >= 0 && valueIdx >= 0) {
     for (let i = headerIdx + 1; i < lines.length; i++) {
       const row = lines[i];
       if (row.trim() === "") continue;
-      const cells = row.split(",").map((s) => s.trim());
+      const cells = row.split(delimiter).map((s) => s.trim());
       const timeCell = cells[timeIdx];
       const valueCell = cells[valueIdx];
       const time = Number(timeCell);
