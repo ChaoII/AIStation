@@ -17,6 +17,7 @@ from .schema import (
     TextAnnotationSaveSchema,
     TimeSeriesAnnotationsSaveSchema,
     VideoAnnotationSaveSchema,
+    VideoEventSaveSchema,
     VideoInterpolateSchema,
 )
 from .service import AnnotationService
@@ -216,6 +217,29 @@ async def save_time_series_annotations(
         data.task_id, data.time_series_id, data.annotations, auth.user.id
     )
     return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.post("/video-event/save", summary="保存视频时间轴事件标注")
+async def save_video_event_annotations(
+    data: VideoEventSaveSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(data.task_id, auth)
+    result = await AnnotationService.save_video_event_annotations(
+        data.task_id, data.video_id, data.segments, auth.user.id
+    )
+    return SuccessResponse(data=result, msg="保存成功")
+
+
+@AnnotationRouter.get("/video-event/load", summary="读取视频时间轴事件标注")
+async def load_video_event_annotations(
+    task_id: int,
+    video_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["annotation:workbench:query"]))],
+) -> JSONResponse:
+    await _verify_task_access(task_id, auth)
+    data = await AnnotationService.load_video_event_annotations(task_id, video_id)
+    return SuccessResponse(data=data)
 
 
 @AnnotationRouter.get("/timeseries/load", summary="读取时间序列事件标注")

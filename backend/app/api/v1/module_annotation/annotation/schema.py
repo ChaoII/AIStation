@@ -104,6 +104,32 @@ class TimeSeriesAnnotationsSaveSchema(BaseModel):
     annotations: list[dict] = Field(default_factory=list)
 
 
+class VideoSegmentSchema(BaseModel):
+    """视频时间轴事件标注项：秒级时间区间 + 事件类别。
+
+    ``start``/``end`` 为视频时间轴秒级 float，``[start, end)`` 半开区间；
+    逐项结构在后端 service 层结合任务 classes 与视频时长做区间/重叠/越界校验。
+    """
+
+    id: str | None = None
+    type: str = "VideoSegment"
+    start: float
+    end: float
+    label_id: int
+
+
+class VideoEventSaveSchema(BaseModel):
+    """视频时间轴事件标注保存请求。
+
+    ``segments`` 为 ``VideoSegment`` 列表，逐项结构在后端 service 层结合任务 classes
+    与视频时长做区间/重叠/越界校验。
+    """
+
+    task_id: int
+    video_id: int
+    segments: list[dict] = Field(default_factory=list)
+
+
 class AnnotationRollbackSchema(BaseModel):
     task_id: int
     version: int

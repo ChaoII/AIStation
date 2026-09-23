@@ -20,6 +20,7 @@ class AnnotationType(str, enum.Enum):
     OCR = "ocr"
     CLASSIFICATION = "classification"
     VIDEO_DETECTION = "video_detection"
+    VIDEO_EVENT = "video_event"
     TEXT_NER = "text_ner"
     AUDIO_EVENT = "audio_event"
     TIME_SERIES_EVENT = "time_series_event"

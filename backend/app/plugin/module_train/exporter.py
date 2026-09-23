@@ -137,6 +137,16 @@ async def _export_core(
         )
         return
 
+    # 视频时间轴事件：按视频导出区间事件 JSONL（可选 CSV）。
+    # 同样放在图片空集守卫之前：video_event 数据集可能没有任何 AnnotationImageModel 行。
+    # 必须传「标注任务 id」而非训练任务 id（同视频/文本/音频/时间序列导出修复）。
+    if task_type == "video_event":
+        await _export_video_event(
+            dataset_id, output_dir, annotation_task_id=annotation_task_id,
+            csv=(framework == "video-event-csv"),
+        )
+        return
+
     if not images:
         log.warning(f"export: dataset {dataset_id} has no images")
         return
@@ -1215,6 +1225,75 @@ async def _export_time_series_event(
                     lid = ev.get("label_id")
                     label = label_names.get(int(lid), f"class_{lid}")
                     f.write(f"{ev['start']},{ev['end']},{label}\n")
+
+
+async def _export_video_event(
+    dataset_id: int, output_dir: str, annotation_task_id: int | None = None,
+    csv: bool = False,
+) -> None:
+    """视频时间轴事件导出：区间事件 JSONL（可选 CSV）。
+
+    对数据集每个视频用 ``load_video_event_annotations`` 读事件标注，生成
+    ``<stem>_{video_id}.jsonl``（每行 ``{"start","end","label"}``，秒级 float，
+    label 取任务 ``classes`` 中 ``label_id`` 对应的名称）；``csv=True`` 时再产出
+    ``<stem>_{video_id}.csv``（表头 ``start,end,label``）。
+    关键：必须用「标注任务 id」而非训练任务 id 读标注——训练/评估路径经
+    ``_export_core(task_id=训练任务id, annotation_task_id=标注任务id)`` 进入，误传
+    训练任务 id 会被 ``_verify_video_event_task_relation`` 拒绝、导致标注静默为空。
+    视频事件导出只依赖标注元数据，无需下载视频文件本身。
+    """
+
+    if not annotation_task_id:
+        log.warning(f"video-event export: dataset {dataset_id} has no annotation_task_id, skip")
+        return
+
+    from app.api.v1.module_annotation.annotation.service import AnnotationService
+    from app.api.v1.module_annotation.dataset.model import AnnotationVideoModel
+    from app.api.v1.module_annotation.task.model import AnnotationTaskModel
+
+    os.makedirs(output_dir, exist_ok=True)
+    label_names: dict[int, str] = {}
+    if annotation_task_id:
+        async with async_db_session() as db:
+            ann_task = await db.get(AnnotationTaskModel, annotation_task_id)
+            if ann_task and isinstance(ann_task.classes, list):
+                for c in ann_task.classes:
+                    label_names[int(c["id"])] = c.get("name", f"class_{c['id']}")
+
+    async with async_db_session() as db:
+        videos = (await db.execute(
+            select(AnnotationVideoModel).where(
+                AnnotationVideoModel.dataset_id == dataset_id,
+                AnnotationVideoModel.is_deleted == False,  # noqa: E712
+            )
+        )).scalars().all()
+
+    if not videos:
+        log.warning(f"video-event export: dataset {dataset_id} has no videos")
+        return
+
+    for video in videos:
+        anns = await AnnotationService.load_video_event_annotations(annotation_task_id, video.id)
+        ann_data = anns.get("annotation_data") or []
+        events = [a for a in ann_data if a.get("type") == "VideoSegment"]
+        stem = os.path.splitext(video.name)[0] or f"video_{video.id}"
+        base = os.path.join(output_dir, f"{stem}_{video.id}")
+        with open(base + ".jsonl", "w", encoding="utf-8") as f:
+            for ev in events:
+                lid = ev.get("label_id")
+                label = label_names.get(int(lid), f"class_{lid}")
+                f.write(json.dumps({
+                    "start": float(ev["start"]),
+                    "end": float(ev["end"]),
+                    "label": label,
+                }, ensure_ascii=False) + "\n")
+        if csv:
+            with open(base + ".csv", "w", encoding="utf-8", newline="") as f:
+                f.write("start,end,label\n")
+                for ev in events:
+                    lid = ev.get("label_id")
+                    label = label_names.get(int(lid), f"class_{lid}")
+                    f.write(f"{float(ev['start'])},{float(ev['end'])},{label}\n")
 
 
 async def _export_coco_panoptic(dataset_id: int, task_id: int, images: list,
