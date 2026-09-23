@@ -450,3 +450,75 @@ export async function selectTimeSeriesLabel(page: Page, labelName: string) {
   const dialog = page.locator(".el-dialog", { hasText: /事件区间/ }).filter({ visible: true }).first();
   await pickSelectOption(page, dialog.locator(".el-select"), labelName);
 }
+
+// ==== 视频事件（video_event）标注专用步骤 ====
+
+/**
+ * 创建含一个测试视频的 video_event（视频时间序列事件）标注任务。
+ * `classes` 为事件类别列表（每项 `{id, name, color}`），与后端 video_event 约定一致。
+ * 复用 `uploadTestVideo` 上传同一 `test.mp4` fixture（320x240 / 25fps / 2s）。
+ * 返回 { taskId, videoId, datasetId }。
+ */
+export async function createVideoEventTask(
+  request: APIRequestContext,
+  auth: Record<string, string>,
+  prefix: string,
+  classes: any[] = []
+): Promise<{ taskId: number; videoId: number; datasetId: number }> {
+  const name = `${prefix}-${Date.now()}`;
+  const dsRes = await request.post(`${API}/annotation/dataset/create`, {
+    data: { name },
+    headers: auth,
+  });
+  expect(dsRes.ok()).toBeTruthy();
+  const dsId = (await dsRes.json()).data.id;
+
+  const video = await uploadTestVideo(request, auth, dsId);
+
+  const taskRes = await request.post(`${API}/annotation/task/create`, {
+    data: { dataset_id: dsId, name: `t-${name}`, task_type: "video_event", classes },
+    headers: auth,
+  });
+  expect(taskRes.ok()).toBeTruthy();
+  const taskId = (await taskRes.json()).data.id;
+  return { taskId: Number(taskId), videoId: video.id, datasetId: dsId };
+}
+
+/**
+ * 进入视频事件工作台：等待时间轴渲染容器与事件面板挂载，并确认已解码出视频总时长
+ * （时间轴刻度显示非 0 的总时长，如 `0:02`），据此确认可拖选区间。视频事件走 `getVideoDetail`
+ * 时间轴（不播放视频），无需跨源 CORS。
+ */
+export async function gotoVideoEventWorkbench(page: Page, taskId: number) {
+  await page.addInitScript(() => {
+    localStorage.setItem("guideVisible", "false");
+    localStorage.setItem("showGuide", "false");
+  });
+  await page.goto(`/#/annotation/workbench/${taskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".video-timeline-canvas .vtc-track").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".video-event-panel").first()).toBeVisible({ timeout: 20_000 });
+  // 刻度右端显示视频总时长（test.mp4 = 2s → `0:02`），确认时间轴已就绪可拖选。
+  await expect(page.locator(".video-timeline-canvas .vtc-scale")).toContainText("0:02", {
+    timeout: 20_000,
+  });
+}
+
+/**
+ * 在视频时间轴轨道上按宽度百分比拖选一段区间，触发「新建事件片段」弹窗。
+ * 拖选落在轨道竖向中部并横跨一段宽度，由 `clientToSeconds` 映射为秒级 `[start, end)`。
+ */
+export async function createVideoEventSegment(page: Page, fromFrac: number, toFrac: number) {
+  const track = await page.locator(".video-timeline-canvas .vtc-track").first().boundingBox();
+  expect(track).not.toBeNull();
+  const y = track!.y + track!.height / 2;
+  await page.mouse.move(track!.x + track!.width * fromFrac, y, { steps: 5 });
+  await page.mouse.down();
+  await page.mouse.move(track!.x + track!.width * toFrac, y, { steps: 20 });
+  await page.mouse.up();
+}
+
+/** 在当前可见的视频事件弹窗中按类别名选择事件类别。 */
+export async function selectVideoEventLabel(page: Page, labelName: string) {
+  const dialog = page.locator(".el-dialog", { hasText: /事件片段/ }).filter({ visible: true }).first();
+  await pickSelectOption(page, dialog.locator(".el-select"), labelName);
+}
