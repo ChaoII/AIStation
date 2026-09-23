@@ -48,6 +48,11 @@ def _csv(header, rows, delim=","):
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def _tsv(header, rows):
+    """构造 TSV 字节内容（制表符分隔）。"""
+    return _csv(header, rows, delim="\t")
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -92,6 +97,40 @@ def test_probe_csv_keyword_column_wins_over_first():
     content = _csv(["no", "timestamp", "value"], [["a", 1.0, 10.0], ["b", 2.0, 20.0]])
     info = time_series_service._probe_csv(content)
     assert info["time_column"] == "timestamp"
+    assert info["value_columns"] == ["value"]
+
+
+def test_probe_tsv_uses_tab_delimiter():
+    # .tsv 应用制表符分隔，整行不再被当成单个 cell，能正确识别时间/数值列。
+    content = _tsv(["timestamp", "value"], [[1.0, 10.0], [2.0, 20.0]])
+    info = time_series_service._probe_csv(content, ".tsv")
+    assert info["time_column"] == "timestamp"
+    assert info["value_columns"] == ["value"]
+    assert info["row_count"] == 2
+    assert info["start_time"] == 1.0
+    assert info["end_time"] == 2.0
+
+
+def test_probe_csv_not_numeric_keyword_column_falls_back_to_numeric_timestamp():
+    # 关键字列「date」是日期字符串，另一列「timestamp」为数值时间戳：应选后者。
+    content = _csv(
+        ["date", "timestamp", "value"],
+        [["2024-01-01", 1700000000.0, 10.0], ["2024-01-02", 1700000100.0, 20.0]],
+    )
+    info = time_series_service._probe_csv(content)
+    assert info["time_column"] == "timestamp"
+    assert info["value_columns"] == ["value"]
+    assert info["start_time"] == 1700000000.0
+
+
+def test_probe_csv_date_keyword_all_unparsable_falls_back_to_first_column():
+    # 关键字列均为日期字符串、首列为非关键字数值列：回退选择首列作为时间列。
+    content = _csv(
+        ["ts", "date", "value"],
+        [[1700000000.0, "2024-01-01", 10.0], [1700000100.0, "2024-01-02", 20.0]],
+    )
+    info = time_series_service._probe_csv(content)
+    assert info["time_column"] == "ts"
     assert info["value_columns"] == ["value"]
 
 

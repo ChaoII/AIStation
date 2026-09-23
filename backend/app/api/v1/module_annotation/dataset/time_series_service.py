@@ -10,6 +10,7 @@ import asyncio
 import csv
 import io
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -54,25 +55,63 @@ def _decode_csv(content: bytes) -> str:
     return content.decode("latin1")
 
 
-def _find_time_column(headers: list[str]) -> tuple[str | None, int | None]:
-    """识别时间列：优先表头含时间关键字的列，否则默认首列；无列时返回 (None, None)。"""
-    for rstrip_idx, header in enumerate(headers):
-        lowered = header.lower()
-        if any(k in lowered for k in _TIME_KEYWORDS):
-            return header, rstrip_idx
-    if headers:
+def _delimiter_for(ext: str | None) -> str:
+    """按扩展名返回 CSV 分隔符：``.tsv`` 用制表符，其余（含未知/None）用逗号。"""
+    if ext and ext.lower() == ".tsv":
+        return "\t"
+    return ","
+
+
+def _column_is_numeric(rows: list[list[str]], idx: int, max_probe: int = 100) -> bool:
+    """探测某一列前若干行（非空）是否都能解析为 float，判断其是否为数值列。
+
+    仅抽样最多 ``max_probe`` 行，避免对每个候选列做全量扫描；任一行解析失败即
+    返回 False。全部为空（无可解析值）也返回 False。
+    """
+    probed = 0
+    for row in rows:
+        if idx >= len(row):
+            continue
+        cell = row[idx].strip()
+        if not cell:
+            continue
+        try:
+            float(cell)
+        except ValueError:
+            return False
+        probed += 1
+        if probed >= max_probe:
+            break
+    return probed > 0
+
+
+def _find_time_column(headers: list[str], rows: list[list[str]]) -> tuple[str, int]:
+    """识别时间列：在命中时间关键字的候选列集中，优先选择值可解析为 float 的那列；
+    若关键字列均不可解析且首列可解析，则回退首列；否则沿用首个关键字列（供下游报错）。"""
+    keyword_idx = [
+        i for i, header in enumerate(headers)
+        if any(k in header.lower() for k in _TIME_KEYWORDS)
+    ]
+    for idx in keyword_idx:
+        if _column_is_numeric(rows, idx):
+            return headers[idx], idx
+    if headers and _column_is_numeric(rows, 0):
         return headers[0], 0
-    return None, None
+    if keyword_idx:
+        return headers[keyword_idx[0]], keyword_idx[0]
+    return headers[0], 0
 
 
-def _probe_csv(content: bytes) -> dict:
+def _probe_csv(content: bytes, ext: str | None = None) -> dict:
     """探测 CSV 结构，返回 ``{time_column, value_columns, row_count, time_unit,
     start_time, end_time}``。
 
-    逐行（csv reader）解析：数据行数超上限即中止；无有效时间列、无数值列抛业务错误。
+    逐行（csv reader，按 ``ext`` 适配分隔符）解析：数据行数超上限即中止；
+    无有效时间列、无数值列抛业务错误。
     """
     text = _decode_csv(content)
-    reader = csv.reader(io.StringIO(text))
+    delimiter = _delimiter_for(ext)
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
 
     headers: list[str] | None = None
     for row in reader:
@@ -84,11 +123,19 @@ def _probe_csv(content: bytes) -> dict:
             msg="无法识别时间列: 文件为空或缺少表头", code=400, status_code=400
         )
 
-    time_column, time_idx = _find_time_column(headers)
-    if time_column is None:
-        raise CustomException(
-            msg="无法识别时间列: 缺少表头", code=400, status_code=400
-        )
+    rows: list[list[str]] = []
+    for row in reader:
+        if not row or not any(cell.strip() for cell in row):
+            continue
+        rows.append(row)
+        if len(rows) > MAX_CSV_ROWS:
+            raise CustomException(
+                msg=f"数据行数超过上限（{MAX_CSV_ROWS} 行）: {len(rows)}",
+                code=400,
+                status_code=400,
+            )
+
+    time_column, time_idx = _find_time_column(headers, rows)
 
     # 数值列候选：除时间列外的其余列（仍保序）
     value_candidates: dict[int, str] = {
@@ -96,28 +143,14 @@ def _probe_csv(content: bytes) -> dict:
     }
     numeric = set(value_candidates.keys())
 
-    row_count = 0
-    first_valid_time: float | None = None
     times: list[float] = []
 
-    for row in reader:
-        if not row or not any(cell.strip() for cell in row):
-            continue
-        row_count += 1
-        if row_count > MAX_CSV_ROWS:
-            raise CustomException(
-                msg=f"数据行数超过上限（{MAX_CSV_ROWS} 行）: {row_count}",
-                code=400,
-                status_code=400,
-            )
+    for row in rows:
         # 时间列：取本行时间值（非数值行不参与统计）
         if time_idx < len(row):
             cell = row[time_idx].strip()
             try:
-                t = float(cell)
-                times.append(t)
-                if first_valid_time is None:
-                    first_valid_time = t
+                times.append(float(cell))
             except ValueError:
                 pass
         # 数值列：只要出现非 float 值即从候选剔除
@@ -141,18 +174,21 @@ def _probe_csv(content: bytes) -> dict:
             msg="未识别到数值列: 除时间列外无数字型数据", code=400, status_code=400
         )
 
-    time_unit = "ms" if abs(first_valid_time) > 1e12 else "s"
+    start_time = min(times)
+    time_unit = "ms" if abs(start_time) > 1e12 else "s"
     return {
         "time_column": time_column,
         "value_columns": value_columns,
-        "row_count": row_count,
+        "row_count": len(rows),
         "time_unit": time_unit,
-        "start_time": min(times),
+        "start_time": start_time,
         "end_time": max(times),
     }
 
 
 class TimeSeriesService:
+
+    LOCK_TIMEOUT_MINUTES = 5
 
     @classmethod
     async def upload_time_series(cls, db, dataset_id: int, file, auth) -> AnnotationTimeSeriesModel:
@@ -178,7 +214,7 @@ class TimeSeriesService:
             raise CustomException(msg="上传内容为空", code=400, status_code=400)
 
         # 探测（探测失败则不写对象存储，避免污染 RustFS）
-        probe = _probe_csv(content)
+        probe = _probe_csv(content, ext)
 
         object_key = f"datasets/{dataset_id}/time_series/{uuid.uuid4().hex}{ext}"
 
@@ -274,10 +310,8 @@ class TimeSeriesService:
                 raise CustomException(
                     msg=f"时间序列不存在: {series_id}", code=404, status_code=404
                 )
-            from datetime import datetime, timedelta
-
             if ts.locked_by and ts.locked_at:
-                if datetime.utcnow() - ts.locked_at > timedelta(minutes=5):
+                if datetime.utcnow() - ts.locked_at > timedelta(minutes=cls.LOCK_TIMEOUT_MINUTES):
                     ts.locked_by = None
                     ts.locked_at = None
             if ts.locked_by and ts.locked_by != user_id:
