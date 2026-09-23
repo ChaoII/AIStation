@@ -153,7 +153,11 @@
         @delete="deleteSelected"
       />
       <div v-if="activeTool?.state?.brushSize" class="brush-opt-bar">
-        <span class="brush-opt-label">画笔粗细</span>
+        <span class="brush-opt-label">画笔</span>
+        <div
+          class="brush-cursor-preview"
+          :style="{ width: Math.max(brushSizeVal, 4) + 'px', height: Math.max(brushSizeVal, 4) + 'px' }"
+        />
         <el-slider
           :model-value="brushSizeVal"
           @input="setBrushSize"
@@ -163,6 +167,7 @@
           class="brush-opt-slider"
         />
         <span class="brush-opt-val">{{ brushSizeVal }}px</span>
+        <span class="brush-opt-key">按 [ ] 调整</span>
       </div>
       <main class="ann-canvas-area">
         <AnnotationCanvas
@@ -200,7 +205,7 @@
             :tag-h="tagH"
             :stroke="strokeW"
             :sel-stroke="selStrokeW"
-            :pointer-none="crossVisible"
+            :pointer-none="isDrawing"
             @ann-down="onAnnDown"
             @handle-down="onHandleDown"
             @rotate-down="onRotateDown"
@@ -219,7 +224,7 @@
             :y1="0"
             :x2="crosshair.x * cw"
             :y2="ch"
-            stroke="#909399"
+            :stroke="currentClassColor"
             stroke-width="1"
             stroke-dasharray="3 3"
             class="cross-svg"
@@ -230,7 +235,7 @@
             :y1="crosshair.y * ch"
             :x2="cw"
             :y2="crosshair.y * ch"
-            stroke="#909399"
+            :stroke="currentClassColor"
             stroke-width="1"
             stroke-dasharray="3 3"
             class="cross-svg"
@@ -1109,6 +1114,14 @@ const activeTool = computed(
     (currentTool.value === plugin.value.tool?.name ? plugin.value.tool : undefined)
 );
 const isDrawing = computed(() => !!activeTool.value);
+const isBrushTool = computed(() => currentTool.value === "brush");
+
+// 当前高亮/选中类别的颜色（用于十字线等）
+const currentClassColor = computed(() =>
+  selectedClassId.value != null
+    ? taskClasses.value.find((c) => c.id === selectedClassId.value)?.color ?? "#909399"
+    : "#909399"
+);
 
 // 画笔工具的笔刷粗细（仅画笔工具 state 提供 brushSize 时显示控件）
 const brushSizeVal = computed(() => {
@@ -1123,9 +1136,13 @@ function setBrushSize(v: number | number[]) {
 }
 const toolCursor = computed(() => {
   if (spaceHeld.value) return "grab";
+  if (isBrushTool.value) return BRUSH_CURSOR;
   return isDrawing.value ? "crosshair" : "default";
 });
-const crossVisible = computed(() => isDrawing.value);
+const crossVisible = computed(() => isDrawing.value && !isBrushTool.value);
+// 画笔光标：SVG 画笔形状（data URI），hotspot 在笔尖
+const BRUSH_CURSOR =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23000' d='M21.3 6.7 L17.3 2.7 C16.5 1.9 15.2 1.9 14.4 2.7 L4 13.1 L2 22 L10.9 20 L21.3 9.6 C22.1 8.8 22.1 7.5 21.3 6.7 Z M10 16.5 C9.6 16.9 9 17 8.5 16.9 L8 19 L5 19 L5 16 L7.1 15.5 C7 15 7.1 14.4 7.5 14 C8 13.5 8.8 13.5 9.2 14 C9.7 14.5 9.7 16 10 16.5 Z'/%3E%3C/svg%3E\") 4 20, crosshair";
 const hintText = computed(() => {
   const t = displayTools.value.find((x) => x.name === currentTool.value);
   return (t as any)?.title || (t as any)?.tip || "";
@@ -4033,6 +4050,19 @@ function onKey(e: KeyboardEvent) {
       return;
     }
   }
+  // 画笔工具 [ ] 调整笔刷粗细
+  if (isBrushTool.value) {
+    if (e.key === "[") {
+      e.preventDefault();
+      setBrushSize(brushSizeVal.value - 2);
+      return;
+    }
+    if (e.key === "]") {
+      e.preventDefault();
+      setBrushSize(brushSizeVal.value + 2);
+      return;
+    }
+  }
   if (e.key === "Delete" || e.key === "Backspace") {
     deleteSelected();
     return;
@@ -4240,8 +4270,8 @@ defineExpose({
 .brush-opt-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: 10px;
+  padding: 6px 12px;
   border-top: 1px solid var(--el-border-color-lighter);
   background: var(--el-fill-color-blank);
 }
@@ -4250,6 +4280,11 @@ defineExpose({
   color: var(--el-text-color-regular);
   white-space: nowrap;
 }
+.brush-cursor-preview {
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  flex-shrink: 0;
+}
 .brush-opt-slider {
   width: 160px;
 }
@@ -4257,6 +4292,11 @@ defineExpose({
   font-size: 12px;
   color: var(--el-text-color-secondary);
   min-width: 38px;
+}
+.brush-opt-key {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 /* 文本模式：允许 CodeMirror 内部拖选文字 */
 .text-ner-main {
