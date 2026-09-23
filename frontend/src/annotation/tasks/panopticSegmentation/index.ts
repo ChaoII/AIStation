@@ -28,10 +28,24 @@ export const panopticSegmentationPlugin: AnnotationTaskPlugin = {
       polygon: {
         name: "polygon",
         preview: SegmentPreview,
-        state: { points: seg.points },
-        down(ctx) { const p = ctx.point; if (p) seg.addPoint(p); return null; },
-        dblclick() { return seg.closePolygon(); },
-        reset() { seg.points.value = []; },
+        state: { points: seg.points, cursor: seg.cursor, closeRadiusPx: seg.closeRadiusPx },
+        down(ctx) {
+          const p = ctx.point;
+          if (p) {
+            if (seg.points.value.length >= 3 && seg.isNearFirst(p, ctx.cw ?? 0, ctx.ch ?? 0, ctx.zoom ?? 1)) {
+              return seg.closePolygon();
+            }
+            seg.addPoint(p);
+          }
+          return null;
+        },
+        move(ctx) {
+          seg.cursor.value = ctx.point ?? null;
+        },
+        reset() {
+          seg.points.value = [];
+          seg.cursor.value = null;
+        },
       },
       brush: {
         name: "brush",

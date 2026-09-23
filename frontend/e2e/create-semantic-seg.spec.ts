@@ -50,11 +50,14 @@ test("semantic_segmentation 画多边形 + 填充背景生成标注", async ({ p
   await page.keyboard.press("p");
 
   const img = await imageBox(page);
-  await page.mouse.click(img.x + img.width * 0.3, img.y + img.height * 0.3);
-  await page.mouse.click(img.x + img.width * 0.7, img.y + img.height * 0.3);
-  await page.mouse.click(img.x + img.width * 0.5, img.y + img.height * 0.6);
-  // 双击闭合
-  await page.mouse.dblclick(img.x + img.width * 0.6, img.y + img.height * 0.7);
+  const p1 = { x: img.x + img.width * 0.3, y: img.y + img.height * 0.3 };
+  const p2 = { x: img.x + img.width * 0.7, y: img.y + img.height * 0.3 };
+  const p3 = { x: img.x + img.width * 0.5, y: img.y + img.height * 0.6 };
+  await page.mouse.click(p1.x, p1.y);
+  await page.mouse.click(p2.x, p2.y);
+  await page.mouse.click(p3.x, p3.y);
+  // 点击首点闭合
+  await page.mouse.click(p1.x, p1.y);
 
   await expectAnnotation(page);
 

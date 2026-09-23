@@ -152,6 +152,18 @@
         @redo="redo"
         @delete="deleteSelected"
       />
+      <div v-if="activeTool?.state?.brushSize" class="brush-opt-bar">
+        <span class="brush-opt-label">画笔粗细</span>
+        <el-slider
+          :model-value="brushSizeVal"
+          @input="setBrushSize"
+          :min="1"
+          :max="80"
+          size="small"
+          class="brush-opt-slider"
+        />
+        <span class="brush-opt-val">{{ brushSizeVal }}px</span>
+      </div>
       <main class="ann-canvas-area">
         <AnnotationCanvas
           ref="canvasRef"
@@ -809,6 +821,7 @@ import {
   shallowRef,
   triggerRef,
   reactive,
+  unref,
   onMounted,
   onBeforeUnmount,
   watch,
@@ -1096,6 +1109,18 @@ const activeTool = computed(
     (currentTool.value === plugin.value.tool?.name ? plugin.value.tool : undefined)
 );
 const isDrawing = computed(() => !!activeTool.value);
+
+// 画笔工具的笔刷粗细（仅画笔工具 state 提供 brushSize 时显示控件）
+const brushSizeVal = computed(() => {
+  const bs = activeTool.value?.state?.brushSize;
+  return bs ? unref(bs) : 8;
+});
+function setBrushSize(v: number | number[]) {
+  const bs = activeTool.value?.state?.brushSize;
+  const val = Array.isArray(v) ? v[0] : v;
+  if (!bs) return;
+  bs.value = Math.max(1, Math.min(120, Math.round(val)));
+}
 const toolCursor = computed(() => {
   if (spaceHeld.value) return "grab";
   return isDrawing.value ? "crosshair" : "default";
@@ -4211,6 +4236,27 @@ defineExpose({
   flex: 1;
   min-width: 0;
   position: relative;
+}
+.brush-opt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-blank);
+}
+.brush-opt-label {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
+}
+.brush-opt-slider {
+  width: 160px;
+}
+.brush-opt-val {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  min-width: 38px;
 }
 /* 文本模式：允许 CodeMirror 内部拖选文字 */
 .text-ner-main {

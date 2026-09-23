@@ -38,27 +38,13 @@
         :data-handle="'poly-' + i"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-' + i)"
       />
-      <circle
-        v-for="(pt, i) in ann.points"
-        :key="'ins-' + i"
-        :cx="midpoints(ann)[i]?.x"
-        :cy="midpoints(ann)[i]?.y"
-        r="3"
-        fill="#fff"
-        stroke="#3b82f6"
-        stroke-width="1"
-        class="handle"
-        :style="peStyle"
-        :data-handle="'poly-ins-' + i"
-        @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-ins-' + i)"
-      />
     </template>
   </g>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
-import type { Annotation, Point } from "../../core/types";
+import type { Annotation } from "../../core/types";
 import { useSegmentTool } from "./useSegmentTool";
 
 const props = defineProps<{
@@ -91,12 +77,5 @@ function path(a: Annotation) {
 function bbox(a: Annotation) {
   if (!a.points || a.points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
   return seg.polyBBox(a, props.cw, props.ch);
-}
-function midpoints(a: Annotation) {
-  const pts = a.points || [];
-  return pts.map((p: Point, i: number) => {
-    const n = pts[(i + 1) % pts.length];
-    return { x: ((p.x + n.x) / 2) * props.cw, y: ((p.y + n.y) / 2) * props.ch };
-  });
 }
 </script>

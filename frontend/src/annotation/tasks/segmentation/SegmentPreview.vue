@@ -1,13 +1,12 @@
 <template>
   <g>
-    <!-- 已确定点折线（虚线） -->
+    <!-- 已确定点折线（实线） -->
     <polyline
       v-if="points.length"
       :points="fixedPts"
       fill="none"
       stroke="#3b82f6"
       stroke-width="1.5"
-      stroke-dasharray="4 3"
     />
     <!-- 已确定点小圈 -->
     <circle
