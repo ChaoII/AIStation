@@ -121,6 +121,7 @@ const option = computed(() => {
   const markAreaData: any[] = props.segments.map((seg) => [
     {
       name: seg.id,
+      xAxis: seg.start,
       itemStyle: { color: colorOf(seg), opacity: 0.35 },
       label: { show: false },
     },
@@ -128,7 +129,11 @@ const option = computed(() => {
   ]);
   if (previewRange.value) {
     markAreaData.push([
-      { itemStyle: { color: "var(--el-color-primary)", opacity: 0.25 }, label: { show: false } },
+      {
+        xAxis: previewRange.value.start,
+        itemStyle: { color: "var(--el-color-primary)", opacity: 0.25 },
+        label: { show: false },
+      },
       { xAxis: previewRange.value.end },
     ]);
   }
@@ -144,7 +149,7 @@ const option = computed(() => {
     },
     yAxis: { type: "value", scale: true },
     dataZoom: [
-      { type: "inside", xAxisIndex: 0, filterMode: "none" },
+      { type: "inside", xAxisIndex: 0, filterMode: "none", moveOnMouseMove: false },
       {
         type: "slider",
         xAxisIndex: 0,
@@ -187,14 +192,18 @@ function toDataTime(px: number, py: number): number | null {
 let dragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
-/** 本次按下是否为点击已有区间（用于抑制拖选与误判）。 */
-let suppressNextClick = false;
+/** 判定「点击」与「拖选」的像素距离阈值：按下/释放点距离小于该值视为点击，否则视为拖选。 */
+const CLICK_DISTANCE = 5;
 
 function onMouseDown(params: any) {
-  // 点在区间高亮上：交给 click 处理选中，不启动拖选。
+  // 点在区间高亮上：记录起点像素供 click 判别，不启动拖选（避免与区间选中/编辑冲突）。
   if (params?.componentType === "markArea") {
-    suppressNextClick = true;
     dragging = false;
+    const evt = params?.event;
+    if (evt) {
+      dragStartX = evt.offsetX;
+      dragStartY = evt.offsetY;
+    }
     return;
   }
   const evt = params?.event;
@@ -230,11 +239,12 @@ function onMouseUp(params: any) {
 }
 
 function onChartClick(params: any) {
-  if (suppressNextClick) {
-    suppressNextClick = false;
+  if (params?.componentType !== "markArea") return;
+  // 用按下/释放像素距离阈值区分「点击」与「拖选」：拖选跨越一定距离视为生成区间，不触发选中。
+  const evt = params?.event;
+  if (evt && Math.hypot(evt.offsetX - dragStartX, evt.offsetY - dragStartY) > CLICK_DISTANCE) {
     return;
   }
-  if (params?.componentType !== "markArea") return;
   const id = (params.data as any)?.name as string | undefined;
   const seg = props.segments.find((s) => s.id === id);
   if (seg) emit("regionClick", { id: seg.id, start: seg.start, end: seg.end });
@@ -244,7 +254,6 @@ function onChartClick(params: any) {
 function cleanup() {
   dragging = false;
   previewRange.value = null;
-  suppressNextClick = false;
 }
 
 watch(
