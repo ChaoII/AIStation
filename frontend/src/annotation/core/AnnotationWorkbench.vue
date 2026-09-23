@@ -3252,6 +3252,8 @@ function onUp(e: MouseEvent) {
         Object.assign(target, d);
         store.markUnsaved();
         pushHistory();
+        // 拖拽/缩放当前帧轨迹框后，使其轨迹连线实时跟随（局部刷新，仅重算轨迹层）
+        if (isVideoTask.value && (d as any)?.track_id) bumpTrack();
       }
     }
     draftAnn.value = null;

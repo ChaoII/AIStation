@@ -1,5 +1,5 @@
 <template>
-  <g class="det-track-overlay">
+  <g class="det-track-overlay" pointer-events="none">
     <template v-for="p in paths" :key="p.trackId">
       <polyline
         v-if="p.points.length > 1"
