@@ -119,6 +119,90 @@ def test_video_save_empty_list_clears_row():
     assert asyncio.run(AnnotationService.load_video_annotations(task_id, video_id, 5)) is None
 
 
+def _get_video(video_id: int) -> AnnotationVideoModel:
+    """读取视频行，用于核对 annotation_count / status。"""
+
+    async def _run():
+        async with async_db_session.begin() as db:
+            return await db.get(AnnotationVideoModel, video_id)
+
+    return asyncio.run(_run())
+
+
+def test_video_annotation_count_is_annotated_frames():
+    """保存多帧后 annotation_count 应为该视频「已标注帧数」，而非单帧框数。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    box = {"id": "a", "type": "AxisAlignedBox", "class_id": 0,
+           "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}
+    two_boxes = [box, {"id": "b", "type": "AxisAlignedBox", "class_id": 1,
+                       "x1": 0.3, "y1": 0.3, "x2": 0.5, "y2": 0.5}]
+
+    # 共 3 个框分布于 2 帧 → annotation_count 应为 2（已标注帧数）
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 10, two_boxes, auth))
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 20, [box], auth))
+    video = _get_video(video_id)
+    assert video.annotation_count == 2
+    assert video.status == "annotated"
+
+
+def test_video_annotation_count_recalc_after_clear_and_status():
+    """清空某帧后应重算已标注帧数；全部清空后 status 回落为 unannotated。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    box = {"id": "a", "type": "AxisAlignedBox", "class_id": 0,
+           "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}
+
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 5, [box], auth))
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 6, [box], auth))
+    assert _get_video(video_id).annotation_count == 2
+
+    # 清空一帧 → 计数回落为 1
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 5, [], auth))
+    assert _get_video(video_id).annotation_count == 1
+
+    # 清空最后一帧 → 计数为 0 且 status unannotated
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 6, [], auth))
+    video = _get_video(video_id)
+    assert video.annotation_count == 0
+    assert video.status == "unannotated"
+
+
+def test_video_annotation_count_scoped_by_task_id():
+    """同一视频被多个视频检测任务共享时，annotation_count 仅统计当前 task_id 的已标注帧。"""
+    video_id, task_id = _make_video_and_task()
+    auth = SimpleNamespace(user=SimpleNamespace(id=1))
+    box = {"id": "a", "type": "AxisAlignedBox", "class_id": 0,
+           "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}
+
+    # 再建一个指向同一数据集/视频的任务
+    async def _sibling_task(ds_id: int) -> int:
+        async with async_db_session.begin() as db:
+            task = AnnotationTaskModel(
+                dataset_id=ds_id,
+                name="视频检测任务2",
+                task_type=AnnotationType.VIDEO_DETECTION,
+                status="pending",
+                assignees=[],
+                classes=[],
+            )
+            db.add(task)
+            await db.flush()
+            return task.id
+
+    video = _get_video(video_id)
+    task2_id = asyncio.run(_sibling_task(video.dataset_id))
+
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 1, [box], auth))
+    asyncio.run(AnnotationService.save_video_annotations(task_id, video_id, 2, [box], auth))
+    # 任务1 重算（限定 task_id）应为 2 帧
+    assert _get_video(video_id).annotation_count == 2
+
+    # 另一任务只标注第 3 帧 → 重算时限定 task2，只计 1 帧（不计任务1 的 2 帧）
+    asyncio.run(AnnotationService.save_video_annotations(task2_id, video_id, 3, [box], auth))
+    assert _get_video(video_id).annotation_count == 1
+
+
 def test_video_save_invalid_task_relation_refused():
     """任务与视频无归属关系（不同数据集）或任务不存在时，保存应被拒绝。"""
     video_id, _ = _make_video_and_task()

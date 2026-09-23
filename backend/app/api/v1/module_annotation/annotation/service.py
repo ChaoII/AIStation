@@ -319,8 +319,16 @@ class AnnotationService:
                 )
 
             if video:
-                video.status = "annotated" if annotation_data else "unannotated"
-                video.annotation_count = len(annotation_data)
+                # 已标注帧数 = count(distinct frame_index)，限定当前 task_id 与该视频，
+                # 与 save_video_interpolation 语义一致（清空该帧后其记录被删除，计数随之回落）。
+                annotated_frames = await db.scalar(
+                    select(func.count(func.distinct(AnnotationRecordModel.frame_index)))
+                    .where(AnnotationRecordModel.task_id == task_id)
+                    .where(AnnotationRecordModel.video_id == video_id)
+                )
+                annotated = annotated_frames or 0
+                video.status = "annotated" if annotated else "unannotated"
+                video.annotation_count = annotated
 
         log.info(f"save_video_annotations video={video_id} frame={frame_index} v={version}")
         return {"version": version, "annotation_count": len(annotation_data)}
@@ -494,9 +502,11 @@ class AnnotationService:
                 )
                 saved.append({"frame_index": frame_index, "version": version})
 
-            # 更新视频状态与已标注帧数（annotation_count 语义为「已标注帧数」）
+            # 更新视频状态与已标注帧数（annotation_count 语义为「已标注帧数」），
+            # 限定 task_id，避免同一数据集下多任务共享视频时重复计入。
             annotated_frames = await db.scalar(
                 select(func.count(func.distinct(AnnotationRecordModel.frame_index)))
+                .where(AnnotationRecordModel.task_id == task_id)
                 .where(AnnotationRecordModel.video_id == video_id)
             )
             video.status = "annotated" if annotated_frames else "unannotated"
