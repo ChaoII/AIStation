@@ -14,6 +14,7 @@ class AxisAlignedBoxSchema(BaseModel):
     y1: Annotated[float, Field(ge=0.0, le=1.0)]
     x2: Annotated[float, Field(ge=0.0, le=1.0)]
     y2: Annotated[float, Field(ge=0.0, le=1.0)]
+    track_id: str | None = None
 
 
 class AnnotationSaveSchema(BaseModel):

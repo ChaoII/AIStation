@@ -251,6 +251,26 @@ class AnnotationService:
         )
 
     @classmethod
+    def _validate_video_track_annotations(cls, annotations: list[dict]) -> None:
+        """校验一帧内的框 track_id：同一帧内同一 track_id 至多一框（一帧一框一目标）。
+
+        ``track_id`` 允许缺失（旧数据/独立目标，行为与现状一致）；仅对非空
+        ``track_id`` 去重。非法项抛 ``CustomException``（400）。
+        """
+        seen: set[str] = set()
+        for item in annotations:
+            track_id = item.get("track_id")
+            if track_id is None:
+                continue
+            if track_id in seen:
+                raise CustomException(
+                    msg=f"同一帧内 track_id 重复: {track_id}（一帧一框一目标）",
+                    code=400,
+                    status_code=400,
+                )
+            seen.add(track_id)
+
+    @classmethod
     async def save_video_annotations(
         cls, task_id: int, video_id: int, frame_index: int, annotation_data: list[dict], auth
     ) -> dict:
@@ -261,6 +281,7 @@ class AnnotationService:
                 raise CustomException(
                     msg="视频已被其他用户锁定，无法保存", code=409, status_code=409
                 )
+            cls._validate_video_track_annotations(annotation_data)
 
             existing = (
                 await db.execute(
