@@ -963,6 +963,8 @@ const trackShow = ref(false); // 显示轨迹开关
 const selectedTrackId = ref(""); // 当前选中的轨迹（用于高亮与按轨迹导航）
 // 已访问帧的标注缓存：帧号 -> 该帧 AxisAlignedBox[]，供轨迹跨帧连线与按轨迹导航使用（局部刷新，不整表刷新）
 const frameCache = new Map<number, Annotation[]>();
+// 轨迹/插值缓存已访问帧标注，长会话会线性增长；超出上限时淘汰最早缓存帧，避免内存无限膨胀。
+const MAX_FRAME_CACHE = 500;
 const trackTick = ref(0); // 轨迹数据变更计数器：缓存更新/关联轨迹后自增，强制轨迹层重算
 function bumpTrack() {
   trackTick.value++;
@@ -2502,6 +2504,10 @@ async function loadFrameAnnotations(idx: number) {
   store.unsaved = false;
   // 缓存该帧标注，供轨迹连线与按轨迹导航使用；并触发轨迹层重算
   frameCache.set(idx, store.annotations);
+  if (frameCache.size > MAX_FRAME_CACHE) {
+    const oldest = frameCache.keys().next().value;
+    if (oldest != null) frameCache.delete(oldest);
+  }
   bumpTrack();
 }
 
