@@ -20,6 +20,8 @@ const PNG = Buffer.from(
 const TEXT = readFileSync(fileURLToPath(new URL("./fixtures/sample.txt", import.meta.url)), "utf-8");
 // 音频事件 e2e 用测试音频（2s / 16kHz 单声道 wav，由 ffmpeg 生成），供上传与波形加载校验。
 const AUDIO = readFileSync(fileURLToPath(new URL("./fixtures/test-audio.wav", import.meta.url)));
+// 时间序列事件 e2e 用测试 CSV（timestamp + value 双列数值序列），供上传与折线图渲染校验。
+const SERIES = readFileSync(fileURLToPath(new URL("./fixtures/test-series.csv", import.meta.url)));
 
 export async function login(request: APIRequestContext) {
   const loginRes = await request.post(`${API}/system/auth/login`, {
@@ -364,5 +366,87 @@ export async function createAudioSegment(page: Page, fromFrac: number, toFrac: n
 /** 在当前可见的音频事件弹窗中按类别名选择事件类别。 */
 export async function selectAudioLabel(page: Page, labelName: string) {
   const dialog = page.locator(".el-dialog", { hasText: /事件片段/ }).filter({ visible: true }).first();
+  await pickSelectOption(page, dialog.locator(".el-select"), labelName);
+}
+
+// ==== 时间序列事件（time_series_event）标注专用步骤 ====
+
+/** 向指定数据集上传测试 CSV（multipart，字段名 file）。返回后端 time series 元数据。 */
+export async function uploadTimeSeriesCsv(
+  request: APIRequestContext,
+  auth: Record<string, string>,
+  datasetId: number
+) {
+  const upRes = await request.post(`${API}/annotation/timeseries/upload?dataset_id=${datasetId}`, {
+    headers: auth,
+    multipart: { file: { name: "test-series.csv", mimeType: "text/csv", buffer: SERIES } },
+  });
+  expect(upRes.ok()).toBeTruthy();
+  return (await upRes.json()).data;
+}
+
+/**
+ * 创建含一个测试 CSV 的 time_series_event 标注任务。
+ * `classes` 为事件类别列表（每项 `{id, name, color}`），与后端 time_series_event 约定一致。
+ * 返回 { taskId, seriesId, datasetId }。
+ */
+export async function createTimeSeriesEventTask(
+  request: APIRequestContext,
+  auth: Record<string, string>,
+  prefix: string,
+  classes: any[] = []
+): Promise<{ taskId: number; seriesId: number; datasetId: number }> {
+  const name = `${prefix}-${Date.now()}`;
+  const dsRes = await request.post(`${API}/annotation/dataset/create`, {
+    data: { name },
+    headers: auth,
+  });
+  expect(dsRes.ok()).toBeTruthy();
+  const dsId = (await dsRes.json()).data.id;
+
+  const series = await uploadTimeSeriesCsv(request, auth, dsId);
+
+  const taskRes = await request.post(`${API}/annotation/task/create`, {
+    data: { dataset_id: dsId, name: `t-${name}`, task_type: "time_series_event", classes },
+    headers: auth,
+  });
+  expect(taskRes.ok()).toBeTruthy();
+  const taskId = (await taskRes.json()).data.id;
+  return { taskId: Number(taskId), seriesId: series.id, datasetId: dsId };
+}
+
+/** 进入时间序列事件工作台：等待 echarts 折线图容器与事件面板挂载，并确认已渲染数据点。 */
+export async function gotoTimeSeriesWorkbench(page: Page, taskId: number) {
+  await page.addInitScript(() => {
+    localStorage.setItem("guideVisible", "false");
+    localStorage.setItem("showGuide", "false");
+  });
+  await page.goto(`/#/annotation/workbench/${taskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".time-series-canvas__chart").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".time-series-panel").first()).toBeVisible({ timeout: 20_000 });
+  // 面板元数据显示行数（CSV 21 行数据行），确认序列已加载可拖选。
+  await expect(page.locator(".tsp-meta-item", { hasText: "行数" })).toContainText("21", {
+    timeout: 20_000,
+  });
+}
+
+/**
+ * 在折线图网格区按水平百分比拖选一段区间，触发「新建事件区间」弹窗。
+ * 拖选落在网格竖向中部并横跨一段宽度，避开底部 dataZoom 滑条与上下轴边距，
+ * 确保 convertFromPixel 能映射到序列时间值（start<end）。
+ */
+export async function createTimeSeriesSegment(page: Page, fromFrac: number, toFrac: number) {
+  const chart = await page.locator(".time-series-canvas__chart").first().boundingBox();
+  expect(chart).not.toBeNull();
+  const y = chart!.y + chart!.height * 0.5;
+  await page.mouse.move(chart!.x + chart!.width * fromFrac, y, { steps: 5 });
+  await page.mouse.down();
+  await page.mouse.move(chart!.x + chart!.width * toFrac, y, { steps: 20 });
+  await page.mouse.up();
+}
+
+/** 在当前可见的时间序列事件弹窗中按类别名选择事件类别。 */
+export async function selectTimeSeriesLabel(page: Page, labelName: string) {
+  const dialog = page.locator(".el-dialog", { hasText: /事件区间/ }).filter({ visible: true }).first();
   await pickSelectOption(page, dialog.locator(".el-select"), labelName);
 }

@@ -9,6 +9,9 @@
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
       @click="onChartClick"
+      @zr:mousedown="onZrMouseDown"
+      @zr:mousemove="onZrMouseMove"
+      @zr:mouseup="onZrMouseUp"
     />
     <div v-if="!data.length" class="time-series-canvas__empty">
       <el-empty description="暂无序列数据" :image-size="60" />
@@ -303,6 +306,46 @@ function onChartClick(params: any) {
   const id = (params.data as any)?.name as string | undefined;
   const seg = props.segments.find((s) => s.id === id);
   if (seg) emit("regionClick", { id: seg.id, start: seg.start, end: seg.end });
+}
+
+/**
+ * zrender 级鼠标事件：折线图空白网格区域的「拖选生成新区间」。
+ * 说明：echarts 图表级 (chart.on) 的 `mousedown/mousemove/mouseup` 只在命中携带 ecData 的图形
+ * 元素（数据点、markArea 等）时派发，落在空白网格区不会触发；故这里用 zr 级事件兜底，
+ * 让整个图表区域都能拖选生成区间。命中已有区间（markArea）时交由图表级 @mousedown 处理移动，此处跳过。
+ */
+function onZrMouseDown(e: any) {
+  if (moveRegionId) return;
+  const t = toDataTime(e.offsetX, e.offsetY);
+  if (t == null) return;
+  // 落在已有事件区间上：交给图表级 onMouseDown 走拖拽移动，不开启新区间拖选。
+  if (props.segments.some((s) => t >= s.start && t <= s.end)) return;
+  dragging = true;
+  dragStartX = e.offsetX;
+  dragStartY = e.offsetY;
+}
+
+function onZrMouseMove(e: any) {
+  if (moveRegionId) return;
+  if (!dragging) return;
+  const startT = toDataTime(dragStartX, dragStartY);
+  const endT = toDataTime(e.offsetX, e.offsetY);
+  if (startT == null || endT == null) return;
+  previewRange.value = clampTimeRange(startT, endT, rangeStart.value, rangeEnd.value);
+}
+
+function onZrMouseUp(e: any) {
+  if (moveRegionId) return;
+  if (!dragging) return;
+  dragging = false;
+  const endT = toDataTime(e.offsetX, e.offsetY);
+  const startT = toDataTime(dragStartX, dragStartY);
+  previewRange.value = null;
+  if (startT == null || endT == null) return;
+  const range = clampTimeRange(startT, endT, rangeStart.value, rangeEnd.value);
+  if (range.end - range.start > 0) {
+    emit("createRegion", { id: crypto.randomUUID(), start: range.start, end: range.end });
+  }
 }
 
 /** 卸载时清空拖选/拖拽移动状态（避免跨实例残留）。 */
