@@ -19,7 +19,7 @@
           <el-button text size="small" class="vep-btn" @click.stop="$emit('edit', s.id)">
             <el-icon :size="12"><Edit /></el-icon>
           </el-button>
-          <el-button text size="small" class="vep-btn vep-del" @click.stop="onDelete(s)">
+          <el-button text size="small" class="vep-btn vep-del" @click.stop="$emit('delete', s.id)">
             <el-icon :size="12"><Delete /></el-icon>
           </el-button>
         </span>
@@ -31,7 +31,6 @@
 
 <script setup lang="ts">
 import { Edit, Delete } from "@element-plus/icons-vue";
-import { ElMessageBox } from "element-plus";
 import type { VideoSegment } from "@/api/module_annotation/videoEvent";
 
 const props = defineProps<{
@@ -60,24 +59,6 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const sec = (seconds % 60).toFixed(1).padStart(4, "0");
   return `${m}:${sec}`;
-}
-
-async function onDelete(s: VideoSegment) {
-  try {
-    await ElMessageBox.confirm(
-      `将删除事件片段「${formatTime(s.start)} - ${formatTime(s.end)}」（${typeName(s)}），且不可恢复。`,
-      "删除确认",
-      {
-        type: "warning",
-        confirmButtonText: "删除",
-        cancelButtonText: "取消",
-        confirmButtonClass: "el-button--danger",
-      }
-    );
-  } catch {
-    return;
-  }
-  emit("delete", s.id);
 }
 </script>
 

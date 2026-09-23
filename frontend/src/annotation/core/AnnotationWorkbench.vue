@@ -118,6 +118,31 @@
           @change-column="onTimeSeriesChangeColumn"
         />
       </template>
+      <template v-else-if="isVideoEventTask">
+        <main class="ann-canvas-area video-event-main">
+          <component
+            :is="plugin.renderer"
+            :duration="videoEventDuration"
+            :segments="videoEventSegments"
+            :classes="taskClasses"
+            :selected-id="store.selectedAnnotationId"
+            :color-for="videoSegmentColor"
+            @create-region="onVideoEventCreateRegion"
+            @update-region="onVideoEventUpdateRegion"
+            @remove-region="onVideoEventRemoveRegion"
+            @region-click="onVideoEventRegionClick"
+          />
+        </main>
+        <VideoEventPanel
+          :segments="videoEventSegments"
+          :classes="taskClasses"
+          :selected-id="store.selectedAnnotationId"
+          @select="store.selectedAnnotationId = $event"
+          @new="openVideoEventNewDialog"
+          @edit="openVideoEventEditDialog"
+          @delete="deleteVideoEventSegment"
+        />
+      </template>
       <template v-else>
       <AnnotationToolbar
         :tools="displayTools"
@@ -252,7 +277,7 @@
       </template>
     </div>
     <VideoPlayerBar
-      v-if="isVideoTask"
+      v-if="isVideoTask && !isVideoEventTask"
       :current-frame="currentFrame"
       :frame-count="frameCount"
       :duration="videoDuration"
@@ -280,7 +305,7 @@
       :can-prev="store.currentImageIndex > 0"
       :can-next="store.currentImageIndex < store.images.length - 1"
       :locked="lockedByOther"
-      :show-coordinate="!isTextTask && !isAudioTask && !isTimeSeriesTask"
+      :show-coordinate="!isTextTask && !isAudioTask && !isTimeSeriesTask && !isVideoEventTask"
       @save="saveAnn"
       @prev="prevImg"
       @next="nextImg"
@@ -679,6 +704,56 @@
       </template>
     </el-dialog>
 
+    <!-- 视频事件：创建/编辑片段 -->
+    <el-dialog
+      v-model="videoEventDialogVisible"
+      :title="videoEventDialogMode === 'create' ? '新建事件片段' : '编辑事件片段'"
+      width="500px"
+      append-to-body
+    >
+      <el-form label-width="80px">
+        <el-form-item label="开始时间">
+          <el-input-number
+            v-model="videoEventDialogRange.start"
+            :min="0"
+            :max="videoEventDuration"
+            :step="0.1"
+            :precision="2"
+            size="small"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="结束时间">
+          <el-input-number
+            v-model="videoEventDialogRange.end"
+            :min="0"
+            :max="videoEventDuration"
+            :step="0.1"
+            :precision="2"
+            size="small"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="事件类别">
+          <el-select v-model="videoEventDialogLabelId" size="small" style="width: 100%" placeholder="选择事件类别">
+            <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="videoEventDialogVisible = false">取消</el-button>
+        <el-button
+          v-if="videoEventDialogMode === 'edit'"
+          type="danger"
+          @click="videoEventDialogVisible = false; deleteVideoEventSegment(videoEventDialogId)"
+        >
+          删除
+        </el-button>
+        <el-button v-if="videoEventDialogMode === 'edit'" type="primary" @click="confirmVideoEventDialog">保存</el-button>
+        <el-button v-else type="primary" @click="confirmVideoEventDialog">确定</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 时间序列事件：创建/编辑区间 -->
     <el-dialog
       v-model="tsDialogVisible"
@@ -840,6 +915,20 @@ import {
 } from "../tasks/timeSeriesEvent/useTimeSeriesEventTool";
 import { parseSeriesCsv } from "../tasks/timeSeriesEvent/parseTimeSeriesCsv";
 import TimeSeriesPanel from "../tasks/timeSeriesEvent/TimeSeriesPanel.vue";
+import {
+  saveVideoEventAnnotations,
+  loadVideoEventAnnotations,
+  type VideoSegment,
+} from "@/api/module_annotation/videoEvent";
+import {
+  createVideoSegment,
+  hasVideoEventOverlap,
+  hasOverlapExcluding as hasVideoOverlapExcluding,
+  findOverlappingSegment as findVideoOverlappingSegment,
+  segmentToRange as videoSegmentToRange,
+  clampVideoRange,
+} from "../tasks/videoEvent/useVideoEventTool";
+import VideoEventPanel from "../tasks/videoEvent/VideoEventPanel.vue";
 
 const props = defineProps<{
   plugins: AnnotationTaskPlugin[];
@@ -963,6 +1052,8 @@ const plugin = computed(
   () => props.plugins.find((p) => p.name === (store.task?.task_type || "")) ?? props.plugins[0]
 );
 const isVideoTask = computed(() => plugin.value.media === "video");
+// video_event 与 video_detection 同为 video 媒体，但 video_event 走时间轴而非帧画布；用插件名区分。
+const isVideoEventTask = computed(() => plugin.value.name === "video_event");
 const isTextTask = computed(() => plugin.value.media === "text");
 const isAudioTask = computed(() => plugin.value.media === "audio");
 const isTimeSeriesTask = computed(() => plugin.value.media === "time_series");
@@ -971,6 +1062,9 @@ const audioId = ref<number | null>(null);
 const audioUrl = ref("");
 const audioDuration = ref(0);
 const audioCurrentTime = ref(0);
+// ==== 视频事件标注状态 ====
+const videoEventId = ref<number | null>(null);
+const videoEventDuration = ref(0);
 // ==== 时间序列事件标注状态 ====
 const timeSeriesId = ref<number | null>(null);
 const seriesMeta = ref<TimeSeriesMeta | null>(null);
@@ -1213,6 +1307,16 @@ function timeSeriesSegmentColor(segment: TimeSeriesSegment, classes: any[]): str
   return "var(--el-color-primary)";
 }
 
+const videoEventSegments = computed<VideoSegment[]>(() =>
+  store.annotations.filter((a) => (a as any).type === "VideoSegment") as unknown as VideoSegment[]
+);
+// 视频事件片段类别颜色：优先用户类别色，缺失回退 Element 主色变量
+function videoSegmentColor(segment: VideoSegment, classes: any[]): string {
+  const c = classes.find((x) => x.id === segment.label_id);
+  if (c?.color) return c.color;
+  return "var(--el-color-primary)";
+}
+
 // ==== 音频事件：创建/编辑/删除 ====
 const audioDialogVisible = ref(false);
 const audioDialogMode = ref<"create" | "edit">("create");
@@ -1364,6 +1468,175 @@ function deleteAudioSegment(id: string) {
   if (!seg) return;
   ElMessageBox.confirm(
     `将删除该音频事件片段（${formatAudioTime(seg.start)} - ${formatAudioTime(seg.end)}），且不可恢复。`,
+    "删除事件片段",
+    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+  )
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter((a) => a.id !== id);
+      if (store.annotations.length !== before) {
+        if (store.selectedAnnotationId === id) store.selectedAnnotationId = "";
+        store.markUnsaved();
+        pushHistory();
+      }
+    })
+    .catch(() => {});
+}
+
+// ==== 视频事件：创建/编辑/删除 ====
+const videoEventDialogVisible = ref(false);
+const videoEventDialogMode = ref<"create" | "edit">("create");
+const videoEventDialogId = ref("");
+const videoEventDialogRange = reactive({ start: 0, end: 0 });
+const videoEventDialogLabelId = ref<number | null>(null);
+
+function formatVideoEventTime(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function openVideoEventCreateDialog(start: number, end: number) {
+  if (lockedByOther.value) return;
+  const range = clampVideoRange(start, end, videoEventDuration.value || end);
+  if (range.end <= range.start) {
+    ElMessage.warning("区间无效，请重新拖选");
+    return;
+  }
+  if (hasVideoEventOverlap(videoEventSegments.value, range.start, range.end)) {
+    ElMessage.warning("该区间与已有事件片段重叠，无法创建");
+    return;
+  }
+  videoEventDialogMode.value = "create";
+  videoEventDialogId.value = "";
+  videoEventDialogRange.start = range.start;
+  videoEventDialogRange.end = range.end;
+  videoEventDialogLabelId.value = taskClasses.value[0]?.id ?? null;
+  videoEventDialogVisible.value = true;
+}
+
+function onVideoEventCreateRegion(region: { id: string; start: number; end: number }) {
+  openVideoEventCreateDialog(region.start, region.end);
+}
+
+function onVideoEventUpdateRegion(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  const seg = store.annotations.find((a) => a.id === region.id) as VideoSegment | undefined;
+  if (!seg) return;
+  if (Math.abs(seg.start - region.start) < 0.001 && Math.abs(seg.end - region.end) < 0.001) return;
+  // 拖拽/拉伸路径与对话框编辑一致：排除自身，校验调整后的区间是否与其它片段重叠
+  if (hasVideoOverlapExcluding(videoEventSegments.value, seg.id, region.start, region.end)) {
+    const conflicting = findVideoOverlappingSegment(
+      videoEventSegments.value.filter((s) => s.id !== seg.id),
+      region.start,
+      region.end
+    );
+    const conflictText = conflicting
+      ? `（与 ${formatVideoEventTime(conflicting.start)} - ${formatVideoEventTime(conflicting.end)} 冲突）`
+      : "";
+    ElMessage.warning(`调整后的区间与已有事件片段重叠，无法保存${conflictText}`);
+    // 还原 region：先临时改为拖拽后的区间再恢复原始值，触发子组件将区间落回原处
+    const original = videoSegmentToRange(seg);
+    seg.start = region.start;
+    seg.end = region.end;
+    seg.start = original.start;
+    seg.end = original.end;
+    return;
+  }
+  seg.start = region.start;
+  seg.end = region.end;
+  store.markUnsaved();
+}
+
+function onVideoEventRemoveRegion(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  if (!store.annotations.some((a) => a.id === region.id)) return;
+  deleteVideoEventSegment(region.id);
+}
+
+function onVideoEventRegionClick(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  store.selectedAnnotationId = region.id;
+  openVideoEventEditDialog(region.id);
+}
+
+function openVideoEventNewDialog() {
+  if (lockedByOther.value) return;
+  if (videoEventDuration.value <= 0) {
+    ElMessage.warning("视频时长未知，无法新建事件");
+    return;
+  }
+  const end = Math.min(videoEventDuration.value, 5);
+  videoEventDialogMode.value = "create";
+  videoEventDialogId.value = "";
+  videoEventDialogRange.start = 0;
+  videoEventDialogRange.end = end > 0 ? end : 1;
+  videoEventDialogLabelId.value = taskClasses.value[0]?.id ?? null;
+  videoEventDialogVisible.value = true;
+}
+
+function openVideoEventEditDialog(id: string) {
+  if (lockedByOther.value) return;
+  const seg = store.annotations.find((a) => a.id === id);
+  if (!seg) return;
+  videoEventDialogMode.value = "edit";
+  videoEventDialogId.value = id;
+  videoEventDialogRange.start = seg.start;
+  videoEventDialogRange.end = seg.end;
+  videoEventDialogLabelId.value = seg.label_id;
+  videoEventDialogVisible.value = true;
+}
+
+function confirmVideoEventDialog() {
+  const labelId = videoEventDialogLabelId.value;
+  if (videoEventDialogMode.value !== "edit" && labelId == null) {
+    ElMessage.warning("请选择事件类别");
+    return;
+  }
+  const start = videoEventDialogRange.start;
+  const end = videoEventDialogRange.end;
+  if (!(start < end)) {
+    ElMessage.warning("区间无效，结束时间需大于开始时间");
+    return;
+  }
+  if (videoEventDialogMode.value === "create") {
+    if (hasVideoEventOverlap(videoEventSegments.value, start, end)) {
+      ElMessage.warning("该区间与已有事件片段重叠，无法创建");
+      return;
+    }
+    if (labelId == null) {
+      ElMessage.warning("请选择事件类别");
+      return;
+    }
+    const seg = createVideoSegment(start, end, labelId);
+    store.annotations.push(seg as any);
+    store.selectedAnnotationId = seg.id;
+    store.markUnsaved();
+    pushHistory();
+  } else {
+    // 编辑分支：先排除自身片段，校验调整后的区间是否与其它片段重叠
+    if (hasVideoOverlapExcluding(videoEventSegments.value, videoEventDialogId.value, start, end)) {
+      ElMessage.warning("调整后的区间与已有事件片段重叠，无法保存");
+      return;
+    }
+    const seg = store.annotations.find((a) => a.id === videoEventDialogId.value) as VideoSegment | undefined;
+    if (seg && labelId != null) {
+      seg.start = start;
+      seg.end = end;
+      seg.label_id = labelId;
+      store.markUnsaved();
+      pushHistory();
+    }
+  }
+  videoEventDialogVisible.value = false;
+}
+
+function deleteVideoEventSegment(id: string) {
+  const seg = store.annotations.find((a) => a.id === id) as VideoSegment | undefined;
+  if (!seg) return;
+  ElMessageBox.confirm(
+    `将删除该视频事件片段（${formatVideoEventTime(seg.start)} - ${formatVideoEventTime(seg.end)}），且不可恢复。`,
     "删除事件片段",
     { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
   )
@@ -1621,6 +1894,33 @@ async function initAudio() {
     ElMessage.error("音频事件数据加载失败，请稍后重试");
   }
 }
+
+async function initVideoEvent() {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId) return;
+  resetDrawingState();
+  try {
+    const lr = await getVideoList(datasetId);
+    const items = lr?.data?.data?.items || [];
+    const video = items[0];
+    if (!video) return;
+    videoEventId.value = video.id;
+    const dr = await getVideoDetail(video.id);
+    const d = dr?.data?.data;
+    videoEventDuration.value = d?.duration || 0;
+    const ar = await loadVideoEventAnnotations({ task_id: store.taskId, video_id: video.id });
+    store.annotations = (ar?.data?.data?.annotation_data || []) as any;
+    store.selectedAnnotationId = "";
+    store.unsaved = false;
+    store.totalCount = 1;
+    store.annotatedCount = store.annotations.length ? 1 : 0;
+    lockCurrentVideo(video.id);
+  } catch (e) {
+    console.error("加载视频事件任务失败", e);
+    ElMessage.error("视频事件数据加载失败，请稍后重试");
+  }
+}
+
 const MAX_HISTORY = 50;
 let historyStack: string[] = [];
 let historyIndex = -1;
@@ -2555,6 +2855,12 @@ async function init() {
     if (!t) return;
     store.task = t;
     props.collab?.connect(store.taskId);
+    if (isVideoEventTask.value) {
+      imageTotal.value = 0;
+      imageLoadedPages = 0;
+      await initVideoEvent();
+      return;
+    }
     if (isVideoTask.value) {
       imageTotal.value = 0;
       imageLoadedPages = 0;
@@ -2676,6 +2982,19 @@ function nextImg() {
 async function saveAnn() {
   if (!store.taskId) return;
   if (lockedByOther.value) return;
+  if (isVideoEventTask.value) {
+    if (!videoEventId.value) return;
+    await saveVideoEventAnnotations({
+      task_id: store.taskId,
+      video_id: videoEventId.value,
+      segments: store.annotations as any,
+    });
+    store.unsaved = false;
+    lastSavedKey = annotKey();
+    historyStack = [lastSavedKey];
+    historyIndex = 0;
+    return;
+  }
   if (isVideoTask.value) {
     if (!videoId.value) return;
     await saveVideoAnnotations(
@@ -3775,7 +4094,13 @@ onBeforeUnmount(() => {
     _resizeObserver = null;
   }
   if (store.unsaved && !lockedByOther.value) {
-    if (isVideoTask.value && videoId.value) {
+    if (isVideoEventTask.value && videoEventId.value) {
+      saveVideoEventAnnotations({
+        task_id: store.taskId,
+        video_id: videoEventId.value,
+        segments: store.annotations as any,
+      }).catch(() => {});
+    } else if (isVideoTask.value && videoId.value) {
       saveVideoAnnotations(
         store.taskId,
         videoId.value,
@@ -3887,6 +4212,11 @@ defineExpose({
 }
 /* 音频模式：波形渲染区留白 */
 .audio-main {
+  padding: 12px;
+  overflow: hidden;
+}
+/* 视频事件模式：时间轴渲染区留白 */
+.video-event-main {
   padding: 12px;
   overflow: hidden;
 }
