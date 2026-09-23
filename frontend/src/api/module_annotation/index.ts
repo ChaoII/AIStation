@@ -3,6 +3,7 @@ import request from "@/utils/request";
 export * from "./video";
 export * from "./document";
 export * from "./audio";
+export * from "./timeSeries";
 
 const API_PATH = "/annotation";
 
