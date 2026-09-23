@@ -73,7 +73,7 @@ const closeRadiusPx = computed<number>(() => unref(props.state?.closeRadiusPx) ?
 const fixedPts = computed(
   () =>
     points.value
-      .map((p: Point, i: number) => `${i === 0 ? "M" : "L"}${p.x * props.cw},${p.y * props.ch}`)
+      .map((p: Point) => `${p.x * props.cw},${p.y * props.ch}`)
       .join(" ")
 );
 
