@@ -19,6 +19,7 @@
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { VideoPlay, VideoPause } from "@element-plus/icons-vue";
+import { Auth } from "@/utils/auth";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
 import type { AudioSegment } from "../../../api/module_annotation/audio";
@@ -36,7 +37,7 @@ export interface ChangedRegion extends AudioRange {
 
 const props = withDefaults(
   defineProps<{
-    /** 音频播放地址（presigned play_url），加载后渲染波形（可只读播放）。 */
+    /** 音频播放地址（同源 content URL），加载后渲染波形（可只读播放）。 */
     url: string;
     /** 外部音频片段（映射为 regions 高亮）。 */
     segments?: AudioSegment[];
@@ -177,6 +178,10 @@ onMounted(() => {
     progressColor: "var(--el-color-primary)",
     cursorColor: "var(--el-color-primary)",
     url: props.url,
+    // 同源 content 端点需鉴权（Authorization: Bearer），wavesurfer 原生 fetch 需显式带上。
+    fetchParams: {
+      headers: { Authorization: `Bearer ${Auth.getAccessToken()}` },
+    },
   });
   regions = ws.registerPlugin(RegionsPlugin.create());
   dragSelectionCleanup = regions.enableDragSelection({

@@ -1,5 +1,4 @@
-import { readFileSync, mkdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { test, expect } from "@playwright/test";
 
@@ -13,12 +12,9 @@ import {
 
 // 音频事件（audio_event）工作台端到端：上传音频 → 建 audio_event 任务 → 波形时间轴上
 // 拖选区间生成事件 → 编辑类别 → 保存 → 刷新验证持久化 → 删除二次确认。
-// 说明：wavesurfer 通过 fetch 加载 presigned play_url 解码波形，对象存储（RustFS/S3）对前端源
-// 未开 CORS 会阻止解码。本用例以「同源音频地址 + 拦截返回测试 wav」的方式绕过（前端路由隔离，
-// 见 AGENTS.md / Task 9 约定）；annotation 读写接口不做 mock，保存/读取仍走真实后端以验证持久化。
-
-// 测试音频（2s / 16kHz 单声道 wav），由 anno-helper 中的 AUDIO 常量读取，此处用于拦截 play_url 响应。
-const AUDIO = readFileSync(fileURLToPath(new URL("./fixtures/test-audio.wav", import.meta.url)));
+// 说明：wavesurfer 通过 fetch 加载同源 content URL（`/api/v1/annotation/audio/content/{id}`），
+// 由前端 Vite/nginx 对 `/api/v1` 的代理转发到后端（后端从对象存储 RustFS 流式回传字节），属同源，
+// 无需 CORS，故本用例不再 mock 音频内容；annotation 读写接口亦走真实后端以验证持久化。
 
 // 事件类别列表（与后端 audio_event `classes` 约定一致）
 const CLASSES = [
@@ -34,22 +30,6 @@ test("audio_event：拖选生成事件、编辑类别、保存与刷新持久化
 
   const auth = await login(request);
   const { taskId } = await createAudioEventTask(request, auth, "audio", CLASSES);
-
-  // 拦截 play-url 端点返回同源音频地址，并拦截该地址提供测试 wav 内容，规避对象存储 CORS。
-  const playPath = `/e2e-audio-${Date.now()}.wav`;
-  await page.route("**/api/v1/annotation/audio/play-url/*", (route) =>
-    route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ code: 0, msg: "ok", data: { play_url: playPath } }),
-    })
-  );
-  await page.route(`**${playPath}`, (route) =>
-    route.fulfill({
-      contentType: "audio/wav",
-      headers: { "Access-Control-Allow-Origin": "*" },
-      body: AUDIO,
-    })
-  );
 
   await gotoAudioWorkbench(page, taskId);
 

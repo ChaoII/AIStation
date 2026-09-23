@@ -64,9 +64,9 @@ describe("音频事件标注 API", () => {
     expect(config.method).toBe("get");
   });
 
-  it("getAudioContentUrl 返回同源相对路径 /annotation/audio/content/{id}，且不发起请求", () => {
+  it("getAudioContentUrl 返回同源相对路径 /api/v1/annotation/audio/content/{id}，且不发起请求", () => {
     const url = getAudioContentUrl(5);
-    expect(url).toBe(`${API_PATH}/audio/content/5`);
+    expect(url).toBe(`/api/v1${API_PATH}/audio/content/5`);
     expect(url.startsWith("/")).toBe(true);
     expect(requestMock).not.toHaveBeenCalled();
   });

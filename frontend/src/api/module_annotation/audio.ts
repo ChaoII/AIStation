@@ -90,11 +90,13 @@ export async function getAudioPlayUrl(id: number): Promise<string> {
 
 /**
  * 获取音频同源内容地址。
- * 返回相对路径 `/annotation/audio/content/{id}`，仅构造 URL 不预先拉字节；
- * wavesurfer 经 fetch 加载，由前端 Vite/nginx 对 `/api/v1` 的代理转发到后端，属同源，无需 CORS。
+ * 返回带 `/api/v1` 前缀的相对路径 `/api/v1/annotation/audio/content/{id}`（Vite/nginx 仅对 `/api/v1`
+ * 前缀做反向代理），仅构造 URL 不预先拉字节；wavesurfer 经 fetch 加载，由前端代理转发到后端，
+ * 属同源，无需 CORS。
  */
 export function getAudioContentUrl(id: number): string {
-  return `${API_PATH}/audio/content/${id}`;
+  const apiBase = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+  return `${apiBase}${API_PATH}/audio/content/${id}`;
 }
 
 /** 锁定音频（按音频整体加锁）。 */
