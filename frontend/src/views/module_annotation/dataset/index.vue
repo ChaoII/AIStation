@@ -1432,6 +1432,12 @@ const FORMAT_TASK_MAP: Record<string, string[]> = {
   "paddle-ocr": ["ocr"],
   "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification", "cuboid"],
   "coco-panoptic": ["panoptic_segmentation"],
+  "audio-event": ["audio_event"],
+  "audio-csv": ["audio_event"],
+  "time-series-event": ["time_series_event"],
+  "time-series-csv": ["time_series_event"],
+  "video-event": ["video_event"],
+  "video-event-csv": ["video_event"],
 };
 
 const filteredExportFormats = computed(() => {
@@ -1457,6 +1463,12 @@ const exportFormatOptions = [
   { value: "paddle-ocr", label: "PaddleOCR" },
   { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
   { value: "coco-panoptic", label: "COCO Panoptic（全景分割 PNG 掩码 + JSON）" },
+  { value: "audio-event", label: "音频事件（JSONL 区间）" },
+  { value: "audio-csv", label: "音频事件（CSV 区间）" },
+  { value: "time-series-event", label: "时间序列事件（JSONL 区间）" },
+  { value: "time-series-csv", label: "时间序列事件（CSV 区间）" },
+  { value: "video-event", label: "视频事件（JSONL 区间）" },
+  { value: "video-event-csv", label: "视频事件（CSV 区间）" },
 ];
 
 function handleOpenExport(row: any) {
