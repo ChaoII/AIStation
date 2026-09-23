@@ -96,3 +96,9 @@ export function isTimeSeriesSegment(value: unknown): value is TimeSeriesSegment 
     typeof v.label_id === "number"
   );
 }
+
+/** 按时间单位序列化一个时间戳（用于区间列表/提示展示）。 */
+export function formatSeriesTime(value: number, unit: string): string {
+  if (!Number.isFinite(value)) return "-";
+  return `${value}${unit}`;
+}

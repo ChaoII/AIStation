@@ -7,6 +7,7 @@ import {
   clampTimeRange,
   segmentToRange,
   isTimeSeriesSegment,
+  formatSeriesTime,
 } from "../useTimeSeriesEventTool";
 import type { TimeSeriesSegment } from "../../../../api/module_annotation/timeSeries";
 
@@ -99,5 +100,11 @@ describe("useTimeSeriesEventTool 时间序列事件工具", () => {
     expect(hasOverlapExcluding(segs, "s1", 5, 7)).toBe(true);
     expect(hasOverlapExcluding(segs, "s1", 4.5, 5.5)).toBe(true);
     expect(hasOverlapExcluding(segs, "not-exist", 1, 1.5)).toBe(true);
+  });
+
+  it("formatSeriesTime 按时间单位格式化时间戳", () => {
+    expect(formatSeriesTime(1700000000, "s")).toBe("1700000000s");
+    expect(formatSeriesTime(1700000000500, "ms")).toBe("1700000000500ms");
+    expect(formatSeriesTime(NaN, "s")).toBe("-");
   });
 });

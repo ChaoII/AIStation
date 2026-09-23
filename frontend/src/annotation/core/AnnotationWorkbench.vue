@@ -86,6 +86,36 @@
           @delete="deleteAudioSegment"
         />
       </template>
+      <template v-else-if="isTimeSeriesTask">
+        <main class="ann-canvas-area time-series-main">
+          <component
+            :is="plugin.renderer"
+            :data="seriesData"
+            :segments="timeSeriesSegments"
+            :classes="taskClasses"
+            :selected-id="store.selectedAnnotationId"
+            :color-for="timeSeriesSegmentColor"
+            :range="seriesRange"
+            @create-region="onTimeSeriesCreateRegion"
+            @update-region="onTimeSeriesUpdateRegion"
+            @remove-region="onTimeSeriesRemoveRegion"
+            @region-click="onTimeSeriesRegionClick"
+          />
+        </main>
+        <TimeSeriesPanel
+          :segments="timeSeriesSegments"
+          :classes="taskClasses"
+          :selected-id="store.selectedAnnotationId"
+          :value-columns="seriesMeta?.value_columns || []"
+          :value-column="seriesValueColumn"
+          :time-unit="seriesMeta?.time_unit || ''"
+          @select="store.selectedAnnotationId = $event"
+          @new="openTimeSeriesNewDialog"
+          @edit="openTimeSeriesEditDialog"
+          @delete="deleteTimeSeriesSegment"
+          @change-column="onTimeSeriesChangeColumn"
+        />
+      </template>
       <template v-else>
       <AnnotationToolbar
         :tools="displayTools"
@@ -215,7 +245,7 @@
       @zoom-out="zoomStep(1 / 1.2)"
     />
     <AnnotationHistoryBar
-      :has-current-image="!!store.currentImage || isVideoTask || isAudioTask || isTextTask"
+      :has-current-image="!!store.currentImage || isVideoTask || isAudioTask || isTextTask || isTimeSeriesTask"
       :current-index="store.currentImageIndex"
       :total="store.images.length"
       :unsaved="store.unsaved"
@@ -223,11 +253,12 @@
       :cursor-y="cursorPos.y"
       :zoom="canvas.zoom.value"
       :cw="canvas.cw.value"
+      :ch="canvas.ch.value"
       :hint="hintText"
       :can-prev="store.currentImageIndex > 0"
       :can-next="store.currentImageIndex < store.images.length - 1"
       :locked="lockedByOther"
-      :show-coordinate="!isTextTask && !isAudioTask"
+      :show-coordinate="!isTextTask && !isAudioTask && !isTimeSeriesTask"
       @save="saveAnn"
       @prev="prevImg"
       @next="nextImg"
@@ -554,6 +585,48 @@
         <el-button v-else type="primary" @click="confirmAudioDialog">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 时间序列事件：创建/编辑区间 -->
+    <el-dialog
+      v-model="tsDialogVisible"
+      :title="tsDialogMode === 'create' ? '新建事件区间' : '编辑事件区间'"
+      width="500px"
+      append-to-body
+    >
+      <el-form label-width="80px">
+        <el-form-item label="开始时间">
+          <el-input-number
+            v-model="tsDialogRange.start"
+            size="small"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="结束时间">
+          <el-input-number
+            v-model="tsDialogRange.end"
+            size="small"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="事件类别">
+          <el-select v-model="tsDialogLabelId" size="small" style="width: 100%" placeholder="选择事件类别">
+            <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="tsDialogVisible = false">取消</el-button>
+        <el-button
+          v-if="tsDialogMode === 'edit'"
+          type="danger"
+          @click="tsDialogVisible = false; deleteTimeSeriesSegment(tsDialogId)"
+        >
+          删除
+        </el-button>
+        <el-button v-if="tsDialogMode === 'edit'" type="primary" @click="confirmTimeSeriesDialog">保存</el-button>
+        <el-button v-else type="primary" @click="confirmTimeSeriesDialog">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -636,6 +709,28 @@ import {
   clampAudioRange,
 } from "../tasks/audioEvent/useAudioEventTool";
 import AudioEventPanel from "../tasks/audioEvent/AudioEventPanel.vue";
+import {
+  getTimeSeriesList,
+  getTimeSeriesDetail,
+  getTimeSeriesContent,
+  lockTimeSeries,
+  unlockTimeSeries,
+  saveTimeSeriesAnnotations,
+  loadTimeSeriesAnnotations,
+  type TimeSeriesMeta,
+  type TimeSeriesSegment,
+} from "@/api/module_annotation/timeSeries";
+import {
+  createTimeSeriesSegment,
+  hasTimeSeriesOverlap,
+  hasOverlapExcluding as hasTsOverlapExcluding,
+  findOverlappingSegment as findTsOverlappingSegment,
+  segmentToRange as tsSegmentToRange,
+  clampTimeRange,
+  formatSeriesTime,
+} from "../tasks/timeSeriesEvent/useTimeSeriesEventTool";
+import { parseSeriesCsv } from "../tasks/timeSeriesEvent/parseTimeSeriesCsv";
+import TimeSeriesPanel from "../tasks/timeSeriesEvent/TimeSeriesPanel.vue";
 
 const props = defineProps<{
   plugins: AnnotationTaskPlugin[];
@@ -752,11 +847,23 @@ const plugin = computed(
 const isVideoTask = computed(() => plugin.value.media === "video");
 const isTextTask = computed(() => plugin.value.media === "text");
 const isAudioTask = computed(() => plugin.value.media === "audio");
+const isTimeSeriesTask = computed(() => plugin.value.media === "time_series");
 // ==== 音频事件标注状态 ====
 const audioId = ref<number | null>(null);
 const audioUrl = ref("");
 const audioDuration = ref(0);
 const audioCurrentTime = ref(0);
+// ==== 时间序列事件标注状态 ====
+const timeSeriesId = ref<number | null>(null);
+const seriesMeta = ref<TimeSeriesMeta | null>(null);
+const seriesData = ref<{ time: number; value: number }[]>([]);
+const seriesValueColumn = ref("");
+const seriesCsvRaw = ref("");
+const seriesRange = computed(() => {
+  const m = seriesMeta.value;
+  if (!m) return undefined;
+  return { start: m.start_time, end: m.end_time };
+});
 // ==== 文本 NER 文档状态 ====
 const documentId = ref<number | null>(null);
 const docContent = ref("");
@@ -874,6 +981,7 @@ let lockRenewTimer: number | null = null;
 let lockedImageId: number | null = null;
 let lockedVideoId: number | null = null;
 let lockedAudioId: number | null = null;
+let lockedTimeSeriesId: number | null = null;
 let unmounted = false;
 let _resizeObserver: ResizeObserver | null = null;
 
@@ -896,6 +1004,10 @@ function unlockCurrent() {
   if (lockedAudioId) {
     unlockAudio(lockedAudioId).catch(() => {});
     lockedAudioId = null;
+  }
+  if (lockedTimeSeriesId) {
+    unlockTimeSeries(lockedTimeSeriesId).catch(() => {});
+    lockedTimeSeriesId = null;
   }
   if (lockedDocumentId) {
     unlockDocument(lockedDocumentId).catch(() => {});
@@ -943,11 +1055,41 @@ function lockCurrentAudio(id: number) {
     .catch(() => {});
 }
 
+// ==== 时间序列事件：锁定（按序列整体加锁，定期续期）====
+function lockCurrentTimeSeries(id: number) {
+  lockTimeSeries(id)
+    .then((lr: any) => {
+      const d = lr?.data?.data;
+      if (d?.locked) {
+        lockedByOther.value = true;
+        lockedByUser.value = d.locked_by ?? null;
+      } else {
+        lockedByOther.value = false;
+        lockedByUser.value = null;
+      }
+      lockedTimeSeriesId = id;
+      clearLockRenewal();
+      lockRenewTimer = window.setInterval(() => {
+        lockTimeSeries(id).catch(() => {});
+      }, 180000);
+    })
+    .catch(() => {});
+}
+
 const audioSegments = computed<AudioSegment[]>(() =>
   store.annotations.filter((a) => (a as any).type === "AudioSegment") as unknown as AudioSegment[]
 );
-// 事件片段类别颜色：优先用户类别色，缺失回退 Element 主色变量
 function audioSegmentColor(segment: AudioSegment, classes: any[]): string {
+  const c = classes.find((x) => x.id === segment.label_id);
+  if (c?.color) return c.color;
+  return "var(--el-color-primary)";
+}
+
+const timeSeriesSegments = computed<TimeSeriesSegment[]>(() =>
+  store.annotations.filter((a) => (a as any).type === "TimeSeriesSegment") as unknown as TimeSeriesSegment[]
+);
+// 时间序列事件片段类别颜色：优先用户类别色，缺失回退 Element 主色变量
+function timeSeriesSegmentColor(segment: TimeSeriesSegment, classes: any[]): string {
   const c = classes.find((x) => x.id === segment.label_id);
   if (c?.color) return c.color;
   return "var(--el-color-primary)";
@@ -1117,6 +1259,218 @@ function deleteAudioSegment(id: string) {
       }
     })
     .catch(() => {});
+}
+
+// ==== 时间序列事件：创建/编辑/删除 ====
+const tsDialogVisible = ref(false);
+const tsDialogMode = ref<"create" | "edit">("create");
+const tsDialogId = ref("");
+const tsDialogRange = reactive({ start: 0, end: 0 });
+const tsDialogLabelId = ref<number | null>(null);
+
+function formatSeriesTimeValue(value: number): string {
+  return formatSeriesTime(value, seriesMeta.value?.time_unit || "");
+}
+
+function assertSeriesRange(start: number, end: number) {
+  const meta = seriesMeta.value;
+  if (meta) {
+    return clampTimeRange(start, end, meta.start_time, meta.end_time);
+  }
+  return { start, end };
+}
+
+function openTimeSeriesCreateDialog(start: number, end: number) {
+  if (lockedByOther.value) return;
+  const range = assertSeriesRange(start, end);
+  if (range.end <= range.start) {
+    ElMessage.warning("区间无效，请重新拖选");
+    return;
+  }
+  if (hasTimeSeriesOverlap(timeSeriesSegments.value, range.start, range.end)) {
+    ElMessage.warning("该区间与已有事件区间重叠，无法创建");
+    return;
+  }
+  tsDialogMode.value = "create";
+  tsDialogId.value = "";
+  tsDialogRange.start = range.start;
+  tsDialogRange.end = range.end;
+  tsDialogLabelId.value = taskClasses.value[0]?.id ?? null;
+  tsDialogVisible.value = true;
+}
+
+function onTimeSeriesCreateRegion(region: { id: string; start: number; end: number }) {
+  openTimeSeriesCreateDialog(region.start, region.end);
+}
+
+function onTimeSeriesUpdateRegion(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  const seg = store.annotations.find((a) => a.id === region.id) as TimeSeriesSegment | undefined;
+  if (!seg) return;
+  if (Math.abs(seg.start - region.start) < 0.001 && Math.abs(seg.end - region.end) < 0.001) return;
+  // 拖拽/拉伸路径与对话框编辑一致：排除自身，校验调整后的区间是否与其它片段重叠
+  if (hasTsOverlapExcluding(timeSeriesSegments.value, seg.id, region.start, region.end)) {
+    const conflicting = findTsOverlappingSegment(
+      timeSeriesSegments.value.filter((s) => s.id !== seg.id),
+      region.start,
+      region.end
+    );
+    const conflictText = conflicting
+      ? `（与 ${formatSeriesTimeValue(conflicting.start)} - ${formatSeriesTimeValue(conflicting.end)} 冲突）`
+      : "";
+    ElMessage.warning(`调整后的区间与已有事件区间重叠，无法保存${conflictText}`);
+    // 还原 region：先临时改为拖拽后的区间再恢复原始值，触发子组件 syncRegions 将区间落回原处
+    const original = tsSegmentToRange(seg);
+    seg.start = region.start;
+    seg.end = region.end;
+    seg.start = original.start;
+    seg.end = original.end;
+    return;
+  }
+  seg.start = region.start;
+  seg.end = region.end;
+  store.markUnsaved();
+}
+
+function onTimeSeriesRemoveRegion(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  if (!store.annotations.some((a) => a.id === region.id)) return;
+  deleteTimeSeriesSegment(region.id);
+}
+
+function onTimeSeriesRegionClick(region: { id: string; start: number; end: number }) {
+  if (lockedByOther.value) return;
+  store.selectedAnnotationId = region.id;
+  openTimeSeriesEditDialog(region.id);
+}
+
+function openTimeSeriesNewDialog() {
+  if (lockedByOther.value) return;
+  if (!seriesData.value.length) {
+    ElMessage.warning("暂无序列数据，无法新建事件");
+    return;
+  }
+  const start = seriesData.value[0].time;
+  const end = seriesData.value[seriesData.value.length - 1].time;
+  tsDialogMode.value = "create";
+  tsDialogId.value = "";
+  tsDialogRange.start = start;
+  tsDialogRange.end = end > start ? end : start + 1;
+  tsDialogLabelId.value = taskClasses.value[0]?.id ?? null;
+  tsDialogVisible.value = true;
+}
+
+function openTimeSeriesEditDialog(id: string) {
+  if (lockedByOther.value) return;
+  const seg = store.annotations.find((a) => a.id === id);
+  if (!seg) return;
+  tsDialogMode.value = "edit";
+  tsDialogId.value = id;
+  tsDialogRange.start = seg.start;
+  tsDialogRange.end = seg.end;
+  tsDialogLabelId.value = seg.label_id;
+  tsDialogVisible.value = true;
+}
+
+function confirmTimeSeriesDialog() {
+  const labelId = tsDialogLabelId.value;
+  if (tsDialogMode.value !== "edit" && labelId == null) {
+    ElMessage.warning("请选择事件类别");
+    return;
+  }
+  const start = tsDialogRange.start;
+  const end = tsDialogRange.end;
+  if (!(start < end)) {
+    ElMessage.warning("区间无效，结束时间需大于开始时间");
+    return;
+  }
+  if (tsDialogMode.value === "create") {
+    if (hasTimeSeriesOverlap(timeSeriesSegments.value, start, end)) {
+      ElMessage.warning("该区间与已有事件区间重叠，无法创建");
+      return;
+    }
+    if (labelId == null) {
+      ElMessage.warning("请选择事件类别");
+      return;
+    }
+    const seg = createTimeSeriesSegment(start, end, labelId);
+    store.annotations.push(seg as any);
+    store.selectedAnnotationId = seg.id;
+    store.markUnsaved();
+    pushHistory();
+  } else {
+    // 编辑分支：先排除自身片段，校验调整后的区间是否与其它片段重叠
+    if (hasTsOverlapExcluding(timeSeriesSegments.value, tsDialogId.value, start, end)) {
+      ElMessage.warning("调整后的区间与已有事件区间重叠，无法保存");
+      return;
+    }
+    const seg = store.annotations.find((a) => a.id === tsDialogId.value) as TimeSeriesSegment | undefined;
+    if (seg && labelId != null) {
+      seg.start = start;
+      seg.end = end;
+      seg.label_id = labelId;
+      store.markUnsaved();
+      pushHistory();
+    }
+  }
+  tsDialogVisible.value = false;
+}
+
+function deleteTimeSeriesSegment(id: string) {
+  const seg = store.annotations.find((a) => a.id === id) as TimeSeriesSegment | undefined;
+  if (!seg) return;
+  ElMessageBox.confirm(
+    `将删除该时间序列事件区间（${formatSeriesTimeValue(seg.start)} - ${formatSeriesTimeValue(seg.end)}），且不可恢复。`,
+    "删除事件区间",
+    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+  )
+    .then(() => {
+      const before = store.annotations.length;
+      store.annotations = store.annotations.filter((a) => a.id !== id);
+      if (store.annotations.length !== before) {
+        if (store.selectedAnnotationId === id) store.selectedAnnotationId = "";
+        store.markUnsaved();
+        pushHistory();
+      }
+    })
+    .catch(() => {});
+}
+
+async function initTimeSeries() {
+  const datasetId = store.task?.dataset_id;
+  if (!datasetId) return;
+  resetDrawingState();
+  try {
+    const lr = await getTimeSeriesList(datasetId);
+    const items = lr?.data?.data?.items || [];
+    const series = items[0];
+    if (!series) return;
+    timeSeriesId.value = series.id;
+    const dr = await getTimeSeriesDetail(series.id);
+    seriesMeta.value = dr?.data?.data ?? series;
+    const cr = await getTimeSeriesContent(series.id);
+    seriesCsvRaw.value = cr?.data ?? "";
+    const parsed = parseSeriesCsv(seriesCsvRaw.value, seriesMeta.value);
+    seriesValueColumn.value = parsed.valueColumn;
+    seriesData.value = parsed.points;
+    const ar = await loadTimeSeriesAnnotations({ task_id: store.taskId, t_id: series.id });
+    store.annotations = (ar?.data?.data?.annotation_data || []) as any;
+    store.selectedAnnotationId = "";
+    store.unsaved = false;
+    store.totalCount = 1;
+    store.annotatedCount = store.annotations.length ? 1 : 0;
+    lockCurrentTimeSeries(series.id);
+  } catch (e) {
+    console.error("加载时间序列事件任务失败", e);
+    ElMessage.error("时间序列数据加载失败，请稍后重试");
+  }
+}
+
+function onTimeSeriesChangeColumn(valueColumn: string) {
+  if (!seriesMeta.value) return;
+  const parsed = parseSeriesCsv(seriesCsvRaw.value, seriesMeta.value, valueColumn);
+  seriesValueColumn.value = parsed.valueColumn;
+  seriesData.value = parsed.points;
 }
 
 async function initAudio() {
@@ -2030,6 +2384,12 @@ async function init() {
       await initAudio();
       return;
     }
+    if (isTimeSeriesTask.value) {
+      imageTotal.value = 0;
+      imageLoadedPages = 0;
+      await initTimeSeries();
+      return;
+    }
     if (isTextTask.value) {
       await initText();
       return;
@@ -2165,6 +2525,19 @@ async function saveAnn() {
     await saveTextAnnotations({
       task_id: store.taskId,
       document_id: documentId.value,
+      annotations: store.annotations as any,
+    });
+    store.unsaved = false;
+    lastSavedKey = annotKey();
+    historyStack = [lastSavedKey];
+    historyIndex = 0;
+    return;
+  }
+  if (isTimeSeriesTask.value) {
+    if (!timeSeriesId.value) return;
+    await saveTimeSeriesAnnotations({
+      task_id: store.taskId,
+      time_series_id: timeSeriesId.value,
       annotations: store.annotations as any,
     });
     store.unsaved = false;
@@ -3057,6 +3430,12 @@ onBeforeUnmount(() => {
         document_id: documentId.value,
         annotations: store.annotations as any,
       }).catch(() => {});
+    } else if (isTimeSeriesTask.value && timeSeriesId.value) {
+      saveTimeSeriesAnnotations({
+        task_id: store.taskId,
+        time_series_id: timeSeriesId.value,
+        annotations: store.annotations as any,
+      }).catch(() => {});
     } else if (store.currentImageId) {
       props.api
         .saveAnnotations(store.taskId, store.currentImageId, store.annotations)
@@ -3144,6 +3523,11 @@ defineExpose({
 }
 /* 音频模式：波形渲染区留白 */
 .audio-main {
+  padding: 12px;
+  overflow: hidden;
+}
+/* 时间序列模式：折线图渲染区留白 */
+.time-series-main {
   padding: 12px;
   overflow: hidden;
 }
