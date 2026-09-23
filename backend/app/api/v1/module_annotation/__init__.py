@@ -10,12 +10,14 @@ def _register_annotation_routers():
     from .dataset.controller import DatasetRouter
     from .dataset.document_controller import DocumentRouter
     from .dataset.export_controller import ExportRouter
+    from .dataset.time_series_controller import TimeSeriesRouter
     from .dataset.video_controller import VideoRouter
     from .task.controller import TaskRouter
     annotation_router.include_router(DatasetRouter)
     annotation_router.include_router(AudioRouter)
     annotation_router.include_router(VideoRouter)
     annotation_router.include_router(DocumentRouter)
+    annotation_router.include_router(TimeSeriesRouter)
     annotation_router.include_router(TaskRouter)
     annotation_router.include_router(AnnotationRouter)
     annotation_router.include_router(ExportRouter)

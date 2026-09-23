@@ -48,3 +48,37 @@ class ImageOutSchema(BaseModel):
     locked_by: int | None
     annotation_count: int
     created_time: datetime | None
+
+
+class TimeSeriesCreateSchema(BaseModel):
+    """时间序列上传入参（文件改为 multipart，此处保留元数据字段约定）。"""
+
+    name: str
+    time_column: str
+    value_columns: list[str]
+    time_unit: str
+
+
+class TimeSeriesOutSchema(BaseModel):
+    """时间序列元数据输出（含时间/数值列、行数、时间单位与范围）。"""
+
+    id: int
+    dataset_id: int
+    name: str
+    object_key: str
+    time_column: str
+    value_columns: list[str]
+    row_count: int
+    time_unit: str
+    start_time: float | None
+    end_time: float | None
+    size_bytes: int
+    status: str
+    locked_by: int | None
+    annotation_count: int
+
+
+class TimeSeriesListOutSchema(BaseModel):
+    """时间序列列表输出：包裹 items。"""
+
+    items: list[TimeSeriesOutSchema]
