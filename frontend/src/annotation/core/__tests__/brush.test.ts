@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { simplifyPolygon, maskToPolygon } from "../brush";
+import { simplifyPolygon, maskToPolygon, lassoToPolygon } from "../brush";
 describe("simplifyPolygon", () => {
   it("保留首尾点并简化中间共线点", () => {
     const pts = [
@@ -92,5 +92,34 @@ describe("maskToPolygon", () => {
       expect(p.y).toBeGreaterThanOrEqual(0);
       expect(p.y).toBeLessThanOrEqual(1);
     }
+  });
+});
+
+describe("lassoToPolygon", () => {
+  it("点数不足 3 返回空数组", () => {
+    const pts = [
+      { x: 0.1, y: 0.1 },
+      { x: 0.2, y: 0.2 },
+    ];
+    expect(lassoToPolygon(pts)).toEqual([]);
+  });
+
+  it("闭合矩形轨迹抽稀后返回合法闭合多边形", () => {
+    const pts: { x: number; y: number }[] = [];
+    const rect = (x: number, y: number) => ({ x, y });
+    for (let i = 0; i <= 40; i++) pts.push(rect(0.2 + 0.6 * (i / 40), 0.2)); // 上边
+    for (let i = 0; i <= 40; i++) pts.push(rect(0.8, 0.2 + 0.6 * (i / 40))); // 右边
+    for (let i = 0; i <= 40; i++) pts.push(rect(0.8 - 0.6 * (i / 40), 0.8)); // 下边
+    for (let i = 0; i <= 40; i++) pts.push(rect(0.2, 0.8 - 0.6 * (i / 40))); // 左边
+    const out = lassoToPolygon(pts);
+    expect(out.length).toBeGreaterThanOrEqual(3);
+    for (const p of out) {
+      expect(p.x).toBeGreaterThanOrEqual(0);
+      expect(p.x).toBeLessThanOrEqual(1);
+      expect(p.y).toBeGreaterThanOrEqual(0);
+      expect(p.y).toBeLessThanOrEqual(1);
+    }
+    // 抽稀后点数应显著少于原始 160+ 点
+    expect(out.length).toBeLessThan(pts.length);
   });
 });

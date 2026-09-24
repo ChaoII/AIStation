@@ -208,11 +208,20 @@ function traceBoundary(
   return { points, closed: false };
 }
 
+/** 套索：中心轨迹抽稀并返回闭合多边形点（≥3），否则空数组。 */
+export function lassoToPolygon(points: Point[]): Point[] {
+  if (points.length < 3) return [];
+  const out = simplifyPolygon(points, 0.01);
+  if (out.length >= 3) return out;
+  return points.length >= 3 ? points : [];
+}
+
 /** 画笔状态机：维护当前笔画轨迹与橡皮擦标记；end() 用位图掩码转 Polygon。 */
 export function useBrushTool() {
   const strokes = ref<Point[][]>([]);
   const brushSize = ref(8);
   const erasing = ref(false);
+  const mode = ref<"paint" | "lasso">("paint");
   let canvas: HTMLCanvasElement | null = null;
 
   function ensureCanvas(cw: number, ch: number): HTMLCanvasElement {
@@ -260,18 +269,32 @@ export function useBrushTool() {
     (cur[cur.length - 1] ||= []).push({ ...p });
   }
 
-  /** 结束一笔：把轨迹刷到画布 → 二值掩码 → 转 Polygon。 */
+  function setBrushMode(m: "paint" | "lasso") {
+    mode.value = m;
+  }
+
+  /** 结束一笔：按模式分流 —— 涂抹走位图掩码转 Polygon；套索走中心轨迹抽稀闭合 Polygon。 */
   function end(cw: number, ch: number): Annotation | null {
     if (strokes.value.length === 0) return null;
     const all: Point[] = [];
     strokes.value.forEach((s) => all.push(...s));
+    strokes.value = [];
+    if (mode.value === "lasso") {
+      const pts = lassoToPolygon(all);
+      if (pts.length < 3) return null;
+      return {
+        id: crypto.randomUUID(),
+        type: "Polygon" as const,
+        class_id: 0,
+        points: pts,
+      };
+    }
     paintStroke(all, cw, ch, erasing.value);
     const ctx = ensureCanvas(cw, ch).getContext("2d")!;
     const imageData = ctx.getImageData(0, 0, cw, ch);
     const mask = new Uint8Array(imageData.data.length / 4);
     for (let i = 0; i < mask.length; i++) mask[i] = imageData.data[i * 4 + 3] > 0 ? 1 : 0;
     const pts = maskToPolygon(mask, cw, ch);
-    strokes.value = [];
     if (pts.length < 3) return null;
     return {
       id: crypto.randomUUID(),
@@ -286,5 +309,5 @@ export function useBrushTool() {
     clearCanvas();
   }
 
-  return { strokes, brushSize, erasing, start, move, end, reset };
+  return { strokes, brushSize, erasing, mode, setBrushMode, start, move, end, reset };
 }
