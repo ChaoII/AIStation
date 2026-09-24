@@ -14,6 +14,8 @@ test("套索描圈生成闭合填充多边形标注", async ({ page, request }) 
   const img = await imageBox(page);
   await page.mouse.click(img.x + img.width * 0.3, img.y + img.height * 0.5, { button: "right" });
   await page.locator(".brush-popover .el-radio-button", { hasText: "套索" }).click();
+  // 断言套索 radio 已被选中（is-active 为 Element Plus 选中态），确保 mode 已切到套索
+  await expect(page.locator(".brush-popover .el-radio-button.is-active", { hasText: "套索" })).toBeVisible();
   await page.mouse.click(img.x + img.width * 0.1, img.y + img.height * 0.9); // 关浮层避免遮挡
 
   // 描一圈（从顶部中点逆时针绕一圈回到起点附近）
@@ -30,5 +32,5 @@ test("套索描圈生成闭合填充多边形标注", async ({ page, request }) 
 
   await expectAnnotation(page);
   await page.keyboard.press("Control+s");
-  await page.screenshot({ path: "C:/Users/aichao/AppData/Local/Temp/opencode/lasso-result.png", fullPage: true });
+  await expectAnnotation(page);
 });
