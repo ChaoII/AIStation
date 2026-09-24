@@ -252,6 +252,12 @@
           @contextmenu.prevent
         >
           <div class="brush-popover-head">画笔大小</div>
+          <div class="brush-popover-mode">
+            <el-radio-group v-model="brushMode" size="small">
+              <el-radio-button value="paint">涂抹</el-radio-button>
+              <el-radio-button value="lasso">套索</el-radio-button>
+            </el-radio-group>
+          </div>
           <div class="brush-popover-body">
             <div
               class="brush-cursor-preview"
@@ -1145,6 +1151,10 @@ function setBrushSize(v: number | number[]) {
   if (!bs) return;
   bs.value = Math.max(1, Math.min(120, Math.round(val)));
 }
+const brushMode = computed({
+  get: () => (unref(activeTool.value?.state?.mode) as "paint" | "lasso") ?? "paint",
+  set: (v: "paint" | "lasso") => activeTool.value?.state?.setBrushMode?.(v),
+});
 const canvasAreaRef = ref<HTMLElement | null>(null);
 const brushPopover = reactive({ visible: false, x: 0, y: 0 });
 function openBrushPopover(e: MouseEvent) {
@@ -4311,6 +4321,9 @@ defineExpose({
 .brush-popover-head {
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
+  margin-bottom: 8px;
+}
+.brush-popover-mode {
   margin-bottom: 8px;
 }
 .brush-popover-body {
