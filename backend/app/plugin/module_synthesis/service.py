@@ -20,9 +20,9 @@ def _png_thumb_b64(content: bytes) -> str:
     from PIL import Image
 
     img = Image.open(io.BytesIO(content))
-    img.thumbnail((320, 320))
+    img.thumbnail((900, 900))
     buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=70)
+    img.convert("RGB").save(buf, format="JPEG", quality=88)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 

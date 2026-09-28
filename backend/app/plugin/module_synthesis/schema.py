@@ -32,8 +32,8 @@ class PlateGenerateReq(BaseModel):
     disturbances: DisturbanceCfg | None = Field(default=None, description="扰动开关")
     upload: bool = Field(default=True, description="是否写入 dataset")
     with_annotation: bool = Field(default=True, description="是否写入标注任务（含检测框）")
-    width: int = Field(default=1280, description="画布宽")
-    height: int = Field(default=720, description="画布高")
+    width: int = Field(default=1920, description="画布宽")
+    height: int = Field(default=1080, description="画布高")
 
 
 class GeneratedItem(BaseModel):

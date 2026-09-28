@@ -59,15 +59,15 @@ _PLATE_SPECS: dict[str, _PlateSpec] = {
     "yellow_double": _PlateSpec("yellow_double", "挂车号牌(双层黄)", "double", 440, 220, "yellow", (0, 0, 0), (0, 0, 0), 6, mark="挂", mark_color=(0, 0, 0), top_dot_after=0),
     "large_rear": _PlateSpec("large_rear", "大型汽车后号牌(双层黄)", "double", 440, 220, "yellow", (0, 0, 0), (0, 0, 0), 6, top_dot_after=0),
     "black": _PlateSpec("black", "涉外/特殊号牌(黑)", "single", 440, 140, "black", (255, 255, 255), (255, 255, 255), 6, dot_after=1),
-    "embassy": _PlateSpec("embassy", "使馆汽车号牌(黑底红使)", "single", 440, 140, "black", (255, 255, 255), (255, 255, 255), 6, mark="使", mark_color=(200, 30, 30), dot_after=2),
-    "consulate": _PlateSpec("consulate", "领馆汽车号牌(黑底红领)", "single", 440, 140, "black", (255, 255, 255), (255, 255, 255), 6, mark="领", mark_color=(200, 30, 30), dot_after=3),
+    "embassy": _PlateSpec("embassy", "使馆汽车号牌(黑底白使)", "single", 440, 140, "black", (255, 255, 255), (255, 255, 255), 6, mark="使", mark_color=(255, 255, 255), dot_after=2),
+    "consulate": _PlateSpec("consulate", "领馆汽车号牌(黑底白领)", "single", 440, 140, "black", (255, 255, 255), (255, 255, 255), 6, mark="领", mark_color=(255, 255, 255), dot_after=3),
     "hk_mo": _PlateSpec("hk_mo", "港澳入出境汽车号牌(黑)", "single", 440, 140, "black", (255, 255, 255), (255, 255, 255), 6, dot_after=1),
     "coach": _PlateSpec("coach", "教练汽车号牌(黄含学)", "single", 440, 140, "yellow", (0, 0, 0), (0, 0, 0), 6, mark="学", mark_color=(0, 0, 0), dot_after=1),
     "police": _PlateSpec("police", "警用汽车号牌(白红警)", "single", 440, 140, "white", (15, 20, 35), (0, 0, 0), 6, mark="警", mark_color=(200, 30, 30), dot_after=0),
     "motorcycle": _PlateSpec("motorcycle", "普通摩托车号牌(黄)", "double", 220, 140, "yellow", (0, 0, 0), (0, 0, 0), 6, top_dot_after=0),
     "light_motorcycle": _PlateSpec("light_motorcycle", "轻便摩托车号牌(蓝)", "double", 220, 140, "blue", (255, 255, 255), (255, 255, 255), 6, top_dot_after=0),
-    "embassy_motor": _PlateSpec("embassy_motor", "使馆摩托车号牌(黑)", "double", 220, 140, "black", (255, 255, 255), (255, 255, 255), 6, top_len=3, top_dot_after=None, mark="使"),
-    "consulate_motor": _PlateSpec("consulate_motor", "领馆摩托车号牌(黑)", "double", 220, 140, "black", (255, 255, 255), (255, 255, 255), 6, top_len=1, top_mark="领", top_mark_color=(200, 30, 30), top_dot_after=0),
+    "embassy_motor": _PlateSpec("embassy_motor", "使馆摩托车号牌(黑)", "double", 220, 140, "black", (255, 255, 255), (255, 255, 255), 6, top_len=3, top_dot_after=None, mark="使", mark_color=(255, 255, 255)),
+    "consulate_motor": _PlateSpec("consulate_motor", "领馆摩托车号牌(黑)", "double", 220, 140, "black", (255, 255, 255), (255, 255, 255), 6, top_len=1, top_mark="领", top_mark_color=(255, 255, 255), top_dot_after=0),
     "coach_motor": _PlateSpec("coach_motor", "教练摩托车号牌(黄)", "double", 220, 140, "yellow", (0, 0, 0), (0, 0, 0), 6, mark="学", mark_color=(0, 0, 0), top_dot_after=0),
     "police_motor": _PlateSpec("police_motor", "警用摩托车号牌(白)", "double", 220, 140, "white", (15, 20, 35), (0, 0, 0), 6, mark="警", mark_color=(200, 30, 30), top_dot_after=0),
     "low_speed": _PlateSpec("low_speed", "低速车号牌(黄)", "double", 300, 165, "yellow", (0, 0, 0), (0, 0, 0), 6, top_dot_after=0),
@@ -217,31 +217,63 @@ def _ga_of(spec: _PlateSpec) -> dict:
 # --------------------------------------------------------------------------- #
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _TEMPLATE_MAP = {
-    "blue": "blue_140.png",
-    "green": "green_car_140.png",
-    "green_large": "green_truck_140.png",
-    "yellow": "yellow_140.png",
-    "yellow_double": "yellow_220.png",
-    "large_rear": "yellow_220.png",
+    "blue": "blue_440x140.png",
+    "green": "green_car_480.png",
+    "green_large": "green_truck_480.png",
+    "yellow": "yellow_440x140.png",
+    "yellow_double": "yellow_double_440x220.png",
+    "large_rear": "yellow_double_440x220.png",
     "black": "black_140.png",
-    "embassy": "black_140.png",
-    "consulate": "black_140.png",
-    "hk_mo": "black_140.png",
-    "coach": "yellow_140.png",
+    "embassy": "embassy_440x140.png",
+    "consulate": "consulate_440x140.png",
+    "hk_mo": "hkmo_440x140.png",
+    "coach": "yellow_440x140.png",
     "police": "white_140.png",
+    # 摩托车（220×140，R8）
+    "motorcycle": "moto_yellow.png",
+    "light_motorcycle": "moto_blue.png",
+    "coach_motor": "moto_yellow.png",
+    "embassy_motor": "moto_black.png",
+    "consulate_motor": "moto_black2.png",
+    "police_motor": "moto_white.png",
+    # 低速车（300×165）
+    "low_speed": "low_300x165.png",
 }
 _TEMPLATE_CACHE: dict = {}
 
 
+def _strip_white_matte(img: Image.Image) -> Image.Image:
+    """去掉模板四周的纯色遮罩（白/灰），只保留圆角内的板面（真透明圆角）。"""
+    import numpy as np
+    from PIL import ImageDraw
+
+    rgba = img.convert("RGBA")
+    # 四角已是透明（如用户提供的模板）则无需处理
+    if rgba.getpixel((0, 0))[3] == 0 and rgba.getpixel((rgba.width - 1, 0))[3] == 0:
+        return rgba
+    probe = rgba.convert("RGB").copy()
+    w, h = rgba.size
+    for xy in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+        r, g, b = probe.getpixel(xy)
+        if max(r, g, b) - min(r, g, b) <= 24 and r >= 90:  # 灰/白遮罩
+            ImageDraw.floodfill(probe, xy, (255, 0, 255), thresh=26)
+    arr = np.array(probe)
+    matte = (arr[:, :, 0] > 250) & (arr[:, :, 1] < 5) & (arr[:, :, 2] > 250)
+    alpha = np.array(rgba.split()[3])
+    alpha[matte] = 0
+    rgba.putalpha(Image.fromarray(alpha))
+    return rgba
+
+
 def _get_template(spec_key: str) -> Image.Image | None:
-    """加载号牌真实反光膜模板（RGBA，圆角外透明）；无对应模板返回 None。"""
+    """加载号牌真实反光膜模板（RGBA，去除白边后圆角透明）；无对应模板返回 None。"""
     fn = _TEMPLATE_MAP.get(spec_key)
     if not fn:
         return None
     path = os.path.join(_TEMPLATE_DIR, fn)
     if path not in _TEMPLATE_CACHE:
         try:
-            _TEMPLATE_CACHE[path] = Image.open(path).convert("RGBA") if os.path.exists(path) else None
+            _TEMPLATE_CACHE[path] = _strip_white_matte(Image.open(path).convert("RGBA")) if os.path.exists(path) else None
         except Exception:
             _TEMPLATE_CACHE[path] = None
     return _TEMPLATE_CACHE[path]
@@ -347,10 +379,11 @@ def _glyph_tile(ch: str, glyph_h: int, color, green: bool = False) -> Image.Imag
 def _draw_row(tile: Image.Image, items: list, y0: float, y1: float, dot_after: int | None,
               scale: float, ch_mm: float, gap_mm: float, dot_mm: float,
               green: bool = False, x_start_mm: float | None = None,
-              region: tuple | None = None) -> None:
+              region: tuple | None = None, draw_dot: bool = False) -> None:
     """按 GA 36-2018 尺寸排布一行字符（尺寸单位 mm，scale=像素/毫米）。
     x_start_mm 给定时自该处左对齐起排，否则在 region 或整板内水平居中。
     items 为 [(字符, 颜色)]，dot_after 为间隔符所在字符下标。
+    draw_dot=True 时才绘制间隔符；底图已固定间隔符的牌型传 False（只留空位）。
     """
     w, h = tile.size
     if not items:
@@ -373,16 +406,17 @@ def _draw_row(tile: Image.Image, items: list, y0: float, y1: float, dot_after: i
     x = (rx0 + x_start_mm * scale) if x_start_mm is not None else (rx0 + (rw - total) / 2)
     gh = glyphs[0][1].height
     y = y0 + (y1 - y0 - gh) / 2
-    d = ImageDraw.Draw(tile)
-    dot_color = items[0][1]
+    d = ImageDraw.Draw(tile) if draw_dot else None
     for i, (_ch, g) in enumerate(glyphs):
         tile.paste(g, (int(x), int(y)), g)
         x += g.width
         if i == dot_after and dot_after is not None:
-            dot_cx = x + interval + dot_w / 2
-            dot_cy = y + g.height / 2
-            dr = max(2, int(gh * 0.06))
-            d.ellipse([dot_cx - dr, dot_cy - dr, dot_cx + dr, dot_cy + dr], fill=dot_color)
+            # 底图已固定间隔符时不绘制，仅留出空位（识别文本不含点）
+            if draw_dot:
+                dot_cx = x + interval + dot_w / 2
+                dot_cy = y + g.height / 2
+                dr = max(2, int(gh * 0.06))
+                d.ellipse([dot_cx - dr, dot_cy - dr, dot_cx + dr, dot_cy + dr], fill=items[0][1])
             x += interval + dot_w
         elif i < n - 1:
             x += interval
@@ -406,9 +440,7 @@ def _draw_emblem(tile: Image.Image, cx: int, cy: int, r: int) -> None:
 def _plate_surface(spec: _PlateSpec, w: int, h: int, text: str) -> Image.Image:
     """绘制一张不含旋转/透视的车牌 RGBA 板面（GA36 尺寸 + 真实反光膜模板）。"""
     tile = _plate_background(spec, w, h).convert("RGBA")
-    draw = ImageDraw.Draw(tile)
     has_tpl = _get_template(spec.key) is not None
-    fw = max(3, h // 42)
     color = spec.text_color
     is_green = spec.key in ("green", "green_large")
     ga = _ga_of(spec)
@@ -438,7 +470,6 @@ def _plate_surface(spec: _PlateSpec, w: int, h: int, text: str) -> Image.Image:
         t0, t1 = top_mm * scale, (top_mm + top_ch) * scale
         b0 = (top_mm + top_ch + ga["row_gap"]) * scale
         b1 = (spec.ah - bot_mm) * scale
-        draw.line([(0, b0), (w - 1, b0)], fill=spec.frame, width=max(2, fw))
         top = [(c, color) for c in text[: spec.top_len]]
         if spec.top_mark:
             top.append((spec.top_mark, spec.top_mark_color))
@@ -649,8 +680,8 @@ def render_license_plate(
         return d.get(k, True)
 
     pad = 6
-    # 按号牌规格的宽高比设板面尺寸（GA36-2018）
-    plate_h = int(canvas_h * rng.uniform(0.13, 0.19))
+    # 按号牌规格的宽高比设板面尺寸（GA36-2018）；占比适当放大以保证字符清晰可辨
+    plate_h = int(canvas_h * rng.uniform(0.18, 0.28))
     plate_w = int(plate_h * (spec.aw / spec.ah))
 
     # 画板面（不含旋转）
@@ -660,7 +691,8 @@ def render_license_plate(
     padded.paste(tile, (pad, pad))
 
     # 背景渐变
-    bg = _make_background(canvas_w, canvas_h, rng)
+    # 背景：优先用真实车尾实拍图（backgrounds/），没有则合成
+    bg = _load_scene_background(canvas_w, canvas_h, rng) or _make_background(canvas_w, canvas_h, rng)
     # 旋转 + 透视
     want_perspective = want("perspective")
     transformed, bbox = _transform_plate(padded, canvas_w, canvas_h, rng, want_perspective)
@@ -694,31 +726,49 @@ def render_license_plate(
     )
 
 
+# 真实场景背景图目录（用户可放入车尾实拍图；为空则回退到合成背景）
+_BG_DIR = os.path.join(os.path.dirname(__file__), "backgrounds")
+
+
+def _load_scene_background(canvas_w: int, canvas_h: int, rng: random.Random) -> Image.Image | None:
+    """从 backgrounds/ 随机取一张真实场景图，等比缩放 + 居中裁剪到画布；无图返回 None。"""
+    if not os.path.isdir(_BG_DIR):
+        return None
+    files = [f for f in os.listdir(_BG_DIR)
+             if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp"))]
+    if not files:
+        return None
+    try:
+        img = Image.open(os.path.join(_BG_DIR, rng.choice(files))).convert("RGB")
+    except Exception:
+        return None
+    sw, sh = img.size
+    s = max(canvas_w / sw, canvas_h / sh)
+    img = img.resize((max(1, int(sw * s)), max(1, int(sh * s))), Image.LANCZOS)
+    x = (img.width - canvas_w) // 2
+    y = (img.height - canvas_h) // 2
+    return img.crop((x, y, x + canvas_w, y + canvas_h))
+
+
 def _make_background(canvas_w: int, canvas_h: int, rng: random.Random) -> Image.Image:
-    """生成车尾背景：上为环境/天空渐变，中下部为深色金属车身 + 车漆反光。"""
+    """生成车尾背景：上为环境/天空、下为深色车身，整体平滑过渡 + 车漆反光 + 暗角。"""
     bg = Image.new("RGB", (canvas_w, canvas_h))
     draw = ImageDraw.Draw(bg)
     sky = rng.choice([(120, 130, 142), (108, 118, 133), (136, 128, 112), (100, 106, 118),
                       (128, 118, 104), (96, 112, 128)])
-    ground = (28, 30, 36)
+    body = (rng.randint(24, 38), rng.randint(26, 42), rng.randint(30, 50))
+    body_top = int(canvas_h * rng.uniform(0.28, 0.40))
+    trans = max(10, int(canvas_h * 0.16))  # 天空→车身柔和过渡带宽，避免硬边形成"黑线"
     for y in range(canvas_h):
-        t = y / canvas_h
-        c = tuple(int(sky[i] + (ground[i] - sky[i]) * t) for i in range(3))
+        k = min(1.0, max(0.0, (y - (body_top - trans)) / (2 * trans)))
+        c = tuple(int(sky[i] + (body[i] - sky[i]) * k) for i in range(3))
         draw.line([(0, y), (canvas_w, y)], fill=c)
 
-    # 车身一块深色金属（中部偏下，车牌贴在此处）
-    body_top = int(canvas_h * rng.uniform(0.24, 0.34))
-    body = (rng.randint(20, 34), rng.randint(22, 38), rng.randint(26, 46))
-    draw.rectangle([0, body_top, canvas_w, canvas_h], fill=body)
-    # 车漆反光渐变条
-    panel = max(2, (canvas_h - body_top) // 22)
-    for y in range(body_top, canvas_h, panel):
-        shade = tuple(min(255, c + rng.randint(3, 16)) for c in body)
-        draw.line([(0, y), (canvas_w, y)], fill=shade)
-    # 车漆横向折线 / 接缝
-    for _ in range(rng.randint(1, 3)):
-        yy = rng.randint(body_top + 4, canvas_h - 2)
-        draw.line([(0, yy), (canvas_w, yy)], fill=tuple(max(0, c - 20) for c in body), width=2)
+    # 车漆反光横向亮条（很轻，模拟金属漆高光）
+    for _ in range(rng.randint(2, 4)):
+        yy = rng.randint(body_top, canvas_h - 1)
+        shade = tuple(min(255, v + rng.randint(8, 20)) for v in body)
+        draw.line([(0, yy), (canvas_w, yy)], fill=shade, width=max(1, canvas_h // 160))
     # 轻微暗角
     vig = Image.new("L", (canvas_w, canvas_h), 0)
     vd = ImageDraw.Draw(vig)
