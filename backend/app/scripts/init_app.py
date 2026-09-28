@@ -958,6 +958,47 @@ TRAIN_EXTRA_MENUS: list[tuple[str, str, str, str, str, bool]] = [
 ]
 
 
+async def _ensure_synthesis_menus() -> None:
+    """Ensure the 数据合成 menu entries exist."""
+    from sqlalchemy import select
+
+    from app.api.v1.module_system.menu.model import MenuModel
+    from app.api.v1.module_system.role.model import RoleMenusModel
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        async with db.begin():
+            existing = await db.execute(
+                select(MenuModel).where(MenuModel.route_name == "Synthesis")
+            )
+            parent = existing.scalar_one_or_none()
+            if parent:
+                return
+
+            parent = MenuModel(
+                name="数据合成", type=1, icon="el-icon-MagicStick", order=13,
+                route_name="Synthesis", route_path="/synthesis", redirect="/synthesis/plate",
+                permission="", status="0", is_deleted=False, title="数据合成",
+            )
+            db.add(parent)
+            await db.flush()
+
+            child = MenuModel(
+                name="车牌合成", type=2, icon="el-icon-FirstAidKit", order=1,
+                route_name="SynthesisPlate", route_path="/synthesis/plate",
+                component_path="module_synthesis/synthesis/index",
+                permission="module_synthesis:plate:query", parent_id=parent.id,
+                status="0", is_deleted=False, title="车牌合成",
+            )
+            db.add(child)
+            await db.flush()
+            db.add(RoleMenusModel(role_id=1, menu_id=child.id))
+
+            db.add(RoleMenusModel(role_id=1, menu_id=parent.id))
+
+    log.info("✅ 数据合成菜单已注册")
+
+
 async def _ensure_train_menus() -> None:
     """Ensure the training module menu entries exist."""
     from sqlalchemy import select
@@ -1182,6 +1223,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
         await _ensure_train_menus()
+        await _ensure_synthesis_menus()
         # 人脸底库进程内缓存（face_match/stranger 叶子求值依赖）；表缺失时告警不阻断启动
         try:
             from app.api.v1.module_video.face_gallery.service import FaceGalleryService

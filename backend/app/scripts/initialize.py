@@ -55,6 +55,8 @@ class InitializeData:
             _ = UserNotificationModel
             from app.plugin.module_train.schedule_model import TrainScheduleModel
             _ = TrainScheduleModel
+            from app.plugin.module_synthesis.model import SynthesisJobModel
+            _ = SynthesisJobModel
             from app.plugin.module_ai.apps.model import AiAppModel
             from app.plugin.module_ai.overview.model import AiCallLogModel
             from app.plugin.module_ai.prompts.model import AiPromptModel
