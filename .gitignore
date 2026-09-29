@@ -73,3 +73,8 @@ pytorch-ocr/*.egg-info
 
 # 可视化头脑风暴伴侣产物（本地草稿，勿提交）
 .superpowers/brainstorm/
+
+# Playwright / vitest 运行期缓存（根目录下的，frontend/.gitignore 只管 frontend/ 内）
+node_modules/
+test-results/
+playwright-report/
