@@ -146,7 +146,7 @@
       <template v-else>
       <AnnotationToolbar
         :tools="displayTools"
-        :current-tool="currentTool"
+        :current-tool="currentToolForBar"
         @select="setTool"
         @undo="undo"
         @redo="redo"
@@ -200,6 +200,7 @@
             :cw="cw"
             :ch="ch"
             :zoom="canvas.zoom.value"
+            :font-size="fontSize"
           />
           <line
             v-if="crossVisible"
@@ -526,14 +527,7 @@
     <el-dialog v-model="ocrInputVisible" title="输入 OCR 文本" width="380px" append-to-body>
       <el-input v-model="ocrInput" placeholder="OCR 文本" @keydown.enter="confirmOcr" />
       <template #footer>
-        <el-button
-          @click="
-            ocrInputVisible = false;
-            pendingOcr = null;
-          "
-        >
-          取消
-        </el-button>
+        <el-button @click="cancelOcr">取消</el-button>
         <el-button type="primary" @click="confirmOcr">确定</el-button>
       </template>
     </el-dialog>
@@ -849,6 +843,7 @@ import {
   watch,
 } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
+import { useUserStore } from "@/store";
 import {
   Select,
   FullScreen,
@@ -978,6 +973,25 @@ const emit = defineEmits<{ (e: "open-history"): void }>();
 const canvasRef = ref<InstanceType<typeof AnnotationCanvas> | null>(null);
 const canvas = useAnnotationCanvas();
 const currentTool = ref("select");
+// 画笔子工具（涂抹/套索），若插件工具未显式提供 subTools 则回退到该默认项
+const BRUSH_SUBS = [
+  { value: "paint", label: "涂抹" },
+  { value: "lasso", label: "套索" },
+];
+// 需要预先建类别才能标注的任务类型（画布上按 taskClasses 分类标注）。
+// 文本/视频事件/音频/时间序列类任务的类别在其专用面板管理，不在此列。
+const TASKS_REQUIRE_CLASS = new Set([
+  "detection",
+  "rotated_detection",
+  "segmentation",
+  "semantic_segmentation",
+  "panoptic_segmentation",
+  "polyline",
+  "cuboid",
+  "keypoint",
+  "ocr",
+  "classification",
+]);
 const imageLoaded = ref(false);
 const lockedByOther = ref(false);
 const lockedByUser = ref<any>(null);
@@ -1118,7 +1132,29 @@ const documentId = ref<number | null>(null);
 const docContent = ref("");
 const docMeta = ref<TextDocumentMeta | null>(null);
 let lockedDocumentId: number | null = null;
-const displayTools = computed(() => [...baseTools, ...plugin.value.tools]);
+const displayTools = computed(() => {
+  const out: any[] = [...baseTools];
+  const tm = plugin.value.toolMap as any;
+  for (const t of plugin.value.tools) {
+    const st = tm?.[t.name]?.state;
+    const subs = st?.subTools ?? (st?.setBrushMode ? BRUSH_SUBS : null);
+    if (subs && subs.length) {
+      for (const s of subs) {
+        out.push({
+          ...t,
+          name: t.name + "-" + s.value,
+          label: s.label,
+          title: s.label,
+          _tool: t.name,
+          _mode: s.value,
+        });
+      }
+    } else {
+      out.push(t);
+    }
+  }
+  return out;
+});
 const taskTypeLabel = computed(() => plugin.value.label);
 const taskTagType = computed(() => (plugin.value.color as any) || "primary");
 const cw = computed(() => canvas.cw.value);
@@ -1132,6 +1168,16 @@ const activeTool = computed(
 );
 const isDrawing = computed(() => !!activeTool.value);
 const isBrushTool = computed(() => currentTool.value === "brush");
+const currentToolForBar = computed(() => {
+  const st = activeTool.value?.state;
+  const subs: any[] = st?.subTools ?? (st?.setBrushMode ? BRUSH_SUBS : []);
+  const mode = unref(st?.mode);
+  // 始终返回带模式后缀的按钮名（如 brush-paint / brush-lasso），
+  // 与 displayTools 生成的按钮 name 一致，保证对应的子工具按钮正确高亮。
+  const found = mode && subs.find((s) => s.value === mode);
+  if (found) return currentTool.value + "-" + mode;
+  return currentTool.value;
+});
 
 // 当前高亮/选中类别的颜色（用于十字线等）
 const currentClassColor = computed(() =>
@@ -1180,13 +1226,41 @@ const crossVisible = computed(() => isDrawing.value && !isBrushTool.value);
 const BRUSH_CURSOR =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23555555' stroke-width='1' d='M13.2886 6.21301L18.2278 2.37142C18.6259 2.0618 19.1922 2.09706 19.5488 2.45367L22.543 5.44787C22.8997 5.80448 22.9349 6.37082 22.6253 6.76891L18.7847 11.7068C19.0778 12.8951 19.0836 14.1721 18.7444 15.4379C17.8463 18.7897 14.8142 20.9986 11.5016 20.9986C8 20.9986 3.5 19.4967 1 17.9967C4.97978 14.9967 4.04722 13.1865 4.5 11.4967C5.55843 7.54658 9.34224 5.23935 13.2886 6.21301ZM16.7015 8.09161C16.7673 8.15506 16.8319 8.21964 16.8952 8.28533L18.0297 9.41984L20.5046 6.23786L18.7589 4.4921L15.5769 6.96698L16.7015 8.09161Z'/%3E%3C/svg%3E\") 10 14, crosshair";
 const hintText = computed(() => {
-  const t = displayTools.value.find((x) => x.name === currentTool.value);
+  const t = displayTools.value.find((x) => (x as any)?._tool === currentTool.value);
+  // 关键点：动态显示「放置进度 + 名称」或「矩形绑定」提示
+  if (currentTool.value === "keypoint") {
+    const kpState = activeTool.value?.state as any;
+    if (kpState?.boxMode?.value)
+      return "关键点已放满，请拖出矩形框绑定为对象（完成）";
+    const n = kpState?.pending?.value?.length ?? 0;
+    const names: string[] =
+      taskClasses.value.find((c: any) => c.id === selectedClassId.value)?.keypoint_names ?? [];
+    if (names.length)
+      return `请逐点放置关键点（${n}/${names.length}）：${names.join("、")}`;
+  }
+  // 3D 目标检测：动态绘制步骤提示
+  if (currentTool.value === "cuboid") {
+    const st = activeTool.value?.state as any;
+    const step = st?.step?.value ?? 0;
+    if (step === 1) return "已放置第 1 个角点，点击放置第 2 个角点（底面一条边）";
+    if (step === 2) return "已放置一条边，点击放置第 3 个角点确定底面平行四边形";
+    if (step === 3) return "底面已确定，向上移动鼠标拖出高度，点击生成 3D 框";
+    return "第 1 步：点击放置底面角点";
+  }
   return (t as any)?.title || (t as any)?.tip || "";
 });
 
 let panState: { startX: number; startY: number; px: number; py: number } | null = null;
 let dragState: {
-  type: "move" | "resize" | "rotate" | "poly-vertex" | "kp-vertex" | "kp-move" | "kp-resize";
+  type:
+    | "move"
+    | "resize"
+    | "rotate"
+    | "poly-vertex"
+    | "kp-vertex"
+    | "kp-move"
+    | "kp-resize"
+    | "cuboid-height";
   ann: Annotation;
   handle: string;
   startX: number;
@@ -2510,14 +2584,23 @@ function resetAllDraftTools() {
 }
 function setTool(t: string) {
   const prev = currentTool.value;
-  if (prev !== t) {
+  const entry = (displayTools.value as any[]).find((x) => x.name === t);
+  const base = entry?._tool ?? t;
+  const mode = entry?._mode ?? null;
+  if (prev !== base) {
     // 重置即将离开的工具，防止其部分绘制状态残留（如多边形半成品顶点）
     const prevTool = toolFor(prev);
     prevTool?.reset?.();
     // 兼容旧版单工具插件：切换时同样重置其工具
     if (plugin.value.tool && plugin.value.tool !== prevTool) plugin.value.tool.reset?.();
   }
-  currentTool.value = t;
+  currentTool.value = base;
+  // 设置子工具模式（涂抹/套索、矩形/多边形等）
+  if (mode != null) {
+    const st = activeTool.value?.state;
+    if (st?.setMode) st.setMode(mode);
+    else if (st?.setBrushMode) st.setBrushMode(mode);
+  }
   resetDrawingState();
 }
 function resetDrawingState() {
@@ -3145,7 +3228,14 @@ async function saveAnn() {
   historyIndex = 0;
   const img = store.images[store.currentImageIndex];
   if (img) {
-    img.status = store.annotations.length ? "annotated" : "unannotated";
+    // 保存后本地同步该图的标注状态与「标注人/标注时间」
+    // （后端 get_images 以最新标注记录的 created_id/created_time 填充，此处保持一致）
+    const hasData = store.annotations.length > 0;
+    img.status = hasData ? "annotated" : "unannotated";
+    const ui = useUserStore().basicInfo;
+    img.updated_by =
+      hasData && ui?.id ? { id: ui.id, name: ui.name || ui.username } : null;
+    img.updated_time = hasData ? new Date().toISOString() : null;
   }
   fetchTaskProgress();
 }
@@ -3162,8 +3252,9 @@ function commitCreated(created: Annotation | null): void {
   // 避免覆盖面板等已写入的（如背景）真实类 id。
   if (!created.class_id && selectedClassId.value != null) created.class_id = selectedClassId.value;
   if (created.type === "Ocr") {
+    store.annotations.push(created);
     pendingOcr = created;
-    ocrInput.value = "";
+    ocrInput.value = created.text || "";
     ocrInputVisible.value = true;
     return;
   }
@@ -3184,6 +3275,10 @@ function onDblClick(e: MouseEvent) {
     }
   }
   const tool = activeTool.value;
+  if (tool && TASKS_REQUIRE_CLASS.has(plugin.value.name) && taskClasses.value.length === 0) {
+    ElMessage.warning("请先创建至少一个类别，再进行标注");
+    return;
+  }
   if (tool) {
     const p = toImagePoint(e);
     const created = tool.dblclick?.({
@@ -3227,6 +3322,10 @@ function onCanvasDown(e: MouseEvent) {
     return;
   }
   const tool = activeTool.value;
+  if (tool && TASKS_REQUIRE_CLASS.has(plugin.value.name) && taskClasses.value.length === 0) {
+    ElMessage.warning("请先创建至少一个类别，再进行标注");
+    return;
+  }
   if (tool) {
     const created = tool.down?.({
       point: p,
@@ -3241,17 +3340,21 @@ function onCanvasDown(e: MouseEvent) {
     return;
   }
 }
+function cancelOcr() {
+  if (pendingOcr) {
+    const i = store.annotations.findIndex((a) => a.id === pendingOcr!.id);
+    if (i >= 0) store.annotations.splice(i, 1);
+    store.markUnsaved();
+  }
+  pendingOcr = null;
+  ocrInputVisible.value = false;
+}
 function confirmOcr() {
   if (pendingOcr) {
     pendingOcr.text = ocrInput.value;
     pendingOcr.class_id = selectedClassId.value ?? pendingOcr.class_id;
-    if (plugin.value.create(pendingOcr)) {
-      store.annotations.push(pendingOcr);
-      store.markUnsaved();
-      pushHistory();
-    } else {
-      ElMessage.warning("OCR 区域无效，未创建标注");
-    }
+    store.markUnsaved();
+    pushHistory();
   }
   pendingOcr = null;
   ocrInputVisible.value = false;
@@ -3334,7 +3437,20 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
     return;
   }
   if (handle.startsWith("ocr-")) {
-    const idx = Number(handle.replace("ocr-", ""));
+    const rest = handle.replace("ocr-", "");
+    // 矩形角点（含 l/r/t/b）→ 整体缩放；多边形顶点 → 逐点编辑
+    if (/^[lrtb]{1,2}$/.test(rest)) {
+      dragState = {
+        type: "resize",
+        ann: draftOf(ann),
+        handle: rest,
+        startX: e.clientX,
+        startY: e.clientY,
+        orig: JSON.parse(JSON.stringify(ann)),
+      };
+      return;
+    }
+    const idx = Number(rest);
     if (e.altKey) {
       const interaction = plugin.value.interaction;
       if (interaction?.vertexDelete) {
@@ -3397,6 +3513,17 @@ function onHandleDown(e: MouseEvent, ann: Annotation, handle: string) {
       type: "poly-vertex",
       ann: draftOf(ann),
       handle: String(idx),
+      startX: e.clientX,
+      startY: e.clientY,
+      orig: JSON.parse(JSON.stringify(ann)),
+    };
+    return;
+  }
+  if (handle === "cuboid-h") {
+    dragState = {
+      type: "cuboid-height",
+      ann: draftOf(ann),
+      handle: "",
       startX: e.clientX,
       startY: e.clientY,
       orig: JSON.parse(JSON.stringify(ann)),
@@ -3563,6 +3690,15 @@ function onMove(e: MouseEvent) {
         });
         return;
       }
+    }
+    if (dragState.type === "cuboid-height") {
+      const nc = (v: number) => Math.max(0, Math.min(1, v));
+      const dy = (e.clientY - dragState.startY) / dh.value;
+      const o = dragState.orig;
+      dragState.ann.top_cy = nc((o.top_cy ?? 0) - dy);
+      dragState.ann.depth = dragState.ann.top_cy;
+      triggerRef(draftAnn);
+      return;
     }
     if (dragState.type === "rotate") {
       const interaction = plugin.value.interaction;
@@ -3754,7 +3890,7 @@ function tagStyle(ann: any): any {
     const off = canvas.imageOffset(r.width, r.height);
     let nx = 0,
       ny = 0;
-    const anchor = plugin.value.interaction?.tagAnchor?.(ann);
+    const anchor = plugin.value.interaction?.tagAnchor?.(ann, cw.value, ch.value);
     if (anchor) {
       nx = anchor.x;
       ny = anchor.y;
@@ -3762,12 +3898,13 @@ function tagStyle(ann: any): any {
       nx = ann.x1;
       ny = ann.y1;
     } else if (ann.type === "RotatedBox" && ann.cx !== undefined) {
-      const hw = ann.width / 2,
-        hh = ann.height / 2;
+      // 像素空间计算左上角，再转回归一化（非方形图片必做 cw/ch 换算）
+      const hw = (ann.width * cw.value) / 2;
+      const hh = (ann.height * ch.value) / 2;
       const cos = Math.cos(ann.angle),
         sin = Math.sin(ann.angle);
-      nx = ann.cx + -hw * cos - -hh * sin;
-      ny = ann.cy + -hw * sin + -hh * cos;
+      nx = (ann.cx * cw.value + -hw * cos - -hh * sin) / cw.value;
+      ny = (ann.cy * ch.value + -hw * sin + -hh * cos) / ch.value;
     } else if (ann.cx !== undefined) {
       nx = ann.cx;
       ny = ann.cy;
@@ -4263,9 +4400,26 @@ defineExpose({
   flex-direction: column;
   width: 100%;
   height: 100%;
+  position: relative;
   background: #fff;
   user-select: none;
   -webkit-user-select: none;
+}
+.ann-plugin-panel {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-bg-color, #fff);
+  box-shadow: var(--el-box-shadow-light);
+  border: 1px solid var(--el-border-color-lighter);
+  max-width: 240px;
 }
 .ann-lock-banner {
   margin: 8px;

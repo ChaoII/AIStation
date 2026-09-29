@@ -1,4 +1,4 @@
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import type { Annotation, Point } from "./types";
 
 /** Douglas-Peucker 折线简化（保留首尾点），返回新数组。 */
@@ -219,10 +219,20 @@ export function lassoToPolygon(points: Point[]): Point[] {
 /** 画笔状态机：维护当前笔画轨迹与橡皮擦标记；end() 用位图掩码转 Polygon。 */
 export function useBrushTool() {
   const strokes = ref<Point[][]>([]);
-  const brushSize = ref(8);
+  const paintSize = ref(8);
+  const lassoSize = ref(8);
   const erasing = ref(false);
   const mode = ref<"paint" | "lasso">("paint");
   let canvas: HTMLCanvasElement | null = null;
+
+  // 涂抹/套索各自独立的笔刷粗细（右键浮层分别设置）
+  const brushSize = computed({
+    get: () => (mode.value === "lasso" ? lassoSize.value : paintSize.value),
+    set: (v: number) => {
+      if (mode.value === "lasso") lassoSize.value = v;
+      else paintSize.value = v;
+    },
+  });
 
   function ensureCanvas(cw: number, ch: number): HTMLCanvasElement {
     if (!canvas) canvas = document.createElement("canvas");

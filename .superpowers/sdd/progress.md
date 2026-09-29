@@ -497,3 +497,22 @@ Fix B (commit 12bc999): 修复初始深度与创建校验/update守卫/top选择
 最终评审验证(本次已重跑): backend test_export_cuboid+test_export_xanylabeling 11 passed; e2e create-cuboid/rotatedbox/polygon 4 passed; type-check 仅 pre-existing 无关模块(module_generator/monitor/system_user/task)报错, annotation/cuboid 0 新增; alembic head 单头 9a8b7c6d5e4f
 CUBOID 整分支最终评审: 功能提交区间 85c8800..12bc999 (8 commits, 17 files, +742/-7), 无 Critical/Important 遗留, Ready to merge = YES
 备注: 工作区存在大量与 cuboid 无关的 prettier 格式化改动(28 文件, module_train/video/stats/Notification/useCollab/SchedulePanel 等, dataset/index.vue 亦仅被重排), 均为既有功能代码被格式化, 非 cuboid 功能改动, 未纳入本分支; 是否 stash/留存由用户决定。
+
+=== SDD: 画笔分割套索子模式 (2026-09-24) ===
+Branch: main
+Baseline: d9a979d
+Plan: docs/superpowers/plans/2026-09-24-segmentation-brush-lasso.md
+
+Task 1: complete (commits d9a979d..b6eae4d, review approved; brush.ts lasso + tests)
+Minor(t1): brush.ts:216 dead ternary (plan-mandated); lasso tolerance 0.01 may over-simplify large canvases (plan default); brush.test.ts closure test name misleading (no closure assert); degenerate fallback when simplify leaves <3
+
+Task 2: complete (commits b6eae4d..a35e7e0, review approved; segmentation index brush state exposes mode/setBrushMode)
+
+Task 3: complete (commits a35e7e0..6efabb6, review approved; BrushPreview lasso render)
+Minor(t3): closePreview computes in non-lasso too; single-point stroke degenerate; multi-stroke lasso could mis-connect (plan design, lasso normally single stroke). Runtime render effect to be verified by e2e/task5 + final shot.
+
+Task 4: complete (commits 6efabb6..55e0d5d, review approved; brushPopover mode toggle)
+
+Task 5: complete (commits 55e0d5d..b8a5ef4, review re-eligible after fix; create-lasso e2e + create-brush regression pass)
+
+Task 6 (final whole-branch review): Ready to merge = YES. No Critical/Important; Minor list (dead ternary, lasso tolerance 0.01, closure-test no closure assert, closePreview edge) all plan-consistent/non-blocking. Final verification: vue-tsc annotation 0 errors, brush tests 8 passed. Lasso feature COMPLETE (commits b6eae4d..b8a5ef4, 6 commits).

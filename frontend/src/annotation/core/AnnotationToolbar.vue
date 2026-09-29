@@ -71,6 +71,31 @@ const BrushIcon = defineComponent({
   },
 });
 
+// Photoshop 风格「套索」图标：开口绳圈 + 绳头
+const LassoIcon = defineComponent({
+  name: "LassoIcon",
+  render() {
+    return h(
+      "svg",
+      {
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": 2,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+        width: "18",
+        height: "18",
+      },
+      [
+        h("path", {
+          d: "M12 4.5 C8.2 4.5 5.2 7.6 5.2 11 C5.2 14.8 8.2 17.8 12 17.8 C14.7 17.8 17 16.3 17.5 14.1 M17.5 14.1 L16 13.1",
+        }),
+      ]
+    );
+  },
+});
+
 const ICONS: Record<string, any> = {
   select: CursorIcon,
   pan: Rank,
@@ -79,8 +104,12 @@ const ICONS: Record<string, any> = {
   rotated_box: Refresh,
   polygon: EditPen,
   brush: BrushIcon,
+  "brush-paint": BrushIcon,
+  "brush-lasso": LassoIcon,
   keypoint: CirclePlus,
   ocr: Document,
+  "ocr-rect": Crop,
+  "ocr-quad": Document,
   classification: Collection,
 };
 

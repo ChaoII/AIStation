@@ -140,7 +140,11 @@
         >
           <span class="dot-color" :style="{ background: c.color }" />
           <span class="flex-1">{{ c.name }}</span>
-          <el-checkbox :model-value="isClsSelected(c.id)" @click.stop />
+          <el-checkbox
+            :model-value="isClsSelected(c.id)"
+            @click.stop
+            @change="$emit('toggle-classification', c.id)"
+          />
         </div>
       </div>
     </div>

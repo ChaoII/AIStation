@@ -4,7 +4,6 @@
       v-model="bgId"
       placeholder="选择背景类别"
       size="small"
-      style="width: 160px"
       clearable
       @change="onBgChange"
     >
