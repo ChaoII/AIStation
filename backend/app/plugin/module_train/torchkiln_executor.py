@@ -417,8 +417,35 @@ class TorchKilnExecutor(TaskExecutor):
         err = final.get("error")
         if status == TrainStatus.FAILED and not err:
             err = f"TorchKiln 作业失败（exit_reason={reason}）"
+
+        # 训练成功后把最优权重复制进 RustFS 并建模型版本——这是打通
+        # 「评估 / 预测 / 导出 / 部署」的前提：那些链路都按 model_id 取权重，
+        # 没有版本它们全都无从下手。
+        model_repo_id = None
+        if status == TrainStatus.SUCCESS:
+            from app.plugin.module_train.exporter import export_model
+
+            export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
+            try:
+                model_info = await export_model(
+                    task_id, "torchkiln", export_dir, best_metrics=best)
+                model_repo_id = model_info.get("repo_id")
+                if not model_info.get("storage_path"):
+                    await broadcast_line(
+                        task_id, "[torchkiln] 未能取得权重，本次不创建模型版本"
+                        "（评估/预测/导出将不可用）")
+                else:
+                    await broadcast_line(
+                        task_id, f"[torchkiln] 权重已入库，模型版本 id={model_repo_id}")
+            except Exception as e:  # noqa: BLE001
+                # 取权重失败**不能**把训练判成失败——训练本身已成功，
+                # 只是没能建版本；否则用户会白跑一遍训练。
+                log.error("[torchkiln] 权重入库失败: %s", e)
+                await broadcast_line(task_id, f"[torchkiln] 权重入库失败: {e}")
+
         await cls._mark_status(
             task_id, status,
+            model_repo_id=model_repo_id,
             metrics_log=final_rows or None,
             best_metrics=best or None,
             last_metrics=last or None,

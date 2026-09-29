@@ -1510,8 +1510,51 @@ def _crop_text_region(img_path: str, quad: list, img_w: int = 1, img_h: int = 1)
             return None
 
 
+async def _fetch_torchkiln_weights(task_id: int, export_dir: str) -> str | None:
+    """从 TorchKiln 服务拉取该任务训练出的最优权重到本地 ``export_dir``。
+
+    为什么需要：TorchKiln 跑在**独立服务**里（可能另一台机器/另一个容器），
+    权重在它自己的 ``output_dir``，本项目必须下载回来才能入 RustFS、
+    下发给评估/预测。服务不可达时抛异常，由调用方降级为「本次不建版本」——
+    不能因为拉不到权重就把整个训练判成失败。
+    """
+    import os as _os
+
+    from .model import TrainTask as _TrainTask
+    from .torchkiln_client import TorchKilnClient
+
+    async with async_db_session() as db:
+        task = await db.get(_TrainTask, task_id)
+        if task is None:
+            raise ValueError(f"训练任务 {task_id} 不存在")
+        job_id = (task.hyperparams or {}).get("__tk_job_id")
+    if not job_id:
+        raise ValueError("任务没有 TorchKiln 作业 id（未启动过训练？）")
+
+    _os.makedirs(export_dir, exist_ok=True)
+    async with TorchKilnClient() as client:
+        info = await client.get_job(job_id)
+        if str(info.get("status")) != "succeeded":
+            raise ValueError(
+                "TorchKiln 作业 {} 状态为 {}，未成功，不取权重".format(
+                    job_id, info.get("status")))
+        dest = _os.path.join(export_dir, "best_accuracy.pth")
+        await client.fetch_file(job_id, "best_accuracy.pth", dest)
+    log.info(f"torchkiln weights fetched -> {dest}")
+    return dest
+
+
 async def export_model(task_id: int, framework: str, export_dir: str, best_metrics: dict | None = None) -> dict:
     from .model import TrainModel, TrainTask
+
+    # 0. TorchKiln：权重在训练服务的 output_dir（可能另一台机器/容器里），
+    #    先把 best_accuracy.pth 拉回本地，后续流程与其它框架一致。
+    if framework == "torchkiln":
+        try:
+            await _fetch_torchkiln_weights(task_id, export_dir)
+        except Exception as e:  # noqa: BLE001
+            log.error(f"从 TorchKiln 服务拉取权重失败: {e}")
+            return {"repo_id": None, "storage_path": None}
 
     # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
     best_path = None
@@ -1531,11 +1574,18 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
                 best_path = p
                 break
     else:
-        extensions = [".pt"] if framework == "ultralytics" else [".pdparams"]
+        extensions = (
+            [".pt"] if framework == "ultralytics"
+            else [".pth"] if framework == "torchkiln"
+            else [".pdparams"]
+        )
         for ext in extensions:
             candidates = [
                 os.path.join(export_dir, "exp", "weights", f"best{ext}"),
                 os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
+                os.path.join(export_dir, "weights", f"best{ext}"),
+                os.path.join(export_dir, f"best_accuracy{ext}"),
+                os.path.join(export_dir, f"best{ext}"),
             ]
             for p in candidates:
                 if os.path.isfile(p):
@@ -1552,6 +1602,9 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
                     best_path = os.path.join(root, f)
                     break
                 if framework == "ultralytics" and f == "best.pt":
+                    best_path = os.path.join(root, f)
+                    break
+                if framework == "torchkiln" and f in ("best_accuracy.pth", "final.pth"):
                     best_path = os.path.join(root, f)
                     break
             if best_path:

@@ -79,6 +79,23 @@ def build_predict_cmd(framework: str, model_filename: str, hp: dict) -> list[str
             f"python {infer} -c {cfg} -o " + " ".join(opts)
         )
         return ["bash", "-c", inner]
+    if str(framework).lower() == "torchkiln":
+        # 自研平台：走它自己的 `tkiln predict`，配置由训练任务带下来（model 名）。
+        # 权重是 .pth，用 Global.pretrained_model 指定；结果写到 /output。
+        model_cfg = hp.get("tk_config") or hp.get("model") or ""
+        if not model_cfg:
+            # 兜底：用训练任务的 hyperparams.model（调用方应透传）
+            model_cfg = hp.get("tk_model") or ""
+        opts = [
+            f"Global.pretrained_model=/model/{model_filename}",
+            "Global.save_model_dir=/output",
+            f"Global.imgsz={imgsz}",
+            f"Global.conf={conf}",
+            f"Global.iou={iou}",
+            f"Global.device={device}",
+            "Global.infer_dir=/data",
+        ]
+        return ["tkiln", "predict", "-c", str(model_cfg), "-o"] + opts
     return [
         "yolo", "predict",
         f"model=/model/{model_filename}",
@@ -90,6 +107,33 @@ def build_predict_cmd(framework: str, model_filename: str, hp: dict) -> list[str
         "save_txt=True", "save_conf=True",
         "project=/output", "name=exp",
     ]
+
+
+async def resolve_predict_tk_config(model_id: int) -> str | None:
+    """反查产出该模型版本的**训练任务**，取其 TorchKiln 配置名。
+
+    预测必须用与训练一致的配置（架构/imgsz/后处理都对不上就没有可比性），
+    所以这里不猜、不让用户手填——直接回到训练任务要。
+    """
+    from sqlalchemy import desc, select
+
+    from .framework_utils import framework_value
+    from .model import TrainModel, TrainTask
+
+    async with async_db_session() as db:
+        model_row = await db.get(TrainModel, model_id)
+        repo_id = model_row.repo_id if model_row else None
+        if not repo_id:
+            return None
+        task = (await db.execute(
+            select(TrainTask).where(TrainTask.model_repo_id == repo_id)
+            .order_by(desc(TrainTask.id)).limit(1)
+        )).scalar_one_or_none()
+    if not task:
+        return None
+    if framework_value(getattr(task, "framework", None)) != "torchkiln":
+        return None
+    return str((task.hyperparams or {}).get("model") or "") or None
 
 
 async def start_prediction_scheduler():
@@ -196,6 +240,17 @@ class PredictExecutor(TaskExecutor):
             # Build command by framework
             if framework == TrainFramework.PADDLEX:
                 docker_image = "paddlex:latest"
+            elif framework == TrainFramework.TORKILN:
+                # 自研平台的推理镜像（镜像内已装好 torch+CUDA 与 tkiln CLI）
+                docker_image = hp.get("docker_image") or "torchkiln:0.1.0"
+
+            if framework == TrainFramework.TORKILN:
+                # 配置名回查训练任务：预测必须与训练用同一套配置
+                tk_cfg = hp.get("tk_config") or await resolve_predict_tk_config(pred.model_id)
+                if not tk_cfg:
+                    raise Exception(
+                        "TorchKiln 预测找不到产出该模型的训练任务，无法确定配置名")
+                hp = {**hp, "tk_config": tk_cfg, "model": tk_cfg}
 
             cmd = build_predict_cmd(framework.value, model_filename, hp)
 
@@ -214,7 +269,7 @@ class PredictExecutor(TaskExecutor):
                         output_dir: {"bind": "/output", "mode": "rw"},
                     },
                     gpu_id=predict_gpu_id(device),
-                    shm_size="4g" if framework == TrainFramework.PADDLEX else None,
+                    shm_size="4g" if framework in (TrainFramework.PADDLEX, TrainFramework.TORKILN) else None,
                     labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
                 )
                 container_id = container.id
@@ -249,6 +304,22 @@ class PredictExecutor(TaskExecutor):
                                 os.path.join(base, f) for f in sorted(os.listdir(base))
                                 if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
                             )
+                elif framework == TrainFramework.TORKILN:
+                    # tkiln predict 的可视化结果落在 save_model_dir 下的常见子目录
+                    results_base = output_dir
+                    result_files = []
+                    for sub in ("output", "results", "vis", "exp"):
+                        base = os.path.join(output_dir, sub)
+                        if os.path.isdir(base):
+                            result_files.extend(
+                                os.path.join(base, f) for f in sorted(os.listdir(base))
+                                if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                            )
+                    if not result_files:
+                        result_files = [
+                            os.path.join(output_dir, f) for f in sorted(os.listdir(output_dir))
+                            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
+                        ]
                 else:
                     results_base = os.path.join(output_dir, "exp")
                     result_files = [

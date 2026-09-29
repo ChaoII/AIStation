@@ -84,7 +84,7 @@
                   :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
                   size="small"
                 >
-                  {{ scope.row.framework === "ultralytics" ? "YOLO" : "PaddleX" }}
+                  {{ scope.row.framework === "ultralytics" ? "YOLO" : scope.row.framework === "paddlex" ? "PaddleX" : "TorchKiln" }}
                 </el-tag>
               </template>
             </el-table-column>
