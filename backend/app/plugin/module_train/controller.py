@@ -190,6 +190,21 @@ async def get_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["mod
     return SuccessResponse(data=data)
 
 
+@router.get("/task/{task_id}/status", summary="训练任务状态（轻量，轮询用）")
+async def get_task_status(
+    task_id: int,
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    """只返回状态相关的少数字段，供详情页轮询。
+
+    ⚠️ **不要用 detail 接口做轮询**：它会返回完整 ``metrics_log``（逐步指标，
+    本项目每任务上限 5000 行），页大小级的数据量每 5 秒重下一次，指标越多页面越卡。
+    逐步指标请走 ``GET /task/{id}/metrics``（支持 offset 增量）或 SSE 流。
+    """
+    data = await TrainService.get_task_status(task_id)
+    return SuccessResponse(data=data)
+
+
 @router.post("/task/{task_id}/stop", summary="停止训练")
 async def stop_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:update"]))):
     result = await TrainService.stop_task(task_id)

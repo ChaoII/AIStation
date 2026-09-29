@@ -4,6 +4,7 @@ import tempfile
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import load_only
 
 from app.core.audit import set_create_audit, set_update_audit
 from app.core.database import async_db_session
@@ -24,6 +25,16 @@ _EPOCH_RE = re.compile(r"(?:^\s*(\d+)/(\d+)\s+|epoch:\s*\[(\d+)/(\d+)\])")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _VERSION_DIGITS = re.compile(r"[^0-9]")
 _EXPORT_DIR = "/export/"
+
+#: 列表接口**不查**的列：都是无界增长的大文本列。
+#:
+#: - ``metrics_log``：逐步指标（本项目每任务上限 5000 行），列表页完全用不到
+#: - ``error_log``：失败时可能是整份 traceback，长度不可控
+#:
+#: 列表页真正需要的只有 progress/status；逐步指标请走 ``GET /task/{id}/metrics``。
+#: 不排除的话，「页大小 20 × 5000 行」会在**每次轮询**（5 秒一次）全量下发，
+#: 这是详情页之外最大的一处带宽浪费。
+LIST_EXCLUDED_COLUMNS = frozenset({"metrics_log", "error_log"})
 
 
 def _backtrack_export_path(storage_path: str, task_id: int | None) -> str:
@@ -70,9 +81,15 @@ def _calc_progress_from_log(task_id: int) -> int | None:
     return None
 
 
-def _model_to_dict(row) -> dict:
+def _model_to_dict(row, exclude: set[str] | None = None) -> dict:
     cols = {}
+    skip = exclude or set()
     for c in row.__table__.columns:
+        # ⚠️ 必须显式跳过 exclude 里的列，不能只是「不查」。配了 load_only 的实例
+        #    属性是 deferred 的，getattr 会**触发一次懒加载 SQL**——10 条任务就是
+        #    10 条额外查询，比把列查出来还糟。
+        if c.name in skip:
+            continue
         try:
             cols[c.name] = getattr(row, c.name)
         except Exception:
@@ -82,8 +99,9 @@ def _model_to_dict(row) -> dict:
     return cols
 
 
-def _enrich_task(row, dataset_names: dict[int, str] | None = None) -> dict:
-    d = _model_to_dict(row)
+def _enrich_task(row, dataset_names: dict[int, str] | None = None,
+                 exclude: set[str] | None = None) -> dict:
+    d = _model_to_dict(row, exclude=exclude)
     if d.get("status") == "running":
         live = _calc_progress_from_log(d.get("id", 0))
         if live is not None:
@@ -384,6 +402,20 @@ class TrainService:
 
         async with async_db_session() as db:
             stmt = select(TrainTask)
+            # ⚠️ 列表**不要**查 metrics_log：那是逐步指标（本项目上限 5000 行/任务），
+            #    列表页只用到 progress/status。查出来等于每 5 秒往浏览器推
+            #    「页大小 × 5000 行」的 JSON（页大小 20 就是 10 万行），
+            #    而前端 index.vue 的轮询只用 progress/status 两个字段——
+            #    这是整条链路上最大的一处带宽浪费。
+            #    同时排除超长文本列 logs，避免同类问题。
+            # ⚠️ load_only 只接受 **ORM 属性**（`getattr(Model, col_name)`），
+            #    传列名字符串会抛 "expected ORM mapped attribute for loader
+            #    strategy argument"，整个列表接口 500。
+            stmt = stmt.options(load_only(*(
+                getattr(TrainTask, c.name)
+                for c in TrainTask.__table__.columns
+                if c.name not in LIST_EXCLUDED_COLUMNS
+            )))
             if name:
                 stmt = stmt.where(TrainTask.name.ilike(f"%{name}%"))
             if framework:
@@ -396,7 +428,8 @@ class TrainService:
             result = await db.execute(stmt)
             rows = result.scalars().all()
             name_map = await _dataset_name_map(db, [r.dataset_id for r in rows])
-            return [_enrich_task(r, name_map) for r in rows], total
+            return [_enrich_task(r, name_map, exclude=LIST_EXCLUDED_COLUMNS)
+                    for r in rows], total
 
     @classmethod
     async def get_task(cls, task_id: int) -> dict | None:
@@ -406,6 +439,28 @@ class TrainService:
                 return None
             name_map = await _dataset_name_map(db, [t.dataset_id])
             return _enrich_task(t, name_map)
+
+    @classmethod
+    async def get_task_status(cls, task_id: int) -> dict | None:
+        """只取状态相关字段，供前端轮询（**不要**用它替代 detail 做全量刷新）。
+
+        progress 需要与 detail 保持同一套算法，否则轮询时进度会来回跳。
+        """
+        want = ("id", "status", "progress", "started_at", "finished_at",
+                "error_log", "model_repo_id", "best_metrics", "last_metrics")
+        # ⚠️ load_only 只接受 **ORM 属性**，传列名字符串会抛
+        #    "expected ORM mapped attribute for loader strategy argument"（500）
+        attrs = [getattr(TrainTask, n) for n in want]
+        async with async_db_session() as db:
+            stmt = select(TrainTask).options(load_only(*attrs)).where(TrainTask.id == task_id)
+            t = (await db.execute(stmt)).scalar_one_or_none()
+            if not t:
+                return None
+            d = _enrich_task(t, exclude={"hyperparams", "metrics_log"})
+            # error_log 只在失败时有值，且可能很长；成功时不给，省带宽
+            if d.get("status") != "failed":
+                d.pop("error_log", None)
+            return d
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
