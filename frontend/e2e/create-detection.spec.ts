@@ -1,15 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // 回归护栏：检测（detection）绘制流程下沉到插件 tool 后，仍能
 // “切换框选工具 → 拖拽 → 生成标注并可拖动”。
 
 const API = process.env.E2E_API_URL || "http://127.0.0.1:8001/api/v1";
-const PNG = Buffer.from(
-  "89504e470d0a1a0a0000000d4948445200000010000000100806000000" +
-    "1ff3ff610000001d4944415478da63fccfc0f01f8a1930e2d4a8016206" +
-    "8c38b5e8d40300b7c02f9c1b3b5c0000000049454e44ae426082",
-  "hex"
-);
+const PNG = readFileSync(fileURLToPath(new URL("./fixtures/test-image.jpg", import.meta.url)));
 
 test("detection 框选拖拽生成标注", async ({ page, request }) => {
   const login = await request.post(`${API}/system/auth/login`, {
@@ -30,12 +27,17 @@ test("detection 框选拖拽生成标注", async ({ page, request }) => {
 
   const upRes = await request.post(`${API}/annotation/dataset/${dsId}/upload`, {
     headers: auth,
-    multipart: { files: { name: "a.png", mimeType: "image/png", buffer: PNG } },
+    multipart: { files: { name: "test-image.jpg", mimeType: "image/jpeg", buffer: PNG } },
   });
   expect(upRes.ok()).toBeTruthy();
 
   const taskRes = await request.post(`${API}/annotation/task/create`, {
-    data: { dataset_id: dsId, name: `t-${name}`, task_type: "detection" },
+    data: {
+      dataset_id: dsId,
+      name: `t-${name}`,
+      task_type: "detection",
+      classes: [{ id: 1, name: "默认", color: "#409eff" }],
+    },
     headers: auth,
   });
   expect(taskRes.ok()).toBeTruthy();

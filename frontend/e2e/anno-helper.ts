@@ -10,12 +10,9 @@ const API = process.env.E2E_API_URL || "http://127.0.0.1:8001/api/v1";
 
 // 视频帧级测试用的小 MP4 fixture（320x240 / 25fps / 2s ≈ 50 帧）。
 const VIDEO = readFileSync(fileURLToPath(new URL("./fixtures/test.mp4", import.meta.url)));
-const PNG = Buffer.from(
-  "89504e470d0a1a0a0000000d4948445200000010000000100806000000" +
-    "1ff3ff610000001d4944415478da63fccfc0f01f8a1930e2d4a8016206" +
-    "8c38b5e8d40300b7c02f9c1b3b5c0000000049454e44ae426082",
-  "hex"
-);
+// 真实测试图片（真实照片，便于可视化/交互），供各图片类 create-*.spec.ts 复用
+const IMG = readFileSync(fileURLToPath(new URL("./fixtures/test-image.jpg", import.meta.url)));
+const PNG = IMG;
 // 文本 NER 测试用中文 fixture（多句，每行一句，供实体/关系标注与「同一句」校验）。
 const TEXT = readFileSync(fileURLToPath(new URL("./fixtures/sample.txt", import.meta.url)), "utf-8");
 // 音频事件 e2e 用测试音频（2s / 16kHz 单声道 wav，由 ffmpeg 生成），供上传与波形加载校验。
@@ -40,6 +37,9 @@ export async function createAnnotationTask(
   prefix: string,
   classes: any[] = []
 ): Promise<number> {
+  if (classes.length === 0) {
+    classes = [{ id: 1, name: "默认", color: "#409eff" }];
+  }
   const name = `${prefix}-${Date.now()}`;
   const dsRes = await request.post(`${API}/annotation/dataset/create`, {
     data: { name },
@@ -50,7 +50,7 @@ export async function createAnnotationTask(
 
   const upRes = await request.post(`${API}/annotation/dataset/${dsId}/upload`, {
     headers: auth,
-    multipart: { files: { name: "a.png", mimeType: "image/png", buffer: PNG } },
+    multipart: { files: { name: "test-image.jpg", mimeType: "image/jpeg", buffer: PNG } },
   });
   expect(upRes.ok()).toBeTruthy();
 

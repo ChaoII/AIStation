@@ -8,8 +8,8 @@ test("画笔自由描画生成多边形标注", async ({ page, request }) => {
   const taskId = await createAnnotationTask(request, auth, "segmentation", "seg");
   await gotoWorkbench(page, taskId);
 
-  // 切到「画笔分割」工具（按钮 hasText，label 为「画笔分割」）
-  await page.locator(".tool-btn", { hasText: "画笔分割" }).click();
+  // 切到「涂抹」工具（画笔的涂抹模式）
+  await page.locator(".tool-btn", { hasText: "涂抹" }).click();
 
   const img = await imageBox(page);
   // 按住拖动画一笔（mouse down → move → up）
