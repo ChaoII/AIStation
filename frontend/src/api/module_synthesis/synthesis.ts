@@ -21,6 +21,22 @@ export interface PlateTypeOption {
   label: string;
 }
 
+export interface DisturbParamInfo {
+  key: string;
+  label: string;
+  lo: number;
+  hi: number;
+  min: number;
+  max: number;
+  step: number;
+}
+
+export interface DisturbDefInfo {
+  key: string;
+  label: string;
+  params: DisturbParamInfo[];
+}
+
 export interface ProviderInfo {
   key: string;
   label: string;
@@ -28,6 +44,7 @@ export interface ProviderInfo {
   task_type: string;
   classes: string[];
   plate_types: PlateTypeOption[];
+  disturbances?: DisturbDefInfo[];
 }
 
 export interface SynthesisJob {
@@ -63,7 +80,7 @@ export const SynthesisAPI = {
     count: number;
     seed?: number;
     plate_type?: string;
-    disturbances?: Record<string, boolean>;
+    disturbances?: Record<string, unknown>;
     upload?: boolean;
     with_annotation?: boolean;
     width?: number;

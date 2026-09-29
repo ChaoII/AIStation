@@ -29,7 +29,15 @@ def _png_thumb_b64(content: bytes) -> str:
 def _disturbances_dict(req: PlateGenerateReq) -> dict:
     if req.disturbances is None:
         return {}
-    return req.disturbances.model_dump()
+    d = req.disturbances.model_dump()
+    d.pop("params", None)  # 参数区间单独传
+    return d
+
+
+def _params_dict(req: PlateGenerateReq) -> dict:
+    if req.disturbances is None:
+        return {}
+    return req.disturbances.params or {}
 
 
 async def _ensure_detection_task(db, dataset_id: int, auth) -> int:
@@ -115,6 +123,7 @@ async def generate_license_plates(req: PlateGenerateReq, auth) -> PlateGenerateR
     job_id = None
     dataset_id = req.dataset_id
     disturbances = _disturbances_dict(req)
+    params = _params_dict(req)
 
     if dataset_id and req.upload:
         async with async_db_session() as db:
@@ -155,6 +164,7 @@ async def generate_license_plates(req: PlateGenerateReq, auth) -> PlateGenerateR
             canvas_h=req.height,
             plate_type=req.plate_type,
             disturbances=disturbances,
+            params=params,
         )
         content = to_png_bytes(result)
         filename = f"synth_plate_{uuid.uuid4().hex[:12]}.png"

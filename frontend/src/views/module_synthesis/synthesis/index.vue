@@ -8,7 +8,7 @@
         </div>
       </template>
 
-      <el-form ref="formRef" :model="form" label-width="100px" size="default">
+      <el-form ref="formRef" :model="form" label-width="100px">
         <el-row :gutter="12">
           <el-col :xs="24" :md="8">
             <el-form-item label="车牌类型">
@@ -36,22 +36,53 @@
           </el-col>
         </el-row>
 
-        <el-form-item label="扰动开关">
-          <el-checkbox v-for="d in disturbanceDefs" :key="d.key" v-model="form.disturbances[d.key]" :label="d.key">
-            {{ d.label }}
-          </el-checkbox>
+        <el-form-item label="扰动">
+          <div style="width: 100%">
+            <el-collapse v-model="activeDisturbs" class="disturb-collapse">
+              <el-collapse-item v-for="d in disturbanceDefs" :key="d.key" :name="d.key">
+                <template #title>
+                  <span class="disturb-title">
+                    <span @click.stop>
+                      <el-switch v-model="form.disturbances[d.key]" />
+                    </span>
+                    <span class="disturb-name">{{ d.label }}</span>
+                    <el-tag v-if="form.disturbances[d.key] === false" size="small" type="info" effect="plain">已关闭</el-tag>
+                    <span class="disturb-sum">{{ disturbSummary(d) }}</span>
+                  </span>
+                </template>
+                <el-row :gutter="12">
+                  <el-col v-for="pm in d.params" :key="pm.key" :xs="24" :md="12">
+                    <div class="param-row">
+                      <span class="param-label">{{ pm.label }}</span>
+                      <el-input-number v-model="form.params[pm.key][0]" :min="pm.min" :max="pm.max" :step="pm.step" :precision="precisionOf(pm.step)" controls-position="right" class="param-num" />
+                      <span class="param-tilde">~</span>
+                      <el-input-number v-model="form.params[pm.key][1]" :min="pm.min" :max="pm.max" :step="pm.step" :precision="precisionOf(pm.step)" controls-position="right" class="param-num" />
+                    </div>
+                  </el-col>
+                </el-row>
+              </el-collapse-item>
+            </el-collapse>
+            <div style="margin-top: 6px">
+              <el-button size="small" link type="primary" @click="resetParams">恢复默认</el-button>
+              <el-button size="small" link @click="toggleAll">{{ activeDisturbs.length ? "收起全部" : "展开全部" }}</el-button>
+              <span class="disturb-hint">关闭的扰动不参与生成；参数为随机区间 [下限 ~ 上限]</span>
+            </div>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="输出">
+          <el-switch v-model="form.upload" active-text="写入数据集" inactive-text="仅预览" style="margin-right: 20px" />
+          <el-switch v-model="form.with_annotation" active-text="写标注" inactive-text="不写标注" />
         </el-form-item>
 
         <el-form-item>
-          <el-switch v-model="form.upload" active-text="写入数据集" inactive-text="仅预览" style="margin-right: 16px" />
-          <el-switch v-model="form.with_annotation" active-text="写标注" inactive-text="不写标注" />
-          <el-button type="primary" :loading="loading" :icon="MagicStick" style="margin-left: 16px" @click="onGenerate">
+          <el-button type="primary" :loading="loading" :icon="MagicStick" @click="onGenerate">
             开始合成
           </el-button>
+          <span class="config-tip">
+            提示：未选择数据集或关闭「写入数据集」时仅预览；选择数据集并开启写入后，合成图会入库并自动建立检测标注任务。
+          </span>
         </el-form-item>
-        <div class="config-tip">
-          提示：未选择数据集或关闭「写入数据集」时仅预览；选择数据集并开启写入后，合成图会入库并自动建立检测标注任务。
-        </div>
       </el-form>
     </el-card>
 
@@ -114,16 +145,10 @@ import { MagicStick, Refresh } from "@element-plus/icons-vue";
 import { SynthesisAPI, type GeneratedPlateItem, type PlateTypeOption, type SynthesisJob } from "@/api/module_synthesis/synthesis";
 import { getDatasetOptions } from "@/api/module_synthesis/dataset";
 
-const disturbanceDefs = [
-  { key: "perspective", label: "透视" },
-  { key: "noise", label: "噪点" },
-  { key: "mottle", label: "污渍" },
-  { key: "occlusion", label: "遮挡" },
-  { key: "blur", label: "模糊" },
-  { key: "motion_blur", label: "运动模糊" },
-  { key: "photon", label: "光照" },
-  { key: "shadow", label: "投影" },
-];
+interface DisturbParam { key: string; label: string; lo: number; hi: number; min: number; max: number; step: number }
+interface DisturbDef { key: string; label: string; params: DisturbParam[] }
+
+const disturbanceDefs = ref<DisturbDef[]>([]);
 
 const form = reactive({
   plate_type: "blue",
@@ -132,8 +157,48 @@ const form = reactive({
   seed: undefined as number | undefined,
   upload: true,
   with_annotation: true,
-  disturbances: Object.fromEntries(disturbanceDefs.map((d) => [d.key, true])) as Record<string, boolean>,
+  disturbances: {} as Record<string, boolean>,
+  params: {} as Record<string, [number, number]>,
 });
+
+function initDisturbances(defs: DisturbDef[]) {
+  disturbanceDefs.value = defs;
+  const dist: Record<string, boolean> = {};
+  const prm: Record<string, [number, number]> = {};
+  for (const d of defs) {
+    dist[d.key] = true;
+    for (const p of d.params) prm[p.key] = [p.lo, p.hi];
+  }
+  form.disturbances = dist;
+  form.params = prm;
+}
+
+function resetParams() {
+  for (const d of disturbanceDefs.value) {
+    for (const p of d.params) form.params[p.key] = [p.lo, p.hi];
+  }
+}
+
+const activeDisturbs = ref<string[]>([]);
+
+function disturbSummary(d: DisturbDef) {
+  return d.params
+    .map((p) => {
+      const v = form.params[p.key];
+      return v ? `${p.label} ${v[0]}~${v[1]}` : p.label;
+    })
+    .join("  ");
+}
+
+function toggleAll() {
+  activeDisturbs.value = activeDisturbs.value.length ? [] : disturbanceDefs.value.map((d) => d.key);
+}
+
+function precisionOf(step: number) {
+  const s = String(step);
+  const i = s.indexOf(".");
+  return i < 0 ? 0 : s.length - i - 1;
+}
 
 const formRef = ref();
 const datasetOptions = ref<any[]>([]);
@@ -163,6 +228,7 @@ async function loadProviders() {
     const res = await SynthesisAPI.getProviders();
     const prov = res.data?.data?.find((p) => p.key === "license_plate");
     if (prov?.plate_types?.length) plateTypes.value = prov.plate_types;
+    if (prov?.disturbances?.length) initDisturbances(prov.disturbances);
   } catch {
     /* ignore */
   }
@@ -193,7 +259,7 @@ async function onGenerate() {
       count: form.count,
       seed: form.seed,
       plate_type: form.plate_type,
-      disturbances: form.disturbances,
+      disturbances: { ...form.disturbances, params: form.params },
       upload: form.upload && !!form.dataset_id,
       with_annotation: form.with_annotation,
     });
@@ -223,6 +289,55 @@ onMounted(() => {
   flex-direction: column;
   gap: 12px;
 }
+.disturb-collapse {
+  border-top: none;
+  .disturb-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    .disturb-name {
+      font-weight: 600;
+    }
+    .disturb-sum {
+      margin-left: 6px;
+      font-size: var(--el-font-size-extra-small);
+      color: var(--el-text-color-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+  .param-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 0;
+    .param-label {
+      flex: 1 1 auto;
+      min-width: 88px;
+      font-size: var(--el-font-size-small);
+      color: var(--el-text-color-regular);
+    }
+    .param-num {
+      width: 110px;
+      flex: 0 0 auto;
+    }
+    .param-tilde {
+      color: var(--el-text-color-secondary);
+    }
+  }
+}
+.disturb-hint {
+  margin-left: 8px;
+  font-size: var(--el-font-size-extra-small);
+  color: var(--el-text-color-secondary);
+}
+// 开关 label 与表单 label 一致（el-switch 自带 500，这里降到 400）
+:deep(.el-switch__label) {
+  font-weight: 400;
+  color: var(--el-text-color-regular);
+}
 .config-card,
 .result-card,
 .history-card {
@@ -238,9 +353,9 @@ onMounted(() => {
   }
 }
 .config-tip {
-  font-size: 12px;
+  margin-left: 12px;
+  font-size: var(--el-font-size-extra-small);
   color: var(--el-text-color-secondary);
-  margin-left: 100px;
 }
 .result-item {
   border: 1px solid var(--el-border-color-lighter);

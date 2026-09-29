@@ -492,8 +492,63 @@ def _plate_surface(spec: _PlateSpec, w: int, h: int, text: str) -> Image.Image:
 # --------------------------------------------------------------------------- #
 # 角点变换（旋转 + 透视）与 QUAD 映射
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# 扰动参数定义（前端据此渲染可调区间；键 -> 默认 [下限, 上限]）
+# --------------------------------------------------------------------------- #
+DISTURBANCE_DEFS = [
+    {"key": "perspective", "label": "透视", "params": [
+        {"key": "persp_angle", "label": "旋转角度(°)", "lo": -16, "hi": 16, "min": -180, "max": 180, "step": 1},
+        {"key": "persp_strength", "label": "透视强度", "lo": 0.0, "hi": 0.22, "min": 0, "max": 1, "step": 0.01},
+    ]},
+    {"key": "noise", "label": "噪点", "params": [
+        {"key": "noise_sigma", "label": "噪声强度σ", "lo": 3, "hi": 12, "min": 0, "max": 80, "step": 0.5},
+        {"key": "noise_salt", "label": "椒盐比例", "lo": 0.0, "hi": 0.003, "min": 0, "max": 0.05, "step": 0.0005},
+        {"key": "noise_salt_prob", "label": "椒盐触发概率", "lo": 0.4, "hi": 0.4, "min": 0, "max": 1, "step": 0.05},
+    ]},
+    {"key": "mottle", "label": "污渍", "params": [
+        {"key": "mottle_count", "label": "斑点数", "lo": 2, "hi": 7, "min": 0, "max": 40, "step": 1},
+        {"key": "mottle_size", "label": "斑点大小占比", "lo": 0.03, "hi": 0.08, "min": 0.005, "max": 0.5, "step": 0.005},
+        {"key": "mottle_alpha", "label": "斑透明度", "lo": 20, "hi": 90, "min": 0, "max": 255, "step": 5},
+    ]},
+    {"key": "occlusion", "label": "遮挡", "params": [
+        {"key": "occl_height", "label": "遮挡带高占比", "lo": 0.06, "hi": 0.16, "min": 0.01, "max": 1, "step": 0.01},
+        {"key": "occl_alpha", "label": "遮挡透明度", "lo": 120, "hi": 200, "min": 0, "max": 255, "step": 5},
+    ]},
+    {"key": "blur", "label": "模糊", "params": [
+        {"key": "blur_radius", "label": "模糊半径", "lo": 0.4, "hi": 1.5, "min": 0, "max": 10, "step": 0.1},
+    ]},
+    {"key": "motion_blur", "label": "运动模糊", "params": [
+        {"key": "mb_kernel", "label": "拖影长度(px)", "lo": 4, "hi": 10, "min": 2, "max": 40, "step": 1},
+    ]},
+    {"key": "photon", "label": "光照", "params": [
+        {"key": "photon_brightness", "label": "亮度", "lo": 0.75, "hi": 1.18, "min": 0.1, "max": 3, "step": 0.01},
+        {"key": "photon_contrast", "label": "对比度", "lo": 0.85, "hi": 1.2, "min": 0.1, "max": 3, "step": 0.01},
+        {"key": "photon_color", "label": "饱和度", "lo": 0.7, "hi": 1.25, "min": 0, "max": 3, "step": 0.01},
+        {"key": "photon_fog", "label": "雾浓度", "lo": 0.08, "hi": 0.3, "min": 0, "max": 1, "step": 0.01},
+        {"key": "photon_fog_prob", "label": "起雾概率", "lo": 0.35, "hi": 0.35, "min": 0, "max": 1, "step": 0.05},
+    ]},
+    {"key": "shadow", "label": "投影", "params": [
+        {"key": "shadow_height", "label": "阴影高占比", "lo": 0.15, "hi": 0.35, "min": 0.02, "max": 1, "step": 0.01},
+        {"key": "shadow_alpha", "label": "阴影浓度", "lo": 40, "hi": 120, "min": 0, "max": 255, "step": 5},
+    ]},
+]
+
+
+def _pv(rng: random.Random, params: dict, key: str, lo: float, hi: float) -> float:
+    """从 params[key]=[下限,上限] 取随机值；缺失/非法则用默认 [lo,hi]。"""
+    v = params.get(key)
+    if v and len(v) == 2:
+        try:
+            lo, hi = float(v[0]), float(v[1])
+        except (TypeError, ValueError):
+            pass
+    if hi < lo:
+        lo, hi = hi, lo
+    return rng.uniform(lo, hi)
+
+
 def _transform_plate(tile: Image.Image, canvas_w: int, canvas_h: int, rng: random.Random,
-                     want_perspective: bool) -> tuple[Image.Image, tuple]:
+                     want_perspective: bool, params: dict | None = None) -> tuple[Image.Image, tuple]:
     """将车牌 tile 旋转/透视后贴到背景，返回 (合成后的透明层, 四角包围盒归一化)。
 
     bbox 采用四角最小/最大归一化坐标，保证覆盖变换后的车牌。用 OpenCV warpPerspective 实现透视，
@@ -502,16 +557,17 @@ def _transform_plate(tile: Image.Image, canvas_w: int, canvas_h: int, rng: rando
     import cv2
 
     w, h = tile.size
+    params = params or {}
     cx = canvas_w * rng.uniform(0.32, 0.68)
     cy = canvas_h * rng.uniform(0.42, 0.66)
     # 透视开关同时控制旋转与透视：关闭时得到正对车牌的干净直牌
-    angle = math.radians(rng.uniform(-16, 16)) if want_perspective else 0.0
+    angle = math.radians(_pv(rng, params, "persp_angle", -16, 16)) if want_perspective else 0.0
 
     # 未旋转四角（以中心为原点）：TL,TR,BR,BL
     corners = [(-w / 2, -h / 2), (w / 2, -h / 2), (w / 2, h / 2), (-w / 2, h / 2)]
 
     # 透视（梯形）：顶边收窄、底边加宽，形成近大远小
-    strength = rng.uniform(0.0, 0.22) if want_perspective else 0.0
+    strength = _pv(rng, params, "persp_strength", 0.0, 0.22) if want_perspective else 0.0
     scale_top = 1 - strength
     scale_bottom = 1 + strength
     y_shift = strength * h * 0.12
@@ -560,52 +616,58 @@ def _transform_plate(tile: Image.Image, canvas_w: int, canvas_h: int, rng: rando
 # --------------------------------------------------------------------------- #
 # 扰动增强
 # --------------------------------------------------------------------------- #
-def _apply_noise(img: Image.Image, rng: random.Random, strength: float = 1.0) -> Image.Image:
+def _apply_noise(img: Image.Image, rng: random.Random, params: dict | None = None) -> Image.Image:
+    params = params or {}
     arr = np.asarray(img).astype(np.float32)
-    sigma = rng.uniform(3, 12) * strength
-    noise = np.random.normal(0, sigma, arr.shape)
-    arr = arr + noise
+    sigma = _pv(rng, params, "noise_sigma", 3, 12)
+    arr = arr + np.random.normal(0, sigma, arr.shape)
     # 椒盐
-    if rng.random() < 0.4:
-        p = rng.uniform(0.0005, 0.003)
-        mask = np.random.random(arr.shape[:2])
-        arr[mask < p] = 0
-        arr[mask > 1 - p] = 255
+    if rng.random() < _pv(rng, params, "noise_salt_prob", 0.4, 0.4):
+        p = _pv(rng, params, "noise_salt", 0.0, 0.003)
+        if p > 0:
+            mask = np.random.random(arr.shape[:2])
+            arr[mask < p] = 0
+            arr[mask > 1 - p] = 255
     arr = np.clip(arr, 0, 255).astype(np.uint8)
     return Image.fromarray(arr, "RGB")
 
 
-def _apply_mottle(img: Image.Image, rng: random.Random) -> Image.Image:
+def _apply_mottle(img: Image.Image, rng: random.Random, params: dict | None = None) -> Image.Image:
     """污渍 / 锈斑 / 反光。"""
+    params = params or {}
     w, h = img.size
-    for _ in range(rng.randint(2, 7)):
-        r = rng.randint(4, max(6, int(min(w, h) * 0.08)))
+    cnt = int(_pv(rng, params, "mottle_count", 2, 7))
+    size_ratio = _pv(rng, params, "mottle_size", 0.03, 0.08)
+    alpha = int(_pv(rng, params, "mottle_alpha", 20, 90))
+    colors = [(120, 90, 60), (90, 60, 50), (150, 130, 110), (220, 220, 210), (70, 70, 70)]
+    for _ in range(max(0, cnt)):
+        r = max(3, int(min(w, h) * size_ratio))
         x = rng.randint(-r, w)
         y = rng.randint(-r, h)
-        color = rng.choice([(120, 90, 60), (90, 60, 50), (150, 130, 110), (220, 220, 210), (70, 70, 70)])
-        alpha = rng.randint(20, 90)
         overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         od = ImageDraw.Draw(overlay)
-        od.ellipse([x, y, x + 2 * r, y + 2 * r], fill=color + (alpha,))
+        od.ellipse([x, y, x + 2 * r, y + 2 * r], fill=rng.choice(colors) + (alpha,))
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
     return img
 
 
-def _apply_occlusion(img: Image.Image, rng: random.Random) -> Image.Image:
+def _apply_occlusion(img: Image.Image, rng: random.Random, params: dict | None = None) -> Image.Image:
     """遮挡带（模拟被护栏/雨刮等遮挡）。"""
+    params = params or {}
     w, h = img.size
-    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    od = ImageDraw.Draw(overlay)
-    band_h = rng.randint(int(h * 0.06), int(h * 0.16))
-    y0 = rng.randint(0, h - band_h)
+    hr = _pv(rng, params, "occl_height", 0.06, 0.16)
+    band_h = max(2, int(h * hr))
+    y0 = rng.randint(0, max(0, h - band_h))
     color = rng.choice([(40, 40, 45), (70, 70, 75), (110, 110, 115)])
-    alpha = rng.randint(120, 200)
-    od.rectangle([0, y0, w, y0 + band_h], fill=color + (alpha,))
+    alpha = int(_pv(rng, params, "occl_alpha", 120, 200))
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(overlay).rectangle([0, y0, w, y0 + band_h], fill=color + (alpha,))
     return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 
-def _apply_motion_blur(img: Image.Image, rng: random.Random) -> Image.Image:
-    k = rng.randint(4, 10)
+def _apply_motion_blur(img: Image.Image, rng: random.Random, params: dict | None = None) -> Image.Image:
+    params = params or {}
+    k = max(2, int(_pv(rng, params, "mb_kernel", 4, 10)))
     arr = np.asarray(img).astype(np.float32)
     pad = k // 2
     padded = np.pad(arr, ((0, 0), (pad, pad), (0, 0)), mode="edge")
@@ -617,26 +679,29 @@ def _apply_motion_blur(img: Image.Image, rng: random.Random) -> Image.Image:
     return Image.fromarray(out, "RGB")
 
 
-def _apply_photon(img: Image.Image, rng: random.Random) -> Image.Image:
+def _apply_photon(img: Image.Image, rng: random.Random, params: dict | None = None) -> Image.Image:
     """亮度 / 对比度 / 饱和度 / 色调扰动 + 雨雾感。"""
-    img = ImageEnhance.Brightness(img).enhance(rng.uniform(0.75, 1.18))
-    img = ImageEnhance.Contrast(img).enhance(rng.uniform(0.85, 1.2))
-    img = ImageEnhance.Color(img).enhance(rng.uniform(0.7, 1.25))
-    if rng.random() < 0.35:
+    params = params or {}
+    img = ImageEnhance.Brightness(img).enhance(_pv(rng, params, "photon_brightness", 0.75, 1.18))
+    img = ImageEnhance.Contrast(img).enhance(_pv(rng, params, "photon_contrast", 0.85, 1.2))
+    img = ImageEnhance.Color(img).enhance(_pv(rng, params, "photon_color", 0.7, 1.25))
+    if rng.random() < _pv(rng, params, "photon_fog_prob", 0.35, 0.35):
         # 雾 / 泛白
         overlay = Image.new("RGB", img.size, (225, 228, 232))
-        img = Image.blend(img, overlay, rng.uniform(0.08, 0.3))
+        img = Image.blend(img, overlay, _pv(rng, params, "photon_fog", 0.08, 0.3))
     return img
 
 
-def _apply_shadow(img: Image.Image, rng: random.Random) -> Image.Image:
+def _apply_shadow(img: Image.Image, rng: random.Random, params: dict | None = None) -> Image.Image:
+    params = params or {}
     w, h = img.size
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
     # 底部阴影渐变
-    grad_h = int(h * rng.uniform(0.15, 0.35))
+    grad_h = max(2, int(h * _pv(rng, params, "shadow_height", 0.15, 0.35)))
+    amax = int(_pv(rng, params, "shadow_alpha", 40, 120))
     for i in range(grad_h):
-        alpha = int(120 * (1 - i / grad_h))
+        alpha = int(amax * (1 - i / grad_h))
         od.line([(0, h - grad_h + i), (w, h - grad_h + i)], fill=(0, 0, 0, alpha))
     return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
@@ -663,11 +728,12 @@ def render_license_plate(
     plate_type: str = "blue",
     text: str | None = None,
     disturbances: dict | None = None,
+    params: dict | None = None,
 ) -> PlateResult:
     """渲染一张车牌合成图。
 
-    参数 disturbancs 键：noise / mottle / occlusion / blur / motion_blur / photon / perspective，
-    布尔表示是否启用该类扰动；缺省按随机概率启用。
+    disturbances：各扰动开关（noise/mottle/occlusion/blur/motion_blur/photon/perspective/shadow），布尔。
+    params：各扰动参数区间 {参数名: [下限, 上限]}，键见 DISTURBANCE_DEFS；缺省用默认区间。
     """
     rng = random.Random(seed)
     spec = _PLATE_SPECS.get(plate_type, _PLATE_SPECS["blue"])
@@ -675,6 +741,7 @@ def render_license_plate(
         text = gen_text(spec, rng)
 
     d = disturbances or {}
+    p = params or {}
 
     def want(k):
         return d.get(k, True)
@@ -695,25 +762,25 @@ def render_license_plate(
     bg = _load_scene_background(canvas_w, canvas_h, rng) or _make_background(canvas_w, canvas_h, rng)
     # 旋转 + 透视
     want_perspective = want("perspective")
-    transformed, bbox = _transform_plate(padded, canvas_w, canvas_h, rng, want_perspective)
+    transformed, bbox = _transform_plate(padded, canvas_w, canvas_h, rng, want_perspective, p)
     # 仅粘贴非透明部分
     bg = Image.alpha_composite(bg.convert("RGBA"), transformed).convert("RGB")
 
-    # 扰动（开关打开即生效；强度随机以增加多样性）
+    # 扰动（开关打开即生效；参数区间可在 params 里调）
     if want("blur"):
-        bg = bg.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.4, 1.5)))
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=_pv(rng, p, "blur_radius", 0.4, 1.5)))
     if want("motion_blur"):
-        bg = _apply_motion_blur(bg, rng)
+        bg = _apply_motion_blur(bg, rng, p)
     if want("photon"):
-        bg = _apply_photon(bg, rng)
+        bg = _apply_photon(bg, rng, p)
     if want("noise"):
-        bg = _apply_noise(bg, rng)
+        bg = _apply_noise(bg, rng, p)
     if want("mottle"):
-        bg = _apply_mottle(bg, rng)
+        bg = _apply_mottle(bg, rng, p)
     if want("occlusion"):
-        bg = _apply_occlusion(bg, rng)
+        bg = _apply_occlusion(bg, rng, p)
     if want("shadow"):
-        bg = _apply_shadow(bg, rng)
+        bg = _apply_shadow(bg, rng, p)
 
     bbox_dict = {"x1": bbox[0], "y1": bbox[1], "x2": bbox[2], "y2": bbox[3]}
     return PlateResult(
@@ -800,5 +867,6 @@ PROVIDERS = [
         "task_type": "detection",
         "classes": ["plate"],
         "plate_types": PLATE_TYPE_OPTIONS,
+        "disturbances": DISTURBANCE_DEFS,
     },
 ]

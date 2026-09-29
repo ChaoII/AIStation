@@ -9,10 +9,11 @@ class ProviderOut(BaseModel):
     task_type: str
     classes: list[str]
     plate_types: list[dict] = Field(default_factory=list)
+    disturbances: list[dict] = Field(default_factory=list)
 
 
 class DisturbanceCfg(BaseModel):
-    """各类扰动开关；缺省 True 表示按随机概率启用。"""
+    """各类扰动开关 + 参数区间；缺省 True 表示启用，params 键见 providers.disturbances。"""
     noise: bool = True
     mottle: bool = True
     occlusion: bool = True
@@ -21,6 +22,7 @@ class DisturbanceCfg(BaseModel):
     photon: bool = True
     perspective: bool = True
     shadow: bool = True
+    params: dict[str, list[float]] = Field(default_factory=dict, description="扰动参数区间 {参数名: [下限, 上限]}")
 
 
 class PlateGenerateReq(BaseModel):
