@@ -20,6 +20,11 @@ class TrainStatus(str, enum.Enum):
 class TrainFramework(str, enum.Enum):
     ULTRALYTICS = "ultralytics"
     PADDLEX = "paddlex"
+    # 自研训练平台（D:\TorchKiln）以 HTTP 服务形态接入：超参点分键直通、指标走
+    # metrics.jsonl 契约，**不再解析容器控制台日志**。
+    # ⚠️ PG 枚举 trainframework 需同步 ALTER TYPE ADD VALUE 'TORKILN'
+    #    （见 app/scripts/init_app.py 的 _ensure_trainframework_enum_values）
+    TORKILN = "torchkiln"
 
 
 class TrainModelRepo(ModelMixin, UserMixin):

@@ -1,8 +1,11 @@
+import asyncio
+import json
 import os
 import tempfile
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
@@ -207,6 +210,159 @@ async def start_task(task_id: int, auth: AuthSchema = Depends(AuthPermission(["m
 async def delete_task(ids: list[int] = Body(...), auth: AuthSchema = Depends(AuthPermission(["module_train:task:delete"]))):
     await TrainService.delete_tasks(ids)
     return SuccessResponse(msg="删除成功")
+
+
+# ==================================================================
+# TorchKiln 训练服务（自研平台）：模型自描述 + 指标流
+# ------------------------------------------------------------------
+# 设计意图：**平台侧不再维护任何超参映射表**。模型下拉框与参数表单全部由
+# TorchKiln 的 configs/ 动态生成——加模型 = 丢一个 YAML，前端无需重新发布。
+# 指标也走 SSE 契约（metrics.jsonl），不再靠轮询 + 正则。
+# ==================================================================
+
+
+@router.get("/framework/torchkiln/status", summary="TorchKiln 训练服务状态")
+async def torchkiln_status(auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
+    """探活 + 版本声明。前端"训练"页据此提示服务是否可用，避免点了开始才报错。"""
+    from .torchkiln_executor import executor_info, service_status
+
+    status = await service_status()
+    return SuccessResponse(data={**status, "config": executor_info()})
+
+
+@router.get("/framework/torchkiln/models", summary="TorchKiln 模型清单")
+async def torchkiln_models(
+    task: str | None = Query(None, description="按任务过滤，如 detect/segment/ocr_rec"),
+    family: str | None = Query(None, description="按模型族过滤，如 yolo/pc/ts"),
+    name: str | None = Query(None, description="按模型名模糊匹配"),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    from .torchkiln_client import TorchKilnClient, TorchKilnError
+
+    try:
+        async with TorchKilnClient() as c:
+            items = await c.list_models(task=task, family=family, name=name)
+    except TorchKilnError as e:
+        from app.common.response import ErrorResponse
+
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data={"items": items, "total": len(items)})
+
+
+@router.get("/framework/torchkiln/models/{model_name}/schema", summary="TorchKiln 超参 schema")
+async def torchkiln_model_schema(
+    model_name: str,
+    o: str | None = Query(None, description="先应用覆盖再看 schema，如 'Global.epoch_num=300'"),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    """超参 schema：类型/默认值/取值范围/控件类型/分组/中文字段名。
+
+    前端据此**动态渲染参数表单**（switch/slider/number/path/list），
+    不再为每个框架写一套表单。
+    """
+    from .torchkiln_client import TorchKilnClient, TorchKilnError
+
+    overrides = [s for s in (o or "").replace(",", " ").split() if s] or None
+    try:
+        async with TorchKilnClient() as c:
+            data = await c.model_schema(model_name, overrides=overrides)
+    except TorchKilnError as e:
+        from app.common.response import ErrorResponse
+
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=data)
+
+
+@router.get("/task/{task_id}/metrics", summary="训练指标（按 seq 补发，可断点续传）")
+async def get_task_metrics(
+    task_id: int,
+    offset: int = Query(-1, ge=-1, description="只返回 seq 大于该值的事件；-1 表示全部"),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    """从 ``TrainTask.metrics_log`` 补发指标。
+
+    前端刷新/断线重连时带 ``offset``（= 已收到的最大 seq）即可**不丢不重**——
+    这是替代「每 N 秒整表重拉」的关键：整表重拉会闪烁、丢滚动与选中态。
+    """
+    from .torchkiln_executor import load_metrics_rows
+
+    rows = await load_metrics_rows(task_id)
+    if offset >= 0:
+        rows = [r for r in rows if _row_seq(r) > offset]
+    info = await TrainService.get_task(task_id)
+    return SuccessResponse(data={
+        "task_id": task_id,
+        "status": (info or {}).get("status"),
+        "items": rows,
+        "total": len(rows),
+    })
+
+
+def _row_seq(row: dict):
+    """metrics_log 行 -> 可比较的 seq（无 seq 时按行序退化为 -1，全量返回）。"""
+    v = row.get("seq")
+    if isinstance(v, int):
+        return v
+    return -1
+
+
+@router.get("/task/{task_id}/metrics/stream", summary="训练指标实时流（SSE）")
+async def stream_task_metrics(
+    task_id: int,
+    request: Request,
+    offset: int = Query(-1, ge=-1, description="先补发 seq>offset 的历史，再切实时"),
+    auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"])),
+):
+    """指标 SSE：先补历史缺口，再切实时；作业终结时推一帧 ``end`` 后收流。
+
+    ⚠️ 响应头 ``no-transform`` / ``X-Accel-Buffering: no`` 是 SSE 穿透代理的关键，
+    少了会被缓冲成"整块才到"，实时性直接消失。
+    """
+    from .torchkiln_executor import (
+        load_metrics_rows,
+        subscribe_metrics,
+        unsubscribe_metrics,
+    )
+
+    async def gen():
+        yield "retry: 3000\n\n"
+        for row in await load_metrics_rows(task_id):
+            if offset >= 0 and _row_seq(row) <= offset:
+                continue
+            yield _sse("metric", row, _row_seq(row))
+        q = subscribe_metrics(task_id)
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"   # 心跳，防代理掐断长连接
+                    continue
+                if ev.get("__end__"):
+                    yield _sse("end", ev)
+                    return
+                yield _sse(ev.get("type") or "metric", ev, ev.get("seq"))
+        finally:
+            unsubscribe_metrics(task_id, q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+def _sse(event: str, data: dict, event_id=None) -> str:
+    out = []
+    if event:
+        out.append(f"event: {event}")
+    if isinstance(event_id, int) and event_id >= 0:
+        out.append(f"id: {event_id}")
+    for line in json.dumps(data, ensure_ascii=False).split("\n"):
+        out.append(f"data: {line}")
+    return "\n".join(out) + "\n\n"
 
 
 @router.post("/eval/create", summary="创建评估任务")

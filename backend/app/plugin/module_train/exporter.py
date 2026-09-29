@@ -36,9 +36,48 @@ async def _load_latest_anns_by_image(db, image_ids: list[int], annotation_task_i
     return anns_by_img
 
 
-async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, ocr_rec: bool = False) -> str:
-    """Export dataset for training — unified with download, just different YAML path."""
-    return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec)
+async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, ocr_rec: bool = False, torchkiln_index: bool = False) -> str:
+    """Export dataset for training — unified with download, just different YAML path.
+
+    ``torchkiln_index=True`` 时额外生成 TorchKiln 需要的 ``train.txt`` / ``val.txt``
+    索引（内容是相对 ``data_dir`` 的图片路径，一行一张）。
+
+    为什么只需补一层索引：TorchKiln 的 ``DetDataset`` 读 ``data_dir +
+    label_file_list``（如 ``["train.txt"]``），而本项目导出的是 ultralytics 的
+    ``images/<split>`` + ``labels/<split>`` 目录布局——**图片与标签路径规则完全一致**
+    （TorchKiln 内部把路径里的 ``images/`` 换成 ``labels/`` 找标注），
+    所以不必再写一套导出逻辑。
+    """
+    # for_training=True 时 YOLO YAML 里的 path 写容器内路径 /data
+    res = await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec)
+    if torchkiln_index:
+        _write_torchkiln_index(output_dir)
+    return res
+
+
+def _write_torchkiln_index(output_dir: str) -> None:
+    """生成 TorchKiln 的 ``train.txt`` / ``val.txt``（相对 data_dir 的图片路径）。
+
+    一行一个图片，路径形如 ``images/train/0001.jpg``，TorchKiln 据此推导
+    ``labels/train/0001.txt`` 读标注。空目录**跳过不写空文件**——写空列表会让
+    dataset 长度��� 0 并在训练第一步直接崩。
+    """
+    for split in ("train", "val"):
+        img_dir = os.path.join(output_dir, "images", split)
+        if not os.path.isdir(img_dir):
+            continue
+        names = sorted(
+            f for f in os.listdir(img_dir)
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"))
+        )
+        if not names:
+            continue
+        list_path = os.path.join(output_dir, f"{split}.txt")
+        with open(list_path, "w", encoding="utf-8", newline="\n") as f:
+            for n in names:
+                # 统一正斜杠：训练环境可能是 Linux 容器
+                f.write(f"images/{split}/{n}\n")
+        log.info("torchkiln index: %s (%d images)", list_path, len(names))
 
 
 async def prepare_eval_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, ocr_mode: str = "det") -> str:
@@ -320,12 +359,23 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
             pts = [[px[i], px[i + 1]] for i in range(0, 8, 2)]
             shapes.append({**base, "points": pts, "shape_type": "rotation"})
         elif t in ("Cuboid", "cuboid"):
-            # 底部旋转矩形 4 顶点（像素坐标），顶面仅用参数表达（不额外产出面）
-            px = rotated_box_to_obb_corners(ann["cx"] * img_w, ann["cy"] * img_h,
-                                            ann["w"] * img_w, ann["h"] * img_h,
-                                            float(ann.get("yaw", 0) or 0),
-                                            reorder=False)
-            pts = [[px[i], px[i + 1]] for i in range(0, 8, 2)]
+            # 底面为平行四边形，由两条边方向角 angle1/angle2 展开 4 顶点（像素坐标），
+            # 顶面仅用参数表达（不额外产出面）。
+            a1 = float(ann.get("angle1", ann.get("yaw", 0) or 0))
+            a2 = float(ann.get("angle2", a1 + math.pi / 2))
+            hw = ann["w"] * img_w / 2
+            hh = ann["h"] * img_h / 2
+            cx_px = ann["cx"] * img_w
+            cy_px = ann["cy"] * img_h
+            d1x, d1y = math.cos(a1), math.sin(a1)
+            d2x, d2y = math.cos(a2), math.sin(a2)
+            corners = [
+                (cx_px - hw * d1x - hh * d2x, cy_px - hw * d1y - hh * d2y),
+                (cx_px + hw * d1x - hh * d2x, cy_px + hw * d1y - hh * d2y),
+                (cx_px + hw * d1x + hh * d2x, cy_px + hw * d1y + hh * d2y),
+                (cx_px - hw * d1x + hh * d2x, cy_px - hw * d1y + hh * d2y),
+            ]
+            pts = [[corners[i][0], corners[i][1]] for i in range(4)]
             shapes.append({
                 **base,
                 "points": pts,
@@ -335,7 +385,9 @@ def xany_shapes(anns: list, img_w: int, img_h: int, class_names: dict[int, str])
                     "cy": ann.get("cy", 0),
                     "w": ann.get("w", 0),
                     "h": ann.get("h", 0),
-                    "yaw": ann.get("yaw", 0),
+                    "yaw": ann.get("yaw", ann.get("angle1", 0)),
+                    "angle1": ann.get("angle1", ann.get("yaw", 0)),
+                    "angle2": ann.get("angle2", float(ann.get("yaw", 0)) + math.pi / 2),
                     "depth": ann.get("depth", 0),
                     "top_cy": ann.get("top_cy", 0),
                 },

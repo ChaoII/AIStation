@@ -683,24 +683,37 @@ async def start_training(task_id: int):
         if result.rowcount == 0:
             # 影响 0 行：已运行（读到的状态过期），拒绝重复启动
             raise Exception("任务正在运行，请勿重复启动")
-    if task.framework == TrainFramework.PADDLEX:
+    # ⚠️ 必须用 framework_value 归一化后比较，**不能**直接 `task.framework ==
+    # TrainFramework.X`：PG 里 SAEnum 存的是枚举**成员名**（"TORKILN"），读回来
+    # 是 str 而非枚举成员，与 TrainFramework.TORKILN（值 "torchkiln"）比较恒为
+    # False，会静默落进 ultralytics 分支——本项目已踩过这个坑。
+    _exec = _executor_for(task)
+    log.info(
+        "[scheduler] 派发训练任务 %s: framework=%r -> executor=%s",
+        task_id, getattr(task, "framework", None), _exec.name,
+    )
+    _spawn(_exec.run(task_id))
+
+
+def _executor_for(task):
+    """按框架取执行器类（start/stop 共用，避免两处 if 走偏）。"""
+    from .framework_utils import framework_value
+
+    if task is None:
+        return TrainExecutor
+    fw = framework_value(getattr(task, "framework", None))
+    if fw == "paddlex":
         from .paddlex_executor import PaddleXOCRDetExecutor, PaddleXOCRRecExecutor
-        hp = task.hyperparams or {}
-        mode = str(hp.get("mode", "det")).lower()
-        exec_cls = PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
-        _spawn(exec_cls.run(task_id))
-    else:
-        _spawn(TrainExecutor.run(task_id))
+        mode = str((task.hyperparams or {}).get("mode", "det")).lower()
+        return PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
+    if fw == "torchkiln":
+        # 自研训练平台：HTTP 客户端形态，排队/容器生命周期都在 TorchKiln 服务里
+        from .torchkiln_executor import TorchKilnExecutor
+        return TorchKilnExecutor
+    return TrainExecutor
 
 
 async def stop_training(task_id: int) -> None:
-    from .paddlex_executor import PaddleXOCRDetExecutor, PaddleXOCRRecExecutor
     async with async_db_session() as db:
         task = await db.get(TrainTask, task_id)
-    if task and task.framework == TrainFramework.PADDLEX:
-        hp = task.hyperparams or {}
-        mode = str(hp.get("mode", "det")).lower()
-        exec_cls = PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
-        await exec_cls.stop(task_id)
-    else:
-        await TrainExecutor.stop(task_id)
+    await _executor_for(task).stop(task_id)

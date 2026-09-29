@@ -244,6 +244,56 @@ async def _ensure_missing_columns() -> None:
 
 CAMERA_GROUP_PARENT_FK = "fk_video_camera_groups_parent_id"
 
+#: ``trainframework`` 枚举需要保证存在的成员（与 model.TrainFramework 保持一致）。
+#: SQLAlchemy 的 SAEnum 存的是**成员名**（大写），所以这里是 'TORKILN'。
+_TRAINFRAMEWORK_VALUES = ("PADDLEX", "ULTRALYTICS", "TORKILN")
+
+
+async def _ensure_trainframework_enum_values() -> None:
+    """兜底补齐 ``trainframework`` PG 枚举的成员值（幂等）。
+
+    为什么要兜底：``metadata.create_all`` 只在**枚举类型尚不存在**时才建它，
+    之后再往已有枚举里加值它一概不管；Alembic 迁移也不是每次都跑。
+    少一个成员值时，插入 ``framework='torchkiln'`` 的任务会直接报
+    ``invalid input value for enum``——而且是**运行时才炸**，很难定位。
+
+    PG 注意：``ALTER TYPE ... ADD VALUE`` 在 PG 12+ 可在事务里执行，但**新值在
+    提交前不可用**。因此这里每条语句用 ``IF NOT EXISTS`` 幂等补齐，事务提交后
+    才可能被后续语句使用。SQLite/MySQL 的 SAEnum 不受影响（整型或 VARCHAR）。
+    """
+    from sqlalchemy import text as sa_text
+
+    from app.core.database import async_engine
+
+    try:
+        async with async_engine.connect() as conn:
+            dialect = conn.dialect.name
+            if dialect == "postgresql":
+                # 类型不存在则跳过（create_all 会建，届时成员由模型定义带上）
+                exists = await conn.execute(sa_text(
+                    "SELECT 1 FROM pg_type WHERE typname = 'trainframework'"))
+                if not exists.scalar():
+                    return
+                current = set((await conn.execute(sa_text(
+                    "SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid "
+                    "WHERE t.typname = 'trainframework'"))).scalars().all())
+                missing = [v for v in _TRAINFRAMEWORK_VALUES if v not in current]
+                if not missing:
+                    return
+                for v in missing:
+                    # 每个值单独一条：PG 不支持一条 ALTER 加多个值
+                    await conn.execute(sa_text(
+                        f"ALTER TYPE trainframework ADD VALUE IF NOT EXISTS '{v}'"))
+                # ADD VALUE 的新值需提交后才可用，这里显式提交再返回
+                await conn.commit()
+                log.info(f"[补枚举] trainframework 已补齐成员: {missing}")
+            else:
+                # SQLite/MySQL：SAEnum 落 VARCHAR/INT，无需补值
+                return
+    except Exception as e:
+        # 不阻断启动：只是兜底，真正写库时仍会报出清晰错误
+        log.warning(f"[补枚举] trainframework 成员补齐失败（不阻断启动）: {e}")
+
 
 async def _ensure_camera_group_parent_fk() -> None:
     """兜底补建 ``video_camera_groups.parent_id`` 自引用外键（审计 M7）。
@@ -1223,6 +1273,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         await _ensure_annotation_menus()
         await _ensure_annotation_button_menus()
         await _ensure_train_menus()
+        await _ensure_trainframework_enum_values()
         await _ensure_synthesis_menus()
         # 人脸底库进程内缓存（face_match/stranger 叶子求值依赖）；表缺失时告警不阻断启动
         try:

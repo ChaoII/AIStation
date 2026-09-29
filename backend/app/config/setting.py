@@ -337,6 +337,20 @@ class Settings(BaseSettings):
     ZLM_WEBRTC_PORT: int = 8000
 
     # ================================================= #
+    # ***************** TorchKiln 训练服务 ***************** #
+    # ================================================= #
+    # 自研训练平台（D:\TorchKiln）以 HTTP 服务形态运行，本项目只做调用方。
+    # 好处：超参零映射（点分键直通 -o）、指标走 metrics.jsonl 契约而非解析日志。
+    TORKILN_SERVICE_URL: str = 'http://127.0.0.1:8000'
+    # 服务间 Bearer token；与 TorchKiln 的 TKILN_SERVICE_TOKEN 保持一致
+    TORKILN_SERVICE_TOKEN: str = ''
+    TORKILN_TIMEOUT: float = 30.0        # 普通 API 超时（秒）
+    TORKILN_SUBMIT_TIMEOUT: float = 120.0  # 提交作业超时（秒，服务端要解析模型清单）
+    TORKILN_ENABLED: bool = True          # 关掉后 torchkiln 框架的训练会被明确拒绝
+    # 本项目把标注导出的目录挂给训练服务用（同一台机器时直接传宿主路径）
+    TORKILN_SHARED_DATA_ROOT: str = ''
+
+    # ================================================= #
     # ******************* AI推理引擎配置 ****************** #
     # ================================================= #
     # 推理回调共享密钥：默认空并 fail-closed（未配置时拒绝回调，不再使用公开默认值）
