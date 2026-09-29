@@ -144,6 +144,16 @@ export const TrainAPI = {
   getTaskDetail(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/detail`, method: "get" });
   },
+  /**
+   * 只取状态相关字段，供详情页轮询。
+   *
+   * ⚠️ 轮询**不要**用 getTaskDetail：它返回完整 metrics_log（逐步指标，本项目
+   * 每任务上限 5000 行），每 5 秒整体重下一次会把整个指标序列重新拉一遍、并重新
+   * 触发所有依赖它的 computed，指标越多页面越卡。逐步指标走 SSE / metrics 接口。
+   */
+  getTaskStatus(id: number) {
+    return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/status`, method: "get" });
+  },
   getTaskLogs(id: number) {
     return request<ApiResponse<{ logs: string }>>({
       url: `${API_PATH}/task/${id}/logs`,

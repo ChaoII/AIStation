@@ -278,7 +278,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, reactive, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -301,11 +301,60 @@ use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent
 const route = useRoute();
 const router = useRouter();
 const task = ref<any>(null);
-const logText = ref("");
+/**
+ * 训练日志缓冲。
+ *
+ * ⚠️ 原实现是**单个响应式字符串** `logText.value += line + "\n"`：每次追加都要
+ * 生成一个新的大字符串并整体替换（响应式代理还要再拷一份），随后整个字符串被
+ * `<pre>{{ logText }}</pre>` 全量重渲染。跑到几万行就是几十 MB 级字符串反复重建，
+ * 页面直接卡死。
+ *
+ * 改为「固定容量环形缓冲 + 批量 flush」：
+ * 1. 收到的行先 push 进**普通数组**（非响应式），不逐行触发渲染；
+ * 2. 每 200ms 或每 200 行 flush 一次，拼成字符串赋给 ref → 每 200ms 只渲染一次；
+ * 3. 只保留最近 ``LOG_MAX_LINES`` 行，超出从头丢，并保持自动滚动到底部。
+ */
+const LOG_MAX_LINES = 3000;
+const LOG_FLUSH_LINES = 200;
+const LOG_FLUSH_MS = 200;
+const logBuf: string[] = [];
+let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let logDropped = 0;
 const logRef = ref<HTMLElement | null>(null);
 const autoScroll = ref(true);
 const wsConnected = ref(false);
+const logText = ref("");
 const logLineCount = ref(0);
+
+function flushLog() {
+  logFlushTimer = null;
+  if (!logBuf.length) return;
+  logText.value = logBuf.join("\n");
+  logLineCount.value = logDropped + logBuf.length;
+  if (autoScroll.value) {
+    // 等 DOM 更新后再滚到底
+    void nextTick(() => {
+      const el = logRef.value;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }
+  if (logFlushTimer) clearTimeout(logFlushTimer);
+  logFlushTimer = setTimeout(flushLog, LOG_FLUSH_MS);
+}
+
+function pushLogLine(line: string) {
+  logBuf.push(line);
+  if (logBuf.length > LOG_MAX_LINES) {
+    const drop = logBuf.length - LOG_MAX_LINES;
+    logBuf.splice(0, drop);
+    logDropped += drop;
+  }
+  if (logBuf.length >= LOG_FLUSH_LINES) {
+    if (logFlushTimer) clearTimeout(logFlushTimer);
+    logFlushTimer = setTimeout(flushLog, 0);
+  }
+}
+
 const submitting = ref(false);
 let ws: WebSocket | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -428,12 +477,30 @@ const livePrimaryKey = computed(() =>
   isPaddlex.value ? (paddlexMode.value === "rec" ? "acc" : "hmean") : "map50"
 );
 
-const liveBestMetrics = computed(() => {
-  const key = livePrimaryKey.value;
-  const v = liveMetricsLog.value.filter((m: any) => m[key] != null);
-  if (v.length) return v.reduce((b: any, m: any) => (m[key] > (b[key] ?? 0) ? m : b), v[0]);
-  return liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null;
-});
+/**
+ * 取该 key 的历史最优行。
+ *
+ * ⚠️ 原实现是 `filter(...).reduce(...)`：每来一个 step 事件就**分配一个
+ * N 长度的临时数组 + 全量遍历**一遍（N = 指标行数，上限 5000）。指标一多，
+ * 每次 push 都要重扫全表，是页面卡顿的主要来源之一。
+ * 改成单趟循环、不分配中间数组，行为完全一致。
+ */
+function bestOf(log: any[], key: string): any | null {
+  let best: any = null;
+  let has = false;
+  for (let i = 0; i < log.length; i++) {
+    const v = log[i]?.[key];
+    if (v == null) continue;
+    if (!has || v > (best[key] ?? 0)) {
+      best = log[i];
+      has = true;
+    }
+  }
+  if (has) return best;
+  return log.length ? log[log.length - 1] : null;
+}
+
+const liveBestMetrics = computed(() => bestOf(liveMetricsLog.value, livePrimaryKey.value));
 const liveLastMetrics = computed(() =>
   liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null
 );
@@ -464,13 +531,18 @@ const isTorchkiln = computed(
 );
 /** TorchKiln 主指标名：取自任意一条带 main_indicator 的行 */
 const tkMainIndicator = computed(() => {
-  const probes = [
-    ...displayMetricsLog.value,
-    displayBestMetrics.value,
-    displayLastMetrics.value,
-  ];
-  for (const m of probes) {
-    if (m?.main_indicator) return String(m.main_indicator);
+  // ⚠️ 原实现 `[...displayMetricsLog.value, best, last]` 每次求值都**浅拷贝一份
+  //    完整数组**（上限 5000 行）。它被 metricSpec / compareTableData /
+  //    tkMainIsRatio 依赖，等于每来一个 step 事件就多一次全量拷贝。
+  //    直接按优先级顺序单趟扫描，语义不变、零分配。
+  const b = displayBestMetrics.value;
+  if (b?.main_indicator) return String(b.main_indicator);
+  const l = displayLastMetrics.value;
+  if (l?.main_indicator) return String(l.main_indicator);
+  const log = displayMetricsLog.value;
+  for (let i = 0; i < log.length; i++) {
+    const mi = log[i]?.main_indicator;
+    if (mi) return String(mi);
   }
   return "";
 });
@@ -503,14 +575,27 @@ const lossSpec = computed<{ key: string; src: string; label: string; color: stri
     if (isTorchkiln.value) {
       // TorchKiln 的 step 事件把各 loss 分量摊平在行顶层（loss_cls/loss_box/…），
       // 名称随模型而变，故从数据里反查有哪些分量，而不是硬编码。
+      //
+      // ⚠️ 性能：`for (const m of log)` 会对 Vue 的 reactive proxy 做**迭代器**枚举，
+      //    再 `Object.keys(m)` 又是一遍属性枚举 —— 5000 行 × ~12 键 ≈ 6 万次字符串
+      //    比较，且每次都发生在 proxy 上（比普通对象慢一个量级）。
+      //    实测过的写法：把已知的 loss_* 键**缓存**下来，只在前若干行里扫，
+      //    因为分量名集合在一个训练任务内是**稳定的**（同一模型结构不变）。
       const seen = new Set<string>();
-      for (const m of displayMetricsLog.value) {
-        if (m?._kind !== "step") continue;
-        for (const key of Object.keys(m)) {
-          if (key === "loss" || !key.startsWith("loss_")) continue;
-          if (typeof m[key] === "number") seen.add(key);
+      const log = displayMetricsLog.value;
+      // 扫前 200 行足够覆盖分量名：若还没找齐，再退回全量扫（兜底）
+      const scan = (from: number, to: number) => {
+        for (let i = from; i < to; i++) {
+          const m = log[i];
+          if (m == null || m._kind !== "step") continue;
+          for (const key in m) {
+            if (key === "loss" || key.indexOf("loss_") !== 0) continue;
+            if (typeof m[key] === "number") seen.add(key);
+          }
         }
-      }
+      };
+      scan(0, Math.min(log.length, 200));
+      if (seen.size === 0 && log.length > 200) scan(200, log.length);
       const colors = ["#f56c6c", "#e6a23c", "#409eff", "#909399"];
       const items = [...seen].map((k, i) => ({
         key: k,
@@ -580,22 +665,108 @@ const displayMetrics = computed<Record<string, string>>(() => {
   return out;
 });
 
+/**
+ * 图表 X 轴取值：**优先用 step**（需求：曲线精确到 step）。
+ *
+ * ⚠️ 此前用的是 `m.epoch`。TorchKiln 的 step 事件里同一个 epoch 的所有 step
+ * epoch 值相同，落在 category 轴上就是**一列重合刻度**——曲线看着像只有几个点，
+ * 实际每个点代表一整段 step，损失曲线的细节全被压平了。
+ *
+ * 判定口径：只要**有任何一行**带 global_step 就整体走 step 轴（缺的那行给 null），
+ * 避免同一张图里混用两套量纲。
+ */
+function useStepAxis(log: any[]): boolean {
+  return log.some((m: any) => typeof m?.global_step === "number");
+}
+
+function xOf(m: any, stepAxis: boolean): number | null {
+  const v = stepAxis ? m?.global_step : m?.epoch;
+  return typeof v === "number" ? v : null;
+}
+
+/**
+ * 统一的折线图 option。
+ *
+ * - `xAxis.type = "value"`：绕开 category 轴对 N 个刻度做布局与间隔裁剪的开销。
+ *   上万 step 时 category 轴本身就是主要瓶颈（`sampling` 只优化 series 绘制，
+ *   **不减少轴项数**），换 value 轴才真正省掉这部分。
+ * - `sampling: "lttb"`：按视觉保真抽稀，保留尖峰与趋势，替代「等间隔丢点」
+ *   （后者会把 loss 突刺抹平，看图等于骗人）。
+ * - `large / largeThreshold`：交给 ECharts 的大数据量折线快路径。
+ */
+function lineChartOption(
+  log: any[],
+  spec: { key: string; label: string; src?: string }[],
+  yName: string,
+  valueOf: (m: any, s: any) => any
+): any {
+  const stepAxis = useStepAxis(log);
+  // step → epoch 的查表，供 tooltip 显示「step N（epoch M）」
+  const epochOf = new Map<number, number>();
+  if (stepAxis) {
+    for (const m of log) {
+      const x = xOf(m, true);
+      if (x != null && typeof m?.epoch === "number" && !epochOf.has(x)) {
+        epochOf.set(x, m.epoch);
+      }
+    }
+  }
+  const xs = log.map((m) => xOf(m, stepAxis));
+  const series = spec.map((s) => ({
+    name: s.label,
+    type: "line",
+    showSymbol: false,
+    sampling: "lttb",
+    large: true,
+    largeThreshold: 2000,
+    data: log.map((m, i) => {
+      const y = valueOf(m, s);
+      return [xs[i], y == null || Number.isNaN(y) ? null : y];
+    }),
+  }));
+  return {
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "line" },
+      formatter: (params: any[]) => {
+        const arr = Array.isArray(params) ? params : [params];
+        if (!arr.length) return "";
+        const x = arr[0]?.axisValue;
+        const ep = stepAxis ? epochOf.get(Number(x)) : undefined;
+        const head = stepAxis
+          ? `step ${x}${ep != null ? `（epoch ${ep}）` : ""}`
+          : `epoch ${x}`;
+        const body = arr
+          .filter((p: any) => p.value?.[1] != null)
+          .map((p: any) => {
+            const y = p.value[1];
+            return `${p.marker}${p.seriesName}: ${Number(y).toFixed(5)}`;
+          })
+          .join("<br/>");
+        return body ? `${head}<br/>${body}` : head;
+      },
+    },
+    legend: { data: spec.map((s) => s.label), top: 0 },
+    grid: { left: 50, right: 20, top: 40, bottom: 30 },
+    xAxis: {
+      type: "value",
+      name: stepAxis ? "Step" : "Epoch",
+      minInterval: stepAxis ? 1 : undefined,
+    },
+    yAxis: { type: "value", name: yName, scale: true },
+    series,
+  };
+}
+
 const lossChartOption = computed(() => {
   const log = displayMetricsLog.value;
   if (!log.length) return {};
-  const spec = lossSpec.value;
-  return {
-    tooltip: { trigger: "axis" },
-    legend: { data: spec.map((s) => s.label), top: 0 },
-    grid: { left: 50, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: "category", data: log.map((m: any) => m.epoch), name: "Epoch" },
-    yAxis: { type: "value", name: "Loss" },
-    series: spec.map((s) => ({
-      name: s.label,
-      type: "line",
-      data: log.map((m: any) => m[s.src] ?? null),
-    })),
-  };
+  return lineChartOption(
+    log,
+    lossSpec.value,
+    "Loss",
+    (m, s) => m?.[s.src as string]
+  );
 });
 
 const valChartOption = computed(() => {
@@ -604,18 +775,12 @@ const valChartOption = computed(() => {
   if (!log.length) return {};
   const usable = log.filter((m: any) => spec.some((s) => m[s.key] != null));
   if (!usable.length) return {};
-  return {
-    tooltip: { trigger: "axis" },
-    legend: { data: spec.map((s) => s.label), top: 0 },
-    grid: { left: 50, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: "category", data: usable.map((m: any) => m.epoch), name: "Epoch" },
-    yAxis: { type: "value", name: "Metric" },
-    series: spec.map((s) => ({
-      name: s.label,
-      type: "line",
-      data: usable.map((m: any) => m[s.key] ?? null),
-    })),
-  };
+  return lineChartOption(
+    usable,
+    spec,
+    "Metric",
+    (m, s) => m?.[s.key]
+  );
 });
 
 const compareTableData = computed(() => [
@@ -750,7 +915,11 @@ function parseLogForMetrics(text: string) {
       current = null;
     }
   }
-  if (metrics.length) liveMetricsLog.value = metrics;
+  if (metrics.length) {
+    liveMetricsLog.value = metrics;
+    // 整体替换后去重索引全部失效，必须重建（否则新事件会因旧下标误替换）
+    rebuildMetricRowIndex();
+  }
 }
 
 function connectWs(id: number) {
@@ -759,15 +928,9 @@ function connectWs(id: number) {
   wsConnected.value = true;
   ws.onmessage = (e: MessageEvent) => {
     const line = e.data.replace(/\r/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-    logText.value += line + "\n";
-    logLineCount.value++;
+    // 进环形缓冲，由 flushLog 批量渲染（详见 logBuf 处注释）
+    pushLogLine(line);
     parseYoloMetrics(line);
-    if (autoScroll.value)
-      nextTick(() =>
-        requestAnimationFrame(() => {
-          if (logRef.value) logRef.value.scrollTop = logRef.value.scrollHeight;
-        })
-      );
   };
   ws.onclose = () => {
     wsConnected.value = false;
@@ -778,8 +941,14 @@ function connectWs(id: number) {
 }
 
 function clearLogs() {
+  logBuf.length = 0;
+  logDropped = 0;
   logText.value = "";
   logLineCount.value = 0;
+  if (logFlushTimer) {
+    clearTimeout(logFlushTimer);
+    logFlushTimer = null;
+  }
 }
 
 function scrollToLog() {
@@ -796,19 +965,53 @@ async function loadTask() {
   task.value = r.data?.data;
 }
 
+/**
+ * 轮询**只拉状态**，不拉整行详情。
+ *
+ * ⚠️ `getTaskDetail` 返回完整 `metrics_log`（逐步指标，本项目每任务上限 5000 行），
+ * 每 5 秒整体重下一次 = 每 5 秒把整个指标序列重新拉一遍、重新塞进响应式对象、
+ * 重新触发所有依赖它的 computed。指标越多页面越卡 —— 这与 AGENTS.md 里
+ * 「进度/状态变化只更新对应的一条数据，不要周期性整体刷新」是同一条铁律。
+ *
+ * 逐步指标由 SSE 流（`metrics/stream`）和 `GET /task/{id}/metrics` 负责，
+ * 与状态轮询互不重叠。
+ */
+async function pollStatus() {
+  const id = Number(route.params.id);
+  if (!id) return;
+  const prevStatus = task.value?.status;
+  const r = await TrainAPI.getTaskStatus(id);
+  const cur = r.data?.data;
+  if (!cur) return;
+  // 只就地更新状态相关字段，不整体替换 task 对象（避免连带丢弃局部状态）
+  const t: any = task.value;
+  if (!t) return;
+  for (const k of [
+    "status",
+    "progress",
+    "started_at",
+    "finished_at",
+    "model_repo_id",
+    "best_metrics",
+    "last_metrics",
+    "error_log",
+  ]) {
+    if (cur[k] !== undefined) t[k] = cur[k];
+  }
+  const curStatus = t.status;
+  if (curStatus !== prevStatus) {
+    if (curStatus === "running" && !ws) connectWs(Number(route.params.id));
+  }
+  if (curStatus && curStatus !== "running" && curStatus !== "pending") {
+    stopPoll();
+    stopMetricStream();
+  }
+}
+
 async function startPoll() {
   stopPoll();
-  pollTimer = setInterval(async () => {
-    const prevStatus = task.value?.status;
-    await loadTask();
-    const curStatus = task.value?.status;
-    if (curStatus !== prevStatus) {
-      if (curStatus === "running" && !ws) connectWs(Number(route.params.id));
-    }
-    if (curStatus && curStatus !== "running" && curStatus !== "pending") {
-      stopPoll();
-      stopMetricStream();
-    }
+  pollTimer = setInterval(() => {
+    void pollStatus();
   }, 5000);
 }
 
@@ -909,17 +1112,44 @@ function metricEventToRow(ev: any) {
   return null;
 }
 
+/**
+ * 指标行去重索引：`(kind|epoch|step) -> 在 liveMetricsLog 里的下标`。
+ *
+ * ⚠️ 原实现每收一个事件都用 `findIndex` 在 Vue 的 **reactive proxy** 上线性全扫
+ * （上限 5000 行）—— 5000 次 proxy 属性访问，每次 push 都付一遍，是卡顿主因之一。
+ * 换成 Map 后是 O(1)。step 事件本身按 seq 严格递增、天然不会重复，
+ * 但 eval 事件在断线重连时会被补发，所以仍要去重，只是不能再线性扫。
+ */
+const metricRowIndex = new Map<string, number>();
+
+function metricRowKey(r: any): string {
+  return `${r?._kind}|${r?.epoch}|${r?.global_step}`;
+}
+
+/** 数组被截断/整体替换后下标会失效，调用方负责在此重建索引。 */
+function rebuildMetricRowIndex() {
+  metricRowIndex.clear();
+  const log = liveMetricsLog.value;
+  for (let i = 0; i < log.length; i++) metricRowIndex.set(metricRowKey(log[i]), i);
+}
+
 function appendMetricRow(row: any) {
   if (!row) return;
-  // 同一 epoch 的 eval 可能被补发（断线重连），按 (kind,epoch) 去重
-  const idx = liveMetricsLog.value.findIndex(
-    (r) => r._kind === row._kind && r.epoch === row.epoch && r.global_step === row.global_step
-  );
-  if (idx >= 0) liveMetricsLog.value.splice(idx, 1, row);
-  else liveMetricsLog.value.push(row);
+  // 同一 epoch 的 eval 可能被补发（断线重连），按 (kind,epoch,step) 去重
+  const key = metricRowKey(row);
+  const idx = metricRowIndex.get(key);
+  if (idx !== undefined && idx < liveMetricsLog.value.length) {
+    liveMetricsLog.value.splice(idx, 1, row);
+  } else {
+    metricRowIndex.set(key, liveMetricsLog.value.length);
+    liveMetricsLog.value.push(row);
+  }
   // 曲线点太多会卡渲染，只保留末尾（后端落库同样是 5000 行上限）
   if (liveMetricsLog.value.length > 5000) {
-    liveMetricsLog.value.splice(0, liveMetricsLog.value.length - 5000);
+    const drop = liveMetricsLog.value.length - 5000;
+    liveMetricsLog.value.splice(0, drop);
+    // 截断后下标整体左移 drop，重建索引（比增量修正更简单也更不容易出错）
+    rebuildMetricRowIndex();
   }
 }
 
@@ -1049,6 +1279,7 @@ async function handleRetrain() {
     }
     clearLogs();
     liveMetricsLog.value = [];
+    rebuildMetricRowIndex();
     Object.assign(yoloMetrics, {
       epoch: 0,
       totalEpochs: 0,
@@ -1121,7 +1352,14 @@ onMounted(async () => {
         const cleaned = r.data.data.logs
           .replace(/\r/g, "")
           .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-        logText.value = cleaned;
+        // 历史日志同样走缓冲并只保留末尾 LOG_MAX_LINES 行：整份塞进响应式字符串
+        // 会让 <pre> 首屏就渲染一个几十 MB 的文本节点。
+        const all = cleaned.split("\n");
+        const keep = all.slice(-LOG_MAX_LINES);
+        logDropped = all.length - keep.length;
+        logBuf.length = 0;
+        logBuf.push(...keep);
+        flushLog();
         if (!task.value?.metrics_log) parseLogForMetrics(cleaned);
       }
     } catch {
@@ -1141,5 +1379,11 @@ onBeforeUnmount(() => {
   ws?.close();
   stopPoll();
   stopMetricStream();
+  // 定时器不清理会一直跑到页面卸载之后
+  if (logFlushTimer) {
+    clearTimeout(logFlushTimer);
+    logFlushTimer = null;
+  }
+  metricRowIndex.clear();
 });
 </script>
