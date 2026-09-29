@@ -414,9 +414,8 @@ class TorchKilnExecutor(TaskExecutor):
                 finished_at=datetime.now())
 
     #: TorchKiln 已实现读取器、且本项目导出格式能对齐的标注任务类型。
-    #: 其余类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线 / 3D 框）要么
-    #: TorchKiln 侧根本没有对应 task，要么语义对不上（如 TorchKiln 的 ``det3d`` 要
-    #: LiDAR 系 3D 框而本平台 cuboid 只有 2D 底面四点），**一律在提交前拦下**。
+    #: 其余类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线）要么
+    #: TorchKiln 侧根本没有对应 task，要么语义对不上，一律在提交前拦下。
     #: 前端也已把 torchkiln 从这些任务的框架下拉里摘掉，这里是后端兜底——
     #: 直接调 API 绕过前端时仍会得到明确报错，而不是训出一堆空标签。
     SUPPORTED_TASK_TYPES = frozenset({
@@ -427,6 +426,11 @@ class TorchKilnExecutor(TaskExecutor):
         "keypoint", "pose",
         "classification", "cls",
         "ocr",
+        # 3D：导出为「相机系 -> LiDAR 系」的 7-dof（cls x y z l w h yaw），
+        # 对应 TorchKiln 的 `mono3d` 任务（det3d 的图像分支）。
+        # ⚠️ 只有带 `box3d` 米制参数的标注才会被导出；只有 2D 投影的会跳过并记日志——
+        #    绝不拿归一化的 cx/cy/w/h 顶替，那会被当米制解析、不报错但数据全错。
+        "cuboid", "det3d", "mono3d",
     })
 
     @classmethod
