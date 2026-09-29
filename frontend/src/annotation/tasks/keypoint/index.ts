@@ -9,7 +9,7 @@ export const keypointPlugin: AnnotationTaskPlugin = {
   label: "关键点",
   color: "danger",
   renderer: KeypointCanvas,
-  tools: [{ name: "keypoint", label: "关键点", title: "依次放点，双击后拉出包围框" }],
+  tools: [{ name: "keypoint", label: "关键点", title: "在画布逐点放置关键点，放满该类别的关键点数后自动进入矩形框绑定，拖出矩形即完成一个对象（归属当前类别）" }],
   create(shape: Annotation): boolean {
     if (shape.type !== "Keypoint") return false;
     const kps = shape.keypoints || [];
@@ -23,7 +23,7 @@ export const keypointPlugin: AnnotationTaskPlugin = {
     return {
       name: "keypoint",
       preview: KeypointPreview,
-      state: { pending: kp.pending, boxStart: kp.boxStart, boxEnd: kp.boxEnd, boxDrafting },
+      state: { pending: kp.pending, boxStart: kp.boxStart, boxEnd: kp.boxEnd, boxDrafting, boxMode: kp.boxMode },
       down(ctx) {
         const p = ctx.point;
         if (!p) return null;
@@ -32,9 +32,11 @@ export const keypointPlugin: AnnotationTaskPlugin = {
           boxDrafting.value = true;
           return null;
         }
-        const kpNames =
-          ctx.classes?.find((c) => c.id === ctx.selectedClassId)?.keypoint_names || [];
+        const cls = ctx.classes?.find((c) => c.id === ctx.selectedClassId);
+        const kpNames = cls?.keypoint_names || [];
+        const kpColors = cls?.keypoint_colors || [];
         kp.setNames(kpNames);
+        kp.setColors(kpColors);
         kp.addPoint(p, visibility.value);
         return null;
       },
@@ -117,8 +119,20 @@ export const keypointPlugin: AnnotationTaskPlugin = {
     vertexMove(ctx: DragContext): void {
       const kp = ctx.ann.keypoints?.[Number(ctx.handle)];
       if (!kp || !ctx.point) return;
-      kp.x = Math.max(0, Math.min(1, ctx.point.x));
-      kp.y = Math.max(0, Math.min(1, ctx.point.y));
+      let x = ctx.point.x;
+      let y = ctx.point.y;
+      // 关键点不能拖出所属对象矩形（bounding_box）之外
+      const b = ctx.ann.bounding_box;
+      if (b && b.width && b.height) {
+        const x1 = b.cx - b.width / 2;
+        const x2 = b.cx + b.width / 2;
+        const y1 = b.cy - b.height / 2;
+        const y2 = b.cy + b.height / 2;
+        x = Math.max(x1, Math.min(x2, x));
+        y = Math.max(y1, Math.min(y2, y));
+      }
+      kp.x = Math.max(0, Math.min(1, x));
+      kp.y = Math.max(0, Math.min(1, y));
       ctx.trigger();
     },
     vertexDelete(ann: Annotation, handle: string): void {

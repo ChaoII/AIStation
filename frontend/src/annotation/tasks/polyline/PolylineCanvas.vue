@@ -11,6 +11,20 @@
     />
     <template v-if="ann.id === selectedId">
       <circle
+        v-for="(pt, i) in midpoints(ann)"
+        :key="'ins-' + i"
+        :cx="pt.x"
+        :cy="pt.y"
+        r="3"
+        fill="#fff"
+        stroke="#3b82f6"
+        stroke-width="1"
+        class="handle"
+        :style="peStyle"
+        :data-handle="'poly-ins-' + i"
+        @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-ins-' + i)"
+      />
+      <circle
         v-for="(pt, i) in ann.points"
         :key="i"
         :cx="pt.x * cw"
@@ -25,18 +39,15 @@
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-' + i)"
       />
       <circle
-        v-for="(pt, i) in midpoints(ann)"
-        :key="'ins-' + i"
-        :cx="pt.x"
-        :cy="pt.y"
-        r="3"
-        fill="#fff"
-        stroke="#3b82f6"
-        stroke-width="1"
-        class="handle"
+        v-for="(pt, i) in ann.points"
+        :key="'hit-' + i"
+        :cx="pt.x * cw"
+        :cy="pt.y * ch"
+        r="8"
+        fill="transparent"
         :style="peStyle"
-        :data-handle="'poly-ins-' + i"
-        @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-ins-' + i)"
+        :data-handle="'poly-' + i"
+        @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'poly-' + i)"
       />
     </template>
   </g>

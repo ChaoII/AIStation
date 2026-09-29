@@ -3,11 +3,17 @@ import type { Annotation, Point } from "../../core/types";
 
 export function useOcrTool() {
   const first = ref<Point | null>(null);
+  const last = ref<Point | null>(null);
   const mode = ref<"rect" | "quad">("rect");
   const quadPoints = ref<Point[]>([]);
 
   function toggleMode() {
     mode.value = mode.value === "rect" ? "quad" : "rect";
+    reset();
+  }
+
+  function setMode(m: "rect" | "quad") {
+    mode.value = m;
     reset();
   }
 
@@ -63,6 +69,7 @@ export function useOcrTool() {
 
   function reset() {
     first.value = null;
+    last.value = null;
     quadPoints.value = [];
   }
 
@@ -73,9 +80,15 @@ export function useOcrTool() {
 
   return {
     first,
+    last,
     mode,
     quadPoints,
     toggleMode,
+    setMode,
+    subTools: [
+      { value: "rect", label: "矩形工具" },
+      { value: "quad", label: "多边形工具" },
+    ],
     onPoint,
     addQuadPoint,
     closeQuad,

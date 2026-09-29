@@ -6,6 +6,7 @@ export interface KpPoint {
   y: number;
   name: string;
   visibility: string;
+  color?: string;
 }
 
 export function useKeypointTool(kpNames: string[] = []) {
@@ -14,9 +15,14 @@ export function useKeypointTool(kpNames: string[] = []) {
   const boxStart = ref<Point | null>(null);
   const boxEnd = ref<Point | null>(null);
   let currentNames = kpNames;
+  let currentColors: (string | undefined)[] = [];
 
   function setNames(names: string[]) {
     currentNames = names;
+  }
+
+  function setColors(colors: (string | undefined)[]) {
+    currentColors = colors || [];
   }
 
   function addPoint(p: Point, visibility = "Visible") {
@@ -25,7 +31,13 @@ export function useKeypointTool(kpNames: string[] = []) {
       y: p.y,
       name: currentNames[pending.value.length] || `kp${pending.value.length + 1}`,
       visibility,
+      color: currentColors[pending.value.length],
     });
+    // 放满当前类别的关键点数量后，自动进入「绘制矩形绑定对象」阶段，
+    // 避免用户可以无限添加关键点。
+    if (currentNames.length > 0 && pending.value.length >= currentNames.length) {
+      boxMode.value = true;
+    }
   }
 
   function removeKeypoint(ann: Annotation, idx: number) {
@@ -135,6 +147,7 @@ export function useKeypointTool(kpNames: string[] = []) {
     boxStart,
     boxEnd,
     setNames,
+    setColors,
     addPoint,
     beginBox,
     setBoxStart,

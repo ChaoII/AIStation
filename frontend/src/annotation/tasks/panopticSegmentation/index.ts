@@ -50,7 +50,12 @@ export const panopticSegmentationPlugin: AnnotationTaskPlugin = {
       brush: {
         name: "brush",
         preview: BrushPreview,
-        state: { strokes: brush.strokes, brushSize: brush.brushSize },
+        state: {
+          strokes: brush.strokes,
+          brushSize: brush.brushSize,
+          mode: brush.mode,
+          setBrushMode: brush.setBrushMode,
+        },
         down(ctx) { const p = ctx.point; if (p) brush.start(p); return null; },
         move(ctx) { const p = ctx.point; if (p) brush.move(p); },
         up(ctx) { if (!ctx.cw || !ctx.ch) { brush.reset(); return null; } return brush.end(ctx.cw, ctx.ch); },

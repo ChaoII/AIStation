@@ -2,29 +2,39 @@ import { ref } from "vue";
 import type { Annotation, Point } from "../../core/types";
 
 // 三步旋转框：p1(边起点) → p2(边终点) → p3(垂直方向点)
-export function rotatedBoxFromEdgeAndPoint(p1: Point, p2: Point, p3: Point) {
-  const vx = p2.x - p1.x;
-  const vy = p2.y - p1.y;
-  const width = Math.hypot(vx, vy);
-  if (width < 1e-6) return null;
-  const mx = (p1.x + p2.x) / 2;
-  const my = (p1.y + p2.y) / 2;
-  const tx = vx / width;
-  const ty = vy / width;
-  const t = (p3.x - p1.x) * tx + (p3.y - p1.y) * ty;
-  const footX = p1.x + t * tx;
-  const footY = p1.y + t * ty;
-  const offx = p3.x - footX;
-  const offy = p3.y - footY;
-  const height = Math.hypot(offx, offy);
-  if (height < 1e-6) return null;
-  const nx = offx / height;
-  const ny = offy / height;
+// 全部在像素(viewBox)空间计算，避免非方形图片在归一化坐标下旋转/距离失真，
+// 使生成的框底边即为 p1-p2 线段、宽高/角度与像素几何严格一致。
+export function rotatedBoxFromEdgeAndPoint(p1: Point, p2: Point, p3: Point, cw: number, ch: number) {
+  const p1x = p1.x * cw;
+  const p1y = p1.y * ch;
+  const p2x = p2.x * cw;
+  const p2y = p2.y * ch;
+  const p3x = p3.x * cw;
+  const p3y = p3.y * ch;
+  const vx = p2x - p1x;
+  const vy = p2y - p1y;
+  const widthPx = Math.hypot(vx, vy);
+  if (widthPx < 1e-6) return null;
+  const tx = vx / widthPx;
+  const ty = vy / widthPx;
+  const mx = (p1x + p2x) / 2;
+  const my = (p1y + p2y) / 2;
+  const t = (p3x - p1x) * tx + (p3y - p1y) * ty;
+  const footX = p1x + t * tx;
+  const footY = p1y + t * ty;
+  const offx = p3x - footX;
+  const offy = p3y - footY;
+  const heightPx = Math.hypot(offx, offy);
+  if (heightPx < 1e-6) return null;
+  const nx = offx / heightPx;
+  const ny = offy / heightPx;
+  const cxPx = mx + (heightPx / 2) * nx;
+  const cyPx = my + (heightPx / 2) * ny;
   return {
-    cx: mx + (height / 2) * nx,
-    cy: my + (height / 2) * ny,
-    width,
-    height,
+    cx: cxPx / cw,
+    cy: cyPx / ch,
+    width: widthPx / cw,
+    height: heightPx / ch,
     angle: Math.atan2(vy, vx),
   };
 }
@@ -34,7 +44,7 @@ export function useRotatedTool() {
   const pt1 = ref<Point | null>(null);
   const pt2 = ref<Point | null>(null);
 
-  function onStep(p: Point): Annotation | null {
+  function onStep(p: Point, cw: number, ch: number): Annotation | null {
     if (step.value === 0) {
       pt1.value = p;
       step.value = 1;
@@ -46,7 +56,7 @@ export function useRotatedTool() {
       return null;
     }
     if (step.value === 2) {
-      const geom = rotatedBoxFromEdgeAndPoint(pt1.value!, pt2.value!, p);
+      const geom = rotatedBoxFromEdgeAndPoint(pt1.value!, pt2.value!, p, cw, ch);
       step.value = 0;
       pt1.value = null;
       pt2.value = null;

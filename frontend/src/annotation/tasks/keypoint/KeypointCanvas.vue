@@ -38,23 +38,37 @@
       :cy="kp.y * ch"
       r="4"
       fill="#fff"
-      :stroke="color(ann)"
+      :stroke="kp.color || color(ann)"
       stroke-width="1.5"
       class="handle"
       :style="peStyle"
       :data-handle="'kp-' + i"
       @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'kp-' + i)"
     />
-    <text
-      v-for="(kp, i) in ann.keypoints"
-      :key="'t' + i"
-      :x="kp.x * cw + 8"
-      :y="kp.y * ch - 4"
-      fill="#606266"
-      font-size="5"
-    >
-      {{ kp.name }}
-    </text>
+    <g v-for="(kp, i) in ann.keypoints" :key="'l' + i">
+      <rect
+        :x="kp.x * cw + 8 - 2"
+        :y="kp.y * ch - 4 - (fontSize + 6)"
+        :width="kp.name.length * fontSize + 6"
+        :height="fontSize + 6"
+        rx="2"
+        fill="#ffffff"
+        fill-opacity="0.9"
+        :stroke="kp.color || color(ann)"
+        stroke-width="0.8"
+        :style="peStyle"
+      />
+      <text
+        :x="kp.x * cw + 8"
+        :y="kp.y * ch - 4"
+        :fill="kp.color || color(ann)"
+        :font-size="fontSize"
+        dominant-baseline="text-after-edge"
+        :style="peStyle"
+      >
+        {{ kp.name }}
+      </text>
+    </g>
   </g>
 </template>
 

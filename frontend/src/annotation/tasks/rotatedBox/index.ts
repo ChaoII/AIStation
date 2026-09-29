@@ -13,10 +13,9 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
   create(shape: Annotation): boolean {
     if (shape.type !== "RotatedBox") return false;
     if (shape.width <= 0 || shape.height <= 0) return false;
-    if (shape.cx < 0 || shape.cy < 0 || shape.cx > 1 || shape.cy > 1) return false;
-    const half = Math.hypot(shape.width, shape.height) / 2;
-    if (shape.cx - half < 0 || shape.cx + half > 1 || shape.cy - half < 0 || shape.cy + half > 1)
-      return false;
+    // 仅约束中心在图像附近并给边缘留出缓冲，允许旋转框稍微超出图像边缘，
+    // 避免在靠近边缘处「第三步拖动绘制不出来」。
+    if (shape.cx < -0.25 || shape.cx > 1.25 || shape.cy < -0.25 || shape.cy > 1.25) return false;
     return true;
   },
   tool: (() => {
@@ -31,7 +30,7 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
         const p = ctx.point;
         if (!p) return null;
         last.value = p;
-        const created = rot.onStep(p);
+        const created = rot.onStep(p, ctx.cw ?? 1, ctx.ch ?? 1);
         if (created) preview.value = null;
         return created;
       },
@@ -40,7 +39,7 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
         if (!p) return;
         last.value = p;
         if (rot.pt1.value && rot.pt2.value) {
-          const g = rotatedBoxFromEdgeAndPoint(rot.pt1.value, rot.pt2.value, p);
+          const g = rotatedBoxFromEdgeAndPoint(rot.pt1.value, rot.pt2.value, p, ctx.cw ?? 1, ctx.ch ?? 1);
           if (g) preview.value = { ...g };
         }
       },
@@ -63,24 +62,28 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
     resize(ctx: DragContext): void {
       const { ann, orig, handle, point, cw, ch } = ctx;
       if (!point) return;
-      const aspect = ch / cw;
       const o = orig;
       const cos = Math.cos(o.angle);
       const sin = Math.sin(o.angle);
       const fx = handle.includes("l") ? 1 : handle.includes("r") ? -1 : 1;
       const fy = handle.includes("t") ? 1 : handle.includes("b") ? -1 : 1;
-      const fix_x = o.cx + ((fx * o.width) / 2) * cos - ((fy * o.height) / 2) * aspect * sin;
-      const fix_y = o.cy + ((fx * o.width) / 2 / aspect) * sin + ((fy * o.height) / 2) * cos;
-      const newCx = (fix_x + point.x) / 2;
-      const newCy = (fix_y + point.y) / 2;
-      const dvx = (point.x - newCx) * cw;
-      const dvy = (point.y - newCy) * ch;
+      // 像素(viewBox)空间计算，避免非方形图片在归一化坐标下旋转/缩放错位
+      const hw = (o.width * cw) / 2;
+      const hh = (o.height * ch) / 2;
+      const fixX = o.cx * cw + (fx * hw) * cos - (fy * hh) * sin;
+      const fixY = o.cy * ch + (fx * hw) * sin + (fy * hh) * cos;
+      const mx = point.x * cw;
+      const my = point.y * ch;
+      const newCxPx = (fixX + mx) / 2;
+      const newCyPx = (fixY + my) / 2;
+      const dvx = mx - newCxPx;
+      const dvy = my - newCyPx;
       const lx = dvx * cos + dvy * sin;
       const ly = -dvx * sin + dvy * cos;
       ann.width = Math.max(0.001, (Math.abs(lx) * 2) / cw);
       ann.height = Math.max(0.001, (Math.abs(ly) * 2) / ch);
-      ann.cx = Math.max(0, Math.min(1, newCx));
-      ann.cy = Math.max(0, Math.min(1, newCy));
+      ann.cx = Math.max(0, Math.min(1, newCxPx / cw));
+      ann.cy = Math.max(0, Math.min(1, newCyPx / ch));
       ctx.trigger();
     },
     rotate(ctx: DragContext): void {
@@ -91,12 +94,17 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
       ann.angle = JSON.parse(JSON.stringify(ann)).angle + (cur - prev);
       ctx.trigger();
     },
-    tagAnchor(ann: Annotation): { x: number; y: number } {
-      const hw = ann.width / 2,
-        hh = ann.height / 2;
+    tagAnchor(ann: Annotation, cw = 1, ch = 1): { x: number; y: number } {
+      // 像素空间计算旋转框左上角，再转回归一化（非方形图片必做 cw/ch 换算），
+      // 否则标签会与矩形分家
+      const hw = (ann.width * cw) / 2,
+        hh = (ann.height * ch) / 2;
       const cos = Math.cos(ann.angle),
         sin = Math.sin(ann.angle);
-      return { x: ann.cx + -hw * cos - -hh * sin, y: ann.cy + -hw * sin + -hh * cos };
+      return {
+        x: (ann.cx * cw + -hw * cos - -hh * sin) / cw,
+        y: (ann.cy * ch + -hw * sin + -hh * cos) / ch,
+      };
     },
   },
 };

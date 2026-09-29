@@ -1,7 +1,11 @@
-import type { AnnotationTaskPlugin, Annotation, DragContext } from "../../core/types";
+import type { AnnotationTaskPlugin, Annotation, DragContext, Point } from "../../core/types";
 import OcrCanvas from "./OcrCanvas.vue";
 import OcrPreview from "./OcrPreview.vue";
 import { useOcrTool } from "./useOcrTool";
+
+function nearPoint(a: Point, b: Point, th = 0.02): boolean {
+  return Math.abs(a.x - b.x) < th && Math.abs(a.y - b.y) < th;
+}
 
 export const ocrPlugin: AnnotationTaskPlugin = {
   name: "ocr",
@@ -20,15 +24,31 @@ export const ocrPlugin: AnnotationTaskPlugin = {
     return {
       name: "ocr",
       preview: OcrPreview,
-      state: { mode: ocr.mode, quadPoints: ocr.quadPoints },
+      state: {
+        mode: ocr.mode,
+        setMode: ocr.setMode,
+        subTools: ocr.subTools,
+        first: ocr.first,
+        last: ocr.last,
+        quadPoints: ocr.quadPoints,
+      },
       down(ctx) {
         const p = ctx.point;
         if (!p) return null;
         if (ocr.mode.value === "quad") {
+          const qp = ocr.quadPoints.value;
+          if (qp.length >= 4 && nearPoint(p, qp[0])) {
+            return ocr.closeQuad();
+          }
           ocr.addQuadPoint(p);
+          ocr.last.value = p;
           return null;
         }
+        ocr.last.value = p;
         return ocr.onPoint(p);
+      },
+      move(ctx) {
+        if (ctx.point) ocr.last.value = ctx.point;
       },
       dblclick() {
         if (ocr.mode.value === "quad") return ocr.closeQuad();
