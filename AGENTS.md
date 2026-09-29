@@ -34,6 +34,39 @@ pnpm run type-check            # vue-tsc --noEmit --skipLibCheck
 pnpm run lint                  # eslint + prettier + stylelint
 ```
 
+## 国内镜像源（**强制**，apt / pip / 任何拉取）
+
+### 用户原话（要求原样记录，不得改写）
+
+> 现在跟你说你不管是有装拍神库还是apt get的这源全部都用国内的镜像听到没把它写在agents.md里面。
+
+> 还有apt也要换阿里镜像
+
+（"拍神库" = 第三方库，指 pip 装包；这两句是本节的**唯一来源**。）
+
+### 硬规矩
+
+- **apt → 清华**：`https://mirrors.tuna.tsinghua.edu.cn/ubuntu`
+  （备选中科大 `https://mirrors.ustc.edu.cn/ubuntu`；
+  **阿里云实测仅 0.02 MB/s，82s 拉 1.7MB，别用**）
+- **pip / uv → 清华**：`https://pypi.tuna.tsinghua.edu.cn/simple`
+- 本项目 `uv sync` 已带 `--index-url`（见 Quick Start），**不要去掉**
+- Dockerfile / CI 里装包同样走国内源，见 `D:\TorchKiln\service\Dockerfile`
+- 唯一例外：pytorch 官方 CUDA 轮子（`download.pytorch.org`）国内常未同步，
+  用时须在提交信息里注明「国内无等价源」
+- 装包一律 `pip install --no-deps` + 手工补传递依赖，避免 resolver
+  顺手升级 torch/numpy/opencv 毁掉已跑通的通路
+
+### PyTorch CUDA 轮子也有国内镜像（用户原话）
+
+> 对于pytorch的cuda版本也有国内镜像你比如说南科科大的。
+
+- 实测可用：**清华** `https://mirrors.tuna.tsinghua.edu.cn/pytorch-wheels/cu132/`（6.2 MB/s）、中科大（5.2 MB/s）
+- ❌ **南科大有反爬挑战**，HEAD 返回 200 但正文是验证页，pip 拉不到，别用
+- ⚠️ 南京大学目录可访问但无 torch 2.1x 条目
+- PyPI 同步源（清华/阿里云 simple）里**没有** CUDA 轮子，这是独立索引，需单独指定
+- 探测可用性必须 GET 一次看正文，`-Method Head` 的 200 不可信
+
 ## Architecture
 
 **Monorepo**: `backend/` (FastAPI + SQLAlchemy 2.0 + Pydantic v2), `frontend/` (Vue 3 + Vite + Element Plus + TypeScript).
