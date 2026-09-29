@@ -342,6 +342,7 @@ function frameworkLabel(fw?: string) {
     {
       ultralytics: "Ultralytics",
       paddlex: "PaddleX",
+      torchkiln: "TorchKiln",
     } as any
   )[fw || ""] || fw || "—";
 }
@@ -455,20 +456,73 @@ const isClassifyTask = computed(() => {
   return displayMetricsLog.value.some((m: any) => m && (m.top1 != null || m.top5 != null));
 });
 
+// TorchKiln（自研平台）：主指标**由训练侧声明**（mAP50-95 / acc / hmean / RMSE…），
+// 随任务变化，所以这里从指标事件里动态读，而不是像第三方那样为每个框架硬编码一张表。
+// 后端已把 eval 事件的 metrics 子对象摊平到行顶层，故按 main_indicator 取值即可。
+const isTorchkiln = computed(
+  () => String(task.value?.framework || "").toLowerCase() === "torchkiln"
+);
+/** TorchKiln 主指标名：取自任意一条带 main_indicator 的行 */
+const tkMainIndicator = computed(() => {
+  const probes = [
+    ...displayMetricsLog.value,
+    displayBestMetrics.value,
+    displayLastMetrics.value,
+  ];
+  for (const m of probes) {
+    if (m?.main_indicator) return String(m.main_indicator);
+  }
+  return "";
+});
+/** TorchKiln 主指标是 0~1 比例还是任意数值（loss/RMSE 之类要按小数展示） */
+const tkMainIsRatio = computed(() => {
+  const k = tkMainIndicator.value.toLowerCase();
+  if (!k) return true;
+  return /map|acc|precision|recall|hmean|iou|ap|f1|acc/.test(k) && !/rmse|mae|loss|error/.test(k);
+});
+
 // 主指标定义：PaddleX det→HMean/Precision/Recall；PaddleX rec→Acc；
 // YOLO 分类→Top1/Top5；其余（det/seg/obb/pose）→mAP@50/mAP@50:95/Precision/Recall
 // 复用 @/utils/trainMetrics，与评估详情保持一致
-const metricSpec = computed<MetricSpecItem[]>(() =>
-  resolveMainMetricSpec({
+const metricSpec = computed<MetricSpecItem[]>(() => {
+  if (isTorchkiln.value) {
+    const k = tkMainIndicator.value;
+    if (!k) return [];
+    return [{ key: k, label: k, color: "#67c23a" } as MetricSpecItem];
+  }
+  return resolveMainMetricSpec({
     framework: task.value?.framework,
     mode: paddlexMode.value,
     classify: isClassifyTask.value,
-  })
-);
+  });
+});
 
 // Loss 定义：PaddleX 只有单一 loss；YOLO 检测族保留 box/cls/dfl；分类为单一 Loss
 const lossSpec = computed<{ key: string; src: string; label: string; color: string; icon: any }[]>(
   () => {
+    if (isTorchkiln.value) {
+      // TorchKiln 的 step 事件把各 loss 分量摊平在行顶层（loss_cls/loss_box/…），
+      // 名称随模型而变，故从数据里反查有哪些分量，而不是硬编码。
+      const seen = new Set<string>();
+      for (const m of displayMetricsLog.value) {
+        if (m?._kind !== "step") continue;
+        for (const key of Object.keys(m)) {
+          if (key === "loss" || !key.startsWith("loss_")) continue;
+          if (typeof m[key] === "number") seen.add(key);
+        }
+      }
+      const colors = ["#f56c6c", "#e6a23c", "#409eff", "#909399"];
+      const items = [...seen].map((k, i) => ({
+        key: k,
+        src: k,
+        label: k.replace(/^loss_/, "").toUpperCase(),
+        color: colors[i % colors.length],
+        icon: TrendCharts,
+      }));
+      return items.length
+        ? items
+        : [{ key: "loss", src: "loss", label: "Loss", color: "#f56c6c", icon: TrendCharts }];
+    }
     if (isPaddlex.value) {
       return [{ key: "loss", src: "loss", label: "Loss", color: "#f56c6c", icon: TrendCharts }];
     }
@@ -573,7 +627,11 @@ const compareTableData = computed(() => [
   ...metricSpec.value.map((s) => ({
     label: s.label,
     getter: (m: any) => m?.[s.key],
-    fmt: (v: number) => (Number(v) * 100).toFixed(1) + "%",
+    // TorchKiln 的主指标可能是 0~1 比例（mAP/acc），也可能是 RMSE/loss 这类任意值
+    fmt: (v: number) =>
+      isTorchkiln.value && !tkMainIsRatio.value
+        ? Number(v).toFixed(4)
+        : (Number(v) * 100).toFixed(1) + "%",
   })),
 ]);
 
@@ -747,7 +805,10 @@ async function startPoll() {
     if (curStatus !== prevStatus) {
       if (curStatus === "running" && !ws) connectWs(Number(route.params.id));
     }
-    if (curStatus && curStatus !== "running" && curStatus !== "pending") stopPoll();
+    if (curStatus && curStatus !== "running" && curStatus !== "pending") {
+      stopPoll();
+      stopMetricStream();
+    }
   }, 5000);
 }
 
@@ -756,6 +817,163 @@ function stopPoll() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+}
+
+// ==================================================================
+// 指标实时流（SSE）
+// ------------------------------------------------------------------
+// 为什么不用"每秒整表重拉"：
+//   整表重拉会让整块区域重新渲染 —— 闪烁、丢滚动位置、丢选中态。
+//   SSE 是**局部增量**：新事件只追加到 liveMetricsLog，曲线/卡片各自重算。
+//
+// 为什么带 offset：
+//   刷新页面/断网重连时带 lastSeq，服务端先补发缺口再切实时，不丢不重。
+//   EventSource 会自动重连，但**不会**自动带我们自定义的 offset，
+//   所以重连成功后要主动用新的 lastSeq 重新开流。
+// ==================================================================
+let metricEs: EventSource | null = null;
+let metricReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const metricConnected = ref(false);
+/** 已消费的最大 seq（用于断点续传；-1=从头） */
+let lastSeq = -1;
+
+function isRunningStatus(s?: string) {
+  return s === "running" || s === "pending";
+}
+
+/** 从已有 metrics_log 推最大 seq（用于首次开流的断点） */
+function maxSeqOf(rows: any[] | undefined) {
+  let m = -1;
+  for (const r of rows || []) {
+    if (typeof r?.seq === "number" && r.seq > m) m = r.seq;
+  }
+  return m;
+}
+
+function stopMetricStream() {
+  if (metricReconnectTimer) {
+    clearTimeout(metricReconnectTimer);
+    metricReconnectTimer = null;
+  }
+  if (metricEs) {
+    metricEs.close();
+    metricEs = null;
+  }
+  metricConnected.value = false;
+}
+
+/** 把一条指标事件转成 liveMetricsLog 的一行（结构与后端 metrics_log 一致） */
+function metricEventToRow(ev: any) {
+  const type = ev?.type;
+  if (type === "step") {
+    const row: any = {
+      _kind: "step",
+      epoch: ev.epoch,
+      global_step: ev.global_step,
+      loss: ev.loss,
+      lr: ev.lr,
+      ips: ev.ips,
+      mem_reserved: ev.mem_reserved,
+    };
+    for (const [k, v] of Object.entries(ev.comps || {})) {
+      if (typeof v === "number") row[k] = v;
+    }
+    return row;
+  }
+  if (type === "eval" || type === "best") {
+    const row: any = {
+      _kind: type,
+      best: type === "best" ? true : undefined,
+      epoch: ev.epoch,
+      global_step: ev.global_step,
+      main_indicator: ev.main_indicator,
+      main_indicator_mode: ev.main_indicator_mode,
+      main_value: ev.main_value,
+    };
+    if (typeof ev.fps === "number") row.fps = ev.fps;
+    for (const [k, v] of Object.entries(ev.metrics || {})) {
+      if (typeof v === "number") row[k] = v;
+    }
+    return row;
+  }
+  if (type === "end") {
+    return {
+      _kind: "end",
+      exit_reason: ev.exit_reason,
+      epoch: ev.epoch,
+      main_indicator: ev.main_indicator,
+      main_value: ev.main_value,
+      duration_sec: ev.duration_sec,
+    };
+  }
+  return null;
+}
+
+function appendMetricRow(row: any) {
+  if (!row) return;
+  // 同一 epoch 的 eval 可能被补发（断线重连），按 (kind,epoch) 去重
+  const idx = liveMetricsLog.value.findIndex(
+    (r) => r._kind === row._kind && r.epoch === row.epoch && r.global_step === row.global_step
+  );
+  if (idx >= 0) liveMetricsLog.value.splice(idx, 1, row);
+  else liveMetricsLog.value.push(row);
+  // 曲线点太多会卡渲染，只保留末尾（后端落库同样是 5000 行上限）
+  if (liveMetricsLog.value.length > 5000) {
+    liveMetricsLog.value.splice(0, liveMetricsLog.value.length - 5000);
+  }
+}
+
+function startMetricStream(taskId: number) {
+  stopMetricStream();
+  const base = import.meta.env.VITE_API_BASE || "/api/v1";
+  const url = `${base}/train/task/${taskId}/metrics/stream?offset=${lastSeq}`;
+  let es: EventSource;
+  try {
+    es = new EventSource(url, { withCredentials: true });
+  } catch {
+    scheduleMetricReconnect(taskId);
+    return;
+  }
+  metricEs = es;
+
+  es.onopen = () => {
+    metricConnected.value = true;
+  };
+  es.onerror = () => {
+    metricConnected.value = false;
+    // EventSource 会自己重连，但不会带 offset；主动关掉后按新 lastSeq 重开
+    es.close();
+    if (metricEs === es) metricEs = null;
+    scheduleMetricReconnect(taskId);
+  };
+  const onData = (e: MessageEvent) => {
+    let ev: any;
+    try {
+      ev = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    if (ev && typeof ev.seq === "number") lastSeq = Math.max(lastSeq, ev.seq);
+    if (ev?.type === "end" || ev?.__end__) {
+      // 作业终结：收流并刷新一次任务详情拿最终状态
+      stopMetricStream();
+      void loadTask();
+      return;
+    }
+    appendMetricRow(metricEventToRow(ev));
+  };
+  for (const t of ["step", "eval", "best", "end", "metric"]) {
+    es.addEventListener(t, onData as EventListener);
+  }
+}
+
+function scheduleMetricReconnect(taskId: number) {
+  if (metricReconnectTimer) return;
+  // 退避到 10s，避免服务不可用时疯狂重连打爆后端
+  metricReconnectTimer = setTimeout(() => {
+    metricReconnectTimer = null;
+    if (isRunningStatus(task.value?.status)) startMetricStream(taskId);
+  }, 5000);
 }
 
 async function handleStart() {
@@ -912,6 +1130,9 @@ onMounted(async () => {
     if (task.value?.status === "running") {
       connectWs(id);
       startPoll();
+      // 指标走 SSE 局部增量；日志走 WS 文本流。两者互补。
+      lastSeq = maxSeqOf(task.value?.metrics_log);
+      startMetricStream(id);
     }
   }
 });
@@ -919,5 +1140,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   ws?.close();
   stopPoll();
+  stopMetricStream();
 });
 </script>

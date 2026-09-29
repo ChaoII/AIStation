@@ -69,7 +69,13 @@
             >
               <template #default="scope">
                 <el-tag
-                  :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
+                  :type="
+                    scope.row.framework === 'ultralytics'
+                      ? 'success'
+                      : scope.row.framework === 'torchkiln'
+                        ? 'warning'
+                        : 'primary'
+                  "
                   size="small"
                 >
                   {{ frameworkLabel(scope.row.framework) }}
@@ -228,6 +234,7 @@
               >
                 <el-radio value="ultralytics">Ultralytics</el-radio>
                 <el-radio value="paddlex">PaddleX</el-radio>
+                <el-radio value="torchkiln">TorchKiln（自研）</el-radio>
               </el-radio-group>
             </el-form-item>
           </el-col>
@@ -433,6 +440,192 @@
             </el-col>
           </el-row>
         </template>
+
+        <!-- ================================================================ -->
+        <!-- TorchKiln（自研平台）：模型与超参**全部由服务端动态下发**            -->
+        <!-- 加模型 = 训练服务里丢一个 YAML，本页面无需改动、无需重新发布。      -->
+        <!-- ================================================================ -->
+        <template v-if="formData.framework === 'torchkiln'">
+          <el-alert
+            v-if="tkStatus && !tkStatus.available"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 12px"
+            :title="`训练服务不可用：${tkStatus.reason || '未知原因'}`"
+          />
+          <el-alert
+            v-else-if="tkStatus?.framework_version"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 12px"
+            :title="`TorchKiln ${tkStatus.framework_version} · ${tkStatus.config_root || ''}`"
+          />
+
+          <el-form-item label="模型" required>
+            <el-select
+              v-model="tkModel"
+              filterable
+              style="width: 100%"
+              :loading="tkLoading"
+              placeholder="请选择 TorchKiln 模型"
+              @change="onTkModelChange"
+            >
+              <el-option-group
+                v-for="g in tkModelGroups"
+                :key="g.label"
+                :label="g.label"
+              >
+                <el-option
+                  v-for="m in g.items"
+                  :key="m.model_name"
+                  :label="m.model_name"
+                  :value="m.model_name"
+                >
+                  <span>{{ m.model_name }}</span>
+                  <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">
+                    {{ m.task }} · {{ m.main_indicator || "—" }}
+                  </span>
+                </el-option>
+              </el-option-group>
+            </el-select>
+          </el-form-item>
+
+          <el-form-item v-if="tkModel" label="任务类型">
+            <el-tag effect="plain">{{ tkModelInfo?.task || "—" }}</el-tag>
+            <el-tag
+              v-if="tkModelInfo?.main_indicator"
+              effect="plain"
+              type="success"
+              style="margin-left: 8px"
+            >
+              主指标 {{ tkModelInfo.main_indicator }}
+              {{ tkModelInfo.main_indicator_mode === "min" ? "（越小越好）" : "（越大越好）" }}
+            </el-tag>
+          </el-form-item>
+
+          <!-- 超参表单：由 schema 动态渲染，加参数不用改前端 -->
+          <el-divider>超参数配置</el-divider>
+          <div v-loading="tkSchemaLoading" style="min-height: 60px">
+            <el-empty
+              v-if="!tkSchema && !tkSchemaLoading"
+              description="请先选择模型"
+              :image-size="60"
+            />
+            <el-collapse v-else-if="tkSchema" v-model="tkGroupsOpen">
+              <el-collapse-item
+                v-for="g in tkSchemaGroups"
+                :key="g.name"
+                :name="g.name"
+                :title="`${g.name}（${g.items.length}）`"
+              >
+                <el-row :gutter="16">
+                  <el-col
+                    v-for="p in g.items"
+                    :key="p.key"
+                    :xs="24"
+                    :sm="12"
+                    :md="8"
+                    style="margin-bottom: 12px"
+                  >
+                    <el-form-item :label="p.label" :title="p.key">
+                      <el-switch
+                        v-if="p.widget === 'switch'"
+                        v-model="tkParams[p.key]"
+                      />
+                      <el-slider
+                        v-else-if="p.widget === 'slider'"
+                        v-model="tkParams[p.key]"
+                        :min="p.min ?? 0"
+                        :max="p.max ?? 100"
+                        show-input
+                        :show-input-controls="false"
+                      />
+                      <el-input-number
+                        v-else-if="p.widget === 'number'"
+                        v-model="tkParams[p.key]"
+                        :min="p.min"
+                        :max="p.max"
+                        :step="p.type === 'float' ? 0.001 : 1"
+                        :precision="p.type === 'float' ? 6 : undefined"
+                        controls-position="right"
+                        style="width: 100%"
+                      />
+                      <el-select
+                        v-else-if="p.options?.length"
+                        v-model="tkParams[p.key]"
+                        style="width: 100%"
+                      >
+                        <el-option
+                          v-for="o in p.options"
+                          :key="String(o)"
+                          :label="String(o)"
+                          :value="o"
+                        />
+                      </el-select>
+                      <el-input
+                        v-else
+                        v-model="tkParams[p.key]"
+                        :placeholder="p.nullable ? '留空表示未设置' : ''"
+                        clearable
+                      />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
+              </el-collapse-item>
+            </el-collapse>
+          </div>
+
+          <el-divider>训练配置</el-divider>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="训练集占比">
+                <el-slider
+                  v-model="hpForm.trainRatio"
+                  :min="50"
+                  :max="95"
+                  :step="5"
+                  show-input
+                  style="width: 300px"
+                />
+                <span style="margin-left: 12px; color: var(--el-text-color-secondary)">
+                  验证集 {{ 100 - (hpForm.trainRatio || 80) }}%
+                </span>
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="随机种子">
+                <el-input-number
+                  v-model="hpForm.seed"
+                  :min="0"
+                  :max="2147483647"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="20">
+            <el-col :span="12">
+              <el-form-item label="显存上限(GB)">
+                <el-input-number
+                  v-model="hpForm.gpuMemory"
+                  :min="1"
+                  :max="80"
+                  :step="1"
+                  controls-position="right"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Docker 镜像">
+                <el-input v-model="hpForm.dockerImage" placeholder="torchkiln:0.1.0" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </template>
       </el-form>
       <div v-if="dialogVisible.type === 'create'" class="docker-preview">
         <el-divider>Docker 命令预览</el-divider>
@@ -451,7 +644,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
@@ -459,6 +652,12 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import SchedulePanel from "@/components/Train/SchedulePanel.vue";
 import { cachedOptions } from "@/composables/useOptions";
 import { TrainAPI } from "@/api/module_train";
+import type {
+  TorchKilnModel,
+  TorchKilnParam,
+  TorchKilnSchema,
+  TorchKilnStatus,
+} from "@/api/module_train";
 import { AnnotationAPI } from "@/api/module_annotation";
 
 interface TablePageQuery {
@@ -494,6 +693,10 @@ function annoTaskTypeLabel(t: string) {
         keypoint: "关键点",
         ocr: "OCR",
         classification: "分类",
+        cuboid: "3D 目标检测",
+        time_series_event: "时间序列",
+        video_event: "视频事件",
+        video_detection: "视频检测",
       } as any
     )[t] || t
   );
@@ -672,6 +875,103 @@ const defaultHpPaddle = () => ({
 
 const hpForm = reactive<Record<string, any>>(defaultHpUltra());
 
+// ==================================================================
+// TorchKiln（自研平台）：模型清单 + 超参 schema 全部**动态下发**
+// ------------------------------------------------------------------
+// 本页面不硬编码任何模型名或超参：模型下拉来自 /framework/torchkiln/models，
+// 参数表单来自 /models/{name}/schema。因此 TorchKiln 里新增一个 YAML 配置，
+// 这里立刻就能选到——不必改前端、不必重新发布。
+// ==================================================================
+const defaultHpTorchkiln = () => ({
+  trainRatio: 80,
+  seed: 1024,
+  gpuMemory: 12,
+  dockerImage: "torchkiln:0.1.0",
+});
+
+const tkStatus = ref<TorchKilnStatus | null>(null);
+const tkModels = ref<TorchKilnModel[]>([]);
+const tkModel = ref<string>("");
+const tkSchema = ref<TorchKilnSchema | null>(null);
+const /** 点分键 -> 用户填的值（提交时原样作为 `-o Key.Sub=value` 透传） */
+  tkParams = reactive<Record<string, any>>({});
+const tkGroupsOpen = ref<string[]>([]);
+const tkLoading = ref(false);
+const tkSchemaLoading = ref(false);
+
+const tkModelInfo = computed(
+  () => tkModels.value.find((m) => m.model_name === tkModel.value) || null
+);
+
+/** 按「任务族/算法」分组，避免 100+ 个模型挤在一个下拉里 */
+const tkModelGroups = computed(() => {
+  const map = new Map<string, TorchKilnModel[]>();
+  for (const m of tkModels.value) {
+    const key = [m.task, m.algorithm].filter(Boolean).join(" · ") || "其它";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(m);
+  }
+  return [...map.entries()].map(([label, items]) => ({ label, items }));
+});
+
+/** schema.params 按 group 分区，保持服务端给定的分组顺序 */
+const tkSchemaGroups = computed(() => {
+  const s = tkSchema.value;
+  if (!s) return [] as { name: string; items: TorchKilnParam[] }[];
+  const byGroup = new Map<string, TorchKilnParam[]>();
+  for (const p of Object.values(s.params || {})) {
+    if (!byGroup.has(p.group)) byGroup.set(p.group, []);
+    byGroup.get(p.group)!.push(p);
+  }
+  return (s.groups?.length ? s.groups : [...byGroup.keys()])
+    .filter((g) => byGroup.has(g))
+    .map((g) => ({ name: g, items: byGroup.get(g)! }));
+});
+
+/** 拉服务状态 + 模型清单（切到 TorchKiln 时懒加载一次） */
+async function loadTorchKiln() {
+  if (tkModels.value.length) return;
+  tkLoading.value = true;
+  try {
+    const [st, ms] = await Promise.all([
+      TrainAPI.getTorchKilnStatus(),
+      TrainAPI.getTorchKilnModels(),
+    ]);
+    tkStatus.value = st?.data?.data || null;
+    tkModels.value = ms?.data?.data?.items || [];
+  } catch {
+    tkStatus.value = { available: false, reason: "无法连接后端或训练服务" };
+  } finally {
+    tkLoading.value = false;
+  }
+}
+
+/** 选模型 -> 拉 schema -> 用默认值预填参数表单 */
+async function onTkModelChange(name: string) {
+  tkSchema.value = null;
+  Object.keys(tkParams).forEach((k) => delete tkParams[k]);
+  if (!name) return;
+  tkSchemaLoading.value = true;
+  try {
+    const res = await TrainAPI.getTorchKilnModelSchema(name);
+    const s = res?.data?.data || null;
+    tkSchema.value = s;
+    if (s) {
+      // 默认展开前两个分组，其余折叠——避免一屏铺开占空间
+      tkGroupsOpen.value = (s.groups || []).slice(0, 2);
+      for (const [k, p] of Object.entries(s.params || {})) {
+        if (p.default === null || p.default === undefined) continue;
+        tkParams[k] = p.default;
+      }
+    }
+  } catch {
+    tkSchema.value = null;
+  } finally {
+    tkSchemaLoading.value = false;
+  }
+}
+
+
 const tempDir = ref("${TEMP_DIR}");
 TrainAPI.getTempDir()
   .then((res) => {
@@ -741,6 +1041,7 @@ function frameworkLabel(fw?: string) {
     {
       ultralytics: "Ultralytics",
       paddlex: "PaddleX",
+      torchkiln: "TorchKiln",
     } as any
   )[fw || ""] || fw || "—";
 }
@@ -749,9 +1050,16 @@ function onFrameworkChange(fw: string) {
   Object.keys(hpForm).forEach((k) => delete hpForm[k]);
   if (fw === "ultralytics") {
     Object.assign(hpForm, defaultHpUltra());
+  } else if (fw === "torchkiln") {
+    Object.assign(hpForm, defaultHpTorchkiln());
+    void loadTorchKiln();
   } else {
     Object.assign(hpForm, defaultHpPaddle());
   }
+  // 切框架时清掉 TorchKiln 的动态表单状态，避免残留上一个模型的参数
+  tkModel.value = "";
+  tkSchema.value = null;
+  Object.keys(tkParams).forEach((k) => delete tkParams[k]);
 }
 
 function buildHyperparams(): Record<string, any> {
@@ -765,6 +1073,26 @@ function buildHyperparams(): Record<string, any> {
       imgsz: hpForm.imgsz,
       workers: hpForm.workers,
       device: hpForm.device,
+      train_ratio: (hpForm.trainRatio || 80) / 100,
+    };
+  }
+  if (formData.framework === "torchkiln") {
+    // ⚠️ params 用**点分键**（"Global.epoch_num"），后端原样转成 `-o Key.Sub=value`，
+    //    中间**零映射**——这是接自研平台相比接第三方的最大收益。
+    //    剔除空值（用户没填的 path 类参数不要传给服务端）。
+    const params: Record<string, any> = {};
+    for (const [k, v] of Object.entries(tkParams)) {
+      if (v === null || v === undefined || v === "") continue;
+      params[k] = v;
+    }
+    const resources: Record<string, any> = { gpu: 1, shm_size: "4g" };
+    if (hpForm.gpuMemory) resources.gpu_memory_gb = hpForm.gpuMemory;
+    return {
+      model: tkModel.value,
+      task_type: tkModelInfo.value?.task === "detect" ? "detection" : tkModelInfo.value?.task,
+      params,
+      resources,
+      seed: hpForm.seed,
       train_ratio: (hpForm.trainRatio || 80) / 100,
     };
   }
@@ -823,6 +1151,11 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
 async function handleSubmit() {
   dataFormRef.value.validate(async (valid: boolean) => {
     if (valid) {
+      // TorchKiln 必须选模型，否则后端提交时会因缺 model 直接失败
+      if (formData.framework === "torchkiln" && !tkModel.value) {
+        ElMessage.warning("请选择 TorchKiln 模型");
+        return;
+      }
       submitLoading.value = true;
       try {
         if (formData.id) {
@@ -838,6 +1171,11 @@ async function handleSubmit() {
             annotation_task_id: formData.annotation_task_id,
             base_model_id: formData.base_model_id,
             hyperparams: buildHyperparams(),
+            // TorchKiln 走 HTTP 服务而非本地容器，镜像字段仅作记录；
+            // ultralytics/paddlex 沿用后端默认值，不下发以免覆盖
+            ...(formData.framework === "torchkiln" && hpForm.dockerImage
+              ? { docker_image: hpForm.dockerImage }
+              : {}),
           });
         }
         dialogVisible.visible = false;

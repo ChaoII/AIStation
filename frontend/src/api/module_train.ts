@@ -2,6 +2,79 @@ import request from "@/utils/request";
 
 const API_PATH = "/train";
 
+// ------------------------------------------------------------------
+// TorchKiln 训练服务类型（后端 torchkiln_client.py / torchkiln_executor.py 对应）
+// ------------------------------------------------------------------
+
+/** 参数控件类型：决定动态表单用哪种 Element Plus 控件 */
+export type TorchKilnWidget = "switch" | "slider" | "number" | "path" | "text" | "list";
+
+/** 单个超参的 schema 描述 */
+export interface TorchKilnParam {
+  key: string;
+  /** 中文标签（服务端下发，已按常见键表 + 配置内 `_ui` 段标注） */
+  label: string;
+  /** 所属分组（Global / Optimizer / Architecture / …），用于表单分区 */
+  group: string;
+  type: "int" | "float" | "bool" | "str" | "list" | "null" | "unknown";
+  default: any;
+  min?: number;
+  max?: number;
+  widget: TorchKilnWidget;
+  nullable?: boolean;
+  options?: (string | number)[];
+}
+
+/** 单个模型的 schema */
+export interface TorchKilnSchema {
+  schema_version: number;
+  model_name: string;
+  config_path: string;
+  task?: string;
+  model_family?: string;
+  algorithm?: string;
+  scale?: string;
+  /** 主指标名（mAP50-95 / acc / hmean / RMSE…），随任务变化 */
+  main_indicator: string;
+  /** 主指标方向：max=越大越好，min=越小越好 */
+  main_indicator_mode: "max" | "min";
+  groups: string[];
+  params: Record<string, TorchKilnParam>;
+  /** 平台托管键（输出目录/续训权重等），不该出现在用户表单里 */
+  managed_keys: string[];
+  defaults: Record<string, any>;
+  data: Record<string, any>;
+}
+
+/** 模型清单项 */
+export interface TorchKilnModel {
+  model_name: string;
+  config_path: string;
+  task?: string;
+  model_family?: string;
+  algorithm?: string;
+  scale?: string;
+  main_indicator?: string;
+  main_indicator_mode?: string;
+  epoch_num?: number;
+  has_pretrained?: boolean;
+}
+
+/** 服务可用性 + 版本声明 */
+export interface TorchKilnStatus {
+  available: boolean;
+  url?: string;
+  reason?: string;
+  framework?: string;
+  framework_version?: string;
+  api_version?: string;
+  spec_version?: string;
+  config_root?: string;
+  config?: Record<string, any>;
+  metrics?: Record<string, any>;
+  job?: Record<string, any>;
+}
+
 export const TrainAPI = {
   getModelList(params?: Record<string, any>) {
     return request<ApiResponse<{ items: any[]; total: number }>>({
@@ -76,6 +149,55 @@ export const TrainAPI = {
       url: `${API_PATH}/task/${id}/logs`,
       method: "get",
     });
+  },
+
+  // ------------------------------------------------------------------
+  // TorchKiln 训练服务（自研平台 D:\TorchKiln）
+  // 模型清单与超参 schema 都由服务端动态下发，**前端不硬编码任何模型/参数**——
+  // 加模型 = 训练服务里丢一个 YAML，本页面无需改动。
+  // ------------------------------------------------------------------
+  /** 训练服务可用性 + 版本声明（页面据此提示，避免点了开始才报错） */
+  getTorchKilnStatus() {
+    return request<ApiResponse<TorchKilnStatus>>({
+      url: `${API_PATH}/framework/torchkiln/status`,
+      method: "get",
+    });
+  },
+  /** 模型清单：{ model_name, task, model_family, algorithm, main_indicator, epoch_num } */
+  getTorchKilnModels(params?: { task?: string; model_family?: string; name?: string }) {
+    return request<ApiResponse<{ items: TorchKilnModel[]; total: number }>>({
+      url: `${API_PATH}/framework/torchkiln/models`,
+      method: "get",
+      params,
+    });
+  },
+  /**
+   * 超参 schema：驱动参数表单**动态渲染**。
+   * widget 决定用哪种控件：switch / slider / number / path / text / list。
+   */
+  getTorchKilnModelSchema(modelName: string, o?: string) {
+    return request<ApiResponse<TorchKilnSchema>>({
+      url: `${API_PATH}/framework/torchkiln/models/${modelName}/schema`,
+      method: "get",
+      params: o ? { o } : undefined,
+    });
+  },
+  /**
+   * 训练指标：按 seq 补发，**可断点续传**。
+   *
+   * ⚠️ 替代「每秒整表重拉」：整表重拉会闪烁、丢滚动位置与选中态。
+   * 带 offset（= 已收到的最大 seq）即可只拿增量。
+   */
+  getTaskMetrics(id: number, offset = -1) {
+    return request<ApiResponse<{ items: any[]; total: number; status?: string }>>({
+      url: `${API_PATH}/task/${id}/metrics`,
+      method: "get",
+      params: { offset },
+    });
+  },
+  /** 指标 SSE 地址（配合 EventSource 使用；后端已带 no-transform 头防代理缓冲） */
+  taskMetricsStreamUrl(id: number, offset = -1) {
+    return `/api/v1${API_PATH}/task/${id}/metrics/stream?offset=${offset}`;
   },
   stopTask(id: number) {
     return request<ApiResponse<any>>({ url: `${API_PATH}/task/${id}/stop`, method: "post" });
