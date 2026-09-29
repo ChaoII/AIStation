@@ -274,7 +274,7 @@
             class="form-tip"
           >
             已隐藏 {{ annoTasks.length - annoTasksForFramework.length }} 个 TorchKiln
-            暂不支持的任务类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线 / 3D 框）
+            暂不支持的任务类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线）
           </div>
         </el-form-item>
         <el-form-item label="基础模型">
@@ -729,6 +729,8 @@ const TK_SUPPORTED_TASK_TYPES = [
   "keypoint",
   "classification",
   "ocr",
+  // 3D：需要标注里带 box3d 米制参数（面板可填），导出为相机系 -> LiDAR 系 7-dof
+  "cuboid",
 ];
 
 /** 按当前框架过滤标注任务下拉：选 TorchKiln 时只给支持的任务类型。 */

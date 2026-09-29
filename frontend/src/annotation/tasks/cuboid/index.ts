@@ -4,6 +4,7 @@ import CuboidCanvas from "./CuboidCanvas.vue";
 import CuboidPreview from "./CuboidPreview.vue";
 import CuboidPanel from "./CuboidPanel.vue";
 import { useCuboidTool, cuboidFromEdgeAndPoint } from "./useCuboidTool";
+import { getBox3D, wrapAngle } from "./box3d";
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -142,6 +143,32 @@ export const cuboidPlugin: AnnotationTaskPlugin = {
         x: ann.cx - hw * Math.cos(a1) - hh * Math.cos(a2),
         y: ann.cy - hw * Math.sin(a1) - hh * Math.sin(a2),
       };
+    },
+    /**
+     * 绕中心旋转：同步改底面的两条边方向角**和**米制 3D 框的航向角 ry。
+     *
+     * ⚠️ 三者必须一起转，否则画布转了而训练真值没转（导出的 yaw 与图对不上，
+     * 训练能跑但学出来的东西朝向全错）。ry 相对 angle1 的**偏移量保持不变**，
+     * 所以先记下原差值再一起加增量，避免把用户手填的 ry 冲掉。
+     */
+    rotate(ctx: DragContext): void {
+      const { ann, orig, center, start, client } = ctx;
+      if (!center || !start || !client) return;
+      const prev = Math.atan2(start.y - center.y, start.x - center.x);
+      const cur = Math.atan2(client.y - center.y, client.x - center.x);
+      const delta = cur - prev;
+      const oa1 = orig.angle1 ?? orig.yaw ?? 0;
+      const oa2 = orig.angle2 ?? oa1 + Math.PI / 2;
+      const na1 = wrapAngle(oa1 + delta);
+      const na2 = wrapAngle(oa2 + delta);
+      ann.angle1 = na1;
+      ann.angle2 = na2;
+      ann.yaw = na1;
+      if ((ann as any).box3d) {
+        const b = getBox3D(ann as any);
+        ann.box3d = { ...b, ry: wrapAngle(b.ry + delta) };
+      }
+      ctx.trigger();
     },
   },
 };

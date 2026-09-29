@@ -2410,6 +2410,10 @@ const panelCtx = computed<PluginPanelContext>(() => ({
     }
   },
   selectedAnnotationId: store.selectedAnnotationId,
+  // 图像像素尺寸：面板要用它做「归一化 ↔ 像素 ↔ 米制」的换算
+  // （如 cuboid 由 3D 框反推底面投影）。此前面板拿不到尺寸，只能显示不能换算。
+  imageWidth: cw.value,
+  imageHeight: ch.value,
   update: (ann: Annotation) => {
     const idx = store.annotations.findIndex((a) => a.id === ann.id);
     if (idx < 0) return;

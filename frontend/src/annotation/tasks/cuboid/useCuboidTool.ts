@@ -1,5 +1,6 @@
 import { ref } from "vue";
 import type { Annotation, Point } from "../../core/types";
+import { defaultBox3D } from "./box3d";
 
 // 底面为平行四边形，由 3 个角点确定（p1 公共角 → p2 沿第 1 条边（长） → p3 沿第 2 条边（宽/高））。
 // 第 4 角 = p2 + p3 - p1。全程在像素空间计算再回归一化，非方形图片不错位。
@@ -89,6 +90,10 @@ export function useCuboidTool() {
       angle2: g.angle2,
       depth: h,
       top_cy: h,
+      // 米制 3D 框（相机系）。画布只能给出 2D 投影，深度/真实尺寸无法从投影
+      // 反推，所以先填一份按类别推荐的缺省值，由面板里的标注者校正。
+      // 不填的话导出会因为缺 box3d 而拿不到训练真值。
+      box3d: defaultBox3D(),
     };
   }
 

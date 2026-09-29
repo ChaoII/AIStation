@@ -71,6 +71,42 @@ export interface ClassificationShape {
   class_id: number;
   class_ids?: number[];
 }
+/**
+ * 3D 框的**米制 7-dof**，单位与坐标系见字段注释。
+ *
+ * 为什么单独挂一个对象而不是往 CuboidShape 上摊平：`w` / `h` 已被底面占用
+ * （且是各向异性的——分别除图像宽与图像高，**不能当米用**），3D 的 l/w/h 必须
+ * 用独立字段名。挂成可选对象还顺带解决了向后兼容：老标注没有 box3d，按缺省值
+ * 渲染即可，不需要数据迁移。
+ */
+export interface Box3DMeters {
+  /**
+   * 底面中心在**相机系**的 x（米，右为正）。
+   * 相机系：x 右 / y 下 / z 前，与 KITTI `label_2` 一致。
+   */
+  x: number;
+  /** 底面中心在相机系的 y（米，下为正） */
+  y: number;
+  /** 底面中心在相机系的 z（米，**沿光轴的前向距离**，即深度） */
+  z: number;
+  /** 长（米，沿航向方向） */
+  l: number;
+  /** 宽（米，垂直于航向） */
+  w: number;
+  /** 高（米，竖直向上） */
+  h: number;
+  /**
+   * 航向角，KITTI 的 `rotation_y`（**弧度**）。
+   *
+   * 车长轴在相机 (x, z) 平面内的方向为 `(cos ry, 0, -sin ry)`：`ry = 0` 时车头朝
+   * 画面**右方**，`ry = π/2` 时朝**正前方**。与 KITTI devkit `compute_box_3d`
+   * 的定义一致，也是 TorchKiln `tools/convert/kitti_to_det3d.py` 的输入约定。
+   *
+   * ⚠️ 不要理解成「绕相机 Y 轴从正前方起算的转角」——那会与 KITTI 差 90°。
+   */
+  ry: number;
+}
+
 export interface CuboidShape {
   id: string;
   type: "Cuboid";
@@ -85,7 +121,14 @@ export interface CuboidShape {
   h: number;
   /** 底部矩形朝向角（弧度，绕中心，参照 rotatedBox） */
   yaw: number;
-  /** 图像深度（归一化 [0,1]，由侧边面板填写） */
+  /**
+   * 图像深度（归一化 [0,1]）。
+   *
+   * ⚠️ 历史遗留：它此前**只是 `top_cy` 的一份拷贝**，没有任何独立语义
+   * （创建时 `depth = top_cy`、拖拽时再同步一次）。真正可用的 3D 深度请用
+   * `box3d.z`（米制相机系深度）。本字段继续只当「画布上的高度投影」用，
+   * 保持旧数据渲染不变。
+   */
   depth: number;
   /** 高度投影线在画布上的垂直偏移（归一化，顶面=底部矩形沿 y 平移 -top_cy 的投影） */
   top_cy: number;
@@ -93,6 +136,14 @@ export interface CuboidShape {
   angle1?: number;
   /** 底面第二条边（宽/高）方向角（弧度）；缺省为 yaw + π/2（正交矩形兼容旧数据） */
   angle2?: number;
+  /**
+   * 米制 3D 框（相机系 7-dof）。**可选**：老标注没有它，按缺省值渲染。
+   *
+   * 语义分工：2D 底面四边形（cx/cy/w/h/angle1/angle2）是**画布上的投影**，
+   * 用来拖拽；`box3d` 是**训练真值**（米制、有真实尺寸与深度）。两者相关但
+   * 不强制一致——图像上拖出来的投影不唯一确定深度，深度只能由人填。
+   */
+  box3d?: Box3DMeters;
 }
 
 export type ShapeAnnotation =
@@ -246,6 +297,12 @@ export interface PluginPanelContext {
   remove?: (ids: string[]) => void;
   /** 当前选中标注 id（面板据此精确锁定要编辑的标注） */
   selectedAnnotationId?: string;
+  /**
+   * 图像像素宽高，供面板做「归一化 ↔ 像素 ↔ 米制」换算。
+   * 画布组件本来就拿得到（`cw`/`ch`），面板此前拿不到——只能显示、不能换算。
+   */
+  imageWidth?: number;
+  imageHeight?: number;
   /** 更新一个已有标注（替换同 id 标注并标记未保存 + 入撤销历史） */
   update?: (ann: Annotation) => void;
 }

@@ -68,6 +68,21 @@
       >
         <title>调整高度（沿竖直方向）</title>
       </circle>
+      <!-- 航向角手柄：底面「长边」中点外侧一点，绕中心旋转改 angle1/angle2/ry -->
+      <circle
+        :cx="rotateHandlePos(ann).x"
+        :cy="rotateHandlePos(ann).y"
+        r="5"
+        fill="#fff"
+        stroke="#67c23a"
+        stroke-width="2"
+        class="handle"
+        :style="peStyle"
+        :data-handle="'cuboid-rotate'"
+        @mousedown.stop.prevent="$emit('rotate-down', $event, ann)"
+      >
+        <title>拖动旋转航向角（同步 angle1 / angle2 / 3D 的 ry）</title>
+      </circle>
     </template>
   </g>
 </template>
@@ -93,12 +108,23 @@ const props = defineProps<{
 defineEmits<{
   (e: "ann-down", ev: MouseEvent, ann: Annotation): void;
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
+  (e: "rotate-down", ev: MouseEvent, ann: Annotation): void;
 }>();
 
 const handles = ["tl", "tr", "br", "bl"];
 const stroke = computed(() => props.stroke ?? 1.5);
 const selStroke = computed(() => props.selStroke ?? 2);
 const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
+
+/** 旋转手柄位置：底面「长边」（沿 d1）中点沿 d1 方向外推一小段。 */
+function rotateHandlePos(a: Annotation): { x: number; y: number } {
+  const { d1 } = dirs(a);
+  const hw = (a.w * props.cw) / 2;
+  const cx = a.cx * props.cw;
+  const cy = a.cy * props.ch;
+  const push = hw + Math.min(24, props.cw * 0.04);
+  return { x: cx + d1.x * push, y: cy + d1.y * push };
+}
 
 function dirs(a: Annotation) {
   const a1 = a.angle1 ?? a.yaw ?? 0;
