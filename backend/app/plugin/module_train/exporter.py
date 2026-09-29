@@ -39,20 +39,44 @@ async def _load_latest_anns_by_image(db, image_ids: list[int], annotation_task_i
 async def prepare_training_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, ocr_rec: bool = False, torchkiln_index: bool = False) -> str:
     """Export dataset for training — unified with download, just different YAML path.
 
-    ``torchkiln_index=True`` 时额外生成 TorchKiln 需要的 ``train.txt`` / ``val.txt``
-    索引（内容是相对 ``data_dir`` 的图片路径，一行一张）。
+    ``torchkiln_index=True`` 时，让**各导出器自己**写 TorchKiln 需要的
+    ``train.txt`` / ``val.txt`` 清单——而不是导出完再补一层。因为不同任务的
+    清单内容规则并不相同（此前正是这里出的问题）：
 
-    为什么只需补一层索引：TorchKiln 的 ``DetDataset`` 读 ``data_dir +
-    label_file_list``（如 ``["train.txt"]``），而本项目导出的是 ultralytics 的
-    ``images/<split>`` + ``labels/<split>`` 目录布局——**图片与标签路径规则完全一致**
-    （TorchKiln 内部把路径里的 ``images/`` 换成 ``labels/`` 找标注），
-    所以不必再写一套导出逻辑。
+    ==================  ==========================================================
+    任务                 清单每行格式
+    ==================  ==========================================================
+    检测/旋转框/分割/关键点 ``images/<split>/<name>.jpg``（纯路径，标签靠
+                          ``images/``→``labels/`` 路径替换推导）
+    分类（单标签）        ``train/<类名>/<name>.jpg <类下标>``
+    分类（多标签）        ``train/<name>.jpg <v1> <v2> … <vC>``
+    语义分割              ``images/<split>/<name>.jpg``（掩码靠 ``images/``→``masks/``）
+    OCR det              ``images/<split>/<name>.jpg\\t[{"transcription","points"}]``
+    OCR rec              ``images/<split>/<name>.jpg\\t<识别文本>``
+    ==================  ==========================================================
+
+    ⚠️ 两条路径规则容易踩坑：**清单里的图片路径相对 ``data_dir``**，但
+    ``label_file_list`` 本身**不做** ``data_dir`` 拼接——TorchKiln 侧对
+    classification / ocr / semantic 等 12 个任务族是直接 ``open()`` 的，
+    所以必须传绝对路径。
     """
     # for_training=True 时 YOLO YAML 里的 path 写容器内路径 /data
-    res = await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec)
-    if torchkiln_index:
-        _write_torchkiln_index(output_dir)
-    return res
+    return await _export_core(dataset_id, task_id, framework, output_dir, annotation_task_id=annotation_task_id, train_ratio=train_ratio, for_training=True, ocr_rec=ocr_rec, torchkiln_index=torchkiln_index)
+
+
+def _write_lines(path: str, lines: list[str]) -> None:
+    """写清单文件；**空集直接跳过不写**。
+
+    TorchKiln 侧 ``SimpleDataSet`` / ``ClsDataset`` / ``DetDataset`` 都会把清单
+    读成样本列表——写一个空清单等于声明「这个数据集有 0 个样本」，训练第一步
+    （取 batch / 除零）就崩，报错还指向 DataLoader，看不出根因。
+    """
+    if not lines:
+        log.info("torchkiln index: 跳过空清单 %s", path)
+        return
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    log.info("torchkiln index: %s (%d 行)", path, len(lines))
 
 
 def _write_torchkiln_index(output_dir: str) -> None:
@@ -107,7 +131,8 @@ async def export_dataset_for_download(
 async def _export_core(
     dataset_id: int, task_id: int, framework: str, output_dir: str,
     annotation_task_id: int | None = None, ocr_rec: bool = True,
-    train_ratio: float = 0.8, for_training: bool = False, for_eval: bool = False
+    train_ratio: float = 0.8, for_training: bool = False, for_eval: bool = False,
+    torchkiln_index: bool = False,
 ) -> str:
     """Core export logic shared by training and download."""
     os.makedirs(output_dir, exist_ok=True)
@@ -198,9 +223,26 @@ async def _export_core(
                 dataset_id, task_id, images, output_dir, annotation_task_id,
                 train_ratio=train_ratio, class_names=class_names, for_training=for_training,
                 multi_label=(classification_mode == "multi"), for_eval=for_eval,
+                torchkiln_index=torchkiln_index,
+            )
+        elif task_type in ("semantic", "semantic_segmentation", "lane_seg"):
+            await _export_yolo_semantic(
+                dataset_id, task_id, images, output_dir, task_type,
+                annotation_task_id, train_ratio=train_ratio,
+                class_names=class_names, for_eval=for_eval,
+                torchkiln_index=torchkiln_index,
+            )
+        elif task_type == "ocr":
+            # TorchKiln 的 OCR 系只认「图片路径 + TAB + 标签」这一种清单，
+            # 与 PaddleOCR 的 det/rec 布局一致，直接复用同一份转换逻辑。
+            await _export_torchkiln_ocr(
+                dataset_id, task_id, images, output_dir,
+                annotation_task_id, train_ratio=train_ratio,
+                for_eval=for_eval, export_rec=ocr_rec,
+                torchkiln_index=torchkiln_index,
             )
         else:
-            await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training, for_eval=for_eval)
+            await _export_yolo(dataset_id, task_id, images, output_dir, task_type, annotation_task_id, train_ratio=train_ratio, class_names=class_names, for_training=for_training, for_eval=for_eval, torchkiln_index=torchkiln_index)
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id, class_names=class_names)
     elif framework == "paddle-ocr":
@@ -223,7 +265,7 @@ async def _export_core(
     log.info(f"export {framework} to {output_dir}")
 
 
-async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, for_eval: bool = False) -> None:
+async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str = "detection", annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, for_eval: bool = False, torchkiln_index: bool = False) -> None:
     """Export to YOLO format with train/val split. for_training controls YAML path.
 
     for_eval=True 时全部图片进 ``images/val``、不 shuffle，保证评估全量且可复现
@@ -287,7 +329,220 @@ async def _export_yolo(dataset_id: int, task_id: int, images: list, output_dir: 
     extra = pose_extra_yaml(anns_by_img) if task_type in ("keypoint", "pose") else None
     _write_yaml(os.path.join(output_dir, "dataset.yaml"), base_path, sorted_out,
                 class_names or {}, class_id_map=class_id_map, extra_yaml=extra)
+    if torchkiln_index:
+        _write_torchkiln_index(output_dir)
     log.info(f"yolo: train={len(train_imgs)} val={len(val_imgs)} classes={len(sorted_out)} → {output_dir}")
+
+
+# 语义分割的「未标注」像素值。与 TorchKiln 的 SemDataset 对齐：
+# ``cv2.imread(..., IMREAD_GRAYSCALE)`` + ``ignore_index`` 默认 255。
+SEMANTIC_IGNORE_INDEX = 255
+
+
+def _semantic_label_map(class_names: dict[int, str], is_instance: dict[int, bool]) -> dict[int, int]:
+    """语义分割的「类别 id → 掩码像素值」映射。
+
+    TorchKiln 的 ``SemDataset`` 直接把掩码像素值当类别下标用，所以像素值必须
+    是 **0..C-1 的连续值**：0 天然是背景（``ignore_index`` 是 255，不冲突）。
+
+    ⚠️ 本平台的类别可能同时含 thing 类（is_instance=True）与 stuff 类。语义分割
+    天然无法表达「同类多个实例」，所以这里把 is_instance 类排在后面统一当普通
+    类别处理——若你期望的是全景语义，请改走 panoptic（当前 TorchKiln 不支持）。
+    """
+    ids = sorted(class_names.keys()) if class_names else []
+    return {cid: idx for idx, cid in enumerate(ids)}
+
+
+def _paint_semantic_mask(anns: list, img_w: int, img_h: int,
+                         class_id_map: dict[int, int], to_pixel: dict[int, int]) -> "object":
+    """把标注光栅化成 uint8 类别索引图（不依赖 cv2/numpy 之外的东西）。"""
+    import numpy as np
+
+    mask = np.zeros((img_h, img_w), dtype=np.uint8)
+    for ann in anns:
+        raw_cls = ann.get("class_id")
+        if raw_cls is None or raw_cls == -1:
+            continue
+        mapped = class_id_map.get(raw_cls)
+        if mapped is None:
+            continue
+        value = min(to_pixel.get(mapped, mapped), SEMANTIC_IGNORE_INDEX - 1)
+
+        ann_type = ann.get("type", "")
+        if ann_type in ("Polygon", "polygon"):
+            pts_raw = ann.get("points", [])
+            pts = []
+            for p in pts_raw:
+                px = p.get("x") if isinstance(p, dict) else p[0]
+                py = p.get("y") if isinstance(p, dict) else p[1]
+                pts.append((float(px) * img_w, float(py) * img_h))
+            if len(pts) < 3:
+                continue
+            arr = np.array(pts, dtype=np.int32).reshape(-1, 1, 2)
+            try:
+                import cv2
+                cv2.fillPoly(mask, [arr], int(value))
+            except Exception as e:  # noqa: BLE001
+                log.warning("semantic fillPoly 失败: %s", e)
+        else:
+            # 框类标注退化成矩形填充：语义分割任务里少见，但不该静默丢标注
+            if "x1" in ann:
+                x1, y1, x2, y2 = ann["x1"], ann["y1"], ann["x2"], ann["y2"]
+            else:
+                xc, yc, w, h = ann["x"], ann["y"], ann["width"], ann["height"]
+                x1, y1, x2, y2 = xc - w / 2, yc - h / 2, xc + w / 2, yc + h / 2
+            cx1 = max(0, min(img_w, int(x1 * img_w)))
+            cy1 = max(0, min(img_h, int(y1 * img_h)))
+            cx2 = max(0, min(img_w, int(x2 * img_w)))
+            cy2 = max(0, min(img_h, int(y2 * img_h)))
+            if cx2 > cx1 and cy2 > cy1:
+                mask[cy1:cy2, cx1:cx2] = int(value)
+    return mask
+
+
+async def _export_yolo_semantic(
+    dataset_id: int, task_id: int, images: list, output_dir: str, task_type: str,
+    annotation_task_id: int | None = None, train_ratio: float = 0.8,
+    class_names: dict | None = None, for_eval: bool = False,
+    torchkiln_index: bool = False,
+) -> None:
+    """导出语义分割：``images/<split>/*.jpg`` + ``masks/<split>/*.png``（uint8 索引图）。
+
+    TorchKiln ``SemDataset`` 的掩码路径推导规则与检测一致——把清单图片路径里的
+    ``images/`` 换成 ``masks/`` 再改扩展名——所以目录布局照抄检测即可，只有标签
+    载体从 ``labels/*.txt`` 换成 ``masks/*.png``。
+
+    ⚠️ 必须是**单通道 uint8**：``IMREAD_GRAYSCALE`` 会把调色板 PNG 转成灰度而非
+    索引值，存成调色板图会导致像素值全错。
+    """
+    import random
+
+    from app.utils.s3_client import s3_client
+
+    async with async_db_session() as db:
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
+
+    used_ids: set[int] = set()
+    for anns in anns_by_img.values():
+        for ann in anns:
+            cid = ann.get("class_id")
+            if cid is not None and cid != -1:
+                used_ids.add(int(cid))
+    class_id_map = build_class_mapping(used_ids)
+
+    if for_eval:
+        train_imgs, val_imgs = [], list(images)
+    else:
+        images = list(images)
+        random.shuffle(images)
+        split_idx = max(1, int(len(images) * train_ratio))
+        train_imgs, val_imgs = images[:split_idx], images[split_idx:]
+
+    n_mask = 0
+    for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
+        img_split = os.path.join(output_dir, "images", split_name)
+        mask_split = os.path.join(output_dir, "masks", split_name)
+        os.makedirs(img_split, exist_ok=True)
+        os.makedirs(mask_split, exist_ok=True)
+        for img in split_imgs:
+            img_path = os.path.join(img_split, img.filename)
+            if not os.path.exists(img_path):
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+                except Exception as e:
+                    log.warning("skip %s: %s", img.filename, e)
+                    continue
+            anns = anns_by_img.get(img.id, [])
+            if not anns:
+                continue
+            w, h = img.width or 1, img.height or 1
+            mask = _paint_semantic_mask(anns, w, h, class_id_map, class_id_map)
+            mask_path = os.path.join(mask_split, img.filename.rsplit(".", 1)[0] + ".png")
+            try:
+                from PIL import Image
+                Image.fromarray(mask, mode="L").save(mask_path)
+                n_mask += 1
+            except Exception as e:
+                log.warning("semantic mask 写入失败 %s: %s", mask_path, e)
+
+    if torchkiln_index:
+        _write_torchkiln_index(output_dir)
+    log.info(f"yolo-semantic: images={len(train_imgs) + len(val_imgs)} masks={n_mask} "
+             f"classes={len(class_id_map)} → {output_dir}")
+
+
+async def _export_torchkiln_ocr(
+    dataset_id: int, task_id: int, images: list, output_dir: str,
+    annotation_task_id: int | None = None, train_ratio: float = 0.8,
+    for_eval: bool = False, export_rec: bool = False,
+    torchkiln_index: bool = True,
+) -> None:
+    """导出 TorchKiln OCR 清单：``images/<split>/*.jpg`` + 每行 ``路径\\t标签``。
+
+    - det（``export_rec=False``）：标签是 JSON 数组，元素 ``{"transcription", "points"}``，
+      **points 是像素坐标**（TorchKiln 直接在原图分辨率上画多边形）。
+    - rec（``export_rec=True``）：标签是识别文本本身。
+
+    清单分隔符固定 ``\\t``（TorchKiln ``SimpleDataSet`` 的 ``delimiter`` 默认值），
+    且**必须有第二段**——缺列会被 ``substr[1]`` 抛 IndexError 后静默丢样本。
+    """
+    import random
+
+    from app.utils.s3_client import s3_client
+
+    async with async_db_session() as db:
+        anns_by_img = await _load_latest_anns_by_image(db, [img.id for img in images], annotation_task_id)
+
+    if for_eval:
+        train_imgs, val_imgs = [], list(images)
+    else:
+        images = list(images)
+        random.shuffle(images)
+        split_idx = max(1, int(len(images) * train_ratio))
+        train_imgs, val_imgs = images[:split_idx], images[split_idx:]
+
+    rows: dict[str, list[str]] = {"train": [], "val": []}
+    n_img = 0
+    for split_name, split_imgs in [("train", train_imgs), ("val", val_imgs)]:
+        img_split = os.path.join(output_dir, "images", split_name)
+        os.makedirs(img_split, exist_ok=True)
+        for img in split_imgs:
+            img_path = os.path.join(img_split, img.filename)
+            if not os.path.exists(img_path):
+                try:
+                    data = s3_client.download_fileobj(img.object_key)
+                    with open(img_path, "wb") as f:
+                        f.write(data.read())
+                except Exception as e:
+                    log.warning("skip %s: %s", img.filename, e)
+                    continue
+            anns = anns_by_img.get(img.id, [])
+            w, h = img.width or 1, img.height or 1
+            rel = f"images/{split_name}/{img.filename}"
+            if export_rec:
+                # rec：一张图对应一段识别文本。多标注时按标注顺序拼接
+                # （rec 数据集的语义是「整图一个字符串」，不是多行）。
+                text = "".join(
+                    (a.get("text", "") or "") for a in anns
+                    if a.get("type", "") in ("Ocr", "ocr", "AxisAlignedBox", "box", "Polygon", "polygon")
+                )
+                if not text:
+                    continue
+                rows[split_name].append(f"{rel}\t{text}")
+            else:
+                entries = paddle_ocr_det_entries(anns, w, h)
+                if not entries:
+                    continue
+                payload = json.dumps(entries, ensure_ascii=False)
+                rows[split_name].append(f"{rel}\t{payload}")
+            n_img += 1
+
+    if torchkiln_index:
+        _write_lines(os.path.join(output_dir, "train.txt"), rows["train"])
+        _write_lines(os.path.join(output_dir, "val.txt"), rows["val"])
+    log.info(f"torchkiln-ocr({'rec' if export_rec else 'det'}): images={n_img} → {output_dir}")
 
 
 def build_class_mapping(class_ids: set[int]) -> dict[int, int]:
@@ -586,15 +841,21 @@ def _format_yolo_lines(anns: list, task_type: str, class_id_map: dict[int, int] 
             bb = ann.get("bounding_box", {})
             cx, cy = bb.get("cx", 0), bb.get("cy", 0)
             w, h = bb.get("width", 0), bb.get("height", 0)
+            keypoints = ann.get("keypoints") or []
+            # ⚠️ 原来的守卫写的是 ``if len(parts) > 4``，而 ``parts`` 是
+            #    [单个拼接好的字符串]（长度恒为 1），所以**关键点标签从来没有被写出过**
+            #    ——训练照常跑完，但 PoseDataset 读到的是全空的 labels/，
+            #    等于在空数据集上训练。正确判据是「关键点数量 > 0」。
+            if not keypoints:
+                continue
             parts = [f"{cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"]
             vis_map = {"Visible": 2, "Occluded": 1, "Hidden": 0}
-            for kp in ann.get("keypoints", []):
+            for kp in keypoints:
                 kx = kp.get("x", 0)
                 ky = kp.get("y", 0)
                 kv = vis_map.get(kp.get("visibility", ""), 0)
                 parts.append(f"{kx:.6f} {ky:.6f} {kv}")
-            if len(parts) > 4:
-                lines.append(f"{cls_id} {' '.join(parts)}")
+            lines.append(f"{cls_id} {' '.join(parts)}")
     return lines
 
 
@@ -655,7 +916,7 @@ def _write_yolo_cls_yaml(output_dir: str, for_training: bool) -> None:
         f.write("val: val\n")
 
 
-async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, multi_label: bool = False, for_eval: bool = False) -> None:
+async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, train_ratio: float = 0.8, class_names: dict | None = None, for_training: bool = False, multi_label: bool = False, for_eval: bool = False, torchkiln_index: bool = False) -> None:
     """Export classification to YOLO CLS format with train/val split.
 
     single_label: train/<cls>/<img>.jpg (目录结构)
@@ -705,6 +966,14 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
             random.shuffle(images)
             split_idx = max(1, int(len(images) * train_ratio)) if images else 0
             train_sub, val_sub = images[:split_idx], images[split_idx:]
+        # TorchKiln 清单：每行 ``<相对 data_dir 的路径> <v1> … <vC>``，**稠密向量**
+        # ⚠️ 必须稠密：ClsDataset 的 ``label_ratio`` 与 collate 都按「向量下标 == 类下标」
+        #    对齐（``label[: len(lb)]``），稀疏写 ``0 0 0 1`` 会被当成「第 0 类命中」。
+        tk_rows: dict[str, list[str]] = {"train": [], "val": []}
+        class_id_map = build_class_mapping({
+            cid for ids in img_labels.values() for cid in ids
+        })
+        n_class = len(class_id_map)
         for split_name, sub in [("train", train_sub), ("val", val_sub)]:
             img_dir = os.path.join(output_dir, split_name)
             lbl_dir = os.path.join(output_dir, split_name, "labels")
@@ -723,8 +992,18 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                 stem = os.path.splitext(img.filename)[0]
                 with open(os.path.join(lbl_dir, stem + ".txt"), "w") as f:
                     f.write("\n".join(str(cid) for cid in sorted(set(ids))))
+                if torchkiln_index:
+                    vec = [0.0] * n_class
+                    for cid in set(ids):
+                        vec[class_id_map[cid]] = 1.0
+                    tk_rows[split_name].append(
+                        f"{split_name}/{img.filename} " + " ".join(str(int(v)) for v in vec))
         _write_yolo_cls_yaml(output_dir, for_training)
-        log.info(f"yolo-cls (multi): exported to {output_dir}")
+        if torchkiln_index:
+            _write_lines(os.path.join(output_dir, "train.txt"), tk_rows["train"])
+            _write_lines(os.path.join(output_dir, "val.txt"), tk_rows["val"])
+        log.info(f"yolo-cls (multi): exported to {output_dir}"
+                 + (f" torchkiln 类别数={n_class}" if torchkiln_index else ""))
         return
 
     # Single-label: existing directory structure
@@ -733,6 +1012,11 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
         ids = img_labels.get(img.id, [])
         if ids:
             class_imgs.setdefault(ids[0], []).append(img)
+    # TorchKiln 清单：每行 ``<相对 data_dir 的路径> <类下标>``。类下标取
+    # ``build_class_mapping`` 的连续映射（按原始 id 升序），**不是**原始 class_id——
+    # 原始 id 稀疏时（类别被删过）直接写会让模型 head 的 num_classes 与标签越界。
+    class_id_map = build_class_mapping(set(class_imgs.keys()))
+    tk_rows: dict[str, list[str]] = {"train": [], "val": []}
     for cid, imgs in class_imgs.items():
         if for_eval:
             train_sub, val_sub = [], imgs
@@ -751,8 +1035,15 @@ async def _export_yolo_cls(dataset_id: int, task_id: int, images: list, output_d
                         f.write(data.read())
                 except Exception:
                     continue
+                if torchkiln_index:
+                    tk_rows[split_name].append(
+                        f"{split_name}/{cls_name}/{img.filename} {class_id_map[cid]}")
     _write_yolo_cls_yaml(output_dir, for_training)
-    log.info(f"yolo-cls: exported to {output_dir}")
+    if torchkiln_index:
+        _write_lines(os.path.join(output_dir, "train.txt"), tk_rows["train"])
+        _write_lines(os.path.join(output_dir, "val.txt"), tk_rows["val"])
+    log.info(f"yolo-cls: exported to {output_dir}"
+             + (f" torchkiln 类别数={len(class_id_map)}" if torchkiln_index else ""))
 
 
 async def _export_x_anylabeling(dataset_id: int, task_id: int, images: list, output_dir: str, annotation_task_id: int | None = None, class_names: dict | None = None) -> None:

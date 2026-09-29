@@ -260,12 +260,22 @@
             @change="onAnnoTaskChange"
           >
             <el-option
-              v-for="t in annoTasks"
+              v-for="t in annoTasksForFramework"
               :key="t.id"
               :label="`${t.name}（${annoTaskTypeLabel(t.task_type)}）`"
               :value="t.id"
             />
           </el-select>
+          <div
+            v-if="
+              formData.framework === 'torchkiln' &&
+              annoTasksForFramework.length < annoTasks.length
+            "
+            class="form-tip"
+          >
+            已隐藏 {{ annoTasks.length - annoTasksForFramework.length }} 个 TorchKiln
+            暂不支持的任务类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线 / 3D 框）
+          </div>
         </el-form-item>
         <el-form-item label="基础模型">
           <el-input-number
@@ -690,6 +700,7 @@ function annoTaskTypeLabel(t: string) {
         detection: "检测",
         rotated_detection: "旋转框",
         segmentation: "分割",
+        semantic_segmentation: "语义分割",
         keypoint: "关键点",
         ocr: "OCR",
         classification: "分类",
@@ -701,6 +712,32 @@ function annoTaskTypeLabel(t: string) {
     )[t] || t
   );
 }
+
+/**
+ * TorchKiln 已实现读取器、且本项目导出格式能对齐的标注任务类型。
+ *
+ * 与后端 `TorchKilnExecutor.SUPPORTED_TASK_TYPES` **必须保持一致**——后端是
+ * 兜底拦截，前端是提前不让用户选。全景分割 / 音视频事件 / 时序事件 / 文本 NER /
+ * 折线 / 3D 框都不在其中：要么 TorchKiln 侧根本没有对应 task，要么语义对不上
+ * （TorchKiln 的 `det3d` 要 LiDAR 系 3D 框，本平台的 cuboid 只有 2D 底面四点）。
+ */
+const TK_SUPPORTED_TASK_TYPES = [
+  "detection",
+  "rotated_detection",
+  "segmentation",
+  "semantic_segmentation",
+  "keypoint",
+  "classification",
+  "ocr",
+];
+
+/** 按当前框架过滤标注任务下拉：选 TorchKiln 时只给支持的任务类型。 */
+const annoTasksForFramework = computed<any[]>(() => {
+  if (formData.framework !== "torchkiln") return annoTasks.value;
+  return annoTasks.value.filter((t: any) =>
+    TK_SUPPORTED_TASK_TYPES.includes(String(t.task_type))
+  );
+});
 
 const modelOptions = computed(() => {
   const activeTask = annoTasks.value.find((t: any) => t.id === formData.annotation_task_id);
@@ -1060,6 +1097,15 @@ function onFrameworkChange(fw: string) {
   tkModel.value = "";
   tkSchema.value = null;
   Object.keys(tkParams).forEach((k) => delete tkParams[k]);
+  // 已选的标注任务若不被新框架支持（如 TorchKiln 不支持全景分割），清掉选择，
+  // 否则会以「框架 + 任务类型」不匹配的组合提交，后端才拦就晚了
+  const sel = annoTasks.value.find((t: any) => t.id === formData.annotation_task_id);
+  if (fw === "torchkiln" && sel && !TK_SUPPORTED_TASK_TYPES.includes(String(sel.task_type))) {
+    formData.annotation_task_id = undefined;
+    ElMessage.warning(
+      `已选标注任务「${sel.name}」的类型（${annoTaskTypeLabel(sel.task_type)}）TorchKiln 暂不支持，已取消选择`
+    );
+  }
 }
 
 function buildHyperparams(): Record<string, any> {
@@ -1309,6 +1355,15 @@ onBeforeUnmount(() => stopPoll());
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+/* 表单项下方的补充说明：次要文字用 12px + --el-text-color-secondary，
+   与页面内其他次要说明一致，不另立颜色/字号体系 */
+.form-tip {
+  width: 100%;
+  margin-top: 4px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 /* 搜索区固定高度，列表卡片占满剩余高度（分页据此沉底） */
 .train-task-tabs :deep(.el-tab-pane > *:not(.data-table)) {

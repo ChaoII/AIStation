@@ -170,8 +170,50 @@ class TorchKilnExecutor(TaskExecutor):
         hp = task.hyperparams or {}
         return str(hp.get("task_type") or "detection").lower()
 
+    @staticmethod
+    async def _dataset_params(task_type: str, hp: dict,
+                              annotation_task_id: int | None) -> dict:
+        """由**实际数据**推出必须下发给 TorchKiln 的数据集级超参。
+
+        目前只有关键点任务的 ``Train.dataset.kpt_shape`` 需要推导。
+
+        ⚠️ 不下发会「静默丢标签」而不是报错：``PoseDataset._load`` 里
+        ``if len(p) < 5 + nk * kpt_dim: continue``——配置模板里的 kpt_shape
+        若与本数据集的关键点数不一致（模板按 COCO 的 17 点、数据实际 4 点），
+        每一行标注都会被整条跳过，训练照常跑完但学到的是空数据集。
+        """
+        params: dict = {}
+        if task_type not in ("keypoint", "pose") or not annotation_task_id:
+            return params
+
+        n_kpt = 0
+        try:
+            from sqlalchemy import select
+
+            from app.api.v1.module_annotation.annotation.model import (
+                AnnotationRecordModel,
+            )
+            async with async_db_session() as db:
+                result = await db.execute(
+                    select(AnnotationRecordModel.annotations)
+                    .where(AnnotationRecordModel.annotation_task_id == annotation_task_id)
+                )
+                for (anns,) in result.all():
+                    for ann in anns or []:
+                        if isinstance(ann, dict) and isinstance(ann.get("keypoints"), list):
+                            n_kpt = max(n_kpt, len(ann["keypoints"]))
+        except Exception as e:  # noqa: BLE001
+            log.warning("[torchkiln] 推导 kpt_shape 失败，沿用配置模板值: %s", e)
+            return params
+
+        if n_kpt:
+            # 3 = (x, y, visibility)，与本项目导出的 kx ky kv 三元组对齐
+            params["Train.dataset.kpt_shape"] = [n_kpt, 3]
+            log.info("[torchkiln] 注入 Train.dataset.kpt_shape=%s", params["Train.dataset.kpt_shape"])
+        return params
+
     @classmethod
-    def _build_spec(cls, task, data_dir: str) -> dict:
+    def _build_spec(cls, task, data_dir: str, params: dict | None = None) -> dict:
         """``TrainTask.hyperparams`` -> 服务端 ``JobSpec``（声明式）。
 
         约定的 ``hyperparams`` 结构::
@@ -186,11 +228,9 @@ class TorchKilnExecutor(TaskExecutor):
             }
         """
         hp = task.hyperparams or {}
+        # ⚠️ 这里**只给 data_dir**。train.txt / val.txt 由导出器产出，导出前还不存在，
+        #    探测必然落空；由 ``_attach_dataset_lists`` 在导出之后补挂（见其注释）。
         dataset = {"data_dir": data_dir}
-        for key, fname in (("train_list", "train.txt"), ("val_list", "val.txt")):
-            p = os.path.join(data_dir, fname)
-            if os.path.isfile(p):
-                dataset[key] = p
         resources = dict(hp.get("resources") or {})
         resources.setdefault("gpu", 1)
         # DataLoader worker>0 时不给 shm 会 BUS error
@@ -200,21 +240,54 @@ class TorchKilnExecutor(TaskExecutor):
             labels["annotation_task_id"] = str(task.annotation_task_id)
         return build_job_spec(
             model_name=cls._model_name(task),
-            params=hp.get("params") or {},
+            # 用户填的超参在前，推导出的数据集级超参在后：让推导值能覆盖模板默认值，
+            # 同时用户显式填过同一个键时应当以用户为准。
+            params={**(hp.get("params") or {}), **(params or {})},
             dataset=dataset,
             resources=resources,
             seed=hp.get("seed"),
             labels=labels,
         )
 
+    @staticmethod
+    def _attach_dataset_lists(spec: dict, data_dir: str) -> dict:
+        """把导出后的 ``train.txt`` / ``val.txt`` 挂进 spec 的 dataset 段。
+
+        ⚠️ **必须在数据导出之后调用**。这两个文件是导出器产出的，导出前探测
+        必然落空，于是 ``dataset`` 里没有 ``train_list``/``val_list``，TorchKiln
+        的 runner 就不会注入 ``Train.dataset.label_file_list``，会退回用模型配置
+        模板里的路径（如镜像内的 ``datasets/det_demo/train.txt``）→ 首次训练必然
+        FileNotFoundError。此前的写法正是把探测放在导出之前，踩的就是这个坑。
+
+        只挂「确实存在」的文件：某个 split 为空时不注入，避免 TorchKiln 用
+        配置模板里的残留路径。
+        """
+        dataset = dict(spec.get("dataset") or {})
+        dataset["data_dir"] = data_dir
+        for key, fname in (("train_list", "train.txt"), ("val_list", "val.txt")):
+            p = os.path.join(data_dir, fname)
+            if os.path.isfile(p):
+                dataset[key] = p
+        spec["dataset"] = dataset
+        return spec
+
     # ------------------------------------------------------------ 指标换算
     @staticmethod
     def _row_from_event(ev: dict) -> dict | None:
-        """``metrics.jsonl`` 事件 -> ``metrics_log`` 行。"""
+        """``metrics.jsonl`` 事件 -> ``metrics_log`` 行。
+
+        ⚠️ **必须把 ``seq`` 写进行里**。前端刷新页面时用
+        ``maxSeqOf(task.metrics_log)`` 恢复 SSE 断点续传的位置
+        （``/train/task/{id}/metrics/stream?offset=<lastSeq>``）；
+        落库行里没有 seq 时它恒为 -1，重连就会从头重发整段指标——
+        轻则重复行把曲线画粗，重则把已画的点挤掉。
+        """
         etype = ev.get("type")
+        seq = ev.get("seq")
         if etype == EVENT_STEP:
             row = {
                 "_kind": EVENT_STEP,
+                "seq": seq,
                 "epoch": ev.get("epoch"),
                 "global_step": ev.get("global_step"),
                 "loss": ev.get("loss"),
@@ -227,7 +300,7 @@ class TorchKilnExecutor(TaskExecutor):
                     row[k] = v
             return row
         if etype in (EVENT_EVAL, EVENT_BEST):
-            row = {"_kind": etype, "best": etype == EVENT_BEST or None}
+            row = {"_kind": etype, "seq": seq, "best": etype == EVENT_BEST or None}
             row["epoch"] = ev.get("epoch")
             row["global_step"] = ev.get("global_step")
             row["main_indicator"] = ev.get("main_indicator")
@@ -243,6 +316,7 @@ class TorchKilnExecutor(TaskExecutor):
         if etype == EVENT_END:
             return {
                 "_kind": EVENT_END,
+                "seq": seq,
                 "exit_reason": ev.get("exit_reason"),
                 "epoch": ev.get("epoch"),
                 "main_indicator": ev.get("main_indicator"),
@@ -303,9 +377,14 @@ class TorchKilnExecutor(TaskExecutor):
                 dataset_id = task.dataset_id
                 annotation_task_id = task.annotation_task_id
                 existing_job = get_job_id(hp)
-                spec = cls._build_spec(task, data_dir)
-                train_ratio = float(hp.get("train_ratio", 0.8))
                 task_type = cls._task_type(task)
+                # OCR 的 det / rec 决定导出的是「四点 JSON」还是「整图文本」，
+                # 从模型名末段推导（PP-OCRv6_tiny_det → det，…_rec → rec）。
+                model_name = cls._model_name(task)
+                ocr_rec = task_type == "ocr" and model_name.lower().rstrip("-_").endswith("rec")
+                params = await cls._dataset_params(task_type, hp, annotation_task_id)
+                spec = cls._build_spec(task, data_dir, params=params)
+                train_ratio = float(hp.get("train_ratio", 0.8))
 
             async with TorchKilnClient() as client:
                 job_id = await cls._ensure_job(
@@ -314,6 +393,7 @@ class TorchKilnExecutor(TaskExecutor):
                     annotation_task_id=annotation_task_id,
                     train_ratio=train_ratio,
                     task_type=task_type,
+                    ocr_rec=ocr_rec,
                     existing_job=existing_job,
                 )
                 await cls._pump(client, task_id, job_id)
@@ -333,12 +413,33 @@ class TorchKilnExecutor(TaskExecutor):
                 error_log=f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
                 finished_at=datetime.now())
 
+    #: TorchKiln 已实现读取器、且本项目导出格式能对齐的标注任务类型。
+    #: 其余类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线 / 3D 框）要么
+    #: TorchKiln 侧根本没有对应 task，要么语义对不上（如 TorchKiln 的 ``det3d`` 要
+    #: LiDAR 系 3D 框而本平台 cuboid 只有 2D 底面四点），**一律在提交前拦下**。
+    #: 前端也已把 torchkiln 从这些任务的框架下拉里摘掉，这里是后端兜底——
+    #: 直接调 API 绕过前端时仍会得到明确报错，而不是训出一堆空标签。
+    SUPPORTED_TASK_TYPES = frozenset({
+        "detection", "detect",
+        "rotated_detection", "rotated",
+        "segmentation", "segment", "seg",
+        "semantic_segmentation", "semantic", "lane_seg",
+        "keypoint", "pose",
+        "classification", "cls",
+        "ocr",
+    })
+
     @classmethod
     async def _ensure_job(cls, client, task_id: int, data_dir: str, spec: dict,
                           dataset_id: int, annotation_task_id: int | None,
                           train_ratio: float, task_type: str,
-                          existing_job: str | None) -> str:
+                          ocr_rec: bool, existing_job: str | None) -> str:
         """拿到一个作业 id：优先接管已有作业，否则导数据 + 提交。"""
+        if task_type not in cls.SUPPORTED_TASK_TYPES:
+            raise ValueError(
+                f"标注任务类型 {task_type!r} 暂不支持 TorchKiln 训练"
+                f"（已支持：{', '.join(sorted(cls.SUPPORTED_TASK_TYPES))}）"
+            )
         if existing_job:
             try:
                 info = await client.get_job(existing_job)
@@ -364,8 +465,11 @@ class TorchKilnExecutor(TaskExecutor):
             dataset_id, task_id, export_framework, data_dir,
             annotation_task_id=annotation_task_id,
             train_ratio=train_ratio,
+            ocr_rec=ocr_rec,
             torchkiln_index=True,
         )
+        # 导出完成后再挂清单路径（导出前探测必然落空，见 _attach_dataset_lists 注释）
+        spec = cls._attach_dataset_lists(spec, data_dir)
         await broadcast_line(task_id, f"[torchkiln] 提交作业（模型 {spec['model_name']}）")
         created = await client.submit_job(
             spec, idempotency_key=f"aistation-train-{task_id}")
@@ -466,6 +570,23 @@ class TorchKilnExecutor(TaskExecutor):
             log.warning("[torchkiln] 日志流中断: %s", e)
             await broadcast_line(task_id, f"[torchkiln] 日志流中断: {e}")
 
+    @staticmethod
+    def _flush_interval(row_count: int) -> float:
+        """按已积累的行数决定落库间隔（秒）。
+
+        指标是**整列覆盖写**，所以「写入速率 × 单次体积」才是真正的压力来源。
+        固定间隔下，行数越多单次越贵，总吞吐随训练推进而线性上升——长训练到几千行
+        时每次 flush 都是几 MB。这里让间隔随行数线性放大，把单次写入速率维持在
+        近似常数：行数翻倍、间隔翻倍。
+
+        下限 ``_FLUSH_SECONDS``（别太频繁，否则小数据集反而延迟落库），
+        上限 30 秒（再慢前端刷新就明显滞后于 SSE；SSE 是实时的，落库只影响
+        刷新页面后的回看）。
+        """
+        if row_count <= 1000:
+            return _FLUSH_SECONDS
+        return min(_FLUSH_SECONDS * (row_count / 1000.0), 30.0)
+
     @classmethod
     async def _consume_metrics(cls, client, task_id: int, job_id: str,
                                last_seq: int, rows: list[dict]):
@@ -487,7 +608,12 @@ class TorchKilnExecutor(TaskExecutor):
                     rows.append(row)
                     pending += 1
                 now = loop.time()
-                if pending >= _FLUSH_EVERY or (now - last_flush) >= _FLUSH_SECONDS:
+                # ⚠️ 落库是**整列覆盖写**（save_metrics）：每写一次都要把整个
+                #    metrics_log 序列化并推送。固定 3 秒一次 flush，在几千行时
+                #    等于「每 3 秒重写几 MB JSONB」，Postgres TOAST 直接吃满。
+                #    按行数自适应退避，把写入速率压到大致恒定的字节量。
+                if (pending >= _FLUSH_EVERY
+                        or (now - last_flush) >= cls._flush_interval(len(rows))):
                     await save_metrics(task_id, rows)
                     pending = 0
                     last_flush = now
