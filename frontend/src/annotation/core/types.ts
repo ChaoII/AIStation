@@ -89,6 +89,10 @@ export interface CuboidShape {
   depth: number;
   /** 高度投影线在画布上的垂直偏移（归一化，顶面=底部矩形沿 y 平移 -top_cy 的投影） */
   top_cy: number;
+  /** 底面第一条边（长）方向角（弧度）；缺省用 yaw（兼容旧数据） */
+  angle1?: number;
+  /** 底面第二条边（宽/高）方向角（弧度）；缺省为 yaw + π/2（正交矩形兼容旧数据） */
+  angle2?: number;
 }
 
 export type ShapeAnnotation =
@@ -180,8 +184,8 @@ export interface AnnotationInteraction {
   vertexInsert?(ann: Annotation, handle: string): void;
   /** 顶点删除（alt+点击） */
   vertexDelete?(ann: Annotation, handle: string): void;
-  /** 标签锚点（相对图像左上角的归一化坐标，返回 null 则用默认） */
-  tagAnchor?(ann: Annotation): { x: number; y: number } | null;
+  /** 标签锚点（相对图像左上角的归一化坐标，返回 null 则用默认）；cw/ch 为图像像素宽高，供非方形图片做像素空间换算 */
+  tagAnchor?(ann: Annotation, cw?: number, ch?: number): { x: number; y: number } | null;
 }
 
 /** 绘制运行上下文（壳在画布事件时传入） */

@@ -1655,6 +1655,10 @@ const taskTypeLabel = computed(
       keypoint: "关键点",
       ocr: "OCR",
       classification: "分类",
+      cuboid: "3D 目标检测",
+      time_series_event: "时间序列",
+      video_event: "视频事件",
+      video_detection: "视频检测",
     })[taskType.value] || taskType.value
 );
 const taskTypeTag = computed(

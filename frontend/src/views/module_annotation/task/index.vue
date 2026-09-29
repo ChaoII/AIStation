@@ -811,6 +811,9 @@ function annotationTypeLabel(type: string) {
     cuboid: "3D 目标检测",
     text_ner: "文本NER",
     audio_event: "音频事件",
+    time_series_event: "时间序列事件",
+    video_event: "视频事件",
+    video_detection: "视频目标检测",
   };
   return map[type] || type;
 }

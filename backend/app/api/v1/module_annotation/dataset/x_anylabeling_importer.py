@@ -386,15 +386,19 @@ def _shape_to_annotation(shape: dict, class_mapping: dict, img_w: int, img_h: in
             width = float(attrs["w"])
             height = float(attrs["h"])
             yaw = float(attrs["yaw"])
+            angle1 = float(attrs["angle1"]) if "angle1" in attrs else yaw
+            angle2 = float(attrs["angle2"]) if "angle2" in attrs else angle1 + math.pi / 2
         else:
-            # 否则从底部旋转矩形角点反推（与 rotated_box 分支一致的逆运算）
+            # 否则从底部平行四边形角点反推（p1→p2 定第 1 条边，p1→p3 定第 2 条边）
             dx = points[1][0] - points[0][0]
             dy = points[1][1] - points[0][1]
             width = math.hypot(dx, dy) / img_w if img_w else 0
-            yaw = math.atan2(dy, dx)
-            ex = points[2][0] - points[1][0]
-            ey = points[2][1] - points[1][1]
+            angle1 = math.atan2(dy, dx)
+            ex = points[3][0] - points[0][0]
+            ey = points[3][1] - points[0][1]
             height = math.hypot(ex, ey) / img_h if img_h else 0
+            angle2 = math.atan2(ey, ex)
+            yaw = angle1
             cx = sum(p[0] for p in points[:4]) / 4 / img_w if img_w else 0
             cy = sum(p[1] for p in points[:4]) / 4 / img_h if img_h else 0
         # 3D 参数（深度 + 顶面垂直偏移），缺省用与 useCuboidTool 初始值对齐的默认值
@@ -410,6 +414,8 @@ def _shape_to_annotation(shape: dict, class_mapping: dict, img_w: int, img_h: in
             "w": width,
             "h": height,
             "yaw": yaw,
+            "angle1": angle1,
+            "angle2": angle2,
             "depth": depth,
             "top_cy": top_cy,
         }

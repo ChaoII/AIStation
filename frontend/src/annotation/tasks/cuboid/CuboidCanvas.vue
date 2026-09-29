@@ -1,6 +1,6 @@
 <template>
   <g v-for="ann in annotations" :key="ann.id" :data-ann-id="ann.id">
-    <!-- 顶面平行四边形（底部矩形沿 y 平移 -top_cy） -->
+    <!-- 顶面平行四边形（底部平行四边形沿竖直方向平移 -top_cy） -->
     <polygon
       :points="topPoints(ann)"
       data-role="top"
@@ -24,10 +24,10 @@
       :style="peStyle"
       vector-effect="non-scaling-stroke"
     />
-    <!-- 底部旋转矩形 -->
+    <!-- 底部平行四边形 -->
     <polygon
       :points="bottomPoints(ann)"
-      :fill="ann.id === selectedId ? color(ann) + '28' : 'none'"
+      :fill="ann.id === selectedId ? color(ann) + '28' : color(ann) + '14'"
       :stroke="color(ann)"
       :stroke-width="ann.id === selectedId ? selStroke : stroke"
       :style="peStyle"
@@ -35,6 +35,7 @@
       @mousedown.stop.prevent="$emit('ann-down', $event, ann)"
     />
     <template v-if="ann.id === selectedId">
+      <!-- 底面 4 角：拖对角改平行四边形 -->
       <circle
         v-for="h in handles"
         :key="'rot-' + h"
@@ -49,19 +50,24 @@
         :style="peStyle"
         vector-effect="non-scaling-stroke"
         @mousedown.stop.prevent="$emit('handle-down', $event, ann, h)"
-      />
+      >
+        <title>拖动缩放底面</title>
+      </circle>
+      <!-- 高度手柄：底面中心上方，沿竖直方向拖动调整高度 -->
       <circle
-        :cx="rotateHandlePos(ann).x"
-        :cy="rotateHandlePos(ann).y"
-        r="3"
+        :cx="ann.cx * cw"
+        :cy="ann.cy * ch - (ann.top_cy || 0) * ch"
+        r="5"
         fill="#fff"
-        :stroke="color(ann)"
-        stroke-width="1.5"
+        stroke="#409eff"
+        stroke-width="2"
         class="handle"
         :style="peStyle"
-        :data-handle="'rotate'"
-        @mousedown.stop.prevent="$emit('rotate-down', $event, ann)"
-      />
+        :data-handle="'cuboid-h'"
+        @mousedown.stop.prevent="$emit('handle-down', $event, ann, 'cuboid-h')"
+      >
+        <title>调整高度（沿竖直方向）</title>
+      </circle>
     </template>
   </g>
 </template>
@@ -87,32 +93,43 @@ const props = defineProps<{
 defineEmits<{
   (e: "ann-down", ev: MouseEvent, ann: Annotation): void;
   (e: "handle-down", ev: MouseEvent, ann: Annotation, handle: string): void;
-  (e: "rotate-down", ev: MouseEvent, ann: Annotation): void;
 }>();
 
-const handles = ["tl", "tr", "bl", "br"];
+const handles = ["tl", "tr", "br", "bl"];
 const stroke = computed(() => props.stroke ?? 1.5);
 const selStroke = computed(() => props.selStroke ?? 2);
 const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as const } : {}));
 
-function corner(a: Annotation, idx: number): { x: number; y: number } {
-  const hw = (a.w * props.cw) / 2;
-  const hh = (a.h * props.ch) / 2;
-  const cos = Math.cos(a.yaw);
-  const sin = Math.sin(a.yaw);
-  const map: Record<number, [number, number]> = {
-    0: [-hw, -hh],
-    1: [hw, -hh],
-    2: [hw, hh],
-    3: [-hw, hh],
+function dirs(a: Annotation) {
+  const a1 = a.angle1 ?? a.yaw ?? 0;
+  const a2 = a.angle2 ?? a1 + Math.PI / 2;
+  return {
+    d1: { x: Math.cos(a1), y: Math.sin(a1) },
+    d2: { x: Math.cos(a2), y: Math.sin(a2) },
   };
-  const [lx, ly] = map[idx] || [0, 0];
-  return { x: a.cx * props.cw + lx * cos - ly * sin, y: a.cy * props.ch + lx * sin + ly * cos };
 }
 
+function corner(a: Annotation, idx: number): { x: number; y: number } {
+  const { d1, d2 } = dirs(a);
+  const hw = (a.w * props.cw) / 2;
+  const hh = (a.h * props.ch) / 2;
+  const cx = a.cx * props.cw;
+  const cy = a.cy * props.ch;
+  const local: [number, number][] = [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [-hw, hh],
+  ];
+  const [lx, ly] = local[idx] || [0, 0];
+  return { x: cx + lx * d1.x + ly * d2.x, y: cy + lx * d1.y + ly * d2.y };
+}
+
+// 顶面 = 底面沿竖直方向（图像向上）上移 height，无 pitch/roll 倾斜
 function topCorner(a: Annotation, idx: number): { x: number; y: number } {
   const c = corner(a, idx);
-  return { x: c.x, y: c.y - a.top_cy * props.ch };
+  const H = (a.top_cy ?? a.depth ?? 0) * props.ch;
+  return { x: c.x, y: c.y - H };
 }
 
 function pts(ann: Annotation, fn: (a: Annotation, i: number) => { x: number; y: number }): string {
@@ -135,16 +152,5 @@ function topPoints(ann: Annotation): string {
 function handlePos(a: Annotation, key: string) {
   const idx = { tl: 0, tr: 1, br: 2, bl: 3 }[key as string] ?? 0;
   return corner(a, idx);
-}
-
-function rotateHandlePos(a: Annotation) {
-  const tc = corner(a, 0);
-  const cx = a.cx * props.cw;
-  const cy = a.cy * props.ch;
-  const dx = tc.x - cx;
-  const dy = tc.y - cy;
-  const len = Math.hypot(dx, dy) || 1;
-  const off = 25;
-  return { x: tc.x + (dx / len) * off, y: tc.y + (dy / len) * off };
 }
 </script>
