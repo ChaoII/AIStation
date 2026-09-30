@@ -138,7 +138,7 @@ async def broadcast_line(task_id: int, line: str) -> None:
     try:
         await broadcast_log(task_id, line)
     except Exception as e:  # noqa: BLE001
-        log.debug("广播日志失败 task=%s: %s", task_id, e)
+        log.debug("广播日志失败 task={}: {}", task_id, e)
 
 
 # ---------------------------------------------------------------- 执行器
@@ -166,9 +166,31 @@ class TorchKilnExecutor(TaskExecutor):
         return str(name)
 
     @staticmethod
-    def _task_type(task) -> str:
-        hp = task.hyperparams or {}
-        return str(hp.get("task_type") or "detection").lower()
+    async def _task_type(task) -> str:
+        """训练任务的**标注任务类型**（``AnnotationType`` 裸值），不是模型 task。
+
+        必须与三处保持一致：ultralytics 路径的 ``scheduler._resolve_task_type``、
+        前端 ``TK_SUPPORTED_TASK_TYPES`` 过滤的字段、本类 ``SUPPORTED_TASK_TYPES``
+        的语义说明——它们说的都是「标注任务类型」。这里直接复用前者，避免两套
+        实现各自漂移。
+
+        ⚠️ 曾经读 ``hyperparams.task_type``，而该字段由前端按**模型** task 填写
+        （``task/index.vue`` 的 ``tkModelInfo.task``），于是同一批任务既「选得了
+        却提交不了」、又「提交得了却导出空标签」：
+
+          - 模型 ``task=classify`` / ``task=obb`` 不在白名单 -> 后端拒提交，
+            而导出器其实早就支持旋转框 9 字段角点；
+          - 模型 ``task=segment`` 恰好在白名单，却把 ``export_framework`` 拼成
+            ``yolo-segment``，格式器只认 ``segmentation``/``seg`` ->
+            **标签文件全空，训练照常跑完但学的是空数据集**；
+          - OCR 模型 yml 的 ``task`` 字段为空 -> 退化成 ``detection`` ->
+            ``ocr_rec`` 恒 False -> **rec 按 det 的清单导出，数据语义错**。
+
+        标注任务 id 缺失时回退 ``detection``（与 scheduler 同语义）。
+        """
+        from app.plugin.module_train.scheduler import _resolve_task_type
+
+        return (await _resolve_task_type(task)).lower()
 
     @staticmethod
     async def _dataset_params(task_type: str, hp: dict,
@@ -203,13 +225,13 @@ class TorchKilnExecutor(TaskExecutor):
                         if isinstance(ann, dict) and isinstance(ann.get("keypoints"), list):
                             n_kpt = max(n_kpt, len(ann["keypoints"]))
         except Exception as e:  # noqa: BLE001
-            log.warning("[torchkiln] 推导 kpt_shape 失败，沿用配置模板值: %s", e)
+            log.warning("[torchkiln] 推导 kpt_shape 失败，沿用配置模板值: {}", e)
             return params
 
         if n_kpt:
             # 3 = (x, y, visibility)，与本项目导出的 kx ky kv 三元组对齐
             params["Train.dataset.kpt_shape"] = [n_kpt, 3]
-            log.info("[torchkiln] 注入 Train.dataset.kpt_shape=%s", params["Train.dataset.kpt_shape"])
+            log.info("[torchkiln] 注入 Train.dataset.kpt_shape={}", params["Train.dataset.kpt_shape"])
         return params
 
     @classmethod
@@ -388,7 +410,9 @@ class TorchKilnExecutor(TaskExecutor):
                 dataset_id = task.dataset_id
                 annotation_task_id = task.annotation_task_id
                 existing_job = get_job_id(hp)
-                task_type = cls._task_type(task)
+                # 取标注任务类型（不是模型 task）——它同时决定白名单、导出格式
+                # 分派与 OCR 的 det/rec，详见 _task_type 的说明。
+                task_type = await cls._task_type(task)
                 # OCR 的 det / rec 决定导出的是「四点 JSON」还是「整图文本」，
                 # 从模型名末段推导（PP-OCRv6_tiny_det → det，…_rec → rec）。
                 model_name = cls._model_name(task)
@@ -411,37 +435,41 @@ class TorchKilnExecutor(TaskExecutor):
 
         except TorchKilnUnavailable as e:
             # 服务不可达：保持 RUNNING 等 recover_orphans 重试，**不误判失败**
-            log.warning("[torchkiln] 服务不可达，任务 %s 保持运行态待重试: %s", task_id, e)
+            log.warning("[torchkiln] 服务不可达，任务 {} 保持运行态待重试: {}", task_id, e)
             await broadcast_line(task_id, f"[torchkiln] 服务不可达，稍后重试: {e}")
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
             # 记录完整堆栈：只留 str(e) 会丢掉"哪个文件哪一行调用出错"，
             # 排查时只能靠猜（本项目就曾因此被 task_type 形参问题绕了很久）
-            log.exception("[torchkiln] task %s failed", task_id)
+            log.exception("[torchkiln] task {} failed", task_id)
             await cls._mark_status(
                 task_id, TrainStatus.FAILED,
                 error_log=f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
                 finished_at=datetime.now())
 
-    #: TorchKiln 已实现读取器、且本项目导出格式能对齐的标注任务类型。
+    #: 本平台**标注任务类型**（``AnnotationType`` 裸值）中，TorchKiln 已实现读取器、
+    #: 且本项目导出格式能对齐的子集。**成员与前端 ``TK_SUPPORTED_TASK_TYPES`` 逐一对应**
+    #: （那边按标注任务类型过滤下拉，这边兜底拦截），取值来源见 ``_task_type``。
     #: 其余类型（全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线）要么
     #: TorchKiln 侧根本没有对应 task，要么语义对不上，一律在提交前拦下。
-    #: 前端也已把 torchkiln 从这些任务的框架下拉里摘掉，这里是后端兜底——
     #: 直接调 API 绕过前端时仍会得到明确报错，而不是训出一堆空标签。
     SUPPORTED_TASK_TYPES = frozenset({
-        "detection", "detect",
-        "rotated_detection", "rotated",
-        "segmentation", "segment", "seg",
-        "semantic_segmentation", "semantic", "lane_seg",
-        "keypoint", "pose",
-        "classification", "cls",
+        "detection",
+        "rotated_detection",
+        "segmentation",
+        "semantic_segmentation",
+        "keypoint",
+        "classification",
         "ocr",
+        # 视频帧级检测：exporter._export_video_detection 已按帧抽帧并复用检测
+        # 格式器，且它在 framework 分派**之前**命中（按标注任务类型），故放行。
+        "video_detection",
         # 3D：导出为「相机系 -> LiDAR 系」的 7-dof（cls x y z l w h yaw），
         # 对应 TorchKiln 的 `mono3d` 任务（det3d 的图像分支）。
         # ⚠️ 只有带 `box3d` 米制参数的标注才会被导出；只有 2D 投影的会跳过并记日志——
         #    绝不拿归一化的 cx/cy/w/h 顶替，那会被当米制解析、不报错但数据全错。
-        "cuboid", "det3d", "mono3d",
+        "cuboid",
     })
 
     @classmethod
@@ -559,7 +587,7 @@ class TorchKilnExecutor(TaskExecutor):
             except Exception as e:  # noqa: BLE001
                 # 取权重失败**不能**把训练判成失败——训练本身已成功，
                 # 只是没能建版本；否则用户会白跑一遍训练。
-                log.error("[torchkiln] 权重入库失败: %s", e)
+                log.error("[torchkiln] 权重入库失败: {}", e)
                 await broadcast_line(task_id, f"[torchkiln] 权重入库失败: {e}")
 
         await cls._mark_status(
@@ -582,7 +610,7 @@ class TorchKilnExecutor(TaskExecutor):
         except asyncio.CancelledError:
             raise
         except TorchKilnError as e:
-            log.warning("[torchkiln] 日志流中断: %s", e)
+            log.warning("[torchkiln] 日志流中断: {}", e)
             await broadcast_line(task_id, f"[torchkiln] 日志流中断: {e}")
 
     @staticmethod
@@ -635,13 +663,13 @@ class TorchKilnExecutor(TaskExecutor):
         except asyncio.CancelledError:
             raise
         except TorchKilnError as e:
-            log.warning("[torchkiln] 指标流中断: %s", e)
+            log.warning("[torchkiln] 指标流中断: {}", e)
         finally:
             try:
                 if rows:
                     await save_metrics(task_id, rows)
             except Exception as e:  # noqa: BLE001
-                log.warning("[torchkiln] 指标落库失败: %s", e)
+                log.warning("[torchkiln] 指标落库失败: {}", e)
 
     @classmethod
     async def _await_terminal(cls, client, task_id: int, job_id: str,
@@ -653,7 +681,7 @@ class TorchKilnExecutor(TaskExecutor):
                 try:
                     return await client.cancel_job(job_id)
                 except TorchKilnError as e:
-                    log.warning("[torchkiln] 取消失败: %s", e)
+                    log.warning("[torchkiln] 取消失败: {}", e)
                     return {"status": "cancelled", "exit_reason": "cancelled"}
             info = await client.get_job(job_id)
             status = str(info.get("status"))

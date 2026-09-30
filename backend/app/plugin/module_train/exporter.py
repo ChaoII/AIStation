@@ -139,7 +139,7 @@ async def _export_mono3d(
                     with open(img_path, "wb") as f:
                         f.write(data.read())
                 except Exception as e:
-                    log.warning("skip %s: %s", img.filename, e)
+                    log.warning("skip {}: {}", img.filename, e)
                     continue
             lines: list[str] = []
             for ann in anns_by_img.get(img.id, []):
@@ -191,13 +191,13 @@ async def _export_mono3d(
 
     if torchkiln_index:
         _write_torchkiln_index(output_dir)
-    log.info("mono3d: images=%d boxes=%d skipped=%d classes=%d → %s",
+    log.info("mono3d: images={} boxes={} skipped={} classes={} → {}",
              len(train_imgs) + len(val_imgs), n_box, n_skipped,
              len(class_id_map), output_dir)
     if n_skipped:
         log.warning(
-            "mono3d: %d 个标注缺少 box3d 米制参数（只有 2D 投影），已跳过——"
-            "请在 3D 目标检���任务的面板里补齐深度与尺寸", n_skipped)
+            "mono3d: {} 个标注缺少 box3d 米制参数（只有 2D 投影），已跳过——"
+            "请在 3D 目标检测任务的面板里补齐深度与尺寸", n_skipped)
 
 
 def _write_lines(path: str, lines: list[str]) -> None:
@@ -208,11 +208,11 @@ def _write_lines(path: str, lines: list[str]) -> None:
     （取 batch / 除零）就崩，报错还指向 DataLoader，看不出根因。
     """
     if not lines:
-        log.info("torchkiln index: 跳过空清单 %s", path)
+        log.info("torchkiln index: 跳过空清单 {}", path)
         return
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")
-    log.info("torchkiln index: %s (%d 行)", path, len(lines))
+    log.info("torchkiln index: {} ({} 行)", path, len(lines))
 
 
 def _write_torchkiln_index(output_dir: str) -> None:
@@ -220,7 +220,7 @@ def _write_torchkiln_index(output_dir: str) -> None:
 
     一行一个图片，路径形如 ``images/train/0001.jpg``，TorchKiln 据此推导
     ``labels/train/0001.txt`` 读标注。空目录**跳过不写空文件**——写空列表会让
-    dataset 长度��� 0 并在训练第一步直接崩。
+    dataset 长度为 0 并在训练第一步直接崩。
     """
     for split in ("train", "val"):
         img_dir = os.path.join(output_dir, "images", split)
@@ -237,7 +237,7 @@ def _write_torchkiln_index(output_dir: str) -> None:
             for n in names:
                 # 统一正斜杠：训练环境可能是 Linux 容器
                 f.write(f"images/{split}/{n}\n")
-        log.info("torchkiln index: %s (%d images)", list_path, len(names))
+        log.info("torchkiln index: {} ({} images)", list_path, len(names))
 
 
 async def prepare_eval_data_for_task(dataset_id: int, task_id: int, framework: str, output_dir: str, annotation_task_id: int | None = None, ocr_mode: str = "det") -> str:
@@ -526,7 +526,7 @@ def _paint_semantic_mask(anns: list, img_w: int, img_h: int,
                 import cv2
                 cv2.fillPoly(mask, [arr], int(value))
             except Exception as e:  # noqa: BLE001
-                log.warning("semantic fillPoly 失败: %s", e)
+                log.warning("semantic fillPoly 失败: {}", e)
         else:
             # 框类标注退化成矩形填充：语义分割任务里少见，但不该静默丢标注
             if "x1" in ann:
@@ -595,7 +595,7 @@ async def _export_yolo_semantic(
                     with open(img_path, "wb") as f:
                         f.write(data.read())
                 except Exception as e:
-                    log.warning("skip %s: %s", img.filename, e)
+                    log.warning("skip {}: {}", img.filename, e)
                     continue
             anns = anns_by_img.get(img.id, [])
             if not anns:
@@ -608,7 +608,7 @@ async def _export_yolo_semantic(
                 Image.fromarray(mask, mode="L").save(mask_path)
                 n_mask += 1
             except Exception as e:
-                log.warning("semantic mask 写入失败 %s: %s", mask_path, e)
+                log.warning("semantic mask 写入失败 {}: {}", mask_path, e)
 
     if torchkiln_index:
         _write_torchkiln_index(output_dir)
@@ -659,7 +659,7 @@ async def _export_torchkiln_ocr(
                     with open(img_path, "wb") as f:
                         f.write(data.read())
                 except Exception as e:
-                    log.warning("skip %s: %s", img.filename, e)
+                    log.warning("skip {}: {}", img.filename, e)
                     continue
             anns = anns_by_img.get(img.id, [])
             w, h = img.width or 1, img.height or 1

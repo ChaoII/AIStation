@@ -716,10 +716,14 @@ function annoTaskTypeLabel(t: string) {
 /**
  * TorchKiln 已实现读取器、且本项目导出格式能对齐的标注任务类型。
  *
- * 与后端 `TorchKilnExecutor.SUPPORTED_TASK_TYPES` **必须保持一致**——后端是
- * 兜底拦截，前端是提前不让用户选。全景分割 / 音视频事件 / 时序事件 / 文本 NER /
- * 折线 / 3D 框都不在其中：要么 TorchKiln 侧根本没有对应 task，要么语义对不上
- * （TorchKiln 的 `det3d` 要 LiDAR 系 3D 框，本平台的 cuboid 只有 2D 底面四点）。
+ * 与后端 `TorchKilnExecutor.SUPPORTED_TASK_TYPES` **必须逐条一致**——后端是
+ * 兜底拦截，前端是提前不让用户选。两边取值都是**标注任务类型**（`AnnotationType`
+ * 裸值），不是模型的 `task` 字段：模型 task 由 `_task_type` 一并让位给标注任务
+ * 类型，否则会出现「模型 task=classify/obb 选得了提交不了」与
+ * 「task=segment 提交得了却导出空标签」这类两边对不上的问题。
+ *
+ * 全景分割 / 音视频事件 / 时序事件 / 文本 NER / 折线不在其中：要么 TorchKiln
+ * 侧根本没有对应 task，要么语义对不上。
  */
 const TK_SUPPORTED_TASK_TYPES = [
   "detection",
@@ -729,6 +733,9 @@ const TK_SUPPORTED_TASK_TYPES = [
   "keypoint",
   "classification",
   "ocr",
+  // 视频帧级检测：抽帧导出已实现（exporter._export_video_detection），标注形状
+  // 与 detection 一致，走 TorchKiln 的 detect 任务。
+  "video_detection",
   // 3D：需要标注里带 box3d 米制参数（面板可填），导出为相机系 -> LiDAR 系 7-dof
   "cuboid",
 ];

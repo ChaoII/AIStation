@@ -129,7 +129,7 @@ class TorchKilnClient:
                 try:
                     await c.aclose()
                 except Exception as e:  # noqa: BLE001
-                    log.debug("torchkiln client close: %s", e)
+                    log.debug("torchkiln client close: {}", e)
         self._client = self._stream_client = None
 
     @property
@@ -268,7 +268,7 @@ class TorchKilnClient:
                         yield event, eid, line[5:].lstrip()
         except (httpx.RemoteProtocolError, httpx.ReadError) as e:
             # 服务端在作业终态后主动收流，属正常语义；让调用方按"流结束"处理
-            log.debug("torchkiln SSE %s 结束: %s", path, e)
+            log.debug("torchkiln SSE {} 结束: {}", path, e)
             return
         except TorchKilnError:
             raise
