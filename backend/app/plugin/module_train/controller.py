@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import tempfile
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
@@ -13,6 +12,7 @@ from app.core.dependencies import AuthPermission
 from app.utils.s3_client import s3_client
 
 from .eval_scheduler import start_evaluation, stop_evaluation
+from .paths import shared_root, work_dir
 from .predict_executor import start_prediction, stop_prediction
 from .scheduler import start_training
 from .schema import (
@@ -35,7 +35,7 @@ router = APIRouter(tags=["模型训练"])
 
 @router.get("/system/tempdir", summary="系统临时目录路径", include_in_schema=False)
 async def get_tempdir(auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"]))):
-    return SuccessResponse(data={"tempdir": tempfile.gettempdir().replace("\\", "/")})
+    return SuccessResponse(data={"tempdir": shared_root().replace("\\", "/")})
 
 
 @router.get("/model/list", summary="模型仓库列表")
@@ -394,8 +394,7 @@ async def get_eval(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["mod
 
 @router.get("/eval/{eval_id}/logs", summary="获取评估日志")
 async def get_eval_logs(eval_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:eval:query"]))):
-    import tempfile
-    log_path = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id), "eval.log")
+    log_path = work_dir("eval_output", eval_id, "eval.log")
     if not os.path.exists(log_path):
         eval_rec = await TrainService.get_eval(eval_id)
         log_content = eval_rec.get("log", "") if eval_rec else ""
@@ -458,8 +457,7 @@ async def list_evals(
 
 @router.get("/task/{task_id}/logs", summary="获取训练日志")
 async def get_task_logs(task_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:task:query"]))):
-    import tempfile
-    log_path = os.path.join(tempfile.gettempdir(), "train_output", str(task_id), "train.log")
+    log_path = work_dir("train_output", task_id, "train.log")
     if not os.path.exists(log_path):
         return SuccessResponse(data={"logs": "", "path": log_path})
     with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -512,8 +510,7 @@ async def get_predict(predict_id: int, auth: AuthSchema = Depends(AuthPermission
 
 @router.get("/predict/{predict_id}/logs", summary="获取预测日志")
 async def get_predict_logs(predict_id: int, auth: AuthSchema = Depends(AuthPermission(["module_train:predict:query"]))):
-    import tempfile
-    log_path = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id), "predict.log")
+    log_path = work_dir("predict_output", predict_id, "predict.log")
     if not os.path.exists(log_path):
         pred_rec = await TrainService.get_predict(predict_id)
         log_content = pred_rec.get("log", "") if pred_rec else ""
@@ -741,8 +738,7 @@ async def get_deploy_logs(
     deploy_id: int,
     auth: AuthSchema = Depends(AuthPermission(["module_train:model:query"])),
 ):
-    import tempfile
-    log_path = os.path.join(tempfile.gettempdir(), "deploy_output", str(deploy_id), "deploy.log")
+    log_path = work_dir("deploy_output", deploy_id, "deploy.log")
     if not os.path.exists(log_path):
         return SuccessResponse(data={"logs": ""})
     with open(log_path, encoding="utf-8", errors="replace") as f:

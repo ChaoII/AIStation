@@ -1,6 +1,5 @@
 import os
 import re
-import tempfile
 
 from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +18,7 @@ from .model import (
     TrainStatus,
     TrainTask,
 )
+from .paths import work_dir
 
 # ultralytics: `1/100 0.983G ...`；PaddleX: `epoch: [1/100], ...`
 _EPOCH_RE = re.compile(r"(?:^\s*(\d+)/(\d+)\s+|epoch:\s*\[(\d+)/(\d+)\])")
@@ -52,7 +52,7 @@ def _strip_ansi(text: str) -> str:
 
 
 def _calc_progress_from_log(task_id: int) -> int | None:
-    log_path = os.path.join(tempfile.gettempdir(), "train_output", str(task_id), "train.log")
+    log_path = work_dir("train_output", task_id, "train.log")
     if not os.path.isfile(log_path):
         return None
     try:
@@ -589,7 +589,6 @@ class TrainService:
     @classmethod
     async def get_eval(cls, eval_id: int) -> dict | None:
         import os
-        import tempfile
 
         async with async_db_session() as db:
             e = await db.get(TrainEval, eval_id)
@@ -600,7 +599,7 @@ class TrainService:
             if e.eval_dataset_id in name_map:
                 data["eval_dataset_name"] = name_map[e.eval_dataset_id]
 
-            log_path = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id), "eval.log")
+            log_path = work_dir("eval_output", eval_id, "eval.log")
             if os.path.exists(log_path):
                 try:
                     with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -634,7 +633,6 @@ class TrainService:
     @classmethod
     async def get_predict(cls, predict_id: int) -> dict | None:
         import os
-        import tempfile
 
         async with async_db_session() as db:
             p = await db.get(TrainPredict, predict_id)
@@ -642,7 +640,7 @@ class TrainService:
                 return None
             data = _model_to_dict(p)
 
-            log_path = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id), "predict.log")
+            log_path = work_dir("predict_output", predict_id, "predict.log")
             if os.path.exists(log_path):
                 try:
                     with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -718,7 +716,6 @@ class TrainService:
     async def export_dataset(cls, data, auth) -> dict:
         import os
         import shutil
-        import tempfile
         import zipfile
 
         from .exporter import export_dataset_for_download as run_export
@@ -741,7 +738,7 @@ class TrainService:
                 if status != "completed":
                     raise Exception(f"标注任务「{ann_task.name}」尚未完成，请先完成标注再导出")
 
-        export_dir = os.path.join(tempfile.gettempdir(), "dataset_export", str(data.dataset_id), data.format)
+        export_dir = work_dir("dataset_export", data.dataset_id, data.format)
         if os.path.exists(export_dir):
             shutil.rmtree(export_dir)
         os.makedirs(export_dir, exist_ok=True)

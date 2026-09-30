@@ -1,7 +1,6 @@
 import asyncio
 import os
 import re
-import tempfile
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -22,6 +21,7 @@ from .docker_utils import (
 )
 from .metrics import best_metric
 from .model import TrainFramework, TrainStatus, TrainTask
+from .paths import work_dir
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
 
@@ -41,7 +41,7 @@ def _spawn(coro) -> asyncio.Task:
     return task
 
 
-MODELS_CACHE_DIR = os.path.join(tempfile.gettempdir(), "train_output", ".models_cache").replace("\\", "/")
+MODELS_CACHE_DIR = work_dir("train_output", ".models_cache").replace("\\", "/")
 _MODEL_DOWNLOAD_BASE = "https://github.com/ultralytics/assets/releases/latest/download"
 _MODEL_MIRROR = os.environ.get("MODEL_MIRROR", "")  # e.g. https://ghproxy.com/
 
@@ -152,7 +152,7 @@ async def _scheduler_loop():
 
 
 async def _build_export_dir(task_id: int) -> str:
-    export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
+    export_dir = work_dir("train_output", task_id)
     os.makedirs(export_dir, exist_ok=True)
     return export_dir
 

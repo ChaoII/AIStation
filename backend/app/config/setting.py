@@ -347,7 +347,19 @@ class Settings(BaseSettings):
     TORKILN_TIMEOUT: float = 30.0        # 普通 API 超时（秒）
     TORKILN_SUBMIT_TIMEOUT: float = 120.0  # 提交作业超时（秒，服务端要解析模型清单）
     TORKILN_ENABLED: bool = True          # 关掉后 torchkiln 框架的训练会被明确拒绝
-    # 本项目把标注导出的目录挂给训练服务用（同一台机器时直接传宿主路径）
+    # 训练链路工作目录的共享根，由 ``app/plugin/module_train/paths.py`` 统一解析
+    # （原先 21 处散落的 ``tempfile.gettempdir()`` 已全部收口过去）。
+    #
+    # 为什么需要显式声明：TorchKiln 训练服务、以及本项目为 paddlex / ultralytics
+    # 起的训练容器，要读写**同一批**路径——标注导出的数据目录（容器里当 /data）、
+    # train.log / eval.log（容器往里写、本项目 tail 出来转 SSE）。两侧算出的路径
+    # 必须逐字相同，否则是**静默失败**：容器报 FileNotFoundError 而本项目只看到
+    # 「训练失败」看不出是路径问题；或训练在跑但页面永远收不到新日志。
+    #
+    # 留空 = 用系统临时目录，仅在「后端与训练服务同机同用户跑」时成立（当前本机
+    # 部署形态）。一旦后端进了容器、或训练服务在另一台机器，就必须显式配成
+    # **双方都能访问**的绝对路径，例如 Linux 宿主上的 ``/mnt/aistation_shared``，
+    # 并让训练容器挂载到同一位置。
     TORKILN_SHARED_DATA_ROOT: str = ''
 
     # ================================================= #

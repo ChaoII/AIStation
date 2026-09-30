@@ -1,6 +1,5 @@
 import asyncio
 import os
-import tempfile
 import zipfile
 from datetime import datetime
 
@@ -12,6 +11,7 @@ from app.core.logger import log
 from .concurrency import get_train_semaphore
 from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainFramework, TrainModel, TrainPredict, TrainStatus
+from .paths import work_dir
 from .task_executor import TaskExecutor
 from .ws import broadcast_predict_log
 
@@ -188,7 +188,7 @@ class PredictExecutor(TaskExecutor):
 
             docker_image = DOCKER_IMAGE
 
-            export_dir = os.path.join(tempfile.gettempdir(), "predict_output", str(predict_id))
+            export_dir = work_dir("predict_output", predict_id)
             source_dir = os.path.join(export_dir, "source")
             output_dir = os.path.join(export_dir, "output")
             model_dir = os.path.join(export_dir, "model")

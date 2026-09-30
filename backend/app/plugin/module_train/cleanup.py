@@ -2,13 +2,13 @@
 import asyncio
 import os
 import shutil
-import tempfile
 import time
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
 from .model import TrainDeploy, TrainEval, TrainPredict, TrainStatus, TrainTask
+from .paths import shared_root
 
 
 async def _running_ids() -> dict[str, set[int]]:
@@ -48,7 +48,7 @@ async def _running_ids() -> dict[str, set[int]]:
 async def cleanup_loop(keep_days: int = 7, interval_sec: int = 3600):
     while True:
         try:
-            base = tempfile.gettempdir()
+            base = shared_root()
             running = await _running_ids()
             for sub in ("train_output", "eval_output", "predict_output", "deploy_output", "model_export", "dataset_export", "model_export_logs"):
                 d = os.path.join(base, sub)

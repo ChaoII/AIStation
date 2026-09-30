@@ -22,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import tempfile
 import traceback
 from datetime import datetime
 
@@ -44,6 +43,8 @@ from app.plugin.module_train.torchkiln_client import (
     build_job_spec,
     probe_service,
 )
+
+from .paths import work_dir
 
 log = logging.getLogger(__name__)
 
@@ -409,7 +410,7 @@ class TorchKilnExecutor(TaskExecutor):
                 finished_at=datetime.now())
             return
 
-        export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
+        export_dir = work_dir("train_output", task_id)
         data_dir = os.path.join(export_dir, "data")
         try:
             async with async_db_session() as db:
@@ -582,7 +583,7 @@ class TorchKilnExecutor(TaskExecutor):
         if status == TrainStatus.SUCCESS:
             from app.plugin.module_train.exporter import export_model
 
-            export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
+            export_dir = work_dir("train_output", task_id)
             try:
                 model_info = await export_model(
                     task_id, "torchkiln", export_dir, best_metrics=best)

@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import re
-import tempfile
 from datetime import datetime
 
 from sqlalchemy import update
@@ -13,6 +12,7 @@ from app.core.logger import log
 from .concurrency import get_train_semaphore
 from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
 from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
+from .paths import work_dir
 from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
 
@@ -215,7 +215,7 @@ class EvalExecutor(TaskExecutor):
             fw = framework_value(framework)
             docker_image = DOCKER_IMAGE
 
-            export_dir = os.path.join(tempfile.gettempdir(), "eval_output", str(eval_id))
+            export_dir = work_dir("eval_output", eval_id)
             data_dir = os.path.join(export_dir, "data")
             model_dir = os.path.join(export_dir, "model")
             os.makedirs(data_dir, exist_ok=True)

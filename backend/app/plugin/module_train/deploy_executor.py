@@ -1,7 +1,6 @@
 import asyncio
 import os
 import socket
-import tempfile
 from datetime import datetime
 
 import docker
@@ -22,6 +21,7 @@ from .docker_utils import (
     stop_container,
 )
 from .model import TrainDeploy, TrainFramework, TrainModel
+from .paths import work_dir
 
 _deploy_running: dict[int, dict] = {}
 # 已请求取消的部署 id -> 请求时间：stop_deployment 后，在途 _execute_deployment
@@ -625,7 +625,7 @@ async def _execute_deployment(deploy_id: int):
 
         await pull_image(image)
 
-        export_dir = os.path.join(tempfile.gettempdir(), "deploy_output", str(deploy_id))
+        export_dir = work_dir("deploy_output", deploy_id)
         model_dir = os.path.join(export_dir, "model")
         server_dir = os.path.join(export_dir, "server")
         os.makedirs(model_dir, exist_ok=True)

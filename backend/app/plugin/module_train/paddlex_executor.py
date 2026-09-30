@@ -7,7 +7,6 @@
 """
 import os
 import re
-import tempfile
 from datetime import datetime
 
 from app.core.database import async_db_session
@@ -18,6 +17,7 @@ from .docker_utils import pull_image, remove_container, run_container
 from .framework_utils import framework_value
 from .metrics import best_metric, primary_metric_key
 from .model import TrainStatus, TrainTask
+from .paths import work_dir
 from .scheduler import _build_cmd, resolve_base_model
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
@@ -130,7 +130,7 @@ class PaddleXOCRExecutor(TaskExecutor):
             await broadcast_log(task_id, f"[{cls.name}] pulling image {cls.DOCKER_IMAGE}...")
             await pull_image(cls.DOCKER_IMAGE)
 
-            export_dir = os.path.join(tempfile.gettempdir(), "train_output", str(task_id))
+            export_dir = work_dir("train_output", task_id)
             data_dir = os.path.join(export_dir, "data")
             os.makedirs(data_dir, exist_ok=True)
 

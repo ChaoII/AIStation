@@ -1,9 +1,10 @@
 import asyncio
 import os
-import tempfile
 
 from app.core.logger import log
 from app.utils.s3_client import s3_client
+
+from .paths import work_dir
 
 # Format -> supported export arguments mapping
 EXPORT_PARAMS_BY_FORMAT = {
@@ -84,7 +85,7 @@ async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> tu
     client = docker.from_env()
     loop = asyncio.get_event_loop()
 
-    log_dir = os.path.join(tempfile.gettempdir(), "model_export_logs")
+    log_dir = work_dir("model_export_logs")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, f"export_{os.getpid()}_{id(volumes)}.log")
 
@@ -224,9 +225,9 @@ async def _export_torchkiln(
     export_format = export_params.get("format", "onnx")
     image = export_params.get("docker_image") or "torchkiln:0.1.0"
 
-    work_dir = os.path.join(tempfile.gettempdir(), "model_export", f"tk_{model_id}")
-    weights_dir = os.path.join(work_dir, "weights")
-    output_dir = os.path.join(work_dir, "output")
+    work_path = work_dir("model_export", f"tk_{model_id}")
+    weights_dir = os.path.join(work_path, "weights")
+    output_dir = os.path.join(work_path, "output")
     os.makedirs(weights_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -348,9 +349,9 @@ async def export_model_to_format(
     image = "ultralytics/ultralytics:latest"
     log_path = ""
 
-    work_dir = os.path.join(tempfile.gettempdir(), "model_export", str(model_id))
-    weights_dir = os.path.join(work_dir, "weights")
-    output_dir = os.path.join(work_dir, "output")
+    work_path = work_dir("model_export", model_id)
+    weights_dir = os.path.join(work_path, "weights")
+    output_dir = os.path.join(work_path, "output")
     os.makedirs(weights_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -484,6 +485,6 @@ async def export_model_to_format(
         raise
     finally:
         import shutil
-        shutil.rmtree(work_dir, ignore_errors=True)
+        shutil.rmtree(work_path, ignore_errors=True)
         if os.path.isfile(log_path):
             os.remove(log_path)
