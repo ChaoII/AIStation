@@ -1961,17 +1961,20 @@ def _crop_text_region(img_path: str, quad: list, img_w: int = 1, img_h: int = 1)
 
 
 async def _fetch_torchkiln_weights(task_id: int, export_dir: str) -> str | None:
-    """从 TorchKiln 服务拉取该任务训练出的最优权重到本地 ``export_dir``。
+    """定位该任务训练出的最优权重，返回其**本地**路径。
 
-    为什么需要：TorchKiln 跑在**独立服务**里（可能另一台机器/另一个容器），
-    权重在它自己的 ``output_dir``，本项目必须下载回来才能入 RustFS、
-    下发给评估/预测。服务不可达时抛异常，由调用方降级为「本次不建版本」——
-    不能因为拉不到权重就把整个训练判成失败。
+    改为直接读本地，而不是去连 TorchKiln 服务下载。原因是 job 容器模式
+    （每任务一容器）下：训练期间 ``TKILN_DATA_ROOT`` 指向挂载点 ``/workspace``，
+    权重其实已经写在宿主的 ``export_dir`` 下面了，容器销毁也不影响；而常驻
+    服务已经不存在，那个固定 URL 连不上——照旧写法会直接拉取失败、权重不入库。
+
+    布局：``export_dir/jobs/<job_id>/best_accuracy.pth``（TorchKiln 的
+    ``output_dir = {data_root}/jobs/{job_id}``）。找不到时递归兜底搜一次，
+    防止 TorchKiln 改了输出布局就彻底断掉。
     """
     import os as _os
 
     from .model import TrainTask as _TrainTask
-    from .torchkiln_client import TorchKilnClient
 
     async with async_db_session() as db:
         task = await db.get(_TrainTask, task_id)
@@ -1981,17 +1984,25 @@ async def _fetch_torchkiln_weights(task_id: int, export_dir: str) -> str | None:
     if not job_id:
         raise ValueError("任务没有 TorchKiln 作业 id（未启动过训练？）")
 
-    _os.makedirs(export_dir, exist_ok=True)
-    async with TorchKilnClient() as client:
-        info = await client.get_job(job_id)
-        if str(info.get("status")) != "succeeded":
-            raise ValueError(
-                "TorchKiln 作业 {} 状态为 {}，未成功，不取权重".format(
-                    job_id, info.get("status")))
-        dest = _os.path.join(export_dir, "best_accuracy.pth")
-        await client.fetch_file(job_id, "best_accuracy.pth", dest)
-    log.info(f"torchkiln weights fetched -> {dest}")
-    return dest
+    direct = _os.path.join(export_dir, "jobs", job_id, "best_accuracy.pth")
+    if _os.path.isfile(direct):
+        log.info(f"torchkiln 权重命中（挂载目录）-> {direct}")
+        return direct
+
+    for root, dirs, files in _os.walk(export_dir):
+        dirs[:] = [d for d in dirs if d != ".models_cache"]
+        if "best_accuracy.pth" in files or "final.pth" in files:
+            name = ("best_accuracy.pth" if "best_accuracy.pth" in files
+                    else "final.pth")
+            hit = _os.path.join(root, name)
+            log.info(f"torchkiln 权重命中（递归兜底）-> {hit}")
+            return hit
+
+    raise FileNotFoundError(
+        f"在 {export_dir} 下找不到作业 {job_id} 的权重"
+        f"（期望 jobs/{job_id}/best_accuracy.pth）。"
+        f"若训练确实成功，请检查该 job 容器当时是否把 TKILN_DATA_ROOT 指到了挂载点。"
+    )
 
 
 async def export_model(task_id: int, framework: str, export_dir: str, best_metrics: dict | None = None) -> dict:

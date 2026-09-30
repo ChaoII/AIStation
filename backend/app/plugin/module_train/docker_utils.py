@@ -96,6 +96,21 @@ def find_task_containers(task_kind: str, task_id: int) -> list[str]:
         return []
 
 
+def get_container_labels(container_id: str) -> dict[str, str]:
+    """读容器的 labels。
+
+    后端重启后要重新连上 job 容器里的 TorchKiln 服务，光有容器 id 不够——还得
+    知道它映射到宿主机的哪个端口。起容器时把端口写进 label
+    （``aistation.tk_port``），这里读回来即可，**不必为此加数据库字段**。
+    """
+    try:
+        c = client.containers.get(container_id)
+        return dict(c.labels or {})
+    except Exception as e:
+        log.warning(f"get_container_labels({container_id[:12]}) 读取失败: {e}")
+        return {}
+
+
 async def stop_task_containers(task_kind: str, task_id: int) -> None:
     """按 label 停止并移除该任务的所有容器（用于内存 registry 丢失后的兜底）。"""
     for cid in find_task_containers(task_kind, task_id):

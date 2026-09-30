@@ -216,6 +216,13 @@ class TorchKilnClient:
         return data.get("lines") or []
 
     async def fetch_file(self, job_id: str, filename: str, dest: str) -> str:
+        """把作业产物下载到本地 ``dest``。
+
+        ⚠️ **job 容器模式下主路径不走这里**：训练时 ``TKILN_DATA_ROOT`` 指向挂载
+        点，权重已经落在宿主目录上，``exporter._fetch_torchkiln_weights`` 直接读
+        本地即可。保留本方法是为了「产物不在共享目录」的场景（例如训练机在另一台
+        机器、只开了 HTTP 通路）。
+        """
         """把作业产物（如 best_accuracy.pth）拉回本机。
 
         训练服务可能与本项目不在同一台机器/容器里，因此权重必须能下载回来。

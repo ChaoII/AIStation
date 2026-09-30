@@ -347,6 +347,29 @@ class Settings(BaseSettings):
     TORKILN_TIMEOUT: float = 30.0        # 普通 API 超时（秒）
     TORKILN_SUBMIT_TIMEOUT: float = 120.0  # 提交作业超时（秒，服务端要解析模型清单）
     TORKILN_ENABLED: bool = True          # 关掉后 torchkiln 框架的训练会被明确拒绝
+    # ---- 每任务一容器（job 容器模式）的配置 ----
+    # TorchKiln 服务不再常驻：每个训练任务起一个独立容器，容器内跑完整的
+    # TorchKiln 服务（监听 8000），映射到宿主机的不同端口；本项目为每个任务
+    # 各连各的端口、各监控各的容器。隔离由容器提供，HTTP 契约一行不改。
+    TORKILN_JOB_IMAGE: str = 'torchkiln:0.1.0'   # job 容器镜像
+    TORKILN_JOB_CONTAINER_PORT: int = 8000        # 容器内服务监听端口
+    # 宿主端口段（闭区间）。容量即并发上限：单卡场景通常 1~4 足够。
+    TORKILN_PORT_START: int = 18100
+    TORKILN_PORT_END: int = 18199
+    # 容器内服务冷启动要 import torch（实测本机 23.4 秒），所以「容器 running」
+    # 不等于「服务可用」，必须轮询 /healthz 到就绪。超时按「训练环境再慢也该起得来」
+    # 留足余量。
+    TORKILN_JOB_READY_TIMEOUT: float = 180.0
+    # GPU 空闲判定的资源层：**看可用显存绝对值**，不用「已用占比 < x%」——
+    # 后者在带桌面环境的 Windows 上永远不成立（实测 dwm + Edge 硬件加速就常驻
+    # 占 3.2GB / 20%），会让平台在这台机器上永远排队。任务自己声明
+    # ``resources.gpu_memory_gb``，执行器会把它作为下限传进来。
+    TORKILN_GPU_MIN_FREE_GB: float = 4.0
+    # 兜底上限：已用占比超过它就绝不出手（防止在显存枯竭边缘还派活导致 OOM）
+    TORKILN_GPU_MAX_USED_RATIO: float = 0.95
+    # 拿不到资源时的轮询间隔与最长等待（0 = 一直等，等到有空闲卡为止）
+    TORKILN_POLL_INTERVAL: float = 5.0
+    TORKILN_QUEUE_TIMEOUT: float = 0.0
     # 训练链路工作目录的共享根，由 ``app/plugin/module_train/paths.py`` 统一解析
     # （原先 21 处散落的 ``tempfile.gettempdir()`` 已全部收口过去）。
     #

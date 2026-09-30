@@ -20,8 +20,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
+import posixpath
 import traceback
 from datetime import datetime
 
@@ -44,9 +46,18 @@ from app.plugin.module_train.torchkiln_client import (
     probe_service,
 )
 
+from . import gpu_pool
+from .docker_utils import get_container_labels, run_container, stop_container
 from .paths import work_dir
 
 log = logging.getLogger(__name__)
+
+#: job 容器内的路径约定。宿主工作目录被挂到这里，所以 TorchKiln 侧的一切
+#: 路径都必须是**容器内**路径——传宿主路径会在容器里 open 失败。
+_CONTAINER_WORKSPACE = "/workspace"
+_CONTAINER_DATA_DIR = "/workspace/data"
+#: 镜像内 TorchKiln 代码的位置，与 TorchKiln 的 service/docker-run.sh 保持一致
+_CONTAINER_REPO_ROOT = "/opt/torchkiln"
 
 #: 服务状态 -> 本项目 TrainStatus。queued 也算 RUNNING（业务上已"开始"）
 _STATUS_MAP = {
@@ -150,8 +161,48 @@ class TorchKilnExecutor(TaskExecutor):
     task_kind = "train"
     status_enum = TrainStatus
     model_class = TrainTask
-    #: 不占用本项目 GPU 信号量——排队是 TorchKiln 服务的职责（单一排队点）
-    _concurrency = 8
+    #: 真正的 GPU 排队由 :mod:`gpu_pool` 负责（Redis 原子分配 + NVML 空闲判定），
+    #: 这里只需要一个足够大的上限防止 asyncio 任务无限堆积——**不能沿用原来的 8**：
+    #: 那个值的理由是「排队交给常驻服务」，而现在常驻服务已经不存在了。
+    #: 取 16 是因为通常只有 1~2 张卡，多出来的任务会停在 pool 里等卡，
+    #: 而不是在信号量上排队（那样它们连数据都还没导出，白占磁盘 IO）。
+    _concurrency = 16
+
+    @classmethod
+    async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
+        """后端重启后重新连上仍在运行的 job 容器。
+
+        基类的实现是「重新 tail 容器日志」，那是 ultralytics / PaddleX 的一次性
+        训练命令模型；TorchKiln 容器里跑的是 HTTP 服务，所以要**从容器 label 里
+        读回宿主端口**再连上去。端口取不到就只能放弃——不能瞎猜一个端口连过去。
+        """
+        if not container_id:
+            return
+        labels = get_container_labels(container_id)
+        port = (labels.get("aistation.tk_port") or "").strip()
+        if not port:
+            log.warning(
+                f"[torchkiln] 任务 {task_id} 的容器 {container_id[:12]} 没有端口 label，"
+                f"无法重连（该容器可能不是本执行器起的）")
+            return
+        try:
+            port_i = int(port)
+        except ValueError:
+            log.warning(f"[torchkiln] 任务 {task_id} 的容器端口 label 非法: {port!r}")
+            return
+
+        async with async_db_session() as db:
+            task = await db.get(TrainTask, task_id)
+            job_id = get_job_id(task.hyperparams) if task else None
+        if not job_id:
+            log.warning(f"[torchkiln] 任务 {task_id} 没有 job_id，无法重连")
+            return
+
+        base_url = f"http://127.0.0.1:{port_i}"
+        log.warning(f"[torchkiln] 任务 {task_id} 重连 {base_url}（作业 {job_id}）")
+        await broadcast_line(task_id, f"[torchkiln] 后端重启，正在重连 job 容器 {base_url}")
+        async with TorchKilnClient(base_url=base_url) as client:
+            await cls._pump(client, task_id, job_id)
 
     @classmethod
     def _recover_row_applies(cls, row) -> bool:
@@ -273,7 +324,8 @@ class TorchKilnExecutor(TaskExecutor):
         )
 
     @staticmethod
-    def _attach_dataset_lists(spec: dict, data_dir: str) -> dict:
+    def _attach_dataset_lists(spec: dict, host_data_dir: str,
+                              container_data_dir: str) -> dict:
         """把导出后的 ``train.txt`` / ``val.txt`` 挂进 spec 的 dataset 段。
 
         ⚠️ **必须在数据导出之后调用**。这两个文件是导出器产出的，导出前探测
@@ -294,15 +346,65 @@ class TorchKilnExecutor(TaskExecutor):
         ``_export_yolo`` 的 ``split_idx = max(1, int(n * ratio))`` 在 n>=2 时必然给
         val 留出至少 1 张，**只有 n==1（数据集仅 1 张标注图）才会缺 val.txt**，
         属已知边界，此时训练会退回模板验证集。
+
+        **存在性在宿主目录探测、路径给容器内路径**：文件实际写在宿主上，但
+        TorchKiln 是在容器里读的，拿宿主路径去 ``open`` 必然 FileNotFoundError。
+        拼接必须用 ``posixpath``——宿主是 Windows，``os.path.join`` 产出反斜杠，
+        到容器里就不是合法路径了。
         """
         dataset = dict(spec.get("dataset") or {})
-        dataset["data_dir"] = data_dir
+        dataset["data_dir"] = container_data_dir
         for key, fname in (("train_list", "train.txt"), ("val_list", "val.txt")):
-            p = os.path.join(data_dir, fname)
-            if os.path.isfile(p):
-                dataset[key] = p
+            if os.path.isfile(os.path.join(host_data_dir, fname)):
+                dataset[key] = posixpath.join(container_data_dir, fname)
         spec["dataset"] = dataset
         return spec
+
+    @classmethod
+    async def _start_job_container(cls, alloc, host_workspace: str, task_id: int):
+        """起这个任务专属的 TorchKiln job 容器。
+
+        与 ultralytics / PaddleX 的容器模式一致（每任务一容器），区别是**容器里
+        跑的是完整的 TorchKiln 服务**而不是一次性训练命令——于是 HTTP 契约、
+        指标事件、状态机全都原样保留，只把「常驻服务」换成了「一任务一服务」。
+
+        三个容易踩的点：
+
+        1. ``TKILN_DATA_ROOT`` 必须指向**挂载点**。服务默认往容器内目录写
+           ``metrics.jsonl`` 和权重，不挂出来的话容器一销毁产物就没了——而且
+           任务还会显示成功，事后才发现没产物。
+        2. 端口映射到 ``alloc.port``，本项目再用 ``alloc.base_url`` 连它。
+        3. ``shm_size``：DataLoader worker>0 时不给 shm 会 BUS error。
+        """
+        # volumes 的值必须是 {"bind": ..., "mode": ...}，不能写成裸字符串——
+        # Docker SDK 会对 str 调 .get() 而炸（与 paddlex_executor 同一写法）
+        volumes = {host_workspace: {"bind": _CONTAINER_WORKSPACE, "mode": "rw"}}
+        env = {
+            "TKILN_DATA_ROOT": _CONTAINER_WORKSPACE,
+            "TKILN_REPO_ROOT": _CONTAINER_REPO_ROOT,
+            "TKILN_SERVICE_TOKEN": settings.TORKILN_SERVICE_TOKEN,
+            "TKILN_MAX_CONCURRENT": "1",
+            "TKILN_POLL_INTERVAL": "1.0",
+        }
+        # device_ids 用**序号**而非 UUID：容器只暴露被选中的卡，容器内序号恒为 0
+        device_ids = ",".join(str(i) for i in alloc.gpu_indices) or "0"
+        # ⚠️ Docker SDK 的 ports 语义是「**key=容器内端口，value=宿主机端口**」
+        # （文档写的是 "ports to bind inside the container"，很容易读反）。
+        # 写反的话 Docker 会去绑**宿主机**的 8000，直接撞上已在运行的常驻服务。
+        return await run_container(
+            image=settings.TORKILN_JOB_IMAGE,
+            cmd=["python", "-m", "uvicorn", "service.main:app",
+                 "--host", "0.0.0.0", "--port", str(settings.TORKILN_JOB_CONTAINER_PORT)],
+            volumes=volumes,
+            gpu_id=device_ids,
+            env=env,
+            ports={f"{int(settings.TORKILN_JOB_CONTAINER_PORT)}/tcp": int(alloc.port)},
+            # label 让 recover_orphans / find_task_containers 能重新找到它
+            labels={"aistation.task_kind": "train",
+                    "aistation.task_id": str(task_id),
+                    "aistation.tk_port": str(alloc.port)},
+            shm_size="8g",
+        )
 
     # ------------------------------------------------------------ 指标换算
     @staticmethod
@@ -411,7 +513,8 @@ class TorchKilnExecutor(TaskExecutor):
             return
 
         export_dir = work_dir("train_output", task_id)
-        data_dir = os.path.join(export_dir, "data")
+        # 宿主上真正写数据的目录；容器里它对应 /workspace/data
+        host_data_dir = os.path.join(export_dir, "data")
         try:
             async with async_db_session() as db:
                 task = await db.get(TrainTask, task_id)
@@ -429,20 +532,59 @@ class TorchKilnExecutor(TaskExecutor):
                 model_name = cls._model_name(task)
                 ocr_rec = task_type == "ocr" and model_name.lower().rstrip("-_").endswith("rec")
                 params = await cls._dataset_params(task_type, hp, annotation_task_id)
-                spec = cls._build_spec(task, data_dir, params=params)
+                # ⚠️ spec 里的路径是**容器内**路径：TorchKiln 在容器里读数据
+                spec = cls._build_spec(task, _CONTAINER_DATA_DIR, params=params)
                 train_ratio = float(hp.get("train_ratio", 0.8))
 
-            async with TorchKilnClient() as client:
-                job_id = await cls._ensure_job(
-                    client, task_id, data_dir, spec,
-                    dataset_id=dataset_id,
+            cls._check_task_type(task_type)
+
+            # 接管已有作业时不必重新导出（那个作业的数据就是这份）
+            if not existing_job:
+                await cls._export_training_data(
+                    task_id, host_data_dir, dataset_id=dataset_id,
                     annotation_task_id=annotation_task_id,
-                    train_ratio=train_ratio,
-                    task_type=task_type,
-                    ocr_rec=ocr_rec,
-                    existing_job=existing_job,
-                )
-                await cls._pump(client, task_id, job_id)
+                    train_ratio=train_ratio, task_type=task_type, ocr_rec=ocr_rec)
+                spec = cls._attach_dataset_lists(spec, host_data_dir, _CONTAINER_DATA_DIR)
+
+            # 先导出再排队：反过来的话，等 GPU 的任务会一边排队一边白占一张卡
+            need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
+                                or settings.TORKILN_GPU_MIN_FREE_GB)
+            await broadcast_line(
+                task_id,
+                f"[torchkiln] 等待可用显存 ≥ {need_mem_gb:.1f}GB 的 GPU 与空闲端口…")
+            alloc = await gpu_pool.acquire(task_id, need_gpu=1, need_mem_gb=need_mem_gb)
+            if alloc is None:
+                await cls._mark_status(
+                    task_id, TrainStatus.FAILED,
+                    error_log="拿不到空闲 GPU 或可用端口（详见后端日志中 gpu_pool 的占用明细）",
+                    finished_at=datetime.now())
+                return
+
+            container = None
+            try:
+                gpu_desc = (f"GPU {','.join(str(i) for i in alloc.gpu_indices)}"
+                            if alloc.gpu_indices else "未指定 GPU")
+                await broadcast_line(
+                    task_id,
+                    f"[torchkiln] 分配到端口 {alloc.port} / {gpu_desc}，启动 job 容器…")
+                container = await cls._start_job_container(alloc, export_dir, task_id)
+                # 容器 running ≠ 服务可用：容器内冷启动要 import torch（本机实测
+                # 23.4 秒），这段时间端口还没监听，提交作业只会拿到连接拒绝。
+                await gpu_pool.wait_service_ready(alloc.port)
+                await broadcast_line(task_id, "[torchkiln] job 容器就绪")
+
+                async with TorchKilnClient(base_url=alloc.base_url) as client:
+                    job_id = await cls._ensure_job(
+                        client, task_id, spec, existing_job=existing_job)
+                    await cls._pump(client, task_id, job_id)
+
+            finally:
+                # 无论成败都要收摊：容器停掉、GPU 与端口归还，否则单卡机器会被
+                # 一次失败的任务永久占死。
+                if container is not None:
+                    with contextlib.suppress(Exception):
+                        await stop_container(container.id)
+                await gpu_pool.release(task_id)
 
         except TorchKilnUnavailable as e:
             # 服务不可达：保持 RUNNING 等 recover_orphans 重试，**不误判失败**
@@ -458,6 +600,42 @@ class TorchKilnExecutor(TaskExecutor):
                 task_id, TrainStatus.FAILED,
                 error_log=f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
                 finished_at=datetime.now())
+
+    @classmethod
+    async def _export_training_data(cls, task_id: int, host_data_dir: str, *,
+                                   dataset_id: int,
+                                   annotation_task_id: int | None,
+                                   train_ratio: float, task_type: str,
+                                   ocr_rec: bool) -> None:
+        """把标注数据导出到**宿主**目录（容器里挂成 /workspace/data）。"""
+        await broadcast_line(task_id, f"[torchkiln] 准备训练数据 -> {host_data_dir}")
+        from app.plugin.module_train.exporter import prepare_training_data_for_task
+
+        # 数据布局与 ultralytics（YOLO）一致：images/<split> + labels/<split>；
+        # torchkiln_index=True 额外生成 TorchKiln 需要的 train.txt / val.txt 索引。
+        # ⚠️ task_type 走 framework 前缀（``yolo-<type>``）——这是 _export_core 既有的
+        #    约定（``framework.startswith("yolo-")`` 时用它推导任务类型），
+        #    prepare_training_data_for_task 没有 task_type 形参。
+        export_framework = (f"yolo-{task_type}"
+                            if task_type not in ("detection", "detect") else "ultralytics")
+        await prepare_training_data_for_task(
+            dataset_id, task_id, export_framework, host_data_dir,
+            annotation_task_id=annotation_task_id,
+            train_ratio=train_ratio,
+            ocr_rec=ocr_rec,
+            torchkiln_index=True,
+        )
+
+    @classmethod
+    def _check_task_type(cls, task_type: str) -> None:
+        """白名单校验。**必须在导出之前**——不然会为一个注定被拒的任务
+        白导出一遍数据、还占着 IO。"""
+        if task_type in cls.SUPPORTED_TASK_TYPES:
+            return
+        raise ValueError(
+            f"标注任务类型 {task_type!r} 暂不支持 TorchKiln 训练"
+            f"（已支持：{', '.join(sorted(cls.SUPPORTED_TASK_TYPES))}）"
+        )
 
     #: 本平台**标注任务类型**（``AnnotationType`` 裸值）中，TorchKiln 已实现读取器、
     #: 且本项目导出格式能对齐的子集。**成员与前端 ``TK_SUPPORTED_TASK_TYPES`` 逐一对应**
@@ -484,16 +662,13 @@ class TorchKilnExecutor(TaskExecutor):
     })
 
     @classmethod
-    async def _ensure_job(cls, client, task_id: int, data_dir: str, spec: dict,
-                          dataset_id: int, annotation_task_id: int | None,
-                          train_ratio: float, task_type: str,
-                          ocr_rec: bool, existing_job: str | None) -> str:
-        """拿到一个作业 id：优先接管已有作业，否则导数据 + 提交。"""
-        if task_type not in cls.SUPPORTED_TASK_TYPES:
-            raise ValueError(
-                f"标注任务类型 {task_type!r} 暂不支持 TorchKiln 训练"
-                f"（已支持：{', '.join(sorted(cls.SUPPORTED_TASK_TYPES))}）"
-            )
+    async def _ensure_job(cls, client, task_id: int, spec: dict,
+                          existing_job: str | None) -> str:
+        """拿到一个作业 id：优先接管已有作业，否则提交新作业。
+
+        数据导出与白名单校验都不在这里——分别在 ``_execute`` 里更早做完，
+        免得为一个注定被拒、或注定要重跑的任务白导一遍数据。
+        """
         if existing_job:
             try:
                 info = await client.get_job(existing_job)
@@ -506,24 +681,6 @@ class TorchKilnExecutor(TaskExecutor):
                     f"[torchkiln] 接管已有作业 {existing_job}（状态 {info.get('status')}）")
                 return existing_job
 
-        await broadcast_line(task_id, f"[torchkiln] 准备训练数据 -> {data_dir}")
-        from app.plugin.module_train.exporter import prepare_training_data_for_task
-
-        # 数据布局与 ultralytics（YOLO）一致：images/<split> + labels/<split>；
-        # torchkiln_index=True 额外生成 TorchKiln 需要的 train.txt / val.txt 索引。
-        # ⚠️ task_type 走 framework 前缀（``yolo-<type>``）——这是 _export_core 既有的
-        #    约定（``framework.startswith("yolo-")`` 时用它推导任务类型），
-        #    prepare_training_data_for_task 没有 task_type 形参。
-        export_framework = f"yolo-{task_type}" if task_type not in ("detection", "detect") else "ultralytics"
-        await prepare_training_data_for_task(
-            dataset_id, task_id, export_framework, data_dir,
-            annotation_task_id=annotation_task_id,
-            train_ratio=train_ratio,
-            ocr_rec=ocr_rec,
-            torchkiln_index=True,
-        )
-        # 导出完成后再挂清单路径（导出前探测必然落空，见 _attach_dataset_lists 注释）
-        spec = cls._attach_dataset_lists(spec, data_dir)
         await broadcast_line(task_id, f"[torchkiln] 提交作业（模型 {spec['model_name']}）")
         created = await client.submit_job(
             spec, idempotency_key=f"aistation-train-{task_id}")
