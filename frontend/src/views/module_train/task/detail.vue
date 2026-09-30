@@ -175,56 +175,58 @@
       style="margin-bottom: 16px"
     />
 
-    <el-row :gutter="16">
-      <el-col :xs="24" :md="12">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">Loss 趋势</span></template>
-          <VChart
-            v-if="displayMetricsLog.length > 0"
-            :option="lossChartOption"
-            style="height: 280px"
-            autoresize
-          />
-          <div v-else class="chart-empty">等待训练数据...</div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :md="12">
-        <el-card shadow="never" class="chart-card">
-          <template #header><span class="card-title">验证指标趋势</span></template>
-          <VChart
-            v-if="displayMetricsLog.length > 0"
-            :option="valChartOption"
-            style="height: 280px"
-            autoresize
-          />
-          <div v-else class="chart-empty">等待训练数据...</div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!--
+      每指标一张小图（TensorBoard 式）：训练指标 / 评估指标各一组。
+      指标随模型而变、可能有十几个，塞进一张图会因为量纲不同（loss 3.0 vs mAP 0.5）
+      要开双 Y 轴、可读性很差；每指标独立小图各自 scale，最直观。
+    -->
+    <el-card
+      v-for="g in chartGroups"
+      :key="g.title"
+      shadow="never"
+      class="section-card"
+    >
+      <template #header><span class="card-title">{{ g.title }}</span></template>
+      <el-row :gutter="12">
+        <el-col v-for="s in g.items" :key="s.key" :xs="24" :sm="12" :md="8" :lg="6">
+          <el-card shadow="never" class="mini-chart-card">
+            <div class="mini-head">
+              <span class="mini-name" :style="{ color: s.color }">{{ s.label }}</span>
+              <span class="mini-val">{{ latestValues[s.key] ?? "—" }}</span>
+            </div>
+            <MetricMiniChart
+              :points="miniSeries[s.key] || []"
+              :color="s.color"
+              :height="132"
+            />
+          </el-card>
+        </el-col>
+      </el-row>
+    </el-card>
 
-    <el-card v-if="displayBestMetrics || displayLastMetrics" shadow="never" class="section-card">
+    <el-card v-if="compareTableData.length" shadow="never" class="section-card">
       <template #header><span class="card-title">指标对比</span></template>
       <el-table :data="compareTableData" border size="small" style="width: 100%">
         <el-table-column prop="label" label="指标" width="140" />
         <el-table-column label="最优值">
           <template #default="{ row }">
-            <span v-if="displayBestMetrics && row.getter(displayBestMetrics) != null" class="mono">
-              {{ row.fmt(row.getter(displayBestMetrics)) }}
+            <span v-if="row.bestRow && row.getter(row.bestRow) != null" class="mono">
+              {{ row.fmt(row.getter(row.bestRow)) }}
             </span>
             <span v-else class="text-muted">—</span>
-            <span v-if="displayBestMetrics?.epoch" class="text-muted sub-epoch">
-              epoch {{ displayBestMetrics.epoch }}
+            <span v-if="row.bestRow?.epoch" class="text-muted sub-epoch">
+              epoch {{ row.bestRow.epoch }}
             </span>
           </template>
         </el-table-column>
         <el-table-column label="最终值">
           <template #default="{ row }">
-            <span v-if="displayLastMetrics && row.getter(displayLastMetrics) != null" class="mono">
-              {{ row.fmt(row.getter(displayLastMetrics)) }}
+            <span v-if="row.lastRow && row.getter(row.lastRow) != null" class="mono">
+              {{ row.fmt(row.getter(row.lastRow)) }}
             </span>
             <span v-else class="text-muted">—</span>
-            <span v-if="displayLastMetrics?.epoch" class="text-muted sub-epoch">
-              epoch {{ displayLastMetrics.epoch }}
+            <span v-if="row.lastRow?.epoch" class="text-muted sub-epoch">
+              epoch {{ row.lastRow.epoch }}
             </span>
           </template>
         </el-table-column>
@@ -284,7 +286,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted, onBeforeUnmount, nextTick } from "vue";
+import {
+  ref,
+  shallowRef,
+  computed,
+  reactive,
+  toRaw,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -295,14 +306,18 @@ import {
   DataAnalysis,
 } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
-import { resolveMainMetricSpec, type MetricSpecItem } from "@/utils/trainMetrics";
-import VChart from "vue-echarts";
-import { use } from "echarts/core";
-import { CanvasRenderer } from "echarts/renderers";
-import { LineChart } from "echarts/charts";
-import { GridComponent, TooltipComponent, LegendComponent } from "echarts/components";
-
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, LegendComponent]);
+import {
+  resolveMainMetricSpec,
+  buildMetricSpecFromKeys,
+  enumerateMetricsFromLog,
+  fmtMetricValue,
+  metricScaleDiv,
+  metricLabel,
+  metricColor,
+  scalarMetricKeys,
+  type MetricSpecItem,
+} from "@/utils/trainMetrics";
+import MetricMiniChart from "../components/MetricMiniChart.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -537,7 +552,11 @@ function bestOf(log: any[], key: string): any | null {
   return null;
 }
 
-const liveBestMetrics = computed(() => bestOf(liveMetricsLog.value, livePrimaryKey.value));
+// ⚠️ 读的是 **400ms 快照 chartLog**，不是活数组 liveMetricsLog。
+//    读活数组会让 `liveMetricsLog.length`（每 append 必变）把这条链整条标脏 ——
+//    实测每来一条事件就白做一次 bestOf 全表扫 + 一轮渲染，单条 88ms。
+//    （chartLog 声明在下方 800 余行，但 computed 惰性求值，首次取值都在 setup 之后，无 TDZ。）
+const liveBestMetrics = computed(() => bestOf(chartLog.value, livePrimaryKey.value));
 /**
  * 「最终值」：优先取最后一条 **eval** 行（与 task.last_metrics 的语义一致——
  * eval 才是「某轮跑完的验证结果」），没有 eval 就退回最后一条指标行。
@@ -548,7 +567,8 @@ const liveBestMetrics = computed(() => bestOf(liveMetricsLog.value, livePrimaryK
  * （YOLO/PaddleX 的行没有 `_kind`，`isMetricRow` 视为指标行，行为与旧版一致。）
  */
 const liveLastMetrics = computed(() => {
-  const log = liveMetricsLog.value;
+  // 同 liveBestMetrics：走 400ms 快照，避免每条 append 都反向全扫一遍
+  const log = chartLog.value;
   let fallback: any = null;
   for (let i = log.length - 1; i >= 0; i--) {
     const row = log[i];
@@ -574,7 +594,8 @@ const isClassifyTask = computed(() => {
   if (/-cls(\.|$)/.test(model)) return true;
   const probes = [displayBestMetrics.value, displayLastMetrics.value];
   if (probes.some((m: any) => m && (m.top1 != null || m.top5 != null))) return true;
-  return displayMetricsLog.value.some((m: any) => m && (m.top1 != null || m.top5 != null));
+  // 走快照：这是一次**全量 .some()**，且分类与否在一个任务里根本不会变
+  return chartLog.value.some((m: any) => m && (m.top1 != null || m.top5 != null));
 });
 
 // TorchKiln（自研平台）：主指标**由训练侧声明**（mAP50-95 / acc / hmean / RMSE…），
@@ -593,28 +614,80 @@ const tkMainIndicator = computed(() => {
   if (b?.main_indicator) return String(b.main_indicator);
   const l = displayLastMetrics.value;
   if (l?.main_indicator) return String(l.main_indicator);
-  const log = displayMetricsLog.value;
+  // 兜底才是全量扫，走快照把它从「每条一次」降到「每 400ms 一次」
+  const log = chartLog.value;
   for (let i = 0; i < log.length; i++) {
     const mi = log[i]?.main_indicator;
     if (mi) return String(mi);
   }
   return "";
 });
-/** TorchKiln 主指标是 0~1 比例还是任意数值（loss/RMSE 之类要按小数展示） */
-const tkMainIsRatio = computed(() => {
-  const k = tkMainIndicator.value.toLowerCase();
-  if (!k) return true;
-  return /map|acc|precision|recall|hmean|iou|ap|f1|acc/.test(k) && !/rmse|mae|loss|error/.test(k);
+
+/* ==========================================================================
+ * 指标清单 —— 全量枚举，来自「任务数据 / 模型接口」，**不再按框架硬编码**
+ *
+ * 旧版是硬编码：`resolveMainMetricSpec` 返回固定的 map50/map5095/precision/recall，
+ * TorchKiln 分支更只返回 1 个主指标 —— 页面上永远只有那几个，模型实际算出来的
+ * 指标（mAP75、各类 loss 分量、fps、显存…）一律不显示。
+ *
+ * 指标**随模型而变**（YOLO → map50/recall/precision，TorchKiln → mAP50/mAP75/
+ * mAP50-95，回归 → RMSE），所以清单必须枚举产生：
+ *   - 训练指标 ← metrics_log 的 step 行
+ *   - 评估指标 ← 模型接口拉的键 ∪ metrics_log 的 eval 行
+ * ======================================================================== */
+
+/** 模型接口拉到的评估指标键（拉不到就留空，由任务数据兜底） */
+const remoteEvalKeys = ref<string[]>([]);
+
+/** 从 metrics_log 枚举：step 行 → 训练指标；eval 行 → 评估指标 */
+// ⚠️ 这个是**整条图表链的源头**（logMetricKeys → trainMetricSpec/evalMetricSpec →
+//    metricSpec/lossSpec → miniSeries → chartGroups → VChart option → setOption）。
+//    若读活数组，每条 append 都会让 10 张小图重建 option 并全量 setOption ——
+//    profiler 实测 ECharts 相关开销占到渲染的 30%+（clone 12.6% + traverse 7.2% + …）。
+//    读快照后，append 只更新数据，整条图表链在 syncChartLog() 时才统一失效一次。
+const logMetricKeys = computed(() => enumerateMetricsFromLog(chartLog.value));
+
+/** 训练指标（loss / box_loss / lr / ips / 显存…），从 step 行枚举 */
+const trainMetricSpec = computed<MetricSpecItem[]>(() =>
+  buildMetricSpecFromKeys(logMetricKeys.value.train)
+);
+
+/**
+ * 评估指标：**模型接口的键在前**（权威，代表该模型会算什么），
+ * 任务数据里有而接口没给的跟在后 —— 取并集，保证每张小图都有数据。
+ */
+const evalMetricSpec = computed<MetricSpecItem[]>(() => {
+  const merged = [...remoteEvalKeys.value];
+  const seen = new Set(merged);
+  for (const k of logMetricKeys.value.eval) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      merged.push(k);
+    }
+  }
+  return buildMetricSpecFromKeys(merged);
 });
 
-// 主指标定义：PaddleX det→HMean/Precision/Recall；PaddleX rec→Acc；
-// YOLO 分类→Top1/Top5；其余（det/seg/obb/pose）→mAP@50/mAP@50:95/Precision/Recall
-// 复用 @/utils/trainMetrics，与评估详情保持一致
+/**
+ * 指标卡 / 指标对比表用的清单 = 训练指标 + 评估指标（**全量**）。
+ *
+ * ⚠️ 要排除 loss 分量：loss 卡由 `lossSpec` 单独渲染（它带 `src` 供对比表取值），
+ *    不排除就会出现 Loss 卡片重复两张。
+ * 都为空时（如 YOLO 任务 metrics_log 为空）退回按框架的硬编码清单做兜底。
+ */
 const metricSpec = computed<MetricSpecItem[]>(() => {
-  if (isTorchkiln.value) {
-    const k = tkMainIndicator.value;
-    if (!k) return [];
-    return [{ key: k, label: k, color: "#67c23a" } as MetricSpecItem];
+  const all = [...trainMetricSpec.value, ...evalMetricSpec.value];
+  if (all.length) {
+    // key 和 src 都要进集合：非 TorchKiln 的 lossSpec 用驼峰 `key`（clsLoss）+
+    // 原始 `src`（cls_loss），只按 key 排除会让 `cls_loss` 从数据枚举里漏进来重复出卡
+    const lossKeys = new Set<string>();
+    for (const s of lossSpec.value) {
+      lossKeys.add(s.key);
+      if (s.src) lossKeys.add(s.src);
+    }
+    const rest = all.filter((s) => !lossKeys.has(s.key));
+    // 全是 loss 时也要显示，别退回硬编码把真数据丢了
+    return rest.length ? rest : all;
   }
   return resolveMainMetricSpec({
     framework: task.value?.framework,
@@ -627,35 +700,29 @@ const metricSpec = computed<MetricSpecItem[]>(() => {
 const lossSpec = computed<{ key: string; src: string; label: string; color: string; icon: any }[]>(
   () => {
     if (isTorchkiln.value) {
-      // TorchKiln 的 step 事件把各 loss 分量摊平在行顶层（loss_cls/loss_box/…），
+      // TorchKiln 的 step 事件把各 loss 分量摊平在行顶层（box_loss/cls_loss/loss_box…），
       // 名称随模型而变，故从数据里反查有哪些分量，而不是硬编码。
       //
-      // ⚠️ 性能：`for (const m of log)` 会对 Vue 的 reactive proxy 做**迭代器**枚举，
-      //    再 `Object.keys(m)` 又是一遍属性枚举 —— 5000 行 × ~12 键 ≈ 6 万次字符串
-      //    比较，且每次都发生在 proxy 上（比普通对象慢一个量级）。
-      //    实测过的写法：把已知的 loss_* 键**缓存**下来，只在前若干行里扫，
-      //    因为分量名集合在一个训练任务内是**稳定的**（同一模型结构不变）。
-      const seen = new Set<string>();
-      const log = displayMetricsLog.value;
-      // 扫前 200 行足够覆盖分量名：若还没找齐，再退回全量扫（兜底）
-      const scan = (from: number, to: number) => {
-        for (let i = from; i < to; i++) {
-          const m = log[i];
-          if (m == null || m._kind !== "step") continue;
-          for (const key in m) {
-            if (key === "loss" || key.indexOf("loss_") !== 0) continue;
-            if (typeof m[key] === "number") seen.add(key);
-          }
-        }
-      };
-      scan(0, Math.min(log.length, 200));
-      if (seen.size === 0 && log.length > 200) scan(200, log.length);
-      const colors = ["#f56c6c", "#e6a23c", "#409eff", "#909399"];
-      const items = [...seen].map((k, i) => ({
+      // ⚠️⚠️ 性能：这里**绝不能自己再扫一遍日志**。
+      //   旧实现先扫前 200 行找 `loss_*` 前缀的键，找不到就兜底 `scan(200, log.length)`
+      //   全量扫 —— 5000 行 × 14 键全部在 **reactive proxy** 上做 ownKeys/get 枚举，
+      //   实测单次 **30.8ms**；而 `displayMetricsLog` 每来一条 append 就失效，
+      //   于是每次渲染都要重付这 30ms（metricSpec/lastRowWithAny/displayMetrics 的
+      //   30+ms 全是被它连带的）。而且 `box_loss` 这种命名根本匹配不上 `loss_` 前缀，
+      //   等于**必然**走到全量扫那条路。
+      //
+      //   改为复用 `trainMetricSpec` —— 它已经用「头部 200 + 尾部 60」的**有界窗口**
+      //   枚举过全部训练指标（`enumerateMetricsFromLog`），这里只做一次内存过滤。
+      const lossKeys = trainMetricSpec.value
+        .map((s) => s.key)
+        .filter((k) => k === "loss" || k.includes("loss"));
+      const items = lossKeys.map((k) => ({
         key: k,
         src: k,
-        label: k.replace(/^loss_/, "").toUpperCase(),
-        color: colors[i % colors.length],
+        // 走共享的 label/color：保证 Loss 卡片与它的小图**同名同色**
+        // （metricColor('loss') 恰好也是 #f56c6c，与原有红配色一致）
+        label: metricLabel(k),
+        color: metricColor(k),
         icon: TrendCharts,
       }));
       return items.length
@@ -677,10 +744,6 @@ const lossSpec = computed<{ key: string; src: string; label: string; color: stri
   }
 );
 
-// 0-1 比例指标 → 百分比；loss → 保留 4 位小数
-function fmtRatio(v: any): string {
-  return v != null && !isNaN(Number(v)) ? (Number(v) * 100).toFixed(1) + "%" : "—";
-}
 function fmtDecimal(v: any): string {
   return v != null && !isNaN(Number(v)) ? Number(v).toFixed(4) : "—";
 }
@@ -704,20 +767,27 @@ function liveLossValue(src: string): any {
 }
 
 /**
- * 各 loss 分量「最后一条含该键的行」。
+ * 每个指标「最后一条含该键的行」。
  *
  * 单趟**从后往前**扫描：第一个命中的就是最后一条，全部命中即提前结束。
- * 不用 `filter().at(-1)`（每个分量各扫一遍）也不用 `findLast`（部分环境不支持）。
+ * 不用 `filter().at(-1)`（每个键各扫一遍）也不用 `findLast`（部分环境不支持）。
+ *
+ * ⚠️ 必须覆盖**全部指标**而不只是 loss 分量：`last`（最后一条 eval 行）按设计
+ *    只有评估指标，`lr` / `ips` / 显存 这些 step 行才有的指标读 `last` 会是
+ *    undefined，卡片就恒为「—」。扩到全量后这些键会回落到最近的 step 行。
  */
-const lastRowWithLoss = computed<Map<string, any>>(() => {
-  const want = lossSpec.value.map((s) => s.src);
+const lastRowWithAny = computed<Map<string, any>>(() => {
+  const keys = new Set<string>();
+  for (const s of lossSpec.value) keys.add(s.src);
+  for (const s of metricSpec.value) keys.add(s.key);
   const hit = new Map<string, any>();
-  if (!want.length) return hit;
-  const log = displayMetricsLog.value;
-  for (let i = log.length - 1; i >= 0 && hit.size < want.length; i--) {
-    const row = log[i];
+  if (!keys.size) return hit;
+  // 走 400ms 快照：卡片值每 400ms 更新一次足够，换来 append 时零渲染
+  const log = chartLog.value;
+  for (let i = log.length - 1; i >= 0 && hit.size < keys.size; i--) {
+    const row = toRaw(log[i]);
     if (!row) continue;
-    for (const k of want) {
+    for (const k of keys) {
       if (!hit.has(k) && row[k] != null) hit.set(k, row);
     }
   }
@@ -725,7 +795,7 @@ const lastRowWithLoss = computed<Map<string, any>>(() => {
 });
 
 function lastRowWithKey(key: string): any {
-  return lastRowWithLoss.value.get(key);
+  return lastRowWithAny.value.get(key);
 }
 
 const displayMetrics = computed<Record<string, string>>(() => {
@@ -733,13 +803,22 @@ const displayMetrics = computed<Record<string, string>>(() => {
   const last = displayLastMetrics.value;
   if (liveMetricsActive.value) {
     out.epoch = `${yoloMetrics.epoch}/${yoloMetrics.totalEpochs}`;
-    for (const s of metricSpec.value) out[s.key] = fmtRatio(liveMetricValue(s.key));
+    for (const s of metricSpec.value) {
+      // 指标名随模型而变，格式化必须按 key 判（fmtRatio 会把 fps=85 显示成 8500%）
+      const v = liveMetricValue(s.key);
+      out[s.key] = fmtMetricValue(s.key, v ?? lastRowWithKey(s.key)?.[s.key]);
+    }
     for (const s of lossSpec.value) out[s.key] = fmtDecimal(liveLossValue(s.src));
     return out;
   }
   // PaddleX 指标行用 total，其余框架用 total_epochs
   out.epoch = last?.epoch != null ? `${last.epoch}/${last.total_epochs ?? last.total ?? "?"}` : "—";
-  for (const s of metricSpec.value) out[s.key] = fmtRatio(last?.[s.key]);
+  for (const s of metricSpec.value) {
+    // ⚠️ 不能只读 last：`last` 是最后一条 **eval** 行，step 行才有的指标（lr/ips/显存）
+    //    读它会是 undefined，卡片恒为「—」→ 回落到「最后一条含该键的行」。
+    const v = last?.[s.key] ?? lastRowWithKey(s.key)?.[s.key];
+    out[s.key] = fmtMetricValue(s.key, v);
+  }
   // ⚠️ loss 必须去**最后一条含该键的行**取，不能只看 last（eval 行）：
   //    eval 行按设计只有指标、没有 loss 分量，直接读 last 会让「Loss」卡片
   //    在训练完成后恒为「—」，哪怕日志里有 5000 条 step loss。
@@ -770,16 +849,6 @@ function xOf(m: any, stepAxis: boolean): number | null {
 }
 
 /**
- * 统一的折线图 option。
- *
- * - `xAxis.type = "value"`：绕开 category 轴对 N 个刻度做布局与间隔裁剪的开销。
- *   上万 step 时 category 轴本身就是主要瓶颈（`sampling` 只优化 series 绘制，
- *   **不减少轴项数**），换 value 轴才真正省掉这部分。
- * - `sampling: "lttb"`：按视觉保真抽稀，保留尖峰与趋势，替代「等间隔丢点」
- *   （后者会把 loss 突刺抹平，看图等于骗人）。
- * - `large / largeThreshold`：交给 ECharts 的大数据量折线快路径。
- */
-/**
  * 图表渲染节流。
  *
  * 指标**每个都收**（存进 `liveMetricsLog`，数据一条不丢），但图表**不必每个都重画**：
@@ -793,15 +862,30 @@ function xOf(m: any, stepAxis: boolean): number | null {
  * 复制 5000 元素的代价是微秒级，远小于省掉的重绘。
  */
 const CHART_THROTTLE_MS = 400;
-/** 图表专用的指标快照（只每 CHART_THROTTLE_MS 更新一次） */
-const chartLog = ref<any[]>([]);
+/**
+ * 图表/卡片专用的指标快照（只每 CHART_THROTTLE_MS 更新一次）。
+ *
+ * ⚠️ 必须是 **`shallowRef` + 纯数组 + 原始行**，三者缺一不可：
+ *  1. `ref` 会让 `.value` 走 `toReactive`，返回**数组代理**；下游 5 个 computed
+ *     各自逐下标读一遍，每次都要过 `get` 陷阱 + `track` 登记依赖 —— CPU profiler
+ *     实测光 reactive 自身开销（get/track/createReactiveObject/prepareDeps/cleanupDeps…）
+ *     就占掉整条链的 **48%**，5826 行 × 5 个 computed 要 95ms/轮。
+ *  2. 存原始行（`toRaw(...)`）才能让 `log[i]` / `row[k]` 全程是普通属性读。
+ *  3. 依赖**只登记 ref 这一个**：`syncChartLog()` 每次都赋一个全新数组，
+ *     整体替换足以让所有下游 computed 失效 —— 下标级细粒度依赖在这里毫无意义
+ *     （活数组 `liveMetricsLog` 才需要它，因为有同 seq 行原地 splice 替换）。
+ */
+const chartLog = shallowRef<any[]>([]);
 let chartTickTimer: ReturnType<typeof setTimeout> | null = null;
 
 function syncChartLog() {
   // ⚠️ 必须用 displayMetricsLog 而不是 liveMetricsLog：后者在 SSE 事件到达前是空的，
   //    displayMetricsLog 会回退到 task.value.metrics_log。直接取 liveMetricsLog
   //    会导致「刷新页面后图表空白，直到第一条 SSE 事件到来」。
-  chartLog.value = displayMetricsLog.value.slice();
+  // ⚠️ 先 `toRaw` 再 slice：`displayMetricsLog.value` 是代理，直接 `.slice()` 会
+  //    逐下标走 5000+ 次 get 陷阱（约 1~2ms），且切出来的元素还是代理。
+  //    toRaw 拿到底层数组（存的就是原始行）后 slice，零陷阱 + 全程原始行。
+  chartLog.value = toRaw(displayMetricsLog.value).slice();
 }
 
 /** 有新数据时调用：保证 CHART_THROTTLE_MS 内至少重绘一次（尾沿不丢） */
@@ -815,121 +899,240 @@ function scheduleChartRender() {
   }, CHART_THROTTLE_MS);
 }
 
-function lineChartOption(
-  log: any[],
-  spec: { key: string; label: string; src?: string }[],
-  yName: string,
-  valueOf: (m: any, s: any) => any
-): any {
+/**
+ * 图表分组：训练指标 / 评估指标各一组（每组内每指标一张小图）。
+ * 空组不渲染，避免没有训练数据时留两个空卡片。
+ */
+const chartGroups = computed(() =>
+  [
+    { title: "训练指标趋势", items: trainMetricSpec.value },
+    { title: "评估指标趋势", items: evalMetricSpec.value },
+  ].filter((g) => g.items.length > 0)
+);
+
+/* ==========================================================================
+ * 每指标一张小图（TensorBoard 式）—— 训练指标 / 评估指标各一个网格
+ * ======================================================================== */
+
+/** 单张小图最多保留的点数（图宽约 256px，600 点仍远超像素列数，ECharts 的 LTTB 还会再压一次） */
+const MINI_MAX_POINTS = 600;
+
+/**
+ * 就地把点序列压到 `target` 条以内 —— **窗口内保留 min/max**，不是等间隔抽稀。
+ *
+ * 为什么必须压点（CPU profiler 实测：40 次 append 的渲染采样里）
+ *   - ECharts `setOption` 会把 option **深克隆**一遍        → clone 12.6%
+ *   - vue-echarts 对 option 有 **deep watch**，渲染前遍历   → traverse 7.2%
+ *   - 兼容处理 / series 解析 / tooltip 等                    → 另约 5%
+ * 这些**全部随点数线性增长**，而小图只有 256px 宽 —— 5000 点是 20 倍过采样。
+ *
+ * 为什么是 min/max 而不是等间隔抽稀：
+ *   等间隔抽稀会把两个采样点之间的**尖刺整根丢掉**（与之前「曲线断掉」是同一类事故）。
+ *   而局部极值**必然**落在它所属的那个窗口里、必然被选出来 —— 尖刺一根都不丢。
+ *   输出按下标升序（日志本身有序 ⇒ 下标序就是 x 序），避免线来回折。
+ *
+ * ⚠️ 必须**就地**改写：`stride >= 2` 时写指针 w 恒 ≤ 读指针 b（w ≤ 2k，b = k*stride），
+ *    且每个窗口是先把 min/max **读完**再覆写，因此不可能读到被自己写坏的数据；
+ *    末尾 `arr.length = w` 截断不触发重新分配。若另开一个数组，反而多一份 GC 压力。
+ */
+function downsampleMinMax(arr: [number | null, number][], target: number): void {
+  const n = arr.length;
+  if (n <= target || n < 4) return;
+  const windows = Math.max(1, Math.floor(target / 2));
+  const stride = Math.ceil(n / windows);
+  if (stride < 2) return;
+  let w = 0;
+  for (let b = 0; b < n; b += stride) {
+    const end = Math.min(n, b + stride);
+    let mi = b;
+    let ma = b;
+    for (let i = b + 1; i < end; i++) {
+      const y = arr[i][1];
+      if (y < arr[mi][1]) mi = i;
+      if (y > arr[ma][1]) ma = i;
+    }
+    if (mi === ma) {
+      arr[w++] = arr[mi];
+    } else if (mi < ma) {
+      arr[w++] = arr[mi];
+      arr[w++] = arr[ma];
+    } else {
+      arr[w++] = arr[ma];
+      arr[w++] = arr[mi];
+    }
+  }
+  arr.length = w;
+}
+
+/**
+ * 一趟把**所有**指标的点分桶，供各小图分别取用。
+ *
+ * ⚠️ 不能让每个小图各自 `log.filter(...)`：N 个小图 × 5000 行 = N 倍全表扫描。
+ * ⚠️ 读行要用 `toRaw(row)`：`chartLog` 里的行是 reactive 代理，直接 `row[k]`
+ *    每次都要走 `get` 陷阱并**登记依赖**（5000 行 × 10 键 = 5 万个依赖）。
+ *    这里整份快照每 400ms 全量重建，行级细粒度依赖没有意义，取 raw 更快。
+ * ⚠️ 除数必须在**循环外**预取：5000 行 × 10 指标 = 5 万格，若每格都调
+ *    `metricDisplayValue` 就是 5 万次函数调用 + 5 万次 `METRIC_SCALE` 查表，
+ *    实测那样要 26.6ms；内联 `typeof` 判断 + 复用除数后降到个位数 ms。
+ */
+const miniSeries = computed<Record<string, [number | null, number][]>>(() => {
+  const log = chartLog.value;
+  const specs = trainMetricSpec.value.concat(evalMetricSpec.value);
+  const n = specs.length;
+  const out: Record<string, [number | null, number][]> = {};
+  if (!n) return out;
+  const keys: string[] = new Array(n);
+  const divs: number[] = new Array(n);
+  const buckets: [number | null, number][][] = new Array(n);
+  for (let j = 0; j < n; j++) {
+    const k = specs[j].key;
+    keys[j] = k;
+    divs[j] = metricScaleDiv(k);
+    buckets[j] = [];
+    out[k] = buckets[j];
+  }
+  // 全图统一量纲：有任一行带 global_step 就用 step 轴
   const stepAxis = useStepAxis(log);
-  // step → epoch 的查表，供 tooltip 显示「step N（epoch M）」
-  const epochOf = new Map<number, number>();
-  if (stepAxis) {
-    for (const m of log) {
-      const x = xOf(m, true);
-      if (x != null && typeof m?.epoch === "number" && !epochOf.has(x)) {
-        epochOf.set(x, m.epoch);
+  for (let i = 0; i < log.length; i++) {
+    const row = toRaw(log[i]);
+    if (row == null) continue;
+    const x = xOf(row, stepAxis);
+    for (let j = 0; j < n; j++) {
+      const v = row[keys[j]];
+      // typeof + 自比较（v === v 排除 NaN），等价于 metricDisplayValue 的数值判定，
+      // 但少掉一层函数调用与对象查表
+      if (typeof v === "number" && v === v) {
+        const d = divs[j];
+        buckets[j].push([x, d === 1 ? v : v / d]);
       }
     }
   }
-  const xs = log.map((m) => xOf(m, stepAxis));
-  const series = spec.map((s) => ({
-    name: s.label,
-    type: "line",
-    showSymbol: false,
-    sampling: "lttb",
-    large: true,
-    largeThreshold: 2000,
-    data: log.map((m, i) => {
-      const y = valueOf(m, s);
-      return [xs[i], y == null || Number.isNaN(y) ? null : y];
-    }),
-  }));
-  return {
-    tooltip: {
-      trigger: "axis",
-      axisPointer: { type: "line" },
-      formatter: (params: any[]) => {
-        const arr = Array.isArray(params) ? params : [params];
-        if (!arr.length) return "";
-        const x = arr[0]?.axisValue;
-        const ep = stepAxis ? epochOf.get(Number(x)) : undefined;
-        const head = stepAxis
-          ? `step ${x}${ep != null ? `（epoch ${ep}）` : ""}`
-          : `epoch ${x}`;
-        const body = arr
-          .filter((p: any) => p.value?.[1] != null)
-          .map((p: any) => {
-            const y = p.value[1];
-            return `${p.marker}${p.seriesName}: ${Number(y).toFixed(5)}`;
-          })
-          .join("<br/>");
-        return body ? `${head}<br/>${body}` : head;
+  // 压点：每个窗口只留极值。读是免不了的（要找出极值），省掉的是
+  // 「把 5000 点原样交给 10 张图去 clone/深观察/解析」这 30% 的渲染开销。
+  for (let j = 0; j < n; j++) downsampleMinMax(buckets[j], MINI_MAX_POINTS);
+  return out;
+});
+
+/**
+ * 每个指标的「当前值」——**一趟从后往前**扫，全部命中即停。
+ * （模板里直接写 `last?.[key]` 会让每张小图各自找，N 个指标 N 次反向扫描。）
+ */
+const latestValues = computed<Record<string, string>>(() => {
+  // 走 400ms 快照：小图卡片头上的「当前值」与小图本身必须同一份数据、同一拍更新
+  const log = chartLog.value;
+  const keys = [...trainMetricSpec.value, ...evalMetricSpec.value].map((s) => s.key);
+  const out: Record<string, string> = {};
+  const pending = new Set(keys);
+  for (let i = log.length - 1; i >= 0 && pending.size > 0; i--) {
+    const row = toRaw(log[i]);
+    if (row == null) continue;
+    for (const k of [...pending]) {
+      const v = row[k];
+      if (typeof v === "number" && !Number.isNaN(v)) {
+        out[k] = fmtMetricValue(k, v);
+        pending.delete(k);
+      }
+    }
+  }
+  for (const k of pending) out[k] = "—";
+  return out;
+});
+
+/**
+ * 「指标对比」表 —— 每个指标**各自**的最优行 / 最终行。
+ *
+ * ⚠️ 此前所有行共用同一个 `displayBestMetrics` / `displayLastMetrics`，而它们是
+ *    **按主指标（mAP50-95 之类）选出的那一条 eval 行** —— eval 行里根本没有
+ *    box_loss / ips / lr 这些只出现在 step 行里的键，于是表里 10 行有 7 行的
+ *    「最优值/最终值」一律显示「—」，可数据明明就在日志里（卡片和小图都取得到）。
+ *    改成一趟扫下来为**每个键**各自记账。
+ *
+ * 方向：loss / rmse / mae / mse / error 越小越好；TorchKiln 主指标若带
+ *       `main_indicator_mode` 就以它为准（RMSE/loss 要取最小），其余越大越好
+ *       —— 与旧版对非主指标的行为一致，不引入新的方向假设。
+ *
+ * 读 `chartLog`（400ms 快照）而非活数组，保证 append 时零渲染。
+ */
+const compareTableData = computed(() => {
+  const defs = [
+    ...lossSpec.value.map((s) => ({
+      key: s.src,
+      label: s.label,
+      getter: (m: any) => m?.[s.src],
+      fmt: (v: number) => Number(v).toFixed(4),
+    })),
+    ...metricSpec.value.map((s) => ({
+      key: s.key,
+      label: s.label,
+      // ⚠️ TorchKiln 的 best 事件**不一定**带 metrics 子对象，只有 main_value。
+      //    只按指标名取摊平键会在这种情况下取到 null，表格显示「—」，
+      //    而值明明就在 main_value 里。找不到摊平键时回退 main_value。
+      getter: (m: any) => {
+        const v = m?.[s.key];
+        if (v != null) return v;
+        const isMain = isTorchkiln.value && s.key === tkMainIndicator.value;
+        return isMain ? (m?.main_value ?? null) : null;
       },
-    },
-    legend: { data: spec.map((s) => s.label), top: 0 },
-    grid: { left: 50, right: 20, top: 40, bottom: 30 },
-    xAxis: {
-      type: "value",
-      name: stepAxis ? "Step" : "Epoch",
-      minInterval: stepAxis ? 1 : undefined,
-    },
-    yAxis: { type: "value", name: yName, scale: true },
-    series,
-  };
-}
-
-const lossChartOption = computed(() => {
-  // 读 chartLog（节流快照）而不是 displayMetricsLog：否则每来一个 step 事件
-  // 就会全量重算 + 重绘，实测 5000 点时一次要 ~30ms
+      // ⚠️ 不能一律 `(v*100)+"%"`：指标随模型而变，fps=85 / lr=0.01 / RMSE=2.3
+      //    全都会被格式化成百分比。fmtMetricValue 按 **key + 数值区间** 双条件判定
+      //    （也覆盖了原来 tkMainIsRatio 那个「主指标可能不是比例」的特判）。
+      fmt: (v: number) => fmtMetricValue(s.key, v),
+    })),
+  ];
+  const n = defs.length;
+  if (!n) return [];
+  const bestRow: any[] = new Array(n).fill(null);
+  const bestV: (number | null)[] = new Array(n).fill(null);
+  const lastRow: any[] = new Array(n).fill(null);
+  // 越小越好：loss 分量，以及回归常用的 rmse/mae/mse/error
+  const minKey = defs.map((d) => /loss|rmse|mae|mse|error/i.test(d.key));
+  const mainKey = tkMainIndicator.value;
+  // 兜底：主指标在日志里只有 main_value、没摊平键时，按 main_value 挑一条
+  let bestMainRow: any = null;
+  let bestMainV: number | null = null;
   const log = chartLog.value;
-  if (!log.length) return {};
-  return lineChartOption(
-    log,
-    lossSpec.value,
-    "Loss",
-    (m, s) => m?.[s.src as string]
-  );
+  for (let i = 0; i < log.length; i++) {
+    const row = toRaw(log[i]);
+    if (!row || !isMetricRow(row)) continue;
+    const rowMode = row.main_indicator_mode ? String(row.main_indicator_mode).toLowerCase() : null;
+    for (let j = 0; j < n; j++) {
+      const raw = row[defs[j].key];
+      if (typeof raw !== "number" || isNaN(raw)) continue;
+      lastRow[j] = row;
+      const isMin = rowMode && defs[j].key === mainKey ? rowMode === "min" : minKey[j];
+      if (bestV[j] === null) {
+        bestV[j] = raw;
+        bestRow[j] = row;
+      } else if (isMin ? raw < (bestV[j] as number) : raw > (bestV[j] as number)) {
+        bestV[j] = raw;
+        bestRow[j] = row;
+      }
+    }
+    const mv = row.main_value;
+    if (typeof mv === "number" && !isNaN(mv)) {
+      const isMin = rowMode ? rowMode === "min" : false;
+      if (bestMainV === null || (isMin ? mv < bestMainV : mv > bestMainV)) {
+        bestMainV = mv;
+        bestMainRow = row;
+      }
+    }
+  }
+  if (bestMainRow) {
+    const j = defs.findIndex((d) => d.key === mainKey);
+    if (j >= 0 && !bestRow[j]) {
+      bestRow[j] = bestMainRow;
+      bestV[j] = bestMainV;
+      if (!lastRow[j]) lastRow[j] = bestMainRow;
+    }
+  }
+  return defs.map((d, j) => ({
+    label: d.label,
+    getter: d.getter,
+    fmt: d.fmt,
+    bestRow: bestRow[j],
+    lastRow: lastRow[j],
+  }));
 });
-
-const valChartOption = computed(() => {
-  const spec = metricSpec.value;
-  const log = chartLog.value;
-  if (!log.length) return {};
-  const usable = log.filter((m: any) => spec.some((s) => m[s.key] != null));
-  if (!usable.length) return {};
-  return lineChartOption(
-    usable,
-    spec,
-    "Metric",
-    (m, s) => m?.[s.key]
-  );
-});
-
-const compareTableData = computed(() => [
-  ...lossSpec.value.map((s) => ({
-    label: s.label,
-    getter: (m: any) => m?.[s.src],
-    fmt: (v: number) => Number(v).toFixed(4),
-  })),
-  ...metricSpec.value.map((s) => ({
-    label: s.label,
-    // ⚠️ TorchKiln 的 best 事件**不一定**带 metrics 子对象，只有 main_value。
-    //    只按指标名取摊平键会在这种情况下取到 null，表格显示「—」，
-    //    而值明明就在 main_value 里。找不到摊平键时回退 main_value。
-    getter: (m: any) => {
-      const v = m?.[s.key];
-      if (v != null) return v;
-      const isMain = isTorchkiln.value && s.key === tkMainIndicator.value;
-      return isMain ? (m?.main_value ?? null) : null;
-    },
-    // TorchKiln 的主指标可能是 0~1 比例（mAP/acc），也可能是 RMSE/loss 这类任意值
-    fmt: (v: number) =>
-      isTorchkiln.value && !tkMainIsRatio.value
-        ? Number(v).toFixed(4)
-        : (Number(v) * 100).toFixed(1) + "%",
-  })),
-]);
 
 function pushLiveMetrics() {
   if (yoloMetrics.epoch > 0) {
@@ -949,6 +1152,10 @@ function pushLiveMetrics() {
       top1: yoloMetrics.top1,
       top5: yoloMetrics.top5,
     });
+    // ⚠️ 卡片与曲线现在都只读 400ms 快照 chartLog（见 liveBestMetrics 处注释）。
+    //    这条 YOLO/PaddleX 日志解析通路原来**从不**安排图表同步 ——
+    //    以前卡片读活数组所以还能动，改成读快照后若不调度就会一直卡在旧值。
+    scheduleChartRender();
   }
 }
 function parseYoloMetrics(line: string) {
@@ -1050,6 +1257,8 @@ function parseLogForMetrics(text: string) {
     liveMetricsLog.value = metrics;
     // 整体替换后去重索引全部失效，必须重建（否则新事件会因旧下标误替换）
     rebuildMetricRowIndex();
+    // 整批替换同样要走一次快照同步（见 pushLiveMetrics 处注释）
+    scheduleChartRender();
   }
 }
 
@@ -1108,6 +1317,47 @@ async function loadTask() {
   // 整体替换后去重索引全部失效，必须重建（否则新事件会因旧下标误替换）
   rebuildMetricRowIndex();
   syncChartLog();
+  // 拉该模型的评估指标键，决定「评估指标」区展示哪些指标
+  loadModelMetricKeys();
+}
+
+/**
+ * 拉「该模型的评估指标键」。
+ *
+ * 指标随模型而变，不能按框架硬编码。优先级：
+ *   1. `GET /model/detail/{repo}` 的 metrics 键 —— 模型版本自己的评估结果
+ *   2. `GET /eval/list?model_repo_id=X` 的 metrics 键 —— 该仓库的评估记录
+ *      （⚠️ 实测 `train_models.metrics` 常为空，真正有值的是 `train_evals.metrics`）
+ *   3. 都拿不到就留空 → evalMetricSpec 回落任务 metrics_log 的 eval 行
+ *
+ * 静默失败：这只决定「显示哪些指标」，失败不该影响页面主流程。
+ */
+async function loadModelMetricKeys() {
+  const repoId = task.value?.model_repo_id;
+  if (!repoId) return;
+  try {
+    const r = await TrainAPI.getModelDetail(repoId);
+    const keys = scalarMetricKeys(r.data?.data?.metrics);
+    if (keys.length) {
+      remoteEvalKeys.value = keys;
+      return;
+    }
+  } catch {
+    /* 换下一种来源 */
+  }
+  try {
+    const r = await TrainAPI.getEvalList({ model_repo_id: repoId, page_no: 1, page_size: 1 });
+    const items = r.data?.data?.items || [];
+    for (const it of items) {
+      const keys = scalarMetricKeys(it?.metrics);
+      if (keys.length) {
+        remoteEvalKeys.value = keys;
+        return;
+      }
+    }
+  } catch {
+    /* 保持空 → 回落任务数据 */
+  }
 }
 
 /**

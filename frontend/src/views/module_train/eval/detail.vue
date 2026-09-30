@@ -93,20 +93,55 @@
 
     <el-card shadow="never" class="section-card">
       <template #header><span class="card-title">评估指标</span></template>
-      <el-row v-if="evalData?.metrics" :gutter="12">
+      <!--
+        指标清单来自 metrics **本身**（scalarMetricKeys），不按框架硬编码 ——
+        模型算出什么就显示什么。格式化走 fmtMetricValue（按 key + 数值区间双判定），
+        不能再用 fmtRatio：fps=85 会被显示成 "8500.0%"。
+      -->
+      <el-row v-if="metricSpec.length" :gutter="12">
         <el-col v-for="s in metricSpec" :key="s.key" :xs="24" :sm="12" :md="6">
           <div class="metric-item">
             <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
               <component :is="s.icon" />
             </el-icon>
             <span class="metric-val" :style="{ color: s.color }">
-              {{ fmtRatio(evalData.metrics[s.key]) }}
+              {{ fmtMetricValue(s.key, evalData?.metrics?.[s.key]) }}
             </span>
             <span class="metric-lbl">{{ s.label }}</span>
           </div>
         </el-col>
       </el-row>
       <el-empty v-else :image-size="40" description="暂无评估指标" />
+    </el-card>
+
+    <!--
+      该模型的历史评估趋势：单条评估只有一组结果、没有时间序列，
+      趋势必须跨「同一模型的历次评估」取（GET /eval/list?model_repo_id=X）。
+      与训练详情页同一套 MetricMiniChart —— 每指标一张小图，各自 scale。
+      不足 2 个点画不出趋势，histSpec 为空时整卡隐藏。
+    -->
+    <el-card v-if="histSpec.length" shadow="never" class="section-card">
+      <template #header>
+        <span class="card-title">历史评估趋势（{{ histEvals.length }} 次）</span>
+      </template>
+      <el-row :gutter="12">
+        <el-col v-for="s in histSpec" :key="s.key" :xs="24" :sm="12" :md="8" :lg="6">
+          <el-card shadow="never" class="mini-chart-card">
+            <div class="mini-head">
+              <span class="mini-name" :style="{ color: s.color }">{{ s.label }}</span>
+              <span class="mini-val">
+                {{ fmtMetricValue(s.key, evalData?.metrics?.[s.key]) }}
+              </span>
+            </div>
+            <MetricMiniChart
+              :points="histSeries[s.key] || []"
+              :color="s.color"
+              :height="132"
+              x-label="评估次序"
+            />
+          </el-card>
+        </el-col>
+      </el-row>
     </el-card>
 
     <!-- Per-class metrics table -->
@@ -200,7 +235,15 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { ArrowLeft } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
-import { resolveMainMetricSpec, fmtRatio, type MetricSpecItem } from "@/utils/trainMetrics";
+import {
+  resolveMainMetricSpec,
+  buildMetricSpecFromKeys,
+  scalarMetricKeys,
+  metricDisplayValue,
+  fmtMetricValue,
+  type MetricSpecItem,
+} from "@/utils/trainMetrics";
+import MetricMiniChart from "../components/MetricMiniChart.vue";
 import ModelExportDialog from "@/components/ModelExportDialog/index.vue";
 
 const route = useRoute();
@@ -232,14 +275,93 @@ const isClassifyEval = computed(() => {
   return !!(m && (m.top1 != null || m.top5 != null));
 });
 
-// 主指标按框架/模式渲染：PaddleX det→HMean/PR、rec→Acc；YOLO cls→Top1/5；其余→mAP/PR
-const metricSpec = computed<MetricSpecItem[]>(() =>
-  resolveMainMetricSpec({
+/**
+ * 指标键 → spec：**主指标排前面**，其余按模型产出顺序跟在后面。
+ * 卡片与趋势图共用这一个排序，避免两处视觉重心漂移。
+ *
+ * ⚠️ 不能再拿 `resolveMainMetricSpec` 的返回值直接当指标清单：它是按 framework/mode
+ *    **硬编码**的固定几个键，而模型实际算出的指标随模型而变（loss/fps/RMSE/…）。
+ *    旧版评估页因此永远只显示 mAP/PR 那几个，其余一律不显示。
+ */
+function buildOrderedSpec(keys: string[]): MetricSpecItem[] {
+  if (!keys.length) return [];
+  const main = resolveMainMetricSpec({
     framework: evalData.value?.framework,
     mode: evalData.value?.hyperparams?.mode,
     classify: isClassifyEval.value,
-  })
+  }).map((s) => s.key);
+  // ⚠️ 其余键必须**显式排序**：PG 的 jsonb 会按「键长度 + 字节序」重排，
+  //    所谓「模型产出顺序」在库里根本不存在；不排序则卡片与趋势两处各排各的，
+  //    同一指标在两块区域里位置不同（实测 mAP75 / mAP50-95 会互换）。
+  const sorted = [...keys].sort();
+  const set = new Set(sorted);
+  const mainFirst = main.filter((k) => set.has(k));
+  const mainSet = new Set(mainFirst);
+  return buildMetricSpecFromKeys([...mainFirst, ...sorted.filter((k) => !mainSet.has(k))]);
+}
+
+/** 本次评估的**全量**指标卡片（键来自 metrics 本身，不硬编码） */
+const metricSpec = computed<MetricSpecItem[]>(() =>
+  buildOrderedSpec(scalarMetricKeys(evalData.value?.metrics))
 );
+
+/* ==========================================================================
+ * 该模型的历史评估趋势
+ *
+ * 单条评估只有一组结果、没有时间序列；趋势必须跨「同一模型的历次评估」取。
+ * 后端 `GET /eval/list?model_repo_id=X` 已支持按仓库过滤（page_size 上限 100）。
+ *
+ * ⚠️ 只在**挂载时 + 状态跃迁时**各拉一次，**不随 5 秒轮询重复拉** ——
+ *    否则评估跑着的 5 秒一次全量列表请求毫无必要（局部刷新原则）。
+ * ========================================================================== */
+const histEvals = ref<any[]>([]);
+
+async function loadHistory() {
+  const repoId = evalData.value?.model_repo_id;
+  if (!repoId) {
+    histEvals.value = [];
+    return;
+  }
+  try {
+    const r = await TrainAPI.getEvalList(
+      { model_repo_id: repoId, page_no: 1, page_size: 100 },
+      { silent: true }
+    );
+    const items: any[] = r.data?.data?.items || [];
+    // 只要**跑完且有指标**的；后端按 created_time DESC 返回，这里翻成升序，
+    // 保证 x = 评估次序（1..N）与时间顺序一致。
+    histEvals.value = items
+      .filter((e) => e && e.status === "success" && e.metrics)
+      .sort((a, b) => String(a.created_time || "").localeCompare(String(b.created_time || "")));
+  } catch {
+    histEvals.value = [];
+  }
+}
+
+/**
+ * 每指标一条序列：x = 评估次序（1..N），y = 与卡片**同一换算口径**
+ * （`metricDisplayValue` 做字节→GB 等换算，保证卡片与曲线一致）。
+ *
+ * 点是稀疏的：某次评估缺这个指标就跳过（x 仍按其真实次序，不重编号）。
+ */
+const histSeries = computed<Record<string, [number | null, number][]>>(() => {
+  const out: Record<string, [number | null, number][]> = {};
+  const evs = histEvals.value;
+  if (evs.length < 2) return out; // 一个点画不出趋势，整段隐藏
+  const keys = new Set<string>();
+  for (const e of evs) for (const k of scalarMetricKeys(e.metrics)) keys.add(k);
+  for (const k of [...keys].sort()) {
+    const pts: [number | null, number][] = [];
+    for (let i = 0; i < evs.length; i++) {
+      const n = metricDisplayValue(k, evs[i].metrics?.[k]);
+      if (typeof n === "number" && !Number.isNaN(n)) pts.push([i + 1, n]);
+    }
+    if (pts.length >= 2) out[k] = pts; // 至少 2 个点才有趋势可画
+  }
+  return out;
+});
+
+const histSpec = computed<MetricSpecItem[]>(() => buildOrderedSpec(Object.keys(histSeries.value)));
 
 const classTableData = computed(() => {
   const cls = evalData.value?.metrics?.classes;
@@ -316,6 +438,9 @@ function startPoll() {
         const id = Number(route.params.id);
         connectWs(id);
       }
+      // 状态跃迁才补拉历史：只有这时「历次评估」集合才可能变化（新评估完成/重跑）。
+      // 顺带的 5 秒轮询不动它，避免评估跑着时反复全量请求列表。
+      loadHistory();
     }
     if (curStatus && curStatus !== "running" && curStatus !== "pending") stopPoll();
   }, 5000);
@@ -446,6 +571,8 @@ function handleExport() {
 
 onMounted(async () => {
   await loadEval();
+  // 历史趋势与主数据并行拉，互不阻塞首屏（拿不到 model_repo_id 时函数内部自行短路）
+  loadHistory();
   const id = Number(route.params.id);
   if (id) {
     if (evalData.value?.status === "running") {

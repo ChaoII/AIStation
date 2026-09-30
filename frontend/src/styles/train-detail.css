@@ -44,3 +44,24 @@
 
 /* 「指标对比」表：值下方的小字 epoch 标注（列头已改为「最优值/最终值」，epoch 另起一行标注） */
 .sub-epoch { display: block; font-size: 12px; line-height: 1.2; margin-top: 2px; }
+
+/* ==========================================================================
+ * 每指标一张小图（TensorBoard 式）—— 训练详情 / 评估详情共用
+ * 颜色/字号一律引用 Element Plus 变量，不写死主题色
+ * ========================================================================== */
+.mini-chart-card { margin-bottom: 12px; }
+.mini-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 4px;
+}
+.mini-name {
+  font-size: var(--el-font-size-base); font-weight: 600;
+  color: var(--el-text-color-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mini-val {
+  flex-shrink: 0;
+  font-family: "Cascadia Code","Fira Code",monospace;
+  font-size: var(--el-font-size-small); font-weight: 700;
+  color: var(--el-text-color-primary);
+}
