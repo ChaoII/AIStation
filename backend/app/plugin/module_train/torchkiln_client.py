@@ -179,6 +179,31 @@ class TorchKilnClient:
         return await self._get(
             f"/api/v1/models/{model_name}/schema", params=params, what="schema")
 
+    async def resolve_config_path(self, model_name: str) -> str:
+        """模型名 -> ``configs/`` 下的**配置路径**，供 ``tkiln`` 命令行使用。
+
+        ⚠️ ``torchkiln/cli.py`` 的用法示例是
+        ``tkiln val -c configs/yolo/yolov8-obb.yml``——``-c`` 只认**配置文件
+        路径**。而本项目从训练任务 hyperparams 拿到的是**模型名**（``yolo11-seg``）。
+        直接把模型名塞给 ``-c`` 会报「省略 <task> 时必须用 -c <config> 指定配置」。
+
+        这里借常驻元数据服务换一次（它扫的就是 ``configs/``）。按名字**精确**匹配，
+        因为 ``list_models(name=...)`` 是子串匹配，会把 ``yolo11-seg`` 匹配到一堆
+        同前缀的模型上。服务不可用时原样返回，让容器内 CLI 报它自己的错——
+        那条错信息比平台侧瞎猜一个路径要有用得多。
+        """
+        try:
+            for item in await self.list_models(name=model_name):
+                if item.get("model_name") == model_name:
+                    path = item.get("config_path")
+                    if path:
+                        return str(path)
+        except TorchKilnError as e:
+            log.warning(
+                f"解析 TorchKiln 配置路径失败（{model_name} -> configs/...）：{e}；"
+                f"将把模型名原样交给容器内 CLI，其报错会更可读")
+        return model_name
+
     async def submit_job(self, spec: dict, idempotency_key: str,
                          user_id: str | None = None, tenant: str | None = None) -> dict:
         headers = {"Idempotency-Key": idempotency_key}

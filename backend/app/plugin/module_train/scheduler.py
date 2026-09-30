@@ -146,6 +146,14 @@ async def _scheduler_loop():
 
             # Periodic orphan recovery (base executor owns registry/DB state)
             await TrainExecutor.recover_orphans()
+
+            # GPU/端口看门狗：容器被强杀或后端崩溃时，任务终止路径上的 release
+            # 不会执行，占用会一直挂到 24h TTL——单卡机器等于被占死。
+            from . import gpu_pool
+            try:
+                await gpu_pool.reap_stale()
+            except Exception as e:
+                log.error(f"gpu pool watchdog error: {e}")
         except Exception as e:
             log.error(f"train scheduler error: {e}")
         await asyncio.sleep(30)

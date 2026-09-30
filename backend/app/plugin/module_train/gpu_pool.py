@@ -33,6 +33,7 @@ import asyncio
 import contextlib
 import socket
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from app.config.setting import settings
@@ -100,16 +101,14 @@ class Allocation:
         return f"http://127.0.0.1:{self.port}"
 
     @property
-    def gpu_select(self) -> str:
-        """传给 ``docker run --gpus`` 的设备选择串。
+    def device_ids(self) -> str:
+        """给 ``run_container(gpu_id=...)`` 用的设备串（逗号分隔的序号）。
 
-        用**序号**而不是 UUID：``--gpus device=N`` 认的是容器内可见的序号，
-        而容器只暴露被选中的那一张卡，序号恒为 0。UUID 记在 Allocation 里
-        仅用于排查与释放时匹配。
+        用**序号**而非 UUID：``docker run --gpus device=N`` 认的是容器内可见的
+        序号，而容器只暴露被选中的那一张卡，序号恒为 0。UUID 记在
+        :attr:`gpu_uuids` 里仅用于排查与释放时匹配。
         """
-        if not self.gpu_indices:
-            return ""
-        return '"device=' + ",".join(str(i) for i in self.gpu_indices) + '"'
+        return ",".join(str(i) for i in self.gpu_indices)
 
 
 #: 进程内回退记录：``task_id -> Allocation``。Redis 不可用时用它。
@@ -365,6 +364,97 @@ async def _cleanup_redis_by_task(task_id: int, rd) -> None:
 def allocation_of(task_id: int) -> Allocation | None:
     """取任务当前的资源（给恢复逻辑用；进程重启后为 None）。"""
     return _local.get(task_id)
+
+
+#: 仍在进行中、因此**不该**回收资源的状态
+_ALIVE_STATUSES = ("pending", "running")
+
+
+async def reap_stale() -> int:
+    """回收「任务已不在进行中」却仍占着 GPU / 端口的记录，返回回收条数。
+
+    正常路径在任务终止时（``_execute`` 的 finally）就会 :func:`release`。但这些
+    情况不会执行到：容器被 ``kill -9``、机器断电、finally 块本身抛异常、
+    后端进程崩溃。届时只能等占用键的 24h TTL——对单卡机器而言等于**被占死两天**。
+
+    判据只看**任务状态**，不猜容器死活：``pending``/``running`` 一律保留
+    （``pending`` 可能是正在排队等卡的，它已经占着资源），其余（success /
+    failed / cancelled / 任务已不存在）一律回收。
+    """
+    from app.core.database import async_db_session
+    from app.plugin.module_train.model import TrainTask
+
+    rd = await _redis()
+    stale: list[int] = []
+    if rd is not None:
+        try:
+            for prefix in (_K_PORT, _K_GPU):
+                async for key in rd.scan_iter(match=f"{prefix}*", count=200):
+                    val = await rd.get(key)
+                    if val and val.isdigit():
+                        stale.append(int(val))
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[gpu_pool] 看门狗扫描占用失败: {e}")
+            return 0
+    else:
+        stale = list(_local_ports.values()) + list(_local_gpus.values())
+    # 去重，并排除本进程内仍然活跃的
+    candidates = {t for t in stale if t not in _local}
+    if not candidates:
+        return 0
+
+    try:
+        async with async_db_session() as db:
+            from sqlalchemy import select
+            rows = (await db.execute(
+                select(TrainTask.id, TrainTask.status).where(
+                    TrainTask.id.in_(list(candidates))))).all()
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[gpu_pool] 看门狗查任务状态失败: {e}")
+        return 0
+
+    alive = {int(i) for i, s in rows if str(getattr(s, "value", s)) in _ALIVE_STATUSES}
+    reaped = 0
+    for tid in sorted(candidates - alive):
+        await release(tid)
+        log.warning(
+            f"[gpu_pool] 看门狗：任务 {tid} 已是终态或已不存在，却仍占着资源，已回收"
+            f"（容器被强杀或后端崩溃过）")
+        reaped += 1
+    return reaped
+
+
+# ----------------------------------------------------------------- 租约
+
+
+@asynccontextmanager
+async def gpu_lease(task_id: int, need_mem_gb: float | None = None):
+    """把「占一张够显存的卡」包成上下文管理器，拿不到就抛。
+
+    给**已经走容器模式、但用的是进程内信号量**的路径（评估 / 预测 / 部署 /
+    paddlex / ultralytics）统一换到本池上：它们的信号量只认「本进程里排队的
+    几个任务」，看不见别的框架、更看不见平台外占着卡的人，于是训练（走本池）
+    和评估（走信号量）可能同时抢同一张卡——**两套排队互不知情是必撞的**。
+
+    典型用法（不改动原有缩进）::
+
+        async with get_train_semaphore(), gpu_lease(eval_id, need_mem) as lease:
+            container = await run_container(..., gpu_id=lease.device_ids)
+
+    信号量保留作进程内的快速闸门：它拒绝得比本池快，而本池负责跨进程/跨机器
+    的精确判定（Redis 原子分配 + NVML 可用显存）。
+    """
+    alloc = await acquire(task_id, need_gpu=1, need_mem_gb=need_mem_gb)
+    if alloc is None:
+        raise RuntimeError(
+            f"等不到可用显存 ≥ {need_mem_gb or settings.TORKILN_GPU_MIN_FREE_GB:.1f}GB 的 GPU"
+            f"（详见后端日志中 gpu_pool 的明细）。若确定机器上无人训练，可调低 "
+            f"TORKILN_GPU_MIN_FREE_GB 或改任务的 resources.gpu_memory_gb"
+        )
+    try:
+        yield alloc
+    finally:
+        await release(task_id)
 
 
 # ----------------------------------------------------------------- 就绪

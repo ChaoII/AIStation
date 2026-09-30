@@ -1,12 +1,14 @@
 import asyncio
 import os
 import socket
+from contextlib import nullcontext
 from datetime import datetime
 
 import docker
 import httpx
 from sqlalchemy import select, update
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -20,6 +22,7 @@ from .docker_utils import (
     run_container,
     stop_container,
 )
+from .gpu_pool import gpu_lease
 from .model import TrainDeploy, TrainFramework, TrainModel
 from .paths import work_dir
 
@@ -693,6 +696,15 @@ async def _execute_deployment(deploy_id: int):
 
         # TOCTOU 兜底：DB 预留与容器实际绑定之间存在竞态窗口，两个并发部署可能选到同一端口。
         # run_container 抛出端口冲突 APIError 时，换新端口（排除当前端口）重试一次。
+        # ⚠️ 顺带解决「部署完全没有 GPU 排队」：它此前直接拿 deploy.device 起容器，
+        #   而训练/评估/预测各自有各自的排队，两边互不知情必然抢同一张卡。
+        #   这里也向 gpu_pool 租一张够显存的卡，保证**起容器时机器上确实有空闲卡**；
+        #   用户显式指定的设备仍然尊重（那是软需求，撞车由日志提示，不静默改掉）。
+        want_gpu = None if deploy.device in ("cpu", "", None) else str(deploy.device)
+        need_mem_gb = float(((deploy.hyperparams or {}).get("resources") or {}).get(
+            "gpu_memory_gb") or settings.TORKILN_GPU_MIN_FREE_GB)
+        lease = gpu_lease(deploy_id, need_mem_gb) if want_gpu else nullcontext(None)
+
         async def _launch(port: int):
             return await run_container(
                 image,
@@ -702,7 +714,7 @@ async def _execute_deployment(deploy_id: int):
                     server_dir: {"bind": "/server", "mode": "ro"},
                 },
                 ports={f"{8000}/tcp": port},
-                gpu_id=deploy.device if deploy.device != "cpu" else None,
+                gpu_id=want_gpu or getattr(alloc, "device_ids", None),
                 entrypoint="",
                 shm_size="4g" if is_paddlex else None,
                 labels={"aistation.task_kind": "deploy", "aistation.task_id": str(deploy_id)},
@@ -714,7 +726,13 @@ async def _execute_deployment(deploy_id: int):
             return
 
         try:
-            container = await _launch(host_port)
+            async with lease as alloc:
+                if want_gpu and getattr(alloc, "device_ids", "") != want_gpu:
+                    log.warning(
+                        f"deploy {deploy_id}: 用户指定 GPU {want_gpu}，gpu_pool 分配的是 "
+                        f"{getattr(alloc, 'device_ids', '?')}；按用户指定启动——"
+                        f"若与其它任务抢卡会 OOM")
+                container = await _launch(host_port)
         except docker.errors.APIError as e:
             if not _is_port_conflict_error(e):
                 raise

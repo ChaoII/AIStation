@@ -5,11 +5,13 @@ from datetime import datetime
 
 from sqlalchemy import update
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
 from .concurrency import get_train_semaphore
 from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
+from .gpu_pool import gpu_lease
 from .model import TrainFramework, TrainModel, TrainPredict, TrainStatus
 from .paths import work_dir
 from .task_executor import TaskExecutor
@@ -250,15 +252,26 @@ class PredictExecutor(TaskExecutor):
                 if not tk_cfg:
                     raise Exception(
                         "TorchKiln 预测找不到产出该模型的训练任务，无法确定配置名")
+                # ⚠️ 上面拿到的是**模型名**（如 yolo11-seg），而 `tkiln predict -c`
+                # 只认 configs/ 下的**配置路径**。借常驻元数据服务换一次，否则容器里
+                # 会报「省略 <task> 时必须用 -c <config> 指定配置」。
+                from .torchkiln_client import TorchKilnClient
+                async with TorchKilnClient() as _tk:
+                    tk_cfg = await _tk.resolve_config_path(tk_cfg)
                 hp = {**hp, "tk_config": tk_cfg, "model": tk_cfg}
 
             cmd = build_predict_cmd(framework.value, model_filename, hp)
 
             await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
             await pull_image(docker_image)
-            # 全局 GPU 并发上限：与训练/评估共享同一信号量，避免同一张卡被并发抢占
-            async with get_train_semaphore():
-                # 等待信号量期间可能被取消：启动容器前再检查一次
+            # 全局 GPU 并发上限：与训练/评估共享同一信号量，避免同一张卡被并发抢占。
+            # ⚠️ 信号量**只认本进程里排队的任务**，看不见别的框架、更看不见平台外
+            #   占着卡的人——而训练走的是 gpu_pool（Redis + NVML）。两套排队互不知情
+            #   必然撞卡，所以这里在信号量之后**再**向 gpu_pool 租一张够显存的卡。
+            need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
+                                or settings.TORKILN_GPU_MIN_FREE_GB)
+            async with get_train_semaphore(), gpu_lease(predict_id, need_mem_gb) as lease:
+                # 等待期间可能被取消：启动容器前再检查一次
                 if cls._registry.get(predict_id, {}).get("cancel"):
                     return
                 container = await run_container(
@@ -268,7 +281,7 @@ class PredictExecutor(TaskExecutor):
                         model_dir: {"bind": "/model", "mode": "ro"},
                         output_dir: {"bind": "/output", "mode": "rw"},
                     },
-                    gpu_id=predict_gpu_id(device),
+                    gpu_id=lease.device_ids or predict_gpu_id(device),
                     shm_size="4g" if framework in (TrainFramework.PADDLEX, TrainFramework.TORKILN) else None,
                     labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
                 )

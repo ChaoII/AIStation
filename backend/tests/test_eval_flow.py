@@ -24,6 +24,14 @@ class _FakeSession:
     async def execute(self, stmt):
         return SimpleNamespace(scalar_one_or_none=lambda: self._task)
 
+    async def get(self, model, pk):
+        """``resolve_eval_context`` 会先 ``db.get(TrainModel, model_id)`` 取版本行。
+
+        有任务时假装版本行存在（``repo_id`` 给个不可能命中的值，这样兜底分支
+        不会被误触发展示成"两次查询都命中"）；无任务时返回 None，走回退分支。
+        """
+        return SimpleNamespace(id=pk, repo_id=999) if self._task is not None else None
+
 
 class _FakeDbSession:
     def __init__(self, session):
@@ -57,6 +65,20 @@ def test_resolve_eval_context_sanitizes_invalid_values(monkeypatch):
         annotation_task_id=None, hyperparams={"mode": "bogus", "model_size": "huge"}
     )
     assert _run_resolve(task, monkeypatch) == (None, "det", "tiny")
+
+
+def test_resolve_eval_context_torchkiln_returns_config_name(monkeypatch):
+    """TorchKiln 的「规格」就是配置名，必须原样回传给 ``tkiln val -c``。
+
+    这条同时钉住**按版本行 id 匹配**这件事：``TrainTask.model_repo_id`` 字段名有
+    误导，存的其实是产出模型行的主键。若改回拿仓库 id 去比，就永远匹配不到，
+    恒回退成 ``("det", "tiny")``，于是 ``tkiln val -c det`` 必然失败。
+    """
+    task = SimpleNamespace(
+        annotation_task_id=8, framework="TORKILN",
+        hyperparams={"model": "yolo11-seg"},
+    )
+    assert _run_resolve(task, monkeypatch) == (8, "yolo11-seg", "tiny")
 
 
 # ---------------------------------------------------------------------------

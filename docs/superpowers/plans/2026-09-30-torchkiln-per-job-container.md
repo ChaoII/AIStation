@@ -93,15 +93,20 @@ TorchKiln 服务**不再以「一个常驻服务接所有训练」的方式运�
 
 | 位置 | 改动 | 状态 |
 |---|---|---|
-| `gpu_pool.py`（新） | 端口池 + GPU 池 + 就绪探测 | ✅ |
+| `gpu_pool.py`（新） | 端口池 + GPU 池 + 就绪探测 + `gpu_lease` | ✅ |
 | `torchkiln_executor.py` | 起容器/等就绪/per-task 客户端/资源回收；`reattach` 覆盖 | ✅ |
 | `_attach_dataset_lists` | 宿主探测 + 容器内 posix 路径 | ✅ |
 | `exporter._fetch_torchkiln_weights` | 改为读宿主挂载目录，不再连服务下载 | ✅ |
 | `docker_utils` | 新增 `get_container_labels`（恢复时读回端口） | ✅ |
 | `_concurrency` | 8 → 16（原值理由是「排队交给常驻服务」，已不成立） | ✅ |
 | `setting.py` | 新增 8 个 job 容器配置项 | ✅ |
-| `tests/test_torchkiln_job_container.py`（新） | 10 个守卫测试 | ✅ |
-| eval / predict / deploy 三处 | 同构改造 | ⏳ P1 |
+| `eval_scheduler.py` | 改走 `gpu_lease`；修 4 个既有 bug（见九之二） | ✅ |
+| `predict_executor.py` | 改走 `gpu_lease`；`-c` 换配置路径 | ✅ |
+| `deploy_executor.py` | 改走 `gpu_lease`（原先**完全没有 GPU 排队**）；`device=cpu` 时跳过 | ✅ |
+| `export_service.py` | `-c` 换配置路径 | ✅ |
+| `torchkiln_client.py` | 新增 `resolve_config_path()` | ✅ |
+| `tests/test_torchkiln_job_container.py`（新） | 11 个守卫测试 | ✅ |
+| `tests/test_eval_flow.py` | 修好 3 个长期红的测试 + 1 条防回归 | ✅ |
 | per-user 目录层 + cleanup 适配 | | ⏳ P1 |
 | 前端「排队中/等待 GPU/运行于 GPU 0」 | | ⏳ P1 |
 
@@ -145,6 +150,41 @@ TorchKiln 服务**不再以「一个常驻服务接所有训练」的方式运�
    同一次排查还发现两个**孤儿训练进程**（父进程已死）占着 1.3GB 显存——它们恰好
    实证了双条件判定的价值：Redis 调度层不认识它们（旧的常驻服务模式起的），
    但 NVML 资源层发现了占用并正确拒绝派卡。若只有调度层，训练会直接 OOM。
+
+## 九之二、TorchKiln 评估链路修掉的 4 个既有 bug
+
+评估/预测/部署**本来就已经是容器模式**（`tkiln val` / `tkiln predict` 一次性命令），
+所以它们不需要「改造成容器」，只需要**统一 GPU 排队**——原先它们用进程内信号量，
+与训练的 gpu_pool 互不知情，必然抢同一张卡。现已全部改走 `gpu_lease`。
+
+但真正跑通一次评估，暴露了 4 个**此前从未成功过**的 bug（端到端验证时逐个撞出来）：
+
+1. **`resolve_eval_context` 永远匹配不到训练任务**。它拿
+   `TrainTask.model_repo_id` 去和**仓库 id** 比，而该字段实际存的是**模型版本 id**
+   （逐条查过历史任务确认，torchkiln / ultralytics 都如此）。于是恒走回退分支：
+   `annotation_task_id` 丢成 None（分类/分割评估会导出成 detection 格式）、
+   规格丢成 tiny。修法是按版本行 id 匹配，并保留按仓库 id 的兜底查询。
+2. **`tkiln val -c` 只认配置路径，不认模型名**。`torchkiln/cli.py` 的用法示例是
+   `-c configs/yolo/yolov8-obb.yml`，而本项目从训练任务拿到的是模型名
+   （`yolo11-seg`），原样传会报「省略 `<task>` 时必须用 -c `<config>` 指定配置」。
+   新增 `TorchKilnClient.resolve_config_path()` 借常驻元数据服务换一次
+   （**按名字精确匹配**——`list_models(name=...)` 是子串匹配，会把 `yolo11-seg`
+   匹配到一堆同前缀模型上）。**评估、预测、导出三处都漏了**，一并修。
+3. **`tkiln val` 会同时构造 Train 与 Eval 两个 dataset**。只覆盖
+   `Eval.dataset.*` 的话，Train 仍用模板里的 `datasets/seg_demo/train.txt` →
+   `FileNotFoundError`。评估导出是 `for_eval=True`（全量进 val 目录），
+   所以 Train 指向同一份数据即可。顺带修正路径：清单在 `/data/val.txt`
+   而不是 `/data/dataset/val.txt`（后者是 PaddleX 那种多一层的结构）。
+4. **指标只认 `EVAL_METRIC_JSON` 标记行**，而 TorchKiln 实际打印的是
+   `cur metric, k: v, ...` 与 `main indicator (k): v`。结果评估**显示成功但指标为空**
+   ——看不出是评估没跑还是解析没匹配上。补了兜底解析，标记行仍优先。
+
+修完实测：训练 38 秒 → 权重入库 → 评估 11 秒 → 指标完整落库
+（`box_mAP50` / `mask_mAP50-95` / `fps` / `main_indicator` / `main_value`）。
+
+顺带把 `tests/test_eval_flow.py` 里三个长期红的测试修好了——它们的 mock 缺
+`db.get`，从 `c762574` 起就一直失败，掩盖真实回归；现已补齐并加了一条
+防回归用例（钉住「按版本行 id 匹配」这件事）。
 
 ## 十、下一步（P1）
 

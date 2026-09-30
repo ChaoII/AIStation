@@ -241,6 +241,13 @@ async def _export_torchkiln(
     if size == 0:
         raise Exception(f"从 RustFS 下载的权重为空: {original_storage_path}")
 
+    # ⚠️ cfg 是从训练任务反查来的**模型名**（如 yolo11-seg），而 `tkiln export -c`
+    # 只认 configs/ 下的**配置路径**。借常驻元数据服务换一次，否则容器里会报
+    # 「省略 <task> 时必须用 -c <config> 指定配置」——导出从来没成功过的根因。
+    from .torchkiln_client import TorchKilnClient
+    async with TorchKilnClient() as _tk:
+        cfg = await _tk.resolve_config_path(cfg)
+
     cmd = _build_tk_export_cmd(weights_name, cfg, export_params)
     log.info(f"tkiln export cmd: {' '.join(cmd)}")
     exit_code, log_path = await _run_export_container(

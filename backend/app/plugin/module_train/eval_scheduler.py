@@ -6,11 +6,13 @@ from datetime import datetime
 
 from sqlalchemy import update
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
 from .concurrency import get_train_semaphore
 from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
+from .gpu_pool import gpu_lease
 from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
 from .paths import work_dir
 from .task_executor import TaskExecutor
@@ -21,6 +23,10 @@ DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 # 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
 # 而留下半成品；任务完成/取消后自动丢弃引用。
 _bg_tasks: set[asyncio.Task] = set()
+
+
+#: ``tkiln val`` 结尾那行的主指标：``main indicator (mask_mAP50-95): 0.0``
+_MAIN_INDICATOR_RE = re.compile(r"main indicator\s*\(([^)]+)\)\s*:\s*([-\d.eE+]+)")
 
 
 def _spawn(coro) -> asyncio.Task:
@@ -96,10 +102,17 @@ async def resolve_eval_context(model_id: int) -> tuple[int | None, str, str]:
     分类/分割评估会导出错误格式；PaddleX 规格也须与被评模型一致而非沿用
     eval 超参。无匹配训练任务时回退 ``(None, "det", "tiny")``。
 
-    ⚠️ ``model_id`` 是**版本行 id**，而 ``TrainTask.model_repo_id`` 存的是**仓库
-    id**——两者不是一回事。原实现直接拿 model_id 比 model_repo_id，多数情况匹配不到，
-    于是恒走回退分支（annotation_task_id 丢成 None、规格丢成 tiny）。
-    这里改为：先按版本行反查仓库 id，再按仓库 id 找训练任务。
+    ⚠️ 两处 id 语义，历史上都踩过：
+
+    1. ``model_id`` 是**版本行 id**，不是仓库 id。
+    2. ``TrainTask.model_repo_id`` 这个字段名有误导——实测**它存的也是版本行
+       id**（产出模型行的主键），不是仓库 id。逐条查过历史任务：
+       torchkiln / ultralytics 的任务都是如此。
+
+    所以匹配要**先按版本行 id 查**；为兼容万一真存了仓库 id 的老数据，查不到
+    时再按 ``TrainModel.repo_id`` 兜一次。此前这里拿仓库 id 去比
+    ``model_repo_id``，**永远匹配不到**，于是恒走回退：``annotation_task_id``
+    丢成 None（分类/分割评估导出成 detection 格式）、规格丢成 tiny。
     """
     from sqlalchemy import desc, select
 
@@ -108,15 +121,23 @@ async def resolve_eval_context(model_id: int) -> tuple[int | None, str, str]:
 
     async with async_db_session() as db:
         model_row = await db.get(TrainModel, model_id)
-        repo_id = model_row.repo_id if model_row else None
-        if repo_id:
+        task = None
+        if model_row:
             task = (await db.execute(
-                select(TrainTask).where(TrainTask.model_repo_id == repo_id)
+                select(TrainTask).where(TrainTask.model_repo_id == model_id)
                 .order_by(desc(TrainTask.id)).limit(1)
             )).scalar_one_or_none()
-        else:
-            task = None
+        if task is None and model_row and model_row.repo_id:
+            # 兜底：万一这行的 model_repo_id 真的存的是仓库 id
+            task = (await db.execute(
+                select(TrainTask).where(TrainTask.model_repo_id == model_row.repo_id)
+                .order_by(desc(TrainTask.id)).limit(1)
+            )).scalar_one_or_none()
     if not task:
+        log.warning(
+            f"评估上下文：模型版本 {model_id} 找不到产出它的训练任务，"
+            f"回退 annotation_task_id=None / det / tiny——若被评模型不是 detection，"
+            f"导出的标签格式会与训练时不一致")
         return (None, "det", "tiny")
     hp = task.hyperparams or {}
     mode = str(hp.get("mode", "det")).lower()
@@ -293,6 +314,13 @@ class EvalExecutor(TaskExecutor):
                     raise Exception(
                         "TorchKiln 评估找不到产出该模型的训练任务，无法确定配置名；"
                         "请确认该模型版本确实由 TorchKiln 训练产出")
+                # ⚠️ 上面的 tk_cfg 是**模型名**（如 yolo11-seg），而 `tkiln val -c`
+                # 只认 **configs/ 下的配置路径**。原样传会在容器里报
+                # 「省略 <task> 时必须用 -c <config> 指定配置」——评估从来没跑通过的
+                # 根因。借常驻元数据服务把模型名换成配置路径。
+                from .torchkiln_client import TorchKilnClient
+                async with TorchKilnClient() as _tk:
+                    tk_cfg = await _tk.resolve_config_path(tk_cfg)
                 opts = [
                     f"Global.pretrained_model=/model/{model_filename}",
                     "Global.save_model_dir=/output",
@@ -301,9 +329,19 @@ class EvalExecutor(TaskExecutor):
                     f"Global.conf={conf}",
                     f"Global.iou={iou}",
                     f"Global.device={device}",
-                    "Eval.dataset.data_dir=/data/dataset",
-                    "Eval.dataset.label_file_list=[\"/data/dataset/val.txt\"]",
+                    # ⚠️ 路径是**挂载点根**：``data_dir`` 整个挂在 ``/data``，清单就在
+                    # ``/data/val.txt``。写成 ``/data/dataset/val.txt``（PaddleX 那种
+                    # 多一层 dataset/ 的结构）会 FileNotFoundError。
+                    "Eval.dataset.data_dir=/data",
+                    "Eval.dataset.label_file_list=[\"/data/val.txt\"]",
                     "Eval.loader.num_workers=0",
+                    # ⚠️ `tkiln val` 的 task.build_datasets 会**同时**构造 Train 与 Eval
+                    # 两个 dataset。只覆盖 Eval 的话，Train 仍用配置模板里的
+                    # `datasets/seg_demo/train.txt` -> FileNotFoundError 直接崩。
+                    # 评估导出是 for_eval=True（全量进 val 目录），所以 Train 指向
+                    # 同一份数据即可，不会读到不存在的清单。
+                    "Train.dataset.data_dir=/data",
+                    "Train.dataset.label_file_list=[\"/data/val.txt\"]",
                 ]
                 cmd = ["tkiln", "val", "-c", str(tk_cfg), "-o"] + opts
                 docker_image = hp.get("docker_image") or "torchkiln:0.1.0"
@@ -332,15 +370,21 @@ class EvalExecutor(TaskExecutor):
                 # tkiln val 写 Global.save_model_dir=/output
                 volumes[os.path.join(export_dir, "output")] = {"bind": "/output", "mode": "rw"}
                 os.makedirs(os.path.join(export_dir, "output"), exist_ok=True)
-            # 全局 GPU 并发上限：与训练/预测共享同一信号量，避免同一张卡被并发抢占
-            async with get_train_semaphore():
-                # 等待信号量期间可能被取消：启动容器前再检查一次
+            # 全局 GPU 并发上限：与训练/预测共享同一信号量，避免同一张卡被并发抢占。
+            # ⚠️ 信号量**只认本进程里排队的任务**，看不见别的框架、更看不见平台外
+            #   占着卡的人——而训练走的是 gpu_pool（Redis + NVML）。两套排队互不知情
+            #   必然撞卡，所以这里在信号量之后**再**向 gpu_pool 租一张够显存的卡：
+            #   信号量是进程内的快速闸门（拒绝得快），gpu_pool 负责跨进程的精确判定。
+            need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
+                                or settings.TORKILN_GPU_MIN_FREE_GB)
+            async with get_train_semaphore(), gpu_lease(eval_id, need_mem_gb) as lease:
+                # 等待期间可能被取消：启动容器前再检查一次
                 if cls._registry.get(eval_id, {}).get("cancel"):
                     return
                 container = await run_container(
                     docker_image, cmd,
                     volumes=volumes,
-                    gpu_id=device,
+                    gpu_id=lease.device_ids or device,
                     shm_size="4g" if fw in ("paddlex", "torchkiln") else None,
                     labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
                 )
@@ -367,10 +411,15 @@ class EvalExecutor(TaskExecutor):
                     return _accumulate_yolo_metrics(line, metrics)
 
                 def _parse_torchkiln_metrics(line: str) -> dict | None:
-                    """解析 tkiln val 输出的 ``EVAL_METRIC_JSON {...}`` 标记行。
+                    """解析 ``tkiln val`` 的评估指标。
 
-                    与 PaddleX 同样的约定：脚本在结尾打一行 JSON 标记，
-                    避免去解析人读的表格（格式随版本变，会静默失效）。
+                    首选 ``EVAL_METRIC_JSON {...}`` 标记行（结构化、抗格式变动）；
+                    没有标记时兜底解析它实际打印的那两行——
+                    ``cur metric, box_mAP50: 0.0, mask_mAP50-95: 0.0, fps: 7.3``
+                    与 ``main indicator (mask_mAP50-95): 0.0``。
+
+                    ⚠️ 只认标记行的话，指标会**静默变成空**：任务显示成功、页面却
+                    没有任何数值，看不出是评估没跑还是解析没匹配上。
                     """
                     if "EVAL_METRIC_JSON" in line:
                         try:
@@ -379,6 +428,28 @@ class EvalExecutor(TaskExecutor):
                             return dict(metrics)
                         except Exception:
                             return None
+                    # 兜底 1：cur metric, k: v, k: v ...
+                    if "cur metric" in line:
+                        payload = line.split("cur metric", 1)[1].lstrip(" ,:")
+                        for part in payload.split(","):
+                            if ":" not in part:
+                                continue
+                            key, _, val = part.partition(":")
+                            key, val = key.strip(), val.strip()
+                            try:
+                                metrics[key] = float(val)
+                            except ValueError:
+                                continue
+                        return dict(metrics)
+                    # 兜底 2：main indicator (mask_mAP50-95): 0.0
+                    m = _MAIN_INDICATOR_RE.search(line)
+                    if m:
+                        metrics["main_indicator"] = m.group(1).strip()
+                        try:
+                            metrics["main_value"] = float(m.group(2))
+                        except ValueError:
+                            pass
+                        return dict(metrics)
                     return None
 
                 if fw == "torchkiln":
