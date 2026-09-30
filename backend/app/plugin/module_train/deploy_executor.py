@@ -57,6 +57,8 @@ def _cleanup_deploy_half_products(model_dir: str | None, server_dir: str | None)
 
 DOCKER_IMAGE = "ultralytics/ultralytics:latest"
 PADDLEX_IMAGE = "paddlex:latest"
+#: 自研平台的推理镜像（镜像内已装好 torch+CUDA、cv2 与 tkiln CLI）
+TORKILN_IMAGE = "torchkiln:0.1.0"
 
 DEPLOY_RECOVERY_INTERVAL = 30
 # 取消墓碑保留时长：超过后自动失效，避免无限增长
@@ -101,6 +103,75 @@ def is_port_reusable(status: str) -> bool:
 def _is_paddlex_framework(framework: TrainFramework) -> bool:
     """PaddleX 框架（PP-OCRv6 det/rec 训练产物 .pdparams 部署）。"""
     return framework == TrainFramework.PADDLEX
+
+
+def _is_torchkiln_framework(framework) -> bool:
+    """自研平台（TorchKiln）框架。
+
+    ⚠️ 必须用 ``framework_value`` 归一化：PG 的 ``SAEnum`` 存的是**成员名**
+    （``"TORKILN"``），读回来是 str 而非枚举成员，直接 ``== TrainFramework.TORKILN``
+    恒为 False —— train/eval 两侧都踩过这个坑，会静默走 ultralytics 分支
+    （拉错镜像、把 .pth 改名成 best.pt、用 YOLO API 加载，必然失败）。
+    """
+    from .framework_utils import framework_value
+
+    return framework_value(framework) == "torchkiln"
+
+
+async def resolve_deploy_tk_config(model_id: int) -> str | None:
+    """取产出该模型的训练任务所用的 **TorchKiln 配置名**。
+
+    部署必须与训练同一套架构：配置错了，权重能加载但前向结构对不上，导出的
+    服务会输出无意义的结果（而不是报错），所以只从训练任务反查，不让用户手填。
+
+    ⚠️ ``model_id`` 是**模型版本行 id**，而 ``TrainTask.model_repo_id`` 存的**也
+    是版本行 id**（字段名有误导，逐条查过历史任务确认）——两者直接相等即可。
+    与 ``resolve_eval_context`` 同一口径。
+    """
+    from sqlalchemy import desc, select
+
+    from .model import TrainTask
+
+    async with async_db_session() as db:
+        task = (await db.execute(
+            select(TrainTask).where(TrainTask.model_repo_id == model_id)
+            .order_by(desc(TrainTask.id)).limit(1)
+        )).scalar_one_or_none()
+    if not task:
+        return None
+    hp = task.hyperparams or {}
+    return hp.get("model") or hp.get("tk_config") or None
+
+
+def _build_tk_serve_cmd(
+    *, config: str, weights_name: str, api_key: str, port: int,
+    device: str, conf: float | None = None, iou: float | None = None,
+) -> list[str]:
+    """构建 ``tkiln serve`` 命令。
+
+    与 ultralytics/PaddleX 分支最大的不同：**不生成 server.py**。推理逻辑由
+    ``tkiln serve`` 提供（与 ``tkiln predict`` 同一份实现），平台侧若再写一份
+    推理脚本，预处理一旦和训练不一致，模型照样能出结果、只是精度悄悄变差。
+    """
+    cmd = [
+        "tkiln", "serve",
+        "-c", str(config),
+        "--weights", f"/model/{weights_name}",
+        "--port", str(port),
+        "--device", "cpu" if device == "cpu" else "cuda:0",
+    ]
+    if api_key:
+        cmd += ["--api-key", str(api_key)]
+    # conf / iou 走配置覆盖而不是命令行参数：它们是后处理阈值（Global.conf /
+    # Global.iou），tkiln 的统一覆盖机制就是 -o，平台侧不另造参数风格。
+    opts = []
+    if conf is not None:
+        opts.append(f"Global.conf={conf}")
+    if iou is not None:
+        opts.append(f"Global.iou={iou}")
+    if opts:
+        cmd += ["-o", *opts]
+    return cmd
 
 
 async def resolve_deploy_spec(deploy, model_rec) -> tuple[str, str]:
@@ -609,8 +680,16 @@ async def _execute_deployment(deploy_id: int):
                     )
                 return
 
-        is_paddlex = _is_paddlex_framework(deploy.framework)
-        image = PADDLEX_IMAGE if is_paddlex else DOCKER_IMAGE
+        # 框架以**模型记录**为准：create 时若没把 framework 持久化到 deploy 上
+        # （历史数据常见），deploy.framework 会是空的，此时按模型推断，
+        # 否则会静默落到 ultralytics 分支去。
+        framework = deploy.framework or getattr(model_rec, "framework", None)
+        is_paddlex = _is_paddlex_framework(framework)
+        is_torchkiln = _is_torchkiln_framework(framework)
+        if is_torchkiln:
+            image = TORKILN_IMAGE
+        else:
+            image = PADDLEX_IMAGE if is_paddlex else DOCKER_IMAGE
 
         if is_paddlex:
             # PaddleX 部署必须有显式的 rec 模型：仅挂载 det 权重时推理管线会产出垃圾文本。
@@ -652,6 +731,11 @@ async def _execute_deployment(deploy_id: int):
             rec_local_path = os.path.join(model_dir, "rec.pdparams")
             with open(rec_local_path, "wb") as f:
                 f.write(rec_data.read())
+        elif is_torchkiln:
+            # TorchKiln：权重**保持原名**（best_accuracy.pth）。
+            # 刻意不改名成 best.pt —— 那个名字只对 ultralytics 的 YOLO(...) 有意义，
+            # 改名在这里没有任何收益，只会在排查时让人误以为文件来源不对。
+            pass
         else:
             # Ensure file is named best.pt inside model mount
             best_pt_path = os.path.join(model_dir, "best.pt")
@@ -659,12 +743,27 @@ async def _execute_deployment(deploy_id: int):
                 import shutil
                 shutil.copy2(model_local_path, best_pt_path)
 
-        # Write inference server script
-        if is_paddlex:
+        # 写推理服务脚本：TorchKiln 分支**不写**（用 tkiln serve，见下）
+        if is_torchkiln:
+            tk_cfg = await resolve_deploy_tk_config(deploy.model_id)
+            if not tk_cfg:
+                raise Exception(
+                    "TorchKiln 部署找不到产出该模型的训练任务，无法确定配置名——"
+                    "配置错了权重能加载但前向结构对不上，会静默输出无意义结果。"
+                    "请确认该模型版本确实由 TorchKiln 训练产出")
+            # -c 只认 configs/ 下的配置路径，借常驻元数据服务把模型名换过去
+            from .torchkiln_client import TorchKilnClient
+
+            async with TorchKilnClient() as _tk:
+                tk_cfg_path = await _tk.resolve_config_path(tk_cfg)
+        elif is_paddlex:
             mode, size = await resolve_deploy_spec(deploy, model_rec)
             server_script = _generate_paddlex_server_script(
                 deploy.api_key, deploy.device, mode=mode, size=size
             )
+            server_path = os.path.join(server_dir, "server.py")
+            with open(server_path, "w", encoding="utf-8") as f:
+                f.write(server_script)
         else:
             hp = deploy.hyperparams or {}
             server_script = _generate_server_script(
@@ -672,9 +771,9 @@ async def _execute_deployment(deploy_id: int):
                 conf=hp.get("conf", 0.25), iou=hp.get("iou", 0.45),
                 imgsz=hp.get("imgsz", 640),
             )
-        server_path = os.path.join(server_dir, "server.py")
-        with open(server_path, "w", encoding="utf-8") as f:
-            f.write(server_script)
+            server_path = os.path.join(server_dir, "server.py")
+            with open(server_path, "w", encoding="utf-8") as f:
+                f.write(server_script)
 
         # Determine port（自动选端口时同时排除 DB 已预留 + Docker 已发布 + socket 已占用）
         host_port = deploy.host_port
@@ -705,18 +804,38 @@ async def _execute_deployment(deploy_id: int):
             "gpu_memory_gb") or settings.TORKILN_GPU_MIN_FREE_GB)
         lease = gpu_lease(deploy_id, need_mem_gb) if want_gpu else nullcontext(None)
 
+        # TorchKiln：命令是 `tkiln serve`，不挂 server_dir、不清 entrypoint
+        # （torchkiln 镜像本身没有 ENTRYPOINT，清了反而会让 docker 走 image CMD）。
+        # 另外容器内固定用 cuda:0：只暴露被分配的那一张卡，容器内序号恒为 0。
+        if is_torchkiln:
+            hp_tk = deploy.hyperparams or {}
+            launch_cmd = _build_tk_serve_cmd(
+                config=tk_cfg_path,
+                weights_name=model_filename,
+                api_key=deploy.api_key,
+                port=8000,
+                device=deploy.device,
+                conf=hp_tk.get("conf"),
+                iou=hp_tk.get("iou"),
+            )
+            launch_volumes = {model_dir: {"bind": "/model", "mode": "ro"}}
+            log.info(f"deploy {deploy_id} tkiln serve cmd: {' '.join(launch_cmd)}")
+        else:
+            launch_cmd = ["python3", "/server/server.py"]
+            launch_volumes = {
+                model_dir: {"bind": "/model", "mode": "ro"},
+                server_dir: {"bind": "/server", "mode": "ro"},
+            }
+
         async def _launch(port: int):
             return await run_container(
                 image,
-                ["python3", "/server/server.py"],
-                volumes={
-                    model_dir: {"bind": "/model", "mode": "ro"},
-                    server_dir: {"bind": "/server", "mode": "ro"},
-                },
+                launch_cmd,
+                volumes=launch_volumes,
                 ports={f"{8000}/tcp": port},
                 gpu_id=want_gpu or getattr(alloc, "device_ids", None),
-                entrypoint="",
-                shm_size="4g" if is_paddlex else None,
+                entrypoint=None if is_torchkiln else "",
+                shm_size="4g" if (is_paddlex or is_torchkiln) else None,
                 labels={"aistation.task_kind": "deploy", "aistation.task_id": str(deploy_id)},
             )
 
@@ -760,8 +879,12 @@ async def _execute_deployment(deploy_id: int):
                 )
             )
 
-        # 健康探活：等待推理服务就绪（最多 60s）；异常则标记 failed 并清理
-        probe_error = await _wait_server_healthy(container, host_port)
+        # 健康探活：等待推理服务就绪；异常则标记 failed 并清理。
+        # ⚠️ TorchKiln 的超时必须放宽：容器内 `import torch` 约 23s（本机实测），
+        # 再加上按配置构建模型 + 加载权重，60s 卡得很紧——会在服务其实能起来的
+        # 情况下被判失败，用户只看到一句 "timeout"，无从判断该等还是该改。
+        probe_timeout = 240 if is_torchkiln else 60
+        probe_error = await _wait_server_healthy(container, host_port, timeout=probe_timeout)
         if probe_error:
             log.error(f"deploy {deploy_id} health probe failed: {probe_error}")
             await remove_container(container_id)
