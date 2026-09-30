@@ -50,30 +50,6 @@ class _FakeSessionMaker:
         return _FakeBegin(self._task)
 
 
-def test_start_training_refuses_running_task(monkeypatch):
-    """RUNNING 任务再次 start 应抛出异常且不创建后台任务/不启动容器。"""
-    task = SimpleNamespace(
-        id=7,
-        status=TrainStatus.RUNNING,
-        annotation_task_id=None,
-        framework=TrainFramework.ULTRALYTICS,
-    )
-    monkeypatch.setattr(sch, "async_db_session", _FakeSessionMaker(task))
-
-    started = {"container": False}
-
-    async def _fake_run_container(*_a, **_k):
-        started["container"] = True
-        raise AssertionError("RUNNING 任务不应启动容器")
-
-    monkeypatch.setattr(sch, "run_container", _fake_run_container)
-    monkeypatch.setattr(sch.asyncio, "create_task", lambda _coro: started.__setitem__("container", True))
-
-    with pytest.raises(Exception, match="任务正在运行"):
-        asyncio.run(sch.start_training(7))
-    assert started["container"] is False
-
-
 class _C:
     def __init__(self, i, labels):
         self.id = i

@@ -464,15 +464,18 @@ class TrainService:
 
     @classmethod
     async def create_task(cls, data, auth) -> dict:
-        from .model import TrainFramework
+        from .retired import ensure_active
+
+        # Ultralytics / PaddleX 已退场：新建训练任务时直接拒绝。
+        # 挡在这里（而不是等到执行器里）有两个好处：一是用户拿到的是**当场**的
+        # 明确提示，不用先创建成功再等它失败；二是避免在库里留下一堆注定失败的行。
+        ensure_active(data.framework, action="训练")
+
         async with async_db_session.begin() as db:
-            image = ("paddlex:latest"
-                     if data.framework == TrainFramework.PADDLEX
-                     else "ultralytics/ultralytics:latest")
             t = TrainTask(
                 name=data.name, framework=data.framework, dataset_id=data.dataset_id,
                 annotation_task_id=data.annotation_task_id,
-                base_model_id=data.base_model_id, docker_image=image,
+                base_model_id=data.base_model_id, docker_image="torchkiln:0.1.0",
                 hyperparams=data.hyperparams,
             )
             set_create_audit(t, auth)
@@ -520,12 +523,16 @@ class TrainService:
     @classmethod
     async def create_eval(cls, data, auth) -> dict:
         from .model import TrainFramework
+        from .retired import ensure_active
         async with async_db_session.begin() as db:
-            # 从模型版本推断 framework 并持久化（否则列表/筛选永远显示 ultralytics）
-            framework = TrainFramework.ULTRALYTICS
+            # 从模型版本推断 framework 并持久化（否则列表/筛选永远显示默认值）
+            framework = TrainFramework.TORKILN
             model_row = await db.get(TrainModel, data.model_id) if data.model_id else None
             if model_row and model_row.framework:
                 framework = model_row.framework
+            # 已退场框架当场拒绝：让用户在建评估单时就看到原因，
+            # 而不是创建成功、跑几分钟后才失败。
+            ensure_active(framework, action="评估")
             e = TrainEval(
                 model_repo_id=data.model_repo_id,
                 model_id=data.model_id,
@@ -611,11 +618,13 @@ class TrainService:
     @classmethod
     async def create_predict(cls, data, auth) -> dict:
         from .model import TrainFramework
+        from .retired import ensure_active
         async with async_db_session.begin() as db:
-            framework = TrainFramework.ULTRALYTICS
+            framework = TrainFramework.TORKILN
             model_row = await db.get(TrainModel, data.model_id) if data.model_id else None
             if model_row and model_row.framework:
                 framework = model_row.framework
+            ensure_active(framework, action="预测")
             p = TrainPredict(
                 model_repo_id=data.model_repo_id,
                 model_id=data.model_id,

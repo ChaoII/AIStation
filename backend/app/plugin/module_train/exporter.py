@@ -12,6 +12,15 @@ from app.core.logger import log
 
 from .model import TrainModelRepo
 
+#: YOLO 目录布局的布局标识符，**不是**训练框架名。
+#:
+#: ⚠️ 这个值恰好等于已退场的 ``TrainFramework.ULTRALYTICS``，极易被误读成
+#: "还在用 ultralytics"。它是**目录结构的选择键**：TorchKiln 的标注数据与
+#: YOLO 布局一致（``images/`` + ``labels/`` + ``train.txt``），所以评估/训练
+#: 导出都传这个值来选布局，与"用哪个框架训练"无关。
+#: 调用方请用本常量而不是裸字符串——裸字符串读起来像是在支持退场框架。
+YOLO_LAYOUT = "ultralytics"
+
 
 async def _load_latest_anns_by_image(db, image_ids: list[int], annotation_task_id: int | None) -> dict[int, list]:
     """一次性查出所有图片的最新版本标注，返回 ``image_id -> annotation_data`` 映射。
@@ -367,7 +376,11 @@ async def _export_core(
         log.warning(f"export: dataset {dataset_id} has no images")
         return
 
-    if framework == "ultralytics" or framework.startswith("yolo-"):
+    # ⚠️ 这里的 "ultralytics" 是**数据布局名**（见 YOLO_LAYOUT），不是已退场的
+    # 训练框架。TorchKiln 的标注数据复用 YOLO 目录结构（images/ + labels/ +
+    # train.txt），所以调用方也传这个值来选布局。Ultralytics 作为训练框架已退场，
+    # 本分支只负责摆文件。
+    if framework == YOLO_LAYOUT or framework.startswith("yolo-"):
         if framework.startswith("yolo-"):
             task_type = framework.replace("yolo-", "")
         if task_type in ("cls", "classification"):
@@ -405,16 +418,16 @@ async def _export_core(
     elif framework == "x-anylabeling":
         await _export_x_anylabeling(dataset_id, task_id, images, output_dir, annotation_task_id, class_names=class_names)
     elif framework == "paddle-ocr":
-        # 数据集下载导出 PaddleOCR 格式（det/rec 由 ocr_rec 控制）
+        # 数据集下载导出 PaddleOCR 格式（det/rec 由 ocr_rec 控制）。
+        # ⚠️ 这不是 PaddleX **训练**通路：它是"把数据集导成 PaddleOCR 标注格式给外部
+        # 工具用"的能力，与 X-AnyLabeling / COCO Panoptic 同属数据可移植格式，
+        # 因此 PaddleX 训练退场后**保留**。原先还有一个完全重复的 `paddlex`
+        # 分支指向同一函数，那是训练侧的别名，已移除。
         await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
                                  export_rec=ocr_rec, train_ratio=train_ratio, for_eval=for_eval)
     elif framework == "paddle-mlcls":
         await _export_paddle_mlcls(dataset_id, task_id, images, output_dir, annotation_task_id,
                                    class_names=class_names)
-    elif framework == "paddlex":
-        # PaddleX OCR：ocr_rec 区分 det(false) / rec(true)
-        await _export_paddle_ocr(dataset_id, task_id, images, output_dir, annotation_task_id,
-                                 export_rec=ocr_rec, train_ratio=train_ratio, for_eval=for_eval)
     elif framework == "coco-panoptic":
         await _export_coco_panoptic(dataset_id, task_id, images, output_dir,
                                     annotation_task_id, class_meta=class_meta)
@@ -2017,55 +2030,38 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
             log.error(f"从 TorchKiln 服务拉取权重失败: {e}")
             return {"repo_id": None, "storage_path": None}
 
-    # 1. 优先从 YOLO/PaddleX 标准输出目录找模型文件
+    # 1. 优先从标准输出目录找模型文件
+    #    TorchKiln 存 .pth；ultralytics 的 .pt 分支保留，是为了仍能读回**历史**
+    #    ultralytics 任务的产物（那 37 条任务行还在库里，权重也还在 RustFS）。
     best_path = None
-    if framework == "paddlex":
-        # PaddleX OCR train.py 保存 best_accuracy/latest .pdparams 到 save_model_dir(=/output/det 或 /output/rec)
+    extensions = (
+        [".pth"] if framework == "torchkiln"
+        else [".pt"] if framework == "ultralytics"
+        else [".pdparams"]
+    )
+    for ext in extensions:
         candidates = [
-            os.path.join(export_dir, "det", "best_accuracy.pdparams"),
-            os.path.join(export_dir, "rec", "best_accuracy.pdparams"),
-            os.path.join(export_dir, "best_accuracy.pdparams"),
-            os.path.join(export_dir, "det", "latest.pdparams"),
-            os.path.join(export_dir, "rec", "latest.pdparams"),
-            os.path.join(export_dir, "det", "best_model", "model.pdparams"),
-            os.path.join(export_dir, "rec", "best_model", "model.pdparams"),
+            os.path.join(export_dir, "exp", "weights", f"best{ext}"),
+            os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
+            os.path.join(export_dir, "weights", f"best{ext}"),
+            os.path.join(export_dir, f"best_accuracy{ext}"),
+            os.path.join(export_dir, f"best{ext}"),
         ]
         for p in candidates:
             if os.path.isfile(p):
                 best_path = p
                 break
-    else:
-        extensions = (
-            [".pt"] if framework == "ultralytics"
-            else [".pth"] if framework == "torchkiln"
-            else [".pdparams"]
-        )
-        for ext in extensions:
-            candidates = [
-                os.path.join(export_dir, "exp", "weights", f"best{ext}"),
-                os.path.join(export_dir, "runs", "train", "exp", "weights", f"best{ext}"),
-                os.path.join(export_dir, "weights", f"best{ext}"),
-                os.path.join(export_dir, f"best_accuracy{ext}"),
-                os.path.join(export_dir, f"best{ext}"),
-            ]
-            for p in candidates:
-                if os.path.isfile(p):
-                    best_path = p
-                    break
-            if best_path:
-                break
+        if best_path:
+            break
     # 2. 降级：递归搜索，但排除 .models_cache 目录
     if not best_path:
         for root, dirs, files in os.walk(export_dir):
             dirs[:] = [d for d in dirs if d != ".models_cache"]
             for f in files:
-                if framework == "paddlex" and f.endswith(".pdparams"):
+                if framework == "torchkiln" and f in ("best_accuracy.pth", "final.pth"):
                     best_path = os.path.join(root, f)
                     break
                 if framework == "ultralytics" and f == "best.pt":
-                    best_path = os.path.join(root, f)
-                    break
-                if framework == "torchkiln" and f in ("best_accuracy.pth", "final.pth"):
                     best_path = os.path.join(root, f)
                     break
             if best_path:

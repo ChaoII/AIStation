@@ -195,9 +195,14 @@ class TaskExecutor(ABC):
 
     @classmethod
     def _recover_row_applies(cls, row) -> bool:
-        """该 RUNNING 行是否由本执行器负责恢复（PaddleX 由 PaddleXOCR* 负责）。"""
+        """该 RUNNING 行是否由本执行器负责恢复。
+
+        TorchKiln 执行器只认 framework='TORKILN' 的行；基类（``TrainExecutor``）
+        负责已退场框架的历史行——那些行已无人执行，但仍需要被 ``recover_orphans``
+        收敛成终态，否则会永远显示"运行中"。
+        """
         framework = getattr(row, "framework", None)
-        if framework_value(framework) == "paddlex" and "PaddleXOCR" not in cls.__name__:
+        if framework_value(framework) == "torchkiln" and "TorchKiln" not in cls.__name__:
             return False
         return True
 

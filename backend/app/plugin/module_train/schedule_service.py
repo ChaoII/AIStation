@@ -24,6 +24,13 @@ class ScheduleService:
 
     @classmethod
     async def create_schedule(cls, data, auth) -> dict:
+        from .retired import ensure_active
+
+        # Ultralytics / PaddleX 已退场，当场拒绝。定时训练尤其要挡：它靠 cron 触发，
+        # 建错了当时没反馈，要等到下一个调度点才炸，且是以「任务失败」的形式炸——
+        # 用户根本看不出根源是建计划时选了个已退场的框架。
+        ensure_active(data.framework, action="定时训练")
+
         async with async_db_session.begin() as db:
             s = TrainScheduleModel(
                 name=data.name, dataset_id=data.dataset_id,
@@ -41,6 +48,13 @@ class ScheduleService:
             s = await db.get(TrainScheduleModel, schedule_id)
             if not s:
                 return None
+            # 改框架同样要挡：否则能把一个已退场的框架"改回去"，让本来建好的
+            # TorchKiln 计划变成永远不会成功的计划。
+            from .retired import ensure_active
+
+            new_fw = getattr(data, "framework", None)
+            if new_fw is not None:
+                ensure_active(new_fw, action="定时训练")
             for key in ("name", "dataset_id", "annotation_task_id", "framework",
                         "hyperparams", "cron_expr", "enabled"):
                 val = getattr(data, key, None)

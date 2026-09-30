@@ -631,15 +631,17 @@ class TorchKilnExecutor(TaskExecutor):
                                    ocr_rec: bool) -> None:
         """把标注数据导出到**宿主**目录（容器里挂成 /workspace/data）。"""
         await broadcast_line(task_id, f"[torchkiln] 准备训练数据 -> {host_data_dir}")
-        from app.plugin.module_train.exporter import prepare_training_data_for_task
+        from app.plugin.module_train.exporter import YOLO_LAYOUT, prepare_training_data_for_task
 
-        # 数据布局与 ultralytics（YOLO）一致：images/<split> + labels/<split>；
+        # 数据布局与 YOLO 一致：images/<split> + labels/<split>；
         # torchkiln_index=True 额外生成 TorchKiln 需要的 train.txt / val.txt 索引。
         # ⚠️ task_type 走 framework 前缀（``yolo-<type>``）——这是 _export_core 既有的
         #    约定（``framework.startswith("yolo-")`` 时用它推导任务类型），
         #    prepare_training_data_for_task 没有 task_type 形参。
+        # 用 YOLO_LAYOUT 常量而非裸 "ultralytics"：那个值是**目录布局标识符**，
+        # 不是已退场的训练框架名，写成常量免得被误读成"还在用 ultralytics"。
         export_framework = (f"yolo-{task_type}"
-                            if task_type not in ("detection", "detect") else "ultralytics")
+                            if task_type not in ("detection", "detect") else YOLO_LAYOUT)
         await prepare_training_data_for_task(
             dataset_id, task_id, export_framework, host_data_dir,
             annotation_task_id=annotation_task_id,

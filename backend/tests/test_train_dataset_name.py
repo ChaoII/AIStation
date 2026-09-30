@@ -17,7 +17,7 @@ def test_train_task_dataset_name(test_client, auth_headers):
         "/api/v1/train/task/create",
         json={
             "name": "P4名称测试任务",
-            "framework": "ultralytics",
+            "framework": "torchkiln",
             "dataset_id": ds_id,
             "hyperparams": {},
         },

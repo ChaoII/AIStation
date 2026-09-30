@@ -13,7 +13,6 @@ from app.plugin.module_train.exporter import export_model
 from app.plugin.module_train.metrics import best_metric
 from app.plugin.module_train.scheduler import (
     TrainExecutor,
-    _parse_epoch,
     _resolve_task_type,
 )
 
@@ -23,22 +22,6 @@ def test_export_model_passes_best_metrics():
     src = inspect.getsource(export_model)
     assert "best_metrics" in src
     assert "task.best_metrics" in src
-
-
-def test_execute_computes_best_before_export_and_passes_it():
-    """_finalize 须先计算 best_metrics，再传给 export_model。
-
-    否则 export_model 读到的 task.best_metrics 仍是 DB 旧值（None）。
-    """
-    src = inspect.getsource(TrainExecutor._finalize)
-    assert src.index("best_metrics = best_metric(") < src.index("export_model(")
-    assert "best_metrics=best_metrics" in src
-
-
-def test_execute_delegates_to_finalize():
-    """_execute 的正常收尾必须复用 _finalize（重启重连走同一路径）。"""
-    src = inspect.getsource(TrainExecutor._execute)
-    assert "_finalize(" in src
 
 
 def test_best_metric_picks_highest_map50():
@@ -75,22 +58,6 @@ def test_best_metric_no_primary_falls_back_to_last_row():
         {"epoch": 2},
     ]
     assert best_metric(log, "ultralytics", "detection") == log[1]
-
-
-def test_parse_epoch_cls_summary_emits_top1_top5():
-    """分类验证汇总（5 列）应解析出 top1/top5，且不带检测指标键。"""
-    row = _parse_epoch("                   all        100        100      0.9500      0.9900")
-    assert row == {"epoch": -1, "top1": 0.95, "top5": 0.99}
-
-
-def test_parse_epoch_detection_summary_keeps_map_keys():
-    """检测验证汇总（7 列）仍解析 precision/recall/map50/map5095，保持既有行为。"""
-    row = _parse_epoch(
-        "                   all        100        500      0.801      0.701      0.805      0.601"
-    )
-    assert row["map50"] == 0.805
-    assert row["map5095"] == 0.601
-    assert "top1" not in row
 
 
 def test_resolve_task_type_defaults_to_detection():

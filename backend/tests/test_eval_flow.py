@@ -85,40 +85,6 @@ def test_resolve_eval_context_torchkiln_returns_config_name(monkeypatch):
 # 指标解析
 # ---------------------------------------------------------------------------
 
-def test_yolo_cls_metrics_parse():
-    line = "                 all        100        200      0.912      0.977"
-    assert es._parse_yolo_cls_line(line) == {"top1": 0.912, "top5": 0.977}
-
-
-def test_yolo_cls_metrics_none_on_five_col_non_all():
-    line = "                  1          50         100      0.912      0.977"
-    assert es._parse_yolo_cls_line(line) is None
-
-
-def test_accumulate_yolo_metrics_classification():
-    """分类 5 列汇总行走 top1/top5 分支。"""
-    metrics = {}
-    out = es._accumulate_yolo_metrics(
-        "                 all        100        200      0.912      0.977", metrics
-    )
-    assert out == {"top1": 0.912, "top5": 0.977}
-
-
-def test_accumulate_yolo_metrics_detection_unchanged():
-    """检测 7 列汇总行仍走 precision/recall/map50/map5095 分支。"""
-    metrics = {}
-    out = es._accumulate_yolo_metrics(
-        "                 all        100        500      0.801      0.701      0.805      0.601",
-        metrics,
-    )
-    assert out == {
-        "precision": 0.801,
-        "recall": 0.701,
-        "map50": 0.805,
-        "map5095": 0.601,
-    }
-
-
 # ---------------------------------------------------------------------------
 # 全量确定性导出（for_eval）
 # ---------------------------------------------------------------------------
@@ -214,7 +180,7 @@ def test_prepare_eval_data_for_task_signature():
     assert "ocr_mode" in sig.parameters
 
 
-def test_prepare_eval_data_for_task_paddle_forwards_for_eval(monkeypatch, tmp_path):
+def test_prepare_eval_data_for_task_paddleocr_forwards_for_eval(monkeypatch, tmp_path):
     """PaddleOCR 评估路径须把 for_eval=True 透传给 _export_paddle_ocr。"""
     recorded = {}
 
@@ -226,7 +192,7 @@ def test_prepare_eval_data_for_task_paddle_forwards_for_eval(monkeypatch, tmp_pa
     monkeypatch.setattr(exporter, "_export_paddle_ocr", fake_paddle)
     asyncio.run(
         exporter.prepare_eval_data_for_task(
-            1, 1, "paddlex", str(tmp_path / "out"), annotation_task_id=7, ocr_mode="rec"
+            1, 1, "paddle-ocr", str(tmp_path / "out"), annotation_task_id=7, ocr_mode="rec"
         )
     )
     assert recorded.get("for_eval") is True

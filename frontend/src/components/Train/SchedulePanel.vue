@@ -36,9 +36,9 @@
           <el-input v-model="form.name" placeholder="如：每晚 2 点训练" />
         </el-form-item>
         <el-form-item label="框架">
+          <!-- Ultralytics / PaddleX 已退场，定时训练只支持自研平台。 -->
           <el-radio-group v-model="form.framework">
-            <el-radio value="ultralytics">Ultralytics</el-radio>
-            <el-radio value="paddlex">PaddleX</el-radio>
+            <el-radio value="torchkiln">TorchKiln（自研）</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="数据集" required>
@@ -90,7 +90,7 @@ const dialogVisible = ref(false);
 const emptyForm = () => ({
   id: 0,
   name: "",
-  framework: "ultralytics",
+  framework: "torchkiln",
   dataset_id: null as number | null,
   cron_expr: "0 2 * * *",
   enabled: true,
@@ -135,7 +135,7 @@ function openEdit(row: any) {
   Object.assign(form, {
     id: row.id,
     name: row.name,
-    framework: row.framework || "ultralytics",
+    framework: row.framework || "torchkiln",
     dataset_id: row.dataset_id,
     cron_expr: row.cron_expr,
     enabled: row.enabled !== false,

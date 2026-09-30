@@ -244,8 +244,14 @@ async def _ensure_missing_columns() -> None:
 
 CAMERA_GROUP_PARENT_FK = "fk_video_camera_groups_parent_id"
 
-#: ``trainframework`` 枚举需要保证存在的成员（与 model.TrainFramework 保持一致）。
+#: ``trainframework`` 枚举需要保证存在的成员。
 #: SQLAlchemy 的 SAEnum 存的是**成员名**（大写），所以这里是 'TORKILN'。
+#:
+#: ⚠️ 这里**必须**继续给已退场的 PADDLEX / ULTRALYTICS 补齐——它们的执行通路已经
+#: 移除，但库里还留着 92 个 ULTRALYTICS 模型与 37 个历史任务。若把这两个值从 PG
+#: 枚举里去掉，读取那些行会直接报 ``invalid input value for enum``，整个模型列表
+#: 页都会打不开。"代码退场"不等于"数据消失"：枚举值要留着让历史可读，新建入口
+#: 才由 service 层拒绝（见 ``service.py`` 的 ``_TRAINFRAMEWORK_RETIRED``）。
 _TRAINFRAMEWORK_VALUES = ("PADDLEX", "ULTRALYTICS", "TORKILN")
 
 
@@ -1332,14 +1338,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_scheduler())
         log.info("✅ 训练调度器已启动")
 
-        from app.plugin.module_train.paddlex_executor import (
-            PaddleXOCRDetExecutor,
-            PaddleXOCRRecExecutor,
-        )
-        asyncio.create_task(PaddleXOCRDetExecutor.start_recovery_loop())
-        asyncio.create_task(PaddleXOCRRecExecutor.start_recovery_loop())
-        log.info("✅ OCR 训练调度器已启动")
-
         from app.plugin.module_train.eval_scheduler import start_evaluation_scheduler
         asyncio.create_task(start_evaluation_scheduler())
         log.info("✅ 评估调度器已启动")
@@ -1393,7 +1391,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
                     deleted_id INTEGER,
                     model_repo_id INTEGER NOT NULL,
                     model_id INTEGER NOT NULL,
-                    framework VARCHAR(16) NOT NULL DEFAULT 'ULTRALYTICS',
+                    -- 默认值原为 'ULTRALYTICS'：那是已退场的训练框架，且历史上
+                    -- 正是它让 create_predict/create_eval 在 framework 为空时
+                    -- 把记录记成 ULTRALYTICS（哪怕实际跑的是别的框架）。
+                    -- 现改为 TORKILN。只影响**新建表**（CREATE TABLE IF NOT EXISTS
+                    -- 在既有表上是 no-op），既有表的默认值见 model.py 的 ORM default。
+                    framework VARCHAR(16) NOT NULL DEFAULT 'TORKILN',
                     source_type VARCHAR(16) NOT NULL,
                     source_dataset_id INTEGER,
                     source_images JSONB,

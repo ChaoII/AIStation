@@ -15,10 +15,12 @@ from .docker_utils import get_container_error_tail, pull_image, remove_container
 from .gpu_pool import gpu_lease
 from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
 from .paths import work_dir
+from .retired import ensure_active
 from .task_executor import TaskExecutor
 from .ws import broadcast_eval_log
 
-DOCKER_IMAGE = "ultralytics/ultralytics:latest"
+#: 自研平台的评估镜像（评估命令由 hp.docker_image 覆盖）
+DOCKER_IMAGE = "torchkiln:0.1.0"
 
 # 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
 # 而留下半成品；任务完成/取消后自动丢弃引用。
@@ -36,38 +38,6 @@ def _spawn(coro) -> asyncio.Task:
         _bg_tasks.add(task)
         task.add_done_callback(_bg_tasks.discard)
     return task
-
-
-# PaddleX OCR 独立 eval 脚本（挂载容器 /scripts/paddlex_eval.py，det/rec 通用）。
-# 加载 best.pdparams + Eval dataset，跑 program.eval，输出 EVAL_METRIC_JSON。
-_PADDLEX_EVAL_SCRIPT = r'''
-import sys, os, json
-__dir__ = os.path.dirname(os.path.abspath(__file__))
-_POCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
-sys.path.append(__dir__)
-sys.path.insert(0, _POCR_DIR)
-sys.path.insert(0, os.path.abspath(os.path.join(_POCR_DIR, "..")))
-
-import paddle
-from ppocr.data import build_dataloader
-from ppocr.modeling.architectures import build_model
-from ppocr.postprocess import build_post_process
-from ppocr.metrics import build_metric
-from ppocr.utils.save_load import load_model
-import tools.program as program
-
-config, device, logger, vdl_writer = program.preprocess(is_train=False)
-model = build_model(config["Architecture"])
-load_model(config, model, model_type=config["Architecture"]["model_type"])
-valid_dataloader = build_dataloader(config, "Eval", device, logger)
-post_process_class = build_post_process(config["PostProcess"], config["Global"])
-eval_class = build_metric(config["Metric"])
-metric = program.eval(
-    model, valid_dataloader, post_process_class, eval_class,
-    model_type=config["Architecture"]["model_type"],
-)
-print("EVAL_METRIC_JSON " + json.dumps(metric, ensure_ascii=False), flush=True)
-'''
 
 
 async def start_evaluation_scheduler():
@@ -152,54 +122,6 @@ async def resolve_eval_context(model_id: int) -> tuple[int | None, str, str]:
     )
 
 
-def _parse_yolo_cls_line(line: str) -> dict | None:
-    """解析 YOLO 分类 val 汇总行：``all <img> <inst> <top1> <top5>``（5 列）。"""
-    if re.match(r"^\s+all\s+", line):
-        parts = line.strip().split()
-        if len(parts) == 5:
-            try:
-                return {"top1": float(parts[3]), "top5": float(parts[4])}
-            except ValueError:
-                return None
-    return None
-
-
-def _accumulate_yolo_metrics(line: str, metrics: dict) -> dict | None:
-    """累积解析 YOLO val 输出行到 ``metrics``。
-
-    分类汇总行（5 列）走 ``_parse_yolo_cls_line``；检测汇总行（7 列）解析
-    precision/recall/map50/map5095；per-class 行按检测格式累积。
-    命中时返回当前 metrics 快照，否则 None。
-    """
-    m_cls = _parse_yolo_cls_line(line)
-    if m_cls is not None:
-        metrics.update(m_cls)
-        return dict(metrics)
-    if re.match(r"^\s+all\s+", line):
-        parts = line.strip().split()
-        if len(parts) >= 7:
-            metrics.update({
-                "precision": float(parts[3]) if parts[3] else 0,
-                "recall": float(parts[4]) if parts[4] else 0,
-                "map50": float(parts[5]) if parts[5] else 0,
-                "map5095": float(parts[6]) if parts[6] else 0,
-            })
-            return dict(metrics)
-    m = re.match(r"^\s+(\d+)\s+", line)
-    if m:
-        parts = line.strip().split()
-        if len(parts) >= 7:
-            cls_id = int(parts[0])
-            metrics.setdefault("classes", {})[str(cls_id)] = {
-                "precision": float(parts[3]) if parts[3] else 0,
-                "recall": float(parts[4]) if parts[4] else 0,
-                "map50": float(parts[5]) if parts[5] else 0,
-                "map5095": float(parts[6]) if parts[6] else 0,
-            }
-            return dict(metrics)
-    return None
-
-
 async def stop_evaluation(eval_id: int):
     await EvalExecutor.stop(eval_id)
 
@@ -222,7 +144,7 @@ class EvalExecutor(TaskExecutor):
                     return
 
             # 有效框架：create_eval 未持久化 framework 时，从模型版本推断
-            framework = eval_rec.framework or TrainFramework.ULTRALYTICS
+            framework = eval_rec.framework or TrainFramework.TORKILN
             async with async_db_session() as db:
                 model_row = await db.get(TrainModel, eval_rec.model_id)
                 if model_row and model_row.framework:
@@ -234,6 +156,11 @@ class EvalExecutor(TaskExecutor):
             from .framework_utils import framework_value
 
             fw = framework_value(framework)
+            # Ultralytics / PaddleX 的评估通路已退场：在这里挡住并说明原因，
+            # 而不是继续往下走——否则会拉错镜像、用 YOLO val 去评估 OCR 权重，
+            # 报出与真实原因无关的错。
+            ensure_active(fw, action="评估")
+
             docker_image = DOCKER_IMAGE
 
             export_dir = work_dir("eval_output", eval_id)
@@ -243,23 +170,18 @@ class EvalExecutor(TaskExecutor):
             os.makedirs(model_dir, exist_ok=True)
 
             # Export evaluation dataset（全量确定性 + 任务类型/规格从产出模型推断）
-            from .exporter import prepare_eval_data_for_task
+            from .exporter import YOLO_LAYOUT, _write_torchkiln_index, prepare_eval_data_for_task
             await broadcast_eval_log(eval_id, "[eval] exporting dataset...")
-            ann_task_id, paddlex_mode, paddlex_size = await resolve_eval_context(eval_rec.model_id)
-            if fw == "torchkiln":
-                # TorchKiln 读 data_dir + label_file_list（train.txt/val.txt 索引），
-                # 图片/标签布局与 ultralytics 一致，故复用 YOLO 导出并补索引。
-                await prepare_eval_data_for_task(
-                    eval_rec.eval_dataset_id, eval_id, "ultralytics", data_dir,
-                    annotation_task_id=ann_task_id,
-                )
-                from .exporter import _write_torchkiln_index
-                _write_torchkiln_index(data_dir)
-            else:
-                await prepare_eval_data_for_task(
-                    eval_rec.eval_dataset_id, eval_id, framework.value, data_dir,
-                    annotation_task_id=ann_task_id, ocr_mode=paddlex_mode,
-                )
+            ann_task_id, tk_cfg_name, _tk_size = await resolve_eval_context(eval_rec.model_id)
+            # TorchKiln 读 data_dir + label_file_list（train.txt/val.txt 索引），
+            # 图片/标签布局与 YOLO 一致，故复用 YOLO 布局导出并补索引。
+            # 传 YOLO_LAYOUT 而不是裸 "ultralytics"：后者是布局标识符，不是框架名
+            # （Ultralytics 作为训练框架已退场），写成常量免得被误读成在用退场框架。
+            await prepare_eval_data_for_task(
+                eval_rec.eval_dataset_id, eval_id, YOLO_LAYOUT, data_dir,
+                annotation_task_id=ann_task_id,
+            )
+            _write_torchkiln_index(data_dir)
 
             # Download model file from RustFS（统一解析：/export/ 导出产物自动回溯原始 best.pt）
             from .service import TrainService
@@ -282,79 +204,44 @@ class EvalExecutor(TaskExecutor):
             iou = hp.get("iou", 0.6)
             device = hp.get("device", "0")
 
-            if fw == "paddlex":
-                # PaddleX OCR eval：容器内脚本加载 best.pdparams 跑 program.eval（det/rec）
-                # 规格取自产出该模型的训练任务（resolve_eval_context），不用 eval 超参
-                mode = paddlex_mode
-                size = paddlex_size
-                cfg = (
-                    f"configs/det/PP-OCRv6/PP-OCRv6_{size}_det.yml"
-                    if mode == "det" else f"configs/rec/PP-OCRv6/PP-OCRv6_{size}_rec.yml"
-                )
-                eval_script = os.path.join(export_dir, "paddlex_eval.py")
-                with open(eval_script, "w", encoding="utf-8") as f:
-                    f.write(_PADDLEX_EVAL_SCRIPT)
-                docker_image = "paddlex:latest"
-                inner = (
-                    f"cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && "
-                    f"PYTHONPATH=/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR "
-                    f"python /scripts/paddlex_eval.py -c {cfg} -o "
-                    f"Global.pretrained_model=/model/{model_filename} "
-                    f"Global.save_model_dir=/output "
-                    f"Eval.dataset.data_dir=/data/{mode}/dataset "
-                    f"'Eval.dataset.label_file_list=[\"/data/{mode}/dataset/val.txt\"]' "
-                    f"Eval.loader.num_workers=0"
-                )
-                cmd = ["bash", "-c", inner]
-            elif fw == "torchkiln":
-                # 自研平台：走 `tkiln val`，配置名取自**产出该模型的训练任务**
-                # （resolve_eval_context 返回的第 2 项），保证与训练时同一套配置。
-                tk_cfg = paddlex_mode  # resolve_eval_context 对 torchkiln 返回的就是配置名
-                if not tk_cfg:
-                    raise Exception(
-                        "TorchKiln 评估找不到产出该模型的训练任务，无法确定配置名；"
-                        "请确认该模型版本确实由 TorchKiln 训练产出")
-                # ⚠️ 上面的 tk_cfg 是**模型名**（如 yolo11-seg），而 `tkiln val -c`
-                # 只认 **configs/ 下的配置路径**。原样传会在容器里报
-                # 「省略 <task> 时必须用 -c <config> 指定配置」——评估从来没跑通过的
-                # 根因。借常驻元数据服务把模型名换成配置路径。
-                from .torchkiln_client import TorchKilnClient
-                async with TorchKilnClient() as _tk:
-                    tk_cfg = await _tk.resolve_config_path(tk_cfg)
-                opts = [
-                    f"Global.pretrained_model=/model/{model_filename}",
-                    "Global.save_model_dir=/output",
-                    f"Global.imgsz={imgsz}",
-                    f"Global.batch={batch}",
-                    f"Global.conf={conf}",
-                    f"Global.iou={iou}",
-                    f"Global.device={device}",
-                    # ⚠️ 路径是**挂载点根**：``data_dir`` 整个挂在 ``/data``，清单就在
-                    # ``/data/val.txt``。写成 ``/data/dataset/val.txt``（PaddleX 那种
-                    # 多一层 dataset/ 的结构）会 FileNotFoundError。
-                    "Eval.dataset.data_dir=/data",
-                    "Eval.dataset.label_file_list=[\"/data/val.txt\"]",
-                    "Eval.loader.num_workers=0",
-                    # ⚠️ `tkiln val` 的 task.build_datasets 会**同时**构造 Train 与 Eval
-                    # 两个 dataset。只覆盖 Eval 的话，Train 仍用配置模板里的
-                    # `datasets/seg_demo/train.txt` -> FileNotFoundError 直接崩。
-                    # 评估导出是 for_eval=True（全量进 val 目录），所以 Train 指向
-                    # 同一份数据即可，不会读到不存在的清单。
-                    "Train.dataset.data_dir=/data",
-                    "Train.dataset.label_file_list=[\"/data/val.txt\"]",
-                ]
-                cmd = ["tkiln", "val", "-c", str(tk_cfg), "-o"] + opts
-                docker_image = hp.get("docker_image") or "torchkiln:0.1.0"
-            else:
-                cmd = [
-                    "yolo", "val",
-                    f"model=/model/{model_filename}",
-                    "data=/data/dataset.yaml",
-                    f"imgsz={imgsz}",
-                    f"batch={batch}",
-                    f"conf={conf}",
-                    f"iou={iou}",
-                ]
+            # 自研平台：走 `tkiln val`，配置名取自**产出该模型的训练任务**
+            # （resolve_eval_context 返回的第 2 项），保证与训练时同一套配置。
+            tk_cfg = tk_cfg_name
+            if not tk_cfg:
+                raise Exception(
+                    "TorchKiln 评估找不到产出该模型的训练任务，无法确定配置名；"
+                    "请确认该模型版本确实由 TorchKiln 训练产出")
+            # ⚠️ 上面的 tk_cfg 是**模型名**（如 yolo11-seg），而 `tkiln val -c`
+            # 只认 **configs/ 下的配置路径**。原样传会在容器里报
+            # 「省略 <task> 时必须用 -c <config> 指定配置」——评估从来没跑通过的
+            # 根因。借常驻元数据服务把模型名换成配置路径。
+            from .torchkiln_client import TorchKilnClient
+            async with TorchKilnClient() as _tk:
+                tk_cfg = await _tk.resolve_config_path(tk_cfg)
+            opts = [
+                f"Global.pretrained_model=/model/{model_filename}",
+                "Global.save_model_dir=/output",
+                f"Global.imgsz={imgsz}",
+                f"Global.batch={batch}",
+                f"Global.conf={conf}",
+                f"Global.iou={iou}",
+                f"Global.device={device}",
+                # ⚠️ 路径是**挂载点根**：``data_dir`` 整个挂在 ``/data``，清单就在
+                # ``/data/val.txt``。写成 ``/data/dataset/val.txt``（PaddleX 那种
+                # 多一层 dataset/ 的结构）会 FileNotFoundError。
+                "Eval.dataset.data_dir=/data",
+                "Eval.dataset.label_file_list=[\"/data/val.txt\"]",
+                "Eval.loader.num_workers=0",
+                # ⚠️ `tkiln val` 的 task.build_datasets 会**同时**构造 Train 与 Eval
+                # 两个 dataset。只覆盖 Eval 的话，Train 仍用配置模板里的
+                # `datasets/seg_demo/train.txt` -> FileNotFoundError 直接崩。
+                # 评估导出是 for_eval=True（全量进 val 目录），所以 Train 指向
+                # 同一份数据即可，不会读到不存在的清单。
+                "Train.dataset.data_dir=/data",
+                "Train.dataset.label_file_list=[\"/data/val.txt\"]",
+            ]
+            cmd = ["tkiln", "val", "-c", str(tk_cfg), "-o"] + opts
+            docker_image = hp.get("docker_image") or "torchkiln:0.1.0"
 
             await broadcast_eval_log(eval_id, f"[eval] pulling image {docker_image}...")
             await pull_image(docker_image)
@@ -362,14 +249,9 @@ class EvalExecutor(TaskExecutor):
                 data_dir: {"bind": "/data", "mode": "rw"},
                 model_dir: {"bind": "/model", "mode": "ro"},
             }
-            if fw == "paddlex":
-                volumes[export_dir] = {"bind": "/scripts", "mode": "ro"}
-                volumes[os.path.join(export_dir, "output")] = {"bind": "/output", "mode": "rw"}
-                os.makedirs(os.path.join(export_dir, "output"), exist_ok=True)
-            elif fw == "torchkiln":
-                # tkiln val 写 Global.save_model_dir=/output
-                volumes[os.path.join(export_dir, "output")] = {"bind": "/output", "mode": "rw"}
-                os.makedirs(os.path.join(export_dir, "output"), exist_ok=True)
+            # tkiln val 写 Global.save_model_dir=/output
+            volumes[os.path.join(export_dir, "output")] = {"bind": "/output", "mode": "rw"}
+            os.makedirs(os.path.join(export_dir, "output"), exist_ok=True)
             # 全局 GPU 并发上限：与训练/预测共享同一信号量，避免同一张卡被并发抢占。
             # ⚠️ 信号量**只认本进程里排队的任务**，看不见别的框架、更看不见平台外
             #   占着卡的人——而训练走的是 gpu_pool（Redis + NVML）。两套排队互不知情
@@ -385,7 +267,7 @@ class EvalExecutor(TaskExecutor):
                     docker_image, cmd,
                     volumes=volumes,
                     gpu_id=lease.device_ids or device,
-                    shm_size="4g" if fw in ("paddlex", "torchkiln") else None,
+                    shm_size="4g",
                     labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
                 )
                 container_id = container.id
@@ -394,21 +276,6 @@ class EvalExecutor(TaskExecutor):
                 cls._registry[eval_id] = entry
 
                 metrics: dict = {}
-
-                def _parse_paddlex_metrics(line: str) -> dict | None:
-                    """解析 PaddleX eval 脚本输出的 EVAL_METRIC_JSON 行。"""
-                    if "EVAL_METRIC_JSON" in line:
-                        try:
-                            data = json.loads(line.split("EVAL_METRIC_JSON", 1)[1].strip())
-                            metrics.update(data)
-                            return dict(metrics)
-                        except Exception:
-                            return None
-                    return None
-
-                def _parse_val_metrics(line: str) -> dict | None:
-                    """解析 YOLO val 输出：分类 top1/top5 与检测汇总/per-class 均累积到 metrics。"""
-                    return _accumulate_yolo_metrics(line, metrics)
 
                 def _parse_torchkiln_metrics(line: str) -> dict | None:
                     """解析 ``tkiln val`` 的评估指标。
@@ -452,18 +319,11 @@ class EvalExecutor(TaskExecutor):
                         return dict(metrics)
                     return None
 
-                if fw == "torchkiln":
-                    _parser = _parse_torchkiln_metrics
-                elif fw == "paddlex":
-                    _parser = _parse_paddlex_metrics
-                else:
-                    _parser = _parse_val_metrics
-
                 await cls.follow_logs(
                     container_id,
                     os.path.join(export_dir, "eval.log"),
                     lambda line: broadcast_eval_log(eval_id, line),
-                    _parser,
+                    _parse_torchkiln_metrics,
                 )
                 exit_code = await cls._get_exit_code(container)
 

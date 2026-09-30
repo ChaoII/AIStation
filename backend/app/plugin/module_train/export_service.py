@@ -5,23 +5,13 @@ from app.core.logger import log
 from app.utils.s3_client import s3_client
 
 from .paths import work_dir
+from .retired import ensure_active
 
 # Format -> supported export arguments mapping
-EXPORT_PARAMS_BY_FORMAT = {
-    "onnx": ["imgsz", "batch", "device", "dynamic", "simplify", "opset", "nms", "quantize", "data", "fraction"],
-    "torchscript": ["imgsz", "batch", "device", "dynamic", "optimize", "nms", "quantize"],
-    "engine": ["imgsz", "batch", "device", "dynamic", "workspace", "nms", "quantize", "simplify", "data", "fraction"],
-    "openvino": ["imgsz", "batch", "device", "dynamic", "nms", "quantize", "data", "fraction"],
-    "coreml": ["imgsz", "batch", "device", "dynamic", "nms", "quantize"],
-    "saved_model": ["imgsz", "batch", "device", "nms", "quantize", "keras", "data", "fraction"],
-    "paddle": ["imgsz", "batch", "device"],
-    "ncnn": ["imgsz", "batch", "device", "quantize"],
-    "litert": ["imgsz", "batch", "device", "quantize", "data", "fraction"],
-    "pb": ["imgsz", "batch", "device"],
-    "edgetpu": ["imgsz", "quantize", "data", "fraction", "device"],
-    "tflite": ["imgsz", "batch", "device", "quantize", "data", "fraction"],
-    "tfjs": ["imgsz", "batch", "device"],
-}
+# 注：原先这里还有 ``EXPORT_PARAMS_BY_FORMAT``（ultralytics yolo export 各格式的
+# 可用参数表）与 ``_build_export_cmd()`` / ``_find_exported_file()``。三者都只服务
+# 于 yolo export 通路，已随 Ultralytics 退场移除。``EXPORT_EXT`` 仍被
+# ``resolve_download_target`` 与 torchkiln 导出共用，保留。
 
 # Format -> output file extension
 EXPORT_EXT = {
@@ -58,27 +48,6 @@ def resolve_download_target(model: dict, exists_fn) -> tuple[str, str]:
     return storage_path, "pytorch"
 
 
-def _build_export_cmd(params: dict) -> list[str]:
-    """Build yolo export CLI command from user params"""
-    cmd = ["yolo", "export", "model=/weights/best.pt", "project=/output", "name=export"]
-
-    for key, val in params.items():
-        if key == "format":
-            cmd.append(f"format={val}")
-            continue
-        fmt = params.get("format", "onnx")
-        if key not in EXPORT_PARAMS_BY_FORMAT.get(fmt, []):
-            continue
-        if val is None or val is False:
-            continue
-        if val is True:
-            cmd.append(f"{key}={str(val).lower()}")
-        else:
-            cmd.append(f"{key}={val}")
-
-    return cmd
-
-
 async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> tuple[int, str]:
     """Run a container, capture logs to file, return (exit_code, log_path)"""
     import docker
@@ -113,22 +82,6 @@ async def _run_export_container(image: str, cmd: list[str], volumes: dict) -> tu
             container.remove()
 
     return await loop.run_in_executor(None, _sync)
-
-
-def _find_exported_file(output_dir: str, weights_dir: str, export_format: str) -> str | None:
-    """Find the exported file in output or weights directory"""
-    ext = EXPORT_EXT.get(export_format, "")
-    search_dirs = [output_dir, weights_dir]
-    for search_dir in search_dirs:
-        if not os.path.isdir(search_dir):
-            continue
-        for root, _, files in os.walk(search_dir):
-            for f in files:
-                if ext and f.endswith(ext):
-                    return os.path.join(root, f)
-                if not ext and export_format in root:
-                    return root
-    return None
 
 
 #: TorchKiln 导出产物扩展名（与 ultralytics 的 EXPORT_EXT 分开）
@@ -301,19 +254,16 @@ async def export_model_to_format(
     Returns:
         dict with download_url, format, file_size, file_name
     """
-    from .model import TrainModel
-
     if not storage_path:
-        raise Exception("该模型未存储训练产物文件（best.pt），无法导出。请确认训练已完成且模型已正常保存。")
+        raise Exception("该模型未存储训练产物文件，无法导出。请确认训练已完成且模型已正常保存。")
 
-    # 非 ultralytics 框架：
-    #   - PaddleX 产物是 .pdparams，无法用 yolo export 转格式
-    #   - TorchKiln 产物是 .pth（自己的 state_dict），同样不能用 yolo export，
-    #     但它自带 `tkiln export --onnx`，可以走自己的导出路径
-    if framework and framework not in ("ultralytics", "yolo", "torchkiln", None):
+    # 格式转换导出只支持自研平台：TorchKiln 产物是 .pth，走它自带的
+    # `tkiln export --onnx`。Ultralytics / PaddleX 的转换通路已退场
+    # （原始权重下载不受影响，仍可从模型仓库直接下载）。
+    if framework != "torchkiln":
         raise Exception(
-            f"「{framework}」框架暂不支持 ONNX/TensorRT 等格式转换导出，"
-            "仅支持下载原始权重文件。请使用模型下载功能获取 .pdparams 权重。"
+            f"「{framework}」框架的格式转换导出已退场，仅支持下载原始权重文件。"
+            f"请使用模型下载功能获取权重；如需 ONNX/TensorRT，请用 TorchKiln 重新训练后导出。"
         )
 
     # 每次导出都重新执行，除非原始 .pt 确实无法找回
@@ -352,146 +302,10 @@ async def export_model_to_format(
         return await _export_torchkiln(
             model_id, original_storage_path, export_params, storage_path, existing_format)
 
-    export_format = export_params.get("format", "onnx")
-    image = "ultralytics/ultralytics:latest"
-    log_path = ""
-
-    work_path = work_dir("model_export", model_id)
-    weights_dir = os.path.join(work_path, "weights")
-    output_dir = os.path.join(work_path, "output")
-    os.makedirs(weights_dir, exist_ok=True)
-    os.makedirs(output_dir, exist_ok=True)
-
-    try:
-        # 1. Download .pt from RustFS
-        pt_path = os.path.join(weights_dir, "best.pt")
-        try:
-            buf = s3_client.download_fileobj(original_storage_path)
-        except Exception as e:
-            if existing_format and "404" in str(e):
-                dl_url = s3_client.presigned_url(storage_path)
-                log.info(f"原始 .pt 不存在(404)，返回已有导出产物: {storage_path}")
-                return {
-                    "download_url": dl_url,
-                    "format": existing_format,
-                    "file_size": 0,
-                    "file_name": f"model_{model_id}_export.{existing_format}",
-                }
-            raise
-        with open(pt_path, "wb") as f:
-            f.write(buf.read())
-        file_size = os.path.getsize(pt_path)
-        log.info(f"downloaded {original_storage_path} to {pt_path} ({file_size} bytes)")
-        if file_size == 0:
-            raise Exception(f"从 RustFS 下载的文件为空 (storage_path={storage_path})")
-        # 检查文件头是否为有效的 PyTorch pickle 格式（前两个字节通常为 0x80 0x02-0x05）
-        with open(pt_path, "rb") as f:
-            header = f.read(8)
-        if not header.startswith(b"\x80") and not header.startswith(b"PK\x03\x04"):
-            if existing_format:
-                # 回溯的 .pt 路径无效，但有旧导出产物，提供下载
-                dl_url = s3_client.presigned_url(storage_path)
-                log.info(f"原始 .pt 不存在，返回已有导出产物: {storage_path}")
-                return {
-                    "download_url": dl_url,
-                    "format": existing_format,
-                    "file_size": 0,
-                    "file_name": f"model_{model_id}_export.{existing_format}",
-                }
-            raise Exception(
-                f"RustFS 返回的文件不是有效的 PyTorch 模型文件\n"
-                f"storage_path={original_storage_path}, 文件大小={file_size} bytes\n"
-                f"前 8 字节 hex: {header.hex()}\n"
-                f"说明: 该模型训练产物丢失或损坏，请重新训练"
-            )
-
-        # 2. Build and run export command
-        cmd = _build_export_cmd(export_params)
-        log.info(f"export cmd: {' '.join(cmd)}")
-
-        exit_code, log_path = await _run_export_container(
-            image, cmd,
-            volumes={
-                weights_dir: {"bind": "/weights", "mode": "rw"},
-                output_dir: {"bind": "/output", "mode": "rw"},
-            },
-        )
-
-        if exit_code != 0:
-            log_tail = ""
-            if os.path.isfile(log_path):
-                with open(log_path, encoding="utf-8", errors="replace") as lf:
-                    lines = lf.readlines()
-                    log_tail = "".join(lines[-200:]).strip()
-            raise Exception(f"容器退出码 {exit_code}\n最后日志:\n{log_tail}")
-
-        # 3. Find exported file
-        exported = _find_exported_file(output_dir, weights_dir, export_format)
-        if not exported:
-            dir_listing = []
-            for d in [output_dir, weights_dir]:
-                if os.path.isdir(d):
-                    for root, _, files in os.walk(d):
-                        dir_listing.append(f"  {root}: {files}")
-            raise Exception(
-                f"exported file not found for format {export_format}\n"
-                f"searched dirs:\n" + "\n".join(dir_listing)
-            )
-
-        # 4. Upload to RustFS
-        rustfs_key = f"train/models/model_{model_id}/export/best{EXPORT_EXT.get(export_format, '')}"
-        if os.path.isfile(exported):
-            with open(exported, "rb") as f:
-                s3_client.upload_fileobj(f, rustfs_key)
-            file_size = os.path.getsize(exported)
-        else:
-            # Directory format - zip it
-            import shutil
-            zip_path = output_dir + ".zip"
-            shutil.make_archive(output_dir, "zip", exported)
-            with open(zip_path, "rb") as f:
-                s3_client.upload_fileobj(f, rustfs_key)
-            file_size = os.path.getsize(zip_path)
-            # 目录格式打包为 zip 上传，但对象键仍为真实上传键（无 .zip 后缀），
-            # 下载链接必须指向该真实对象，否则会 404。.zip 仅用于用户可见文件名。
-
-        # 5. Update DB
-        from datetime import datetime
-
-        from sqlalchemy import update
-
-        from app.core.database import async_db_session
-
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainModel)
-                .where(TrainModel.id == model_id)
-                .values(
-                    format=export_format,
-                    updated_time=datetime.now(),
-                )
-            )
-
-        # 6. Generate download URL
-        download_url = s3_client.presigned_url(rustfs_key)
-
-        # 目录格式（EXPORT_EXT 为空串）用户可见文件名以 .zip 结尾
-        file_name = f"model_{model_id}_{export_format}{EXPORT_EXT.get(export_format) or '.zip'}"
-
-        log.info(f"model {model_id} exported to {export_format}: {rustfs_key} ({file_size} bytes)")
-
-        return {
-            "download_url": download_url,
-            "format": export_format,
-            "file_size": file_size,
-            "file_name": file_name,
-        }
-
-    except Exception as e:
-        log.error(f"model export failed: {e}")
-        raise
-    finally:
-        import shutil
-        shutil.rmtree(work_path, ignore_errors=True)
-        if os.path.isfile(log_path):
-            os.remove(log_path)
+    # Ultralytics 的 `yolo export` 与 PaddleX 的 .pdparams 转换通路都已退场。
+    # 这里原本还有一整套「下载 .pt -> 组 yolo export 命令 -> 起容器 -> 找产物 ->
+    # 上传 RustFS」的流程（约 140 行）；对已退场框架保留它没有意义——真跑起来
+    # 也只会因为镜像/权重格式不匹配而失败，报错还与真实原因无关。
+    #
+    # 注意：**原始权重下载不受影响**，走的是 resolve_download_target 那条路。
+    ensure_active(framework, action="格式转换导出")

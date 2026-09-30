@@ -23,8 +23,9 @@ from .docker_utils import (
     stop_container,
 )
 from .gpu_pool import gpu_lease
-from .model import TrainDeploy, TrainFramework, TrainModel
+from .model import TrainDeploy, TrainModel
 from .paths import work_dir
+from .retired import _RetiredFramework, ensure_active
 
 _deploy_running: dict[int, dict] = {}
 # 已请求取消的部署 id -> 请求时间：stop_deployment 后，在途 _execute_deployment
@@ -47,16 +48,18 @@ def _spawn(coro) -> asyncio.Task:
     return task
 
 
-def _cleanup_deploy_half_products(model_dir: str | None, server_dir: str | None) -> None:
-    """失败后清理部署的半成品目录（下载的模型权重与服务脚本），保留 deploy.log 供排查。"""
+def _cleanup_deploy_half_products(model_dir: str | None) -> None:
+    """失败后清理部署的半成品目录（下载的模型权重），保留 deploy.log 供排查。
+
+    原来还要清 ``server_dir``（平台侧生成的 server.py），PaddleX / Ultralytics
+    退场后不再生成该目录，故这个参数一并去掉。
+    """
     import shutil
-    for d in (model_dir, server_dir):
-        if d:
-            shutil.rmtree(d, ignore_errors=True)
+    if model_dir:
+        shutil.rmtree(model_dir, ignore_errors=True)
 
 
-DOCKER_IMAGE = "ultralytics/ultralytics:latest"
-PADDLEX_IMAGE = "paddlex:latest"
+#: 部署镜像。Ultralytics 与 PaddleX 的部署通路已退场，只剩自研平台。
 #: 自研平台的推理镜像（镜像内已装好 torch+CUDA、cv2 与 tkiln CLI）
 TORKILN_IMAGE = "torchkiln:0.1.0"
 
@@ -98,11 +101,6 @@ def deploy_exit_status(cancel: bool, exit_code: int) -> str | None:
 def is_port_reusable(status: str) -> bool:
     """已停止/失败/待开始的部署端口可复用；部署中/运行中不可复用。"""
     return status not in ("deploying", "running")
-
-
-def _is_paddlex_framework(framework: TrainFramework) -> bool:
-    """PaddleX 框架（PP-OCRv6 det/rec 训练产物 .pdparams 部署）。"""
-    return framework == TrainFramework.PADDLEX
 
 
 def _is_torchkiln_framework(framework) -> bool:
@@ -172,284 +170,6 @@ def _build_tk_serve_cmd(
     if opts:
         cmd += ["-o", *opts]
     return cmd
-
-
-async def resolve_deploy_spec(deploy, model_rec) -> tuple[str, str]:
-    """推断部署 OCR 的 (mode, size)：deploy.hyperparams → 训练任务 → 默认。
-
-    部署 hyperparams 未显式给出合法 mode/model_size 时，回溯产出该模型的训练
-    任务 hyperparams；仍缺失则回退 ("det", "tiny")。与 eval/predict 的规格推断
-    口径一致：model_id 为模型版本 id，与训练任务的 model_repo_id 对应。
-    """
-    hp = deploy.hyperparams or {}
-    # 归一化后再判定：形如 "Small" 的非法值不能靠 or 兜底（其非空会跳过回查）
-    mode = str(hp.get("mode", "") or "").lower()
-    size = str(hp.get("model_size", "") or "").lower()
-    if mode not in ("det", "rec") or size not in ("tiny", "small", "medium"):
-        from sqlalchemy import desc, select
-
-        from .model import TrainTask
-
-        async with async_db_session() as db:
-            task = (await db.execute(
-                select(TrainTask).where(TrainTask.model_repo_id == deploy.model_id)
-                .order_by(desc(TrainTask.id)).limit(1)
-            )).scalar_one_or_none()
-        thp = (task.hyperparams or {}) if task else {}
-        mode = mode if mode in ("det", "rec") else str(thp.get("mode", "det")).lower()
-        size = size if size in ("tiny", "small", "medium") else str(thp.get("model_size", "tiny")).lower()
-    return (
-        mode if mode in ("det", "rec") else "det",
-        size if size in ("tiny", "small", "medium") else "tiny",
-    )
-
-
-def _generate_server_script(
-    api_key: str, device: str, conf: float = 0.25, iou: float = 0.45, imgsz: int = 640
-) -> str:
-    device_arg = device if device != "cpu" else "cpu"
-    return f'''#!/usr/bin/env python3
-"""Auto-generated inference server for AIStation model deployment."""
-import os, sys, json, time, asyncio, subprocess
-
-# 依赖按需安装：仅在 fastapi 缺失时安装，避免每次启动都 pip install 拖慢健康检查
-try:
-    import fastapi  # noqa: F401
-except ImportError:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
-
-import numpy as np
-import cv2
-from fastapi import FastAPI, File, UploadFile, HTTPException, Security
-from fastapi.security import APIKeyHeader
-import uvicorn
-from ultralytics import YOLO
-
-MODEL_PATH = "/model/best.pt"
-API_KEY = "{api_key}"
-HOST = "0.0.0.0"
-PORT = 8000
-
-print(f"[deploy] loading model from {{MODEL_PATH}}...", flush=True)
-model = YOLO(MODEL_PATH)
-print(f"[deploy] model loaded: {{model.names}}", flush=True)
-
-app = FastAPI(title="AIStation Model Inference")
-
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-@app.get("/health")
-async def health():
-    return {{"status": "ok", "model_name": model.model_name}}
-
-@app.post("/predict")
-async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_header)):
-    if api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-    start = time.time()
-    contents = await file.read()
-    img_array = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image")
-    results = model(img, device="{device_arg}", conf={conf}, iou={iou}, imgsz={imgsz}, verbose=False)[0]
-    elapsed = round((time.time() - start) * 1000, 1)
-    detections = []
-    if results.boxes is not None:
-        for box in results.boxes:
-            cls_id = int(box.cls[0])
-            detections.append({{
-                "class": results.names[cls_id],
-                "confidence": float(box.conf[0]),
-                "bbox": box.xyxy[0].tolist(),
-            }})
-    return {{
-        "success": True,
-        "detections": detections,
-        "image_width": int(results.orig_shape[1]) if results.orig_shape else 0,
-        "image_height": int(results.orig_shape[0]) if results.orig_shape else 0,
-        "inference_time_ms": elapsed,
-    }}
-
-if __name__ == "__main__":
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
-'''
-
-
-def _generate_paddlex_server_script(
-    api_key: str, device: str, mode: str = "det", size: str = "tiny"
-) -> str:
-    """生成 PaddleX OCR 推理服务脚本（PP-OCRv6 det + rec，.pdparams 权重）。
-
-    运行在 paddlex:latest 镜像（内置 PaddleOCR），加载 /model/det.pdparams +
-    /model/rec.pdparams，/predict 返回 [{text, confidence, box}]。
-    cfg 由模型规格（``mode``/``size``）驱动，避免 tiny/medium 部署套用 small 架构。
-    """
-    device_arg = device if device != "cpu" else "cpu"
-    if mode not in ("det", "rec"):
-        mode = "det"
-    if size not in ("tiny", "small", "medium"):
-        size = "tiny"
-    det_cfg = f"configs/det/PP-OCRv6/PP-OCRv6_{size}_det.yml"
-    rec_cfg = f"configs/rec/PP-OCRv6/PP-OCRv6_{size}_rec.yml"
-    return r'''#!/usr/bin/env python3
-"""Auto-generated PaddleX OCR inference server (PP-OCRv6 det + rec)."""
-import os, sys, json, time, io, subprocess
-
-# 依赖按需安装：仅在 fastapi 缺失时安装，避免每次启动都 pip install
-try:
-    import fastapi  # noqa: F401
-except ImportError:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn", "python-multipart"], check=True)
-
-_POCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
-sys.path.insert(0, _POCR_DIR)
-sys.path.insert(0, os.path.join(_POCR_DIR, ".."))
-os.chdir(_POCR_DIR)
-os.environ["FLAGS_allocator_strategy"] = "auto_growth"
-
-import numpy as np
-import cv2
-import paddle
-from fastapi import FastAPI, File, UploadFile, HTTPException, Security
-from fastapi.security import APIKeyHeader
-import uvicorn
-
-from ppocr.data import create_operators, transform
-from ppocr.modeling.architectures import build_model
-from ppocr.postprocess import build_post_process
-from ppocr.utils.save_load import load_model
-import tools.program as program
-
-API_KEY = __API_KEY__
-HOST = "0.0.0.0"
-PORT = 8000
-DEVICE = __DEVICE__
-
-
-def _load_pipeline(cfg_name, weights_path):
-    """构建 PP-OCRv6 推理管线（det 或 rec）。"""
-    sys.argv = ["infer", "-c", cfg_name, "-o",
-                "Global.pretrained_model=" + weights_path,
-                "Global.use_gpu=" + str(DEVICE != "cpu")]
-    config, _device, logger, _vdl = program.preprocess(is_train=False)
-    post_process_class = build_post_process(config["PostProcess"], config["Global"])
-    # rec MultiHead 需要 out_channels_list（从字符集算输出通道，对齐官方 tools/eval.py）
-    if config["Architecture"].get("Head", {}).get("name") == "MultiHead":
-        char_num = len(getattr(post_process_class, "character"))
-        out_channels_list = {
-            "CTCLabelDecode": char_num,
-            "SARLabelDecode": char_num + 2,
-            "NRTRLabelDecode": char_num + 3,
-        }
-        config["Architecture"]["Head"]["out_channels_list"] = out_channels_list
-    model = build_model(config["Architecture"])
-    load_model(config, model)
-    model.eval()
-    transforms = []
-    for op in config["Eval"]["dataset"]["transforms"]:
-        op_name = list(op)[0]
-        if "Label" in op_name:
-            continue
-        elif op_name == "KeepKeys":
-            op[op_name]["keep_keys"] = ["image", "shape"]
-        transforms.append(op)
-    ops = create_operators(transforms, config["Global"])
-    return model, post_process_class, ops
-
-
-DET_CFG = __DET_CFG__
-REC_CFG = __REC_CFG__
-MODE = __MODE__
-SIZE = __SIZE__
-DET_PATH = "/model/det.pdparams"
-REC_PATH = "/model/rec.pdparams"
-
-print("[deploy] loading PaddleX det model...", flush=True)
-det_model, det_post, det_ops = _load_pipeline(DET_CFG, DET_PATH)
-rec_model, rec_post, rec_ops = None, None, None
-if os.path.exists(REC_PATH):
-    print("[deploy] loading PaddleX rec model...", flush=True)
-    rec_model, rec_post, rec_ops = _load_pipeline(REC_CFG, REC_PATH)
-print("[deploy] PaddleX OCR models loaded", flush=True)
-
-
-def _det_boxes(img):
-    data = {"image": cv2.imencode(".jpg", img)[1].tobytes()}
-    batch = transform(data, det_ops)
-    images = np.expand_dims(batch[0], axis=0)
-    shape_list = np.expand_dims(batch[1], axis=0)
-    preds = det_model(paddle.to_tensor(images))
-    res = det_post(preds, shape_list)
-    # PP-OCRv6 DetPostProcess 输出 res[0]["points"] = list[ndarray(N,2)]
-    boxes = res[0]["points"]
-    return [np.array(b, dtype=np.float32) for b in boxes]
-
-
-def _rec_text(crop):
-    if rec_model is None:
-        return "", 0.0
-    data = {"image": cv2.imencode(".jpg", crop)[1].tobytes()}
-    batch = transform(data, rec_ops)
-    images = np.expand_dims(batch[0], axis=0)
-    preds = rec_model(paddle.to_tensor(images))
-    res = rec_post(preds)
-    return res[0]["text"], res[0]["score"]
-
-
-def _crop_box(img, box):
-    """按检测框裁剪文字区域（越界保护），rec 识别应基于裁剪图而非整图。"""
-    x, y, w, h = cv2.boundingRect(np.asarray(box, dtype=np.int32))
-    ih, iw = img.shape[:2]
-    x1, y1 = max(0, x), max(0, y)
-    x2, y2 = min(iw, x + w), min(ih, y + h)
-    if x2 <= x1 or y2 <= y1:
-        # 越界/空裁剪：返回 None 让调用方跳过该框，绝不能回退整图识别
-        return None
-    return img[y1:y2, x1:x2]
-
-
-app = FastAPI(title="AIStation PaddleX OCR Inference")
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "model": "paddlex-ocr", "mode": MODE, "size": SIZE}
-
-
-@app.post("/predict")
-async def predict(file: UploadFile = File(...), api_key: str = Security(api_key_header)):
-    if api_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
-    start = time.time()
-    contents = await file.read()
-    img_array = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image")
-    detections = []
-    boxes = _det_boxes(img)
-    for box in boxes:
-        text, conf = "", 0.0
-        if rec_model is not None:
-            crop = _crop_box(img, box)
-            if crop is None:
-                continue
-            text, conf = _rec_text(crop)
-        detections.append({
-            "text": text, "confidence": float(conf),
-            "box": box.astype(float).tolist(),
-        })
-    elapsed = round((time.time() - start) * 1000, 1)
-    return {"success": True, "detections": detections, "inference_time_ms": elapsed}
-
-
-if __name__ == "__main__":
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
-'''.replace("__API_KEY__", repr(api_key)).replace("__DEVICE__", repr(device_arg)) \
-        .replace("__DET_CFG__", repr(det_cfg)).replace("__REC_CFG__", repr(rec_cfg)) \
-        .replace("__MODE__", repr(mode)).replace("__SIZE__", repr(size))
 
 
 async def start_deployment(deploy_id: int):
@@ -663,7 +383,6 @@ async def _execute_deployment(deploy_id: int):
     container_id = None
     export_dir = None
     model_dir = None
-    server_dir = None
     try:
         async with async_db_session() as db:
             deploy = await db.get(TrainDeploy, deploy_id)
@@ -681,37 +400,30 @@ async def _execute_deployment(deploy_id: int):
                 return
 
         # 框架以**模型记录**为准：create 时若没把 framework 持久化到 deploy 上
-        # （历史数据常见），deploy.framework 会是空的，此时按模型推断，
-        # 否则会静默落到 ultralytics 分支去。
+        # （历史数据常见），deploy.framework 会是空的，此时按模型推断。
         framework = deploy.framework or getattr(model_rec, "framework", None)
-        is_paddlex = _is_paddlex_framework(framework)
-        is_torchkiln = _is_torchkiln_framework(framework)
-        if is_torchkiln:
-            image = TORKILN_IMAGE
-        else:
-            image = PADDLEX_IMAGE if is_paddlex else DOCKER_IMAGE
+        # Ultralytics / PaddleX 的部署通路已退场：在这里挡住并写明原因。
+        # 之前是"非 torchkiln 就走 ultralytics 分支"，那会让历史模型拉错镜像、
+        # 把 .pth 改名成 best.pt 再用 YOLO API 加载，失败原因与真实问题毫无关系。
+        try:
+            ensure_active(framework, action="部署")
+        except _RetiredFramework as exc:
+            async with async_db_session.begin() as db:
+                await db.execute(
+                    update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
+                        status="failed", error_log=str(exc),
+                        finished_at=datetime.now()))
+            log.warning(f"deploy {deploy_id} 拒绝执行：{exc}")
+            return
 
-        if is_paddlex:
-            # PaddleX 部署必须有显式的 rec 模型：仅挂载 det 权重时推理管线会产出垃圾文本。
-            rec_model_path = (deploy.hyperparams or {}).get("rec_model_path")
-            if not rec_model_path:
-                async with async_db_session.begin() as db:
-                    await db.execute(
-                        update(TrainDeploy).where(TrainDeploy.id == deploy_id).values(
-                            status="failed",
-                            error_log="OCR 部署需要提供 rec_model_path",
-                            finished_at=datetime.now(),
-                        )
-                    )
-                return
+        image = TORKILN_IMAGE
+        is_torchkiln = True
 
         await pull_image(image)
 
         export_dir = work_dir("deploy_output", deploy_id)
         model_dir = os.path.join(export_dir, "model")
-        server_dir = os.path.join(export_dir, "server")
         os.makedirs(model_dir, exist_ok=True)
-        os.makedirs(server_dir, exist_ok=True)
 
         # Download model from RustFS
         from app.utils.s3_client import s3_client
@@ -721,59 +433,22 @@ async def _execute_deployment(deploy_id: int):
         with open(model_local_path, "wb") as f:
             f.write(model_data.read())
 
-        if is_paddlex:
-            # PaddleX：det 产物统一命名 det.pdparams；rec 为 rec.pdparams
-            det_pd_path = os.path.join(model_dir, "det.pdparams")
-            if model_local_path != det_pd_path:
-                import shutil
-                shutil.copy2(model_local_path, det_pd_path)
-            rec_data = s3_client.download_fileobj(rec_model_path)
-            rec_local_path = os.path.join(model_dir, "rec.pdparams")
-            with open(rec_local_path, "wb") as f:
-                f.write(rec_data.read())
-        elif is_torchkiln:
-            # TorchKiln：权重**保持原名**（best_accuracy.pth）。
-            # 刻意不改名成 best.pt —— 那个名字只对 ultralytics 的 YOLO(...) 有意义，
-            # 改名在这里没有任何收益，只会在排查时让人误以为文件来源不对。
-            pass
-        else:
-            # Ensure file is named best.pt inside model mount
-            best_pt_path = os.path.join(model_dir, "best.pt")
-            if model_local_path != best_pt_path:
-                import shutil
-                shutil.copy2(model_local_path, best_pt_path)
+        # TorchKiln：权重**保持原名**（best_accuracy.pth）。
+        # 刻意不改成 best.pt —— 那个名字只对 ultralytics 的 YOLO(...) 有意义，
+        # 改名在这里没有任何收益，只会在排查时让人误以为文件来源不对。
 
-        # 写推理服务脚本：TorchKiln 分支**不写**（用 tkiln serve，见下）
-        if is_torchkiln:
-            tk_cfg = await resolve_deploy_tk_config(deploy.model_id)
-            if not tk_cfg:
-                raise Exception(
-                    "TorchKiln 部署找不到产出该模型的训练任务，无法确定配置名——"
-                    "配置错了权重能加载但前向结构对不上，会静默输出无意义结果。"
-                    "请确认该模型版本确实由 TorchKiln 训练产出")
-            # -c 只认 configs/ 下的配置路径，借常驻元数据服务把模型名换过去
-            from .torchkiln_client import TorchKilnClient
+        # 推理服务直接用 `tkiln serve`，平台侧不生成 server.py
+        tk_cfg = await resolve_deploy_tk_config(deploy.model_id)
+        if not tk_cfg:
+            raise Exception(
+                "TorchKiln 部署找不到产出该模型的训练任务，无法确定配置名——"
+                "配置错了权重能加载但前向结构对不上，会静默输出无意义结果。"
+                "请确认该模型版本确实由 TorchKiln 训练产出")
+        # -c 只认 configs/ 下的配置路径，借常驻元数据服务把模型名换过去
+        from .torchkiln_client import TorchKilnClient
 
-            async with TorchKilnClient() as _tk:
-                tk_cfg_path = await _tk.resolve_config_path(tk_cfg)
-        elif is_paddlex:
-            mode, size = await resolve_deploy_spec(deploy, model_rec)
-            server_script = _generate_paddlex_server_script(
-                deploy.api_key, deploy.device, mode=mode, size=size
-            )
-            server_path = os.path.join(server_dir, "server.py")
-            with open(server_path, "w", encoding="utf-8") as f:
-                f.write(server_script)
-        else:
-            hp = deploy.hyperparams or {}
-            server_script = _generate_server_script(
-                deploy.api_key, deploy.device,
-                conf=hp.get("conf", 0.25), iou=hp.get("iou", 0.45),
-                imgsz=hp.get("imgsz", 640),
-            )
-            server_path = os.path.join(server_dir, "server.py")
-            with open(server_path, "w", encoding="utf-8") as f:
-                f.write(server_script)
+        async with TorchKilnClient() as _tk:
+            tk_cfg_path = await _tk.resolve_config_path(tk_cfg)
 
         # Determine port（自动选端口时同时排除 DB 已预留 + Docker 已发布 + socket 已占用）
         host_port = deploy.host_port
@@ -807,25 +482,18 @@ async def _execute_deployment(deploy_id: int):
         # TorchKiln：命令是 `tkiln serve`，不挂 server_dir、不清 entrypoint
         # （torchkiln 镜像本身没有 ENTRYPOINT，清了反而会让 docker 走 image CMD）。
         # 另外容器内固定用 cuda:0：只暴露被分配的那一张卡，容器内序号恒为 0。
-        if is_torchkiln:
-            hp_tk = deploy.hyperparams or {}
-            launch_cmd = _build_tk_serve_cmd(
-                config=tk_cfg_path,
-                weights_name=model_filename,
-                api_key=deploy.api_key,
-                port=8000,
-                device=deploy.device,
-                conf=hp_tk.get("conf"),
-                iou=hp_tk.get("iou"),
-            )
-            launch_volumes = {model_dir: {"bind": "/model", "mode": "ro"}}
-            log.info(f"deploy {deploy_id} tkiln serve cmd: {' '.join(launch_cmd)}")
-        else:
-            launch_cmd = ["python3", "/server/server.py"]
-            launch_volumes = {
-                model_dir: {"bind": "/model", "mode": "ro"},
-                server_dir: {"bind": "/server", "mode": "ro"},
-            }
+        hp_tk = deploy.hyperparams or {}
+        launch_cmd = _build_tk_serve_cmd(
+            config=tk_cfg_path,
+            weights_name=model_filename,
+            api_key=deploy.api_key,
+            port=8000,
+            device=deploy.device,
+            conf=hp_tk.get("conf"),
+            iou=hp_tk.get("iou"),
+        )
+        launch_volumes = {model_dir: {"bind": "/model", "mode": "ro"}}
+        log.info(f"deploy {deploy_id} tkiln serve cmd: {' '.join(launch_cmd)}")
 
         async def _launch(port: int):
             return await run_container(
@@ -834,8 +502,8 @@ async def _execute_deployment(deploy_id: int):
                 volumes=launch_volumes,
                 ports={f"{8000}/tcp": port},
                 gpu_id=want_gpu or getattr(alloc, "device_ids", None),
-                entrypoint=None if is_torchkiln else "",
-                shm_size="4g" if (is_paddlex or is_torchkiln) else None,
+                entrypoint=None,
+                shm_size="4g",
                 labels={"aistation.task_kind": "deploy", "aistation.task_id": str(deploy_id)},
             )
 
@@ -942,7 +610,7 @@ async def _execute_deployment(deploy_id: int):
                     )
                 )
             # 失败后清理部署半成品（模型权重/服务脚本），保留 deploy.log
-            _cleanup_deploy_half_products(model_dir, server_dir)
+            _cleanup_deploy_half_products(model_dir)
     finally:
         _deploy_running.pop(deploy_id, None)
         _deploy_cancelled.pop(deploy_id, None)

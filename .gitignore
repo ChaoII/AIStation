@@ -6,6 +6,17 @@ __pycache__
 .DS_Store
 .git
 
+# devops/ 下的运行时数据（**不要**提交）：
+# - backups/     数据库 dump（单个 160MB+，且含用户数据）
+# - rustfs/ postgres/ redis/ zlm/  bind mount 的数据目录（几十万小文件）
+# 只保留 devops/README.md 与 devops/backend|nginx|zlm 下的配置文件。
+devops/backups/
+devops/rustfs/
+devops/postgres/
+devops/redis/
+devops/zlm/*/data/
+devops/zlm/logs/
+
 backend/__pycache__
 backend/.vscode
 backend/.idea

@@ -1,26 +1,15 @@
 import asyncio
 import os
-import re
 from datetime import datetime
 from types import SimpleNamespace
 
-import requests
 from sqlalchemy import update
 
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .concurrency import get_train_semaphore
-from .docker_utils import (
-    find_task_containers,
-    get_container,
-    get_container_error_tail,
-    pull_image,
-    remove_container,
-    run_container,
-)
-from .metrics import best_metric
-from .model import TrainFramework, TrainStatus, TrainTask
+from .docker_utils import find_task_containers
+from .model import TrainStatus, TrainTask
 from .paths import work_dir
 from .task_executor import TaskExecutor
 from .ws import broadcast_log
@@ -41,9 +30,10 @@ def _spawn(coro) -> asyncio.Task:
     return task
 
 
-MODELS_CACHE_DIR = work_dir("train_output", ".models_cache").replace("\\", "/")
-_MODEL_DOWNLOAD_BASE = "https://github.com/ultralytics/assets/releases/latest/download"
-_MODEL_MIRROR = os.environ.get("MODEL_MIRROR", "")  # e.g. https://ghproxy.com/
+# 注：原先这里有 ``MODELS_CACHE_DIR`` / ``_MODEL_DOWNLOAD_BASE`` / ``_MODEL_MIRROR``
+# 与 ``_ensure_model_file()``，用于从 GitHub 预下载 30 个 Ultralytics 权重。
+# Ultralytics 通路已退场，这些权重不再被任何训练路径使用，故一并移除。
+# TorchKiln 的权重由其镜像内自带的 ``resolve_pretrained`` 解析，不走这套缓存。
 
 
 def _send_notify(user_id: int, title: str, content: str | None, type_: str, module: str, module_id: int | None):
@@ -58,36 +48,6 @@ def _send_notify(user_id: int, title: str, content: str | None, type_: str, modu
         ))
     except Exception:
         pass
-
-
-def _ensure_model_file(model_name: str) -> str:
-    name = model_name if model_name.endswith(".pt") else f"{model_name}.pt"
-    dst = os.path.join(MODELS_CACHE_DIR, name)
-    if os.path.isfile(dst) and os.path.getsize(dst) > 5000000:
-        return dst
-    os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
-    url = f"{_MODEL_DOWNLOAD_BASE}/{name}"
-    if _MODEL_MIRROR:
-        url = _MODEL_MIRROR.rstrip("/") + "/" + url
-    tmp = dst + ".part"
-    log.info(f"downloading model {name} ...")
-    try:
-        r = requests.get(url, stream=True, timeout=(10, 120))
-        r.raise_for_status()
-        downloaded = 0
-        with open(tmp, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-                downloaded += len(chunk)
-        if downloaded < 5000000:
-            raise Exception(f"download too small: {downloaded} bytes")
-        os.replace(tmp, dst)
-        log.info(f"model {name} downloaded ({downloaded} bytes)")
-    except Exception as e:
-        log.error(f"failed to download model {name}: {e}")
-        if os.path.isfile(tmp):
-            os.remove(tmp)
-    return dst
 
 
 async def start_scheduler():
@@ -177,216 +137,7 @@ def _cleanup_export_data(data_dir: str | None) -> None:
     shutil.rmtree(data_dir, ignore_errors=True)
 
 
-async def resolve_base_model(task, export_dir: str) -> str | None:
-    """解析任务的基础模型：下载到 ``<export_dir>/base/`` 并返回文件名。
-
-    当 ``task.base_model_id`` 指向一个带 ``storage_path`` 的 ``TrainModel`` 版本时，
-    从 RustFS 下载权重到 ``<export_dir>/base/<basename>``，返回该 basename（供容器
-    挂载到 ``/base`` 或 ``/pretrained``）。否则返回 ``None``（训练从默认权重开始）。
-    """
-    base_model_id = getattr(task, "base_model_id", None)
-    if not base_model_id:
-        return None
-
-    from .model import TrainModel
-    async with async_db_session() as db:
-        model = await db.get(TrainModel, base_model_id)
-    storage_path = getattr(model, "storage_path", None) if model else None
-    if not storage_path:
-        return None
-    name = os.path.basename(storage_path)
-    if not name:
-        return None
-
-    base_dir = os.path.join(export_dir, "base")
-    os.makedirs(base_dir, exist_ok=True)
-    from app.utils.s3_client import s3_client
-    data = s3_client.download_fileobj(storage_path)
-    with open(os.path.join(base_dir, name), "wb") as f:
-        f.write(data.read())
-    log.info(f"base model {base_model_id} resolved: {storage_path} -> base/{name}")
-    return name
-
-
 # hp dict key → (yolo CLI flag, 默认值, 校验lambda)。仅当 key 在 hp 且值非 None 时拼入命令。
-_ULTRALYTICS_HP: dict[str, tuple[str, object, object | None]] = {
-    "model":        ("model", "yolo11n.pt", None),
-    "epochs":       ("epochs", 100, lambda v: 1 <= int(v) <= 1000),
-    "batch":        ("batch", 16, lambda v: 1 <= int(v) <= 512),
-    "imgsz":        ("imgsz", 640, lambda v: 32 <= int(v) <= 4096),
-    "lr0":          ("lr0", 0.01, lambda v: float(v) > 0),
-    "lrf":          ("lrf", 0.01, lambda v: 0 <= float(v) <= 1),
-    "momentum":     ("momentum", 0.937, lambda v: 0 <= float(v) <= 1),
-    "weight_decay": ("weight_decay", 0.0005, lambda v: float(v) >= 0),
-    "optimizer":    ("optimizer", "AdamW", lambda v: v in ("AdamW", "SGD", "Adam", "Adamax", "NAdam")),
-    "patience":     ("patience", 100, lambda v: int(v) >= 0),
-    "workers":      ("workers", 8, lambda v: 0 <= int(v) <= 32),
-    "device":       ("device", "0", None),
-    "seed":         ("seed", 0, None),
-    "hsv_h":        ("hsv_h", 0.015, lambda v: 0 <= float(v) <= 1),
-    "hsv_s":        ("hsv_s", 0.7, lambda v: 0 <= float(v) <= 1),
-    "hsv_v":        ("hsv_v", 0.4, lambda v: 0 <= float(v) <= 1),
-    "fliplr":       ("fliplr", 0.5, lambda v: 0 <= float(v) <= 1),
-    "flipud":       ("flipud", 0.0, lambda v: 0 <= float(v) <= 1),
-    "mosaic":       ("mosaic", 1.0, lambda v: 0 <= float(v) <= 1),
-    "mixup":        ("mixup", 0.0, lambda v: 0 <= float(v) <= 1),
-    "multi_label":  ("multi_label", False, None),
-}
-
-
-# 基础模型文件名白名单：必须以字母/数字/下划线/中文等 word 字符开头，
-# 后续仅允许 word 字符、点、连字符；拒绝路径分隔符与 shell 元字符（审计 #14）。
-_BASE_MODEL_NAME_RE = re.compile(r"^[\w][\w.\-]*$")
-
-
-def safe_base_model_name(name: str) -> str:
-    """校验基础模型文件名，拒绝 shell 元字符与路径语义（审计 #14）。
-
-    名称来自上传权重的 ``storage_path`` basename，会被拼入 PaddleX 的 ``bash -c``
-    命令；含 ``;``/``$()``/空格/换行等可造成容器内命令注入。非法即抛 ``ValueError``，
-    使训练任务快速失败且不执行危险命令。中文等 Unicode word 字符仍被允许。
-    """
-    value = (name or "").strip()
-    if not value or value in (".", "..") or not _BASE_MODEL_NAME_RE.match(value):
-        raise ValueError(f"非法的 base_model 文件名：{name!r}")
-    return value
-
-
-def _build_ultralytics_cmd(hp: dict, data_dir: str, export_dir: str, task_type: str = "detection", force_multi_label: bool | None = None, base_model_name: str | None = None) -> list[str]:
-    hp = dict(hp)
-    if base_model_name:
-        base_model_name = safe_base_model_name(base_model_name)
-    # 兼容旧任务：前端曾发 `lr`，但白名单 key 是 `lr0`（否则 lr 被静默丢弃）
-    if "lr" in hp and "lr0" not in hp:
-        hp["lr0"] = hp.pop("lr")
-    if force_multi_label is not None:
-        hp["multi_label"] = force_multi_label
-    if base_model_name:
-        # 基础模型：直接以挂载到 /base 的已训练权重为起点，跳过内置模型名的任务类型后缀
-        model_arg = f"model=/base/{base_model_name}"
-    else:
-        model_name = hp.get("model") or "yolo11n.pt"
-        # Auto-select OBB model for rotated_detection tasks
-        if task_type == "rotated_detection" and "-obb" not in model_name:
-            base = model_name.replace(".pt", "")
-            model_name = f"{base}-obb.pt"
-        # Auto-select CLS model for classification tasks
-        if task_type in ("cls", "classification") and "-cls" not in model_name:
-            base = model_name.replace(".pt", "")
-            model_name = f"{base}-cls.pt"
-        model_arg = f"model=/models/{model_name}"
-    cmd = ["yolo", "train", model_arg, "data=/data/dataset.yaml",
-           "project=/output", "name=exp"]
-    for key, (flag, _default, validator) in _ULTRALYTICS_HP.items():
-        if key == "model":
-            continue
-        if key not in hp or hp[key] is None:
-            continue
-        val = hp[key]
-        if validator is not None:
-            try:
-                if not validator(val):
-                    log.warning(f"[yolo] skipping invalid hyperparam {key}={val}")
-                    continue
-            except (TypeError, ValueError):
-                log.warning(f"[yolo] skipping invalid hyperparam {key}={val}")
-                continue
-        if isinstance(val, bool):
-            cmd.append(f"{flag}={str(val)}")
-        else:
-            cmd.append(f"{flag}={val}")
-    return cmd
-
-
-# PaddleX OCR (PP-OCRv6 det/rec) 超参白名单：key -> (flag, default, validator)
-# 对齐 ultralytics 的 _ULTRALYTICS_HP 结构。
-_PADDLEX_OCR_HP: dict[str, tuple[str, object, object | None]] = {
-    "model_size": ("model-size", "tiny", lambda v: v in ("tiny", "small", "medium")),
-    "epochs":     ("epochs", 100, lambda v: 1 <= int(v) <= 1000),
-    "batch":      ("batch", 8, lambda v: 1 <= int(v) <= 128),
-    "lr":         ("lr", 0.0005, lambda v: float(v) > 0),
-    "device":     ("device", "0", None),
-    "pretrained": ("pretrained", True, None),  # 是否使用官方预训练权重微调
-}
-
-_PADDLEX_OCR_DIR = "/paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR"
-_PADDLEX_WEIGHTS = {
-    "det": {
-        "tiny": "/weights/PP-OCRv6_tiny_det_pretrained.pdparams",
-        "small": "/weights/PP-OCRv6_small_det_pretrained.pdparams",
-        "medium": "/weights/PP-OCRv6_medium_det_pretrained.pdparams",
-    },
-    "rec": {
-        "tiny": "/weights/PP-OCRv6_tiny_rec_pretrained.pdparams",
-        "small": "/weights/PP-OCRv6_small_rec_pretrained.pdparams",
-        "medium": "/weights/PP-OCRv6_medium_rec_pretrained.pdparams",
-    },
-}
-
-
-def _build_paddlex_ocr_cmd(hp: dict, data_dir: str, export_dir: str, mode: str = "det", base_model_name: str | None = None) -> list[str]:
-    """构建 PaddleX OCR 训练命令（PP-OCRv6 det/rec，tiny/small/medium）。
-
-    数据布局（exporter 生成）：
-      det: /data/det/   (dataset/ 子目录含 train.txt + images)
-      rec: /data/rec/   (dataset/ 子目录含 train.txt + images)
-    输出到 /output/det 或 /output/rec。
-
-    ``base_model_name`` 非空时优先作为初始权重：挂载到 ``/pretrained/<name>``
-    （覆盖官方预训练权重）。
-    """
-    hp = dict(hp)
-    if base_model_name:
-        # 该名称会经 `bash -c` 拼入训练命令，必须先做白名单校验（审计 #14）
-        base_model_name = safe_base_model_name(base_model_name)
-    size = hp.get("model_size") or "tiny"
-    if size not in _PADDLEX_WEIGHTS[mode]:
-        size = "tiny"
-    epochs = int(hp.get("epochs", 100))
-    batch = int(hp.get("batch", 8))
-    lr = float(hp.get("lr", 0.0005))
-    use_pretrained = bool(hp.get("pretrained", False))
-    config_name = f"PP-OCRv6_{size}_{mode}.yml"
-    config_path = (
-        f"configs/det/PP-OCRv6/{config_name}"
-        if mode == "det" else f"configs/rec/PP-OCRv6/{config_name}"
-    )
-    data_dir_in = f"/data/{mode}/dataset"
-    out_dir = f"/output/{mode}"
-    if base_model_name:
-        # 基础模型优先于官方预训练权重
-        pretrained = f"/pretrained/{base_model_name}"
-    elif use_pretrained:
-        pretrained = f"/pretrained/{mode}.pdparams"
-    else:
-        pretrained = ""
-
-    opts = [
-        f"Global.epoch_num={epochs}",
-        f"Global.save_model_dir={out_dir}",
-        f"Train.dataset.data_dir={data_dir_in}",
-        f"'Train.dataset.label_file_list=[\"{data_dir_in}/train.txt\"]'",
-        f"Train.loader.batch_size_per_card={batch}",
-        "Train.loader.num_workers=2",
-        f"Eval.dataset.data_dir={data_dir_in}",
-        f"'Eval.dataset.label_file_list=[\"{data_dir_in}/val.txt\"]'",
-        "Eval.loader.num_workers=0",
-    ]
-    if lr > 0:
-        opts.append(f"Optimizer.lr.learning_rate={lr}")
-    if pretrained:
-        opts.append(f"Global.pretrained_model={pretrained}")
-    if mode == "rec":
-        # rec 用官方默认词表 ppocrv6_dict.txt（与官方预训练权重匹配），无需自定义 dict.txt
-        pass
-    # 官方 -o 用 nargs='+'，多个 key=value 必须跟在同一个 -o 后（空格分隔），
-    # 否则 argparse 只保留最后一个 opt。
-    inner = " ".join(
-        [f"python tools/train.py -c {config_path} -o"] + opts
-    )
-    return ["bash", "-c", f"cd {_PADDLEX_OCR_DIR} && {inner}"]
-
-
 async def _resolve_task_type(task) -> str:
     """解析训练任务对应标注任务的 ``task_type``；无标注任务时默认 ``detection``。
 
@@ -404,78 +155,19 @@ async def _resolve_task_type(task) -> str:
     return getattr(tt, "value", tt)
 
 
-async def _build_cmd(task, data_dir: str, export_dir: str, base_model_name: str | None = None) -> list[str]:
-    """按框架构建训练命令。``base_model_name`` 非空时以其为初始权重。"""
-    if task.framework == TrainFramework.ULTRALYTICS:
-        task_type = "detection"
-        force_multi_label = None
-        if task.annotation_task_id:
-            from app.api.v1.module_annotation.task.model import AnnotationTaskModel
-            async with async_db_session() as db:
-                ann_task = await db.get(AnnotationTaskModel, task.annotation_task_id)
-                if ann_task:
-                    task_type = ann_task.task_type
-                    # The data export is authoritative on classification_mode; keep the CLI flag
-                    # in sync so a "multi" task always trains with multi_label=True.
-                    if task_type in ("cls", "classification") and ann_task.classification_mode == "multi":
-                        force_multi_label = True
-        return _build_ultralytics_cmd(task.hyperparams, data_dir, export_dir, task_type, force_multi_label=force_multi_label, base_model_name=base_model_name)
-    if task.framework == TrainFramework.PADDLEX:
-        # PaddleX OCR：按任务类型 det/rec 走 PP-OCRv6 训练
-        # hyperparams 里用 mode 区分（前端传入 det/rec 或由任务名推断）
-        hp = task.hyperparams or {}
-        mode = str(hp.get("mode", "det")).lower()
-        if mode not in ("det", "rec"):
-            # 从框架/模型名兜底推断
-            mode = "det"
-        return _build_paddlex_ocr_cmd(hp, data_dir, export_dir, mode=mode, base_model_name=base_model_name)
-    raise ValueError(f"不支持的训练框架: {task.framework}")
-
-
-def _parse_epoch(line: str) -> dict | None:
-    """解析 YOLO 训练输出行：epoch 行或最终 all 汇总行。"""
-    m = re.search(r"^\s*(\d+)/(\d+)\s+", line)
-    if m:
-        parts = line.strip().split()
-        met = {"epoch": int(m.group(1)), "total_epochs": int(m.group(2))}
-        for i, p in enumerate(parts):
-            if re.match(r"^[\d.]+[GM]$", p):
-                if i + 1 < len(parts):
-                    try:
-                        met["box_loss"] = float(parts[i + 1])
-                    except ValueError:
-                        pass
-                if i + 2 < len(parts):
-                    try:
-                        met["cls_loss"] = float(parts[i + 2])
-                    except ValueError:
-                        pass
-                if i + 3 < len(parts):
-                    try:
-                        met["dfl_loss"] = float(parts[i + 3])
-                    except ValueError:
-                        pass
-                break
-        return met
-    if re.match(r"^\s+all\s+", line):
-        parts = line.strip().split()
-        if len(parts) >= 7:
-            return {"epoch": -1,
-                    "precision": float(parts[3]) if parts[3] else 0,
-                    "recall": float(parts[4]) if parts[4] else 0,
-                    "map50": float(parts[5]) if parts[5] else 0,
-                    "map5095": float(parts[6]) if parts[6] else 0}
-        # 分类验证汇总列不同：all <images> <instances> <top1> <top5>
-        # （检测/分割/姿态仍为 7 列 P/R/mAP50/mAP50-95，优先走上分支）
-        if len(parts) == 5:
-            try:
-                return {"epoch": -1, "top1": float(parts[3]), "top5": float(parts[4])}
-            except ValueError:
-                return None
-    return None
-
-
 class TrainExecutor(TaskExecutor):
+    """已退场框架（Ultralytics / PaddleX）的训练入口——**只拒绝，不再执行**。
+
+    ⚠️ 名字保留是因为 ``_executor_for()`` 仍需要它来处理历史任务行：库里还有 37 条
+    ``framework='ULTRALYTICS'/'PADDLEX'`` 的训练任务，其中可能残留 RUNNING 行，
+    要靠本类继承的 ``recover_orphans`` 收敛掉。删掉这个类，那些行会永远显示
+    「运行中」，比退场本身更糟。
+
+    真正的训练能力已整体移除：超参白名单、命令构建、权重预下载、容器编排
+    （原 ~340 行）都不在这里了。遇到已退场框架时明确报错，而不是静默不动——
+    用户看到「已退场」才知道该用 TorchKiln 重训，而不是以为系统卡了。
+    """
+
     name = "train"
     task_kind = "train"
     status_enum = TrainStatus
@@ -484,170 +176,40 @@ class TrainExecutor(TaskExecutor):
 
     @classmethod
     async def _execute(cls, task_id: int):
-        container_id = None
-        data_dir = None
-        try:
-            async with async_db_session() as db:
-                task = await db.get(TrainTask, task_id)
-                if not task:
-                    return
+        async with async_db_session() as db:
+            task = await db.get(TrainTask, task_id)
+            if not task:
+                return
+            fw = getattr(task, "framework", None)
+            task_name = getattr(task, "name", str(task_id))
+            created_id = getattr(task, "created_id", None)
 
-            await broadcast_log(task_id, f"[scheduler] pulling image {task.docker_image}...")
-            await pull_image(task.docker_image)
+        from .framework_utils import framework_value
 
-            export_dir = await _build_export_dir(task_id)
-            data_dir = os.path.join(export_dir, "data")
-            os.makedirs(data_dir, exist_ok=True)
-
-            from .exporter import prepare_training_data_for_task
-            data_train_ratio = task.hyperparams.get("train_ratio", 0.8)
-            await prepare_training_data_for_task(task.dataset_id, task.id, task.framework, data_dir, annotation_task_id=task.annotation_task_id, train_ratio=data_train_ratio)
-
-            base_model_name = await resolve_base_model(task, export_dir)
-            cmd = await _build_cmd(task, data_dir, export_dir, base_model_name=base_model_name)
-
-            # Pre-download model weights so container doesn't fetch from internet
-            # （base_model 已本地挂载，无需再下载内置权重）
-            if task.framework == TrainFramework.ULTRALYTICS and not base_model_name:
-                model_arg = next((a for a in cmd if a.startswith("model=")), "model=yolo11n.pt")
-                model_name = model_arg.split("=", 1)[1].removeprefix("/models/")
-                _ensure_model_file(model_name)
-
-            volumes = {data_dir: {"bind": "/data", "mode": "rw"},
-                       export_dir: {"bind": "/output", "mode": "rw"},
-                       MODELS_CACHE_DIR: {"bind": "/models", "mode": "ro"}}
-            if base_model_name:
-                # 已下载的基础模型目录只读挂载到 /base
-                volumes[os.path.join(export_dir, "base")] = {"bind": "/base", "mode": "ro"}
-
-            os.makedirs(MODELS_CACHE_DIR, exist_ok=True)
-            # 全局 GPU 并发上限：跨 ultralytics / PaddleX det / rec 共享同一信号量，
-            # 信号量覆盖从启动容器到容器退出（含日志跟随/收尾）的整个 GPU 阶段。
-            async with get_train_semaphore():
-                # 等待信号量期间可能被取消：启动容器前再检查一次
-                if cls._registry.get(task_id, {}).get("cancel"):
-                    return
-                container = await run_container(
-                    task.docker_image, cmd,
-                    volumes=volumes,
-                    gpu_id=task.hyperparams.get("gpu_id", "0"),
-                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(task_id)},
-                )
-                container_id = container.id
-                entry = cls._registry.get(task_id) or {}
-                entry.update({"container_id": container_id})
-                cls._registry[task_id] = entry
-
-                await cls._finalize(task_id, container, export_dir, task=task)
-        except Exception as e:
-            log.error(f"training task {task_id} failed: {e}")
-            await cls._mark_status(task_id, TrainStatus.FAILED,
-                                   error_log=str(e), finished_at=datetime.now())
-            # 失败后清理本次导出的 data 半成品目录（保留日志文件供排查）
-            _cleanup_export_data(data_dir)
-        finally:
-            cls._registry.pop(task_id, None)
-            if container_id:
-                await remove_container(container_id)
-
-    @classmethod
-    async def _finalize(cls, task_id: int, container, export_dir: str, task=None) -> None:
-        """跟随日志 + 判定退出码 + 导出模型 + 标记状态。
-
-        正常执行（``_execute``）与后端重启后的重连（``reattach``）共用此逻辑，
-        保证两条路径的收尾行为一致。
-        """
-        container_id = container.id
-        if task is None:
-            async with async_db_session() as db:
-                task = await db.get(TrainTask, task_id)
-        if not task:
-            return
-
-        task_type = await _resolve_task_type(task)
-
-        metrics_log = await cls.follow_logs(
-            container_id,
-            os.path.join(export_dir, "train.log"),
-            lambda line: broadcast_log(task_id, line),
-            _parse_epoch,
+        shown = framework_value(fw) or str(fw)
+        message = (
+            f"训练框架 {shown} 已退场，执行通路已移除。"
+            f"请用 TorchKiln 重新训练（历史任务与模型记录仍可查看，但不能再启动训练）。"
         )
+        log.warning(f"[scheduler] 任务 {task_id} 拒绝执行：{message}")
+        await broadcast_log(task_id, f"[scheduler] {message}")
 
-        # Merge trailing "all" summary (epoch == -1) into last real epoch to restore old metrics shape
-        if metrics_log and metrics_log[-1].get("epoch") == -1:
-            summary = metrics_log.pop()
-            for m in metrics_log[::-1]:
-                if m.get("epoch", -1) > 0:
-                    for k, v in summary.items():
-                        if k != "epoch":
-                            m[k] = v
-                    break
-        exit_code = await cls._get_exit_code(container)
-
-        if cls._registry.get(task_id, {}).get("cancel"):
-            await remove_container(container_id)
-            await cls._mark_status(task_id, TrainStatus.CANCELLED, finished_at=datetime.now())
-        elif exit_code == 0:
-            await remove_container(container_id)
-            from .exporter import export_model
-            best_metrics = best_metric(metrics_log, "ultralytics", task_type)
-            last_metrics = metrics_log[-1] if metrics_log else None
-            model_info = await export_model(task_id, task.framework, export_dir, best_metrics=best_metrics)
-            if not model_info.get("storage_path"):
-                # 训练进程正常退出但未找到模型产物：不标成功，避免写入无权重版本
-                await cls._mark_status(task_id, TrainStatus.FAILED,
-                                       error_log="训练完成但未找到模型产物",
-                                       metrics_log=metrics_log or None,
-                                       best_metrics=best_metrics,
-                                       last_metrics=last_metrics,
-                                       finished_at=datetime.now())
-            else:
-                await cls._mark_status(task_id, TrainStatus.SUCCESS,
-                                       model_repo_id=model_info.get("repo_id"),
-                                       progress=100, finished_at=datetime.now(),
-                                       metrics_log=metrics_log or None,
-                                       best_metrics=best_metrics,
-                                       last_metrics=last_metrics)
-                if getattr(task, "created_id", None):
-                    _send_notify(task.created_id, f"训练完成: {task.name}",
-                                 "任务已成功完成，模型已保存", "training_complete", "train", task_id)
-        else:
-            error_msg = (await get_container_error_tail(container_id)).strip()
-            await remove_container(container_id)
-            await cls._mark_status(task_id, TrainStatus.FAILED,
-                                   error_log=error_msg or "training failed",
-                                   finished_at=datetime.now(),
-                                   metrics_log=metrics_log or None,
-                                   best_metrics=best_metric(metrics_log, "ultralytics", task_type),
-                                   last_metrics=metrics_log[-1] if metrics_log else None)
-            if getattr(task, "created_id", None):
-                _send_notify(task.created_id, f"训练失败: {task.name}",
-                             error_msg or "训练异常退出", "training_failed", "train", task_id)
+        async with async_db_session.begin() as db:
+            await db.execute(
+                update(TrainTask).where(TrainTask.id == task_id).values(
+                    status=TrainStatus.FAILED, error_log=message,
+                    finished_at=datetime.now()))
+        if created_id:
+            _send_notify(created_id, f"训练无法启动: {task_name}", message,
+                         "training_failed", "train", task_id)
 
     @classmethod
     async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
-        """后端重启后重连存活容器：跟随剩余日志并复用 ``_finalize`` 收尾。"""
-        # 整个流程用 try/finally 包裹：任何早退（未找到容器、获取容器失败）或异常
-        # 都必须清理 registry，否则 recover_orphans 会因注册表残留而永久跳过该行
-        try:
-            ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
-            if not ids:
-                log.warning(f"[{cls.name}] 任务 {task_id} 需要重连但未找到存活容器")
-                return
-            cid = ids[0]
-            try:
-                container = await get_container(cid)
-            except Exception as e:
-                log.error(f"[{cls.name}] 任务 {task_id} 重连失败：无法获取容器 {cid}: {e}")
-                return
-            export_dir = await _build_export_dir(task_id)
-            await broadcast_log(task_id, f"[scheduler] 后端已重启，重连到运行中的容器 {cid[:12]}…")
-            try:
-                await cls._finalize(task_id, container, export_dir)
-            except Exception as e:
-                log.error(f"[{cls.name}] 任务 {task_id} 重连收尾失败: {e}")
-        finally:
-            cls._registry.pop(task_id, None)
+        """已退场框架没有可重连的容器；清掉注册表让 recover_orphans 继续收敛。"""
+        ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
+        log.warning(f"[train] 任务 {task_id} 属于已退场框架，"
+                    f"无可重连容器（找到 {len(ids)} 个）；将交由 recover_orphans 标记终态")
+        cls._registry.pop(task_id, None)
 
 
 async def start_training(task_id: int):
@@ -704,16 +266,18 @@ async def start_training(task_id: int):
 
 
 def _executor_for(task):
-    """按框架取执行器类（start/stop 共用，避免两处 if 走偏）。"""
+    """按框架取执行器类（start/stop 共用，避免两处 if 走偏）。
+
+    只剩 TorchKiln 一条通路。保留这层间接而不是直接返回 ``TorchKilnExecutor``：
+    历史任务里仍有 ``framework='ULTRALYTICS'/'PADDLEX'`` 的行，它们要落到
+    ``TrainExecutor``（恢复逻辑），才能在遇到已退场框架时给出明确提示，
+    而不是掉进无人处理的分支被静默跳过。
+    """
     from .framework_utils import framework_value
 
     if task is None:
         return TrainExecutor
     fw = framework_value(getattr(task, "framework", None))
-    if fw == "paddlex":
-        from .paddlex_executor import PaddleXOCRDetExecutor, PaddleXOCRRecExecutor
-        mode = str((task.hyperparams or {}).get("mode", "det")).lower()
-        return PaddleXOCRRecExecutor if mode == "rec" else PaddleXOCRDetExecutor
     if fw == "torchkiln":
         # 自研训练平台：HTTP 客户端形态，排队/容器生命周期都在 TorchKiln 服务里
         from .torchkiln_executor import TorchKilnExecutor

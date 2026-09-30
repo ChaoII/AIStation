@@ -124,7 +124,7 @@ class TrainPredictOutSchema(BaseModel):
 class DatasetExportSchema(BaseModel):
     dataset_id: int
     annotation_task_id: int | None = None
-    format: str = "ultralytics"
+    format: str = "torchkiln"
     ocr_rec: bool = True
     train_ratio: float = 0.8
 
@@ -133,7 +133,7 @@ class TrainScheduleCreateSchema(BaseModel):
     name: str = Field(max_length=128)
     dataset_id: int
     annotation_task_id: int | None = None
-    framework: str = "ultralytics"
+    framework: str = "torchkiln"
     hyperparams: dict = {}
     cron_expr: str
 

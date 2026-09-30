@@ -232,8 +232,6 @@
                 v-model="formData.framework"
                 @change="(v: any) => onFrameworkChange(String(v))"
               >
-                <el-radio value="ultralytics">Ultralytics</el-radio>
-                <el-radio value="paddlex">PaddleX</el-radio>
                 <el-radio value="torchkiln">TorchKiln（自研）</el-radio>
               </el-radio-group>
             </el-form-item>
@@ -287,169 +285,6 @@
           />
         </el-form-item>
         <el-divider>超参数配置</el-divider>
-
-        <!-- Ultralytics hyperparams -->
-        <template v-if="formData.framework === 'ultralytics'">
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="模型" prop="hpModel">
-                <el-select v-model="hpForm.model" style="width: 100%">
-                  <el-option-group
-                    v-for="g in [...new Set(modelOptions.map((o) => o.group))]"
-                    :key="g"
-                    :label="g"
-                  >
-                    <el-option
-                      v-for="opt in modelOptions.filter((o) => o.group === g)"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </el-option-group>
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="Epochs">
-                <el-input-number v-model="hpForm.epochs" :min="1" :max="1000" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="Batch Size">
-                <el-input-number v-model="hpForm.batch" :min="1" :max="512" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="Learning Rate">
-                <el-input-number
-                  v-model="hpForm.lr"
-                  :min="0.0001"
-                  :max="1"
-                  :step="0.001"
-                  :precision="4"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="Optimizer">
-                <el-select v-model="hpForm.optimizer" style="width: 100%">
-                  <el-option label="AdamW" value="AdamW" />
-                  <el-option label="SGD" value="SGD" />
-                  <el-option label="Adam" value="Adam" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="Image Size">
-                <el-input-number
-                  v-model="hpForm.imgsz"
-                  :min="32"
-                  :max="4096"
-                  :step="32"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="Workers">
-                <el-input-number v-model="hpForm.workers" :min="0" :max="32" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="GPU 设备">
-                <el-input v-model="hpForm.device" placeholder="如: 0" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </template>
-
-        <!-- PaddleX OCR hyperparams (PP-OCRv6 det/rec, tiny/small/medium) -->
-        <template v-else>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="任务类型">
-                <el-select v-model="hpForm.mode" style="width: 100%">
-                  <el-option label="文本检测 (det)" value="det" />
-                  <el-option label="文本识别 (rec)" value="rec" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="模型规格">
-                <el-select v-model="hpForm.model_size" style="width: 100%">
-                  <el-option label="tiny（轻量）" value="tiny" />
-                  <el-option label="small（推荐）" value="small" />
-                  <el-option label="medium（高精度）" value="medium" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="Epochs">
-                <el-input-number v-model="hpForm.epochs" :min="1" :max="1000" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="Batch Size">
-                <el-input-number v-model="hpForm.batch" :min="1" :max="128" style="width: 100%" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="12">
-              <el-form-item label="Learning Rate">
-                <el-input-number
-                  v-model="hpForm.lr"
-                  :min="0.00001"
-                  :max="1"
-                  :step="0.0001"
-                  :precision="5"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
-              <el-form-item label="GPU 设备">
-                <el-input v-model="hpForm.device" placeholder="如: 0" />
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="24">
-              <el-form-item label="预训练权重">
-                <el-switch v-model="hpForm.pretrained" />
-                <span style="margin-left: 8px; font-size: 12px; color: #909399">
-                  使用官方权重微调
-                </span>
-              </el-form-item>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20">
-            <el-col :span="24">
-              <el-form-item label="训练集占比">
-                <el-slider
-                  v-model="hpForm.trainRatio"
-                  :min="50"
-                  :max="95"
-                  :step="5"
-                  show-input
-                  style="width: 300px"
-                />
-                <span style="margin-left: 12px; font-size: 12px; color: #909399">
-                  验证集 {{ 100 - (hpForm.trainRatio || 80) }}%
-                </span>
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </template>
 
         <!-- ================================================================ -->
         <!-- TorchKiln（自研平台）：模型与超参**全部由服务端动态下发**            -->
@@ -819,6 +654,9 @@ const searchConfig = reactive<ISearchConfig>({
       prop: "framework",
       label: "框架",
       type: "select",
+      // 筛选**保留**已退场框架的选项：库里还有 37 条历史任务带着这两个框架，
+      // 删掉选项会让它们既看不出框架、也没法被筛出来——等于让历史数据消失了。
+      // 新建表单只给 TorchKiln（见上方 radio-group），这里是"查看"不是"新建"。
       options: [
         { label: "Ultralytics", value: "ultralytics" },
         { label: "PaddleX", value: "paddlex" },
@@ -894,33 +732,8 @@ const formData = reactive({
   dataset_id: undefined as number | undefined,
   annotation_task_id: undefined as number | undefined,
   base_model_id: undefined as number | undefined,
-  framework: "ultralytics" as string,
+  framework: "torchkiln" as string,
 });
-
-const defaultHpUltra = () => ({
-  model: "yolo11n.pt",
-  epochs: 100,
-  batch: 16,
-  lr: 0.01,
-  optimizer: "AdamW",
-  imgsz: 640,
-  workers: 4,
-  device: "0",
-  trainRatio: 80,
-});
-
-const defaultHpPaddle = () => ({
-  mode: "det",
-  model_size: "tiny",
-  epochs: 100,
-  batch: 8,
-  lr: 0.0005,
-  device: "0",
-  pretrained: true,
-  trainRatio: 80,
-});
-
-const hpForm = reactive<Record<string, any>>(defaultHpUltra());
 
 // ==================================================================
 // TorchKiln（自研平台）：模型清单 + 超参 schema 全部**动态下发**
@@ -935,6 +748,13 @@ const defaultHpTorchkiln = () => ({
   gpuMemory: 12,
   dockerImage: "torchkiln:0.1.0",
 });
+
+// Ultralytics 的 defaultHpUltra 与 PaddleX 的 defaultHpPaddle 随两个框架一并退场。
+// hpForm 初值改用 TorchKiln 那份——不要写成空对象：新建表单一打开就渲染参数区，
+// 初值缺失会让 trainRatio 等字段变成 undefined。
+// ⚠️ 声明顺序不能反：const 无提升，hpForm 初始化时 defaultHpTorchkiln 尚未定义
+// 会抛 ReferenceError（TDZ），整页白屏。TS 会直接报 TS2448 挡住这种写法。
+const hpForm = reactive<Record<string, any>>(defaultHpTorchkiln());
 
 const tkStatus = ref<TorchKilnStatus | null>(null);
 const tkModels = ref<TorchKilnModel[]>([]);
@@ -1020,36 +840,25 @@ async function onTkModelChange(name: string) {
 
 
 const tempDir = ref("${TEMP_DIR}");
+
 TrainAPI.getTempDir()
   .then((res) => {
     if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir;
   })
   .catch(() => {});
 
-const dockerCmdPreview = computed(() => {
-  const taskId = "{task_id}";
-  const dataMount = `${tempDir.value}/train_output/${taskId}/data`;
-  const outputMount = `${tempDir.value}/train_output/${taskId}`;
-  const cacheMount = `${tempDir.value}/train_output/.models_cache`;
-  if (formData.framework === "ultralytics") {
-    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${cacheMount}:/models \\\n  ultralytics/ultralytics:latest \\\n  yolo train \\\n    model=/models/${hpForm.model} \\\n    data=/data/dataset.yaml \\\n    epochs=${hpForm.epochs} \\\n    batch=${hpForm.batch} \\\n    lr0=${hpForm.lr} \\\n    imgsz=${hpForm.imgsz} \\\n    workers=${hpForm.workers} \\\n    optimizer=${hpForm.optimizer} \\\n    project=/output \\\n    name=exp`;
-  } else if (formData.framework === "paddlex") {
-    const cfg =
-      hpForm.mode === "rec"
-        ? `PP-OCRv6_${hpForm.model_size}_rec.yml`
-        : `PP-OCRv6_${hpForm.model_size}_det.yml`;
-    return `docker run --gpus all \\\n  -v ${dataMount}:/data \\\n  -v ${outputMount}:/output \\\n  -v ${outputMount}/pretrained:/pretrained \\\n  paddlex:latest \\\n  bash -c \"cd /paddlex_workspace/paddlex/repo_manager/repos/PaddleOCR && \\\n    python tools/train.py -c configs/${hpForm.mode === "rec" ? "rec" : "det"}/PP-OCRv6/${cfg} \\\n      -o Global.epoch_num=${hpForm.epochs} \\\n      -o Train.dataset.data_dir=/data/${hpForm.mode}/dataset \\\n      -o Train.loader.batch_size_per_card=${hpForm.batch} \\\n      -o Optimizer.lr.learning_rate=${hpForm.lr} \\\n      -o Global.save_model_dir=/output/${hpForm.mode} \\\n      ${hpForm.pretrained ? `-o Global.pretrained_model=/pretrained/${hpForm.mode}.pdparams` : ""}\"`;
-  }
-  return "";
-});
-
+// 退场前这里按框架拼 docker run 命令预览给用户看（ultralytics 的 yolo train /
+// paddlex 的 bash -c）。这两个框架移除后只剩 TorchKiln，而它的命令由容器内的
+// tkiln CLI 决定、平台侧预知不了（端口/GPU/挂载都是运行时分配的），所以恒为空串。
+// 保留这个计算属性：详情弹窗仍会引用它，删掉会连带改模板。
+const dockerCmdPreview = computed(() => "");
 const initialFormData = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
   dataset_id: undefined as number | undefined,
   annotation_task_id: undefined as number | undefined,
   base_model_id: undefined as number | undefined,
-  framework: "ultralytics" as string,
+  framework: "torchkiln" as string,
 };
 
 const rules = reactive({
@@ -1094,14 +903,13 @@ function frameworkLabel(fw?: string) {
 }
 
 function onFrameworkChange(fw: string) {
+  // Ultralytics / PaddleX 已退场，新建表单只有 TorchKiln 一条分支。
+  // 保留 fw 形参与 if 判断，是为了让"切到已退场框架"（理论上只可能来自被外部
+  // 改坏的表单）落进 else 时不会给 hpForm 塞进无关字段。
   Object.keys(hpForm).forEach((k) => delete hpForm[k]);
-  if (fw === "ultralytics") {
-    Object.assign(hpForm, defaultHpUltra());
-  } else if (fw === "torchkiln") {
+  if (fw === "torchkiln") {
     Object.assign(hpForm, defaultHpTorchkiln());
     void loadTorchKiln();
-  } else {
-    Object.assign(hpForm, defaultHpPaddle());
   }
   // 切框架时清掉 TorchKiln 的动态表单状态，避免残留上一个模型的参数
   tkModel.value = "";
@@ -1119,47 +927,25 @@ function onFrameworkChange(fw: string) {
 }
 
 function buildHyperparams(): Record<string, any> {
-  if (formData.framework === "ultralytics") {
-    return {
-      model: hpForm.model,
-      epochs: hpForm.epochs,
-      batch: hpForm.batch,
-      lr0: hpForm.lr,
-      optimizer: hpForm.optimizer,
-      imgsz: hpForm.imgsz,
-      workers: hpForm.workers,
-      device: hpForm.device,
-      train_ratio: (hpForm.trainRatio || 80) / 100,
-    };
+  // 只剩 TorchKiln 一条通路（Ultralytics / PaddleX 已退场）。
+  // 兜底的 `{}`：framework 被改成未知值时不至于把 undefined 提交给后端。
+  if (formData.framework !== "torchkiln") return {};
+  // ⚠️ params 用**点分键**（"Global.epoch_num"），后端原样转成 `-o Key.Sub=value`，
+  //    中间**零映射**——这是接自研平台相比接第三方的最大收益。
+  //    剔除空值（用户没填的 path 类参数不要传给服务端）。
+  const params: Record<string, any> = {};
+  for (const [k, v] of Object.entries(tkParams)) {
+    if (v === null || v === undefined || v === "") continue;
+    params[k] = v;
   }
-  if (formData.framework === "torchkiln") {
-    // ⚠️ params 用**点分键**（"Global.epoch_num"），后端原样转成 `-o Key.Sub=value`，
-    //    中间**零映射**——这是接自研平台相比接第三方的最大收益。
-    //    剔除空值（用户没填的 path 类参数不要传给服务端）。
-    const params: Record<string, any> = {};
-    for (const [k, v] of Object.entries(tkParams)) {
-      if (v === null || v === undefined || v === "") continue;
-      params[k] = v;
-    }
-    const resources: Record<string, any> = { gpu: 1, shm_size: "4g" };
-    if (hpForm.gpuMemory) resources.gpu_memory_gb = hpForm.gpuMemory;
-    return {
-      model: tkModel.value,
-      task_type: tkModelInfo.value?.task === "detect" ? "detection" : tkModelInfo.value?.task,
-      params,
-      resources,
-      seed: hpForm.seed,
-      train_ratio: (hpForm.trainRatio || 80) / 100,
-    };
-  }
+  const resources: Record<string, any> = { gpu: 1, shm_size: "4g" };
+  if (hpForm.gpuMemory) resources.gpu_memory_gb = hpForm.gpuMemory;
   return {
-    mode: hpForm.mode,
-    model_size: hpForm.model_size,
-    epochs: hpForm.epochs,
-    batch: hpForm.batch,
-    lr: hpForm.lr,
-    device: hpForm.device,
-    pretrained: hpForm.pretrained,
+    model: tkModel.value,
+    task_type: tkModelInfo.value?.task === "detect" ? "detection" : tkModelInfo.value?.task,
+    params,
+    resources,
+    seed: hpForm.seed,
     train_ratio: (hpForm.trainRatio || 80) / 100,
   };
 }
@@ -1170,7 +956,7 @@ async function resetForm() {
     dataFormRef.value.clearValidate();
   }
   Object.assign(formData, initialFormData);
-  onFrameworkChange("ultralytics");
+  onFrameworkChange("torchkiln");
 }
 
 async function handleCloseDialog() {
@@ -1227,8 +1013,7 @@ async function handleSubmit() {
             annotation_task_id: formData.annotation_task_id,
             base_model_id: formData.base_model_id,
             hyperparams: buildHyperparams(),
-            // TorchKiln 走 HTTP 服务而非本地容器，镜像字段仅作记录；
-            // ultralytics/paddlex 沿用后端默认值，不下发以免覆盖
+            // TorchKiln 走每任务一容器，镜像字段仅作记录；未填时沿用后端默认值
             ...(formData.framework === "torchkiln" && hpForm.dockerImage
               ? { docker_image: hpForm.dockerImage }
               : {}),
