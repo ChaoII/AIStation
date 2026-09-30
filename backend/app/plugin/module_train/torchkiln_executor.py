@@ -284,6 +284,10 @@ class TorchKilnExecutor(TaskExecutor):
         """
         etype = ev.get("type")
         seq = ev.get("seq")
+        # TorchKiln 的事件带 `epoch_num`（总轮次），但**必须改写成本项目约定的 `total_epochs`**：
+        # 前端「Epoch N/M」卡片与进度条按 `total_epochs`（PaddleX 叫 `total`）取分母。
+        # 之前没透传，导致完成态永远显示成「50/?」。
+        total_epochs = ev.get("epoch_num")
         if etype == EVENT_STEP:
             row = {
                 "_kind": EVENT_STEP,
@@ -295,6 +299,8 @@ class TorchKilnExecutor(TaskExecutor):
                 "ips": ev.get("ips"),
                 "mem_reserved": ev.get("mem_reserved"),
             }
+            if isinstance(total_epochs, int):
+                row["total_epochs"] = total_epochs
             for k, v in (ev.get("comps") or {}).items():
                 if isinstance(v, (int, float)):
                     row[k] = v
@@ -306,6 +312,8 @@ class TorchKilnExecutor(TaskExecutor):
             row["main_indicator"] = ev.get("main_indicator")
             row["main_indicator_mode"] = ev.get("main_indicator_mode")
             row["main_value"] = ev.get("main_value")
+            if isinstance(total_epochs, int):
+                row["total_epochs"] = total_epochs
             if ev.get("fps") is not None:
                 row["fps"] = ev["fps"]
             # metrics 子对象摊平，前端按 {epoch, 指标名: 值} 取值
@@ -314,7 +322,7 @@ class TorchKilnExecutor(TaskExecutor):
                     row[k] = v
             return row
         if etype == EVENT_END:
-            return {
+            row = {
                 "_kind": EVENT_END,
                 "seq": seq,
                 "exit_reason": ev.get("exit_reason"),
@@ -323,6 +331,9 @@ class TorchKilnExecutor(TaskExecutor):
                 "main_value": ev.get("main_value"),
                 "duration_sec": ev.get("duration_sec"),
             }
+            if isinstance(total_epochs, int):
+                row["total_epochs"] = total_epochs
+            return row
         return None
 
     @staticmethod

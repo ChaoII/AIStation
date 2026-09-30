@@ -206,20 +206,26 @@
       <template #header><span class="card-title">指标对比</span></template>
       <el-table :data="compareTableData" border size="small" style="width: 100%">
         <el-table-column prop="label" label="指标" width="140" />
-        <el-table-column label="最优 Epoch">
+        <el-table-column label="最优值">
           <template #default="{ row }">
             <span v-if="displayBestMetrics && row.getter(displayBestMetrics) != null" class="mono">
               {{ row.fmt(row.getter(displayBestMetrics)) }}
             </span>
             <span v-else class="text-muted">—</span>
+            <span v-if="displayBestMetrics?.epoch" class="text-muted sub-epoch">
+              epoch {{ displayBestMetrics.epoch }}
+            </span>
           </template>
         </el-table-column>
-        <el-table-column label="最终 Epoch">
+        <el-table-column label="最终值">
           <template #default="{ row }">
             <span v-if="displayLastMetrics && row.getter(displayLastMetrics) != null" class="mono">
               {{ row.fmt(row.getter(displayLastMetrics)) }}
             </span>
             <span v-else class="text-muted">—</span>
+            <span v-if="displayLastMetrics?.epoch" class="text-muted sub-epoch">
+              epoch {{ displayLastMetrics.epoch }}
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -473,9 +479,20 @@ const liveMetricsLog = ref<any[]>([]);
 // 框架感知：PaddleX 以 hmean(det)/acc(rec) 为主指标，其余框架为 map50
 const isPaddlex = computed(() => String(task.value?.framework || "").toLowerCase() === "paddlex");
 const paddlexMode = computed(() => String(task.value?.hyperparams?.mode || "det").toLowerCase());
-const livePrimaryKey = computed(() =>
-  isPaddlex.value ? (paddlexMode.value === "rec" ? "acc" : "hmean") : "map50"
-);
+const livePrimaryKey = computed(() => {
+  if (isPaddlex.value) return paddlexMode.value === "rec" ? "acc" : "hmean";
+  // ⚠️ TorchKiln 的主指标**随任务变**（mAP50-95 / mAP50 / acc / hmean / RMSE…），
+  //    且行里的键是 `mAP50-95` 这种带连字符的名字，不是硬编码的 `map50`。
+  //    这里沿用旧写死的 "map50" 会**永远取不到任何一行**，于是 bestOf 走
+  //    「取最后一行」兜底，把 `end` 簿记行当成最优值（epoch 显示成最后一轮）。
+  if (isTorchkiln.value) return tkMainIndicator.value;
+  return "map50";
+});
+
+/** 簿记行（`end` / `start`）本身不含指标值，不能参与「最优/最终」的评选。 */
+function isMetricRow(r: any): boolean {
+  return !!r && r._kind !== "end";
+}
 
 /**
  * 取该 key 的历史最优行。
@@ -484,26 +501,63 @@ const livePrimaryKey = computed(() =>
  * N 长度的临时数组 + 全量遍历**一遍（N = 指标行数，上限 5000）。指标一多，
  * 每次 push 都要重扫全表，是页面卡顿的主要来源之一。
  * 改成单趟循环、不分配中间数组，行为完全一致。
+ *
+ * ⚠️ 两处语义修正：
+ *   1. 跳过 `end` 行 —— 它是「训练结束」的簿记，epoch 是最后一轮、但可能没有指标值；
+ *      混进来会把最优 epoch 错报成最后一轮。
+ *   2. 找不到候选时返回 **null**（交给 task.best_metrics 兜底），而不是「取最后一行」。
+ *      旧兜底正是上面「最优值显示成最后一轮」的直接原因。
+ *   3. 指标方向：TorchKiln 的 eval/best 行带 `main_indicator_mode`（RMSE/loss 要取最小值），
+ *      有就用；没有的框架（YOLO/PaddleX）行为与以前完全一致，仍是取最大值。
  */
 function bestOf(log: any[], key: string): any | null {
   let best: any = null;
+  let bestV = 0;
   let has = false;
+  let mode = "max";
   for (let i = 0; i < log.length; i++) {
-    const v = log[i]?.[key];
+    const row = log[i];
+    if (!isMetricRow(row)) continue;
+    const v = row?.[key];
     if (v == null) continue;
-    if (!has || v > (best[key] ?? 0)) {
-      best = log[i];
+    if (row.main_indicator_mode) mode = String(row.main_indicator_mode).toLowerCase();
+    if (!has) {
+      best = row;
+      bestV = v;
       has = true;
+      continue;
+    }
+    const better = mode === "min" ? v < bestV : v > bestV;
+    if (better) {
+      best = row;
+      bestV = v;
     }
   }
-  if (has) return best;
-  return log.length ? log[log.length - 1] : null;
+  if (best) return best;
+  return null;
 }
 
 const liveBestMetrics = computed(() => bestOf(liveMetricsLog.value, livePrimaryKey.value));
-const liveLastMetrics = computed(() =>
-  liveMetricsLog.value.length ? liveMetricsLog.value[liveMetricsLog.value.length - 1] : null
-);
+/**
+ * 「最终值」：优先取最后一条 **eval** 行（与 task.last_metrics 的语义一致——
+ * eval 才是「某轮跑完的验证结果」），没有 eval 就退回最后一条指标行。
+ *
+ * ⚠️ 不能直接取数组末元素：末尾常是 `end` 簿记行，它有 `epoch`/`main_value`，
+ * 但没有 `mAP50-95` 这类摊平的指标键、也没有 `total_epochs`，
+ * 卡片会因此显示成「—」和「50/?」。
+ * （YOLO/PaddleX 的行没有 `_kind`，`isMetricRow` 视为指标行，行为与旧版一致。）
+ */
+const liveLastMetrics = computed(() => {
+  const log = liveMetricsLog.value;
+  let fallback: any = null;
+  for (let i = log.length - 1; i >= 0; i--) {
+    const row = log[i];
+    if (!isMetricRow(row)) continue;
+    if (row._kind === "eval") return row;
+    if (!fallback) fallback = row;
+  }
+  return fallback;
+});
 const metricsLog = computed<any[]>(() => task.value?.metrics_log || []);
 const bestMetrics = computed<any>(() => task.value?.best_metrics || null);
 const lastMetrics = computed<any>(() => task.value?.last_metrics || null);
@@ -649,6 +703,31 @@ function liveLossValue(src: string): any {
   return map[src];
 }
 
+/**
+ * 各 loss 分量「最后一条含该键的行」。
+ *
+ * 单趟**从后往前**扫描：第一个命中的就是最后一条，全部命中即提前结束。
+ * 不用 `filter().at(-1)`（每个分量各扫一遍）也不用 `findLast`（部分环境不支持）。
+ */
+const lastRowWithLoss = computed<Map<string, any>>(() => {
+  const want = lossSpec.value.map((s) => s.src);
+  const hit = new Map<string, any>();
+  if (!want.length) return hit;
+  const log = displayMetricsLog.value;
+  for (let i = log.length - 1; i >= 0 && hit.size < want.length; i--) {
+    const row = log[i];
+    if (!row) continue;
+    for (const k of want) {
+      if (!hit.has(k) && row[k] != null) hit.set(k, row);
+    }
+  }
+  return hit;
+});
+
+function lastRowWithKey(key: string): any {
+  return lastRowWithLoss.value.get(key);
+}
+
 const displayMetrics = computed<Record<string, string>>(() => {
   const out: Record<string, string> = {};
   const last = displayLastMetrics.value;
@@ -661,7 +740,13 @@ const displayMetrics = computed<Record<string, string>>(() => {
   // PaddleX 指标行用 total，其余框架用 total_epochs
   out.epoch = last?.epoch != null ? `${last.epoch}/${last.total_epochs ?? last.total ?? "?"}` : "—";
   for (const s of metricSpec.value) out[s.key] = fmtRatio(last?.[s.key]);
-  for (const s of lossSpec.value) out[s.key] = fmtDecimal(last?.[s.src]);
+  // ⚠️ loss 必须去**最后一条含该键的行**取，不能只看 last（eval 行）：
+  //    eval 行按设计只有指标、没有 loss 分量，直接读 last 会让「Loss」卡片
+  //    在训练完成后恒为「—」，哪怕日志里有 5000 条 step loss。
+  for (const s of lossSpec.value) {
+    const v = last?.[s.src] ?? lastRowWithKey(s.src)?.[s.src];
+    out[s.key] = fmtDecimal(v);
+  }
   return out;
 });
 
@@ -694,6 +779,42 @@ function xOf(m: any, stepAxis: boolean): number | null {
  *   （后者会把 loss 突刺抹平，看图等于骗人）。
  * - `large / largeThreshold`：交给 ECharts 的大数据量折线快路径。
  */
+/**
+ * 图表渲染节流。
+ *
+ * 指标**每个都收**（存进 `liveMetricsLog`，数据一条不丢），但图表**不必每个都重画**：
+ * 实测 5000 点时一次全量重绘约 30ms，step 事件每秒来几个到十几个，等于持续占掉
+ * 三成主线程。
+ *
+ * ⚠️ 这里必须给图表喂**快照副本**而不是活数组。只加一个「节流开关」依赖是**无效**的
+ * ——图表 computed 仍在遍历活数组，`push` 一下照样把它标脏、照样全量重算。
+ * 正确做法是隔一段时间复制一份给图表看，图表只依赖这份副本。
+ *
+ * 复制 5000 元素的代价是微秒级，远小于省掉的重绘。
+ */
+const CHART_THROTTLE_MS = 400;
+/** 图表专用的指标快照（只每 CHART_THROTTLE_MS 更新一次） */
+const chartLog = ref<any[]>([]);
+let chartTickTimer: ReturnType<typeof setTimeout> | null = null;
+
+function syncChartLog() {
+  // ⚠️ 必须用 displayMetricsLog 而不是 liveMetricsLog：后者在 SSE 事件到达前是空的，
+  //    displayMetricsLog 会回退到 task.value.metrics_log。直接取 liveMetricsLog
+  //    会导致「刷新页面后图表空白，直到第一条 SSE 事件到来」。
+  chartLog.value = displayMetricsLog.value.slice();
+}
+
+/** 有新数据时调用：保证 CHART_THROTTLE_MS 内至少重绘一次（尾沿不丢） */
+function scheduleChartRender() {
+  if (chartTickTimer) return;
+  chartTickTimer = setTimeout(() => {
+    chartTickTimer = null;
+    syncChartLog();
+    // flush 期间若又来了新数据，立刻再排一轮，保证尾沿不丢、也不饿死
+    if (chartLog.value.length !== displayMetricsLog.value.length) scheduleChartRender();
+  }, CHART_THROTTLE_MS);
+}
+
 function lineChartOption(
   log: any[],
   spec: { key: string; label: string; src?: string }[],
@@ -759,7 +880,9 @@ function lineChartOption(
 }
 
 const lossChartOption = computed(() => {
-  const log = displayMetricsLog.value;
+  // 读 chartLog（节流快照）而不是 displayMetricsLog：否则每来一个 step 事件
+  // 就会全量重算 + 重绘，实测 5000 点时一次要 ~30ms
+  const log = chartLog.value;
   if (!log.length) return {};
   return lineChartOption(
     log,
@@ -771,7 +894,7 @@ const lossChartOption = computed(() => {
 
 const valChartOption = computed(() => {
   const spec = metricSpec.value;
-  const log = displayMetricsLog.value;
+  const log = chartLog.value;
   if (!log.length) return {};
   const usable = log.filter((m: any) => spec.some((s) => m[s.key] != null));
   if (!usable.length) return {};
@@ -791,7 +914,15 @@ const compareTableData = computed(() => [
   })),
   ...metricSpec.value.map((s) => ({
     label: s.label,
-    getter: (m: any) => m?.[s.key],
+    // ⚠️ TorchKiln 的 best 事件**不一定**带 metrics 子对象，只有 main_value。
+    //    只按指标名取摊平键会在这种情况下取到 null，表格显示「—」，
+    //    而值明明就在 main_value 里。找不到摊平键时回退 main_value。
+    getter: (m: any) => {
+      const v = m?.[s.key];
+      if (v != null) return v;
+      const isMain = isTorchkiln.value && s.key === tkMainIndicator.value;
+      return isMain ? (m?.main_value ?? null) : null;
+    },
     // TorchKiln 的主指标可能是 0~1 比例（mAP/acc），也可能是 RMSE/loss 这类任意值
     fmt: (v: number) =>
       isTorchkiln.value && !tkMainIsRatio.value
@@ -963,6 +1094,20 @@ async function loadTask() {
   if (!id) return;
   const r = await TrainAPI.getTaskDetail(id);
   task.value = r.data?.data;
+  // ⚠️ 必须用接口返回的 metrics_log 给 liveMetricsLog **播种**，否则图表会塌。
+  //
+  //    displayMetricsLog 是「liveMetricsLog 非空就用它、否则用 metrics_log」。
+  //    页面刷新时 lastSeq 已推到 maxSeqOf(metrics_log)，SSE 只补缺口，于是第一条新事件
+  //    到达时 liveMetricsLog.length 由 0 变 1 —— displayMetricsLog 立刻从「5000 条历史」
+  //    **整体翻转**成「1 条新数据」，图表瞬间塌成一个点，且越训练越退化。
+  //    （浏览器实测：注入 60 条后 liveLen 由 5052 掉到 60。）
+  //
+  //    播种后 live 数组就是历史的延续，appendMetricRow 才是真正的**增量追加**。
+  const rows = r.data?.data?.metrics_log;
+  liveMetricsLog.value = Array.isArray(rows) ? rows.slice() : [];
+  // 整体替换后去重索引全部失效，必须重建（否则新事件会因旧下标误替换）
+  rebuildMetricRowIndex();
+  syncChartLog();
 }
 
 /**
@@ -1113,44 +1258,80 @@ function metricEventToRow(ev: any) {
 }
 
 /**
- * 指标行去重索引：`(kind|epoch|step) -> 在 liveMetricsLog 里的下标`。
+ * 指标行去重索引：`(kind|epoch|step) -> 在 liveMetricsLog 里的**绝对**下标`。
  *
  * ⚠️ 原实现每收一个事件都用 `findIndex` 在 Vue 的 **reactive proxy** 上线性全扫
  * （上限 5000 行）—— 5000 次 proxy 属性访问，每次 push 都付一遍，是卡顿主因之一。
  * 换成 Map 后是 O(1)。step 事件本身按 seq 严格递增、天然不会重复，
  * 但 eval 事件在断线重连时会被补发，所以仍要去重，只是不能再线性扫。
+ *
+ * ⚠️ 存**绝对**下标（= `metricBase` + 数组下标）而不是数组下标，是为了在丢弃队首
+ * 时**不必重建整张索引表**：丢弃后剩余行的数组下标整体左移，但绝对下标不变，
+ * 只要 `metricBase` 加上偏移量即可。浏览器实测：不做这一步时，指标一越过
+ * 5000 行上限，**每个事件**都要全量重建索引，注入 60 条要 1.66 秒。
  */
 const metricRowIndex = new Map<string, number>();
+/** 已从队首丢弃的行数；绝对下标 = metricBase + 数组下标 */
+let metricBase = 0;
+const MAX_METRIC_ROWS = 5000;
+/**
+ * 攒够这么多「超限行」才切一次队首。
+ *
+ * 上限 5000 之上允许再溢出 1024 行才做一次 `splice(0, drop)`。
+ * 对响应式代理数组做 `splice(0, n)` 是 O(n) 且逐次走 `set` 陷阱，
+ * 逐事件执行时是「数据量大了界面卡」的直接元凶（profiler: `set` 占 20.7%）。
+ * 攒成块后平摊为每 1024 个事件一次，数组占用只多 20%。
+ */
+const TRIM_CHUNK = 1024;
 
 function metricRowKey(r: any): string {
   return `${r?._kind}|${r?.epoch}|${r?.global_step}`;
 }
 
-/** 数组被截断/整体替换后下标会失效，调用方负责在此重建索引。 */
+/** 数组被**整体替换**后绝对下标失效，调用方负责在此重建索引（并把 metricBase 归零）。 */
 function rebuildMetricRowIndex() {
   metricRowIndex.clear();
+  metricBase = 0;
   const log = liveMetricsLog.value;
   for (let i = 0; i < log.length; i++) metricRowIndex.set(metricRowKey(log[i]), i);
 }
 
 function appendMetricRow(row: any) {
   if (!row) return;
+  // ⚠️ `liveMetricsLog` 是**深响应式 ref**，`liveMetricsLog.value` 每访问一次都要走
+  //    toRaw + isShallow + isReadonly + reactive 一整套解包。
+  //    CPU profiler 实测：单次 append 里重复取 5 次 .value 就占掉约 13% 采样。
+  //    这里**只取一次**并复用。
+  const log = liveMetricsLog.value;
   // 同一 epoch 的 eval 可能被补发（断线重连），按 (kind,epoch,step) 去重
   const key = metricRowKey(row);
-  const idx = metricRowIndex.get(key);
-  if (idx !== undefined && idx < liveMetricsLog.value.length) {
-    liveMetricsLog.value.splice(idx, 1, row);
+  const abs = metricRowIndex.get(key);
+  // 绝对下标换算成当前数组下标；越界说明那行已被丢弃，按新行处理
+  const pos = abs === undefined ? -1 : abs - metricBase;
+  if (pos >= 0 && pos < log.length) {
+    log.splice(pos, 1, row);
   } else {
-    metricRowIndex.set(key, liveMetricsLog.value.length);
-    liveMetricsLog.value.push(row);
+    metricRowIndex.set(key, metricBase + log.length);
+    log.push(row);
   }
-  // 曲线点太多会卡渲染，只保留末尾（后端落库同样是 5000 行上限）
-  if (liveMetricsLog.value.length > 5000) {
-    const drop = liveMetricsLog.value.length - 5000;
-    liveMetricsLog.value.splice(0, drop);
-    // 截断后下标整体左移 drop，重建索引（比增量修正更简单也更不容易出错）
-    rebuildMetricRowIndex();
+  // 曲线点太多会卡渲染，只保留末尾（后端落库同样是 5000 行上限）。
+  //
+  // ⚠️ 不能一超限就 splice：对 5000 元素的**响应式代理数组**做 splice(0, drop) 是
+  //    O(n)，且每次搬移都走一遍 set 陷阱（profiler 里 `set` 占 20.7% 自耗时）。
+  //    逐事件都做，实测注入 300 条要 3 秒。
+  //    改成**攒够一整块再切一次**，把 O(n) 摊薄成每 TRIM_CHUNK 个事件一次。
+  if (log.length > MAX_METRIC_ROWS + TRIM_CHUNK) {
+    const drop = log.length - MAX_METRIC_ROWS;
+    // 只删**被丢弃那些行**的索引项（O(drop)），其余行的绝对下标不变 ——
+    // 因此不需要重建整张索引表。
+    for (let i = 0; i < drop; i++) {
+      metricRowIndex.delete(metricRowKey(log[i]));
+    }
+    log.splice(0, drop);
+    metricBase += drop;
   }
+  // 数据已入数组，这里只**安排**一次节流重绘（不是每个事件都重画）
+  scheduleChartRender();
 }
 
 function startMetricStream(taskId: number) {
@@ -1280,6 +1461,7 @@ async function handleRetrain() {
     clearLogs();
     liveMetricsLog.value = [];
     rebuildMetricRowIndex();
+    syncChartLog();   // 重新训练后清图表（否则节流快照还留着上一轮的曲线）
     Object.assign(yoloMetrics, {
       epoch: 0,
       totalEpochs: 0,
@@ -1344,6 +1526,8 @@ function handleExport() {
 
 onMounted(async () => {
   await loadTask();
+  // 首屏灌一次图表快照：否则节流定时器还没轮到，图表会一直空着
+  syncChartLog();
   const id = Number(route.params.id);
   if (id) {
     try {
@@ -1383,6 +1567,10 @@ onBeforeUnmount(() => {
   if (logFlushTimer) {
     clearTimeout(logFlushTimer);
     logFlushTimer = null;
+  }
+  if (chartTickTimer) {
+    clearTimeout(chartTickTimer);
+    chartTickTimer = null;
   }
   metricRowIndex.clear();
 });
