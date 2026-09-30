@@ -88,7 +88,13 @@ class TrainTask(ModelMixin, UserMixin):
 
 class TrainEval(ModelMixin, UserMixin):
     __tablename__ = "train_evals"
-    model_repo_id: Mapped[int] = mapped_column(Integer, comment="模型仓库ID")
+    # ⚠️ 字段名有误导：这里存的是**模型版本行 id**（train_models.id），不是仓库 id。
+    #    历史遗留（见 test_retired_frameworks 之外的既有数据）。
+    # nullable：2026-07 数据事故删掉了一批模型行，留下指向已删 id 的悬空引用。
+    #   NOT NULL 时结构上无法表达"引用的模型已删除"这一合法状态——既不能修复，
+    #   也不能如实记录。改为可空后，悬空引用可被置空（迁移见 c4d5e6f7a8b9）。
+    model_repo_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="模型版本ID（字段名沿用历史，实为版本行 id）")
     model_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="具体模型版本ID")
     eval_dataset_id: Mapped[int] = mapped_column(Integer, comment="评估数据集ID")
     framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="框架（ULTRALYTICS/PADDLEX 已退场，仅历史数据保留）")
@@ -107,8 +113,12 @@ class TrainEval(ModelMixin, UserMixin):
 
 class TrainPredict(ModelMixin, UserMixin):
     __tablename__ = "train_predicts"
-    model_repo_id: Mapped[int] = mapped_column(Integer, comment="模型仓库ID")
-    model_id: Mapped[int] = mapped_column(Integer, comment="模型版本ID")
+    # 同 TrainEval.model_repo_id：存的是模型版本行 id，且允许为 NULL
+    # （模型被删后需能如实记录"预测目标已不存在"，见迁移 c4d5e6f7a8b9）。
+    model_repo_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="模型版本ID（字段名沿用历史，实为版本行 id）")
+    model_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, comment="模型版本ID（模型被删后置空）")
     framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="框架（ULTRALYTICS/PADDLEX 已退场，仅历史数据保留）")
     source_type: Mapped[str] = mapped_column(String(16), comment="图片来源 dataset/upload")
     source_dataset_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="源数据集ID")
