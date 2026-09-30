@@ -1395,7 +1395,14 @@ async function pollStatus() {
   }
   const curStatus = t.status;
   if (curStatus !== prevStatus) {
-    if (curStatus === "running" && !ws) connectWs(Number(route.params.id));
+    // ⚠️ **pending 也要连**：排队期的日志恰恰是最需要看的——「准备训练数据 ->
+    // 等待可用显存 ≥ 4GB 的 GPU 与空闲端口 -> 分配到端口 18100 / GPU 0 -> 启动
+    // job 容器 -> 就绪」全在 pending 阶段推送。此前只在 running 时连，用户点进
+    // 详情页只能看到一个光秃秃的「等待日志…」，完全不知道任务卡在哪一步、要等
+    // 多久。WS 是按 task_id 订阅的、与任务状态无关，pending 时连接是安全的。
+    if ((curStatus === "running" || curStatus === "pending") && !ws) {
+      connectWs(Number(route.params.id));
+    }
   }
   if (curStatus && curStatus !== "running" && curStatus !== "pending") {
     stopPoll();
@@ -1799,7 +1806,10 @@ onMounted(async () => {
     } catch {
       /* */
     }
-    if (task.value?.status === "running") {
+    // pending 也要连：刷新进详情页时任务可能正在排队（等 GPU / 等端口），
+    // 那段日志正是用户最需要看的。终态任务不用连——历史日志已由上面的 HTTP
+    // 拉取填好了。
+    if (task.value?.status === "running" || task.value?.status === "pending") {
       connectWs(id);
       startPoll();
       // 指标走 SSE 局部增量；日志走 WS 文本流。两者互补。
