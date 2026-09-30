@@ -65,6 +65,54 @@ class DiskInfoSchema(BaseModel):
     usage: float = Field(ge=0, le=100, description="使用率(%)")
 
 
+class GpuDeviceSchema(BaseModel):
+    """单张 GPU 的信息"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    index: int = Field(description="GPU序号")
+    name: str = Field(description="GPU型号")
+    uuid: str = Field(default="", description="GPU UUID")
+    total: str = Field(default="", description="显存总量")
+    used: str = Field(default="", description="已用显存")
+    free: str = Field(default="", description="可用显存")
+    usage: float = Field(default=0, ge=0, le=100, description="显存使用率(%)")
+    utilization: float = Field(default=0, ge=0, le=100, description="GPU核心利用率(%)")
+    temperature: int | None = Field(default=None, description="温度(℃)")
+    power: str | None = Field(default=None, description="当前功耗")
+    power_limit: str | None = Field(default=None, description="功耗上限")
+
+
+class GpuInfoSchema(BaseModel):
+    """GPU 信息（宿主机 NVML 直读，与训练容器是否可用无关）"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    available: bool = Field(default=False, description="NVML 是否可用")
+    error: str | None = Field(default=None, description="不可用原因")
+    driver_version: str | None = Field(default=None, description="NVIDIA驱动版本")
+    cuda_version: str | None = Field(default=None, description="驱动支持的CUDA版本")
+    device_count: int = Field(default=0, description="GPU数量")
+    devices: list[GpuDeviceSchema] = Field(default_factory=list, description="GPU列表")
+
+
+class TorchEnvSchema(BaseModel):
+    """训练环境运行时版本（由 TorchKiln 服务上报，本服务不装 torch）"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    available: bool = Field(default=False, description="训练服务是否可达")
+    error: str | None = Field(default=None, description="不可用原因")
+    framework: str | None = Field(default=None, description="训练框架")
+    framework_version: str | None = Field(default=None, description="框架版本")
+    python: str | None = Field(default=None, description="训练环境Python版本")
+    torch: str | None = Field(default=None, description="PyTorch版本")
+    cuda: str | None = Field(default=None, description="CUDA运行时版本")
+    cudnn: str | None = Field(default=None, description="cuDNN版本")
+    device: str | None = Field(default=None, description="训练用GPU")
+    device_count: int = Field(default=0, description="训练环境可见GPU数")
+
+
 class ServerMonitorSchema(BaseModel):
     """服务器监控信息模型"""
 
@@ -75,3 +123,6 @@ class ServerMonitorSchema(BaseModel):
     py: PyInfoSchema = Field(description="Python运行信息")
     sys: SysInfoSchema = Field(description="系统信息")
     disks: list[DiskInfoSchema] = Field(default_factory=list, description="磁盘信息")
+    gpu: GpuInfoSchema = Field(default_factory=GpuInfoSchema, description="GPU信息")
+    torch_env: TorchEnvSchema = Field(
+        default_factory=TorchEnvSchema, description="训练环境运行时版本")

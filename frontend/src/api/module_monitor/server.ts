@@ -58,10 +58,54 @@ export interface SysFile {
   usage: number;
 }
 
+/** 单张 GPU（后端 NVML 直读，字段为 snake_case） */
+export interface GpuDevice {
+  index: number;
+  name: string;
+  uuid: string;
+  total: string;
+  used: string;
+  free: string;
+  /** 显存使用率(%) */
+  usage: number;
+  /** GPU 核心利用率(%) */
+  utilization: number;
+  temperature: number | null;
+  power: string | null;
+  power_limit: string | null;
+}
+
+/** 宿主机 GPU 信息 */
+export interface Gpu {
+  available: boolean;
+  error: string | null;
+  driver_version: string | null;
+  /** 驱动支持的 CUDA 版本（不是 torch 编译时的运行时版本） */
+  cuda_version: string | null;
+  device_count: number;
+  devices: GpuDevice[];
+}
+
+/** 训练环境运行时版本（由 TorchKiln 服务上报） */
+export interface TorchEnv {
+  available: boolean;
+  error: string | null;
+  framework: string | null;
+  framework_version: string | null;
+  python: string | null;
+  torch: string | null;
+  cuda: string | null;
+  cudnn: string | null;
+  device: string | null;
+  device_count: number;
+}
+
 export interface ServerInfo {
   cpu: Cpu;
   mem: Memory;
   sys: System;
   py: Python;
   disks: SysFile[];
+  gpu?: Gpu;
+  torch_env?: TorchEnv;
 }
