@@ -31,6 +31,10 @@ FRONTEND_LIST = (
     Path(__file__).resolve().parents[2]
     / "frontend" / "src" / "views" / "module_train" / "task" / "index.vue"
 )
+FRONTEND_EXPORT_MAP = (
+    Path(__file__).resolve().parents[2]
+    / "frontend" / "src" / "views" / "module_annotation" / "dataset" / "index.vue"
+)
 
 
 def _frontend_tk_types() -> set[str]:
@@ -57,6 +61,30 @@ def test_whitelist_is_annotation_type_subset():
     valid = {t.value for t in AnnotationType}
     bad = set(TorchKilnExecutor.SUPPORTED_TASK_TYPES) - valid
     assert not bad, f"白名单含非 AnnotationType 的值（会永远匹配不上）: {sorted(bad)}"
+
+
+def _frontend_torchkiln_export_types() -> set[str]:
+    """从数据集导出页 ``FORMAT_TASK_MAP`` 里抠出 ``torchkiln-<任务类型>`` 的类型集合。"""
+    text = FRONTEND_EXPORT_MAP.read_text(encoding="utf-8")
+    m = re.search(r"FORMAT_TASK_MAP[^=]*=\s*\{(.*?)\n\};", text, re.S)
+    assert m, "找不到 FORMAT_TASK_MAP，前端数据集导出页可能改名了"
+    body = "\n".join(line.split("//")[0] for line in m.group(1).splitlines())
+    return set(re.findall(r'"torchkiln-([a-z_]+)"', body))
+
+
+def test_dataset_export_covers_all_torchkiln_task_types():
+    """数据集下载导出必须覆盖 TorchKiln 支持的**每一种**任务类型。
+
+    少任何一种，用户就导不出该任务能直接喂给 TorchKiln 的数据——导出的目录
+    缺 ``train.txt`` / ``val.txt`` 清单，而 TorchKiln 侧读到空清单不会报错，
+    只是训练时按 0 个样本走，排查起来毫无线索。
+    """
+    back = set(TorchKilnExecutor.SUPPORTED_TASK_TYPES)
+    front = _frontend_torchkiln_export_types()
+    assert front == back, (
+        "数据集导出的 torchkiln-* 格式与训练白名单不一致："
+        f"缺少 {sorted(back - front)}，多余 {sorted(front - back)}"
+    )
 
 
 def test_task_type_reads_annotation_task_not_model_task(monkeypatch):

@@ -281,8 +281,18 @@ class TorchKilnExecutor(TaskExecutor):
         模板里的路径（如镜像内的 ``datasets/det_demo/train.txt``）→ 首次训练必然
         FileNotFoundError。此前的写法正是把探测放在导出之前，踩的就是这个坑。
 
-        只挂「确实存在」的文件：某个 split 为空时不注入，避免 TorchKiln 用
-        配置模板里的残留路径。
+        只挂「确实存在」的文件。
+
+        ⚠️ 注意「不注入」的**真实后果**：TorchKiln 的 runner 只在 ``ds.val_list``
+        非空时才覆盖 ``Eval.dataset.label_file_list``（service/runner.py）。所以
+        「不注入」等于**退回模型配置模板里的值**（通常是镜像内 demo 数据的
+        ``val.txt``）—— 找不到就 FileNotFoundError，找得到就拿 demo 数据当验证集，
+        指标是假的。本方法只解决「别指向别的数据集」，**不能**用它来「跳过验证集」。
+
+        真正的保障在导出侧：两个 split 都要有图才会写两份清单。而
+        ``_export_yolo`` 的 ``split_idx = max(1, int(n * ratio))`` 在 n>=2 时必然给
+        val 留出至少 1 张，**只有 n==1（数据集仅 1 张标注图）才会缺 val.txt**，
+        属已知边界，此时训练会退回模板验证集。
         """
         dataset = dict(spec.get("dataset") or {})
         dataset["data_dir"] = data_dir

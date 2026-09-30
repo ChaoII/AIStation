@@ -270,7 +270,23 @@ async def _export_core(
     train_ratio: float = 0.8, for_training: bool = False, for_eval: bool = False,
     torchkiln_index: bool = False,
 ) -> str:
-    """Core export logic shared by training and download."""
+    """Core export logic shared by training and download.
+
+    ``format`` 额外认 ``torchkiln-<任务类型>`` 前缀（如
+    ``torchkiln-segmentation``）：它等价于 ``yolo-<任务类型>``，并**强制**生成
+    TorchKiln 的 ``train.txt`` / ``val.txt`` 清单。
+
+    为什么需要这个前缀：TorchKiln 的数据集就是「YOLO 文本标签 + 清单」，而清单
+    每行的写法**按任务不同**——检测/旋转框/分割/关键点/语义分割是纯图片路径、
+    分类是「路径 类下标」、OCR det 是「路径\\t四点 JSON」、OCR rec 是「路径\\t整图
+    文本」（完整对照表见 :func:`prepare_training_data_for_task`）。下载导出原本
+    只能选 ``yolo-*``，拿到的目录没有清单，用户得在 TorchKiln 侧自己拼；而拼错
+    （漏清单、清单分隔符写错）**不会报错**，只是训练读到 0 个样本。
+    """
+    if framework.startswith("torchkiln-"):
+        framework = "yolo-" + framework[len("torchkiln-"):]
+        torchkiln_index = True
+
     os.makedirs(output_dir, exist_ok=True)
     async with async_db_session() as db:
         result = await db.execute(

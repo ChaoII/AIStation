@@ -464,7 +464,10 @@
           <el-select v-model="exportFormat" style="width:100%">
             <el-option v-for="opt in filteredExportFormats" :key="opt.value" :value="opt.value" :label="opt.label" />
           </el-select>
-          <div v-if="exportFormat === 'paddle-ocr'" style="margin-top:8px">
+          <div
+            v-if="exportFormat === 'paddle-ocr' || exportFormat === 'torchkiln-ocr'"
+            style="margin-top:8px"
+          >
             <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
             <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
           </div>
@@ -1419,7 +1422,11 @@ const ocrExportRec = ref(true);
 const trainRatio = ref(80);
 
 const isYoloOrPaddleFormat = computed(() => {
-  return exportFormat.value.startsWith("yolo-") || exportFormat.value.startsWith("paddle-");
+  return (
+    exportFormat.value.startsWith("yolo-") ||
+    exportFormat.value.startsWith("paddle-") ||
+    exportFormat.value.startsWith("torchkiln-")
+  );
 });
 
 const FORMAT_TASK_MAP: Record<string, string[]> = {
@@ -1438,6 +1445,21 @@ const FORMAT_TASK_MAP: Record<string, string[]> = {
   "time-series-csv": ["time_series_event"],
   "video-event": ["video_event"],
   "video-event-csv": ["video_event"],
+  // TorchKiln（自研）：YOLO 文本标签 + 训练清单（train.txt / val.txt）。
+  // 清单每行的写法按任务不同（分类是「路径 类下标」、OCR det 是「路径\t四点
+  // JSON」…），少了清单在 TorchKiln 侧读到的就是 0 个样本且不报错，所以这里
+  // 按任务类型逐个列出，而不是给一个笼统的「TorchKiln」格式。
+  // ⚠️ 这组 key 必须与后端 TorchKilnExecutor.SUPPORTED_TASK_TYPES 覆盖同一批
+  // 任务类型（tests/test_torchkiln_task_type.py 钉住了这一点）。
+  "torchkiln-detection": ["detection"],
+  "torchkiln-rotated_detection": ["rotated_detection"],
+  "torchkiln-segmentation": ["segmentation"],
+  "torchkiln-semantic_segmentation": ["semantic_segmentation"],
+  "torchkiln-keypoint": ["keypoint"],
+  "torchkiln-classification": ["classification"],
+  "torchkiln-ocr": ["ocr"],
+  "torchkiln-video_detection": ["video_detection"],
+  "torchkiln-cuboid": ["cuboid"],
 };
 
 const filteredExportFormats = computed(() => {
@@ -1463,6 +1485,15 @@ const exportFormatOptions = [
   { value: "paddle-ocr", label: "PaddleOCR" },
   { value: "x-anylabeling", label: "X-AnyLabeling（通用 JSON 格式）" },
   { value: "coco-panoptic", label: "COCO Panoptic（全景分割 PNG 掩码 + JSON）" },
+  { value: "torchkiln-detection", label: "TorchKiln 检测（YOLO 标签 + 训练清单）" },
+  { value: "torchkiln-rotated_detection", label: "TorchKiln 旋转框（YOLO OBB + 训练清单）" },
+  { value: "torchkiln-segmentation", label: "TorchKiln 分割（YOLO Seg + 训练清单）" },
+  { value: "torchkiln-semantic_segmentation", label: "TorchKiln 语义分割（掩码 PNG + 训练清单）" },
+  { value: "torchkiln-keypoint", label: "TorchKiln 关键点（YOLO Pose + 训练清单）" },
+  { value: "torchkiln-classification", label: "TorchKiln 分类（类目录 + 训练清单）" },
+  { value: "torchkiln-ocr", label: "TorchKiln OCR（四点标注 / 整图文本 + 训练清单）" },
+  { value: "torchkiln-video_detection", label: "TorchKiln 视频检测（抽帧 + 训练清单）" },
+  { value: "torchkiln-cuboid", label: "TorchKiln 3D 框（相机系 7-dof + 训练清单）" },
   { value: "audio-event", label: "音频事件（JSONL 区间）" },
   { value: "audio-csv", label: "音频事件（CSV 区间）" },
   { value: "time-series-event", label: "时间序列事件（JSONL 区间）" },
@@ -1491,7 +1522,7 @@ async function handleExportSubmit() {
   try {
     const { TrainAPI } = await import("@/api/module_train");
     let ocrRec: boolean | undefined;
-    if (exportFormat.value === "paddle-ocr") {
+    if (exportFormat.value === "paddle-ocr" || exportFormat.value === "torchkiln-ocr") {
       if (!ocrExportDet.value && !ocrExportRec.value) {
         ElMessage.warning("请至少选择一种 OCR 导出（det/rec）");
         return;
