@@ -111,6 +111,11 @@ def _reset_local():
     gpu_pool._local_gpus.clear()
 
 
+async def _async_none():
+    """假装 Redis 不可用（让池走进程内字典这条降级路径，测试不依赖真实 Redis）。"""
+    return None
+
+
 def test_acquire_gets_port_and_gpu(fake_gpus):
     _reset_local()
     alloc = asyncio.run(gpu_pool.acquire(1, need_gpu=1, wait=False))
@@ -180,6 +185,35 @@ def test_desktop_baseline_usage_does_not_block(monkeypatch):
     assert alloc is not None, "桌面基线占用不该导致永久排队"
     assert alloc.gpu_indices == [0]
     asyncio.run(gpu_pool.release(61))
+
+
+def test_busy_task_count_counts_tasks_not_gpus(fake_gpus, monkeypatch):
+    """排队提示里的"有 N 个任务占用 GPU"要按**任务**去重，不能按键数。
+
+    一个任务占多张卡时若按键数算，显示的排队长度会随分配方式跳动；而且
+    提示语本身说的是"任务"，按 GPU 数报会前后矛盾。
+    """
+    _reset_local()
+    monkeypatch.setattr(gpu_pool, "gpu_devices", lambda: [
+        _dev(0, "GPU-a", free_gb=12.0), _dev(1, "GPU-b", free_gb=12.0),
+        _dev(2, "GPU-c", free_gb=12.0)])
+    # 让 Redis 判定为"不可用"，从而走进程内字典这条路径（测试不依赖真实 Redis）
+    monkeypatch.setattr(gpu_pool, "_redis", _async_none)
+    assert asyncio.run(gpu_pool.busy_task_count()) == 0
+
+    a1 = asyncio.run(gpu_pool.acquire(61, need_gpu=2, wait=False))
+    assert a1 is not None
+    # 一个任务占了 2 张卡 -> 仍只算 1 个"占用中的任务"
+    assert len(a1.gpu_indices) == 2
+    assert asyncio.run(gpu_pool.busy_task_count()) == 1
+
+    a2 = asyncio.run(gpu_pool.acquire(62, need_gpu=1, wait=False))
+    assert a2 is not None
+    assert asyncio.run(gpu_pool.busy_task_count()) == 2
+    asyncio.run(gpu_pool.release(61))
+    assert asyncio.run(gpu_pool.busy_task_count()) == 1
+    asyncio.run(gpu_pool.release(62))
+    assert asyncio.run(gpu_pool.busy_task_count()) == 0
 
 
 def test_no_gpu_enumerated_degrades_instead_of_hanging(monkeypatch):

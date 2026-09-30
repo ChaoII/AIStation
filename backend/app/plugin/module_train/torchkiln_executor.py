@@ -24,6 +24,7 @@ import contextlib
 import logging
 import os
 import posixpath
+import time
 import traceback
 from datetime import datetime
 
@@ -70,6 +71,9 @@ _STATUS_MAP = {
 
 #: 作业 id 存在 hyperparams 的这个键下（``__`` 前缀，用户表单不会渲染）
 JOB_ID_KEY = "__tk_job_id"
+
+#: 排队超过这么久就在日志里补一句"排了多久 + 前面有几个人在等"
+_QUEUE_HINT_AFTER = 10.0
 
 #: 指标落库批量阈值：step 级指标很密，逐条 UPDATE 会把 Postgres 打满
 _FLUSH_EVERY = 40
@@ -549,6 +553,7 @@ class TorchKilnExecutor(TaskExecutor):
             # 先导出再排队：反过来的话，等 GPU 的任务会一边排队一边白占一张卡
             need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
                                 or settings.TORKILN_GPU_MIN_FREE_GB)
+            waiting_since = time.monotonic()
             await broadcast_line(
                 task_id,
                 f"[torchkiln] 等待可用显存 ≥ {need_mem_gb:.1f}GB 的 GPU 与空闲端口…")
@@ -559,6 +564,23 @@ class TorchKilnExecutor(TaskExecutor):
                     error_log="拿不到空闲 GPU 或可用端口（详见后端日志中 gpu_pool 的占用明细）",
                     finished_at=datetime.now())
                 return
+            waited = time.monotonic() - waiting_since
+            if waited >= _QUEUE_HINT_AFTER:
+                # 说清楚"等多久、为什么等"：只说"等待可用 GPU"的话，用户无法判断
+                # 是该继续等还是这台机器根本跑不动这个任务。
+                ahead = await gpu_pool.busy_task_count()
+                await broadcast_line(
+                    task_id,
+                    f"[torchkiln] 已排队 {waited:.0f}s，当前有 {ahead} 个任务占用 GPU"
+                    f"（本次需要 {need_mem_gb:.1f}GB 可用显存）")
+            # 拿到资源才算"开始"：在此之前一直是 PENDING（排队中）。
+            # ⚠️ 此前**从不**置 RUNNING，于是整个训练过程在列表页都显示"排队中"，
+            # 进度条与运行中态（v-if status==='running'）永远不出现——用户看到的
+            # 与实际完全对不上。RUNNING 语义 = 已分配到资源、正在执行。
+            if task.status != TrainStatus.RUNNING:
+                await cls._mark_status(
+                    task_id, TrainStatus.RUNNING,
+                    started_at=task.started_at or datetime.now())
 
             container = None
             try:

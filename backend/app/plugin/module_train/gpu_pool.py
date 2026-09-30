@@ -370,6 +370,28 @@ def allocation_of(task_id: int) -> Allocation | None:
 _ALIVE_STATUSES = ("pending", "running")
 
 
+async def busy_task_count() -> int:
+    """当前占用着 GPU 的**任务数**（给排队中的任务显示"前面有几个人"）。
+
+    按 GPU 认领键的**去重 task_id** 计数，而不是按键数——一个任务占多张卡时
+    只算一次，否则显示的排队长度会随卡的分配方式跳动。Redis 不可用时退回
+    进程内字典，只能反映本进程（这时提示语会自然少一些，不会报错）。
+    """
+    rd = await _redis()
+    if rd is None:
+        return len(set(_local_gpus.values()))
+    try:
+        owners: set[str] = set()
+        async for key in rd.scan_iter(match=f"{_K_GPU}*", count=200):
+            val = await rd.get(key)
+            if val:
+                owners.add(val.decode() if isinstance(val, bytes) else str(val))
+        return len(owners)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[gpu_pool] 统计占用任务数失败: {e}")
+        return len(set(_local_gpus.values()))
+
+
 async def reap_stale() -> int:
     """回收「任务已不在进行中」却仍占着 GPU / 端口的记录，返回回收条数。
 
