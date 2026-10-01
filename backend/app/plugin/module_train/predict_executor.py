@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import update
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -319,6 +320,12 @@ class PredictExecutor(TaskExecutor):
                     lease, broadcast=lambda ln: broadcast_predict_log(predict_id, ln))
 
                 async with TorchKilnClient(base_url=lease.base_url) as client:
+                    # 提交作业**之前**确认镜像里的代码身份——
+                    # 否则缺端点会表现为 404、缺方法会表现为 AttributeError，
+                    # 而后者往往在结果图都写完之后才炸（need_kinds=('predict',)）。
+                    await tkjc.assert_image_current(
+                        client, need_kinds=("predict",),
+                        expect_revision=settings.TORKILN_EXPECTED_REVISION or None)
                     job_id = await cls._submit(client, predict_id, spec)
                     logs_task = await tkjc.stream_logs(
                         client, job_id, "predict",

@@ -123,6 +123,59 @@ async def await_terminal(client: TorchKilnClient, job_id: str, kind: str,
         await asyncio.sleep(poll_seconds)
 
 
+class StaleJobImage(RuntimeError):
+    """job 镜像里的 TorchKiln 代码比本地旧（或缺本次需要的能力）。
+
+    刻意做成**显式异常**而不是让它自然失败：这两种情况下真正发生的报错都指向
+    离原因很远的地方——
+
+    - 端点不存在 → ``POST /api/v1/eval/jobs`` 返回 **404 Not Found**，
+      看起来像「服务有问题」；
+    - 契约少一个方法 → ``AttributeError: 'MetricSink' object has no attribute
+      'predict'``，而此时结果图**已经写完**了（产物齐了、状态却是失败）。
+
+    2026-10 因此连续踩了两次。所以这里在**提交作业之前**用一次 GET 拦住它。
+    """
+
+
+async def assert_image_current(client: TorchKilnClient, *,
+                               need_kinds: tuple[str, ...],
+                               expect_revision: str | None = None) -> dict:
+    """确认 job 容器里的代码身份符合预期，否则抛 :class:`StaleJobImage`。
+
+    检查两件事：
+
+    1. **能力**：服务自报的 ``job_kinds`` 是否覆盖本次要用的种类
+       （``/healthz`` 从 ``_ARGV_BUILDERS`` 的键推导，正是这份代码真的能跑什么）；
+    2. **版本**：若配置了 ``TORKILN_EXPECTED_REVISION``，镜像自报的修订号是否匹配。
+
+    ``expect_revision`` 为空则跳过第 2 项——不是每次部署都应该锁死修订号。
+    「``code_revision`` 是 ``unknown``」也**不算过期**：那说明镜像不是用
+    ``service/build-image.ps1`` 构建的（可能压根没用注入），此时只能靠第 1 项。
+
+    Args:
+        need_kinds: 本次作业需要的种类，如 ``("eval",)`` / ``("predict",)``
+    """
+    info = await client.healthz()
+    have = set(info.get("job_kinds") or ())
+    missing = sorted(set(need_kinds) - have)
+    if missing:
+        raise StaleJobImage(
+            f"job 镜像过旧：容器里的 TorchKiln 不支持作业种类 {missing}"
+            f"（它支持 {sorted(have) or '（未自报）'}）。"
+            f"多半是改了 TorchKiln 代码但没重建镜像——"
+            f"请在 D:\\TorchKiln 执行 pwsh service\\build-image.ps1")
+
+    if expect_revision:
+        rev = str(info.get("code_revision") or "unknown")
+        if rev not in ("unknown", expect_revision):
+            raise StaleJobImage(
+                f"job 镜像版本不符：镜像内 TorchKiln 修订号 {rev}，"
+                f"期望 {expect_revision}（多半是本地 TorchKiln 有更新的提交）。"
+                f"请执行 pwsh service\\build-image.ps1 重建镜像")
+    return info
+
+
 def container_path(*parts: str) -> str:
     """把宿主相对路径拼成容器内**POSIX** 绝对路径。
 

@@ -48,6 +48,7 @@ from app.plugin.module_train.torchkiln_client import (
 )
 
 from . import gpu_pool
+from . import tk_job_container as tkjc
 from .docker_utils import get_container_labels, run_container, stop_container
 from .paths import work_dir
 
@@ -596,6 +597,12 @@ class TorchKilnExecutor(TaskExecutor):
                 await broadcast_line(task_id, "[torchkiln] job 容器就绪")
 
                 async with TorchKilnClient(base_url=alloc.base_url) as client:
+                    # 提交作业**之前**确认镜像里的代码身份——
+                    # 否则缺端点会表现为 404、缺方法会表现为 AttributeError，
+                    # 而后者往往在结果图都写完之后才炸。
+                    await tkjc.assert_image_current(
+                        client, need_kinds=("train",),
+                        expect_revision=settings.TORKILN_EXPECTED_REVISION or None)
                     job_id = await cls._ensure_job(
                         client, task_id, spec, existing_job=existing_job)
                     await cls._pump(client, task_id, job_id)

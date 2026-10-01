@@ -5,6 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import update
 
+from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -275,6 +276,12 @@ class EvalExecutor(TaskExecutor):
                 await tkjc.wait_ready(lease, broadcast=lambda ln: broadcast_eval_log(eval_id, ln))
 
                 async with TorchKilnClient(base_url=lease.base_url) as client:
+                    # 提交作业**之前**确认镜像里的代码身份——
+                    # 否则缺端点会表现为 404、缺方法会表现为 AttributeError，
+                    # 而后者往往在结果图都写完之后才炸（need_kinds=('eval',)）。
+                    await tkjc.assert_image_current(
+                        client, need_kinds=("eval",),
+                        expect_revision=settings.TORKILN_EXPECTED_REVISION or None)
                     job_id = await cls._submit(client, eval_id, spec, hp)
                     logs_task = await tkjc.stream_logs(
                         client, job_id, "eval",

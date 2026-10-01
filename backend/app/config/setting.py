@@ -352,6 +352,12 @@ class Settings(BaseSettings):
     # TorchKiln 服务（监听 8000），映射到宿主机的不同端口；本项目为每个任务
     # 各连各的端口、各监控各的容器。隔离由容器提供，HTTP 契约一行不改。
     TORKILN_JOB_IMAGE: str = 'torchkiln:0.1.0'   # job 容器镜像
+    # 期望 job 镜像里的 TorchKiln 修订号（短 sha）。留空 = 不校验版本，
+    # 只校验「镜像是否支持本次要用的作业种类」。
+    #: 填了之后，改了 TorchKiln 代码没重建镜像会在**提交作业之前**被拦住，
+    # 而不是等到提交后收到一个 404 或 AttributeError。
+    TORKILN_EXPECTED_REVISION: str = ''
+
     TORKILN_JOB_CONTAINER_PORT: int = 8000        # 容器内服务监听端口
     # 宿主端口段（闭区间）。容量即并发上限：单卡场景通常 1~4 足够。
     TORKILN_PORT_START: int = 18100
