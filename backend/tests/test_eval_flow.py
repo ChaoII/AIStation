@@ -51,7 +51,15 @@ def _run_resolve(task, monkeypatch):
 
 
 def test_resolve_eval_context_no_task_defaults(monkeypatch):
-    assert _run_resolve(None, monkeypatch) == (None, "det", "tiny")
+    """找不到产出该模型的训练任务：配置名回退成**空串**。
+
+    ⚠️ 这里原先断言的是 ``"det"``，改掉是有意的：第二项现在的语义是
+    **TorchKiln 配置名**（``configs/`` 下的 model_name），而 ``"det"`` 作为配置名
+    根本不存在。返回空串让 :func:`EvalExecutor._execute` 走「找不到配置名」的
+    可读报错；返回 ``"det"`` 会被当成真实模型名去 ``resolve_config_path`` 查，
+    查不到就原样返回，最终在容器里报一个与真实原因无关的错。
+    """
+    assert _run_resolve(None, monkeypatch) == (None, "", "tiny")
 
 
 def test_resolve_eval_context_reads_task_hyperparams(monkeypatch):
@@ -69,11 +77,11 @@ def test_resolve_eval_context_sanitizes_invalid_values(monkeypatch):
 
 
 def test_resolve_eval_context_torchkiln_returns_config_name(monkeypatch):
-    """TorchKiln 的「规格」就是配置名，必须原样回传给 ``tkiln val -c``。
+    """TorchKiln 的「规格」就是配置名，必须原样回传给作业 spec 的 ``config_path``。
 
     这条同时钉住**按版本行 id 匹配**这件事：``TrainTask.model_repo_id`` 字段名有
     误导，存的其实是产出模型行的主键。若改回拿仓库 id 去比，就永远匹配不到，
-    恒回退成 ``("det", "tiny")``，于是 ``tkiln val -c det`` 必然失败。
+    恒回退成空配置名，于是评估在提交作业前就被拒。
     """
     task = SimpleNamespace(
         annotation_task_id=8, framework="TORKILN",
@@ -82,9 +90,168 @@ def test_resolve_eval_context_torchkiln_returns_config_name(monkeypatch):
     assert _run_resolve(task, monkeypatch) == (8, "yolo11-seg", "tiny")
 
 
+def test_resolve_eval_context_retired_framework_keeps_mode_semantics(monkeypatch):
+    """非 TorchKiln 训练任务仍按 mode/size 语义回退。
+
+    这条通路（Ultralytics/PaddleX）已退场，但**推断函数本身**保留 mode/size
+    行为是为了不改动既有分支；调用侧的守卫在 ``ensure_active``。
+    """
+    task = SimpleNamespace(
+        annotation_task_id=7, framework="ULTRALYTICS",
+        hyperparams={"mode": "rec", "model_size": "small"},
+    )
+    assert _run_resolve(task, monkeypatch) == (7, "rec", "small")
+
+
 # ---------------------------------------------------------------------------
-# 指标解析
+# 指标契约（替代原先的日志正则解析）
 # ---------------------------------------------------------------------------
+
+class _FakeClient:
+    """只实现 ``metrics()``——``_read_metrics`` 只需要这一个方法。"""
+
+    def __init__(self, events):
+        self._events = events
+        self.kwargs = None
+
+    async def metrics(self, job_id, offset=-1, limit=5000, kind="train"):
+        self.kwargs = {"offset": offset, "limit": limit, "kind": kind}
+        return list(self._events)
+
+
+def _read_metrics(events):
+    import asyncio
+
+    c = _FakeClient(events)
+    return asyncio.run(es.EvalExecutor._read_metrics(c, "job_x")), c
+
+
+def test_read_metrics_merges_submetrics_and_main_indicator():
+    """评估契约：一条 ``eval`` 事件 = 全量子指标 + 主指标 + fps。
+
+    这些字段原先全靠正则从 ``cur metric, k: v, ...`` 里抠出来。
+    """
+    got, _c = _read_metrics([
+        {"type": "eval", "seq": 0, "main_indicator": "mask_mAP50-95",
+         "main_value": 0.83, "fps": 12.3,
+         "metrics": {"box_mAP50": 0.87, "box_mAP50-95": 0.6, "mask_mAP50": 0.79}},
+        {"type": "end", "seq": 1, "exit_reason": "finished"},
+    ])
+    assert got["main_indicator"] == "mask_mAP50-95"
+    assert got["main_value"] == 0.83
+    assert got["fps"] == 12.3
+    assert got["box_mAP50"] == 0.87
+    assert got["mask_mAP50"] == 0.79
+
+
+def test_read_metrics_ignores_end_event():
+    """``end`` 只是终态标记，不该混进指标字典。"""
+    got, _c = _read_metrics([
+        {"type": "eval", "seq": 0, "main_value": 0.5, "metrics": {"box_mAP50": 0.5}},
+        {"type": "end", "seq": 1, "exit_reason": "finished", "main_value": 0.5},
+    ])
+    assert "exit_reason" not in got
+    assert got["main_value"] == 0.5
+
+
+def test_read_metrics_returns_none_when_no_eval_event():
+    """没有 eval 事件 → 返回 None（调用方据此不写 metrics）。
+
+    这个区别很重要：返回 ``{}`` 会被当作「评估成功但指标全 0」，
+    而 None 会让上层看到「没拿到指标」。
+    """
+    got, _c = _read_metrics([{"type": "end", "seq": 0, "exit_reason": "no_end_event"}])
+    assert got is None
+
+
+def test_read_metrics_returns_none_on_empty():
+    assert _read_metrics([])[0] is None
+
+
+def test_read_metrics_uses_eval_namespace():
+    """必须带 ``kind="eval"`` —— 否则会查训练命名空间。
+
+    job_id 全局唯一，所以查错命名空间**不会 404**，只会拿到另一个作业的信息：
+    一种非常安静的串台。
+    """
+    _got, c = _read_metrics([])
+    assert c.kwargs["kind"] == "eval"
+
+
+def test_read_metrics_later_eval_event_wins():
+    """多条 eval 事件时后者覆盖前者（增量评估场景）。"""
+    got, _c = _read_metrics([
+        {"type": "eval", "seq": 0, "main_value": 0.1, "metrics": {"box_mAP50": 0.1}},
+        {"type": "eval", "seq": 1, "main_value": 0.9, "metrics": {"box_mAP50": 0.9}},
+    ])
+    assert got["main_value"] == 0.9
+    assert got["box_mAP50"] == 0.9
+
+
+def test_read_metrics_skips_none_values():
+    """值为 None 的键不该写入（契约里 None 表示"没这项"）。"""
+    got, _c = _read_metrics([
+        {"type": "eval", "seq": 0, "main_indicator": "hmean", "main_value": None,
+         "metrics": {"box_mAP50": 0.5}},
+    ])
+    assert "main_value" not in got
+    assert got["main_indicator"] == "hmean"
+
+
+# ---------------------------------------------------------------------------
+# 作业 spec 组装
+# ---------------------------------------------------------------------------
+
+def test_build_eval_spec_shape():
+    spec = es.build_eval_spec(
+        config_path="configs/yolo/yolo11-seg.yml",
+        weights_path="/workspace/model/best.pth",
+        data_dir="/workspace/data",
+        val_list="/workspace/data/val.txt",
+        params={"Global.conf": 0.001},
+        resources={"gpu": 1, "gpu_memory_gb": 6},
+    )
+    assert spec["kind"] == "eval"
+    assert spec["config_path"] == "configs/yolo/yolo11-seg.yml"
+    assert spec["weights_path"] == "/workspace/model/best.pth"
+    assert spec["dataset"] == {"data_dir": "/workspace/data",
+                               "val_list": "/workspace/data/val.txt"}
+    assert spec["params"] == {"Global.conf": 0.001}
+    assert spec["resources"] == {"gpu": 1, "gpu_memory_gb": 6}
+
+
+def test_build_eval_spec_omits_train_list():
+    """不给 train_list：服务端会把 val_list 同时注入 Train/Eval 两个 dataset。
+
+    这里多给一份 train_list 反而要求调用方导出第二份清单，而评估导出是
+    ``for_eval=True``（全量进 val），本来就没有 train.txt。
+    """
+    spec = es.build_eval_spec("c.yml", "/w/model/b.pth", "/w/data", "/w/data/val.txt")
+    assert "train_list" not in spec["dataset"]
+    assert spec["dataset"].get("train_list") is None
+
+
+def test_build_eval_spec_omits_resources_when_absent():
+    spec = es.build_eval_spec("c.yml", "/w/m/b.pth", "/w/data", "/w/data/val.txt")
+    assert "resources" not in spec
+
+
+def test_build_eval_spec_uses_posix_paths():
+    """路径不能带反斜杠——本项目在 Windows 上跑而容器是 Linux。
+
+    ``/workspace\\data` 在宿主上看着完全正常，传进容器就找不到文件了。
+    """
+    from app.plugin.module_train import tk_job_container as tkjc
+
+    spec = es.build_eval_spec(
+        "c.yml",
+        tkjc.container_path("model", "best_accuracy.pth"),
+        tkjc.container_path("data"),
+        tkjc.container_path("data", "val.txt"),
+    )
+    blob = f"{spec['weights_path']} {spec['dataset']['data_dir']} {spec['dataset']['val_list']}"
+    assert "\\" not in blob, f"路径里有反斜杠: {blob}"
+
 
 # ---------------------------------------------------------------------------
 # 全量确定性导出（for_eval）

@@ -132,6 +132,41 @@ async def run_and_follow(
     )
 
 
+async def _finish(
+    executor: Any,
+    job_id: int,
+    *,
+    cancelled_now: bool,
+    succeeded: bool,
+    error: str,
+    container_id: str | None,
+    success_fields: dict | None,
+) -> None:
+    """三态收尾的**唯一**实现。:func:`settle` 与 :func:`settle_by_status` 都走它。
+
+    - 取消：只改状态，不读容器日志（容器可能已在移除中）
+    - 成功：写 ``success_fields``
+    - 失败：错误文案写进 ``log`` 与 ``error_log``——``error_log`` 只在失败时有值，
+      也是前端弹错误提示的依据
+    """
+    if cancelled_now:
+        await remove_container(container_id)
+        await executor._mark_status(job_id, TrainStatus.CANCELLED,
+                                    finished_at=datetime.now(), progress=100)
+        return
+
+    await remove_container(container_id)
+    if succeeded:
+        await executor._mark_status(job_id, TrainStatus.SUCCESS,
+                                    **(success_fields or {}),
+                                    finished_at=datetime.now(), progress=100)
+    else:
+        msg = error or "job failed"
+        await executor._mark_status(job_id, TrainStatus.FAILED,
+                                    log=msg, error_log=msg,
+                                    finished_at=datetime.now(), progress=100)
+
+
 async def settle(
     executor: Any,
     job_id: int,
@@ -143,32 +178,49 @@ async def settle(
     success_fields: dict | None = None,
     failure_message: str = "job failed",
 ) -> None:
-    """按「取消 / 成功 / 失败」三态收尾，并移除容器。
+    """按「取消 / 成功 / 失败」三态收尾，并移除容器（一次性容器作业用）。
 
-    三态的判定顺序与副作用刻意固定成一处：以前两处各写一遍，已经漂移过一次
-    （一处漏了 ``error_log``、一处漏了 ``progress=100``）。现在改一处即两处生效。
-
-    - 取消：只改状态，不读容器日志（容器可能已在移除中）
-    - 成功：写 ``success_fields``
-    - 失败：容器尾日志写进 ``log`` 与 ``error_log``——``error_log`` 只在失败时有值，
-      也是前端弹错误提示的依据
+    判据是**容器退出码**。三态的判定顺序与副作用刻意固定在 :func:`_finish` 一处：
+    以前两处各写一遍，已经漂移过一次（一处漏了 ``error_log``、一处漏了
+    ``progress=100``）。
     """
-    if was_cancelled:
-        await remove_container(container_id)
-        await executor._mark_status(job_id, TrainStatus.CANCELLED,
-                                    finished_at=datetime.now(), progress=100)
-        return
+    await _finish(
+        executor, job_id,
+        cancelled_now=was_cancelled,
+        succeeded=(exit_code == 0),
+        error=error_tail or failure_message,
+        container_id=container_id,
+        success_fields=success_fields,
+    )
 
-    await remove_container(container_id)
-    if exit_code == 0:
-        await executor._mark_status(job_id, TrainStatus.SUCCESS,
-                                    **(success_fields or {}),
-                                    finished_at=datetime.now(), progress=100)
-    else:
-        msg = error_tail or failure_message
-        await executor._mark_status(job_id, TrainStatus.FAILED,
-                                    log=msg, error_log=msg,
-                                    finished_at=datetime.now(), progress=100)
+
+async def settle_by_status(
+    executor: Any,
+    job_id: int,
+    *,
+    status: str,
+    error: str = "",
+    container_id: str | None = None,
+    success_fields: dict | None = None,
+    failure_message: str = "job failed",
+) -> None:
+    """同上，但判据是 **HTTP 作业的状态字符串**（``succeeded``/``failed``/``cancelled``）。
+
+    为什么单独一个入口而不是让调用方把状态翻译成退出码再走 :func:`settle`：
+    TorchKiln 服务给的终态是**已经判定过的结论**（``setup_failed`` /
+    ``no_end_event`` / ``killed`` 都已被它归成 ``failed``）。让调用方
+    ``0 if status == 'succeeded' else 1`` 会丢掉这个信息——失败原因要原样透传，
+    否则用户只会看到「评估失败」而看不到「trainer 构造阶段异常」。
+    """
+    st = (status or "").strip().lower()
+    await _finish(
+        executor, job_id,
+        cancelled_now=(st == "cancelled"),
+        succeeded=(st == "succeeded"),
+        error=error or failure_message,
+        container_id=container_id,
+        success_fields=success_fields,
+    )
 
 
 async def mark_failed(executor: Any, job_id: int, exc: BaseException, *,
