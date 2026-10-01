@@ -37,6 +37,22 @@ EVENT_END = "end"
 #: 服务端在作业终结时另发的一帧（不是 metrics.jsonl 里的事件）
 EVENT_JOB_END = "__end__"
 
+#: 作业种类 -> 服务端路径前缀。
+#:
+#: 训练与评估在 TorchKiln 侧是两个 REST 命名空间（``/api/v1/train/jobs`` 与
+#: ``/api/v1/eval/jobs``），但**生命周期完全同构**——同一个 JobManager、同一套队列、
+#: 同一份指标契约，只有提交时的 ``kind`` 与「评估必须有 ``weights_path``」不同。
+#: 所以这里用一张表换前缀，而不是写两套方法：两套方法必然漂移。
+_PREFIX = {"train": "train", "eval": "eval"}
+
+
+def _jobs_path(kind: str, job_id: str | None = None) -> str:
+    """作业路径。未知的 ``kind`` 退回 train——宁可路径指向训练作业，
+    也不要因为一个新种类拼出 ``/api/v1/unknown/jobs`` 这种必然 404 的路径。"""
+    prefix = _PREFIX.get(kind or "train", "train")
+    base = f"/api/v1/{prefix}/jobs"
+    return f"{base}/{job_id}" if job_id else base
+
 
 class TorchKilnError(RuntimeError):
     """训练服务调用失败（连接不上/返回 4xx/5xx/契约不符）。
@@ -214,31 +230,72 @@ class TorchKilnClient:
         return await self._post(
             "/api/v1/train/jobs", spec, headers=headers, what="submit_job")
 
-    async def get_job(self, job_id: str) -> dict:
-        return await self._get(f"/api/v1/train/jobs/{job_id}", what="get_job")
+    async def submit_eval_job(self, spec: dict, idempotency_key: str,
+                              user_id: str | None = None,
+                              tenant: str | None = None) -> dict:
+        """提交评估作业（HTTP 通路，与训练同形）。
+
+        ``spec`` 需要额外带 ``weights_path``（容器内待评估权重的绝对路径）。
+        服务端不猜：猜错等于「评了个别的模型还报成功」。
+
+        ⚠️ 评估的产物是**指标**，所以必须走这条通路而不是解析容器日志——
+        日志格式随 TorchKiln 版本变，正则会**静默失效**（指标变空却不报错）。
+        ``tools/eval.py`` 现在会写 ``metrics.jsonl``（``eval`` + ``end`` 两条事件），
+        这里的 :meth:`metrics` 就是消费它。
+        """
+        headers = {"Idempotency-Key": idempotency_key}
+        if user_id:
+            headers["X-User-Id"] = str(user_id)
+        if tenant:
+            headers["X-Tenant"] = str(tenant)
+        return await self._post(
+            "/api/v1/eval/jobs", spec, headers=headers, what="submit_eval_job")
+
+    async def get_job(self, job_id: str, kind: str = "train") -> dict:
+        return await self._get(_jobs_path(kind, job_id), what="get_job")
 
     async def list_jobs(self, status: str | None = None, user_id: str | None = None,
-                        limit: int = 50, offset: int = 0) -> dict:
+                        limit: int = 50, offset: int = 0,
+                        kind: str | None = None) -> dict:
+        """列作业。``kind`` 为 ``"eval"`` 时只返回评估作业。
+
+        ⚠️ 训练与评估是两个路径前缀（``/api/v1/train/jobs`` 与 ``/api/v1/eval/jobs``），
+        但 job_id 是全局唯一的，所以同一批方法按 ``kind`` 选前缀即可，不要写两套方法。
+        """
         params = {k: v for k, v in
                   (("status", status), ("user_id", user_id)) if v}
         params.update({"limit": limit, "offset": offset})
-        return await self._get("/api/v1/train/jobs", params=params, what="list_jobs")
+        if kind:
+            params["kind"] = kind
+        return await self._get(f"/api/v1/{_PREFIX.get(kind, 'train')}/jobs",
+                               params=params, what="list_jobs")
 
-    async def cancel_job(self, job_id: str) -> dict:
+    async def cancel_job(self, job_id: str, kind: str = "train") -> dict:
         return await self._post(
-            f"/api/v1/train/jobs/{job_id}/cancel", {}, what="cancel_job")
+            f"{_jobs_path(kind, job_id)}/cancel", {}, what="cancel_job")
 
-    async def metrics(self, job_id: str, offset: int = -1, limit: int = 5000) -> list[dict]:
-        """按 seq 补发历史指标（前端刷新/断线重连用）。"""
+    async def metrics(self, job_id: str, offset: int = -1, limit: int = 5000,
+                      kind: str = "train") -> list[dict]:
+        """按 seq 补发历史指标（前端刷新/断线重连用）。
+
+        评估作业返回的是 ``eval`` 与 ``end`` 两条事件：``eval.metrics`` 里是全量指标，
+        ``end.main_value`` 是主指标值——**这就是取代解析 ``cur metric, ...`` 日志的契约**。
+        """
         data = await self._get(
-            f"/api/v1/train/jobs/{job_id}/metrics",
+            f"{_jobs_path(kind, job_id)}/metrics",
             params={"offset": offset, "limit": limit}, what="metrics")
         return data.get("items") or []
 
-    async def logs(self, job_id: str, tail: int = 500) -> list[str]:
+    async def logs(self, job_id: str, tail: int = 500, kind: str = "train") -> list[str]:
         data = await self._get(
-            f"/api/v1/train/jobs/{job_id}/logs", params={"tail": tail}, what="logs")
+            f"{_jobs_path(kind, job_id)}/logs",
+            params={"tail": tail}, what="logs")
         return data.get("lines") or []
+
+    async def artifacts(self, job_id: str, kind: str = "train") -> dict:
+        """列出作业产物（权重 / metrics.jsonl / 日志等）。"""
+        return await self._get(
+            f"{_jobs_path(kind, job_id)}/artifacts", what="artifacts")
 
     async def fetch_file(self, job_id: str, filename: str, dest: str) -> str:
         """把作业产物下载到本地 ``dest``。
@@ -308,13 +365,18 @@ class TorchKilnClient:
             raise _wrap_error(e, f"SSE {path}") from e
 
     async def stream_metrics(self, job_id: str, offset: int = -1,
-                             last_event_id: str | None = None) -> AsyncIterator[dict]:
+                             last_event_id: str | None = None,
+                             kind: str = "train") -> AsyncIterator[dict]:
         """指标事件流。产出 dict（含 ``type``/``seq``）；作业终结时最后收一条
-        ``{"__end__": True, ...}``。"""
+        ``{"__end__": True, ...}``。
+
+        评估作业（``kind="eval"``）走同一份协议，只是事件序列是
+        ``eval`` → ``end``，没有中间的 ``step``。
+        """
         headers = {"Last-Event-ID": last_event_id} if last_event_id else None
         params = {"offset": offset}
         async for event, _eid, data in self._sse(
-                f"/api/v1/train/jobs/{job_id}/metrics/stream", params, headers):
+                f"{_jobs_path(kind, job_id)}/metrics/stream", params, headers):
             try:
                 obj = json.loads(data)
             except (ValueError, TypeError):
@@ -327,10 +389,11 @@ class TorchKilnClient:
                 obj.setdefault("type", event)
                 yield obj
 
-    async def stream_logs(self, job_id: str, tail: int = 200) -> AsyncIterator[str]:
+    async def stream_logs(self, job_id: str, tail: int = 200,
+                          kind: str = "train") -> AsyncIterator[str]:
         params = {"tail": tail}
         async for event, _eid, data in self._sse(
-                f"/api/v1/train/jobs/{job_id}/logs/stream", params):
+                f"{_jobs_path(kind, job_id)}/logs/stream", params):
             if event == "end":
                 return
             yield data

@@ -19,6 +19,7 @@ import pytest
 
 from app.config.setting import settings
 from app.plugin.module_train import gpu_pool
+from app.plugin.module_train.gpu_pool import _store, device, port_bindable
 from app.plugin.module_train.torchkiln_executor import (
     _CONTAINER_DATA_DIR,
     TorchKilnExecutor,
@@ -85,7 +86,7 @@ def test_check_task_type_rejects_unsupported():
 @pytest.fixture
 def fake_gpus(monkeypatch):
     """固定成 2 张「显存充足」的卡，避免测试依赖真实机器的显卡状态。"""
-    monkeypatch.setattr(gpu_pool, "gpu_devices", lambda: [
+    monkeypatch.setattr(device, "gpu_devices", lambda: [
         _dev(0, "GPU-a", free_gb=12.0),
         _dev(1, "GPU-b", free_gb=8.0),
     ])
@@ -106,9 +107,9 @@ def _dev(index: int, uuid: str, *, free_gb: float) -> dict:
 
 
 def _reset_local():
-    gpu_pool._local.clear()
-    gpu_pool._local_ports.clear()
-    gpu_pool._local_gpus.clear()
+    _store.LOCAL.clear()
+    _store.LOCAL_PORTS.clear()
+    _store.LOCAL_GPUS.clear()
 
 
 async def _async_none():
@@ -140,16 +141,16 @@ def test_two_tasks_get_different_ports(fake_gpus):
 def test_single_gpu_second_task_does_not_leak(fake_gpus, monkeypatch):
     """只有 1 张卡时第二个任务拿不到卡，**已认领的端口必须归还**。"""
     _reset_local()
-    monkeypatch.setattr(gpu_pool, "gpu_devices",
+    monkeypatch.setattr(device, "gpu_devices",
                         lambda: [_dev(0, "GPU-a", free_gb=12.0)])
     a1 = asyncio.run(gpu_pool.acquire(21, need_gpu=1, wait=False))
     assert a1 is not None
-    before = dict(gpu_pool._local_ports)
+    before = dict(_store.LOCAL_PORTS)
 
     a2 = asyncio.run(gpu_pool.acquire(22, need_gpu=1, wait=False))
     assert a2 is None
     # 关键：22 没拿到任何端口（不是 21 那个）
-    assert gpu_pool._local_ports == before
+    assert _store.LOCAL_PORTS == before
     asyncio.run(gpu_pool.release(21))
 
 
@@ -157,7 +158,7 @@ def test_insufficient_memory_not_handed_out(fake_gpus, monkeypatch):
     """资源层：可用显存不够本次训练要求的卡不能派出去。"""
     _reset_local()
     # 卡上还剩 2GB，本次训练要 4GB -> 不该派
-    monkeypatch.setattr(gpu_pool, "gpu_devices",
+    monkeypatch.setattr(device, "gpu_devices",
                         lambda: [_dev(0, "GPU-a", free_gb=2.0)])
     assert asyncio.run(gpu_pool.acquire(31, need_gpu=1, need_mem_gb=4.0,
                                         wait=False)) is None
@@ -178,7 +179,7 @@ def test_desktop_baseline_usage_does_not_block(monkeypatch):
     monkeypatch.setattr(settings, "TORKILN_PORT_START", 19700, raising=False)
     monkeypatch.setattr(settings, "TORKILN_PORT_END", 19702, raising=False)
     # 已用 20%（3.2GB），剩 12.8GB —— 典型的桌面环境基线
-    monkeypatch.setattr(gpu_pool, "gpu_devices",
+    monkeypatch.setattr(device, "gpu_devices",
                         lambda: [_dev(0, "GPU-a", free_gb=12.8)])
     alloc = asyncio.run(gpu_pool.acquire(61, need_gpu=1, need_mem_gb=4.0,
                                          wait=False))
@@ -194,11 +195,11 @@ def test_busy_task_count_counts_tasks_not_gpus(fake_gpus, monkeypatch):
     提示语本身说的是"任务"，按 GPU 数报会前后矛盾。
     """
     _reset_local()
-    monkeypatch.setattr(gpu_pool, "gpu_devices", lambda: [
+    monkeypatch.setattr(device, "gpu_devices", lambda: [
         _dev(0, "GPU-a", free_gb=12.0), _dev(1, "GPU-b", free_gb=12.0),
         _dev(2, "GPU-c", free_gb=12.0)])
     # 让 Redis 判定为"不可用"，从而走进程内字典这条路径（测试不依赖真实 Redis）
-    monkeypatch.setattr(gpu_pool, "_redis", _async_none)
+    monkeypatch.setattr(_store, "redis_or_none", _async_none)
     assert asyncio.run(gpu_pool.busy_task_count()) == 0
 
     a1 = asyncio.run(gpu_pool.acquire(61, need_gpu=2, wait=False))
@@ -219,7 +220,7 @@ def test_busy_task_count_counts_tasks_not_gpus(fake_gpus, monkeypatch):
 def test_no_gpu_enumerated_degrades_instead_of_hanging(monkeypatch):
     """一台卡都枚举不到时必须降级为「不指定 --gpus」，不能死等。"""
     _reset_local()
-    monkeypatch.setattr(gpu_pool, "gpu_devices", lambda: [])
+    monkeypatch.setattr(device, "gpu_devices", lambda: [])
     monkeypatch.setattr(settings, "TORKILN_PORT_START", 19400, raising=False)
     monkeypatch.setattr(settings, "TORKILN_PORT_END", 19400, raising=False)
     alloc = asyncio.run(gpu_pool.acquire(41, need_gpu=1, wait=False))
@@ -232,7 +233,7 @@ def test_no_gpu_enumerated_degrades_instead_of_hanging(monkeypatch):
 def test_port_range_exhausted_returns_none_not_hang(monkeypatch):
     """端口段被占满时应返回 None（明确失败），而不是无限等。"""
     _reset_local()
-    monkeypatch.setattr(gpu_pool, "gpu_devices", lambda: [])
+    monkeypatch.setattr(device, "gpu_devices", lambda: [])
     monkeypatch.setattr(settings, "TORKILN_PORT_START", 19500, raising=False)
     monkeypatch.setattr(settings, "TORKILN_PORT_END", 19500, raising=False)
     hog = socket.socket()
@@ -253,7 +254,7 @@ def test_port_probe_rejects_port_in_use(monkeypatch):
     hog.bind(("127.0.0.1", 19600))
     hog.listen(1)
     try:
-        assert gpu_pool._port_bindable(19600) is False
+        assert port_bindable(19600) is False
     finally:
         hog.close()
-    assert gpu_pool._port_bindable(19600) is True
+    assert port_bindable(19600) is True
