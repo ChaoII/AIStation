@@ -549,10 +549,23 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         # 合并所有需要预加载的选项
         all_preloads = set(model_loader_options)
+        # ⚠️ 非字符串的 loader option（selectinload / noload / lazyload 等）必须
+        # **原样保留**。以前这里写成
+        #     for opt in preload:
+        #         if isinstance(opt, str):
+        #             all_preloads.add(opt)
+        # 于是调用方传进来的 loader option 对象被**静默丢弃**——不报错、不告警，
+        # 只是不生效。docstring 声称"支持关系名字符串或 SQLAlchemy loader option"，
+        # 实际只支持前者；底部那个 `else: options.append(opt)` 分支从 preload
+        # 永远走不到。已有调用方（鉴权路径的 selectinload(UserModel.roles)）
+        # 一直是空操作，只是恰好被模型的 lazy="selectin" 掩盖了。
+        extra_options = []
         if preload:
             for opt in preload:
                 if isinstance(opt, str):
                     all_preloads.add(opt)
+                else:
+                    extra_options.append(opt)
         elif preload == []:
             # 如果明确指定空列表，则不使用任何预加载
             all_preloads = set()
@@ -563,8 +576,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 # 使用selectinload来避免在异步环境中的MissingGreenlet错误
                 if hasattr(self.model, opt):
                     options.append(selectinload(getattr(self.model, opt)))
-            else:
-                # 直接使用非字符串的加载选项
-                options.append(opt)
+        # 非字符串选项放在最后：通配的 noload("*") 必须先于 selectinload 生效，
+        # 否则 selectinload 会把它要加载的关联又标回需要加载。
+        options.extend(extra_options)
 
         return options
