@@ -17,6 +17,50 @@ _IMAGE_TAG_TO_FRAMEWORK = {
 }
 
 
+def framework_filter(column, framework: object | None):
+    """把 ``?framework=`` 查询参数变成一个**安全**的 SQL 条件。
+
+    返回 ``None`` 表示"这个值不可能匹配任何行"，调用方应据此短路返回空列表。
+
+    为什么不能把字符串直接丢给枚举列
+    --------------------------------
+    PG 会把绑定参数转成 ``trainframework`` 类型，传一个类型里没有的值会直接报
+    ``invalid input value for enum trainframework: "paddlex"``——是 DBAPIError，
+    在接口层就是 **500**，而用户只是筛了个列表。
+
+    ⚠️ 这个坑是「删掉退场框架的枚举成员」才暴露的：退场前 ``TrainFramework("paddlex")``
+    还能拿到成员，五个列表端点里有的用 try/except 兜住了、有的直接比字符串，也都
+    「碰巧能跑」。成员一删，``try`` 分支就成了每次都走的路径，500 全线爆发。
+
+    所以过滤前必须先归一再校验：
+
+    - 归一（``framework_value``）——让 ``TORKILN`` / ``torchkiln`` /
+      ``paddlex/paddlex:cpu`` 这些写法都能对上；
+    - 校验是不是**当前**的枚举成员——不是就返回 ``None``，而不是把脏值丢给 PG。
+
+    为什么退场值返回空列表而不是报错
+    --------------------------------
+    这是**查询参数**不是动作。一个筛选项匹配不到任何行时，返回空列表是对的；
+    反过来因为「你填的旧值已过期」就让整个请求 4xx，比空列表更让人困惑。
+    打一条 warning 是为了还能从日志里看出是谁在用旧书签。
+    """
+    from .model import TrainFramework
+
+    if not framework:
+        return None
+    value = framework_value(framework)
+    try:
+        member = TrainFramework(value)
+    except ValueError:
+        from app.core.logger import log
+
+        log.warning(
+            "[train] framework 过滤值 %r 不是当前枚举成员，按空结果处理", framework
+        )
+        return None
+    return column == member
+
+
 def framework_value(framework: object | None) -> str:
     """返回框架的规范化字符串值。
 

@@ -9,6 +9,7 @@ from app.core.audit import set_create_audit, set_update_audit
 from app.core.database import async_db_session
 from app.core.logger import log
 
+from .framework_utils import framework_filter
 from .model import (
     TrainDeploy,
     TrainEval,
@@ -162,7 +163,7 @@ class TrainService:
             if name:
                 stmt = stmt.where(TrainModel.name.ilike(f"%{name}%"))
             if framework:
-                stmt = stmt.where(TrainModel.framework == framework)
+                stmt = stmt.where(framework_filter(TrainModel.framework, framework))
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await db.execute(count_stmt)).scalar() or 0
             stmt = stmt.order_by(desc(TrainModel.created_time)).limit(page_size).offset((page_no - 1) * page_size)
@@ -296,7 +297,7 @@ class TrainService:
             if name:
                 stmt = stmt.where(TrainModelRepo.name.ilike(f"%{name}%"))
             if framework:
-                stmt = stmt.where(TrainModelRepo.framework == framework)
+                stmt = stmt.where(framework_filter(TrainModelRepo.framework, framework))
             count_stmt = select(func.count()).select_from(stmt.subquery())
             total = (await db.execute(count_stmt)).scalar() or 0
             rows = (await db.execute(
@@ -419,7 +420,7 @@ class TrainService:
             if name:
                 stmt = stmt.where(TrainTask.name.ilike(f"%{name}%"))
             if framework:
-                stmt = stmt.where(TrainTask.framework == framework)
+                stmt = stmt.where(framework_filter(TrainTask.framework, framework))
             if status:
                 stmt = stmt.where(TrainTask.status == status)
             count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -568,7 +569,7 @@ class TrainService:
                 else:
                     stmt = stmt.where(TrainEval.model_id == -1)
             if framework:
-                stmt = stmt.where(TrainEval.framework == framework)
+                stmt = stmt.where(framework_filter(TrainEval.framework, framework))
             if status:
                 stmt = stmt.where(TrainEval.status == status)
             count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -671,12 +672,7 @@ class TrainService:
             if status:
                 stmt = stmt.where(TrainPredict.status == status)
             if framework:
-                from .model import TrainFramework as _TF
-                try:
-                    fw_enum = _TF(framework)
-                    stmt = stmt.where(TrainPredict.framework == fw_enum)
-                except ValueError:
-                    stmt = stmt.where(TrainPredict.framework == framework)
+                stmt = stmt.where(framework_filter(TrainPredict.framework, framework))
             if name:
                 from .model import TrainModel as TM
                 matched_model_ids = (

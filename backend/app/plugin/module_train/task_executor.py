@@ -16,7 +16,6 @@ from .docker_utils import (
     stop_container,
     stop_task_containers,
 )
-from .framework_utils import framework_value
 
 
 def recovery_decision(has_live_container: bool, started_at, now, timeout_sec: float) -> str:
@@ -198,16 +197,17 @@ class TaskExecutor(ABC):
     def _recover_row_applies(cls, row) -> bool:
         """该 RUNNING 行是否由本执行器负责恢复。
 
-        TorchKiln 执行器只认 framework='TORKILN' 的行。
+        基类默认全部认领：它靠 ``model_class`` 已经把范围限定在自己那张表上，
+        行不属于本执行器的情形本来就不可能出现。
 
-        旧版本里另有一个基类子类 ``TrainExecutor`` 专门负责已退场框架的历史行——
-        那些行已无人执行，但仍需要被 ``recover_orphans`` 收敛成终态，否则会永远
-        显示"运行中"。它已随 Ultralytics / PaddleX 的数据一并删除：枚举只剩
-        TORKILN，没有任何一行会再走到它那条分支上。
+        ⚠️ 这里曾经有一段“按名字排除”的黑魔法：
+        ``if framework_value(fw) == "torchkiln" and "TorchKiln" not in cls.__name__: return False``
+        它是为了让基类派生的 ``TrainExecutor`` 不赎纳 TORKILN 的行。但它同时也误伤了
+        ``EvalExecutor`` / ``PredictExecutor``
+4——它们的行 framework 也是 TORKILN，却因为类名里没有 "TorchKiln" 而一律返回 False，
+        导致**孤儿化的评估/预测任务永远得不到收敛**，只会一直显示「运行中」。
+        而 ``TrainExecutor`` 已随退场数据一并删除，这段黑魔法的唯一用途也没了。
         """
-        framework = getattr(row, "framework", None)
-        if framework_value(framework) == "torchkiln" and "TorchKiln" not in cls.__name__:
-            return False
         return True
 
     @classmethod

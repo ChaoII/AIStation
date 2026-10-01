@@ -143,6 +143,46 @@ def test_retired_framework_executors_are_gone():
         "PaddleX 执行器被加回来了——若要恢复请先想清楚它依赖的镜像还在不在"
 
 
+def test_base_recover_row_applies_claims_its_own_torchkiln_rows():
+    """基类 ``_recover_row_applies`` 必须认领 framework='TORKILN' 的行。
+
+    ⚠️ 这是一条**回归测试**，保护的是一个既有 bug。
+
+    基类曾经有一段“按类名排除”的黑魔法：
+
+        if framework_value(fw) == "torchkiln" and "TorchKiln" not in cls.__name__:
+            return False
+
+    它本意是让基类派生的 ``TrainExecutor``（类名里没有 "TorchKiln"）不赎纳
+    TORKILN 的行。但它同时也误伤了 ``EvalExecutor`` / ``PredictExecutor``——
+    **它们的行 framework 也是 TORKILN**，却因为自己的类名里没有“TorchKiln”而
+    一律返回 False。
+
+    后果：``start_recovery_loop()`` 实际在跑（启动时调用），但孤儿化的评估/预测任务
+    永远得不到收敛，在列表里一直显示「运行中」——而它们引擎已经不存在了。
+
+    ``TrainExecutor`` 删除后，这段黑魔法的唯一用途也没了，所以基类应该
+    简单地全部认领（范围由 ``model_class`` 限定）。
+    """
+    from app.plugin.module_train.eval_scheduler import EvalExecutor
+    from app.plugin.module_train.predict_executor import PredictExecutor
+    from app.plugin.module_train.task_executor import TaskExecutor
+    from app.plugin.module_train.torchkiln_executor import TorchKilnExecutor
+
+    class Row:
+        framework = "TORKILN"
+
+    for cls in (EvalExecutor, PredictExecutor, TorchKilnExecutor):
+        owns = cls._recover_row_applies(Row())
+        assert owns is True, (
+            f"{cls.__name__} 连自己的 framework='TORKILN' 行都不认领，"
+            f"孤儿化的任务会永远停在「运行中」"
+        )
+
+    # 基类实现本身也必须是"全认领"，不能再有按类名排除的分支
+    assert TaskExecutor._recover_row_applies(Row()) is True
+
+
 def test_train_executor_class_stays_deleted():
     """``scheduler.TrainExecutor`` 必须**不存在**。
 
