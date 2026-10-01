@@ -6,7 +6,6 @@ from datetime import datetime
 
 from sqlalchemy import update
 
-from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
@@ -325,7 +324,7 @@ class PredictExecutor(TaskExecutor):
                     # 而后者往往在结果图都写完之后才炸（need_kinds=('predict',)）。
                     await tkjc.assert_image_current(
                         client, need_kinds=("predict",),
-                        expect_revision=settings.TORKILN_EXPECTED_REVISION or None)
+                        expect_revision=None)  # 默认自动读本地 HEAD
                     job_id = await cls._submit(client, predict_id, spec)
                     logs_task = await tkjc.stream_logs(
                         client, job_id, "predict",

@@ -352,11 +352,17 @@ class Settings(BaseSettings):
     # TorchKiln 服务（监听 8000），映射到宿主机的不同端口；本项目为每个任务
     # 各连各的端口、各监控各的容器。隔离由容器提供，HTTP 契约一行不改。
     TORKILN_JOB_IMAGE: str = 'torchkiln:0.1.0'   # job 容器镜像
-    # 期望 job 镜像里的 TorchKiln 修订号（短 sha）。留空 = 不校验版本，
-    # 只校验「镜像是否支持本次要用的作业种类」。
-    #: 填了之后，改了 TorchKiln 代码没重建镜像会在**提交作业之前**被拦住，
-    # 而不是等到提交后收到一个 404 或 AttributeError。
+    # 期望 job 镜像里的 TorchKiln 修订号（短 sha）。**留空 = 自动读本地仓库的
+    # HEAD**（需配 TORKILN_REPO_PATH）。显式填值优先于自动读。
+    #: 之所以默认走自动读而不是硬编码：硬编码意味着每次 TorchKiln 提交后都要
+    #: 改配置或重建镜像，而漏改的后果与「忘了重建镜像」完全一样——守卫成了
+    #: 天天误报的噪音，大家只会习惯性忽略它，那等于没有守卫。
     TORKILN_EXPECTED_REVISION: str = ''
+
+    # 本地 TorchKiln 仓库路径，只用于**读取** HEAD 修订号（不执行任何构建）。
+    #: 留空则跳过版本检查，只保留「能力检查」（镜像是否支持本次要用的作业
+    #: 种类）——那一项不依赖任何配置，已经能挡住绝大多数「忘了重建」。
+    TORKILN_REPO_PATH: str = ''
 
     TORKILN_JOB_CONTAINER_PORT: int = 8000        # 容器内服务监听端口
     # 宿主端口段（闭区间）。容量即并发上限：单卡场景通常 1~4 足够。

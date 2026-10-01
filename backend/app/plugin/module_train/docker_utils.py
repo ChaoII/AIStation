@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import docker
 
@@ -65,13 +66,69 @@ async def run_container(
     )
 
 
-def _stop_container(container_id: str) -> None:
+def _wait_until_gone(container_id: str, timeout: float = 30.0) -> bool:
+    """轮询直到容器真正消失。返回是否在超时前消失。
+
+    只用于「另一个协程正在移除这个容器」的情况——那时再发一次 remove 只会再拿
+    一个 409，唯一能做的就是等。
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            client.containers.get(container_id)
+        except docker.errors.NotFound:
+            return True
+        except Exception:  # noqa: BLE001
+            # Docker API 临时不可用等，按「还没消失」处理，继续轮询
+            pass
+        time.sleep(0.3)
+    return False
+
+
+def _remove_now(container_id: str, *, force: bool = True,
+                stop_timeout: int | None = None) -> None:
+    """移除容器，对「已被移除」与「正在被移除」都幂等。
+
+    ⚠️ 409 是**必须处理**的，不是可以忽略的噪音。
+
+    本项目有两个移除入口：:func:`_stop_container`（阻塞 stop 后 remove）与
+    :func:`remove_container`（force remove）。它们经常作用于**同一个容器**——
+    部署停止时「协程 A 正在 stop 并 remove，协程 B 的 finally 也来 remove」
+    就是常态。此时 B 撞上 A 正在进行的移除，Docker 返回::
+
+        409 Conflict ("removal of container X is already in progress")
+
+    让它冒出去的后果不是「日志里多几行」：收尾路径被打断，后台任务变成
+    ``Task exception was never retrieved``，而且**容器可能没被移除**。
+    正确做法是轮询等它消失——那是唯一确定会到来的结果。
+    """
+    # 空 id 的守卫放在这里而不是调用方：``_stop_container`` 也直接调本函数，
+    # 而 ``client.containers.get(None)`` 抛的是 ``NullResource``（不在
+    # NotFound 捕获范围内），会把「本来就没容器可清」变成异常。
+    if not container_id:
+        return
     try:
         c = client.containers.get(container_id)
-        c.stop(timeout=10)
-        c.remove()
+    except docker.errors.NotFound:
+        return
+    try:
+        if stop_timeout is not None:
+            c.stop(timeout=stop_timeout)
+        c.remove(force=force)
     except docker.errors.NotFound:
         pass
+    except docker.errors.APIError as e:
+        if e.status_code == 409:
+            if not _wait_until_gone(container_id):
+                log.warning(
+                    f"[docker] 等待容器 {container_id[:12]} 被移除超时（30s）"
+                    f"——可能仍有进程持有它；下次看门狗会重试")
+            return
+        raise
+
+
+def _stop_container(container_id: str) -> None:
+    _remove_now(container_id, force=False, stop_timeout=10)
 
 
 async def stop_container(container_id: str) -> None:
@@ -144,14 +201,13 @@ async def remove_container(container_id: str | None) -> None:
     ``NullResource``，不在下面的 ``NotFound`` 捕获范围内，会把「本来就没容器可清」
     变成一次异常——而这恰恰发生在收尾路径上（容器从未起来、注册表已被清掉），
     结果是任务状态永远停在 RUNNING。
+
+    「正在被另一个协程移除」也必须幂等，见 :func:`_remove_now` 的说明。
     """
     if not container_id:
         return
-    try:
-        c = client.containers.get(container_id)
-        c.remove(force=True)
-    except docker.errors.NotFound:
-        pass
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _remove_now, container_id)
 
 
 async def get_container_error_tail(container_id: str, tail: int = 50) -> str:

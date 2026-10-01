@@ -602,7 +602,7 @@ class TorchKilnExecutor(TaskExecutor):
                     # 而后者往往在结果图都写完之后才炸。
                     await tkjc.assert_image_current(
                         client, need_kinds=("train",),
-                        expect_revision=settings.TORKILN_EXPECTED_REVISION or None)
+                        expect_revision=None)  # 默认自动读本地 HEAD
                     job_id = await cls._ensure_job(
                         client, task_id, spec, existing_job=existing_job)
                     await cls._pump(client, task_id, job_id)

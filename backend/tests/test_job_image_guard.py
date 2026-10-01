@@ -32,6 +32,23 @@ class _FakeClient:
         return dict(self._payload)
 
 
+@pytest.fixture(autouse=True)
+def _isolate_from_local_dev_config(monkeypatch):
+    """把守卫测试与本机开发配置隔离。
+
+    ``.env.dev`` 里配了 ``TORKILN_REPO_PATH``，于是 ``expected_revision()``
+    会自动读本地 TorchKiln 的 HEAD 并参与比对——那是**部署机上的正常行为**，
+    但会让这些只测「能力检查」的用例莫名报「版本不符」。
+
+    这里显式清空：本文件只验证「能力检查 + 显式版本参数」的行为；
+    自动推导本身由 ``test_job_image_revision.py`` 单独验证。
+    """
+    from app.config.setting import settings
+
+    monkeypatch.setattr(settings, "TORKILN_REPO_PATH", "")
+    monkeypatch.setattr(settings, "TORKILN_EXPECTED_REVISION", "")
+
+
 def _run(payload, **kw):
     return asyncio.run(tkjc.assert_image_current(_FakeClient(payload), **kw))
 
@@ -118,6 +135,13 @@ def test_unknown_revision_skips_version_check():
 
 
 def test_no_expect_revision_skips_version_check():
+    """不传 ``expect_revision`` 且**无法自动推导**时跳过版本检查。
+
+    ⚠️ 「无法自动推导」是这里的关键前提：``.env.dev`` 里配了
+    ``TORKILN_REPO_PATH`` 时会自动读本地 HEAD 并参与比对（那是期望行为，
+    由 ``test_job_image_revision.py`` 覆盖）。本文件的 autouse fixture 把
+    它清空，所以这里等价于「部署机上没有 TorchKiln 源码」。
+    """
     _run({"job_kinds": ["train"], "code_revision": "whatever"},
          need_kinds=("train",))
 

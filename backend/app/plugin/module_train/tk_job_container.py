@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 
 from app.config.setting import settings
 from app.core.logger import log
@@ -138,6 +139,53 @@ class StaleJobImage(RuntimeError):
     """
 
 
+def local_torchkiln_revision() -> str | None:
+    """读本地 TorchKiln 仓库的 HEAD 短 sha；读不到返回 ``None``。
+
+    为什么自动读而不是让人配一个固定值：固定值意味着**每次 TorchKiln 提交后都要
+    改配置或重建镜像**，而漏改的后果与「忘了重建镜像」完全一样——守卫变成噪音，
+    大家只会习惯性忽略它。自动读就没有这个维护负担。
+
+    读不到的情况（非 git 仓库 / 没配 ``TORKILN_REPO_PATH`` / git 不可用）返回
+    ``None``，调用方据此**跳过版本检查**，只留能力检查——能力检查不依赖任何配置，
+    已经能挡住绝大多数「忘了重建」。
+    """
+    import subprocess
+
+    path = (settings.TORKILN_REPO_PATH or "").strip()
+    if not path or not os.path.isdir(path):
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=path,
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rev = (r.stdout or "").strip()
+    if r.returncode != 0 or not rev:
+        return None
+    # 本地有未提交改动时，镜像即使按这个 sha 构建也可能不含那些改动。
+    # 这里**不**因此判过期（本地开发构建带改动是常态），但把 dirty 标记带出去，
+    # 让上层在日志里能看出「镜像构建自脏工作区」。
+    try:
+        st = subprocess.run(["git", "status", "--porcelain"], cwd=path,
+                            capture_output=True, text=True, timeout=10)
+        if st.stdout.strip():
+            log.debug("[tk_job_container] 本地 TorchKiln 工作区有未提交改动")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return rev
+
+
+def expected_revision() -> str | None:
+    """本次应当期望的修订号：显式配置优先，否则自动读本地 HEAD。"""
+    pinned = (settings.TORKILN_EXPECTED_REVISION or "").strip()
+    if pinned:
+        return pinned
+    return local_torchkiln_revision()
+
+
 async def assert_image_current(client: TorchKilnClient, *,
                                need_kinds: tuple[str, ...],
                                expect_revision: str | None = None) -> dict:
@@ -147,14 +195,21 @@ async def assert_image_current(client: TorchKilnClient, *,
 
     1. **能力**：服务自报的 ``job_kinds`` 是否覆盖本次要用的种类
        （``/healthz`` 从 ``_ARGV_BUILDERS`` 的键推导，正是这份代码真的能跑什么）；
-    2. **版本**：若配置了 ``TORKILN_EXPECTED_REVISION``，镜像自报的修订号是否匹配。
+    2. **版本**：镜像自报的修订号与期望的是否一致。期望值取自
+       ``expect_revision`` 参数；为 ``None`` 时回落到 :func:`expected_revision`
+       （显式配置优先，否则自动读本地 TorchKiln 的 HEAD）。
 
-    ``expect_revision`` 为空则跳过第 2 项——不是每次部署都应该锁死修订号。
-    「``code_revision`` 是 ``unknown``」也**不算过期**：那说明镜像不是用
-    ``service/build-image.ps1`` 构建的（可能压根没用注入），此时只能靠第 1 项。
+    无论怎么取到期望值，两种情况都**跳过**版本检查：
+
+    - 期望值拿不到（没配仓库路径 / 不是 git 仓库 / git 不可用）；
+    - 镜像自报 ``unknown``（镜像不是用 ``service/build-image.ps1`` 构建的）。
+
+    跳过而不是判过期，是为了不把检查变成「天天误报的噪音」——一个天天误报的
+    守卫等于没有守卫。能力检查不依赖任何配置，仍然拦得住「忘了重建」。
 
     Args:
         need_kinds: 本次作业需要的种类，如 ``("eval",)`` / ``("predict",)``
+        expect_revision: 覆盖期望修订号；``None`` 表示自动取
     """
     info = await client.healthz()
     have = set(info.get("job_kinds") or ())
@@ -166,12 +221,13 @@ async def assert_image_current(client: TorchKilnClient, *,
             f"多半是改了 TorchKiln 代码但没重建镜像——"
             f"请在 D:\\TorchKiln 执行 pwsh service\\build-image.ps1")
 
-    if expect_revision:
+    want = expect_revision if expect_revision is not None else expected_revision()
+    if want:
         rev = str(info.get("code_revision") or "unknown")
-        if rev not in ("unknown", expect_revision):
+        if rev not in ("unknown", want):
             raise StaleJobImage(
                 f"job 镜像版本不符：镜像内 TorchKiln 修订号 {rev}，"
-                f"期望 {expect_revision}（多半是本地 TorchKiln 有更新的提交）。"
+                f"期望 {want}（多半是本地 TorchKiln 有更新的提交）。"
                 f"请执行 pwsh service\\build-image.ps1 重建镜像")
     return info
 
