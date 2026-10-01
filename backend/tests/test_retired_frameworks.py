@@ -143,6 +143,40 @@ def test_retired_framework_executors_are_gone():
         "PaddleX 执行器被加回来了——若要恢复请先想清楚它依赖的镜像还在不在"
 
 
+def test_train_executor_class_stays_deleted():
+    """``scheduler.TrainExecutor`` 必须**不存在**。
+
+    它曾只为接住 ``framework='ULTRALYTICS'/'PADDLEX'`` 的历史任务行：让它们落到
+    一个只会报「已退场」的执行器，而不是掉进无人处理的分支。那两个框架的数据已按
+    显式 id 白名单删净、枚举值也已 ``ALTER TYPE`` 移除，所以它成了永远走不到的死
+    分支。
+
+    连带被它拖成死代码的三个 import 也一并删了（``TaskExecutor`` / ``broadcast_log``
+    / ``find_task_containers``）——留着它们只会让 ruff 报 F401，或者更糟：
+    让人误以为 scheduler 里还有别的执行器在用。
+
+    退场框架的拒绝改由 service 层的 ``retired.ensure_active()`` 承担（另有测试）。
+    """
+    import app.plugin.module_train.scheduler as sched
+
+    assert not hasattr(sched, "TrainExecutor"), \
+        "TrainExecutor 只会拒绝不执行，且已无行可拒——别把它加回来"
+    assert sched._executor_for(None).__name__ == "TorchKilnExecutor", \
+        "训练执行器只剩 TorchKilnExecutor 一条通路"
+
+    # 孤儿恢复也必须归到唯一那个执行器上。
+    # ⚠️ 用 **AST** 判定而不是子串匹配：docstring 里提到 ``TrainExecutor`` 是在
+    #    解释「它为什么被删」，那是正常文档，子串匹配会把文档判成「还在用」。
+    tree = ast.parse(pathlib.Path(sched.__file__).read_text(encoding="utf-8"))
+    classes = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+    assert "TrainExecutor" not in classes, "scheduler.py 里还定义了 TrainExecutor"
+    refs = [
+        n.id for n in ast.walk(tree)
+        if isinstance(n, ast.Name) and n.id == "TrainExecutor"
+    ]
+    assert not refs, f"scheduler.py 里还有对 TrainExecutor 的引用: {refs}"
+
+
 def test_no_bash_c_string_concatenation_in_module():
     """模块里不应再有 ``bash -c "..."`` 字符串拼接。
 

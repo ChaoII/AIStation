@@ -29,7 +29,8 @@ def recovery_decision(has_live_container: bool, started_at, now, timeout_sec: fl
 
 
 class TaskExecutor(ABC):
-    """抽象基类。子类：TrainExecutor / EvalExecutor / PredictExecutor。
+    """抽象基类。训练类现在只剩 ``TorchKilnExecutor``（旧的 TrainExecutor 随
+    Ultralytics / PaddleX 退场一并删除）；其余子类有 EvalExecutor / PredictExecutor。
 
     每个子类通过 __init_subclass__ 维护独立 registry 与信号量。
     并发上限由 _concurrency 控制。
@@ -141,7 +142,7 @@ class TaskExecutor(ABC):
 
         基类默认行为：该框架暂不支持自动重连（无法收集产物），因此把仍处于
         RUNNING 的任务落到终态 FAILED，避免任务永久卡在 RUNNING（容器以
-        all=True 查询会被反复重选为 reattach）。子类（如 TrainExecutor）可覆盖
+        all=True 查询会被反复重选为 reattach）。子类（如 TorchKilnExecutor）可覆盖
         此方法实现真正的重连收尾。
         """
         try:
@@ -197,9 +198,12 @@ class TaskExecutor(ABC):
     def _recover_row_applies(cls, row) -> bool:
         """该 RUNNING 行是否由本执行器负责恢复。
 
-        TorchKiln 执行器只认 framework='TORKILN' 的行；基类（``TrainExecutor``）
-        负责已退场框架的历史行——那些行已无人执行，但仍需要被 ``recover_orphans``
-        收敛成终态，否则会永远显示"运行中"。
+        TorchKiln 执行器只认 framework='TORKILN' 的行。
+
+        旧版本里另有一个基类子类 ``TrainExecutor`` 专门负责已退场框架的历史行——
+        那些行已无人执行，但仍需要被 ``recover_orphans`` 收敛成终态，否则会永远
+        显示"运行中"。它已随 Ultralytics / PaddleX 的数据一并删除：枚举只剩
+        TORKILN，没有任何一行会再走到它那条分支上。
         """
         framework = getattr(row, "framework", None)
         if framework_value(framework) == "torchkiln" and "TorchKiln" not in cls.__name__:

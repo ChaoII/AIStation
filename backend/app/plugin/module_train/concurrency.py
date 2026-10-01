@@ -1,6 +1,6 @@
 """进程内 GPU 并发信号量（评估 / 预测链路用）。
 
-⚠️ **训练不走这里**。``TrainExecutor`` 与 ``TorchKilnExecutor`` 都走
+⚠️ **训练不走这里**。``TorchKilnExecutor`` 与 ``TorchKilnExecutor`` 都走
 ``gpu_pool.gpu_lease()``——它做的是真正的 GPU 认领（跨进程、按显存需求量、
 Redis 去重），而这里只是本进程里的一把计数锁。
 

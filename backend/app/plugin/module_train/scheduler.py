@@ -8,11 +8,8 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import find_task_containers
 from .model import TrainStatus, TrainTask
 from .paths import work_dir
-from .task_executor import TaskExecutor
-from .ws import broadcast_log
 
 _scheduler_task: asyncio.Task | None = None
 
@@ -70,7 +67,7 @@ def build_scheduled_task_data(schedule) -> SimpleNamespace:
 
 
 async def _scheduler_loop():
-    """维护循环：触发定时训练 + 周期孤儿恢复（交由 TrainExecutor.recover_orphans）。"""
+    """维护循环：触发定时训练 + 周期孤儿恢复（归并到唯一的 TorchKiln 执行器）。"""
     while True:
         try:
             # Check for due training schedules
@@ -105,7 +102,7 @@ async def _scheduler_loop():
                 log.error(f"schedule check error: {e}")
 
             # Periodic orphan recovery (base executor owns registry/DB state)
-            await TrainExecutor.recover_orphans()
+            await _executor_for(None).recover_orphans()
 
             # GPU/端口看门狗：容器被强杀或后端崩溃时，任务终止路径上的 release
             # 不会执行，占用会一直挂到 24h TTL——单卡机器等于被占死。
@@ -153,63 +150,6 @@ async def _resolve_task_type(task) -> str:
         return "detection"
     # 枚举成员取裸值（AnnotationType.CLASSIFICATION -> "classification"）
     return getattr(tt, "value", tt)
-
-
-class TrainExecutor(TaskExecutor):
-    """已退场框架（Ultralytics / PaddleX）的训练入口——**只拒绝，不再执行**。
-
-    ⚠️ 名字保留是因为 ``_executor_for()`` 仍需要它来处理历史任务行：库里还有 37 条
-    ``framework='ULTRALYTICS'/'PADDLEX'`` 的训练任务，其中可能残留 RUNNING 行，
-    要靠本类继承的 ``recover_orphans`` 收敛掉。删掉这个类，那些行会永远显示
-    「运行中」，比退场本身更糟。
-
-    真正的训练能力已整体移除：超参白名单、命令构建、权重预下载、容器编排
-    （原 ~340 行）都不在这里了。遇到已退场框架时明确报错，而不是静默不动——
-    用户看到「已退场」才知道该用 TorchKiln 重训，而不是以为系统卡了。
-    """
-
-    name = "train"
-    task_kind = "train"
-    status_enum = TrainStatus
-    model_class = TrainTask
-    _concurrency = 1
-
-    @classmethod
-    async def _execute(cls, task_id: int):
-        async with async_db_session() as db:
-            task = await db.get(TrainTask, task_id)
-            if not task:
-                return
-            fw = getattr(task, "framework", None)
-            task_name = getattr(task, "name", str(task_id))
-            created_id = getattr(task, "created_id", None)
-
-        from .framework_utils import framework_value
-
-        shown = framework_value(fw) or str(fw)
-        message = (
-            f"训练框架 {shown} 已退场，执行通路已移除。"
-            f"请用 TorchKiln 重新训练（历史任务与模型记录仍可查看，但不能再启动训练）。"
-        )
-        log.warning(f"[scheduler] 任务 {task_id} 拒绝执行：{message}")
-        await broadcast_log(task_id, f"[scheduler] {message}")
-
-        async with async_db_session.begin() as db:
-            await db.execute(
-                update(TrainTask).where(TrainTask.id == task_id).values(
-                    status=TrainStatus.FAILED, error_log=message,
-                    finished_at=datetime.now()))
-        if created_id:
-            _send_notify(created_id, f"训练无法启动: {task_name}", message,
-                         "training_failed", "train", task_id)
-
-    @classmethod
-    async def reattach(cls, task_id: int, container_id: str | None = None) -> None:
-        """已退场框架没有可重连的容器；清掉注册表让 recover_orphans 继续收敛。"""
-        ids = [container_id] if container_id else find_task_containers(cls.task_kind, task_id)
-        log.warning(f"[train] 任务 {task_id} 属于已退场框架，"
-                    f"无可重连容器（找到 {len(ids)} 个）；将交由 recover_orphans 标记终态")
-        cls._registry.pop(task_id, None)
 
 
 async def start_training(task_id: int):
@@ -266,23 +206,21 @@ async def start_training(task_id: int):
 
 
 def _executor_for(task):
-    """按框架取执行器类（start/stop 共用，避免两处 if 走偏）。
+    """取训练执行器类（start/stop 共用）。
 
-    只剩 TorchKiln 一条通路。保留这层间接而不是直接返回 ``TorchKilnExecutor``：
-    历史任务里仍有 ``framework='ULTRALYTICS'/'PADDLEX'`` 的行，它们要落到
-    ``TrainExecutor``（恢复逻辑），才能在遇到已退场框架时给出明确提示，
-    而不是掉进无人处理的分支被静默跳过。
+    只剩 TorchKiln 一条通路，不再按框架分派。原先这里还有一层 ``TrainExecutor``
+    兜底，专门接住 ``framework='ULTRALYTICS'/'PADDLEX'`` 的历史任务行并给出退场
+    提示——那两个框架的数据已按显式 id 白名单删净、枚举值也已从 PG 里
+    ``ALTER TYPE`` 移除，那层兜底成了永远走不到的死分支，故随之删除。
+
+    ⚠️ 退场框架的拒绝**不靠这里**，而是靠 service 层入口的
+    ``retired.ensure_active()``：请求体里的 ``framework`` 是字符串，客户端能传
+    任意值，走到执行器之前就该被挡下。
     """
-    from .framework_utils import framework_value
+    # 自研训练平台：HTTP 客户端形态，排队/容器生命周期都在 TorchKiln 服务里
+    from .torchkiln_executor import TorchKilnExecutor
 
-    if task is None:
-        return TrainExecutor
-    fw = framework_value(getattr(task, "framework", None))
-    if fw == "torchkiln":
-        # 自研训练平台：HTTP 客户端形态，排队/容器生命周期都在 TorchKiln 服务里
-        from .torchkiln_executor import TorchKilnExecutor
-        return TorchKilnExecutor
-    return TrainExecutor
+    return TorchKilnExecutor
 
 
 async def stop_training(task_id: int) -> None:
