@@ -137,8 +137,16 @@ async def follow_container_logs(container_id: str) -> asyncio.Queue:
     return queue
 
 
-async def remove_container(container_id: str) -> None:
-    """移除容器"""
+async def remove_container(container_id: str | None) -> None:
+    """移除容器；没给 id 就什么都不做。
+
+    ``id`` 为空**必须**静默跳过而不是往下走：``client.containers.get(None)`` 抛的是
+    ``NullResource``，不在下面的 ``NotFound`` 捕获范围内，会把「本来就没容器可清」
+    变成一次异常——而这恰恰发生在收尾路径上（容器从未起来、注册表已被清掉），
+    结果是任务状态永远停在 RUNNING。
+    """
+    if not container_id:
+        return
     try:
         c = client.containers.get(container_id)
         c.remove(force=True)

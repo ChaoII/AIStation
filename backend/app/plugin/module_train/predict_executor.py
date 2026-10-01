@@ -5,13 +5,19 @@ from datetime import datetime
 
 from sqlalchemy import update
 
-from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .concurrency import get_train_semaphore
-from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
-from .gpu_pool import gpu_lease
+from .docker_utils import pull_image
+from .job_runner import (
+    JobCancelled,
+    cancelled,
+    cleanup_registry,
+    gpu_slot,
+    mark_failed,
+    run_and_follow,
+    settle,
+)
 from .model import TrainFramework, TrainModel, TrainPredict, TrainStatus
 from .paths import work_dir
 from .retired import ensure_active
@@ -69,23 +75,70 @@ def build_predict_cmd(framework: str, model_filename: str, hp: dict) -> list[str
 
     conf = hp.get("conf", 0.25)
     iou = hp.get("iou", 0.45)
-    imgsz = hp.get("imgsz", 640)
     device = hp.get("device", "0")
     # 配置由训练任务带下来（model 名）
     model_cfg = hp.get("tk_config") or hp.get("model") or ""
     if not model_cfg:
         # 兜底：用训练任务的 hyperparams.model（调用方应透传）
         model_cfg = hp.get("tk_model") or ""
-    opts = [
-        f"Global.pretrained_model=/model/{model_filename}",
-        "Global.save_model_dir=/output",
-        f"Global.imgsz={imgsz}",
-        f"Global.conf={conf}",
-        f"Global.iou={iou}",
-        f"Global.device={device}",
-        "Global.infer_dir=/data",
+    # ⚠️ ``tkiln predict`` 用的是 **argparse 风格**，不是 ``tkiln val`` 那套
+    #    ``-o Global.xxx=`` 配置覆盖。契约见 ``tools/infer/predict_yolo.py``：
+    #        -c/--config（必填） --weights（必填） --input（必填）
+    #        --output（默认 output/yolo_result.jpg） --device
+    #        -o/--opt（可选，nargs="*"）
+    #
+    #    原实现照着 val 的样子拼 ``-o Global.pretrained_model=...``，容器里直接
+    #    argparse 报「the following arguments are required: --weights, --input」。
+    #    这条链路自接入 TorchKiln 起就没跑通过（与同文件里另外两个 bug 同源：
+    #    都没有 e2e 覆盖）。部署侧的 ``tkiln serve`` 一直是对的，可作对照。
+    cmd = [
+        "tkiln", "predict",
+        "-c", str(model_cfg),
+        "--weights", f"/model/{model_filename}",
+        # /data 挂的是**整个数据集目录**，不是单张图
+        "--input", "/data",
+        # 目录输入时 --output 语义是**输出目录**（TorchKiln 侧 predict_yolo 遍历
+        # 目录、按原文件名写出结果图）。模型只加载一次，不会按图起进程。
+        "--output", "/output",
+        "--device", "cpu" if str(device).strip().lower() in ("", "cpu") else "cuda:0",
     ]
-    return ["tkiln", "predict", "-c", str(model_cfg), "-o"] + opts
+    # conf / iou 是后处理阈值，imgsz 走配置的 image_size；统一用 -o 覆盖
+    # （tkiln 的覆盖机制）。YAML 里没有的键 TorchKiln 会 warning 后照加，
+    # 不影响运行——但那三行 warning 会混进 error_log，故只传确有意义的项。
+    opts = [f"Global.conf={conf}", f"Global.iou={iou}"]
+    cmd += ["-o", *opts]
+    return cmd
+
+
+def collect_result_images(output_dir: str) -> list[tuple[str, str]]:
+    """收集容器输出目录下的结果图，返回 ``[(相对路径, 绝对路径)]``，按相对路径排序。
+
+    契约：``tkiln predict`` 收到目录输入时，按输入的**相对路径**把每张图的可视化
+    结果写到 ``--output`` 下，只把扩展名统一成 ``.jpg``。所以这里**递归**扫。
+
+    两处曾各踩一个坑，都是「同名互相覆盖 / 静默丢结果」这一类：
+
+    1. 原来只扫 ``output``/``results``/``vis``/``exp`` 四个固定子目录加顶层，
+       而实际布局是 ``images/train``、``images/val`` —— 扫不到，结果恒为空；
+       更早还有一个「找到文件后反而只去看 ``exp/``」的写法，同样静默返回空。
+       那套猜测是为 Ultralytics/PaddleX 准备的，两者已退场，留着只会让人以为
+       还有别的输出布局要兼容。
+    2. RustFS key 曾用 ``basename``：``images/train/a.jpg`` 与 ``images/val/a.jpg``
+       同名，后者会静默覆盖前者，表现为「结果数对不上」。
+
+    返回相对路径（``/`` 分隔）正是为了让调用方能把它当唯一标识用。
+    """
+    found: list[tuple[str, str]] = []
+    for root, dirs, files in os.walk(output_dir):
+        dirs.sort()
+        for name in sorted(files):
+            if not name.lower().endswith((".jpg", ".jpeg", ".png", ".bmp")):
+                continue
+            abspath = os.path.join(root, name)
+            rel = os.path.relpath(abspath, output_dir).replace(os.sep, "/")
+            found.append((rel, abspath))
+    found.sort(key=lambda it: it[0])
+    return found
 
 
 async def resolve_predict_tk_config(model_id: int) -> str | None:
@@ -93,6 +146,21 @@ async def resolve_predict_tk_config(model_id: int) -> str | None:
 
     预测必须用与训练一致的配置（架构/imgsz/后处理都对不上就没有可比性），
     所以这里不猜、不让用户手填——直接回到训练任务要。
+
+    ⚠️ 两处 id 语义，历史上都踩过（与 ``eval_scheduler.resolve_eval_context``
+    同一个坑，那边早已修好、这边一直漏着）：
+
+    1. ``model_id`` 是**版本行 id**，不是仓库 id。
+    2. ``TrainTask.model_repo_id`` 字段名有误导——实测**它存的也是版本行 id**
+       （产出模型行的主键），不是仓库 id。逐条查过历史任务：torchkiln /
+       ultralytics 的任务都是如此。
+
+    原实现拿 ``TrainModel.repo_id``（仓库 id）去比 ``model_repo_id``，**永远匹配
+    不到** → 恒返回 None → 预测恒失败于「找不到产出该模型的训练任务」。这条链路
+    自接入 TorchKiln 起就没跑通过；此前没有 e2e 覆盖预测，所以一直没暴露。
+
+    匹配**先按版本行 id 查**；为兼容万一真存了仓库 id 的老数据，查不到时再按
+    ``TrainModel.repo_id`` 兜一次。
     """
     from sqlalchemy import desc, select
 
@@ -101,13 +169,18 @@ async def resolve_predict_tk_config(model_id: int) -> str | None:
 
     async with async_db_session() as db:
         model_row = await db.get(TrainModel, model_id)
-        repo_id = model_row.repo_id if model_row else None
-        if not repo_id:
+        if not model_row:
             return None
         task = (await db.execute(
-            select(TrainTask).where(TrainTask.model_repo_id == repo_id)
+            select(TrainTask).where(TrainTask.model_repo_id == model_id)
             .order_by(desc(TrainTask.id)).limit(1)
         )).scalar_one_or_none()
+        if not task and model_row.repo_id:
+            # 兜底：万一某些老数据真的存了仓库 id
+            task = (await db.execute(
+                select(TrainTask).where(TrainTask.model_repo_id == model_row.repo_id)
+                .order_by(desc(TrainTask.id)).limit(1)
+            )).scalar_one_or_none()
     if not task:
         return None
     if framework_value(getattr(task, "framework", None)) != "torchkiln":
@@ -188,9 +261,15 @@ class PredictExecutor(TaskExecutor):
             from app.utils.s3_client import s3_client
             if pred.source_type == "dataset":
                 await broadcast_predict_log(predict_id, "[predict] exporting dataset images...")
-                from .exporter import prepare_training_data_for_task
+                from .exporter import YOLO_LAYOUT, prepare_training_data_for_task
+                # ⚠️ 必须传 **YOLO_LAYOUT**（目录布局名），不能传 framework.value。
+                #    两者恰好都是 "ultralytics" 的时候看不出问题，但 TorchKiln 下
+                #    framework.value 是 "torchkiln"，而 _export_core 只按**布局名**
+                #    分发，于是直接抛「不支持的导出框架: torchkiln」——预测链路
+                #    从接入 TorchKiln 起就一直是坏的，只是此前没有 e2e 覆盖到它。
+                #    eval_scheduler 早就用的是 YOLO_LAYOUT，两边不一致才拖到现在。
                 await prepare_training_data_for_task(
-                    pred.source_dataset_id, predict_id, framework.value, source_dir
+                    pred.source_dataset_id, predict_id, YOLO_LAYOUT, source_dir
                 )
                 # Remove label files and yaml, keep only images
                 for root, _, files in os.walk(source_dir):
@@ -240,107 +319,76 @@ class PredictExecutor(TaskExecutor):
 
             await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
             await pull_image(docker_image)
-            # 全局 GPU 并发上限：与训练/评估共享同一信号量，避免同一张卡被并发抢占。
-            # ⚠️ 信号量**只认本进程里排队的任务**，看不见别的框架、更看不见平台外
-            #   占着卡的人——而训练走的是 gpu_pool（Redis + NVML）。两套排队互不知情
-            #   必然撞卡，所以这里在信号量之后**再**向 gpu_pool 租一张够显存的卡。
-            need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
-                                or settings.TORKILN_GPU_MIN_FREE_GB)
-            async with get_train_semaphore(), gpu_lease(predict_id, need_mem_gb) as lease:
-                # 等待期间可能被取消：启动容器前再检查一次
-                if cls._registry.get(predict_id, {}).get("cancel"):
-                    return
-                container = await run_container(
-                    docker_image, cmd,
+            # GPU 申请 + 「起容器→跟日志→等退出码」骨架已抽到 job_runner，与
+            # eval_scheduler 共用。见 job_runner 模块 docstring：两处独立演进曾导致
+            # 结果收集逻辑漂移（这里曾写成「找到文件后反而只去看 exp/」）。
+            async with gpu_slot(cls, predict_id, hp) as lease:
+                outcome = await run_and_follow(
+                    cls, predict_id,
+                    image=docker_image, cmd=cmd,
                     volumes={
                         source_dir: {"bind": "/data", "mode": "ro"},
                         model_dir: {"bind": "/model", "mode": "ro"},
                         output_dir: {"bind": "/output", "mode": "rw"},
                     },
                     gpu_id=lease.device_ids or predict_gpu_id(device),
-                    shm_size="4g",
-                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(predict_id)},
+                    log_path=os.path.join(export_dir, "predict.log"),
+                    broadcast=lambda line: broadcast_predict_log(predict_id, line),
                 )
-                container_id = container.id
-                entry = cls._registry.get(predict_id) or {}
-                entry.update({"container_id": container_id})
-                cls._registry[predict_id] = entry
-
-                await cls.follow_logs(
-                    container_id,
-                    os.path.join(export_dir, "predict.log"),
-                    lambda line: broadcast_predict_log(predict_id, line),
-                )
-                exit_code = await cls._get_exit_code(container)
+                container_id = outcome.container_id
 
             result_images = []
             result_zip_path = None
 
-            if cls._registry.get(predict_id, {}).get("cancel"):
-                await remove_container(container_id)
-                await cls._mark_status(predict_id, TrainStatus.CANCELLED, finished_at=datetime.now(), progress=100)
-            elif exit_code == 0:
-                await remove_container(container_id)
-
-                # Collect result images from output dir.
-                # tkiln predict 把可视化结果写在 save_model_dir 下的常见子目录里；
-                # 逐个找，找到就用该子目录作为打包的相对根（这样 zip 里不带多层前缀）。
-                # ⚠️ 原来的实现是「找到文件后反而只去看 exp/」，结果落在 vis/ 或
-                # output/ 时会把已找到的文件丢掉、只认 exp/——那是条会静默返回空
-                # 结果的路径。现在改成记住实际命中的那个子目录。
-                results_base = output_dir
-                result_files = []
-                for sub in ("output", "results", "vis", "exp"):
-                    base = os.path.join(output_dir, sub)
-                    if not os.path.isdir(base):
-                        continue
-                    found = [os.path.join(base, f) for f in sorted(os.listdir(base))
-                             if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))]
-                    if found:
-                        results_base, result_files = base, found
-                        break
-                if not result_files:
-                    result_files = [
-                        os.path.join(output_dir, f) for f in sorted(os.listdir(output_dir))
-                        if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp"))
-                    ]
+            # 结果收集/上传/打包要在 mark SUCCESS **之前**完成，所以先算出
+            # success_fields 再交给 settle 统一收尾。取消或失败时不收集——否则会
+            # 白白把一批图传上 RustFS，而状态最终会被写成 CANCELLED/FAILED。
+            was_cancelled = cancelled(cls, predict_id)
+            success_fields: dict = {}
+            if not was_cancelled and outcome.exit_code == 0:
+                result_files = collect_result_images(output_dir)
 
                 if result_files:
-                    for img_path in result_files:
-                        f = os.path.basename(img_path)
-                        rustfs_key = f"train/predict/{predict_id}/{f}"
+                    for rel, img_path in result_files:
+                        rustfs_key = f"train/predict/{predict_id}/{rel}"
                         with open(img_path, "rb") as img_f:
                             s3_client.upload_fileobj(img_f, rustfs_key)
                         result_images.append(rustfs_key)
 
-                    # Create ZIP
+                    # Create ZIP（相对 output_dir 保留层级，便于对照输入图定位）
                     zip_path = os.path.join(export_dir, "results.zip")
                     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                        for fp in result_files:
-                            zf.write(fp, os.path.relpath(fp, results_base))
+                        for _rel, fp in result_files:
+                            zf.write(fp, _rel)
                     zip_rustfs_key = f"train/predict/{predict_id}/results.zip"
                     with open(zip_path, "rb") as zf:
                         s3_client.upload_fileobj(zf, zip_rustfs_key)
                     result_zip_path = zip_rustfs_key
 
-                await cls._mark_status(predict_id, TrainStatus.SUCCESS,
-                                       result_images=result_images or None,
-                                       result_zip_path=result_zip_path,
-                                       finished_at=datetime.now(),
-                                       progress=100)
-            else:
-                error_msg = (await get_container_error_tail(container_id)).strip()
-                await remove_container(container_id)
-                await cls._mark_status(predict_id, TrainStatus.FAILED,
-                                       log=error_msg or "predict failed",
-                                       finished_at=datetime.now(), progress=100)
+                success_fields = {
+                    "result_images": result_images or None,
+                    "result_zip_path": result_zip_path,
+                }
+
+            await settle(
+                cls, predict_id,
+                was_cancelled=was_cancelled,
+                container_id=container_id,
+                exit_code=outcome.exit_code,
+                error_tail=outcome.error_tail,
+                failure_message="predict failed",
+                success_fields=success_fields,
+            )
+
+        except JobCancelled:
+            # 等待 GPU 期间被取消：容器从未起来，不能记失败也不能走收尾。
+            # 状态留给 stop_prediction 置 CANCELLED（与拆分前的 return 行为一致）。
+            log.info(f"[predict] 任务 {predict_id} 在等待 GPU 期间被取消，未启动容器")
+            return
 
         except Exception as e:
-            log.error(f"predict task {predict_id} failed: {e}")
-            await cls._mark_status(predict_id, TrainStatus.FAILED, log=str(e), finished_at=datetime.now())
+            await mark_failed(cls, predict_id, e, kind="predict")
             # 失败后清理本次导出的临时输出目录（保留日志文件供排查）
             _cleanup_export_dir(export_dir)
         finally:
-            cls._registry.pop(predict_id, None)
-            if container_id:
-                await remove_container(container_id)
+            await cleanup_registry(cls, predict_id, container_id)

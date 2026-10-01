@@ -6,13 +6,19 @@ from datetime import datetime
 
 from sqlalchemy import update
 
-from app.config.setting import settings
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .concurrency import get_train_semaphore
-from .docker_utils import get_container_error_tail, pull_image, remove_container, run_container
-from .gpu_pool import gpu_lease
+from .docker_utils import pull_image
+from .job_runner import (
+    JobCancelled,
+    cancelled,
+    cleanup_registry,
+    gpu_slot,
+    mark_failed,
+    run_and_follow,
+    settle,
+)
 from .model import TrainEval, TrainFramework, TrainModel, TrainStatus
 from .paths import work_dir
 from .retired import ensure_active
@@ -252,111 +258,92 @@ class EvalExecutor(TaskExecutor):
             # tkiln val 写 Global.save_model_dir=/output
             volumes[os.path.join(export_dir, "output")] = {"bind": "/output", "mode": "rw"}
             os.makedirs(os.path.join(export_dir, "output"), exist_ok=True)
-            # 全局 GPU 并发上限：与训练/预测共享同一信号量，避免同一张卡被并发抢占。
-            # ⚠️ 信号量**只认本进程里排队的任务**，看不见别的框架、更看不见平台外
-            #   占着卡的人——而训练走的是 gpu_pool（Redis + NVML）。两套排队互不知情
-            #   必然撞卡，所以这里在信号量之后**再**向 gpu_pool 租一张够显存的卡：
-            #   信号量是进程内的快速闸门（拒绝得快），gpu_pool 负责跨进程的精确判定。
-            need_mem_gb = float((hp.get("resources") or {}).get("gpu_memory_gb")
-                                or settings.TORKILN_GPU_MIN_FREE_GB)
-            async with get_train_semaphore(), gpu_lease(eval_id, need_mem_gb) as lease:
-                # 等待期间可能被取消：启动容器前再检查一次
-                if cls._registry.get(eval_id, {}).get("cancel"):
-                    return
-                container = await run_container(
-                    docker_image, cmd,
-                    volumes=volumes,
-                    gpu_id=lease.device_ids or device,
-                    shm_size="4g",
-                    labels={"aistation.task_kind": cls.task_kind, "aistation.task_id": str(eval_id)},
-                )
-                container_id = container.id
-                entry = cls._registry.get(eval_id) or {}
-                entry.update({"container_id": container_id})
-                cls._registry[eval_id] = entry
 
-                metrics: dict = {}
+            metrics: dict = {}
 
-                def _parse_torchkiln_metrics(line: str) -> dict | None:
-                    """解析 ``tkiln val`` 的评估指标。
+            def _parse_torchkiln_metrics(line: str) -> dict | None:
+                """解析 ``tkiln val`` 的评估指标。
 
-                    首选 ``EVAL_METRIC_JSON {...}`` 标记行（结构化、抗格式变动）；
-                    没有标记时兜底解析它实际打印的那两行——
-                    ``cur metric, box_mAP50: 0.0, mask_mAP50-95: 0.0, fps: 7.3``
-                    与 ``main indicator (mask_mAP50-95): 0.0``。
+                首选 ``EVAL_METRIC_JSON {...}`` 标记行（结构化、抗格式变动）；
+                没有标记时兜底解析它实际打印的那两行——
+                ``cur metric, box_mAP50: 0.0, mask_mAP50-95: 0.0, fps: 7.3``
+                与 ``main indicator (mask_mAP50-95): 0.0``。
 
-                    ⚠️ 只认标记行的话，指标会**静默变成空**：任务显示成功、页面却
-                    没有任何数值，看不出是评估没跑还是解析没匹配上。
-                    """
-                    if "EVAL_METRIC_JSON" in line:
-                        try:
-                            data = json.loads(line.split("EVAL_METRIC_JSON", 1)[1].strip())
-                            metrics.update(data)
-                            return dict(metrics)
-                        except Exception:
-                            return None
-                    # 兜底 1：cur metric, k: v, k: v ...
-                    if "cur metric" in line:
-                        payload = line.split("cur metric", 1)[1].lstrip(" ,:")
-                        for part in payload.split(","):
-                            if ":" not in part:
-                                continue
-                            key, _, val = part.partition(":")
-                            key, val = key.strip(), val.strip()
-                            try:
-                                metrics[key] = float(val)
-                            except ValueError:
-                                continue
+                ⚠️ 只认标记行的话，指标会**静默变成空**：任务显示成功、页面却
+                没有任何数值，看不出是评估没跑还是解析没匹配上。
+                """
+                if "EVAL_METRIC_JSON" in line:
+                    try:
+                        data = json.loads(line.split("EVAL_METRIC_JSON", 1)[1].strip())
+                        metrics.update(data)
                         return dict(metrics)
-                    # 兜底 2：main indicator (mask_mAP50-95): 0.0
-                    m = _MAIN_INDICATOR_RE.search(line)
-                    if m:
-                        metrics["main_indicator"] = m.group(1).strip()
+                    except Exception:
+                        return None
+                # 兜底 1：cur metric, k: v, k: v ...
+                if "cur metric" in line:
+                    payload = line.split("cur metric", 1)[1].lstrip(" ,:")
+                    for part in payload.split(","):
+                        if ":" not in part:
+                            continue
+                        key, _, val = part.partition(":")
+                        key, val = key.strip(), val.strip()
                         try:
-                            metrics["main_value"] = float(m.group(2))
+                            metrics[key] = float(val)
                         except ValueError:
-                            pass
-                        return dict(metrics)
-                    return None
+                            continue
+                    return dict(metrics)
+                # 兜底 2：main indicator (mask_mAP50-95): 0.0
+                m = _MAIN_INDICATOR_RE.search(line)
+                if m:
+                    metrics["main_indicator"] = m.group(1).strip()
+                    try:
+                        metrics["main_value"] = float(m.group(2))
+                    except ValueError:
+                        pass
+                    return dict(metrics)
+                return None
 
-                await cls.follow_logs(
-                    container_id,
-                    os.path.join(export_dir, "eval.log"),
-                    lambda line: broadcast_eval_log(eval_id, line),
-                    _parse_torchkiln_metrics,
+            # GPU 申请（信号量 + 跨进程租约 + 等待期取消检查）与「起容器→跟日志→
+            # 等退出码→按三态收尾」这套骨架已抽到 job_runner，与 predict_executor 共用。
+            # 见 job_runner 模块 docstring：两处独立演进曾导致结果收集逻辑漂移。
+            async with gpu_slot(cls, eval_id, hp) as lease:
+                outcome = await run_and_follow(
+                    cls, eval_id,
+                    image=docker_image, cmd=cmd, volumes=volumes,
+                    gpu_id=lease.device_ids or device,
+                    log_path=os.path.join(export_dir, "eval.log"),
+                    broadcast=lambda line: broadcast_eval_log(eval_id, line),
+                    parse_fn=_parse_torchkiln_metrics,
                 )
-                exit_code = await cls._get_exit_code(container)
+                container_id = outcome.container_id
 
             current_metrics = metrics or None
+            await settle(
+                cls, eval_id,
+                was_cancelled=cancelled(cls, eval_id),
+                container_id=container_id,
+                exit_code=outcome.exit_code,
+                error_tail=outcome.error_tail,
+                failure_message="eval failed",
+                success_fields={
+                    "metrics": current_metrics,
+                    "metrics_log": [current_metrics] if current_metrics else None,
+                    "best_metrics": current_metrics,
+                    "last_metrics": current_metrics,
+                },
+            )
 
-            if cls._registry.get(eval_id, {}).get("cancel"):
-                await remove_container(container_id)
-                await cls._mark_status(eval_id, TrainStatus.CANCELLED, finished_at=datetime.now(), progress=100)
-            elif exit_code == 0:
-                await remove_container(container_id)
-                await cls._mark_status(eval_id, TrainStatus.SUCCESS,
-                                       metrics=current_metrics,
-                                       metrics_log=[current_metrics] if current_metrics else None,
-                                       best_metrics=current_metrics,
-                                       last_metrics=current_metrics,
-                                       finished_at=datetime.now(),
-                                       progress=100)
-            else:
-                error_msg = (await get_container_error_tail(container_id)).strip()
-                await remove_container(container_id)
-                await cls._mark_status(eval_id, TrainStatus.FAILED,
-                                       log=error_msg or "eval failed",
-                                       error_log=error_msg or "eval failed",
-                                       finished_at=datetime.now(), progress=100)
+        except JobCancelled:
+            # 等待 GPU 期间被取消：容器从未起来，不能记失败也不能走收尾。
+            # 状态留给 stop_evaluation 置 CANCELLED（与拆分前的 return 行为一致）。
+            log.info(f"[eval] 任务 {eval_id} 在等待 GPU 期间被取消，未启动容器")
+            return
 
         except Exception as e:
-            log.error(f"eval task {eval_id} failed: {e}")
-            await cls._mark_status(eval_id, TrainStatus.FAILED, log=str(e), finished_at=datetime.now())
+            await mark_failed(cls, eval_id, e, kind="eval")
             # 失败后清理本次导出的 data 半成品目录（保留日志文件供排查）
             if data_dir:
                 import shutil
                 shutil.rmtree(data_dir, ignore_errors=True)
         finally:
-            cls._registry.pop(eval_id, None)
-            if container_id:
-                await remove_container(container_id)
+            await cleanup_registry(cls, eval_id, container_id)
