@@ -1,13 +1,17 @@
-"""已退场框架（Ultralytics / PaddleX）的守卫与历史可读性测试。
+"""已退场框架（Ultralytics / PaddleX）的守卫测试。
 
-退场这件事最容易的失败方式不是"忘了删"，而是**半年后有人顺手把分支加回来**——
-尤其是看到 ``TrainFramework.ULTRALYTICS`` 还在、UI 上还显示着历史任务，
-就以为"框架还支持"。所以这里把三条不变量钉死：
+退场这件事最容易的失败方式不是「忘了删」，而是**半年后有人顺手把分支加回来**——
+尤其是看到 UI 上还留着一批历史数据，就以为「框架还支持」。所以这里把不变量钉死。
 
-1. **执行通路确实没了**：``ensure_active`` 挡住四种大小写/带不带枚举的输入形式。
-2. **历史数据仍可读**：``TrainFramework`` 的枚举成员与 PG 枚举值必须留着，
-   否则 92 个 ULTRALYTICS 模型反序列化失败，整个模型列表页打不开。
-3. **新建入口当场拒绝**：训练/评估/预测/定时训练的 create 都返回明确提示。
+两个退场框架的**处理方式不同**，取决于退场时库里还有没有数据：
+
+1. **执行通路确实没了**：``ensure_active`` 挡住各种大小写/带不带枚举的输入形式。
+2. **PADDLEX 的枚举成员必须留着**：它的历史数据仍在库，而 ``SAEnum`` 按成员名
+   反序列化，删成员会让读那些行直接报 ``invalid input value for enum``。
+3. **ULTRALYTICS 已彻底移除**：项目未发布、处于开发态，历史 82 行数据已按显式 id
+   白名单清空、PG 枚举值已 ``ALTER TYPE`` 移除、Python 枚举成员也已删除。
+   这里额外断言它**不会**被人顺手加回来。
+4. **新建入口当场拒绝**：训练/评估/预测/定时训练的 create 都返回明确提示。
 """
 
 import ast
@@ -38,44 +42,85 @@ MODULE_DIR = pathlib.Path(retired.__file__).parent
 @pytest.mark.parametrize(
     "fw",
     [
-        "ultralytics", "ULTRALYTICS", "Ultralytics", "ULTRALYTICS",
-        "paddlex", "PADDLEX", "PaddleX",
-        TrainFramework.ULTRALYTICS, TrainFramework.PADDLEX,
+        # 两个退场框架的枚举成员都已删除（数据也清干净了），但请求体里的 framework
+        # 是字符串，客户端仍能传这些形式——所以守卫必须继续挡。
+        "ultralytics", "ULTRALYTICS", "Ultralytics", "ultralytics/ultralytics",
+        "ultralytics/ultralytics:latest",
+        "paddlex", "PADDLEX", "PaddleX", "paddlex/paddlex:cpu",
     ],
 )
 def test_ensure_active_rejects_retired_frameworks(fw):
-    """四种书写形式都要挡住——只挡小写是最常见的漏网方式。"""
+    """各种书写形式都要挡住——只挡小写是最常见的漏网方式。
+
+    顺带把**镜像标签**形式也钉住：历史脏数据里出现过 ``framework`` 被填成整个镜像
+    标签（多半是某处把 ``docker_image`` 误赋给了 framework）。不归一的话守卫认不出
+    来会**放行**，退场框架就能绕过它——而这正是守卫唯一要拦的事。
+    """
     with pytest.raises(_RetiredFramework):
         ensure_active(fw, action="评估")
 
 
 @pytest.mark.parametrize("fw", ["torchkiln", "TORKILN", TrainFramework.TORKILN, None, ""])
 def test_ensure_active_allows_active_framework(fw):
-    """TORKILN 与空值（"未指定"）都要放行：历史评估记录里有 framework=None 的行。"""
+    """TORKILN 与空值（“未指定”）都要放行。"""
     ensure_active(fw, action="评估")
 
 
 def test_is_retired_matches_framework_value_normalisation():
-    """is_retired 必须复用 framework_value：PG 枚举存的是成员名（"ULTRALYTICS"），
-    直接 `== "ultralytics"` 会恒为 False 而放行——本项目在多个分发点踩过这个坑。"""
-    assert framework_value(TrainFramework.ULTRALYTICS) == "ultralytics"
-    assert is_retired(TrainFramework.ULTRALYTICS) is True
+    """is_retired 必须复用 framework_value：PG 枚举存的是**成员名**（大写），
+    直接 `== "paddlex"` 会恒为 False 而放行——本项目在多个分发点踩过这个坑。
+
+    ⚠️ 退场框架的枚举成员已删，所以这里只能拿**裸字符串**验归一化；这恰恰是
+    真实场景——从库里读出来、或者客户端传来的，就是这种形态。
+    """
+    assert framework_value("PADDLEX") == "paddlex"
+    assert framework_value("ULTRALYTICS") == "ultralytics"
+    assert is_retired("PADDLEX") is True
     assert is_retired("ULTRALYTICS") is True
     assert is_retired("TorchKiln") is False
 
 
-def test_retired_message_states_three_things():
-    """提示必须说清：已退场 / 改用什么 / 历史数据还在。
+def test_framework_enum_only_has_torchkiln():
+    """``TrainFramework`` 必须**只剩** TORKILN。
 
-    缺任何一条用户都会误判：只说"不支持"会以为是 bug，只说"已退场"不知道
-    怎么办，只说"请重训"会以为历史模型连权重都下载不了了。
+    两个退场框架的历史数据都已按显式 id 白名单删净、PG 枚举值也已移除，所以成员
+    不必保留。把它们加回来只会变成「枚举里有值但库里没有行」的孤儿——本项目就踩过
+    这个坑（``PYTORCH_OCR_DET`` / ``PYTORCH_OCR_REC`` 正是这么攒出来的，
+    ULTRALYTICS / PADDLEX 又续了两笔，这次一并清掉了）。
+
+    同理，``init_app._TRAINFRAMEWORK_VALUES`` 也不能再把它们兜底补回 PG。
+    """
+    assert {m.name for m in TrainFramework} == {"TORKILN"}
+    assert not hasattr(TrainFramework, "ULTRALYTICS")
+    assert not hasattr(TrainFramework, "PADDLEX")
+
+    init_app = MODULE_DIR.parents[1] / "scripts" / "init_app.py"
+    line = next(
+        ln for ln in init_app.read_text(encoding="utf-8").splitlines()
+        if ln.startswith("_TRAINFRAMEWORK_VALUES")
+    )
+    assert '"TORKILN"' in line
+    for gone in ("ULTRALYTICS", "PADDLEX", "PYTORCH_OCR_DET", "PYTORCH_OCR_REC"):
+        assert f'"{gone}"' not in line, f"{gone} 已从 PG 枚举移除，别再兜底补回来"
+
+
+def test_retired_message_states_three_things():
+    """提示必须说清：已退场 / 改用什么 / **历史数据已经不在了**。
+
+    缺任何一条用户都会误判：只说“不支持”会以为是 bug；只说“已退场”不知道
+    接下来该干什么；最要紧的是**不能说历史权重还能下载**——数据已随退场删净，
+    留这种承诺等于让用户去列表里翻、翻不到然后以为系统坏了。
     """
     for action in ("训练", "评估", "预测", "部署", "格式转换导出", "定时训练"):
-        msg = retired_message("ULTRALYTICS", action=action)
-        assert action in msg, f"{action} 的提示里没提是哪个操作"
-        assert "已退场" in msg
-        assert "TorchKiln" in msg, "没告诉用户改用什么"
-        assert "下载" in msg, "没说明历史权重仍可下载"
+        for fw in ("ULTRALYTICS", "PADDLEX"):
+            msg = retired_message(fw, action=action)
+            assert action in msg, f"{fw} 的提示里没提是哪个操作"
+            assert "已退场" in msg
+            assert "TorchKiln" in msg, "没告诉用户改用什么"
+            assert "清理" in msg, "没说清历史数据已随退场清理"
+            # 反向断言：假承诺不许出现
+            assert "仍可" not in msg, f"{fw} 的数据已删净，不该承诺「仍可…」"
+            assert "仍可正常下载" not in msg
 
 
 def test_retired_uses_its_own_exception_type():
@@ -190,32 +235,6 @@ def test_predict_retired_framework_is_refused_by_ensure_active():
     ensure_active("TORKILN", action="预测")
 
 
-# --------------------------------------- 不变量 2：历史数据必须仍可读
-
-
-def test_framework_enum_keeps_retired_members():
-    """⚠️ 这是本文件最重要的一条。
-
-    SQLAlchemy 的 ``SAEnum(TrainFramework)`` 按**成员名**反序列化。删掉
-    ULTRALYTICS/PADDLEX 成员，读取那 92 个模型行会直接报
-    ``invalid input value for enum``，模型列表页 500——数据还在，但读不出来，
-    等于等于丢了。
-    """
-    names = {e.name for e in TrainFramework}
-    assert {"ULTRALYTICS", "PADDLEX", "TORKILN"} <= names
-
-
-def test_init_app_still_backfills_retired_enum_values():
-    """PG 枚举里也必须留着 PADDLEX / ULTRALYTICS（既有表的行靠它反序列化）。"""
-    # MODULE_DIR = backend/app/plugin/module_train，往上两级是 app，再拼 scripts/
-    init_app = MODULE_DIR.parents[1] / "scripts" / "init_app.py"
-    src = init_app.read_text(encoding="utf-8")
-    assert "_TRAINFRAMEWORK_VALUES" in src
-    # 只匹配定义那一行，避免命中注释里对它的解释
-    line = next(ln for ln in src.splitlines() if ln.startswith("_TRAINFRAMEWORK_VALUES"))
-    assert '"PADDLEX"' in line and '"ULTRALYTICS"' in line and '"TORKILN"' in line
-
-
 def test_defaults_no_longer_point_at_retired_frameworks():
     """ORM 默认值不能是已退场框架。
 
@@ -232,17 +251,20 @@ def test_defaults_no_longer_point_at_retired_frameworks():
             f"{cls.__name__}.framework 的 ORM 默认值仍是 {default}"
 
 
-def test_export_download_path_still_works_for_retired_models():
-    """格式转换导出退场了，但**原始权重下载**必须仍可用。
+def test_model_persist_no_longer_has_ultralytics_artifact_branch():
+    """``model_persist`` 里读 ``best.pt`` 的分支必须跟着数据一起消失。
 
-    ``resolve_download_target`` 是模型下载功能走的路，与导出格式无关；
-    退场时若连它一起砍掉，用户连历史权重都拿不回来。
+    那个分支存在的唯一理由是读回**历史 ultralytics 任务**的产物。数据已删，
+    留着就成了永远走不到的死分支，而且会让人以为 ultralytics 权重还受支持。
     """
-    from app.plugin.module_train import export_service
-
-    assert callable(export_service.resolve_download_target)
-    src = inspect.getsource(export_service.resolve_download_target)
-    assert "EXPORT_EXT" in src, "下载目标仍需按扩展名拼 RustFS key"
+    tree = ast.parse((MODULE_DIR / "model_persist.py").read_text(encoding="utf-8"))
+    literals = {
+        n.value for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+    }
+    assert "best.pt" not in literals, "model_persist 里还有 ultralytics 的 best.pt 分支"
+    assert not any("ultralytics" in v for v in literals), \
+        "model_persist 里还有裸 ultralytics 字面量（框架名）"
 
 
 # --------------------------------------- 不变量 3：新建入口当场拒绝
@@ -275,7 +297,8 @@ def test_service_guards_are_inside_create_methods():
     ):
         for name in names:
             fn = getattr(cls, name)
-            assert "ensure_active" in inspect.getsource(fn), f"{cls.__name__}.{name} 没有退场守卫"
+            src = inspect.getsource(fn)
+            assert "ensure_active" in src, f"{cls.__name__}.{name} 没有退场守卫"
 
 
 # ------------------------------------------------ 最优指标策略（随退场改写）
@@ -289,13 +312,3 @@ def test_best_metric_prefers_map5095_then_map50():
         {"epoch": 2, "mAP50": 0.60, "mAP50-95": 0.55},
     ]
     assert best_metric(log, "torchkiln")["epoch"] == 2
-
-
-def test_best_metric_still_serves_ultralytics_log_shape():
-    """历史任务的 metrics_log 里是 map50/map5095（小写、无连字符），
-    最优指标计算仍要认它们——否则回填时挑不出正确的轮次。"""
-    log = [
-        {"epoch": 1, "map50": 0.3, "map5095": 0.1},
-        {"epoch": 2, "map50": 0.6, "map5095": 0.3},
-    ]
-    assert best_metric(log, "ultralytics")["epoch"] == 2

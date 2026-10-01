@@ -20,22 +20,22 @@ class TrainStatus(str, enum.Enum):
 class TrainFramework(str, enum.Enum):
     """训练框架。
 
-    ⚠️ ``ULTRALYTICS`` / ``PADDLEX`` **已退场**：执行通路（训练、评估、预测、部署、
-    格式转换导出）全部移除，新建入口由 ``retired.ensure_active()`` 拒绝。但这两个
-    成员**必须保留**——库里还有 92 个 ULTRALYTICS 模型与 37 条历史训练任务，
-    SQLAlchemy 的 ``SAEnum`` 按成员名反序列化，删掉成员会让读那些行直接报
-    ``invalid input value for enum``，整个模型列表页都打不开。
-    「代码退场」不等于「数据消失」：枚举值留着让历史可读，新建时才由 service 层拒绝。
+    只剩 ``TORKILN``。另两个框架（``ULTRALYTICS`` / ``PADDLEX``）都已**彻底**移除：
+    执行通路（训练、评估、预测、部署、格式转换导出）早就不走了；项目尚未发布、
+    处于开发态，没有"历史可读"的需求，于是历史数据按显式 id 白名单删净、PG 枚举值
+    ``ALTER TYPE`` 移除、Python 枚举成员一并删除。
 
-    同理，PG 枚举 ``trainframework`` 里的 ``PYTORCH_OCR_DET`` / ``PYTORCH_OCR_REC``
-    也早已没有对应成员（本项目既有做法），由 init_app 兜底补齐。
+    **退场顺序不可颠倒**（详见 alembic 迁移 ``c7d2e5f8a9b1`` 的 docstring）：
+    先删数据 → 再改 PG 枚举 → 最后删 Python 成员。反过来会撞上 ``SAEnum`` 按
+    **成员名**反序列化的坑——类型里还有值、代码里成员已删时，读那一列直接报
+    ``invalid input value for enum``。
+
+    ⚠️ 新建入口仍由 ``retired.ensure_active()`` 兜底：请求体里的 ``framework`` 是
+    字符串，客户端可以传任意值，枚举本身拦不住。两个已退场的名字因此仍留在
+    ``RETIRED_FRAMEWORKS`` 里——那里它们只是"拒绝名单"，不是可用的框架。
     """
-    ULTRALYTICS = "ultralytics"
-    PADDLEX = "paddlex"
     # 自研训练平台（D:\TorchKiln）以每任务一容器形态接入：超参点分键直通、指标走
     # metrics.jsonl 契约，**不再解析容器控制台日志**。
-    # ⚠️ PG 枚举 trainframework 需同步 ALTER TYPE ADD VALUE 'TORKILN'
-    #    （见 app/scripts/init_app.py 的 _ensure_trainframework_enum_values）
     TORKILN = "torchkiln"
 
 
@@ -59,7 +59,7 @@ class TrainModel(ModelMixin, UserMixin):
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="描述")
     storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="RustFS 存储路径")
     format: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="导出格式 ONNX/Paddle/TorchScript")
-    export_format: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="数据集导出格式 YOLO/PaddleX")
+    export_format: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="数据集导出格式 YOLO/PaddleOCR")
     metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="评估指标")
     annotation_dataset_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="来源数据集ID")
     status: Mapped[str] = mapped_column(String(16), default="draft", comment="draft/released/archived")
@@ -97,7 +97,7 @@ class TrainEval(ModelMixin, UserMixin):
         Integer, nullable=True, comment="模型版本ID（字段名沿用历史，实为版本行 id）")
     model_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="具体模型版本ID")
     eval_dataset_id: Mapped[int] = mapped_column(Integer, comment="评估数据集ID")
-    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="框架（ULTRALYTICS/PADDLEX 已退场，仅历史数据保留）")
+    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="训练框架")
     hyperparams: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=dict, comment="评估参数")
     metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True, comment="评估指标")
     status: Mapped[TrainStatus] = mapped_column(SAEnum(TrainStatus), default=TrainStatus.PENDING, comment="状态")
@@ -119,7 +119,7 @@ class TrainPredict(ModelMixin, UserMixin):
         Integer, nullable=True, comment="模型版本ID（字段名沿用历史，实为版本行 id）")
     model_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, comment="模型版本ID（模型被删后置空）")
-    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="框架（ULTRALYTICS/PADDLEX 已退场，仅历史数据保留）")
+    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="训练框架")
     source_type: Mapped[str] = mapped_column(String(16), comment="图片来源 dataset/upload")
     source_dataset_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="源数据集ID")
     source_images: Mapped[list | None] = mapped_column(JSONB, nullable=True, comment="上传图片原始URL列表")
@@ -140,7 +140,7 @@ class TrainDeploy(ModelMixin, UserMixin):
     model_id: Mapped[int] = mapped_column(Integer, comment="模型ID")
     model_name: Mapped[str] = mapped_column(String(128), comment="模型名称")
     model_version: Mapped[str] = mapped_column(String(32), comment="模型版本")
-    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="框架（ULTRALYTICS/PADDLEX 已退场，仅历史数据保留）")
+    framework: Mapped[TrainFramework] = mapped_column(SAEnum(TrainFramework), default=TrainFramework.TORKILN, comment="训练框架")
     device: Mapped[str] = mapped_column(String(16), default="0", comment="GPU设备ID或cpu")
     host_port: Mapped[int] = mapped_column(Integer, comment="宿主机端口")
     container_id: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="Docker容器ID")

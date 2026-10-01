@@ -254,25 +254,17 @@ export function enumerateMetricsFromLog(log: any[]): { train: string[]; eval: st
   return { train: [...train].sort(), eval: [...ev].sort() };
 }
 
-// 按 framework / mode 解析主指标：
-// PaddleX det→HMean/Precision/Recall；PaddleX rec→Acc；
-// YOLO 分类→Top1/Top5；其余（YOLO det/seg/obb/pose）→mAP@50/mAP@50:95/Precision/Recall
+// 按任务类型解析主指标：
+// 分类→Top1/Top5；其余（det/seg/obb/pose）→mAP@50/mAP@50:95/Precision/Recall
+//
+// ⚠️ 这里**不再按 framework 分支**。PaddleX 已随退场彻底移除（枚举只剩 TORKILN），
+// 原来那条 `framework === "paddlex"` 的 HMean/Acc 分支永远走不到，留着只会让人
+// 以为那套指标还是活的。rec（OCR 识别）的 Acc 若将来要回来，届时按 mode 加分支。
 export function resolveMainMetricSpec(opts: {
   framework?: string | null;
   mode?: string | null;
   classify?: boolean;
 }): MetricSpecItem[] {
-  const framework = String(opts.framework || "").toLowerCase();
-  const mode = String(opts.mode || "det").toLowerCase();
-  if (framework === "paddlex") {
-    return mode === "rec"
-      ? [{ key: "acc", label: "Acc", color: "#409eff", icon: Aim }]
-      : [
-          { key: "hmean", label: "HMean", color: "#52c41a", icon: StarFilled },
-          { key: "precision", label: "Precision", color: "#409eff", icon: Aim },
-          { key: "recall", label: "Recall", color: "#fa8c16", icon: Search },
-        ];
-  }
   if (opts.classify) {
     return [
       { key: "top1", label: "Top1", color: "#52c41a", icon: Aim },

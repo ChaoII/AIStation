@@ -27,7 +27,7 @@ def test_model_update_persists_status(test_client, auth_headers):
     name = f"pytest_status_{int(time.time())}"
     created = test_client.post(
         "/api/v1/train/model/create",
-        json={"name": name, "framework": "ultralytics"},
+        json={"name": name, "framework": "torchkiln"},
         headers=headers,
     )
     assert created.status_code == 200, created.text

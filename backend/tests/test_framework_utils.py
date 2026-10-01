@@ -4,8 +4,8 @@ from app.plugin.module_train.model import TrainFramework
 
 
 def test_framework_value_from_enum():
-    assert framework_value(TrainFramework.PADDLEX) == "paddlex"
-    assert framework_value(TrainFramework.ULTRALYTICS) == "ultralytics"
+    assert framework_value(TrainFramework.TORKILN) == "torchkiln"
+    assert framework_value(TrainFramework.TORKILN) == "torchkiln"
 
 
 def test_framework_value_from_plain_string():

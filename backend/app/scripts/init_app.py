@@ -247,12 +247,15 @@ CAMERA_GROUP_PARENT_FK = "fk_video_camera_groups_parent_id"
 #: ``trainframework`` 枚举需要保证存在的成员。
 #: SQLAlchemy 的 SAEnum 存的是**成员名**（大写），所以这里是 'TORKILN'。
 #:
-#: ⚠️ 这里**必须**继续给已退场的 PADDLEX / ULTRALYTICS 补齐——它们的执行通路已经
-#: 移除，但库里还留着 92 个 ULTRALYTICS 模型与 37 个历史任务。若把这两个值从 PG
-#: 枚举里去掉，读取那些行会直接报 ``invalid input value for enum``，整个模型列表
-#: 页都会打不开。"代码退场"不等于"数据消失"：枚举值要留着让历史可读，新建入口
-#: 才由 service 层拒绝（见 ``service.py`` 的 ``_TRAINFRAMEWORK_RETIRED``）。
-_TRAINFRAMEWORK_VALUES = ("PADDLEX", "ULTRALYTICS", "TORKILN")
+#: ⚠️ 只列**唯一还在用**的框架。``ULTRALYTICS`` / ``PADDLEX`` 的执行通路早已移除，
+#: 历史数据也已按显式 id 白名单删净、枚举值 ``ALTER TYPE`` 移除（见迁移
+#: ``c7d2e5f8a9b1``），**不要**再补回来——补一个「有枚举值但库里没有行」的值
+#: 没有好处，只会让日后重建枚举时悄悄多出成员（本项目就踩过：
+#: ``PYTORCH_OCR_DET`` / ``PYTORCH_OCR_REC`` 正是这么攒出来的，已一并清掉）。
+#:
+#: 新建入口一律由 service 层拒绝（见 ``retired.ensure_active()``）——枚举只挡得住
+#: 走 ORM 的写入，挡不住请求体里的裸字符串。
+_TRAINFRAMEWORK_VALUES = ("TORKILN",)
 
 
 async def _ensure_trainframework_enum_values() -> None:

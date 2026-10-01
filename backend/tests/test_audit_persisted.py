@@ -8,7 +8,7 @@ def test_model_repo_create_sets_audit_fields(test_client: TestClient, auth_heade
     name = f"audit-{uuid4().hex[:8]}"
     created = test_client.post(
         "/api/v1/train/model/repos",
-        json={"name": name, "framework": "ultralytics"},
+        json={"name": name, "framework": "torchkiln"},
         headers=auth_headers,
     )
     assert created.status_code == 200, created.text

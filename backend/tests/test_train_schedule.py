@@ -11,7 +11,7 @@ from app.plugin.module_train.scheduler import build_scheduled_task_data
 def test_build_scheduled_task_data_has_required_attrs():
     s = SimpleNamespace(
         name="x", dataset_id=1, annotation_task_id=2,
-        framework=TrainFramework.ULTRALYTICS, hyperparams={},
+        framework=TrainFramework.TORKILN, hyperparams={},
     )
     data = build_scheduled_task_data(s)
     for attr in ("name", "dataset_id", "annotation_task_id", "framework", "hyperparams", "base_model_id"):
@@ -19,7 +19,7 @@ def test_build_scheduled_task_data_has_required_attrs():
 
 
 def test_schedule_to_dict_is_json_serializable():
-    s = TrainScheduleModel(name="n", dataset_id=1, framework="ultralytics",
+    s = TrainScheduleModel(name="n", dataset_id=1, framework="torchkiln",
                            hyperparams={}, cron_expr="0 2 * * 0")
     d = _schedule_to_dict(s)
     json.dumps(d)  # 不得抛异常

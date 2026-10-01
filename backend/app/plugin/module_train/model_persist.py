@@ -84,15 +84,12 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
             log.error(f"从 TorchKiln 服务拉取权重失败: {e}")
             return {"repo_id": None, "storage_path": None}
 
-    # 1. 优先从标准输出目录找模型文件
-    #    TorchKiln 存 .pth；ultralytics 的 .pt 分支保留，是为了仍能读回**历史**
-    #    ultralytics 任务的产物（那 37 条任务行还在库里，权重也还在 RustFS）。
+    # 1. 优先从标准输出目录找模型文件。
+    #    只剩 ``.pth``：``.pt``（ultralytics）与 ``.pdparams``（PaddleX）两个分支
+    #    曾只为读回那两家的历史产物而存在，数据已随退场一并删净，留着就是永远走不到
+    #    的死分支，还会让人以为那些权重仍受支持。
     best_path = None
-    extensions = (
-        [".pth"] if framework == "torchkiln"
-        else [".pt"] if framework == "ultralytics"
-        else [".pdparams"]
-    )
+    extensions = [".pth"]
     for ext in extensions:
         candidates = [
             os.path.join(export_dir, "exp", "weights", f"best{ext}"),
@@ -113,9 +110,6 @@ async def export_model(task_id: int, framework: str, export_dir: str, best_metri
             dirs[:] = [d for d in dirs if d != ".models_cache"]
             for f in files:
                 if framework == "torchkiln" and f in ("best_accuracy.pth", "final.pth"):
-                    best_path = os.path.join(root, f)
-                    break
-                if framework == "ultralytics" and f == "best.pt":
                     best_path = os.path.join(root, f)
                     break
             if best_path:

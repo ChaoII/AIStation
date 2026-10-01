@@ -187,7 +187,7 @@ async def _export_paddle_ocr(dataset_id: int, task_id: int, images: list,
         with open(dict_path, "w", encoding="utf-8") as f:
             f.write("\n".join(chars))
         log.warning(
-            "paddlex rec: 未找到官方 ppocrv6_dict.txt，词表退化为数据字符集"
+            "paddleocr rec: 未找到官方 ppocrv6_dict.txt，词表退化为数据字符集"
             f"（{len(chars)} 字），可能不与官方预训练权重匹配"
         )
 
