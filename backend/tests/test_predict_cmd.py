@@ -1,4 +1,11 @@
-"""预测命令、GPU 处理与启动守卫测试。"""
+"""预测的启动守卫测试。
+
+⚠️ 这里曾有一个 ``test_predict_cmd.py`` 名字对、实际零覆盖的教训：该文件 import
+``build_predict_cmd`` 却从没测它，于是命令拼错（照 ``tkiln val`` 的样式拼
+``-o Global.pretrained_model=``）在容器里被 argparse 直接拒绝，长期无人察觉。
+命令构造的测试现在在 TorchKiln 侧 ``tests/test_service_predict_jobs.py``
+（那里才是拼命令的地方）；平台侧只保留**接缝**的测试。
+"""
 
 import asyncio
 from types import SimpleNamespace
@@ -7,14 +14,6 @@ import pytest
 
 from app.plugin.module_train import predict_executor as pe
 from app.plugin.module_train.model import TrainStatus
-from app.plugin.module_train.predict_executor import build_predict_cmd, predict_gpu_id
-
-
-def test_predict_gpu_id():
-    assert predict_gpu_id("cpu") is None
-    assert predict_gpu_id("") is None
-    assert predict_gpu_id(None) is None
-    assert predict_gpu_id("0") == "0"
 
 
 class _FakeResult:

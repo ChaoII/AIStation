@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import os
 import zipfile
 from datetime import datetime
@@ -8,24 +9,30 @@ from sqlalchemy import update
 from app.core.database import async_db_session
 from app.core.logger import log
 
-from .docker_utils import pull_image
+from . import gpu_pool
+from . import tk_job_container as tkjc
+from .docker_utils import stop_container
 from .job_runner import (
     JobCancelled,
-    cancelled,
     cleanup_registry,
     gpu_slot,
     mark_failed,
-    run_and_follow,
-    settle,
+    settle_by_status,
 )
 from .model import TrainFramework, TrainModel, TrainPredict, TrainStatus
 from .paths import work_dir
 from .retired import ensure_active
 from .task_executor import TaskExecutor
+from .torchkiln_client import TorchKilnClient
 from .ws import broadcast_predict_log
 
-#: 自研平台的推理镜像（镜像内已装好 torch+CUDA 与 tkiln CLI）
+#: 自研平台的推理镜像（保留为兜底；实际用 settings.TORKILN_JOB_IMAGE）
 DOCKER_IMAGE = "torchkiln:0.1.0"
+
+#: 预测作业的 TorchKiln job_id 存在 hyperparams 里的键。
+#: 与训练/评估用**同一个**键名（``__tk_job_id``）：它们指的是同一种东西——
+#: 一个 TorchKiln 作业的引用。用两个键名会让「按 job_id 恢复」的逻辑要判断两次。
+JOB_ID_KEY = "__tk_job_id"
 
 # 后台任务持有集合：防止 asyncio.create_task 返回的 Task 在进程退出时被 cancel
 # 而留下半成品；任务完成/取消后自动丢弃引用。
@@ -49,65 +56,34 @@ def _cleanup_export_dir(export_dir: str | None) -> None:
     shutil.rmtree(export_dir, ignore_errors=True)
 
 
-def predict_gpu_id(device) -> str | None:
-    """GPU 设备 id；cpu/空 → None（不请求 GPU）。"""
-    if device is None:
-        return None
-    d = str(device).strip().lower()
-    if d in ("", "cpu"):
-        return None
-    return str(device)
+def build_predict_spec(
+    config_path: str,
+    weights_path: str,
+    input_dir: str,
+    params: dict | None = None,
+    resources: dict | None = None,
+) -> dict:
+    """组装 TorchKiln 预测作业的 ``JobSpec``。
 
+    ⚠️ 三个路径都必须是**容器内**路径（作业进程看不到宿主机），由调用方用
+    :func:`tk_job_container.container_path` 换算。
 
-def build_predict_cmd(framework: str, model_filename: str, hp: dict) -> list[str]:
-    """构建 ``tkiln predict`` 命令。
-
-    只剩自研平台一条通路（Ultralytics / PaddleX 已退场，由 ``ensure_active``
-    在入口挡住）。保留 ``framework`` 形参是为了让调用点不必为退场再改一轮签名，
-    这里的断言顺带把"传了已退场框架"这类错误在开发期就暴露出来。
+    ⚠️ 用 ``input_dir`` 而不是 ``dataset.data_dir``：预测不吃 YOLO 清单，
+    它要的是**一个装满图片的目录**。放混的话 TorchKiln 会去找 val.txt 然后
+    报「找不到清单」——与真实原因（这里根本没清单）无关的错误信息。
     """
-    from .framework_utils import framework_value
-
-    fw = framework_value(framework)
-    if fw != "torchkiln":
-        raise ValueError(
-            f"build_predict_cmd 只支持 torchkiln，收到 {fw!r}（已退场框架）")
-
-    conf = hp.get("conf", 0.25)
-    iou = hp.get("iou", 0.45)
-    device = hp.get("device", "0")
-    # 配置由训练任务带下来（model 名）
-    model_cfg = hp.get("tk_config") or hp.get("model") or ""
-    if not model_cfg:
-        # 兜底：用训练任务的 hyperparams.model（调用方应透传）
-        model_cfg = hp.get("tk_model") or ""
-    # ⚠️ ``tkiln predict`` 用的是 **argparse 风格**，不是 ``tkiln val`` 那套
-    #    ``-o Global.xxx=`` 配置覆盖。契约见 ``tools/infer/predict_yolo.py``：
-    #        -c/--config（必填） --weights（必填） --input（必填）
-    #        --output（默认 output/yolo_result.jpg） --device
-    #        -o/--opt（可选，nargs="*"）
-    #
-    #    原实现照着 val 的样子拼 ``-o Global.pretrained_model=...``，容器里直接
-    #    argparse 报「the following arguments are required: --weights, --input」。
-    #    这条链路自接入 TorchKiln 起就没跑通过（与同文件里另外两个 bug 同源：
-    #    都没有 e2e 覆盖）。部署侧的 ``tkiln serve`` 一直是对的，可作对照。
-    cmd = [
-        "tkiln", "predict",
-        "-c", str(model_cfg),
-        "--weights", f"/model/{model_filename}",
-        # /data 挂的是**整个数据集目录**，不是单张图
-        "--input", "/data",
-        # 目录输入时 --output 语义是**输出目录**（TorchKiln 侧 predict_yolo 遍历
-        # 目录、按原文件名写出结果图）。模型只加载一次，不会按图起进程。
-        "--output", "/output",
-        "--device", "cpu" if str(device).strip().lower() in ("", "cpu") else "cuda:0",
-    ]
-    # conf / iou 是后处理阈值，imgsz 走配置的 image_size；统一用 -o 覆盖
-    # （tkiln 的覆盖机制）。YAML 里没有的键 TorchKiln 会 warning 后照加，
-    # 不影响运行——但那三行 warning 会混进 error_log，故只传确有意义的项。
-    opts = [f"Global.conf={conf}", f"Global.iou={iou}"]
-    cmd += ["-o", *opts]
-    return cmd
+    spec: dict = {
+        "spec_version": "1.0",
+        "framework": "torchkiln",
+        "kind": "predict",
+        "config_path": config_path,
+        "weights_path": weights_path,
+        "input_dir": input_dir,
+        "params": dict(params or {}),
+    }
+    if resources:
+        spec["resources"] = resources
+    return spec
 
 
 def collect_result_images(output_dir: str) -> list[tuple[str, str]]:
@@ -223,7 +199,18 @@ class PredictExecutor(TaskExecutor):
 
     @classmethod
     async def _execute(cls, predict_id: int):
-        container_id = None
+        """跑一次预测：起 job 容器 -> HTTP 提交作业 -> 收集结果图 -> 收尾。
+
+        与训练、评估同形。三条链路共用 TorchKiln 的作业契约，所以排队、幂等、
+        日志、终态判定、产物发现全都不需要各自实现一遍——此前预测是唯一还留在
+        「起一次性容器跑 CLI」上的链路，结果它的结果收集逻辑曾与评估漂移过
+        （「找到文件后反而只去看 exp/」），且静默返回空。
+
+        结果图的落点变了：不再是容器内 ``/output`` 再拷回来，而是直接写在
+        **作业的 output_dir**（服务把 ``TKILN_DATA_ROOT`` 指到挂载点），
+        宿主上直接可读——少一次容器内外拷贝。
+        """
+        container = None
         export_dir = None
         try:
             async with async_db_session() as db:
@@ -243,22 +230,18 @@ class PredictExecutor(TaskExecutor):
             # 报出与真实原因毫无关系的错。
             ensure_active(framework, action="预测")
 
-            docker_image = DOCKER_IMAGE
-
             export_dir = work_dir("predict_output", predict_id)
             source_dir = os.path.join(export_dir, "source")
-            output_dir = os.path.join(export_dir, "output")
             model_dir = os.path.join(export_dir, "model")
             os.makedirs(source_dir, exist_ok=True)
-            os.makedirs(output_dir, exist_ok=True)
             os.makedirs(model_dir, exist_ok=True)
 
-            # 超参需在数据导出前取得，供 mode/device 使用
+            # 超参需在数据导出前取得，供 spec 组装使用
             hp = pred.hyperparams or {}
-            device = hp.get("device", "0")
 
-            # Prepare source images
+            # ---- 准备待推理图片 ----
             from app.utils.s3_client import s3_client
+
             if pred.source_type == "dataset":
                 await broadcast_predict_log(predict_id, "[predict] exporting dataset images...")
                 from .exporter import YOLO_LAYOUT, prepare_training_data_for_task
@@ -272,7 +255,7 @@ class PredictExecutor(TaskExecutor):
                     pred.source_dataset_id, predict_id, YOLO_LAYOUT, source_dir
                 )
                 # Remove label files and yaml, keep only images
-                for root, _, files in os.walk(source_dir):
+                for root, _dirs, files in os.walk(source_dir):
                     for f in files:
                         if f.endswith(".txt") or f == "dataset.yaml":
                             os.remove(os.path.join(root, f))
@@ -284,70 +267,94 @@ class PredictExecutor(TaskExecutor):
                         filename = img_key.rsplit("/", 1)[-1]
                         with open(os.path.join(source_dir, filename), "wb") as f:
                             f.write(data.read())
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         log.warning(f"skip image {img_key}: {e}")
 
-            # Download model（统一解析：/export/ 导出产物自动回溯原始 best.pt）
+            # ---- 取权重（统一解析：/export/ 导出产物自动回溯原始 best.pt）----
             from .service import TrainService
+
             # model_id 是版本行 id（model_repo_id 是仓库 id），不可用仓库 id 冒充版本 id
             storage_path = await TrainService._resolve_model_storage(pred.model_id)
-
-            await broadcast_predict_log(predict_id, f"[predict] downloading model {storage_path}...")
+            await broadcast_predict_log(
+                predict_id, f"[predict] downloading model {storage_path}...")
             model_data = s3_client.download_fileobj(storage_path)
             model_filename = storage_path.rsplit("/", 1)[-1]
             model_local_path = os.path.join(model_dir, model_filename)
             with open(model_local_path, "wb") as f:
                 f.write(model_data.read())
 
-            # 自研平台的推理镜像（镜像内已装好 torch+CUDA 与 tkiln CLI）
-            docker_image = hp.get("docker_image") or "torchkiln:0.1.0"
-
-            # 配置名回查训练任务：预测必须与训练用同一套配置
+            # ---- 配置名回查训练任务：预测必须与训练用同一套配置 ----
             tk_cfg = hp.get("tk_config") or await resolve_predict_tk_config(pred.model_id)
             if not tk_cfg:
                 raise Exception(
                     "TorchKiln 预测找不到产出该模型的训练任务，无法确定配置名")
-            # ⚠️ 上面拿到的是**模型名**（如 yolo11-seg），而 `tkiln predict -c`
-            # 只认 configs/ 下的**配置路径**。借常驻元数据服务换一次，否则容器里
-            # 会报「省略 <task> 时必须用 -c <config> 指定配置」。
-            from .torchkiln_client import TorchKilnClient
+            # ⚠️ 拿到的是**模型名**（如 yolo11-seg），而作业的 ``config_path`` 只认
+            # configs/ 下的**配置路径**。借常驻元数据服务换一次。
             async with TorchKilnClient() as _tk:
-                tk_cfg = await _tk.resolve_config_path(tk_cfg)
-            hp = {**hp, "tk_config": tk_cfg, "model": tk_cfg}
+                tk_cfg_path = await _tk.resolve_config_path(tk_cfg)
 
-            cmd = build_predict_cmd(framework.value, model_filename, hp)
+            spec = build_predict_spec(
+                config_path=tk_cfg_path,
+                weights_path=tkjc.container_path("model", model_filename),
+                input_dir=tkjc.container_path("source"),
+                params={
+                    "Global.conf": float(hp.get("conf", 0.25)),
+                    "Global.iou": float(hp.get("iou", 0.45)),
+                    "Global.imgsz": int(hp.get("imgsz", 640)),
+                },
+                resources={"gpu": 1,
+                           "gpu_memory_gb": (hp.get("resources") or {}).get(
+                               "gpu_memory_gb")},
+            )
 
-            await broadcast_predict_log(predict_id, f"[predict] pulling image {docker_image}...")
-            await pull_image(docker_image)
-            # GPU 申请 + 「起容器→跟日志→等退出码」骨架已抽到 job_runner，与
-            # eval_scheduler 共用。见 job_runner 模块 docstring：两处独立演进曾导致
-            # 结果收集逻辑漂移（这里曾写成「找到文件后反而只去看 exp/」）。
+            # ---- 起 job 容器 -> 提交作业 -> 等终态 ----
             async with gpu_slot(cls, predict_id, hp) as lease:
-                outcome = await run_and_follow(
-                    cls, predict_id,
-                    image=docker_image, cmd=cmd,
-                    volumes={
-                        source_dir: {"bind": "/data", "mode": "ro"},
-                        model_dir: {"bind": "/model", "mode": "ro"},
-                        output_dir: {"bind": "/output", "mode": "rw"},
-                    },
-                    gpu_id=lease.device_ids or predict_gpu_id(device),
-                    log_path=os.path.join(export_dir, "predict.log"),
-                    broadcast=lambda line: broadcast_predict_log(predict_id, line),
-                )
-                container_id = outcome.container_id
+                container = await tkjc.start_job_container(
+                    lease, export_dir, task_kind=cls.task_kind, task_id=predict_id)
+                entry = cls._registry.get(predict_id) or {}
+                entry.update({"container_id": container.id})
+                cls._registry[predict_id] = entry
 
-            result_images = []
+                await tkjc.wait_ready(
+                    lease, broadcast=lambda ln: broadcast_predict_log(predict_id, ln))
+
+                async with TorchKilnClient(base_url=lease.base_url) as client:
+                    job_id = await cls._submit(client, predict_id, spec)
+                    logs_task = await tkjc.stream_logs(
+                        client, job_id, "predict",
+                        lambda ln: broadcast_predict_log(predict_id, ln))
+                    try:
+                        final = await tkjc.await_terminal(
+                            client, job_id, "predict",
+                            is_cancelled=lambda: bool(
+                                cls._registry.get(predict_id, {}).get("cancel")),
+                            broadcast=lambda ln: broadcast_predict_log(predict_id, ln))
+                    finally:
+                        logs_task.cancel()
+                        await asyncio.gather(logs_task, return_exceptions=True)
+
+                    metrics = await cls._read_metrics(client, job_id)
+                    info = await client.get_job(job_id, kind="predict")
+                    # 作业的 output_dir 在宿主上就是 <export_dir>/jobs/<job_id>
+                    job_dir = os.path.join(
+                        export_dir, "jobs", job_id)
+                    results_dir = os.path.join(job_dir, "predict_results")
+
+            status = str(final.get("status"))
+            err = final.get("error") or (info.get("error") if info else "") or ""
+            if status != "succeeded" and not err:
+                err = (f"TorchKiln 预测作业失败"
+                       f"（exit_reason={final.get('exit_reason')}, "
+                       f"exit_code={final.get('exit_code')}）")
+
+            # ---- 收集结果图 -> 上传 RustFS -> 打包 ----
+            # 只在成功且未取消时收集：否则会白白把一批图传上对象存储，
+            # 而状态最终会被写成 CANCELLED/FAILED。
+            was_cancelled = bool(cls._registry.get(predict_id, {}).get("cancel"))
+            result_images: list[str] = []
             result_zip_path = None
-
-            # 结果收集/上传/打包要在 mark SUCCESS **之前**完成，所以先算出
-            # success_fields 再交给 settle 统一收尾。取消或失败时不收集——否则会
-            # 白白把一批图传上 RustFS，而状态最终会被写成 CANCELLED/FAILED。
-            was_cancelled = cancelled(cls, predict_id)
-            success_fields: dict = {}
-            if not was_cancelled and outcome.exit_code == 0:
-                result_files = collect_result_images(output_dir)
-
+            if status == "succeeded" and not was_cancelled:
+                result_files = collect_result_images(results_dir)
                 if result_files:
                     for rel, img_path in result_files:
                         rustfs_key = f"train/predict/{predict_id}/{rel}"
@@ -355,34 +362,42 @@ class PredictExecutor(TaskExecutor):
                             s3_client.upload_fileobj(img_f, rustfs_key)
                         result_images.append(rustfs_key)
 
-                    # Create ZIP（相对 output_dir 保留层级，便于对照输入图定位）
+                    # 打包（相对 results_dir 保留层级，便于对照输入图定位）
                     zip_path = os.path.join(export_dir, "results.zip")
                     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                        for _rel, fp in result_files:
-                            zf.write(fp, _rel)
+                        for rel, fp in result_files:
+                            zf.write(fp, rel)
                     zip_rustfs_key = f"train/predict/{predict_id}/results.zip"
                     with open(zip_path, "rb") as zf:
                         s3_client.upload_fileobj(zf, zip_rustfs_key)
                     result_zip_path = zip_rustfs_key
 
-                success_fields = {
+                if metrics:
+                    await broadcast_predict_log(
+                        predict_id,
+                        f"[predict] 完成：{metrics.get('images_done')}/"
+                        f"{metrics.get('images_total')} 张，"
+                        f"耗时 {metrics.get('elapsed_sec')}s，"
+                        f"输出 {metrics.get('output_dir')}")
+
+            # ⚠️ success_fields 里**只能有 TrainPredict 真实存在的列**。
+            #   它没有 metrics / metrics_log / last_metrics（那是训练与评估的列），
+            #   写进去会让 ``_mark_status`` 抛 ``Unconsumed column names`` ——
+            #   而那发生在**收尾**阶段，结果是「结果图都齐了、任务却判失败」。
+            #   预测的指标摘要改为写进日志（上面已广播）。
+            await settle_by_status(
+                cls, predict_id,
+                status=status, error=err,
+                success_fields={
                     "result_images": result_images or None,
                     "result_zip_path": result_zip_path,
-                }
-
-            await settle(
-                cls, predict_id,
-                was_cancelled=was_cancelled,
-                container_id=container_id,
-                exit_code=outcome.exit_code,
-                error_tail=outcome.error_tail,
+                },
                 failure_message="predict failed",
-                success_fields=success_fields,
             )
 
         except JobCancelled:
             # 等待 GPU 期间被取消：容器从未起来，不能记失败也不能走收尾。
-            # 状态留给 stop_prediction 置 CANCELLED（与拆分前的 return 行为一致）。
+            # 状态留给 stop_prediction 置 CANCELLED。
             log.info(f"[predict] 任务 {predict_id} 在等待 GPU 期间被取消，未启动容器")
             return
 
@@ -391,4 +406,63 @@ class PredictExecutor(TaskExecutor):
             # 失败后清理本次导出的临时输出目录（保留日志文件供排查）
             _cleanup_export_dir(export_dir)
         finally:
-            await cleanup_registry(cls, predict_id, container_id)
+            # 无论成败都要收摊：容器停掉、GPU 与端口归还，否则单卡机器会被
+            # 一次失败的任务永久占死。
+            if container is not None:
+                with contextlib.suppress(Exception):
+                    await stop_container(container.id)
+            await gpu_pool.release(predict_id)
+            await cleanup_registry(cls, predict_id, None)
+
+    @classmethod
+    async def _submit(cls, client: TorchKilnClient, predict_id: int, spec: dict) -> str:
+        """提交预测作业。幂等键按预测 id 生成，重试/重启不会重复排队。"""
+        created = await client.submit_predict_job(
+            spec, idempotency_key=f"aistation-predict-{predict_id}")
+        job_id = created["job_id"]
+        await cls._remember_job_id(predict_id, job_id)
+        await broadcast_predict_log(
+            predict_id, f"[predict] 作业已受理 {job_id}（幂等命中="
+                        f"{created.get('idempotent_hit')}）")
+        return job_id
+
+    @classmethod
+    async def _remember_job_id(cls, predict_id: int, job_id: str) -> None:
+        """把 job_id 记进 hyperparams，供重启后接管而不是重跑。
+
+        与训练/评估用同一个键名 ``__tk_job_id``：它们指的是同一种东西
+        （一个 TorchKiln 作业的引用）。用两个键名会让「按 job_id 恢复」的
+        逻辑要判断两次。
+        """
+        try:
+            async with async_db_session.begin() as db:
+                row = await db.get(TrainPredict, predict_id)
+                if row is None:
+                    return
+                h = dict(row.hyperparams or {})
+                h[JOB_ID_KEY] = job_id
+                row.hyperparams = h
+        except Exception as e:  # noqa: BLE001
+            # 记不住只影响重启后的接管，不该让预测本身失败
+            log.warning(f"[predict] 任务 {predict_id} 的 job_id 记录失败: {e}")
+
+    @classmethod
+    async def _read_metrics(cls, client: TorchKilnClient, job_id: str) -> dict | None:
+        """从指标契约读预测结果。
+
+        契约（``tools/infer/predict_yolo.py`` 写）：一条 ``predict`` 事件
+        （总张数 / 成功张数 / 耗时 / 输出目录），外加一条 ``end``。
+
+        ⚠️ 这里**没有**精度指标——预测没有 ground truth。TorchKiln 那边刻意
+        只报计数与耗时，所以这一段也不会出现 mAP 字段；哪天出现了，说明
+        有人往契约里塞了编造的数据。
+        """
+        events = await client.metrics(job_id, offset=-1, limit=1000, kind="predict")
+        out: dict = {}
+        for ev in events:
+            if ev.get("type") != "predict":
+                continue
+            for k in ("images_total", "images_done", "elapsed_sec", "output_dir"):
+                if ev.get(k) is not None:
+                    out[k] = ev[k]
+        return out or None

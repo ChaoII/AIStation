@@ -148,17 +148,46 @@ def test_deleted_builders_stay_deleted(filename, forbidden):
 
 
 def test_yolo_ultralytics_predict_command_is_gone():
-    """``yolo predict`` 整条通路必须消失，且 build_predict_cmd 对退场框架主动报错。"""
-    from app.plugin.module_train.predict_executor import build_predict_cmd
+    """``yolo predict`` 整条通路必须消失。
 
-    with pytest.raises(ValueError, match="torchkiln"):
-        build_predict_cmd("ultralytics", "best.pt", {})
-    with pytest.raises(ValueError, match="torchkiln"):
-        build_predict_cmd("paddlex", "best_accuracy.pdparams", {})
+    ⚠️ 断言的是**符号不存在**，而不是「调用时报错」——更强也更准确：预测改走
+    HTTP 作业通路后，命令行由 TorchKiln 服务侧的 ``build_predict_argv`` 拼，
+    平台侧不再有任何命令构造入口。这条退场不变量就是它的守卫。
 
-    cmd = build_predict_cmd("torchkiln", "best_accuracy.pth", {"tk_config": "configs/det/x.yml"})
-    assert cmd[0] == "tkiln" and cmd[1] == "predict"
-    assert not any("yolo" == c for c in cmd), "命令里还混着 yolo"
+    退场框架的拦截改由 ``_execute`` 里的 ``ensure_active`` 承担（另有一条测试）。
+    """
+    import app.plugin.module_train.predict_executor as pe
+
+    for gone in ("build_predict_cmd", "predict_gpu_id"):
+        assert not hasattr(pe, gone), (
+            f"{gone} 还在 predict_executor 里——预测已改走 HTTP 作业通路，"
+            f"命令由 TorchKiln 服务侧拼，平台侧留一份必然漂移")
+
+    # 也不能以「换个名字/私有名」的形式把命令拼装藏回来。
+    # ⚠️ 用 **AST** 判定而不是子串匹配：docstring 里出现 ``tkiln predict`` 是
+    #    正常的（解释契约），子串匹配会把文档也判成「还在拼命令」。
+    tree = ast.parse(pathlib.Path(pe.__file__).read_text(encoding="utf-8"))
+    cmd_literals = [
+        ast.unparse(n)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.List) and n.elts
+        and isinstance(n.elts[0], ast.Constant) and n.elts[0].value == "tkiln"
+    ]
+    assert not cmd_literals, f"predict_executor 里还在拼 tkiln 命令: {cmd_literals}"
+
+
+def test_predict_retired_framework_is_refused_by_ensure_active():
+    """退场框架的预测必须在**入口**被挡住并说明原因。"""
+    from app.plugin.module_train.retired import ensure_active
+
+    for fw in ("ULTRALYTICS", "PADDLEX", "ultralytics", "paddlex"):
+        with pytest.raises(Exception) as ei:
+            ensure_active(fw, action="预测")
+        msg = str(ei.value)
+        assert "已" in msg, f"退场原因要写进报错: {msg}"
+
+    # 唯一在用的框架必须放行
+    ensure_active("TORKILN", action="预测")
 
 
 # --------------------------------------- 不变量 2：历史数据必须仍可读
@@ -237,8 +266,8 @@ def test_create_entrypoints_guard_retired_framework():
 
 def test_service_guards_are_inside_create_methods():
     """守卫必须在 create_* 方法体内，而不是文件里的注释或 import 行。"""
-    import app.plugin.module_train.service as service_mod
     import app.plugin.module_train.schedule_service as sched_mod
+    import app.plugin.module_train.service as service_mod
 
     for cls, names in (
         (service_mod.TrainService, ("create_task", "create_eval", "create_predict")),

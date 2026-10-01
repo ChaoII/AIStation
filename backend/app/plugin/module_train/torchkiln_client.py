@@ -251,6 +251,30 @@ class TorchKilnClient:
         return await self._post(
             "/api/v1/eval/jobs", spec, headers=headers, what="submit_eval_job")
 
+    async def submit_predict_job(self, spec: dict, idempotency_key: str,
+                              user_id: str | None = None,
+                              tenant: str | None = None) -> dict:
+        """提交预测作业（HTTP 通路，与训练/评估同形）。
+
+        ``spec`` 用 ``input_dir``（待推理图片目录）而不是 ``dataset.data_dir``：
+        预测不吃 YOLO 清单，放混的话 TorchKiln 会去找 ``val.txt`` 并报
+        「找不到清单」——与真实原因（这里根本没清单）无关的错误信息。
+
+        结果图的落点由服务端决定（作业 ``output_dir/predict_results/``），
+        因为 ``TKILN_DATA_ROOT`` 指向共享卷挂载点，宿主直接可读——省掉一次
+        容器内外拷贝。读它用 :meth:`artifacts` 或直接看目录。
+
+        指标事件只有 ``images_total`` / ``images_done`` / ``elapsed_sec``，
+        **没有精度指标**——预测没有 ground truth。
+        """
+        headers = {"Idempotency-Key": idempotency_key}
+        if user_id:
+            headers["X-User-Id"] = str(user_id)
+        if tenant:
+            headers["X-Tenant"] = str(tenant)
+        return await self._post(
+            "/api/v1/predict/jobs", spec, headers=headers, what="submit_predict_job")
+
     async def get_job(self, job_id: str, kind: str = "train") -> dict:
         return await self._get(_jobs_path(kind, job_id), what="get_job")
 

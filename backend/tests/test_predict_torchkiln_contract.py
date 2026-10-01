@@ -16,6 +16,10 @@ bug**——这条链路自接入 TorchKiln 起就没跑通过，只是此前没�
 
 以及两个「静默丢结果 / 同名覆盖」的结果收集坑（见 ``collect_result_images``）。
 
+2026-10 追加：预测也改走了 HTTP 作业通路，因此**删除了** ``build_predict_cmd``
+（命令改由 TorchKiln 服务侧的 ``build_predict_argv`` 拼）。下面 2、3 两组测试
+对应当时暴露的三个 bug，仍然有效；命令形状的断言已迁到 TorchKiln 侧。
+
 这里把契约钉住，防止再漂回去。真实链路验证靠 ``%TEMP%\\e2e_jobrunner.py``。
 """
 
@@ -26,86 +30,10 @@ import pytest
 
 from app.plugin.module_train import predict_executor as pe
 from app.plugin.module_train.predict_executor import (
-    build_predict_cmd,
+    build_predict_spec,
     collect_result_images,
     resolve_predict_tk_config,
 )
-
-# ---------------------------------------------------------------------------
-# 1. 命令形状：argparse 风格，不是 -o Global.xxx=
-# ---------------------------------------------------------------------------
-
-
-def test_predict_cmd_uses_argparse_form():
-    """``tkiln predict`` 吃 ``--weights``/``--input``/``--output``，不是 ``-o``。"""
-    cmd = build_predict_cmd("torchkiln", "best_accuracy.pth",
-                            {"tk_config": "configs/yolo/yolo11-seg.yml"})
-
-    assert cmd[:2] == ["tkiln", "predict"]
-    for flag, value in (("--weights", "/model/best_accuracy.pth"),
-                        ("--input", "/data"),
-                        ("--output", "/output")):
-        assert flag in cmd, f"缺少 {flag}"
-        assert cmd[cmd.index(flag) + 1] == value
-
-
-def test_predict_cmd_does_not_use_val_style_overrides():
-    """不能出现 ``Global.pretrained_model=`` ——那是 ``tkiln val`` 的写法。
-
-    这是修 bug #1 的核心断言：之前正是拼了这两个键，容器里 argparse 直接拒绝。
-    """
-    cmd = build_predict_cmd("torchkiln", "w.pth", {"tk_config": "c.yml"})
-    joined = " ".join(cmd)
-
-    assert "Global.pretrained_model" not in joined
-    assert "Global.infer_dir" not in joined
-    assert "Global.save_model_dir" not in joined
-
-
-def test_predict_cmd_output_is_directory_not_file():
-    """``/data`` 挂的是整个数据集目录，所以 ``--output`` 必须是**目录**。
-
-    TorchKiln 侧按输入相对路径写结果图；写成文件路径会让它把 ``/output`` 当普通
-    文件，目录挂载点上直接失败。
-    """
-    cmd = build_predict_cmd("torchkiln", "w.pth", {"tk_config": "c.yml"})
-    out = cmd[cmd.index("--output") + 1]
-    assert out == "/output"
-    assert not out.lower().endswith((".jpg", ".jpeg", ".png"))
-
-
-def test_predict_cmd_passes_config_name():
-    """``-c`` 是 TorchKiln 的配置名（configs/... 的 model_name），由训练任务带下来。"""
-    cmd = build_predict_cmd("torchkiln", "w.pth",
-                            {"tk_config": "configs/yolo/yolo11-seg.yml"})
-    assert cmd[cmd.index("-c") + 1] == "configs/yolo/yolo11-seg.yml"
-
-
-def test_predict_cmd_device_maps_cpu():
-    """``--device`` 用 TorchKiln 的写法；cpu 要如实传，不能被折成 cuda:0。"""
-    cmd = build_predict_cmd("torchkiln", "w.pth",
-                            {"tk_config": "c.yml", "device": "cpu"})
-    assert cmd[cmd.index("--device") + 1] == "cpu"
-
-    cmd = build_predict_cmd("torchkiln", "w.pth",
-                            {"tk_config": "c.yml", "device": "0"})
-    assert cmd[cmd.index("--device") + 1] == "cuda:0"
-
-
-def test_predict_cmd_conf_iou_via_opt():
-    """conf / iou 是后处理阈值，走 tkiln 的 ``-o`` 覆盖机制。"""
-    cmd = build_predict_cmd("torchkiln", "w.pth",
-                            {"tk_config": "c.yml", "conf": 0.4, "iou": 0.6})
-    joined = " ".join(cmd)
-    assert "Global.conf=0.4" in joined
-    assert "Global.iou=0.6" in joined
-
-
-def test_predict_cmd_rejects_retired_framework():
-    """已退场框架必须在这里就报错，而不是拉错镜像。"""
-    with pytest.raises(ValueError):
-        build_predict_cmd("ultralytics", "best.pt", {"tk_config": "c.yml"})
-
 
 # ---------------------------------------------------------------------------
 # 2. 数据集导出必须传布局名 YOLO_LAYOUT，不能传 framework.value
@@ -337,3 +265,140 @@ def _run(coro):
     import asyncio
 
     return asyncio.run(coro)
+
+
+# ---------------------------------------------------------------------------
+# 5. 作业 spec 组装（HTTP 通路的接缝）
+# ---------------------------------------------------------------------------
+
+
+def test_predict_spec_shape():
+    spec = build_predict_spec(
+        config_path="configs/yolo/yolo11-seg.yml",
+        weights_path="/workspace/model/best_accuracy.pth",
+        input_dir="/workspace/source",
+        params={"Global.conf": 0.25},
+        resources={"gpu": 1, "gpu_memory_gb": 6},
+    )
+    assert spec["kind"] == "predict"
+    assert spec["config_path"] == "configs/yolo/yolo11-seg.yml"
+    assert spec["weights_path"] == "/workspace/model/best_accuracy.pth"
+    assert spec["input_dir"] == "/workspace/source"
+    assert spec["params"] == {"Global.conf": 0.25}
+    assert spec["resources"] == {"gpu": 1, "gpu_memory_gb": 6}
+
+
+def test_predict_spec_uses_input_dir_not_dataset():
+    """⚠️ 关键区分：预测用 ``input_dir``，**不是** ``dataset.data_dir``。
+
+    预测不吃 YOLO 清单。放混的话 TorchKiln 会去找 ``val.txt`` 并报「找不到
+    清单」——与真实原因（这里根本没清单）完全无关的错误信息。
+    """
+    spec = build_predict_spec("c.yml", "/w/m/b.pth", "/w/source")
+    assert "input_dir" in spec
+    assert "dataset" not in spec
+
+
+def test_predict_spec_omits_resources_when_absent():
+    assert "resources" not in build_predict_spec("c.yml", "/w/m/b.pth", "/w/source")
+
+
+def test_predict_spec_omits_params_when_absent():
+    assert build_predict_spec("c.yml", "/w/m/b.pth", "/w/source")["params"] == {}
+
+
+def test_predict_spec_paths_are_posix():
+    """路径不能带反斜杠——平台在 Windows 上而容器是 Linux。"""
+    from app.plugin.module_train import tk_job_container as tkjc
+
+    spec = build_predict_spec(
+        "c.yml",
+        tkjc.container_path("model", "best.pth"),
+        tkjc.container_path("source"),
+    )
+    blob = f"{spec['weights_path']} {spec['input_dir']}"
+    assert "\\" not in blob, f"路径里有反斜杠: {blob}"
+
+
+# ---------------------------------------------------------------------------
+# 6. 指标契约读取
+# ---------------------------------------------------------------------------
+
+
+class _FakePredictClient:
+    """只实现 ``metrics()``——``_read_metrics`` 只需要这一个方法。"""
+
+    def __init__(self, events):
+        self._events = events
+        self.kwargs = None
+
+    async def metrics(self, job_id, offset=-1, limit=5000, kind="train"):
+        self.kwargs = {"offset": offset, "limit": limit, "kind": kind}
+        return list(self._events)
+
+
+def _read(events):
+    import asyncio
+
+    from app.plugin.module_train.predict_executor import PredictExecutor
+
+    c = _FakePredictClient(events)
+    return asyncio.run(PredictExecutor._read_metrics(c, "job_x")), c
+
+
+def test_read_metrics_picks_counters():
+    got, _c = _read([
+        {"type": "predict", "seq": 0, "images_total": 19, "images_done": 19,
+         "elapsed_sec": 44.976, "output_dir": "/workspace/jobs/job_1/predict_results"},
+        {"type": "end", "seq": 1, "exit_reason": "finished"},
+    ])
+    assert got["images_total"] == 19
+    assert got["images_done"] == 19
+    assert got["elapsed_sec"] == 44.976
+    assert got["output_dir"].endswith("predict_results")
+
+
+def test_read_metrics_has_no_accuracy_metrics():
+    """⚠️ 预测**没有** ground truth，契约里不该出现精度指标。
+
+    哪天这里出现 mAP，说明有人往契约里塞了编造的数据——因为页面上看起来
+    「预测效果 0.87」会让人以为模型真的有那么准。
+    """
+    got, _c = _read([
+        {"type": "predict", "seq": 0, "images_total": 3, "images_done": 3},
+    ])
+    for k in got:
+        assert "mAP" not in k and "map" not in k.lower()
+        assert k in ("images_total", "images_done", "elapsed_sec", "output_dir")
+
+
+def test_read_metrics_ignores_end_event():
+    got, _c = _read([
+        {"type": "predict", "seq": 0, "images_done": 5},
+        {"type": "end", "seq": 1, "exit_reason": "finished", "elapsed_sec": 1.0},
+    ])
+    assert got == {"images_done": 5}
+
+
+def test_read_metrics_none_when_no_predict_event():
+    """没有 predict 事件 → None。上层据此不上传任何结果。"""
+    assert _read([{"type": "end", "seq": 0, "exit_reason": "finished"}])[0] is None
+
+
+def test_read_metrics_none_on_empty():
+    assert _read([])[0] is None
+
+
+def test_read_metrics_uses_predict_namespace():
+    """必须带 ``kind="predict"``——job_id 全局唯一，查错命名空间不会 404，
+    只会安静地拿到另一个作业的信息。"""
+    _got, c = _read([])
+    assert c.kwargs["kind"] == "predict"
+
+
+def test_read_metrics_skips_none_values():
+    got, _c = _read([
+        {"type": "predict", "seq": 0, "images_total": None, "images_done": 7},
+    ])
+    assert "images_total" not in got
+    assert got["images_done"] == 7
