@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.plugin.module_train import exporter
 from app.plugin.module_train.exporter import _export_core, _export_yolo_cls
+from app.plugin.module_train.exporters import dispatch
 
 
 def test_export_yolo_cls_accepts_multi_label_param():
@@ -72,10 +73,14 @@ def _run_export(tmp_path, task_type, classification_mode):
     ann_task = _make_ann_task(task_type, classification_mode)
     session = _FakeDbSession(_FakeSession(images, ann_task))
 
+    # ⚠️ 补丁必须打在 **dispatch**（`_export_core` 所在模块）上，不是 exporter 转发层。
+    # `_export_core` 是按自己模块的全局去查找 `_export_yolo` / `async_db_session` 的，
+    # 打在转发层的别名上不会生效——而 `patch.object` 会在属性不存在时直接报
+    # AttributeError，于是错误信息指向 exporter，掩盖真正的目标模块。
     with (
-        patch.object(exporter, "async_db_session", return_value=session),
-        patch.object(exporter, "_export_yolo_cls", new=AsyncMock()) as yolo_cls,
-        patch.object(exporter, "_export_yolo", new=AsyncMock()) as yolo,
+        patch.object(dispatch, "async_db_session", return_value=session),
+        patch.object(dispatch, "_export_yolo_cls", new=AsyncMock()) as yolo_cls,
+        patch.object(dispatch, "_export_yolo", new=AsyncMock()) as yolo,
     ):
         asyncio.run(exporter._export_core(1, 1, "ultralytics", str(tmp_path / "out"), annotation_task_id=7))
 

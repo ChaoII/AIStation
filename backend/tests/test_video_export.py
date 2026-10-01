@@ -17,8 +17,8 @@ from app.api.v1.module_annotation.dataset.model import (
 )
 from app.api.v1.module_annotation.task.model import AnnotationTaskModel
 from app.core.database import async_db_session
-from app.plugin.module_train import exporter
 from app.plugin.module_train.exporter import _export_core, _export_video_detection
+from app.plugin.module_train.exporters import video
 
 
 def _make_video() -> tuple[int, int]:
@@ -109,7 +109,7 @@ def _patch_video_mocks(monkeypatch):
         return boxes if frame_index == 1 else []
 
     monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
-    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(video, "_extract_frames", _fake_extract)
 
     from app.utils.s3_client import s3_client
     monkeypatch.setattr(
@@ -190,7 +190,7 @@ def test_video_export_skips_unknown_fps_video(monkeypatch, tmp_path):
 
     monkeypatch.setattr(AnnotationService, "load_video_annotations",
                         lambda *a, **k: _async_noop())
-    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(video, "_extract_frames", _fake_extract)
     from app.utils.s3_client import s3_client
     monkeypatch.setattr(s3_client, "download_fileobj",
                         lambda key: BytesIO(b"fake-video"))
@@ -222,7 +222,7 @@ def test_video_export_through_core_entry(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
-    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(video, "_extract_frames", _fake_extract)
     from app.utils.s3_client import s3_client
     monkeypatch.setattr(s3_client, "download_fileobj",
                         lambda key: BytesIO(b"fake-video"))
@@ -266,7 +266,7 @@ def test_video_export_training_path_uses_annotation_task_id(monkeypatch, tmp_pat
         return []
 
     monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
-    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(video, "_extract_frames", _fake_extract)
     from app.utils.s3_client import s3_client
     monkeypatch.setattr(s3_client, "download_fileobj",
                         lambda key: BytesIO(b"fake-video"))
@@ -303,7 +303,7 @@ def test_video_export_training_split(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
-    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(video, "_extract_frames", _fake_extract)
     from app.utils.s3_client import s3_client
     monkeypatch.setattr(s3_client, "download_fileobj",
                         lambda key: BytesIO(b"fake-video"))
@@ -333,7 +333,7 @@ def test_video_export_eval_all_to_val(monkeypatch, tmp_path):
                  "x1": 0.1, "y1": 0.1, "x2": 0.2, "y2": 0.2}]
 
     monkeypatch.setattr(AnnotationService, "load_video_annotations", _load)
-    monkeypatch.setattr(exporter, "_extract_frames", _fake_extract)
+    monkeypatch.setattr(video, "_extract_frames", _fake_extract)
     from app.utils.s3_client import s3_client
     monkeypatch.setattr(s3_client, "download_fileobj",
                         lambda key: BytesIO(b"fake-video"))

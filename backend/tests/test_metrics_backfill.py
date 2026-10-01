@@ -8,11 +8,10 @@ import asyncio
 import inspect
 from types import SimpleNamespace
 
-from app.plugin.module_train import exporter
+from app.plugin.module_train import model_persist
 from app.plugin.module_train.exporter import export_model
 from app.plugin.module_train.metrics import best_metric
 from app.plugin.module_train.scheduler import (
-    TrainExecutor,
     _resolve_task_type,
 )
 
@@ -89,7 +88,7 @@ def test_export_model_no_artifact_skips_db(tmp_path, monkeypatch):
         def __call__(self, *a, **k):
             return FakeBegin()
 
-    monkeypatch.setattr(exporter, "async_db_session", FakeFactory())
+    monkeypatch.setattr(model_persist, "async_db_session", FakeFactory())
 
     result = asyncio.run(export_model(1, "paddlex", str(tmp_path)))
     assert result == {"repo_id": None, "storage_path": None}

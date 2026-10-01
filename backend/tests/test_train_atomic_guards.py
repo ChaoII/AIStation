@@ -15,7 +15,8 @@ import pytest
 
 from app.plugin.module_train import deploy_executor as de
 from app.plugin.module_train import eval_scheduler as es
-from app.plugin.module_train import exporter, scheduler
+from app.plugin.module_train import scheduler
+from app.plugin.module_train.exporters import yolo
 from app.plugin.module_train.model import TrainStatus
 
 # ---------------------------------------------------------------------------
@@ -309,9 +310,11 @@ def _images(n):
 def test_export_yolo_batches_annotation_query(monkeypatch, tmp_path):
     """导出 N 张图只应发 1 次 AnnotationRecordModel 查询（IN 批量），而非逐图 N 次。"""
     db = _CountDb()
-    monkeypatch.setattr(exporter, "async_db_session", db)
+    # ⚠️ patch 到函数真正所在的模块（yolo._export_yolo），不是 exporter 转发层——
+    # 打在那里不会生效：被调用方按**自己模块的全局**查找 async_db_session。
+    monkeypatch.setattr(yolo, "async_db_session", db)
     with patch("app.utils.s3_client.s3_client", _FakeS3()):
-        asyncio.run(exporter._export_yolo(
+        asyncio.run(yolo._export_yolo(
             1, 1, _images(5), str(tmp_path / "out"), task_type="detection",
         ))
     assert db.session.annotation_queries == 1

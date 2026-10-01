@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from app.plugin.module_train import eval_scheduler as es
 from app.plugin.module_train import exporter
+from app.plugin.module_train.exporters import dispatch, yolo
 
 # ---------------------------------------------------------------------------
 # 规格推断 resolve_eval_context
@@ -146,7 +147,12 @@ def _images(n):
 
 def _run_eval_export(monkeypatch, tmp_path, framework="ultralytics", ocr_mode="det"):
     imgs = _images(3)
-    monkeypatch.setattr(exporter, "async_db_session", lambda: _FakeExportDb(imgs))
+    # ⚠️ 必须 patch 到**函数真正所在的模块**：`async_db_session` 是各子模块 import
+    # 进来的**模块全局**，在 exporter 这个转发层上打补丁完全不会生效（且不报错）——
+    # 症状会表现为「DB 真被连上」或计数不对，离原因很远。
+    # 查图发生在 dispatch._export_core，导出在 yolo._export_yolo，两处都要 patch。
+    monkeypatch.setattr(dispatch, "async_db_session", lambda: _FakeExportDb(imgs))
+    monkeypatch.setattr(yolo, "async_db_session", lambda: _FakeExportDb(imgs))
     with patch("app.utils.s3_client.s3_client", _FakeS3()):
         out = tmp_path / "out"
         asyncio.run(
@@ -188,8 +194,10 @@ def test_prepare_eval_data_for_task_paddleocr_forwards_for_eval(monkeypatch, tmp
         recorded.update(kwargs)
 
     imgs = _images(3)
-    monkeypatch.setattr(exporter, "async_db_session", lambda: _FakeExportDb(imgs))
-    monkeypatch.setattr(exporter, "_export_paddle_ocr", fake_paddle)
+    # _export_core 在 dispatch 里调用 _export_paddle_ocr，故补丁要打在 dispatch 上；
+    # 打在 exporter 转发层上不会生效（别名 ≠ 调用点的模块全局）。
+    monkeypatch.setattr(dispatch, "async_db_session", lambda: _FakeExportDb(imgs))
+    monkeypatch.setattr(dispatch, "_export_paddle_ocr", fake_paddle)
     asyncio.run(
         exporter.prepare_eval_data_for_task(
             1, 1, "paddle-ocr", str(tmp_path / "out"), annotation_task_id=7, ocr_mode="rec"
