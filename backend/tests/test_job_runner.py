@@ -109,8 +109,9 @@ def test_settle_cancelled_only_marks_status():
 
     _job, status, fields = ex.marks[0]
     assert status == TrainStatus.CANCELLED
-    assert fields["progress"] == 100
     assert "metrics" not in fields, "取消时不该把成功字段写进去"
+    # 取消**不能**写 progress=100：满格进度条配红色状态，只会被读成"已经跑完"。
+    assert "progress" not in fields, "取消时不该碰 progress，让它保留自己的值"
 
 
 def test_settle_cancelled_wins_over_success_exit_code():
@@ -148,7 +149,9 @@ def test_settle_failure_uses_error_tail():
     assert status == TrainStatus.FAILED
     assert fields["log"] == "CUDA out of memory"
     assert fields["error_log"] == "CUDA out of memory"
-    assert fields["progress"] == 100
+    # 失败也不能写 progress=100（列表页满格会被误读成成功）。progress 由指标 flush
+    # 顺带写入，失败时保留"跑到第几轮挂的"；评估/预测则保持启动时写的 10。
+    assert "progress" not in fields
 
 
 def test_settle_failure_falls_back_to_message():

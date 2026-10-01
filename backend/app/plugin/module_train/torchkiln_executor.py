@@ -135,16 +135,62 @@ async def load_metrics_rows(task_id: int) -> list[dict]:
         return list(task.metrics_log or []) if task else []
 
 
+async def task_is_terminal(task_id: int) -> bool:
+    """作业是否已到终态（成功 / 失败 / 取消）。
+
+    供 SSE 端点判断「还能不能等实时事件」：终态作业的 ``end`` 事件早已随executor
+    一起销毁，新开的流永远等不到，必须直接收流。
+    """
+    async with async_db_session() as db:
+        task = await db.get(TrainTask, task_id)
+        return task is None or task.status not in (
+            TrainStatus.PENDING, TrainStatus.RUNNING,
+        )
+
+
+def progress_from_rows(rows: list[dict]) -> int | None:
+    """按 ``epoch / total_epochs`` 推算进度百分比，取不到就返回 ``None``。
+
+    为什么需要它：``TrainTask.progress`` 以前只在启动时写 0、收尾时写 100，
+    **训练全程不动**，列表页进度条因此恒为 0%。而指标行里 epoch 与 total_epochs
+    一直都在，信息其实早就够了。
+
+    两个必须防的点：
+
+    - ``_kind="best"`` 的行**不带** ``total_epochs``（step / eval 行才带），
+      所以要跳过缺失的行、不能只看最后一行。
+    - 收尾行 ``_kind="end"`` 的 ``epoch`` 是终值、``total_epochs`` 也齐，但它
+      之后的值已经是 100%，带上它没坏处；真正要防的是分母为 0 或缺失导致的
+      除零 / ``Infinity``（前端会显示成 1000% 这种鬼数字）。
+    """
+    for row in reversed(rows):
+        ep = row.get("epoch")
+        tot = row.get("total_epochs")
+        if not isinstance(ep, int) or not isinstance(tot, int) or tot <= 0:
+            continue
+        return max(0, min(100, round(ep / tot * 100)))
+    return None
+
+
 async def save_metrics(task_id: int, rows: list[dict]) -> None:
-    """整体覆盖写 ``metrics_log``。
+    """整体覆盖写 ``metrics_log``，并在同一条 UPDATE 里顺带写回 ``progress``。
 
     指标流是**单写者**，所以覆盖写比 UPDATE 安全（避免读-改-写竞态）。
+
+    顺带写 progress 是刻意选的落点：这条 UPDATE 本来就要执行，把进度折进同一
+    个语句里，训练进度就变成**零额外开销**的副产物。不另开一次 UPDATE 是因为
+    指标 flush 有频率（每 40 行或按行数缩放的自适应间隔），多一次写会把这块
+    唯一的热路径翻倍。
     """
     payload = rows[-_MAX_METRIC_ROWS:] if len(rows) > _MAX_METRIC_ROWS else rows
+    values: dict = {"metrics_log": payload}
+    progress = progress_from_rows(payload)
+    if progress is not None:
+        values["progress"] = progress
     async with async_db_session.begin() as db:
         await db.execute(
             update(TrainTask).where(TrainTask.id == task_id)
-            .values(metrics_log=payload)
+            .values(**values)
         )
 
 
@@ -789,15 +835,27 @@ class TorchKilnExecutor(TaskExecutor):
                 log.error("[torchkiln] 权重入库失败: {}", e)
                 await broadcast_line(task_id, f"[torchkiln] 权重入库失败: {e}")
 
+        # 进度只在成功时收成 100。失败/取消时**不碰**这一列——它由指标 flush 顺带写入，
+        # 取不到就保持启动时的 0（那才是"还没跑出第一个 epoch"的真实含义）。
+        # ⚠️ 必须"不传"而不是"传 None"：``TrainTask.progress`` 是 NOT NULL 列，
+        # 传 None 会直接 IntegrityError（实测 NotNullViolation），把一次正常的
+        # 训练失败变成"连失败状态都写不进去"。
+        settle_values: dict = {}
+        if status == TrainStatus.SUCCESS:
+            settle_values["progress"] = 100
+        else:
+            p = progress_from_rows(final_rows)
+            if p is not None:
+                settle_values["progress"] = p
         await cls._mark_status(
             task_id, status,
             model_repo_id=model_repo_id,
             metrics_log=final_rows or None,
             best_metrics=best or None,
             last_metrics=last or None,
-            progress=100,
             error_log=err if status == TrainStatus.FAILED else None,
             finished_at=datetime.now(),
+            **settle_values,
         )
 
     # ------------------------------------------------------------ 两条流

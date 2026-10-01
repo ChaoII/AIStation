@@ -4,11 +4,11 @@ import os
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, File, Query, Request, UploadFile
-from fastapi.responses import StreamingResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import SuccessResponse
 from app.core.dependencies import AuthPermission
+from app.core.sse import sse_response
 from app.utils.s3_client import s3_client
 
 from .eval_scheduler import start_evaluation, stop_evaluation
@@ -330,21 +330,37 @@ async def stream_task_metrics(
 ):
     """指标 SSE：先补历史缺口，再切实时；作业终结时推一帧 ``end`` 后收流。
 
-    ⚠️ 响应头 ``no-transform`` / ``X-Accel-Buffering: no`` 是 SSE 穿透代理的关键，
-    少了会被缓冲成"整块才到"，实时性直接消失。
+    ⚠️ 响应头走 :func:`app.core.sse.sse_response`，**不要就地手写**：SSE 有两个坑
+    都不在端点代码里（见该模块 docstring），手写必漏其中一个。
     """
+    from .torchkiln_client import EVENT_END
     from .torchkiln_executor import (
         load_metrics_rows,
         subscribe_metrics,
+        task_is_terminal,
         unsubscribe_metrics,
     )
 
     async def gen():
         yield "retry: 3000\n\n"
-        for row in await load_metrics_rows(task_id):
+        rows = await load_metrics_rows(task_id)
+        for row in rows:
             if offset >= 0 and _row_seq(row) <= offset:
                 continue
             yield _sse("metric", row, _row_seq(row))
+        # ⚠️ 作业已终结时**必须直接收流**，不能再进 while True。
+        # end 事件是在作业收尾那一刻广播的，订阅者队列那时就随 executor 一起销毁了；
+        # 此时新开的流永远等不到它 —— 实测一条已完成的作业，开流 62 秒一帧不到，
+        # 连接一直挂着直到客户端超时。前端那边表现为「指标图空白 + 连接一直转」。
+        if await task_is_terminal(task_id):
+            tail = next((r for r in reversed(rows) if r.get("_kind") == EVENT_END), None)
+            yield _sse("end", {
+                "type": "end",
+                "seq": _row_seq(tail) if tail else None,
+                **(tail or {}),
+                "replayed": True,   # 标记：这是补发的收尾帧，不是实时收到的
+            })
+            return
         q = subscribe_metrics(task_id)
         try:
             while True:
@@ -362,11 +378,7 @@ async def stream_task_metrics(
         finally:
             unsubscribe_metrics(task_id, q)
 
-    return StreamingResponse(
-        gen(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
-    )
+    return sse_response(gen())
 
 
 def _sse(event: str, data: dict, event_id=None) -> str:

@@ -148,11 +148,16 @@ async def _finish(
     - 成功：写 ``success_fields``
     - 失败：错误文案写进 ``log`` 与 ``error_log``——``error_log`` 只在失败时有值，
       也是前端弹错误提示的依据
+
+    ⚠️ ``progress`` **只在成功时写 100**。以前三个分支一律写 100，于是列表页上
+    失败/取消的作业也显示满格进度条——和「成功」唯一的区别只剩颜色，容易被误读
+    成「已经跑完了」。失败/取消一律不碰这一列，保留它自己的值（训练由指标 flush
+    顺带写入，评估/预测保持启动时写的 10）。
     """
     if cancelled_now:
         await remove_container(container_id)
         await executor._mark_status(job_id, TrainStatus.CANCELLED,
-                                    finished_at=datetime.now(), progress=100)
+                                    finished_at=datetime.now())
         return
 
     await remove_container(container_id)
@@ -164,7 +169,7 @@ async def _finish(
         msg = error or "job failed"
         await executor._mark_status(job_id, TrainStatus.FAILED,
                                     log=msg, error_log=msg,
-                                    finished_at=datetime.now(), progress=100)
+                                    finished_at=datetime.now())
 
 
 async def settle(
@@ -181,7 +186,7 @@ async def settle(
     """按「取消 / 成功 / 失败」三态收尾，并移除容器（一次性容器作业用）。
 
     判据是**容器退出码**。三态的判定顺序与副作用刻意固定在 :func:`_finish` 一处：
-    以前两处各写一遍，已经漂移过一次（一处漏了 ``error_log``、一处漏了
+    以前两处各写一遍，已经漂移过一次（一处漏了 ``error_log``、一处给失败也写了
     ``progress=100``）。
     """
     await _finish(
