@@ -30,6 +30,9 @@
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
           <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+          <el-table-column label="节点" width="80" align="center">
+            <template #default="{ row }">{{ (row.graph?.nodes || []).length }}</template>
+          </el-table-column>
           <el-table-column prop="version" label="版本" width="80" align="center" />
           <el-table-column label="状态" width="90" align="center">
             <template #default="{ row }">
