@@ -42,7 +42,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="updated_time" label="更新时间" width="170" />
-          <el-table-column label="操作" width="180" fixed="right">
+          <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
               <el-button
                 v-hasPerm="['module_ai:workflow:update']"
@@ -52,6 +52,15 @@
                 @click="handleOpen(row)"
               >
                 编辑
+              </el-button>
+              <el-button
+                v-hasPerm="['module_ai:workflow:create']"
+                link
+                type="success"
+                size="small"
+                @click="handleCopy(row)"
+              >
+                复制
               </el-button>
               <el-button
                 v-hasPerm="['module_ai:workflow:delete']"
@@ -82,7 +91,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
-import { getAiWorkflowList, deleteAiWorkflow } from "@/api/module_ai/workflow";
+import { getAiWorkflowList, deleteAiWorkflow, createAiWorkflow } from "@/api/module_ai/workflow";
 import WorkflowEditor from "./components/WorkflowEditor.vue";
 
 defineOptions({ name: "AiWorkflow" });
@@ -119,6 +128,27 @@ const currentWorkflow = ref<any>();
 function handleOpen(row?: any) {
   currentWorkflow.value = row || undefined;
   editorVisible.value = true;
+}
+
+async function handleCopy(row: any) {
+  ElMessageBox.confirm(`将复制工作流「${row.name}」为新工作流，是否继续？`, "复制确认", {
+    confirmButtonText: "复制",
+    cancelButtonText: "取消",
+    type: "warning",
+  })
+    .then(async () => {
+      await createAiWorkflow({
+        name: `${row.name}（副本）`,
+        description: row.description || "",
+        graph: row.graph || { nodes: [], edges: [] },
+        enabled: false,
+      });
+      ElMessage.success("已复制为新工作流");
+      refreshList();
+    })
+    .catch(() => {
+      /* 取消 */
+    });
 }
 
 function handleDelete(row: any) {
