@@ -480,7 +480,13 @@
     />
 
     <!-- 运行历史弹窗 -->
-    <el-dialog v-model="historyVisible" title="运行历史" width="760px" append-to-body>
+    <el-dialog
+      v-model="historyVisible"
+      title="运行历史"
+      width="760px"
+      append-to-body
+      @closed="stopReplay"
+    >
       <div class="history-stats">
         <el-statistic title="总运行" :value="runHistoryList.length" />
         <el-statistic title="成功" :value="historyStats.success" />
@@ -533,7 +539,32 @@
       </el-table>
 
       <div v-if="runDetail" class="history-detail">
-        <div class="history-detail__title">节点执行过程</div>
+        <div class="history-detail__title">
+          节点执行过程
+          <span class="hd-replay">
+            <el-button v-if="!replayPlaying" link type="primary" size="small" @click="startReplay">
+              画布回放
+            </el-button>
+            <el-button v-else link type="danger" size="small" @click="stopReplay">
+              停止 ({{ replayIdx + 1 }}/{{ (runDetail.node_trace || []).length }})
+            </el-button>
+          </span>
+        </div>
+        <div v-if="replayInfo" class="hd-replay-info">
+          <div class="hd-replay-info__head">
+            <el-tag size="small">{{ replayInfo.label }}</el-tag>
+            <span class="hd-replay-info__status">{{ replayStatusText(replayInfo.status) }}</span>
+          </div>
+          <div v-if="replayInfo.input && Object.keys(replayInfo.input).length" class="hd-kv">
+            <span class="hd-kv-t">输入</span>
+            <pre class="hd-pre">{{ formatJson(replayInfo.input) }}</pre>
+          </div>
+          <div v-if="replayInfo.output != null" class="hd-kv">
+            <span class="hd-kv-t">输出</span>
+            <pre class="hd-pre">{{ formatJson(replayInfo.output) }}</pre>
+          </div>
+          <div v-if="replayInfo.error" class="hd-err">{{ replayInfo.error }}</div>
+        </div>
         <div v-for="(tr, i) in runDetail.node_trace || []" :key="i" class="history-detail__item">
           <div class="hd-head">
             <span class="hd-label">{{ tr.label }}</span>
@@ -974,6 +1005,46 @@ const filteredHistory = computed(() =>
     ? runHistoryList.value
     : runHistoryList.value.filter((r) => r.status === historyFilter.value)
 );
+
+// ---------- 轨迹可视回放 ----------
+const replayPlaying = ref(false);
+const replayIdx = ref(-1);
+const replayInfo = ref<any>(null);
+let replayTimer = 0;
+function replayStatusText(s: string) {
+  return s === "success" ? "完成" : s === "error" ? "失败" : s === "skipped" ? "已跳过" : "执行中";
+}
+function startReplay() {
+  const trace = runDetail.value?.node_trace || [];
+  if (!trace.length) return;
+  replayIdx.value = -1;
+  replayPlaying.value = true;
+  resetRunTrace();
+  clearInterval(replayTimer);
+  replayTimer = window.setInterval(() => {
+    replayIdx.value += 1;
+    if (replayIdx.value >= trace.length) {
+      stopReplay();
+      return;
+    }
+    const tr = trace[replayIdx.value];
+    replayInfo.value = tr;
+    const n = nodes.value.find((x) => x.id === tr.nodeId);
+    if (n) {
+      n.data = {
+        ...(n.data || {}),
+        __runStatus: tr.status,
+        __runOutput: tr.output,
+        __runError: tr.error,
+        __runDuration: tr.duration_ms,
+      };
+    }
+  }, 900);
+}
+function stopReplay() {
+  clearInterval(replayTimer);
+  replayPlaying.value = false;
+}
 const statsVisible = ref(false);
 const statsLoading = ref(false);
 const stats = ref<{
@@ -2834,6 +2905,50 @@ async function handleApprove(decision: "approve" | "reject") {
   .history-detail__title {
     margin-bottom: 10px;
     font-weight: 600;
+
+    .hd-replay {
+      float: right;
+      font-weight: 400;
+    }
+  }
+
+  .hd-replay-info {
+    margin-bottom: 10px;
+    padding: 8px;
+    background: var(--el-color-primary-light-9);
+    border: 1px solid var(--el-color-primary-light-5);
+    border-radius: 6px;
+
+    .hd-replay-info__head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .hd-replay-info__status {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .hd-kv {
+      margin-top: 4px;
+      .hd-kv-t {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+      .hd-pre {
+        margin: 4px 0 0;
+        max-height: 140px;
+        overflow: auto;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    }
+    .hd-err {
+      margin-top: 4px;
+      color: var(--el-color-danger);
+      font-size: 12px;
+    }
   }
 
   .history-detail__item {
