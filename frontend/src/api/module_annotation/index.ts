@@ -200,6 +200,38 @@ export const AnnotationAPI = {
     });
   },
 
+  // 数据落地（抽帧+清洗入库）
+  preprocessVideo(datasetId: number, file: File, params: Record<string, any>) {
+    const formData = new FormData();
+    formData.append("video", file);
+    return request<ApiResponse<{ job_id: string }>>({
+      url: `${API_PATH}/dataset/preprocess/video`,
+      method: "post",
+      params: { dataset_id: datasetId, ...params },
+      data: formData,
+      headers: { "Content-Type": "multipart/form-data", _silent: "true" },
+      timeout: 0,
+    });
+  },
+  preprocessImages(datasetId: number, files: File[], params: Record<string, any>) {
+    const formData = new FormData();
+    for (const f of files) formData.append("files", f);
+    return request<ApiResponse<{ job_id: string }>>({
+      url: `${API_PATH}/dataset/preprocess/images`,
+      method: "post",
+      params: { dataset_id: datasetId, ...params },
+      data: formData,
+      headers: { "Content-Type": "multipart/form-data", _silent: "true" },
+      timeout: 0,
+    });
+  },
+  getPreprocessJob(jobId: string) {
+    return request<ApiResponse<any>>({
+      url: `${API_PATH}/dataset/preprocess/${jobId}`,
+      method: "get",
+    });
+  },
+
   // Stats
   getOverview() {
     return request<ApiResponse<any>>({ url: `${API_PATH}/stats/overview`, method: "get" });

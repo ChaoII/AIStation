@@ -10,6 +10,7 @@ def _register_annotation_routers():
     from .dataset.controller import DatasetRouter
     from .dataset.document_controller import DocumentRouter
     from .dataset.export_controller import ExportRouter
+    from .dataset.preprocess.controller import PreprocessRouter
     from .dataset.time_series_controller import TimeSeriesRouter
     from .dataset.video_controller import VideoRouter
     from .task.controller import TaskRouter
@@ -22,6 +23,7 @@ def _register_annotation_routers():
     annotation_router.include_router(AnnotationRouter)
     annotation_router.include_router(ExportRouter)
     annotation_router.include_router(CleanRouter)
+    annotation_router.include_router(PreprocessRouter)
     from .stats.controller import StatsRouter
     annotation_router.include_router(StatsRouter)
 

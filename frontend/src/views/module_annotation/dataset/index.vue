@@ -263,6 +263,7 @@
                       <el-dropdown-item command="export" icon="Download">导出</el-dropdown-item>
                       <el-dropdown-item command="exportHistory" icon="Clock">导出历史</el-dropdown-item>
                       <el-dropdown-item command="clean" icon="Brush">数据清洗</el-dropdown-item>
+                      <el-dropdown-item command="preprocess" icon="Crop">数据落地</el-dropdown-item>
                       <el-dropdown-item command="train" icon="Aim">去训练</el-dropdown-item>
                       <el-dropdown-item
                         v-hasPerm="['module_annotation:dataset:purge']"
@@ -488,6 +489,7 @@
 
     <ExportHistoryDrawer ref="exportHistoryRef" />
     <CleanDrawer ref="cleanRef" />
+    <PreprocessDrawer ref="preprocessRef" />
     <DatasetImageGrid
       v-model="gridVisible"
       :dataset-id="gridDatasetId"
@@ -509,6 +511,7 @@ import PageContent from "@/components/CURD/PageContent.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import ExportHistoryDrawer from "@/components/Annotation/ExportHistoryDrawer.vue";
 import CleanDrawer from "@/components/Annotation/CleanDrawer.vue";
+import PreprocessDrawer from "@/components/Annotation/PreprocessDrawer.vue";
 import DatasetImageGrid from "@/components/Annotation/DatasetImageGrid.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -844,6 +847,9 @@ function handleMoreCommand(cmd: string, row: any) {
       break;
     case "clean":
       cleanRef.value?.open(row.id);
+      break;
+    case "preprocess":
+      preprocessRef.value?.open(row.id, row.name);
       break;
     case "train":
       router.push(`/train/task?dataset_id=${row.id}&autoCreate=1`);
@@ -1411,6 +1417,7 @@ onBeforeUnmount(() => {
 const exportDialogVisible = ref(false);
 const exportHistoryRef = ref();
 const cleanRef = ref();
+const preprocessRef = ref();
 const exportDatasetId = ref<number | null>(null);
 const exportDatasetName = ref("");
 const exportFormat = ref("yolo-detection");
