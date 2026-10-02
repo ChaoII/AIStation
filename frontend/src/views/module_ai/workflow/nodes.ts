@@ -25,6 +25,7 @@ export type WorkflowNodeType =
   | "web_search"
   | "database"
   | "note"
+  | "group"
   | "end";
 
 export interface NodeDef {
@@ -179,6 +180,13 @@ export const NODE_DEFS: NodeDef[] = [
     desc: "添加说明文字的分组/注释框（纯视觉）",
     branch: false,
   },
+  {
+    type: "group",
+    label: "分组",
+    color: "#5c7cfa",
+    desc: "容器：把节点归入分组，拖动整体移动",
+    branch: false,
+  },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },
 ];
 
@@ -211,6 +219,7 @@ const NODE_CATEGORY_MAP: Record<string, string> = {
   sub_workflow: "sub",
   agent: "sub",
   note: "note",
+  group: "note",
 };
 
 export const NODE_CATEGORIES: { key: string; label: string }[] = [

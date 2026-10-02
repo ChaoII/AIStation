@@ -572,6 +572,36 @@
       </el-form-item>
     </template>
 
+    <!-- group：分组容器 -->
+    <template v-else-if="type === 'group'">
+      <el-form-item label="分组标题">
+        <el-input v-model="d.title" placeholder="分组标题" />
+      </el-form-item>
+      <el-form-item label="尺寸">
+        <el-space>
+          <el-input-number
+            v-model="d.width"
+            :min="200"
+            :max="2000"
+            :step="20"
+            size="small"
+            controls-position="right"
+          />
+          <el-input-number
+            v-model="d.height"
+            :min="120"
+            :max="2000"
+            :step="20"
+            size="small"
+            controls-position="right"
+          />
+        </el-space>
+      </el-form-item>
+      <el-alert type="info" :closable="false" show-icon>
+        右键其它节点可「加入分组」；拖动分组框可整体移动组内节点。
+      </el-alert>
+    </template>
+
     <!-- {{ 变量内联提示 -->
     <div
       v-if="suggestVisible && varSuggest.length"

@@ -462,6 +462,8 @@
           <div class="ctx-title">节点操作</div>
           <div class="ctx-item" @click.stop="ctxDebug">调试此节点</div>
           <div class="ctx-item" @click.stop="ctxCopy">复制节点</div>
+          <div class="ctx-item" @click.stop="ctxAddToGroup">加入分组</div>
+          <div class="ctx-item" @click.stop="ctxRemoveGroup">移出分组</div>
           <div class="ctx-item" @click.stop="ctxToggleEnable">
             {{ contextMenuEnabled ? "禁用节点" : "启用节点" }}
           </div>
@@ -469,6 +471,17 @@
         </div>
       </div>
     </teleport>
+
+    <!-- 加入分组选择弹窗 -->
+    <el-dialog v-model="groupDialogVisible" title="加入分组" width="400px" append-to-body>
+      <el-select v-model="groupSelect" filterable placeholder="选择分组" style="width: 100%">
+        <el-option v-for="g in groupOptions" :key="g.id" :label="g.label" :value="g.id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="groupDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmJoinGroup">加入</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 隐藏文件选择：工作流导入 -->
     <input
@@ -1369,6 +1382,10 @@ async function doRollback(v: any) {
         type: n.type,
         position: { x: n.x ?? 0, y: n.y ?? 0 },
         data: { ...(n.data || {}) },
+        ...(n.parentId ? { parentNode: n.parentId } : {}),
+        ...(n.type === "group"
+          ? { width: n.data?.width ?? 640, height: n.data?.height ?? 420 }
+          : {}),
       }));
       edges.value = g.edges.map((e: any) => ({
         id: e.id,
@@ -1409,6 +1426,7 @@ function iconOf(type: string) {
     web_search: Search,
     database: Coin,
     note: DocumentCopy,
+    group: Collection,
     end: CircleCheckFilled,
   };
   return m[type as WorkflowNodeType] || Cpu;
@@ -1438,6 +1456,8 @@ onInit((instance) => {
       type: n.type,
       position: { x: n.x ?? 0, y: n.y ?? 0 },
       data: { ...(n.data || {}) },
+      ...(n.parentId ? { parentNode: n.parentId } : {}),
+      ...(n.type === "group" ? { width: n.data?.width ?? 640, height: n.data?.height ?? 420 } : {}),
     }));
     edges.value = g.edges.map((e: any) => ({
       id: e.id,
@@ -1493,7 +1513,14 @@ function onPaletteClick(type: string) {
     y: window.innerHeight / 2,
   });
   const id = `node_${Date.now()}`;
-  const node = { id, type, position, data: defaultData(type) } as Node;
+  const data = defaultData(type);
+  const node = {
+    id,
+    type,
+    position,
+    data,
+    ...(type === "group" ? { width: data.width, height: data.height } : {}),
+  } as Node;
   pushHistory();
   addNodes([node]);
   selectedNode.value = node;
@@ -1510,13 +1537,15 @@ function onDrop(event: DragEvent) {
   if (!type) return;
   const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
   const id = `node_${Date.now()}`;
+  const data = defaultData(type);
   pushHistory();
   addNodes([
     {
       id,
       type,
       position,
-      data: defaultData(type),
+      data,
+      ...(type === "group" ? { width: data.width, height: data.height } : {}),
     } as Node,
   ]);
 }
@@ -1567,6 +1596,8 @@ function defaultData(type: string): Record<string, any> {
       return { dsn: "", sql: "", output_variable: "" };
     case "note":
       return { title: "说明", content: "" };
+    case "group":
+      return { title: "分组", width: 640, height: 420 };
     case "end":
       return { output_template: "" };
     default:
@@ -1943,6 +1974,10 @@ function onNodeConfigChange(data: Record<string, any>) {
   if (!selectedNode.value) return;
   scheduleHistory();
   selectedNode.value.data = { ...selectedNode.value.data, ...data };
+  if (selectedNode.value.type === "group") {
+    selectedNode.value.width = data.width ?? selectedNode.value.width;
+    selectedNode.value.height = data.height ?? selectedNode.value.height;
+  }
 }
 
 function handleDeleteNode() {
@@ -1954,6 +1989,15 @@ function handleDeleteNode() {
     type: "warning",
   }).then(() => {
     pushHistory();
+    // 删除分组时，解除其子节点的归属并把坐标转回绝对
+    const gx = selectedNode.value?.position?.x ?? 0;
+    const gy = selectedNode.value?.position?.y ?? 0;
+    nodes.value.forEach((n) => {
+      if (n.parentNode === id) {
+        n.position = { x: (n.position?.x ?? 0) + gx, y: (n.position?.y ?? 0) + gy };
+        n.parentNode = undefined;
+      }
+    });
     nodes.value = nodes.value.filter((n) => n.id !== id);
     edges.value = edges.value.filter((e) => e.source !== id && e.target !== id);
     selectedNode.value = undefined;
@@ -1970,10 +2014,19 @@ function copySelectedNode() {
   delete data.__runOutput;
   delete data.__runError;
   delete data.__runInput;
+  let pos = { x: src.position.x + 60, y: src.position.y + 60 };
+  // 若原节点在分组中，复制为绝对坐标并脱离分组
+  if (src.parentNode) {
+    const g = nodes.value.find((n) => n.id === src.parentNode);
+    pos = {
+      x: (src.position.x ?? 0) + (g?.position?.x ?? 0) + 60,
+      y: (src.position.y ?? 0) + (g?.position?.y ?? 0) + 60,
+    };
+  }
   const node = {
     id,
     type: src.type,
-    position: { x: src.position.x + 60, y: src.position.y + 60 },
+    position: pos,
     data,
   } as Node;
   pushHistory();
@@ -2029,9 +2082,67 @@ function ctxDelete() {
   }
 }
 
+// ---------- 分组（parentNode） ----------
+const groupDialogVisible = ref(false);
+const groupSelect = ref("");
+const groupTargetId = ref("");
+const groupOptions = computed(() =>
+  nodes.value
+    .filter((n) => n.type === "group")
+    .map((n) => ({ id: n.id, label: n.data?.title || "分组" }))
+);
+function ctxAddToGroup() {
+  const id = contextMenu.value?.nodeId;
+  contextMenu.value = null;
+  if (!id) return;
+  const target = nodes.value.find((n) => n.id === id);
+  if (!target || target.type === "group") {
+    ElMessage.warning("分组节点不能加入分组");
+    return;
+  }
+  groupTargetId.value = id;
+  groupSelect.value = "";
+  groupDialogVisible.value = true;
+}
+function confirmJoinGroup() {
+  const gid = groupSelect.value;
+  if (!gid) {
+    ElMessage.warning("请选择分组");
+    return;
+  }
+  const child = nodes.value.find((n) => n.id === groupTargetId.value);
+  const g = nodes.value.find((n) => n.id === gid);
+  if (!child || !g) return;
+  pushHistory();
+  const gx = g.position?.x ?? 0;
+  const gy = g.position?.y ?? 0;
+  child.parentNode = g.id;
+  child.position = { x: (child.position?.x ?? 0) - gx, y: (child.position?.y ?? 0) - gy };
+  groupDialogVisible.value = false;
+  ElMessage.success("已加入分组");
+}
+function ctxRemoveGroup() {
+  const id = contextMenu.value?.nodeId;
+  contextMenu.value = null;
+  if (!id) return;
+  const child = nodes.value.find((n) => n.id === id);
+  if (!child || !child.parentNode) return;
+  const g = nodes.value.find((n) => n.id === child.parentNode);
+  pushHistory();
+  const gx = g?.position?.x ?? 0;
+  const gy = g?.position?.y ?? 0;
+  child.position = { x: (child.position?.x ?? 0) + gx, y: (child.position?.y ?? 0) + gy };
+  child.parentNode = undefined;
+  ElMessage.success("已移出分组");
+}
+
 function autoLayout() {
   if (nodes.value.length === 0) {
     ElMessage.warning("画布中没有节点");
+    return;
+  }
+  if (nodes.value.some((n) => n.type === "group")) {
+    ElMessage.warning("存在分组，自动布局可能打乱分组关系，请手动调整");
     return;
   }
   const g = new dagre.graphlib.Graph();
@@ -2059,6 +2170,7 @@ function buildGraph() {
       x: n.position?.x ?? 0,
       y: n.position?.y ?? 0,
       data: n.data || {},
+      parentId: n.parentNode || undefined,
     })),
     edges: edges.value.map((e) => ({
       id: e.id,
@@ -2120,6 +2232,8 @@ async function onImportFileChange(e: Event) {
     type: n.type || "llm",
     position: { x: n.x ?? 40, y: n.y ?? 40 * (i + 1) },
     data: { ...(n.data || {}) },
+    ...(n.parentId ? { parentNode: n.parentId } : {}),
+    ...(n.type === "group" ? { width: n.data?.width ?? 640, height: n.data?.height ?? 420 } : {}),
   })) as Node[];
   edges.value = iedges.map((e: any) => ({
     id: e.id || `imp_${t}_e${Math.random().toString(36).slice(2)}`,

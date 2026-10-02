@@ -11,25 +11,36 @@
       'is-err': data.__runStatus === 'error',
       'is-disabled': data.enabled === false,
       'is-note': def.type === 'note',
+      'is-group': def.type === 'group',
     }"
   >
     <Handle
-      v-if="def.type !== 'start' && def.type !== 'note'"
+      v-if="def.type !== 'start' && def.type !== 'note' && def.type !== 'group'"
       type="target"
       :position="Position.Left"
       class="wf-handle"
       :connectable="true"
     />
     <div class="wf-node__head">
-      <el-icon v-if="def.type !== 'note'" class="wf-node__icon" :color="def.color">
+      <el-icon
+        v-if="def.type !== 'note' && def.type !== 'group'"
+        class="wf-node__icon"
+        :color="def.color"
+      >
         <component :is="def.icon" />
       </el-icon>
-      <span v-if="def.type !== 'note'" class="wf-node__label">{{ def.label }}</span>
+      <span v-if="def.type !== 'note' && def.type !== 'group'" class="wf-node__label">
+        {{ def.label }}
+      </span>
       <span v-if="def.type === 'condition'" class="wf-node__branch-tag">分支</span>
       <span v-if="data.enabled === false" class="wf-node__disable-tag">禁用</span>
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
     </div>
     <div class="wf-node__body">
+      <template v-if="def.type === 'group'">
+        <div class="wf-group__title">{{ data.title || "分组" }}</div>
+        <div class="wf-group__hint">拖动分组整体移动；右键节点可「加入/移出分组」</div>
+      </template>
       <div v-if="data.output_variable" class="wf-node__outvar">→ {{ data.output_variable }}</div>
       <template v-if="def.type === 'note'">
         <div v-if="data.title" class="wf-note__title">{{ data.title }}</div>
@@ -151,7 +162,7 @@
     </div>
     <!-- 输出句柄：条件节点出 true/false 两条 -->
     <Handle
-      v-if="def.type !== 'end' && def.type !== 'note'"
+      v-if="def.type !== 'end' && def.type !== 'note' && def.type !== 'group'"
       type="source"
       :position="Position.Right"
       class="wf-handle"
@@ -230,6 +241,7 @@ const def = computed(() => {
     web_search: Search,
     database: Coin,
     note: DocumentCopy,
+    group: Collection,
     end: CircleCheckFilled,
   };
   return { ...d, icon: iconMap[d.type] || Cpu };
@@ -278,6 +290,30 @@ function shortText(v: any, limit = 160): string {
       white-space: pre-wrap;
       word-break: break-word;
       font-size: 12px;
+    }
+  }
+
+  &.is-group {
+    width: 100%;
+    height: 100%;
+    padding: 20px 16px;
+    background: var(--el-color-primary-light-9);
+    border: 2px dashed var(--el-color-primary-light-5);
+    box-shadow: none;
+
+    .wf-node__head {
+      min-height: 0;
+      padding: 0;
+    }
+
+    .wf-group__title {
+      font-weight: 600;
+      color: var(--el-color-primary);
+    }
+    .wf-group__hint {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--el-text-color-secondary);
     }
   }
 
