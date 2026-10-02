@@ -191,6 +191,23 @@
 
     <!-- condition：条件分支 -->
     <template v-else-if="type === 'condition'">
+      <el-form-item label="条件构建（参数化）">
+        <div class="cond-builder">
+          <el-select v-model="condVar" placeholder="选择变量" filterable class="cond-var">
+            <el-option v-for="v in availableVars" :key="v.name" :label="v.name" :value="v.name" />
+          </el-select>
+          <el-select v-model="condOp" class="cond-op" placeholder="算子">
+            <el-option v-for="o in COND_OPS" :key="o.v" :label="o.label" :value="o.v" />
+          </el-select>
+          <el-input v-model="condVal" class="cond-val" placeholder="值" />
+          <el-button size="small" type="primary" @click="applyCond">生成</el-button>
+        </div>
+        <div class="cond-hint">
+          支持英文/数字/布尔，或
+          <code v-pre>{{ 变量 }}</code>
+          ；点击「生成」写入下方表达式。
+        </div>
+      </el-form-item>
       <el-form-item label="条件表达式">
         <el-input v-model="d.expression" placeholder="如：{{v}} == 1" />
       </el-form-item>
@@ -724,6 +741,49 @@ const nodeEnabled = computed({
   },
 });
 
+// 条件节点：参数化构建
+const COND_OPS = [
+  { v: "==", label: "等于 ===" },
+  { v: "!=", label: "不等于 !=" },
+  { v: ">", label: "大于 >" },
+  { v: "<", label: "小于 <" },
+  { v: ">=", label: "大于等于 >=" },
+  { v: "<=", label: "小于等于 <=" },
+  { v: "in", label: "属于 in" },
+  { v: "not in", label: "不属于 not in" },
+  { v: "contains", label: "包含 contains" },
+];
+const condVar = ref("");
+const condOp = ref("==");
+const condVal = ref("");
+function applyCond() {
+  const v = condVar.value.trim();
+  if (!v) {
+    ElMessage.warning("请选择变量");
+    return;
+  }
+  const raw = condVal.value.trim();
+  const op = condOp.value;
+  if (op === "in" || op === "not in") {
+    let arr: any = [];
+    try {
+      arr = JSON.parse(raw || "[]");
+    } catch {
+      arr = raw ? raw.split(/[,，]/).map((s) => s.trim()) : [];
+    }
+    d.expression = `${v} ${op} ${JSON.stringify(arr)}`;
+  } else if (op === "contains") {
+    d.expression = `${JSON.stringify(raw)} in ${v}`;
+  } else {
+    let lit: any = raw;
+    if (raw === "true") lit = true;
+    else if (raw === "false") lit = false;
+    else if (/^-?\d+(\.\d+)?$/.test(raw)) lit = Number(raw);
+    else lit = JSON.stringify(raw);
+    d.expression = `${v} ${op} ${lit}`;
+  }
+}
+
 // 本节点引用到的输入变量（从 data 的字符串值中提取 {{var}}）
 const refVars = computed(() => {
   const found = new Set<string>();
@@ -883,6 +943,29 @@ onMounted(async () => {
 
 .node-disabled-tip {
   margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.cond-builder {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+
+  .cond-var {
+    flex: 1.2;
+  }
+  .cond-op {
+    width: 120px;
+  }
+  .cond-val {
+    flex: 1;
+  }
+}
+
+.cond-hint {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
