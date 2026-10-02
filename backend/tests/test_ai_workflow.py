@@ -1466,3 +1466,32 @@ def test_workflow_step_execution(test_client, auth_headers):
         assert "你好" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_condition_and_or(test_client, auth_headers):
+    """条件节点：多条件 AND 表达式正确路由到真/假分支。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "v", "type": "variable", "data": {"name": "a", "value": 5}},
+                {"id": "c", "type": "condition", "data": {"expression": "a > 3 and a < 10"}},
+                {"id": "ans", "type": "answer", "data": {"output_template": "命中"}},
+                {"id": "end", "type": "end", "data": {"output_template": "未命中"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "v"},
+                {"id": "e2", "source": "v", "target": "c"},
+                {"id": "e3", "source": "c", "target": "ans", "sourceHandle": "true"},
+                {"id": "e4", "source": "c", "target": "end", "sourceHandle": "false"},
+            ],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "命中" in r.text and "未命中" not in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])
