@@ -8,6 +8,8 @@ export interface ChatMessage {
   loading?: boolean;
   collapsed?: boolean;
   files?: UploadedFile[];
+  // 知识检索引用来源（RAG）
+  sources?: { title: string; content: string; score?: number }[];
 }
 
 // 上传文件类型

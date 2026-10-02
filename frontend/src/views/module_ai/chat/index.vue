@@ -32,6 +32,20 @@
           />
         </el-main>
         <el-footer class="chat-footer">
+          <div v-if="!appId && !agentId" class="chat-kb-bar">
+            <span class="chat-kb-label">关联知识库</span>
+            <el-select
+              v-model="selectedKbIds"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              size="small"
+              placeholder="可选：回答时检索这些知识库"
+              style="max-width: 360px"
+            >
+              <el-option v-for="kb in kbOptions" :key="kb.id" :label="kb.name" :value="kb.id" />
+            </el-select>
+          </div>
           <ChatInput :sending="isSending" @send="handleSendMessage" @stop="handleStop" />
         </el-footer>
       </el-container>
@@ -55,8 +69,9 @@ import Sidebar from "./components/Sidebar.vue";
 import { createAiSession, getAiSessionDetail, type AiSessionItem } from "@/api/module_ai/session";
 import { getAiAppDetail } from "@/api/module_ai/app";
 import { getAiAgentDetail } from "@/api/module_ai/agent";
+import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { useAiChat } from "@/composables/ai/useAiChat";
-import { textOf, reasoningOf, toolPartsOf } from "@/composables/ai/uiMessage";
+import { textOf, reasoningOf, toolPartsOf, sourcesOf } from "@/composables/ai/uiMessage";
 import type { ChatMessage, UploadedFile } from "./types";
 
 const route = useRoute();
@@ -76,6 +91,22 @@ const agentId = ref<number | null>(route.query.agent_id ? Number(route.query.age
 const appName = ref("");
 // 请求令牌：discard out-of-order responses when app_id/agent_id changes quickly
 let appLoadToken = 0;
+
+// 关联知识库（RAG）：仅通用助手（无 app/agent）时生效
+const selectedKbIds = ref<number[]>([]);
+const kbOptions = ref<{ id: number; name: string }[]>([]);
+
+async function loadKnowledgeBases() {
+  try {
+    const res = await getAiKnowledgeList();
+    const rows = res.data?.data || [];
+    kbOptions.value = rows.map((r: any) => ({ id: r.id, name: r.name }));
+  } catch {
+    // 列表加载失败不阻断聊天
+    kbOptions.value = [];
+  }
+}
+loadKnowledgeBases();
 
 watch(
   () => route.query.app_id,
@@ -147,6 +178,10 @@ const chat = useAiChat(() => ({
     const payload: Record<string, unknown> = {};
     if (currentSessionId.value != null) payload.session_id = currentSessionId.value;
     if (appId.value != null) payload.app_id = appId.value;
+    // 通用助手（无 app/agent）时可关联知识库做 RAG
+    if (!appId.value && !agentId.value && selectedKbIds.value.length) {
+      payload.knowledge_ids = selectedKbIds.value;
+    }
     return payload;
   },
 }));
@@ -167,11 +202,13 @@ const liveMessages = computed<ChatMessage[]>(() =>
       .map((p) => p.toolName)
       .filter(Boolean);
     const toolHint = toolNames.map((n) => `\n\n> 🔧 调用工具：${n}`).join("");
+    const sources = sourcesOf(m);
     return {
       id: m.id,
       type: m.role === "user" ? "user" : "assistant",
       content: `${text}${toolHint}`,
       think: think || undefined,
+      sources: sources.length ? sources : undefined,
       timestamp: Date.now(),
       loading: isSending.value && m.role === "assistant" && !text,
       collapsed: text.length > 200,
@@ -372,10 +409,22 @@ const handleCloseApp = () => {
 
   .chat-footer {
     height: auto;
-    min-height: 80px;
+    min-height: 84px;
     padding: 0;
     background: var(--chat-area-bg);
     border-top: 1px solid var(--el-border-color-lighter);
+
+    .chat-kb-bar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 16px 0;
+
+      .chat-kb-label {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+    }
   }
 }
 </style>

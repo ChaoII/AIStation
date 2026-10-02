@@ -34,6 +34,13 @@ export function toolPartsOf(msg: any): AiUIPart[] {
   return (msg?.parts || []).filter((p: AiUIPart) => p.type === "dynamic-tool");
 }
 
+/** 取知识检索引用来源（累积 sources part）。 */
+export function sourcesOf(msg: any): any[] {
+  return (msg?.parts || [])
+    .filter((p: AiUIPart) => p.type === "sources")
+    .flatMap((p: AiUIPart) => p.sources || []);
+}
+
 /** 取指定 data-* part 的 data（如 "data-finish"）。 */
 export function dataPartsOf(msg: any, type: string): any[] {
   return (msg?.parts || []).filter((p: AiUIPart) => p.type === type).map((p: AiUIPart) => p.data);

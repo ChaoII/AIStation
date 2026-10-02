@@ -49,6 +49,18 @@
           :class="{ collapsed: message.collapsed }"
           v-html="formattedContent"
         ></div>
+        <div v-if="message.sources && message.sources.length" class="message-sources">
+          <div class="message-sources__title">引用来源</div>
+          <div class="message-sources__list">
+            <div v-for="(s, i) in message.sources" :key="i" class="message-source-item">
+              <el-icon class="message-source-item__icon"><Document /></el-icon>
+              <span class="message-source-item__title">{{ s.title }}</span>
+              <el-tag v-if="s.score != null" size="small" type="info">
+                相似度 {{ Number(s.score).toFixed(2) }}
+              </el-tag>
+            </div>
+          </div>
+        </div>
         <div
           v-if="message.type === 'assistant' && message.loading && !message.content"
           class="typing-indicator"
@@ -440,6 +452,44 @@ const formatFileSize = (bytes: number): string => {
           th {
             font-weight: 600;
             background: var(--el-fill-color-light);
+          }
+        }
+      }
+
+      .message-sources {
+        margin-top: 12px;
+
+        .message-sources__title {
+          margin-bottom: 8px;
+          font-size: 13px;
+          font-weight: 600;
+        }
+
+        .message-sources__list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .message-source-item {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+          padding: 6px 10px;
+          font-size: 12px;
+          background: var(--el-fill-color-light);
+          border: 1px solid var(--el-border-color-light);
+          border-radius: 6px;
+
+          .message-source-item__icon {
+            color: var(--el-color-primary);
+          }
+
+          .message-source-item__title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
           }
         }
       }
