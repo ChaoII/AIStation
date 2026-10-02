@@ -129,6 +129,41 @@
           />
         </el-form-item>
       </el-form>
+      <el-alert
+        v-if="runApproval"
+        type="warning"
+        :closable="false"
+        title="需要工具调用审批"
+        class="run-approval"
+      >
+        <div class="run-approval__list">
+          <div v-for="t in runApproval.toolCalls" :key="t.toolCallId" class="run-approval__item">
+            <div class="run-approval__name">
+              <el-icon><Tools /></el-icon>
+              <span>{{ t.toolName }}</span>
+            </div>
+            <pre class="run-approval__args">{{ JSON.stringify(t.arguments, null, 2) }}</pre>
+          </div>
+        </div>
+        <div class="run-approval__actions">
+          <el-button
+            type="success"
+            size="small"
+            :loading="approving"
+            @click="handleApprove('approve')"
+          >
+            允许执行
+          </el-button>
+          <el-button
+            type="danger"
+            size="small"
+            :loading="approving"
+            @click="handleApprove('reject')"
+          >
+            拒绝执行
+          </el-button>
+        </div>
+      </el-alert>
       <div v-if="runSources.length" class="run-sources">
         <div class="run-sources__title">引用来源</div>
         <div class="run-sources__list">
@@ -225,6 +260,8 @@ const runInput = ref("");
 const runVariables = ref("{}");
 const runOutput = ref("");
 const runSources = ref<any[]>([]);
+const runApproval = ref<{ run_id: string; toolCalls: any[] } | null>(null);
+const approving = ref(false);
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
 
@@ -446,7 +483,35 @@ function openRun() {
   runVariables.value = "{}";
   runOutput.value = "";
   runSources.value = [];
+  runApproval.value = null;
   runVisible.value = true;
+}
+
+/** 读取 AI SDK UI Message Stream（SSE）并逐帧回调，供运行/审批复用。 */
+async function readUiStream(resp: Response, onFrame: (obj: any) => void) {
+  const reader = resp.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() || "";
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith("data:")) continue;
+      const raw = t.slice(5).trim();
+      if (raw === "[DONE]") continue;
+      let obj: any;
+      try {
+        obj = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      onFrame(obj);
+    }
+  }
 }
 
 async function handleRun() {
@@ -456,6 +521,7 @@ async function handleRun() {
     if (!workflowId.value) return;
   }
   running.value = true;
+  runApproval.value = null;
   runOutput.value = "运行中...";
   try {
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
@@ -481,40 +547,56 @@ async function handleRun() {
       runOutput.value = `请求失败：${resp.status}`;
       return;
     }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
     let out = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() || "";
-      for (const line of lines) {
-        const t = line.trim();
-        if (!t.startsWith("data:")) continue;
-        const raw = t.slice(5).trim();
-        if (raw === "[DONE]") continue;
-        let obj: any;
-        try {
-          obj = JSON.parse(raw);
-        } catch {
-          continue;
+    await readUiStream(resp, (obj) => {
+      if (obj.type === "text-delta") out += obj.text;
+      else if (obj.type === "sources") runSources.value = obj.sources || [];
+      else if (obj.type === "data-finish") {
+        if (obj.awaiting_approval && obj.run_id) {
+          runApproval.value = { run_id: obj.run_id, toolCalls: obj.pending_tool_calls || [] };
         }
-        if (obj.type === "text-delta") out += obj.text;
-        else if (obj.type === "sources") runSources.value = obj.sources || [];
-        else if (obj.type === "data-finish") {
-          out = obj.reply || out;
-          runOutput.value = out;
-        }
+        out = obj.reply || out;
       }
-    }
+    });
     runOutput.value = out || "(无输出)";
   } catch (e: any) {
     runOutput.value = `运行失败：${e?.message || e}`;
   } finally {
     running.value = false;
+  }
+}
+
+async function handleApprove(decision: "approve" | "reject") {
+  if (!runApproval.value || !workflowId.value) return;
+  const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+  const runId = runApproval.value.run_id;
+  approving.value = true;
+  const prior =
+    runOutput.value === "运行中..." || runOutput.value === "(无输出)" ? "" : runOutput.value;
+  try {
+    const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/approve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
+      },
+      body: JSON.stringify({ run_id: runId, decision }),
+    });
+    if (!resp.ok || !resp.body) {
+      runOutput.value = `审批请求失败：${resp.status}`;
+      return;
+    }
+    let out = prior;
+    await readUiStream(resp, (obj) => {
+      if (obj.type === "text-delta") out += obj.text;
+      else if (obj.type === "data-finish") out = obj.reply || out;
+    });
+    runOutput.value = out || "(无输出)";
+  } catch (e: any) {
+    runOutput.value = `审批续跑失败：${e?.message || e}`;
+  } finally {
+    approving.value = false;
+    runApproval.value = null;
   }
 }
 </script>
@@ -609,6 +691,44 @@ async function handleRun() {
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+.run-approval {
+  margin-top: 12px;
+
+  .run-approval__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .run-approval__item {
+    padding: 8px 10px;
+    background: var(--el-fill-color-light);
+    border: 1px solid var(--el-border-color-light);
+    border-radius: 6px;
+  }
+
+  .run-approval__name {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-weight: 600;
+  }
+
+  .run-approval__args {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--el-text-color-regular);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .run-approval__actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
   }
 }
 

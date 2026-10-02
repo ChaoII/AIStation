@@ -1,7 +1,9 @@
 """工作流服务：CRUD 与流式运行（AI SDK UI Message Stream）。"""
 from __future__ import annotations
 
+import json
 import time
+import uuid
 from collections.abc import AsyncIterator
 
 from sqlalchemy import select
@@ -10,6 +12,7 @@ from app.core.database import async_db_session
 
 from .engine import WorkflowEngine
 from .model import AiWorkflowModel
+from .schema import AiWorkflowApproveSchema
 
 
 def _to_dict(w: AiWorkflowModel) -> dict:
@@ -98,8 +101,13 @@ class AiWorkflowService:
         auth,
         variables: dict | None = None,
         session_id: int | None = None,
+        redis=None,
     ) -> AsyncIterator[str]:
-        """运行工作流：实例化引擎并流式产出 UI Message Stream 帧。"""
+        """运行工作流：实例化引擎并流式产出 UI Message Stream 帧。
+
+        LLM 节点挂起待审批时（HITL），把运行状态持久化到 Redis 并产出
+        ``data-finish``（含 ``awaiting_approval`` 与 ``run_id``），供前端调审批接口续跑。
+        """
         from app.plugin.module_ai.assistant.service import (
             extract_openai_messages,
             last_user_text,
@@ -120,6 +128,8 @@ class AiWorkflowService:
             "action": None,
             "report_id": None,
             "error": None,
+            "halted": False,
+            "pending_approval": None,
         }
         yield ms.start()
         try:
@@ -144,6 +154,34 @@ class AiWorkflowService:
             )
             async for frame in engine.run():
                 yield frame
+
+            if state.get("halted") and state.get("pending_approval"):
+                # HITL：持久化运行状态，产出审批装载帧供前端确认后调 approve 续跑
+                run_id = uuid.uuid4().hex
+                await cls._persist_pending(redis, run_id, workflow_id, state, uid)
+                yield ms.data(
+                    "finish",
+                    {
+                        "reply": state.get("assistant_text") or "",
+                        "tool_calls": state["tool_calls"],
+                        "action": state["action"],
+                        "report_id": state["report_id"],
+                        "awaiting_approval": True,
+                        "run_id": run_id,
+                        "pending_tool_calls": [
+                            {
+                                "toolCallId": t["toolCallId"],
+                                "toolName": t["toolName"],
+                                "arguments": t.get("arguments"),
+                            }
+                            for t in state["pending_approval"].get("pending", [])
+                        ],
+                    },
+                )
+                yield ms.finish()
+                yield ms.done()
+                return
+
             yield ms.data(
                 "finish",
                 {
@@ -174,7 +212,7 @@ class AiWorkflowService:
                 runtime_model_name(workflow_id),
                 "workflow",
                 int((time.perf_counter() - t0) * 1000),
-                "success" if state["error"] is None else "error",
+                "success" if state["error"] is None and not state.get("halted") else "pending",
                 state["error"],
                 app_id=workflow_id,
                 user_id=uid,
@@ -186,6 +224,129 @@ class AiWorkflowService:
                 app_id=workflow_id,
                 user_id=uid,
             )
+
+    @staticmethod
+    async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:
+        """把挂起的运行状态写入 Redis（供审批续跑读取）。"""
+        if not redis:
+            return
+        try:
+            from app.core.redis_crud import RedisCURD
+
+            payload = {
+                "workflow_id": workflow_id,
+                "user_id": uid,
+                "pending_approval": state.get("pending_approval"),
+                "assistant_text": state.get("assistant_text") or "",
+                "tool_calls": state.get("tool_calls") or [],
+            }
+            await RedisCURD(redis).set(f"ai:wf:approval:{run_id}", payload, expire=1800)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @staticmethod
+    async def _load_pending(redis, run_id: str) -> dict | None:
+        """读取挂起状态（RedisCURD.get 返回 JSON 字节，需反序列化）。"""
+        if not redis:
+            return None
+        try:
+            from app.core.redis_crud import RedisCURD
+
+            raw = await RedisCURD(redis).get(f"ai:wf:approval:{run_id}")
+            if not raw:
+                return None
+            if isinstance(raw, (bytes, bytearray)):
+                raw = raw.decode("utf-8")
+            if isinstance(raw, str):
+                return json.loads(raw)
+            return raw
+        except Exception:  # noqa: BLE001
+            return None
+
+    @classmethod
+    async def approve_ui_stream(
+        cls, workflow_id: int, approve: AiWorkflowApproveSchema, auth, redis=None
+    ) -> AsyncIterator[str]:
+        """HITL 审批续跑：读取挂起状态，执行/拒绝工具并流式产出最终回复。"""
+        from app.plugin.module_ai.streaming import UiMessageStream
+
+        ms = UiMessageStream()
+        state: dict = {
+            "assistant_text": "",
+            "tool_calls": [],
+            "action": None,
+            "report_id": None,
+            "error": None,
+            "reply": "",
+        }
+        yield ms.start()
+        try:
+            payload = await cls._load_pending(redis, approve.run_id)
+            if not payload:
+                state["error"] = "审批会话不存在或已过期"
+                yield ms.error(state["error"])
+                yield ms.data("finish", {"reply": "", "tool_calls": []})
+                yield ms.finish()
+                yield ms.done()
+                return
+
+            workflow = await cls.get_workflow(workflow_id)
+            if not workflow or not workflow.get("enabled"):
+                state["error"] = "工作流不存在或未启用"
+                yield ms.error(state["error"])
+                yield ms.data("finish", {"reply": "", "tool_calls": []})
+                yield ms.finish()
+                yield ms.done()
+                return
+
+            paused = payload.get("pending_approval") or {}
+            graph = workflow.get("graph") or {}
+            openai_messages = (paused.get("llm_messages") or [])[:]
+            engine = WorkflowEngine(
+                graph=graph,
+                variables={},
+                messages=openai_messages,
+                ms=ms,
+                state=state,
+                user_id=payload.get("user_id"),
+            )
+            # 恢复挂起状态供 resume_after_approval 读取 llm_messages/content
+            engine.state["pending_approval"] = paused
+            engine.state["assistant_text"] = payload.get("assistant_text") or ""
+            node_id = paused.get("node_id")
+            tool_calls = [
+                {
+                    "toolCallId": t["toolCallId"],
+                    "toolName": t["toolName"],
+                    "arguments": t.get("arguments"),
+                }
+                for t in (paused.get("pending") or [])
+            ]
+            async for frame in engine.resume_after_approval(
+                node_id, tool_calls, approve.decision
+            ):
+                yield frame
+            if redis and approve.run_id:
+                from app.core.redis_crud import RedisCURD
+
+                await RedisCURD(redis).delete(f"ai:wf:approval:{approve.run_id}")
+            yield ms.data(
+                "finish",
+                {
+                    "reply": state.get("reply") or state.get("assistant_text"),
+                    "tool_calls": state["tool_calls"],
+                    "action": state["action"],
+                    "report_id": state["report_id"],
+                },
+            )
+            yield ms.finish()
+            yield ms.done()
+        except Exception as e:  # noqa: BLE001
+            state["error"] = str(e)
+            yield ms.error(f"审批续跑失败：{e}")
+            yield ms.data("finish", {"reply": state.get("assistant_text"), "tool_calls": []})
+            yield ms.finish()
+            yield ms.done()
 
 
 def runtime_model_name(workflow_id: int) -> str:

@@ -102,6 +102,12 @@ class UiMessageStream:
             )
         return out
 
+    def tool_approval(self, tool_calls: list[dict]) -> str:
+        """HITL 工具审批帧：透出待审批的工具调用（名/参数），前端需确认或拒绝。"""
+        if not tool_calls:
+            return ""
+        return _frame({"type": "tool-approval", "toolCalls": tool_calls})
+
     def sources(self, sources: list[dict]) -> str:
         """知识检索引用来源帧：供前端展示引用的知识块（标题/片段/相似度）。"""
         if not sources:

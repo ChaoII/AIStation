@@ -41,6 +41,9 @@
           <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
         </el-select>
       </el-form-item>
+      <el-form-item label="工具调用需人工审批（HITL）">
+        <el-switch v-model="d.require_approval" />
+      </el-form-item>
       <el-form-item label="输出变量名（可选）">
         <el-input v-model="d.output_variable" placeholder="供下游引用" />
       </el-form-item>

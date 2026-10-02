@@ -1,7 +1,7 @@
 """工作流控制器：CRUD 与流式运行。"""
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -10,7 +10,12 @@ from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.streaming import ui_stream_response
 
-from .schema import AiWorkflowCreateSchema, AiWorkflowRunSchema, AiWorkflowUpdateSchema
+from .schema import (
+    AiWorkflowApproveSchema,
+    AiWorkflowCreateSchema,
+    AiWorkflowRunSchema,
+    AiWorkflowUpdateSchema,
+)
 from .service import AiWorkflowService
 
 AiWorkflowRouter = APIRouter(
@@ -69,10 +74,30 @@ async def delete_workflows(
 async def run_workflow_stream(
     workflow_id: int,
     data: AiWorkflowRunSchema,
+    request: Request,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
 ) -> StreamingResponse:
     return ui_stream_response(
         AiWorkflowService.run_ui_stream(
-            workflow_id, data.messages, auth, data.variables, data.session_id
+            workflow_id,
+            data.messages,
+            auth,
+            data.variables,
+            data.session_id,
+            redis=request.app.state.redis,
+        )
+    )
+
+
+@AiWorkflowRouter.post("/{workflow_id}/approve", summary="HITL 工具审批续跑（流式）")
+async def approve_workflow(
+    workflow_id: int,
+    data: AiWorkflowApproveSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> StreamingResponse:
+    return ui_stream_response(
+        AiWorkflowService.approve_ui_stream(
+            workflow_id, data, auth, redis=request.app.state.redis
         )
     )

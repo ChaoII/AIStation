@@ -24,3 +24,11 @@ class AiWorkflowRunSchema(BaseModel):
     messages: list[dict] = Field(default_factory=list)
     variables: dict | None = None
     session_id: int | None = None
+
+
+class AiWorkflowApproveSchema(BaseModel):
+    """HITL 工具审批：基于 run_id 对挂起的工具调用做出 approve/reject。"""
+
+    run_id: str
+    decision: str = Field(pattern="^(approve|reject)$")
+    tool_call_ids: list[str] | None = None

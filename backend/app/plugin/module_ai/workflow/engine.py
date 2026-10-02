@@ -93,9 +93,8 @@ class WorkflowEngine:
             if name not in self.variables and "default" in v:
                 self.variables[name] = v["default"]
 
-    async def _exec_llm(self, node: dict) -> None:
-        """LLM 节点：渲染提示词 → 流式调用 → 累积文本；写入输出变量。"""
-        data = node.get("data") or {}
+    async def _resolve_llm_client(self, data: dict):
+        """解析 LLM 节点运行时：返回 (client, runtime, tool_schemas, dispatch)。"""
         from app.plugin.module_ai.provider.service import (
             AiModelService,
             build_headers,
@@ -109,21 +108,6 @@ class WorkflowEngine:
         if not runtime:
             raise RuntimeError("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
 
-        system_prompt = self._render(data.get("prompt") or "")
-        messages: list[dict] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        # 组装知识库上下文（阶段 3：RAG 注入）+ 透出引用来源
-        if data.get("knowledge_ids"):
-            kb_context, sources = await self._retrieve_context(data)
-            if kb_context:
-                messages.append({"role": "system", "content": f"参考知识：\n{kb_context}"})
-            if sources:
-                yield_src = self.ms.sources(sources)
-                if yield_src:
-                    yield yield_src
-        messages += self.messages
-
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(
@@ -133,6 +117,37 @@ class WorkflowEngine:
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-workflow"
             ),
         )
+        tool_schemas, dispatch = await self._llm_tools(data)
+        return client, runtime, tool_schemas, dispatch
+
+    def _llm_base_messages(self, data: dict, kb_context: str = "") -> list[dict]:
+        """组装 LLM 节点输入消息：系统提示词 + 知识库上下文 + 历史消息。"""
+        system_prompt = self._render(data.get("prompt") or "")
+        messages: list[dict] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if kb_context:
+            messages.append({"role": "system", "content": f"参考知识：\n{kb_context}"})
+        messages += self.messages
+        return messages
+
+    async def _exec_llm(self, node: dict) -> None:
+        """LLM 节点：渲染提示词 → 流式调用 → 累积文本；写入输出变量。
+
+        当节点配置 ``require_approval`` 且模型发起工具调用时，透出
+        ``tool-approval`` 帧并挂起运行，等待用户审批后经 ``resume_after_approval`` 续跑。
+        """
+        data = node.get("data") or {}
+        client, runtime, tool_schemas, dispatch = await self._resolve_llm_client(data)
+
+        kb_context = ""
+        if data.get("knowledge_ids"):
+            kb_context, sources = await self._retrieve_context(data)
+            if sources:
+                yield_src = self.ms.sources(sources)
+                if yield_src:
+                    yield yield_src
+        messages = self._llm_base_messages(data, kb_context)
 
         kwargs: dict = {
             "model": runtime["model"],
@@ -141,7 +156,6 @@ class WorkflowEngine:
             "max_tokens": data.get("max_tokens", runtime["max_tokens"]),
             "stream": True,
         }
-        tool_schemas, dispatch = await self._llm_tools(data)
         if tool_schemas:
             kwargs["tools"] = tool_schemas
             kwargs["tool_choice"] = "auto"
@@ -181,6 +195,30 @@ class WorkflowEngine:
         yield_text_end = self.ms.text_end()
         if yield_text_end:
             yield yield_text_end
+
+        # HITL：需人工审批的工具调用 → 透出审批帧并挂起（不执行工具）
+        if tool_calls and tool_schemas and data.get("require_approval"):
+            pending = [
+                {
+                    "toolCallId": s["id"],
+                    "toolName": s["name"],
+                    "arguments": json.loads(s["arguments"] or "{}") if s["arguments"] else {},
+                }
+                for s in tool_calls.values()
+            ]
+            yield_ap = self.ms.tool_approval(pending)
+            if yield_ap:
+                yield yield_ap
+            self.state["pending_approval"] = {
+                "node_id": node["id"],
+                "llm_messages": messages,
+                "tool_calls": tool_calls,
+                "content": content,
+                "pending": pending,
+            }
+            self.state["halted"] = True
+            self.outputs[node["id"]] = content
+            return
 
         # 工具循环（V1：单轮工具调用后把结果并入本轮文本，供模型继续）
         if tool_calls and tool_schemas:
@@ -249,6 +287,94 @@ class WorkflowEngine:
             return content
         except Exception as e:  # noqa: BLE001
             return f"（工具结果收尾失败：{e}）"
+
+    async def resume_after_approval(
+        self, node_id: str, tool_calls: list[dict], decision: str
+    ):
+        """用户审批后从 LLM 节点续跑：执行/拒绝挂起的工具调用并生成最终回复。
+
+        ``tool_calls`` 为 ``[{"toolCallId","toolName","arguments"}]``，
+        ``decision`` 为 ``approve`` / ``reject``。产出 text 帧（异步生成器）。
+        """
+        node = self._node(node_id)
+        data = node.get("data") or {}
+        client, runtime, tool_schemas, dispatch = await self._resolve_llm_client(data)
+
+        norm: list[dict] = []
+        for t in tool_calls:
+            slot = {
+                "id": t.get("toolCallId"),
+                "name": t.get("toolName"),
+                "arguments": json.dumps(t.get("arguments") or {}, ensure_ascii=False),
+            }
+            norm.append(slot)
+
+        content = ""
+        pending = self.state.get("pending_approval") or {}
+        base_messages = pending.get("llm_messages") or self._llm_base_messages(data)
+        self.messages = list(base_messages)
+
+        for s in norm:
+            name = s["name"]
+            try:
+                args = json.loads(s["arguments"] or "{}") if s["arguments"] else {}
+            except Exception:  # noqa: BLE001
+                args = {}
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": s["id"],
+                            "type": "function",
+                            "function": {"name": s["name"], "arguments": s["arguments"]},
+                        }
+                    ],
+                }
+            )
+            if decision == "approve":
+                result = await dispatch(name, args, self.user_id)
+                self.state["tool_calls"].append(
+                    {"name": name, "args": args, "result": result}
+                )
+                yield_tool = self.ms.tool(s["id"], name, args=args, output=result)
+                if yield_tool:
+                    yield yield_tool
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": s["id"],
+                        "content": json.dumps(
+                            result, ensure_ascii=False, default=str
+                        )[:4000],
+                    }
+                )
+            else:
+                self.state["tool_calls"].append(
+                    {"name": name, "args": args, "result": {"approved": False}}
+                )
+                yield_deny = self.ms.tool(s["id"], name, args=args, error="用户拒绝了该工具调用")
+                if yield_deny:
+                    yield yield_deny
+                self.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": s["id"],
+                        "content": "用户拒绝了该工具调用。",
+                    }
+                )
+
+        final = await self._continue_llm(client, runtime, data, tool_schemas, dispatch)
+        content = (pending.get("content") or "") + (final or "")
+        self.outputs[node_id] = content
+        self.state["reply"] = content
+        yield_final = self.ms.text(content)
+        if yield_final:
+            yield yield_final
+        yield_end = self.ms.text_end()
+        if yield_end:
+            yield yield_end
 
     async def _llm_tools(self, data: dict):
         """解析 LLM 节点绑定的工具名 → schema 与派发器。"""
@@ -426,6 +552,9 @@ class WorkflowEngine:
             elif ntype == "llm":
                 async for frame in self._exec_llm(node):
                     yield frame
+                # HITL：LLM 节点挂起等待审批时停止后续节点执行
+                if self.state.get("halted"):
+                    break
                 next_id = self._edge_target(node_id)
                 if next_id:
                     stack.append(next_id)
