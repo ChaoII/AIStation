@@ -99,6 +99,68 @@ def test_render_template():
     assert render_template("{{未知}}", {}) == "{{未知}}"
 
 
+def test_extract_json():
+    """从 LLM 输出中切出 JSON。"""
+    from app.plugin.module_ai.workflow.engine import _extract_json
+
+    assert _extract_json('{"a": 1}') == {"a": 1}
+    assert _extract_json('好的，结果为 {"a": 1, "b": [1,2]} 以上') == {"a": 1, "b": [1, 2]}
+    assert _extract_json("[1, 2, 3]") == [1, 2, 3]
+    # 无 JSON 时原样返回
+    assert _extract_json("无结果") == "无结果"
+
+
+def test_extractor_node(monkeypatch):
+    """参数提取：LLM 返回 JSON 字符串，解析为对象写变量。"""
+    import asyncio
+
+    from app.plugin.module_ai.workflow import engine as E
+
+    class _Message:
+        content = '{"city": "北京", "date": "2026-10-02"}'
+
+    class _Choice:
+        message = _Message()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    class _Completions:
+        async def create(self, **kw):
+            return _Resp()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    async def _resolve(self, data):
+        return _Client(), {"model": "m", "temperature": 0, "max_tokens": 256}, [], None
+
+    monkeypatch.setattr(E.WorkflowEngine, "_resolve_llm_client", _resolve)
+
+    eng = E.WorkflowEngine(
+        graph={
+            "nodes": [
+                {
+                    "id": "x",
+                    "type": "extractor",
+                    "data": {"schema": ["city", "date"], "output_variable": "info"},
+                }
+            ],
+            "edges": [],
+        },
+        variables={},
+        messages=[],
+        ms=E.UiMessageStream(),
+        state={},
+    )
+    asyncio.run(eng._exec_extractor(eng.nodes["x"]))
+    assert eng.outputs["x"] == {"city": "北京", "date": "2026-10-02"}
+    assert eng.variables["info"]["city"] == "北京"
+
+
 def test_classifier_node(monkeypatch):
     """问题分类器：LLM 返回类别名，写入输出与变量。"""
     import asyncio

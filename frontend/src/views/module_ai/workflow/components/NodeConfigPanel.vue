@@ -216,6 +216,19 @@
       </el-form-item>
     </template>
 
+    <!-- extractor：参数提取 -->
+    <template v-else-if="type === 'extractor'">
+      <el-form-item label="提取字段（JSON 数组）">
+        <el-input v-model="schemaText" type="textarea" :rows="2" placeholder='["城市", "日期"]' />
+      </el-form-item>
+      <el-form-item label="输入（支持 {{变量}}）">
+        <el-input v-model="d.query" type="textarea" :rows="2" placeholder="如：{{query}}" />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="JSON 对象" />
+      </el-form-item>
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">
@@ -265,6 +278,9 @@ const iterArgsText = ref(
 );
 const categoriesText = ref(
   Array.isArray(d.categories) ? d.categories.join(", ") : d.categories || ""
+);
+const schemaText = ref(
+  Array.isArray(d.schema) ? JSON.stringify(d.schema, null, 0) : d.schema || ""
 );
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
@@ -323,6 +339,14 @@ function emitChange() {
       .map((s: string) => s.trim())
       .filter(Boolean);
   }
+  if (type === "extractor") {
+    try {
+      const v: any = schemaText.value ? JSON.parse(schemaText.value) : [];
+      data.schema = Array.isArray(v) ? v : [];
+    } catch {
+      data.schema = [];
+    }
+  }
   emit("change", data);
 }
 
@@ -337,6 +361,7 @@ watch(
     itemsText,
     iterArgsText,
     categoriesText,
+    schemaText,
   ],
   emitChange,
   { deep: true }

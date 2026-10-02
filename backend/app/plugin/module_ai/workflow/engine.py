@@ -27,6 +27,33 @@ def render_template(template: str | None, variables: dict) -> str:
     return _VAR_RE.sub(lambda m: str(variables.get(m.group(1), m.group(0))), template)
 
 
+def _extract_json(text: str) -> Any:
+    """从 LLM 输出中提取第一个 JSON 对象/数组；失败返回原文本。"""
+    if not text:
+        return {}
+    text = text.strip()
+    for token in ("{", "["):
+        start = text.find(token)
+        if start == -1:
+            continue
+        # 做括号配平以切出合法 JSON 片段
+        open_ch = token
+        close_ch = "}" if token == "{" else "]"
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == open_ch:
+                depth += 1
+            elif text[i] == close_ch:
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start : i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except Exception:  # noqa: BLE001
+                        break
+    return text
+
+
 class WorkflowEngine:
     """按节点 DAG 顺序执行工作流，流式产出 SSE 帧。
 
@@ -645,6 +672,39 @@ class WorkflowEngine:
         if out_var:
             self.variables[out_var] = category
 
+    async def _exec_extractor(self, node: dict) -> None:
+        """参数提取（JSON 输出）节点：LLM 按 schema 从输入抽取 JSON 对象写变量。"""
+        data = node.get("data") or {}
+        client, runtime, _tools, _dispatch = await self._resolve_llm_client(data)
+        schema = data.get("schema") or []
+        query = self._render(data.get("query") or "") or ""
+        if not query:
+            query = self.state.get("assistant_text") or ""
+        prompt = (
+            "你是信息抽取器。根据给定字段从输入中提取 JSON 对象，只输出 JSON，不要其它文字。\n"
+            f"字段：{json.dumps(schema, ensure_ascii=False)}\n输入：{query}"
+        )
+        resp = await client.chat.completions.create(
+            model=runtime["model"],
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=256,
+            stream=False,
+        )
+        text = ""
+        if isinstance(resp, dict):
+            text = ((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        else:
+            try:
+                text = resp.choices[0].message.content or ""
+            except Exception:  # noqa: BLE001
+                text = ""
+        parsed = _extract_json(text)
+        self.outputs[node["id"]] = parsed
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = parsed
+
     async def _exec_end(self, node: dict) -> None:
         """结束节点：组装最终回复（output_template 或最后 LLM 输出）。"""
         data = node.get("data") or {}
@@ -745,6 +805,11 @@ class WorkflowEngine:
                 if not next_id:
                     next_id = self._edge_target(node_id)
                 if next_id and next_id not in visited:
+                    stack.append(next_id)
+            elif ntype == "extractor":
+                await self._exec_extractor(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
                     stack.append(next_id)
             elif ntype == "end":
                 await self._exec_end(node)
