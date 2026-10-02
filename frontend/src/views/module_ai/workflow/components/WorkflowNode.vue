@@ -108,6 +108,17 @@
           {{ (data.branches || []).length ? `并行 ${data.branches.length} 分支` : "选择并行分支" }}
         </div>
       </template>
+      <template v-else-if="def.type === 'doc_extractor'">
+        <div class="wf-node__text">
+          {{ data.url ? "抓取页面文本" : data.source ? "内联文本提取" : "未配置内容源" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'web_search'">
+        <div class="wf-node__text">{{ data.query ? `搜索：${data.query}` : "未配置搜索词" }}</div>
+      </template>
+      <template v-else-if="def.type === 'database'">
+        <div class="wf-node__text">{{ data.sql ? "SQL 已配置" : "未配置 SQL" }}</div>
+      </template>
       <template v-else-if="def.type === 'end'">
         <div class="wf-node__text">{{ data.output_template ? "模板已配置" : "输出最终回复" }}</div>
       </template>
@@ -154,6 +165,9 @@ import {
   User,
   Sort,
   Grid,
+  Document,
+  Search,
+  Coin,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import { nodeDefOf, type WorkflowNodeType } from "../nodes";
@@ -186,6 +200,9 @@ const def = computed(() => {
     agent: User,
     loop: Sort,
     parallel: Grid,
+    doc_extractor: Document,
+    web_search: Search,
+    database: Coin,
     end: CircleCheckFilled,
   };
   return { ...d, icon: iconMap[d.type] || Cpu };

@@ -302,6 +302,8 @@ import {
   User,
   Sort,
   Grid,
+  Search,
+  Coin,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -630,6 +632,9 @@ function iconOf(type: string) {
     agent: User,
     loop: Sort,
     parallel: Grid,
+    doc_extractor: Document,
+    web_search: Search,
+    database: Coin,
     end: CircleCheckFilled,
   };
   return m[type as WorkflowNodeType] || Cpu;
@@ -768,6 +773,12 @@ function defaultData(type: string): Record<string, any> {
       return { items: [], body_workflow_id: null, max_iterations: 20, output_variable: "" };
     case "parallel":
       return { branches: [], output_variable: "" };
+    case "doc_extractor":
+      return { url: "", source: "", output_variable: "" };
+    case "web_search":
+      return { query: "", endpoint: "", api_key: "", output_variable: "" };
+    case "database":
+      return { dsn: "", sql: "", output_variable: "" };
     case "end":
       return { output_template: "" };
     default:

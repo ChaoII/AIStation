@@ -408,6 +408,66 @@
       </el-alert>
     </template>
 
+    <!-- doc_extractor：文档提取 -->
+    <template v-else-if="type === 'doc_extractor'">
+      <el-form-item label="URL（支持 {{变量}}）">
+        <el-input v-model="d.url" placeholder="http://...，二选一，优先 URL" />
+      </el-form-item>
+      <el-form-item label="内联文本（支持 {{变量}}）">
+        <el-input
+          v-model="d.source"
+          type="textarea"
+          :rows="3"
+          placeholder="粘贴 HTML 或文本，将剥离标签"
+        />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="提取出的纯文本" />
+      </el-form-item>
+    </template>
+
+    <!-- web_search：网页搜索 -->
+    <template v-else-if="type === 'web_search'">
+      <el-form-item label="搜索词（支持 {{变量}}）">
+        <el-input v-model="d.query" placeholder="如 {{query}}" />
+      </el-form-item>
+      <el-form-item label="接口地址">
+        <el-input v-model="d.endpoint" placeholder="https://api.example.com/search?q={{query}}" />
+      </el-form-item>
+      <el-form-item label="API Key（可选）">
+        <el-input
+          v-model="d.api_key"
+          type="password"
+          show-password
+          placeholder="以 Bearer 形式注入 Authorization 头"
+        />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="格式化后的搜索结果" />
+      </el-form-item>
+    </template>
+
+    <!-- database：数据库查询 -->
+    <template v-else-if="type === 'database'">
+      <el-form-item label="连接 DSN">
+        <el-input
+          v-model="d.dsn"
+          placeholder="postgresql+asyncpg://user:pass@host/db 或 sqlite+aiosqlite:///a.db"
+        />
+      </el-form-item>
+      <el-form-item label="SQL（支持 {{变量}}）">
+        <el-input
+          v-model="d.sql"
+          type="textarea"
+          :rows="3"
+          placeholder="SELECT * FROM t WHERE id={{id}}"
+        />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="查询得到的行数组" />
+      </el-form-item>
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">

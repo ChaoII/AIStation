@@ -1205,3 +1205,119 @@ def test_workflow_parallel_node(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [parent, wf_a["id"], wf_b["id"]])
+
+
+def test_workflow_doc_extractor(test_client, auth_headers):
+    """文档提取节点：内联 HTML 源剥离为纯文本。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "doc", "type": "doc_extractor",
+                 "data": {"source": "<p>你好&nbsp;<b>世界</b></p><script>var x=1;</script>",
+                          "output_variable": "doctext"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{doctext}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "doc"},
+                      {"id": "e2", "source": "doc", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "你好" in r.text and "世界" in r.text
+        assert "var x" not in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_web_search(test_client, auth_headers):
+    """网页搜索节点：请求本地 mock 搜索 API 并格式化结果。"""
+    import http.server
+    import json as _json
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = _json.dumps({"results": [
+                {"title": "Alpha 结果", "link": "http://a", "snippet": "关于 alpha 的描述"},
+                {"title": "Beta", "link": "http://b", "snippet": "beta 介绍"},
+            ]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    try:
+        wf = test_client.post("/api/v1/ai/workflows/create",
+            json={"name": _new_name(), "graph": {
+                "nodes": [
+                    {"id": "start", "type": "start", "data": {"variables": []}},
+                    {"id": "ws", "type": "web_search",
+                     "data": {"query": "alpha",
+                              "endpoint": f"http://127.0.0.1:{port}/search?q={{{{query}}}}",
+                              "output_variable": "search"}},
+                    {"id": "end", "type": "end", "data": {"output_template": "{{search}}"}},
+                ],
+                "edges": [{"id": "e1", "source": "start", "target": "ws"},
+                          {"id": "e2", "source": "ws", "target": "end"}],
+            }}, headers=auth_headers).json()["data"]["id"]
+        try:
+            r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+                json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+                headers=auth_headers)
+            assert r.status_code == 200, r.text
+            assert "Alpha 结果" in r.text and "beta 介绍" in r.text
+            assert "data: [DONE]" in r.text
+        finally:
+            _delete_wf(test_client, auth_headers, [wf])
+    finally:
+        srv.shutdown()
+
+
+def test_workflow_database(test_client, auth_headers):
+    """数据库查询节点：对本地 sqlite 文件执行 SQL 返回行。"""
+    import os
+    import sqlite3
+    import tempfile
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE t (id INTEGER, name TEXT)")
+        conn.executemany("INSERT INTO t VALUES (?,?)", [(1, "张三"), (2, "李四")])
+        conn.commit()
+        conn.close()
+        dsn = f"sqlite+aiosqlite:///{path}"
+        wf = test_client.post("/api/v1/ai/workflows/create",
+            json={"name": _new_name(), "graph": {
+                "nodes": [
+                    {"id": "start", "type": "start", "data": {"variables": []}},
+                    {"id": "db", "type": "database",
+                     "data": {"dsn": dsn, "sql": "SELECT name FROM t WHERE id=1", "output_variable": "rows"}},
+                    {"id": "end", "type": "end", "data": {"output_template": "{{rows}}"}},
+                ],
+                "edges": [{"id": "e1", "source": "start", "target": "db"},
+                          {"id": "e2", "source": "db", "target": "end"}],
+            }}, headers=auth_headers).json()["data"]["id"]
+        try:
+            r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+                json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+                headers=auth_headers)
+            assert r.status_code == 200, r.text
+            assert "张三" in r.text
+            assert "data: [DONE]" in r.text
+        finally:
+            _delete_wf(test_client, auth_headers, [wf])
+    finally:
+        os.remove(path)

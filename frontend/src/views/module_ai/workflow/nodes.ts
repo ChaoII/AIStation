@@ -21,6 +21,9 @@ export type WorkflowNodeType =
   | "agent"
   | "loop"
   | "parallel"
+  | "doc_extractor"
+  | "web_search"
+  | "database"
   | "end";
 
 export interface NodeDef {
@@ -145,6 +148,27 @@ export const NODE_DEFS: NodeDef[] = [
     label: "并行",
     color: "#26a69a",
     desc: "并发运行多个分支工作流",
+    branch: false,
+  },
+  {
+    type: "doc_extractor",
+    label: "文档提取",
+    color: "#8d6e63",
+    desc: "抓取 URL 或内联文本并剥离标签",
+    branch: false,
+  },
+  {
+    type: "web_search",
+    label: "网页搜索",
+    color: "#5c6bc0",
+    desc: "调用搜索 API 并格式化结果",
+    branch: false,
+  },
+  {
+    type: "database",
+    label: "数据库",
+    color: "#455a64",
+    desc: "对数据库执行 SQL 查询",
     branch: false,
   },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },

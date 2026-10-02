@@ -9,7 +9,7 @@
     />
 
     <PageContent ref="contentRef" :content-config="contentConfig">
-      <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
+      <template #toolbar="{ toolbarRight, onToolbar, cols }">
         <div class="data-table__toolbar--left">
           <el-button
             v-hasPerm="['module_ai:workflow:create']"

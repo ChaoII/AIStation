@@ -76,6 +76,9 @@ _NODE_LABELS = {
     "agent": "子智能体",
     "loop": "循环",
     "parallel": "并行",
+    "doc_extractor": "文档提取",
+    "web_search": "网页搜索",
+    "database": "数据库",
     "end": "结束",
 }
 
@@ -619,6 +622,137 @@ class WorkflowEngine:
         if out_var:
             self.variables[out_var] = parsed
 
+    # ---------------------------- 文档提取 / 网页搜索 / 数据库 ---------------------------- #
+    @staticmethod
+    def _strip_html(raw: str) -> str:
+        """剥离 HTML 标签，提取纯文本。"""
+        import html as html_mod
+
+        t = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
+        t = re.sub(r"(?s)<[^>]+>", " ", t)
+        t = html_mod.unescape(t)
+        t = re.sub(r"[ \t]+", " ", t)
+        t = re.sub(r"\n\s*\n+", "\n", t)
+        return t.strip()
+
+    @staticmethod
+    def _format_search_results(obj) -> str | None:
+        """从搜索 API JSON 中抽取常见结果数组，格式化为可读文本。"""
+        items = None
+        if isinstance(obj, dict):
+            for key in ("results", "data", "items", "organic", "organic_results", "web", "news", "value"):
+                if isinstance(obj.get(key), list) and obj[key]:
+                    items = obj[key]
+                    break
+        elif isinstance(obj, list):
+            items = obj
+        else:
+            return None
+        lines = []
+        for it in items:
+            if isinstance(it, str):
+                lines.append(it)
+            elif isinstance(it, dict):
+                title = it.get("title") or it.get("name") or ""
+                link = it.get("link") or it.get("url") or it.get("href") or it.get("snippet_url") or ""
+                snip = it.get("snippet") or it.get("description") or it.get("abstract") or ""
+                outline = " | ".join(p for p in (title, link, snip) if p)
+                if outline:
+                    lines.append(outline)
+        return "\n".join(lines) if lines else None
+
+    async def _exec_doc_extractor(self, node: dict) -> None:
+        """文档提取节点：抓取 URL 页面或内联文本，剥离标签得到纯文本。
+
+        ``data``：``url``(模板，可选)、``source``(内联文本/模板)、``output_variable``。
+        二者都给出时优先 url。
+        """
+        data = node.get("data") or {}
+        url = self._render(data.get("url") or "")
+        txt = ""
+        if url:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                resp = await client.get(url)
+            ct = resp.headers.get("content-type", "")
+            if "json" in ct:
+                txt = resp.text
+            else:
+                txt = self._strip_html(resp.text)
+        else:
+            txt = self._render(data.get("source") or "")
+            if "<" in txt and ">" in txt:
+                txt = self._strip_html(txt)
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = txt
+        self.outputs[node["id"]] = txt
+
+    async def _exec_web_search(self, node: dict) -> None:
+        """网页搜索节点：调用可配置搜索 API，把结果文本写入变量。
+
+        ``data``：``query``(模板)、``endpoint``(URL，含 ``{{query}}`` 占位)、
+        ``api_key``(可选)、``output_variable``。
+        """
+        data = node.get("data") or {}
+        query = self._render(data.get("query") or "")
+        if not query:
+            raise RuntimeError("网页搜索节点缺少 query")
+        endpoint = self._render(data.get("endpoint") or "")
+        if not endpoint:
+            raise RuntimeError("网页搜索节点缺少 endpoint")
+        import urllib.parse
+
+        import httpx
+
+        url = endpoint.replace("{{query}}", urllib.parse.quote(query))
+        headers = {"User-Agent": "Mozilla/5.0"}
+        api_key = self._render(data.get("api_key") or "")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+        try:
+            obj = resp.json()
+        except Exception:  # noqa: BLE001
+            obj = resp.text
+        text_out = self._format_search_results(obj)
+        if text_out is None:
+            text_out = obj if isinstance(obj, str) else json.dumps(obj, ensure_ascii=False)
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = text_out
+        self.outputs[node["id"]] = text_out
+
+    async def _exec_database(self, node: dict) -> None:
+        """数据库查询节点：对给定 DSN 执行 SQL，返回行列表。
+
+        ``data``：``dsn``(如 ``postgresql+asyncpg://...`` 或 ``sqlite+aiosqlite://...``)、
+        ``sql``(模板，可含 ``{{变量}}``)、``output_variable``。
+        """
+        data = node.get("data") or {}
+        dsn = self._render(data.get("dsn") or "")
+        if not dsn:
+            raise RuntimeError("数据库节点缺少 dsn")
+        sql = self._render(data.get("sql") or "")
+        if not sql:
+            raise RuntimeError("数据库节点缺少 sql")
+        from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        engine = create_async_engine(dsn)
+        try:
+            async with engine.connect() as conn:
+                res = await conn.execute(text(sql))
+                rows = [dict(r._mapping) for r in res]
+        finally:
+            await engine.dispose()
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = rows
+        self.outputs[node["id"]] = rows
+
     async def _exec_knowledge(self, node: dict):
         """知识检索节点：检索知识库，透出引用来源并把上下文写入输出变量。
 
@@ -1133,6 +1267,21 @@ class WorkflowEngine:
                         stack.append(next_id)
                 elif ntype == "parallel":
                     await self._exec_parallel(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "doc_extractor":
+                    await self._exec_doc_extractor(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "web_search":
+                    await self._exec_web_search(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "database":
+                    await self._exec_database(node)
                     next_id = self._edge_target(node_id)
                     if next_id:
                         stack.append(next_id)
