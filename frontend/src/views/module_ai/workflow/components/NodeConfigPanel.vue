@@ -176,15 +176,10 @@
     <!-- code：代码转换 -->
     <template v-else-if="type === 'code'">
       <el-form-item label="Python 代码">
-        <el-input v-model="d.code" type="textarea" :rows="5" placeholder="见下方说明" />
+        <CodeEditor v-model="d.code" language="python" />
       </el-form-item>
       <el-form-item label="输入变量映射（JSON）">
-        <el-input
-          v-model="codeInputsText"
-          type="textarea"
-          :rows="2"
-          placeholder='{"x":"{{变量}}"}'
-        />
+        <CodeEditor v-model="codeInputsText" language="json" />
       </el-form-item>
       <el-form-item label="输出变量名">
         <el-input v-model="d.output_variable" />
@@ -263,15 +258,10 @@
         <el-input v-model="d.url" placeholder="https://api.example.com/{{id}}" />
       </el-form-item>
       <el-form-item label="请求头（JSON）">
-        <el-input
-          v-model="headersText"
-          type="textarea"
-          :rows="2"
-          placeholder='{"Authorization":"Bearer {{token}}"}'
-        />
+        <CodeEditor v-model="headersText" language="json" />
       </el-form-item>
       <el-form-item label="请求体（JSON，GET 可留空）">
-        <el-input v-model="bodyText" type="textarea" :rows="3" placeholder='{"q":"{{query}}"}' />
+        <CodeEditor v-model="bodyText" language="json" />
       </el-form-item>
       <el-form-item label="输出变量名">
         <el-input v-model="d.output_variable" />
@@ -634,6 +624,7 @@ import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getAiAgentList } from "@/api/module_ai/agent";
+import CodeEditor from "./CodeEditor.vue";
 
 const props = defineProps<{
   node: Node;
