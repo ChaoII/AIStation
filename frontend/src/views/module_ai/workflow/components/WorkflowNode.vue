@@ -71,6 +71,27 @@
           {{ (data.schema || []).length ? `抽取 ${data.schema.length} 字段` : "抽取 JSON" }}
         </div>
       </template>
+      <template v-else-if="def.type === 'template'">
+        <div class="wf-node__text">{{ data.template ? "模板已配置" : "配置模板" }}</div>
+      </template>
+      <template v-else-if="def.type === 'variable_aggregator'">
+        <div class="wf-node__text">
+          {{ (data.fields || []).length ? `聚合 ${data.fields.length} 字段` : "变量聚合" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'answer'">
+        <div class="wf-node__text">{{ data.output_template ? "文本输出" : "回答节点" }}</div>
+      </template>
+      <template v-else-if="def.type === 'sub_workflow'">
+        <div class="wf-node__text">
+          {{ data.workflow_id ? `调用工作流 #${data.workflow_id}` : "选择子工作流" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'agent'">
+        <div class="wf-node__text">
+          {{ data.agent_id ? `调用智能体 #${data.agent_id}` : "选择子智能体" }}
+        </div>
+      </template>
       <template v-else-if="def.type === 'end'">
         <div class="wf-node__text">{{ data.output_template ? "模板已配置" : "输出最终回复" }}</div>
       </template>
@@ -110,6 +131,11 @@ import {
   Refresh,
   Filter,
   Tickets,
+  MagicStick,
+  Collection,
+  ChatDotRound,
+  Share,
+  User,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import { nodeDefOf, type WorkflowNodeType } from "../nodes";
@@ -135,6 +161,11 @@ const def = computed(() => {
     iteration: Refresh,
     classifier: Filter,
     extractor: Tickets,
+    template: MagicStick,
+    variable_aggregator: Collection,
+    answer: ChatDotRound,
+    sub_workflow: Share,
+    agent: User,
     end: CircleCheckFilled,
   };
   return { ...d, icon: iconMap[d.type] || Cpu };

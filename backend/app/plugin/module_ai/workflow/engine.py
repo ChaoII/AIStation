@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from app.plugin.module_ai.streaming import UiMessageStream
@@ -723,6 +724,161 @@ class WorkflowEngine:
         self.outputs[node["id"]] = final
         self.state["reply"] = final
 
+    async def _exec_template(self, node: dict) -> None:
+        """模板节点：对模板做 ``{{变量}}`` 替换，产出文本/JSON 到输出变量。
+
+        ``data``：``template``（支持 {{var}} 与 Jinja 风格）、``output_variable``。
+        """
+        data = node.get("data") or {}
+        rendered = self._render(data.get("template") or "")
+        # 若结果是合法 JSON 则解析成对象，否则保留字符串
+        try:
+            value = json.loads(rendered) if rendered.strip().startswith(("{", "[")) else rendered
+        except Exception:  # noqa: BLE001
+            value = rendered
+        self.outputs[node["id"]] = value
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = value
+
+    async def _exec_variable_aggregator(self, node: dict) -> None:
+        """变量聚合节点：把多个字段/变量合并成一个对象。
+
+        ``data``：``fields``=[{"name","value"}]，value 可为 ``{"__var__": name}``
+        变量引用、字面量或带 ``{{var}}`` 的模板；``output_variable``。
+        """
+        data = node.get("data") or {}
+        result: dict = {}
+        for f in (data.get("fields") or []):
+            name = f.get("name")
+            if not name:
+                continue
+            val = self._resolve_option(f.get("value"))
+            if isinstance(val, str):
+                val = self._render(val)
+            result[name] = val
+        self.outputs[node["id"]] = result
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = result
+
+    async def _exec_answer(self, node: dict) -> AsyncIterator[Any]:
+        """回答节点：在任意位置向用户流式输出一段文本（可引用变量）。"""
+        data = node.get("data") or {}
+        text = self._render(data.get("output_template") or "") or self.state.get("assistant_text") or ""
+        self.outputs[node["id"]] = text
+        self.state["reply"] = text
+        if text:
+            yield_ms = self.ms.text(text)
+            if yield_ms:
+                yield yield_ms
+            yield_end = self.ms.text_end()
+            if yield_end:
+                yield yield_end
+
+    async def _exec_sub_workflow(self, node: dict) -> AsyncIterator[Any]:
+        """子工作流节点：以给定变量调用另一工作流（嵌套），透传其回复。
+
+        ``data``：``workflow_id``、``variables``(可选，模板/变量引用)。
+        子工作流的流式帧转发到当前消息流，使回复始终可见。
+        """
+        data = node.get("data") or {}
+        wf_id = data.get("workflow_id")
+        if not wf_id:
+            raise RuntimeError("子工作流节点缺少 workflow_id")
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+        sub = await AiWorkflowService.get_workflow(int(wf_id))
+        if not sub:
+            raise RuntimeError(f"子工作流 {wf_id} 不存在")
+        sub_vars = dict(self.variables)
+        supplied = self._resolve_option(data.get("variables"))
+        if isinstance(supplied, dict):
+            for k, v in supplied.items():
+                sub_vars[k] = self._render(str(v)) if isinstance(v, str) else v
+        sub_engine = WorkflowEngine(
+            graph=sub["graph"] or {"nodes": [], "edges": []},
+            variables=sub_vars,
+            messages=[],
+            ms=self.ms,
+            state={},
+            user_id=self.user_id,
+        )
+        async for frame in sub_engine.run():
+            yield frame
+        reply = sub_engine.state.get("reply") or sub_engine.state.get("assistant_text") or ""
+        self.outputs[node["id"]] = reply
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = reply
+
+    async def _exec_agent(self, node: dict) -> AsyncIterator[Any]:
+        """子智能体节点：调用另一 AI 智能体（若其绑定工作流则走子工作流，
+        否则按模型+提示词+知识库执行），透传回复。
+
+        ``data``：``agent_id``、``query``(用户输入模板，可选)。
+        """
+        data = node.get("data") or {}
+        agent_id = data.get("agent_id")
+        if not agent_id:
+            raise RuntimeError("子智能体节点缺少 agent_id")
+        from app.plugin.module_ai.agent.service import AiAgentService
+
+        agent = await AiAgentService.get_agent(int(agent_id))
+        if not agent:
+            raise RuntimeError(f"子智能体 {agent_id} 不存在")
+        query = self._render(data.get("query") or "") or ""
+        if not query:
+            query = self.state.get("assistant_text") or ""
+
+        # 绑定工作流：委托子工作流
+        if agent.get("workflow_id"):
+            sub_node = {
+                "id": node["id"],
+                "type": "sub_workflow",
+                "data": {
+                    "workflow_id": agent["workflow_id"],
+                    "variables": {"query": query, "user_text": query},
+                    "output_variable": data.get("output_variable") or "",
+                },
+            }
+            async for frame in self._exec_sub_workflow(sub_node):
+                yield frame
+            self.outputs[node["id"]] = self.outputs.get(node["id"])
+            return
+
+        # 未绑定工作流：按智能体模型+提示词+知识库执行
+        agent_vars = {**self.variables, "query": query, "user_text": query, "assistant_text": query}
+        saved = self.variables
+        self.variables = agent_vars
+        kb_context = ""
+        if agent.get("knowledge_ids"):
+            kb_context, sources = await self._retrieve_context(
+                {"knowledge_ids": agent["knowledge_ids"], "query": query}
+            )
+            if sources:
+                yield_src = self.ms.sources(sources)
+                if yield_src:
+                    yield yield_src
+        try:
+            llm_node = {
+                "id": node["id"],
+                "type": "llm",
+                "data": {
+                    "model_id": agent.get("model_id") or None,
+                    "prompt": agent.get("agent_role") or agent.get("description") or "你是智能助手。",
+                    "temperature": agent.get("temperature") or 0.7,
+                    "tools": agent.get("tool_ids") or [],
+                    "knowledge_ids": agent.get("knowledge_ids") or [],
+                    "output_variable": data.get("output_variable") or "",
+                },
+            }
+            async for frame in self._exec_llm(llm_node):
+                yield frame
+        finally:
+            self.variables = saved
+        self.outputs[node["id"]] = self.outputs.get(node["id"])
+
     # ------------------------------------------------------------------ #
     # 主执行
     # ------------------------------------------------------------------ #
@@ -808,6 +964,34 @@ class WorkflowEngine:
                     stack.append(next_id)
             elif ntype == "extractor":
                 await self._exec_extractor(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "template":
+                await self._exec_template(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "variable_aggregator":
+                await self._exec_variable_aggregator(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "answer":
+                async for frame in self._exec_answer(node):
+                    yield frame
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "sub_workflow":
+                async for frame in self._exec_sub_workflow(node):
+                    yield frame
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "agent":
+                async for frame in self._exec_agent(node):
+                    yield frame
                 next_id = self._edge_target(node_id)
                 if next_id:
                     stack.append(next_id)

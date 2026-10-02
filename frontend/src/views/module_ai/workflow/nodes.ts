@@ -14,6 +14,11 @@ export type WorkflowNodeType =
   | "iteration"
   | "classifier"
   | "extractor"
+  | "template"
+  | "variable_aggregator"
+  | "answer"
+  | "sub_workflow"
+  | "agent"
   | "end";
 
 export interface NodeDef {
@@ -89,6 +94,41 @@ export const NODE_DEFS: NodeDef[] = [
     label: "参数提取",
     color: "#00bcd4",
     desc: "LLM 提炼 JSON 结构化数据",
+    branch: false,
+  },
+  {
+    type: "template",
+    label: "模板转换",
+    color: "#9c27b0",
+    desc: "按 {{变量}} 模板生成/拼接文本",
+    branch: false,
+  },
+  {
+    type: "variable_aggregator",
+    label: "变量聚合",
+    color: "#607d8b",
+    desc: "把多个变量合并成一个对象",
+    branch: false,
+  },
+  {
+    type: "answer",
+    label: "回答",
+    color: "#ff5252",
+    desc: "在流程任意处向用户输出文本",
+    branch: false,
+  },
+  {
+    type: "sub_workflow",
+    label: "子工作流",
+    color: "#00acc1",
+    desc: "嵌套调用另一个工作流",
+    branch: false,
+  },
+  {
+    type: "agent",
+    label: "子智能体",
+    color: "#7cb342",
+    desc: "调用另一个 AI 智能体",
     branch: false,
   },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },

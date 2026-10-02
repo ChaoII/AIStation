@@ -247,6 +247,82 @@
       </el-form-item>
     </template>
 
+    <!-- template：模板转换 -->
+    <template v-else-if="type === 'template'">
+      <el-form-item label="模板（支持 {{变量}}）">
+        <el-input
+          v-model="d.template"
+          type="textarea"
+          :rows="3"
+          placeholder="如：今天是 {{date}}，城市是 {{city}}"
+        />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="转换结果" />
+      </el-form-item>
+    </template>
+
+    <!-- variable_aggregator：变量聚合 -->
+    <template v-else-if="type === 'variable_aggregator'">
+      <el-form-item label="聚合字段">
+        <el-space v-for="(f, i) in aggFields" :key="i" fill>
+          <el-input v-model="f.name" placeholder="字段名" style="width: 120px" />
+          <el-input v-model="f.value" placeholder="变量名或字面量（如 {{city}}）" style="flex: 1" />
+          <el-button link type="danger" :icon="Delete" @click="aggFields.splice(i, 1)" />
+        </el-space>
+        <el-button
+          size="small"
+          :icon="Plus"
+          style="margin-top: 4px"
+          @click="aggFields.push({ name: '', value: '' })"
+        >
+          添加字段
+        </el-button>
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="聚合结果对象" />
+      </el-form-item>
+    </template>
+
+    <!-- answer：回答 -->
+    <template v-else-if="type === 'answer'">
+      <el-form-item label="输出文本（支持 {{变量}}）">
+        <el-input
+          v-model="d.output_template"
+          type="textarea"
+          :rows="3"
+          placeholder="如：最终结果是 {{result}}"
+        />
+      </el-form-item>
+    </template>
+
+    <!-- sub_workflow：子工作流 -->
+    <template v-else-if="type === 'sub_workflow'">
+      <el-form-item label="选择子工作流">
+        <el-select v-model="d.workflow_id" filterable placeholder="选择工作流" style="width: 100%">
+          <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="子工作流回复" />
+      </el-form-item>
+    </template>
+
+    <!-- agent：子智能体 -->
+    <template v-else-if="type === 'agent'">
+      <el-form-item label="选择子智能体">
+        <el-select v-model="d.agent_id" filterable placeholder="选择智能体" style="width: 100%">
+          <el-option v-for="a in agentOptions" :key="a.id" :label="a.agent_name" :value="a.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="输入（支持 {{变量}}）">
+        <el-input v-model="d.query" type="textarea" :rows="2" placeholder="如：{{query}}" />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="智能体回复" />
+      </el-form-item>
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">
@@ -269,6 +345,8 @@ import type { Node } from "@vue-flow/core";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
+import { getAiWorkflowList } from "@/api/module_ai/workflow";
+import { getAiAgentList } from "@/api/module_ai/agent";
 
 const props = defineProps<{
   node: Node;
@@ -333,6 +411,13 @@ const schemaText = ref(
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
 const kbOptions = ref<{ id: number; name: string }[]>([]);
+const workflowOptions = ref<{ id: number; name: string }[]>([]);
+const agentOptions = ref<{ id: number; agent_name: string }[]>([]);
+const aggFields = ref<{ name: string; value: string }[]>(
+  Array.isArray(d.fields)
+    ? d.fields.map((f: any) => ({ name: f.name || "", value: f.value || "" }))
+    : []
+);
 
 function addVar() {
   vars.value.push({ name: "", type: "string" });
@@ -394,6 +479,11 @@ function emitChange() {
       data.schema = [];
     }
   }
+  if (type === "variable_aggregator") {
+    data.fields = aggFields.value
+      .map((f) => ({ name: f.name, value: f.value }))
+      .filter((f) => f.name);
+  }
   emit("change", data);
 }
 
@@ -409,6 +499,7 @@ watch(
     iterArgsText,
     categoriesText,
     schemaText,
+    aggFields,
   ],
   emitChange,
   { deep: true }
@@ -416,14 +507,21 @@ watch(
 
 onMounted(async () => {
   try {
-    const [mr, tr, kr] = await Promise.all([
+    const [mr, tr, kr, wr, ar] = await Promise.all([
       getAiModelList({}),
       getAiToolList({}),
       getAiKnowledgeList(),
+      getAiWorkflowList(),
+      getAiAgentList(),
     ]);
     modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
     toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
     kbOptions.value = (kr.data?.data || []).map((k: any) => ({ id: k.id, name: k.name }));
+    workflowOptions.value = (wr.data?.data || []).map((w: any) => ({ id: w.id, name: w.name }));
+    agentOptions.value = (ar.data?.data || []).map((a: any) => ({
+      id: a.id,
+      agent_name: a.agent_name,
+    }));
   } catch {
     /* ignore */
   }

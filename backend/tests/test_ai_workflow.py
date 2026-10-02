@@ -1029,3 +1029,108 @@ def test_workflow_versions_publish_rollback(test_client, auth_headers):
         assert detail2["graph"]["nodes"][1]["data"]["output_template"] == "B"
     finally:
         _delete_wf(test_client, auth_headers, [wid])
+
+
+def test_template_node():
+    """模板节点：{{变量}} 替换与 JSON 自动解析。"""
+    import asyncio
+
+    from app.plugin.module_ai.workflow.engine import UiMessageStream, WorkflowEngine
+
+    eng = WorkflowEngine(
+        graph={"nodes": [{"id": "t", "type": "template",
+                          "data": {"template": "你好 {{name}}", "output_variable": "greet"}}],
+               "edges": []},
+        variables={"name": "世界"}, messages=[], ms=UiMessageStream(), state={},
+    )
+    asyncio.run(eng._exec_template(eng.nodes["t"]))
+    assert eng.outputs["t"] == "你好 世界"
+    assert eng.variables["greet"] == "你好 世界"
+
+    # JSON 模板自动解析为对象
+    eng2 = WorkflowEngine(
+        graph={"nodes": [{"id": "t", "type": "template",
+                          "data": {"template": '{"a": {{n}}}', "output_variable": "obj"}}],
+               "edges": []},
+        variables={"n": 1}, messages=[], ms=UiMessageStream(), state={},
+    )
+    asyncio.run(eng2._exec_template(eng2.nodes["t"]))
+    assert eng2.outputs["t"] == {"a": 1}
+
+
+def test_variable_aggregator_node():
+    """变量聚合：把多个变量/字段合并为一个对象。"""
+    import asyncio
+
+    from app.plugin.module_ai.workflow.engine import UiMessageStream, WorkflowEngine
+
+    eng = WorkflowEngine(
+        graph={"nodes": [{"id": "a", "type": "variable_aggregator",
+                          "data": {"fields": [
+                              {"name": "city", "value": {"__var__": "city"}},
+                              {"name": "date", "value": "2026"},
+                          ], "output_variable": "info"}}],
+               "edges": []},
+        variables={"city": "北京"}, messages=[], ms=UiMessageStream(), state={},
+    )
+    asyncio.run(eng._exec_variable_aggregator(eng.nodes["a"]))
+    assert eng.outputs["a"] == {"city": "北京", "date": "2026"}
+    assert eng.variables["info"]["city"] == "北京"
+
+
+def test_answer_node(test_client, auth_headers):
+    """回答节点：在流程中任意位置输出文本帧。"""
+    wid = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": [{"name": "q"}]}},
+                {"id": "ans", "type": "answer", "data": {"output_template": "收到：{{q}}"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{assistant_text}}"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "ans"},
+                {"id": "e2", "source": "ans", "target": "end"},
+            ],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wid}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}],
+                  "variables": {"q": "你好"}},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "收到：你好" in r.text
+        assert '"type": "text-delta"' in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wid])
+
+
+def test_workflow_sub_workflow_node(test_client, auth_headers):
+    """子工作流节点：嵌套调用另一工作流并透传其回复。"""
+    sub = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [{"id": "start", "type": "start", "data": {"variables": []}},
+                      {"id": "end", "type": "end", "data": {"output_template": "子工作流OK"}}],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]
+    parent = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "sw", "type": "sub_workflow", "data": {"workflow_id": sub["id"], "output_variable": "sub_reply"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{sub_reply}}"}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "sw"},
+                {"id": "e2", "source": "sw", "target": "end"},
+            ],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{parent}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert '"reply": "子工作流OK"' in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [parent, sub["id"]])

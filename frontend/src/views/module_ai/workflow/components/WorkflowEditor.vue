@@ -279,6 +279,11 @@ import {
   RefreshLeft,
   RefreshRight,
   Clock,
+  MagicStick,
+  Collection,
+  ChatDotRound,
+  Share,
+  User,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -562,6 +567,11 @@ function iconOf(type: string) {
     iteration: Refresh,
     classifier: Filter,
     extractor: Tickets,
+    template: MagicStick,
+    variable_aggregator: Collection,
+    answer: ChatDotRound,
+    sub_workflow: Share,
+    agent: User,
     end: CircleCheckFilled,
   };
   return m[type as WorkflowNodeType] || Cpu;
@@ -686,6 +696,16 @@ function defaultData(type: string): Record<string, any> {
       return { categories: [], query: "", output_variable: "" };
     case "extractor":
       return { schema: [], query: "", output_variable: "" };
+    case "template":
+      return { template: "", output_variable: "" };
+    case "variable_aggregator":
+      return { fields: [], output_variable: "" };
+    case "answer":
+      return { output_template: "" };
+    case "sub_workflow":
+      return { workflow_id: null, output_variable: "" };
+    case "agent":
+      return { agent_id: null, query: "", output_variable: "" };
     case "end":
       return { output_template: "" };
     default:
