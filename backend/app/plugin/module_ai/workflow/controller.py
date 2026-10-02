@@ -1,0 +1,78 @@
+"""工作流控制器：CRUD 与流式运行。"""
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from app.api.v1.module_system.auth.schema import AuthSchema
+from app.common.response import ErrorResponse, SuccessResponse
+from app.core.dependencies import AuthPermission
+from app.core.router_class import OperationLogRoute
+from app.plugin.module_ai.streaming import ui_stream_response
+
+from .schema import AiWorkflowCreateSchema, AiWorkflowRunSchema, AiWorkflowUpdateSchema
+from .service import AiWorkflowService
+
+AiWorkflowRouter = APIRouter(
+    route_class=OperationLogRoute, prefix="/workflows", tags=["AI-工作流"]
+)
+
+
+@AiWorkflowRouter.get("/list", summary="工作流列表")
+async def list_workflows(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiWorkflowService.list_workflows(), msg="查询成功")
+
+
+@AiWorkflowRouter.get("/detail/{workflow_id}", summary="工作流详情")
+async def get_workflow(
+    workflow_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    data = await AiWorkflowService.get_workflow(workflow_id)
+    if not data:
+        return ErrorResponse(msg="工作流不存在")
+    return SuccessResponse(data=data, msg="查询成功")
+
+
+@AiWorkflowRouter.post("/create", summary="新增工作流")
+async def create_workflow(
+    data: AiWorkflowCreateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:create"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiWorkflowService.create(data, auth), msg="创建成功")
+
+
+@AiWorkflowRouter.put("/update/{workflow_id}", summary="编辑工作流")
+async def update_workflow(
+    workflow_id: int,
+    data: AiWorkflowUpdateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
+) -> JSONResponse:
+    result = await AiWorkflowService.update(workflow_id, data, auth)
+    if not result:
+        return ErrorResponse(msg="工作流不存在")
+    return SuccessResponse(data=result, msg="修改成功")
+
+
+@AiWorkflowRouter.delete("/delete", summary="删除工作流")
+async def delete_workflows(
+    ids: Annotated[list[int], Body(description="ID列表")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:delete"]))],
+) -> JSONResponse:
+    await AiWorkflowService.delete(ids)
+    return SuccessResponse(msg="删除成功")
+
+
+@AiWorkflowRouter.post("/{workflow_id}/run/stream", summary="运行工作流（AI SDK UI Message Stream）")
+async def run_workflow_stream(
+    workflow_id: int,
+    data: AiWorkflowRunSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> StreamingResponse:
+    return ui_stream_response(
+        AiWorkflowService.run_ui_stream(
+            workflow_id, data.messages, auth, data.variables, data.session_id
+        )
+    )
