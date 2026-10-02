@@ -523,12 +523,7 @@
         />
       </el-form-item>
       <el-form-item label="SQL（支持 {{变量}}）">
-        <el-input
-          v-model="d.sql"
-          type="textarea"
-          :rows="3"
-          placeholder="SELECT * FROM t WHERE id={{id}}"
-        />
+        <CodeEditor v-model="d.sql" language="sql" />
       </el-form-item>
       <el-form-item label="输出变量名">
         <el-input v-model="d.output_variable" placeholder="查询得到的行数组" />

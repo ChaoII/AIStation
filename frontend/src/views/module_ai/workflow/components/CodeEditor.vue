@@ -10,10 +10,11 @@ import { EditorState } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
 import { json } from "@codemirror/lang-json";
 import { javascript } from "@codemirror/lang-javascript";
+import { sql } from "@codemirror/lang-sql";
 
 const props = defineProps<{
   modelValue?: string;
-  language?: "python" | "json" | "javascript";
+  language?: "python" | "json" | "javascript" | "sql";
 }>();
 const emit = defineEmits(["update:modelValue"]);
 
@@ -23,6 +24,7 @@ let view: EditorView | null = null;
 function lang() {
   if (props.language === "python") return python();
   if (props.language === "json") return json();
+  if (props.language === "sql") return sql();
   return javascript();
 }
 
