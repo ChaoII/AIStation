@@ -34,6 +34,15 @@
     <el-form-item label="输出变量">
       <el-tag v-if="d.output_variable" size="small" type="success">{{ d.output_variable }}</el-tag>
       <el-tag v-else size="small" type="info">未设置</el-tag>
+      <el-button
+        v-if="d.output_variable"
+        link
+        size="small"
+        type="primary"
+        @click="copyVarRef(d.output_variable)"
+      >
+        复制引用
+      </el-button>
     </el-form-item>
 
     <!-- start：输入变量 -->
@@ -41,16 +50,34 @@
       <el-form-item label="输入变量">
         <el-button size="small" :icon="Plus" @click="addVar">添加变量</el-button>
       </el-form-item>
-      <el-form-item v-for="(v, i) in vars" :key="i" label="变量">
-        <el-space fill>
-          <el-input v-model="v.name" placeholder="变量名" style="width: 140px" />
-          <el-select v-model="v.type" style="width: 90px">
+      <div v-for="(v, i) in vars" :key="i" class="start-var">
+        <div class="start-var__row">
+          <el-input v-model="v.name" placeholder="变量名" size="small" class="start-var__name" />
+          <el-select v-model="v.type" size="small" class="start-var__type">
             <el-option label="文本" value="string" />
             <el-option label="数字" value="number" />
+            <el-option label="布尔" value="boolean" />
+            <el-option label="对象" value="object" />
+            <el-option label="数组" value="array" />
           </el-select>
+          <el-checkbox v-model="v.required" size="small">必填</el-checkbox>
           <el-button link type="danger" :icon="Delete" @click="vars.splice(i, 1)" />
-        </el-space>
-      </el-form-item>
+        </div>
+        <div class="start-var__row">
+          <el-input
+            v-model="v.default"
+            placeholder="默认值（可空）"
+            size="small"
+            class="start-var__default"
+          />
+          <el-input
+            v-model="v.desc"
+            placeholder="说明（可空）"
+            size="small"
+            class="start-var__desc"
+          />
+        </div>
+      </div>
     </template>
 
     <!-- llm：模型 + 提示词 + 温度 + 工具 -->
@@ -602,10 +629,19 @@ function varToken(name: string) {
   return `{{${name}}}`;
 }
 
+function copyVarRef(name: string) {
+  navigator.clipboard.writeText(`{{${name}}}`).then(
+    () => ElMessage.success("已复制变量引用"),
+    () => ElMessage.error("复制失败")
+  );
+}
+
 const type = computed(() => props.node.type || "llm");
 const d = reactive<Record<string, any>>({ ...((props.node.data || {}) as any) });
 // start 变量用本地数组代理（避免直接改 reactive 复杂结构）
-const vars = ref<Array<{ name: string; type: string }>>([]);
+const vars = ref<
+  Array<{ name: string; type: string; default?: any; required?: boolean; desc?: string }>
+>([]);
 const argsText = ref("");
 const codeInputsText = ref("");
 const headersText = ref("");
@@ -630,6 +666,9 @@ function syncFromNode() {
   vars.value = (data.variables || []).map((v: any) => ({
     name: v.name || "",
     type: v.type || "string",
+    default: v.default ?? "",
+    required: !!v.required,
+    desc: v.desc || "",
   }));
   argsText.value = _jsonText(data.args);
   codeInputsText.value = _jsonText(data.inputs);
@@ -680,7 +719,7 @@ const refVars = computed(() => {
 });
 
 function addVar() {
-  vars.value.push({ name: "", type: "string" });
+  vars.value.push({ name: "", type: "string", default: "", required: false, desc: "" });
 }
 
 function emitChange() {
@@ -817,6 +856,37 @@ onMounted(async () => {
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;
+}
+
+.start-var {
+  margin-bottom: 10px;
+  padding: 8px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+
+  .start-var__row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+
+    + .start-var__row {
+      margin-top: 6px;
+    }
+  }
+
+  .start-var__name {
+    width: 120px;
+  }
+  .start-var__type {
+    width: 88px;
+  }
+  .start-var__default {
+    flex: 1;
+  }
+  .start-var__desc {
+    flex: 1;
+  }
 }
 
 .var-suggest {

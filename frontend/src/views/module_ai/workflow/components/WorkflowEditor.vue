@@ -26,26 +26,58 @@
                     placeholder="描述"
                   />
                 </el-form-item>
+                <el-form-item label="快速模板">
+                  <el-dropdown trigger="click" style="width: 100%" @command="applyTemplateByKey">
+                    <el-button size="small" :icon="MagicStick" style="width: 100%">
+                      一键生成工作流
+                    </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item
+                          v-for="tpl in WF_TEMPLATES"
+                          :key="tpl.key"
+                          :command="tpl.key"
+                        >
+                          <div class="tpl-menu">
+                            <span>{{ tpl.name }}</span>
+                            <span class="tpl-menu__desc">{{ tpl.desc }}</span>
+                          </div>
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </el-form-item>
               </el-form>
             </div>
             <el-divider style="margin: 4px 0" />
             <div class="panel-section">
               <div class="section-title">节点</div>
               <div class="palette-tip">点击或拖拽节点到画布</div>
-              <el-space direction="vertical" :size="8" fill style="width: 100%">
-                <div
-                  v-for="def in NODE_DEFS"
-                  :key="def.type"
-                  class="palette-item"
-                  draggable="true"
-                  @dragstart="onDragStart($event, def.type)"
-                  @click="onPaletteClick(def.type)"
-                >
-                  <el-icon :color="def.color"><component :is="iconOf(def.type)" /></el-icon>
-                  <span>{{ def.label }}</span>
-                  <span class="palette-item__desc">{{ def.desc }}</span>
-                </div>
-              </el-space>
+              <el-input
+                v-model="paletteQuery"
+                size="small"
+                placeholder="搜索节点"
+                clearable
+                :prefix-icon="Search"
+                class="palette-search"
+              />
+              <div v-for="cat in NODE_CATEGORIES" :key="cat.key" class="palette-group">
+                <div class="palette-group__title">{{ cat.label }}</div>
+                <el-space direction="vertical" :size="8" fill style="width: 100%">
+                  <div
+                    v-for="def in filteredPalette(cat.key)"
+                    :key="def.type"
+                    class="palette-item"
+                    draggable="true"
+                    @dragstart="onDragStart($event, def.type)"
+                    @click="onPaletteClick(def.type)"
+                  >
+                    <el-icon :color="def.color"><component :is="iconOf(def.type)" /></el-icon>
+                    <span>{{ def.label }}</span>
+                    <span class="palette-item__desc">{{ def.desc }}</span>
+                  </div>
+                </el-space>
+              </div>
             </div>
           </el-scrollbar>
         </el-splitter-panel>
@@ -220,15 +252,40 @@
             </div>
             <div v-if="traceDetail[i]" class="run-trace__detail">
               <div v-if="t.input && Object.keys(t.input).length" class="run-trace__kv">
-                <div class="kv-title">输入</div>
+                <div class="kv-title">
+                  输入
+                  <el-button
+                    link
+                    size="small"
+                    class="kv-copy"
+                    @click.stop="copyText(formatJson(t.input))"
+                  >
+                    复制
+                  </el-button>
+                </div>
                 <pre class="kv-body">{{ formatJson(t.input) }}</pre>
               </div>
               <div v-if="t.output != null" class="run-trace__kv">
-                <div class="kv-title">输出</div>
+                <div class="kv-title">
+                  输出
+                  <el-button
+                    link
+                    size="small"
+                    class="kv-copy"
+                    @click.stop="copyText(formatJson(t.output))"
+                  >
+                    复制
+                  </el-button>
+                </div>
                 <pre class="kv-body">{{ formatJson(t.output) }}</pre>
               </div>
               <div v-if="t.error" class="run-trace__kv">
-                <div class="kv-title">错误</div>
+                <div class="kv-title">
+                  错误
+                  <el-button link size="small" class="kv-copy" @click.stop="copyText(t.error)">
+                    复制
+                  </el-button>
+                </div>
                 <pre class="kv-body is-err">{{ t.error }}</pre>
               </div>
             </div>
@@ -326,7 +383,7 @@ import "@vue-flow/minimap/dist/style.css";
 
 import WorkflowNode from "./WorkflowNode.vue";
 import NodeConfigPanel from "./NodeConfigPanel.vue";
-import { NODE_DEFS, nodeDefOf, type WorkflowNodeType } from "../nodes";
+import { NODE_DEFS, NODE_CATEGORIES, nodeDefOf, categoryOf, type WorkflowNodeType } from "../nodes";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
 import {
@@ -510,6 +567,13 @@ function formatJson(v: any): string {
   } catch {
     return String(v);
   }
+}
+function copyText(text: string) {
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(
+    () => ElMessage.success("已复制"),
+    () => ElMessage.error("复制失败")
+  );
 }
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
@@ -793,6 +857,18 @@ function onDragStart(event: DragEvent, type: string) {
   }
 }
 
+// 调色板检索与分组
+const paletteQuery = ref("");
+function filteredPalette(catKey: string): typeof NODE_DEFS {
+  const q = paletteQuery.value.trim().toLowerCase();
+  const inCat = NODE_DEFS.filter((d) => categoryOf(d.type) === catKey);
+  if (!q) return inCat;
+  return inCat.filter(
+    (d) =>
+      d.label.toLowerCase().includes(q) || d.desc.toLowerCase().includes(q) || d.type.includes(q)
+  );
+}
+
 function onPaletteClick(type: string) {
   const position = screenToFlowCoordinate({
     x: window.innerWidth / 2,
@@ -876,6 +952,219 @@ function defaultData(type: string): Record<string, any> {
     default:
       return {};
   }
+}
+
+// ---------------- 快速模板 ----------------
+interface WfTemplate {
+  key: string;
+  name: string;
+  desc: string;
+  build: () => { nodes: Node[]; edges: Edge[] };
+}
+
+const WF_TEMPLATES: WfTemplate[] = [
+  {
+    key: "qa",
+    name: "客服问答",
+    desc: "start → LLM → 结束",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 120 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "query", type: "string", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "llm",
+          position: { x: 320, y: 120 },
+          data: {
+            ...defaultData("llm"),
+            prompt: "你是客服助手，请回答用户问题：{{query}}",
+            output_variable: "llm_output",
+          },
+        },
+        {
+          id: `t3_${t}`,
+          type: "end",
+          position: { x: 600, y: 120 },
+          data: { ...defaultData("end"), output_template: "{{llm_output}}" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+      ];
+      return { nodes, edges };
+    },
+  },
+  {
+    key: "rag",
+    name: "知识库检索问答",
+    desc: "start → 知识检索 → LLM → 结束",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 120 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "query", type: "string", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "knowledge",
+          position: { x: 320, y: 60 },
+          data: { ...defaultData("knowledge"), query: "{{query}}", output_variable: "kb_context" },
+        },
+        {
+          id: `t3_${t}`,
+          type: "llm",
+          position: { x: 320, y: 220 },
+          data: {
+            ...defaultData("llm"),
+            prompt: "结合知识库回答：\n{{kb_context}}\n问题：{{query}}",
+            output_variable: "llm_output",
+          },
+        },
+        {
+          id: `t4_${t}`,
+          type: "end",
+          position: { x: 620, y: 150 },
+          data: { ...defaultData("end"), output_template: "{{llm_output}}" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te1b_${t}`, source: nodes[0].id, target: nodes[2].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+        { id: `te3_${t}`, source: nodes[2].id, target: nodes[3].id },
+      ];
+      return { nodes, edges };
+    },
+  },
+  {
+    key: "condition",
+    name: "条件分派",
+    desc: "start → LLM → 条件分支",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 150 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "query", type: "string", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "llm",
+          position: { x: 320, y: 150 },
+          data: {
+            ...defaultData("llm"),
+            prompt: "请简洁回答：{{query}}",
+            output_variable: "llm_output",
+          },
+        },
+        {
+          id: `t3_${t}`,
+          type: "condition",
+          position: { x: 600, y: 150 },
+          data: { ...defaultData("condition"), expression: 'llm_output != ""' },
+        },
+        {
+          id: `t4_${t}`,
+          type: "answer",
+          position: { x: 880, y: 60 },
+          data: { ...defaultData("answer"), output_template: "{{llm_output}}" },
+        },
+        {
+          id: `t5_${t}`,
+          type: "end",
+          position: { x: 880, y: 240 },
+          data: { ...defaultData("end"), output_template: "无结果" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+        { id: `te3_${t}`, source: nodes[2].id, target: nodes[3].id, sourceHandle: "true" },
+        { id: `te4_${t}`, source: nodes[2].id, target: nodes[4].id, sourceHandle: "false" },
+      ];
+      return { nodes, edges };
+    },
+  },
+  {
+    key: "batch",
+    name: "批量处理",
+    desc: "start → 迭代(工具) → 结束",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 150 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "items", type: "array", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "iteration",
+          position: { x: 320, y: 150 },
+          data: {
+            ...defaultData("iteration"),
+            items: "{{items}}",
+            tool_name: "",
+            output_variable: "results",
+          },
+        },
+        {
+          id: `t3_${t}`,
+          type: "end",
+          position: { x: 600, y: 150 },
+          data: { ...defaultData("end"), output_template: "{{results}}" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+      ];
+      return { nodes, edges };
+    },
+  },
+];
+
+async function applyTemplateByKey(key: string) {
+  const tpl = WF_TEMPLATES.find((x) => x.key === key);
+  if (!tpl) return;
+  if (nodes.value.length) {
+    await ElMessageBox.confirm(
+      "应用模板将替换当前画布内容，此操作不可恢复。是否继续？",
+      "应用模板",
+      { confirmButtonText: "应用", cancelButtonText: "取消", type: "warning" }
+    );
+  }
+  const { nodes: tn, edges: te } = tpl.build();
+  pushHistory();
+  nodes.value = tn;
+  edges.value = te as Edge[];
+  if (!formData.name.trim()) formData.name = tpl.name;
+  selectedNode.value = undefined;
+  ElMessage.success(`已应用模板「${tpl.name}」`);
 }
 
 function onNodeConfigChange(data: Record<string, any>) {
@@ -1164,6 +1453,32 @@ async function handleApprove(decision: "approve" | "reject") {
   color: var(--el-text-color-secondary);
 }
 
+.palette-search {
+  margin-bottom: 8px;
+}
+
+.palette-group {
+  margin-bottom: 10px;
+
+  .palette-group__title {
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-text-color-secondary);
+  }
+}
+
+.tpl-menu {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+
+  .tpl-menu__desc {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+}
+
 .canvas-main {
   display: flex;
   flex-direction: column;
@@ -1305,9 +1620,16 @@ async function handleApprove(decision: "approve" | "reject") {
       }
 
       .kv-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         font-size: 12px;
         font-weight: 600;
         color: var(--el-text-color-secondary);
+
+        .kv-copy {
+          font-size: 12px;
+        }
       }
 
       .kv-body {

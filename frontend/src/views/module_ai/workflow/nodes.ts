@@ -177,3 +177,45 @@ export const NODE_DEFS: NodeDef[] = [
 export function nodeDefOf(type: string): NodeDef {
   return NODE_DEFS.find((d) => d.type === type) || NODE_DEFS[0];
 }
+
+/** 节点分类（用于调色板分组展示）。 */
+const NODE_CATEGORY_MAP: Record<string, string> = {
+  start: "io",
+  end: "io",
+  answer: "io",
+  llm: "core",
+  tool: "core",
+  code: "core",
+  http: "core",
+  knowledge: "data",
+  doc_extractor: "data",
+  web_search: "data",
+  database: "data",
+  condition: "logic",
+  classifier: "logic",
+  iteration: "logic",
+  loop: "logic",
+  parallel: "logic",
+  variable: "logic",
+  template: "logic",
+  variable_aggregator: "logic",
+  extractor: "logic",
+  sub_workflow: "sub",
+  agent: "sub",
+};
+
+export const NODE_CATEGORIES: { key: string; label: string }[] = [
+  { key: "io", label: "输入 / 输出" },
+  { key: "core", label: "核心处理" },
+  { key: "data", label: "数据 / 检索" },
+  { key: "logic", label: "逻辑控制" },
+  { key: "sub", label: "子流程" },
+];
+
+export function categoryOf(type: string): string {
+  return NODE_CATEGORY_MAP[type] || "core";
+}
+
+export function categoryLabel(key: string): string {
+  return NODE_CATEGORIES.find((c) => c.key === key)?.label || "其他";
+}

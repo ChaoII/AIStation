@@ -1323,3 +1323,25 @@ def test_workflow_database(test_client, auth_headers):
             _delete_wf(test_client, auth_headers, [wf])
     finally:
         os.remove(path)
+
+
+def test_workflow_required_start_var(test_client, auth_headers):
+    """start 节点必填变量未传入时，节点运行报错。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start",
+                 "data": {"variables": [{"name": "q", "type": "string", "required": True}]}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{q}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "缺少必填输入变量" in r.text
+        assert '"status": "error"' in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

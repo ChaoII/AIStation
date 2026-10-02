@@ -180,13 +180,18 @@ class WorkflowEngine:
     # 各节点实现
     # ------------------------------------------------------------------ #
     async def _exec_start(self, node: dict) -> None:
-        """初始化输入变量：start.variables 的默认值兜底（显式入参优先）。"""
+        """初始化输入变量：start.variables 的默认值兜底（显式入参优先），并校验必填项。"""
+        missing = []
         for v in (node.get("data") or {}).get("variables") or []:
             name = v.get("name")
             if not name:
                 continue
             if name not in self.variables and "default" in v:
                 self.variables[name] = v["default"]
+            if v.get("required") and name not in self.variables:
+                missing.append(name)
+        if missing:
+            raise RuntimeError(f"缺少必填输入变量：{', '.join(missing)}")
 
     async def _resolve_llm_client(self, data: dict):
         """解析 LLM 节点运行时：返回 (client, runtime, tool_schemas, dispatch)。"""
