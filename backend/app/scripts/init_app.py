@@ -652,6 +652,14 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:app:create", "新增AI应用"),
     ("module_ai:app:update", "编辑AI应用"),
     ("module_ai:app:delete", "删除AI应用"),
+    ("module_ai:agent:query", "查询智能体"),
+    ("module_ai:agent:create", "新增智能体"),
+    ("module_ai:agent:update", "编辑智能体"),
+    ("module_ai:agent:delete", "删除智能体"),
+    ("module_ai:workflow:query", "查询工作流"),
+    ("module_ai:workflow:create", "新增工作流"),
+    ("module_ai:workflow:update", "编辑工作流"),
+    ("module_ai:workflow:delete", "删除工作流"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -712,6 +720,8 @@ async def _ensure_ai_menus() -> None:
 
             pages = [
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
+                ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11),
+                ("工作流编排", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12),
                 ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 13),
                 ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 14),
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 15),

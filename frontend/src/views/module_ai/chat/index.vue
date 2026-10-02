@@ -54,6 +54,7 @@ import ChatInput from "./components/ChatInput.vue";
 import Sidebar from "./components/Sidebar.vue";
 import { createAiSession, getAiSessionDetail, type AiSessionItem } from "@/api/module_ai/session";
 import { getAiAppDetail } from "@/api/module_ai/app";
+import { getAiAgentDetail } from "@/api/module_ai/agent";
 import { useAiChat } from "@/composables/ai/useAiChat";
 import { textOf, reasoningOf, toolPartsOf } from "@/composables/ai/uiMessage";
 import type { ChatMessage, UploadedFile } from "./types";
@@ -70,8 +71,10 @@ const isSidebarCollapsed = ref(false);
 
 // 运行中的 AI 应用（?app_id=）：非空时流式走 /ai/apps/{id}/run/stream
 const appId = ref<number | null>(route.query.app_id ? Number(route.query.app_id) : null);
+// 运行中的智能体（?agent_id=）：非空时流式走 /ai/agents/{id}/run/stream
+const agentId = ref<number | null>(route.query.agent_id ? Number(route.query.agent_id) : null);
 const appName = ref("");
-// 请求令牌：discard out-of-order responses when app_id changes quickly
+// 请求令牌：discard out-of-order responses when app_id/agent_id changes quickly
 let appLoadToken = 0;
 
 watch(
@@ -79,6 +82,7 @@ watch(
   async (v) => {
     const token = ++appLoadToken;
     appId.value = v ? Number(v) : null;
+    agentId.value = null;
     appName.value = "";
     if (!appId.value) return;
     try {
@@ -103,11 +107,42 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => route.query.agent_id,
+  async (v) => {
+    const token = ++appLoadToken;
+    agentId.value = v ? Number(v) : null;
+    appId.value = null;
+    appName.value = "";
+    if (!agentId.value) return;
+    try {
+      const res = await getAiAgentDetail(agentId.value);
+      if (token !== appLoadToken) return;
+      const agent = res.data?.data;
+      if (!agent) {
+        agentId.value = null;
+        appName.value = "";
+        return;
+      }
+      appName.value = agent.agent_name || "";
+    } catch {
+      if (token !== appLoadToken) return;
+      agentId.value = null;
+      appName.value = "";
+    }
+  },
+  { immediate: true }
+);
+
 // AI SDK 流式聊天（getter：随所选应用动态切换 path/body，替代旧 Agno WS）。
 // body 在发送时读取响应式值：session_id 为 ai_sessions 整数主键（persist_session_exchange 需要），
 // 选中应用时附 app_id 供新建会话记录归属。
 const chat = useAiChat(() => ({
-  path: appId.value ? `/ai/apps/${appId.value}/run/stream` : "/ai/assistant/stream",
+  path: appId.value
+    ? `/ai/apps/${appId.value}/run/stream`
+    : agentId.value
+      ? `/ai/agents/${agentId.value}/run/stream`
+      : "/ai/assistant/stream",
   body: () => {
     const payload: Record<string, unknown> = {};
     if (currentSessionId.value != null) payload.session_id = currentSessionId.value;
@@ -182,7 +217,7 @@ const createNewSession = async (firstMessage: string): Promise<boolean> => {
   const title = firstMessage.slice(0, 20) + (firstMessage.length > 20 ? "..." : "");
   try {
     // 运行时会话：写入 ai_sessions（整数主键），选中应用时记录 app_id
-    const res = await createAiSession({ title, app_id: appId.value });
+    const res = await createAiSession({ title, app_id: agentId.value ?? appId.value });
     const created = res.data?.data;
     if (created?.id != null) {
       currentSessionId.value = created.id;

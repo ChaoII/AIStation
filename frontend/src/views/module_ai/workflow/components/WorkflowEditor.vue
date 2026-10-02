@@ -1,0 +1,598 @@
+<!-- AI 工作流编排编辑器：左节点面板 / 中画布 / 右属性面板，支持运行调试 -->
+<template>
+  <el-drawer
+    v-model="dialogVisible"
+    :title="workflow ? '编辑工作流' : '新建工作流'"
+    size="88%"
+    class="ai-workflow-editor"
+    destroy-on-close
+  >
+    <div class="wf-editor">
+      <el-splitter direction="horizontal" style="height: 100%">
+        <!-- 左侧：基础信息 + 节点面板 -->
+        <el-splitter-panel size="240px" :min="200" :max="340">
+          <el-scrollbar style="height: 100%">
+            <div class="panel-section">
+              <div class="section-title">基础信息</div>
+              <el-form :model="formData" label-position="top" size="small">
+                <el-form-item label="名称" required>
+                  <el-input v-model="formData.name" placeholder="工作流名称" />
+                </el-form-item>
+                <el-form-item label="描述">
+                  <el-input
+                    v-model="formData.description"
+                    type="textarea"
+                    :rows="2"
+                    placeholder="描述"
+                  />
+                </el-form-item>
+              </el-form>
+            </div>
+            <el-divider style="margin: 4px 0" />
+            <div class="panel-section">
+              <div class="section-title">节点</div>
+              <el-space direction="vertical" :size="8" fill style="width: 100%">
+                <div
+                  v-for="def in NODE_DEFS"
+                  :key="def.type"
+                  class="palette-item"
+                  draggable="true"
+                  @dragstart="onDragStart($event, def.type)"
+                >
+                  <el-icon :color="def.color"><component :is="iconOf(def.type)" /></el-icon>
+                  <span>{{ def.label }}</span>
+                  <span class="palette-item__desc">{{ def.desc }}</span>
+                </div>
+              </el-space>
+            </div>
+          </el-scrollbar>
+        </el-splitter-panel>
+
+        <!-- 中间：画布 -->
+        <el-splitter-panel>
+          <div class="canvas-main">
+            <div class="canvas-container" @click="handleCanvasClick">
+              <VueFlow
+                v-model:nodes="nodes"
+                v-model:edges="edges"
+                :node-types="nodeTypes"
+                :default-viewport="{ zoom: 1.2 }"
+                :min-zoom="0.2"
+                :max-zoom="4"
+                :default-edge-options="defaultEdgeOptions"
+                @node-click="onNodeClick"
+                @drop="onDrop"
+                @dragover="onDragOver"
+              >
+                <Controls />
+                <Background pattern-color="#aaa" :gap="16" />
+                <MiniMap pannable zoomable />
+                <Panel position="top-right" class="wf-toolbar">
+                  <el-button size="small" :icon="Promotion" @click="autoLayout">自动布局</el-button>
+                  <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
+                    运行
+                  </el-button>
+                </Panel>
+              </VueFlow>
+            </div>
+          </div>
+        </el-splitter-panel>
+
+        <!-- 右侧：节点属性 -->
+        <el-splitter-panel v-if="selectedNode" size="320px" :min="280" :max="420">
+          <el-scrollbar style="height: 100%">
+            <div class="panel-section">
+              <div class="section-title">
+                节点：{{ nodeDefOf(selectedNode.type || "llm").label }}
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  style="float: right"
+                  @click="handleDeleteNode"
+                >
+                  删除
+                </el-button>
+              </div>
+              <NodeConfigPanel :node="selectedNode" @change="onNodeConfigChange" />
+            </div>
+          </el-scrollbar>
+        </el-splitter-panel>
+      </el-splitter>
+    </div>
+
+    <template #footer>
+      <div class="wf-footer">
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleSave">保存工作流</el-button>
+      </div>
+    </template>
+
+    <!-- 运行调试弹窗 -->
+    <el-dialog
+      v-model="runVisible"
+      title="运行调试"
+      width="560px"
+      append-to-body
+      class="ai-run-dialog"
+    >
+      <el-form label-position="top" size="small">
+        <el-form-item label="测试输入（用户消息）">
+          <el-input v-model="runInput" type="textarea" :rows="2" placeholder="输入一条测试消息" />
+        </el-form-item>
+        <el-form-item label="变量（JSON，可选）">
+          <el-input
+            v-model="runVariables"
+            type="textarea"
+            :rows="3"
+            placeholder='如 {"query":"你好"}'
+          />
+        </el-form-item>
+      </el-form>
+      <div v-if="runOutput" class="run-output">
+        <div class="run-output__title">输出</div>
+        <div class="run-output__body">{{ runOutput }}</div>
+      </div>
+      <template #footer>
+        <el-button @click="runVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="running" @click="handleRun">开始运行</el-button>
+      </template>
+    </el-dialog>
+  </el-drawer>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, computed, markRaw, type Component } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { Panel, VueFlow, useVueFlow } from "@vue-flow/core";
+import { Background } from "@vue-flow/background";
+import { MiniMap } from "@vue-flow/minimap";
+import { Controls } from "@vue-flow/controls";
+import type { Node, Edge, DefaultEdgeOptions, MarkerType } from "@vue-flow/core";
+import {
+  Promotion,
+  VideoPlay,
+  Cpu,
+  DocumentCopy,
+  Tools,
+  Operation,
+  SwitchFilled,
+  DataLine,
+  CircleCheckFilled,
+} from "@element-plus/icons-vue";
+import dagre from "dagre";
+import "@vue-flow/core/dist/style.css";
+import "@vue-flow/core/dist/theme-default.css";
+import "@vue-flow/controls/dist/style.css";
+import "@vue-flow/minimap/dist/style.css";
+
+import WorkflowNode from "./WorkflowNode.vue";
+import NodeConfigPanel from "./NodeConfigPanel.vue";
+import { NODE_DEFS, nodeDefOf, type WorkflowNodeType } from "../nodes";
+import { getAiModelList } from "@/api/module_ai/model";
+import { getAiToolList } from "@/api/module_ai/tool";
+import { createAiWorkflow, updateAiWorkflow } from "@/api/module_ai/workflow";
+import { Auth } from "@/utils/auth";
+
+defineOptions({ name: "AiWorkflowEditor", inheritAttrs: false });
+
+const props = defineProps<{ visible: boolean; workflow?: any }>();
+const emit = defineEmits(["update:visible", "refresh"]);
+
+const dialogVisible = computed({
+  get: () => props.visible,
+  set: (v) => emit("update:visible", v),
+});
+
+const nodeTypes = markRaw<Record<string, Component>>({ __default: WorkflowNode });
+
+const { onInit, onConnect, addEdges, setNodes, setEdges, screenToFlowCoordinate, addNodes } =
+  useVueFlow();
+
+const defaultEdgeOptions: DefaultEdgeOptions = {
+  type: "smoothstep",
+  animated: true,
+  markerEnd: "arrowclosed" as MarkerType,
+};
+
+// 连接事件：由 useVueFlow 注册处理器
+onConnect((conn) => {
+  addEdges({ ...conn, type: defaultEdgeOptions.type, animated: true });
+});
+
+const formData = reactive<{ name: string; description: string }>({ name: "", description: "" });
+const workflowId = ref<number>();
+const saving = ref(false);
+const nodes = ref<Node[]>([]);
+const edges = ref<Edge[]>([]);
+const selectedNode = ref<Node>();
+const runVisible = ref(false);
+const running = ref(false);
+const runInput = ref("");
+const runVariables = ref("{}");
+const runOutput = ref("");
+const modelOptions = ref<{ id: number; name: string }[]>([]);
+const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
+
+function iconOf(type: string) {
+  const m: Record<WorkflowNodeType, any> = {
+    start: Promotion,
+    llm: Cpu,
+    knowledge: DocumentCopy,
+    tool: Tools,
+    code: Operation,
+    condition: SwitchFilled,
+    variable: DataLine,
+    end: CircleCheckFilled,
+  };
+  return m[type as WorkflowNodeType] || Cpu;
+}
+
+// 载入模型 / 工具选项供 LLM / 工具节点使用
+const loadOptions = async () => {
+  try {
+    const [mr, tr] = await Promise.all([getAiModelList({}), getAiToolList({})]);
+    modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
+    toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
+  } catch {
+    /* ignore */
+  }
+};
+
+onInit((instance) => {
+  instance.fitView();
+  loadOptions();
+  if (props.workflow) {
+    workflowId.value = props.workflow.id;
+    formData.name = props.workflow.name || "";
+    formData.description = props.workflow.description || "";
+    const g = props.workflow.graph || { nodes: [], edges: [] };
+    nodes.value = g.nodes.map((n: any) => ({
+      id: n.id,
+      type: n.type,
+      position: { x: n.x ?? 0, y: n.y ?? 0 },
+      data: { ...(n.data || {}) },
+    }));
+    edges.value = g.edges.map((e: any) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle || undefined,
+      type: defaultEdgeOptions.type,
+      animated: true,
+    }));
+  }
+});
+
+function onNodeClick(event: any) {
+  event.event.stopPropagation();
+  selectedNode.value = event.node;
+}
+
+function handleCanvasClick(event: MouseEvent) {
+  if (
+    event.target instanceof HTMLElement &&
+    (event.target.classList.contains("vue-flow__node") || event.target.closest(".vue-flow__node"))
+  ) {
+    return;
+  }
+  selectedNode.value = undefined;
+}
+
+function onDragStart(event: DragEvent, type: string) {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData("application/aiworkflow", type);
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function onDragOver(event: DragEvent) {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+}
+
+function onDrop(event: DragEvent) {
+  const type = event.dataTransfer?.getData("application/aiworkflow");
+  if (!type) return;
+  const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
+  const id = `node_${Date.now()}`;
+  addNodes([
+    {
+      id,
+      type,
+      position,
+      data: defaultData(type),
+    } as Node,
+  ]);
+}
+
+function defaultData(type: string): Record<string, any> {
+  switch (type) {
+    case "start":
+      return { variables: [] };
+    case "llm":
+      return { prompt: "", temperature: 0.7, tools: [], output_variable: "" };
+    case "knowledge":
+      return { knowledge_ids: [], query: "", top_k: 3 };
+    case "tool":
+      return { tool_name: "", args: {}, output_variable: "" };
+    case "code":
+      return { code: "", inputs: {}, output_variable: "" };
+    case "condition":
+      return { expression: "" };
+    case "variable":
+      return { name: "", value: "" };
+    case "end":
+      return { output_template: "" };
+    default:
+      return {};
+  }
+}
+
+function onNodeConfigChange(data: Record<string, any>) {
+  if (!selectedNode.value) return;
+  selectedNode.value.data = { ...selectedNode.value.data, ...data };
+}
+
+function handleDeleteNode() {
+  if (!selectedNode.value) return;
+  const id = selectedNode.value.id;
+  ElMessageBox.confirm("确定删除该节点吗？", "提示", {
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+    type: "warning",
+  }).then(() => {
+    nodes.value = nodes.value.filter((n) => n.id !== id);
+    edges.value = edges.value.filter((e) => e.source !== id && e.target !== id);
+    selectedNode.value = undefined;
+    ElMessage.success("节点已删除");
+  });
+}
+
+function autoLayout() {
+  if (nodes.value.length === 0) {
+    ElMessage.warning("画布中没有节点");
+    return;
+  }
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  const nodeWidth = 200;
+  const nodeHeight = 60;
+  g.setGraph({ rankdir: "LR", nodesep: 60, ranksep: 120, marginx: 40, marginy: 40 });
+  nodes.value.forEach((n) => g.setNode(n.id, { width: nodeWidth, height: nodeHeight }));
+  edges.value.forEach((e) => g.setEdge(e.source, e.target));
+  dagre.layout(g);
+  setNodes(
+    nodes.value.map((n) => {
+      const p = g.node(n.id);
+      return { ...n, position: { x: p.x - nodeWidth / 2, y: p.y - nodeHeight / 2 } };
+    })
+  );
+}
+
+function buildGraph() {
+  return {
+    nodes: nodes.value.map((n) => ({
+      id: n.id,
+      type: n.type,
+      x: n.position?.x ?? 0,
+      y: n.position?.y ?? 0,
+      data: n.data || {},
+    })),
+    edges: edges.value.map((e) => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle || undefined,
+    })),
+  };
+}
+
+async function handleSave() {
+  if (!formData.name) {
+    ElMessage.warning("请填写工作流名称");
+    return;
+  }
+  const hasStart = nodes.value.some((n) => n.type === "start");
+  const hasEnd = nodes.value.some((n) => n.type === "end");
+  if (!hasStart || !hasEnd) {
+    ElMessage.warning("工作流需包含「开始」与「结束」节点");
+    return;
+  }
+  saving.value = true;
+  try {
+    const graph = buildGraph();
+    if (workflowId.value) {
+      await updateAiWorkflow(workflowId.value, {
+        name: formData.name,
+        description: formData.description,
+        graph,
+      });
+    } else {
+      const res = await createAiWorkflow({
+        name: formData.name,
+        description: formData.description,
+        graph,
+        enabled: true,
+      });
+      workflowId.value = res.data?.data?.id;
+    }
+    ElMessage.success("保存成功");
+    emit("refresh");
+    dialogVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openRun() {
+  runInput.value = "";
+  runVariables.value = "{}";
+  runOutput.value = "";
+  runVisible.value = true;
+}
+
+async function handleRun() {
+  if (!workflowId.value) {
+    // 未保存：先保存再运行
+    await handleSave();
+    if (!workflowId.value) return;
+  }
+  running.value = true;
+  runOutput.value = "运行中...";
+  try {
+    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+    let variables = {};
+    try {
+      variables = runVariables.value ? JSON.parse(runVariables.value) : {};
+    } catch {
+      variables = {};
+    }
+    const body = {
+      messages: [{ role: "user", parts: [{ type: "text", text: runInput.value || "你好" }] }],
+      variables,
+    };
+    const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/run/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok || !resp.body) {
+      runOutput.value = `请求失败：${resp.status}`;
+      return;
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let out = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const raw = t.slice(5).trim();
+        if (raw === "[DONE]") continue;
+        let obj: any;
+        try {
+          obj = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        if (obj.type === "text-delta") out += obj.text;
+        else if (obj.type === "data-finish") {
+          out = obj.reply || out;
+          runOutput.value = out;
+        }
+      }
+    }
+    runOutput.value = out || "(无输出)";
+  } catch (e: any) {
+    runOutput.value = `运行失败：${e?.message || e}`;
+  } finally {
+    running.value = false;
+  }
+}
+</script>
+
+<style scoped lang="scss">
+.wf-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.wf-editor :deep(.el-splitter) {
+  flex: 1;
+}
+
+.wf-editor :deep(.el-splitter-panel) {
+  overflow: hidden;
+}
+
+.panel-section {
+  padding: 12px;
+
+  .section-title {
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+}
+
+.palette-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: move;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  user-select: none;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+  }
+
+  .palette-item__desc {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--el-text-color-placeholder);
+  }
+}
+
+.canvas-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+.wf-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+}
+
+.wf-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.run-output {
+  padding: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+
+  .run-output__title {
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .run-output__body {
+    max-height: 220px;
+    overflow: auto;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+</style>
