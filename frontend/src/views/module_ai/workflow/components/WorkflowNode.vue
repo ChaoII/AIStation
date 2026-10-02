@@ -146,6 +146,7 @@
       >
         {{ shortText(data.__runOutput) }}
       </div>
+      <div v-if="data.__runDuration != null" class="wf-node__dur">{{ data.__runDuration }}ms</div>
     </div>
     <!-- 输出句柄：条件节点出 true/false 两条 -->
     <Handle
@@ -400,6 +401,12 @@ function shortText(v: any, limit = 160): string {
       color: var(--el-color-danger);
       background: var(--el-color-danger-light-9);
     }
+  }
+
+  .wf-node__dur {
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--el-text-color-placeholder);
   }
 
   .wf-node__text {

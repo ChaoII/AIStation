@@ -1289,6 +1289,9 @@ class WorkflowEngine:
                 if budget is not None and executed >= budget:
                     break
                 continue
+            import time as _time
+
+            node_t0 = _time.perf_counter()
             yield self.ms.node_status(node_id, "running", label, input=self._node_input(node))
             try:
                 if ntype == "start":
@@ -1418,12 +1421,12 @@ class WorkflowEngine:
                 elif ntype == "end":
                     await self._exec_end(node)
             except Exception as e:  # noqa: BLE001
-                yield self.ms.node_status(node_id, "error", label, error=str(e), input=self._node_input(node))
+                yield self.ms.node_status(node_id, "error", label, error=str(e), input=self._node_input(node), duration_ms=int((_time.perf_counter() - node_t0) * 1000))
                 self.state["error"] = str(e)
                 yield self.ms.error(str(e))
                 break
             yield self.ms.node_status(
-                node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id))
+                node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id)), duration_ms=int((_time.perf_counter() - node_t0) * 1000)
             )
             visited.add(node_id)
             _snapshot_frontier()

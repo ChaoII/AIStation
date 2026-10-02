@@ -313,6 +313,9 @@
                       </span>
                       <span class="trace-item__dot" />
                       <span class="trace-item__label">{{ t.label }}</span>
+                      <span v-if="t.duration != null" class="trace-item__dur">
+                        {{ t.duration }}ms
+                      </span>
                       <span class="trace-item__status">{{ statusText(t.status) }}</span>
                       <span v-if="t.error" class="trace-item__err">{{ t.error }}</span>
                     </div>
@@ -805,6 +808,7 @@ interface TraceItem {
   input?: any;
   output?: any;
   error?: string;
+  duration?: number;
 }
 interface ChatMsg {
   id: number;
@@ -856,6 +860,7 @@ function onNodeStatus(ns: any) {
       __runInput: ns.input,
       __runOutput: ns.output,
       __runError: ns.error,
+      __runDuration: ns.duration_ms,
     };
   }
 }
@@ -2141,6 +2146,7 @@ async function sendStep() {
           input: obj.input,
           output: obj.output,
           error: obj.error,
+          duration: obj.duration_ms,
         });
         scrollRunBottom();
       } else if (obj.type === "data-step") {
@@ -2241,6 +2247,7 @@ async function sendChat() {
           input: obj.input,
           output: obj.output,
           error: obj.error,
+          duration: obj.duration_ms,
         });
         scrollRunBottom();
       } else if (obj.type === "data-finish") {
@@ -2292,6 +2299,7 @@ async function handleApprove(decision: "approve" | "reject") {
           input: obj.input,
           output: obj.output,
           error: obj.error,
+          duration: obj.duration_ms,
         });
       } else if (obj.type === "data-finish") am.content = obj.reply || am.content;
       else if (obj.type === "error")
@@ -2595,6 +2603,11 @@ async function handleApprove(decision: "approve" | "reject") {
 
     .trace-item__label {
       font-weight: 600;
+    }
+
+    .trace-item__dur {
+      font-size: 11px;
+      color: var(--el-text-color-secondary);
     }
 
     .trace-item__status {
