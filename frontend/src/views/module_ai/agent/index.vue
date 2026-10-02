@@ -108,6 +108,14 @@
                 >
                   知识库
                 </el-tag>
+                <el-tag
+                  v-if="(a.skill_ids || []).length"
+                  size="small"
+                  effect="plain"
+                  type="warning"
+                >
+                  技能
+                </el-tag>
               </div>
               <div class="agent-card__actions">
                 <el-button
@@ -222,6 +230,17 @@
               <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
             </el-select>
           </el-form-item>
+          <el-form-item label="技能">
+            <el-select
+              v-model="agentForm.skill_ids"
+              multiple
+              filterable
+              placeholder="绑定技能广场技能"
+              style="width: 100%"
+            >
+              <el-option v-for="s in skillOptions" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="温度">
             <el-slider
               v-model="agentForm.temperature"
@@ -288,6 +307,7 @@ import { getAiModelList } from "@/api/module_ai/model";
 import { getAiPromptList } from "@/api/module_ai/prompt";
 import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
+import { getAiSkillList } from "@/api/module_ai/skill";
 
 defineOptions({ name: "AiAgent" });
 
@@ -302,6 +322,7 @@ const modelOptions = ref<{ id: number; name: string }[]>([]);
 const promptOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
+const skillOptions = ref<{ id: number; name: string }[]>([]);
 
 const filteredAgents = computed(() => {
   let list = agents.value;
@@ -318,13 +339,14 @@ const filteredAgents = computed(() => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const [ar, cr, mr, pr, tr, wr] = await Promise.all([
+    const [ar, cr, mr, pr, tr, wr, sr] = await Promise.all([
       getAiAgentList({}),
       getAgentCategoryList(),
       getAiModelList({}),
       getAiPromptList({}),
       getAiToolList({}),
       getAiWorkflowList(),
+      getAiSkillList({}),
     ]);
     agents.value = ar.data?.data || [];
     categories.value = cr.data?.data || [];
@@ -332,6 +354,7 @@ const loadData = async () => {
     promptOptions.value = (pr.data?.data || []).map((p: any) => ({ id: p.id, name: p.name }));
     toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
     workflowOptions.value = (wr.data?.data || []).map((w: any) => ({ id: w.id, name: w.name }));
+    skillOptions.value = (sr.data?.data || []).map((s: any) => ({ id: s.id, name: s.name }));
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -367,6 +390,7 @@ function openAgentDialog(a?: any) {
       model_id: null,
       prompt_id: null,
       tool_ids: [],
+      skill_ids: [],
       temperature: 0.7,
       color: "#409eff",
       markdown: true,
@@ -403,6 +427,7 @@ async function saveAgent() {
       model_id: agentForm.runMode === "model" ? agentForm.model_id : null,
       prompt_id: agentForm.runMode === "model" ? agentForm.prompt_id : null,
       tool_ids: agentForm.runMode === "model" ? agentForm.tool_ids : [],
+      skill_ids: agentForm.runMode === "model" ? agentForm.skill_ids : [],
       temperature: agentForm.runMode === "model" ? agentForm.temperature : null,
       color: agentForm.color,
       markdown: agentForm.markdown,
