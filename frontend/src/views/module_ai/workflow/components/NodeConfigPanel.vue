@@ -257,8 +257,20 @@
       <el-form-item label="URL（支持 {{变量}}）">
         <el-input v-model="d.url" placeholder="https://api.example.com/{{id}}" />
       </el-form-item>
-      <el-form-item label="请求头（JSON）">
-        <CodeEditor v-model="headersText" language="json" />
+      <el-form-item label="请求头（键值对）">
+        <div v-for="(h, i) in headerRows" :key="i" class="http-kv">
+          <el-input v-model="h.key" placeholder="Header 名" size="small" class="http-kv__k" />
+          <el-input
+            v-model="h.value"
+            placeholder="值（支持 {{变量}}）"
+            size="small"
+            class="http-kv__v"
+          />
+          <el-button link type="danger" :icon="Delete" @click="headerRows.splice(i, 1)" />
+        </div>
+        <el-button size="small" :icon="Plus" @click="headerRows.push({ key: '', value: '' })">
+          添加请求头
+        </el-button>
       </el-form-item>
       <el-form-item label="请求体（JSON，GET 可留空）">
         <CodeEditor v-model="bodyText" language="json" />
@@ -728,6 +740,7 @@ const vars = ref<
 const argsText = ref("");
 const codeInputsText = ref("");
 const headersText = ref("");
+const headerRows = ref<{ key: string; value: string }[]>([]);
 const bodyText = ref("");
 const itemsText = ref("");
 const iterArgsText = ref("");
@@ -756,6 +769,10 @@ function syncFromNode() {
   argsText.value = _jsonText(data.args);
   codeInputsText.value = _jsonText(data.inputs);
   headersText.value = _jsonText(data.headers);
+  headerRows.value = Object.entries((data.headers || {}) as Record<string, any>).map(([k, v]) => ({
+    key: k,
+    value: typeof v === "string" ? v : JSON.stringify(v),
+  }));
   bodyText.value = _jsonText(data.body);
   itemsText.value = Array.isArray(data.items)
     ? JSON.stringify(data.items, null, 0)
@@ -881,11 +898,9 @@ function emitChange() {
     }
   }
   if (type.value === "http") {
-    try {
-      data.headers = headersText.value ? JSON.parse(headersText.value) : {};
-    } catch {
-      data.headers = {};
-    }
+    data.headers = Object.fromEntries(
+      headerRows.value.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value])
+    );
     try {
       data.body = bodyText.value ? JSON.parse(bodyText.value) : {};
     } catch {
@@ -934,6 +949,7 @@ watch(
     argsText,
     codeInputsText,
     headersText,
+    headerRows,
     bodyText,
     itemsText,
     iterArgsText,
@@ -1046,6 +1062,20 @@ onMounted(async () => {
   margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.http-kv {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+
+  .http-kv__k {
+    width: 180px;
+  }
+  .http-kv__v {
+    flex: 1;
+  }
 }
 
 .parallel-branch {
