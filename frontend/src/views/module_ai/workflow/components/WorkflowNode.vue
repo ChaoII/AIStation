@@ -3,7 +3,13 @@
   <div
     class="wf-node"
     :style="{ '--node-color': def.color }"
-    :class="{ selected, branch: def.branch }"
+    :class="{
+      selected,
+      branch: def.branch,
+      'is-running': data.__runStatus === 'running',
+      'is-ok': data.__runStatus === 'success',
+      'is-err': data.__runStatus === 'error',
+    }"
   >
     <Handle
       v-if="def.type !== 'start'"
@@ -205,6 +211,21 @@ const def = computed(() => {
   &.selected {
     border-color: var(--node-color);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 25%, transparent);
+  }
+
+  &.is-running {
+    border-color: var(--el-color-primary);
+    box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.25);
+  }
+
+  &.is-ok {
+    border-color: var(--el-color-success);
+    box-shadow: 0 0 0 2px rgba(103, 194, 58, 0.2);
+  }
+
+  &.is-err {
+    border-color: var(--el-color-danger);
+    box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.2);
   }
 
   .wf-node__head {

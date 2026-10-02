@@ -207,6 +207,22 @@
           </el-card>
         </div>
       </div>
+      <div v-if="runTrace.length" class="run-trace">
+        <div class="run-trace__title">执行过程</div>
+        <div class="run-trace__list">
+          <div
+            v-for="(t, i) in runTrace"
+            :key="i"
+            class="run-trace__item"
+            :class="`is-${t.status}`"
+          >
+            <span class="run-trace__dot" />
+            <span class="run-trace__label">{{ t.label }}</span>
+            <span class="run-trace__status">{{ statusText(t.status) }}</span>
+            <span v-if="t.error" class="run-trace__err">{{ t.error }}</span>
+          </div>
+        </div>
+      </div>
       <div v-if="runOutput" class="run-output">
         <div class="run-output__title">输出</div>
         <div class="run-output__body">{{ runOutput }}</div>
@@ -361,6 +377,44 @@ const runOutput = ref("");
 const runSources = ref<any[]>([]);
 const runApproval = ref<{ run_id: string; toolCalls: any[] } | null>(null);
 const approving = ref(false);
+// 调试执行追踪：按序记录各节点状态/输出，并高亮画布节点
+const nodeRunStates = ref<Record<string, string>>({});
+const runTrace = ref<
+  { nodeId: string; status: string; label: string; output?: any; error?: string }[]
+>([]);
+
+function resetRunTrace() {
+  nodeRunStates.value = {};
+  runTrace.value = [];
+  nodes.value.forEach((n) => {
+    n.data = { ...(n.data || {}), __runStatus: "" };
+  });
+}
+
+function onNodeStatus(ns: any) {
+  const status = ns.status || "success";
+  nodeRunStates.value[ns.nodeId] = status;
+  const n = nodes.value.find((x) => x.id === ns.nodeId);
+  if (n) {
+    n.data = {
+      ...(n.data || {}),
+      __runStatus: status,
+      __runOutput: ns.output,
+      __runError: ns.error,
+    };
+  }
+  runTrace.value.push({
+    nodeId: ns.nodeId,
+    status,
+    label: ns.label || ns.nodeId,
+    output: ns.output,
+    error: ns.error,
+  });
+}
+
+function statusText(s: string) {
+  return s === "running" ? "执行中" : s === "error" ? "失败" : "完成";
+}
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
 
@@ -859,6 +913,7 @@ async function handleRun() {
   running.value = true;
   runApproval.value = null;
   runOutput.value = "运行中...";
+  resetRunTrace();
   try {
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     let variables = {};
@@ -887,6 +942,7 @@ async function handleRun() {
     await readUiStream(resp, (obj) => {
       if (obj.type === "text-delta") out += obj.text;
       else if (obj.type === "sources") runSources.value = obj.sources || [];
+      else if (obj.type === "node-status") onNodeStatus(obj);
       else if (obj.type === "data-finish") {
         if (obj.awaiting_approval && obj.run_id) {
           runApproval.value = { run_id: obj.run_id, toolCalls: obj.pending_tool_calls || [] };
@@ -1054,6 +1110,73 @@ async function handleApprove(decision: "approve" | "reject") {
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+.run-trace {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+
+  .run-trace__title {
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .run-trace__list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .run-trace__item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    font-size: 13px;
+    background: #fff;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+
+    .run-trace__dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--el-color-info);
+    }
+
+    &.is-running .run-trace__dot {
+      background: var(--el-color-primary);
+      animation: wf-pulse 1s ease-in-out infinite;
+    }
+    &.is-success .run-trace__dot {
+      background: var(--el-color-success);
+    }
+    &.is-error .run-trace__dot {
+      background: var(--el-color-danger);
+    }
+
+    .run-trace__status {
+      margin-left: auto;
+      color: var(--el-text-color-secondary);
+    }
+    .run-trace__err {
+      color: var(--el-color-danger);
+      font-size: 12px;
+    }
+  }
+}
+
+@keyframes wf-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
   }
 }
 

@@ -55,6 +55,45 @@ def _extract_json(text: str) -> Any:
     return text
 
 
+# 节点类型 → 中文标签（供调试追踪显示）
+_NODE_LABELS = {
+    "start": "开始",
+    "llm": "LLM",
+    "knowledge": "知识检索",
+    "tool": "工具调用",
+    "code": "代码转换",
+    "condition": "条件分支",
+    "variable": "变量赋值",
+    "http": "HTTP 请求",
+    "iteration": "迭代/批量",
+    "classifier": "问题分类器",
+    "extractor": "参数提取",
+    "template": "模板转换",
+    "variable_aggregator": "变量聚合",
+    "answer": "回答",
+    "sub_workflow": "子工作流",
+    "agent": "子智能体",
+    "end": "结束",
+}
+
+
+def _snapshot(value: Any, limit: int = 500) -> Any:
+    """输出快照：过大/二进制值截断转字符串，便于前端展示。"""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value if len(value) <= limit else value[:limit] + "…"
+    if isinstance(value, (dict, list)):
+        try:
+            s = json.dumps(value, ensure_ascii=False, default=str)
+            if len(s) <= limit:
+                return value
+            return s[:limit] + "…"
+        except Exception:  # noqa: BLE001
+            return str(value)[:limit]
+    return value
+
+
 class WorkflowEngine:
     """按节点 DAG 顺序执行工作流，流式产出 SSE 帧。
 
@@ -883,7 +922,11 @@ class WorkflowEngine:
     # 主执行
     # ------------------------------------------------------------------ #
     async def run(self):
-        """按 DAG 顺序执行全部节点，逐帧产出 SSE 帧（异步生成器）。"""
+        """按 DAG 顺序执行全部节点，逐帧产出 SSE 帧（异步生成器）。
+
+        每个节点执行前/后产出 ``node-status`` 帧（running/success/error），
+        前端据此高亮当前节点并展示各节点的输入输出。
+        """
         start = next(
             (n for n in (self.graph.get("nodes") or []) if n.get("type") == "start"),
             None,
@@ -898,103 +941,116 @@ class WorkflowEngine:
                 continue
             node = self._node(node_id)
             ntype = node.get("type") or "start"
-            if ntype == "start":
-                await self._exec_start(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "llm":
-                async for frame in self._exec_llm(node):
-                    yield frame
-                # HITL：LLM 节点挂起等待审批时停止后续节点执行
-                if self.state.get("halted"):
-                    break
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "tool":
-                await self._exec_tool(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "code":
-                await self._exec_code(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "condition":
-                await self._exec_condition(node)
-                # 只走命中分支：true 命中则走 sourceHandle=true，否则走 false
-                result = self.outputs.get(node_id)
-                handle = "true" if result else "false"
-                next_id = self._edge_target(node_id, handle)
-                if not next_id:
-                    # 无对应 handle 边时回退到无条件边
+            label = _NODE_LABELS.get(ntype, ntype)
+            yield self.ms.node_status(node_id, "running", label)
+            try:
+                if ntype == "start":
+                    await self._exec_start(node)
                     next_id = self._edge_target(node_id)
-                if next_id and next_id not in visited:
-                    stack.append(next_id)
-            elif ntype == "variable":
-                await self._exec_variable(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "knowledge":
-                async for frame in self._exec_knowledge(node):
-                    yield frame
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "http":
-                await self._exec_http(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "iteration":
-                await self._exec_iteration(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "classifier":
-                await self._exec_classifier(node)
-                cat = self.outputs.get(node_id)
-                next_id = self._edge_target(node_id, str(cat)) if cat else None
-                if not next_id:
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "llm":
+                    async for frame in self._exec_llm(node):
+                        yield frame
+                    # HITL：LLM 节点挂起等待审批时停止后续节点执行
+                    if self.state.get("halted"):
+                        yield self.ms.node_status(
+                            node_id, "success", label, output=_snapshot(self.outputs.get(node_id))
+                        )
+                        visited.add(node_id)
+                        break
                     next_id = self._edge_target(node_id)
-                if next_id and next_id not in visited:
-                    stack.append(next_id)
-            elif ntype == "extractor":
-                await self._exec_extractor(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "template":
-                await self._exec_template(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "variable_aggregator":
-                await self._exec_variable_aggregator(node)
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "answer":
-                async for frame in self._exec_answer(node):
-                    yield frame
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "sub_workflow":
-                async for frame in self._exec_sub_workflow(node):
-                    yield frame
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "agent":
-                async for frame in self._exec_agent(node):
-                    yield frame
-                next_id = self._edge_target(node_id)
-                if next_id:
-                    stack.append(next_id)
-            elif ntype == "end":
-                await self._exec_end(node)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "tool":
+                    await self._exec_tool(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "code":
+                    await self._exec_code(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "condition":
+                    await self._exec_condition(node)
+                    result = self.outputs.get(node_id)
+                    handle = "true" if result else "false"
+                    next_id = self._edge_target(node_id, handle)
+                    if not next_id:
+                        next_id = self._edge_target(node_id)
+                    if next_id and next_id not in visited:
+                        stack.append(next_id)
+                elif ntype == "variable":
+                    await self._exec_variable(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "knowledge":
+                    async for frame in self._exec_knowledge(node):
+                        yield frame
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "http":
+                    await self._exec_http(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "iteration":
+                    await self._exec_iteration(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "classifier":
+                    await self._exec_classifier(node)
+                    cat = self.outputs.get(node_id)
+                    next_id = self._edge_target(node_id, str(cat)) if cat else None
+                    if not next_id:
+                        next_id = self._edge_target(node_id)
+                    if next_id and next_id not in visited:
+                        stack.append(next_id)
+                elif ntype == "extractor":
+                    await self._exec_extractor(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "template":
+                    await self._exec_template(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "variable_aggregator":
+                    await self._exec_variable_aggregator(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "answer":
+                    async for frame in self._exec_answer(node):
+                        yield frame
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "sub_workflow":
+                    async for frame in self._exec_sub_workflow(node):
+                        yield frame
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "agent":
+                    async for frame in self._exec_agent(node):
+                        yield frame
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "end":
+                    await self._exec_end(node)
+            except Exception as e:  # noqa: BLE001
+                yield self.ms.node_status(node_id, "error", label, error=str(e))
+                self.state["error"] = str(e)
+                yield self.ms.error(str(e))
+                break
+            yield self.ms.node_status(
+                node_id, "success", label, output=_snapshot(self.outputs.get(node_id))
+            )
             visited.add(node_id)

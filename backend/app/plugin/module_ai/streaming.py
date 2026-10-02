@@ -120,6 +120,26 @@ class UiMessageStream:
     def data(self, name: str, payload: object) -> str:
         return _frame({"type": f"data-{name}", "data": payload})
 
+    def node_status(
+        self,
+        node_id: str,
+        status: str,
+        label: str = "",
+        output: object | None = None,
+        error: str | None = None,
+    ) -> str:
+        """节点执行状态帧：前端据此高亮进行中的节点并展示各节点输出。"""
+        return _frame(
+            {
+                "type": "node-status",
+                "nodeId": node_id,
+                "status": status,  # running / success / error
+                "label": label,
+                "output": output,
+                "error": error,
+            }
+        )
+
     def finish(self) -> str:
         return _frame({"type": "finish"})
 

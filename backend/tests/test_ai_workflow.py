@@ -1100,6 +1100,8 @@ def test_answer_node(test_client, auth_headers):
         assert r.status_code == 200, r.text
         assert "收到：你好" in r.text
         assert '"type": "text-delta"' in r.text
+        assert '"type": "node-status"' in r.text
+        assert '"status": "success"' in r.text
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wid])

@@ -1,6 +1,11 @@
 <!-- 节点属性面板：按所选节点类型渲染对应配置表单 -->
 <template>
-  <el-form label-position="top" size="small" @focus.capture="onPanelFocus">
+  <el-form
+    label-position="top"
+    size="small"
+    @focus.capture="onPanelFocus"
+    @input.capture="onVarInput"
+  >
     <!-- 插入变量 -->
     <el-form-item v-if="availableVars && availableVars.length" label="插入变量">
       <el-dropdown trigger="click" @command="insertVar">
@@ -334,6 +339,26 @@
         />
       </el-form-item>
     </template>
+
+    <!-- {{ 变量内联提示 -->
+    <div
+      v-if="suggestVisible && varSuggest.length"
+      class="var-suggest"
+      :style="{ left: suggestPos.x + 'px', top: suggestPos.y + 'px' }"
+      @blur="onVarBlur"
+      @mousedown.prevent
+    >
+      <div
+        v-for="v in varSuggest"
+        :key="v.name"
+        class="var-suggest__item"
+        @mousedown.prevent
+        @click="pickVar(v.name)"
+      >
+        <code>{{ varToken(v.name) }}</code>
+        <span class="var-suggest__label">{{ v.label }}</span>
+      </div>
+    </div>
   </el-form>
 </template>
 
@@ -377,6 +402,64 @@ function insertVar(name: string) {
   el.setSelectionRange(pos, pos);
   el.focus();
   focusedEl.value = el;
+}
+
+// ---------- {{ 变量内联提示 ----------
+const varSuggest = ref<{ name: string; label: string }[]>([]);
+const suggestVisible = ref(false);
+const suggestPos = ref({ x: 0, y: 0 });
+
+function _inputFor(e: Event): HTMLTextAreaElement | HTMLInputElement | null {
+  const t = e.target as HTMLElement;
+  return t instanceof HTMLTextAreaElement || t instanceof HTMLInputElement ? t : null;
+}
+
+function onVarInput(e: Event) {
+  const el = _inputFor(e);
+  if (!el) return;
+  focusedEl.value = el;
+  const caret = el.selectionStart ?? el.value.length;
+  const before = el.value.slice(0, caret);
+  const m = /{{\s*([\w\u4e00-\u9fa5]*)$/.exec(before);
+  if (!m) {
+    suggestVisible.value = false;
+    return;
+  }
+  const q = m[1] || "";
+  const opts = (props.availableVars || []).filter((v) => !q || v.name.includes(q));
+  if (!opts.length) {
+    suggestVisible.value = false;
+    return;
+  }
+  varSuggest.value = opts;
+  const rect = el.getBoundingClientRect();
+  suggestPos.value = { x: rect.left, y: rect.bottom + 4 };
+  suggestVisible.value = true;
+}
+
+function pickVar(name: string) {
+  const el = focusedEl.value;
+  if (!el) return;
+  const caret = el.selectionStart ?? el.value.length;
+  const before = el.value.slice(0, caret);
+  const m = /{{\s*([\w\u4e00-\u9fa5]*)$/.exec(before);
+  const start = m ? caret - m[0].length : caret;
+  el.value = el.value.slice(0, start) + `{{${name}}}` + el.value.slice(caret);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.setSelectionRange(start + name.length + 2, start + name.length + 2);
+  el.focus();
+  suggestVisible.value = false;
+}
+
+function onVarBlur() {
+  // 延后隐藏，避免点击选项前被关闭
+  window.setTimeout(() => {
+    suggestVisible.value = false;
+  }, 150);
+}
+
+function varToken(name: string) {
+  return `{{${name}}}`;
 }
 
 const type = props.node.type || "llm";
@@ -544,5 +627,40 @@ onMounted(async () => {
   padding: 1px 4px;
   background: var(--el-fill-color-light);
   border-radius: 3px;
+}
+
+.var-suggest {
+  position: fixed;
+  z-index: 3000;
+  width: 260px;
+  max-height: 220px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  box-shadow: var(--el-box-shadow-light);
+}
+.var-suggest__item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.var-suggest__item:hover {
+  background: var(--el-fill-color-light);
+}
+.var-suggest__item code {
+  padding: 1px 4px;
+  background: var(--el-fill-color-light);
+  border-radius: 3px;
+  font-size: 12px;
+}
+.var-suggest__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>
