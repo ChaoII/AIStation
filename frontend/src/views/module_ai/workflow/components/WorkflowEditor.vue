@@ -152,6 +152,15 @@
                 </el-button>
                 <el-button
                   link
+                  type="primary"
+                  size="small"
+                  style="float: right; margin-right: 8px"
+                  @click="copySelectedNode"
+                >
+                  复制
+                </el-button>
+                <el-button
+                  link
                   type="danger"
                   size="small"
                   style="float: right"
@@ -1303,6 +1312,27 @@ function handleDeleteNode() {
     selectedNode.value = undefined;
     ElMessage.success("节点已删除");
   });
+}
+
+function copySelectedNode() {
+  if (!selectedNode.value) return;
+  const src = selectedNode.value;
+  const id = `node_${Date.now()}`;
+  const data = JSON.parse(JSON.stringify(src.data || {}));
+  delete data.__runStatus;
+  delete data.__runOutput;
+  delete data.__runError;
+  delete data.__runInput;
+  const node = {
+    id,
+    type: src.type,
+    position: { x: src.position.x + 60, y: src.position.y + 60 },
+    data,
+  } as Node;
+  pushHistory();
+  addNodes([node]);
+  selectedNode.value = node;
+  ElMessage.success("已复制节点，可修改其配置");
 }
 
 function autoLayout() {

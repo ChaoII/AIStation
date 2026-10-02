@@ -123,6 +123,17 @@
       <template v-else-if="def.type === 'end'">
         <div class="wf-node__text">{{ data.output_template ? "模板已配置" : "输出最终回复" }}</div>
       </template>
+      <!-- 运行后：节点卡片直接展示输出 / 报错（Dify 式） -->
+      <div v-if="data.__runError" class="wf-node__out is-err" :title="data.__runError">
+        {{ data.__runError }}
+      </div>
+      <div
+        v-else-if="data.__runStatus === 'success' && data.__runOutput != null"
+        class="wf-node__out"
+        :title="shortText(data.__runOutput, 1000)"
+      >
+        {{ shortText(data.__runOutput) }}
+      </div>
     </div>
     <!-- 输出句柄：条件节点出 true/false 两条 -->
     <Handle
@@ -208,6 +219,12 @@ const def = computed(() => {
   };
   return { ...d, icon: iconMap[d.type] || Cpu };
 });
+
+function shortText(v: any, limit = 160): string {
+  if (v == null) return "";
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s.length <= limit ? s : s.slice(0, limit) + "…";
+}
 </script>
 
 <style scoped lang="scss">
@@ -300,6 +317,24 @@ const def = computed(() => {
 
   .wf-node__body {
     font-size: var(--el-font-size-small);
+  }
+
+  .wf-node__out {
+    margin-top: 6px;
+    padding: 4px 6px;
+    font-size: 11px;
+    color: var(--el-text-color-regular);
+    background: var(--el-fill-color-light);
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+
+    &.is-err {
+      color: var(--el-color-danger);
+      background: var(--el-color-danger-light-9);
+    }
   }
 
   .wf-node__text {
