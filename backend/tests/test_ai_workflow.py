@@ -99,6 +99,81 @@ def test_render_template():
     assert render_template("{{未知}}", {}) == "{{未知}}"
 
 
+def test_workflow_run_http(monkeypatch, test_client, auth_headers):
+    """HTTP 节点：发起外部请求并把 JSON 响应写入变量、end 模板插值。"""
+    import httpx
+
+    captured: dict = {}
+
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {"hello": "世界"}
+
+        text = '{"hello": "世界"}'
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, **kw):
+            captured["method"] = method
+            captured["url"] = url
+            captured["json"] = kw.get("json")
+            return _FakeResp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+    graph = {
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"variables": []}},
+            {
+                "id": "http",
+                "type": "http",
+                "data": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"X-Token": "{{token}}"},
+                    "body": {"q": "{{question}}"},
+                    "output_variable": "resp",
+                },
+            },
+            {"id": "end", "type": "end", "data": {"output_template": "{{resp}}"}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "start", "target": "http"},
+            {"id": "e2", "source": "http", "target": "end"},
+        ],
+    }
+    wf_id = _create_workflow(test_client, auth_headers, graph)
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/workflows/{wf_id}/run/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "x"}]}],
+                "variables": {"token": "abc", "question": "hi"},
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        body = r.text
+        assert '"reply"' in body
+        assert "世界" in body
+        assert captured["method"] == "POST"
+        assert captured["url"] == "https://example.com/api"
+        # 变量渲染：{{token}}/{{question}}
+        assert captured["json"] == {"q": "hi"}
+    finally:
+        _delete_wf(test_client, auth_headers, [wf_id])
+
+
 def test_workflow_crud(test_client, auth_headers):
     """创建 → 列表 → 详情 → 更新 → 删除。"""
     wf_id = _create_workflow(test_client, auth_headers)

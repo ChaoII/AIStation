@@ -507,6 +507,48 @@ class WorkflowEngine:
         self.variables[name] = value
         self.outputs[node["id"]] = value
 
+    async def _exec_http(self, node: dict) -> None:
+        """HTTP 节点：发起一次外部 API 请求，把 JSON/文本结果写入变量。
+
+        ``data``：``method`` / ``url`` / ``headers``(dict) / ``body``(模板) /
+        ``output_variable``。响应写入 ``{"status", "body", "text"}``。
+        """
+        data = node.get("data") or {}
+        method = (data.get("method") or "GET").upper()
+        url = self._render(data.get("url") or "")
+        if not url:
+            raise RuntimeError("HTTP 节点缺少 url")
+        headers = self._resolve_option(data.get("headers") or {})
+        if isinstance(headers, dict):
+            headers = {k: self._render(str(v)) for k, v in headers.items()}
+        body = self._resolve_option(data.get("body"))
+        if isinstance(body, str):
+            body = self._render(body)
+        elif isinstance(body, dict):
+            body = {k: (self._render(v) if isinstance(v, str) else v) for k, v in body.items()}
+        elif isinstance(body, list):
+            body = [self._render(v) if isinstance(v, str) else v for v in body]
+        import httpx
+
+        payload = body if isinstance(body, (dict, list)) else body
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.request(
+                method,
+                url,
+                headers=headers or None,
+                json=payload if isinstance(payload, (dict, list)) else None,
+                content=None if isinstance(payload, (dict, list)) else (payload or None),
+            )
+        try:
+            parsed: object = resp.json()
+        except Exception:  # noqa: BLE001
+            parsed = resp.text
+        value = {"status": resp.status_code, "body": parsed, "text": resp.text}
+        self.outputs[node["id"]] = value
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = parsed
+
     async def _exec_end(self, node: dict) -> None:
         """结束节点：组装最终回复（output_template 或最后 LLM 输出）。"""
         data = node.get("data") or {}
@@ -581,6 +623,11 @@ class WorkflowEngine:
                     stack.append(next_id)
             elif ntype == "variable":
                 await self._exec_variable(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "http":
+                await self._exec_http(node)
                 next_id = self._edge_target(node_id)
                 if next_id:
                     stack.append(next_id)
