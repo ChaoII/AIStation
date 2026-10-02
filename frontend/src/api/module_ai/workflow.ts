@@ -21,3 +21,20 @@ export function updateAiWorkflow(id: number, data: any) {
 export function deleteAiWorkflow(ids: number[]) {
   return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
 }
+
+// ---------- 版本 / 发布 / 回滚 ----------
+export function saveAiWorkflowVersion(id: number, data: { remark?: string; graph?: any }) {
+  return request({ url: `${API_PATH}/${id}/versions`, method: "post", data });
+}
+
+export function listAiWorkflowVersions(id: number) {
+  return request({ url: `${API_PATH}/${id}/versions`, method: "get" });
+}
+
+export function rollbackAiWorkflowVersion(id: number, versionId: number) {
+  return request({ url: `${API_PATH}/${id}/versions/${versionId}/rollback`, method: "post" });
+}
+
+export function publishAiWorkflowVersion(id: number, versionId: number) {
+  return request({ url: `${API_PATH}/${id}/versions/${versionId}/publish`, method: "post" });
+}

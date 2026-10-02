@@ -80,6 +80,14 @@
                   </el-button>
                   <el-button size="small" :icon="FullScreen" @click="fitView()">适配视图</el-button>
                   <el-button size="small" :icon="Promotion" @click="autoLayout">自动布局</el-button>
+                  <el-button
+                    size="small"
+                    :icon="Clock"
+                    :disabled="!workflowId"
+                    @click="openVersions"
+                  >
+                    版本
+                  </el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
                     运行
                   </el-button>
@@ -208,6 +216,40 @@
         <el-button type="primary" :loading="running" @click="handleRun">开始运行</el-button>
       </template>
     </el-dialog>
+
+    <!-- 版本管理弹窗 -->
+    <el-dialog v-model="versionsVisible" title="版本管理" width="680px" append-to-body>
+      <div class="version-save-row">
+        <el-input
+          v-model="versionRemark"
+          placeholder="填写本次版本说明（可选）"
+          style="flex: 1"
+          size="small"
+        />
+        <el-button type="primary" size="small" :loading="savingVersion" @click="saveVersion">
+          保存当前版本
+        </el-button>
+      </div>
+      <el-table v-loading="versionLoading" :data="versions" size="small" border>
+        <el-table-column label="版本" width="80">
+          <template #default="{ row }">v{{ row.version_no }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="说明" />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.published" type="success" size="small">已发布</el-tag>
+            <el-tag v-else type="info" size="small">草稿</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_time" label="保存时间" width="180" />
+        <el-table-column label="操作" width="160">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="doPublish(row)">发布</el-button>
+            <el-button link type="warning" size="small" @click="doRollback(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </el-drawer>
 </template>
 
@@ -236,6 +278,7 @@ import {
   FullScreen,
   RefreshLeft,
   RefreshRight,
+  Clock,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -249,7 +292,14 @@ import NodeConfigPanel from "./NodeConfigPanel.vue";
 import { NODE_DEFS, nodeDefOf, type WorkflowNodeType } from "../nodes";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
-import { createAiWorkflow, updateAiWorkflow } from "@/api/module_ai/workflow";
+import {
+  createAiWorkflow,
+  updateAiWorkflow,
+  saveAiWorkflowVersion,
+  listAiWorkflowVersions,
+  rollbackAiWorkflowVersion,
+  publishAiWorkflowVersion,
+} from "@/api/module_ai/workflow";
 import { Auth } from "@/utils/auth";
 
 defineOptions({ name: "AiWorkflowEditor", inheritAttrs: false });
@@ -405,6 +455,99 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+
+// ---------- 版本管理 ----------
+const versionsVisible = ref(false);
+const versions = ref<any[]>([]);
+const versionLoading = ref(false);
+const savingVersion = ref(false);
+const versionRemark = ref("");
+
+async function openVersions() {
+  versionsVisible.value = true;
+  versionRemark.value = "";
+  await loadVersions();
+}
+
+async function loadVersions() {
+  if (!workflowId.value) return;
+  versionLoading.value = true;
+  try {
+    const res = await listAiWorkflowVersions(workflowId.value);
+    versions.value = res.data?.data || [];
+  } catch {
+    versions.value = [];
+  } finally {
+    versionLoading.value = false;
+  }
+}
+
+async function saveVersion() {
+  if (!workflowId.value) return;
+  savingVersion.value = true;
+  try {
+    await saveAiWorkflowVersion(workflowId.value, {
+      remark: versionRemark.value,
+      graph: buildGraph(),
+    });
+    ElMessage.success("版本已保存");
+    versionRemark.value = "";
+    await loadVersions();
+  } catch {
+    ElMessage.error("保存版本失败");
+  } finally {
+    savingVersion.value = false;
+  }
+}
+
+async function doPublish(v: any) {
+  if (!workflowId.value) return;
+  await ElMessageBox.confirm(
+    `确认发布版本 v${v.version_no} 为线上版本吗？将用该版本的 DAG 覆盖当前工作流。`,
+    "发布确认",
+    { confirmButtonText: "发布", cancelButtonText: "取消", type: "warning" }
+  );
+  try {
+    await publishAiWorkflowVersion(workflowId.value, v.id);
+    ElMessage.success("发布成功");
+    await loadVersions();
+  } catch {
+    ElMessage.error("发布失败");
+  }
+}
+
+async function doRollback(v: any) {
+  if (!workflowId.value) return;
+  await ElMessageBox.confirm(
+    `确认回滚到版本 v${v.version_no} 吗？当前画布内容将被该版本的 DAG 覆盖，且不可恢复。`,
+    "回滚确认",
+    { confirmButtonText: "回滚", cancelButtonText: "取消", type: "warning" }
+  );
+  try {
+    const res = await rollbackAiWorkflowVersion(workflowId.value, v.id);
+    ElMessage.success("回滚成功");
+    const g = res.data?.data?.graph;
+    if (g) {
+      nodes.value = g.nodes.map((n: any) => ({
+        id: n.id,
+        type: n.type,
+        position: { x: n.x ?? 0, y: n.y ?? 0 },
+        data: { ...(n.data || {}) },
+      }));
+      edges.value = g.edges.map((e: any) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle || undefined,
+        type: defaultEdgeOptions.type,
+        animated: true,
+      }));
+    }
+    await loadVersions();
+  } catch {
+    ElMessage.error("回滚失败");
+  }
+}
 
 function iconOf(type: string) {
   const m: Record<WorkflowNodeType, any> = {
@@ -866,6 +1009,12 @@ async function handleApprove(decision: "approve" | "reject") {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+}
+
+.version-save-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .run-output {

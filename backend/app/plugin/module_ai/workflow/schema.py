@@ -32,3 +32,10 @@ class AiWorkflowApproveSchema(BaseModel):
     run_id: str
     decision: str = Field(pattern="^(approve|reject)$")
     tool_call_ids: list[str] | None = None
+
+
+class AiWorkflowVersionCreateSchema(BaseModel):
+    """保存工作流版本：可自带 graph，缺省用当前工作流 graph。"""
+
+    remark: str | None = Field(default=None, max_length=255)
+    graph: dict | None = None

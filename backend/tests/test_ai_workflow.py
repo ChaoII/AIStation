@@ -975,3 +975,57 @@ def test_workflow_run_hitl_reject(monkeypatch, test_client, auth_headers):
         assert "AIStation 是开源平台" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf_id])
+
+
+def test_workflow_versions_publish_rollback(test_client, auth_headers):
+    """版本：保存快照、发布、回滚到指定版本。"""
+    graph_a = {
+        "nodes": [{"id": "start", "type": "start", "data": {"variables": []}},
+                  {"id": "end", "type": "end", "data": {"output_template": "A"}}],
+        "edges": [{"id": "e1", "source": "start", "target": "end"}],
+    }
+    graph_b = {
+        "nodes": [{"id": "start", "type": "start", "data": {"variables": []}},
+                  {"id": "end", "type": "end", "data": {"output_template": "B"}}],
+        "edges": [{"id": "e1", "source": "start", "target": "end"}],
+    }
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": graph_a}, headers=auth_headers).json()["data"]
+    wid = wf["id"]
+    try:
+        r1 = test_client.post(f"/api/v1/ai/workflows/{wid}/versions",
+            json={"remark": "v1"}, headers=auth_headers)
+        assert r1.status_code == 200, r1.text
+        v1 = r1.json()["data"]
+        assert v1["version_no"] == 1 and v1["published"] is True
+
+        test_client.put(f"/api/v1/ai/workflows/update/{wid}",
+            json={"graph": graph_b}, headers=auth_headers)
+        r2 = test_client.post(f"/api/v1/ai/workflows/{wid}/versions",
+            json={"remark": "v2"}, headers=auth_headers)
+        v2 = r2.json()["data"]
+        assert v2["version_no"] == 2 and v2["published"] is False
+
+        lst = test_client.get(f"/api/v1/ai/workflows/{wid}/versions", headers=auth_headers).json()["data"]
+        assert [x["version_no"] for x in lst] == [2, 1]
+
+        # 回滚到 v1
+        rb = test_client.post(f"/api/v1/ai/workflows/{wid}/versions/{v1['id']}/rollback",
+            headers=auth_headers)
+        assert rb.status_code == 200, rb.text
+        assert rb.json()["data"]["version"] == 1
+        detail = test_client.get(f"/api/v1/ai/workflows/detail/{wid}", headers=auth_headers).json()["data"]
+        assert detail["graph"]["nodes"][1]["data"]["output_template"] == "A"
+
+        # 发布 v2
+        pub = test_client.post(f"/api/v1/ai/workflows/{wid}/versions/{v2['id']}/publish",
+            headers=auth_headers)
+        assert pub.status_code == 200, pub.text
+        assert pub.json()["data"]["version"] == 2
+        lst2 = test_client.get(f"/api/v1/ai/workflows/{wid}/versions", headers=auth_headers).json()["data"]
+        published = [x for x in lst2 if x["published"]]
+        assert len(published) == 1 and published[0]["id"] == v2["id"]
+        detail2 = test_client.get(f"/api/v1/ai/workflows/detail/{wid}", headers=auth_headers).json()["data"]
+        assert detail2["graph"]["nodes"][1]["data"]["output_template"] == "B"
+    finally:
+        _delete_wf(test_client, auth_headers, [wid])

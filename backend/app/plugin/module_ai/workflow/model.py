@@ -23,3 +23,24 @@ class AiWorkflowModel(ModelMixin, UserMixin):
     )
     version: Mapped[int] = mapped_column(Integer, default=1, comment="版本号")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+
+
+class AiWorkflowVersionModel(ModelMixin, UserMixin):
+    """工作流版本快照：保存某一时刻的 DAG 定义，用于发布与回滚。"""
+
+    __tablename__ = "ai_workflow_versions"
+    __table_args__ = ({"comment": "AI 工作流版本表"},)
+
+    workflow_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="所属工作流 ID"
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False, comment="版本号")
+    graph: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="该版本的节点 DAG"
+    )
+    remark: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default="", comment="版本说明"
+    )
+    published: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="是否已发布（线上版本）"
+    )

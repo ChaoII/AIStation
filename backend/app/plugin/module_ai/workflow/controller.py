@@ -15,6 +15,7 @@ from .schema import (
     AiWorkflowCreateSchema,
     AiWorkflowRunSchema,
     AiWorkflowUpdateSchema,
+    AiWorkflowVersionCreateSchema,
 )
 from .service import AiWorkflowService
 
@@ -68,6 +69,50 @@ async def delete_workflows(
 ) -> JSONResponse:
     await AiWorkflowService.delete(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@AiWorkflowRouter.post("/{workflow_id}/versions", summary="保存工作流版本")
+async def save_workflow_version(
+    workflow_id: int,
+    data: AiWorkflowVersionCreateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
+) -> JSONResponse:
+    result = await AiWorkflowService.save_version(workflow_id, data, auth)
+    if not result:
+        return ErrorResponse(msg="工作流不存在")
+    return SuccessResponse(data=result, msg="版本已保存")
+
+
+@AiWorkflowRouter.get("/{workflow_id}/versions", summary="工作流版本列表")
+async def list_workflow_versions(
+    workflow_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiWorkflowService.list_versions(workflow_id), msg="查询成功")
+
+
+@AiWorkflowRouter.post("/{workflow_id}/versions/{version_id}/rollback", summary="回滚工作流到指定版本")
+async def rollback_workflow_version(
+    workflow_id: int,
+    version_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
+) -> JSONResponse:
+    result = await AiWorkflowService.rollback_version(workflow_id, version_id, auth)
+    if not result:
+        return ErrorResponse(msg="工作流或版本不存在")
+    return SuccessResponse(data=result, msg="回滚成功")
+
+
+@AiWorkflowRouter.post("/{workflow_id}/versions/{version_id}/publish", summary="发布工作流版本")
+async def publish_workflow_version(
+    workflow_id: int,
+    version_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
+) -> JSONResponse:
+    result = await AiWorkflowService.publish_version(workflow_id, version_id, auth)
+    if not result:
+        return ErrorResponse(msg="工作流或版本不存在")
+    return SuccessResponse(data=result, msg="发布成功")
 
 
 @AiWorkflowRouter.post("/{workflow_id}/run/stream", summary="运行工作流（AI SDK UI Message Stream）")

@@ -6,12 +6,12 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 
 from .engine import WorkflowEngine
-from .model import AiWorkflowModel
+from .model import AiWorkflowModel, AiWorkflowVersionModel
 from .schema import AiWorkflowApproveSchema
 
 
@@ -25,6 +25,18 @@ def _to_dict(w: AiWorkflowModel) -> dict:
         "enabled": w.enabled,
         "created_time": w.created_time,
         "updated_time": w.updated_time,
+    }
+
+
+def _version_dict(v: AiWorkflowVersionModel) -> dict:
+    return {
+        "id": v.id,
+        "workflow_id": v.workflow_id,
+        "version_no": v.version_no,
+        "graph": v.graph or {"nodes": [], "edges": []},
+        "remark": v.remark or "",
+        "published": v.published,
+        "created_time": v.created_time,
     }
 
 
@@ -92,6 +104,85 @@ class AiWorkflowService:
                 w = await db.get(AiWorkflowModel, wid)
                 if w:
                     await db.delete(w)
+
+    # ---------- 版本 / 发布 / 回滚 ----------
+    @classmethod
+    async def save_version(cls, workflow_id: int, data, auth) -> dict | None:
+        """保存工作流当前 DAG 为版本快照，并推进工作流版本号。"""
+        async with async_db_session.begin() as db:
+            w = await db.get(AiWorkflowModel, workflow_id)
+            if not w or w.is_deleted:
+                return None
+            latest = await db.scalar(
+                select(func.max(AiWorkflowVersionModel.version_no)).where(
+                    AiWorkflowVersionModel.workflow_id == workflow_id
+                )
+            )
+            version_no = (latest or 0) + 1
+            v = AiWorkflowVersionModel(
+                workflow_id=workflow_id,
+                version_no=version_no,
+                graph=data.graph if data.graph is not None else (w.graph or {"nodes": [], "edges": []}),
+                remark=data.remark or "",
+                published=(version_no == 1),
+                created_id=auth.user.id,
+            )
+            db.add(v)
+            w.version = version_no
+            await db.flush()
+            return _version_dict(v)
+
+    @classmethod
+    async def list_versions(cls, workflow_id: int) -> list[dict]:
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiWorkflowVersionModel)
+                    .where(
+                        AiWorkflowVersionModel.workflow_id == workflow_id,
+                        AiWorkflowVersionModel.is_deleted.is_(False),
+                    )
+                    .order_by(AiWorkflowVersionModel.version_no.desc())
+                )
+            ).scalars().all()
+            return [_version_dict(v) for v in rows]
+
+    @classmethod
+    async def rollback_version(cls, workflow_id: int, version_id: int, auth) -> dict | None:
+        """把工作流回滚到指定版本（恢复 graph 与版本号）。"""
+        async with async_db_session.begin() as db:
+            w = await db.get(AiWorkflowModel, workflow_id)
+            v = await db.get(AiWorkflowVersionModel, version_id)
+            if not w or w.is_deleted or not v or v.workflow_id != workflow_id:
+                return None
+            w.graph = v.graph
+            w.version = v.version_no
+            w.updated_id = auth.user.id
+            return _to_dict(w)
+
+    @classmethod
+    async def publish_version(cls, workflow_id: int, version_id: int, auth) -> dict | None:
+        """发布指定版本为线上版本：置为已发布并同步工作流 graph/version。"""
+        async with async_db_session.begin() as db:
+            w = await db.get(AiWorkflowModel, workflow_id)
+            v = await db.get(AiWorkflowVersionModel, version_id)
+            if not w or w.is_deleted or not v or v.workflow_id != workflow_id:
+                return None
+            others = (
+                await db.execute(
+                    select(AiWorkflowVersionModel).where(
+                        AiWorkflowVersionModel.workflow_id == workflow_id,
+                        AiWorkflowVersionModel.published.is_(True),
+                    )
+                )
+            ).scalars().all()
+            for o in others:
+                o.published = False
+            v.published = True
+            w.graph = v.graph
+            w.version = v.version_no
+            w.updated_id = auth.user.id
+            return _to_dict(w)
 
     @classmethod
     async def run_ui_stream(
