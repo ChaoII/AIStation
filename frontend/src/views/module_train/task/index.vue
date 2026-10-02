@@ -654,14 +654,9 @@ const searchConfig = reactive<ISearchConfig>({
       prop: "framework",
       label: "框架",
       type: "select",
-      // 筛选**保留**已退场框架的选项：库里还有 37 条历史任务带着这两个框架，
-      // 删掉选项会让它们既看不出框架、也没法被筛出来——等于让历史数据消失了。
-      // 新建表单只给 TorchKiln（见上方 radio-group），这里是"查看"不是"新建"。
-      options: [
-        { label: "Ultralytics", value: "ultralytics" },
-        { label: "PaddleX", value: "paddlex" },
-        { label: "TorchKiln（自研）", value: "torchkiln" },
-      ],
+      // 筛选只给 TorchKiln：退场框架的历史数据已随 6c6eb60 一并删除，
+      // 库里不再有任何 ultralytics / paddlex 的任务行，留选项只会是噪音。
+      options: [{ label: "TorchKiln（自研）", value: "torchkiln" }],
       attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
     },
     {
@@ -1112,7 +1107,7 @@ onMounted(() => {
   // 从模型仓库"训练"按钮进入：自动打开创建对话框并预填框架
   const fw = route.query.framework as string | undefined;
   const modelId = route.query.model_id;
-  if (fw && ["ultralytics", "paddlex"].includes(fw)) {
+  if (fw === "torchkiln") {
     onFrameworkChange(fw);
     formData.framework = fw;
     if (modelId) formData.base_model_id = Number(modelId);

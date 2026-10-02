@@ -165,8 +165,7 @@
           <el-col :span="12">
             <el-form-item label="框架" prop="framework">
               <el-select v-model="formData.framework" style="width: 100%">
-                <el-option label="Ultralytics" value="ultralytics" />
-                <el-option label="PaddleX" value="paddlex" />
+                <el-option label="TorchKiln（自研）" value="torchkiln" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -305,11 +304,7 @@ const searchConfig = reactive<ISearchConfig>({
       prop: "framework",
       label: "框架",
       type: "select",
-      options: [
-        { label: "Ultralytics", value: "ultralytics" },
-        { label: "PaddleX", value: "paddlex" },
-        { label: "TorchKiln（自研）", value: "torchkiln" },
-      ],
+      options: [{ label: "TorchKiln（自研）", value: "torchkiln" }],
       attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
     },
   ],
@@ -397,7 +392,7 @@ const exportModelName = ref("");
 const formData = reactive({
   id: undefined as number | undefined,
   name: undefined as string | undefined,
-  framework: "ultralytics" as string,
+  framework: "torchkiln" as string,
   annotation_dataset_id: undefined as number | undefined,
   description: undefined as string | undefined,
   status: undefined as string | undefined,
@@ -406,7 +401,7 @@ const formData = reactive({
 const initialFormData = {
   id: undefined as number | undefined,
   name: undefined as string | undefined,
-  framework: "ultralytics" as string,
+  framework: "torchkiln" as string,
   annotation_dataset_id: undefined as number | undefined,
   description: undefined as string | undefined,
   status: undefined as string | undefined,
@@ -433,8 +428,7 @@ function frameworkLabel(fw?: string) {
   return (
     (
       {
-        ultralytics: "Ultralytics",
-        paddlex: "PaddleX",
+        torchkiln: "TorchKiln（自研）",
       } as any
     )[fw || ""] ||
     fw ||

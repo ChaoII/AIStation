@@ -414,11 +414,7 @@ const searchConfig = reactive<ISearchConfig>({
       prop: "framework",
       label: "框架",
       type: "select",
-      options: [
-        { label: "Ultralytics", value: "ultralytics" },
-        { label: "PaddleX", value: "paddlex" },
-        { label: "TorchKiln（自研）", value: "torchkiln" },
-      ],
+      options: [{ label: "TorchKiln（自研）", value: "torchkiln" }],
       attrs: { placeholder: "请选择框架", clearable: true, style: { width: "167.5px" } },
     },
     {
