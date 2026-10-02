@@ -163,6 +163,7 @@
             拒绝执行
           </el-button>
         </div>
+        <div class="run-approval__hint">审批会话约 30 分钟内有效，超时后需重新运行工作流。</div>
       </el-alert>
       <div v-if="runSources.length" class="run-sources">
         <div class="run-sources__title">引用来源</div>
@@ -591,10 +592,16 @@ async function handleApprove(decision: "approve" | "reject") {
       return;
     }
     let out = prior;
+    let errMsg = "";
     await readUiStream(resp, (obj) => {
       if (obj.type === "text-delta") out += obj.text;
       else if (obj.type === "data-finish") out = obj.reply || out;
+      else if (obj.type === "error") errMsg = obj.errorText || obj.msg || obj.message || "";
     });
+    if (errMsg) {
+      runOutput.value = `审批失败：${errMsg}`;
+      return;
+    }
     runOutput.value = out || "(无输出)";
   } catch (e: any) {
     runOutput.value = `审批续跑失败：${e?.message || e}`;
@@ -733,6 +740,12 @@ async function handleApprove(decision: "approve" | "reject") {
     display: flex;
     gap: 8px;
     margin-top: 12px;
+  }
+
+  .run-approval__hint {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 }
 
