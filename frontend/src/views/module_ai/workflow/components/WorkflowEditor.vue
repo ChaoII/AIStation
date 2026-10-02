@@ -97,6 +97,7 @@
                 :snap-grid="[16, 16]"
                 :default-edge-options="defaultEdgeOptions"
                 @node-click="onNodeClick"
+                @node-context-menu="onNodeContextMenu"
                 @drop="onDrop"
                 @dragover="onDragOver"
                 @node-drag-start="onNodeDragStart"
@@ -437,6 +438,26 @@
         <pre class="debug-result__body">{{ debugOutput }}</pre>
       </div>
     </el-drawer>
+
+    <!-- 节点右键菜单 -->
+    <teleport to="body">
+      <div
+        v-if="contextMenu"
+        class="ctx-overlay"
+        @click="contextMenu = null"
+        @contextmenu.prevent=""
+      >
+        <div class="ctx-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
+          <div class="ctx-title">节点操作</div>
+          <div class="ctx-item" @click.stop="ctxDebug">调试此节点</div>
+          <div class="ctx-item" @click.stop="ctxCopy">复制节点</div>
+          <div class="ctx-item" @click.stop="ctxToggleEnable">
+            {{ contextMenuEnabled ? "禁用节点" : "启用节点" }}
+          </div>
+          <div class="ctx-item is-danger" @click.stop="ctxDelete">删除节点</div>
+        </div>
+      </div>
+    </teleport>
 
     <!-- 隐藏文件选择：工作流导入 -->
     <input
@@ -1589,6 +1610,158 @@ const WF_TEMPLATES: WfTemplate[] = [
       return { nodes, edges };
     },
   },
+  {
+    key: "doc",
+    name: "文档摘要",
+    desc: "start → 文档提取 → LLM → 结束",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 150 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "url", type: "string", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "doc_extractor",
+          position: { x: 320, y: 60 },
+          data: { ...defaultData("doc_extractor"), url: "{{url}}", output_variable: "doc_text" },
+        },
+        {
+          id: `t3_${t}`,
+          type: "llm",
+          position: { x: 320, y: 220 },
+          data: {
+            ...defaultData("llm"),
+            prompt: "请总结以下文档：\n{{doc_text}}",
+            output_variable: "llm_output",
+          },
+        },
+        {
+          id: `t4_${t}`,
+          type: "end",
+          position: { x: 620, y: 150 },
+          data: { ...defaultData("end"), output_template: "{{llm_output}}" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te1b_${t}`, source: nodes[0].id, target: nodes[2].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+        { id: `te3_${t}`, source: nodes[2].id, target: nodes[3].id },
+      ];
+      return { nodes, edges };
+    },
+  },
+  {
+    key: "web",
+    name: "实时网页搜索问答",
+    desc: "start → 网页搜索 → LLM → 结束",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 150 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "query", type: "string", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "web_search",
+          position: { x: 320, y: 150 },
+          data: {
+            ...defaultData("web_search"),
+            query: "{{query}}",
+            endpoint: "",
+            output_variable: "search_results",
+          },
+        },
+        {
+          id: `t3_${t}`,
+          type: "llm",
+          position: { x: 600, y: 150 },
+          data: {
+            ...defaultData("llm"),
+            prompt: "结合实时搜索结果回答：{{query}}\n结果：{{search_results}}",
+            output_variable: "llm_output",
+          },
+        },
+        {
+          id: `t4_${t}`,
+          type: "end",
+          position: { x: 880, y: 150 },
+          data: { ...defaultData("end"), output_template: "{{llm_output}}" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+        { id: `te3_${t}`, source: nodes[2].id, target: nodes[3].id },
+      ];
+      return { nodes, edges };
+    },
+  },
+  {
+    key: "data",
+    name: "数据查询",
+    desc: "start → 数据库 → 模板 → 结束",
+    build: () => {
+      const t = Date.now();
+      const nodes: Node[] = [
+        {
+          id: `t1_${t}`,
+          type: "start",
+          position: { x: 40, y: 150 },
+          data: {
+            ...defaultData("start"),
+            variables: [{ name: "dsn", type: "string", required: true }],
+          },
+        },
+        {
+          id: `t2_${t}`,
+          type: "database",
+          position: { x: 320, y: 150 },
+          data: {
+            ...defaultData("database"),
+            dsn: "{{dsn}}",
+            sql: "SELECT * FROM my_table",
+            output_variable: "rows",
+          },
+        },
+        {
+          id: `t3_${t}`,
+          type: "template",
+          position: { x: 600, y: 150 },
+          data: {
+            ...defaultData("template"),
+            template: "查询到 {{rows}} 行",
+            output_variable: "summary",
+          },
+        },
+        {
+          id: `t4_${t}`,
+          type: "end",
+          position: { x: 880, y: 150 },
+          data: { ...defaultData("end"), output_template: "{{summary}}" },
+        },
+      ];
+      const edges: Edge[] = [
+        { id: `te1_${t}`, source: nodes[0].id, target: nodes[1].id },
+        { id: `te2_${t}`, source: nodes[1].id, target: nodes[2].id },
+        { id: `te3_${t}`, source: nodes[2].id, target: nodes[3].id },
+      ];
+      return { nodes, edges };
+    },
+  },
 ];
 
 async function applyTemplateByKey(key: string) {
@@ -1651,6 +1824,53 @@ function copySelectedNode() {
   addNodes([node]);
   selectedNode.value = node;
   ElMessage.success("已复制节点，可修改其配置");
+}
+
+// ---------- 节点右键菜单 ----------
+const contextMenu = ref<{ x: number; y: number; nodeId: string } | null>(null);
+const contextMenuNode = computed(() =>
+  contextMenu.value ? nodes.value.find((n) => n.id === contextMenu.value!.nodeId) : undefined
+);
+const contextMenuEnabled = computed(() =>
+  contextMenuNode.value ? contextMenuNode.value.data?.enabled !== false : true
+);
+function onNodeContextMenu(payload: any) {
+  const event: MouseEvent = payload?.event;
+  const node: Node = payload?.node;
+  if (event) event.preventDefault();
+  if (!node) return;
+  contextMenu.value = { x: event?.clientX ?? 0, y: event?.clientY ?? 0, nodeId: node.id };
+  selectedNode.value = node;
+}
+function ctxDebug() {
+  const id = contextMenu.value?.nodeId;
+  const n = id ? nodes.value.find((x) => x.id === id) : undefined;
+  contextMenu.value = null;
+  if (n) {
+    selectedNode.value = n;
+    openNodeDebug();
+  }
+}
+function ctxCopy() {
+  contextMenu.value = null;
+  copySelectedNode();
+}
+function ctxToggleEnable() {
+  const n = contextMenuNode.value;
+  contextMenu.value = null;
+  if (n) {
+    pushHistory();
+    n.data = { ...(n.data || {}), enabled: n.data?.enabled === false };
+  }
+}
+function ctxDelete() {
+  const id = contextMenu.value?.nodeId;
+  const n = id ? nodes.value.find((x) => x.id === id) : undefined;
+  contextMenu.value = null;
+  if (n) {
+    selectedNode.value = n;
+    handleDeleteNode();
+  }
 }
 
 function autoLayout() {
@@ -2439,6 +2659,46 @@ async function handleApprove(decision: "approve" | "reject") {
   color: var(--el-text-color-secondary);
 }
 
+.ctx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+
+.ctx-menu {
+  position: fixed;
+  min-width: 140px;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  .ctx-title {
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-text-color-secondary);
+  }
+
+  .ctx-item {
+    padding: 6px 8px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--el-fill-color-light);
+    }
+
+    &.is-danger {
+      color: var(--el-color-danger);
+      &:hover {
+        background: var(--el-color-danger-light-9);
+      }
+    }
+  }
+}
 .compare-item {
   display: flex;
   gap: 8px;
