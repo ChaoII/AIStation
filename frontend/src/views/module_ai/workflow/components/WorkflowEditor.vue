@@ -111,7 +111,11 @@
                   删除
                 </el-button>
               </div>
-              <NodeConfigPanel :node="selectedNode" @change="onNodeConfigChange" />
+              <NodeConfigPanel
+                :node="selectedNode"
+                :available-vars="availableVars"
+                @change="onNodeConfigChange"
+              />
             </div>
           </el-scrollbar>
         </el-splitter-panel>
@@ -304,6 +308,24 @@ const runApproval = ref<{ run_id: string; toolCalls: any[] } | null>(null);
 const approving = ref(false);
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
+
+// 供属性面板「插入变量」使用：内置变量 + 输入变量 + 各节点输出变量
+const availableVars = computed(() => {
+  const map = new Map<string, string>();
+  map.set("query", "用户输入 query");
+  map.set("assistant_text", "助手回复 assistant_text");
+  nodes.value.forEach((n) => {
+    if (n.type === "start") {
+      (n.data.variables || []).forEach((v: any) => {
+        if (v.name) map.set(v.name, `输入变量 ${v.name}`);
+      });
+    }
+    if (n.data?.output_variable) {
+      map.set(n.data.output_variable, `节点输出 ${n.data.output_variable}`);
+    }
+  });
+  return Array.from(map, ([name, label]) => ({ name, label }));
+});
 
 // ---------- 撤销 / 重做 ----------
 type GraphSnapshot = { nodes: any[]; edges: any[] };

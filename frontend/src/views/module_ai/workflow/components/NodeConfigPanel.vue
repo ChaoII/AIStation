@@ -1,6 +1,24 @@
 <!-- 节点属性面板：按所选节点类型渲染对应配置表单 -->
 <template>
-  <el-form label-position="top" size="small">
+  <el-form label-position="top" size="small" @focus.capture="onPanelFocus">
+    <!-- 插入变量 -->
+    <el-form-item v-if="availableVars && availableVars.length" label="插入变量">
+      <el-dropdown trigger="click" @command="insertVar">
+        <el-button size="small" :icon="MagicStick">插入变量</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item v-for="v in availableVars" :key="v.name" :command="v.name">
+              <span class="var-item">{{ v.label }}</span>
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <div class="var-tip">
+        点击输入框后，在此选择变量以插入
+        <code v-pre>{{ 变量 }}</code>
+      </div>
+    </el-form-item>
+
     <!-- start：输入变量 -->
     <template v-if="type === 'start'">
       <el-form-item label="输入变量">
@@ -245,14 +263,43 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted } from "vue";
-import { Plus, Delete } from "@element-plus/icons-vue";
+import { Plus, Delete, MagicStick } from "@element-plus/icons-vue";
+import { ElMessage } from "element-plus";
 import type { Node } from "@vue-flow/core";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 
-const props = defineProps<{ node: Node }>();
+const props = defineProps<{
+  node: Node;
+  availableVars?: { name: string; label: string }[];
+}>();
 const emit = defineEmits(["change"]);
+
+// ---------- 插入变量 ----------
+const focusedEl = ref<HTMLTextAreaElement | HTMLInputElement | null>(null);
+function onPanelFocus(e: FocusEvent) {
+  const t = e.target as HTMLElement;
+  if (t instanceof HTMLTextAreaElement || t instanceof HTMLInputElement) {
+    focusedEl.value = t;
+  }
+}
+function insertVar(name: string) {
+  const el = focusedEl.value;
+  const token = `{{${name}}}`;
+  if (!el) {
+    ElMessage.info("请先点击一个输入框，再插入变量");
+    return;
+  }
+  const start = el.selectionStart ?? el.value.length;
+  const end = el.selectionEnd ?? el.value.length;
+  el.value = el.value.slice(0, start) + token + el.value.slice(end);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  const pos = start + token.length;
+  el.setSelectionRange(pos, pos);
+  el.focus();
+  focusedEl.value = el;
+}
 
 const type = props.node.type || "llm";
 const d = reactive<Record<string, any>>({ ...((props.node.data || {}) as any) });
@@ -382,3 +429,22 @@ onMounted(async () => {
   }
 });
 </script>
+
+<style scoped>
+.var-item {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.var-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.var-tip code {
+  padding: 1px 4px;
+  background: var(--el-fill-color-light);
+  border-radius: 3px;
+}
+</style>
