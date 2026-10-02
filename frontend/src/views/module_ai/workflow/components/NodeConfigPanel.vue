@@ -51,18 +51,26 @@
 
     <!-- knowledge：知识检索（阶段 3 落地） -->
     <template v-else-if="type === 'knowledge'">
+      <el-form-item label="关联知识库">
+        <el-select
+          v-model="d.knowledge_ids"
+          multiple
+          filterable
+          placeholder="选择知识库"
+          style="width: 100%"
+        >
+          <el-option v-for="kb in kbOptions" :key="kb.id" :label="kb.name" :value="kb.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="检索查询模板">
         <el-input v-model="d.query" placeholder="如：{{query}}" />
       </el-form-item>
       <el-form-item label="返回条数">
         <el-input-number v-model="d.top_k" :min="1" :max="10" />
       </el-form-item>
-      <el-alert
-        title="知识库检索将在「知识库/RAG」阶段开放"
-        type="info"
-        :closable="false"
-        show-icon
-      />
+      <el-form-item label="输出变量名（可选）">
+        <el-input v-model="d.output_variable" placeholder="供下游 LLM 用 {{变量}} 引用" />
+      </el-form-item>
     </template>
 
     <!-- tool：工具调用 -->
@@ -184,6 +192,7 @@ import { Plus, Delete } from "@element-plus/icons-vue";
 import type { Node } from "@vue-flow/core";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
+import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 
 const props = defineProps<{ node: Node }>();
 const emit = defineEmits(["change"]);
@@ -209,6 +218,7 @@ const bodyText = ref(
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
+const kbOptions = ref<{ id: number; name: string }[]>([]);
 
 function addVar() {
   vars.value.push({ name: "", type: "string" });
@@ -250,9 +260,14 @@ watch([d, vars, argsText, codeInputsText, headersText, bodyText], emitChange, { 
 
 onMounted(async () => {
   try {
-    const [mr, tr] = await Promise.all([getAiModelList({}), getAiToolList({})]);
+    const [mr, tr, kr] = await Promise.all([
+      getAiModelList({}),
+      getAiToolList({}),
+      getAiKnowledgeList(),
+    ]);
     modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
     toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
+    kbOptions.value = (kr.data?.data || []).map((k: any) => ({ id: k.id, name: k.name }));
   } catch {
     /* ignore */
   }

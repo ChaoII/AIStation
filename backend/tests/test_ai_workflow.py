@@ -99,6 +99,62 @@ def test_render_template():
     assert render_template("{{未知}}", {}) == "{{未知}}"
 
 
+def test_workflow_run_knowledge(monkeypatch, test_client, auth_headers):
+    """独立知识节点：检索产生 sources 帧，上下文写入变量供 end 模板插值。"""
+    from app.plugin.module_ai.knowledge import service as kb_service
+
+    async def _fake_search(kb_ids, query, top_k=5):
+        return [
+            {
+                "chunk_id": 1,
+                "knowledge_base_id": 1,
+                "file_name": "doc.txt",
+                "content": "AIStation 是开源平台",
+                "score": 0.9,
+            }
+        ]
+
+    monkeypatch.setattr(kb_service.AiKnowledgeService, "search", staticmethod(_fake_search))
+
+    graph = {
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"variables": []}},
+            {
+                "id": "kb",
+                "type": "knowledge",
+                "data": {
+                    "knowledge_ids": [1],
+                    "query": "{{q}}",
+                    "top_k": 3,
+                    "output_variable": "kb",
+                },
+            },
+            {"id": "end", "type": "end", "data": {"output_template": "{{kb}}"}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "start", "target": "kb"},
+            {"id": "e2", "source": "kb", "target": "end"},
+        ],
+    }
+    wf_id = _create_workflow(test_client, auth_headers, graph)
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/workflows/{wf_id}/run/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "x"}]}],
+                "variables": {"q": "介绍"},
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        body = r.text
+        assert '"type": "sources"' in body
+        assert "doc.txt" in body
+        assert "AIStation 是开源平台" in body
+    finally:
+        _delete_wf(test_client, auth_headers, [wf_id])
+
+
 def test_workflow_run_http(monkeypatch, test_client, auth_headers):
     """HTTP 节点：发起外部请求并把 JSON 响应写入变量、end 模板插值。"""
     import httpx

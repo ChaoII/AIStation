@@ -366,7 +366,7 @@ function defaultData(type: string): Record<string, any> {
     case "llm":
       return { prompt: "", temperature: 0.7, tools: [], output_variable: "" };
     case "knowledge":
-      return { knowledge_ids: [], query: "", top_k: 3 };
+      return { knowledge_ids: [], query: "", top_k: 3, output_variable: "" };
     case "tool":
       return { tool_name: "", args: {}, output_variable: "" };
     case "code":

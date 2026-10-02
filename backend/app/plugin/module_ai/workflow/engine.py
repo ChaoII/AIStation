@@ -549,6 +549,25 @@ class WorkflowEngine:
         if out_var:
             self.variables[out_var] = parsed
 
+    async def _exec_knowledge(self, node: dict):
+        """知识检索节点：检索知识库，透出引用来源并把上下文写入输出变量。
+
+        供下游 LLM 节点通过 ``{{变量}}`` 引用检索到的上下文。
+        """
+        data = node.get("data") or {}
+        kb_context, sources = await self._retrieve_context(data)
+        if sources:
+            yield_src = self.ms.sources(sources)
+            if yield_src:
+                yield yield_src
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = kb_context
+        elif kb_context:
+            # 未指定输出变量时写入默认上下文变量，供下游 LLM 引用
+            self.variables["kb_context"] = kb_context
+        self.outputs[node["id"]] = kb_context
+
     async def _exec_end(self, node: dict) -> None:
         """结束节点：组装最终回复（output_template 或最后 LLM 输出）。"""
         data = node.get("data") or {}
@@ -623,6 +642,12 @@ class WorkflowEngine:
                     stack.append(next_id)
             elif ntype == "variable":
                 await self._exec_variable(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "knowledge":
+                async for frame in self._exec_knowledge(node):
+                    yield frame
                 next_id = self._edge_target(node_id)
                 if next_id:
                     stack.append(next_id)
