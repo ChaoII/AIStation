@@ -32,7 +32,7 @@
           />
         </el-main>
         <el-footer class="chat-footer">
-          <ChatInput :sending="isSending" @send="handleSendMessage" />
+          <ChatInput :sending="isSending" @send="handleSendMessage" @stop="handleStop" />
         </el-footer>
       </el-container>
     </el-container>
@@ -308,6 +308,12 @@ const handleClearChat = async () => {
   } catch {
     ElMessage.info("已取消清空对话");
   }
+};
+
+// HITL：停止当前生成（AI SDK abort）
+const handleStop = () => {
+  chat.stop();
+  ElMessage.info("已停止生成");
 };
 
 const toggleSidebar = () => {

@@ -31,9 +31,12 @@
           >
             <el-button :icon="Paperclip" class="upload-btn" circle />
           </el-upload>
+          <el-button v-if="sending" class="stop-button" type="danger" circle @click="emit('stop')">
+            <el-icon><VideoPause /></el-icon>
+          </el-button>
           <el-button
+            v-else
             :disabled="(!inputMessage.trim() && uploadedFiles.length === 0) || disabled || sending"
-            :loading="sending"
             class="send-button"
             type="primary"
             circle
@@ -49,7 +52,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { Promotion, Paperclip, Document, Close } from "@element-plus/icons-vue";
+import { Promotion, Paperclip, Document, Close, VideoPause } from "@element-plus/icons-vue";
 import type { UploadFile } from "element-plus";
 import type { UploadedFile } from "@/views/module_ai/chat/types";
 
@@ -60,6 +63,7 @@ interface Props {
 
 interface Emits {
   (e: "send", message: string, files?: UploadedFile[]): void;
+  (e: "stop"): void;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -255,6 +259,17 @@ defineExpose({
 
           &:active {
             transform: translateY(0);
+          }
+        }
+
+        .stop-button {
+          flex-shrink: 0;
+          border-radius: 50%;
+          box-shadow: var(--el-box-shadow-light);
+          transition: all 0.2s ease;
+
+          &:hover {
+            transform: scale(1.05);
           }
         }
       }
