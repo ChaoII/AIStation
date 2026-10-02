@@ -453,6 +453,59 @@
       </div>
     </el-drawer>
 
+    <!-- 分享预览抽屉（受限匿名运行） -->
+    <el-drawer v-model="shareRunVisible" title="分享预览（受限运行）" size="480px" append-to-body>
+      <el-form label-position="top" size="small">
+        <el-form-item label="测试消息">
+          <el-input
+            v-model="shareMessage"
+            type="textarea"
+            :rows="2"
+            placeholder="输入一条消息测试公开分享运行"
+          />
+        </el-form-item>
+        <el-button type="primary" :loading="shareRunning" style="width: 100%" @click="runShare">
+          运行
+        </el-button>
+      </el-form>
+      <div v-if="shareError" class="debug-result">
+        <div class="debug-result__title is-err">错误</div>
+        <pre class="debug-result__body is-err">{{ shareError }}</pre>
+      </div>
+      <div v-if="shareOutput" class="debug-result">
+        <div class="debug-result__title">回复</div>
+        <pre class="debug-result__body">{{ shareOutput }}</pre>
+      </div>
+      <div v-if="shareTrace.length" class="debug-result">
+        <div class="debug-result__title">节点执行过程</div>
+        <div v-for="(t, i) in shareTrace" :key="i" class="share-trace-item">
+          <div class="share-trace-item__head" @click="shareTraceOpen[i] = !shareTraceOpen[i]">
+            <span class="share-trace-item__chev">{{ shareTraceOpen[i] ? "▾" : "▸" }}</span>
+            <el-tag
+              size="small"
+              :type="t.status === 'success' ? 'success' : t.status === 'error' ? 'danger' : 'info'"
+            >
+              {{ t.label }}
+            </el-tag>
+            <span v-if="t.error" class="share-trace-item__err">{{ t.error }}</span>
+          </div>
+          <div
+            v-if="shareTraceOpen[i] && (t.input || t.output != null)"
+            class="share-trace-item__detail"
+          >
+            <div v-if="t.input && Object.keys(t.input).length" class="hd-kv">
+              <span class="hd-kv-t">输入</span>
+              <pre class="hd-pre">{{ formatJson(t.input) }}</pre>
+            </div>
+            <div v-if="t.output != null" class="hd-kv">
+              <span class="hd-kv-t">输出</span>
+              <pre class="hd-pre">{{ formatJson(t.output) }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
     <!-- 节点右键菜单 -->
     <teleport to="body">
       <div
@@ -1203,12 +1256,70 @@ async function openShare() {
       ElMessage.error("生成分享失败（仅启用的工作流可分享）");
       return;
     }
+    shareToken.value = token;
+    shareMessage.value = "";
+    shareOutput.value = "";
+    shareError.value = "";
+    shareTrace.value = [];
+    shareRunVisible.value = true;
     const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     const link = `${location.origin}${base}#/ai/share?token=${token}`;
     await navigator.clipboard.writeText(link);
     ElMessage.success("分享链接已复制（匿名受限运行）");
   } catch (e: any) {
     ElMessage.error(e?.message || "生成分享失败");
+  }
+}
+
+// ---------- 分享预览（受限匿名运行） ----------
+const shareRunVisible = ref(false);
+const shareToken = ref("");
+const shareMessage = ref("");
+const shareOutput = ref("");
+const shareRunning = ref(false);
+const shareError = ref("");
+const shareTrace = ref<any[]>([]);
+const shareTraceOpen = ref<Record<number, boolean>>({});
+async function runShare() {
+  if (!shareToken.value) return;
+  shareRunning.value = true;
+  shareOutput.value = "";
+  shareError.value = "";
+  shareTrace.value = [];
+  try {
+    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+    const resp = await fetch(`${base}/ai/workflows/share/run`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
+      },
+      body: JSON.stringify({ token: shareToken.value, message: shareMessage.value || "你好" }),
+    });
+    if (!resp.ok || !resp.body) {
+      shareError.value = `请求失败：${resp.status}`;
+      return;
+    }
+    await readUiStream(resp, (obj) => {
+      if (obj.type === "text-delta") shareOutput.value += obj.text;
+      else if (obj.type === "data-finish") shareOutput.value = obj.reply || shareOutput.value;
+      else if (obj.type === "node-status") {
+        shareTrace.value.push({
+          label: obj.label || obj.nodeId,
+          status: obj.status || "success",
+          input: obj.input,
+          output: obj.output,
+          error: obj.error,
+        });
+      } else if (obj.type === "error") {
+        shareError.value = obj.errorText || obj.message || "运行失败";
+      }
+    });
+    if (!shareOutput.value) shareOutput.value = "（无回复）";
+  } catch (e: any) {
+    shareError.value = `运行失败：${e?.message || e}`;
+  } finally {
+    shareRunning.value = false;
   }
 }
 const historyStats = computed(() => {
@@ -3037,6 +3148,31 @@ async function handleApprove(decision: "approve" | "reject") {
 .history-preview {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.share-trace-item {
+  margin-bottom: 6px;
+
+  .share-trace-item__head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .share-trace-item__chev {
+    color: var(--el-text-color-secondary);
+    font-size: 11px;
+  }
+
+  .share-trace-item__err {
+    color: var(--el-color-danger);
+    font-size: 12px;
+  }
+
+  .share-trace-item__detail {
+    margin: 4px 0 0 18px;
+  }
 }
 
 .history-stats {
