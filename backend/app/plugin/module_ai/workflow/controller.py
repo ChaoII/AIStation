@@ -15,6 +15,7 @@ from .schema import (
     AiWorkflowCreateSchema,
     AiWorkflowDebugNodeSchema,
     AiWorkflowRunSchema,
+    AiWorkflowShareRunSchema,
     AiWorkflowStepSchema,
     AiWorkflowUpdateSchema,
     AiWorkflowVersionCreateSchema,
@@ -72,6 +73,31 @@ async def get_workflow_stats(
 ) -> JSONResponse:
     return SuccessResponse(
         data=await AiWorkflowService.get_workflow_stats(workflow_id), msg="查询成功"
+    )
+
+
+@AiWorkflowRouter.post("/{workflow_id}/share", summary="生成/获取公开分享令牌")
+async def create_share(
+    workflow_id: int,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    token = await AiWorkflowService.generate_share_token(workflow_id, uid)
+    if token is None:
+        return ErrorResponse(msg="工作流不存在")
+    return SuccessResponse(data={"token": token}, msg="分享链接已生成")
+
+
+@AiWorkflowRouter.post("/share/run", summary="公开分享受限运行（匿名）")
+async def share_run(
+    data: AiWorkflowShareRunSchema,
+    request: Request,
+) -> StreamingResponse:
+    return ui_stream_response(
+        AiWorkflowService.share_ui_stream(
+            data.token, data.message, redis=request.app.state.redis
+        )
     )
 
 

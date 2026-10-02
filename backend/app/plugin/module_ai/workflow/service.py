@@ -600,6 +600,112 @@ class AiWorkflowService:
             "max_ms": max(durs) if durs else 0,
         }
 
+    @classmethod
+    async def generate_share_token(cls, workflow_id: int, uid) -> str | None:
+        """为已启用工作流生成/复用公开展示令牌。"""
+        async with async_db_session() as db:
+            wf = await db.get(AiWorkflowModel, workflow_id)
+            if not wf:
+                return None
+            if not wf.enabled:
+                raise RuntimeError("仅启用的工作流可公开分享")
+            if not wf.share_token:
+                wf.share_token = uuid.uuid4().hex
+                wf.updated_id = uid
+                await db.commit()
+                await db.refresh(wf)
+            return wf.share_token
+
+    @classmethod
+    async def _get_by_share_token(cls, token: str) -> dict | None:
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    select(AiWorkflowModel).where(AiWorkflowModel.share_token == token)
+                )
+            ).scalar_one_or_none()
+        if not row:
+            return None
+        return {
+            "id": row.id,
+            "name": row.name,
+            "graph": row.graph or {"nodes": [], "edges": []},
+            "enabled": row.enabled,
+        }
+
+    @classmethod
+    async def share_ui_stream(
+        cls, token: str, message: str, redis=None
+    ) -> AsyncIterator[str]:
+        """公开分享受限运行：匿名、仅白名单节点、令牌校验 + 限流。"""
+        from app.plugin.module_ai.assistant.service import extract_openai_messages
+        from app.plugin.module_ai.streaming import UiMessageStream
+
+        ms = UiMessageStream()
+        yield ms.start()
+        try:
+            if not token:
+                yield ms.error("缺少分享令牌")
+                yield ms.finish()
+                yield ms.done()
+                return
+            # 限流：按令牌每分钟最多 20 次
+            if redis:
+                key = f"ai:workflow:share:rl:{token}"
+                cnt = int(await redis.incr(key))
+                if cnt == 1:
+                    await redis.expire(key, 60)
+                if cnt > 20:
+                    yield ms.error("访问过于频繁，请稍后再试")
+                    yield ms.finish()
+                    yield ms.done()
+                    return
+            wf = await cls._get_by_share_token(token)
+            if not wf or not wf.get("enabled"):
+                yield ms.error("分享无效或该工作流已停用")
+                yield ms.finish()
+                yield ms.done()
+                return
+            state: dict = {
+                "assistant_text": "",
+                "reply": "",
+                "tool_calls": [],
+                "action": None,
+                "report_id": None,
+                "error": None,
+                "halted": False,
+                "pending_approval": None,
+            }
+            openai_messages = extract_openai_messages(
+                [{"role": "user", "parts": [{"type": "text", "text": message}]}]
+            )
+            engine = WorkflowEngine(
+                graph=wf["graph"],
+                variables={},
+                messages=openai_messages,
+                ms=ms,
+                state=state,
+                user_id=None,
+                restricted=True,
+            )
+            async for frame in engine.run():
+                yield frame
+            yield ms.data(
+                "finish",
+                {
+                    "reply": state["reply"] or state["assistant_text"],
+                    "tool_calls": state["tool_calls"],
+                    "action": state["action"],
+                    "report_id": state["report_id"],
+                },
+            )
+            yield ms.finish()
+            yield ms.done()
+        except Exception as e:  # noqa: BLE001
+            yield ms.error(f"运行失败：{e}")
+            yield ms.finish()
+            yield ms.done()
+
     @staticmethod
     async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:
         """把挂起的运行状态写入 Redis（供审批续跑读取）。"""

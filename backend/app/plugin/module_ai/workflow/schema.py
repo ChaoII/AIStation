@@ -42,6 +42,13 @@ class AiWorkflowStepSchema(BaseModel):
     messages: list[dict] = Field(default_factory=list)
 
 
+class AiWorkflowShareRunSchema(BaseModel):
+    """公开分享运行：仅凭分享令牌 + 一条消息（匿名、受限白名单节点）。"""
+
+    token: str
+    message: str = Field(..., max_length=2000)
+
+
 class AiWorkflowApproveSchema(BaseModel):
     """HITL 工具审批：基于 run_id 对挂起的工具调用做出 approve/reject。"""
 

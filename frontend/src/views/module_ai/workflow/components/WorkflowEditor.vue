@@ -139,6 +139,9 @@
                   >
                     统计
                   </el-button>
+                  <el-button size="small" :icon="Link" :disabled="!workflowId" @click="openShare">
+                    分享
+                  </el-button>
                   <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
                   <el-button size="small" :icon="Upload" @click="triggerImport">导入</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
@@ -697,6 +700,7 @@ import {
   Delete,
   ArrowRight,
   DataAnalysis,
+  Link,
   Operation,
   SwitchFilled,
   DataLine,
@@ -740,6 +744,7 @@ import {
   listAiWorkflowRunLogs,
   getAiWorkflowRunLog,
   getAiWorkflowStats,
+  createAiWorkflowShare,
 } from "@/api/module_ai/workflow";
 import { Auth } from "@/utils/auth";
 
@@ -1091,6 +1096,23 @@ async function openStats() {
     // ignore
   } finally {
     statsLoading.value = false;
+  }
+}
+async function openShare() {
+  if (!workflowId.value) return;
+  try {
+    const res = await createAiWorkflowShare(workflowId.value);
+    const token = res.data?.data?.token;
+    if (!token) {
+      ElMessage.error("生成分享失败（仅启用的工作流可分享）");
+      return;
+    }
+    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+    const link = `${location.origin}${base}#/ai/share?token=${token}`;
+    await navigator.clipboard.writeText(link);
+    ElMessage.success("分享链接已复制（匿名受限运行）");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "生成分享失败");
   }
 }
 const historyStats = computed(() => {

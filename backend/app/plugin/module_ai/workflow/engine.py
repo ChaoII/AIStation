@@ -83,6 +83,22 @@ _NODE_LABELS = {
 }
 
 
+# 公开分享「受限模式」下允许执行的节点白名单（排除工具/代码/HTTP/数据库/搜索/子流程等高风险）
+_RESTRICTED_ALLOW = {
+    "start",
+    "llm",
+    "knowledge",
+    "template",
+    "condition",
+    "variable",
+    "variable_aggregator",
+    "answer",
+    "classifier",
+    "extractor",
+    "end",
+}
+
+
 def _snapshot(value: Any, limit: int = 500) -> Any:
     """输出快照：过大/二进制值截断转字符串，便于前端展示。"""
     if value is None:
@@ -120,6 +136,7 @@ class WorkflowEngine:
         initial_outputs: dict | None = None,
         initial_visited: set | None = None,
         initial_stack: list | None = None,
+        restricted: bool = False,
     ) -> None:
         self.graph = graph or {}
         self.nodes: dict[str, dict] = {
@@ -131,6 +148,7 @@ class WorkflowEngine:
         self.ms = ms
         self.state = state
         self.user_id = user_id
+        self.restricted = restricted
         self.outputs: dict[str, Any] = dict(initial_outputs or {})
         self._initial_visited = set(initial_visited or [])
         self._initial_stack = list(initial_stack or [])
@@ -1278,6 +1296,17 @@ class WorkflowEngine:
             ntype = node.get("type") or "start"
             label = _NODE_LABELS.get(ntype, ntype)
             executed += 1
+            # 受限模式：非白名单节点直接跳过（防匿名触发代码/网络/数据等高危操作）
+            if self.restricted and ntype not in _RESTRICTED_ALLOW:
+                yield self.ms.node_status(node_id, "skipped", label, input=self._node_input(node))
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+                visited.add(node_id)
+                _snapshot_frontier()
+                if budget is not None and executed >= budget:
+                    break
+                continue
             # 禁用节点：跳过执行，直接走下游边
             if (node.get("data") or {}).get("enabled", True) is False:
                 yield self.ms.node_status(node_id, "skipped", label, input=self._node_input(node))

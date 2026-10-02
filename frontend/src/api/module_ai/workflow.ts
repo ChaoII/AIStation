@@ -51,3 +51,11 @@ export function getAiWorkflowRunLog(runId: number) {
 export function getAiWorkflowStats(id: number) {
   return request({ url: `${API_PATH}/${id}/stats`, method: "get" });
 }
+
+export function createAiWorkflowShare(id: number) {
+  return request({ url: `${API_PATH}/${id}/share`, method: "post" });
+}
+
+export function shareAiWorkflowRun(token: string, message: string) {
+  return request({ url: `${API_PATH}/share/run`, method: "post", data: { token, message } });
+}

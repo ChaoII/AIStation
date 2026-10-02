@@ -1517,3 +1517,34 @@ def test_workflow_stats(test_client, auth_headers):
         assert "success_rate" in s and "avg_ms" in s
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_share(test_client, auth_headers):
+    """公开分享：生成令牌 + 匿名受限运行，高危节点被跳过。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "http", "type": "http",
+                 "data": {"method": "GET", "url": "http://127.0.0.1:1/x", "output_variable": "h"}},
+                {"id": "tpl", "type": "template",
+                 "data": {"template": "结果", "output_variable": "out"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{out}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "http"},
+                      {"id": "e2", "source": "http", "target": "tpl"},
+                      {"id": "e3", "source": "tpl", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        sh = test_client.post(f"/api/v1/ai/workflows/{wf}/share", headers=auth_headers).json()["data"]
+        token = sh["token"]
+        assert token
+        r = test_client.post("/api/v1/ai/workflows/share/run",
+            json={"token": token, "message": "hi"}, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        # 受限模式 http 节点被跳过，但模板/结束仍执行
+        assert '"status": "skipped"' in r.text
+        assert "结果" in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])
