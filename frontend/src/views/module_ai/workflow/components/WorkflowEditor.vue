@@ -195,141 +195,188 @@
       </div>
     </template>
 
-    <!-- 运行调试弹窗 -->
-    <el-dialog
+    <!-- 运行调试抽屉（对话式 + 节点执行详情） -->
+    <el-drawer
       v-model="runVisible"
-      title="运行调试"
-      width="560px"
+      title="工作流运行"
+      size="520px"
+      class="ai-run-drawer"
       append-to-body
-      class="ai-run-dialog"
+      destroy-on-close
     >
-      <el-form label-position="top" size="small">
-        <el-form-item label="测试输入（用户消息）">
-          <el-input v-model="runInput" type="textarea" :rows="2" placeholder="输入一条测试消息" />
-        </el-form-item>
-        <el-form-item label="变量（JSON，可选）">
-          <el-input
-            v-model="runVariables"
-            type="textarea"
-            :rows="3"
-            placeholder='如 {"query":"你好"}'
-          />
-        </el-form-item>
-      </el-form>
-      <el-alert
-        v-if="runApproval"
-        type="warning"
-        :closable="false"
-        title="需要工具调用审批"
-        class="run-approval"
-      >
-        <div class="run-approval__list">
-          <div v-for="t in runApproval.toolCalls" :key="t.toolCallId" class="run-approval__item">
-            <div class="run-approval__name">
-              <el-icon><Tools /></el-icon>
-              <span>{{ t.toolName }}</span>
-            </div>
-            <pre class="run-approval__args">{{ JSON.stringify(t.arguments, null, 2) }}</pre>
+      <div class="chat-panel">
+        <div ref="runListRef" class="chat-list">
+          <div v-if="!chatMessages.length" class="chat-empty">
+            输入消息开始测试工作流；每次运行都会展示每个节点的执行结果，点击可查看输入/输出/报错详情。
           </div>
-        </div>
-        <div class="run-approval__actions">
-          <el-button
-            type="success"
-            size="small"
-            :loading="approving"
-            @click="handleApprove('approve')"
-          >
-            允许执行
-          </el-button>
-          <el-button
-            type="danger"
-            size="small"
-            :loading="approving"
-            @click="handleApprove('reject')"
-          >
-            拒绝执行
-          </el-button>
-        </div>
-        <div class="run-approval__hint">审批会话约 30 分钟内有效，超时后需重新运行工作流。</div>
-      </el-alert>
-      <div v-if="runSources.length" class="run-sources">
-        <div class="run-sources__title">引用来源</div>
-        <div class="run-sources__list">
-          <el-card v-for="(s, i) in runSources" :key="i" class="run-source-card" shadow="never">
-            <div class="run-source-card__head">
-              <el-icon><Document /></el-icon>
-              <span class="run-source-card__title">{{ s.title }}</span>
-              <el-tag v-if="s.score != null" size="small" type="info">相似度 {{ s.score }}</el-tag>
-            </div>
-            <div class="run-source-card__content">{{ s.content }}</div>
-          </el-card>
-        </div>
-      </div>
-      <div v-if="runTrace.length" class="run-trace">
-        <div class="run-trace__title">执行过程</div>
-        <div class="run-trace__list">
-          <div v-for="(t, i) in runTrace" :key="i" class="run-trace__item-wrap">
-            <div class="run-trace__item" :class="`is-${t.status}`" @click="toggleTrace(i)">
-              <span class="run-trace__chev">{{ traceDetail[i] ? "▾" : "▸" }}</span>
-              <span class="run-trace__dot" />
-              <span class="run-trace__label">{{ t.label }}</span>
-              <span class="run-trace__status">{{ statusText(t.status) }}</span>
-              <span v-if="t.error" class="run-trace__err">{{ t.error }}</span>
-            </div>
-            <div v-if="traceDetail[i]" class="run-trace__detail">
-              <div v-if="t.input && Object.keys(t.input).length" class="run-trace__kv">
-                <div class="kv-title">
-                  输入
-                  <el-button
-                    link
-                    size="small"
-                    class="kv-copy"
-                    @click.stop="copyText(formatJson(t.input))"
-                  >
-                    复制
-                  </el-button>
+          <div v-for="m in chatMessages" :key="m.id" class="chat-msg" :class="`is-${m.role}`">
+            <div class="chat-msg__bubble">
+              <div v-if="m.role === 'user'" class="chat-msg__user">{{ m.content }}</div>
+              <template v-else>
+                <div v-if="m.running" class="chat-msg__load">
+                  <el-icon class="is-loading"><Loading /></el-icon>
+                  执行中…
                 </div>
-                <pre class="kv-body">{{ formatJson(t.input) }}</pre>
-              </div>
-              <div v-if="t.output != null" class="run-trace__kv">
-                <div class="kv-title">
-                  输出
-                  <el-button
-                    link
-                    size="small"
-                    class="kv-copy"
-                    @click.stop="copyText(formatJson(t.output))"
-                  >
-                    复制
-                  </el-button>
-                </div>
-                <pre class="kv-body">{{ formatJson(t.output) }}</pre>
-              </div>
-              <div v-if="t.error" class="run-trace__kv">
-                <div class="kv-title">
-                  错误
-                  <el-button link size="small" class="kv-copy" @click.stop="copyText(t.error)">
-                    复制
-                  </el-button>
-                </div>
-                <pre class="kv-body is-err">{{ t.error }}</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-if="runOutput" class="run-output">
-        <div class="run-output__title">输出</div>
-        <div class="run-output__body">{{ runOutput }}</div>
-      </div>
-      <template #footer>
-        <el-button @click="runVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="running" @click="handleRun">开始运行</el-button>
-      </template>
-    </el-dialog>
+                <div v-else-if="m.error" class="chat-msg__err">{{ m.error }}</div>
+                <div v-else class="chat-msg__ai">{{ m.content || "(无输出)" }}</div>
 
-    <!-- 单节点调试弹窗 -->
-    <el-dialog v-model="debugVisible" title="单节点调试" width="560px" append-to-body>
+                <div v-if="m.sources?.length" class="chat-sources">
+                  <div class="chat-sub-title">引用来源</div>
+                  <el-card
+                    v-for="(s, si) in m.sources"
+                    :key="si"
+                    class="run-source-card"
+                    shadow="never"
+                  >
+                    <div class="run-source-card__head">
+                      <el-icon><Document /></el-icon>
+                      <span class="run-source-card__title">{{ s.title }}</span>
+                      <el-tag v-if="s.score != null" size="small" type="info">
+                        相似度 {{ s.score }}
+                      </el-tag>
+                    </div>
+                    <div class="run-source-card__content">{{ s.content }}</div>
+                  </el-card>
+                </div>
+
+                <!-- HITL 工具审批 -->
+                <div v-if="m.approval" class="run-approval">
+                  <div class="run-approval__list">
+                    <div
+                      v-for="t in m.approval.toolCalls"
+                      :key="t.toolCallId"
+                      class="run-approval__item"
+                    >
+                      <div class="run-approval__name">
+                        <el-icon><Tools /></el-icon>
+                        <span>{{ t.toolName }}</span>
+                      </div>
+                      <pre class="run-approval__args">{{
+                        JSON.stringify(t.arguments, null, 2)
+                      }}</pre>
+                    </div>
+                  </div>
+                  <div class="run-approval__actions">
+                    <el-button
+                      type="success"
+                      size="small"
+                      :loading="approving"
+                      @click="handleApprove('approve')"
+                    >
+                      允许执行
+                    </el-button>
+                    <el-button
+                      type="danger"
+                      size="small"
+                      :loading="approving"
+                      @click="handleApprove('reject')"
+                    >
+                      拒绝执行
+                    </el-button>
+                  </div>
+                  <div class="run-approval__hint">
+                    审批会话约 30 分钟内有效，超时后需重新运行工作流。
+                  </div>
+                </div>
+
+                <!-- 节点执行过程 -->
+                <div v-if="m.trace?.length" class="chat-trace">
+                  <div class="chat-sub-title">节点执行过程（点击查看详情）</div>
+                  <div
+                    v-for="(t, i) in m.trace"
+                    :key="i"
+                    class="trace-item"
+                    :class="`is-${t.status}`"
+                  >
+                    <div class="trace-item__head" @click="toggleTraceOpen(m.id + '_' + i)">
+                      <span class="trace-item__chev">
+                        {{ traceOpen[m.id + "_" + i] ? "▾" : "▸" }}
+                      </span>
+                      <span class="trace-item__dot" />
+                      <span class="trace-item__label">{{ t.label }}</span>
+                      <span class="trace-item__status">{{ statusText(t.status) }}</span>
+                      <span v-if="t.error" class="trace-item__err">{{ t.error }}</span>
+                    </div>
+                    <div v-if="traceOpen[m.id + '_' + i]" class="trace-item__detail">
+                      <div v-if="t.input && Object.keys(t.input).length" class="trace-item__kv">
+                        <div class="kv-t">
+                          输入
+                          <el-button
+                            link
+                            size="small"
+                            class="kv-copy"
+                            @click.stop="copyText(formatJson(t.input))"
+                          >
+                            复制
+                          </el-button>
+                        </div>
+                        <pre class="kv-b">{{ formatJson(t.input) }}</pre>
+                      </div>
+                      <div v-if="t.output != null" class="trace-item__kv">
+                        <div class="kv-t">
+                          输出
+                          <el-button
+                            link
+                            size="small"
+                            class="kv-copy"
+                            @click.stop="copyText(formatJson(t.output))"
+                          >
+                            复制
+                          </el-button>
+                        </div>
+                        <pre class="kv-b">{{ formatJson(t.output) }}</pre>
+                      </div>
+                      <div v-if="t.error" class="trace-item__kv">
+                        <div class="kv-t">
+                          错误
+                          <el-button
+                            link
+                            size="small"
+                            class="kv-copy"
+                            @click.stop="copyText(t.error)"
+                          >
+                            复制
+                          </el-button>
+                        </div>
+                        <pre class="kv-b is-err">{{ t.error }}</pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input">
+          <el-collapse v-model="chatVarsOpen" class="chat-vars">
+            <el-collapse-item title="输入变量（JSON，可选）" name="vars">
+              <el-input
+                v-model="runVariables"
+                type="textarea"
+                :rows="3"
+                placeholder='如 {"query":"你好", "items":[1,2,3]}'
+              />
+            </el-collapse-item>
+          </el-collapse>
+          <div class="chat-input__row">
+            <el-input
+              v-model="runInput"
+              type="textarea"
+              :rows="2"
+              placeholder="输入消息，回车或点发送……"
+              @keydown.enter.exact.prevent="sendChat"
+            />
+            <el-button type="primary" :loading="running" :icon="Promotion" @click="sendChat">
+              发送
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
+    <!-- 单节点调试抽屉 -->
+    <el-drawer v-model="debugVisible" title="单节点调试" size="480px" append-to-body>
       <el-form label-position="top" size="small">
         <el-form-item label="调试节点">
           <div class="debug-node-title">
@@ -347,6 +394,9 @@
             placeholder='如 {"query": "你好", "items": [1,2,3]}'
           />
         </el-form-item>
+        <el-button type="primary" :loading="debugRunning" style="width: 100%" @click="runNodeDebug">
+          运行节点
+        </el-button>
       </el-form>
       <div v-if="debugError" class="debug-result">
         <div class="debug-result__title is-err">错误</div>
@@ -360,11 +410,7 @@
         <div class="debug-result__title">输出</div>
         <pre class="debug-result__body">{{ debugOutput }}</pre>
       </div>
-      <template #footer>
-        <el-button @click="debugVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="debugRunning" @click="runNodeDebug">运行节点</el-button>
-      </template>
-    </el-dialog>
+    </el-drawer>
 
     <!-- 运行历史弹窗 -->
     <el-dialog v-model="historyVisible" title="运行历史" width="760px" append-to-body>
@@ -483,6 +529,7 @@ import {
   Document,
   DocumentCopy,
   Tools,
+  Loading,
   Operation,
   SwitchFilled,
   DataLine,
@@ -634,28 +681,54 @@ const runVisible = ref(false);
 const running = ref(false);
 const runInput = ref("");
 const runVariables = ref("{}");
-const runOutput = ref("");
-const runSources = ref<any[]>([]);
-const runApproval = ref<{ run_id: string; toolCalls: any[] } | null>(null);
 const approving = ref(false);
-// 调试执行追踪：按序记录各节点状态/输出，并高亮画布节点
-const nodeRunStates = ref<Record<string, string>>({});
-const runTrace = ref<
-  {
-    nodeId: string;
-    status: string;
-    label: string;
-    input?: any;
-    output?: any;
-    error?: string;
-  }[]
->([]);
+const runListRef = ref<HTMLElement>();
 
+// 对话式运行：消息列表（含每轮的节点执行轨迹）
+interface TraceItem {
+  nodeId: string;
+  status: string;
+  label: string;
+  input?: any;
+  output?: any;
+  error?: string;
+}
+interface ChatMsg {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  trace?: TraceItem[];
+  sources?: any[];
+  approval?: { run_id: string; toolCalls: any[] };
+  running?: boolean;
+  error?: string;
+}
+const chatMessages = ref<ChatMsg[]>([]);
+const activeMsg = ref<ChatMsg | null>(null);
+let chatSeq = 0;
+const chatVarsOpen = ref<string[]>([]);
+const traceOpen = ref<Record<string, boolean>>({});
+function toggleTraceOpen(key: string) {
+  traceOpen.value[key] = !traceOpen.value[key];
+}
+function scrollRunBottom() {
+  window.setTimeout(() => {
+    runListRef.value?.scrollTo({ top: runListRef.value.scrollHeight, behavior: "smooth" });
+  }, 30);
+}
+
+// 调试执行追踪：高亮画布节点
+const nodeRunStates = ref<Record<string, string>>({});
 function resetRunTrace() {
   nodeRunStates.value = {};
-  runTrace.value = [];
   nodes.value.forEach((n) => {
-    n.data = { ...(n.data || {}), __runStatus: "" };
+    n.data = {
+      ...(n.data || {}),
+      __runStatus: "",
+      __runInput: undefined,
+      __runOutput: undefined,
+      __runError: undefined,
+    };
   });
 }
 
@@ -672,25 +745,12 @@ function onNodeStatus(ns: any) {
       __runError: ns.error,
     };
   }
-  runTrace.value.push({
-    nodeId: ns.nodeId,
-    status,
-    label: ns.label || ns.nodeId,
-    input: ns.input,
-    output: ns.output,
-    error: ns.error,
-  });
 }
 
 function statusText(s: string) {
   return s === "running" ? "执行中" : s === "error" ? "失败" : "完成";
 }
 
-// 执行过程展开详情（输入/输出/报错）
-const traceDetail = ref<Record<number, boolean>>({});
-function toggleTrace(i: number) {
-  traceDetail.value[i] = !traceDetail.value[i];
-}
 function formatJson(v: any): string {
   if (v == null) return "";
   if (typeof v === "string") return v;
@@ -1527,9 +1587,8 @@ async function handleSave() {
 function openRun() {
   runInput.value = "";
   runVariables.value = "{}";
-  runOutput.value = "";
-  runSources.value = [];
-  runApproval.value = null;
+  chatMessages.value = [];
+  activeMsg.value = null;
   runVisible.value = true;
 }
 
@@ -1560,67 +1619,88 @@ async function readUiStream(resp: Response, onFrame: (obj: any) => void) {
   }
 }
 
-async function handleRun() {
+async function sendChat() {
+  const text = runInput.value.trim();
+  if (!text) {
+    ElMessage.warning("请输入消息");
+    return;
+  }
   if (!workflowId.value) {
     // 未保存：先保存再运行
     await handleSave();
     if (!workflowId.value) return;
   }
+  const userMsg: ChatMsg = { id: ++chatSeq, role: "user", content: text };
+  chatMessages.value.push(userMsg);
+  runInput.value = "";
+  const msg: ChatMsg = { id: ++chatSeq, role: "assistant", content: "", trace: [], running: true };
+  chatMessages.value.push(msg);
+  activeMsg.value = msg;
   running.value = true;
-  runApproval.value = null;
-  runOutput.value = "运行中...";
   resetRunTrace();
+  scrollRunBottom();
   try {
-    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     let variables = {};
     try {
       variables = runVariables.value ? JSON.parse(runVariables.value) : {};
     } catch {
       variables = {};
     }
-    const body = {
-      messages: [{ role: "user", parts: [{ type: "text", text: runInput.value || "你好" }] }],
-      variables,
-    };
+    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
     const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/run/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        messages: [{ role: "user", parts: [{ type: "text", text }] }],
+        variables,
+      }),
     });
     if (!resp.ok || !resp.body) {
-      runOutput.value = `请求失败：${resp.status}`;
+      msg.error = `请求失败：${resp.status}`;
       return;
     }
-    let out = "";
     await readUiStream(resp, (obj) => {
-      if (obj.type === "text-delta") out += obj.text;
-      else if (obj.type === "sources") runSources.value = obj.sources || [];
-      else if (obj.type === "node-status") onNodeStatus(obj);
-      else if (obj.type === "data-finish") {
+      if (obj.type === "text-delta") msg.content += obj.text;
+      else if (obj.type === "sources") msg.sources = obj.sources || [];
+      else if (obj.type === "node-status") {
+        onNodeStatus(obj);
+        msg.trace?.push({
+          nodeId: obj.nodeId,
+          status: obj.status || "success",
+          label: obj.label || obj.nodeId,
+          input: obj.input,
+          output: obj.output,
+          error: obj.error,
+        });
+        scrollRunBottom();
+      } else if (obj.type === "data-finish") {
         if (obj.awaiting_approval && obj.run_id) {
-          runApproval.value = { run_id: obj.run_id, toolCalls: obj.pending_tool_calls || [] };
+          msg.approval = { run_id: obj.run_id, toolCalls: obj.pending_tool_calls || [] };
         }
-        out = obj.reply || out;
+        if (obj.reply != null) msg.content = obj.reply || msg.content;
       }
     });
-    runOutput.value = out || "(无输出)";
   } catch (e: any) {
-    runOutput.value = `运行失败：${e?.message || e}`;
+    msg.error = `运行失败：${e?.message || e}`;
   } finally {
+    msg.running = false;
     running.value = false;
+    scrollRunBottom();
   }
 }
 
 async function handleApprove(decision: "approve" | "reject") {
-  if (!runApproval.value || !workflowId.value) return;
+  const am = activeMsg.value;
+  if (!am?.approval || !workflowId.value) return;
   const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
-  const runId = runApproval.value.run_id;
+  const runId = am.approval.run_id;
   approving.value = true;
-  const prior =
-    runOutput.value === "运行中..." || runOutput.value === "(无输出)" ? "" : runOutput.value;
+  am.approval = undefined;
+  am.running = true;
+  running.value = true;
   try {
     const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/approve`, {
       method: "POST",
@@ -1631,26 +1711,32 @@ async function handleApprove(decision: "approve" | "reject") {
       body: JSON.stringify({ run_id: runId, decision }),
     });
     if (!resp.ok || !resp.body) {
-      runOutput.value = `审批请求失败：${resp.status}`;
+      am.error = `审批请求失败：${resp.status}`;
       return;
     }
-    let out = prior;
-    let errMsg = "";
     await readUiStream(resp, (obj) => {
-      if (obj.type === "text-delta") out += obj.text;
-      else if (obj.type === "data-finish") out = obj.reply || out;
-      else if (obj.type === "error") errMsg = obj.errorText || obj.msg || obj.message || "";
+      if (obj.type === "text-delta") am.content += obj.text;
+      else if (obj.type === "node-status") {
+        onNodeStatus(obj);
+        am.trace?.push({
+          nodeId: obj.nodeId,
+          status: obj.status || "success",
+          label: obj.label || obj.nodeId,
+          input: obj.input,
+          output: obj.output,
+          error: obj.error,
+        });
+      } else if (obj.type === "data-finish") am.content = obj.reply || am.content;
+      else if (obj.type === "error")
+        am.error = obj.errorText || obj.msg || obj.message || "审批失败";
     });
-    if (errMsg) {
-      runOutput.value = `审批失败：${errMsg}`;
-      return;
-    }
-    runOutput.value = out || "(无输出)";
   } catch (e: any) {
-    runOutput.value = `审批续跑失败：${e?.message || e}`;
+    am.error = `审批续跑失败：${e?.message || e}`;
   } finally {
+    am.running = false;
+    running.value = false;
     approving.value = false;
-    runApproval.value = null;
+    am.approval = undefined;
   }
 }
 </script>
@@ -1792,6 +1878,196 @@ async function handleApprove(decision: "approve" | "reject") {
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+/* ---------- 运行抽屉（对话式） ---------- */
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-list {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 4px 12px;
+}
+
+.chat-empty {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.chat-msg {
+  display: flex;
+  margin-bottom: 12px;
+
+  &.is-user {
+    justify-content: flex-end;
+  }
+
+  .chat-msg__bubble {
+    max-width: 92%;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  &.is-user .chat-msg__bubble {
+    background: var(--el-color-primary-light-9);
+    border: 1px solid var(--el-color-primary-light-7);
+  }
+
+  &.is-assistant .chat-msg__bubble {
+    width: 100%;
+    background: var(--el-fill-color-light);
+    border: 1px solid var(--el-border-color-light);
+  }
+
+  .chat-msg__user {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .chat-msg__ai {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .chat-msg__load {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--el-text-color-secondary);
+  }
+
+  .chat-msg__err {
+    color: var(--el-color-danger);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .chat-sub-title {
+    margin: 10px 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-text-color-secondary);
+  }
+
+  .chat-sources {
+    margin-top: 10px;
+
+    .run-source-card {
+      margin-bottom: 6px;
+    }
+  }
+
+  .chat-trace {
+    margin-top: 10px;
+    border-top: 1px dashed var(--el-border-color-lighter);
+    padding-top: 6px;
+  }
+
+  .trace-item {
+    margin-bottom: 4px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+    background: #fff;
+
+    .trace-item__head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .trace-item__chev {
+      color: var(--el-text-color-secondary);
+      font-size: 11px;
+    }
+
+    .trace-item__dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--el-color-info);
+    }
+
+    &.is-running .trace-item__dot {
+      background: var(--el-color-primary);
+    }
+    &.is-success .trace-item__dot {
+      background: var(--el-color-success);
+    }
+    &.is-error .trace-item__dot {
+      background: var(--el-color-danger);
+    }
+
+    .trace-item__label {
+      font-weight: 600;
+    }
+
+    .trace-item__status {
+      margin-left: auto;
+      color: var(--el-text-color-secondary);
+    }
+
+    .trace-item__err {
+      color: var(--el-color-danger);
+      font-size: 12px;
+    }
+
+    .trace-item__detail {
+      padding: 6px 10px 10px;
+      border-top: 1px dashed var(--el-border-color-lighter);
+
+      .trace-item__kv {
+        margin-top: 6px;
+
+        .kv-t {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+        }
+
+        .kv-b {
+          margin: 4px 0 0;
+          max-height: 150px;
+          overflow: auto;
+          font-size: 12px;
+          white-space: pre-wrap;
+          word-break: break-word;
+
+          &.is-err {
+            color: var(--el-color-danger);
+          }
+        }
+      }
+    }
+  }
+}
+
+.chat-input {
+  padding-top: 10px;
+  border-top: 1px solid var(--el-border-color-light);
+
+  .chat-vars {
+    margin-bottom: 8px;
+  }
+
+  .chat-input__row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
   }
 }
 
