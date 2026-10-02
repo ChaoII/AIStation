@@ -12,6 +12,7 @@ export interface AssistantResult {
     payload?: any;
   } | null;
   report_id: number | null;
+  sources?: Array<{ title: string; content: string; score?: number }>;
 }
 
 export function assistantChat(message: string) {
