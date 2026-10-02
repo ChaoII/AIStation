@@ -6,6 +6,11 @@
     @focus.capture="onPanelFocus"
     @input.capture="onVarInput"
   >
+    <!-- 启用 / 禁用 -->
+    <el-form-item label="启用此节点">
+      <el-switch v-model="nodeEnabled" inline-prompt active-text="启用" inactive-text="禁用" />
+      <span v-if="!nodeEnabled" class="node-disabled-tip">（运行将跳过该节点）</span>
+    </el-form-item>
     <!-- 插入变量 -->
     <el-form-item v-if="availableVars && availableVars.length" label="插入变量">
       <el-dropdown trigger="click" @command="insertVar">
@@ -711,6 +716,14 @@ const kbOptions = ref<{ id: number; name: string }[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const agentOptions = ref<{ id: number; agent_name: string }[]>([]);
 
+// 节点启用开关（默认启用）
+const nodeEnabled = computed({
+  get: () => d.enabled !== false,
+  set: (v: boolean) => {
+    d.enabled = !!v;
+  },
+});
+
 // 本节点引用到的输入变量（从 data 的字符串值中提取 {{var}}）
 const refVars = computed(() => {
   const found = new Set<string>();
@@ -865,6 +878,12 @@ onMounted(async () => {
 .io-var-src {
   margin-left: 4px;
   font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.node-disabled-tip {
+  margin-left: 8px;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 

@@ -1260,6 +1260,14 @@ class WorkflowEngine:
             node = self._node(node_id)
             ntype = node.get("type") or "start"
             label = _NODE_LABELS.get(ntype, ntype)
+            # 禁用节点：跳过执行，直接走下游边
+            if (node.get("data") or {}).get("enabled", True) is False:
+                yield self.ms.node_status(node_id, "skipped", label, input=self._node_input(node))
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+                visited.add(node_id)
+                continue
             yield self.ms.node_status(node_id, "running", label, input=self._node_input(node))
             try:
                 if ntype == "start":

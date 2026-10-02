@@ -1400,3 +1400,28 @@ def test_workflow_run_logs(test_client, auth_headers):
         assert detail and detail["node_trace"]
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_disabled_node(test_client, auth_headers):
+    """禁用节点：运行被跳过，不产生其输出变量。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "pv", "type": "variable",
+                 "data": {"name": "a", "value": "hello", "enabled": False}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{a}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "pv"},
+                      {"id": "e2", "source": "pv", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert '"status": "skipped"' in r.text
+        assert "hello" not in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

@@ -9,6 +9,7 @@
       'is-running': data.__runStatus === 'running',
       'is-ok': data.__runStatus === 'success',
       'is-err': data.__runStatus === 'error',
+      'is-disabled': data.enabled === false,
     }"
   >
     <Handle
@@ -22,6 +23,7 @@
       <el-icon class="wf-node__icon" :color="def.color"><component :is="def.icon" /></el-icon>
       <span class="wf-node__label">{{ def.label }}</span>
       <span v-if="def.type === 'condition'" class="wf-node__branch-tag">分支</span>
+      <span v-if="data.enabled === false" class="wf-node__disable-tag">禁用</span>
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
     </div>
     <div class="wf-node__body">
@@ -275,6 +277,21 @@ function shortText(v: any, limit = 160): string {
   &.is-err {
     border-color: var(--el-color-danger);
     box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.2);
+  }
+
+  &.is-disabled {
+    opacity: 0.5;
+    border-style: dashed;
+  }
+
+  .wf-node__disable-tag {
+    margin-left: 8px;
+    padding: 1px 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+    border-radius: 4px;
   }
 
   .wf-node__err-badge {

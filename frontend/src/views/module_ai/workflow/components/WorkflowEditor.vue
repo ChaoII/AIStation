@@ -130,6 +130,8 @@
                   >
                     历史
                   </el-button>
+                  <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
+                  <el-button size="small" :icon="Upload" @click="triggerImport">导入</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
                     运行
                   </el-button>
@@ -415,6 +417,15 @@
       </div>
     </el-drawer>
 
+    <!-- 隐藏文件选择：工作流导入 -->
+    <input
+      ref="importFileRef"
+      type="file"
+      accept=".json,application/json"
+      style="display: none"
+      @change="onImportFileChange"
+    />
+
     <!-- 运行历史弹窗 -->
     <el-dialog v-model="historyVisible" title="运行历史" width="760px" append-to-body>
       <el-table
@@ -549,6 +560,8 @@ import {
   DocumentCopy,
   Tools,
   Loading,
+  Download,
+  Upload,
   Operation,
   SwitchFilled,
   DataLine,
@@ -767,7 +780,7 @@ function onNodeStatus(ns: any) {
 }
 
 function statusText(s: string) {
-  return s === "running" ? "执行中" : s === "error" ? "失败" : "完成";
+  return s === "running" ? "执行中" : s === "error" ? "失败" : s === "skipped" ? "已跳过" : "完成";
 }
 
 function formatJson(v: any): string {
@@ -1613,6 +1626,71 @@ function buildGraph() {
   };
 }
 
+// ---------- 导入 / 导出 ----------
+const importFileRef = ref<HTMLInputElement>();
+function handleExport() {
+  const data = {
+    name: formData.name || "未命名工作流",
+    description: formData.description,
+    graph: buildGraph(),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(formData.name || "workflow").replace(/[\\/:*?"<>|]/g, "_")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  ElMessage.success("已导出工作流 JSON");
+}
+function triggerImport() {
+  importFileRef.value?.click();
+}
+async function onImportFileChange(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    ElMessage.error("文件不是有效的 JSON");
+    return;
+  }
+  const graph = parsed?.graph || parsed;
+  const inodes = (graph?.nodes || []) as any[];
+  const iedges = (graph?.edges || []) as any[];
+  if (!Array.isArray(inodes)) {
+    ElMessage.error("JSON 中缺少 nodes 数组");
+    return;
+  }
+  await ElMessageBox.confirm(
+    `将导入 ${inodes.length} 个节点、${iedges.length} 条连线，并替换当前画布内容，此操作不可恢复。是否继续？`,
+    "导入工作流",
+    { confirmButtonText: "导入", cancelButtonText: "取消", type: "warning" }
+  );
+  pushHistory();
+  const t = Date.now();
+  nodes.value = inodes.map((n: any, i: number) => ({
+    id: n.id || `imp_${t}_${i}`,
+    type: n.type || "llm",
+    position: { x: n.x ?? 40, y: n.y ?? 40 * (i + 1) },
+    data: { ...(n.data || {}) },
+  })) as Node[];
+  edges.value = iedges.map((e: any) => ({
+    id: e.id || `imp_${t}_e${Math.random().toString(36).slice(2)}`,
+    source: e.source,
+    target: e.target,
+    sourceHandle: e.sourceHandle || undefined,
+  })) as Edge[];
+  if (parsed?.name && !formData.name.trim()) formData.name = parsed.name;
+  if (parsed?.description && !formData.description.trim())
+    formData.description = parsed.description;
+  selectedNode.value = undefined;
+  ElMessage.success(`已导入工作流，共 ${inodes.length} 个节点`);
+}
+
 async function handleSave() {
   if (!formData.name) {
     ElMessage.warning("请填写工作流名称");
@@ -2076,6 +2154,9 @@ async function handleApprove(decision: "approve" | "reject") {
     }
     &.is-error .trace-item__dot {
       background: var(--el-color-danger);
+    }
+    &.is-skipped .trace-item__dot {
+      background: var(--el-color-info);
     }
 
     .trace-item__label {
