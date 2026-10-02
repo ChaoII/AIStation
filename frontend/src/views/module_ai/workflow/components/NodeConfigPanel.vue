@@ -547,6 +547,21 @@
       </el-form-item>
     </template>
 
+    <!-- note：注释框 -->
+    <template v-else-if="type === 'note'">
+      <el-form-item label="标题">
+        <el-input v-model="d.title" placeholder="注释标题" />
+      </el-form-item>
+      <el-form-item label="内容">
+        <el-input
+          v-model="d.content"
+          type="textarea"
+          :rows="3"
+          placeholder="说明文字（纯注释，不参与运行）"
+        />
+      </el-form-item>
+    </template>
+
     <!-- {{ 变量内联提示 -->
     <div
       v-if="suggestVisible && varSuggest.length"

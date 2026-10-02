@@ -24,6 +24,7 @@ export type WorkflowNodeType =
   | "doc_extractor"
   | "web_search"
   | "database"
+  | "note"
   | "end";
 
 export interface NodeDef {
@@ -171,6 +172,13 @@ export const NODE_DEFS: NodeDef[] = [
     desc: "对数据库执行 SQL 查询",
     branch: false,
   },
+  {
+    type: "note",
+    label: "注释框",
+    color: "#8a6d3b",
+    desc: "添加说明文字的分组/注释框（纯视觉）",
+    branch: false,
+  },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },
 ];
 
@@ -202,6 +210,7 @@ const NODE_CATEGORY_MAP: Record<string, string> = {
   extractor: "logic",
   sub_workflow: "sub",
   agent: "sub",
+  note: "note",
 };
 
 export const NODE_CATEGORIES: { key: string; label: string }[] = [
@@ -210,6 +219,7 @@ export const NODE_CATEGORIES: { key: string; label: string }[] = [
   { key: "data", label: "数据 / 检索" },
   { key: "logic", label: "逻辑控制" },
   { key: "sub", label: "子流程" },
+  { key: "note", label: "注释" },
 ];
 
 export function categoryOf(type: string): string {

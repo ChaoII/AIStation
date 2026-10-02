@@ -10,24 +10,33 @@
       'is-ok': data.__runStatus === 'success',
       'is-err': data.__runStatus === 'error',
       'is-disabled': data.enabled === false,
+      'is-note': def.type === 'note',
     }"
   >
     <Handle
-      v-if="def.type !== 'start'"
+      v-if="def.type !== 'start' && def.type !== 'note'"
       type="target"
       :position="Position.Left"
       class="wf-handle"
       :connectable="true"
     />
     <div class="wf-node__head">
-      <el-icon class="wf-node__icon" :color="def.color"><component :is="def.icon" /></el-icon>
-      <span class="wf-node__label">{{ def.label }}</span>
+      <el-icon v-if="def.type !== 'note'" class="wf-node__icon" :color="def.color">
+        <component :is="def.icon" />
+      </el-icon>
+      <span v-if="def.type !== 'note'" class="wf-node__label">{{ def.label }}</span>
       <span v-if="def.type === 'condition'" class="wf-node__branch-tag">分支</span>
       <span v-if="data.enabled === false" class="wf-node__disable-tag">禁用</span>
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
     </div>
     <div class="wf-node__body">
-      <div v-if="data.note" class="wf-node__note" :title="data.note">{{ data.note }}</div>
+      <template v-if="def.type === 'note'">
+        <div v-if="data.title" class="wf-note__title">{{ data.title }}</div>
+        <div v-if="data.content" class="wf-note__content">{{ data.content }}</div>
+      </template>
+      <div v-if="data.note && def.type !== 'note'" class="wf-node__note" :title="data.note">
+        {{ data.note }}
+      </div>
       <template v-if="def.type === 'start'">
         <div v-if="(data.variables || []).length === 0" class="wf-node__empty">定义输入变量</div>
         <div v-else class="wf-node__chips">
@@ -140,7 +149,7 @@
     </div>
     <!-- 输出句柄：条件节点出 true/false 两条 -->
     <Handle
-      v-if="def.type !== 'end'"
+      v-if="def.type !== 'end' && def.type !== 'note'"
       type="source"
       :position="Position.Right"
       class="wf-handle"
@@ -218,6 +227,7 @@ const def = computed(() => {
     doc_extractor: Document,
     web_search: Search,
     database: Coin,
+    note: DocumentCopy,
     end: CircleCheckFilled,
   };
   return { ...d, icon: iconMap[d.type] || Cpu };
@@ -244,6 +254,30 @@ function shortText(v: any, limit = 160): string {
     box-shadow 0.2s,
     border-color 0.2s;
   cursor: pointer;
+
+  &.is-note {
+    width: 240px;
+    min-height: 80px;
+    background: var(--el-color-warning-light-9);
+    border: 1px dashed var(--el-color-warning-light-5);
+    box-shadow: none;
+
+    .wf-node__head {
+      min-height: 0;
+    }
+
+    .wf-note__title {
+      font-weight: 600;
+      color: var(--el-color-warning-dark-2);
+    }
+    .wf-note__content {
+      margin-top: 4px;
+      color: var(--el-text-color-regular);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+    }
+  }
 
   &::before {
     content: "";

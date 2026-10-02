@@ -1209,6 +1209,7 @@ function iconOf(type: string) {
     doc_extractor: Document,
     web_search: Search,
     database: Coin,
+    note: DocumentCopy,
     end: CircleCheckFilled,
   };
   return m[type as WorkflowNodeType] || Cpu;
@@ -1365,6 +1366,8 @@ function defaultData(type: string): Record<string, any> {
       return { query: "", endpoint: "", api_key: "", output_variable: "" };
     case "database":
       return { dsn: "", sql: "", output_variable: "" };
+    case "note":
+      return { title: "说明", content: "" };
     case "end":
       return { output_template: "" };
     default:
