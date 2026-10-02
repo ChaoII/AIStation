@@ -207,6 +207,7 @@ import {
   Operation,
   SwitchFilled,
   DataLine,
+  Connection,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -274,6 +275,7 @@ function iconOf(type: string) {
     code: Operation,
     condition: SwitchFilled,
     variable: DataLine,
+    http: Connection,
     end: CircleCheckFilled,
   };
   return m[type as WorkflowNodeType] || Cpu;
@@ -373,6 +375,8 @@ function defaultData(type: string): Record<string, any> {
       return { expression: "" };
     case "variable":
       return { name: "", value: "" };
+    case "http":
+      return { method: "GET", url: "", headers: {}, body: {}, output_variable: "" };
     case "end":
       return { output_template: "" };
     default:

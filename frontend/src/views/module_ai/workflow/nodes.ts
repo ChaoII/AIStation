@@ -3,7 +3,7 @@
  * 前端仅描述展示与表单，不改运行语义。
  */
 export type WorkflowNodeType =
-  "start" | "llm" | "knowledge" | "tool" | "code" | "condition" | "variable" | "end";
+  "start" | "llm" | "knowledge" | "tool" | "code" | "condition" | "variable" | "http" | "end";
 
 export interface NodeDef {
   type: WorkflowNodeType;
@@ -45,7 +45,20 @@ export const NODE_DEFS: NodeDef[] = [
     desc: "按表达式走真/假分支",
     branch: true,
   },
-  { type: "variable", label: "变量赋值", color: "#17b3a3", desc: "给变量赋静态值", branch: false },
+  {
+    type: "variable",
+    label: "变量赋值",
+    color: "#17b3a3",
+    desc: "给变量赋静态值",
+    branch: false,
+  },
+  {
+    type: "http",
+    label: "HTTP 请求",
+    color: "#8e44ad",
+    desc: "请求外部 HTTP API",
+    branch: false,
+  },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },
 ];
 

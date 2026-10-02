@@ -127,6 +127,43 @@
       </el-form-item>
     </template>
 
+    <!-- http：外部请求 -->
+    <template v-else-if="type === 'http'">
+      <el-form-item label="方法">
+        <el-select v-model="d.method" style="width: 120px">
+          <el-option
+            v-for="m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']"
+            :key="m"
+            :label="m"
+            :value="m"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="URL（支持 {{变量}}）">
+        <el-input v-model="d.url" placeholder="https://api.example.com/{{id}}" />
+      </el-form-item>
+      <el-form-item label="请求头（JSON）">
+        <el-input
+          v-model="headersText"
+          type="textarea"
+          :rows="2"
+          placeholder='{"Authorization":"Bearer {{token}}"}'
+        />
+      </el-form-item>
+      <el-form-item label="请求体（JSON，GET 可留空）">
+        <el-input v-model="bodyText" type="textarea" :rows="3" placeholder='{"q":"{{query}}"}' />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" />
+      </el-form-item>
+      <el-alert
+        title="响应 {status, body, text} 写入输出变量"
+        type="info"
+        :closable="false"
+        show-icon
+      />
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">
@@ -163,6 +200,12 @@ const argsText = ref(
 const codeInputsText = ref(
   d.inputs && typeof d.inputs === "object" ? JSON.stringify(d.inputs, null, 0) : d.inputs || ""
 );
+const headersText = ref(
+  d.headers && typeof d.headers === "object" ? JSON.stringify(d.headers, null, 0) : d.headers || ""
+);
+const bodyText = ref(
+  d.body && typeof d.body === "object" ? JSON.stringify(d.body, null, 0) : d.body || ""
+);
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
@@ -188,10 +231,22 @@ function emitChange() {
       data.inputs = {};
     }
   }
+  if (type === "http") {
+    try {
+      data.headers = headersText.value ? JSON.parse(headersText.value) : {};
+    } catch {
+      data.headers = {};
+    }
+    try {
+      data.body = bodyText.value ? JSON.parse(bodyText.value) : {};
+    } catch {
+      data.body = {};
+    }
+  }
   emit("change", data);
 }
 
-watch([d, vars, argsText, codeInputsText], emitChange, { deep: true });
+watch([d, vars, argsText, codeInputsText, headersText, bodyText], emitChange, { deep: true });
 
 onMounted(async () => {
   try {
