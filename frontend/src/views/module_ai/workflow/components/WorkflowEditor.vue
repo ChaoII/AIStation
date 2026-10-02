@@ -248,7 +248,12 @@ const dialogVisible = computed({
   set: (v) => emit("update:visible", v),
 });
 
-const nodeTypes = markRaw<Record<string, Component>>({ __default: WorkflowNode });
+const nodeTypes = markRaw<Record<string, Component>>(
+  Object.fromEntries([
+    ...NODE_DEFS.map((d) => [d.type, WorkflowNode]),
+    ["__default", WorkflowNode],
+  ] as [string, Component][])
+);
 
 const { onInit, onConnect, addEdges, setNodes, screenToFlowCoordinate, addNodes, fitView } =
   useVueFlow();
@@ -365,7 +370,7 @@ function onPaletteClick(type: string) {
   const id = `node_${Date.now()}`;
   const node = { id, type, position, data: defaultData(type) } as Node;
   addNodes([node]);
-  selectedNode.value = nodes.value.find((n) => n.id === id);
+  selectedNode.value = node;
   ElMessage.success(`已添加「${nodeDefOf(type).label}」节点，请在右侧编辑`);
 }
 
@@ -849,7 +854,7 @@ async function handleApprove(decision: "approve" | "reject") {
 /* 非 scoped：修复 Vue Flow 画布光标消失，并让节点可交互表达更清晰 */
 .ai-workflow-editor {
   .vue-flow__pane {
-    cursor: grab;
+    cursor: default;
   }
 
   .vue-flow__pane.dragging {
