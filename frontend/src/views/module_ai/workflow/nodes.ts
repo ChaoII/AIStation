@@ -19,6 +19,8 @@ export type WorkflowNodeType =
   | "answer"
   | "sub_workflow"
   | "agent"
+  | "loop"
+  | "parallel"
   | "end";
 
 export interface NodeDef {
@@ -129,6 +131,20 @@ export const NODE_DEFS: NodeDef[] = [
     label: "子智能体",
     color: "#7cb342",
     desc: "调用另一个 AI 智能体",
+    branch: false,
+  },
+  {
+    type: "loop",
+    label: "循环",
+    color: "#ff7043",
+    desc: "对列表逐项运行循环体工作流",
+    branch: false,
+  },
+  {
+    type: "parallel",
+    label: "并行",
+    color: "#26a69a",
+    desc: "并发运行多个分支工作流",
     branch: false,
   },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },

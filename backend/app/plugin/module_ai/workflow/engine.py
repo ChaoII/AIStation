@@ -10,6 +10,7 @@ V1 节点集：``start`` / ``llm`` / ``tool`` / ``code`` / ``condition`` /
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
@@ -73,6 +74,8 @@ _NODE_LABELS = {
     "answer": "回答",
     "sub_workflow": "子工作流",
     "agent": "子智能体",
+    "loop": "循环",
+    "parallel": "并行",
     "end": "结束",
 }
 
@@ -918,6 +921,86 @@ class WorkflowEngine:
             self.variables = saved
         self.outputs[node["id"]] = self.outputs.get(node["id"])
 
+    # ---------------------------- 循环 / 并行（子图语义） ---------------------------- #
+    async def _resolve_workflow(self, wf_id):
+        """解析工作流定义，供循环体/并行分支复用。"""
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+        return await AiWorkflowService.get_workflow(int(wf_id))
+
+    async def _run_workflow_graph(self, graph, variables) -> Any:
+        """以给定变量运行一段工作流图（丢弃内部帧），返回最终回复/最后输出。"""
+        inner = WorkflowEngine(
+            graph=graph or {"nodes": [], "edges": []},
+            variables=dict(variables),
+            messages=self.messages,
+            ms=UiMessageStream(),
+            state={},
+            user_id=self.user_id,
+        )
+        async for _ in inner.run():
+            pass
+        out = inner.state.get("reply")
+        if out is None:
+            for v in inner.outputs.values():
+                if isinstance(v, str) and v:
+                    out = v
+        return out
+
+    async def _exec_loop(self, node: dict) -> None:
+        """循环节点：对列表逐项运行「循环体工作流」，聚合每次结果。
+
+        ``data``：``items``(列表变量/内联列表)、``body_workflow_id``(循环体工作流)、
+        ``max_iterations``、``output_variable``。每项把 ``item`` 注入循环体变量。
+        """
+        data = node.get("data") or {}
+        wf_id = data.get("body_workflow_id")
+        if not wf_id:
+            raise RuntimeError("循环节点缺少循环体工作流 body_workflow_id")
+        wf = await self._resolve_workflow(wf_id)
+        items = self._resolve_option(data.get("items"))
+        if isinstance(items, str):
+            rendered = self._render(items)
+            try:
+                parsed = json.loads(rendered)
+            except Exception:  # noqa: BLE001
+                parsed = rendered
+            items = parsed if isinstance(parsed, list) else [rendered]
+        if items is None:
+            items = []
+        if not isinstance(items, list):
+            items = [items] if items else []
+        max_iter = int(data.get("max_iterations") or 50)
+        items = items[:max_iter]
+        results = []
+        for item in items:
+            sub_vars = {**self.variables, "item": item, "loop_item": item}
+            results.append(await self._run_workflow_graph(wf["graph"], sub_vars))
+        self.outputs[node["id"]] = results
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = results
+
+    async def _exec_parallel(self, node: dict) -> None:
+        """并行节点：并发运行多个分支工作流，聚合为 ``{分支名: 输出}``。
+
+        ``data``：``branches``=[{"name","workflow_id"}]、``output_variable``。
+        """
+        data = node.get("data") or {}
+        branches = data.get("branches") or []
+
+        async def _one(b: dict):
+            wf = await self._resolve_workflow(b.get("workflow_id"))
+            out = await self._run_workflow_graph(wf["graph"], dict(self.variables))
+            return (b.get("name") or b.get("id") or "branch", out)
+
+        outs = await asyncio.gather(*[_one(b) for b in branches])
+        results = dict(outs)
+        self.outputs[node["id"]] = results
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = results
+
     # ------------------------------------------------------------------ #
     # 主执行
     # ------------------------------------------------------------------ #
@@ -1040,6 +1123,16 @@ class WorkflowEngine:
                 elif ntype == "agent":
                     async for frame in self._exec_agent(node):
                         yield frame
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "loop":
+                    await self._exec_loop(node)
+                    next_id = self._edge_target(node_id)
+                    if next_id:
+                        stack.append(next_id)
+                elif ntype == "parallel":
+                    await self._exec_parallel(node)
                     next_id = self._edge_target(node_id)
                     if next_id:
                         stack.append(next_id)

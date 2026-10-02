@@ -98,6 +98,16 @@
           {{ data.agent_id ? `调用智能体 #${data.agent_id}` : "选择子智能体" }}
         </div>
       </template>
+      <template v-else-if="def.type === 'loop'">
+        <div class="wf-node__text">
+          {{ data.body_workflow_id ? `循环工作流 #${data.body_workflow_id}` : "选择循环体工作流" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'parallel'">
+        <div class="wf-node__text">
+          {{ (data.branches || []).length ? `并行 ${data.branches.length} 分支` : "选择并行分支" }}
+        </div>
+      </template>
       <template v-else-if="def.type === 'end'">
         <div class="wf-node__text">{{ data.output_template ? "模板已配置" : "输出最终回复" }}</div>
       </template>
@@ -142,6 +152,8 @@ import {
   ChatDotRound,
   Share,
   User,
+  Sort,
+  Grid,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import { nodeDefOf, type WorkflowNodeType } from "../nodes";
@@ -172,6 +184,8 @@ const def = computed(() => {
     answer: ChatDotRound,
     sub_workflow: Share,
     agent: User,
+    loop: Sort,
+    parallel: Grid,
     end: CircleCheckFilled,
   };
   return { ...d, icon: iconMap[d.type] || Cpu };

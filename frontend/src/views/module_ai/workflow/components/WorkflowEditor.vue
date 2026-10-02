@@ -300,6 +300,8 @@ import {
   ChatDotRound,
   Share,
   User,
+  Sort,
+  Grid,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -626,6 +628,8 @@ function iconOf(type: string) {
     answer: ChatDotRound,
     sub_workflow: Share,
     agent: User,
+    loop: Sort,
+    parallel: Grid,
     end: CircleCheckFilled,
   };
   return m[type as WorkflowNodeType] || Cpu;
@@ -760,6 +764,10 @@ function defaultData(type: string): Record<string, any> {
       return { workflow_id: null, output_variable: "" };
     case "agent":
       return { agent_id: null, query: "", output_variable: "" };
+    case "loop":
+      return { items: [], body_workflow_id: null, max_iterations: 20, output_variable: "" };
+    case "parallel":
+      return { branches: [], output_variable: "" };
     case "end":
       return { output_template: "" };
     default:

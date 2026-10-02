@@ -1136,3 +1136,72 @@ def test_workflow_sub_workflow_node(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [parent, sub["id"]])
+
+
+def test_workflow_loop_node(test_client, auth_headers):
+    """循环节点：对列表逐项运行循环体工作流并聚合。"""
+    body = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [{"id": "start", "type": "start", "data": {"variables": []}},
+                      {"id": "end", "type": "end", "data": {"output_template": "item={{item}}"}}],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]
+    parent = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "lp", "type": "loop",
+                 "data": {"items": [1, 2, 3], "body_workflow_id": body["id"],
+                          "output_variable": "looped", "max_iterations": 10}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{looped}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "lp"},
+                      {"id": "e2", "source": "lp", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{parent}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "item=1" in r.text and "item=2" in r.text and "item=3" in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [parent, body["id"]])
+
+
+def test_workflow_parallel_node(test_client, auth_headers):
+    """并行节点：并发运行多个分支工作流并聚合。"""
+    wf_a = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [{"id": "start", "type": "start", "data": {"variables": []}},
+                      {"id": "end", "type": "end", "data": {"output_template": "A结果"}}],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]
+    wf_b = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [{"id": "start", "type": "start", "data": {"variables": []}},
+                      {"id": "end", "type": "end", "data": {"output_template": "B结果"}}],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]
+    parent = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "par", "type": "parallel",
+                 "data": {"branches": [{"name": "a", "workflow_id": wf_a["id"]},
+                                        {"name": "b", "workflow_id": wf_b["id"]}],
+                          "output_variable": "par"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{par}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "par"},
+                      {"id": "e2", "source": "par", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{parent}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "A结果" in r.text and "B结果" in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [parent, wf_a["id"], wf_b["id"]])

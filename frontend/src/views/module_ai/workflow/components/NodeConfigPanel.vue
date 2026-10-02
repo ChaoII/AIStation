@@ -24,6 +24,18 @@
       </div>
     </el-form-item>
 
+    <!-- 输入 / 输出 静态信息 -->
+    <el-form-item label="输入变量">
+      <div class="io-var-list">
+        <el-tag v-if="!refVars.length" size="small" type="info">无引用</el-tag>
+        <el-tag v-for="v in refVars" :key="v" size="small" effect="plain">{{ v }}</el-tag>
+      </div>
+    </el-form-item>
+    <el-form-item label="输出变量">
+      <el-tag v-if="d.output_variable" size="small" type="success">{{ d.output_variable }}</el-tag>
+      <el-tag v-else size="small" type="info">未设置</el-tag>
+    </el-form-item>
+
     <!-- start：输入变量 -->
     <template v-if="type === 'start'">
       <el-form-item label="输入变量">
@@ -328,6 +340,74 @@
       </el-form-item>
     </template>
 
+    <!-- loop：循环 -->
+    <template v-else-if="type === 'loop'">
+      <el-form-item label="循环体工作流">
+        <el-select
+          v-model="d.body_workflow_id"
+          filterable
+          placeholder="选择循环体工作流"
+          style="width: 100%"
+        >
+          <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="列表项（支持 {{变量}}）">
+        <el-input
+          v-model="d.items"
+          type="textarea"
+          :rows="3"
+          placeholder="JSON 数组或列表变量，如 {{items}} 或 [1,2,3]"
+        />
+      </el-form-item>
+      <el-form-item label="最大循环次数">
+        <el-input-number v-model="d.max_iterations" :min="1" :max="100" style="width: 100%" />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="聚合后的列表结果" />
+      </el-form-item>
+      <el-alert type="info" :closable="false" show-icon>
+        每一项以变量
+        <code v-pre>{{ item }}</code>
+        注入循环体工作流，结果为每项输出组成的列表。
+      </el-alert>
+    </template>
+
+    <!-- parallel：并行 -->
+    <template v-else-if="type === 'parallel'">
+      <el-form-item label="并行分支">
+        <div v-for="(b, i) in d.branches" :key="i" class="parallel-branch">
+          <el-input v-model="b.name" size="small" placeholder="分支名" style="width: 100px" />
+          <el-select
+            v-model="b.workflow_id"
+            size="small"
+            filterable
+            placeholder="选择工作流"
+            style="flex: 1"
+          >
+            <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+          <el-button size="small" :icon="Delete" circle @click="d.branches.splice(i, 1)" />
+        </div>
+        <el-button
+          size="small"
+          :icon="Plus"
+          style="margin-top: 4px"
+          @click="d.branches.push({ name: '', workflow_id: null })"
+        >
+          添加分支
+        </el-button>
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="{分支名: 输出}" />
+      </el-form-item>
+      <el-alert type="info" :closable="false" show-icon>
+        各分支并发运行，输出为
+        <code>{分支名: 结果}</code>
+        的对象。
+      </el-alert>
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">
@@ -502,6 +582,24 @@ const aggFields = ref<{ name: string; value: string }[]>(
     : []
 );
 
+// 本节点引用到的输入变量（从 data 的字符串值中提取 {{var}}）
+const refVars = computed(() => {
+  const found = new Set<string>();
+  const walk = (val: any) => {
+    if (typeof val === "string") {
+      const re = /\{\{\s*([\w\u4e00-\u9fa5]+)\s*\}\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(val))) found.add(m[1]);
+    } else if (Array.isArray(val)) {
+      val.forEach(walk);
+    } else if (val && typeof val === "object") {
+      Object.values(val).forEach(walk);
+    }
+  };
+  walk(d);
+  return Array.from(found);
+});
+
 function addVar() {
   vars.value.push({ name: "", type: "string" });
 }
@@ -627,6 +725,19 @@ onMounted(async () => {
   padding: 1px 4px;
   background: var(--el-fill-color-light);
   border-radius: 3px;
+}
+
+.io-var-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.parallel-branch {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
 }
 
 .var-suggest {
