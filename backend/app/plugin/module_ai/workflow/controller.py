@@ -43,6 +43,27 @@ async def get_workflow(
     return SuccessResponse(data=data, msg="查询成功")
 
 
+@AiWorkflowRouter.get("/{workflow_id}/run-logs", summary="工作流运行历史列表")
+async def list_run_logs(
+    workflow_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiWorkflowService.list_run_logs(workflow_id), msg="查询成功"
+    )
+
+
+@AiWorkflowRouter.get("/run-log/{run_id}", summary="单次运行详情")
+async def get_run_log(
+    run_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    data = await AiWorkflowService.get_run_log(run_id)
+    if not data:
+        return ErrorResponse(msg="运行记录不存在")
+    return SuccessResponse(data=data, msg="查询成功")
+
+
 @AiWorkflowRouter.post("/create", summary="新增工作流")
 async def create_workflow(
     data: AiWorkflowCreateSchema,

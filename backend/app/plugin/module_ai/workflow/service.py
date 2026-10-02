@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from app.core.database import async_db_session
 
 from .engine import WorkflowEngine
-from .model import AiWorkflowModel, AiWorkflowVersionModel
+from .model import AiWorkflowModel, AiWorkflowRunLogModel, AiWorkflowVersionModel
 from .schema import AiWorkflowApproveSchema
 
 
@@ -211,6 +211,7 @@ class AiWorkflowService:
         t0 = time.perf_counter()
         uid = getattr(getattr(auth, "user", None), "id", None)
         user_text = last_user_text(ui_messages)
+        trace: list = []
         empty_finish = {"reply": "", "tool_calls": [], "action": None, "report_id": None}
         state: dict = {
             "assistant_text": "",
@@ -245,6 +246,11 @@ class AiWorkflowService:
             )
             async for frame in engine.run():
                 yield frame
+                if '"type": "node-status"' in frame:
+                    try:
+                        trace.append(json.loads(frame[len("data: ") :].strip()))
+                    except Exception:  # noqa: BLE001
+                        pass
 
             if state.get("halted") and state.get("pending_approval"):
                 # HITL：持久化运行状态，产出审批装载帧供前端确认后调 approve 续跑
@@ -315,6 +321,16 @@ class AiWorkflowService:
                 app_id=workflow_id,
                 user_id=uid,
             )
+            await cls._log_run(
+                workflow_id,
+                "success" if state["error"] is None and not state.get("halted") else ("pending" if state.get("halted") else "error"),
+                {"messages": ui_messages, "variables": variables or {}, "user_text": user_text},
+                {"reply": state["reply"] or state["assistant_text"], "tool_calls": state["tool_calls"]},
+                state["error"],
+                trace,
+                int((time.perf_counter() - t0) * 1000),
+                uid,
+            )
 
     @classmethod
     async def debug_node_ui_stream(
@@ -364,6 +380,81 @@ class AiWorkflowService:
             yield ms.error(f"调试失败：{e}")
             yield ms.finish()
             yield ms.done()
+
+    @classmethod
+    async def _log_run(
+        cls,
+        workflow_id: int,
+        status: str,
+        run_input: dict,
+        run_output: dict,
+        error: str | None,
+        node_trace: list,
+        duration_ms: int,
+        uid: int | None,
+    ) -> None:
+        """持久化一次工作流运行的输入/输出/报错/节点轨迹。"""
+        try:
+            async with async_db_session() as db:
+                db.add(
+                    AiWorkflowRunLogModel(
+                        workflow_id=workflow_id,
+                        status=status,
+                        run_input=run_input,
+                        run_output=run_output,
+                        error=(error or "")[:1024] or None,
+                        node_trace=node_trace,
+                        duration_ms=duration_ms,
+                        created_id=uid,
+                    )
+                )
+                await db.commit()
+        except Exception:  # noqa: BLE001 运行历史记录失败不影响主流程
+            pass
+
+    @classmethod
+    async def list_run_logs(cls, workflow_id: int, limit: int = 20) -> list[dict]:
+        """按时间倒序返回某工作流的运行历史（不含节点轨迹，保持轻量）。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiWorkflowRunLogModel)
+                    .where(AiWorkflowRunLogModel.workflow_id == workflow_id)
+                    .order_by(AiWorkflowRunLogModel.id.desc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+        return [
+            {
+                "id": r.id,
+                "status": r.status,
+                "run_input": r.run_input,
+                "run_output": r.run_output,
+                "error": r.error,
+                "duration_ms": r.duration_ms,
+                "created_time": r.created_time,
+            }
+            for r in rows
+        ]
+
+    @classmethod
+    async def get_run_log(cls, run_id: int) -> dict | None:
+        """取单次运行完整记录（含节点轨迹）。"""
+        async with async_db_session() as db:
+            r = await db.get(AiWorkflowRunLogModel, run_id)
+        if not r:
+            return None
+        return {
+            "id": r.id,
+            "workflow_id": r.workflow_id,
+            "status": r.status,
+            "run_input": r.run_input,
+            "run_output": r.run_output,
+            "error": r.error,
+            "node_trace": r.node_trace,
+            "duration_ms": r.duration_ms,
+            "created_time": r.created_time,
+        }
 
     @staticmethod
     async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:

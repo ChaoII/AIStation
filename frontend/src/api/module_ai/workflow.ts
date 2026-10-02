@@ -38,3 +38,12 @@ export function rollbackAiWorkflowVersion(id: number, versionId: number) {
 export function publishAiWorkflowVersion(id: number, versionId: number) {
   return request({ url: `${API_PATH}/${id}/versions/${versionId}/publish`, method: "post" });
 }
+
+// ---------- 运行历史 ----------
+export function listAiWorkflowRunLogs(id: number) {
+  return request({ url: `${API_PATH}/${id}/run-logs`, method: "get" });
+}
+
+export function getAiWorkflowRunLog(runId: number) {
+  return request({ url: `${API_PATH}/run-log/${runId}`, method: "get" });
+}

@@ -1,3 +1,4 @@
+
 """AI 低代码工作流：CRUD、流式运行（start→llm→end）与条件分支。"""
 import json
 import re
@@ -1369,5 +1370,33 @@ def test_workflow_debug_node(test_client, auth_headers):
         assert "结果:你好" in r.text
         assert '"input":' in r.text and '"output":' in r.text
         assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_run_logs(test_client, auth_headers):
+    """运行后应生成运行历史记录，可列表查询。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "tpl", "type": "template", "data": {"template": "Hi {{q}}", "output_variable": "out"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{out}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "tpl"},
+                      {"id": "e2", "source": "tpl", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}],
+                  "variables": {"q": "你好"}},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "data: [DONE]" in r.text
+        logs = test_client.get(f"/api/v1/ai/workflows/{wf}/run-logs", headers=auth_headers).json()["data"]
+        assert logs, "应有运行历史记录"
+        assert logs[0]["status"] == "success"
+        detail = test_client.get(f"/api/v1/ai/workflows/run-log/{logs[0]['id']}", headers=auth_headers).json()["data"]
+        assert detail and detail["node_trace"]
     finally:
         _delete_wf(test_client, auth_headers, [wf])

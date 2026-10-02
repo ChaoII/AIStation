@@ -120,6 +120,14 @@
                   >
                     版本
                   </el-button>
+                  <el-button
+                    size="small"
+                    :icon="Tickets"
+                    :disabled="!workflowId"
+                    @click="openRunHistory"
+                  >
+                    历史
+                  </el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
                     运行
                   </el-button>
@@ -358,6 +366,72 @@
       </template>
     </el-dialog>
 
+    <!-- 运行历史弹窗 -->
+    <el-dialog v-model="historyVisible" title="运行历史" width="760px" append-to-body>
+      <el-table
+        v-loading="historyLoading"
+        :data="runHistoryList"
+        size="small"
+        border
+        max-height="420"
+      >
+        <el-table-column label="时间" width="180">
+          <template #default="{ row }">{{ formatTime(row.created_time) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              :type="
+                row.status === 'success' ? 'success' : row.status === 'error' ? 'danger' : 'warning'
+              "
+            >
+              {{ row.status === "success" ? "成功" : row.status === "error" ? "失败" : "审批中" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="耗时" width="90" prop="duration_ms" />
+        <el-table-column label="输出预览">
+          <template #default="{ row }">
+            <span class="history-preview">{{ previewText(row.run_output) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="" width="70">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openRunDetail(row.id)">
+              详情
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="runDetail" class="history-detail">
+        <div class="history-detail__title">节点执行过程</div>
+        <div v-for="(tr, i) in runDetail.node_trace || []" :key="i" class="history-detail__item">
+          <div class="hd-head">
+            <span class="hd-label">{{ tr.label }}</span>
+            <el-tag
+              size="small"
+              :type="
+                tr.status === 'success' ? 'success' : tr.status === 'error' ? 'danger' : 'primary'
+              "
+            >
+              {{ tr.status === "success" ? "完成" : tr.status === "error" ? "失败" : "执行中" }}
+            </el-tag>
+          </div>
+          <div v-if="tr.error" class="hd-err">{{ tr.error }}</div>
+          <div v-if="tr.input && Object.keys(tr.input).length" class="hd-kv">
+            <span class="hd-kv-t">输入</span>
+            <pre class="hd-pre">{{ formatJson(tr.input) }}</pre>
+          </div>
+          <div v-if="tr.output != null" class="hd-kv">
+            <span class="hd-kv-t">输出</span>
+            <pre class="hd-pre">{{ formatJson(tr.output) }}</pre>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 版本管理弹窗 -->
     <el-dialog v-model="versionsVisible" title="版本管理" width="680px" append-to-body>
       <div class="version-save-row">
@@ -449,6 +523,8 @@ import {
   listAiWorkflowVersions,
   rollbackAiWorkflowVersion,
   publishAiWorkflowVersion,
+  listAiWorkflowRunLogs,
+  getAiWorkflowRunLog,
 } from "@/api/module_ai/workflow";
 import { Auth } from "@/utils/auth";
 
@@ -699,6 +775,40 @@ async function runNodeDebug() {
   } finally {
     debugRunning.value = false;
   }
+}
+
+// ---------- 运行历史 ----------
+const historyVisible = ref(false);
+const historyLoading = ref(false);
+const runHistoryList = ref<any[]>([]);
+const runDetail = ref<any>(null);
+async function openRunHistory() {
+  if (!workflowId.value) return;
+  historyVisible.value = true;
+  historyLoading.value = true;
+  runDetail.value = null;
+  try {
+    const res = await listAiWorkflowRunLogs(workflowId.value);
+    runHistoryList.value = res.data?.data || [];
+  } catch {
+    runHistoryList.value = [];
+  } finally {
+    historyLoading.value = false;
+  }
+}
+async function openRunDetail(id: number) {
+  const res = await getAiWorkflowRunLog(id);
+  runDetail.value = res.data?.data || null;
+}
+function previewText(out: any): string {
+  if (!out) return "";
+  const reply = out.reply ?? out;
+  const s = typeof reply === "string" ? reply : JSON.stringify(reply);
+  return s.length > 80 ? s.slice(0, 80) + "…" : s;
+}
+function formatTime(t: any): string {
+  if (!t) return "-";
+  return String(t).replace("T", " ").slice(0, 19);
 }
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
@@ -1698,7 +1808,6 @@ async function handleApprove(decision: "approve" | "reject") {
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
-
   .debug-result__title {
     font-size: 12px;
     font-weight: 600;
@@ -1719,6 +1828,63 @@ async function handleApprove(decision: "approve" | "reject") {
 
     &.is-err {
       color: var(--el-color-danger);
+    }
+  }
+}
+
+.history-preview {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.history-detail {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+
+  .history-detail__title {
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  .history-detail__item {
+    padding: 8px 0;
+    border-top: 1px dashed var(--el-border-color-lighter);
+
+    .hd-head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .hd-label {
+      font-weight: 600;
+    }
+
+    .hd-err {
+      margin: 4px 0 0;
+      color: var(--el-color-danger);
+      font-size: 12px;
+    }
+
+    .hd-kv {
+      margin-top: 4px;
+
+      .hd-kv-t {
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
+      }
+
+      .hd-pre {
+        margin: 4px 0 0;
+        max-height: 140px;
+        overflow: auto;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
     }
   }
 }
