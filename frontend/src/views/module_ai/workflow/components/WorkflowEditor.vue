@@ -210,16 +210,28 @@
       <div v-if="runTrace.length" class="run-trace">
         <div class="run-trace__title">执行过程</div>
         <div class="run-trace__list">
-          <div
-            v-for="(t, i) in runTrace"
-            :key="i"
-            class="run-trace__item"
-            :class="`is-${t.status}`"
-          >
-            <span class="run-trace__dot" />
-            <span class="run-trace__label">{{ t.label }}</span>
-            <span class="run-trace__status">{{ statusText(t.status) }}</span>
-            <span v-if="t.error" class="run-trace__err">{{ t.error }}</span>
+          <div v-for="(t, i) in runTrace" :key="i" class="run-trace__item-wrap">
+            <div class="run-trace__item" :class="`is-${t.status}`" @click="toggleTrace(i)">
+              <span class="run-trace__chev">{{ traceDetail[i] ? "▾" : "▸" }}</span>
+              <span class="run-trace__dot" />
+              <span class="run-trace__label">{{ t.label }}</span>
+              <span class="run-trace__status">{{ statusText(t.status) }}</span>
+              <span v-if="t.error" class="run-trace__err">{{ t.error }}</span>
+            </div>
+            <div v-if="traceDetail[i]" class="run-trace__detail">
+              <div v-if="t.input && Object.keys(t.input).length" class="run-trace__kv">
+                <div class="kv-title">输入</div>
+                <pre class="kv-body">{{ formatJson(t.input) }}</pre>
+              </div>
+              <div v-if="t.output != null" class="run-trace__kv">
+                <div class="kv-title">输出</div>
+                <pre class="kv-body">{{ formatJson(t.output) }}</pre>
+              </div>
+              <div v-if="t.error" class="run-trace__kv">
+                <div class="kv-title">错误</div>
+                <pre class="kv-body is-err">{{ t.error }}</pre>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -362,9 +374,65 @@ const defaultEdgeOptions: DefaultEdgeOptions = {
 };
 
 // 连接事件：由 useVueFlow 注册处理器
+// 连线自动填充：连上后让下游「输出类/模板」节点自动引用上游输出变量
+const AUTO_OUTPUT_VAR: Record<string, string> = {
+  llm: "llm_output",
+  code: "code_output",
+  tool: "tool_output",
+  http: "http_output",
+  knowledge: "kb_context",
+  template: "template_output",
+  variable_aggregator: "aggregated",
+  sub_workflow: "workflow_output",
+  agent: "agent_output",
+  loop: "loop_output",
+  parallel: "parallel_output",
+  doc_extractor: "doc_output",
+  web_search: "web_output",
+  database: "db_rows",
+  condition: "condition_result",
+  classifier: "classifier_result",
+  extractor: "extractor_result",
+  answer: "answer_output",
+};
+const AUTO_PRIMARY_FIELD: Record<string, string> = {
+  end: "output_template",
+  answer: "output_template",
+  template: "template",
+  llm: "prompt",
+};
+
+function ensureOutputVar(s: Node): string | null {
+  const base = AUTO_OUTPUT_VAR[s.type as string];
+  if (!base) return null;
+  if (s.data?.output_variable) return s.data.output_variable;
+  let name = base;
+  let i = 2;
+  const used = new Set(
+    nodes.value.map((n) => n.data?.output_variable).filter((v): v is string => !!v)
+  );
+  while (used.has(name)) name = `${base}_${i++}`;
+  s.data = { ...(s.data || {}), output_variable: name };
+  return name;
+}
+
+function autoFillOnConnect(conn: { source: string; target: string }) {
+  const s = nodes.value.find((n) => n.id === conn.source);
+  const t = nodes.value.find((n) => n.id === conn.target);
+  if (!s || !t) return;
+  const field = AUTO_PRIMARY_FIELD[t.type as string];
+  if (!field) return;
+  const varName = ensureOutputVar(s);
+  if (!varName) return;
+  const cur = t.data?.[field];
+  if (cur && String(cur).trim()) return; // 已有内容不覆盖
+  t.data = { ...(t.data || {}), [field]: `{{${varName}}}` };
+}
+
 onConnect((conn) => {
   pushHistory();
   addEdges({ ...conn, type: defaultEdgeOptions.type, animated: true });
+  autoFillOnConnect(conn);
 });
 
 const formData = reactive<{ name: string; description: string }>({ name: "", description: "" });
@@ -384,7 +452,14 @@ const approving = ref(false);
 // 调试执行追踪：按序记录各节点状态/输出，并高亮画布节点
 const nodeRunStates = ref<Record<string, string>>({});
 const runTrace = ref<
-  { nodeId: string; status: string; label: string; output?: any; error?: string }[]
+  {
+    nodeId: string;
+    status: string;
+    label: string;
+    input?: any;
+    output?: any;
+    error?: string;
+  }[]
 >([]);
 
 function resetRunTrace() {
@@ -403,6 +478,7 @@ function onNodeStatus(ns: any) {
     n.data = {
       ...(n.data || {}),
       __runStatus: status,
+      __runInput: ns.input,
       __runOutput: ns.output,
       __runError: ns.error,
     };
@@ -411,6 +487,7 @@ function onNodeStatus(ns: any) {
     nodeId: ns.nodeId,
     status,
     label: ns.label || ns.nodeId,
+    input: ns.input,
     output: ns.output,
     error: ns.error,
   });
@@ -418,6 +495,21 @@ function onNodeStatus(ns: any) {
 
 function statusText(s: string) {
   return s === "running" ? "执行中" : s === "error" ? "失败" : "完成";
+}
+
+// 执行过程展开详情（输入/输出/报错）
+const traceDetail = ref<Record<number, boolean>>({});
+function toggleTrace(i: number) {
+  traceDetail.value[i] = !traceDetail.value[i];
+}
+function formatJson(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
 }
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
@@ -1185,6 +1277,51 @@ async function handleApprove(decision: "approve" | "reject") {
     .run-trace__err {
       color: var(--el-color-danger);
       font-size: 12px;
+    }
+  }
+
+  .run-trace__item {
+    cursor: pointer;
+    user-select: none;
+
+    .run-trace__chev {
+      color: var(--el-text-color-secondary);
+      font-size: 11px;
+    }
+  }
+
+  .run-trace__detail {
+    margin: 4px 0 8px 20px;
+    padding: 8px 10px;
+    background: #fff;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+
+    .run-trace__kv {
+      + .run-trace__kv {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--el-border-color-lighter);
+      }
+
+      .kv-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--el-text-color-secondary);
+      }
+
+      .kv-body {
+        margin: 4px 0 0;
+        max-height: 160px;
+        overflow: auto;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+
+        &.is-err {
+          color: var(--el-color-danger);
+        }
+      }
     }
   }
 }

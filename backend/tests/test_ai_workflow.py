@@ -1102,6 +1102,8 @@ def test_answer_node(test_client, auth_headers):
         assert '"type": "text-delta"' in r.text
         assert '"type": "node-status"' in r.text
         assert '"status": "success"' in r.text
+        assert '"input":' in r.text
+        assert '"output":' in r.text
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wid])

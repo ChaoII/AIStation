@@ -154,6 +154,28 @@ class WorkflowEngine:
             return self.variables.get(val["__var__"])
         return val
 
+    def _node_input(self, node: dict) -> dict:
+        """采集节点输入：解析 data 中引用到的变量，生成「输入」快照供前端展示。
+
+        仅保留含 ``{{变量}}`` 的字符串字段的解析结果，避免把整份配置原样透出。
+        """
+        data = node.get("data") or {}
+        resolved: dict = {}
+
+        def _walk(val: Any, key: str) -> None:
+            if isinstance(val, str):
+                if "{{" in val:
+                    resolved[key] = self._render(val)
+            elif isinstance(val, dict):
+                for k, v in val.items():
+                    _walk(v, f"{key}.{k}" if key else k)
+            elif isinstance(val, list):
+                for i, v in enumerate(val):
+                    _walk(v, f"{key}[{i}]" if key else str(i))
+
+        _walk(data, "")
+        return _snapshot(resolved, limit=800)
+
     # ------------------------------------------------------------------ #
     # 各节点实现
     # ------------------------------------------------------------------ #
@@ -1159,7 +1181,7 @@ class WorkflowEngine:
             node = self._node(node_id)
             ntype = node.get("type") or "start"
             label = _NODE_LABELS.get(ntype, ntype)
-            yield self.ms.node_status(node_id, "running", label)
+            yield self.ms.node_status(node_id, "running", label, input=self._node_input(node))
             try:
                 if ntype == "start":
                     await self._exec_start(node)
@@ -1172,7 +1194,7 @@ class WorkflowEngine:
                     # HITL：LLM 节点挂起等待审批时停止后续节点执行
                     if self.state.get("halted"):
                         yield self.ms.node_status(
-                            node_id, "success", label, output=_snapshot(self.outputs.get(node_id))
+                            node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id))
                         )
                         visited.add(node_id)
                         break
@@ -1288,11 +1310,11 @@ class WorkflowEngine:
                 elif ntype == "end":
                     await self._exec_end(node)
             except Exception as e:  # noqa: BLE001
-                yield self.ms.node_status(node_id, "error", label, error=str(e))
+                yield self.ms.node_status(node_id, "error", label, error=str(e), input=self._node_input(node))
                 self.state["error"] = str(e)
                 yield self.ms.error(str(e))
                 break
             yield self.ms.node_status(
-                node_id, "success", label, output=_snapshot(self.outputs.get(node_id))
+                node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id))
             )
             visited.add(node_id)

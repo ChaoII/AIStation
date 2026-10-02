@@ -127,14 +127,16 @@ class UiMessageStream:
         label: str = "",
         output: object | None = None,
         error: str | None = None,
+        input: object | None = None,
     ) -> str:
-        """节点执行状态帧：前端据此高亮进行中的节点并展示各节点输出。"""
+        """节点执行状态帧：前端据此高亮进行中的节点并展示各节点输入/输出/报错。"""
         return _frame(
             {
                 "type": "node-status",
                 "nodeId": node_id,
                 "status": status,  # running / success / error
                 "label": label,
+                "input": input,
                 "output": output,
                 "error": error,
             }

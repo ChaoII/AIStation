@@ -22,6 +22,7 @@
       <el-icon class="wf-node__icon" :color="def.color"><component :is="def.icon" /></el-icon>
       <span class="wf-node__label">{{ def.label }}</span>
       <span v-if="def.type === 'condition'" class="wf-node__branch-tag">分支</span>
+      <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
     </div>
     <div class="wf-node__body">
       <template v-if="def.type === 'start'">
@@ -257,6 +258,19 @@ const def = computed(() => {
   &.is-err {
     border-color: var(--el-color-danger);
     box-shadow: 0 0 0 2px rgba(245, 108, 108, 0.2);
+  }
+
+  .wf-node__err-badge {
+    margin-left: auto;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    font-size: 11px;
+    color: #fff;
+    background: var(--el-color-danger);
+    border-radius: 50%;
+    cursor: help;
   }
 
   .wf-node__head {

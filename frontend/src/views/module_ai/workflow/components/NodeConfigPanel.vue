@@ -503,7 +503,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from "vue";
+import { ref, reactive, watch, onMounted, computed } from "vue";
 import { Plus, Delete, MagicStick } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import type { Node } from "@vue-flow/core";
@@ -602,33 +602,57 @@ function varToken(name: string) {
   return `{{${name}}}`;
 }
 
-const type = props.node.type || "llm";
+const type = computed(() => props.node.type || "llm");
 const d = reactive<Record<string, any>>({ ...((props.node.data || {}) as any) });
 // start 变量用本地数组代理（避免直接改 reactive 复杂结构）
-const vars = ref<Array<{ name: string; type: string }>>(
-  (d.variables || []).map((v: any) => ({ name: v.name || "", type: v.type || "string" }))
-);
-const argsText = ref(
-  d.args && typeof d.args === "object" ? JSON.stringify(d.args, null, 0) : d.args || ""
-);
-const codeInputsText = ref(
-  d.inputs && typeof d.inputs === "object" ? JSON.stringify(d.inputs, null, 0) : d.inputs || ""
-);
-const headersText = ref(
-  d.headers && typeof d.headers === "object" ? JSON.stringify(d.headers, null, 0) : d.headers || ""
-);
-const bodyText = ref(
-  d.body && typeof d.body === "object" ? JSON.stringify(d.body, null, 0) : d.body || ""
-);
-const itemsText = ref(Array.isArray(d.items) ? JSON.stringify(d.items, null, 0) : d.items || "");
-const iterArgsText = ref(
-  d.args && typeof d.args === "object" ? JSON.stringify(d.args, null, 0) : d.args || ""
-);
-const categoriesText = ref(
-  Array.isArray(d.categories) ? d.categories.join(", ") : d.categories || ""
-);
-const schemaText = ref(
-  Array.isArray(d.schema) ? JSON.stringify(d.schema, null, 0) : d.schema || ""
+const vars = ref<Array<{ name: string; type: string }>>([]);
+const argsText = ref("");
+const codeInputsText = ref("");
+const headersText = ref("");
+const bodyText = ref("");
+const itemsText = ref("");
+const iterArgsText = ref("");
+const categoriesText = ref("");
+const schemaText = ref("");
+const aggFields = ref<{ name: string; value: string }[]>([]);
+
+function _jsonText(v: any): string {
+  return v && typeof v === "object" ? JSON.stringify(v, null, 0) : v || "";
+}
+
+// 切换到新节点时重设表单（组件复用不重挂载，必须显式同步）
+function syncFromNode() {
+  const nd = props.node;
+  if (!nd) return;
+  const data = (nd.data || {}) as any;
+  Object.keys(d).forEach((k) => delete d[k]);
+  Object.assign(d, data);
+  vars.value = (data.variables || []).map((v: any) => ({
+    name: v.name || "",
+    type: v.type || "string",
+  }));
+  argsText.value = _jsonText(data.args);
+  codeInputsText.value = _jsonText(data.inputs);
+  headersText.value = _jsonText(data.headers);
+  bodyText.value = _jsonText(data.body);
+  itemsText.value = Array.isArray(data.items)
+    ? JSON.stringify(data.items, null, 0)
+    : data.items || "";
+  iterArgsText.value = _jsonText(data.args);
+  categoriesText.value = Array.isArray(data.categories)
+    ? data.categories.join(", ")
+    : data.categories || "";
+  schemaText.value = Array.isArray(data.schema)
+    ? JSON.stringify(data.schema, null, 0)
+    : data.schema || "";
+  aggFields.value = Array.isArray(data.fields)
+    ? data.fields.map((f: any) => ({ name: f.name || "", value: f.value || "" }))
+    : [];
+}
+syncFromNode();
+watch(
+  () => props.node,
+  () => syncFromNode()
 );
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
@@ -636,11 +660,6 @@ const toolOptions = ref<{ id: number; name: string }[]>([]);
 const kbOptions = ref<{ id: number; name: string }[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const agentOptions = ref<{ id: number; agent_name: string }[]>([]);
-const aggFields = ref<{ name: string; value: string }[]>(
-  Array.isArray(d.fields)
-    ? d.fields.map((f: any) => ({ name: f.name || "", value: f.value || "" }))
-    : []
-);
 
 // 本节点引用到的输入变量（从 data 的字符串值中提取 {{var}}）
 const refVars = computed(() => {
@@ -666,22 +685,22 @@ function addVar() {
 
 function emitChange() {
   const data: Record<string, any> = { ...d };
-  if (type === "start") data.variables = vars.value;
-  if (type === "tool") {
+  if (type.value === "start") data.variables = vars.value;
+  if (type.value === "tool") {
     try {
       data.args = argsText.value ? JSON.parse(argsText.value) : {};
     } catch {
       data.args = {};
     }
   }
-  if (type === "code") {
+  if (type.value === "code") {
     try {
       data.inputs = codeInputsText.value ? JSON.parse(codeInputsText.value) : {};
     } catch {
       data.inputs = {};
     }
   }
-  if (type === "http") {
+  if (type.value === "http") {
     try {
       data.headers = headersText.value ? JSON.parse(headersText.value) : {};
     } catch {
@@ -693,7 +712,7 @@ function emitChange() {
       data.body = {};
     }
   }
-  if (type === "iteration") {
+  if (type.value === "iteration") {
     try {
       const v: any = itemsText.value ? JSON.parse(itemsText.value) : [];
       data.items = Array.isArray(v) ? v : v;
@@ -706,13 +725,13 @@ function emitChange() {
       data.args = {};
     }
   }
-  if (type === "classifier") {
+  if (type.value === "classifier") {
     data.categories = (categoriesText.value || "")
       .split(/[,，\n]/)
       .map((s: string) => s.trim())
       .filter(Boolean);
   }
-  if (type === "extractor") {
+  if (type.value === "extractor") {
     try {
       const v: any = schemaText.value ? JSON.parse(schemaText.value) : [];
       data.schema = Array.isArray(v) ? v : [];
@@ -720,7 +739,7 @@ function emitChange() {
       data.schema = [];
     }
   }
-  if (type === "variable_aggregator") {
+  if (type.value === "variable_aggregator") {
     data.fields = aggFields.value
       .map((f) => ({ name: f.name, value: f.value }))
       .filter((f) => f.name);
