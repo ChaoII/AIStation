@@ -159,12 +159,30 @@ class AiKnowledgeService:
     # 入库 / 检索
     # ------------------------------------------------------------ #
     @classmethod
+    async def _kb_model_id(cls, kb_ids: list[int]) -> int | None:
+        """取目标知识库的嵌入模型 ID（取最小 id 的一个，保证检索与入库同模型）。"""
+        if not kb_ids:
+            return None
+        async with async_db_session() as db:
+            b = await db.scalar(
+                select(AiKnowledgeBaseModel)
+                .where(
+                    AiKnowledgeBaseModel.id.in_(kb_ids),
+                    AiKnowledgeBaseModel.is_deleted.is_(False),
+                )
+                .order_by(AiKnowledgeBaseModel.id.asc())
+                .limit(1)
+            )
+            return b.model_id if b else None
+
+    @classmethod
     async def ingest(cls, kb_id: int, data, auth) -> dict:
         """文本 → 分块 → 向量化 → 入库，返回写入分块数。"""
         chunks = chunk_text(data.content, data.chunk_size, data.overlap)
         if not chunks:
             return {"chunks": 0}
-        vectors = await embedding.embed_texts(chunks, model_id=None)
+        model_id = await cls._kb_model_id([kb_id])
+        vectors = await embedding.embed_texts(chunks, model_id=model_id)
         saved = 0
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
@@ -199,7 +217,7 @@ class AiKnowledgeService:
         """在指定知识库内做余弦检索，返回 top_k 分块。"""
         if not kb_ids or not query:
             return []
-        qvec = (await embedding.embed_texts([query]))[0]
+        qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
         async with async_db_session() as db:
             rows = (
                 await db.execute(
@@ -401,7 +419,7 @@ class AiKnowledgeService:
         chunks = chunk_text(text)
         if not chunks:
             return 0
-        vectors = await embedding.embed_texts(chunks)
+        vectors = await embedding.embed_texts(chunks, model_id=await cls._kb_model_id([kb_id]))
         async with async_db_session.begin() as db:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if not b:
