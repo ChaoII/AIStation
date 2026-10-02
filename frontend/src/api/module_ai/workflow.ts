@@ -47,3 +47,7 @@ export function listAiWorkflowRunLogs(id: number) {
 export function getAiWorkflowRunLog(runId: number) {
   return request({ url: `${API_PATH}/run-log/${runId}`, method: "get" });
 }
+
+export function getAiWorkflowStats(id: number) {
+  return request({ url: `${API_PATH}/${id}/stats`, method: "get" });
+}

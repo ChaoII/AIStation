@@ -571,6 +571,35 @@ class AiWorkflowService:
             "created_time": r.created_time,
         }
 
+    @classmethod
+    async def get_workflow_stats(cls, workflow_id: int) -> dict:
+        """聚合某工作流的运行统计（次数/成功率/耗时）。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(
+                        AiWorkflowRunLogModel.status,
+                        AiWorkflowRunLogModel.duration_ms,
+                    ).where(AiWorkflowRunLogModel.workflow_id == workflow_id)
+                )
+            ).all()
+        statuses = [r.status for r in rows]
+        durs = [r.duration_ms or 0 for r in rows]
+        n = len(statuses)
+        success = statuses.count("success")
+        error = statuses.count("error")
+        pending = statuses.count("pending")
+        return {
+            "total": n,
+            "success": success,
+            "error": error,
+            "pending": pending,
+            "success_rate": round(success / n * 100, 1) if n else 0,
+            "avg_ms": round(sum(durs) / n) if n else 0,
+            "min_ms": min(durs) if durs else 0,
+            "max_ms": max(durs) if durs else 0,
+        }
+
     @staticmethod
     async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:
         """把挂起的运行状态写入 Redis（供审批续跑读取）。"""

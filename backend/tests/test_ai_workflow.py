@@ -1495,3 +1495,25 @@ def test_workflow_condition_and_or(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_stats(test_client, auth_headers):
+    """工作流运行统计聚合。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "end", "type": "end", "data": {"output_template": "ok"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        s = test_client.get(f"/api/v1/ai/workflows/{wf}/stats", headers=auth_headers).json()["data"]
+        assert s["total"] >= 1
+        assert s["success"] >= 1
+        assert "success_rate" in s and "avg_ms" in s
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

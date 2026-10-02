@@ -131,6 +131,14 @@
                   >
                     历史
                   </el-button>
+                  <el-button
+                    size="small"
+                    :icon="DataAnalysis"
+                    :disabled="!workflowId"
+                    @click="openStats"
+                  >
+                    统计
+                  </el-button>
                   <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
                   <el-button size="small" :icon="Upload" @click="triggerImport">导入</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
@@ -540,6 +548,27 @@
       </div>
     </el-dialog>
 
+    <!-- 运行统计抽屉 -->
+    <el-drawer v-model="statsVisible" title="工作流运行统计" size="420px" append-to-body>
+      <div v-loading="statsLoading" class="stats-panel">
+        <div class="stats-cards">
+          <el-statistic title="总运行" :value="stats.total" />
+          <el-statistic title="成功率" :value="stats.success_rate" suffix="%" />
+          <el-statistic title="平均耗时" :value="stats.avg_ms" suffix="ms" />
+        </div>
+        <div class="stats-cards">
+          <el-statistic title="成功" :value="stats.success" />
+          <el-statistic title="失败" :value="stats.error" />
+          <el-statistic title="审批中" :value="stats.pending" />
+        </div>
+        <el-descriptions :column="1" border size="small" class="stats-detail">
+          <el-descriptions-item label="最短耗时">{{ stats.min_ms }} ms</el-descriptions-item>
+          <el-descriptions-item label="最长耗时">{{ stats.max_ms }} ms</el-descriptions-item>
+        </el-descriptions>
+        <el-empty v-if="!stats.total" description="暂无运行记录" />
+      </div>
+    </el-drawer>
+
     <!-- 版本管理弹窗 -->
     <el-dialog v-model="versionsVisible" title="版本管理" width="680px" append-to-body>
       <div class="version-save-row">
@@ -612,6 +641,7 @@ import {
   Upload,
   Delete,
   ArrowRight,
+  DataAnalysis,
   Operation,
   SwitchFilled,
   DataLine,
@@ -654,6 +684,7 @@ import {
   publishAiWorkflowVersion,
   listAiWorkflowRunLogs,
   getAiWorkflowRunLog,
+  getAiWorkflowStats,
 } from "@/api/module_ai/workflow";
 import { Auth } from "@/utils/auth";
 
@@ -924,6 +955,41 @@ const historyVisible = ref(false);
 const historyLoading = ref(false);
 const runHistoryList = ref<any[]>([]);
 const runDetail = ref<any>(null);
+const statsVisible = ref(false);
+const statsLoading = ref(false);
+const stats = ref<{
+  total: number;
+  success: number;
+  error: number;
+  pending: number;
+  success_rate: number;
+  avg_ms: number;
+  min_ms: number;
+  max_ms: number;
+}>({
+  total: 0,
+  success: 0,
+  error: 0,
+  pending: 0,
+  success_rate: 0,
+  avg_ms: 0,
+  min_ms: 0,
+  max_ms: 0,
+});
+async function openStats() {
+  if (!workflowId.value) return;
+  statsVisible.value = true;
+  statsLoading.value = true;
+  try {
+    const res = await getAiWorkflowStats(workflowId.value);
+    const d = res.data?.data;
+    if (d) stats.value = { ...stats.value, ...d };
+  } catch {
+    // ignore
+  } finally {
+    statsLoading.value = false;
+  }
+}
 const historyStats = computed(() => {
   const list = runHistoryList.value;
   const success = list.filter((r) => r.status === "success").length;
@@ -2665,6 +2731,17 @@ async function handleApprove(decision: "approve" | "reject") {
   z-index: 3000;
 }
 
+.stats-panel {
+  .stats-cards {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .stats-detail {
+    margin-top: 4px;
+  }
+}
 .ctx-menu {
   position: fixed;
   min-width: 140px;
