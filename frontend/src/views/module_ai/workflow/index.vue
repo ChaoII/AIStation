@@ -63,6 +63,15 @@
                 复制
               </el-button>
               <el-button
+                v-hasPerm="['module_ai:workflow:update']"
+                link
+                type="warning"
+                size="small"
+                @click="handleToggleEnable(row)"
+              >
+                {{ row.enabled ? "停用" : "启用" }}
+              </el-button>
+              <el-button
                 v-hasPerm="['module_ai:workflow:delete']"
                 link
                 type="danger"
@@ -91,7 +100,12 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
-import { getAiWorkflowList, deleteAiWorkflow, createAiWorkflow } from "@/api/module_ai/workflow";
+import {
+  getAiWorkflowList,
+  deleteAiWorkflow,
+  createAiWorkflow,
+  updateAiWorkflow,
+} from "@/api/module_ai/workflow";
 import WorkflowEditor from "./components/WorkflowEditor.vue";
 
 defineOptions({ name: "AiWorkflow" });
@@ -149,6 +163,12 @@ async function handleCopy(row: any) {
     .catch(() => {
       /* 取消 */
     });
+}
+
+async function handleToggleEnable(row: any) {
+  await updateAiWorkflow(row.id, { enabled: !row.enabled });
+  ElMessage.success(row.enabled ? "已停用" : "已启用");
+  refreshList();
 }
 
 function handleDelete(row: any) {
