@@ -51,6 +51,26 @@
       <template v-else-if="def.type === 'variable'">
         <div class="wf-node__text">{{ data.name ? `${data.name} = 值` : "变量赋值" }}</div>
       </template>
+      <template v-else-if="def.type === 'http'">
+        <div class="wf-node__text">
+          {{ data.url ? `${data.method || "GET"} ${data.url}` : "HTTP 请求" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'iteration'">
+        <div class="wf-node__text">
+          {{ data.tool_name ? `遍历调用 ${data.tool_name}` : "遍历列表" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'classifier'">
+        <div class="wf-node__text">
+          {{ (data.categories || []).length ? `${data.categories.length} 类路由` : "问题分类" }}
+        </div>
+      </template>
+      <template v-else-if="def.type === 'extractor'">
+        <div class="wf-node__text">
+          {{ (data.schema || []).length ? `抽取 ${data.schema.length} 字段` : "抽取 JSON" }}
+        </div>
+      </template>
       <template v-else-if="def.type === 'end'">
         <div class="wf-node__text">{{ data.output_template ? "模板已配置" : "输出最终回复" }}</div>
       </template>
@@ -126,15 +146,34 @@ const def = computed(() => {
   --node-color: #409eff;
   position: relative;
   width: 200px;
-  padding: 8px 12px;
+  padding: 10px 12px 10px 14px;
   background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e4e7ed;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(31, 45, 61, 0.08);
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
+  cursor: pointer;
+
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--node-color);
+  }
+
+  &:hover {
+    box-shadow: 0 4px 14px rgba(31, 45, 61, 0.14);
+  }
 
   &.selected {
     border-color: var(--node-color);
-    box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-color) 25%, transparent);
   }
 
   .wf-node__head {
@@ -186,10 +225,15 @@ const def = computed(() => {
 }
 
 .wf-handle {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   background: #909399;
   border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+
+  &:hover {
+    transform: scale(1.2);
+  }
 }
 
 .wf-handle--true {

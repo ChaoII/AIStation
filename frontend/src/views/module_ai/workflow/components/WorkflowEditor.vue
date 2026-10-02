@@ -31,6 +31,7 @@
             <el-divider style="margin: 4px 0" />
             <div class="panel-section">
               <div class="section-title">节点</div>
+              <div class="palette-tip">点击或拖拽节点到画布</div>
               <el-space direction="vertical" :size="8" fill style="width: 100%">
                 <div
                   v-for="def in NODE_DEFS"
@@ -38,6 +39,7 @@
                   class="palette-item"
                   draggable="true"
                   @dragstart="onDragStart($event, def.type)"
+                  @click="onPaletteClick(def.type)"
                 >
                   <el-icon :color="def.color"><component :is="iconOf(def.type)" /></el-icon>
                   <span>{{ def.label }}</span>
@@ -68,9 +70,16 @@
                 <Background pattern-color="#aaa" :gap="16" />
                 <MiniMap pannable zoomable />
                 <Panel position="top-right" class="wf-toolbar">
+                  <el-button size="small" :icon="FullScreen" @click="fitView()">适配视图</el-button>
                   <el-button size="small" :icon="Promotion" @click="autoLayout">自动布局</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
                     运行
+                  </el-button>
+                </Panel>
+                <Panel position="bottom-center" class="wf-hint">
+                  操作：左侧点选/拖拽添加节点 → 点击节点在右侧编辑 → 拖动节点圆点连线 →
+                  <el-button link type="primary" size="small" @click="fitView()">
+                    适配视图
                   </el-button>
                 </Panel>
               </VueFlow>
@@ -212,6 +221,7 @@ import {
   Refresh,
   Filter,
   Tickets,
+  FullScreen,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -240,7 +250,8 @@ const dialogVisible = computed({
 
 const nodeTypes = markRaw<Record<string, Component>>({ __default: WorkflowNode });
 
-const { onInit, onConnect, addEdges, setNodes, screenToFlowCoordinate, addNodes } = useVueFlow();
+const { onInit, onConnect, addEdges, setNodes, screenToFlowCoordinate, addNodes, fitView } =
+  useVueFlow();
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
   type: "smoothstep",
@@ -344,6 +355,18 @@ function onDragStart(event: DragEvent, type: string) {
     event.dataTransfer.setData("application/aiworkflow", type);
     event.dataTransfer.effectAllowed = "move";
   }
+}
+
+function onPaletteClick(type: string) {
+  const position = screenToFlowCoordinate({
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2,
+  });
+  const id = `node_${Date.now()}`;
+  const node = { id, type, position, data: defaultData(type) } as Node;
+  addNodes([node]);
+  selectedNode.value = nodes.value.find((n) => n.id === id);
+  ElMessage.success(`已添加「${nodeDefOf(type).label}」节点，请在右侧编辑`);
 }
 
 function onDragOver(event: DragEvent) {
@@ -672,6 +695,12 @@ async function handleApprove(decision: "approve" | "reject") {
   }
 }
 
+.palette-tip {
+  margin: -4px 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
 .canvas-main {
   display: flex;
   flex-direction: column;
@@ -689,6 +718,15 @@ async function handleApprove(decision: "approve" | "reject") {
   padding: 8px;
   border-radius: 8px;
   box-shadow: var(--el-box-shadow-light);
+}
+
+.wf-hint {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
 }
 
 .wf-footer {
@@ -803,6 +841,27 @@ async function handleApprove(decision: "approve" | "reject") {
     font-size: var(--el-font-size-base);
     line-height: 1.5;
     color: var(--el-text-color-regular);
+  }
+}
+</style>
+
+<style lang="scss">
+/* 非 scoped：修复 Vue Flow 画布光标消失，并让节点可交互表达更清晰 */
+.ai-workflow-editor {
+  .vue-flow__pane {
+    cursor: grab;
+  }
+
+  .vue-flow__pane.dragging {
+    cursor: grabbing;
+  }
+
+  .vue-flow__node {
+    cursor: pointer;
+  }
+
+  .vue-flow__edge-path {
+    cursor: pointer;
   }
 }
 </style>
