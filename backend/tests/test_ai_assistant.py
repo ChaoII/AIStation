@@ -98,3 +98,81 @@ def test_run_assistant_tool_loop(monkeypatch):
     assert out["reply"] == "已为你打开报告页"
     assert out["action"]["type"] == "navigate"
     assert out["tool_calls"][0]["name"] == "navigate"
+
+
+def test_assistant_stream_rag(monkeypatch, test_client, auth_headers):
+    """AI 助手流式接入知识库 RAG：透出 sources 引用帧并把知识上下文注入 system。"""
+    import openai
+
+    from app.plugin.module_ai.knowledge import service as kb_service
+    from app.plugin.module_ai.provider.service import AiModelService
+
+    async def _fake_search(kb_ids, query, top_k=5):
+        return [
+            {
+                "chunk_id": 1,
+                "knowledge_base_id": 1,
+                "file_name": "doc.txt",
+                "content": "AIStation 是开源平台",
+                "score": 0.92,
+            }
+        ]
+
+    monkeypatch.setattr(kb_service.AiKnowledgeService, "search", staticmethod(_fake_search))
+
+    sent: list[dict] = []
+
+    class _Delta:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    class _Chunk:
+        def __init__(self, delta):
+            self.choices = [SimpleNamespace(delta=delta)]
+
+    class _Completions:
+        def __init__(self):
+            self.calls = 0
+
+        async def create(self, **kwargs):
+            sent.append(kwargs)
+            self.calls += 1
+
+            async def _gen():
+                yield _Chunk(_Delta(content="好的，AIStation 是开源平台。"))
+
+            return _gen()
+
+    class _Chat:
+        def __init__(self):
+            self.completions = _Completions()
+
+    class _Client:
+        def __init__(self, *a, **k):
+            self.chat = _Chat()
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _Client)
+
+    async def _runtime(usage=None):
+        return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
+
+    monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
+
+    r = test_client.post(
+        "/api/v1/ai/assistant/stream",
+        json={
+            "messages": [{"role": "user", "parts": [{"type": "text", "text": "介绍一下"}]}],
+            "knowledge_ids": [1],
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.text
+    assert '"type": "sources"' in body
+    assert "doc.txt" in body
+    assert "AIStation 是开源平台" in body
+    assert "好的，AIStation" in body
+    # 知识库上下文已作为 system 消息注入（含来源前缀）
+    sys_ctx = sent[0]["messages"][1]["content"]
+    assert "参考知识" in sys_ctx
+    assert "AIStation 是开源平台" in sys_ctx

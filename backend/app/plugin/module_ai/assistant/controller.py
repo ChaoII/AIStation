@@ -27,7 +27,7 @@ async def assistant_chat(
     t0 = time.perf_counter()
     uid = getattr(getattr(auth, "user", None), "id", None)
     try:
-        result = await run_assistant(data.message, auth)
+        result = await run_assistant(data.message, auth, data.knowledge_ids)
     except Exception as e:
         await AiOverviewService.add_log(
             "assistant", "chat", int((time.perf_counter() - t0) * 1000), "error", str(e), user_id=uid
@@ -54,7 +54,9 @@ async def assistant_stream(
         t0 = time.perf_counter()
         ok, err = True, None
         try:
-            async for item in run_assistant_ui_stream(data.messages, auth, data.session_id):
+            async for item in run_assistant_ui_stream(
+                data.messages, auth, data.session_id, data.knowledge_ids
+            ):
                 if '"type": "error"' in item:
                     ok = False
                     err = item

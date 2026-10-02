@@ -52,6 +52,36 @@ async def _call_tool(name: str, args: dict, user_id: int | None) -> object:
         return {"error": str(e)}
 
 
+async def retrieve_kb_rag(kb_ids: list[int], query: str, top_k: int = 5) -> tuple[str, list[dict]]:
+    """知识库检索（RAG）：返回 ``(注入上下文, 引用来源列表)``。
+
+    检索或模型异常时返回 ``("", [])``，对话可安全跳过 RAG。
+    """
+    try:
+        from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+        if not kb_ids or not query:
+            return "", []
+        results = await AiKnowledgeService.search(kb_ids, query, top_k)
+        if not results:
+            return "", []
+        ctx = "\n\n".join(
+            f"[来源: {r.get('file_name') or '未知'}] {r.get('content')}" for r in results
+        )
+        sources = [
+            {
+                "title": r.get("file_name") or "未知",
+                "content": (r.get("content") or "")[:200],
+                "score": r.get("score"),
+                "chunkId": r.get("chunk_id"),
+            }
+            for r in results
+        ]
+        return ctx, sources
+    except Exception:  # noqa: BLE001
+        return "", []
+
+
 async def run_agent_ui_stream(
     *,
     client,
@@ -196,7 +226,7 @@ async def run_agent_ui_stream(
     yield ms.done()
 
 
-async def run_assistant(message: str, auth) -> dict:
+async def run_assistant(message: str, auth, knowledge_ids: list[int] | None = None) -> dict:
     runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
     if not runtime:
         raise CustomException(msg="未配置大模型，请在 AI 管理→模型配置 中添加并启用")
@@ -214,10 +244,13 @@ async def run_assistant(message: str, auth) -> dict:
         ),
     )
     tool_schemas = await _load_tool_schemas()
-    messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message},
-    ]
+    kb_ctx, sources = "", []
+    if knowledge_ids:
+        kb_ctx, sources = await retrieve_kb_rag(knowledge_ids, message)
+    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if kb_ctx:
+        messages.append({"role": "system", "content": f"参考知识：\n{kb_ctx}"})
+    messages.append({"role": "user", "content": message})
     tool_log: list[dict] = []
     action = None
     report_id = None
@@ -247,6 +280,7 @@ async def run_assistant(message: str, auth) -> dict:
                 "tool_calls": tool_log,
                 "action": action,
                 "report_id": report_id,
+                "sources": sources,
             }
 
         messages.append(
@@ -289,6 +323,7 @@ async def run_assistant(message: str, auth) -> dict:
         "tool_calls": tool_log,
         "action": action,
         "report_id": report_id,
+        "sources": sources,
     }
 
 
@@ -317,7 +352,10 @@ def last_user_text(ui_messages: list[dict]) -> str:
 
 
 async def run_assistant_ui_stream(
-    ui_messages: list[dict], auth, session_id: int | None = None
+    ui_messages: list[dict],
+    auth,
+    session_id: int | None = None,
+    knowledge_ids: list[int] | None = None,
 ):
     """AI SDK UI Message Stream 版助手：reasoning/text/tool/finish 分片。
 
@@ -368,7 +406,17 @@ async def run_assistant_ui_stream(
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-assistant"
             ),
         )
+        # 知识库 RAG：检索注入上下文并透出引用来源（sources）帧
+        kb_ctx, sources = "", []
+        if knowledge_ids:
+            kb_ctx, sources = await retrieve_kb_rag(knowledge_ids, user_text)
+            if sources:
+                src = ms.sources(sources)
+                if src:
+                    yield src
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        if kb_ctx:
+            messages.append({"role": "system", "content": f"参考知识：\n{kb_ctx}"})
         messages += extract_openai_messages(ui_messages)
         tool_schemas = await _load_tool_schemas()
 
