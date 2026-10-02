@@ -65,11 +65,19 @@
                 @node-click="onNodeClick"
                 @drop="onDrop"
                 @dragover="onDragOver"
+                @node-drag-start="onNodeDragStart"
+                @node-drag-stop="onNodeDragStop"
               >
                 <Controls />
                 <Background pattern-color="#aaa" :gap="16" />
                 <MiniMap pannable zoomable />
                 <Panel position="top-right" class="wf-toolbar">
+                  <el-button size="small" :icon="RefreshLeft" :disabled="!canUndo" @click="undo">
+                    撤销
+                  </el-button>
+                  <el-button size="small" :icon="RefreshRight" :disabled="!canRedo" @click="redo">
+                    重做
+                  </el-button>
                   <el-button size="small" :icon="FullScreen" @click="fitView()">适配视图</el-button>
                   <el-button size="small" :icon="Promotion" @click="autoLayout">自动布局</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
@@ -200,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, markRaw, type Component } from "vue";
+import { ref, reactive, computed, markRaw, onMounted, onUnmounted, type Component } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Panel, VueFlow, useVueFlow } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
@@ -222,6 +230,8 @@ import {
   Filter,
   Tickets,
   FullScreen,
+  RefreshLeft,
+  RefreshRight,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import dagre from "dagre";
@@ -255,8 +265,16 @@ const nodeTypes = markRaw<Record<string, Component>>(
   ] as [string, Component][])
 );
 
-const { onInit, onConnect, addEdges, setNodes, screenToFlowCoordinate, addNodes, fitView } =
-  useVueFlow();
+const {
+  onInit,
+  onConnect,
+  addEdges,
+  setNodes,
+  setEdges,
+  screenToFlowCoordinate,
+  addNodes,
+  fitView,
+} = useVueFlow();
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
   type: "smoothstep",
@@ -266,6 +284,7 @@ const defaultEdgeOptions: DefaultEdgeOptions = {
 
 // 连接事件：由 useVueFlow 注册处理器
 onConnect((conn) => {
+  pushHistory();
   addEdges({ ...conn, type: defaultEdgeOptions.type, animated: true });
 });
 
@@ -285,6 +304,85 @@ const runApproval = ref<{ run_id: string; toolCalls: any[] } | null>(null);
 const approving = ref(false);
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
+
+// ---------- 撤销 / 重做 ----------
+type GraphSnapshot = { nodes: any[]; edges: any[] };
+const undoStack = ref<GraphSnapshot[]>([]);
+const redoStack = ref<GraphSnapshot[]>([]);
+const canUndo = computed(() => undoStack.value.length > 0);
+const canRedo = computed(() => redoStack.value.length > 0);
+let configHistoryTimer = 0;
+
+function graphSnapshot(): GraphSnapshot {
+  return {
+    nodes: JSON.parse(JSON.stringify(nodes.value)),
+    edges: JSON.parse(JSON.stringify(edges.value)),
+  };
+}
+
+function pushHistory() {
+  const snap = graphSnapshot();
+  const top = undoStack.value[undoStack.value.length - 1];
+  if (top && JSON.stringify(snap) === JSON.stringify(top)) return; // 与上一条相同则跳过
+  undoStack.value.push(snap);
+  if (undoStack.value.length > 50) undoStack.value.shift();
+  redoStack.value = [];
+}
+
+function applySnapshot(snap: GraphSnapshot) {
+  setNodes(snap.nodes);
+  setEdges(snap.edges);
+  const selId = selectedNode.value?.id;
+  selectedNode.value = snap.nodes.find((n) => n.id === selId) || undefined;
+}
+
+function undo() {
+  if (!undoStack.value.length) return;
+  redoStack.value.push(graphSnapshot());
+  const prev = undoStack.value.pop()!;
+  applySnapshot(prev);
+}
+
+function redo() {
+  if (!redoStack.value.length) return;
+  undoStack.value.push(graphSnapshot());
+  const next = redoStack.value.pop()!;
+  applySnapshot(next);
+}
+
+// 编辑节点属性时，仅在首个变更记录一次「编辑前」快照（500ms 窗口去抖）
+function scheduleHistory() {
+  if (configHistoryTimer) return;
+  pushHistory();
+  configHistoryTimer = window.setTimeout(() => {
+    configHistoryTimer = 0;
+  }, 500);
+}
+
+function onNodeDragStart() {
+  pushHistory();
+}
+function onNodeDragStop() {
+  /* 拖动结束由 drag-start 已记录一次，这里无需重复 */
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === "z" && e.shiftKey) {
+    e.preventDefault();
+    redo();
+  } else if (key === "z") {
+    e.preventDefault();
+    undo();
+  } else if (key === "y") {
+    e.preventDefault();
+    redo();
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKeydown));
+onUnmounted(() => window.removeEventListener("keydown", onKeydown));
 
 function iconOf(type: string) {
   const m: Record<WorkflowNodeType, any> = {
@@ -338,6 +436,9 @@ onInit((instance) => {
       animated: true,
     }));
   }
+  // 载入后重置撤销/重做历史
+  undoStack.value = [];
+  redoStack.value = [];
 });
 
 function onNodeClick(event: any) {
@@ -369,6 +470,7 @@ function onPaletteClick(type: string) {
   });
   const id = `node_${Date.now()}`;
   const node = { id, type, position, data: defaultData(type) } as Node;
+  pushHistory();
   addNodes([node]);
   selectedNode.value = node;
   ElMessage.success(`已添加「${nodeDefOf(type).label}」节点，请在右侧编辑`);
@@ -384,6 +486,7 @@ function onDrop(event: DragEvent) {
   if (!type) return;
   const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
   const id = `node_${Date.now()}`;
+  pushHistory();
   addNodes([
     {
       id,
@@ -427,6 +530,7 @@ function defaultData(type: string): Record<string, any> {
 
 function onNodeConfigChange(data: Record<string, any>) {
   if (!selectedNode.value) return;
+  scheduleHistory();
   selectedNode.value.data = { ...selectedNode.value.data, ...data };
 }
 
@@ -438,6 +542,7 @@ function handleDeleteNode() {
     cancelButtonText: "取消",
     type: "warning",
   }).then(() => {
+    pushHistory();
     nodes.value = nodes.value.filter((n) => n.id !== id);
     edges.value = edges.value.filter((e) => e.source !== id && e.target !== id);
     selectedNode.value = undefined;
@@ -458,6 +563,7 @@ function autoLayout() {
   nodes.value.forEach((n) => g.setNode(n.id, { width: nodeWidth, height: nodeHeight }));
   edges.value.forEach((e) => g.setEdge(e.source, e.target));
   dagre.layout(g);
+  pushHistory();
   setNodes(
     nodes.value.map((n) => {
       const p = g.node(n.id);
