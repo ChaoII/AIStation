@@ -263,6 +263,21 @@ class AiAgentService:
                         + "\n\n".join(skill_blocks)
                     )
 
+            # 注入知识库检索上下文（RAG，阶段3）
+            if agent.get("knowledge_ids"):
+                from app.plugin.module_ai.knowledge.service import retrieve as kb_retrieve
+
+                kb_context = await kb_retrieve(
+                    agent["knowledge_ids"], user_text, top_k=5
+                )
+                if kb_context:
+                    system_prompt = (
+                        f"{system_prompt}\n\n"
+                        "## 参考知识库\n"
+                        "以下是检索到的相关知识，回答时优先引用并在合适处以 [来源] 标注：\n"
+                        f"{kb_context}"
+                    )
+
             runtime = None
             if agent.get("model_id"):
                 runtime = await AiModelService.get_runtime_model(model_id=agent["model_id"])

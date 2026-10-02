@@ -664,6 +664,10 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:skill:create", "新增技能"),
     ("module_ai:skill:update", "编辑技能"),
     ("module_ai:skill:delete", "删除技能"),
+    ("module_ai:knowledge:query", "查询知识库"),
+    ("module_ai:knowledge:create", "新增知识库"),
+    ("module_ai:knowledge:update", "编辑知识库"),
+    ("module_ai:knowledge:delete", "删除知识库"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -727,10 +731,11 @@ async def _ensure_ai_menus() -> None:
                 ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11),
                 ("工作流编排", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12),
                 ("技能广场", "AiSkill", "/ai/skill", "module_ai/skill/index", "module_ai:skill:query", 13),
-                ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 14),
-                ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 15),
-                ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 16),
-                ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 17),
+                ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14),
+                ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 15),
+                ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 16),
+                ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17),
+                ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18),
             ]
             for title, rname, rpath, comp, perm, order in pages:
                 exists = await db.scalar(
