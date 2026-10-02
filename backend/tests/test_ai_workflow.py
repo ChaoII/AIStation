@@ -99,6 +99,54 @@ def test_render_template():
     assert render_template("{{未知}}", {}) == "{{未知}}"
 
 
+def test_classifier_node(monkeypatch):
+    """问题分类器：LLM 返回类别名，写入输出与变量。"""
+    import asyncio
+
+    from app.plugin.module_ai.workflow import engine as E
+
+    class _Message:
+        content = "查询"
+
+    class _Choice:
+        message = _Message()
+
+    class _Resp:
+        choices = [_Choice()]
+
+    class _Completions:
+        async def create(self, **kw):
+            return _Resp()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    async def _resolve(self, data):
+        return _Client(), {"model": "m", "temperature": 0, "max_tokens": 32}, [], None
+
+    monkeypatch.setattr(E.WorkflowEngine, "_resolve_llm_client", _resolve)
+
+    eng = E.WorkflowEngine(
+        graph={
+            "nodes": [
+                {"id": "c", "type": "classifier", "data": {"categories": ["查询", "操作"], "output_variable": "cat"}}
+            ],
+            "edges": [],
+        },
+        variables={},
+        messages=[],
+        ms=E.UiMessageStream(),
+        state={},
+    )
+    node = eng.nodes["c"]
+    asyncio.run(eng._exec_classifier(node))
+    assert eng.outputs["c"] == "查询"
+    assert eng.variables["cat"] == "查询"
+
+
 def test_workflow_run_iteration(monkeypatch, test_client, auth_headers):
     """迭代/循环节点：遍历列表，对每项调用工具并聚合为结果数组。"""
     from app.plugin.module_ai import tools_catalog as tc

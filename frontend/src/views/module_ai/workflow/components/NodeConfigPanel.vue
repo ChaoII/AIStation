@@ -203,6 +203,19 @@
       </el-form-item>
     </template>
 
+    <!-- classifier：问题分类器 -->
+    <template v-else-if="type === 'classifier'">
+      <el-form-item label="类别（逗号或换行分隔）">
+        <el-input v-model="categoriesText" type="textarea" :rows="2" placeholder="查询, 操作" />
+      </el-form-item>
+      <el-form-item label="输入（支持 {{变量}}）">
+        <el-input v-model="d.query" placeholder="如：{{query}}" />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="命中的类别" />
+      </el-form-item>
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">
@@ -249,6 +262,9 @@ const bodyText = ref(
 const itemsText = ref(Array.isArray(d.items) ? JSON.stringify(d.items, null, 0) : d.items || "");
 const iterArgsText = ref(
   d.args && typeof d.args === "object" ? JSON.stringify(d.args, null, 0) : d.args || ""
+);
+const categoriesText = ref(
+  Array.isArray(d.categories) ? d.categories.join(", ") : d.categories || ""
 );
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
@@ -301,11 +317,27 @@ function emitChange() {
       data.args = {};
     }
   }
+  if (type === "classifier") {
+    data.categories = (categoriesText.value || "")
+      .split(/[,，\n]/)
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+  }
   emit("change", data);
 }
 
 watch(
-  [d, vars, argsText, codeInputsText, headersText, bodyText, itemsText, iterArgsText],
+  [
+    d,
+    vars,
+    argsText,
+    codeInputsText,
+    headersText,
+    bodyText,
+    itemsText,
+    iterArgsText,
+    categoriesText,
+  ],
   emitChange,
   { deep: true }
 );

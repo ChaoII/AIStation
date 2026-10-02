@@ -12,6 +12,7 @@ export type WorkflowNodeType =
   | "variable"
   | "http"
   | "iteration"
+  | "classifier"
   | "end";
 
 export interface NodeDef {
@@ -73,6 +74,13 @@ export const NODE_DEFS: NodeDef[] = [
     label: "迭代/批量",
     color: "#ff9800",
     desc: "遍历列表并调用工具聚合",
+    branch: false,
+  },
+  {
+    type: "classifier",
+    label: "问题分类器",
+    color: "#3f8cff",
+    desc: "LLM 归类并按类别路由",
     branch: false,
   },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },

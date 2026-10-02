@@ -607,6 +607,44 @@ class WorkflowEngine:
         if out_var:
             self.variables[out_var] = results
 
+    async def _exec_classifier(self, node: dict) -> None:
+        """问题分类器：LLM 把输入归类到预设类别，并按类别路由到对应分支。
+
+        命中类别后写 ``output_variable``，执行器按 ``sourceHandle == 类别`` 选边。
+        """
+        data = node.get("data") or {}
+        client, runtime, _tools, _dispatch = await self._resolve_llm_client(data)
+        categories = data.get("categories") or []
+        if not categories:
+            raise RuntimeError("分类器缺少 categories")
+        query = self._render(data.get("query") or "") or ""
+        if not query:
+            query = self.state.get("assistant_text") or ""
+        prompt = (
+            "你是问题分类器。把用户问题归入下列类别之一，只输出类别名，不要其它文字。\n"
+            f"类别：{'、'.join(categories)}\n问题：{query}"
+        )
+        resp = await client.chat.completions.create(
+            model=runtime["model"],
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=32,
+            stream=False,
+        )
+        text = ""
+        if isinstance(resp, dict):
+            text = ((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        else:
+            try:
+                text = resp.choices[0].message.content or ""
+            except Exception:  # noqa: BLE001
+                text = ""
+        category = next((c for c in categories if c and c in text), (categories[0] or ""))
+        self.outputs[node["id"]] = category
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = category
+
     async def _exec_end(self, node: dict) -> None:
         """结束节点：组装最终回复（output_template 或最后 LLM 输出）。"""
         data = node.get("data") or {}
@@ -699,6 +737,14 @@ class WorkflowEngine:
                 await self._exec_iteration(node)
                 next_id = self._edge_target(node_id)
                 if next_id:
+                    stack.append(next_id)
+            elif ntype == "classifier":
+                await self._exec_classifier(node)
+                cat = self.outputs.get(node_id)
+                next_id = self._edge_target(node_id, str(cat)) if cat else None
+                if not next_id:
+                    next_id = self._edge_target(node_id)
+                if next_id and next_id not in visited:
                     stack.append(next_id)
             elif ntype == "end":
                 await self._exec_end(node)

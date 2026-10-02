@@ -88,6 +88,7 @@ import {
   DataLine,
   Connection,
   Refresh,
+  Filter,
   CircleCheckFilled,
 } from "@element-plus/icons-vue";
 import { nodeDefOf, type WorkflowNodeType } from "../nodes";
@@ -111,6 +112,7 @@ const def = computed(() => {
     variable: DataLine,
     http: Connection,
     iteration: Refresh,
+    classifier: Filter,
     end: CircleCheckFilled,
   };
   return { ...d, icon: iconMap[d.type] || Cpu };
