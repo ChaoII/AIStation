@@ -199,25 +199,35 @@
 
     <!-- condition：条件分支 -->
     <template v-else-if="type === 'condition'">
-      <el-form-item label="条件构建（参数化）">
-        <div class="cond-builder">
-          <el-select v-model="condVar" placeholder="选择变量" filterable class="cond-var">
+      <el-form-item label="条件构建（参数化，多条件）">
+        <div class="cond-logic">
+          <el-radio-group v-model="condLogic" size="small">
+            <el-radio-button label="and">同时满足（AND）</el-radio-button>
+            <el-radio-button label="or">任一满足（OR）</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div v-for="(c, i) in conditions" :key="i" class="cond-row">
+          <el-select v-model="c.var" placeholder="变量" filterable class="cond-var">
             <el-option v-for="v in availableVars" :key="v.name" :label="v.name" :value="v.name" />
           </el-select>
-          <el-select v-model="condOp" class="cond-op" placeholder="算子">
+          <el-select v-model="c.op" class="cond-op" placeholder="算子">
             <el-option v-for="o in COND_OPS" :key="o.v" :label="o.label" :value="o.v" />
           </el-select>
-          <el-input v-model="condVal" class="cond-val" placeholder="值" />
-          <el-button size="small" type="primary" @click="applyCond">生成</el-button>
+          <el-input v-model="c.val" class="cond-val" placeholder="值" />
+          <el-button link type="danger" :icon="Delete" @click="conditions.splice(i, 1)" />
+        </div>
+        <div class="cond-actions">
+          <el-button size="small" :icon="Plus" @click="addCond">添加条件</el-button>
+          <el-button size="small" type="primary" @click="applyCond">生成表达式</el-button>
         </div>
         <div class="cond-hint">
-          支持英文/数字/布尔，或
+          支持英文/数字/布尔/数组，或
           <code v-pre>{{ 变量 }}</code>
-          ；点击「生成」写入下方表达式。
+          ；点「生成表达式」写入下方表达式，可手工微调。
         </div>
       </el-form-item>
       <el-form-item label="条件表达式">
-        <el-input v-model="d.expression" placeholder="如：{{v}} == 1" />
+        <el-input v-model="d.expression" placeholder="如：{{a}} == 1 and {{b}} > 2" />
       </el-form-item>
       <el-alert
         title="连接时从上（绿=真）/下（红=假）句柄拖出即可区分分支"
@@ -765,9 +775,9 @@ const nodeEnabled = computed({
   },
 });
 
-// 条件节点：参数化构建
+// 条件节点：参数化构建（多条件 AND/OR）
 const COND_OPS = [
-  { v: "==", label: "等于 ===" },
+  { v: "==", label: "等于 ==" },
   { v: "!=", label: "不等于 !=" },
   { v: ">", label: "大于 >" },
   { v: "<", label: "小于 <" },
@@ -777,17 +787,21 @@ const COND_OPS = [
   { v: "not in", label: "不属于 not in" },
   { v: "contains", label: "包含 contains" },
 ];
-const condVar = ref("");
-const condOp = ref("==");
-const condVal = ref("");
-function applyCond() {
-  const v = condVar.value.trim();
-  if (!v) {
-    ElMessage.warning("请选择变量");
-    return;
-  }
-  const raw = condVal.value.trim();
-  const op = condOp.value;
+const condLogic = ref<"and" | "or">("and");
+const conditions = ref<{ var: string; op: string; val: string }[]>([]);
+function addCond() {
+  conditions.value.push({ var: "", op: "==", val: "" });
+}
+function _buildLiteral(raw: string): any {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw);
+  return JSON.stringify(raw);
+}
+function _buildOne(c: { var: string; op: string; val: string }): string {
+  const v = c.var.trim();
+  const op = c.op;
+  const raw = c.val.trim();
   if (op === "in" || op === "not in") {
     let arr: any = [];
     try {
@@ -795,17 +809,20 @@ function applyCond() {
     } catch {
       arr = raw ? raw.split(/[,，]/).map((s) => s.trim()) : [];
     }
-    d.expression = `${v} ${op} ${JSON.stringify(arr)}`;
-  } else if (op === "contains") {
-    d.expression = `${JSON.stringify(raw)} in ${v}`;
-  } else {
-    let lit: any = raw;
-    if (raw === "true") lit = true;
-    else if (raw === "false") lit = false;
-    else if (/^-?\d+(\.\d+)?$/.test(raw)) lit = Number(raw);
-    else lit = JSON.stringify(raw);
-    d.expression = `${v} ${op} ${lit}`;
+    return `${v} ${op} ${JSON.stringify(arr)}`;
   }
+  if (op === "contains") {
+    return `${JSON.stringify(raw)} in ${v}`;
+  }
+  return `${v} ${op} ${_buildLiteral(raw)}`;
+}
+function applyCond() {
+  const parts = conditions.value.filter((c) => c.var.trim()).map((c) => _buildOne(c));
+  if (!parts.length) {
+    ElMessage.warning("请添加并填写至少一个条件");
+    return;
+  }
+  d.expression = parts.join(condLogic.value === "and" ? " and " : " or ");
 }
 
 // 本节点引用到的输入变量（从 data 的字符串值中提取 {{var}}）
@@ -982,11 +999,15 @@ onMounted(async () => {
   word-break: break-word;
 }
 
-.cond-builder {
+.cond-logic {
+  margin-bottom: 8px;
+}
+
+.cond-row {
   display: flex;
   gap: 6px;
   align-items: center;
-  width: 100%;
+  margin-bottom: 6px;
 
   .cond-var {
     flex: 1.2;
@@ -997,6 +1018,12 @@ onMounted(async () => {
   .cond-val {
     flex: 1;
   }
+}
+
+.cond-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .cond-hint {
