@@ -623,6 +623,18 @@
           <el-descriptions-item label="最短耗时">{{ stats.min_ms }} ms</el-descriptions-item>
           <el-descriptions-item label="最长耗时">{{ stats.max_ms }} ms</el-descriptions-item>
         </el-descriptions>
+        <div class="stats-chart">
+          <div class="stats-chart__title">状态分布</div>
+          <VChart class="stats-chart__item" :option="pieOption" autoresize />
+        </div>
+        <div class="stats-chart">
+          <div class="stats-chart__title">成功率趋势（最近 20 次）</div>
+          <VChart class="stats-chart__item" :option="rateOption" autoresize />
+        </div>
+        <div class="stats-chart">
+          <div class="stats-chart__title">耗时趋势（最近 20 次，ms）</div>
+          <VChart class="stats-chart__item" :option="durationOption" autoresize />
+        </div>
         <el-empty v-if="!stats.total" description="暂无运行记录" />
       </div>
     </el-drawer>
@@ -747,6 +759,25 @@ import {
   createAiWorkflowShare,
 } from "@/api/module_ai/workflow";
 import { Auth } from "@/utils/auth";
+import VChart from "vue-echarts";
+import { use } from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
+import { LineChart, PieChart } from "echarts/charts";
+import {
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+} from "echarts/components";
+use([
+  CanvasRenderer,
+  LineChart,
+  PieChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+]);
 
 defineOptions({ name: "AiWorkflowEditor", inheritAttrs: false });
 
@@ -1084,20 +1115,85 @@ const stats = ref<{
   min_ms: 0,
   max_ms: 0,
 });
+const statsLogs = ref<any[]>([]);
 async function openStats() {
   if (!workflowId.value) return;
   statsVisible.value = true;
   statsLoading.value = true;
   try {
-    const res = await getAiWorkflowStats(workflowId.value);
+    const [res, logsRes] = await Promise.all([
+      getAiWorkflowStats(workflowId.value),
+      listAiWorkflowRunLogs(workflowId.value),
+    ]);
     const d = res.data?.data;
     if (d) stats.value = { ...stats.value, ...d };
+    statsLogs.value = logsRes.data?.data || [];
   } catch {
     // ignore
   } finally {
     statsLoading.value = false;
   }
 }
+const pieOption = computed(() => ({
+  tooltip: { trigger: "item" },
+  legend: { bottom: 0 },
+  series: [
+    {
+      type: "pie",
+      radius: ["40%", "70%"],
+      label: { formatter: "{b}: {c}" },
+      data: [
+        { name: "成功", value: stats.value.success },
+        { name: "失败", value: stats.value.error },
+        { name: "审批中", value: stats.value.pending },
+      ],
+    },
+  ],
+}));
+const trendData = computed(() => {
+  const logs = statsLogs.value.slice(0, 20);
+  const x = logs.map((_, i) => `#${i + 1}`);
+  let runSuccess = 0;
+  const rate: number[] = [];
+  logs.forEach((l, i) => {
+    if (l.status === "success") runSuccess += 1;
+    rate.push(Math.round((runSuccess / (i + 1)) * 100));
+  });
+  const duration = logs.map((l) => l.duration_ms || 0);
+  return { x, rate, duration };
+});
+const rateOption = computed(() => ({
+  tooltip: { trigger: "axis" },
+  grid: { left: 40, right: 16, top: 24, bottom: 24 },
+  xAxis: { type: "category", data: trendData.value.x, boundaryGap: false },
+  yAxis: { type: "value", min: 0, max: 100, axisLabel: { formatter: "{value}%" } },
+  series: [
+    {
+      type: "line",
+      name: "成功率",
+      smooth: true,
+      data: trendData.value.rate,
+      itemStyle: { color: "#67c23a" },
+      areaStyle: { opacity: 0.15 },
+    },
+  ],
+}));
+const durationOption = computed(() => ({
+  tooltip: { trigger: "axis" },
+  grid: { left: 56, right: 16, top: 24, bottom: 24 },
+  xAxis: { type: "category", data: trendData.value.x },
+  yAxis: { type: "value" },
+  series: [
+    {
+      type: "line",
+      name: "耗时(ms)",
+      smooth: true,
+      data: trendData.value.duration,
+      itemStyle: { color: "#409eff" },
+      areaStyle: { opacity: 0.15 },
+    },
+  ],
+}));
 async function openShare() {
   if (!workflowId.value) return;
   try {
@@ -2978,6 +3074,21 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .stats-detail {
     margin-top: 4px;
+  }
+
+  .stats-chart {
+    margin-top: 16px;
+
+    .stats-chart__title {
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--el-text-color-secondary);
+    }
+
+    .stats-chart__item {
+      height: 220px;
+    }
   }
 }
 .ctx-menu {
