@@ -129,6 +129,19 @@
           />
         </el-form-item>
       </el-form>
+      <div v-if="runSources.length" class="run-sources">
+        <div class="run-sources__title">引用来源</div>
+        <div class="run-sources__list">
+          <el-card v-for="(s, i) in runSources" :key="i" class="run-source-card" shadow="never">
+            <div class="run-source-card__head">
+              <el-icon><Document /></el-icon>
+              <span class="run-source-card__title">{{ s.title }}</span>
+              <el-tag v-if="s.score != null" size="small" type="info">相似度 {{ s.score }}</el-tag>
+            </div>
+            <div class="run-source-card__content">{{ s.content }}</div>
+          </el-card>
+        </div>
+      </div>
       <div v-if="runOutput" class="run-output">
         <div class="run-output__title">输出</div>
         <div class="run-output__body">{{ runOutput }}</div>
@@ -153,6 +166,7 @@ import {
   Promotion,
   VideoPlay,
   Cpu,
+  Document,
   DocumentCopy,
   Tools,
   Operation,
@@ -186,8 +200,7 @@ const dialogVisible = computed({
 
 const nodeTypes = markRaw<Record<string, Component>>({ __default: WorkflowNode });
 
-const { onInit, onConnect, addEdges, setNodes, setEdges, screenToFlowCoordinate, addNodes } =
-  useVueFlow();
+const { onInit, onConnect, addEdges, setNodes, screenToFlowCoordinate, addNodes } = useVueFlow();
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
   type: "smoothstep",
@@ -211,6 +224,7 @@ const running = ref(false);
 const runInput = ref("");
 const runVariables = ref("{}");
 const runOutput = ref("");
+const runSources = ref<any[]>([]);
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
 
@@ -431,6 +445,7 @@ function openRun() {
   runInput.value = "";
   runVariables.value = "{}";
   runOutput.value = "";
+  runSources.value = [];
   runVisible.value = true;
 }
 
@@ -488,6 +503,7 @@ async function handleRun() {
           continue;
         }
         if (obj.type === "text-delta") out += obj.text;
+        else if (obj.type === "sources") runSources.value = obj.sources || [];
         else if (obj.type === "data-finish") {
           out = obj.reply || out;
           runOutput.value = out;
@@ -593,6 +609,51 @@ async function handleRun() {
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+.run-sources {
+  margin-top: 12px;
+
+  .run-sources__title {
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .run-sources__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 220px;
+    overflow: auto;
+  }
+}
+
+.run-source-card {
+  border-radius: 8px;
+
+  :deep(.el-card__body) {
+    padding: 10px 12px;
+  }
+
+  .run-source-card__head {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .run-source-card__title {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .run-source-card__content {
+    font-size: var(--el-font-size-base);
+    line-height: 1.5;
+    color: var(--el-text-color-regular);
   }
 }
 </style>

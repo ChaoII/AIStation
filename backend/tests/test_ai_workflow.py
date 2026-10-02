@@ -450,3 +450,63 @@ def test_workflow_run_llm_tool_loop(monkeypatch, test_client, auth_headers):
         assert "最终回复" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf_id])
+
+
+def test_workflow_run_llm_sources(monkeypatch, test_client, auth_headers):
+    """LLM 节点接入知识库 RAG：后端透出 ``sources`` 引用来源帧。"""
+    import openai
+
+    from app.plugin.module_ai.knowledge import service as kb_service
+
+    async def _fake_search(kb_ids, query, top_k=5):
+        return [
+            {
+                "chunk_id": 1,
+                "knowledge_base_id": 1,
+                "file_name": "doc.txt",
+                "content": "AIStation 是开源平台",
+                "score": 0.92,
+            }
+        ]
+
+    monkeypatch.setattr(
+        kb_service.AiKnowledgeService, "search", staticmethod(_fake_search)
+    )
+    monkeypatch.setattr(
+        openai,
+        "AsyncOpenAI",
+        _make_stream_client([[_FakeChunk(_FakeDelta(content="好的"))]], []),
+    )
+    _patch_runtime(monkeypatch)
+
+    graph = {
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"variables": []}},
+            {
+                "id": "llm1",
+                "type": "llm",
+                "data": {"prompt": "你好", "knowledge_ids": [1], "query": "{{q}}"},
+            },
+            {"id": "end", "type": "end", "data": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "start", "target": "llm1"},
+            {"id": "e2", "source": "llm1", "target": "end"},
+        ],
+    }
+    wf_id = _create_workflow(test_client, auth_headers, graph)
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/workflows/{wf_id}/run/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "x"}]}],
+                "variables": {"q": "介绍"},
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert '"type": "sources"' in r.text
+        assert "doc.txt" in r.text
+        assert "AIStation 是开源平台" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf_id])

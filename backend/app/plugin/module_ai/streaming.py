@@ -102,6 +102,12 @@ class UiMessageStream:
             )
         return out
 
+    def sources(self, sources: list[dict]) -> str:
+        """知识检索引用来源帧：供前端展示引用的知识块（标题/片段/相似度）。"""
+        if not sources:
+            return ""
+        return _frame({"type": "sources", "sources": sources})
+
     def error(self, text: str) -> str:
         return _frame({"type": "error", "errorText": text})
 

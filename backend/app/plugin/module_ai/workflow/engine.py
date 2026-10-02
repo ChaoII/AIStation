@@ -113,11 +113,15 @@ class WorkflowEngine:
         messages: list[dict] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        # 组装知识库上下文（阶段 3：RAG 注入）
+        # 组装知识库上下文（阶段 3：RAG 注入）+ 透出引用来源
         if data.get("knowledge_ids"):
-            kb_context = await self._retrieve_context(data)
+            kb_context, sources = await self._retrieve_context(data)
             if kb_context:
                 messages.append({"role": "system", "content": f"参考知识：\n{kb_context}"})
+            if sources:
+                yield_src = self.ms.sources(sources)
+                if yield_src:
+                    yield yield_src
         messages += self.messages
 
         from openai import AsyncOpenAI
@@ -262,14 +266,38 @@ class WorkflowEngine:
 
         return schemas, _dispatch
 
-    async def _retrieve_context(self, data: dict) -> str:
-        """知识检索（阶段 3 实现；当前返回空串，节点可跳过注入）。"""
-        try:
-            from app.plugin.module_ai.knowledge.service import retrieve
+    async def _retrieve_context(self, data: dict) -> tuple[str, list[dict]]:
+        """知识检索（RAG）：返回 ``(注入上下文, 引用来源列表)``。
 
-            return await retrieve(data.get("knowledge_ids"), self._render(data.get("query") or ""))
+        引用来源供流式 ``sources`` 帧透出，前端可展示知识块标题/片段/相似度。
+        检索或模型异常时返回 ``("", [])``，节点可安全跳过。
+        """
+        try:
+            from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+            kb_ids = data.get("knowledge_ids")
+            query = self._render(data.get("query") or "")
+            if not kb_ids or not query:
+                return "", []
+            top_k = int(data.get("top_k") or 5)
+            results = await AiKnowledgeService.search(kb_ids, query, top_k)
+            if not results:
+                return "", []
+            ctx = "\n\n".join(
+                f"[来源: {r.get('file_name') or '未知'}] {r.get('content')}" for r in results
+            )
+            sources = [
+                {
+                    "title": r.get("file_name") or "未知",
+                    "content": (r.get("content") or "")[:200],
+                    "score": r.get("score"),
+                    "chunkId": r.get("chunk_id"),
+                }
+                for r in results
+            ]
+            return ctx, sources
         except Exception:  # noqa: BLE001
-            return ""
+            return "", []
 
     async def _exec_tool(self, node: dict) -> None:
         """工具节点：调用工具目录中的工具并把结果写入变量。"""
