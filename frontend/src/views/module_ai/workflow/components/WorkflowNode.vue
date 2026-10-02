@@ -30,6 +30,7 @@
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
     </div>
     <div class="wf-node__body">
+      <div v-if="data.output_variable" class="wf-node__outvar">→ {{ data.output_variable }}</div>
       <template v-if="def.type === 'note'">
         <div v-if="data.title" class="wf-note__title">{{ data.title }}</div>
         <div v-if="data.content" class="wf-note__content">{{ data.content }}</div>
@@ -383,6 +384,12 @@ function shortText(v: any, limit = 160): string {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+  }
+
+  .wf-node__outvar {
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--el-color-success);
   }
 
   .wf-node__out {
