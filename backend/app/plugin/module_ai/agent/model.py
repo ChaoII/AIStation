@@ -55,6 +55,9 @@ class AiAgentModel(ModelMixin, UserMixin):
     tool_ids: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=list, comment="工具名列表"
     )
+    skill_ids: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list, comment="技能ID列表（技能广场）"
+    )
     knowledge_ids: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=list, comment="知识库ID列表（RAG）"
     )

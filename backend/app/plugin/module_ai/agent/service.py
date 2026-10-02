@@ -23,6 +23,7 @@ def _to_dict(a: AiAgentModel) -> dict:
         "temperature": a.temperature,
         "workflow_id": a.workflow_id,
         "tool_ids": a.tool_ids or [],
+        "skill_ids": a.skill_ids or [],
         "knowledge_ids": a.knowledge_ids or [],
         "input_schema": a.input_schema,
         "avatar": a.avatar or "",
@@ -133,6 +134,7 @@ class AiAgentService:
                 temperature=data.temperature,
                 workflow_id=data.workflow_id,
                 tool_ids=data.tool_ids or [],
+                skill_ids=data.skill_ids or [],
                 knowledge_ids=data.knowledge_ids or [],
                 input_schema=data.input_schema,
                 avatar=data.avatar or "",
@@ -155,8 +157,9 @@ class AiAgentService:
                 return None
             for key in (
                 "agent_name", "category_id", "agent_role", "description", "model_id",
-                "prompt_id", "temperature", "workflow_id", "tool_ids", "knowledge_ids",
-                "input_schema", "avatar", "color", "markdown", "enabled", "order",
+                "prompt_id", "temperature", "workflow_id", "tool_ids", "skill_ids",
+                "knowledge_ids", "input_schema", "avatar", "color", "markdown", "enabled",
+                "order",
             ):
                 if getattr(data, key) is not None:
                     setattr(a, key, getattr(data, key))
@@ -240,6 +243,25 @@ class AiAgentService:
                     rendered = render_prompt(prompt.get("blocks"), values)
                     if rendered:
                         system_prompt = rendered
+
+            # 注入绑定技能内容（技能广场，skill_type=instruction 直接并入系统提示词）
+            if agent.get("skill_ids"):
+                from app.plugin.module_ai.skill.service import AiSkillService
+
+                skills = await AiSkillService.get_skills_by_ids(agent["skill_ids"])
+                skill_blocks = []
+                for sk in skills:
+                    if sk.get("content"):
+                        skill_blocks.append(
+                            f"### 技能：{sk.get('name')}\n{sk.get('content')}"
+                        )
+                if skill_blocks:
+                    system_prompt = (
+                        f"{system_prompt}\n\n"
+                        "## 可调用技能\n"
+                        "以下是已绑定技能的使用说明，在合适场景按说明执行：\n"
+                        + "\n\n".join(skill_blocks)
+                    )
 
             runtime = None
             if agent.get("model_id"):

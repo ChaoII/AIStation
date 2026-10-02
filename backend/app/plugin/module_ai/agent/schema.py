@@ -14,6 +14,7 @@ class AiAgentCreateSchema(BaseModel):
     temperature: float | None = None
     workflow_id: int | None = None
     tool_ids: list[str] = Field(default_factory=list)
+    skill_ids: list[int] = Field(default_factory=list)
     knowledge_ids: list[int] = Field(default_factory=list)
     input_schema: dict | None = None
     avatar: str | None = Field(default=None, max_length=256)
@@ -33,6 +34,7 @@ class AiAgentUpdateSchema(BaseModel):
     temperature: float | None = None
     workflow_id: int | None = None
     tool_ids: list[str] | None = None
+    skill_ids: list[int] | None = None
     knowledge_ids: list[int] | None = None
     input_schema: dict | None = None
     avatar: str | None = Field(default=None, max_length=256)
