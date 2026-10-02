@@ -172,6 +172,37 @@
       />
     </template>
 
+    <!-- iteration：迭代/批量 -->
+    <template v-else-if="type === 'iteration'">
+      <el-form-item label="遍历列表（JSON 数组）">
+        <el-input
+          v-model="itemsText"
+          type="textarea"
+          :rows="2"
+          placeholder="[1, 2, 3] 或 {{变量}}"
+        />
+      </el-form-item>
+      <el-form-item label="工具">
+        <el-select v-model="d.tool_name" filterable placeholder="选择工具" style="width: 100%">
+          <el-option v-for="t in toolOptions" :key="t.name" :label="t.name" :value="t.name" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="工具参数（JSON，支持 {{item}}）">
+        <el-input
+          v-model="iterArgsText"
+          type="textarea"
+          :rows="2"
+          placeholder='{"id":"{{item}}"}'
+        />
+      </el-form-item>
+      <el-form-item label="最大迭代次数">
+        <el-input-number v-model="d.max_iterations" :min="1" :max="100" />
+      </el-form-item>
+      <el-form-item label="输出变量名">
+        <el-input v-model="d.output_variable" placeholder="结果数组" />
+      </el-form-item>
+    </template>
+
     <!-- end：结束输出 -->
     <template v-else-if="type === 'end'">
       <el-form-item label="输出模板">
@@ -215,6 +246,10 @@ const headersText = ref(
 const bodyText = ref(
   d.body && typeof d.body === "object" ? JSON.stringify(d.body, null, 0) : d.body || ""
 );
+const itemsText = ref(Array.isArray(d.items) ? JSON.stringify(d.items, null, 0) : d.items || "");
+const iterArgsText = ref(
+  d.args && typeof d.args === "object" ? JSON.stringify(d.args, null, 0) : d.args || ""
+);
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
@@ -253,10 +288,27 @@ function emitChange() {
       data.body = {};
     }
   }
+  if (type === "iteration") {
+    try {
+      const v: any = itemsText.value ? JSON.parse(itemsText.value) : [];
+      data.items = Array.isArray(v) ? v : v;
+    } catch {
+      data.items = itemsText.value;
+    }
+    try {
+      data.args = iterArgsText.value ? JSON.parse(iterArgsText.value) : {};
+    } catch {
+      data.args = {};
+    }
+  }
   emit("change", data);
 }
 
-watch([d, vars, argsText, codeInputsText, headersText, bodyText], emitChange, { deep: true });
+watch(
+  [d, vars, argsText, codeInputsText, headersText, bodyText, itemsText, iterArgsText],
+  emitChange,
+  { deep: true }
+);
 
 onMounted(async () => {
   try {

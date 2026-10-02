@@ -568,6 +568,45 @@ class WorkflowEngine:
             self.variables["kb_context"] = kb_context
         self.outputs[node["id"]] = kb_context
 
+    async def _exec_iteration(self, node: dict) -> None:
+        """迭代/循环节点：遍历列表并对每项调用指定工具，聚合结果为数组。
+
+        ``data``：``items``(列表变量引用或内联数组/模板)、``tool_name``、
+        ``args``(可含 ``{{item}}``)、``output_variable``、``max_iterations``。
+        """
+        data = node.get("data") or {}
+        items = self._resolve_option(data.get("items"))
+        if isinstance(items, str):
+            rendered = self._render(items)
+            try:
+                parsed = json.loads(rendered)
+            except Exception:  # noqa: BLE001
+                parsed = rendered
+            items = parsed if isinstance(parsed, list) else [rendered]
+        if items is None:
+            items = []
+        if not isinstance(items, list):
+            items = [items] if items else []
+        max_iter = int(data.get("max_iterations") or 20)
+        items = items[:max_iter]
+        tool_name = data.get("tool_name")
+        results: list = []
+        from app.plugin.module_ai.tools_catalog.service import dispatch_tool
+
+        for item in items:
+            self.variables["item"] = item
+            args = self._resolve_option(data.get("args") or {})
+            if isinstance(args, dict):
+                args = {k: self._render(str(v)) for k, v in args.items()}
+            if tool_name:
+                results.append(await dispatch_tool(tool_name, args, self.user_id))
+            else:
+                results.append(item)
+        self.outputs[node["id"]] = results
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = results
+
     async def _exec_end(self, node: dict) -> None:
         """结束节点：组装最终回复（output_template 或最后 LLM 输出）。"""
         data = node.get("data") or {}
@@ -653,6 +692,11 @@ class WorkflowEngine:
                     stack.append(next_id)
             elif ntype == "http":
                 await self._exec_http(node)
+                next_id = self._edge_target(node_id)
+                if next_id:
+                    stack.append(next_id)
+            elif ntype == "iteration":
+                await self._exec_iteration(node)
                 next_id = self._edge_target(node_id)
                 if next_id:
                     stack.append(next_id)

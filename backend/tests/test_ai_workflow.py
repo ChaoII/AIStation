@@ -99,6 +99,58 @@ def test_render_template():
     assert render_template("{{未知}}", {}) == "{{未知}}"
 
 
+def test_workflow_run_iteration(monkeypatch, test_client, auth_headers):
+    """迭代/循环节点：遍历列表，对每项调用工具并聚合为结果数组。"""
+    from app.plugin.module_ai import tools_catalog as tc
+
+    calls: list[dict] = []
+
+    async def _fake_dispatch(name, args, user_id, db_rows=None):
+        calls.append({"name": name, "args": args})
+        return {"item": args.get("id")}
+
+    monkeypatch.setattr(tc.service, "dispatch_tool", _fake_dispatch)
+
+    graph = {
+        "nodes": [
+            {"id": "start", "type": "start", "data": {"variables": []}},
+            {
+                "id": "iter",
+                "type": "iteration",
+                "data": {
+                    "items": [1, 2, 3],
+                    "tool_name": "mock_batch",
+                    "args": {"id": "{{item}}"},
+                    "output_variable": "results",
+                },
+            },
+            {"id": "end", "type": "end", "data": {"output_template": "{{results}}"}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "start", "target": "iter"},
+            {"id": "e2", "source": "iter", "target": "end"},
+        ],
+    }
+    wf_id = _create_workflow(test_client, auth_headers, graph)
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/workflows/{wf_id}/run/stream",
+            json={
+                "messages": [{"role": "user", "parts": [{"type": "text", "text": "x"}]}],
+                "variables": {},
+            },
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        body = r.text
+        assert '"reply"' in body
+        # 每项调用一次工具，参数中 {{item}} 已渲染为对应值（模板渲染输出字符串）
+        assert [c["args"]["id"] for c in calls] == ["1", "2", "3"]
+        assert all(c["name"] == "mock_batch" for c in calls)
+    finally:
+        _delete_wf(test_client, auth_headers, [wf_id])
+
+
 def test_workflow_run_knowledge(monkeypatch, test_client, auth_headers):
     """独立知识节点：检索产生 sources 帧，上下文写入变量供 end 模板插值。"""
     from app.plugin.module_ai.knowledge import service as kb_service

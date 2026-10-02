@@ -3,7 +3,16 @@
  * 前端仅描述展示与表单，不改运行语义。
  */
 export type WorkflowNodeType =
-  "start" | "llm" | "knowledge" | "tool" | "code" | "condition" | "variable" | "http" | "end";
+  | "start"
+  | "llm"
+  | "knowledge"
+  | "tool"
+  | "code"
+  | "condition"
+  | "variable"
+  | "http"
+  | "iteration"
+  | "end";
 
 export interface NodeDef {
   type: WorkflowNodeType;
@@ -57,6 +66,13 @@ export const NODE_DEFS: NodeDef[] = [
     label: "HTTP 请求",
     color: "#8e44ad",
     desc: "请求外部 HTTP API",
+    branch: false,
+  },
+  {
+    type: "iteration",
+    label: "迭代/批量",
+    color: "#ff9800",
+    desc: "遍历列表并调用工具聚合",
     branch: false,
   },
   { type: "end", label: "结束", color: "#909399", desc: "输出最终回复", branch: false },
