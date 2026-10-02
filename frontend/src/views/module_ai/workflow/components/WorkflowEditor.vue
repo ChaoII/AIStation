@@ -185,6 +185,7 @@
                 :node="selectedNode"
                 :available-vars="availableVars"
                 :var-sources="varSources"
+                :node-chain="nodeChain"
                 @change="onNodeConfigChange"
               />
             </div>
@@ -946,6 +947,32 @@ const varSources = computed(() => {
     if (ov) m[ov] = nodeDefOf(n.type || "llm").label;
   });
   return m;
+});
+
+// 选中节点的上游调用链（从 start 到该节点的路径节点标签序列）
+function findPath(from: string, to: string, visited: Set<string>): string[] | null {
+  if (from === to) return [from];
+  if (visited.has(from)) return null;
+  visited.add(from);
+  for (const e of edges.value.filter((x) => x.source === from)) {
+    const p = findPath(e.target, to, visited);
+    if (p) return [from, ...p];
+  }
+  return null;
+}
+const nodeChain = computed(() => {
+  if (!selectedNode.value) return [];
+  const starts = nodes.value.filter((n) => n.type === "start").map((n) => n.id);
+  for (const s of starts) {
+    const path = findPath(s, selectedNode.value.id, new Set());
+    if (path) {
+      return path.map((id) => {
+        const n = nodes.value.find((x) => x.id === id);
+        return nodeDefOf(n?.type || "llm").label;
+      });
+    }
+  }
+  return [];
 });
 
 // ---------- 撤销 / 重做 ----------

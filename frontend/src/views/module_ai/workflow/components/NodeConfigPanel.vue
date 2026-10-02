@@ -15,6 +15,10 @@
     <el-form-item label="节点备注">
       <el-input v-model="d.note" placeholder="给该节点加一条备注（可选）" size="small" />
     </el-form-item>
+    <!-- 上游调用链 -->
+    <el-form-item v-if="props.nodeChain && props.nodeChain.length > 1" label="上游调用链">
+      <div class="chain-text">{{ props.nodeChain.join(" → ") }}</div>
+    </el-form-item>
     <!-- 插入变量 -->
     <el-form-item v-if="availableVars && availableVars.length" label="插入变量">
       <el-dropdown trigger="click" @command="insertVar">
@@ -580,6 +584,7 @@ const props = defineProps<{
   node: Node;
   availableVars?: { name: string; label: string }[];
   varSources?: Record<string, string>;
+  nodeChain?: string[];
 }>();
 const emit = defineEmits(["change"]);
 
@@ -949,6 +954,17 @@ onMounted(async () => {
   margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.chain-text {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  word-break: break-word;
 }
 
 .cond-builder {
