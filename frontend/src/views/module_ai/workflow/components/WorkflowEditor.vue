@@ -487,9 +487,17 @@
         <el-statistic title="失败" :value="historyStats.fail" />
         <el-statistic title="平均耗时(ms)" :value="historyStats.avgMs" />
       </div>
+      <div class="history-filter">
+        <el-radio-group v-model="historyFilter" size="small">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="success">成功</el-radio-button>
+          <el-radio-button label="error">失败</el-radio-button>
+          <el-radio-button label="pending">审批中</el-radio-button>
+        </el-radio-group>
+      </div>
       <el-table
         v-loading="historyLoading"
-        :data="runHistoryList"
+        :data="filteredHistory"
         size="small"
         border
         max-height="420"
@@ -960,6 +968,12 @@ const historyVisible = ref(false);
 const historyLoading = ref(false);
 const runHistoryList = ref<any[]>([]);
 const runDetail = ref<any>(null);
+const historyFilter = ref<"all" | "success" | "error" | "pending">("all");
+const filteredHistory = computed(() =>
+  historyFilter.value === "all"
+    ? runHistoryList.value
+    : runHistoryList.value.filter((r) => r.status === historyFilter.value)
+);
 const statsVisible = ref(false);
 const statsLoading = ref(false);
 const stats = ref<{
@@ -2730,6 +2744,10 @@ async function handleApprove(decision: "approve" | "reject") {
   background: var(--el-fill-color-light);
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
+}
+
+.history-filter {
+  margin-bottom: 10px;
 }
 
 .compare-empty {
