@@ -93,6 +93,8 @@
                 :default-viewport="{ zoom: 1.2 }"
                 :min-zoom="0.2"
                 :max-zoom="4"
+                :snap-to-grid="true"
+                :snap-grid="[16, 16]"
                 :default-edge-options="defaultEdgeOptions"
                 @node-click="onNodeClick"
                 @drop="onDrop"
@@ -180,6 +182,7 @@
               <NodeConfigPanel
                 :node="selectedNode"
                 :available-vars="availableVars"
+                :var-sources="varSources"
                 @change="onNodeConfigChange"
               />
             </div>
@@ -889,6 +892,16 @@ const availableVars = computed(() => {
     }
   });
   return Array.from(map, ([name, label]) => ({ name, label }));
+});
+
+// 变量来源映射：变量名 → 产出该变量的节点类型（供属性面板展示来源）
+const varSources = computed(() => {
+  const m: Record<string, string> = {};
+  nodes.value.forEach((n) => {
+    const ov = n.data?.output_variable;
+    if (ov) m[ov] = nodeDefOf(n.type || "llm").label;
+  });
+  return m;
 });
 
 // ---------- 撤销 / 重做 ----------

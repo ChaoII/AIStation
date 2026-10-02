@@ -28,7 +28,17 @@
     <el-form-item label="输入变量">
       <div class="io-var-list">
         <el-tag v-if="!refVars.length" size="small" type="info">无引用</el-tag>
-        <el-tag v-for="v in refVars" :key="v" size="small" effect="plain">{{ v }}</el-tag>
+        <el-tag
+          v-for="v in refVars"
+          :key="v"
+          size="small"
+          effect="plain"
+          :type="props.varSources?.[v] ? undefined : 'info'"
+          :title="props.varSources?.[v] ? `来源：${props.varSources[v]}` : '无来源'"
+        >
+          {{ v }}
+          <span v-if="props.varSources?.[v]" class="io-var-src">← {{ props.varSources[v] }}</span>
+        </el-tag>
       </div>
     </el-form-item>
     <el-form-item label="输出变量">
@@ -543,6 +553,7 @@ import { getAiAgentList } from "@/api/module_ai/agent";
 const props = defineProps<{
   node: Node;
   availableVars?: { name: string; label: string }[];
+  varSources?: Record<string, string>;
 }>();
 const emit = defineEmits(["change"]);
 
@@ -849,6 +860,12 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.io-var-src {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
 }
 
 .parallel-branch {
