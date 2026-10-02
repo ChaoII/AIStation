@@ -15,6 +15,7 @@ from .schema import (
     AiWorkflowCreateSchema,
     AiWorkflowDebugNodeSchema,
     AiWorkflowRunSchema,
+    AiWorkflowStepSchema,
     AiWorkflowUpdateSchema,
     AiWorkflowVersionCreateSchema,
 )
@@ -165,6 +166,24 @@ async def debug_node_stream(
     return ui_stream_response(
         AiWorkflowService.debug_node_ui_stream(
             workflow_id, data.node_id, data.variables, data.messages
+        )
+    )
+
+
+@AiWorkflowRouter.post("/{workflow_id}/step/stream", summary="逐步执行节点（流式）")
+async def step_node_stream(
+    workflow_id: int,
+    data: AiWorkflowStepSchema,
+    request: Request,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> StreamingResponse:
+    return ui_stream_response(
+        AiWorkflowService.step_node_ui_stream(
+            workflow_id,
+            data.run_id,
+            data.variables,
+            data.messages,
+            redis=request.app.state.redis,
         )
     )
 

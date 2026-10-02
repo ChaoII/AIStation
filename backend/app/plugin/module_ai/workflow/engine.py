@@ -117,6 +117,9 @@ class WorkflowEngine:
         ms: UiMessageStream,
         state: dict,
         user_id: int | None = None,
+        initial_outputs: dict | None = None,
+        initial_visited: set | None = None,
+        initial_stack: list | None = None,
     ) -> None:
         self.graph = graph or {}
         self.nodes: dict[str, dict] = {
@@ -128,7 +131,12 @@ class WorkflowEngine:
         self.ms = ms
         self.state = state
         self.user_id = user_id
-        self.outputs: dict[str, Any] = {}
+        self.outputs: dict[str, Any] = dict(initial_outputs or {})
+        self._initial_visited = set(initial_visited or [])
+        self._initial_stack = list(initial_stack or [])
+        self._visited: set[str] = set(self._initial_visited)
+        self._stack: list[str] = list(self._initial_stack)
+        self._completed = False
 
     # ------------------------------------------------------------------ #
     # 工具函数
@@ -1239,11 +1247,14 @@ class WorkflowEngine:
     # ------------------------------------------------------------------ #
     # 主执行
     # ------------------------------------------------------------------ #
-    async def run(self):
+    async def run(self, budget: int | None = None):
         """按 DAG 顺序执行全部节点，逐帧产出 SSE 帧（异步生成器）。
 
         每个节点执行前/后产出 ``node-status`` 帧（running/success/error），
         前端据此高亮当前节点并展示各节点的输入输出。
+
+        ``budget``：限制本次执行的节点数量（逐步调试用）；耗尽后暂停，前端可持
+        frontier 续跑。默认 ``None`` 表示一次性执行到底。
         """
         start = next(
             (n for n in (self.graph.get("nodes") or []) if n.get("type") == "start"),
@@ -1251,8 +1262,14 @@ class WorkflowEngine:
         )
         if not start:
             raise RuntimeError("工作流缺少 start 节点")
-        visited: set[str] = set()
-        stack: list[str] = [start["id"]]
+        visited: set[str] = set(self._visited)
+        stack: list[str] = list(self._stack) or [start["id"]]
+        executed = 0
+
+        def _snapshot_frontier() -> None:
+            self._visited = set(visited)
+            self._stack = list(stack)
+
         while stack:
             node_id = stack.pop()
             if node_id in visited:
@@ -1260,6 +1277,7 @@ class WorkflowEngine:
             node = self._node(node_id)
             ntype = node.get("type") or "start"
             label = _NODE_LABELS.get(ntype, ntype)
+            executed += 1
             # 禁用节点：跳过执行，直接走下游边
             if (node.get("data") or {}).get("enabled", True) is False:
                 yield self.ms.node_status(node_id, "skipped", label, input=self._node_input(node))
@@ -1267,6 +1285,9 @@ class WorkflowEngine:
                 if next_id:
                     stack.append(next_id)
                 visited.add(node_id)
+                _snapshot_frontier()
+                if budget is not None and executed >= budget:
+                    break
                 continue
             yield self.ms.node_status(node_id, "running", label, input=self._node_input(node))
             try:
@@ -1405,3 +1426,9 @@ class WorkflowEngine:
                 node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id))
             )
             visited.add(node_id)
+            _snapshot_frontier()
+            if budget is not None and executed >= budget:
+                break
+        self._completed = not stack
+        self._visited = set(visited)
+        self._stack = list(stack)

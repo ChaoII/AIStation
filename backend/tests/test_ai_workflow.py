@@ -1425,3 +1425,44 @@ def test_workflow_disabled_node(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_step_execution(test_client, auth_headers):
+    """逐步执行：每次一个节点，frontier 续跑至结束。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": [{"name": "q"}]}},
+                {"id": "v", "type": "variable", "data": {"name": "a", "value": "{{q}}"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{a}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "v"},
+                      {"id": "e2", "source": "v", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        run_id = None
+        seen_start = seen_var = seen_end = False
+        for _ in range(5):
+            r = test_client.post(f"/api/v1/ai/workflows/{wf}/step/stream",
+                json={"run_id": run_id, "variables": {"q": "你好"},
+                      "messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+                headers=auth_headers)
+            assert r.status_code == 200, r.text
+            if '"type": "node-status"' not in r.text:
+                print("STEP_RESP", r.text)
+            assert '"type": "node-status"' in r.text
+            if "开始" in r.text:
+                seen_start = True
+            if "变量赋值" in r.text:
+                seen_var = True
+            if "结束" in r.text:
+                seen_end = True
+            import re as _re
+            m = _re.search(r'"run_id":\s*"([^"]+)"', r.text)
+            run_id = m.group(1) if m else run_id
+            if '"done": true' in r.text:
+                break
+        assert seen_start and seen_var and seen_end, (seen_start, seen_var, seen_end)
+        assert "你好" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

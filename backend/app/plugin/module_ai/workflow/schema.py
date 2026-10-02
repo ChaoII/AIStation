@@ -34,6 +34,14 @@ class AiWorkflowDebugNodeSchema(BaseModel):
     messages: list[dict] = Field(default_factory=list)
 
 
+class AiWorkflowStepSchema(BaseModel):
+    """逐步执行：run_id 为空则新建；带 run_id 则从持久化 frontier 续跑一个节点。"""
+
+    run_id: str | None = None
+    variables: dict | None = None
+    messages: list[dict] = Field(default_factory=list)
+
+
 class AiWorkflowApproveSchema(BaseModel):
     """HITL 工具审批：基于 run_id 对挂起的工具调用做出 approve/reject。"""
 

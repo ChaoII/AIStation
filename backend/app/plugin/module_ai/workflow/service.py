@@ -382,6 +382,121 @@ class AiWorkflowService:
             yield ms.done()
 
     @classmethod
+    async def step_node_ui_stream(
+        cls,
+        workflow_id: int,
+        run_id: str | None,
+        variables: dict | None,
+        messages: list[dict] | None,
+        redis=None,
+    ) -> AsyncIterator[str]:
+        """逐步执行：每次运行一个节点（replay 式），frontier 持久化到 Redis。
+
+        首步 ``run_id`` 为空则新建；后续带 ``run_id`` 续跑。结束时以
+        ``data: step`` 帧回传 ``run_id`` 与 ``done``。
+        """
+        from app.plugin.module_ai.streaming import UiMessageStream
+
+        ms = UiMessageStream()
+        yield ms.start()
+        try:
+            workflow = await cls.get_workflow(workflow_id)
+            if not workflow:
+                yield ms.error("工作流不存在或未启用")
+                yield ms.finish()
+                yield ms.done()
+                return
+            graph = workflow.get("graph") or {}
+            if not run_id:
+                run_id = uuid.uuid4().hex
+                frontier = cls._new_step_frontier(variables, messages)
+            else:
+                frontier = await cls._load_step(redis, run_id)
+                if frontier is None:
+                    yield ms.error("步骤会话已失效，请重新开始")
+                    yield ms.finish()
+                    yield ms.done()
+                    return
+            engine = WorkflowEngine(
+                graph=graph,
+                variables=frontier.get("variables") or {},
+                messages=frontier.get("messages") or [],
+                ms=ms,
+                state=frontier.get("state") or {},
+                user_id=None,
+                initial_outputs=frontier.get("outputs") or {},
+                initial_visited=set(frontier.get("visited") or []),
+                initial_stack=frontier.get("stack") or [],
+            )
+            async for frame in engine.run(budget=1):
+                yield frame
+            await cls._save_step(
+                redis,
+                run_id,
+                {
+                    "visited": list(engine._visited),
+                    "stack": list(engine._stack),
+                    "outputs": engine.outputs,
+                    "state": engine.state,
+                    "variables": engine.variables,
+                    "messages": engine.messages,
+                },
+            )
+            yield ms.data("step", {"run_id": run_id, "done": engine._completed})
+            yield ms.finish()
+            yield ms.done()
+        except Exception as e:  # noqa: BLE001
+            yield ms.error(f"步骤运行失败：{e}")
+            yield ms.finish()
+            yield ms.done()
+
+    @staticmethod
+    def _step_key(run_id: str) -> str:
+        return f"ai:workflow:step:{run_id}"
+
+    @staticmethod
+    def _new_step_frontier(variables, messages) -> dict:
+        return {
+            "visited": [],
+            "stack": [],
+            "outputs": {},
+            "state": {
+                "assistant_text": "",
+                "reply": "",
+                "tool_calls": [],
+                "action": None,
+                "report_id": None,
+                "error": None,
+                "halted": False,
+                "pending_approval": None,
+            },
+            "variables": variables or {},
+            "messages": messages or [],
+        }
+
+    @staticmethod
+    async def _save_step(redis, run_id: str, frontier: dict) -> None:
+        if not redis:
+            return
+        await redis.set(
+            AiWorkflowService._step_key(run_id),
+            json.dumps(frontier, ensure_ascii=False, default=str),
+            ex=3600,
+        )
+
+    @staticmethod
+    async def _load_step(redis, run_id: str) -> dict | None:
+        if not redis:
+            return None
+        raw = await redis.get(AiWorkflowService._step_key(run_id))
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @classmethod
     async def _log_run(
         cls,
         workflow_id: int,

@@ -381,6 +381,22 @@
               发送
             </el-button>
           </div>
+          <div class="chat-input__row chat-step-row">
+            <el-switch v-model="stepMode" inline-prompt active-text="逐步" inactive-text="连续" />
+            <span class="chat-step-tip">
+              {{ stepMode ? "每次只执行一个节点，点「下一步」继续" : "一键运行到底" }}
+            </span>
+            <el-button
+              v-if="stepMode"
+              size="small"
+              type="success"
+              :loading="running"
+              :icon="ArrowRight"
+              @click="sendStep"
+            >
+              下一步
+            </el-button>
+          </div>
         </div>
       </div>
     </el-drawer>
@@ -574,6 +590,7 @@ import {
   Download,
   Upload,
   Delete,
+  ArrowRight,
   Operation,
   SwitchFilled,
   DataLine,
@@ -1785,12 +1802,75 @@ function openRun() {
   runVariables.value = "{}";
   chatMessages.value = [];
   activeMsg.value = null;
+  stepMode.value = false;
+  stepRunId.value = null;
   runVisible.value = true;
 }
 function clearChat() {
   if (running.value) return;
   chatMessages.value = [];
   activeMsg.value = null;
+  stepRunId.value = null;
+}
+
+// ---------- 逐步执行 ----------
+const stepMode = ref(false);
+const stepRunId = ref<string | null>(null);
+async function sendStep() {
+  if (!workflowId.value) {
+    await handleSave();
+    if (!workflowId.value) return;
+  }
+  const text = runInput.value.trim() || "继续";
+  const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+  const msg: ChatMsg = { id: ++chatSeq, role: "assistant", content: "", trace: [], running: true };
+  chatMessages.value.push(msg);
+  activeMsg.value = msg;
+  running.value = true;
+  try {
+    const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/step/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
+      },
+      body: JSON.stringify({
+        run_id: stepRunId.value,
+        variables: runVariables.value ? JSON.parse(runVariables.value) : {},
+        messages: [{ role: "user", parts: [{ type: "text", text }] }],
+      }),
+    });
+    if (!resp.ok || !resp.body) {
+      msg.error = `请求失败：${resp.status}`;
+      return;
+    }
+    await readUiStream(resp, (obj) => {
+      if (obj.type === "text-delta") msg.content += obj.text;
+      else if (obj.type === "node-status") {
+        onNodeStatus(obj);
+        msg.trace?.push({
+          nodeId: obj.nodeId,
+          status: obj.status || "success",
+          label: obj.label || obj.nodeId,
+          input: obj.input,
+          output: obj.output,
+          error: obj.error,
+        });
+        scrollRunBottom();
+      } else if (obj.type === "data-step") {
+        stepRunId.value = obj.data?.run_id || stepRunId.value;
+        if (obj.data?.done) msg.content = msg.content || "(已执行完毕)";
+      } else if (obj.type === "error") {
+        msg.error = obj.errorText || obj.message || "步骤失败";
+      }
+    });
+  } catch (e: any) {
+    msg.error = `步骤失败：${e?.message || e}`;
+  } finally {
+    msg.running = false;
+    running.value = false;
+    scrollRunBottom();
+  }
 }
 
 /** 读取 AI SDK UI Message Stream（SSE）并逐帧回调，供运行/审批复用。 */
@@ -2285,6 +2365,19 @@ async function handleApprove(decision: "approve" | "reject") {
     display: flex;
     gap: 8px;
     align-items: flex-end;
+  }
+
+  .chat-step-row {
+    margin-top: 8px;
+    align-items: center;
+    justify-content: space-between;
+
+    .chat-step-tip {
+      flex: 1;
+      margin-left: 8px;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
   }
 }
 
