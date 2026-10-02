@@ -176,6 +176,80 @@ class WorkflowEngine:
         _walk(data, "")
         return _snapshot(resolved, limit=800)
 
+    # ---------------------------- 单节点调试 ---------------------------- #
+    async def _exec_single(self, node: dict) -> AsyncIterator[Any]:
+        """仅执行单个节点（调试用）：按类型分派，流式节点透传帧。"""
+        ntype = node.get("type") or "start"
+        if ntype == "llm":
+            async for f in self._exec_llm(node):
+                yield f
+        elif ntype == "agent":
+            async for f in self._exec_agent(node):
+                yield f
+        elif ntype == "knowledge":
+            async for f in self._exec_knowledge(node):
+                yield f
+        elif ntype == "sub_workflow":
+            async for f in self._exec_sub_workflow(node):
+                yield f
+        elif ntype == "start":
+            await self._exec_start(node)
+        elif ntype == "end":
+            await self._exec_end(node)
+        elif ntype == "tool":
+            await self._exec_tool(node)
+        elif ntype == "code":
+            await self._exec_code(node)
+        elif ntype == "condition":
+            await self._exec_condition(node)
+        elif ntype == "variable":
+            await self._exec_variable(node)
+        elif ntype == "http":
+            await self._exec_http(node)
+        elif ntype == "iteration":
+            await self._exec_iteration(node)
+        elif ntype == "classifier":
+            await self._exec_classifier(node)
+        elif ntype == "extractor":
+            await self._exec_extractor(node)
+        elif ntype == "template":
+            await self._exec_template(node)
+        elif ntype == "variable_aggregator":
+            await self._exec_variable_aggregator(node)
+        elif ntype == "answer":
+            await self._exec_answer(node)
+        elif ntype == "loop":
+            await self._exec_loop(node)
+        elif ntype == "parallel":
+            await self._exec_parallel(node)
+        elif ntype == "doc_extractor":
+            await self._exec_doc_extractor(node)
+        elif ntype == "web_search":
+            await self._exec_web_search(node)
+        elif ntype == "database":
+            await self._exec_database(node)
+
+    async def run_single(self, node_id: str):
+        """调试：运行单个节点（带给定变量），产出 node-status/输出帧。"""
+        node = self._node(node_id)
+        if not node:
+            raise RuntimeError("节点不存在")
+        ntype = node.get("type") or "start"
+        label = _NODE_LABELS.get(ntype, ntype)
+        yield self.ms.node_status(node_id, "running", label, input=self._node_input(node))
+        try:
+            async for frame in self._exec_single(node):
+                yield frame
+        except Exception as e:  # noqa: BLE001
+            yield self.ms.node_status(
+                node_id, "error", label, input=self._node_input(node), error=str(e)
+            )
+            yield self.ms.error(str(e))
+            return
+        yield self.ms.node_status(
+            node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id))
+        )
+
     # ------------------------------------------------------------------ #
     # 各节点实现
     # ------------------------------------------------------------------ #

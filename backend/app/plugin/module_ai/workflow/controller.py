@@ -13,6 +13,7 @@ from app.plugin.module_ai.streaming import ui_stream_response
 from .schema import (
     AiWorkflowApproveSchema,
     AiWorkflowCreateSchema,
+    AiWorkflowDebugNodeSchema,
     AiWorkflowRunSchema,
     AiWorkflowUpdateSchema,
     AiWorkflowVersionCreateSchema,
@@ -130,6 +131,19 @@ async def run_workflow_stream(
             data.variables,
             data.session_id,
             redis=request.app.state.redis,
+        )
+    )
+
+
+@AiWorkflowRouter.post("/{workflow_id}/debug-node/stream", summary="单节点调试运行（流式）")
+async def debug_node_stream(
+    workflow_id: int,
+    data: AiWorkflowDebugNodeSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> StreamingResponse:
+    return ui_stream_response(
+        AiWorkflowService.debug_node_ui_stream(
+            workflow_id, data.node_id, data.variables, data.messages
         )
     )
 

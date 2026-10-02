@@ -316,6 +316,55 @@ class AiWorkflowService:
                 user_id=uid,
             )
 
+    @classmethod
+    async def debug_node_ui_stream(
+        cls,
+        workflow_id: int,
+        node_id: str,
+        variables: dict | None = None,
+        messages: list[dict] | None = None,
+    ) -> AsyncIterator[str]:
+        """单节点调试：运行指定节点（带给定变量），产出 node-status/输出帧。"""
+        from app.plugin.module_ai.assistant.service import extract_openai_messages
+        from app.plugin.module_ai.streaming import UiMessageStream
+
+        ms = UiMessageStream()
+        yield ms.start()
+        try:
+            workflow = await cls.get_workflow(workflow_id)
+            if not workflow:
+                yield ms.error("工作流不存在或未启用")
+                yield ms.finish()
+                yield ms.done()
+                return
+            openai_messages = extract_openai_messages(messages or [])
+            state: dict = {
+                "assistant_text": "",
+                "reply": "",
+                "tool_calls": [],
+                "action": None,
+                "report_id": None,
+                "error": None,
+                "halted": False,
+                "pending_approval": None,
+            }
+            engine = WorkflowEngine(
+                graph=workflow.get("graph") or {},
+                variables=variables or {},
+                messages=openai_messages,
+                ms=ms,
+                state=state,
+                user_id=None,
+            )
+            async for frame in engine.run_single(node_id):
+                yield frame
+            yield ms.finish()
+            yield ms.done()
+        except Exception as e:  # noqa: BLE001
+            yield ms.error(f"调试失败：{e}")
+            yield ms.finish()
+            yield ms.done()
+
     @staticmethod
     async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:
         """把挂起的运行状态写入 Redis（供审批续跑读取）。"""

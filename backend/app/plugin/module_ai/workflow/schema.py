@@ -26,6 +26,14 @@ class AiWorkflowRunSchema(BaseModel):
     session_id: int | None = None
 
 
+class AiWorkflowDebugNodeSchema(BaseModel):
+    """单节点调试：运行指定节点（带给定变量），返回其输入/输出/报错。"""
+
+    node_id: str
+    variables: dict | None = None
+    messages: list[dict] = Field(default_factory=list)
+
+
 class AiWorkflowApproveSchema(BaseModel):
     """HITL 工具审批：基于 run_id 对挂起的工具调用做出 approve/reject。"""
 

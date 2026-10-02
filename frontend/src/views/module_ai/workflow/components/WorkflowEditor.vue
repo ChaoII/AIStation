@@ -143,6 +143,15 @@
                 节点：{{ nodeDefOf(selectedNode.type || "llm").label }}
                 <el-button
                   link
+                  type="primary"
+                  size="small"
+                  style="float: right; margin-right: 8px"
+                  @click="openNodeDebug"
+                >
+                  调试此节点
+                </el-button>
+                <el-button
+                  link
                   type="danger"
                   size="small"
                   style="float: right"
@@ -299,6 +308,44 @@
       <template #footer>
         <el-button @click="runVisible = false">关闭</el-button>
         <el-button type="primary" :loading="running" @click="handleRun">开始运行</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 单节点调试弹窗 -->
+    <el-dialog v-model="debugVisible" title="单节点调试" width="560px" append-to-body>
+      <el-form label-position="top" size="small">
+        <el-form-item label="调试节点">
+          <div class="debug-node-title">
+            <el-icon :color="iconColor(debugNodeType)">
+              <component :is="iconOf(debugNodeType)" />
+            </el-icon>
+            <span>{{ nodeDefOf(debugNodeType).label }}</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="输入变量（JSON，可留空）">
+          <el-input
+            v-model="debugVariables"
+            type="textarea"
+            :rows="3"
+            placeholder='如 {"query": "你好", "items": [1,2,3]}'
+          />
+        </el-form-item>
+      </el-form>
+      <div v-if="debugError" class="debug-result">
+        <div class="debug-result__title is-err">错误</div>
+        <pre class="debug-result__body is-err">{{ debugError }}</pre>
+      </div>
+      <div v-if="debugInput" class="debug-result">
+        <div class="debug-result__title">输入</div>
+        <pre class="debug-result__body">{{ debugInput }}</pre>
+      </div>
+      <div v-if="debugOutput != null" class="debug-result">
+        <div class="debug-result__title">输出</div>
+        <pre class="debug-result__body">{{ debugOutput }}</pre>
+      </div>
+      <template #footer>
+        <el-button @click="debugVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="debugRunning" @click="runNodeDebug">运行节点</el-button>
       </template>
     </el-dialog>
 
@@ -574,6 +621,75 @@ function copyText(text: string) {
     () => ElMessage.success("已复制"),
     () => ElMessage.error("复制失败")
   );
+}
+
+// ---------- 单节点调试 ----------
+const debugVisible = ref(false);
+const debugNodeId = ref<string>("");
+const debugNodeType = ref<string>("llm");
+const debugVariables = ref("{}");
+const debugRunning = ref(false);
+const debugInput = ref<any>(null);
+const debugOutput = ref<any>(null);
+const debugError = ref("");
+function iconColor(t: string): string {
+  return nodeDefOf(t).color;
+}
+function openNodeDebug() {
+  if (!selectedNode.value) return;
+  debugNodeId.value = selectedNode.value.id;
+  debugNodeType.value = selectedNode.value.type || "llm";
+  debugVariables.value = "{}";
+  debugInput.value = null;
+  debugOutput.value = null;
+  debugError.value = "";
+  debugVisible.value = true;
+}
+async function runNodeDebug() {
+  if (!workflowId.value) {
+    await handleSave();
+    if (!workflowId.value) return;
+  }
+  if (!debugNodeId.value) return;
+  debugRunning.value = true;
+  debugInput.value = null;
+  debugOutput.value = null;
+  debugError.value = "";
+  try {
+    let variables = {};
+    try {
+      variables = debugVariables.value ? JSON.parse(debugVariables.value) : {};
+    } catch {
+      variables = {};
+    }
+    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
+    const resp = await fetch(`${base}/ai/workflows/${workflowId.value}/debug-node/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken() || ""}`,
+      },
+      body: JSON.stringify({ node_id: debugNodeId.value, variables }),
+    });
+    if (!resp.ok || !resp.body) {
+      debugError.value = `请求失败：${resp.status}`;
+      return;
+    }
+    await readUiStream(resp, (obj) => {
+      if (obj.type === "node-status") {
+        debugInput.value = obj.input ?? debugInput.value;
+        debugOutput.value = obj.output ?? debugOutput.value;
+        if (obj.error) debugError.value = obj.error;
+        if (obj.status === "error" && !obj.error) debugError.value = "节点执行失败";
+      } else if (obj.type === "error") {
+        debugError.value = obj.errorText || obj.message || "节点执行失败";
+      }
+    });
+  } catch (e: any) {
+    debugError.value = `调试失败：${e?.message || e}`;
+  } finally {
+    debugRunning.value = false;
+  }
 }
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string; enabled: boolean }[]>([]);
@@ -1539,6 +1655,44 @@ async function handleApprove(decision: "approve" | "reject") {
   }
 }
 
+.debug-node-title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+
+.debug-result {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+
+  .debug-result__title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-text-color-secondary);
+
+    &.is-err {
+      color: var(--el-color-danger);
+    }
+  }
+
+  .debug-result__body {
+    margin: 6px 0 0;
+    max-height: 180px;
+    overflow: auto;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+
+    &.is-err {
+      color: var(--el-color-danger);
+    }
+  }
+}
+
 .run-trace {
   margin-bottom: 12px;
   padding: 12px;
@@ -1660,7 +1814,6 @@ async function handleApprove(decision: "approve" | "reject") {
 
 .run-approval {
   margin-top: 12px;
-
   .run-approval__list {
     display: flex;
     flex-direction: column;

@@ -1345,3 +1345,29 @@ def test_workflow_required_start_var(test_client, auth_headers):
         assert '"status": "error"' in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_debug_node(test_client, auth_headers):
+    """单节点调试：带变量运行指定节点，返回其输入/输出。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "tpl", "type": "template",
+                 "data": {"template": "结果:{{q}}", "output_variable": "out"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{out}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "tpl"},
+                      {"id": "e2", "source": "tpl", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/debug-node/stream",
+            json={"node_id": "tpl", "variables": {"q": "你好"}},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert '"status": "success"' in r.text
+        assert "结果:你好" in r.text
+        assert '"input":' in r.text and '"output":' in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])
