@@ -506,13 +506,29 @@
           </template>
         </el-table-column>
         <el-table-column prop="created_time" label="保存时间" width="180" />
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
+            <el-button link type="success" size="small" @click="openCompare(row)">对比</el-button>
             <el-button link type="primary" size="small" @click="doPublish(row)">发布</el-button>
             <el-button link type="warning" size="small" @click="doRollback(row)">回滚</el-button>
           </template>
         </el-table-column>
       </el-table>
+    </el-dialog>
+
+    <!-- 版本对比弹窗 -->
+    <el-dialog v-model="compareVisible" :title="compareTitle" width="520px" append-to-body>
+      <div v-if="!diffItems.length" class="compare-empty">该版本与当前画布内容一致。</div>
+      <div v-for="(d, i) in diffItems" :key="i" class="compare-item">
+        <el-tag
+          size="small"
+          :type="d.status === '新增' ? 'success' : d.status === '删除' ? 'danger' : 'warning'"
+        >
+          {{ d.status }}
+        </el-tag>
+        <span class="compare-label">{{ d.label }}</span>
+        <span class="compare-detail">{{ d.detail }}</span>
+      </div>
     </el-dialog>
   </el-drawer>
 </template>
@@ -989,6 +1005,45 @@ const versions = ref<any[]>([]);
 const versionLoading = ref(false);
 const savingVersion = ref(false);
 const versionRemark = ref("");
+const compareVisible = ref(false);
+const compareTitle = ref("");
+const diffItems = ref<{ label: string; status: string; detail: string }[]>([]);
+
+function openCompare(row: any) {
+  const vNodes: any[] = (row.graph?.nodes || []) as any[];
+  const curNodes: any[] = nodes.value || [];
+  const vMap = new Map(vNodes.map((n: any) => [n.id, n]));
+  const cMap = new Map(curNodes.map((n: any) => [n.id, n]));
+  const items: { label: string; status: string; detail: string }[] = [];
+  cMap.forEach((n, id) => {
+    const v = vMap.get(id);
+    if (!v) {
+      items.push({
+        label: nodeDefOf(n.type || "llm").label,
+        status: "新增",
+        detail: "当前画布新增节点",
+      });
+    } else if (JSON.stringify(n.data || {}) !== JSON.stringify(v.data || {})) {
+      items.push({
+        label: nodeDefOf(n.type || "llm").label,
+        status: "修改",
+        detail: "节点参数已变化",
+      });
+    }
+  });
+  vMap.forEach((v, id) => {
+    if (!cMap.has(id)) {
+      items.push({
+        label: nodeDefOf(v.type || "llm").label,
+        status: "删除",
+        detail: "该版本有、当前画布无",
+      });
+    }
+  });
+  diffItems.value = items;
+  compareTitle.value = `版本 v${row.version_no} vs 当前画布`;
+  compareVisible.value = true;
+}
 
 async function openVersions() {
   versionsVisible.value = true;
@@ -2124,6 +2179,29 @@ async function handleApprove(decision: "approve" | "reject") {
 .history-preview {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.compare-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+}
+
+.compare-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+
+  .compare-label {
+    font-weight: 600;
+  }
+
+  .compare-detail {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
 }
 
 .history-detail {
