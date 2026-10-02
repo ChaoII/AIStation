@@ -72,6 +72,14 @@
               精选
             </el-button>
             <el-button
+              v-hasPerm="['module_ai:agent:update']"
+              size="small"
+              :icon="Link"
+              @click="openInstallDialog(s)"
+            >
+              安装
+            </el-button>
+            <el-button
               v-hasPerm="['module_ai:skill:delete']"
               size="small"
               type="danger"
@@ -170,13 +178,39 @@
         <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="installVisible" title="安装技能到智能体" width="520px" append-to-body>
+      <el-form label-position="top" size="small">
+        <el-form-item label="选择智能体">
+          <el-select
+            v-model="installAgentId"
+            filterable
+            placeholder="选择智能体"
+            style="width: 100%"
+          >
+            <el-option v-for="a in agentOptions" :key="a.id" :label="a.agent_name" :value="a.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="installVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="installing"
+          :disabled="!installAgentId"
+          @click="confirmInstall"
+        >
+          安装
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Edit, Delete, View, Star } from "@element-plus/icons-vue";
+import { Plus, Edit, Delete, View, Star, Link } from "@element-plus/icons-vue";
 import {
   getAiSkillList,
   getAiSkillCategories,
@@ -185,7 +219,9 @@ import {
   updateAiSkill,
   deleteAiSkill,
   toggleAiSkillFeatured,
+  installAiSkillToAgent,
 } from "@/api/module_ai/skill";
+import { getAiAgentList } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiSkill" });
 
@@ -193,6 +229,45 @@ const loading = ref(false);
 const skills = ref<any[]>([]);
 const categories = ref<any[]>([]);
 const activeTab = ref("all");
+
+// 安装技能到智能体
+const installVisible = ref(false);
+const installing = ref(false);
+const installAgentId = ref<number | null>(null);
+const agentOptions = ref<any[]>([]);
+let currentSkill: any = null;
+
+async function openInstallDialog(s: any) {
+  currentSkill = s;
+  installAgentId.value = null;
+  installVisible.value = true;
+  if (!agentOptions.value.length) {
+    try {
+      const res = await getAiAgentList({});
+      agentOptions.value = (res.data?.data || []).map((a: any) => ({
+        id: a.id,
+        agent_name: a.agent_name,
+      }));
+    } catch {
+      agentOptions.value = [];
+    }
+  }
+}
+
+async function confirmInstall() {
+  if (!currentSkill || !installAgentId.value) return;
+  installing.value = true;
+  try {
+    await installAiSkillToAgent(installAgentId.value, currentSkill.id);
+    ElMessage.success("安装成功");
+    installVisible.value = false;
+    await loadData();
+  } catch {
+    ElMessage.error("安装失败，请重试");
+  } finally {
+    installing.value = false;
+  }
+}
 
 function skillTypeLabel(t: string) {
   return { instruction: "指令", tool: "工具", custom: "自定义" }[t] || t;

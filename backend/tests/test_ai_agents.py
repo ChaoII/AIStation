@@ -245,3 +245,50 @@ def test_agent_run_delegates_to_workflow(monkeypatch, test_client, auth_headers)
         test_client.request(
             "DELETE", "/api/v1/ai/workflows/delete", json=[wf_id], headers=auth_headers
         )
+
+
+def test_agent_install_uninstall_skill(test_client, auth_headers):
+    """技能安装到智能体：同步 skill_ids 并累加安装次数；卸载移除。"""
+    sk = test_client.post(
+        "/api/v1/ai/skills/create",
+        json={"name": _new_name("pytest_skill"), "skill_type": "instruction"},
+        headers=auth_headers,
+    ).json()["data"]
+    ag = test_client.post(
+        "/api/v1/ai/agents/create",
+        json={"agent_name": _new_name("pytest_agent"), "skill_ids": []},
+        headers=auth_headers,
+    ).json()["data"]
+    try:
+        r = test_client.post(
+            f"/api/v1/ai/agents/{ag['id']}/install-skill",
+            json={"skill_id": sk["id"]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200, r.text
+        detail = test_client.get(
+            f"/api/v1/ai/agents/detail/{ag['id']}", headers=auth_headers
+        ).json()["data"]
+        assert sk["id"] in (detail.get("skill_ids") or [])
+        sdetail = test_client.get(
+            f"/api/v1/ai/skills/detail/{sk['id']}", headers=auth_headers
+        ).json()["data"]
+        assert sdetail["install_count"] >= 1
+
+        r2 = test_client.post(
+            f"/api/v1/ai/agents/{ag['id']}/uninstall-skill",
+            json={"skill_id": sk["id"]},
+            headers=auth_headers,
+        )
+        assert r2.status_code == 200, r2.text
+        detail2 = test_client.get(
+            f"/api/v1/ai/agents/detail/{ag['id']}", headers=auth_headers
+        ).json()["data"]
+        assert sk["id"] not in (detail2.get("skill_ids") or [])
+    finally:
+        test_client.request(
+            "DELETE", "/api/v1/ai/agents/delete", json=[ag["id"]], headers=auth_headers
+        )
+        test_client.request(
+            "DELETE", "/api/v1/ai/skills/delete", json=[sk["id"]], headers=auth_headers
+        )

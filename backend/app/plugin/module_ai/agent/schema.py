@@ -52,6 +52,12 @@ class AiAgentRunSchema(BaseModel):
     session_id: int | None = None
 
 
+class AiAgentSkillBindSchema(BaseModel):
+    """安装/卸载技能到智能体。"""
+
+    skill_id: int = Field(..., description="技能 ID")
+
+
 class AiAgentCategoryCreateSchema(BaseModel):
     name: str = Field(..., max_length=64)
     parent_id: int | None = None

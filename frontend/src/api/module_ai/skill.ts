@@ -29,3 +29,21 @@ export function deleteAiSkill(ids: number[]) {
 export function toggleAiSkillFeatured(id: number, featured: boolean) {
   return request({ url: `${API_PATH}/toggle/${id}`, method: "put", params: { featured } });
 }
+
+/** 安装技能到智能体（同步 agent.skill_ids 并累加安装次数）。 */
+export function installAiSkillToAgent(agentId: number, skillId: number) {
+  return request({
+    url: `/ai/agents/${agentId}/install-skill`,
+    method: "post",
+    data: { skill_id: skillId },
+  });
+}
+
+/** 卸载智能体上的技能。 */
+export function uninstallAiSkillFromAgent(agentId: number, skillId: number) {
+  return request({
+    url: `/ai/agents/${agentId}/uninstall-skill`,
+    method: "post",
+    data: { skill_id: skillId },
+  });
+}

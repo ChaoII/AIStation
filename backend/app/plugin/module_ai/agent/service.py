@@ -176,6 +176,34 @@ class AiAgentService:
                     await db.delete(a)
 
     @classmethod
+    async def install_skill(cls, agent_id: int, skill_id: int, auth) -> bool | None:
+        """把技能关联到智能体并返回 True；智能体不存在返回 None。"""
+        async with async_db_session.begin() as db:
+            a = await db.get(AiAgentModel, agent_id)
+            if not a:
+                return None
+            skills = list(a.skill_ids or [])
+            if skill_id not in skills:
+                skills.append(skill_id)
+            a.skill_ids = skills
+            a.updated_id = getattr(getattr(auth, "user", None), "id", None)
+        return True
+
+    @classmethod
+    async def uninstall_skill(cls, agent_id: int, skill_id: int, auth) -> bool | None:
+        """移除智能体上的技能并返回 True；智能体不存在返回 None。"""
+        async with async_db_session.begin() as db:
+            a = await db.get(AiAgentModel, agent_id)
+            if not a:
+                return None
+            skills = list(a.skill_ids or [])
+            if skill_id in skills:
+                skills.remove(skill_id)
+            a.skill_ids = skills
+            a.updated_id = getattr(getattr(auth, "user", None), "id", None)
+        return True
+
+    @classmethod
     async def run_ui_stream(
         cls,
         agent_id: int,

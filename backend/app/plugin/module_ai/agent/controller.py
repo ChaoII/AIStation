@@ -15,6 +15,7 @@ from .schema import (
     AiAgentCategoryUpdateSchema,
     AiAgentCreateSchema,
     AiAgentRunSchema,
+    AiAgentSkillBindSchema,
     AiAgentUpdateSchema,
 )
 from .service import AiAgentService
@@ -112,6 +113,36 @@ async def delete_agents(
 ) -> JSONResponse:
     await AiAgentService.delete(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@AiAgentRouter.post("/{agent_id}/install-skill", summary="安装技能到智能体")
+async def install_skill(
+    agent_id: int,
+    data: AiAgentSkillBindSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:update"]))],
+) -> JSONResponse:
+    ok = await AiAgentService.install_skill(agent_id, data.skill_id, auth)
+    if ok is None:
+        return ErrorResponse(msg="智能体不存在")
+    from app.plugin.module_ai.skill.service import AiSkillService
+
+    await AiSkillService.bump_install([data.skill_id], 1)
+    return SuccessResponse(msg="安装成功")
+
+
+@AiAgentRouter.post("/{agent_id}/uninstall-skill", summary="卸载智能体上的技能")
+async def uninstall_skill(
+    agent_id: int,
+    data: AiAgentSkillBindSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:update"]))],
+) -> JSONResponse:
+    ok = await AiAgentService.uninstall_skill(agent_id, data.skill_id, auth)
+    if ok is None:
+        return ErrorResponse(msg="智能体不存在")
+    from app.plugin.module_ai.skill.service import AiSkillService
+
+    await AiSkillService.bump_install([data.skill_id], -1)
+    return SuccessResponse(msg="卸载成功")
 
 
 @AiAgentRouter.post("/{agent_id}/run/stream", summary="运行智能体（AI SDK UI Message Stream）")
