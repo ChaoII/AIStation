@@ -211,6 +211,10 @@
       destroy-on-close
     >
       <div class="chat-panel">
+        <div class="chat-toolbar">
+          <span class="chat-toolbar__tip">多轮对话 · 每次运行可展开节点详情</span>
+          <el-button link size="small" :icon="Delete" @click="clearChat">清空对话</el-button>
+        </div>
         <div ref="runListRef" class="chat-list">
           <div v-if="!chatMessages.length" class="chat-empty">
             输入消息开始测试工作流；每次运行都会展示每个节点的执行结果，点击可查看输入/输出/报错详情。
@@ -569,6 +573,7 @@ import {
   Loading,
   Download,
   Upload,
+  Delete,
   Operation,
   SwitchFilled,
   DataLine,
@@ -1782,6 +1787,11 @@ function openRun() {
   activeMsg.value = null;
   runVisible.value = true;
 }
+function clearChat() {
+  if (running.value) return;
+  chatMessages.value = [];
+  activeMsg.value = null;
+}
 
 /** 读取 AI SDK UI Message Stream（SSE）并逐帧回调，供运行/审批复用。 */
 async function readUiStream(resp: Response, onFrame: (obj: any) => void) {
@@ -2077,6 +2087,19 @@ async function handleApprove(decision: "approve" | "reject") {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.chat-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+  border-bottom: 1px solid var(--el-border-color-light);
+
+  .chat-toolbar__tip {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
 }
 
 .chat-list {
