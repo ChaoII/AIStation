@@ -428,6 +428,12 @@
 
     <!-- 运行历史弹窗 -->
     <el-dialog v-model="historyVisible" title="运行历史" width="760px" append-to-body>
+      <div class="history-stats">
+        <el-statistic title="总运行" :value="runHistoryList.length" />
+        <el-statistic title="成功" :value="historyStats.success" />
+        <el-statistic title="失败" :value="historyStats.fail" />
+        <el-statistic title="平均耗时(ms)" :value="historyStats.avgMs" />
+      </div>
       <el-table
         v-loading="historyLoading"
         :data="runHistoryList"
@@ -874,6 +880,15 @@ const historyVisible = ref(false);
 const historyLoading = ref(false);
 const runHistoryList = ref<any[]>([]);
 const runDetail = ref<any>(null);
+const historyStats = computed(() => {
+  const list = runHistoryList.value;
+  const success = list.filter((r) => r.status === "success").length;
+  const fail = list.filter((r) => r.status === "error").length;
+  const ms = list.length
+    ? Math.round(list.reduce((acc, r) => acc + (r.duration_ms || 0), 0) / list.length)
+    : 0;
+  return { success, fail, avgMs: ms };
+});
 async function openRunHistory() {
   if (!workflowId.value) return;
   historyVisible.value = true;
@@ -2260,6 +2275,16 @@ async function handleApprove(decision: "approve" | "reject") {
 .history-preview {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.history-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
 }
 
 .compare-empty {

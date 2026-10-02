@@ -11,6 +11,10 @@
       <el-switch v-model="nodeEnabled" inline-prompt active-text="启用" inactive-text="禁用" />
       <span v-if="!nodeEnabled" class="node-disabled-tip">（运行将跳过该节点）</span>
     </el-form-item>
+    <!-- 节点备注 -->
+    <el-form-item label="节点备注">
+      <el-input v-model="d.note" placeholder="给该节点加一条备注（可选）" size="small" />
+    </el-form-item>
     <!-- 插入变量 -->
     <el-form-item v-if="availableVars && availableVars.length" label="插入变量">
       <el-dropdown trigger="click" @command="insertVar">

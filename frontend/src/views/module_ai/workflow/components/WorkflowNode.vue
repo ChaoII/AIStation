@@ -27,6 +27,7 @@
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
     </div>
     <div class="wf-node__body">
+      <div v-if="data.note" class="wf-node__note" :title="data.note">{{ data.note }}</div>
       <template v-if="def.type === 'start'">
         <div v-if="(data.variables || []).length === 0" class="wf-node__empty">定义输入变量</div>
         <div v-else class="wf-node__chips">
@@ -334,6 +335,19 @@ function shortText(v: any, limit = 160): string {
 
   .wf-node__body {
     font-size: var(--el-font-size-small);
+  }
+
+  .wf-node__note {
+    margin-bottom: 6px;
+    padding: 4px 6px;
+    font-size: 11px;
+    color: var(--el-color-primary);
+    background: var(--el-color-primary-light-9);
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .wf-node__out {
