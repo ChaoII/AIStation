@@ -140,8 +140,40 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="所属供应商">
+          <el-select
+            v-model="formData.provider_id"
+            clearable
+            placeholder="选择后自动带出 API 基址"
+            style="width: 100%"
+            @change="onProviderChange"
+          >
+            <el-option v-for="p in providers" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="模型名" prop="model" required>
           <el-input v-model="formData.model" placeholder="如：deepseek-chat" />
+          <el-button
+            text
+            type="primary"
+            :icon="Refresh"
+            style="margin-left: 8px"
+            :disabled="!formData.provider_id"
+            :loading="pulling"
+            @click="pullRemoteModels"
+          >
+            从供应商导入
+          </el-button>
+        </el-form-item>
+        <el-form-item v-if="remoteModels.length" label="选择模型">
+          <el-select
+            v-model="formData.model"
+            filterable
+            placeholder="从远端模型列表选择"
+            style="width: 100%"
+          >
+            <el-option v-for="m in remoteModels" :key="m" :label="m" :value="m" />
+          </el-select>
         </el-form-item>
         <el-form-item label="API 基址" prop="base_url" required>
           <el-input v-model="formData.base_url" placeholder="如：https://api.deepseek.com" />
@@ -194,8 +226,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { ElMessage } from "element-plus";
+import { Refresh } from "@element-plus/icons-vue";
 import {
   getAiModelList,
   createAiModel,
@@ -204,6 +237,7 @@ import {
   setDefaultAiModel,
   testAiModel,
 } from "@/api/module_ai/model";
+import { getAiProviderList, getAiProviderRemoteModels } from "@/api/module_ai/provider";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
@@ -282,6 +316,7 @@ const emptyForm = () => ({
   name: "",
   model: "",
   usage: "chat",
+  provider_id: undefined as number | undefined,
   capabilities_text: "",
   context_window: undefined as number | undefined,
   base_url: "",
@@ -294,6 +329,47 @@ const emptyForm = () => ({
   description: undefined as string | undefined,
 });
 const formData = reactive<any>(emptyForm());
+const providers = ref<any[]>([]);
+const remoteModels = ref<string[]>([]);
+const pulling = ref(false);
+
+async function loadProviders() {
+  try {
+    const res = await getAiProviderList();
+    providers.value = (res.data?.data || []) as any[];
+  } catch {
+    providers.value = [];
+  }
+}
+
+function onProviderChange(id: number | undefined) {
+  remoteModels.value = [];
+  if (!id) return;
+  const p = providers.value.find((x) => x.id === id);
+  // 已有基址则不覆盖，仅首次带出
+  if (p && !formData.base_url) formData.base_url = p.base_url || "";
+}
+
+async function pullRemoteModels() {
+  if (!formData.provider_id) {
+    ElMessage.warning("请先选择所属供应商");
+    return;
+  }
+  pulling.value = true;
+  try {
+    const res = await getAiProviderRemoteModels(formData.provider_id);
+    remoteModels.value = (res.data?.data || []) as string[];
+    if (remoteModels.value.length) {
+      ElMessage.success(`已导入 ${remoteModels.value.length} 个远端模型`);
+    } else {
+      ElMessage.warning("该供应商未拉取到模型");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "拉取失败");
+  } finally {
+    pulling.value = false;
+  }
+}
 
 function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
@@ -312,6 +388,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
         name: item.name,
         model: item.model,
         usage: item.usage || "chat",
+        provider_id: item.provider_id || undefined,
         capabilities_text: (item.capabilities || []).join(","),
         context_window: item.context_window,
         base_url: item.base_url,
@@ -327,6 +404,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
   } else {
     dialogVisible.title = "新增模型配置";
   }
+  remoteModels.value = [];
   dialogVisible.visible = true;
 }
 
@@ -355,6 +433,7 @@ async function handleSubmit() {
     const payload: any = {
       name: formData.name,
       provider: "openai_compatible",
+      provider_id: formData.provider_id || undefined,
       usage: formData.usage,
       capabilities: formData.capabilities_text
         ? formData.capabilities_text
@@ -425,6 +504,10 @@ async function handleTestForm() {
     testing.value = false;
   }
 }
+
+onMounted(() => {
+  loadProviders();
+});
 </script>
 
 <style scoped>

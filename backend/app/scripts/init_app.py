@@ -668,6 +668,10 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
     ("module_ai:knowledge:create", "新增知识库"),
     ("module_ai:knowledge:update", "编辑知识库"),
     ("module_ai:knowledge:delete", "删除知识库"),
+    ("module_ai:provider:query", "查询供应商"),
+    ("module_ai:provider:create", "新增供应商"),
+    ("module_ai:provider:update", "编辑供应商"),
+    ("module_ai:provider:delete", "删除供应商"),
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
@@ -736,6 +740,7 @@ async def _ensure_ai_menus() -> None:
                 ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 16),
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17),
                 ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18),
+                ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19),
             ]
             for title, rname, rpath, comp, perm, order in pages:
                 exists = await db.scalar(

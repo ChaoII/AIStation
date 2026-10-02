@@ -58,3 +58,11 @@ async def remote_models(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:provider:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiProviderService.remote_models(provider_id), msg="查询成功")
+
+
+@AiProviderRouter.get("/test/{provider_id}", summary="测试供应商连通性")
+async def test_provider(
+    provider_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:provider:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiProviderService.test(provider_id), msg="测试完成")

@@ -112,3 +112,31 @@ class AiProviderService:
             raise
         except Exception as e:
             raise CustomException(msg=f"拉取失败: {e}")
+
+    @classmethod
+    async def test(cls, provider_id: int) -> dict:
+        """测试供应商连通性：请求其 /models 端点验证连通与鉴权。"""
+        p = await cls._load(provider_id)
+        if not p.base_url:
+            raise CustomException(msg="base_url 不能为空")
+        import httpx
+
+        url = p.base_url.rstrip("/") + "/models"
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {p.api_key}" if p.api_key else "",
+                        "User-Agent": "aistation/1.0",
+                        **build_headers(p.base_url, p.extra_headers),
+                    },
+                )
+            if resp.status_code >= 400:
+                return {"ok": False, "message": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            data = resp.json()
+            items = data.get("data") if isinstance(data, dict) else data
+            count = len(items) if isinstance(items, list) else 0
+            return {"ok": True, "message": f"连接成功，发现 {count} 个模型"}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "message": str(e)}
