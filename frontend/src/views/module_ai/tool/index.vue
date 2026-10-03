@@ -91,6 +91,7 @@
                 />
               </span>
               <div class="tool-card__actions">
+                <el-button text type="primary" @click="openDetail(tool)">详情</el-button>
                 <el-button
                   text
                   type="primary"
@@ -217,6 +218,58 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <!-- 工具详情（结构化参数展示） -->
+    <el-dialog
+      v-model="detailVisible"
+      :title="detailTool ? displayName(detailTool) : '工具详情'"
+      width="640px"
+      append-to-body
+    >
+      <el-descriptions v-if="detailTool" :column="2" border size="small">
+        <el-descriptions-item label="来源">
+          {{ sourceLabel(detailTool.source) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="分组">{{ detailTool.group || "—" }}</el-descriptions-item>
+        <el-descriptions-item label="状态">
+          <el-tag size="small" :type="detailTool.ready ? 'success' : 'warning'">
+            {{ detailTool.ready ? "就绪" : "未就绪" }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="风险">
+          <el-tag v-if="detailTool.risk === 'high'" size="small" type="danger">高危</el-tag>
+          <span v-else>—</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="描述" :span="2">
+          {{ detailTool.description || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="paramsFields.length" label="入参" :span="2">
+          <div class="tool-params">
+            <div v-for="p in paramsFields" :key="p.key" class="tool-params__row">
+              <el-tag size="small" type="info" effect="plain">{{ p.key }}</el-tag>
+              <span class="tool-params__type">{{ p.type }}</span>
+              <span v-if="p.required" class="tool-params__req">必填</span>
+              <span v-if="p.desc" class="tool-params__desc">{{ p.desc }}</span>
+            </div>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item
+          v-if="detailTool.config && Object.keys(detailTool.config).length"
+          label="已配置参数"
+          :span="2"
+        >
+          <div class="tool-params">
+            <div v-for="(v, k) in detailTool.config" :key="k" class="tool-params__row">
+              <el-tag size="small" effect="plain">{{ k }}</el-tag>
+              <span class="tool-params__val">{{ String(v) }}</span>
+            </div>
+          </div>
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -589,6 +642,43 @@ async function onDelete(tool: AiToolRow) {
   }
 }
 
+// ---- 工具详情（结构化参数展示） ----
+const detailVisible = ref(false);
+const detailTool = ref<AiToolRow | null>(null);
+const paramsFields = computed(() => {
+  const tool = detailTool.value;
+  const out: { key: string; type: string; required: boolean; desc: string }[] = [];
+  // config_fields（Agno/系统声明字段）
+  for (const f of tool?.config_fields || []) {
+    out.push({
+      key: f.key,
+      type: (f as any).type || (f.secret ? "password" : "string"),
+      required: !!f.required,
+      desc: f.label || "",
+    });
+  }
+  // params_schema（HTTP 入参 JSON Schema）
+  const schema = tool?.params_schema as any;
+  const props = schema?.properties;
+  if (props && typeof props === "object") {
+    const required = new Set(schema?.required || []);
+    for (const [key, spec] of Object.entries<any>(props)) {
+      out.push({
+        key,
+        type: String(spec?.type || "any"),
+        required: required.has(key),
+        desc: String(spec?.description || spec?.title || ""),
+      });
+    }
+  }
+  return out;
+});
+function openDetail(tool: AiToolRow | null) {
+  if (!tool) return;
+  detailTool.value = tool;
+  detailVisible.value = true;
+}
+
 onMounted(() => {
   refreshList();
 });
@@ -670,5 +760,29 @@ onMounted(() => {
 
 .custom-param__value {
   flex: 1;
+}
+.tool-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tool-params__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--el-font-size-base);
+}
+.tool-params__type {
+  color: var(--el-text-color-secondary);
+  font-family: var(--el-font-family-mono, monospace);
+}
+.tool-params__req {
+  color: var(--el-color-danger);
+  font-size: 12px;
+}
+.tool-params__desc,
+.tool-params__val {
+  color: var(--el-text-color-regular);
 }
 </style>
