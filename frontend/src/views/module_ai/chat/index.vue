@@ -45,6 +45,15 @@
             >
               <el-option v-for="kb in kbOptions" :key="kb.id" :label="kb.name" :value="kb.id" />
             </el-select>
+            <el-select
+              v-model="selectedModelId"
+              clearable
+              size="small"
+              placeholder="切换模型（默认）"
+              style="max-width: 240px"
+            >
+              <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
+            </el-select>
           </div>
           <ChatInput :sending="isSending" @send="handleSendMessage" @stop="handleStop" />
         </el-footer>
@@ -70,6 +79,7 @@ import { createAiSession, getAiSessionDetail, type AiSessionItem } from "@/api/m
 import { getAiAppDetail } from "@/api/module_ai/app";
 import { getAiAgentDetail } from "@/api/module_ai/agent";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
+import { getAiModelList } from "@/api/module_ai/model";
 import { useAiChat } from "@/composables/ai/useAiChat";
 import { textOf, reasoningOf, toolPartsOf, sourcesOf } from "@/composables/ai/uiMessage";
 import type { ChatMessage, UploadedFile } from "./types";
@@ -95,6 +105,18 @@ let appLoadToken = 0;
 // 关联知识库（RAG）：仅通用助手（无 app/agent）时生效
 const selectedKbIds = ref<number[]>([]);
 const kbOptions = ref<{ id: number; name: string }[]>([]);
+const selectedModelId = ref<number | null>(null);
+const modelOptions = ref<{ id: number; name: string; model: string }[]>([]);
+
+async function loadModels() {
+  try {
+    const res = await getAiModelList();
+    modelOptions.value = (res.data?.data || []).filter((m: any) => m.enabled);
+  } catch {
+    modelOptions.value = [];
+  }
+}
+loadModels();
 
 async function loadKnowledgeBases() {
   try {
@@ -181,6 +203,10 @@ const chat = useAiChat(() => ({
     // 通用助手（无 app/agent）时可关联知识库做 RAG
     if (!appId.value && !agentId.value && selectedKbIds.value.length) {
       payload.knowledge_ids = selectedKbIds.value;
+    }
+    // 通用助手可切换模型
+    if (!appId.value && !agentId.value && selectedModelId.value != null) {
+      payload.model_id = selectedModelId.value;
     }
     return payload;
   },

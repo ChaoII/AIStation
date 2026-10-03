@@ -359,6 +359,7 @@ async def run_assistant_ui_stream(
     auth,
     session_id: int | None = None,
     knowledge_ids: list[int] | None = None,
+    model_id: int | None = None,
 ):
     """AI SDK UI Message Stream 版助手：reasoning/text/tool/finish 分片。
 
@@ -389,8 +390,12 @@ async def run_assistant_ui_stream(
     yield ms.start()
     try:
         runtime = (
-            await AiModelService.get_runtime_model("chat")
-            or await AiModelService.get_runtime_model()
+            await AiModelService.get_runtime_model(model_id=model_id)
+            if model_id
+            else (
+                await AiModelService.get_runtime_model("chat")
+                or await AiModelService.get_runtime_model()
+            )
         )
         if not runtime:
             yield ms.error("未配置大模型，请在 AI 管理→模型配置 中添加并启用")

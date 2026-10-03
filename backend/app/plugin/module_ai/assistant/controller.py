@@ -55,7 +55,7 @@ async def assistant_stream(
         ok, err = True, None
         try:
             async for item in run_assistant_ui_stream(
-                data.messages, auth, data.session_id, data.knowledge_ids
+                data.messages, auth, data.session_id, data.knowledge_ids, data.model_id
             ):
                 if '"type": "error"' in item:
                     ok = False
