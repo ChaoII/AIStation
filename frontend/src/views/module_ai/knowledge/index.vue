@@ -512,8 +512,14 @@
             <el-table-column label="时间" width="150">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="80" align="center">
+            <el-table-column label="操作" width="160" align="center">
               <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="previewDoc(row)">
+                  预览
+                </el-button>
+                <el-button link type="warning" size="small" @click="reparseDoc(row)">
+                  重建
+                </el-button>
                 <el-button link type="danger" size="small" @click="deleteDoc(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -523,6 +529,29 @@
             description="暂无文档"
             :image-size="60"
           />
+
+          <el-divider />
+          <div class="qa-block">
+            <div class="qa-block__title">跨文档交叉问答</div>
+            <div class="dt-search">
+              <el-input
+                v-model="qaQuery"
+                placeholder="输入问题，检索全部文档"
+                @keyup.enter="doQaSearch"
+              />
+              <el-button type="primary" :loading="qaSearching" @click="doQaSearch">问答</el-button>
+            </div>
+            <div v-for="(h, i) in qaResults" :key="i" class="search-hit">
+              <div class="search-hit__meta">
+                <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
+                <span class="search-hit__score">得分 {{ h.score }}</span>
+                <el-tag size="small" effect="plain" :type="engineType(h.engine)">
+                  {{ engineLabel(h.engine) }}
+                </el-tag>
+              </div>
+              <div class="search-hit__content" v-html="highlight(h.content, qaQuery)"></div>
+            </div>
+          </div>
         </el-tab-pane>
 
         <!-- 分块 -->
@@ -1343,6 +1372,16 @@
       </template>
     </el-dialog>
 
+    <!-- 文档内容预览 -->
+    <el-dialog v-model="docPreviewVisible" :title="docPreviewName" width="720px" append-to-body>
+      <div v-loading="docPreviewLoading" class="doc-preview">
+        {{ docPreviewContent || "（空文档）" }}
+      </div>
+      <template #footer>
+        <el-button @click="docPreviewVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 连线样式设置 -->
     <el-dialog v-model="edgeStyleVisible" title="连线样式设置" width="560px" append-to-body>
       <el-form label-width="90px" size="default">
@@ -1607,6 +1646,8 @@ import {
   getAiKnowledgeDocuments,
   uploadAiKnowledgeDocument,
   deleteAiKnowledgeDocument,
+  getAiKnowledgeDocumentContent,
+  reparseAiKnowledgeDocument,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
@@ -2542,6 +2583,56 @@ async function deleteDoc(row: any) {
     ElMessage.error(e?.message || "删除失败");
   }
 }
+// 预览 / 重建
+const docPreviewVisible = ref(false);
+const docPreviewName = ref("");
+const docPreviewContent = ref("");
+const docPreviewLoading = ref(false);
+async function previewDoc(row: any) {
+  if (!detailKb.value) return;
+  docPreviewVisible.value = true;
+  docPreviewName.value = row.name;
+  docPreviewContent.value = "";
+  docPreviewLoading.value = true;
+  try {
+    const r = await getAiKnowledgeDocumentContent(detailKb.value.id, row.id);
+    docPreviewContent.value = r.data?.data?.content || "";
+  } catch (e: any) {
+    ElMessage.error(e?.message || "预览失败");
+  } finally {
+    docPreviewLoading.value = false;
+  }
+}
+async function reparseDoc(row: any) {
+  if (!detailKb.value) return;
+  try {
+    const r = await reparseAiKnowledgeDocument(detailKb.value.id, row.id);
+    ElMessage.success(`已重新解析，分块 ${r.data?.data?.chunks || 0}`);
+    await loadDocs();
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "重建失败");
+  }
+}
+// 跨文档交叉问答
+const qaQuery = ref("");
+const qaSearching = ref(false);
+const qaResults = ref<any[]>([]);
+async function doQaSearch() {
+  if (!detailKb.value || !qaQuery.value.trim()) return;
+  qaSearching.value = true;
+  try {
+    const r = await searchAiKnowledge(detailKb.value.id, qaQuery.value, 12, true, "hybrid");
+    qaResults.value = r.data?.data || [];
+    if (!qaResults.value.length) {
+      ElMessage.info("未检索到相关内容，可换个问法或给分块加标注");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "问答失败");
+  } finally {
+    qaSearching.value = false;
+  }
+}
 
 // ---------- 检索统计 ----------
 const statsDays = ref(30);
@@ -3290,6 +3381,25 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+.doc-preview {
+  max-height: 70vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: var(--el-font-size-base);
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  padding: 14px;
+}
+.qa-block {
+  .qa-block__title {
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
 }
 
 .graph-ctx {

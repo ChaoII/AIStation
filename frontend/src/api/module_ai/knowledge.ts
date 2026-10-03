@@ -217,6 +217,12 @@ export function uploadAiKnowledgeDocument(
 export function deleteAiKnowledgeDocument(id: number, docId: number) {
   return request({ url: `${BASE}/${id}/documents/${docId}`, method: "delete" });
 }
+export function getAiKnowledgeDocumentContent(id: number, docId: number) {
+  return request({ url: `${BASE}/${id}/documents/${docId}/content`, method: "get" });
+}
+export function reparseAiKnowledgeDocument(id: number, docId: number) {
+  return request({ url: `${BASE}/${id}/documents/${docId}/reparse`, method: "post" });
+}
 
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {
