@@ -516,9 +516,9 @@ class AiKnowledgeService:
             if mode == "vector":
                 return vec_list[:top_k]
 
-        # hybrid：向量 + 全文加权融合（min-max 归一化后按权重合成）
+        # hybrid：向量 + 全文 RRF 融合（各引擎按排名倒数加权，鲁棒且不惩罚缺失引擎）
         if mode == "hybrid":
-            results = cls._fuse_weighted(vec_list, ft_list, vector_weight, fulltext_weight)
+            results = cls._fuse_rrf(vec_list, ft_list)
             seen = {r["chunk_id"] for r in results}
         else:
             results = vec_list + ft_list
@@ -577,6 +577,32 @@ class AiKnowledgeService:
         for cid, it in info.items():
             combined = vn.get(cid, 0.0) * vec_w + fn.get(cid, 0.0) * ft_w
             fused.append({**it, "engine": "hybrid", "score": round(combined, 4)})
+        fused.sort(key=lambda x: x["score"], reverse=True)
+        return fused
+
+    @classmethod
+    def _fuse_rrf(
+        cls,
+        vec_list: list[dict],
+        ft_list: list[dict],
+        k: int = 60,
+    ) -> list[dict]:
+        """RRF（Reciprocal Rank Fusion）：多引擎按排名倒数融合。
+
+        分数 = Σ 1/(k + rank)，不依赖各引擎分数尺度，也不因某引擎缺失而
+        惩罚命中项；比加权归一化更鲁棒，是主流混合检索的标准融合法。
+        """
+        scores: dict[int, float] = {}
+        info: dict[int, dict] = {}
+        for lst in (vec_list, ft_list):
+            for rank, it in enumerate(lst, start=1):
+                cid = it["chunk_id"]
+                scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
+                info.setdefault(cid, it)
+        fused = [
+            {**info[cid], "engine": "hybrid", "score": round(s, 4)}
+            for cid, s in scores.items()
+        ]
         fused.sort(key=lambda x: x["score"], reverse=True)
         return fused
 
@@ -1322,7 +1348,7 @@ class AiKnowledgeService:
         hits = await cls.search([kb_id], query, top_k=top_k, use_graph=True, mode=mode)
         if not hits:
             return {"answer": "未检索到相关知识，请换个问法或上传更多文档。", "references": []}
-        # 取文档表，生成 RustFS 原文档链接
+        # 取文档表 + 上下文扩展（父块/相邻片段回填），生成 RustFS 原文档链接
         async with async_db_session() as db:
             doc_ids = {h.get("document_id") for h in hits if h.get("document_id")}
             docs: dict[int, AiKnowledgeDocumentModel] = {}
@@ -1335,25 +1361,56 @@ class AiKnowledgeService:
                     )
                 ).scalars().all()
                 docs = {d.id: d for d in rows}
-        refs: list[dict] = []
-        context_parts: list[str] = []
-        for i, h in enumerate(hits, start=1):
-            did = h.get("document_id")
-            doc = docs.get(did) if did else None
-            rust = cls._presigned(doc.object_key) if doc and doc.object_key else None
-            refs.append(
-                {
-                    "index": i,
-                    "chunk_id": h["chunk_id"],
-                    "file": h.get("file_name") or (doc.name if doc else "未知"),
-                    "document_id": did,
-                    "start_line": h.get("start_line"),
-                    "page": h.get("page"),
-                    "content": h["content"],
-                    "rustfs_url": rust,
-                }
-            )
-            context_parts.append(f"[{i}] {h['content']}")
+            refs: list[dict] = []
+            context_parts: list[str] = []
+            for i, h in enumerate(hits, start=1):
+                did = h.get("document_id")
+                doc = docs.get(did) if did else None
+                rust = cls._presigned(doc.object_key) if doc and doc.object_key else None
+                # 父块回填：拉取同文档相邻 chunk 作为该引用的完整上下文（检索小块、回答用大块）
+                ext_ctx = h["content"]
+                if did:
+                    try:
+                        cur = (
+                            await db.execute(
+                                select(AiKnowledgeChunkModel).where(
+                                    AiKnowledgeChunkModel.id == h["chunk_id"]
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if cur is not None:
+                            nb = (
+                                await db.execute(
+                                    select(AiKnowledgeChunkModel.content)
+                                    .where(
+                                        AiKnowledgeChunkModel.document_id == did,
+                                        AiKnowledgeChunkModel.is_deleted.is_(False),
+                                        AiKnowledgeChunkModel.chunk_index.between(
+                                            (cur.chunk_index or 1) - 1,
+                                            (cur.chunk_index or 1) + 1,
+                                        ),
+                                    )
+                                    .order_by(AiKnowledgeChunkModel.chunk_index)
+                                )
+                            ).scalars().all()
+                            if nb:
+                                ext_ctx = "\n\n".join(nb)
+                    except Exception:  # noqa: BLE001
+                        ext_ctx = h["content"]
+                refs.append(
+                    {
+                        "index": i,
+                        "chunk_id": h["chunk_id"],
+                        "file": h.get("file_name") or (doc.name if doc else "未知"),
+                        "document_id": did,
+                        "start_line": h.get("start_line"),
+                        "page": h.get("page"),
+                        "content": h["content"],
+                        "context": ext_ctx,
+                        "rustfs_url": rust,
+                    }
+                )
+                context_parts.append(f"[{i}] {ext_ctx}")
         answer = await cls._generate_answer(kb_id, query, context_parts, refs)
         return {"answer": answer, "references": refs}
 
