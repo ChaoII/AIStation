@@ -30,3 +30,21 @@ async def list_logs(
         keyword=keyword,
     )
     return SuccessResponse(data=data, msg="查询成功")
+
+
+@AiLogsRouter.get("/stats", summary="调用日志统计")
+async def log_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: Annotated[int, Query(ge=1, le=90, description="统计天数")] = 7,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiLogService.stats(days), msg="查询成功")
+
+
+@AiLogsRouter.get("/export", summary="导出调用日志(CSV)")
+async def export_logs(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: Annotated[int, Query(ge=1, le=365, description="天数")] = 30,
+    usage: Annotated[str | None, Query(description="用途过滤")] = None,
+    result: Annotated[str | None, Query(description="success/error")] = None,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiLogService.export(days, usage, result), msg="查询成功")
