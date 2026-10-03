@@ -40,7 +40,7 @@
     <div class="wf-node__body">
       <template v-if="def.type === 'group'">
         <div class="wf-group__title">{{ data.title || "分组" }}</div>
-        <div class="wf-group__hint">拖动分组整体移动；右键节点可「加入/移出分组」</div>
+        <div class="wf-group__hint">双击收缩/展开；右键节点可「加入/移出分组」</div>
       </template>
       <div v-if="data.output_variable" class="wf-node__outvar">→ {{ data.output_variable }}</div>
       <template v-if="def.type === 'note'">

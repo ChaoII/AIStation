@@ -98,6 +98,7 @@
                 :default-edge-options="defaultEdgeOptions"
                 @node-click="onNodeClick"
                 @node-context-menu="onNodeContextMenu"
+                @node-double-click="onNodeDoubleClick"
                 @drop="onDrop"
                 @dragover="onDragOver"
                 @node-drag-start="onNodeDragStart"
@@ -2500,6 +2501,35 @@ function onNodeContextMenu(payload: any) {
   if (!node) return;
   contextMenu.value = { x: event?.clientX ?? 0, y: event?.clientY ?? 0, nodeId: node.id };
   selectedNode.value = node;
+}
+
+// 双击分组：收缩/展开（隐藏或显示组内子节点）
+function onNodeDoubleClick(payload: any) {
+  const node = payload?.node;
+  if (node?.type === "group") toggleGroupCollapse(node.id);
+}
+function toggleGroupCollapse(id: string) {
+  const g = nodes.value.find((n) => n.id === id);
+  if (!g) return;
+  pushHistory();
+  const collapsed = !g.data?.collapsed;
+  if (collapsed) {
+    g.data = { ...(g.data || {}), collapsed: true };
+    g.width = 180;
+    g.height = 48;
+    nodes.value.forEach((n) => {
+      if (n.parentNode === id) n.hidden = true;
+    });
+  } else {
+    const w = g.data?.width || 640;
+    const h = g.data?.height || 420;
+    g.data = { ...(g.data || {}), collapsed: false };
+    g.width = w;
+    g.height = h;
+    nodes.value.forEach((n) => {
+      if (n.parentNode === id) n.hidden = false;
+    });
+  }
 }
 function ctxDebug() {
   const id = contextMenu.value?.nodeId;
