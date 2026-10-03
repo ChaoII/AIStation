@@ -179,6 +179,18 @@ class AiKnowledgeEntityModel(ModelMixin):
     )
 
 
+class AiRelationTypeTemplateModel(ModelMixin):
+    """图谱关系类型常用模板（可维护）。"""
+
+    __tablename__ = "ai_relation_types"
+    __table_args__ = ({"comment": "AI 图谱关系类型模板表"},)
+
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, comment="关系类型名")
+    color: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default="#a0a6ad", comment="连线颜色（可选）"
+    )
+
+
 class AiKnowledgeRelationModel(ModelMixin):
     """知识图谱关系（GraphRAG 边）。"""
 

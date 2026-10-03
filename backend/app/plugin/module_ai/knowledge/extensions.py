@@ -46,6 +46,17 @@ async def ensure_extensions() -> None:
     await _run_sql("ALTER TABLE ai_knowledge_entities ADD COLUMN IF NOT EXISTS description text")
     await _run_sql("ALTER TABLE ai_knowledge_entities ADD COLUMN IF NOT EXISTS layout jsonb")
     await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_relation_types ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, name VARCHAR(64) UNIQUE, color VARCHAR(16))"
+    )
+    for rt in ("属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"):
+        await _run_sql(
+            f"INSERT INTO ai_relation_types (name,color) SELECT '{rt}','#a0a6ad' "
+            "WHERE NOT EXISTS (SELECT 1 FROM ai_relation_types WHERE name='" + rt + "')"
+        )
+    await _run_sql(
         "CREATE TABLE IF NOT EXISTS ai_knowledge_entity_chunks ("
         "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "
         "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "

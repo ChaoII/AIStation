@@ -115,3 +115,9 @@ class AiKnowledgeGraphLayoutItemSchema(BaseModel):
 class AiKnowledgeGraphLayoutSchema(BaseModel):
     """保存图谱布局：节点坐标列表。"""
     items: list[AiKnowledgeGraphLayoutItemSchema] = Field(default_factory=list)
+
+
+class AiRelationTypeCreateSchema(BaseModel):
+    """关系类型模板。"""
+    name: str = Field(..., min_length=1, max_length=64)
+    color: str | None = Field(default=None, max_length=16)

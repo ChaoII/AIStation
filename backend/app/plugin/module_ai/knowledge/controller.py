@@ -24,6 +24,7 @@ from .schema import (
     AiKnowledgeIngestSchema,
     AiKnowledgeSearchSchema,
     AiKnowledgeUpdateChunkSchema,
+    AiRelationTypeCreateSchema,
 )
 from .service import AiKnowledgeService
 
@@ -228,6 +229,34 @@ async def clear_graph_layout(
         data={"cleared": await AiKnowledgeService.clear_graph_layout(kb_id)},
         msg="已清除布局",
     )
+
+
+# ---------- 关系类型模板（可维护） ----------
+@KnowledgeRouter.get("/relation-types", summary="关系类型模板列表")
+async def list_relation_types(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiKnowledgeService.list_relation_types(), msg="查询成功")
+
+
+@KnowledgeRouter.post("/relation-types", summary="新增关系类型模板")
+async def create_relation_type(
+    data: AiRelationTypeCreateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.create_relation_type(data.name, data.color),
+        msg="已新增关系类型",
+    )
+
+
+@KnowledgeRouter.delete("/relation-types/{rid}", summary="删除关系类型模板")
+async def delete_relation_type(
+    rid: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    await AiKnowledgeService.delete_relation_type(rid)
+    return SuccessResponse(msg="已删除")
 
 
 @KnowledgeRouter.post("/bases/{kb_id}/rebuild", summary="重建索引（重新向量化+重建图谱）")

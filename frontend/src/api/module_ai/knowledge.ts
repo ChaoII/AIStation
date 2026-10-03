@@ -181,6 +181,16 @@ export function saveAiKnowledgeGraphLayout(
 export function clearAiKnowledgeGraphLayout(id: number) {
   return request({ url: `${BASE}/${id}/graph/layout`, method: "delete" });
 }
+// ---------- 关系类型模板 ----------
+export function getAiRelationTypes() {
+  return request({ url: `/ai/knowledge/relation-types`, method: "get" });
+}
+export function createAiRelationType(data: { name: string; color?: string }) {
+  return request({ url: `/ai/knowledge/relation-types`, method: "post", data });
+}
+export function deleteAiRelationType(rid: number) {
+  return request({ url: `/ai/knowledge/relation-types/${rid}`, method: "delete" });
+}
 
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {

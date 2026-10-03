@@ -573,6 +573,9 @@
               >
                 + 标注此分块
               </el-button>
+              <el-button link type="primary" size="small" @click="locateInGraph(h)">
+                图谱定位
+              </el-button>
             </div>
             <div class="search-hit__content" v-html="highlight(h.content, detailQuery)"></div>
           </div>
@@ -756,6 +759,10 @@
               </el-button>
               <el-button size="small" @click="relayoutGraph">重新布局</el-button>
               <el-button size="small" @click="() => reloadGraph()">刷新</el-button>
+              <el-button size="small" @click="openRelationTypeDialog">关系模板</el-button>
+              <el-button size="small" type="primary" plain @click="graphFullscreenVisible = true">
+                全屏
+              </el-button>
               <el-switch
                 v-model="linkMode"
                 size="small"
@@ -1024,6 +1031,86 @@
       </template>
     </el-dialog>
 
+    <!-- 图谱全屏查看 -->
+    <el-dialog v-model="graphFullscreenVisible" title="知识图谱 · 全屏" fullscreen append-to-body>
+      <div v-loading="graphLoading" class="graph-fullscreen">
+        <div class="graph-stats">
+          <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
+          <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+          <el-button size="small" @click="relayoutGraph">重新布局</el-button>
+          <el-button size="small" @click="() => reloadGraph()">刷新</el-button>
+          <el-switch
+            v-model="linkMode"
+            size="small"
+            active-text="连线模式"
+            @change="linkSource = null"
+          />
+        </div>
+        <VChart
+          v-if="graphOption"
+          class="graph-chart graph-chart--fullscreen"
+          :option="graphOption"
+          autoresize
+          @click="onGraphNodeClick"
+          @contextmenu="onGraphContextmenu"
+        />
+        <div
+          v-if="ctxMenu.visible"
+          class="graph-ctx"
+          :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+          @click.stop
+        >
+          <template v-if="ctxMenu.kind === 'node'">
+            <div class="graph-ctx__item" @click="ctxEditNode">编辑节点属性</div>
+            <div class="graph-ctx__item" @click="ctxBindNode">绑定分块</div>
+            <div class="graph-ctx__item" @click="ctxAddRel">添加关系</div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">删除节点</div>
+          </template>
+          <template v-else-if="ctxMenu.kind === 'edge'">
+            <div class="graph-ctx__item" @click="ctxEditRel">编辑关系</div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">删除关系</div>
+          </template>
+          <template v-else>
+            <div class="graph-ctx__item" @click="ctxNewNode">新建节点</div>
+          </template>
+        </div>
+      </div>
+    </el-dialog>
+
+    <!-- 关系类型模板管理 -->
+    <el-dialog
+      v-model="relationTypeDialogVisible"
+      title="关系类型模板"
+      width="520px"
+      append-to-body
+    >
+      <div class="rt-add">
+        <el-input
+          v-model="rtNewName"
+          placeholder="关系类型名，如：依赖"
+          size="small"
+          @keyup.enter="addRt"
+        />
+        <el-button size="small" type="primary" @click="addRt">添加</el-button>
+      </div>
+      <el-table :data="relationTypes" size="small" max-height="50vh">
+        <el-table-column prop="name" label="类型" min-width="140" />
+        <el-table-column label="颜色" width="80" align="center">
+          <template #default="{ row }">
+            <i class="graph-legend__dot" :style="{ background: row.color || '#a0a6ad' }" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" align="center">
+          <template #default="{ row }">
+            <el-button link type="danger" size="small" @click="delRt(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="relationTypeDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 实体关联分块（图谱节点点击直达） -->
     <el-dialog
       v-model="entityChunksVisible"
@@ -1168,6 +1255,9 @@ import {
   updateAiKnowledgeGraphRelation,
   saveAiKnowledgeGraphLayout,
   clearAiKnowledgeGraphLayout,
+  getAiRelationTypes,
+  createAiRelationType,
+  deleteAiRelationType,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
@@ -1236,6 +1326,7 @@ const loadData = async () => {
       .map((m: any) => ({ id: m.id, name: m.name }));
     modelNameMap.value = Object.fromEntries(models.map((m: any) => [m.id, m.name]));
     modelUsageMap.value = Object.fromEntries(models.map((m: any) => [m.id, m.usage]));
+    await loadRelationTypes();
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -1413,7 +1504,70 @@ const graphLegend = [
   { color: "#67c23a", label: "自定义" },
   { color: "#909399", label: "其他" },
 ];
-const rtypeOptions = ["属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"];
+const relationTypes = ref<any[]>([]);
+const rtypeOptions = computed(() => {
+  const names = relationTypes.value.map((r: any) => r.name);
+  return names.length ? names : ["属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"];
+});
+async function loadRelationTypes() {
+  try {
+    const r = await getAiRelationTypes();
+    relationTypes.value = r.data?.data || [];
+  } catch {
+    relationTypes.value = [];
+  }
+}
+// 关系类型模板管理
+const relationTypeDialogVisible = ref(false);
+const rtNewName = ref("");
+function openRelationTypeDialog() {
+  rtNewName.value = "";
+  relationTypeDialogVisible.value = true;
+}
+async function addRt() {
+  if (!rtNewName.value.trim()) return;
+  try {
+    await createAiRelationType({ name: rtNewName.value.trim() });
+    rtNewName.value = "";
+    ElMessage.success("已添加关系类型");
+    await loadRelationTypes();
+    await reloadGraph();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "添加失败");
+  }
+}
+async function delRt(row: any) {
+  try {
+    await deleteAiRelationType(row.id);
+    ElMessage.success("已删除");
+    await loadRelationTypes();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "删除失败");
+  }
+}
+// 图谱全屏
+const graphFullscreenVisible = ref(false);
+// 检索定位图谱命中节点
+const highlightNames = ref<Set<string>>(new Set());
+function locateInGraph(h: any) {
+  if (!detailKb.value) return;
+  const names = new Set<string>();
+  const ent = h?.graph_entity;
+  if (ent) names.add(ent);
+  const q = detailQuery.value.trim();
+  if (q) {
+    for (const n of graphNodes.value) {
+      if (n.name && n.name.includes(q)) names.add(n.name);
+    }
+  }
+  if (!names.size) {
+    ElMessage.info("未匹配到图谱节点");
+    return;
+  }
+  highlightNames.value = names;
+  detailTab.value = "graph";
+  reloadGraph();
+}
 async function loadGraph(g: any) {
   graphStats.value = { nodes: (g.nodes || []).length, edges: (g.edges || []).length };
   graphNodes.value = (g.nodes || []).map((n: any) => ({ ...n, id: n.id ?? n.name }));
@@ -1425,6 +1579,7 @@ async function loadGraph(g: any) {
     graphNodes.value.length > 0 && graphNodes.value.every((n: any) => n.x != null && n.y != null);
   const nodes = graphNodes.value.map((n: any) => {
     const isLink = linkMode.value && linkSource.value === n.name;
+    const isHl = highlightNames.value.has(n.name);
     const hasChunk = (n.chunk_count || 0) > 0;
     return {
       id: String(n.id),
@@ -1433,9 +1588,9 @@ async function loadGraph(g: any) {
       ...(hasLayout ? { x: n.x, y: n.y, fixed: true } : {}),
       symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
       itemStyle: {
-        color: nodeColor(n.etype, hasChunk, isLink),
-        borderColor: isLink ? "#f56c6c" : hasChunk ? "#c0700f" : "#2f7ccc",
-        borderWidth: isLink ? 4 : hasChunk ? 2 : 0,
+        color: isLink ? "#f56c6c" : isHl ? "#f5b942" : nodeColor(n.etype, hasChunk, false),
+        borderColor: isLink ? "#f56c6c" : isHl ? "#f5b942" : hasChunk ? "#c0700f" : "#2f7ccc",
+        borderWidth: isHl ? 4 : isLink ? 4 : hasChunk ? 2 : 0,
       },
     };
   });
@@ -2551,6 +2706,14 @@ onMounted(() => {
 .graph-view {
   .graph-chart {
     height: 480px;
+  }
+}
+
+.graph-fullscreen {
+  height: 100%;
+
+  .graph-chart--fullscreen {
+    height: calc(100vh - 180px);
   }
 }
 

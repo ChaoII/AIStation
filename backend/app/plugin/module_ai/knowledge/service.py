@@ -17,6 +17,7 @@ from .model import (
     AiKnowledgeEntityChunkModel,
     AiKnowledgeEntityModel,
     AiKnowledgeRelationModel,
+    AiRelationTypeTemplateModel,
     AiSearchLogModel,
 )
 
@@ -1282,6 +1283,48 @@ class AiKnowledgeService:
                 e.layout = None
                 cleared += 1
         return cleared
+
+    # ---------- 关系类型模板 ----------
+    @classmethod
+    async def list_relation_types(cls) -> list[dict]:
+        async with async_db_session() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(AiRelationTypeTemplateModel)
+                        .where(AiRelationTypeTemplateModel.is_deleted.is_(False))
+                        .order_by(AiRelationTypeTemplateModel.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [{"id": r.id, "name": r.name, "color": r.color or "#a0a6ad"} for r in rows]
+
+    @classmethod
+    async def create_relation_type(cls, name: str, color: str | None = None) -> dict:
+        async with async_db_session.begin() as db:
+            exists = (
+                await db.execute(
+                    select(AiRelationTypeTemplateModel).where(
+                        AiRelationTypeTemplateModel.name == name,
+                        AiRelationTypeTemplateModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if exists:
+                raise ValueError("关系类型已存在")
+            r = AiRelationTypeTemplateModel(name=name, color=color or "#a0a6ad")
+            db.add(r)
+            await db.flush()
+        return {"id": r.id, "name": r.name, "color": r.color or "#a0a6ad"}
+
+    @classmethod
+    async def delete_relation_type(cls, rid: int) -> None:
+        async with async_db_session.begin() as db:
+            r = await db.get(AiRelationTypeTemplateModel, rid)
+            if r:
+                await db.delete(r)
 
     # ------------------------------------------------------------ #
     # 数据源
