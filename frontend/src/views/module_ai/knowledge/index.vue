@@ -838,6 +838,15 @@
               />
               <el-button size="small" @click="graphStatsVisible = true">统计</el-button>
               <el-button size="small" @click="edgeStyleVisible = true">连线样式</el-button>
+              <el-button size="small" @click="nodeStyleVisible = true">节点样式</el-button>
+              <el-select v-model="graphTheme" size="small" style="width: 90px">
+                <el-option
+                  v-for="t in THEME_OPTIONS"
+                  :key="t.value"
+                  :label="t.label"
+                  :value="t.value"
+                />
+              </el-select>
             </div>
             <div class="graph-legend">
               <span v-for="lg in graphLegend" :key="lg.label" class="graph-legend__item">
@@ -862,6 +871,8 @@
               :use-preset="graphUsePreset"
               :highlight="graphHighlight"
               :edge-style="edgeStyle"
+              :theme="graphTheme"
+              :node-style="nodeStyle"
               :layout-name="graphLayout"
               :link-mode="linkMode"
               :shortest-mode="shortestMode"
@@ -1141,6 +1152,8 @@
           :use-preset="graphUsePreset"
           :highlight="graphHighlight"
           :edge-style="edgeStyle"
+          :theme="graphTheme"
+          :node-style="nodeStyle"
           :layout-name="graphLayout"
           :link-mode="linkMode"
           :shortest-mode="shortestMode"
@@ -1207,6 +1220,61 @@
       </el-table>
       <template #footer>
         <el-button @click="relationTypeDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 节点样式设置 -->
+    <el-dialog v-model="nodeStyleVisible" title="节点样式设置" width="560px" append-to-body>
+      <el-form label-width="90px" size="default">
+        <el-form-item label="节点大小">
+          <el-radio-group v-model="nodeStyle.sizeMode">
+            <el-radio-button label="weight">按权重</el-radio-button>
+            <el-radio-button label="fixed">固定</el-radio-button>
+          </el-radio-group>
+          <el-input-number
+            v-if="nodeStyle.sizeMode === 'fixed'"
+            v-model="nodeStyle.fixedSize"
+            :min="10"
+            :max="60"
+            size="small"
+            style="margin-left: 8px"
+          />
+        </el-form-item>
+        <el-form-item label="节点形状">
+          <el-radio-group v-model="nodeStyle.shapeMode">
+            <el-radio-button label="type">按类型</el-radio-button>
+            <el-radio-button label="uniform">统一</el-radio-button>
+          </el-radio-group>
+          <el-select
+            v-if="nodeStyle.shapeMode === 'uniform'"
+            v-model="nodeStyle.uniformShape"
+            size="small"
+            style="width: 140px; margin-left: 8px"
+          >
+            <el-option label="椭圆" value="ellipse" />
+            <el-option label="圆" value="circle" />
+            <el-option label="圆角方" value="round-rectangle" />
+            <el-option label="菱形" value="diamond" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="节点颜色">
+          <el-radio-group v-model="nodeStyle.colorMode">
+            <el-radio-button label="type">按类型</el-radio-button>
+            <el-radio-button label="single">统一</el-radio-button>
+          </el-radio-group>
+          <el-color-picker
+            v-if="nodeStyle.colorMode === 'single'"
+            v-model="nodeStyle.singleColor"
+            size="small"
+            style="margin-left: 8px"
+          />
+        </el-form-item>
+        <el-form-item label="标签字号">
+          <el-input-number v-model="nodeStyle.labelSize" :min="9" :max="20" size="small" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="nodeStyleVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1701,6 +1769,24 @@ const graphSearch = ref("");
 const shortestMode = ref(false);
 const graphStatsVisible = ref(false);
 const edgeStyleVisible = ref(false);
+const graphTheme = ref("default");
+const nodeStyleVisible = ref(false);
+const THEME_OPTIONS = [
+  { value: "default", label: "默认" },
+  { value: "ocean", label: "海洋" },
+  { value: "forest", label: "森林" },
+  { value: "sunset", label: "落日" },
+  { value: "mono", label: "单色" },
+];
+const nodeStyle = reactive({
+  sizeMode: "weight" as "weight" | "fixed",
+  fixedSize: 22,
+  shapeMode: "type" as "type" | "uniform",
+  uniformShape: "ellipse" as "ellipse" | "round-rectangle" | "diamond" | "circle",
+  colorMode: "type" as "type" | "single",
+  singleColor: "#4a86f7",
+  labelSize: 12,
+});
 const edgeStyle = reactive({
   lineStyle: "solid" as "solid" | "dashed" | "dotted",
   curve: "bezier" as "bezier" | "straight" | "taxi",

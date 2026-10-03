@@ -1,6 +1,6 @@
 <template>
   <div class="graph-canvas-wrap" :style="{ height: heightStyle }">
-    <div ref="container" class="graph-canvas" />
+    <div ref="container" class="graph-canvas" :style="bgStyle" />
     <div
       v-if="tooltip.show"
       class="graph-tooltip"
@@ -42,6 +42,16 @@ const props = defineProps<{
     label?: "show" | "nondefault" | "hover" | "none";
     opacity?: number;
   };
+  theme?: string;
+  nodeStyle?: {
+    sizeMode?: "weight" | "fixed";
+    fixedSize?: number;
+    shapeMode?: "type" | "uniform";
+    uniformShape?: "ellipse" | "round-rectangle" | "diamond" | "circle";
+    colorMode?: "type" | "single";
+    singleColor?: string;
+    labelSize?: number;
+  };
 }>();
 
 const emit = defineEmits<{
@@ -65,29 +75,135 @@ let dragTarget: any = null;
 const dragTmpId = "tmp_target";
 const dragEdgeId = "tmp_edge";
 
-function colorFor(etype?: string, hasChunk = false) {
-  if (hasChunk) return "#f7a733";
-  if (etype === "custom") return "#5ac66b";
-  if (etype === "annotation") return "#f7a733";
-  if (etype === "keyword" || !etype) return "#4a86f7";
-  return "#a0a6ad";
+const THEMES: Record<string, any> = {
+  default: {
+    label: "默认",
+    node: { keyword: "#4a86f7", annotation: "#f7a733", custom: "#5ac66b", other: "#a0a6ad" },
+    edge: {
+      属于: "#5ac66b",
+      包含: "#4a86f7",
+      依赖: "#f7a733",
+      相关: "#a8abb3",
+      引用: "#7f8fa6",
+      位于: "#3f9ad6",
+      用于: "#e6b455",
+      关联: "#f7a733",
+      default: "#a8abb3",
+    },
+    bg: "#fafbfc",
+    grid: "#e3e7ec",
+  },
+  ocean: {
+    label: "海洋",
+    node: { keyword: "#2f7bc4", annotation: "#30a6c9", custom: "#4dbf9c", other: "#7d9bb3" },
+    edge: {
+      属于: "#4dbf9c",
+      包含: "#2f7bc4",
+      依赖: "#30a6c9",
+      相关: "#8fa9c0",
+      引用: "#6b8aa6",
+      位于: "#1f6c9e",
+      用于: "#57b7d8",
+      关联: "#30a6c9",
+      default: "#8fa9c0",
+    },
+    bg: "#f2f8fc",
+    grid: "#dbe9f3",
+  },
+  forest: {
+    label: "森林",
+    node: { keyword: "#3f9d63", annotation: "#8fbf4d", custom: "#5f9e8f", other: "#8aa88f" },
+    edge: {
+      属于: "#5f9e8f",
+      包含: "#3f9d63",
+      依赖: "#8fbf4d",
+      相关: "#9bb6a4",
+      引用: "#6f9481",
+      位于: "#2f7d54",
+      用于: "#a9c96f",
+      关联: "#8fbf4d",
+      default: "#9bb6a4",
+    },
+    bg: "#f4f9f4",
+    grid: "#ddeae0",
+  },
+  sunset: {
+    label: "落日",
+    node: { keyword: "#e07a4f", annotation: "#f4b14e", custom: "#c86a8a", other: "#b98e8e" },
+    edge: {
+      属于: "#c86a8a",
+      包含: "#e07a4f",
+      依赖: "#f4b14e",
+      相关: "#c9a8a0",
+      引用: "#a9796e",
+      位于: "#d95f3b",
+      用于: "#e8a35c",
+      关联: "#f4b14e",
+      default: "#c9a8a0",
+    },
+    bg: "#fdf8f3",
+    grid: "#f0e2d6",
+  },
+  mono: {
+    label: "单色",
+    node: { keyword: "#6b7480", annotation: "#9aa3ad", custom: "#4d5560", other: "#b6bdc5" },
+    edge: {
+      属于: "#7d8791",
+      包含: "#6b7480",
+      依赖: "#9aa3ad",
+      相关: "#aab1b9",
+      引用: "#8b939d",
+      位于: "#5a636e",
+      用于: "#9aa3ad",
+      关联: "#9aa3ad",
+      default: "#aab1b9",
+    },
+    bg: "#f5f6f7",
+    grid: "#e2e4e7",
+  },
+};
+const NS = computed(() => ({
+  sizeMode: props.nodeStyle?.sizeMode || "weight",
+  fixedSize: props.nodeStyle?.fixedSize || 22,
+  shapeMode: props.nodeStyle?.shapeMode || "type",
+  uniformShape: props.nodeStyle?.uniformShape || "ellipse",
+  colorMode: props.nodeStyle?.colorMode || "type",
+  singleColor: props.nodeStyle?.singleColor || "#4a86f7",
+  labelSize: props.nodeStyle?.labelSize || 12,
+}));
+function palette() {
+  return THEMES[props.theme || "default"] || THEMES.default;
+}
+function nodeColorFor(etype?: string, hasChunk = false) {
+  const p = palette();
+  if (NS.value.colorMode === "single") return NS.value.singleColor;
+  if (hasChunk || etype === "annotation") return p.node.annotation;
+  if (etype === "custom") return p.node.custom;
+  if (etype === "keyword" || !etype) return p.node.keyword;
+  return p.node.other;
 }
 function edgeColor(rtype?: string) {
-  const map: Record<string, string> = {
-    属于: "#5ac66b",
-    包含: "#4a86f7",
-    依赖: "#f7a733",
-    相关: "#a8abb3",
-    引用: "#7f8fa6",
-    位于: "#3f9ad6",
-    用于: "#e6b455",
-    关联: "#f7a733",
-  };
-  return map[rtype || ""] || "#a8abb3";
+  const p = palette();
+  if (p.edge[rtype || ""]) return p.edge[rtype || ""];
+  return p.edge.default || "#a8abb3";
 }
 function nodeSize(weight?: number) {
-  return 14 + Math.min(weight || 1, 20) * 1.2;
+  return NS.value.sizeMode === "fixed" ? NS.value.fixedSize : 14 + Math.min(weight || 1, 20) * 1.2;
 }
+function nodeShape(etype?: string) {
+  if (NS.value.shapeMode === "uniform") return NS.value.uniformShape;
+  const t = etype;
+  if (t === "annotation") return "round-rectangle";
+  if (t === "custom") return "diamond";
+  return "ellipse";
+}
+const bgStyle = computed(() => {
+  const p = palette();
+  return {
+    background: p.bg,
+    backgroundImage: `radial-gradient(${p.grid} 1px, transparent 1px)`,
+  };
+});
 const ES = computed(() => ({
   lineStyle: props.edgeStyle?.lineStyle || "solid",
   curve: props.edgeStyle?.curve || "bezier",
@@ -130,21 +246,17 @@ const graphStyle: any[] = [
     selector: "node",
     style: {
       label: "data(label)",
-      "font-size": 12,
+      "font-size": NS.value.labelSize,
       color: "#2f3542",
       "text-valign": "bottom",
       "text-margin-y": 5,
       "text-wrap": "wrap",
-      "text-max-width": 120,
+      "text-max-width": NS.value.labelSize * 10,
       width: (ele: any) => nodeSize(ele.data("weight")),
       height: (ele: any) => nodeSize(ele.data("weight")),
-      shape: (ele: any) => {
-        const t = ele.data("etype");
-        if (t === "annotation") return "round-rectangle";
-        if (t === "custom") return "diamond";
-        return "ellipse";
-      },
-      "background-color": (ele: any) => colorFor(ele.data("etype"), ele.data("chunk_count") > 0),
+      shape: (ele: any) => nodeShape(ele.data("etype")),
+      "background-color": (ele: any) =>
+        nodeColorFor(ele.data("etype"), ele.data("chunk_count") > 0),
       "border-width": 2,
       "border-color": "#ffffff",
       "shadow-blur": 8,
@@ -584,6 +696,14 @@ watch(
 );
 watch(
   () => props.edgeStyle,
+  () => {
+    if (!cy) return;
+    (cy.style(graphStyle) as any).update?.();
+  },
+  { deep: true }
+);
+watch(
+  () => [props.theme, props.nodeStyle],
   () => {
     if (!cy) return;
     (cy.style(graphStyle) as any).update?.();
