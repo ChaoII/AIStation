@@ -109,6 +109,12 @@ _ANN_SQL = (
 )
 
 
+def _grep_terms(query: str) -> list[str]:
+    """把查询拆成检索词元：去标点、按空格/标点切分，保留中英文词与短语。"""
+    parts = re.split(r"[\s,，。.．?？!！、；;:：\"'“”‘’|·—\-()（）\[\]]+", query or "")
+    return [p.strip() for p in parts if p and p.strip()]
+
+
 def _kb_to_dict(b: AiKnowledgeBaseModel) -> dict:
     return {
         "id": b.id,
@@ -405,9 +411,18 @@ class AiKnowledgeService:
         do_vec = mode in ("vector", "hybrid")
         do_graph = mode == "graph" or (mode == "hybrid" and use_graph)
 
-        # grep / 子串全文（WikiLLM 式，正则/包含）
+        # grep / 子串全文（WikiLLM 式）：拆词后任一命中即返回（简单问题兜底）
         if mode == "grep":
             try:
+                terms = _grep_terms(query)
+                if not terms:
+                    terms = [query]
+                conds = " OR ".join(
+                    [f"(content ILIKE :t{i} OR {_ANN_SQL} ILIKE :t{i})" for i in range(len(terms))]
+                )
+                params: dict = {"ids": kb_ids, "k": top_k}
+                for i, t in enumerate(terms):
+                    params[f"t{i}"] = f"%{t}%"
                 async with async_db_session() as db:
                     rows = (
                         await db.execute(
@@ -415,10 +430,10 @@ class AiKnowledgeService:
                                 "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, 1.0 AS score "
                                 "FROM ai_knowledge_chunks "
                                 "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
-                                "AND (content ILIKE '%' || :q || '%' OR " + _ANN_SQL + " ILIKE '%' || :q || '%') "
+                                f"AND ({conds}) "
                                 "ORDER BY id LIMIT :k"
                             ),
-                            {"ids": kb_ids, "q": query, "k": top_k},
+                            params,
                         )
                     ).mappings().all()
                     for r in rows:
@@ -1353,6 +1368,9 @@ class AiKnowledgeService:
         渲染「角标→弹窗看行页→末尾原文档链接」。
         """
         hits = await cls.search([kb_id], query, top_k=top_k, use_graph=True, mode=mode)
+        if not hits:
+            # 兜底：混合检索为空时回退子串 grep（简单/口语化问题也能命中）
+            hits = await cls.search([kb_id], query, top_k=top_k, use_graph=False, mode="grep")
         if not hits:
             return {"answer": "未检索到相关知识，请换个问法或上传更多文档。", "references": []}
         # 取文档表 + 上下文扩展（父块/相邻片段回填），生成 RustFS 原文档链接

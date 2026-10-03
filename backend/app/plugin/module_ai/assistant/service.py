@@ -328,7 +328,7 @@ async def run_assistant(message: str, auth, knowledge_ids: list[int] | None = No
 
 
 def extract_openai_messages(ui_messages: list[dict]) -> list[dict]:
-    """把 AI SDK UIMessage 列表转成 OpenAI messages（只取 user/assistant 的 text part）。"""
+    """把 AI SDK UIMessage 列表转成 OpenAI messages（兼容 parts 文本与 content 字段）。"""
     out: list[dict] = []
     for m in ui_messages or []:
         role = m.get("role")
@@ -338,6 +338,9 @@ def extract_openai_messages(ui_messages: list[dict]) -> list[dict]:
         for part in m.get("parts") or []:
             if isinstance(part, dict) and part.get("type") == "text":
                 text += part.get("text") or ""
+        # 兼容直接 content 字段（测试/简易调用）
+        if not text and isinstance(m.get("content"), str):
+            text = m.get("content") or ""
         if text:
             out.append({"role": role, "content": text})
     return out
