@@ -73,8 +73,17 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="200" align="center">
+            <el-table-column label="操作" fixed="right" width="260" align="center">
               <template #default="{ row }">
+                <el-button
+                  v-hasPerm="['module_ai:app:query']"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="openDetail(row)"
+                >
+                  详情
+                </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:query']"
                   size="small"
@@ -92,6 +101,14 @@
                   @click="handleOpenDialog(row)"
                 >
                   编辑
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:app:create']"
+                  size="small"
+                  link
+                  @click="doCopy(row)"
+                >
+                  复制
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:app:delete']"
@@ -215,12 +232,72 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <!-- 应用组件详情 + 运行调试 -->
+    <el-drawer
+      v-model="detailVisible"
+      :title="detail?.name || '应用详情'"
+      size="520px"
+      append-to-body
+    >
+      <el-descriptions v-if="detail" :column="1" border size="small">
+        <el-descriptions-item label="组件类型">
+          <el-tag size="small" :type="typeTagType(detail.app_type)" effect="plain">
+            {{ typeLabel(detail.app_type) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="模型">{{ modelName(detail.model_id) }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.app_type === 'kb'" label="知识库">
+          {{ kbName(detail.kb_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="detail.workflow_id" label="工作流">
+          {{ wfName(detail.workflow_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="提示词">
+          {{ promptName(detail.prompt_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="工具数">
+          {{ (detail.tools || []).length }}
+        </el-descriptions-item>
+        <el-descriptions-item label="输出格式">
+          {{ formatLabel(detail.output_format) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="启用">
+          <el-tag size="small" :type="detail.enabled ? 'success' : 'info'">
+            {{ detail.enabled ? "启用" : "停用" }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ detail.created_time }}</el-descriptions-item>
+      </el-descriptions>
+
+      <el-divider content-position="left">运行调试</el-divider>
+      <div class="app-run">
+        <div class="app-run__input">
+          <el-input
+            v-model="runQuery"
+            placeholder="输入问题，调试组件（回车发送）"
+            @keyup.enter="runDebug"
+          />
+          <el-button type="primary" :loading="runLoading" @click="runDebug">发送</el-button>
+        </div>
+        <div v-loading="runLoading" class="app-run__output">
+          <template v-if="runAnswer">
+            <div class="app-run__bot">
+              <span class="app-run__label">回答</span>
+              <div class="app-run__text">{{ runAnswer }}</div>
+            </div>
+          </template>
+          <el-empty v-else description="输入问题开始调试" :image-size="50" />
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
+import { Auth } from "@/utils/auth";
 import { ElMessage } from "element-plus";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -470,6 +547,97 @@ function handleRun(row: any) {
   router.push({ path: "/ai/chat", query: { app_id: String(row.id) } });
 }
 
+// ---- 详情 / 复制 / 运行调试 ----
+const detailVisible = ref(false);
+const detail = ref<any>(null);
+function openDetail(row: any) {
+  detail.value = row;
+  detailVisible.value = true;
+}
+function kbName(id: number | null) {
+  if (!id) return "—";
+  return kbOptions.value.find((k: any) => k.id === id)?.name || `#${id}`;
+}
+function wfName(id: number | null) {
+  if (!id) return "—";
+  return wfOptions.value.find((w: any) => w.id === id)?.name || `#${id}`;
+}
+async function doCopy(row: any) {
+  try {
+    await createAiApp({
+      name: `${row.name}（副本）`,
+      icon: row.icon || "",
+      description: row.description || "",
+      model_id: row.model_id ?? null,
+      prompt_id: row.prompt_id ?? null,
+      tools: row.tools || [],
+      output_format: row.output_format || "text",
+      input_schema: row.input_schema || undefined,
+      order: 0,
+      enabled: row.enabled !== false,
+      app_type: row.app_type || "chat",
+      kb_id: row.kb_id ?? null,
+      workflow_id: row.workflow_id ?? null,
+    });
+    ElMessage.success("已复制");
+    refreshList();
+  } catch {
+    ElMessage.error("复制失败");
+  }
+}
+
+const runQuery = ref("");
+const runAnswer = ref("");
+const runLoading = ref(false);
+async function runDebug() {
+  if (!detail.value || !runQuery.value.trim()) return;
+  runLoading.value = true;
+  runAnswer.value = "";
+  try {
+    const resp = await fetch(`/api/v1/ai/apps/${detail.value.id}/run/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken()}`,
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: runQuery.value }],
+      }),
+    });
+    if (!resp.ok || !resp.body) throw new Error("请求失败");
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s.startsWith("data: ")) continue;
+        try {
+          const evt = JSON.parse(s.slice(6));
+          if (evt.type === "text-delta") runAnswer.value += evt.delta || "";
+          else if (evt.type === "error")
+            runAnswer.value += `\n[错误] ${evt.error || evt.message || ""}`;
+          else if (evt.type === "text") runAnswer.value += evt.text || "";
+          else if (evt.type === "finish") {
+            if (evt.payload?.reply) runAnswer.value += evt.payload.reply;
+          }
+        } catch {
+          // 忽略非 JSON 行
+        }
+      }
+    }
+  } catch (e: any) {
+    runAnswer.value = `运行失败：${e?.message || e}`;
+  } finally {
+    runLoading.value = false;
+  }
+}
+
 onMounted(() => {
   loadOptions();
 });
@@ -478,5 +646,28 @@ onMounted(() => {
 <style scoped>
 .ai-app-page {
   flex-shrink: 0;
+}
+.app-run__input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.app-run__output {
+  min-height: 160px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 12px;
+}
+.app-run__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+.app-run__text {
+  line-height: 1.7;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 </style>
