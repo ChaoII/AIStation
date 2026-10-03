@@ -29,12 +29,22 @@ export function ingestAiKnowledge(id: number, data: any) {
   return request({ url: `${BASE}/${id}/ingest`, method: "post", data });
 }
 
-export function searchAiKnowledge(id: number, query: string, topK = 5, useGraph = true) {
+export function searchAiKnowledge(
+  id: number,
+  query: string,
+  topK = 5,
+  useGraph = true,
+  mode = "hybrid"
+) {
   return request({
     url: `${BASE}/${id}/search`,
     method: "post",
-    data: { query, top_k: topK, use_graph: useGraph },
+    data: { query, top_k: topK, use_graph: useGraph, mode },
   });
+}
+
+export function rebuildAiKnowledge(id: number) {
+  return request({ url: `${BASE}/${id}/rebuild`, method: "post" });
 }
 
 export function getAiKnowledgeGraph(id: number) {

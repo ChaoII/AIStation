@@ -81,8 +81,9 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="200" align="center" fixed="right">
+            <el-table-column label="操作" width="220" align="center" fixed="right">
               <template #default="{ row }">
+                <el-button size="small" type="primary" @click="openDetail(row)">详情</el-button>
                 <el-button
                   v-hasPerm="['module_ai:knowledge:update']"
                   size="small"
@@ -379,7 +380,168 @@
       </el-table>
     </el-drawer>
 
-    <!-- 新增/编辑数据源 -->
+    <!-- 知识库详情抽屉（多 tab） -->
+    <el-drawer
+      v-model="detailVisible"
+      :title="`知识库管理 · ${detailKb?.name || ''}`"
+      size="820px"
+      append-to-body
+    >
+      <el-tabs v-model="detailTab" class="detail-tabs">
+        <!-- 概览 -->
+        <el-tab-pane label="概览" name="overview">
+          <div class="ov-stats">
+            <el-statistic title="分块" :value="detailChunkCount" />
+            <el-statistic title="图谱节点" :value="detailGraphNodes" />
+            <el-statistic title="图谱边" :value="detailGraphEdges" />
+            <el-statistic title="数据源" :value="detailDsCount" />
+          </div>
+          <el-form label-width="80px" size="small" class="ov-form">
+            <el-form-item label="描述">
+              <el-input v-model="detailDesc" type="textarea" :rows="2" />
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="detailEnabled" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="saveDetailOverview">保存</el-button>
+              <el-button type="warning" :loading="rebuilding" @click="rebuildDetail">
+                重建索引
+              </el-button>
+            </el-form-item>
+          </el-form>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="重建索引会重新向量化所有分块并重建图谱（Age 同步）。"
+          />
+        </el-tab-pane>
+
+        <!-- 文本入库 -->
+        <el-tab-pane label="文本入库" name="ingest">
+          <el-form label-width="90px" size="small">
+            <el-form-item label="文件名">
+              <el-input v-model="detailIngest.file_name" />
+            </el-form-item>
+            <el-form-item label="内容">
+              <el-input
+                v-model="detailIngest.content"
+                type="textarea"
+                :rows="6"
+                placeholder="粘贴待入库文本"
+              />
+            </el-form-item>
+            <el-form-item label="分段策略">
+              <el-select v-model="detailIngest.strategy" style="width: 200px">
+                <el-option label="定长+重叠" value="fixed" />
+                <el-option label="按段落" value="paragraph" />
+                <el-option label="按句子" value="sentence" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="块大小/重叠">
+              <el-input-number
+                v-model="detailIngest.chunk_size"
+                :min="100"
+                :max="2000"
+                :step="50"
+              />
+              <el-input-number
+                v-model="detailIngest.overlap"
+                :min="0"
+                :max="200"
+                :step="10"
+                style="margin-left: 8px"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="detailIngesting" @click="doDetailIngest">
+                入库
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <!-- 分块 -->
+        <el-tab-pane label="分块" name="chunks">
+          <el-table v-loading="loadingChunks" :data="detailChunks" size="small" max-height="60vh">
+            <el-table-column prop="chunk_index" label="#" width="60" align="center" />
+            <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
+            <el-table-column label="内容" min-width="200">
+              <template #default="{ row }">{{ row.content }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="70" align="center">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :icon="Delete"
+                  @click="deleteChunkFromDetail(row)"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <!-- 检索测试 -->
+        <el-tab-pane label="检索测试" name="search">
+          <div class="dt-search">
+            <el-select v-model="detailSearchMode" style="width: 130px">
+              <el-option label="混合" value="hybrid" />
+              <el-option label="向量" value="vector" />
+              <el-option label="中文全文" value="fulltext" />
+              <el-option label="图谱" value="graph" />
+              <el-option label="子串全文" value="grep" />
+            </el-select>
+            <el-input
+              v-model="detailQuery"
+              placeholder="输入检索"
+              style="flex: 1"
+              @keyup.enter="doDetailSearch"
+            />
+            <el-button type="primary" :loading="detailSearching" @click="doDetailSearch">
+              检索
+            </el-button>
+            <el-button @click="openGraph(detailKb)">图谱</el-button>
+          </div>
+          <el-empty
+            v-if="!detailSearchResults.length"
+            description="输入查询后检索"
+            :image-size="60"
+          />
+          <div v-for="(h, i) in detailSearchResults" :key="i" class="search-hit">
+            <div class="search-hit__meta">
+              <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
+              <span class="search-hit__score">得分 {{ h.score }}</span>
+              <el-tag size="small" effect="plain" :type="engineType(h.engine)">
+                {{ engineLabel(h.engine) }}
+              </el-tag>
+              <el-tag v-if="h.graph_entity" size="small" type="warning" effect="plain">
+                图谱：{{ h.graph_entity }}
+              </el-tag>
+            </div>
+            <div class="search-hit__content">{{ h.content }}</div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 图谱 -->
+        <el-tab-pane label="图谱" name="graph">
+          <div class="graph-stats">
+            <el-tag type="success" effect="plain">{{ detailGraphNodes }} 个实体节点</el-tag>
+            <el-tag type="warning" effect="plain">{{ detailGraphEdges }} 条关系边</el-tag>
+            <el-button size="small" @click="openGraph(detailKb)">打开图谱编辑</el-button>
+          </div>
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="点击「打开图谱编辑」查看可视化并增删实体/关系。"
+          />
+        </el-tab-pane>
+      </el-tabs>
+    </el-drawer>
+
     <el-dialog
       v-model="dsDialogVisible"
       :title="editingDs ? '编辑数据源' : '新增数据源'"
@@ -473,6 +635,7 @@ import {
   deleteAiKnowledge,
   ingestAiKnowledge,
   searchAiKnowledge,
+  rebuildAiKnowledge,
   getAiKnowledgeChunks,
   deleteAiKnowledgeChunk,
   getAiKnowledgeGraph,
@@ -805,6 +968,126 @@ async function delGraphRelation(e: any) {
   }
 }
 
+// ---------- 知识库详情抽屉 ----------
+const detailVisible = ref(false);
+const detailTab = ref("overview");
+const detailKb = ref<any>();
+const detailDesc = ref("");
+const detailEnabled = ref(true);
+const detailChunkCount = ref(0);
+const detailGraphNodes = ref(0);
+const detailGraphEdges = ref(0);
+const detailDsCount = ref(0);
+const rebuilding = ref(false);
+const detailIngest = reactive<any>({
+  file_name: "",
+  content: "",
+  strategy: "fixed",
+  chunk_size: 500,
+  overlap: 50,
+});
+const detailIngesting = ref(false);
+const detailChunks = ref<any[]>([]);
+const detailSearchMode = ref("hybrid");
+const detailQuery = ref("");
+const detailSearching = ref(false);
+const detailSearchResults = ref<any[]>([]);
+
+async function loadDetailStats(kbId: number) {
+  const [chunksR, graphR] = await Promise.all([
+    getAiKnowledgeChunks(kbId).catch(() => ({ data: { data: [] } })),
+    getAiKnowledgeGraph(kbId).catch(() => ({ data: { data: { nodes: [], edges: [] } } })),
+  ]);
+  detailChunks.value = chunksR.data?.data || [];
+  detailChunkCount.value = detailChunks.value.length;
+  const g = graphR.data?.data || {};
+  detailGraphNodes.value = (g.nodes || []).length;
+  detailGraphEdges.value = (g.edges || []).length;
+  detailDsCount.value = datasources.value.filter((d: any) => d.knowledge_base_id === kbId).length;
+}
+
+async function openDetail(row: any) {
+  detailKb.value = row;
+  detailDesc.value = row.description || "";
+  detailEnabled.value = !!row.enabled;
+  detailTab.value = "overview";
+  detailVisible.value = true;
+  await loadDetailStats(row.id);
+}
+
+async function saveDetailOverview() {
+  if (!detailKb.value) return;
+  try {
+    await updateAiKnowledge(detailKb.value.id, {
+      description: detailDesc.value,
+      enabled: detailEnabled.value,
+    });
+    ElMessage.success("已保存");
+    await loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  }
+}
+
+async function rebuildDetail() {
+  if (!detailKb.value) return;
+  rebuilding.value = true;
+  try {
+    const r = await rebuildAiKnowledge(detailKb.value.id);
+    ElMessage.success(`重建完成（${r.data?.data?.chunks || 0} 分块）`);
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "重建失败");
+  } finally {
+    rebuilding.value = false;
+  }
+}
+
+async function doDetailIngest() {
+  if (!detailKb.value || !detailIngest.content.trim()) {
+    ElMessage.warning("请粘贴待入库文本");
+    return;
+  }
+  detailIngesting.value = true;
+  try {
+    const r = await ingestAiKnowledge(detailKb.value.id, { ...detailIngest });
+    ElMessage.success(`入库成功，写入 ${r.data?.data?.chunks || 0} 个分块`);
+    detailIngest.content = "";
+    await loadDetailStats(detailKb.value.id);
+    await loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "入库失败");
+  } finally {
+    detailIngesting.value = false;
+  }
+}
+
+async function deleteChunkFromDetail(row: any) {
+  if (!detailKb.value) return;
+  await deleteAiKnowledgeChunk(detailKb.value.id, row.id);
+  ElMessage.success("已删除分块");
+  await loadDetailStats(detailKb.value.id);
+}
+
+async function doDetailSearch() {
+  if (!detailKb.value || !detailQuery.value.trim()) return;
+  detailSearching.value = true;
+  try {
+    const r = await searchAiKnowledge(
+      detailKb.value.id,
+      detailQuery.value,
+      10,
+      true,
+      detailSearchMode.value
+    );
+    detailSearchResults.value = r.data?.data || [];
+  } catch (e: any) {
+    ElMessage.error(e?.message || "检索失败");
+  } finally {
+    detailSearching.value = false;
+  }
+}
+
 // ---------- 分块 ----------
 const chunksVisible = ref(false);
 const loadingChunks = ref(false);
@@ -1041,6 +1324,22 @@ onMounted(loadData);
 .graph-dialog {
   width: 100%;
   height: 480px;
+}
+
+.detail-tabs {
+  .ov-stats {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .ov-form {
+    max-width: 520px;
+  }
+  .dt-search {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
 }
 
 .graph-stats {
