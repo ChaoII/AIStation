@@ -1,7 +1,7 @@
 """后端启动时初始化 AI 扩展（pgvector / Apache AGE / pg_jieba）。
 
 仅对 PostgreSQL 数据库执行；非 PostgreSQL 或未安装扩展（如旧 postgres:17 或 SQLite 测试）
-时静默跳过，不阻塞启动。
+时静默跳过，不阻塞启动。每条扩展独立事务提交，避免一条失败回滚掉其它。
 """
 from __future__ import annotations
 
@@ -14,35 +14,29 @@ _STMTS = [
 ]
 
 
-async def ensure_extensions() -> None:
-    """初始化扩展：创建扩展、LOAD age、确保 jieba 全文配置。"""
-    if (os.getenv("DATABASE_TYPE") or "postgresql").lower() != "postgresql":
-        return
+async def _run_sql(sql: str) -> None:
+    """在独立会话执行一条 SQL，失败静默。"""
     try:
         from sqlalchemy import text
 
         from app.core.database import async_db_session
 
         async with async_db_session() as db:
-            for stmt in _STMTS:
-                try:
-                    await db.execute(text(stmt))
-                except Exception:  # noqa: BLE001 单个扩展失败不影响其它
-                    await db.rollback()
-            # ARGE 会话内加载（若已 preload 则冗余无害）
-            try:
-                await db.execute(text("LOAD 'age'"))
-            except Exception:  # noqa: BLE001
-                pass
-            # 确保中文全文检索配置存在（pg_jieba 提供 jiebacfg 字典，缺则按 simple 补建）
-            try:
-                await db.execute(
-                    text(
-                        "CREATE TEXT SEARCH CONFIGURATION IF NOT EXISTS jiebacfg (COPY = simple)"
-                    )
-                )
-            except Exception:  # noqa: BLE001
-                await db.rollback()
+            await db.execute(text(sql))
             await db.commit()
-    except Exception:  # noqa: BLE001  初始化失败不阻塞服务启动
+    except Exception:  # noqa: BLE001
         pass
+
+
+async def ensure_extensions() -> None:
+    """初始化扩展：创建扩展、LOAD age、确保 jieba 全文配置。"""
+    if (os.getenv("DATABASE_TYPE") or "postgresql").lower() not in ("postgres", "postgresql"):
+        return
+    for stmt in _STMTS:
+        await _run_sql(stmt)
+    # ARGE 会话内加载（若已 preload 则冗余无害）
+    await _run_sql("LOAD 'age'")
+    # 确保中文全文检索配置存在（pg_jieba 提供 jiebacfg，缺则按 simple 补建）
+    await _run_sql(
+        "CREATE TEXT SEARCH CONFIGURATION IF NOT EXISTS jiebacfg (COPY = simple)"
+    )

@@ -232,7 +232,10 @@ class AiKnowledgeService:
     def _is_postgres() -> bool:
         import os
 
-        return (os.getenv("DATABASE_TYPE") or "postgresql").lower() == "postgresql"
+        return (os.getenv("DATABASE_TYPE") or "postgresql").lower() in (
+            "postgres",
+            "postgresql",
+        )
 
     @classmethod
     async def _pg_ext(cls, name: str) -> bool:
