@@ -28,3 +28,12 @@ class AiAppModel(ModelMixin, UserMixin):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     order: Mapped[int] = mapped_column(Integer, default=0, comment="排序")
+    app_type: Mapped[str] = mapped_column(
+        String(16), default="chat", comment="组件类型: chat/agent/workflow/kb"
+    )
+    kb_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="绑定知识库ID(类型=kb)"
+    )
+    workflow_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="绑定工作流ID(有工作流时)"
+    )

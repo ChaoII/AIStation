@@ -24,15 +24,39 @@ def _to_dict(a: AiAppModel) -> dict:
         "input_schema": a.input_schema,
         "enabled": a.enabled,
         "order": a.order or 0,
+        "app_type": a.app_type or "chat",
+        "kb_id": a.kb_id,
+        "workflow_id": a.workflow_id,
         "created_time": a.created_time,
         "updated_time": a.updated_time,
     }
+
+
+async def _ensure_app_columns() -> None:
+    """确保组件类型/绑定列存在（幂等，兼容旧表）。"""
+    from sqlalchemy import text as _text
+
+    from app.core.database import async_db_session as _db
+
+    try:
+        async with _db.begin() as db:
+            for col, ddl in (
+                ("app_type", "VARCHAR(16) DEFAULT 'chat'"),
+                ("kb_id", "INTEGER"),
+                ("workflow_id", "INTEGER"),
+            ):
+                await db.execute(
+                    _text(f"ALTER TABLE ai_apps ADD COLUMN IF NOT EXISTS {col} {ddl}")
+                )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 class AiAppService:
 
     @classmethod
     async def list_apps(cls) -> list[dict]:
+        await _ensure_app_columns()
         async with async_db_session() as db:
             rows = (
                 await db.execute(
@@ -53,6 +77,7 @@ class AiAppService:
 
     @classmethod
     async def create(cls, data, auth) -> dict:
+        await _ensure_app_columns()
         async with async_db_session.begin() as db:
             a = AiAppModel(
                 name=data.name,
@@ -65,6 +90,9 @@ class AiAppService:
                 input_schema=data.input_schema,
                 enabled=data.enabled,
                 order=data.order or 0,
+                app_type=data.app_type or "chat",
+                kb_id=getattr(data, "kb_id", None),
+                workflow_id=getattr(data, "workflow_id", None),
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
@@ -74,12 +102,13 @@ class AiAppService:
 
     @classmethod
     async def update(cls, app_id: int, data, auth) -> dict | None:
+        await _ensure_app_columns()
         async with async_db_session.begin() as db:
             a = await db.get(AiAppModel, app_id)
             if not a or a.is_deleted:
                 return None
             provided = getattr(data, "model_fields_set", set())
-            nullable = {"description", "model_id", "prompt_id", "input_schema"}
+            nullable = {"description", "model_id", "prompt_id", "input_schema", "kb_id", "workflow_id"}
             for key in (
                 "name",
                 "icon",
@@ -91,6 +120,9 @@ class AiAppService:
                 "input_schema",
                 "enabled",
                 "order",
+                "app_type",
+                "kb_id",
+                "workflow_id",
             ):
                 if key not in provided:
                     continue
@@ -235,6 +267,42 @@ async def run_app_ui_stream(
             state["error"] = "应用不存在或未启用"
             yield ms.error(state["error"])
             yield ms.data("finish", empty_finish)
+            yield ms.finish()
+            yield ms.done()
+            return
+
+        # 统一组件：按类型分发运行
+        app_type = app.get("app_type") or "chat"
+        if app_type == "workflow" and app.get("workflow_id"):
+            from app.plugin.module_ai.workflow.service import AiWorkflowService
+
+            async for frame in AiWorkflowService.run_ui_stream(
+                app["workflow_id"], ui_messages, auth, variables, session_id
+            ):
+                yield frame
+            return
+        if app_type == "kb" and app.get("kb_id"):
+            from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+            try:
+                q = last_user_text(ui_messages)
+                result = await AiKnowledgeService.ask(
+                    app["kb_id"], q, top_k=6, auth=auth
+                )
+                ans = result.get("answer") or ""
+                refs = result.get("references") or []
+                if ans:
+                    yield ms.text(ans)
+                if refs:
+                    yield ms.tool(name="references", args={"refs": refs}, state="success")
+                yield ms.text_end()
+                state["assistant_text"] = ans
+                state["reply"] = ans
+                yield ms.data("finish", {"reply": ans, "tool_calls": [], "action": None, "report_id": None})
+            except Exception as e:  # noqa: BLE001
+                state["error"] = str(e)
+                yield ms.error(f"运行失败：{e}")
+                yield ms.data("finish", empty_finish)
             yield ms.finish()
             yield ms.done()
             return

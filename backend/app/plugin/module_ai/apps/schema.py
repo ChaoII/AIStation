@@ -4,7 +4,7 @@ OUTPUT_FORMATS: set[str] = {"text", "table", "report"}
 
 
 class AiAppCreateSchema(BaseModel):
-    """新增 AI 应用。"""
+    """新增 AI 应用（统一可配置组件）。"""
 
     name: str = Field(..., max_length=128)
     icon: str = Field(default="", max_length=64)
@@ -16,6 +16,9 @@ class AiAppCreateSchema(BaseModel):
     input_schema: dict | None = None
     enabled: bool = True
     order: int = 0
+    app_type: str = Field(default="chat", max_length=16, description="组件类型: chat/agent/workflow/kb")
+    kb_id: int | None = Field(default=None, description="绑定知识库ID(类型=kb)")
+    workflow_id: int | None = Field(default=None, description="绑定工作流ID(类型=workflow或有工作流)")
 
 
 class AiAppUpdateSchema(BaseModel):
@@ -31,6 +34,9 @@ class AiAppUpdateSchema(BaseModel):
     input_schema: dict | None = None
     enabled: bool | None = None
     order: int | None = None
+    app_type: str | None = Field(default=None, max_length=16)
+    kb_id: int | None = None
+    workflow_id: int | None = None
 
 
 class AiAppRunSchema(BaseModel):

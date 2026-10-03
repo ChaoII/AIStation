@@ -113,6 +113,37 @@
         <el-form-item label="名称" required>
           <el-input v-model="formData.name" placeholder="应用唯一名称" />
         </el-form-item>
+        <el-form-item label="组件类型">
+          <el-select v-model="formData.app_type" style="width: 100%">
+            <el-option label="聊天" value="chat" />
+            <el-option label="智能体" value="agent" />
+            <el-option label="工作流" value="workflow" />
+            <el-option label="知识库问答" value="kb" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="formData.app_type === 'kb'" label="知识库">
+          <el-select
+            v-model="formData.kb_id"
+            clearable
+            placeholder="绑定知识库"
+            style="width: 100%"
+          >
+            <el-option v-for="k in kbOptions" :key="k.id" :label="k.name" :value="k.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          v-if="formData.app_type === 'workflow' || formData.workflow_id"
+          label="工作流"
+        >
+          <el-select
+            v-model="formData.workflow_id"
+            clearable
+            placeholder="绑定工作流"
+            style="width: 100%"
+          >
+            <el-option v-for="w in wfOptions" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="图标">
           <el-input v-model="formData.icon" placeholder="Element Plus 图标名，如 MagicStick" />
         </el-form-item>
@@ -195,6 +226,8 @@ import { createAiApp, deleteAiApp, getAiAppList, updateAiApp } from "@/api/modul
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiPromptList } from "@/api/module_ai/prompt";
 import { getAiToolList } from "@/api/module_ai/tool";
+import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
+import { getAiWorkflowList } from "@/api/module_ai/workflow";
 
 defineOptions({ name: "AiApp" });
 
@@ -261,6 +294,8 @@ const contentConfig = reactive<IContentConfig>({
 const modelOptions = ref<any[]>([]);
 const promptOptions = ref<any[]>([]);
 const toolOptions = ref<any[]>([]);
+const kbOptions = ref<any[]>([]);
+const wfOptions = ref<any[]>([]);
 
 const dialogVisible = ref(false);
 const dialogTitle = ref("新增应用");
@@ -279,6 +314,9 @@ const emptyForm = () => ({
   input_schema_text: "",
   order: 0,
   enabled: true,
+  app_type: "chat",
+  kb_id: null as number | null,
+  workflow_id: null as number | null,
 });
 
 const formData = reactive(emptyForm());
@@ -308,14 +346,18 @@ function formatLabel(fmt: string) {
 
 async function loadOptions() {
   try {
-    const [models, prompts, tools] = await Promise.all([
+    const [models, prompts, tools, kbs, wfs] = await Promise.all([
       getAiModelList(),
       getAiPromptList(),
       getAiToolList(),
+      getAiKnowledgeList(),
+      getAiWorkflowList(),
     ]);
     modelOptions.value = models.data?.data || [];
     promptOptions.value = prompts.data?.data || [];
     toolOptions.value = (tools.data?.data || []).filter((t: any) => t.enabled);
+    kbOptions.value = kbs.data?.data || [];
+    wfOptions.value = wfs.data?.data || [];
   } catch {
     // 选项加载失败不阻断列表展示
   }
@@ -340,6 +382,9 @@ function handleOpenDialog(row?: any) {
     formData.input_schema_text = row.input_schema ? JSON.stringify(row.input_schema, null, 2) : "";
     formData.order = row.order ?? 0;
     formData.enabled = row.enabled !== false;
+    formData.app_type = row.app_type || "chat";
+    formData.kb_id = row.kb_id ?? null;
+    formData.workflow_id = row.workflow_id ?? null;
   } else {
     dialogTitle.value = "新增应用";
   }
@@ -384,6 +429,9 @@ async function handleSubmit() {
     input_schema: inputSchema,
     order: formData.order,
     enabled: formData.enabled,
+    app_type: formData.app_type,
+    kb_id: formData.app_type === "kb" ? formData.kb_id : null,
+    workflow_id: formData.workflow_id,
   };
   submitLoading.value = true;
   try {
