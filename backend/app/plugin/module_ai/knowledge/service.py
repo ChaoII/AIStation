@@ -708,7 +708,7 @@ class AiKnowledgeService:
 
     @classmethod
     async def get_graph(cls, kb_id: int) -> dict:
-        """返回知识库图谱（实体 + 关系），供前端可视化。"""
+        """返回知识库图谱（实体 + 关系 + 绑定分块数），供前端可视化。"""
         async with async_db_session() as db:
             ents = (
                 (
@@ -734,9 +734,34 @@ class AiKnowledgeService:
                 .scalars()
                 .all()
             )
+        # 实体绑定分块数（图谱节点显示关联度）
+        chunk_count: dict[int, int] = {}
+        if ents:
+            from sqlalchemy import func as _func
+
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        select(
+                            AiKnowledgeEntityChunkModel.entity_id, _func.count()
+                        )
+                        .where(
+                            AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                            AiKnowledgeEntityChunkModel.entity_id.in_([e.id for e in ents]),
+                        )
+                        .group_by(AiKnowledgeEntityChunkModel.entity_id)
+                    )
+                ).all()
+            chunk_count = {r[0]: int(r[1]) for r in rows}
         return {
             "nodes": [
-                {"id": e.id, "name": e.name, "etype": e.etype or "keyword", "weight": e.weight or 1}
+                {
+                    "id": e.id,
+                    "name": e.name,
+                    "etype": e.etype or "keyword",
+                    "weight": e.weight or 1,
+                    "chunk_count": chunk_count.get(e.id, 0),
+                }
                 for e in ents
             ],
             "edges": [

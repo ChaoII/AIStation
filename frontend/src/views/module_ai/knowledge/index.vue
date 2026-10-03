@@ -634,7 +634,35 @@
 
         <!-- 标注台账 -->
         <el-tab-pane label="标注台账" name="logs">
-          <el-table v-loading="loadingLogs" :data="annotationLogs" size="small" max-height="60vh">
+          <div class="log-toolbar">
+            <el-select
+              v-model="logSourceFilter"
+              size="small"
+              placeholder="来源"
+              clearable
+              style="width: 120px"
+            >
+              <el-option label="手动" value="manual" />
+              <el-option label="检索" value="search" />
+              <el-option label="自动" value="auto" />
+              <el-option label="图谱" value="graph" />
+            </el-select>
+            <el-select
+              v-model="logKindFilter"
+              size="small"
+              placeholder="类型"
+              clearable
+              style="width: 120px"
+            >
+              <el-option label="别名" value="alias" />
+              <el-option label="锚点" value="anchor" />
+              <el-option label="备注" value="note" />
+            </el-select>
+            <el-tag size="small" type="info" effect="plain">共 {{ filteredLogs.length }} 条</el-tag>
+            <el-tag size="small" type="success" effect="plain">添加 {{ statAdd }}</el-tag>
+            <el-tag size="small" type="danger" effect="plain">删除 {{ statRemove }}</el-tag>
+          </div>
+          <el-table v-loading="loadingLogs" :data="filteredLogs" size="small" max-height="60vh">
             <el-table-column label="时间" width="160">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
@@ -988,7 +1016,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import VChart from "vue-echarts";
 import { use } from "echarts/core";
@@ -1266,8 +1294,13 @@ async function loadGraph(g: any) {
   const nodes = graphNodes.value.map((n: any) => ({
     id: String(n.id),
     name: n.name,
-    symbolSize: Math.min(20 + (n.weight || 1) * 2, 40),
-    itemStyle: { color: "#409eff" },
+    chunk_count: n.chunk_count || 0,
+    symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
+    itemStyle: {
+      color: (n.chunk_count || 0) > 0 ? "#e6a23c" : "#409eff",
+      borderColor: (n.chunk_count || 0) > 0 ? "#c0700f" : "#2f7ccc",
+      borderWidth: (n.chunk_count || 0) > 0 ? 2 : 0,
+    },
   }));
   const links = graphEdges.value.map((e: any) => ({
     source: String(e.source),
@@ -1275,7 +1308,14 @@ async function loadGraph(g: any) {
     lineStyle: { width: 1 + Math.min((e.weight || 1) / 3, 2), opacity: 0.7 },
   }));
   graphOption.value = {
-    tooltip: { show: true },
+    tooltip: {
+      show: true,
+      formatter: (p: any) => {
+        const d = p.data || {};
+        const cnt = d.chunk_count ?? 0;
+        return `${d.name || ""}<br/>权重：${d.weight ?? 1}<br/>绑定分块：${cnt} 个`;
+      },
+    },
     series: [
       {
         type: "graph",
@@ -1285,7 +1325,13 @@ async function loadGraph(g: any) {
         data: nodes,
         links,
         force: { repulsion: 120, edgeLength: 80 },
-        label: { show: true, position: "right", fontSize: 11 },
+        label: {
+          show: true,
+          position: "right",
+          fontSize: 11,
+          formatter: (p: any) =>
+            p.data?.chunk_count ? `${p.data.name} (${p.data.chunk_count})` : p.data.name,
+        },
       },
     ],
   };
@@ -1709,6 +1755,19 @@ async function loadSuggest() {
 // ---------- 标注台账 ----------
 const annotationLogs = ref<any[]>([]);
 const loadingLogs = ref(false);
+const logSourceFilter = ref("");
+const logKindFilter = ref("");
+const filteredLogs = computed(() => {
+  return annotationLogs.value.filter((l: any) => {
+    if (logSourceFilter.value && (l.source || "manual") !== logSourceFilter.value) return false;
+    if (logKindFilter.value && (l.kind || "alias") !== logKindFilter.value) return false;
+    return true;
+  });
+});
+const statAdd = computed(() => annotationLogs.value.filter((l: any) => l.action === "add").length);
+const statRemove = computed(
+  () => annotationLogs.value.filter((l: any) => l.action === "remove").length
+);
 async function loadLogs() {
   if (!detailKb.value) return;
   loadingLogs.value = true;
@@ -1760,6 +1819,10 @@ async function doDetailSearch() {
       detailFulltextWeight.value
     );
     detailSearchResults.value = r.data?.data || [];
+    // 检索后自动推测相关分块（若未命中/少命中则提示可标注）
+    if (detailSearchResults.value.length < 10) {
+      await loadSuggest().catch(() => {});
+    }
   } catch (e: any) {
     ElMessage.error(e?.message || "检索失败");
   } finally {
@@ -2058,6 +2121,12 @@ onMounted(loadData);
         color: var(--el-text-color-regular);
       }
     }
+  }
+  .log-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
   }
 }
 
