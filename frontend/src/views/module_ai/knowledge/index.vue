@@ -37,6 +37,14 @@
             >
               分块查看
             </el-button>
+            <el-button
+              v-hasPerm="['module_ai:knowledge:query']"
+              :icon="Share"
+              :disabled="!selectedKb"
+              @click="selectedKb && openGraph(selectedKb)"
+            >
+              图谱
+            </el-button>
           </div>
 
           <el-table
@@ -254,6 +262,10 @@
         <el-form-item label="Top K">
           <el-input-number v-model="searchForm.top_k" :min="1" :max="20" />
         </el-form-item>
+        <el-form-item label="GraphRAG">
+          <el-switch v-model="searchForm.use_graph" />
+          <span class="kb-opt-hint">开启后按知识图谱扩展相关实体</span>
+        </el-form-item>
       </el-form>
       <div v-loading="searching">
         <el-empty v-if="!searchResults.length" description="输入查询后检索" :image-size="60" />
@@ -261,9 +273,25 @@
           <div class="search-hit__meta">
             <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
             <span class="search-hit__score">相似度 {{ h.score }}</span>
+            <el-tag v-if="h.graph_entity" size="small" type="warning" effect="plain">
+              图谱：{{ h.graph_entity }}
+            </el-tag>
           </div>
           <div class="search-hit__content">{{ h.content }}</div>
         </div>
+      </div>
+    </el-dialog>
+
+    <!-- 图谱可视化 -->
+    <el-dialog
+      v-model="graphVisible"
+      :title="`知识图谱 · ${selectedKb?.name || ''}`"
+      width="720px"
+      height="560px"
+      append-to-body
+    >
+      <div class="graph-dialog">
+        <VChart v-if="graphOption" class="graph-chart" :option="graphOption" autoresize />
       </div>
     </el-dialog>
 
@@ -361,6 +389,12 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import VChart from "vue-echarts";
+import { use } from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
+import { GraphChart } from "echarts/charts";
+import { TooltipComponent } from "echarts/components";
+use([CanvasRenderer, GraphChart, TooltipComponent]);
 import {
   Plus,
   Edit,
@@ -370,6 +404,7 @@ import {
   Files,
   Connection,
   Refresh,
+  Share,
 } from "@element-plus/icons-vue";
 import {
   getAiKnowledgeList,
@@ -380,6 +415,7 @@ import {
   searchAiKnowledge,
   getAiKnowledgeChunks,
   deleteAiKnowledgeChunk,
+  getAiKnowledgeGraph,
   getAiDatasourceList,
   createAiDatasource,
   updateAiDatasource,
@@ -519,7 +555,7 @@ async function doIngest() {
 // ---------- 检索 ----------
 const searchDialogVisible = ref(false);
 const searching = ref(false);
-const searchForm = reactive<any>({ query: "", top_k: 5 });
+const searchForm = reactive<any>({ query: "", top_k: 5, use_graph: true });
 const searchResults = ref<any[]>([]);
 
 function openSearchDialog(kb: any) {
@@ -536,12 +572,64 @@ async function doSearch() {
   }
   searching.value = true;
   try {
-    const r = await searchAiKnowledge(selectedKb.value?.id, searchForm.query, searchForm.top_k);
+    const r = await searchAiKnowledge(
+      selectedKb.value?.id,
+      searchForm.query,
+      searchForm.top_k,
+      searchForm.use_graph
+    );
     searchResults.value = r.data?.data || [];
   } catch (e: any) {
     ElMessage.error(e?.message || "检索失败");
   } finally {
     searching.value = false;
+  }
+}
+
+// ---------- 图谱可视化 ----------
+const graphVisible = ref(false);
+const graphLoading = ref(false);
+const graphOption = ref<any>(null);
+async function openGraph(kb: any) {
+  const kbId = kb?.id || selectedKb.value?.id;
+  if (!kbId) return;
+  selectedKb.value = kb;
+  graphVisible.value = true;
+  graphLoading.value = true;
+  graphOption.value = null;
+  try {
+    const r = await getAiKnowledgeGraph(kbId);
+    const g = r.data?.data || { nodes: [], edges: [] };
+    const nodes = (g.nodes || []).map((n: any) => ({
+      id: String(n.id),
+      name: n.name,
+      symbolSize: Math.min(20 + (n.weight || 1) * 2, 40),
+      itemStyle: { color: "#409eff" },
+    }));
+    const links = (g.edges || []).map((e: any) => ({
+      source: String(e.source),
+      target: String(e.target),
+      lineStyle: { width: 1 + Math.min((e.weight || 1) / 3, 2), opacity: 0.7 },
+    }));
+    graphOption.value = {
+      tooltip: { show: true },
+      series: [
+        {
+          type: "graph",
+          layout: "force",
+          roam: true,
+          draggable: true,
+          data: nodes,
+          links,
+          force: { repulsion: 120, edgeLength: 80 },
+          label: { show: true, position: "right", fontSize: 11 },
+        },
+      ],
+    };
+  } catch (e: any) {
+    ElMessage.error(e?.message || "加载图谱失败");
+  } finally {
+    graphLoading.value = false;
   }
 }
 
@@ -764,5 +852,26 @@ onMounted(loadData);
   color: var(--el-text-color-regular);
   white-space: pre-wrap;
   word-break: break-word;
+}
+</style>
+
+<style lang="scss">
+.kb-opt-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.search-hit__score {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.graph-dialog {
+  width: 100%;
+  height: 480px;
+}
+.graph-chart {
+  width: 100%;
+  height: 100%;
 }
 </style>
