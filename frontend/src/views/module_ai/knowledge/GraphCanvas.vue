@@ -379,8 +379,7 @@ function runLayout() {
     // d3-force 物理引擎：节点持续弹跳/碰撞，拖动推挤
     opts.name = "d3-force";
     opts.animate = true;
-    opts.fit = true;
-    opts.padding = 30;
+    opts.fit = false;
     opts.linkDistance = 72;
     opts.charge = -420;
     opts.gravity = 0.12;
@@ -399,6 +398,11 @@ function runLayout() {
     if (name === "grid") opts.avoidOverlap = true;
   }
   c.layout(opts).run();
+  if (opts.name === "d3-force") {
+    setTimeout(() => {
+      if (cy) cy.fit(undefined, 30);
+    }, 150);
+  }
 }
 function setLayout(name: string) {
   const c = cy;
@@ -407,8 +411,7 @@ function setLayout(name: string) {
     c.layout({
       name: "d3-force",
       animate: true,
-      fit: true,
-      padding: 30,
+      fit: false,
       linkDistance: 72,
       charge: -420,
       gravity: 0.12,
@@ -417,6 +420,9 @@ function setLayout(name: string) {
       randomize: true,
       stiffness: 0.7,
     } as any).run();
+    setTimeout(() => {
+      if (cy) cy.fit(undefined, 30);
+    }, 150);
     return;
   }
   c.layout({
