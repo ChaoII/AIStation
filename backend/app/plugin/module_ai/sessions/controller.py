@@ -66,3 +66,18 @@ async def delete_sessions(
             _ensure_session_owner(session, auth)
     await AiSessionService.delete(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@AiSessionRouter.put("/rename/{session_id}", summary="重命名会话")
+async def rename_session(
+    session_id: int,
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+) -> JSONResponse:
+    session = await AiSessionService.get_session(session_id)
+    if session:
+        _ensure_session_owner(session, auth)
+    result = await AiSessionService.rename(session_id, body.get("title") or "", auth)
+    if not result:
+        return ErrorResponse(msg="会话不存在")
+    return SuccessResponse(data=result, msg="已重命名")

@@ -198,3 +198,15 @@ class AiSessionService:
                 for m in msgs:
                     await db.delete(m)
                 await db.delete(s)
+
+    @classmethod
+    async def rename(cls, session_id: int, title: str, auth) -> dict | None:
+        """重命名会话。"""
+        async with async_db_session.begin() as db:
+            s = await db.get(AiSessionModel, session_id)
+            if not s or s.is_deleted:
+                return None
+            s.title = (title or "").strip()[:255] or s.title
+            s.updated_id = getattr(getattr(auth, "user", None), "id", None)
+            await db.flush()
+            return {"id": s.id, "title": s.title}

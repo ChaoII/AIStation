@@ -54,6 +54,7 @@
                     <el-icon class="more-icon" @click.stop><MoreFilled /></el-icon>
                     <template #dropdown>
                       <el-dropdown-menu>
+                        <el-dropdown-item command="rename">重命名</el-dropdown-item>
                         <el-dropdown-item command="delete">删除</el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
@@ -122,7 +123,12 @@ import {
   ArrowDown,
 } from "@element-plus/icons-vue";
 import { useUserStoreHook } from "@/store";
-import { deleteAiSessions, getAiSessionList, type AiSessionItem } from "@/api/module_ai/session";
+import {
+  deleteAiSessions,
+  getAiSessionList,
+  renameAiSession,
+  type AiSessionItem,
+} from "@/api/module_ai/session";
 
 interface SessionGroup {
   id: string;
@@ -243,6 +249,22 @@ const handleNewSession = () => {
 };
 
 const handleSessionCommand = async (command: string, session: AiSessionItem) => {
+  if (command === "rename") {
+    try {
+      const { value } = await ElMessageBox.prompt("输入新的会话名称", "重命名会话", {
+        confirmButtonText: "确定",
+        cancelButtonText: "取消",
+        inputValue: session.title || "",
+        inputValidator: (v: string) => (v?.trim() ? true : "名称不能为空"),
+      });
+      await renameAiSession(session.id, value);
+      session.title = value.trim();
+    } catch (error) {
+      if (error === "cancel" || error === "close") return;
+      // 接口失败已由全局拦截器提示
+    }
+    return;
+  }
   if (command === "delete") {
     try {
       await ElMessageBox.confirm("确定要删除此会话吗？", "确认删除", {

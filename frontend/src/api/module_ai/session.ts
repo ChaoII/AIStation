@@ -53,3 +53,11 @@ export function createAiSession(data: { title?: string; app_id?: number | null }
 export function deleteAiSessions(ids: number[]) {
   return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
 }
+
+export function renameAiSession(id: number, title: string) {
+  return request({
+    url: `${API_PATH}/rename/${id}`,
+    method: "put",
+    data: { title },
+  });
+}
