@@ -497,8 +497,24 @@
               <el-option label="按段落" value="paragraph" />
               <el-option label="按句子" value="sentence" />
             </el-select>
+            <el-button
+              size="small"
+              type="danger"
+              plain
+              :disabled="!selectedDocIds.length"
+              @click="batchDeleteDocs"
+            >
+              批量删除（{{ selectedDocIds.length }}）
+            </el-button>
           </div>
-          <el-table v-loading="loadingDocs" :data="documents" size="small" max-height="50vh">
+          <el-table
+            v-loading="loadingDocs"
+            :data="documents"
+            size="small"
+            max-height="50vh"
+            @selection-change="(sel: any[]) => (selectedDocIds = sel.map((s) => s.id))"
+          >
+            <el-table-column type="selection" width="42" />
             <el-table-column prop="name" label="文档" min-width="180" show-overflow-tooltip />
             <el-table-column label="类型" width="70" align="center">
               <template #default="{ row }">
@@ -2624,6 +2640,30 @@ async function deleteDoc(row: any) {
   try {
     await deleteAiKnowledgeDocument(detailKb.value.id, row.id);
     ElMessage.success("已删除");
+    await loadDocs();
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "删除失败");
+  }
+}
+const selectedDocIds = ref<number[]>([]);
+async function batchDeleteDocs() {
+  if (!detailKb.value || !selectedDocIds.value.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `将删除 ${selectedDocIds.value.length} 个文档及其全部索引/分块，不可恢复。`,
+      "批量删除文档",
+      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    for (const id of selectedDocIds.value) {
+      await deleteAiKnowledgeDocument(detailKb.value.id, id);
+    }
+    ElMessage.success(`已删除 ${selectedDocIds.value.length} 个文档`);
+    selectedDocIds.value = [];
     await loadDocs();
     await loadDetailStats(detailKb.value.id);
   } catch (e: any) {
