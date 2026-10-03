@@ -582,6 +582,89 @@
             </div>
             <div class="search-hit__content" v-html="highlight(h.content, detailQuery)"></div>
           </div>
+          <el-divider />
+          <div class="dt-suggest">
+            <div class="dt-suggest__head">
+              <span class="dt-suggest__title">检索失败？推测相关分块并标注</span>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="suggestLoading"
+                :disabled="!detailQuery.trim()"
+                @click="loadSuggest"
+              >
+                推测相关分块
+              </el-button>
+            </div>
+            <el-alert
+              v-if="suggestHint"
+              type="success"
+              :closable="false"
+              show-icon
+              :title="suggestHint"
+            />
+            <div v-for="(s, si) in suggestList" :key="si" class="search-hit">
+              <div class="search-hit__meta">
+                <span class="search-hit__file">{{ s.file_name || "未知" }}</span>
+                <span class="search-hit__score">相似 {{ s.similarity }}</span>
+                <el-tag v-if="s.hit" size="small" type="success" effect="plain">已命中</el-tag>
+                <el-tag v-else size="small" type="warning" effect="plain">未命中，建议标注</el-tag>
+                <el-button
+                  link
+                  type="warning"
+                  size="small"
+                  @click="
+                    openAnnotation({
+                      id: s.chunk_id,
+                      content: s.content,
+                      file_name: s.file_name,
+                      _query: detailQuery,
+                      _source: 'search',
+                    })
+                  "
+                >
+                  + 标注此分块
+                </el-button>
+              </div>
+              <div class="search-hit__content" v-html="highlight(s.content, detailQuery)"></div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 标注台账 -->
+        <el-tab-pane label="标注台账" name="logs">
+          <el-table v-loading="loadingLogs" :data="annotationLogs" size="small" max-height="60vh">
+            <el-table-column label="时间" width="160">
+              <template #default="{ row }">{{ row.created_time }}</template>
+            </el-table-column>
+            <el-table-column label="分块" width="70" align="center">
+              <template #default="{ row }">#{{ row.chunk_id }}</template>
+            </el-table-column>
+            <el-table-column label="动作" width="70" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="row.action === 'add' ? 'success' : 'danger'"
+                  effect="plain"
+                >
+                  {{ row.action === "add" ? "添加" : "删除" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="标注" min-width="140">
+              <template #default="{ row }">{{ row.text }}</template>
+            </el-table-column>
+            <el-table-column label="类型" width="70" align="center">
+              <template #default="{ row }">{{ annotKindLabel(row.kind) }}</template>
+            </el-table-column>
+            <el-table-column label="来源" width="90" align="center">
+              <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
+            </el-table-column>
+            <el-table-column label="触发查询" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.query || "—" }}</template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
 
         <!-- 图谱（内嵌可视化 + 编辑） -->
@@ -655,7 +738,13 @@
                 </div>
               </el-collapse-item>
             </el-collapse>
-            <VChart v-if="graphOption" class="graph-chart" :option="graphOption" autoresize />
+            <VChart
+              v-if="graphOption"
+              class="graph-chart"
+              :option="graphOption"
+              autoresize
+              @click="onGraphNodeClick"
+            />
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -796,6 +885,42 @@
       </template>
     </el-dialog>
 
+    <!-- 实体关联分块（图谱节点点击直达） -->
+    <el-dialog
+      v-model="entityChunksVisible"
+      :title="`实体关联分块 · ${entityChunksName}`"
+      width="560px"
+      append-to-body
+    >
+      <el-table
+        v-loading="entityChunksLoading"
+        :data="entityChunksList"
+        size="small"
+        max-height="50vh"
+      >
+        <el-table-column prop="chunk_index" label="#" width="60" align="center" />
+        <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
+        <el-table-column label="内容" min-width="200">
+          <template #default="{ row }">{{ row.content }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center">
+          <template #default="{ row }">
+            <el-button
+              link
+              type="warning"
+              size="small"
+              @click="
+                openAnnotation({ id: row.id, content: row.content, file_name: row.file_name })
+              "
+            >
+              标注
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!entityChunksList.length" description="该实体尚未绑定分块" :image-size="50" />
+    </el-dialog>
+
     <el-dialog
       v-model="dsDialogVisible"
       :title="editingDs ? '编辑数据源' : '新增数据源'"
@@ -895,6 +1020,8 @@ import {
   updateAiKnowledgeChunk,
   addAiKnowledgeChunkAnnotation,
   removeAiKnowledgeChunkAnnotation,
+  suggestAiKnowledgeAnnotate,
+  getAiKnowledgeAnnotationLogs,
   getAiKnowledgeEntityChunks,
   bindAiKnowledgeEntityChunks,
   unbindAiKnowledgeEntityChunks,
@@ -1401,6 +1528,10 @@ async function openDetail(row: any) {
   } finally {
     graphLoading.value = false;
   }
+  // 预加载标注台账
+  suggestList.value = [];
+  suggestHint.value = "";
+  loadLogs();
 }
 
 async function saveDetailOverview() {
@@ -1499,6 +1630,13 @@ function annotKindLabel(k: string) {
   if (k === "note") return "备注";
   return k;
 }
+function sourceLabel(k: string) {
+  if (k === "manual") return "手动";
+  if (k === "search") return "检索";
+  if (k === "auto") return "自动";
+  if (k === "graph") return "图谱";
+  return k;
+}
 function openAnnotation(row: any) {
   annotChunk.value = row;
   annotList.value = (row.annotations || []).map((a: any) => ({ ...a }));
@@ -1517,12 +1655,15 @@ async function addAnnotation() {
       detailKb.value.id,
       annotChunk.value.id,
       annotText.value.trim(),
-      annotKind.value
+      annotKind.value,
+      annotChunk.value._query,
+      annotChunk.value._source || "manual"
     );
     annotList.value = r.data?.data?.annotations || annotList.value;
     annotText.value = "";
     ElMessage.success("已添加标注并更新索引");
     await loadDetailStats(detailKb.value.id);
+    await loadLogs();
   } catch (e: any) {
     ElMessage.error(e?.message || "添加失败");
   } finally {
@@ -1536,8 +1677,72 @@ async function removeAnnotation(index: number) {
     annotList.value = r.data?.data?.annotations || annotList.value;
     ElMessage.success("已删除标注并更新索引");
     await loadDetailStats(detailKb.value.id);
+    await loadLogs();
   } catch (e: any) {
     ElMessage.error(e?.message || "删除失败");
+  }
+}
+
+// ---------- 检索失败建议标注 ----------
+const suggestList = ref<any[]>([]);
+const suggestLoading = ref(false);
+const suggestHint = ref("");
+async function loadSuggest() {
+  if (!detailKb.value || !detailQuery.value.trim()) return;
+  suggestLoading.value = true;
+  suggestHint.value = "";
+  try {
+    const r = await suggestAiKnowledgeAnnotate(detailKb.value.id, detailQuery.value, 8);
+    suggestList.value = r.data?.data || [];
+    const un = suggestList.value.filter((s) => !s.hit);
+    suggestHint.value = un.length
+      ? `推测到 ${suggestList.value.length} 个相关分块，其中 ${un.length} 个未被当前检索命中，可对其标注以提升下次召回。`
+      : `推测的相关分块均已被命中。`;
+  } catch (e: any) {
+    suggestList.value = [];
+    ElMessage.error(e?.message || "推测失败");
+  } finally {
+    suggestLoading.value = false;
+  }
+}
+
+// ---------- 标注台账 ----------
+const annotationLogs = ref<any[]>([]);
+const loadingLogs = ref(false);
+async function loadLogs() {
+  if (!detailKb.value) return;
+  loadingLogs.value = true;
+  try {
+    const r = await getAiKnowledgeAnnotationLogs(detailKb.value.id);
+    annotationLogs.value = r.data?.data || [];
+  } catch {
+    annotationLogs.value = [];
+  } finally {
+    loadingLogs.value = false;
+  }
+}
+
+// ---------- 图谱节点点击 → 关联分块 ----------
+const entityChunksVisible = ref(false);
+const entityChunksName = ref("");
+const entityChunksList = ref<any[]>([]);
+const entityChunksLoading = ref(false);
+async function onGraphNodeClick(params: any) {
+  const name = params?.data?.name || params?.name;
+  if (!name || !graphKbId.value) return;
+  const node = graphNodes.value.find((n) => n.name === name);
+  if (!node) return;
+  entityChunksName.value = name;
+  entityChunksVisible.value = true;
+  entityChunksLoading.value = true;
+  try {
+    const r = await getAiKnowledgeEntityChunks(graphKbId.value, node.id);
+    entityChunksList.value = r.data?.data || [];
+  } catch (e: any) {
+    entityChunksList.value = [];
+    ElMessage.error(e?.message || "加载失败");
+  } finally {
+    entityChunksLoading.value = false;
   }
 }
 
@@ -1839,6 +2044,19 @@ onMounted(loadData);
     .dt-weight-label {
       font-size: var(--el-font-size-base);
       color: var(--el-text-color-regular);
+    }
+  }
+  .dt-suggest {
+    .dt-suggest__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+
+      .dt-suggest__title {
+        font-size: var(--el-font-size-base);
+        color: var(--el-text-color-regular);
+      }
     }
   }
 }

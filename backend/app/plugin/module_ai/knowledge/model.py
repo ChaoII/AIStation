@@ -77,6 +77,36 @@ class AiKnowledgeEntityChunkModel(ModelMixin):
     )
 
 
+class AiChunkAnnotationLogModel(ModelMixin):
+    """分块标注台账：记录每次标注的来源（查询/手动/图谱）与操作人，形成 QA 闭环。"""
+
+    __tablename__ = "ai_chunk_annotation_logs"
+    __table_args__ = ({"comment": "AI 分块标注台账表"},)
+
+    knowledge_base_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="知识库 ID"
+    )
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_knowledge_chunks.id"), nullable=False, comment="分块 ID"
+    )
+    action: Mapped[str] = mapped_column(
+        String(16), default="add", comment="动作: add/remove"
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False, comment="标注文本")
+    kind: Mapped[str | None] = mapped_column(
+        String(32), default="alias", comment="类型: alias/anchor/note"
+    )
+    query: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, comment="触发标注的查询"
+    )
+    source: Mapped[str | None] = mapped_column(
+        String(32), default="manual", comment="来源: manual/search/auto/graph"
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="操作用户 ID"
+    )
+
+
 class AiDatasourceModel(ModelMixin, UserMixin):
     """数据源：数据库（SQL）或 API，可同步到知识库。"""
     __tablename__ = "ai_datasources"

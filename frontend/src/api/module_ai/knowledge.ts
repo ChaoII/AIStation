@@ -104,12 +104,14 @@ export function addAiKnowledgeChunkAnnotation(
   id: number,
   chunkId: number,
   text: string,
-  kind = "alias"
+  kind = "alias",
+  query?: string,
+  source = "manual"
 ) {
   return request({
     url: `${BASE}/${id}/chunks/${chunkId}/annotations`,
     method: "post",
-    data: { text, kind },
+    data: { text, kind, query, source },
   });
 }
 export function removeAiKnowledgeChunkAnnotation(id: number, chunkId: number, index: number) {
@@ -117,6 +119,16 @@ export function removeAiKnowledgeChunkAnnotation(id: number, chunkId: number, in
     url: `${BASE}/${id}/chunks/${chunkId}/annotations/${index}`,
     method: "delete",
   });
+}
+export function suggestAiKnowledgeAnnotate(id: number, query: string, topN = 5) {
+  return request({
+    url: `${BASE}/${id}/suggest-annotate`,
+    method: "get",
+    params: { query, top_n: topN },
+  });
+}
+export function getAiKnowledgeAnnotationLogs(id: number) {
+  return request({ url: `${BASE}/${id}/annotation-logs`, method: "get" });
 }
 export function getAiKnowledgeChunkEntities(id: number, chunkId: number) {
   return request({ url: `${BASE}/${id}/chunks/${chunkId}/entities`, method: "get" });

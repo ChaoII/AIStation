@@ -33,9 +33,11 @@ class AiKnowledgeUpdateChunkSchema(BaseModel):
 
 
 class AiKnowledgeChunkAnnotateSchema(BaseModel):
-    """分块标注：文本 + 类型（alias 别名 / anchor 锚点 / note 备注）。"""
+    """分块标注：文本 + 类型（alias 别名 / anchor 锚点 / note 备注）+ 来源上下文。"""
     text: str = Field(..., min_length=1, max_length=512)
     kind: str = Field(default="alias", max_length=32, description="alias/anchor/note")
+    query: str | None = Field(default=None, max_length=1000, description="触发标注的查询")
+    source: str = Field(default="manual", max_length=32, description="manual/search/auto/graph")
 
 
 class AiKnowledgeEntityBindSchema(BaseModel):

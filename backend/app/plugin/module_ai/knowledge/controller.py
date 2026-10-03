@@ -241,7 +241,10 @@ async def add_chunk_annotation(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await AiKnowledgeService.add_chunk_annotation(kb_id, chunk_id, data.text, data.kind),
+        data=await AiKnowledgeService.add_chunk_annotation(
+            kb_id, chunk_id, data.text, data.kind,
+            query=data.query, source=data.source, user_id=auth.user.id,
+        ),
         msg="已添加标注并更新索引",
     )
 
@@ -254,8 +257,33 @@ async def remove_chunk_annotation(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
 ) -> JSONResponse:
     return SuccessResponse(
-        data=await AiKnowledgeService.remove_chunk_annotation(kb_id, chunk_id, index),
+        data=await AiKnowledgeService.remove_chunk_annotation(
+            kb_id, chunk_id, index, user_id=auth.user.id,
+        ),
         msg="已删除标注并更新索引",
+    )
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/annotation-logs", summary="标注台账")
+async def list_annotation_logs(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.list_annotation_logs(kb_id), msg="查询成功"
+    )
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/suggest-annotate", summary="检索失败建议标注")
+async def suggest_annotate(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+    query: str = "",
+    top_n: int = 5,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.suggest_annotate(kb_id, query, top_n),
+        msg="查询成功",
     )
 
 

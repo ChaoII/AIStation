@@ -10,6 +10,7 @@ from app.core.database import async_db_session
 
 from . import embedding, graphrag
 from .model import (
+    AiChunkAnnotationLogModel,
     AiDatasourceModel,
     AiKnowledgeBaseModel,
     AiKnowledgeChunkModel,
@@ -871,7 +872,10 @@ class AiKnowledgeService:
 
     # ---------- 分块标注（提升换说法召回命中） ----------
     @classmethod
-    async def add_chunk_annotation(cls, kb_id: int, chunk_id: int, text: str, kind: str = "alias") -> dict:
+    async def add_chunk_annotation(
+        cls, kb_id: int, chunk_id: int, text: str, kind: str = "alias",
+        query: str | None = None, source: str = "manual", user_id: int | None = None,
+    ) -> dict:
         """给分块加一条标注，并用正文+标注重新向量化该分块（标注即刻生效于检索）。"""
         async with async_db_session.begin() as db:
             c = await db.get(AiKnowledgeChunkModel, chunk_id)
@@ -885,11 +889,21 @@ class AiKnowledgeService:
             c.vector = vec
             c.dimension = len(vec) if vec else None
             c.meta = {**(c.meta or {}), "vector_annotated": True}
+            db.add(
+                AiChunkAnnotationLogModel(
+                    knowledge_base_id=kb_id, chunk_id=chunk_id, action="add",
+                    text=text, kind=kind, query=query, source=source, user_id=user_id,
+                )
+            )
         return {"chunk_id": chunk_id, "annotations": anns}
 
     @classmethod
-    async def remove_chunk_annotation(cls, kb_id: int, chunk_id: int, index: int) -> dict:
+    async def remove_chunk_annotation(
+        cls, kb_id: int, chunk_id: int, index: int,
+        query: str | None = None, source: str = "manual", user_id: int | None = None,
+    ) -> dict:
         """删除分块第 index 条标注，并重算向量。"""
+        text_removed = ""
         async with async_db_session.begin() as db:
             c = await db.get(AiKnowledgeChunkModel, chunk_id)
             if not c or c.knowledge_base_id != kb_id:
@@ -897,15 +911,80 @@ class AiKnowledgeService:
             anns = list(c.annotations or [])
             if index < 0 or index >= len(anns):
                 raise ValueError("标注不存在")
-            anns.pop(index)
+            text_removed = anns.pop(index).get("text", "")
             c.annotations = anns
             model_id = await cls._kb_model_id([kb_id])
             vec = (await embedding.embed_texts([_searchable_text(c.content, anns)], model_id=model_id))[0]
             c.vector = vec
             c.dimension = len(vec) if vec else None
+            db.add(
+                AiChunkAnnotationLogModel(
+                    knowledge_base_id=kb_id, chunk_id=chunk_id, action="remove",
+                    text=text_removed, kind="", query=query, source=source, user_id=user_id,
+                )
+            )
         return {"chunk_id": chunk_id, "annotations": anns}
 
-    # ---------- 实体 ↔ 分块 绑定 ----------
+    @classmethod
+    async def list_annotation_logs(cls, kb_id: int, limit: int = 50) -> list[dict]:
+        """标注台账：按时间倒序返回标注增删历史。"""
+        async with async_db_session() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(AiChunkAnnotationLogModel)
+                        .where(AiChunkAnnotationLogModel.knowledge_base_id == kb_id)
+                        .order_by(AiChunkAnnotationLogModel.id.desc())
+                        .limit(limit)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [
+            {
+                "id": r.id,
+                "chunk_id": r.chunk_id,
+                "action": r.action,
+                "text": r.text,
+                "kind": r.kind or "alias",
+                "query": r.query,
+                "source": r.source or "manual",
+                "user_id": r.user_id,
+                "created_time": r.created_time,
+            }
+            for r in rows
+        ]
+
+    @classmethod
+    async def suggest_annotate(cls, kb_id: int, query: str, top_n: int = 5) -> list[dict]:
+        """检索失败标注引导：向量召回与查询相关但未被全文命中的分块，建议用户标注。"""
+        if not query:
+            return []
+        # 向量召回（含标注）
+        try:
+            vec = await cls._pg_search([kb_id], query, top_n, False, "vector")
+        except Exception:  # noqa: BLE001
+            vec = []
+        # 全文命中的分块 id
+        try:
+            ft = await cls._pg_search([kb_id], query, top_n * 3, False, "fulltext")
+        except Exception:  # noqa: BLE001
+            ft = []
+        ft_ids = {r["chunk_id"] for r in ft}
+        out = []
+        for v in vec:
+            out.append(
+                {
+                    "chunk_id": v["chunk_id"],
+                    "file_name": v["file_name"],
+                    "content": v["content"],
+                    "similarity": v["score"],
+                    "hit": v["chunk_id"] in ft_ids,
+                }
+            )
+        return out
+
     @classmethod
     async def bind_entity_chunks(cls, kb_id: int, entity_id: int, chunk_ids: list[int]) -> dict:
         """把若干分块绑定到实体（图谱检索命中实体可回溯分块）。"""

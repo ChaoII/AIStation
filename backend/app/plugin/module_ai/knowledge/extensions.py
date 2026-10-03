@@ -49,3 +49,11 @@ async def ensure_extensions() -> None:
         "deleted_time TIMESTAMP, entity_id INTEGER, chunk_id INTEGER, "
         "UNIQUE (entity_id, chunk_id))"
     )
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_chunk_annotation_logs ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, knowledge_base_id INTEGER, chunk_id INTEGER, "
+        "action VARCHAR(16), text TEXT, kind VARCHAR(32), query TEXT, "
+        "source VARCHAR(32), user_id INTEGER)"
+    )
