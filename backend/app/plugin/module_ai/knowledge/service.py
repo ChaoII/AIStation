@@ -1651,6 +1651,15 @@ class AiKnowledgeService:
         async with async_db_session.begin() as db:
             from sqlalchemy import delete as _delete
 
+            # 先删除实体-分块绑定（外键依赖实体），避免 FK 冲突
+            ent_ids = select(AiKnowledgeEntityModel.id).where(
+                AiKnowledgeEntityModel.knowledge_base_id == kb_id
+            )
+            await db.execute(
+                _delete(AiKnowledgeEntityChunkModel).where(
+                    AiKnowledgeEntityChunkModel.entity_id.in_(ent_ids)
+                )
+            )
             await db.execute(
                 _delete(AiKnowledgeEntityModel).where(
                     AiKnowledgeEntityModel.knowledge_base_id == kb_id
