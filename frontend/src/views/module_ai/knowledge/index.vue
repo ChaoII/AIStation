@@ -970,12 +970,15 @@ function engineLabel(e: string): string {
   if (e === "jieba_fulltext") return "中文全文";
   if (e === "pgvector") return "向量";
   if (e === "graphrag") return "图谱";
+  if (e === "hybrid") return "混合";
+  if (e === "grep") return "子串全文";
   return e;
 }
 function engineType(e: string): "primary" | "success" | "warning" | "info" | "danger" {
   if (e === "jieba_fulltext") return "success";
   if (e === "pgvector") return "primary";
   if (e === "graphrag") return "warning";
+  if (e === "hybrid") return "danger";
   return "info";
 }
 

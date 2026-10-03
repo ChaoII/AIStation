@@ -510,13 +510,13 @@ class AiKnowledgeService:
 
     @staticmethod
     def _minmax_scores(items: list[dict]) -> dict[int, float]:
-        """按分块得分清单做 min-max 归一化。"""
+        """按分块得分清单做 max 归一分（score/max，命中最大者=1，单命中不再归零）。"""
         if not items:
             return {}
-        scores = [it.get("score", 0.0) or 0.0 for it in items]
-        lo, hi = min(scores), max(scores)
-        rng = (hi - lo) or 1.0
-        return {it["chunk_id"]: ((it.get("score", 0.0) or 0.0) - lo) / rng for it in items}
+        hi = max(it.get("score", 0.0) or 0.0 for it in items)
+        if hi <= 0.0:
+            return {it["chunk_id"]: 0.0 for it in items}
+        return {it["chunk_id"]: ((it.get("score", 0.0) or 0.0) / hi) for it in items}
 
     @classmethod
     def _fuse_weighted(
@@ -535,7 +535,7 @@ class AiKnowledgeService:
         fused: list[dict] = []
         for cid, it in info.items():
             combined = vn.get(cid, 0.0) * vec_w + fn.get(cid, 0.0) * ft_w
-            fused.append({**it, "score": round(combined, 4)})
+            fused.append({**it, "engine": "hybrid", "score": round(combined, 4)})
         fused.sort(key=lambda x: x["score"], reverse=True)
         return fused
 
@@ -706,9 +706,12 @@ class AiKnowledgeService:
                 .all()
             )
         return {
-            "nodes": [{"id": e.name, "name": e.name, "weight": e.weight or 1} for e in ents],
+            "nodes": [
+                {"id": e.id, "name": e.name, "etype": e.etype or "keyword", "weight": e.weight or 1}
+                for e in ents
+            ],
             "edges": [
-                {"source": r.source, "target": r.target, "weight": r.weight or 1}
+                {"id": r.id, "source": r.source, "target": r.target, "weight": r.weight or 1}
                 for r in rels
             ],
         }
