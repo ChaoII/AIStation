@@ -1325,6 +1325,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         log.info("✅ Redis系统配置初始化完成")
         await DictDataService().init_dict_service(redis=app.state.redis)
         log.info("✅ Redis数据字典初始化完成")
+        # 初始化 AI 扩展（pgvector / AGE / pg_jieba），非 PG 或未安装时静默跳过
+        from app.plugin.module_ai.knowledge.extensions import ensure_extensions
+
+        await ensure_extensions()
+        log.info("✅ AI 扩展初始化完成")
         await SchedulerUtil.init_scheduler(redis=app.state.redis)
         log.info("✅ 定时任务调度器初始化完成")
         await FastAPILimiter.init(
