@@ -871,6 +871,12 @@
                 <el-option label="环形" value="circle" />
                 <el-option label="层级" value="breadthfirst" />
               </el-select>
+              <el-switch
+                v-model="physicsMode"
+                size="small"
+                active-text="物理模式"
+                @change="() => onGraphLayoutChange(graphLayout)"
+              />
               <el-button size="small" @click="() => graphCanvasRef?.fit?.()">适配</el-button>
               <el-button size="small" @click="() => graphCanvasRef?.zoom?.(1.25)">放大</el-button>
               <el-button size="small" @click="() => graphCanvasRef?.zoom?.(0.8)">缩小</el-button>
@@ -932,6 +938,7 @@
               :node-style="nodeStyle"
               :layout-name="graphLayout"
               :link-mode="linkMode"
+              :physics-mode="physicsMode"
               :shortest-mode="shortestMode"
               @node-tap="onGraphNodeTap"
               @node-dbltap="onGraphNodeDbltap"
@@ -1213,6 +1220,7 @@
           :node-style="nodeStyle"
           :layout-name="graphLayout"
           :link-mode="linkMode"
+          :physics-mode="physicsMode"
           :shortest-mode="shortestMode"
           :height="`calc(100vh - 210px)`"
           @node-tap="onGraphNodeTap"
@@ -1826,6 +1834,7 @@ const graphEdges = ref<any[]>([]);
 const graphKbId = ref<number>();
 const graphUsePreset = ref(false);
 const graphLayout = ref("cose");
+const physicsMode = ref(false);
 const graphSearch = ref("");
 const shortestMode = ref(false);
 const graphStatsVisible = ref(false);

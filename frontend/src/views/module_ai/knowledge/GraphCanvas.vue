@@ -35,6 +35,7 @@ const props = defineProps<{
   layoutName?: string;
   linkMode?: boolean;
   shortestMode?: boolean;
+  physicsMode?: boolean;
   edgeStyle?: {
     lineStyle?: "solid" | "dashed" | "dotted";
     curve?: "bezier" | "straight" | "taxi";
@@ -376,17 +377,32 @@ function runLayout() {
     opts.fit = true;
     opts.padding = 30;
   } else if (name === "cose") {
-    // d3-force 物理引擎：节点持续弹跳/碰撞，拖动推挤
-    opts.name = "d3-force";
-    opts.animate = true;
-    opts.fit = false;
-    opts.linkDistance = 72;
-    opts.charge = -420;
-    opts.gravity = 0.12;
-    opts.collideRadius = 24;
-    opts.alphaMin = 0.0005;
-    opts.randomize = true;
-    opts.stiffness = 0.7;
+    if (props.physicsMode) {
+      // d3-force 物理引擎：节点持续弹跳/碰撞，拖动推挤
+      opts.name = "d3-force";
+      opts.animate = true;
+      opts.fit = false;
+      opts.linkDistance = 72;
+      opts.charge = -420;
+      opts.gravity = 0.12;
+      opts.collideRadius = 24;
+      opts.alphaMin = 0.0005;
+      opts.randomize = true;
+      opts.stiffness = 0.7;
+    } else {
+      // 稳定力导向（cose，碰撞避免）
+      opts.name = "cose";
+      opts.animate = true;
+      opts.animationDuration = 500;
+      opts.fit = true;
+      opts.padding = 30;
+      opts.nodeRepulsion = 40000;
+      opts.idealEdgeLength = 110;
+      opts.gravity = 0.35;
+      opts.numIter = 2500;
+      opts.nodeOverlap = 20;
+      opts.spacingFactor = 1.2;
+    }
   } else {
     opts.name = name;
     opts.animate = true;
@@ -408,21 +424,34 @@ function setLayout(name: string) {
   const c = cy;
   if (!c) return;
   if (name === "cose") {
-    c.layout({
-      name: "d3-force",
-      animate: true,
-      fit: false,
-      linkDistance: 72,
-      charge: -420,
-      gravity: 0.12,
-      collideRadius: 24,
-      alphaMin: 0.0005,
-      randomize: true,
-      stiffness: 0.7,
-    } as any).run();
-    setTimeout(() => {
-      if (cy) cy.fit(undefined, 30);
-    }, 150);
+    if (props.physicsMode) {
+      c.layout({
+        name: "d3-force",
+        animate: true,
+        fit: false,
+        linkDistance: 72,
+        charge: -420,
+        gravity: 0.12,
+        collideRadius: 24,
+        alphaMin: 0.0005,
+        randomize: true,
+        stiffness: 0.7,
+      } as any).run();
+    } else {
+      c.layout({
+        name: "cose",
+        animate: true,
+        animationDuration: 500,
+        fit: true,
+        padding: 30,
+        nodeRepulsion: 40000,
+        idealEdgeLength: 110,
+        gravity: 0.35,
+        numIter: 2500,
+        nodeOverlap: 20,
+        spacingFactor: 1.2,
+      } as any).run();
+    }
     return;
   }
   c.layout({
