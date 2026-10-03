@@ -1384,7 +1384,12 @@ async function loadGraph(g: any) {
     source: String(e.source),
     target: String(e.target),
     rtype: e.rtype || "related",
-    lineStyle: { width: 1 + Math.min((e.weight || 1) / 3, 2), opacity: 0.7 },
+    lineStyle: {
+      width: 1.5 + Math.min((e.weight || 1) / 2, 3),
+      opacity: 0.9,
+      color: "#a0a6ad",
+      curveness: 0.08,
+    },
   }));
   graphOption.value = {
     tooltip: {
