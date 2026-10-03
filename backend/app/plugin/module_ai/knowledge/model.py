@@ -130,6 +130,29 @@ class AiSearchLogModel(ModelMixin):
     )
 
 
+class AiKnowledgeDocumentModel(ModelMixin):
+    """知识库文档（wikiLLM / ima 式文档管理）：上传解析→分块→索引。"""
+
+    __tablename__ = "ai_knowledge_documents"
+    __table_args__ = ({"comment": "AI 知识库文档表"},)
+
+    knowledge_base_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="知识库 ID"
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False, comment="文档名")
+    file_type: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default="txt", comment="类型: txt/md/docx/pdf"
+    )
+    size: Mapped[int] = mapped_column(Integer, default=0, comment="文件大小(字节)")
+    content: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="提取的全文"
+    )
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, comment="分块数")
+    doc_status: Mapped[str] = mapped_column(
+        String(16), default="ready", comment="状态: ready/error"
+    )
+
+
 class AiDatasourceModel(ModelMixin, UserMixin):
     """数据源：数据库（SQL）或 API，可同步到知识库。"""
     __tablename__ = "ai_datasources"

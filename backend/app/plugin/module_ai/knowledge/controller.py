@@ -1,7 +1,7 @@
 """知识库 / 数据源 RAG 控制器。"""
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -256,6 +256,45 @@ async def delete_relation_type(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
 ) -> JSONResponse:
     await AiKnowledgeService.delete_relation_type(rid)
+    return SuccessResponse(msg="已删除")
+
+
+# ---------- 文档管理（wikiLLM / ima 式） ----------
+@KnowledgeRouter.get("/bases/{kb_id}/documents", summary="文档列表")
+async def list_documents(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiKnowledgeService.list_documents(kb_id), msg="查询成功")
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/documents/upload", summary="上传文档并索引")
+async def upload_document(
+    kb_id: int,
+    file: Annotated[UploadFile, File(...)],
+    chunk_size: Annotated[int, Form()] = 500,
+    overlap: Annotated[int, Form()] = 50,
+    strategy: Annotated[str, Form()] = "fixed",
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))] = None,
+) -> JSONResponse:
+    data = await file.read()
+    try:
+        result = await AiKnowledgeService.upload_document(
+            kb_id, file.filename or "文档", data, auth,
+            chunk_size=chunk_size, overlap=overlap, strategy=strategy,
+        )
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=result, msg="已上传并索引")
+
+
+@KnowledgeRouter.delete("/bases/{kb_id}/documents/{doc_id}", summary="删除文档")
+async def delete_document(
+    kb_id: int,
+    doc_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:delete"]))],
+) -> JSONResponse:
+    await AiKnowledgeService.delete_document(kb_id, doc_id)
     return SuccessResponse(msg="已删除")
 
 

@@ -14,6 +14,7 @@ from .model import (
     AiDatasourceModel,
     AiKnowledgeBaseModel,
     AiKnowledgeChunkModel,
+    AiKnowledgeDocumentModel,
     AiKnowledgeEntityChunkModel,
     AiKnowledgeEntityModel,
     AiKnowledgeRelationModel,
@@ -1003,6 +1004,144 @@ class AiKnowledgeService:
             }
             for r in rows
         ]
+
+    # ---------- 文档管理（wikiLLM / ima 式） ----------
+    @staticmethod
+    def _extract_text(filename: str, data: bytes) -> str:
+        """按扩展名提取全文：txt/md/csv/docx/pdf。"""
+        lower = (filename or "").lower()
+        ext = lower.rsplit(".", 1)[-1] if "." in lower else "txt"
+        if ext in ("txt", "md", "csv", "json", "log"):
+            try:
+                return data.decode("utf-8", errors="ignore")
+            except Exception:  # noqa: BLE001
+                return data.decode("gbk", errors="ignore")
+        if ext == "docx":
+            import io
+
+            from docx import Document
+
+            doc = Document(io.BytesIO(data))
+            return "\n".join(p.text for p in doc.paragraphs)
+        if ext == "pdf":
+            import io
+
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(data))
+            return "\n".join((page.extract_text() or "") for page in reader.pages)
+        # 未知类型退回当作 utf-8 文本
+        return data.decode("utf-8", errors="ignore")
+
+    @classmethod
+    async def upload_document(
+        cls, kb_id: int, filename: str, data: bytes, auth,
+        chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",
+    ) -> dict:
+        """上传文档→提取全文→分块向量化→入库。"""
+        text = cls._extract_text(filename, data)
+        if not text.strip():
+            raise ValueError("文档无有效文本")
+        ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
+        async with async_db_session.begin() as db:
+            doc = AiKnowledgeDocumentModel(
+                knowledge_base_id=kb_id,
+                name=filename or "文档",
+                file_type=ext,
+                size=len(data),
+                content=text,
+                doc_status="ready",
+            )
+            db.add(doc)
+            await db.flush()
+            doc_id = doc.id
+        # 分块向量化入库
+        result = await cls.ingest_text(
+            kb_id, text, file_name=filename or "文档", auth=auth,
+            chunk_size=chunk_size, overlap=overlap, strategy=strategy,
+        )
+        async with async_db_session.begin() as db:
+            d = await db.get(AiKnowledgeDocumentModel, doc_id)
+            d.chunk_count = result.get("chunks", 0)
+        return {"id": doc_id, "name": filename or "文档", "chunks": result.get("chunks", 0)}
+
+    @classmethod
+    async def list_documents(cls, kb_id: int) -> list[dict]:
+        async with async_db_session() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeDocumentModel)
+                        .where(
+                            AiKnowledgeDocumentModel.knowledge_base_id == kb_id,
+                            AiKnowledgeDocumentModel.is_deleted.is_(False),
+                        )
+                        .order_by(AiKnowledgeDocumentModel.id.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [
+            {
+                "id": d.id,
+                "name": d.name,
+                "file_type": d.file_type or "txt",
+                "size": d.size or 0,
+                "chunk_count": d.chunk_count or 0,
+                "status": d.doc_status or "ready",
+                "created_time": d.created_time,
+            }
+            for d in rows
+        ]
+
+    @classmethod
+    async def delete_document(cls, kb_id: int, doc_id: int) -> None:
+        async with async_db_session.begin() as db:
+            d = await db.get(AiKnowledgeDocumentModel, doc_id)
+            if d and d.knowledge_base_id == kb_id:
+                await db.delete(d)
+
+    @classmethod
+    async def ingest_text(
+        cls, kb_id: int, text: str, file_name: str, auth,
+        chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",
+    ) -> dict:
+        """文本→分块→向量化→入库（文档复用）。"""
+        chunks = chunk_text(text, chunk_size, overlap, strategy)
+        if not chunks:
+            return {"chunks": 0}
+        model_id = await cls._kb_model_id([kb_id])
+        vectors = await embedding.embed_texts(chunks, model_id=model_id)
+        saved = 0
+        async with async_db_session.begin() as db:
+            b = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not b or b.is_deleted:
+                raise ValueError("知识库不存在")
+            existing = (
+                await db.execute(
+                    select(func.max(AiKnowledgeChunkModel.chunk_index)).where(
+                        AiKnowledgeChunkModel.knowledge_base_id == kb_id
+                    )
+                )
+            ).scalar() or 0
+            for i, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False), start=existing + 1):
+                db.add(
+                    AiKnowledgeChunkModel(
+                        knowledge_base_id=kb_id,
+                        file_name=file_name,
+                        chunk_index=i,
+                        content=chunk,
+                        meta={"file_name": file_name},
+                        vector=vec,
+                        dimension=len(vec) if vec else None,
+                    )
+                )
+                saved += 1
+            b.chunk_count = (b.chunk_count or 0) + saved
+            b.updated_id = auth.user.id
+        await cls._rebuild_graph(kb_id)
+        return {"chunks": saved}
 
     @classmethod
     async def suggest_annotate(cls, kb_id: int, query: str, top_n: int = 5) -> list[dict]:
