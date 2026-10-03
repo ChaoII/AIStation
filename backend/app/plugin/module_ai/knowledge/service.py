@@ -189,22 +189,37 @@ class AiKnowledgeService:
 
     @classmethod
     async def delete_bases(cls, ids: list[int]) -> None:
+        from sqlalchemy import delete as _delete
+
         async with async_db_session.begin() as db:
             for kid in ids:
                 b = await db.get(AiKnowledgeBaseModel, kid)
                 if not b:
                     continue
-                await db.delete(b)
-                # 级联删除分块
-                chunks = (
-                    await db.execute(
-                        select(AiKnowledgeChunkModel).where(
-                            AiKnowledgeChunkModel.knowledge_base_id == kid
-                        )
+                # 级联删除子数据（分块 / 图谱实体 / 关系），避免外键 IntegrityError
+                await db.execute(
+                    _delete(AiKnowledgeChunkModel).where(
+                        AiKnowledgeChunkModel.knowledge_base_id == kid
                     )
-                ).scalars().all()
-                for c in chunks:
-                    await db.delete(c)
+                )
+                await db.execute(
+                    _delete(AiKnowledgeEntityModel).where(
+                        AiKnowledgeEntityModel.knowledge_base_id == kid
+                    )
+                )
+                await db.execute(
+                    _delete(AiKnowledgeRelationModel).where(
+                        AiKnowledgeRelationModel.knowledge_base_id == kid
+                    )
+                )
+                await db.delete(b)
+                # 尝试删除对应 AGE 图（仅 PostgreSQL + AGE 可用时；失败忽略）
+                try:
+                    await db.execute(
+                        text(f"SELECT drop_graph('kb_graph_{kid}', true)")
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
     # ------------------------------------------------------------ #
     # 入库 / 检索

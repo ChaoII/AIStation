@@ -467,7 +467,23 @@ const loadData = async () => {
       getAiDatasourceList(),
       getAiModelList({}),
     ]);
-    bases.value = kr.data?.data || [];
+    const list = kr.data?.data || [];
+    // 图谱列：逐个拉取 /graph 统计（可靠）
+    await Promise.all(
+      list.map(async (b: any) => {
+        if (b.graph_nodes == null) {
+          try {
+            const g = await getAiKnowledgeGraph(b.id);
+            b.graph_nodes = (g.data?.data?.nodes || []).length;
+            b.graph_edges = (g.data?.data?.edges || []).length;
+          } catch {
+            b.graph_nodes = 0;
+            b.graph_edges = 0;
+          }
+        }
+      })
+    );
+    bases.value = list;
     datasources.value = dr.data?.data || [];
     modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
   } catch (e: any) {
