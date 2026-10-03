@@ -172,6 +172,15 @@ export function updateAiKnowledgeGraphRelation(
 ) {
   return request({ url: `${BASE}/${id}/graph/relation/${relId}`, method: "put", data });
 }
+export function saveAiKnowledgeGraphLayout(
+  id: number,
+  items: { id: number; x: number; y: number }[]
+) {
+  return request({ url: `${BASE}/${id}/graph/layout`, method: "put", data: { items } });
+}
+export function clearAiKnowledgeGraphLayout(id: number) {
+  return request({ url: `${BASE}/${id}/graph/layout`, method: "delete" });
+}
 
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {

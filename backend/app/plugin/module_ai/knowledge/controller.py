@@ -18,6 +18,7 @@ from .schema import (
     AiKnowledgeChunkAnnotateSchema,
     AiKnowledgeEntityBindSchema,
     AiKnowledgeGraphEntitySchema,
+    AiKnowledgeGraphLayoutSchema,
     AiKnowledgeGraphRelationSchema,
     AiKnowledgeGraphRelationUpdateSchema,
     AiKnowledgeIngestSchema,
@@ -204,6 +205,29 @@ async def update_graph_relation(
     if not r:
         return ErrorResponse(msg="关系不存在")
     return SuccessResponse(data=r, msg="已更新关系")
+
+
+@KnowledgeRouter.put("/bases/{kb_id}/graph/layout", summary="保存图谱布局")
+async def save_graph_layout(
+    kb_id: int,
+    data: AiKnowledgeGraphLayoutSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data={"saved": await AiKnowledgeService.save_graph_layout(kb_id, data.items)},
+        msg="已保存布局",
+    )
+
+
+@KnowledgeRouter.delete("/bases/{kb_id}/graph/layout", summary="清除布局记忆")
+async def clear_graph_layout(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data={"cleared": await AiKnowledgeService.clear_graph_layout(kb_id)},
+        msg="已清除布局",
+    )
 
 
 @KnowledgeRouter.post("/bases/{kb_id}/rebuild", summary="重建索引（重新向量化+重建图谱）")

@@ -44,6 +44,7 @@ async def ensure_extensions() -> None:
     await _run_sql("ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS annotations jsonb")
     await _run_sql("ALTER TABLE ai_knowledge_relations ADD COLUMN IF NOT EXISTS rtype varchar(64)")
     await _run_sql("ALTER TABLE ai_knowledge_entities ADD COLUMN IF NOT EXISTS description text")
+    await _run_sql("ALTER TABLE ai_knowledge_entities ADD COLUMN IF NOT EXISTS layout jsonb")
     await _run_sql(
         "CREATE TABLE IF NOT EXISTS ai_knowledge_entity_chunks ("
         "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "

@@ -103,3 +103,15 @@ class AiKnowledgeGraphRelationSchema(BaseModel):
     target: str = Field(..., max_length=256)
     weight: int = Field(default=1, ge=1)
     rtype: str | None = Field(default="related", max_length=64, description="关系类型/语义")
+
+
+class AiKnowledgeGraphLayoutItemSchema(BaseModel):
+    """单个节点坐标。"""
+    id: int
+    x: float
+    y: float
+
+
+class AiKnowledgeGraphLayoutSchema(BaseModel):
+    """保存图谱布局：节点坐标列表。"""
+    items: list[AiKnowledgeGraphLayoutItemSchema] = Field(default_factory=list)

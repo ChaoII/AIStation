@@ -763,6 +763,8 @@ class AiKnowledgeService:
                     "weight": e.weight or 1,
                     "description": e.description or "",
                     "chunk_count": chunk_count.get(e.id, 0),
+                    "x": (e.layout or {}).get("x"),
+                    "y": (e.layout or {}).get("y"),
                 }
                 for e in ents
             ],
@@ -1245,6 +1247,41 @@ class AiKnowledgeService:
         await graphrag.age_sync_graph(kb_id)
         return {"id": r.id, "source": r.source, "target": r.target,
                 "weight": r.weight or 1, "rtype": r.rtype or "related"}
+
+    @classmethod
+    async def save_graph_layout(cls, kb_id: int, items: list) -> int:
+        """保存图谱布局（节点坐标记忆）。"""
+        saved = 0
+        async with async_db_session.begin() as db:
+            for it in items:
+                e = await db.get(AiKnowledgeEntityModel, it.id)
+                if not e or e.is_deleted or e.knowledge_base_id != kb_id:
+                    continue
+                e.layout = {"x": it.x, "y": it.y}
+                saved += 1
+        return saved
+
+    @classmethod
+    async def clear_graph_layout(cls, kb_id: int) -> int:
+        """清除全部节点布局记忆（回到自动力导向）。"""
+        cleared = 0
+        async with async_db_session.begin() as db:
+            es = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeEntityModel).where(
+                            AiKnowledgeEntityModel.knowledge_base_id == kb_id,
+                            AiKnowledgeEntityModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for e in es:
+                e.layout = None
+                cleared += 1
+        return cleared
 
     # ------------------------------------------------------------ #
     # 数据源

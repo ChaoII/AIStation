@@ -751,18 +751,30 @@
               <el-button size="small" type="success" plain @click="openAddRel">
                 + 新建关系
               </el-button>
+              <el-button size="small" :loading="graphSavingLayout" @click="saveLayout">
+                保存布局
+              </el-button>
+              <el-button size="small" @click="relayoutGraph">重新布局</el-button>
+              <el-button size="small" @click="() => reloadGraph()">刷新</el-button>
               <el-switch
                 v-model="linkMode"
                 size="small"
                 active-text="连线模式"
                 @change="linkSource = null"
               />
-              <span class="kb-opt-hint">
-                右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线。
+            </div>
+            <div class="graph-legend">
+              <span v-for="lg in graphLegend" :key="lg.label" class="graph-legend__item">
+                <i class="graph-legend__dot" :style="{ background: lg.color }" />
+                {{ lg.label }}
               </span>
+            </div>
+            <div class="kb-opt-hint">
+              右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线；拖动后可「保存布局」记住位置。
             </div>
             <VChart
               v-if="graphOption"
+              ref="graphChartRef"
               class="graph-chart"
               :option="graphOption"
               autoresize
@@ -922,11 +934,16 @@
           </el-select>
         </el-form-item>
         <el-form-item label="关系类型">
-          <el-input
+          <el-select
             v-model="relEditForm.rtype"
-            placeholder="如：属于/包含/依赖/相关"
-            maxlength="64"
-          />
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入关系类型"
+            style="width: 100%"
+          >
+            <el-option v-for="r in rtypeOptions" :key="r" :label="r" :value="r" />
+          </el-select>
         </el-form-item>
         <el-form-item label="权重">
           <el-input-number v-model="relEditForm.weight" :min="1" :max="9999" />
@@ -986,11 +1003,16 @@
           </el-select>
         </el-form-item>
         <el-form-item label="关系类型">
-          <el-input
+          <el-select
             v-model="relAddForm.rtype"
-            placeholder="如：属于/包含/依赖/相关"
-            maxlength="64"
-          />
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入关系类型"
+            style="width: 100%"
+          >
+            <el-option v-for="r in rtypeOptions" :key="r" :label="r" :value="r" />
+          </el-select>
         </el-form-item>
         <el-form-item label="权重">
           <el-input-number v-model="relAddForm.weight" :min="1" :max="9999" />
@@ -1144,6 +1166,8 @@ import {
   bindAiKnowledgeEntityChunks,
   unbindAiKnowledgeEntityChunks,
   updateAiKnowledgeGraphRelation,
+  saveAiKnowledgeGraphLayout,
+  clearAiKnowledgeGraphLayout,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
@@ -1372,11 +1396,24 @@ const graphKbId = ref<number>();
 // 连线模式：第一次点击记源节点，第二次点击记目标节点建边
 const linkMode = ref(false);
 const linkSource = ref<string | null>(null);
-// 编辑表单
-const newEntityName = ref("");
-const newEntityType = ref("keyword");
-const newRelSource = ref("");
-const newRelTarget = ref("");
+// 图形 ref（保存布局取节点坐标）
+const graphChartRef = ref<any>();
+const graphSavingLayout = ref(false);
+function nodeColor(etype: string, hasChunk: boolean, isLink: boolean) {
+  if (isLink) return "#f56c6c";
+  if (hasChunk) return "#e6a23c";
+  if (etype === "custom") return "#67c23a";
+  if (etype === "annotation") return "#e6a23c";
+  if (etype === "keyword" || !etype) return "#409eff";
+  return "#909399";
+}
+const graphLegend = [
+  { color: "#409eff", label: "关键词" },
+  { color: "#e6a23c", label: "标注/关联分块" },
+  { color: "#67c23a", label: "自定义" },
+  { color: "#909399", label: "其他" },
+];
+const rtypeOptions = ["属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"];
 async function loadGraph(g: any) {
   graphStats.value = { nodes: (g.nodes || []).length, edges: (g.edges || []).length };
   graphNodes.value = (g.nodes || []).map((n: any) => ({ ...n, id: n.id ?? n.name }));
@@ -1384,6 +1421,8 @@ async function loadGraph(g: any) {
     ...e,
     id: e.id ?? `${e.source}_${e.target}_${i}`,
   }));
+  const hasLayout =
+    graphNodes.value.length > 0 && graphNodes.value.every((n: any) => n.x != null && n.y != null);
   const nodes = graphNodes.value.map((n: any) => {
     const isLink = linkMode.value && linkSource.value === n.name;
     const hasChunk = (n.chunk_count || 0) > 0;
@@ -1391,9 +1430,10 @@ async function loadGraph(g: any) {
       id: String(n.id),
       name: n.name,
       chunk_count: n.chunk_count || 0,
+      ...(hasLayout ? { x: n.x, y: n.y, fixed: true } : {}),
       symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
       itemStyle: {
-        color: isLink ? "#f56c6c" : hasChunk ? "#e6a23c" : "#409eff",
+        color: nodeColor(n.etype, hasChunk, isLink),
         borderColor: isLink ? "#f56c6c" : hasChunk ? "#c0700f" : "#2f7ccc",
         borderWidth: isLink ? 4 : hasChunk ? 2 : 0,
       },
@@ -1427,7 +1467,7 @@ async function loadGraph(g: any) {
     series: [
       {
         type: "graph",
-        layout: "force",
+        layout: hasLayout ? "none" : "force",
         roam: true,
         scaleLimit: { min: 0.35, max: 4 },
         draggable: true,
@@ -1464,10 +1504,7 @@ async function openGraph(kb: any) {
   graphKbId.value = kbId;
   graphVisible.value = true;
   graphLoading.value = true;
-  newEntityName.value = "";
-  newEntityType.value = "keyword";
-  newRelSource.value = "";
-  newRelTarget.value = "";
+  linkSource.value = null;
   try {
     const r = await getAiKnowledgeGraph(kbId);
     await loadGraph(r.data?.data || { nodes: [], edges: [] });
@@ -1983,6 +2020,46 @@ function closeCtxMenu() {
 function findNodeByName(name: string) {
   return graphNodes.value.find((n) => n.name === name);
 }
+// 保存 / 重新布局
+async function saveLayout() {
+  if (!graphKbId.value) return;
+  const inst = graphChartRef.value?.chart;
+  if (!inst) {
+    ElMessage.warning("图表未就绪");
+    return;
+  }
+  const series = inst.getModel().getSeriesByIndex(0);
+  const graph = series?.getGraph();
+  if (!graph) return;
+  const items: { id: number; x: number; y: number }[] = [];
+  graph.data.each((idx: number) => {
+    const nd = graph.getNodeByIndex(idx);
+    const data = nd?.data || {};
+    const layout = nd?.getLayout?.();
+    if (data.id != null && layout) {
+      items.push({ id: Number(data.id), x: layout[0], y: layout[1] });
+    }
+  });
+  if (!items.length) return;
+  graphSavingLayout.value = true;
+  try {
+    await saveAiKnowledgeGraphLayout(graphKbId.value, items);
+    ElMessage.success(`已保存 ${items.length} 个节点位置`);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存布局失败");
+  } finally {
+    graphSavingLayout.value = false;
+  }
+}
+async function relayoutGraph() {
+  if (!graphKbId.value) return;
+  try {
+    await clearAiKnowledgeGraphLayout(graphKbId.value);
+    await reloadGraph("已清除布局记忆，重新自动排版");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "重新布局失败");
+  }
+}
 // 右键：新建节点
 const nodeNewVisible = ref(false);
 const nodeNewForm = reactive<any>({ name: "", etype: "keyword", weight: 1, description: "" });
@@ -2474,6 +2551,27 @@ onMounted(() => {
 .graph-view {
   .graph-chart {
     height: 480px;
+  }
+}
+
+.graph-legend {
+  display: flex;
+  gap: 14px;
+  margin: 6px 0;
+
+  .graph-legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+
+    .graph-legend__dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
   }
 }
 

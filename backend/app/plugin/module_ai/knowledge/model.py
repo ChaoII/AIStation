@@ -174,6 +174,9 @@ class AiKnowledgeEntityModel(ModelMixin):
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="", comment="实体备注/描述"
     )
+    layout: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="节点坐标 {x,y}（布局记忆）"
+    )
 
 
 class AiKnowledgeRelationModel(ModelMixin):
