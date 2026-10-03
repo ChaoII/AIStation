@@ -50,6 +50,7 @@ class AiKnowledgeGraphRelationUpdateSchema(BaseModel):
     source: str | None = Field(default=None, max_length=256)
     target: str | None = Field(default=None, max_length=256)
     weight: int | None = Field(default=None, ge=1)
+    rtype: str | None = Field(default=None, max_length=64)
 
 
 class AiKnowledgeSearchSchema(BaseModel):
@@ -96,7 +97,8 @@ class AiKnowledgeGraphEntitySchema(BaseModel):
 
 
 class AiKnowledgeGraphRelationSchema(BaseModel):
-    """图谱关系：源 + 目标 + 权重。"""
+    """图谱关系：源 + 目标 + 权重 + 关系类型。"""
     source: str = Field(..., max_length=256)
     target: str = Field(..., max_length=256)
     weight: int = Field(default=1, ge=1)
+    rtype: str | None = Field(default="related", max_length=64, description="关系类型/语义")

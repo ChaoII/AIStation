@@ -75,7 +75,7 @@ export function deleteAiKnowledgeGraphEntities(id: number, ids: number[]) {
 }
 export function createAiKnowledgeGraphRelation(
   id: number,
-  data: { source: string; target: string; weight?: number }
+  data: { source: string; target: string; weight?: number; rtype?: string }
 ) {
   return request({ url: `${BASE}/${id}/graph/relation`, method: "post", data });
 }
@@ -164,7 +164,7 @@ export function unbindAiKnowledgeEntityChunks(id: number, entityId: number, chun
 export function updateAiKnowledgeGraphRelation(
   id: number,
   relId: number,
-  data: { source?: string; target?: string; weight?: number }
+  data: { source?: string; target?: string; weight?: number; rtype?: string }
 ) {
   return request({ url: `${BASE}/${id}/graph/relation/${relId}`, method: "put", data });
 }

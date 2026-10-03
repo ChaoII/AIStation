@@ -185,3 +185,6 @@ class AiKnowledgeRelationModel(ModelMixin):
     source: Mapped[str] = mapped_column(String(256), nullable=False, comment="源实体")
     target: Mapped[str] = mapped_column(String(256), nullable=False, comment="目标实体")
     weight: Mapped[int] = mapped_column(Integer, default=1, comment="共现权重")
+    rtype: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default="related", comment="关系类型/语义描述（线上显示）"
+    )

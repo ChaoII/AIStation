@@ -199,9 +199,10 @@ async def age_sync_graph(kb_id: int) -> bool:
                 s = r.source.replace("'", "''")
                 t = r.target.replace("'", "''")
                 w = r.weight or 1
+                rtype = (r.rtype or "related").replace("'", "''")
                 await db.execute(
                     text(
-                        f"SELECT * FROM cypher('{g}', $$ MATCH (a:Entity {{name:'{s}'}}), (b:Entity {{name:'{t}'}}) MERGE (a)-[:REL {{weight:{w}}}]->(b) RETURN 1 $$) AS (x agtype)"
+                        f"SELECT * FROM cypher('{g}', $$ MATCH (a:Entity {{name:'{s}'}}), (b:Entity {{name:'{t}'}}) MERGE (a)-[:REL {{weight:{w}, rtype:'{rtype}'}}]->(b) RETURN 1 $$) AS (x agtype)"
                     )
                 )
         return True

@@ -766,7 +766,13 @@ class AiKnowledgeService:
                 for e in ents
             ],
             "edges": [
-                {"id": r.id, "source": r.source, "target": r.target, "weight": r.weight or 1}
+                {
+                    "id": r.id,
+                    "source": r.source,
+                    "target": r.target,
+                    "weight": r.weight or 1,
+                    "rtype": r.rtype or "related",
+                }
                 for r in rels
             ],
         }
@@ -839,13 +845,14 @@ class AiKnowledgeService:
         async with async_db_session.begin() as db:
             r = AiKnowledgeRelationModel(
                 knowledge_base_id=kb_id, source=data.source, target=data.target,
-                weight=data.weight or 1,
+                weight=data.weight or 1, rtype=data.rtype or "related",
             )
             db.add(r)
             await db.flush()
             rid = r.id
         await graphrag.age_sync_graph(kb_id)
-        return {"id": rid, "source": data.source, "target": data.target, "weight": data.weight or 1}
+        return {"id": rid, "source": data.source, "target": data.target,
+                "weight": data.weight or 1, "rtype": data.rtype or "related"}
 
     @classmethod
     async def delete_graph_relations(cls, kb_id: int, ids: list[int]) -> None:
@@ -1226,8 +1233,11 @@ class AiKnowledgeService:
                 r.target = data.target
             if data.weight:
                 r.weight = data.weight
+            if data.rtype is not None:
+                r.rtype = data.rtype
         await graphrag.age_sync_graph(kb_id)
-        return {"id": r.id, "source": r.source, "target": r.target, "weight": r.weight or 1}
+        return {"id": r.id, "source": r.source, "target": r.target,
+                "weight": r.weight or 1, "rtype": r.rtype or "related"}
 
     # ------------------------------------------------------------ #
     # 数据源

@@ -772,48 +772,6 @@
                   />
                   <el-button size="small" type="primary" @click="addGraphEntity">加实体</el-button>
                 </div>
-                <div v-for="n in graphNodes" :key="n.id" class="ge-item">
-                  <span class="ge-item__name">{{ n.name }}</span>
-                  <span v-if="n.weight" class="ge-item__w">w={{ n.weight }}</span>
-                  <el-button link type="primary" size="small" @click="openRenameEntity(n)">
-                    编辑
-                  </el-button>
-                  <el-button link type="danger" size="small" @click="delGraphEntity(n)">
-                    删除
-                  </el-button>
-                </div>
-                <el-divider />
-                <div class="ge-row">
-                  <el-select v-model="newRelSource" placeholder="源" size="small" style="flex: 1">
-                    <el-option
-                      v-for="n in graphNodes"
-                      :key="n.id"
-                      :label="n.name"
-                      :value="n.name"
-                    />
-                  </el-select>
-                  <el-select v-model="newRelTarget" placeholder="目标" size="small" style="flex: 1">
-                    <el-option
-                      v-for="n in graphNodes"
-                      :key="n.id"
-                      :label="n.name"
-                      :value="n.name"
-                    />
-                  </el-select>
-                  <el-button size="small" type="primary" @click="addGraphRelation">
-                    加关系
-                  </el-button>
-                </div>
-                <div v-for="e in graphEdges" :key="e.id" class="ge-item">
-                  <span class="ge-item__name">{{ e.source }} → {{ e.target }}</span>
-                  <span v-if="e.weight" class="ge-item__w">w={{ e.weight }}</span>
-                  <el-button link type="primary" size="small" @click="openRenameRel(e)">
-                    编辑
-                  </el-button>
-                  <el-button link type="danger" size="small" @click="delGraphRelation(e)">
-                    删除
-                  </el-button>
-                </div>
               </el-collapse-item>
             </el-collapse>
             <VChart
@@ -822,7 +780,29 @@
               :option="graphOption"
               autoresize
               @click="onGraphNodeClick"
+              @contextmenu="onGraphContextmenu"
             />
+            <!-- 图上右键菜单 -->
+            <div
+              v-if="ctxMenu.visible"
+              class="graph-ctx"
+              :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+              @click.stop
+            >
+              <template v-if="ctxMenu.kind === 'node'">
+                <div class="graph-ctx__item" @click="ctxEditNode">编辑节点属性</div>
+                <div class="graph-ctx__item" @click="ctxBindNode">绑定分块</div>
+                <div class="graph-ctx__item" @click="ctxAddRel">添加关系</div>
+                <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">删除节点</div>
+              </template>
+              <template v-else-if="ctxMenu.kind === 'edge'">
+                <div class="graph-ctx__item" @click="ctxEditRel">编辑关系</div>
+                <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">删除关系</div>
+              </template>
+              <template v-else>
+                <div class="graph-ctx__item" @click="ctxNewNode">新建节点</div>
+              </template>
+            </div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -951,6 +931,13 @@
             <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
           </el-select>
         </el-form-item>
+        <el-form-item label="关系类型">
+          <el-input
+            v-model="relEditForm.rtype"
+            placeholder="如：属于/包含/依赖/相关"
+            maxlength="64"
+          />
+        </el-form-item>
         <el-form-item label="权重">
           <el-input-number v-model="relEditForm.weight" :min="1" :max="9999" />
         </el-form-item>
@@ -960,6 +947,58 @@
         <el-button type="primary" :loading="savingRel" @click="saveRelEdit">
           保存（同步 AGE）
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建节点（图上右键空白） -->
+    <el-dialog v-model="nodeNewVisible" title="新建节点" width="440px" append-to-body>
+      <el-form label-width="80px" size="default">
+        <el-form-item label="节点名" required>
+          <el-input v-model="nodeNewForm.name" placeholder="实体名称" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-input v-model="nodeNewForm.etype" placeholder="keyword" />
+        </el-form-item>
+        <el-form-item label="权重">
+          <el-input-number v-model="nodeNewForm.weight" :min="1" :max="9999" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="nodeNewVisible = false">取消</el-button>
+        <el-button type="primary" :loading="addingNode" @click="saveNewNode">创建</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 添加关系（图上右键节点） -->
+    <el-dialog v-model="relAddVisible" title="添加关系" width="480px" append-to-body>
+      <el-form label-width="90px" size="default">
+        <el-form-item label="源实体">
+          <el-input :model-value="relAddForm.source" disabled />
+        </el-form-item>
+        <el-form-item label="目标实体">
+          <el-select
+            v-model="relAddForm.target"
+            filterable
+            placeholder="选择目标"
+            style="width: 100%"
+          >
+            <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关系类型">
+          <el-input
+            v-model="relAddForm.rtype"
+            placeholder="如：属于/包含/依赖/相关"
+            maxlength="64"
+          />
+        </el-form-item>
+        <el-form-item label="权重">
+          <el-input-number v-model="relAddForm.weight" :min="1" :max="9999" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relAddVisible = false">取消</el-button>
+        <el-button type="primary" :loading="addingRel" @click="saveAddRel">添加</el-button>
       </template>
     </el-dialog>
 
@@ -1356,12 +1395,17 @@ async function loadGraph(g: any) {
   const links = graphEdges.value.map((e: any) => ({
     source: String(e.source),
     target: String(e.target),
+    rtype: e.rtype || "related",
     lineStyle: { width: 1 + Math.min((e.weight || 1) / 3, 2), opacity: 0.7 },
   }));
   graphOption.value = {
     tooltip: {
       show: true,
       formatter: (p: any) => {
+        if (p.dataType === "edge") {
+          const d = p.data || {};
+          return `${d.source} → ${d.target}<br/>关系：${d.rtype || "related"}<br/>权重：${d.weight ?? 1}`;
+        }
         const d = p.data || {};
         const cnt = d.chunk_count ?? 0;
         return `${d.name || ""}<br/>权重：${d.weight ?? 1}<br/>绑定分块：${cnt} 个`;
@@ -1375,13 +1419,19 @@ async function loadGraph(g: any) {
         draggable: true,
         data: nodes,
         links,
-        force: { repulsion: 120, edgeLength: 80 },
+        force: { repulsion: 150, edgeLength: 110 },
         label: {
           show: true,
           position: "right",
           fontSize: 11,
           formatter: (p: any) =>
             p.data?.chunk_count ? `${p.data.name} (${p.data.chunk_count})` : p.data.name,
+        },
+        edgeLabel: {
+          show: true,
+          fontSize: 10,
+          color: "#909399",
+          formatter: (p: any) => p.data?.rtype || "",
         },
       },
     ],
@@ -1492,13 +1542,20 @@ function openRenameEntity(n: any) {
 }
 // 图谱关系编辑
 const relEditVisible = ref(false);
-const relEditForm = reactive<any>({ id: null, source: "", target: "", weight: 1 });
+const relEditForm = reactive<any>({
+  id: null,
+  source: "",
+  target: "",
+  weight: 1,
+  rtype: "related",
+});
 const savingRel = ref(false);
 function openRenameRel(e: any) {
   relEditForm.id = e.id;
   relEditForm.source = e.source;
   relEditForm.target = e.target;
   relEditForm.weight = e.weight || 1;
+  relEditForm.rtype = e.rtype || "related";
   relEditVisible.value = true;
 }
 async function saveRelEdit() {
@@ -1513,6 +1570,7 @@ async function saveRelEdit() {
       source: relEditForm.source,
       target: relEditForm.target,
       weight: relEditForm.weight,
+      rtype: relEditForm.rtype,
     });
     relEditVisible.value = false;
     await reloadGraph("已更新关系");
@@ -1879,6 +1937,127 @@ async function onGraphNodeClick(params: any) {
   } finally {
     entityChunksLoading.value = false;
   }
+}
+
+// ---------- 图上右键菜单（直接在图里编辑） ----------
+const ctxMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  kind: "blank",
+  node: null as any,
+  edge: null as any,
+});
+function onGraphContextmenu(params: any) {
+  const ev = params?.event;
+  if (ev) ev.preventDefault();
+  const kind =
+    params?.dataType === "edge" ? "edge" : params?.dataType === "node" ? "node" : "blank";
+  ctxMenu.kind = kind;
+  ctxMenu.node = kind === "node" ? params?.data : null;
+  ctxMenu.edge = kind === "edge" ? params?.data : null;
+  ctxMenu.x = ev?.clientX ?? 0;
+  ctxMenu.y = ev?.clientY ?? 0;
+  ctxMenu.visible = true;
+}
+function closeCtxMenu() {
+  ctxMenu.visible = false;
+}
+function findNodeByName(name: string) {
+  return graphNodes.value.find((n) => n.name === name);
+}
+// 右键：新建节点
+const nodeNewVisible = ref(false);
+const nodeNewForm = reactive<any>({ name: "", etype: "keyword", weight: 1 });
+const addingNode = ref(false);
+function ctxNewNode() {
+  closeCtxMenu();
+  Object.assign(nodeNewForm, { name: "", etype: "keyword", weight: 1 });
+  nodeNewVisible.value = true;
+}
+async function saveNewNode() {
+  if (!graphKbId.value || !nodeNewForm.name.trim()) return;
+  addingNode.value = true;
+  try {
+    await createAiKnowledgeGraphEntity(graphKbId.value, {
+      name: nodeNewForm.name.trim(),
+      etype: nodeNewForm.etype,
+      weight: nodeNewForm.weight,
+    });
+    nodeNewVisible.value = false;
+    ElMessage.success("已新建节点");
+    await reloadGraph();
+    await loadDetailStats(graphKbId.value);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "新建失败");
+  } finally {
+    addingNode.value = false;
+  }
+}
+// 右键：编辑节点属性
+function ctxEditNode() {
+  closeCtxMenu();
+  const n = findNodeByName(ctxMenu.node?.name);
+  if (n) openRenameEntity(n);
+}
+// 右键：绑定分块（编辑对话框内）
+function ctxBindNode() {
+  ctxEditNode();
+}
+// 右键：添加关系
+const relAddVisible = ref(false);
+const relAddForm = reactive<any>({ source: "", target: "", rtype: "related", weight: 1 });
+const addingRel = ref(false);
+function ctxAddRel() {
+  closeCtxMenu();
+  const n = findNodeByName(ctxMenu.node?.name);
+  if (!n) return;
+  relAddForm.source = n.name;
+  relAddForm.target = "";
+  relAddForm.rtype = "related";
+  relAddForm.weight = 1;
+  relAddVisible.value = true;
+}
+async function saveAddRel() {
+  if (!graphKbId.value || !relAddForm.source || !relAddForm.target) return;
+  addingRel.value = true;
+  try {
+    await createAiKnowledgeGraphRelation(graphKbId.value, {
+      source: relAddForm.source,
+      target: relAddForm.target,
+      rtype: relAddForm.rtype,
+      weight: relAddForm.weight,
+    });
+    relAddVisible.value = false;
+    ElMessage.success("已添加关系");
+    await reloadGraph();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "添加失败");
+  } finally {
+    addingRel.value = false;
+  }
+}
+// 右键：删除节点 / 关系
+function ctxDelNode() {
+  closeCtxMenu();
+  const n = findNodeByName(ctxMenu.node?.name);
+  if (n) delGraphEntity(n);
+}
+function ctxEditRel() {
+  closeCtxMenu();
+  const e = ctxMenu.edge;
+  if (!e) return;
+  relEditForm.id = e.id;
+  relEditForm.source = e.source;
+  relEditForm.target = e.target;
+  relEditForm.weight = e.weight || 1;
+  relEditForm.rtype = e.rtype || "related";
+  relEditVisible.value = true;
+}
+function ctxDelRel() {
+  closeCtxMenu();
+  const e = ctxMenu.edge;
+  if (e) delGraphRelation(e);
 }
 
 async function doDetailSearch() {
@@ -2263,6 +2442,37 @@ onMounted(loadData);
 .graph-view {
   .graph-chart {
     height: 360px;
+  }
+}
+
+.graph-ctx {
+  position: fixed;
+  z-index: 3000;
+  min-width: 140px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  box-shadow: var(--el-box-shadow-light);
+  padding: 4px 0;
+
+  .graph-ctx__item {
+    padding: 8px 14px;
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--el-fill-color-light);
+      color: var(--el-color-primary);
+    }
+  }
+  .graph-ctx__danger {
+    color: var(--el-color-danger);
+
+    &:hover {
+      background: var(--el-fill-color-light);
+      color: var(--el-color-danger);
+    }
   }
 }
 
