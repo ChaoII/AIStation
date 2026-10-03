@@ -837,6 +837,7 @@
                 @change="graphCanvasRef?.fit?.()"
               />
               <el-button size="small" @click="graphStatsVisible = true">统计</el-button>
+              <el-button size="small" @click="edgeStyleVisible = true">连线样式</el-button>
             </div>
             <div class="graph-legend">
               <span v-for="lg in graphLegend" :key="lg.label" class="graph-legend__item">
@@ -860,6 +861,7 @@
               :edges="graphEdges"
               :use-preset="graphUsePreset"
               :highlight="graphHighlight"
+              :edge-style="edgeStyle"
               :layout-name="graphLayout"
               :link-mode="linkMode"
               :shortest-mode="shortestMode"
@@ -1138,6 +1140,7 @@
           :edges="graphEdges"
           :use-preset="graphUsePreset"
           :highlight="graphHighlight"
+          :edge-style="edgeStyle"
           :layout-name="graphLayout"
           :link-mode="linkMode"
           :shortest-mode="shortestMode"
@@ -1204,6 +1207,80 @@
       </el-table>
       <template #footer>
         <el-button @click="relationTypeDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 连线样式设置 -->
+    <el-dialog v-model="edgeStyleVisible" title="连线样式设置" width="560px" append-to-body>
+      <el-form label-width="90px" size="default">
+        <el-form-item label="线型">
+          <el-radio-group v-model="edgeStyle.lineStyle">
+            <el-radio-button label="solid">实线</el-radio-button>
+            <el-radio-button label="dashed">虚线</el-radio-button>
+            <el-radio-button label="dotted">点线</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="曲线">
+          <el-radio-group v-model="edgeStyle.curve">
+            <el-radio-button label="bezier">贝塞尔</el-radio-button>
+            <el-radio-button label="straight">直线</el-radio-button>
+            <el-radio-button label="taxi">折线</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="箭头">
+          <el-select v-model="edgeStyle.arrow" style="width: 140px">
+            <el-option label="三角" value="triangle" />
+            <el-option label="V形" value="vee" />
+            <el-option label="圆点" value="circle" />
+            <el-option label="无" value="none" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="线宽">
+          <el-radio-group v-model="edgeStyle.widthMode">
+            <el-radio-button label="weight">按权重</el-radio-button>
+            <el-radio-button label="fixed">固定</el-radio-button>
+          </el-radio-group>
+          <el-input-number
+            v-if="edgeStyle.widthMode === 'fixed'"
+            v-model="edgeStyle.fixedWidth"
+            :min="1"
+            :max="8"
+            size="small"
+            style="margin-left: 8px"
+          />
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-radio-group v-model="edgeStyle.colorMode">
+            <el-radio-button label="type">按关系类型</el-radio-button>
+            <el-radio-button label="single">统一</el-radio-button>
+          </el-radio-group>
+          <el-color-picker
+            v-if="edgeStyle.colorMode === 'single'"
+            v-model="edgeStyle.singleColor"
+            size="small"
+            style="margin-left: 8px"
+          />
+        </el-form-item>
+        <el-form-item label="关系标签">
+          <el-select v-model="edgeStyle.label" style="width: 180px">
+            <el-option label="始终显示" value="show" />
+            <el-option label="仅非默认关系" value="nondefault" />
+            <el-option label="悬停显示" value="hover" />
+            <el-option label="不显示" value="none" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="透明度">
+          <el-slider
+            v-model="edgeStyle.opacity"
+            :min="0.1"
+            :max="1"
+            :step="0.05"
+            style="width: 260px"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="edgeStyleVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1623,6 +1700,18 @@ const graphLayout = ref("cose");
 const graphSearch = ref("");
 const shortestMode = ref(false);
 const graphStatsVisible = ref(false);
+const edgeStyleVisible = ref(false);
+const edgeStyle = reactive({
+  lineStyle: "solid" as "solid" | "dashed" | "dotted",
+  curve: "bezier" as "bezier" | "straight" | "taxi",
+  arrow: "triangle" as "triangle" | "vee" | "circle" | "none",
+  widthMode: "weight" as "weight" | "fixed",
+  fixedWidth: 2,
+  colorMode: "type" as "type" | "single",
+  singleColor: "#409eff",
+  label: "show" as "show" | "nondefault" | "hover" | "none",
+  opacity: 0.75,
+});
 const graphStatsDetail = computed(() => {
   const typeCount: Record<string, number> = {};
   graphNodes.value.forEach((n: any) => {

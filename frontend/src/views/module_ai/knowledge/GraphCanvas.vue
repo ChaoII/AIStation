@@ -31,6 +31,17 @@ const props = defineProps<{
   layoutName?: string;
   linkMode?: boolean;
   shortestMode?: boolean;
+  edgeStyle?: {
+    lineStyle?: "solid" | "dashed" | "dotted";
+    curve?: "bezier" | "straight" | "taxi";
+    arrow?: "triangle" | "vee" | "circle" | "none";
+    widthMode?: "weight" | "fixed";
+    fixedWidth?: number;
+    colorMode?: "type" | "single";
+    singleColor?: string;
+    label?: "show" | "nondefault" | "hover" | "none";
+    opacity?: number;
+  };
 }>();
 
 const emit = defineEmits<{
@@ -77,6 +88,17 @@ function edgeColor(rtype?: string) {
 function nodeSize(weight?: number) {
   return 14 + Math.min(weight || 1, 20) * 1.2;
 }
+const ES = computed(() => ({
+  lineStyle: props.edgeStyle?.lineStyle || "solid",
+  curve: props.edgeStyle?.curve || "bezier",
+  arrow: props.edgeStyle?.arrow || "triangle",
+  widthMode: props.edgeStyle?.widthMode || "weight",
+  fixedWidth: props.edgeStyle?.fixedWidth || 2,
+  colorMode: props.edgeStyle?.colorMode || "type",
+  singleColor: props.edgeStyle?.singleColor || "#409eff",
+  label: props.edgeStyle?.label || "show",
+  opacity: props.edgeStyle?.opacity ?? 0.75,
+}));
 
 function buildElements(): ElementDefinition[] {
   const nodes = props.nodes.map((n) => ({
@@ -135,20 +157,42 @@ const graphStyle: any[] = [
   {
     selector: "edge",
     style: {
-      width: (ele: any) => 1.5 + Math.min(ele.data("weight") || 1, 5) * 0.6,
-      "line-color": (ele: any) => edgeColor(ele.data("rtype")),
-      "curve-style": "bezier",
-      "target-arrow-shape": "triangle",
-      "target-arrow-color": (ele: any) => edgeColor(ele.data("rtype")),
+      width: (ele: any) =>
+        ES.value.widthMode === "fixed"
+          ? ES.value.fixedWidth
+          : 1.5 + Math.min(ele.data("weight") || 1, 5) * 0.6,
+      "line-color": (ele: any) =>
+        ES.value.colorMode === "single" ? ES.value.singleColor : edgeColor(ele.data("rtype")),
+      "line-style": ES.value.lineStyle,
+      "curve-style": ES.value.curve,
+      "target-arrow-shape": ES.value.arrow,
+      "target-arrow-color": (ele: any) =>
+        ES.value.colorMode === "single" ? ES.value.singleColor : edgeColor(ele.data("rtype")),
       "arrow-scale": 0.9,
-      label: (ele: any) => ((ele.data("rtype") || "") === "related" ? "" : ele.data("label")),
+      label: (ele: any) => {
+        const mode = ES.value.label;
+        if (mode === "show") return ele.data("label") || "";
+        if (mode === "nondefault")
+          return (ele.data("rtype") || "") === "related" ? "" : ele.data("label");
+        return "";
+      },
       "font-size": 9,
       color: "#7f8fa6",
       "text-background-color": "#ffffff",
       "text-background-opacity": 0.9,
       "text-background-padding": 3,
       "text-rotation": "autorotate",
-      opacity: 0.75,
+      opacity: ES.value.opacity,
+    },
+  },
+  {
+    selector: "edge.hovered",
+    style: {
+      opacity: 1,
+      width: 4,
+      "line-color": "#409eff",
+      "target-arrow-color": "#409eff",
+      label: "data(label)",
     },
   },
   // 悬停节点放大 + 高亮描边
@@ -537,6 +581,14 @@ watch(
       if (node.length) node.addClass("highlight");
     });
   }
+);
+watch(
+  () => props.edgeStyle,
+  () => {
+    if (!cy) return;
+    (cy.style(graphStyle) as any).update?.();
+  },
+  { deep: true }
 );
 
 function png(): string {
