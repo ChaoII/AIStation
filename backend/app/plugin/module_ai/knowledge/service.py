@@ -1055,7 +1055,7 @@ class AiKnowledgeService:
             db.add(doc)
             await db.flush()
             doc_id = doc.id
-            doc.file_path = cls._save_original(filename or "文档", data)
+            doc.object_key = await cls._upload_to_rustfs(kb_id, filename or "文档", data)
         # 分块向量化入库
         result = await cls.ingest_text(
             kb_id, text, file_name=filename or "文档", auth=auth,
@@ -1067,21 +1067,21 @@ class AiKnowledgeService:
         return {"id": doc_id, "name": filename or "文档", "chunks": result.get("chunks", 0)}
 
     @staticmethod
-    def _save_original(filename: str, data: bytes) -> str | None:
-        """保存原始文件到 uploads/knowledge_docs，返回相对路径。"""
+    async def _upload_to_rustfs(kb_id: int, filename: str, data: bytes) -> str | None:
+        """文档原始文件上传到 RustFS（S3 兼容），返回 object_key。"""
         try:
-            import os
+            import asyncio
+            import io
             import uuid
 
+            from app.utils.s3_client import s3_client
+
             ext = (filename or "doc").rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
-            rel_dir = os.path.join("uploads", "knowledge_docs")
-            base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-            abs_dir = os.path.join(base, rel_dir)
-            os.makedirs(abs_dir, exist_ok=True)
-            fname = f"{uuid.uuid4().hex}.{ext}"
-            with open(os.path.join(abs_dir, fname), "wb") as f:
-                f.write(data)
-            return f"{rel_dir}/{fname}"
+            object_key = f"knowledge/{kb_id}/documents/{uuid.uuid4().hex}.{ext}"
+            await asyncio.to_thread(
+                s3_client.upload_fileobj, io.BytesIO(data), object_key,
+            )
+            return object_key
         except Exception:  # noqa: BLE001
             return None
 
@@ -1091,16 +1091,12 @@ class AiKnowledgeService:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
             if not d or d.knowledge_base_id != kb_id or d.is_deleted:
                 raise ValueError("文档不存在")
-            fpath = d.file_path
-        if not fpath:
-            raise ValueError("文档无原始文件")
-        import os
-
-        base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
-        abs_path = os.path.join(base, fpath)
-        if not os.path.exists(abs_path):
-            raise ValueError("原始文件缺失")
-        return {"path": abs_path, "name": d.name or "文档", "file_type": d.file_type or "txt"}
+            ok = d.object_key
+            name = d.name or "文档"
+            file_type = d.file_type or "txt"
+        if not ok:
+            raise ValueError("文档无原始文件（RustFS）")
+        return {"object_key": ok, "name": name, "file_type": file_type}
 
     @classmethod
     async def export_faq(cls, kb_id: int) -> dict:
@@ -1159,16 +1155,39 @@ class AiKnowledgeService:
                 "chunk_count": d.chunk_count or 0,
                 "status": d.doc_status or "ready",
                 "created_time": d.created_time,
+                "rustfs_url": (
+                    AiKnowledgeService._presigned(d.object_key) if d.object_key else None
+                ),
             }
             for d in rows
         ]
 
+    @staticmethod
+    def _presigned(object_key: str) -> str | None:
+        """生成 RustFS 预签名下载链接。"""
+        try:
+            from app.utils.s3_client import s3_client
+
+            return s3_client.presigned_url(object_key)
+        except Exception:  # noqa: BLE001
+            return None
+
     @classmethod
     async def delete_document(cls, kb_id: int, doc_id: int) -> None:
+        import asyncio
+
+        from app.utils.s3_client import s3_client
+
         async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
             if d and d.knowledge_base_id == kb_id:
+                ok = d.object_key
                 await db.delete(d)
+        if ok:
+            try:
+                await asyncio.to_thread(s3_client.delete_object, ok)
+            except Exception:  # noqa: BLE001
+                pass
 
     @classmethod
     async def get_document_content(cls, kb_id: int, doc_id: int) -> dict:

@@ -152,7 +152,10 @@ class AiKnowledgeDocumentModel(ModelMixin):
         String(16), default="ready", comment="状态: ready/error"
     )
     file_path: Mapped[str | None] = mapped_column(
-        String(512), nullable=True, default=None, comment="原始文件相对路径"
+        String(512), nullable=True, default=None, comment="原始文件相对路径(旧本地存储，兼容)"
+    )
+    object_key: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, default=None, comment="RustFS 对象存储 key"
     )
 
 

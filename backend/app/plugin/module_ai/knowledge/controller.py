@@ -335,9 +335,38 @@ async def download_document(
 ) -> JSONResponse:
     try:
         r = await AiKnowledgeService.download_document(kb_id, doc_id)
-        from fastapi.responses import FileResponse
+        import asyncio
+        from urllib.parse import quote
 
-        return FileResponse(r["path"], filename=r["name"], media_type="application/octet-stream")
+        from fastapi.responses import StreamingResponse
+
+        from app.utils.s3_client import s3_client
+
+        obj = await asyncio.to_thread(s3_client.get_object, r["object_key"])
+        body = obj["Body"]
+
+        async def _gen():
+            while True:
+                chunk = await asyncio.to_thread(body.read, 65536)
+                if not chunk:
+                    break
+                yield chunk
+
+        media = {
+            "pdf": "application/pdf",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "md": "text/markdown",
+            "txt": "text/plain",
+            "csv": "text/csv",
+            "json": "application/json",
+        }.get(r["file_type"], "application/octet-stream")
+        return StreamingResponse(
+            _gen(),
+            media_type=media,
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(r['name'])}"
+            },
+        )
     except ValueError as e:
         return ErrorResponse(msg=str(e))
 

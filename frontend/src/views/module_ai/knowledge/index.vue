@@ -2654,6 +2654,11 @@ async function reparseDoc(row: any) {
 }
 async function downloadDoc(row: any) {
   if (!detailKb.value) return;
+  // 优先使用 RustFS 预签名链接（原文档存储位置）
+  if (row.rustfs_url) {
+    window.open(row.rustfs_url, "_blank");
+    return;
+  }
   try {
     const r: any = await downloadAiKnowledgeDocument(detailKb.value.id, row.id);
     const blob = r.data instanceof Blob ? r.data : new Blob([r.data]);
