@@ -151,6 +151,9 @@ class AiKnowledgeDocumentModel(ModelMixin):
     doc_status: Mapped[str] = mapped_column(
         String(16), default="ready", comment="状态: ready/error"
     )
+    file_path: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, default=None, comment="原始文件相对路径"
+    )
 
 
 class AiDatasourceModel(ModelMixin, UserMixin):

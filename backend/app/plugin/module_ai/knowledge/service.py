@@ -1055,6 +1055,7 @@ class AiKnowledgeService:
             db.add(doc)
             await db.flush()
             doc_id = doc.id
+            doc.file_path = cls._save_original(filename or "文档", data)
         # 分块向量化入库
         result = await cls.ingest_text(
             kb_id, text, file_name=filename or "文档", auth=auth,
@@ -1064,6 +1065,73 @@ class AiKnowledgeService:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
             d.chunk_count = result.get("chunks", 0)
         return {"id": doc_id, "name": filename or "文档", "chunks": result.get("chunks", 0)}
+
+    @staticmethod
+    def _save_original(filename: str, data: bytes) -> str | None:
+        """保存原始文件到 uploads/knowledge_docs，返回相对路径。"""
+        try:
+            import os
+            import uuid
+
+            ext = (filename or "doc").rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
+            rel_dir = os.path.join("uploads", "knowledge_docs")
+            base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+            abs_dir = os.path.join(base, rel_dir)
+            os.makedirs(abs_dir, exist_ok=True)
+            fname = f"{uuid.uuid4().hex}.{ext}"
+            with open(os.path.join(abs_dir, fname), "wb") as f:
+                f.write(data)
+            return f"{rel_dir}/{fname}"
+        except Exception:  # noqa: BLE001
+            return None
+
+    @classmethod
+    async def download_document(cls, kb_id: int, doc_id: int) -> dict:
+        async with async_db_session() as db:
+            d = await db.get(AiKnowledgeDocumentModel, doc_id)
+            if not d or d.knowledge_base_id != kb_id or d.is_deleted:
+                raise ValueError("文档不存在")
+            fpath = d.file_path
+        if not fpath:
+            raise ValueError("文档无原始文件")
+        import os
+
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+        abs_path = os.path.join(base, fpath)
+        if not os.path.exists(abs_path):
+            raise ValueError("原始文件缺失")
+        return {"path": abs_path, "name": d.name or "文档", "file_type": d.file_type or "txt"}
+
+    @classmethod
+    async def export_faq(cls, kb_id: int) -> dict:
+        """导出 FAQ：从知识库分块生成问答对（问题=内容前若干字/关键词，答案=内容）。"""
+        from app.plugin.module_ai.knowledge.graphrag import extract_keywords
+
+        async with async_db_session() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        ).order_by(AiKnowledgeChunkModel.chunk_index)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        items = []
+        for c in rows:
+            kws = extract_keywords(c.content, topk=8)
+            q = "；".join(kws[:6]) if kws else (c.content[:30] if c.content else "")
+            items.append({
+                "id": c.id,
+                "file": c.file_name or "",
+                "question": q or "知识条目",
+                "answer": c.content,
+                "keywords": kws[:6],
+            })
+        return {"count": len(items), "items": items}
 
     @classmethod
     async def list_documents(cls, kb_id: int) -> list[dict]:

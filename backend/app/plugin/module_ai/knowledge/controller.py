@@ -327,6 +327,36 @@ async def reparse_document(
         return ErrorResponse(msg=str(e))
 
 
+@KnowledgeRouter.get("/bases/{kb_id}/documents/{doc_id}/download", summary="下载原始文档")
+async def download_document(
+    kb_id: int,
+    doc_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    try:
+        r = await AiKnowledgeService.download_document(kb_id, doc_id)
+        from fastapi.responses import FileResponse
+
+        return FileResponse(r["path"], filename=r["name"], media_type="application/octet-stream")
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/faq", summary="导出 FAQ 缓存")
+async def export_faq(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+    format: str = "json",
+) -> JSONResponse:
+    data = await AiKnowledgeService.export_faq(kb_id)
+    if format == "md":
+        lines = [f"# 知识库 FAQ（{data['count']} 条）\n"]
+        for it in data["items"]:
+            lines.append(f"## Q：{it['question']}\n来源：{it['file']}\n\n{it['answer']}\n")
+        return SuccessResponse(data={"count": data["count"], "markdown": "\n".join(lines)}, msg="导出成功")
+    return SuccessResponse(data=data, msg="导出成功")
+
+
 @KnowledgeRouter.post("/bases/{kb_id}/rebuild", summary="重建索引（重新向量化+重建图谱）")
 async def rebuild_index(
     kb_id: int,
