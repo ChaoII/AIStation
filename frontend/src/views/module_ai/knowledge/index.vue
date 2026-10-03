@@ -760,9 +760,38 @@
               <el-button size="small" @click="relayoutGraph">重新布局</el-button>
               <el-button size="small" @click="() => reloadGraph()">刷新</el-button>
               <el-button size="small" @click="openRelationTypeDialog">关系模板</el-button>
+              <el-button size="small" @click="exportGraphImage">导出图片</el-button>
               <el-button size="small" type="primary" plain @click="graphFullscreenVisible = true">
                 全屏
               </el-button>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :disabled="!selectedNames.size"
+                @click="batchDeleteNodes"
+              >
+                批量删除{{ selectedNames.size ? ` (${selectedNames.size})` : "" }}
+              </el-button>
+              <el-button
+                v-if="selectedNames.size"
+                size="small"
+                @click="
+                  selectedNames = new Set();
+                  reloadGraph();
+                "
+              >
+                清空选择
+              </el-button>
+              <el-switch
+                v-model="multiSelect"
+                size="small"
+                active-text="多选模式"
+                @change="
+                  selectedNames = new Set();
+                  reloadGraph();
+                "
+              />
               <el-switch
                 v-model="linkMode"
                 size="small"
@@ -777,7 +806,7 @@
               </span>
             </div>
             <div class="kb-opt-hint">
-              右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线；拖动后可「保存布局」记住位置。
+              右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线；拖动后可「保存布局」记住位置；多选模式下点击节点可多选批量删除。
             </div>
             <VChart
               v-if="graphOption"
@@ -1490,6 +1519,51 @@ const linkSource = ref<string | null>(null);
 // 图形 ref（保存布局取节点坐标）
 const graphChartRef = ref<any>();
 const graphSavingLayout = ref(false);
+// 多选批量操作
+const multiSelect = ref(false);
+const selectedNames = ref<Set<string>>(new Set());
+function toggleSelect(name: string) {
+  const s = new Set(selectedNames.value);
+  if (s.has(name)) s.delete(name);
+  else s.add(name);
+  selectedNames.value = s;
+}
+async function exportGraphImage() {
+  const inst = graphChartRef.value?.chart;
+  if (!inst) {
+    ElMessage.warning("图表未就绪");
+    return;
+  }
+  const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#fff" });
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `知识图谱_${graphKbId.value || ""}.png`;
+  a.click();
+  ElMessage.success("已导出图片");
+}
+async function batchDeleteNodes() {
+  if (!graphKbId.value || !selectedNames.value.size) return;
+  const ids = graphNodes.value.filter((n) => selectedNames.value.has(n.name)).map((n) => n.id);
+  if (!ids.length) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${ids.length} 个节点吗？其关联关系与绑定将一并移除，不可恢复。`,
+      "批量删除",
+      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await deleteAiKnowledgeGraphEntities(graphKbId.value, ids);
+    selectedNames.value = new Set();
+    ElMessage.success("已批量删除");
+    await reloadGraph();
+    await loadDetailStats(graphKbId.value);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "删除失败");
+  }
+}
 function nodeColor(etype: string, hasChunk: boolean, isLink: boolean) {
   if (isLink) return "#f56c6c";
   if (hasChunk) return "#e6a23c";
@@ -1505,6 +1579,21 @@ const graphLegend = [
   { color: "#909399", label: "其他" },
 ];
 const relationTypes = ref<any[]>([]);
+function edgeColor(rtype: string) {
+  const t = relationTypes.value.find((r: any) => r.name === rtype);
+  if (t?.color) return t.color;
+  const map: Record<string, string> = {
+    属于: "#67c23a",
+    包含: "#409eff",
+    依赖: "#e6a23c",
+    相关: "#a0a6ad",
+    引用: "#909399",
+    位于: "#2f7ccc",
+    用于: "#c0700f",
+    关联: "#e6a23c",
+  };
+  return map[rtype] || "#a0a6ad";
+}
 const rtypeOptions = computed(() => {
   const names = relationTypes.value.map((r: any) => r.name);
   return names.length ? names : ["属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"];
@@ -1580,6 +1669,7 @@ async function loadGraph(g: any) {
   const nodes = graphNodes.value.map((n: any) => {
     const isLink = linkMode.value && linkSource.value === n.name;
     const isHl = highlightNames.value.has(n.name);
+    const isSel = selectedNames.value.has(n.name);
     const hasChunk = (n.chunk_count || 0) > 0;
     return {
       id: String(n.id),
@@ -1588,9 +1678,23 @@ async function loadGraph(g: any) {
       ...(hasLayout ? { x: n.x, y: n.y, fixed: true } : {}),
       symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
       itemStyle: {
-        color: isLink ? "#f56c6c" : isHl ? "#f5b942" : nodeColor(n.etype, hasChunk, false),
-        borderColor: isLink ? "#f56c6c" : isHl ? "#f5b942" : hasChunk ? "#c0700f" : "#2f7ccc",
-        borderWidth: isHl ? 4 : isLink ? 4 : hasChunk ? 2 : 0,
+        color: isLink
+          ? "#f56c6c"
+          : isSel
+            ? "#67c23a"
+            : isHl
+              ? "#f5b942"
+              : nodeColor(n.etype, hasChunk, false),
+        borderColor: isLink
+          ? "#f56c6c"
+          : isSel
+            ? "#67c23a"
+            : isHl
+              ? "#f5b942"
+              : hasChunk
+                ? "#c0700f"
+                : "#2f7ccc",
+        borderWidth: isSel ? 4 : isHl ? 4 : isLink ? 4 : hasChunk ? 2 : 0,
       },
     };
   });
@@ -1601,7 +1705,7 @@ async function loadGraph(g: any) {
     lineStyle: {
       width: 1.5 + Math.min((e.weight || 1) / 2, 3),
       opacity: 0.9,
-      color: "#a0a6ad",
+      color: edgeColor(e.rtype || "related"),
       curveness: 0.08,
     },
   }));
@@ -2118,6 +2222,12 @@ async function onGraphNodeClick(params: any) {
   if (!name || !graphKbId.value) return;
   const node = graphNodes.value.find((n) => n.name === name);
   if (!node) return;
+  // 多选模式：点击节点切换选中
+  if (multiSelect.value) {
+    toggleSelect(name);
+    reloadGraph();
+    return;
+  }
   // 连线模式：第一次点击记起点，第二次点击记终点并弹添加关系
   if (linkMode.value) {
     if (!linkSource.value) {
