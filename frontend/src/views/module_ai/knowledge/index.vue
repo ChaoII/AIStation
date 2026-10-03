@@ -1791,12 +1791,12 @@ const edgeStyle = reactive({
   lineStyle: "solid" as "solid" | "dashed" | "dotted",
   curve: "bezier" as "bezier" | "straight" | "taxi",
   arrow: "triangle" as "triangle" | "vee" | "circle" | "none",
-  widthMode: "weight" as "weight" | "fixed",
-  fixedWidth: 2,
+  widthMode: "fixed" as "weight" | "fixed",
+  fixedWidth: 1.5,
   colorMode: "type" as "type" | "single",
-  singleColor: "#409eff",
-  label: "show" as "show" | "nondefault" | "hover" | "none",
-  opacity: 0.75,
+  singleColor: "#a8abb3",
+  label: "none" as "show" | "nondefault" | "hover" | "none",
+  opacity: 0.55,
 });
 const graphStatsDetail = computed(() => {
   const typeCount: Record<string, number> = {};

@@ -12,7 +12,11 @@
 
 <script setup lang="ts">
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
+// @ts-ignore 无类型声明
+import cytoscapeD3Force from "cytoscape-d3-force";
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+
+cytoscape.use(cytoscapeD3Force);
 
 const props = defineProps<{
   nodes: {
@@ -366,26 +370,55 @@ function runLayout() {
   if (!c) return;
   const preset = props.usePreset && props.nodes.every((n) => n.x != null && n.y != null);
   const name = (props.layoutName || "cose") as string;
-  const base = { animate: true, animationDuration: 500, fit: true, padding: 30 };
-  const opts: any = { ...base };
-  if (preset && name === "cose") opts.name = "preset";
-  else opts.name = name;
-  if (name === "cose") {
-    opts.nodeRepulsion = 40000;
-    opts.idealEdgeLength = 110;
-    opts.gravity = 0.35;
-    opts.numIter = 2500;
-    opts.nodeOverlap = 20;
-    opts.spacingFactor = 1.2;
+  const opts: any = {};
+  if (preset && name === "cose") {
+    opts.name = "preset";
+    opts.fit = true;
+    opts.padding = 30;
+  } else if (name === "cose") {
+    // d3-force 物理引擎：节点持续弹跳/碰撞，拖动推挤
+    opts.name = "d3-force";
+    opts.animate = true;
+    opts.fit = true;
+    opts.padding = 30;
+    opts.linkDistance = 72;
+    opts.charge = -420;
+    opts.gravity = 0.12;
+    opts.collideRadius = 24;
+    opts.alphaMin = 0.0005;
+    opts.randomize = true;
+    opts.stiffness = 0.7;
+  } else {
+    opts.name = name;
+    opts.animate = true;
+    opts.animationDuration = 400;
+    opts.fit = true;
+    opts.padding = 30;
+    if (name === "concentric") opts.minNodeSpacing = 26;
+    if (name === "breadthfirst") opts.spacingFactor = 1.2;
+    if (name === "grid") opts.avoidOverlap = true;
   }
-  if (name === "concentric") opts.minNodeSpacing = 26;
-  if (name === "breadthfirst") opts.spacingFactor = 1.2;
-  if (name === "grid") opts.avoidOverlap = true;
   c.layout(opts).run();
 }
 function setLayout(name: string) {
   const c = cy;
   if (!c) return;
+  if (name === "cose") {
+    c.layout({
+      name: "d3-force",
+      animate: true,
+      fit: true,
+      padding: 30,
+      linkDistance: 72,
+      charge: -420,
+      gravity: 0.12,
+      collideRadius: 24,
+      alphaMin: 0.0005,
+      randomize: true,
+      stiffness: 0.7,
+    } as any).run();
+    return;
+  }
   c.layout({
     name,
     animate: true,
@@ -671,7 +704,7 @@ onMounted(() => {
     container: container.value,
     elements: buildElements(),
     style: graphStyle,
-    layout: { name: "cose", animate: false, fit: true, padding: 30 },
+    layout: { name: "preset", fit: true, padding: 30 },
   });
   bind();
   runLayout();

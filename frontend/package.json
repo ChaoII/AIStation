@@ -92,6 +92,7 @@
     "clipboard": "^2.0.11",
     "codemirror": "^6.0.1",
     "cytoscape": "^3.34.3",
+    "cytoscape-d3-force": "^1.1.4",
     "dagre": "^0.8.5",
     "dayjs": "^1.11.13",
     "dompurify": "^3.4.13",
