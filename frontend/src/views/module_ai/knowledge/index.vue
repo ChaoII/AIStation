@@ -326,13 +326,16 @@
             右键节点可编辑属性/绑定分块/加关系/删除，右键空白新建节点。
           </span>
         </div>
-        <VChart
-          v-if="graphOption"
+        <GraphCanvas
+          v-if="graphNodes.length"
           class="graph-chart"
-          :option="graphOption"
-          autoresize
-          @click="onGraphNodeClick"
-          @contextmenu="onGraphContextmenu"
+          :nodes="graphNodes"
+          :edges="graphEdges"
+          :use-preset="graphUsePreset"
+          @node-tap="onGraphNodeTap"
+          @node-ctx="onGraphNodeCtx"
+          @edge-ctx="onGraphEdgeCtx"
+          @blank-ctx="onGraphBlankCtx"
         />
         <!-- 图上右键菜单 -->
         <div
@@ -808,14 +811,24 @@
             <div class="kb-opt-hint">
               右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线；拖动后可「保存布局」记住位置；多选模式下点击节点可多选批量删除。
             </div>
-            <VChart
-              v-if="graphOption"
-              ref="graphChartRef"
+            <el-empty
+              v-if="!graphNodes.length"
+              description="暂无节点，右键画布或点「新建节点」创建"
+              :image-size="60"
+            />
+            <GraphCanvas
+              v-if="graphNodes.length"
+              ref="graphCanvasRef"
               class="graph-chart"
-              :option="graphOption"
-              autoresize
-              @click="onGraphNodeClick"
-              @contextmenu="onGraphContextmenu"
+              :nodes="graphNodes"
+              :edges="graphEdges"
+              :use-preset="graphUsePreset"
+              :highlight="graphHighlight"
+              @node-tap="onGraphNodeTap"
+              @node-ctx="onGraphNodeCtx"
+              @edge-ctx="onGraphEdgeCtx"
+              @blank-ctx="onGraphBlankCtx"
+              @layout="onGraphLayout"
             />
             <!-- 图上右键菜单 -->
             <div
@@ -1075,13 +1088,18 @@
             @change="linkSource = null"
           />
         </div>
-        <VChart
-          v-if="graphOption"
+        <GraphCanvas
+          v-if="graphNodes.length"
+          ref="graphFullscreenRef"
           class="graph-chart graph-chart--fullscreen"
-          :option="graphOption"
-          autoresize
-          @click="onGraphNodeClick"
-          @contextmenu="onGraphContextmenu"
+          :nodes="graphNodes"
+          :edges="graphEdges"
+          :use-preset="graphUsePreset"
+          :highlight="graphHighlight"
+          @node-tap="onGraphNodeTap"
+          @node-ctx="onGraphNodeCtx"
+          @edge-ctx="onGraphEdgeCtx"
+          @blank-ctx="onGraphBlankCtx"
         />
         <div
           v-if="ctxMenu.visible"
@@ -1244,8 +1262,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
+import GraphCanvas from "./GraphCanvas.vue";
+
+const graphCanvasRef = ref<any>();
 import { ElMessage, ElMessageBox } from "element-plus";
-import VChart from "vue-echarts";
 import { use } from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { GraphChart } from "echarts/charts";
@@ -1508,16 +1528,16 @@ function engineType(e: string): "primary" | "success" | "warning" | "info" | "da
 // ---------- 图谱可视化 ----------
 const graphVisible = ref(false);
 const graphLoading = ref(false);
-const graphOption = ref<any>(null);
 const graphStats = ref({ nodes: 0, edges: 0 });
 const graphNodes = ref<any[]>([]);
 const graphEdges = ref<any[]>([]);
 const graphKbId = ref<number>();
+const graphUsePreset = ref(false);
 // 连线模式：第一次点击记源节点，第二次点击记目标节点建边
 const linkMode = ref(false);
 const linkSource = ref<string | null>(null);
 // 图形 ref（保存布局取节点坐标）
-const graphChartRef = ref<any>();
+const graphFullscreenRef = ref<any>();
 const graphSavingLayout = ref(false);
 // 多选批量操作
 const multiSelect = ref(false);
@@ -1529,12 +1549,16 @@ function toggleSelect(name: string) {
   selectedNames.value = s;
 }
 async function exportGraphImage() {
-  const inst = graphChartRef.value?.chart;
-  if (!inst) {
+  let url = "";
+  try {
+    url = graphCanvasRef.value?.png?.() || graphFullscreenRef.value?.png?.() || "";
+  } catch {
+    url = "";
+  }
+  if (!url) {
     ElMessage.warning("图表未就绪");
     return;
   }
-  const url = inst.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#fff" });
   const a = document.createElement("a");
   a.href = url;
   a.download = `知识图谱_${graphKbId.value || ""}.png`;
@@ -1564,14 +1588,6 @@ async function batchDeleteNodes() {
     ElMessage.error(e?.message || "删除失败");
   }
 }
-function nodeColor(etype: string, hasChunk: boolean, isLink: boolean) {
-  if (isLink) return "#f56c6c";
-  if (hasChunk) return "#e6a23c";
-  if (etype === "custom") return "#67c23a";
-  if (etype === "annotation") return "#e6a23c";
-  if (etype === "keyword" || !etype) return "#409eff";
-  return "#909399";
-}
 const graphLegend = [
   { color: "#409eff", label: "关键词" },
   { color: "#e6a23c", label: "标注/关联分块" },
@@ -1579,21 +1595,6 @@ const graphLegend = [
   { color: "#909399", label: "其他" },
 ];
 const relationTypes = ref<any[]>([]);
-function edgeColor(rtype: string) {
-  const t = relationTypes.value.find((r: any) => r.name === rtype);
-  if (t?.color) return t.color;
-  const map: Record<string, string> = {
-    属于: "#67c23a",
-    包含: "#409eff",
-    依赖: "#e6a23c",
-    相关: "#a0a6ad",
-    引用: "#909399",
-    位于: "#2f7ccc",
-    用于: "#c0700f",
-    关联: "#e6a23c",
-  };
-  return map[rtype] || "#a0a6ad";
-}
 const rtypeOptions = computed(() => {
   const names = relationTypes.value.map((r: any) => r.name);
   return names.length ? names : ["属于", "包含", "依赖", "相关", "引用", "位于", "用于", "关联"];
@@ -1638,6 +1639,9 @@ async function delRt(row: any) {
 const graphFullscreenVisible = ref(false);
 // 检索定位图谱命中节点
 const highlightNames = ref<Set<string>>(new Set());
+const graphHighlight = computed(() =>
+  Array.from(new Set([...highlightNames.value, ...selectedNames.value]))
+);
 function locateInGraph(h: any) {
   if (!detailKb.value) return;
   const names = new Set<string>();
@@ -1664,96 +1668,9 @@ async function loadGraph(g: any) {
     ...e,
     id: e.id ?? `${e.source}_${e.target}_${i}`,
   }));
-  const hasLayout =
+  graphUsePreset.value =
     graphNodes.value.length > 0 && graphNodes.value.every((n: any) => n.x != null && n.y != null);
-  const nodes = graphNodes.value.map((n: any) => {
-    const isLink = linkMode.value && linkSource.value === n.name;
-    const isHl = highlightNames.value.has(n.name);
-    const isSel = selectedNames.value.has(n.name);
-    const hasChunk = (n.chunk_count || 0) > 0;
-    return {
-      id: String(n.id),
-      name: n.name,
-      chunk_count: n.chunk_count || 0,
-      ...(hasLayout ? { x: n.x, y: n.y, fixed: true } : {}),
-      symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
-      itemStyle: {
-        color: isLink
-          ? "#f56c6c"
-          : isSel
-            ? "#67c23a"
-            : isHl
-              ? "#f5b942"
-              : nodeColor(n.etype, hasChunk, false),
-        borderColor: isLink
-          ? "#f56c6c"
-          : isSel
-            ? "#67c23a"
-            : isHl
-              ? "#f5b942"
-              : hasChunk
-                ? "#c0700f"
-                : "#2f7ccc",
-        borderWidth: isSel ? 4 : isHl ? 4 : isLink ? 4 : hasChunk ? 2 : 0,
-      },
-    };
-  });
-  const links = graphEdges.value.map((e: any) => ({
-    source: String(e.source),
-    target: String(e.target),
-    rtype: e.rtype || "related",
-    lineStyle: {
-      width: 1.5 + Math.min((e.weight || 1) / 2, 3),
-      opacity: 0.9,
-      color: edgeColor(e.rtype || "related"),
-      curveness: 0.08,
-    },
-  }));
-  graphOption.value = {
-    tooltip: {
-      show: true,
-      confine: true,
-      formatter: (p: any) => {
-        if (p.dataType === "edge") {
-          const d = p.data || {};
-          return `${d.source} → ${d.target}<br/>关系：${d.rtype || "related"}<br/>权重：${d.weight ?? 1}`;
-        }
-        const d = p.data || {};
-        const cnt = d.chunk_count ?? 0;
-        return `${d.name || ""}<br/>权重：${d.weight ?? 1}<br/>绑定分块：${cnt} 个`;
-      },
-    },
-    series: [
-      {
-        type: "graph",
-        layout: hasLayout ? "none" : "force",
-        roam: true,
-        scaleLimit: { min: 0.35, max: 4 },
-        draggable: true,
-        data: nodes,
-        links,
-        force: { repulsion: 150, edgeLength: 110 },
-        labelLayout: { hideOverlap: false },
-        emphasis: {
-          focus: "adjacency",
-          label: { show: true, fontSize: 13, fontWeight: "bold" },
-        },
-        label: {
-          show: true,
-          position: "right",
-          fontSize: 11,
-          formatter: (p: any) =>
-            p.data?.chunk_count ? `${p.data.name} (${p.data.chunk_count})` : p.data.name,
-        },
-        edgeLabel: {
-          show: true,
-          fontSize: 10,
-          color: "#909399",
-          formatter: (p: any) => p.data?.rtype || "",
-        },
-      },
-    ],
-  };
+  highlightNames.value = new Set();
 }
 
 async function openGraph(kb: any) {
@@ -2267,16 +2184,66 @@ const ctxMenu = reactive({
   node: null as any,
   edge: null as any,
 });
-function onGraphContextmenu(params: any) {
-  const ev = params?.event;
-  if (ev) ev.preventDefault();
-  const kind =
-    params?.dataType === "edge" ? "edge" : params?.dataType === "node" ? "node" : "blank";
-  ctxMenu.kind = kind;
-  ctxMenu.node = kind === "node" ? params?.data : null;
-  ctxMenu.edge = kind === "edge" ? params?.data : null;
-  ctxMenu.x = ev?.clientX ?? 0;
-  ctxMenu.y = ev?.clientY ?? 0;
+// Cytoscape 事件适配
+function onGraphNodeTap(name: string) {
+  closeCtxMenu();
+  const node = graphNodes.value.find((n) => n.name === name);
+  if (!node || !graphKbId.value) return;
+  if (multiSelect.value) {
+    toggleSelect(name);
+    return;
+  }
+  if (linkMode.value) {
+    if (!linkSource.value) {
+      linkSource.value = name;
+      ElMessage.info(`已选起点「${name}」，再点击目标节点完成连线`);
+    } else if (linkSource.value !== name) {
+      const src = linkSource.value;
+      linkSource.value = null;
+      relAddForm.source = src;
+      relAddForm.target = name;
+      relAddForm.rtype = "related";
+      relAddForm.weight = 1;
+      relAddVisible.value = true;
+    }
+    return;
+  }
+  entityChunksName.value = name;
+  entityChunksVisible.value = true;
+  entityChunksLoading.value = true;
+  getAiKnowledgeEntityChunks(graphKbId.value, node.id)
+    .then((r: any) => {
+      entityChunksList.value = r.data?.data || [];
+    })
+    .catch(() => {
+      entityChunksList.value = [];
+    })
+    .finally(() => {
+      entityChunksLoading.value = false;
+    });
+}
+function onGraphNodeCtx(name: string, x: number, y: number) {
+  ctxMenu.kind = "node";
+  ctxMenu.node = name;
+  ctxMenu.edge = null;
+  ctxMenu.x = x;
+  ctxMenu.y = y;
+  ctxMenu.visible = true;
+}
+function onGraphEdgeCtx(source: string, target: string, x: number, y: number) {
+  ctxMenu.kind = "edge";
+  ctxMenu.node = null;
+  ctxMenu.edge = { source, target };
+  ctxMenu.x = x;
+  ctxMenu.y = y;
+  ctxMenu.visible = true;
+}
+function onGraphBlankCtx(x: number, y: number) {
+  ctxMenu.kind = "blank";
+  ctxMenu.node = null;
+  ctxMenu.edge = null;
+  ctxMenu.x = x;
+  ctxMenu.y = y;
   ctxMenu.visible = true;
 }
 function closeCtxMenu() {
@@ -2286,34 +2253,21 @@ function findNodeByName(name: string) {
   return graphNodes.value.find((n) => n.name === name);
 }
 // 保存 / 重新布局
+function onGraphLayout(items: { id: number; x: number; y: number }[]) {
+  if (!graphKbId.value || !items.length) return;
+  saveAiKnowledgeGraphLayout(graphKbId.value, items)
+    .then(() => ElMessage.success(`已保存 ${items.length} 个节点位置`))
+    .catch(() => ElMessage.error("保存布局失败"));
+}
 async function saveLayout() {
   if (!graphKbId.value) return;
-  const inst = graphChartRef.value?.chart;
-  if (!inst) {
-    ElMessage.warning("图表未就绪");
-    return;
-  }
-  const series = inst.getModel().getSeriesByIndex(0);
-  const graph = series?.getGraph();
-  if (!graph) return;
-  const items: { id: number; x: number; y: number }[] = [];
-  graph.data.each((idx: number) => {
-    const nd = graph.getNodeByIndex(idx);
-    const data = nd?.data || {};
-    const layout = nd?.getLayout?.();
-    if (data.id != null && layout) {
-      items.push({ id: Number(data.id), x: layout[0], y: layout[1] });
-    }
-  });
-  if (!items.length) return;
   graphSavingLayout.value = true;
   try {
-    await saveAiKnowledgeGraphLayout(graphKbId.value, items);
-    ElMessage.success(`已保存 ${items.length} 个节点位置`);
-  } catch (e: any) {
-    ElMessage.error(e?.message || "保存布局失败");
+    graphCanvasRef.value?.emitPositions?.();
   } finally {
-    graphSavingLayout.value = false;
+    setTimeout(() => {
+      graphSavingLayout.value = false;
+    }, 300);
   }
 }
 async function relayoutGraph() {
@@ -2355,9 +2309,12 @@ async function saveNewNode() {
   }
 }
 // 右键：编辑节点属性
+function findEdgeById(s: string, t: string) {
+  return graphEdges.value.find((e) => e.source === s && e.target === t);
+}
 function ctxEditNode() {
   closeCtxMenu();
-  const n = findNodeByName(ctxMenu.node?.name);
+  const n = findNodeByName(ctxMenu.node);
   if (n) openRenameEntity(n);
 }
 // 右键：绑定分块（编辑对话框内）
@@ -2378,7 +2335,7 @@ function openAddRel() {
 }
 function ctxAddRel() {
   closeCtxMenu();
-  const n = findNodeByName(ctxMenu.node?.name);
+  const n = findNodeByName(ctxMenu.node);
   if (!n) return;
   relAddForm.source = n.name;
   relAddForm.target = "";
@@ -2408,12 +2365,12 @@ async function saveAddRel() {
 // 右键：删除节点 / 关系
 function ctxDelNode() {
   closeCtxMenu();
-  const n = findNodeByName(ctxMenu.node?.name);
+  const n = findNodeByName(ctxMenu.node);
   if (n) delGraphEntity(n);
 }
 function ctxEditRel() {
   closeCtxMenu();
-  const e = ctxMenu.edge;
+  const e = findEdgeById(ctxMenu.edge?.source, ctxMenu.edge?.target);
   if (!e) return;
   relEditForm.id = e.id;
   relEditForm.source = e.source;
@@ -2424,7 +2381,7 @@ function ctxEditRel() {
 }
 function ctxDelRel() {
   closeCtxMenu();
-  const e = ctxMenu.edge;
+  const e = findEdgeById(ctxMenu.edge?.source, ctxMenu.edge?.target);
   if (e) delGraphRelation(e);
 }
 
