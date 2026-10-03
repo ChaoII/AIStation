@@ -1,10 +1,18 @@
 <template>
-  <div ref="container" class="graph-canvas" />
+  <div class="graph-canvas-wrap" :style="{ height: heightStyle }">
+    <div ref="container" class="graph-canvas" />
+    <div
+      v-if="tooltip.show"
+      class="graph-tooltip"
+      :style="{ left: tooltip.x + 'px', top: tooltip.y + 'px' }"
+      v-html="tooltip.html"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 
 const props = defineProps<{
   nodes: {
@@ -17,14 +25,14 @@ const props = defineProps<{
     y?: number | null;
   }[];
   edges: { source: string; target: string; rtype?: string; weight?: number }[];
-  // preset=true 用记忆坐标；否则库可自由布局（但仍可让用户拖动）
   usePreset?: boolean;
-  // 检索定位高亮节点名
   highlight?: string[];
+  height?: string;
 }>();
 
 const emit = defineEmits<{
   (e: "node-tap", name: string): void;
+  (e: "node-dbltap", name: string): void;
   (e: "node-ctx", name: string, x: number, y: number): void;
   (e: "edge-ctx", source: string, target: string, x: number, y: number): void;
   (e: "blank-ctx", x: number, y: number): void;
@@ -32,27 +40,32 @@ const emit = defineEmits<{
 }>();
 
 const container = ref<HTMLDivElement>();
+const heightStyle = computed(() => props.height || "480px");
+const tooltip = ref({ show: false, x: 0, y: 0, html: "" });
 let cy: Core | null = null;
 
 function colorFor(etype?: string, hasChunk = false) {
-  if (hasChunk) return "#e6a23c";
-  if (etype === "custom") return "#67c23a";
-  if (etype === "annotation") return "#e6a23c";
-  if (etype === "keyword" || !etype) return "#409eff";
-  return "#909399";
+  if (hasChunk) return "#f7a733";
+  if (etype === "custom") return "#5ac66b";
+  if (etype === "annotation") return "#f7a733";
+  if (etype === "keyword" || !etype) return "#4a86f7";
+  return "#a0a6ad";
 }
 function edgeColor(rtype?: string) {
   const map: Record<string, string> = {
-    属于: "#67c23a",
-    包含: "#409eff",
-    依赖: "#e6a23c",
-    相关: "#a0a6ad",
-    引用: "#909399",
-    位于: "#2f7ccc",
-    用于: "#c0700f",
-    关联: "#e6a23c",
+    属于: "#5ac66b",
+    包含: "#4a86f7",
+    依赖: "#f7a733",
+    相关: "#a8abb3",
+    引用: "#7f8fa6",
+    位于: "#3f9ad6",
+    用于: "#e6b455",
+    关联: "#f7a733",
   };
-  return map[rtype || ""] || "#a0a6ad";
+  return map[rtype || ""] || "#a8abb3";
+}
+function nodeSize(weight?: number) {
+  return 14 + Math.min(weight || 1, 20) * 1.2;
 }
 
 function buildElements(): ElementDefinition[] {
@@ -86,33 +99,63 @@ const graphStyle: any[] = [
     style: {
       label: "data(label)",
       "font-size": 12,
-      color: "#303133",
+      color: "#2f3542",
       "text-valign": "bottom",
-      "text-margin-y": 4,
-      width: 16,
-      height: 16,
+      "text-margin-y": 5,
+      "text-wrap": "wrap",
+      "text-max-width": 120,
+      width: (ele: any) => nodeSize(ele.data("weight")),
+      height: (ele: any) => nodeSize(ele.data("weight")),
+      shape: "ellipse",
       "background-color": (ele: any) => colorFor(ele.data("etype"), ele.data("chunk_count") > 0),
       "border-width": 2,
-      "border-color": "#fff",
+      "border-color": "#ffffff",
+      "shadow-blur": 8,
+      "shadow-color": "rgba(31,45,61,0.16)",
+      "shadow-offset-x": 0,
+      "shadow-offset-y": 2,
+      "min-zoomed-font-size": 6,
     },
   },
   {
     selector: "edge",
     style: {
-      width: 2,
+      width: (ele: any) => 1.5 + Math.min(ele.data("weight") || 1, 5) * 0.6,
       "line-color": (ele: any) => edgeColor(ele.data("rtype")),
-      "target-arrow-shape": "triangle",
-      "arrow-scale": 0.8,
       "curve-style": "bezier",
+      "target-arrow-shape": "triangle",
+      "target-arrow-color": (ele: any) => edgeColor(ele.data("rtype")),
+      "arrow-scale": 0.9,
       label: "data(label)",
       "font-size": 9,
-      color: "#909399",
+      color: "#7f8fa6",
       "text-background-color": "#ffffff",
-      "text-background-opacity": 0.8,
-      "text-background-padding": 2,
+      "text-background-opacity": 0.9,
+      "text-background-padding": 3,
+      "text-rotation": "autorotate",
+      opacity: 0.75,
     },
   },
-  // 选中态 / 检索高亮
+  // 悬停节点放大 + 高亮描边
+  {
+    selector: "node.hovered",
+    style: {
+      "border-width": 3,
+      "border-color": "#4a86f7",
+    },
+  },
+  {
+    selector: "node.dim",
+    style: { opacity: 0.25 },
+  },
+  {
+    selector: "edge.dim",
+    style: { opacity: 0.05 },
+  },
+  {
+    selector: "edge.hovered",
+    style: { opacity: 1, width: 3, "line-color": "#409eff" },
+  },
   {
     selector: "node:selected",
     style: { "border-width": 5, "border-color": "#67c23a" },
@@ -129,11 +172,20 @@ function runLayout() {
   const preset = props.usePreset && props.nodes.every((n) => n.x != null && n.y != null);
   c.layout({
     name: preset ? "preset" : "cose",
-    animate: !preset,
-    padding: 20,
+    animate: !preset ? true : false,
+    animationDuration: 600,
+    padding: 30,
     fit: true,
-    // cose 碰撞避免/力导向（greedy 使节点尽量不重叠）
-    ...(preset ? {} : { nodeRepulsion: 12000, idealEdgeLength: 80, gravity: 0.2, numIter: 1000 }),
+    ...(preset
+      ? {}
+      : {
+          nodeRepulsion: 40000,
+          idealEdgeLength: 110,
+          gravity: 0.35,
+          numIter: 2500,
+          nodeOverlap: 20,
+          spacingFactor: 1.2,
+        }),
   }).run();
 }
 
@@ -148,22 +200,74 @@ function emitPositions() {
   emit("layout", items as any);
 }
 
+function resetDim() {
+  const c = cy;
+  if (!c) return;
+  c.elements().removeClass("dim");
+}
+function showTooltip(html: string, x: number, y: number) {
+  tooltip.value = { show: true, x, y, html };
+}
+function hideTooltip() {
+  tooltip.value = { show: false, x: 0, y: 0, html: "" };
+}
+
 function bind() {
   const c = cy;
   if (!c) return;
-  c.on("tap", "node", (e) => {
-    const name = e.target.data("name") as string;
-    emit("node-tap", name);
+  // 悬停节点：放大 + 邻接高亮 + tooltip
+  c.on("mouseover", "node", (e) => {
+    const node = e.target;
+    node.addClass("hovered");
+    const nb = node.neighborhood();
+    // 非邻接变暗
+    const others = c.nodes().difference(nb.union(node));
+    others.addClass("dim");
+    const edges = c.edges().difference(nb.edges());
+    edges.addClass("dim");
+    const pos = node.renderedPosition();
+    showTooltip(
+      `<b>${node.data("name")}</b><br/>类型：${node.data("etype") || "keyword"}<br/>权重：${node.data("weight")}<br/>绑定分块：${node.data("chunk_count") || 0}`,
+      pos.x + 10,
+      pos.y - 12
+    );
   });
+  c.on("mouseout", "node", (e) => {
+    e.target.removeClass("hovered");
+    resetDim();
+    hideTooltip();
+  });
+  // 悬停边：显示关系
+  c.on("mouseover", "edge", (e) => {
+    e.target.addClass("hovered");
+    const pos = e.target.midpoint();
+    showTooltip(
+      `${e.target.data("source")} → ${e.target.data("target")}<br/>关系：${e.target.data("rtype") || "related"}<br/>权重：${e.target.data("weight")}`,
+      pos.x + 10,
+      pos.y - 12
+    );
+  });
+  c.on("mouseout", "edge", () => {
+    hideTooltip();
+  });
+  // 单击节点
+  c.on("tap", "node", (e) => {
+    emit("node-tap", e.target.data("name") as string);
+  });
+  // 双击节点：打开详情
+  c.on("dbltap", "node", (e) => {
+    emit("node-dbltap", e.target.data("name") as string);
+  });
+  // 右键
   c.on("cxttap", "node", (e) => {
     e.preventDefault();
-    const rp = e.renderedPosition || e.position;
+    const rp = e.renderedPosition;
     emit("node-ctx", e.target.data("name") as string, rp.x, rp.y);
   });
   c.on("cxttap", "edge", (e) => {
     e.preventDefault();
     const d = e.target.data();
-    const rp = e.renderedPosition || e.position;
+    const rp = e.renderedPosition;
     emit("edge-ctx", String(d.source), String(d.target), rp.x, rp.y);
   });
   c.on("cxttap", (e) => {
@@ -173,6 +277,8 @@ function bind() {
       emit("blank-ctx", rp.x, rp.y);
     }
   });
+  // 浏览器默认右键屏蔽（在容器上）
+  container.value?.addEventListener("contextmenu", (e) => e.preventDefault());
 }
 
 function applyElements() {
@@ -188,7 +294,7 @@ onMounted(() => {
     container: container.value,
     elements: buildElements(),
     style: graphStyle,
-    layout: { name: "cose", animate: false, fit: true, padding: 20 },
+    layout: { name: "cose", animate: false, fit: true, padding: 30 },
   });
   bind();
   runLayout();
@@ -224,3 +330,32 @@ onBeforeUnmount(() => {
   cy = null;
 });
 </script>
+
+<style scoped>
+.graph-canvas-wrap {
+  position: relative;
+  width: 100%;
+}
+.graph-canvas {
+  width: 100%;
+  height: 100%;
+  background: #fafbfc;
+  background-image: radial-gradient(#e3e7ec 1px, transparent 1px);
+  background-size: 20px 20px;
+  border-radius: 8px;
+  border: 1px solid #eef1f5;
+}
+.graph-tooltip {
+  position: fixed;
+  z-index: 4000;
+  pointer-events: none;
+  background: rgba(45, 55, 72, 0.92);
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  max-width: 260px;
+}
+</style>

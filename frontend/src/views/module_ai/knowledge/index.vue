@@ -333,6 +333,7 @@
           :edges="graphEdges"
           :use-preset="graphUsePreset"
           @node-tap="onGraphNodeTap"
+          @node-dbltap="onGraphNodeDbltap"
           @node-ctx="onGraphNodeCtx"
           @edge-ctx="onGraphEdgeCtx"
           @blank-ctx="onGraphBlankCtx"
@@ -825,6 +826,7 @@
               :use-preset="graphUsePreset"
               :highlight="graphHighlight"
               @node-tap="onGraphNodeTap"
+              @node-dbltap="onGraphNodeDbltap"
               @node-ctx="onGraphNodeCtx"
               @edge-ctx="onGraphEdgeCtx"
               @blank-ctx="onGraphBlankCtx"
@@ -1096,7 +1098,9 @@
           :edges="graphEdges"
           :use-preset="graphUsePreset"
           :highlight="graphHighlight"
+          :height="`calc(100vh - 210px)`"
           @node-tap="onGraphNodeTap"
+          @node-dbltap="onGraphNodeDbltap"
           @node-ctx="onGraphNodeCtx"
           @edge-ctx="onGraphEdgeCtx"
           @blank-ctx="onGraphBlankCtx"
@@ -2187,8 +2191,7 @@ const ctxMenu = reactive({
 // Cytoscape 事件适配
 function onGraphNodeTap(name: string) {
   closeCtxMenu();
-  const node = graphNodes.value.find((n) => n.name === name);
-  if (!node || !graphKbId.value) return;
+  if (!graphKbId.value) return;
   if (multiSelect.value) {
     toggleSelect(name);
     return;
@@ -2208,6 +2211,11 @@ function onGraphNodeTap(name: string) {
     }
     return;
   }
+  // 普通单击：仅选中（cytoscape 高亮邻接），不弹窗
+}
+function onGraphNodeDbltap(name: string) {
+  const node = graphNodes.value.find((n) => n.name === name);
+  if (!node || !graphKbId.value) return;
   entityChunksName.value = name;
   entityChunksVisible.value = true;
   entityChunksLoading.value = true;
