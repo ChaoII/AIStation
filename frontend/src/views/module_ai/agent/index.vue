@@ -330,6 +330,27 @@
           {{ detail.markdown ? "是" : "否" }}
         </el-descriptions-item>
       </el-descriptions>
+      <el-divider content-position="left">运行调试</el-divider>
+      <div class="agent-run">
+        <div class="agent-run__input">
+          <el-input
+            v-model="runQuery"
+            placeholder="输入问题，调试智能体（Enter 发送）"
+            @keyup.enter="runDebug"
+          />
+          <el-button type="primary" :loading="runLoading" @click="runDebug">发送</el-button>
+        </div>
+        <div v-loading="runLoading" class="agent-run__output">
+          <template v-if="runAnswer">
+            <div v-for="(l, i) in runAnswer" :key="i" class="agent-run__line">
+              <el-tag v-if="l.kind === 'tool'" size="small" type="warning">工具</el-tag>
+              <el-tag v-else-if="l.kind === 'error'" size="small" type="danger">错误</el-tag>
+              <span class="agent-run__text">{{ l.text }}</span>
+            </div>
+          </template>
+          <el-empty v-else description="输入问题开始调试" :image-size="50" />
+        </div>
+      </div>
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
       </template>
@@ -368,6 +389,7 @@ import {
   CopyDocument,
 } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
+import { Auth } from "@/utils/auth";
 import {
   getAiAgentList,
   createAiAgent,
@@ -540,6 +562,65 @@ const detail = ref<any>(null);
 function viewAgent(a: any) {
   detail.value = a;
   detailVisible.value = true;
+}
+
+const runQuery = ref("");
+const runAnswer = ref<{ kind: string; text: string }[]>([]);
+const runLoading = ref(false);
+async function runDebug() {
+  if (!detail.value || !runQuery.value.trim()) return;
+  runLoading.value = true;
+  runAnswer.value = [];
+  try {
+    const resp = await fetch(`/api/v1/ai/agents/${detail.value.id}/run/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Auth.getAccessToken()}`,
+      },
+      body: JSON.stringify({ messages: [{ role: "user", content: runQuery.value }] }),
+    });
+    if (!resp.ok || !resp.body) throw new Error("请求失败");
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() || "";
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s.startsWith("data: ")) continue;
+        try {
+          const evt = JSON.parse(s.slice(6));
+          if (evt.type === "text-delta") {
+            const last = runAnswer.value[runAnswer.value.length - 1];
+            if (last && last.kind === "text") last.text += evt.delta || "";
+            else runAnswer.value.push({ kind: "text", text: evt.delta || "" });
+          } else if (evt.type === "text") {
+            runAnswer.value.push({ kind: "text", text: evt.text || "" });
+          } else if (evt.type === "tool") {
+            runAnswer.value.push({
+              kind: "tool",
+              text: `${evt.name || "工具"}：${JSON.stringify(evt.args || {})}`,
+            });
+          } else if (evt.type === "error") {
+            runAnswer.value.push({ kind: "error", text: evt.error || evt.message || "" });
+          } else if (evt.type === "finish" && evt.payload?.reply) {
+            runAnswer.value.push({ kind: "text", text: evt.payload.reply });
+          }
+        } catch {
+          /* 忽略非 JSON */
+        }
+      }
+    }
+  } catch (e: any) {
+    runAnswer.value.push({ kind: "error", text: `运行失败：${e?.message || e}` });
+  } finally {
+    runLoading.value = false;
+  }
 }
 function modelName(id: number | null) {
   if (!id) return "默认";
@@ -772,5 +853,29 @@ onMounted(loadData);
   margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.agent-run__input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.agent-run__output {
+  min-height: 160px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 12px;
+}
+.agent-run__line {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+.agent-run__text {
+  line-height: 1.7;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 </style>
