@@ -1,0 +1,79 @@
+services:
+  # 一体化 PostgreSQL 18：pgvector 0.8.6 + pg_jieba + Apache AGE（RAG 用）
+  # 构建：docker build -f devops/postgres/Dockerfile -t aistation-pg-rag:18 devops/postgres
+  # 注意：旧 aistation-pg(postgres:17) 数据在 ./devops/postgres/data，PG17→18 数据目录不兼容；
+  #       此服务用新卷 data18 + 端口 5433（保留旧 5432 不占用）。迁移完成后可停旧容器并把端口改回 5432。
+  postgres:
+    container_name: aistation-pg-rag
+    image: aistation-pg-rag:18
+    restart: always
+    command: postgres -c shared_preload_libraries=age
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ServBay.dev
+      POSTGRES_DB: aistation
+      TZ: Asia/Shanghai
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./devops/postgres/data18:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d aistation"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    container_name: aistation-redis
+    image: redis:latest
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./devops/redis/data:/data
+
+  zlmediakit:
+    container_name: aistation-zlm
+    image: zlmediakit/zlmediakit:master_py
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "1935:1935"      # RTMP
+      - "8554:554"       # RTSP（避免 macOS 端口冲突）
+      - "8080:80"        # HTTP (HLS, HTTP-FLV, API)
+      - "8443:443"       # HTTPS
+      - "8000:8000/tcp"  # WebRTC TCP
+      - "8000:8000/udp"  # WebRTC UDP
+      - "9000:9000/udp"  # WebRTC 扩展端口
+      - "10000:10000"    # RTP 代理
+    volumes:
+      - ./devops/zlm/conf/config.ini:/opt/media/conf/config.ini
+      - ./devops/zlm/data:/opt/media/data
+
+  rustfs_perms:
+    image: alpine
+    user: root
+    restart: "no"
+    volumes:
+      - ./devops/rustfs/data:/data
+    command: chown -R 10001:10001 /data
+
+  rustfs:
+    container_name: aistation-rustfs
+    image: rustfs/rustfs:latest
+    restart: always
+    depends_on:
+      rustfs_perms:
+        condition: service_completed_successfully
+    ports:
+      - "9010:9000"   # S3 API (avoid ZLM 9000 conflict)
+      - "9011:9001"   # Web Console
+    environment:
+      - RUSTFS_ACCESS_KEY=aistation
+      - RUSTFS_SECRET_KEY=aistation_secret
+      - RUSTFS_CONSOLE_ENABLE=true
+    volumes:
+      - ./devops/rustfs/data:/data
+    command: ["--console-enable", "/data"]
