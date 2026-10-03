@@ -745,8 +745,14 @@
             <div class="graph-stats">
               <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
               <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+              <el-switch
+                v-model="linkMode"
+                size="small"
+                active-text="连线模式"
+                @change="linkSource = null"
+              />
               <span class="kb-opt-hint">
-                拖动节点可微调布局；下方可直接编辑图谱（保存后同步 AGE）。
+                右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；连线模式下点两个节点拉关系。
               </span>
             </div>
             <VChart
@@ -1344,6 +1350,9 @@ const graphStats = ref({ nodes: 0, edges: 0 });
 const graphNodes = ref<any[]>([]);
 const graphEdges = ref<any[]>([]);
 const graphKbId = ref<number>();
+// 连线模式：第一次点击记源节点，第二次点击记目标节点建边
+const linkMode = ref(false);
+const linkSource = ref<string | null>(null);
 // 编辑表单
 const newEntityName = ref("");
 const newEntityType = ref("keyword");
@@ -1356,17 +1365,21 @@ async function loadGraph(g: any) {
     ...e,
     id: e.id ?? `${e.source}_${e.target}_${i}`,
   }));
-  const nodes = graphNodes.value.map((n: any) => ({
-    id: String(n.id),
-    name: n.name,
-    chunk_count: n.chunk_count || 0,
-    symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
-    itemStyle: {
-      color: (n.chunk_count || 0) > 0 ? "#e6a23c" : "#409eff",
-      borderColor: (n.chunk_count || 0) > 0 ? "#c0700f" : "#2f7ccc",
-      borderWidth: (n.chunk_count || 0) > 0 ? 2 : 0,
-    },
-  }));
+  const nodes = graphNodes.value.map((n: any) => {
+    const isLink = linkMode.value && linkSource.value === n.name;
+    const hasChunk = (n.chunk_count || 0) > 0;
+    return {
+      id: String(n.id),
+      name: n.name,
+      chunk_count: n.chunk_count || 0,
+      symbolSize: Math.min(18 + (n.chunk_count || 0) * 7 + (n.weight || 1) * 2, 46),
+      itemStyle: {
+        color: isLink ? "#f56c6c" : hasChunk ? "#e6a23c" : "#409eff",
+        borderColor: isLink ? "#f56c6c" : hasChunk ? "#c0700f" : "#2f7ccc",
+        borderWidth: isLink ? 4 : hasChunk ? 2 : 0,
+      },
+    };
+  });
   const links = graphEdges.value.map((e: any) => ({
     source: String(e.source),
     target: String(e.target),
@@ -1376,6 +1389,7 @@ async function loadGraph(g: any) {
   graphOption.value = {
     tooltip: {
       show: true,
+      confine: true,
       formatter: (p: any) => {
         if (p.dataType === "edge") {
           const d = p.data || {};
@@ -1391,10 +1405,16 @@ async function loadGraph(g: any) {
         type: "graph",
         layout: "force",
         roam: true,
+        scaleLimit: { min: 0.35, max: 4 },
         draggable: true,
         data: nodes,
         links,
         force: { repulsion: 150, edgeLength: 110 },
+        labelLayout: { hideOverlap: false },
+        emphasis: {
+          focus: "adjacency",
+          label: { show: true, fontSize: 13, fontWeight: "bold" },
+        },
         label: {
           show: true,
           position: "right",
@@ -1869,10 +1889,27 @@ const entityChunksName = ref("");
 const entityChunksList = ref<any[]>([]);
 const entityChunksLoading = ref(false);
 async function onGraphNodeClick(params: any) {
+  closeCtxMenu();
   const name = params?.data?.name || params?.name;
   if (!name || !graphKbId.value) return;
   const node = graphNodes.value.find((n) => n.name === name);
   if (!node) return;
+  // 连线模式：第一次点击记起点，第二次点击记终点并弹添加关系
+  if (linkMode.value) {
+    if (!linkSource.value) {
+      linkSource.value = name;
+      ElMessage.info(`已选起点「${name}」，再点击目标节点完成连线`);
+    } else if (linkSource.value !== name) {
+      const src = linkSource.value;
+      linkSource.value = null;
+      relAddForm.source = src;
+      relAddForm.target = name;
+      relAddForm.rtype = "related";
+      relAddForm.weight = 1;
+      relAddVisible.value = true;
+    }
+    return;
+  }
   entityChunksName.value = name;
   entityChunksVisible.value = true;
   entityChunksLoading.value = true;
@@ -2208,7 +2245,13 @@ async function doSync(row: any, extra: any) {
   }
 }
 
-onMounted(loadData);
+onMounted(() => {
+  loadData();
+  // 点击任意处关闭图上右键菜单
+  document.addEventListener("click", () => {
+    if (ctxMenu.visible) ctxMenu.visible = false;
+  });
+});
 </script>
 
 <style scoped lang="scss">
