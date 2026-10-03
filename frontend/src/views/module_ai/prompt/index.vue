@@ -202,7 +202,8 @@
           </el-card>
           <el-card shadow="never" class="col-card">
             <template #header>预览</template>
-            <pre class="preview">{{ preview || "（暂无内容）" }}</pre>
+            <div v-if="preview" class="preview" v-html="renderMd(preview)"></div>
+            <div v-else class="preview muted">（暂无内容）</div>
           </el-card>
         </el-col>
       </el-row>
@@ -226,6 +227,7 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
+import MarkdownIt from "markdown-it";
 import {
   createAiPrompt,
   deleteAiPrompt,
@@ -361,6 +363,11 @@ const preview = computed(() => {
     })
     .join("\n\n");
 });
+
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+function renderMd(text: string) {
+  return md.render(text || "");
+}
 
 function resetVariables() {
   Object.keys(variableValues).forEach((key) => delete variableValues[key]);
@@ -544,10 +551,27 @@ async function handleSave() {
 }
 
 .preview {
-  margin: 0;
-  white-space: pre-wrap;
+  line-height: 1.7;
   word-break: break-word;
   font-family: inherit;
   color: var(--el-text-color-regular);
+  font-size: var(--el-font-size-base);
+}
+.preview.muted {
+  color: var(--el-text-color-placeholder);
+}
+.preview :deep(pre) {
+  background: var(--el-fill-color-light);
+  padding: 8px;
+  border-radius: 6px;
+  overflow: auto;
+}
+.preview :deep(code) {
+  font-family: var(--el-font-family-mono, monospace);
+}
+.preview :deep(h1),
+.preview :deep(h2),
+.preview :deep(h3) {
+  margin: 0.5em 0;
 }
 </style>
