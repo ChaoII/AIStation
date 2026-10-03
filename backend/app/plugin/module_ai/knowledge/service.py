@@ -56,9 +56,50 @@ def _kb_to_dict(b: AiKnowledgeBaseModel) -> dict:
         "chunk_count": b.chunk_count or 0,
         "file_type": b.file_type or "text",
         "enabled": b.enabled,
+        "graph_nodes": 0,
+        "graph_edges": 0,
         "created_time": b.created_time,
         "updated_time": b.updated_time,
     }
+
+
+async def _attach_graph_stats(items: list[dict]) -> None:
+    """给知识库字典附加上下文的图谱规模（实体/关系数）。"""
+    from sqlalchemy import func as _func
+
+    from app.plugin.module_ai.knowledge.model import (
+        AiKnowledgeEntityModel,
+        AiKnowledgeRelationModel,
+    )
+
+    ids = [i["id"] for i in items if i.get("id")]
+    if not ids:
+        return
+    try:
+        async with async_db_session() as db:
+            nrows = (
+                await db.execute(
+                    select(AiKnowledgeEntityModel.knowledge_base_id, _func.count()).where(
+                        AiKnowledgeEntityModel.knowledge_base_id.in_(ids),
+                        AiKnowledgeEntityModel.is_deleted.is_(False),
+                    ).group_by(AiKnowledgeEntityModel.knowledge_base_id)
+                )
+            ).all()
+            erows = (
+                await db.execute(
+                    select(AiKnowledgeRelationModel.knowledge_base_id, _func.count()).where(
+                        AiKnowledgeRelationModel.knowledge_base_id.in_(ids),
+                        AiKnowledgeRelationModel.is_deleted.is_(False),
+                    ).group_by(AiKnowledgeRelationModel.knowledge_base_id)
+                )
+            ).all()
+    except Exception:  # noqa: BLE001
+        return
+    nmap = {r[0]: int(r[1]) for r in nrows}
+    emap = {r[0]: int(r[1]) for r in erows}
+    for it in items:
+        it["graph_nodes"] = nmap.get(it["id"], 0)
+        it["graph_edges"] = emap.get(it["id"], 0)
 
 
 def _chunk_to_dict(c: AiKnowledgeChunkModel) -> dict:
@@ -103,7 +144,9 @@ class AiKnowledgeService:
                     .order_by(AiKnowledgeBaseModel.id.desc())
                 )
             ).scalars().all()
-            return [_kb_to_dict(b) for b in rows]
+            items = [_kb_to_dict(b) for b in rows]
+        await _attach_graph_stats(items)
+        return items
 
     @classmethod
     async def get_base(cls, kb_id: int) -> dict | None:
@@ -111,7 +154,9 @@ class AiKnowledgeService:
             b = await db.get(AiKnowledgeBaseModel, kb_id)
             if not b or b.is_deleted:
                 return None
-            return _kb_to_dict(b)
+            item = _kb_to_dict(b)
+        await _attach_graph_stats([item])
+        return item
 
     @classmethod
     async def create_base(cls, data, auth) -> dict:

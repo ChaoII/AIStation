@@ -58,6 +58,14 @@
               <template #default="{ row }">{{ row.description || "—" }}</template>
             </el-table-column>
             <el-table-column prop="chunk_count" label="分块数" width="90" align="center" />
+            <el-table-column label="图谱" width="130" align="center">
+              <template #default="{ row }">
+                <el-tag v-if="row.graph_nodes" size="small" type="success" effect="plain">
+                  {{ row.graph_nodes }} 节点 / {{ row.graph_edges }} 边
+                </el-tag>
+                <span v-else class="kb-opt-hint">—</span>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="90" align="center">
               <template #default="{ row }">
                 <el-tag :type="row.enabled ? 'success' : 'info'" size="small" effect="plain">
@@ -273,6 +281,9 @@
           <div class="search-hit__meta">
             <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
             <span class="search-hit__score">相似度 {{ h.score }}</span>
+            <el-tag v-if="h.engine" size="small" effect="plain" :type="engineType(h.engine)">
+              {{ engineLabel(h.engine) }}
+            </el-tag>
             <el-tag v-if="h.graph_entity" size="small" type="warning" effect="plain">
               图谱：{{ h.graph_entity }}
             </el-tag>
@@ -291,6 +302,11 @@
       append-to-body
     >
       <div class="graph-dialog">
+        <div class="graph-stats">
+          <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
+          <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+          <span class="kb-opt-hint">拖动节点可微调布局；检索可走图谱多跳。</span>
+        </div>
         <VChart v-if="graphOption" class="graph-chart" :option="graphOption" autoresize />
       </div>
     </el-dialog>
@@ -586,10 +602,25 @@ async function doSearch() {
   }
 }
 
+// 检索引擎标签
+function engineLabel(e: string): string {
+  if (e === "jieba_fulltext") return "中文全文";
+  if (e === "pgvector") return "向量";
+  if (e === "graphrag") return "图谱";
+  return e;
+}
+function engineType(e: string): "primary" | "success" | "warning" | "info" | "danger" {
+  if (e === "jieba_fulltext") return "success";
+  if (e === "pgvector") return "primary";
+  if (e === "graphrag") return "warning";
+  return "info";
+}
+
 // ---------- 图谱可视化 ----------
 const graphVisible = ref(false);
 const graphLoading = ref(false);
 const graphOption = ref<any>(null);
+const graphStats = ref({ nodes: 0, edges: 0 });
 async function openGraph(kb: any) {
   const kbId = kb?.id || selectedKb.value?.id;
   if (!kbId) return;
@@ -597,9 +628,11 @@ async function openGraph(kb: any) {
   graphVisible.value = true;
   graphLoading.value = true;
   graphOption.value = null;
+  graphStats.value = { nodes: 0, edges: 0 };
   try {
     const r = await getAiKnowledgeGraph(kbId);
     const g = r.data?.data || { nodes: [], edges: [] };
+    graphStats.value = { nodes: (g.nodes || []).length, edges: (g.edges || []).length };
     const nodes = (g.nodes || []).map((n: any) => ({
       id: String(n.id),
       name: n.name,
@@ -869,6 +902,13 @@ onMounted(loadData);
 .graph-dialog {
   width: 100%;
   height: 480px;
+}
+
+.graph-stats {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
 }
 .graph-chart {
   width: 100%;
