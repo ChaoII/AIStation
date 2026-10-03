@@ -1,4 +1,4 @@
-<!-- 公开分享运行页：无需登录，凭分享令牌调用受限匿名 share/run -->
+<!-- 公开分享运行页：无需登录，凭分享令牌调用受限匿名 share/run，含滑块人机校验 -->
 <template>
   <div class="share-page">
     <div class="share-card">
@@ -28,7 +28,10 @@
                 <div v-if="m.trace?.length" class="share-trace">
                   <div class="share-trace__title">节点执行过程</div>
                   <div v-for="(t, ti) in m.trace" :key="ti" class="share-trace__item">
-                    <div class="share-trace__head" @click="openDetail(i, ti)">
+                    <div
+                      class="share-trace__head"
+                      @click="detail[i + '_' + ti] = !detail[i + '_' + ti]"
+                    >
                       <span class="share-trace__chev">{{ detail[i + "_" + ti] ? "▾" : "▸" }}</span>
                       <span class="share-trace__dot" :class="`is-${t.status}`" />
                       <span class="share-trace__label">{{ t.label }}</span>
@@ -54,14 +57,21 @@
             </div>
           </div>
         </div>
-        <div class="share-captcha">
-          <span class="share-captcha__q">验证：{{ captchaA }} + {{ captchaB }} = ?</span>
-          <el-input
-            v-model="captchaAnswer"
-            size="small"
-            class="share-captcha__input"
-            placeholder="答案"
-          />
+        <div
+          v-if="!sliderVerified"
+          class="share-slider"
+          @mousedown="onStart"
+          @mousemove="onMove"
+          @mouseup="onEnd"
+          @mouseleave="onEnd"
+        >
+          <div class="share-slider__track">
+            <div class="share-slider__progress" :style="{ width: sliderProgress + '%' }" />
+            <span v-if="!sliderVerified" class="share-slider__hint">请按住滑块拖到最右侧</span>
+          </div>
+          <div class="share-slider__handle" :style="{ left: sliderProgress + '%' }">
+            <el-icon><Right /></el-icon>
+          </div>
         </div>
         <div class="share-input">
           <el-input
@@ -73,7 +83,9 @@
             placeholder="输入消息，回车或点发送……"
             @keydown.enter.exact.prevent="send"
           />
-          <el-button type="primary" :loading="running" @click="send">发送</el-button>
+          <el-button type="primary" :loading="running" :disabled="!sliderVerified" @click="send">
+            发送
+          </el-button>
         </div>
       </div>
     </div>
@@ -83,6 +95,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRoute } from "vue-router";
+import { Right } from "@element-plus/icons-vue";
 
 const route = useRoute();
 const token = ref("");
@@ -98,25 +111,35 @@ const messages = ref<
   }>
 >([]);
 const detail = ref<Record<string, boolean>>({});
-// 人机校验（算术）
-const captchaA = ref(0);
-const captchaB = ref(0);
-const captchaAnswer = ref("");
-function newCaptcha() {
-  captchaA.value = Math.floor(Math.random() * 8) + 1;
-  captchaB.value = Math.floor(Math.random() * 8) + 1;
-  captchaAnswer.value = "";
+
+// 滑块人机校验（拖到最右解锁）
+const sliderProgress = ref(0);
+const sliderVerified = ref(false);
+const sliderDragging = ref(false);
+
+function onStart() {
+  if (sliderVerified.value) return;
+  sliderDragging.value = true;
+}
+function onMove(e: MouseEvent) {
+  if (!sliderDragging.value || sliderVerified.value) return;
+  const track = (e.currentTarget as HTMLElement).querySelector(
+    ".share-slider__track"
+  ) as HTMLElement;
+  if (!track) return;
+  const rect = track.getBoundingClientRect();
+  const x = Math.max(0, Math.min(e.clientX - rect.left - 22, rect.width - 44));
+  sliderProgress.value = Math.round((x / (rect.width - 44)) * 100);
+  if (sliderProgress.value >= 100) {
+    sliderVerified.value = true;
+    sliderDragging.value = false;
+  }
+}
+function onEnd() {
+  sliderDragging.value = false;
+  if (!sliderVerified.value) sliderProgress.value = 0;
 }
 
-onMounted(() => {
-  token.value = (route.query.token as string) || "";
-  newCaptcha();
-});
-
-function openDetail(i: number, ti: number) {
-  const k = `${i}_${ti}`;
-  detail.value[k] = !detail.value[k];
-}
 function statusText(s: string) {
   return s === "success" ? "完成" : s === "error" ? "失败" : s === "skipped" ? "已跳过" : "执行中";
 }
@@ -158,11 +181,7 @@ async function send() {
   const text = inputText.value.trim();
   if (!text) return;
   if (!token.value) return;
-  if (Number(captchaAnswer.value.trim()) !== captchaA.value + captchaB.value) {
-    captchaAnswer.value = "";
-    return;
-  }
-  newCaptcha();
+  if (!sliderVerified.value) return;
   messages.value.push({ role: "user", text });
   inputText.value = "";
   const msg = { role: "assistant", text: "", trace: [], running: true } as any;
@@ -202,6 +221,10 @@ async function send() {
     running.value = false;
   }
 }
+
+onMounted(() => {
+  token.value = (route.query.token as string) || "";
+});
 </script>
 
 <style scoped lang="scss">
@@ -371,25 +394,58 @@ async function send() {
   }
 }
 
+.share-slider {
+  position: relative;
+  height: 40px;
+  margin: 0 20px 12px;
+  cursor: grab;
+  user-select: none;
+
+  .share-slider__track {
+    position: relative;
+    height: 100%;
+    background: var(--el-fill-color-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 20px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .share-slider__progress {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      background: var(--el-color-primary-light-7);
+    }
+    .share-slider__hint {
+      position: relative;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .share-slider__handle {
+    position: absolute;
+    top: 0;
+    width: 44px;
+    height: 40px;
+    background: #fff;
+    border: 1px solid var(--el-border-color);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+    color: var(--el-color-primary);
+  }
+}
+
 .share-input {
   display: flex;
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--el-border-color-light);
-}
-
-.share-captcha {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 0 20px 8px;
-
-  .share-captcha__q {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
-  .share-captcha__input {
-    width: 90px;
-  }
 }
 </style>

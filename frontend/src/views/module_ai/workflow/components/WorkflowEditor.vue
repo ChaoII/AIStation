@@ -161,6 +161,9 @@
                     </div>
                   </el-popover>
                   <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
+                  <el-button size="small" :icon="DocumentCopy" @click="handleExportDoc">
+                    文档
+                  </el-button>
                   <el-button size="small" :icon="Upload" @click="triggerImport">导入</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
                     运行
@@ -712,6 +715,10 @@
         <div class="stats-chart">
           <div class="stats-chart__title">耗时趋势（最近 20 次，ms）</div>
           <VChart class="stats-chart__item" :option="durationOption" autoresize />
+        </div>
+        <div class="stats-chart">
+          <div class="stats-chart__title">耗时分布（近 100 次）</div>
+          <VChart class="stats-chart__item" :option="histOption" autoresize />
         </div>
         <el-empty v-if="!stats.total" description="暂无运行记录" />
       </div>
@@ -1296,6 +1303,33 @@ const durationOption = computed(() => ({
     },
   ],
 }));
+const histOption = computed(() => {
+  const logs = statsLogs.value.slice(0, 100);
+  const buckets = [
+    { label: "<500ms", min: 0, max: 500 },
+    { label: "0.5-1s", min: 500, max: 1000 },
+    { label: "1-3s", min: 1000, max: 3000 },
+    { label: "3-10s", min: 3000, max: 10000 },
+    { label: ">10s", min: 10000, max: Infinity },
+  ];
+  const counts = buckets.map(
+    (b) => logs.filter((l) => (l.duration_ms || 0) >= b.min && (l.duration_ms || 0) < b.max).length
+  );
+  return {
+    tooltip: { trigger: "axis" },
+    grid: { left: 40, right: 16, top: 24, bottom: 24 },
+    xAxis: { type: "category", data: buckets.map((b) => b.label) },
+    yAxis: { type: "value" },
+    series: [
+      {
+        type: "bar",
+        name: "次数",
+        data: counts,
+        itemStyle: { color: "#e6a23c", borderRadius: [4, 4, 0, 0] },
+      },
+    ],
+  };
+});
 async function openShare() {
   if (!workflowId.value) return;
   try {
@@ -2619,6 +2653,45 @@ function handleExport() {
 }
 function triggerImport() {
   importFileRef.value?.click();
+}
+
+// 导出为可执行文档（Markdown 描述）
+function handleExportDoc() {
+  const lines: string[] = [];
+  lines.push(`# 工作流：${formData.name || "未命名"}`);
+  if (formData.description) lines.push(`\n> 描述：${formData.description}`);
+  lines.push("");
+  lines.push("## 节点");
+  lines.push("");
+  lines.push("| # | 类型 | 名称 | 输出变量 |");
+  lines.push("| --- | --- | --- | --- |");
+  nodes.value.forEach((n, i) => {
+    lines.push(
+      `| ${i + 1} | ${nodeDefOf(n.type || "llm").label} | ${n.data?.note || n.data?.title || "-"} | ${n.data?.output_variable || "-"} |`
+    );
+  });
+  lines.push("");
+  lines.push("## 连线");
+  lines.push("");
+  edges.value.forEach((e) => {
+    const s = nodes.value.find((n) => n.id === e.source);
+    const t = nodes.value.find((n) => n.id === e.target);
+    lines.push(
+      `- ${nodeDefOf(s?.type || "llm").label} → ${nodeDefOf(t?.type || "llm").label}${e.sourceHandle ? `（${e.sourceHandle}）` : ""}`
+    );
+  });
+  lines.push("");
+  lines.push("## 执行概要");
+  lines.push("");
+  lines.push(`- 节点数：${nodes.value.length}，连线数：${edges.value.length}`);
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(formData.name || "workflow").replace(/[\\/:*?"<>|]/g, "_")}.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+  ElMessage.success("已导出工作流文档");
 }
 async function onImportFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
