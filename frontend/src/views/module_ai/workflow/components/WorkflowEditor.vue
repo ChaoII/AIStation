@@ -152,6 +152,14 @@
                     分享
                   </el-button>
                   <el-button size="small" :icon="Share" @click="topoVisible = true">拓扑</el-button>
+                  <el-button
+                    size="small"
+                    :icon="Timer"
+                    :disabled="!workflowId"
+                    @click="openSchedule"
+                  >
+                    计划
+                  </el-button>
                   <el-popover trigger="click" placement="bottom-end" :disabled="!selectedCount">
                     <template #reference>
                       <el-button size="small" :icon="Grid" :disabled="!selectedCount">
@@ -815,6 +823,24 @@
         <TopoView :nodes="nodes" :edges="edges" />
       </div>
     </el-dialog>
+
+    <!-- 定时调度 -->
+    <el-dialog v-model="scheduleVisible" title="定时调度" width="460px" append-to-body>
+      <el-form label-position="top" size="small">
+        <el-form-item label="cron 表达式（分 时 日 月 周）">
+          <el-input v-model="scheduleCron" placeholder="如：0 9 * * *（每天 09:00）" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="scheduleEnabled" />
+        </el-form-item>
+      </el-form>
+      <div v-if="scheduleNext" class="schedule-next">下次运行：{{ scheduleNext }}</div>
+      <template #footer>
+        <el-button @click="scheduleVisible = false">关闭</el-button>
+        <el-button @click="runScheduleNow">立即运行</el-button>
+        <el-button type="primary" @click="saveSchedule">保存</el-button>
+      </template>
+    </el-dialog>
   </el-drawer>
 </template>
 
@@ -841,6 +867,7 @@ import {
   DataAnalysis,
   Link,
   Aim,
+  Timer,
   Operation,
   SwitchFilled,
   DataLine,
@@ -886,6 +913,9 @@ import {
   getAiWorkflowRunLog,
   getAiWorkflowStats,
   createAiWorkflowShare,
+  getAiWorkflowSchedule,
+  setAiWorkflowSchedule,
+  runAiWorkflowSchedule,
 } from "@/api/module_ai/workflow";
 import { Auth } from "@/utils/auth";
 import VChart from "vue-echarts";
@@ -1394,7 +1424,52 @@ async function openShare() {
   }
 }
 
-// ---------- 分享预览（受限匿名运行） ----------
+// ---------- 定时调度 ----------
+const scheduleVisible = ref(false);
+const scheduleCron = ref("");
+const scheduleEnabled = ref(false);
+const scheduleNext = ref("");
+async function openSchedule() {
+  if (!workflowId.value) return;
+  try {
+    const res = await getAiWorkflowSchedule(workflowId.value);
+    const d = res.data?.data || {};
+    scheduleCron.value = d.cron || "";
+    scheduleEnabled.value = !!d.enabled;
+    scheduleNext.value = d.next_run_time
+      ? String(d.next_run_time).replace("T", " ").slice(0, 19)
+      : "";
+    scheduleVisible.value = true;
+  } catch {
+    ElMessage.error("读取调度配置失败");
+  }
+}
+async function saveSchedule() {
+  if (!workflowId.value) return;
+  try {
+    const res = await setAiWorkflowSchedule(workflowId.value, {
+      cron: scheduleCron.value,
+      enabled: scheduleEnabled.value,
+    });
+    const d = res.data?.data || {};
+    scheduleNext.value = d.next_run_time
+      ? String(d.next_run_time).replace("T", " ").slice(0, 19)
+      : "";
+    ElMessage.success("调度已保存");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败（cron 可能无效）");
+  }
+}
+async function runScheduleNow() {
+  if (!workflowId.value) return;
+  try {
+    await runAiWorkflowSchedule(workflowId.value);
+    ElMessage.success("已触发运行（可在运行历史查看）");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "触发失败");
+  }
+}
+
 const shareRunVisible = ref(false);
 const shareToken = ref("");
 const shareLink = computed(() => `${location.origin}/#/share?token=${shareToken.value}`);
@@ -3751,6 +3826,12 @@ async function handleApprove(decision: "approve" | "reject") {
 .topo-dialog {
   width: 100%;
   height: 520px;
+}
+
+.schedule-next {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .history-detail {

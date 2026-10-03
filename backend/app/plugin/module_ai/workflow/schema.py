@@ -50,6 +50,13 @@ class AiWorkflowShareRunSchema(BaseModel):
     message: str = Field(..., max_length=2000)
 
 
+class AiWorkflowScheduleSchema(BaseModel):
+    """定时调度配置：cron（5 段）+ 启用。"""
+
+    cron: str | None = Field(default=None, max_length=128)
+    enabled: bool = False
+
+
 class AiWorkflowApproveSchema(BaseModel):
     """HITL 工具审批：基于 run_id 对挂起的工具调用做出 approve/reject。"""
 

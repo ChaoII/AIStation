@@ -1,5 +1,7 @@
 """低代码工作流定义模型。"""
-from sqlalchemy import Boolean, Integer, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -51,7 +53,6 @@ class AiWorkflowVersionModel(ModelMixin, UserMixin):
 
 class AiWorkflowRunLogModel(ModelMixin, UserMixin):
     """工作流运行历史：记录每次运行的输入/输出/报错与节点执行轨迹。"""
-
     __tablename__ = "ai_workflow_run_logs"
     __table_args__ = ({"comment": "AI 工作流运行历史表"},)
 
@@ -72,3 +73,24 @@ class AiWorkflowRunLogModel(ModelMixin, UserMixin):
         JSONB, nullable=True, default=None, comment="节点执行轨迹（node-status 快照）"
     )
     duration_ms: Mapped[int] = mapped_column(Integer, default=0, comment="运行耗时(ms)")
+
+
+class AiWorkflowScheduleModel(ModelMixin):
+    """工作流定时调度配置。"""
+
+    __tablename__ = "ai_workflow_schedules"
+    __table_args__ = ({"comment": "AI 工作流调度表"},)
+
+    workflow_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True, comment="所属工作流 ID"
+    )
+    cron: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="", comment="cron 表达式（5 段）"
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否启用")
+    last_run_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, comment="上次运行时间"
+    )
+    next_run_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, comment="下次运行时间"
+    )

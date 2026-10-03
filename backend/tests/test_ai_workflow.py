@@ -1597,3 +1597,27 @@ def test_workflow_node_retry(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_schedule(test_client, auth_headers):
+    """定时调度：保存 cron 配置 + 立即运行。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "end", "type": "end", "data": {"output_template": "ok"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        s = test_client.put(f"/api/v1/ai/workflows/{wf}/schedule",
+            json={"cron": "0 * * * *", "enabled": True}, headers=auth_headers).json()["data"]
+        assert s["enabled"] is True
+        assert s["cron"] == "0 * * * *"
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/schedule/run", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        # 运行日志应新增一条
+        logs = test_client.get(f"/api/v1/ai/workflows/{wf}/run-logs", headers=auth_headers).json()["data"]
+        assert logs and logs[0]["status"] == "success"
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

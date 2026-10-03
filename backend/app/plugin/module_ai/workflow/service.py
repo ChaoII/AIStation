@@ -11,7 +11,12 @@ from sqlalchemy import func, select
 from app.core.database import async_db_session
 
 from .engine import WorkflowEngine
-from .model import AiWorkflowModel, AiWorkflowRunLogModel, AiWorkflowVersionModel
+from .model import (
+    AiWorkflowModel,
+    AiWorkflowRunLogModel,
+    AiWorkflowScheduleModel,
+    AiWorkflowVersionModel,
+)
 from .schema import AiWorkflowApproveSchema
 
 
@@ -711,6 +716,144 @@ class AiWorkflowService:
             yield ms.error(f"运行失败：{e}")
             yield ms.finish()
             yield ms.done()
+
+    @classmethod
+    async def set_schedule(cls, workflow_id: int, cron: str | None, enabled: bool) -> dict:
+        """保存调度配置并计算下次运行时间。"""
+        from datetime import datetime
+
+        from apscheduler.triggers.cron import CronTrigger
+
+        next_run = None
+        if enabled and cron:
+            try:
+                CronTrigger.from_crontab(cron)
+                next_run = CronTrigger.from_crontab(cron).get_next_fire_time(None, datetime.now())
+            except Exception:  # noqa: BLE001
+                raise RuntimeError("cron 表达式无效")
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    select(AiWorkflowScheduleModel).where(
+                        AiWorkflowScheduleModel.workflow_id == workflow_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if not row:
+                row = AiWorkflowScheduleModel(workflow_id=workflow_id)
+                db.add(row)
+            row.cron = cron or ""
+            row.enabled = enabled
+            row.next_run_time = next_run
+            await db.commit()
+            await db.refresh(row)
+        return {"cron": row.cron, "enabled": row.enabled, "next_run_time": row.next_run_time}
+
+    @classmethod
+    async def get_schedule(cls, workflow_id: int) -> dict:
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    select(AiWorkflowScheduleModel).where(
+                        AiWorkflowScheduleModel.workflow_id == workflow_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if not row:
+            return {"cron": "", "enabled": False, "next_run_time": None}
+        return {
+            "cron": row.cron or "",
+            "enabled": row.enabled,
+            "next_run_time": row.next_run_time,
+            "last_run_time": row.last_run_time,
+        }
+
+    @classmethod
+    async def run_schedule(cls, workflow_id: int) -> None:
+        """按调度运行工作流（非流式，记录运行日志）。"""
+        from app.plugin.module_ai.streaming import UiMessageStream
+
+        workflow = await cls.get_workflow(workflow_id)
+        if not workflow or not workflow.get("enabled"):
+            return
+        ms = UiMessageStream()
+        state: dict = {
+            "assistant_text": "",
+            "reply": "",
+            "tool_calls": [],
+            "action": None,
+            "report_id": None,
+            "error": None,
+            "halted": False,
+            "pending_approval": None,
+        }
+        engine = WorkflowEngine(
+            graph=workflow.get("graph") or {},
+            variables={},
+            messages=[],
+            ms=ms,
+            state=state,
+            user_id=None,
+            timeout_seconds=180,
+        )
+        async for _ in engine.run():
+            pass
+        await cls._log_run(
+            workflow_id,
+            "success" if state["error"] is None else "error",
+            {"scheduled": True},
+            {"reply": state["reply"] or state["assistant_text"]},
+            state["error"],
+            [],
+            0,
+            None,
+        )
+
+    @classmethod
+    async def start_scheduler(cls) -> None:
+        """后台轮询任务：每分钟检查到期调度并运行。"""
+        import asyncio
+        from datetime import datetime
+
+        while True:
+            try:
+                now = datetime.now()
+                async with async_db_session() as db:
+                    rows = (
+                        await db.execute(
+                            select(AiWorkflowScheduleModel).where(
+                                AiWorkflowScheduleModel.enabled.is_(True)
+                            )
+                        )
+                    ).scalars().all()
+                for row in rows:
+                    due = row.next_run_time is None or (
+                        row.next_run_time and row.next_run_time <= now
+                    )
+                    if due:
+                        try:
+                            await cls.run_schedule(row.workflow_id)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        next_run = None
+                        if row.cron:
+                            try:
+                                from apscheduler.triggers.cron import CronTrigger
+
+                                next_run = CronTrigger.from_crontab(row.cron).get_next_fire_time(
+                                    None, datetime.now()
+                                )
+                            except Exception:  # noqa: BLE001
+                                next_run = None
+                        async with async_db_session() as db2:
+                            r = await db2.get(AiWorkflowScheduleModel, row.id)
+                            if r:
+                                r.last_run_time = now
+                                r.next_run_time = next_run
+                                await db2.commit()
+            except Exception:  # noqa: BLE001
+                pass
+            await asyncio.sleep(60)
 
     @staticmethod
     async def _persist_pending(redis, run_id: str, workflow_id: int, state: dict, uid) -> None:

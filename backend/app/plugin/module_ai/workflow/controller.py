@@ -15,6 +15,7 @@ from .schema import (
     AiWorkflowCreateSchema,
     AiWorkflowDebugNodeSchema,
     AiWorkflowRunSchema,
+    AiWorkflowScheduleSchema,
     AiWorkflowShareRunSchema,
     AiWorkflowStepSchema,
     AiWorkflowUpdateSchema,
@@ -100,6 +101,36 @@ async def share_run(
             data.token, data.message, redis=request.app.state.redis, ip=ip
         )
     )
+
+
+@AiWorkflowRouter.get("/{workflow_id}/schedule", summary="获取定时调度配置")
+async def get_schedule(
+    workflow_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiWorkflowService.get_schedule(workflow_id), msg="查询成功")
+
+
+@AiWorkflowRouter.put("/{workflow_id}/schedule", summary="保存定时调度配置")
+async def set_schedule(
+    workflow_id: int,
+    data: AiWorkflowScheduleSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:update"]))],
+) -> JSONResponse:
+    try:
+        result = await AiWorkflowService.set_schedule(workflow_id, data.cron, data.enabled)
+    except RuntimeError as e:
+        return ErrorResponse(msg=str(e))
+    return SuccessResponse(data=result, msg="保存成功")
+
+
+@AiWorkflowRouter.post("/{workflow_id}/schedule/run", summary="立即按调度运行")
+async def run_schedule_now(
+    workflow_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    await AiWorkflowService.run_schedule(workflow_id)
+    return SuccessResponse(data=None, msg="已触发运行")
 
 
 @AiWorkflowRouter.post("/create", summary="新增工作流")

@@ -1374,6 +1374,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(start_prediction_scheduler())
         log.info("✅ 预测调度器已启动")
 
+        from app.plugin.module_ai.workflow.service import AiWorkflowService
+        asyncio.create_task(AiWorkflowService.start_scheduler())
+        log.info("✅ 工作流定时调度器已启动")
+
         from app.plugin.module_train.deploy_executor import start_deploy_recovery
         asyncio.create_task(start_deploy_recovery())
         log.info("✅ 部署孤儿回收已启动")

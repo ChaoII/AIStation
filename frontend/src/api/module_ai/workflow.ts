@@ -56,6 +56,18 @@ export function createAiWorkflowShare(id: number) {
   return request({ url: `${API_PATH}/${id}/share`, method: "post" });
 }
 
+export function getAiWorkflowSchedule(id: number) {
+  return request({ url: `${API_PATH}/${id}/schedule`, method: "get" });
+}
+
+export function setAiWorkflowSchedule(id: number, data: { cron?: string; enabled: boolean }) {
+  return request({ url: `${API_PATH}/${id}/schedule`, method: "put", data });
+}
+
+export function runAiWorkflowSchedule(id: number) {
+  return request({ url: `${API_PATH}/${id}/schedule/run`, method: "post" });
+}
+
 export function shareAiWorkflowRun(token: string, message: string) {
   return request({ url: `${API_PATH}/share/run`, method: "post", data: { token, message } });
 }
