@@ -4,6 +4,13 @@
     <!-- 分类 tab -->
     <el-card shadow="never" class="skill-cat-card">
       <div class="skill-cat-bar">
+        <el-input
+          v-model="searchKeyword"
+          class="skill-search"
+          :prefix-icon="Search"
+          placeholder="搜索技能名称/描述/分类"
+          clearable
+        />
         <el-button
           v-hasPerm="['module_ai:skill:create']"
           type="primary"
@@ -78,6 +85,14 @@
               @click="openInstallDialog(s)"
             >
               安装
+            </el-button>
+            <el-button
+              v-hasPerm="['module_ai:skill:create']"
+              size="small"
+              :icon="CopyDocument"
+              @click="copySkill(s)"
+            >
+              复制
             </el-button>
             <el-button
               v-hasPerm="['module_ai:skill:delete']"
@@ -171,7 +186,7 @@
           {{ detail.description || "—" }}
         </el-descriptions-item>
         <el-descriptions-item label="技能内容" :span="2">
-          <pre class="skill-content-pre">{{ detail.content || "—" }}</pre>
+          <div class="skill-md" v-html="renderMd(detail.content)"></div>
         </el-descriptions-item>
       </el-descriptions>
       <template #footer>
@@ -210,7 +225,17 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Edit, Delete, View, Star, Link } from "@element-plus/icons-vue";
+import {
+  Plus,
+  Edit,
+  Delete,
+  View,
+  Star,
+  Link,
+  CopyDocument,
+  Search,
+} from "@element-plus/icons-vue";
+import MarkdownIt from "markdown-it";
 import {
   getAiSkillList,
   getAiSkillCategories,
@@ -229,6 +254,11 @@ const loading = ref(false);
 const skills = ref<any[]>([]);
 const categories = ref<any[]>([]);
 const activeTab = ref("all");
+const searchKeyword = ref("");
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+function renderMd(text: string) {
+  return md.render(text || "");
+}
 
 // 安装技能到智能体
 const installVisible = ref(false);
@@ -278,8 +308,38 @@ const filteredSkills = computed(() => {
   if (activeTab.value !== "all") {
     list = list.filter((s) => (s.category || "未分类") === activeTab.value);
   }
+  const kw = searchKeyword.value.trim().toLowerCase();
+  if (kw) {
+    list = list.filter(
+      (s) =>
+        (s.name || "").toLowerCase().includes(kw) ||
+        (s.description || "").toLowerCase().includes(kw) ||
+        (s.category || "").toLowerCase().includes(kw)
+    );
+  }
   return list;
 });
+
+async function copySkill(s: any) {
+  try {
+    await createAiSkill({
+      name: `${s.name}（副本）`,
+      skill_type: s.skill_type,
+      category: s.category || null,
+      author: s.author || null,
+      version: s.version || "1.0",
+      icon: s.icon || null,
+      description: s.description,
+      content: s.content,
+      sort_order: 0,
+      enabled: s.enabled !== false,
+    });
+    ElMessage.success("已复制技能");
+    loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "复制失败");
+  }
+}
 
 const loadData = async () => {
   loading.value = true;
@@ -417,6 +477,11 @@ onMounted(loadData);
     align-items: center;
     gap: 16px;
 
+    .skill-search {
+      width: 260px;
+      flex-shrink: 0;
+    }
+
     .skill-tabs {
       flex: 1;
 
@@ -517,5 +582,25 @@ onMounted(loadData);
   font-family: var(--el-font-family);
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
+}
+.skill-md {
+  line-height: 1.7;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  word-break: break-word;
+}
+.skill-md :deep(pre) {
+  background: var(--el-fill-color-light);
+  padding: 10px;
+  border-radius: 6px;
+  overflow: auto;
+}
+.skill-md :deep(code) {
+  font-family: var(--el-font-family-mono, monospace);
+}
+.skill-md :deep(h1),
+.skill-md :deep(h2),
+.skill-md :deep(h3) {
+  margin: 0.5em 0;
 }
 </style>
