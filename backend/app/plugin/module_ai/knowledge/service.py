@@ -13,6 +13,7 @@ from .model import (
     AiDatasourceModel,
     AiKnowledgeBaseModel,
     AiKnowledgeChunkModel,
+    AiKnowledgeEntityChunkModel,
     AiKnowledgeEntityModel,
     AiKnowledgeRelationModel,
 )
@@ -79,6 +80,31 @@ def _fixed_chunk(text: str, chunk_size: int, overlap: int) -> list[str]:
     return chunks
 
 
+def _annotation_text(annotations: list | None) -> str:
+    """把分块标注文本拼成空白分隔字符串，用于检索。"""
+    if not annotations:
+        return ""
+    parts = []
+    for a in annotations:
+        if isinstance(a, dict) and a.get("text"):
+            parts.append(str(a["text"]))
+    return " ".join(parts)
+
+
+def _searchable_text(content: str, annotations: list | None) -> str:
+    """检索用文本：正文 + 标注（提高换说法命中率）。"""
+    t = (content or "").strip()
+    at = _annotation_text(annotations)
+    return (t + " " + at).strip()
+
+
+# PostgreSQL：把分块标注（JSONB [{text,kind}]）拼成可检索文本的 SQL 表达式
+_ANN_SQL = (
+    "COALESCE((SELECT string_agg(a->>'text',' ') FROM "
+    "jsonb_array_elements(coalesce(annotations,'[]'::jsonb)) a),'')"
+)
+
+
 def _kb_to_dict(b: AiKnowledgeBaseModel) -> dict:
     return {
         "id": b.id,
@@ -141,6 +167,7 @@ def _chunk_to_dict(c: AiKnowledgeChunkModel) -> dict:
         "file_name": c.file_name or "",
         "chunk_index": c.chunk_index or 0,
         "content": c.content,
+        "annotations": c.annotations or [],
         "meta": c.meta,
         "dimension": c.dimension,
     }
@@ -384,7 +411,8 @@ class AiKnowledgeService:
                                 "SELECT id, knowledge_base_id, file_name, content, 1.0 AS score "
                                 "FROM ai_knowledge_chunks "
                                 "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
-                                "AND content ILIKE '%' || :q || '%' ORDER BY id LIMIT :k"
+                                "AND (content ILIKE '%' || :q || '%' OR " + _ANN_SQL + " ILIKE '%' || :q || '%') "
+                                "ORDER BY id LIMIT :k"
                             ),
                             {"ids": kb_ids, "q": query, "k": top_k},
                         )
@@ -416,10 +444,10 @@ class AiKnowledgeService:
                             await db.execute(
                                 text(
                                     "SELECT id, knowledge_base_id, file_name, content, "
-                                    "ts_rank(to_tsvector('jiebacfg', content), plainto_tsquery('jiebacfg', :q)) AS score "
+                                    "ts_rank(to_tsvector('jiebacfg', content || ' ' || " + _ANN_SQL + "), plainto_tsquery('jiebacfg', :q)) AS score "
                                     "FROM ai_knowledge_chunks "
                                     "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
-                                    "AND to_tsvector('jiebacfg', content) @@ plainto_tsquery('jiebacfg', :q) "
+                                    "AND to_tsvector('jiebacfg', content || ' ' || " + _ANN_SQL + ") @@ plainto_tsquery('jiebacfg', :q) "
                                     "ORDER BY score DESC LIMIT :k"
                                 ),
                                 {"ids": kb_ids, "q": query, "k": top_k},
@@ -615,7 +643,7 @@ class AiKnowledgeService:
                     )
                 ).scalars().all()
             for c in rows:
-                if query in (c.content or ""):
+                if query in _searchable_text(c.content, c.annotations):
                     results.append(
                         {
                             "chunk_id": c.id,
@@ -664,7 +692,7 @@ class AiKnowledgeService:
                     )
                 ).scalars().all()
             for c in rows:
-                if query in (c.content or ""):
+                if query in _searchable_text(c.content, c.annotations):
                     results.append(
                         {
                             "chunk_id": c.id,
@@ -840,6 +868,163 @@ class AiKnowledgeService:
             c.vector = vec
             c.dimension = len(vec) if vec else None
         return {"chunk_id": chunk_id}
+
+    # ---------- 分块标注（提升换说法召回命中） ----------
+    @classmethod
+    async def add_chunk_annotation(cls, kb_id: int, chunk_id: int, text: str, kind: str = "alias") -> dict:
+        """给分块加一条标注，并用正文+标注重新向量化该分块（标注即刻生效于检索）。"""
+        async with async_db_session.begin() as db:
+            c = await db.get(AiKnowledgeChunkModel, chunk_id)
+            if not c or c.knowledge_base_id != kb_id:
+                raise ValueError("分块不存在")
+            anns = list(c.annotations or [])
+            anns.append({"text": text, "kind": kind})
+            c.annotations = anns
+            model_id = await cls._kb_model_id([kb_id])
+            vec = (await embedding.embed_texts([_searchable_text(c.content, anns)], model_id=model_id))[0]
+            c.vector = vec
+            c.dimension = len(vec) if vec else None
+            c.meta = {**(c.meta or {}), "vector_annotated": True}
+        return {"chunk_id": chunk_id, "annotations": anns}
+
+    @classmethod
+    async def remove_chunk_annotation(cls, kb_id: int, chunk_id: int, index: int) -> dict:
+        """删除分块第 index 条标注，并重算向量。"""
+        async with async_db_session.begin() as db:
+            c = await db.get(AiKnowledgeChunkModel, chunk_id)
+            if not c or c.knowledge_base_id != kb_id:
+                raise ValueError("分块不存在")
+            anns = list(c.annotations or [])
+            if index < 0 or index >= len(anns):
+                raise ValueError("标注不存在")
+            anns.pop(index)
+            c.annotations = anns
+            model_id = await cls._kb_model_id([kb_id])
+            vec = (await embedding.embed_texts([_searchable_text(c.content, anns)], model_id=model_id))[0]
+            c.vector = vec
+            c.dimension = len(vec) if vec else None
+        return {"chunk_id": chunk_id, "annotations": anns}
+
+    # ---------- 实体 ↔ 分块 绑定 ----------
+    @classmethod
+    async def bind_entity_chunks(cls, kb_id: int, entity_id: int, chunk_ids: list[int]) -> dict:
+        """把若干分块绑定到实体（图谱检索命中实体可回溯分块）。"""
+        imported = 0
+        async with async_db_session.begin() as db:
+            ent = await db.get(AiKnowledgeEntityModel, entity_id)
+            if not ent or ent.is_deleted or ent.knowledge_base_id != kb_id:
+                raise ValueError("实体不存在")
+            for cid in chunk_ids:
+                exists = (
+                    await db.execute(
+                        select(AiKnowledgeEntityChunkModel).where(
+                            AiKnowledgeEntityChunkModel.entity_id == entity_id,
+                            AiKnowledgeEntityChunkModel.chunk_id == cid,
+                            AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if exists:
+                    continue
+                db.add(AiKnowledgeEntityChunkModel(entity_id=entity_id, chunk_id=cid))
+                imported += 1
+        return {"entity_id": entity_id, "imported": imported}
+
+    @classmethod
+    async def unbind_entity_chunks(cls, kb_id: int, entity_id: int, chunk_ids: list[int]) -> dict:
+        """解除实体与若干分块的绑定。"""
+        removed = 0
+        async with async_db_session.begin() as db:
+            ent = await db.get(AiKnowledgeEntityModel, entity_id)
+            if not ent or ent.is_deleted or ent.knowledge_base_id != kb_id:
+                raise ValueError("实体不存在")
+            rows = (
+                await db.execute(
+                    select(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.entity_id == entity_id,
+                        AiKnowledgeEntityChunkModel.chunk_id.in_(chunk_ids),
+                        AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+            for r in rows:
+                await db.delete(r)
+                removed += 1
+        return {"entity_id": entity_id, "removed": removed}
+
+    @classmethod
+    async def get_entity_chunks(cls, kb_id: int, entity_id: int) -> list[dict]:
+        """返回实体绑定的分块。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.entity_id == entity_id,
+                        AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+            chunk_ids = [r.chunk_id for r in rows]
+            if not chunk_ids:
+                return []
+            chunks = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.id.in_(chunk_ids),
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [_chunk_to_dict(c) for c in chunks]
+
+    @classmethod
+    async def get_chunk_entities(cls, kb_id: int, chunk_id: int) -> list[dict]:
+        """返回绑定到某分块的实体。"""
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    select(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.chunk_id == chunk_id,
+                        AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+            ent_ids = [r.entity_id for r in rows]
+            if not ent_ids:
+                return []
+            ents = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeEntityModel).where(
+                            AiKnowledgeEntityModel.id.in_(ent_ids),
+                            AiKnowledgeEntityModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [{"id": e.id, "name": e.name, "etype": e.etype or "keyword"} for e in ents]
+
+    # ---------- 图谱关系编辑 ----------
+    @classmethod
+    async def update_graph_relation(cls, kb_id: int, rel_id: int, data) -> dict | None:
+        async with async_db_session.begin() as db:
+            r = await db.get(AiKnowledgeRelationModel, rel_id)
+            if not r or r.is_deleted or r.knowledge_base_id != kb_id:
+                return None
+            if data.source:
+                r.source = data.source
+            if data.target:
+                r.target = data.target
+            if data.weight:
+                r.weight = data.weight
+        await graphrag.age_sync_graph(kb_id)
+        return {"id": r.id, "source": r.source, "target": r.target, "weight": r.weight or 1}
 
     # ------------------------------------------------------------ #
     # 数据源

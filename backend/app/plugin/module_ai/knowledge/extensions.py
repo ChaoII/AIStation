@@ -40,3 +40,12 @@ async def ensure_extensions() -> None:
     await _run_sql(
         "CREATE TEXT SEARCH CONFIGURATION IF NOT EXISTS jiebacfg (COPY = simple)"
     )
+    # 知识库：确保分块标注列 + 实体-分块绑定表存在（幂等）
+    await _run_sql("ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS annotations jsonb")
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_knowledge_entity_chunks ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, entity_id INTEGER, chunk_id INTEGER, "
+        "UNIQUE (entity_id, chunk_id))"
+    )

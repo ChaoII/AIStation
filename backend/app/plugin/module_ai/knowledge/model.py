@@ -33,7 +33,7 @@ class AiKnowledgeBaseModel(ModelMixin, UserMixin):
 
 
 class AiKnowledgeChunkModel(ModelMixin):
-    """知识分块：内容 + 向量（可移植余弦，dimension 过滤）。"""
+    """知识分块：内容 + 向量（可移植余弦，dimension 过滤）+ 用户标注。"""
 
     __tablename__ = "ai_knowledge_chunks"
     __table_args__ = ({"comment": "AI 知识分块表"},)
@@ -46,14 +46,34 @@ class AiKnowledgeChunkModel(ModelMixin):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, comment="分块序号")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="分块内容")
+    annotations: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=None,
+        comment="用户标注（[{text,kind}]），参与向量+全文+grep 检索以提升召回",
+    )
     meta: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=None, comment="元数据"
     )
     vector: Mapped[list | None] = mapped_column(
-        JSONB, nullable=True, default=None, comment="向量（JSON 列表）"
+        JSONB, nullable=True, default=None, comment="向量（JSON 列表，含标注文本）"
     )
     dimension: Mapped[int | None] = mapped_column(
         Integer, nullable=True, default=None, comment="向量维度"
+    )
+
+
+class AiKnowledgeEntityChunkModel(ModelMixin):
+    """图谱实体 ↔ 知识分块 多对多绑定（用于图谱检索回溯分块）。"""
+
+    __tablename__ = "ai_knowledge_entity_chunks"
+    __table_args__ = (
+        {"comment": "图谱实体-分块绑定表"},
+    )
+
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_knowledge_entities.id"), nullable=False, comment="实体 ID"
+    )
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_knowledge_chunks.id"), nullable=False, comment="分块 ID"
     )
 
 

@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 from app.core.database import async_db_session
 from app.plugin.module_ai.knowledge.model import (
     AiKnowledgeChunkModel,
+    AiKnowledgeEntityChunkModel,
     AiKnowledgeEntityModel,
     AiKnowledgeRelationModel,
 )
@@ -296,6 +297,28 @@ async def graph_retrieve(kb_ids: list[int], query: str, top_k: int = 5, hops: in
                 seed |= new
                 expanded += list(new)
     expanded = list(dict.fromkeys(expanded))
+    # 实体 ↔ 分块绑定（图谱检索回溯到明确关联的分块，优于纯文本包含匹配）
+    async with async_db_session() as db:
+        binds = (
+            (
+                await db.execute(
+                    select(AiKnowledgeEntityChunkModel).where(
+                        AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    ent_id_to_name = {e.id: e.name for e in ents}
+    bind_chunks: dict[int, list[int]] = {}
+    for b in binds:
+        bind_chunks.setdefault(b.entity_id, []).append(b.chunk_id)
+    name_to_chunkids: dict[str, list[int]] = {}
+    for eid, cids in bind_chunks.items():
+        nm = ent_id_to_name.get(eid)
+        if nm:
+            name_to_chunkids.setdefault(nm, []).extend(cids)
     # 取匹配实体（含扩展）所在分块
     async with async_db_session() as db:
         chunks = (
@@ -310,13 +333,22 @@ async def graph_retrieve(kb_ids: list[int], query: str, top_k: int = 5, hops: in
             .scalars()
             .all()
         )
+    chunk_by_id = {ch.id: ch for ch in chunks}
     result: list[dict] = []
     for name in expanded:
-        c = [
-            {"chunk_id": ch.id, "content": ch.content, "file_name": ch.file_name}
-            for ch in chunks
-            if name in (ch.content or "")
-        ]
+        bound_ids = name_to_chunkids.get(name) or []
+        c: list[dict] = []
+        for cid in bound_ids:
+            ch = chunk_by_id.get(cid)
+            if ch and ch.knowledge_base_id in kb_ids:
+                c.append({"chunk_id": ch.id, "content": ch.content, "file_name": ch.file_name})
+        if not c:
+            # 回退：实体名出现在正文中
+            c = [
+                {"chunk_id": ch.id, "content": ch.content, "file_name": ch.file_name}
+                for ch in chunks
+                if name in (ch.content or "")
+            ]
         weight = ent_map.get(name).weight if ent_map.get(name) else 0
         result.append({"name": name, "weight": weight or 0, "chunks": c[:top_k]})
     result.sort(key=lambda x: x["weight"], reverse=True)

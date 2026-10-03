@@ -32,6 +32,24 @@ class AiKnowledgeUpdateChunkSchema(BaseModel):
     content: str = Field(..., min_length=1, description="分块内容")
 
 
+class AiKnowledgeChunkAnnotateSchema(BaseModel):
+    """分块标注：文本 + 类型（alias 别名 / anchor 锚点 / note 备注）。"""
+    text: str = Field(..., min_length=1, max_length=512)
+    kind: str = Field(default="alias", max_length=32, description="alias/anchor/note")
+
+
+class AiKnowledgeEntityBindSchema(BaseModel):
+    """实体绑定分块：给定要绑定的分块 id 列表。"""
+    chunk_ids: list[int] = Field(default_factory=list)
+
+
+class AiKnowledgeGraphRelationUpdateSchema(BaseModel):
+    """图谱关系编辑。"""
+    source: str | None = Field(default=None, max_length=256)
+    target: str | None = Field(default=None, max_length=256)
+    weight: int | None = Field(default=None, ge=1)
+
+
 class AiKnowledgeSearchSchema(BaseModel):
     query: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=20)

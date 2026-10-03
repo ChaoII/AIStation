@@ -15,8 +15,11 @@ from .schema import (
     AiDatasourceUpdateSchema,
     AiKnowledgeBaseCreateSchema,
     AiKnowledgeBaseUpdateSchema,
+    AiKnowledgeChunkAnnotateSchema,
+    AiKnowledgeEntityBindSchema,
     AiKnowledgeGraphEntitySchema,
     AiKnowledgeGraphRelationSchema,
+    AiKnowledgeGraphRelationUpdateSchema,
     AiKnowledgeIngestSchema,
     AiKnowledgeSearchSchema,
     AiKnowledgeUpdateChunkSchema,
@@ -175,6 +178,19 @@ async def delete_graph_relations(
     return SuccessResponse(data=None, msg="已删除")
 
 
+@KnowledgeRouter.put("/bases/{kb_id}/graph/relation/{rel_id}", summary="编辑图谱关系")
+async def update_graph_relation(
+    kb_id: int,
+    rel_id: int,
+    data: AiKnowledgeGraphRelationUpdateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    r = await AiKnowledgeService.update_graph_relation(kb_id, rel_id, data)
+    if not r:
+        return ErrorResponse(msg="关系不存在")
+    return SuccessResponse(data=r, msg="已更新关系")
+
+
 @KnowledgeRouter.post("/bases/{kb_id}/rebuild", summary="重建索引（重新向量化+重建图谱）")
 async def rebuild_index(
     kb_id: int,
@@ -213,6 +229,82 @@ async def update_chunk(
     return SuccessResponse(
         data=await AiKnowledgeService.update_chunk(kb_id, chunk_id, data.content),
         msg="已更新并重向量化",
+    )
+
+
+# ---------- 分块标注（提升换说法召回） ----------
+@KnowledgeRouter.post("/bases/{kb_id}/chunks/{chunk_id}/annotations", summary="添加分块标注")
+async def add_chunk_annotation(
+    kb_id: int,
+    chunk_id: int,
+    data: AiKnowledgeChunkAnnotateSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.add_chunk_annotation(kb_id, chunk_id, data.text, data.kind),
+        msg="已添加标注并更新索引",
+    )
+
+
+@KnowledgeRouter.delete("/bases/{kb_id}/chunks/{chunk_id}/annotations/{index}", summary="删除分块标注")
+async def remove_chunk_annotation(
+    kb_id: int,
+    chunk_id: int,
+    index: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.remove_chunk_annotation(kb_id, chunk_id, index),
+        msg="已删除标注并更新索引",
+    )
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/chunks/{chunk_id}/entities", summary="分块绑定的实体")
+async def get_chunk_entities(
+    kb_id: int,
+    chunk_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.get_chunk_entities(kb_id, chunk_id), msg="查询成功"
+    )
+
+
+# ---------- 实体 ↔ 分块 绑定 ----------
+@KnowledgeRouter.get("/bases/{kb_id}/entities/{entity_id}/chunks", summary="实体绑定的分块")
+async def get_entity_chunks(
+    kb_id: int,
+    entity_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.get_entity_chunks(kb_id, entity_id), msg="查询成功"
+    )
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/entities/{entity_id}/bind", summary="实体绑定分块")
+async def bind_entity_chunks(
+    kb_id: int,
+    entity_id: int,
+    data: AiKnowledgeEntityBindSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.bind_entity_chunks(kb_id, entity_id, data.chunk_ids),
+        msg="已绑定",
+    )
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/entities/{entity_id}/unbind", summary="实体解绑分块")
+async def unbind_entity_chunks(
+    kb_id: int,
+    entity_id: int,
+    data: AiKnowledgeEntityBindSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.unbind_entity_chunks(kb_id, entity_id, data.chunk_ids),
+        msg="已解绑",
     )
 
 

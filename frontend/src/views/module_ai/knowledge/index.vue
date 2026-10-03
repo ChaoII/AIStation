@@ -476,12 +476,28 @@
             <el-table-column prop="chunk_index" label="#" width="60" align="center" />
             <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
             <el-table-column label="内容" min-width="200">
-              <template #default="{ row }">{{ row.content }}</template>
+              <template #default="{ row }">
+                <div>{{ row.content }}</div>
+                <div v-if="(row.annotations || []).length" class="chunk-ann-tags">
+                  <el-tag
+                    v-for="(a, ai) in row.annotations"
+                    :key="ai"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    {{ a.text }}
+                  </el-tag>
+                </div>
+              </template>
             </el-table-column>
-            <el-table-column label="操作" width="110" align="center">
+            <el-table-column label="操作" width="150" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openChunkEdit(row)">
                   编辑
+                </el-button>
+                <el-button link type="warning" size="small" @click="openAnnotation(row)">
+                  标注
                 </el-button>
                 <el-button
                   link
@@ -552,6 +568,17 @@
               <el-tag v-if="h.graph_entity" size="small" type="warning" effect="plain">
                 图谱：{{ h.graph_entity }}
               </el-tag>
+              <el-button
+                link
+                type="warning"
+                size="small"
+                class="search-hit__annotate"
+                @click="
+                  openAnnotation({ id: h.chunk_id, content: h.content, file_name: h.file_name })
+                "
+              >
+                + 标注此分块
+              </el-button>
             </div>
             <div class="search-hit__content" v-html="highlight(h.content, detailQuery)"></div>
           </div>
@@ -619,6 +646,9 @@
                 <div v-for="e in graphEdges" :key="e.id" class="ge-item">
                   <span class="ge-item__name">{{ e.source }} → {{ e.target }}</span>
                   <span v-if="e.weight" class="ge-item__w">w={{ e.weight }}</span>
+                  <el-button link type="primary" size="small" @click="openRenameRel(e)">
+                    编辑
+                  </el-button>
                   <el-button link type="danger" size="small" @click="delGraphRelation(e)">
                     删除
                   </el-button>
@@ -659,10 +689,108 @@
         <el-form-item label="权重">
           <el-input-number v-model="renameForm.weight" :min="1" :max="9999" />
         </el-form-item>
+        <el-form-item label="关联分块">
+          <div class="bind-chunks">
+            <div v-for="c in entityBoundChunks" :key="c.id" class="bind-item">
+              <span class="bind-item__label">#{{ c.chunk_index }}</span>
+              <span class="bind-item__text">{{ c.content }}</span>
+              <el-button link type="danger" size="small" @click="unbindChunk(c)">解绑</el-button>
+            </div>
+            <el-empty
+              v-if="!entityBoundChunks.length"
+              description="尚未绑定分块"
+              :image-size="50"
+            />
+            <el-select
+              v-model="entityBindSel"
+              multiple
+              filterable
+              collapse-tags
+              placeholder="选择要绑定的分块"
+              size="small"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="c in detailChunks"
+                :key="c.id"
+                :label="`#${c.chunk_index} ${c.content.slice(0, 20)}`"
+                :value="c.id"
+              />
+            </el-select>
+            <el-button size="small" type="primary" :loading="bindingChunks" @click="bindChunks">
+              绑定
+            </el-button>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="renameEntityVisible = false">取消</el-button>
         <el-button type="primary" :loading="renamingEntity" @click="saveRenameEntity">
+          保存（同步 AGE）
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 分块标注（换说法召回命中） -->
+    <el-dialog
+      v-model="annotationVisible"
+      :title="`分块标注 · #${annotChunk?.chunk_index || ''}`"
+      width="620px"
+      append-to-body
+    >
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="给分块加额外标注（别名/锚点/备注），标注会进入向量、中文全文、子串检索索引，用户换种说法提问也能命中该分块。"
+      />
+      <div class="ann-preview">{{ annotChunk?.content }}</div>
+      <div class="ann-list">
+        <div v-for="(a, ai) in annotList" :key="ai" class="ann-item">
+          <el-tag size="small" type="warning" effect="plain">{{ a.text }}</el-tag>
+          <el-tag size="small" type="info" effect="plain">{{ annotKindLabel(a.kind) }}</el-tag>
+          <el-button link type="danger" size="small" @click="removeAnnotation(ai)">删除</el-button>
+        </div>
+        <el-empty v-if="!annotList.length" description="暂无标注" :image-size="50" />
+      </div>
+      <div class="ann-add">
+        <el-input
+          v-model="annotText"
+          placeholder="输入标注，如「XX 的别名」"
+          size="small"
+          @keyup.enter="addAnnotation"
+        />
+        <el-select v-model="annotKind" size="small" style="width: 110px">
+          <el-option label="别名" value="alias" />
+          <el-option label="锚点" value="anchor" />
+          <el-option label="备注" value="note" />
+        </el-select>
+        <el-button type="primary" size="small" :loading="annotating" @click="addAnnotation">
+          添加
+        </el-button>
+      </div>
+    </el-dialog>
+
+    <!-- 图谱关系编辑 -->
+    <el-dialog v-model="relEditVisible" title="编辑图谱关系" width="480px" append-to-body>
+      <el-form label-width="90px" size="default">
+        <el-form-item label="源实体">
+          <el-select v-model="relEditForm.source" filterable placeholder="源" style="width: 100%">
+            <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标实体">
+          <el-select v-model="relEditForm.target" filterable placeholder="目标" style="width: 100%">
+            <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="权重">
+          <el-input-number v-model="relEditForm.weight" :min="1" :max="9999" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingRel" @click="saveRelEdit">
           保存（同步 AGE）
         </el-button>
       </template>
@@ -765,6 +893,12 @@ import {
   getAiKnowledgeChunks,
   deleteAiKnowledgeChunk,
   updateAiKnowledgeChunk,
+  addAiKnowledgeChunkAnnotation,
+  removeAiKnowledgeChunkAnnotation,
+  getAiKnowledgeEntityChunks,
+  bindAiKnowledgeEntityChunks,
+  unbindAiKnowledgeEntityChunks,
+  updateAiKnowledgeGraphRelation,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
@@ -1087,12 +1221,82 @@ async function delGraphEntity(n: any) {
 const renameEntityVisible = ref(false);
 const renameForm = reactive<any>({ id: null, name: "", etype: "keyword", weight: 1 });
 const renamingEntity = ref(false);
+// 实体绑定分块
+const entityBoundChunks = ref<any[]>([]);
+const entityBindSel = ref<number[]>([]);
+const bindingChunks = ref(false);
+async function loadEntityChunks() {
+  if (!graphKbId.value || !renameForm.id) return;
+  try {
+    const r = await getAiKnowledgeEntityChunks(graphKbId.value, renameForm.id);
+    entityBoundChunks.value = r.data?.data || [];
+  } catch {
+    entityBoundChunks.value = [];
+  }
+}
+async function bindChunks() {
+  if (!graphKbId.value || !renameForm.id || !entityBindSel.value.length) return;
+  bindingChunks.value = true;
+  try {
+    await bindAiKnowledgeEntityChunks(graphKbId.value, renameForm.id, entityBindSel.value);
+    entityBindSel.value = [];
+    ElMessage.success("已绑定分块");
+    await loadEntityChunks();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "绑定失败");
+  } finally {
+    bindingChunks.value = false;
+  }
+}
+async function unbindChunk(c: any) {
+  if (!graphKbId.value || !renameForm.id) return;
+  try {
+    await unbindAiKnowledgeEntityChunks(graphKbId.value, renameForm.id, [c.id]);
+    ElMessage.success("已解绑");
+    await loadEntityChunks();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "解绑失败");
+  }
+}
 function openRenameEntity(n: any) {
   renameForm.id = n.id;
   renameForm.name = n.name;
   renameForm.etype = n.etype || "keyword";
   renameForm.weight = n.weight || 1;
   renameEntityVisible.value = true;
+  loadEntityChunks();
+}
+// 图谱关系编辑
+const relEditVisible = ref(false);
+const relEditForm = reactive<any>({ id: null, source: "", target: "", weight: 1 });
+const savingRel = ref(false);
+function openRenameRel(e: any) {
+  relEditForm.id = e.id;
+  relEditForm.source = e.source;
+  relEditForm.target = e.target;
+  relEditForm.weight = e.weight || 1;
+  relEditVisible.value = true;
+}
+async function saveRelEdit() {
+  if (!graphKbId.value || !relEditForm.id) return;
+  if (!relEditForm.source || !relEditForm.target) {
+    ElMessage.warning("源/目标不能为空");
+    return;
+  }
+  savingRel.value = true;
+  try {
+    await updateAiKnowledgeGraphRelation(graphKbId.value, relEditForm.id, {
+      source: relEditForm.source,
+      target: relEditForm.target,
+      weight: relEditForm.weight,
+    });
+    relEditVisible.value = false;
+    await reloadGraph("已更新关系");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "更新失败");
+  } finally {
+    savingRel.value = false;
+  }
 }
 async function saveRenameEntity() {
   if (!graphKbId.value || !renameForm.id) return;
@@ -1279,6 +1483,61 @@ async function saveChunkEdit() {
     ElMessage.error(e?.message || "保存失败");
   } finally {
     chunkEditing.value = false;
+  }
+}
+
+// ---------- 分块标注 ----------
+const annotationVisible = ref(false);
+const annotChunk = ref<any>();
+const annotList = ref<any[]>([]);
+const annotText = ref("");
+const annotKind = ref("alias");
+const annotating = ref(false);
+function annotKindLabel(k: string) {
+  if (k === "alias") return "别名";
+  if (k === "anchor") return "锚点";
+  if (k === "note") return "备注";
+  return k;
+}
+function openAnnotation(row: any) {
+  annotChunk.value = row;
+  annotList.value = (row.annotations || []).map((a: any) => ({ ...a }));
+  annotText.value = "";
+  annotKind.value = "alias";
+  annotationVisible.value = true;
+}
+async function addAnnotation() {
+  if (!detailKb.value || !annotChunk.value || !annotText.value.trim()) {
+    ElMessage.warning("请输入标注文本");
+    return;
+  }
+  annotating.value = true;
+  try {
+    const r = await addAiKnowledgeChunkAnnotation(
+      detailKb.value.id,
+      annotChunk.value.id,
+      annotText.value.trim(),
+      annotKind.value
+    );
+    annotList.value = r.data?.data?.annotations || annotList.value;
+    annotText.value = "";
+    ElMessage.success("已添加标注并更新索引");
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "添加失败");
+  } finally {
+    annotating.value = false;
+  }
+}
+async function removeAnnotation(index: number) {
+  if (!detailKb.value || !annotChunk.value) return;
+  try {
+    const r = await removeAiKnowledgeChunkAnnotation(detailKb.value.id, annotChunk.value.id, index);
+    annotList.value = r.data?.data?.annotations || annotList.value;
+    ElMessage.success("已删除标注并更新索引");
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "删除失败");
   }
 }
 
@@ -1625,6 +1884,79 @@ onMounted(loadData);
 .graph-view {
   .graph-chart {
     height: 360px;
+  }
+}
+
+.chunk-ann-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.search-hit__annotate {
+  margin-left: 8px;
+}
+
+.ann-preview {
+  max-height: 120px;
+  overflow: auto;
+  padding: 8px 10px;
+  margin: 12px 0;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+}
+.ann-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+
+  .ann-item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+
+    .el-tag {
+      max-width: 60%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+.ann-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.bind-chunks {
+  width: 100%;
+
+  .bind-item {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 2px 0;
+
+    .bind-item__label {
+      color: var(--el-text-color-secondary);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .bind-item__text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: var(--el-font-size-base);
+    }
+  }
+  .el-select {
+    margin-bottom: 8px;
   }
 }
 </style>

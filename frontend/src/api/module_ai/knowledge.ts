@@ -99,6 +99,57 @@ export function updateAiKnowledgeChunk(id: number, chunkId: number, content: str
   });
 }
 
+// ---------- 分块标注 ----------
+export function addAiKnowledgeChunkAnnotation(
+  id: number,
+  chunkId: number,
+  text: string,
+  kind = "alias"
+) {
+  return request({
+    url: `${BASE}/${id}/chunks/${chunkId}/annotations`,
+    method: "post",
+    data: { text, kind },
+  });
+}
+export function removeAiKnowledgeChunkAnnotation(id: number, chunkId: number, index: number) {
+  return request({
+    url: `${BASE}/${id}/chunks/${chunkId}/annotations/${index}`,
+    method: "delete",
+  });
+}
+export function getAiKnowledgeChunkEntities(id: number, chunkId: number) {
+  return request({ url: `${BASE}/${id}/chunks/${chunkId}/entities`, method: "get" });
+}
+
+// ---------- 实体 ↔ 分块 绑定 ----------
+export function getAiKnowledgeEntityChunks(id: number, entityId: number) {
+  return request({ url: `${BASE}/${id}/entities/${entityId}/chunks`, method: "get" });
+}
+export function bindAiKnowledgeEntityChunks(id: number, entityId: number, chunkIds: number[]) {
+  return request({
+    url: `${BASE}/${id}/entities/${entityId}/bind`,
+    method: "post",
+    data: { chunk_ids: chunkIds },
+  });
+}
+export function unbindAiKnowledgeEntityChunks(id: number, entityId: number, chunkIds: number[]) {
+  return request({
+    url: `${BASE}/${id}/entities/${entityId}/unbind`,
+    method: "post",
+    data: { chunk_ids: chunkIds },
+  });
+}
+
+// ---------- 图谱关系编辑 ----------
+export function updateAiKnowledgeGraphRelation(
+  id: number,
+  relId: number,
+  data: { source?: string; target?: string; weight?: number }
+) {
+  return request({ url: `${BASE}/${id}/graph/relation/${relId}`, method: "put", data });
+}
+
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {
   return request({ url: `${DS}/list`, method: "get" });
