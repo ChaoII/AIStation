@@ -241,6 +241,9 @@ async def sync_annotation_entities(kb_id: int, chunk_id: int, texts: list[str]) 
     """把分块标注文本的关键词作为图谱实体，并绑定到该分块（标注自动纳入图谱）。"""
     names: list[str] = []
     for t in texts or []:
+        t = (t or "").strip()
+        if len(t) >= 2:
+            names.append(t)
         for kw in extract_keywords(t, topk=10):
             if len(kw) >= 2:
                 names.append(kw)

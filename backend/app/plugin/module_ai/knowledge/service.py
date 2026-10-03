@@ -1035,6 +1035,7 @@ class AiKnowledgeService:
                         user_id=user_id,
                     )
                 )
+                await db.commit()
         except Exception:  # noqa: BLE001  检索日志失败不影响主流程
             pass
 
