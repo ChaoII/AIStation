@@ -1103,6 +1103,32 @@ class AiKnowledgeService:
                 await db.delete(d)
 
     @classmethod
+    async def get_document_content(cls, kb_id: int, doc_id: int) -> dict:
+        async with async_db_session() as db:
+            d = await db.get(AiKnowledgeDocumentModel, doc_id)
+            if not d or d.knowledge_base_id != kb_id or d.is_deleted:
+                raise ValueError("文档不存在")
+            return {"id": d.id, "name": d.name, "content": d.content or ""}
+
+    @classmethod
+    async def reparse_document(cls, kb_id: int, doc_id: int, auth) -> dict:
+        """重新解析文档：基于全文重建分块向量化与图谱。"""
+        async with async_db_session() as db:
+            d = await db.get(AiKnowledgeDocumentModel, doc_id)
+            if not d or d.knowledge_base_id != kb_id or d.is_deleted:
+                raise ValueError("文档不存在")
+            text = d.content or ""
+        if not text.strip():
+            raise ValueError("文档无有效文本")
+        result = await cls.ingest_text(
+            kb_id, text, file_name=d.name or "文档", auth=auth,
+        )
+        async with async_db_session.begin() as db:
+            dd = await db.get(AiKnowledgeDocumentModel, doc_id)
+            dd.chunk_count = result.get("chunks", 0)
+        return {"id": doc_id, "chunks": result.get("chunks", 0)}
+
+    @classmethod
     async def ingest_text(
         cls, kb_id: int, text: str, file_name: str, auth,
         chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",

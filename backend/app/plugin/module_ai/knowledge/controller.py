@@ -298,6 +298,35 @@ async def delete_document(
     return SuccessResponse(msg="已删除")
 
 
+@KnowledgeRouter.get("/bases/{kb_id}/documents/{doc_id}/content", summary="文档内容(在线预览)")
+async def get_document_content(
+    kb_id: int,
+    doc_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    try:
+        return SuccessResponse(
+            data=await AiKnowledgeService.get_document_content(kb_id, doc_id), msg="查询成功"
+        )
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/documents/{doc_id}/reparse", summary="重新解析文档")
+async def reparse_document(
+    kb_id: int,
+    doc_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    try:
+        return SuccessResponse(
+            data=await AiKnowledgeService.reparse_document(kb_id, doc_id, auth),
+            msg="已重新解析并索引",
+        )
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+
+
 @KnowledgeRouter.post("/bases/{kb_id}/rebuild", summary="重建索引（重新向量化+重建图谱）")
 async def rebuild_index(
     kb_id: int,
