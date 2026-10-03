@@ -3,10 +3,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_jieba;
 CREATE EXTENSION IF NOT EXISTS age;
 
--- AGE 需要在会话中先 LOAD（且容器以 -c shared_preload_libraries=age 启动）
+-- AGE 需要在会话中先 LOAD（且容器以 -c shared_preload_libraries=age,pg_jieba 启动）
 LOAD 'age';
 
--- 设置搜索路径，便于使用 age 的 agtype
+-- 设置搜索路径，便于使用 age 的 agtype 与中文全文配置（pg_jieba 提供 jiebacfg/jiebaqry）
 SET search_path = public, ag_catalog;
 
 -- 示例：创建图

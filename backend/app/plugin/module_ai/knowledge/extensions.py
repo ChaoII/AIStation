@@ -34,11 +34,11 @@ async def ensure_extensions() -> None:
                 await db.execute(text("LOAD 'age'"))
             except Exception:  # noqa: BLE001
                 pass
-            # 确保中文全文检索配置存在（pg_jieba 提供 jieba 字典）
+            # 确保中文全文检索配置存在（pg_jieba 提供 jiebacfg 字典，缺则按 simple 补建）
             try:
                 await db.execute(
                     text(
-                        "CREATE TEXT SEARCH CONFIGURATION IF NOT EXISTS jieba (COPY = simple)"
+                        "CREATE TEXT SEARCH CONFIGURATION IF NOT EXISTS jiebacfg (COPY = simple)"
                     )
                 )
             except Exception:  # noqa: BLE001

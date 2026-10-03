@@ -43,12 +43,12 @@ SET search_path = public, ag_catalog;
 ```sql
 -- 建 jieba 全文索引
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_chunk_fts
-  ON ai_knowledge_chunks USING gin (to_tsvector('jieba', content));
+  ON ai_knowledge_chunks USING gin (to_tsvector('jiebacfg', content));
 
 -- 关键词检索
 SELECT chunk_id, content
 FROM ai_knowledge_chunks
-WHERE to_tsvector('jieba', content) @@ plainto_tsquery('jieba', '智能体编排')
+WHERE to_tsvector('jiebacfg', content) @@ plainto_tsquery('jiebacfg', '智能体编排')
 LIMIT 5;
 ```
 
@@ -87,3 +87,4 @@ $$) AS (name agtype);
 ```bash
 docker run --rm -it aistation-pg-rag:18 psql -U root -d aistation -c "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector','age','pg_jieba');"
 ```
+

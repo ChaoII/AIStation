@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.core.database import async_db_session
 
@@ -221,9 +221,173 @@ class AiKnowledgeService:
 
     @classmethod
     async def search(cls, kb_ids: list[int], query: str, top_k: int = 5, use_graph: bool = True) -> list[dict]:
-        """在指定知识库内做余弦检索，返回 top_k 分块；可选并入 GraphRAG 实体扩展。"""
+        """知识检索（全链路，自动选路）。"""
         if not kb_ids or not query:
             return []
+        if cls._is_postgres() and await cls._pg_ext("vector"):
+            return await cls._pg_search(kb_ids, query, top_k, use_graph)
+        return await cls._py_search(kb_ids, query, top_k, use_graph)
+
+    @staticmethod
+    def _is_postgres() -> bool:
+        import os
+
+        return (os.getenv("DATABASE_TYPE") or "postgresql").lower() == "postgresql"
+
+    @classmethod
+    async def _pg_ext(cls, name: str) -> bool:
+        """检测 PostgreSQL 扩展是否存在。"""
+        try:
+            async with async_db_session() as db:
+                return bool(
+                    (
+                        await db.execute(
+                            text("SELECT count(*) FROM pg_extension WHERE extname = :n"),
+                            {"n": name},
+                        )
+                    ).scalar()
+                )
+        except Exception:  # noqa: BLE001
+            return False
+
+    @classmethod
+    async def _pg_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool) -> list[dict]:
+        """PostgreSQL 全链路：jieba 全文 + pgvector 向量 + AGE/自有图多跳。"""
+        results: list[dict] = []
+        seen: set[int] = set()
+
+        # 1) jieba 中文全文检索
+        try:
+            if await cls._pg_ext("pg_jieba"):
+                async with async_db_session() as db:
+                    rows = (
+                        await db.execute(
+                            text(
+                                "SELECT id, knowledge_base_id, file_name, content, "
+                                "ts_rank(to_tsvector('jiebacfg', content), plainto_tsquery('jiebacfg', :q)) AS score "
+                                "FROM ai_knowledge_chunks "
+                                "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
+                                "AND to_tsvector('jiebacfg', content) @@ plainto_tsquery('jiebacfg', :q) "
+                                "ORDER BY score DESC LIMIT :k"
+                            ),
+                            {"ids": kb_ids, "q": query, "k": top_k},
+                        )
+                    ).mappings().all()
+                    for r in rows:
+                        rid = int(r["id"])
+                        seen.add(rid)
+                        results.append(
+                            {
+                                "chunk_id": rid,
+                                "knowledge_base_id": int(r["knowledge_base_id"]),
+                                "file_name": r["file_name"] or "",
+                                "content": r["content"],
+                                "score": round(float(r["score"] or 0), 4),
+                                "engine": "jieba_fulltext",
+                            }
+                        )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 2) pgvector 向量检索（惰性建 embedding 列，失败则回退 Python 余弦）
+        try:
+            qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
+            async with async_db_session() as db:
+                await cls._ensure_vector_col(db)
+                rows = (
+                    await db.execute(
+                        text(
+                            "SELECT id, knowledge_base_id, file_name, content, "
+                            "(1 - (embedding <=> :qv)) AS score "
+                            "FROM ai_knowledge_chunks "
+                            "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false AND embedding IS NOT NULL "
+                            "ORDER BY embedding <=> :qv LIMIT :k"
+                        ),
+                        {"ids": kb_ids, "qv": str(qvec), "k": top_k},
+                    )
+                ).mappings().all()
+                for r in rows:
+                    rid = int(r["id"])
+                    if rid in seen:
+                        continue
+                    seen.add(rid)
+                    results.append(
+                        {
+                            "chunk_id": rid,
+                            "knowledge_base_id": int(r["knowledge_base_id"]),
+                            "file_name": r["file_name"] or "",
+                            "content": r["content"],
+                            "score": round(float(r["score"] or 0), 4),
+                            "engine": "pgvector",
+                        }
+                    )
+        except Exception:  # noqa: BLE001
+            # 无 vector 列/冲突 → 回退 Python 余弦
+            py = await cls._py_search_vector(kb_ids, query, top_k)
+            for r in py:
+                rid = r["chunk_id"]
+                if rid not in seen:
+                    seen.add(rid)
+                    results.append(r)
+
+        # 3) GraphRAG 多跳（AGE 优先）
+        if use_graph:
+            try:
+                gh = await graphrag.graph_retrieve(kb_ids, query, top_k)
+                for hit in gh:
+                    for c in hit.get("chunks") or []:
+                        rid = c.get("chunk_id")
+                        if rid in seen:
+                            continue
+                        seen.add(rid)
+                        results.append(
+                            {
+                                "chunk_id": rid,
+                                "knowledge_base_id": kb_ids[0],
+                                "file_name": c.get("file_name") or "",
+                                "content": c["content"],
+                                "score": 0,
+                                "graph_entity": hit.get("name"),
+                                "engine": "graphrag",
+                            }
+                        )
+            except Exception:  # noqa: BLE001
+                pass
+        return results[: top_k * 3]
+
+    @classmethod
+    async def _ensure_vector_col(cls, db) -> None:
+        """惰性：为 chunk 表加 pgvector embedding 列 + HNSW 索引（幂等，异常忽略）。"""
+        try:
+            await db.execute(
+                text(
+                    "ALTER TABLE ai_knowledge_chunks "
+                    "ADD COLUMN IF NOT EXISTS embedding vector(256)"
+                )
+            )
+            await db.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_chunk_embedding "
+                    "ON ai_knowledge_chunks USING hnsw (embedding vector_cosine_ops)"
+                )
+            )
+            # 从现有 JSONB vector 迁移一次（254+ 维才填，避免缩小）
+            await db.execute(
+                text(
+                    "UPDATE ai_knowledge_chunks SET embedding = vector(v.vec::text) "
+                    "FROM (SELECT id, vector AS vec FROM ai_knowledge_chunks "
+                    "      WHERE vector IS NOT NULL AND embedding IS NULL) v "
+                    "WHERE ai_knowledge_chunks.id = v.id AND "
+                    "      jsonb_array_length(v.vec::jsonb) BETWEEN 1 AND 256"
+                )
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            await db.rollback()
+
+    @classmethod
+    async def _py_search_vector(cls, kb_ids: list[int], query: str, top_k: int) -> list[dict]:
+        """Python 余弦向量检索回退。"""
         qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
         async with async_db_session() as db:
             rows = (
@@ -250,7 +414,12 @@ class AiKnowledgeService:
                 }
             )
         scored.sort(key=lambda x: x["score"], reverse=True)
-        results = scored[:top_k]
+        return scored[:top_k]
+
+    @classmethod
+    async def _py_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool) -> list[dict]:
+        """全可移植回退（SQLite / 无扩展）：Python 余弦 + 自有表共现图。"""
+        results = await cls._py_search_vector(kb_ids, query, top_k)
         if use_graph:
             try:
                 gh = await graphrag.graph_retrieve(kb_ids, query, top_k)
