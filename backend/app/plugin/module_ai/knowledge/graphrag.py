@@ -1,12 +1,14 @@
 """GraphRAG：基于 jieba 关键词建立轻量实体-关系图谱，检索时扩展邻居注入上下文。
 
 可移植（不依赖 AGE/Neo4j），SQLite 亦可运行；实体/关系存自有表。
+若 PostgreSQL 已启用 Apache AGE 扩展（aistation-pg-rag 镜像自带），
+实体/关系会**同步写入 AGE 图库**，检索优先用 Cypher 做多跳邻居扩展。
 """
 from __future__ import annotations
 
 import re
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.database import async_db_session
 from app.plugin.module_ai.knowledge.model import (
@@ -19,6 +21,26 @@ _STOPWORDS = {
     "的", "了", "和", "是", "在", "与", "或", "及", "对", "为", "而", "等",
     "a", "an", "the", "of", "to", "and", "or", "in", "on", "for",
 }
+
+
+def _graph_name(kb_id: int) -> str:
+    return f"kb_graph_{kb_id}"
+
+
+async def _age_available() -> bool:
+    """检测当前 DB 是否为 PostgreSQL 且已启用 age 扩展。"""
+    try:
+        async with async_db_session() as db:
+            row = (
+                await db.execute(
+                    text(
+                        "SELECT count(*) FROM pg_extension WHERE extname = 'age'"
+                    )
+                )
+            ).scalar()
+        return bool(row)
+    except Exception:  # noqa: BLE001  非 PostgreSQL / 无扩展则回退
+        return False
 
 
 def _cut(text: str) -> list[str]:
@@ -48,6 +70,7 @@ def extract_keywords(text: str, topk: int = 20) -> list[str]:
 
 async def build_graph(kb_id: int) -> int:
     """从某知识库全部 chunk 抽取实体与共现关系。返回关系数。"""
+
     async with async_db_session() as db:
         chunks = (
             (
@@ -121,6 +144,98 @@ async def build_graph(kb_id: int) -> int:
     return rel_count
 
 
+async def age_sync_graph(kb_id: int) -> bool:
+    """若 AGE 可用，把自有实体/关系表镜像写入 AGE 图库。"""
+    if not await _age_available():
+        return False
+    async with async_db_session() as db:
+        ents = (
+            (
+                await db.execute(
+                    select(AiKnowledgeEntityModel).where(
+                        AiKnowledgeEntityModel.knowledge_base_id == kb_id,
+                        AiKnowledgeEntityModel.is_deleted.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        rels = (
+            (
+                await db.execute(
+                    select(AiKnowledgeRelationModel).where(
+                        AiKnowledgeRelationModel.knowledge_base_id == kb_id,
+                        AiKnowledgeRelationModel.is_deleted.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    g = _graph_name(kb_id)
+    try:
+        async with async_db_session.begin() as db:
+            await db.execute(text("LOAD 'age'"))
+            await db.execute(text("SET search_path = public, ag_catalog"))
+            # 建/清空图
+            await db.execute(text(f"SELECT create_graph('{g}')"))
+        async with async_db_session.begin() as db:
+            await db.execute(text("LOAD 'age'"))
+            await db.execute(text("SET search_path = public, ag_catalog"))
+            await db.execute(
+                text(f"SELECT * FROM cypher('{g}', $$ MATCH (n) DETACH DELETE n RETURN 1 $$) AS (x agtype)")
+            )
+            for e in ents:
+                name = e.name.replace("'", "''")
+                w = e.weight or 1
+                await db.execute(
+                    text(
+                        f"SELECT * FROM cypher('{g}', $$ MERGE (n:Entity {{name:'{name}'}}) SET n.weight={w} RETURN n.name $$) AS (x agtype)"
+                    )
+                )
+            for r in rels:
+                s = r.source.replace("'", "''")
+                t = r.target.replace("'", "''")
+                w = r.weight or 1
+                await db.execute(
+                    text(
+                        f"SELECT * FROM cypher('{g}', $$ MATCH (a:Entity {{name:'{s}'}}), (b:Entity {{name:'{t}'}}) MERGE (a)-[:REL {{weight:{w}}}]->(b) RETURN 1 $$) AS (x agtype)"
+                    )
+                )
+        return True
+    except Exception:  # noqa: BLE001  AGE 写失败回退自有表
+        return False
+
+
+async def _age_neighbors(kb_id: int, qwords: list[str], hops: int = 1) -> list[str]:
+    """用 AGE Cypher 查询给定词实体的多跳邻居。"""
+    if not await _age_available() or not qwords:
+        return []
+    g = _graph_name(kb_id)
+    seed = "', '".join(w.replace("'", "''") for w in qwords)
+    cypher = f"""
+        MATCH (a:Entity) WHERE a.name IN ['{seed}']
+        MATCH path = (a)-[:REL*1..{max(1, hops)}]-(b:Entity)
+        RETURN b.name
+    """
+    try:
+        async with async_db_session() as db:
+            await db.execute(text("LOAD 'age'"))
+            res = await db.execute(
+                text(f"SELECT * FROM cypher('{g}', $${cypher}$$) AS (name agtype)")
+            )
+            rows = res.fetchall()
+        out: list[str] = []
+        for row in rows:
+            val = row[0]
+            # agtype 值是字符串（可能带双引号）
+            out.append(str(val).strip('"'))
+        return list(dict.fromkeys(out))
+    except Exception:  # noqa: BLE001
+        return []
+
+
 async def graph_retrieve(kb_ids: list[int], query: str, top_k: int = 5, hops: int = 1) -> list[dict]:
     """图谱检索：查询词匹配实体 → 扩展邻居 → 收集相关实体及其所在分块。
 
@@ -160,22 +275,26 @@ async def graph_retrieve(kb_ids: list[int], query: str, top_k: int = 5, hops: in
         for e in ent_map.values():
             if any(q in e.name or e.name in q for q in qkws):
                 hits.append(e.name)
-    # 扩展邻居
+    # 扩展邻居：优先用 AGE Cypher 多跳；不可用则自有表共现扩展
     expanded: list[str] = list(hits)
     if hops >= 1:
-        seed = set(hits)
-        for _ in range(hops):
-            nbrs: set[str] = set()
-            for r in rels:
-                if r.source in seed:
-                    nbrs.add(r.target)
-                if r.target in seed:
-                    nbrs.add(r.source)
-            new = nbrs - seed
-            if not new:
-                break
-            seed |= new
-            expanded += list(new)
+        age_nbrs = await _age_neighbors(kb_ids[0], hits, hops)
+        if age_nbrs:
+            expanded += [n for n in age_nbrs if n not in expanded]
+        else:
+            seed = set(hits)
+            for _ in range(hops):
+                nbrs: set[str] = set()
+                for r in rels:
+                    if r.source in seed:
+                        nbrs.add(r.target)
+                    if r.target in seed:
+                        nbrs.add(r.source)
+                new = nbrs - seed
+                if not new:
+                    break
+                seed |= new
+                expanded += list(new)
     expanded = list(dict.fromkeys(expanded))
     # 取匹配实体（含扩展）所在分块
     async with async_db_session() as db:

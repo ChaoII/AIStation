@@ -529,6 +529,7 @@ class AiKnowledgeService:
             )
         try:
             await graphrag.build_graph(kb_id)
+            await graphrag.age_sync_graph(kb_id)  # AGE 可用则同步图库
         except Exception:  # noqa: BLE001  图谱构建失败不影响主入库
             pass
 
