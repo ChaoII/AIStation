@@ -35,6 +35,7 @@
       <span v-if="def.type === 'condition'" class="wf-node__branch-tag">分支</span>
       <span v-if="data.enabled === false" class="wf-node__disable-tag">禁用</span>
       <span v-if="data.__runError" class="wf-node__err-badge" :title="data.__runError">!</span>
+      <span v-if="data.__runOrder != null" class="wf-node__order">{{ data.__runOrder }}</span>
     </div>
     <div class="wf-node__body">
       <template v-if="def.type === 'group'">
@@ -365,6 +366,20 @@ function shortText(v: any, limit = 160): string {
     color: var(--el-text-color-secondary);
     background: var(--el-fill-color-light);
     border-radius: 4px;
+  }
+
+  .wf-node__order {
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    width: 18px;
+    height: 18px;
+    line-height: 18px;
+    text-align: center;
+    font-size: 11px;
+    color: #fff;
+    background: var(--el-color-primary);
+    border-radius: 50%;
   }
 
   .wf-node__err-badge {

@@ -59,6 +59,8 @@
             v-model="inputText"
             type="textarea"
             :rows="2"
+            maxlength="500"
+            show-word-limit
             placeholder="输入消息，回车或点发送……"
             @keydown.enter.exact.prevent="send"
           />

@@ -540,6 +540,7 @@
         <div class="ctx-menu" :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }">
           <div class="ctx-title">节点操作</div>
           <div class="ctx-item" @click.stop="ctxDebug">调试此节点</div>
+          <div class="ctx-item" @click.stop="ctxRetry">重试此节点</div>
           <div class="ctx-item" @click.stop="ctxCopy">复制节点</div>
           <div class="ctx-item" @click.stop="ctxAddToGroup">加入分组</div>
           <div class="ctx-item" @click.stop="ctxRemoveGroup">移出分组</div>
@@ -1002,8 +1003,10 @@ function scrollRunBottom() {
 
 // 调试执行追踪：高亮画布节点
 const nodeRunStates = ref<Record<string, string>>({});
+let runOrderSeq = 0;
 function resetRunTrace() {
   nodeRunStates.value = {};
+  runOrderSeq = 0;
   nodes.value.forEach((n) => {
     n.data = {
       ...(n.data || {}),
@@ -1011,6 +1014,7 @@ function resetRunTrace() {
       __runInput: undefined,
       __runOutput: undefined,
       __runError: undefined,
+      __runOrder: undefined,
     };
   });
 }
@@ -1020,6 +1024,10 @@ function onNodeStatus(ns: any) {
   nodeRunStates.value[ns.nodeId] = status;
   const n = nodes.value.find((x) => x.id === ns.nodeId);
   if (n) {
+    if (status !== "skipped") {
+      runOrderSeq += 1;
+      n.data.__runOrder = runOrderSeq;
+    }
     n.data = {
       ...(n.data || {}),
       __runStatus: status,
@@ -2391,6 +2399,16 @@ function ctxDebug() {
   if (n) {
     selectedNode.value = n;
     openNodeDebug();
+  }
+}
+function ctxRetry() {
+  const id = contextMenu.value?.nodeId;
+  const n = id ? nodes.value.find((x) => x.id === id) : undefined;
+  contextMenu.value = null;
+  if (n) {
+    selectedNode.value = n;
+    openNodeDebug();
+    ElMessage.info("已打开单节点调试，可重跑该节点查看结果");
   }
 }
 function ctxCopy() {

@@ -94,9 +94,10 @@ async def share_run(
     data: AiWorkflowShareRunSchema,
     request: Request,
 ) -> StreamingResponse:
+    ip = request.client.host if request.client else ""
     return ui_stream_response(
         AiWorkflowService.share_ui_stream(
-            data.token, data.message, redis=request.app.state.redis
+            data.token, data.message, redis=request.app.state.redis, ip=ip
         )
     )
 

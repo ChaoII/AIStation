@@ -637,9 +637,9 @@ class AiWorkflowService:
 
     @classmethod
     async def share_ui_stream(
-        cls, token: str, message: str, redis=None
+        cls, token: str, message: str, redis=None, ip: str = ""
     ) -> AsyncIterator[str]:
-        """公开分享受限运行：匿名、仅白名单节点、令牌校验 + 限流。"""
+        """公开分享受限运行：匿名、仅白名单节点、令牌 + IP 双重限流。"""
         from app.plugin.module_ai.assistant.service import extract_openai_messages
         from app.plugin.module_ai.streaming import UiMessageStream
 
@@ -651,13 +651,17 @@ class AiWorkflowService:
                 yield ms.finish()
                 yield ms.done()
                 return
-            # 限流：按令牌每分钟最多 20 次
+            # 限流：令牌维度（每分钟 20 次）+ IP 维度（每分钟 30 次）
             if redis:
-                key = f"ai:workflow:share:rl:{token}"
-                cnt = int(await redis.incr(key))
-                if cnt == 1:
-                    await redis.expire(key, 60)
-                if cnt > 20:
+                async def _limit(key: str, cap: int):
+                    cnt = int(await redis.incr(key))
+                    if cnt == 1:
+                        await redis.expire(key, 60)
+                    return cnt > cap
+
+                if await _limit(f"ai:workflow:share:rl:{token}", 20) or await _limit(
+                    f"ai:workflow:share:rl:ip:{ip or 'na'}", 30
+                ):
                     yield ms.error("访问过于频繁，请稍后再试")
                     yield ms.finish()
                     yield ms.done()
