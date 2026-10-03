@@ -518,6 +518,10 @@
         <el-button type="primary" :loading="shareRunning" style="width: 100%" @click="runShare">
           运行
         </el-button>
+        <div class="share-drawer-actions">
+          <el-button size="small" @click="copyShareEmbed">复制嵌入代码</el-button>
+          <el-button size="small" @click="copyShareLink">复制链接</el-button>
+        </div>
       </el-form>
       <div v-if="shareError" class="debug-result">
         <div class="debug-result__title is-err">错误</div>
@@ -815,7 +819,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, markRaw, onMounted, onUnmounted, type Component } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, ElNotification } from "element-plus";
 import { Panel, VueFlow, useVueFlow } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
 import { MiniMap } from "@vue-flow/minimap";
@@ -1392,6 +1396,20 @@ async function openShare() {
 // ---------- 分享预览（受限匿名运行） ----------
 const shareRunVisible = ref(false);
 const shareToken = ref("");
+const shareLink = computed(() => `${location.origin}/#/share?token=${shareToken.value}`);
+function copyShareLink() {
+  navigator.clipboard.writeText(shareLink.value).then(
+    () => ElMessage.success("已复制分享链接"),
+    () => ElMessage.error("复制失败")
+  );
+}
+function copyShareEmbed() {
+  const html = `<iframe src="${shareLink.value}" width="560" height="560" style="border:0;border-radius:12px" allow="fullscreen"></iframe>`;
+  navigator.clipboard.writeText(html).then(
+    () => ElMessage.success("已复制嵌入代码"),
+    () => ElMessage.error("复制失败")
+  );
+}
 const shareMessage = ref("");
 const shareOutput = ref("");
 const shareRunning = ref(false);
@@ -3088,6 +3106,9 @@ async function sendChat() {
     msg.running = false;
     running.value = false;
     scrollRunBottom();
+    if (msg.error) {
+      ElNotification({ title: "运行失败", message: msg.error, type: "warning", duration: 4500 });
+    }
   }
 }
 
@@ -3672,6 +3693,12 @@ async function handleApprove(decision: "approve" | "reject") {
     font-size: 12px;
     color: var(--el-text-color-secondary);
   }
+}
+
+.share-drawer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .compare-item {
