@@ -34,12 +34,21 @@ export function searchAiKnowledge(
   query: string,
   topK = 5,
   useGraph = true,
-  mode = "hybrid"
+  mode = "hybrid",
+  vectorWeight = 0.5,
+  fulltextWeight = 0.5
 ) {
   return request({
     url: `${BASE}/${id}/search`,
     method: "post",
-    data: { query, top_k: topK, use_graph: useGraph, mode },
+    data: {
+      query,
+      top_k: topK,
+      use_graph: useGraph,
+      mode,
+      vector_weight: vectorWeight,
+      fulltext_weight: fulltextWeight,
+    },
   });
 }
 

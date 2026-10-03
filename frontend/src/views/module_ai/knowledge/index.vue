@@ -58,6 +58,14 @@
               <template #default="{ row }">{{ row.description || "—" }}</template>
             </el-table-column>
             <el-table-column prop="chunk_count" label="分块数" width="90" align="center" />
+            <el-table-column label="嵌入模型" width="150" show-overflow-tooltip>
+              <template #default="{ row }">
+                <el-tag v-if="row.model_id" size="small" type="info" effect="plain">
+                  {{ modelNameMap[row.model_id] || `#${row.model_id}` }}
+                </el-tag>
+                <span v-else class="kb-opt-hint">确定性向量</span>
+              </template>
+            </el-table-column>
             <el-table-column label="图谱" width="150" align="center">
               <template #default="{ row }">
                 <el-tag
@@ -508,6 +516,27 @@
             </el-button>
             <el-button @click="openGraph(detailKb)">图谱</el-button>
           </div>
+          <div v-if="detailSearchMode === 'hybrid'" class="dt-weights">
+            <span class="dt-weight-label">混合权重</span>
+            <el-input-number
+              v-model="detailVectorWeight"
+              :min="0"
+              :max="1"
+              :step="0.1"
+              size="small"
+              controls-position="right"
+            />
+            <span class="dt-weight-label">向量</span>
+            <el-input-number
+              v-model="detailFulltextWeight"
+              :min="0"
+              :max="1"
+              :step="0.1"
+              size="small"
+              controls-position="right"
+            />
+            <span class="dt-weight-label">全文</span>
+          </div>
           <el-empty
             v-if="!detailSearchResults.length"
             description="输入查询后检索"
@@ -558,6 +587,9 @@
                 <div v-for="n in graphNodes" :key="n.id" class="ge-item">
                   <span class="ge-item__name">{{ n.name }}</span>
                   <span v-if="n.weight" class="ge-item__w">w={{ n.weight }}</span>
+                  <el-button link type="primary" size="small" @click="openRenameEntity(n)">
+                    编辑
+                  </el-button>
                   <el-button link type="danger" size="small" @click="delGraphEntity(n)">
                     删除
                   </el-button>
@@ -611,6 +643,27 @@
         <el-button @click="chunkEditVisible = false">取消</el-button>
         <el-button type="primary" :loading="chunkEditing" @click="saveChunkEdit">
           保存并重向量化
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 图谱实体重命名 -->
+    <el-dialog v-model="renameEntityVisible" title="编辑图谱实体" width="480px" append-to-body>
+      <el-form label-width="90px" size="default">
+        <el-form-item label="实体名" required>
+          <el-input v-model="renameForm.name" placeholder="实体名称" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-input v-model="renameForm.etype" placeholder="keyword" />
+        </el-form-item>
+        <el-form-item label="权重">
+          <el-input-number v-model="renameForm.weight" :min="1" :max="9999" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="renameEntityVisible = false">取消</el-button>
+        <el-button type="primary" :loading="renamingEntity" @click="saveRenameEntity">
+          保存（同步 AGE）
         </el-button>
       </template>
     </el-dialog>
@@ -714,6 +767,7 @@ import {
   updateAiKnowledgeChunk,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
+  updateAiKnowledgeGraphEntity,
   deleteAiKnowledgeGraphEntities,
   createAiKnowledgeGraphRelation,
   deleteAiKnowledgeGraphRelations,
@@ -734,6 +788,8 @@ const loadingDs = ref(false);
 const bases = ref<any[]>([]);
 const datasources = ref<any[]>([]);
 const modelOptions = ref<{ id: number; name: string }[]>([]);
+const modelNameMap = ref<Record<number, string>>({});
+const modelUsageMap = ref<Record<number, string>>({});
 
 const selectedKb = ref<any>();
 const selectedDs = ref<any>();
@@ -770,7 +826,13 @@ const loadData = async () => {
     );
     bases.value = list;
     datasources.value = dr.data?.data || [];
-    modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
+    const models = mr.data?.data || [];
+    // 只列可用作嵌入的模型（usage=embedding 或 capabilities 含 embedding）
+    modelOptions.value = models
+      .filter((m: any) => m.usage === "embedding" || (m.capabilities || []).includes("embedding"))
+      .map((m: any) => ({ id: m.id, name: m.name }));
+    modelNameMap.value = Object.fromEntries(models.map((m: any) => [m.id, m.name]));
+    modelUsageMap.value = Object.fromEntries(models.map((m: any) => [m.id, m.usage]));
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -1018,6 +1080,39 @@ async function delGraphEntity(n: any) {
     ElMessage.error(e?.message || "删除失败");
   }
 }
+// 图谱实体重命名
+const renameEntityVisible = ref(false);
+const renameForm = reactive<any>({ id: null, name: "", etype: "keyword", weight: 1 });
+const renamingEntity = ref(false);
+function openRenameEntity(n: any) {
+  renameForm.id = n.id;
+  renameForm.name = n.name;
+  renameForm.etype = n.etype || "keyword";
+  renameForm.weight = n.weight || 1;
+  renameEntityVisible.value = true;
+}
+async function saveRenameEntity() {
+  if (!graphKbId.value || !renameForm.id) return;
+  if (!renameForm.name.trim()) {
+    ElMessage.warning("实体名不能为空");
+    return;
+  }
+  renamingEntity.value = true;
+  try {
+    await updateAiKnowledgeGraphEntity(graphKbId.value, renameForm.id, {
+      name: renameForm.name.trim(),
+      etype: renameForm.etype,
+      weight: renameForm.weight,
+    });
+    renameEntityVisible.value = false;
+    await reloadGraph("已更新实体（含关系联动）");
+    await loadDetailStats(graphKbId.value);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "更新失败");
+  } finally {
+    renamingEntity.value = false;
+  }
+}
 async function addGraphRelation() {
   const s = newRelSource.value;
   const t = newRelTarget.value;
@@ -1065,6 +1160,8 @@ const detailSearchMode = ref("hybrid");
 const detailQuery = ref("");
 const detailSearching = ref(false);
 const detailSearchResults = ref<any[]>([]);
+const detailVectorWeight = ref(0.5);
+const detailFulltextWeight = ref(0.5);
 
 async function loadDetailStats(kbId: number) {
   const [chunksR, graphR] = await Promise.all([
@@ -1191,7 +1288,9 @@ async function doDetailSearch() {
       detailQuery.value,
       10,
       true,
-      detailSearchMode.value
+      detailSearchMode.value,
+      detailVectorWeight.value,
+      detailFulltextWeight.value
     );
     detailSearchResults.value = r.data?.data || [];
   } catch (e: any) {
@@ -1468,6 +1567,17 @@ onMounted(loadData);
     display: flex;
     gap: 8px;
     margin-bottom: 12px;
+  }
+  .dt-weights {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+
+    .dt-weight-label {
+      font-size: var(--el-font-size-base);
+      color: var(--el-text-color-regular);
+    }
   }
 }
 
