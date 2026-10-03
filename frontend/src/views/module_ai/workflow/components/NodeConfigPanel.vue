@@ -51,13 +51,28 @@
           :key="v"
           size="small"
           effect="plain"
-          :type="props.varSources?.[v] ? undefined : 'info'"
-          :title="props.varSources?.[v] ? `来源：${props.varSources[v]}` : '无来源'"
+          :type="unknownVars.includes(v) ? 'warning' : props.varSources?.[v] ? undefined : 'info'"
+          :title="
+            unknownVars.includes(v)
+              ? '未定义的变量（请检查来源）'
+              : props.varSources?.[v]
+                ? `来源：${props.varSources[v]}`
+                : '无来源'
+          "
         >
           {{ v }}
           <span v-if="props.varSources?.[v]" class="io-var-src">← {{ props.varSources[v] }}</span>
         </el-tag>
       </div>
+      <el-alert
+        v-if="unknownVars.length"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="io-var-warn"
+      >
+        以下变量未定义/无来源：{{ unknownVars.join(", ") }}
+      </el-alert>
     </el-form-item>
     <el-form-item label="输出变量">
       <el-tag v-if="d.output_variable" size="small" type="success">{{ d.output_variable }}</el-tag>
@@ -881,6 +896,12 @@ const refVars = computed(() => {
   return Array.from(found);
 });
 
+// 引用但未定义/无来源的变量（提示校验）
+const unknownVars = computed(() => {
+  const known = new Set((props.availableVars || []).map((v) => v.name));
+  return refVars.value.filter((v) => !known.has(v));
+});
+
 function addVar() {
   vars.value.push({ name: "", type: "string", default: "", required: false, desc: "" });
 }
@@ -1017,6 +1038,10 @@ onMounted(async () => {
   margin-left: 4px;
   font-size: 11px;
   color: var(--el-text-color-secondary);
+}
+
+.io-var-warn {
+  margin-top: 6px;
 }
 
 .node-disabled-tip {

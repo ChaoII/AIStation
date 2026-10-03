@@ -1026,6 +1026,15 @@ function scrollRunBottom() {
 // 调试执行追踪：高亮画布节点
 const nodeRunStates = ref<Record<string, string>>({});
 let runOrderSeq = 0;
+function refreshEdgeHighlight() {
+  const active = new Set<string>();
+  Object.entries(nodeRunStates.value).forEach(([id, st]) => {
+    if (st === "running" || st === "success") active.add(id);
+  });
+  edges.value.forEach((e: any) => {
+    e.class = active.has(e.source) && active.has(e.target) ? "wf-edge-active" : "";
+  });
+}
 function resetRunTrace() {
   nodeRunStates.value = {};
   runOrderSeq = 0;
@@ -1039,6 +1048,7 @@ function resetRunTrace() {
       __runOrder: undefined,
     };
   });
+  edges.value.forEach((e: any) => (e.class = ""));
 }
 
 function onNodeStatus(ns: any) {
@@ -1059,6 +1069,7 @@ function onNodeStatus(ns: any) {
       __runDuration: ns.duration_ms,
     };
   }
+  refreshEdgeHighlight();
 }
 
 function statusText(s: string) {
@@ -3884,6 +3895,25 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .vue-flow__edge-path {
     cursor: pointer;
+  }
+
+  .vue-flow__edge.wf-edge-active .vue-flow__edge-path {
+    stroke: var(--el-color-primary) !important;
+    stroke-width: 2.5px;
+    filter: drop-shadow(0 0 3px rgba(64, 158, 255, 0.6));
+  }
+  .vue-flow__edge.wf-edge-active .vue-flow__edge-animation {
+    stroke-dasharray: 5;
+    animation: wf-edge-dash 0.6s linear infinite;
+  }
+}
+
+@keyframes wf-edge-dash {
+  from {
+    stroke-dashoffset: 10;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 </style>

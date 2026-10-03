@@ -60,10 +60,10 @@
         <div
           v-if="!sliderVerified"
           class="share-slider"
-          @mousedown="onStart"
-          @mousemove="onMove"
-          @mouseup="onEnd"
-          @mouseleave="onEnd"
+          @pointerdown="onStart"
+          @pointermove="onMove"
+          @pointerup="onEnd"
+          @pointerleave="onEnd"
         >
           <div class="share-slider__track">
             <div class="share-slider__progress" :style="{ width: sliderProgress + '%' }" />
@@ -117,11 +117,12 @@ const sliderProgress = ref(0);
 const sliderVerified = ref(false);
 const sliderDragging = ref(false);
 
-function onStart() {
+function onStart(e: PointerEvent) {
   if (sliderVerified.value) return;
   sliderDragging.value = true;
+  (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
 }
-function onMove(e: MouseEvent) {
+function onMove(e: PointerEvent) {
   if (!sliderDragging.value || sliderVerified.value) return;
   const track = (e.currentTarget as HTMLElement).querySelector(
     ".share-slider__track"
