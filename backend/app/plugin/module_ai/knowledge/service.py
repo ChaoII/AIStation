@@ -607,29 +607,36 @@ class AiKnowledgeService:
         return fused
 
     @classmethod
-    async def _ensure_vector_col(cls, db) -> None:
-        """惰性：为 chunk 表加 pgvector embedding 列 + HNSW 索引（幂等，异常忽略）。"""
+    async def _ensure_vector_col(cls, db, dim: int | None = None) -> None:
+        """惰性：为 chunk 表加 pgvector embedding 列 + HNSW 索引（幂等，异常忽略）。
+
+        dim 超过 2000 时 HNSW 无法建索引，退化为顺序扫描（用小库可接受）。
+        """
+        from . import embedding as _emb
+
+        dim = dim or _emb.EMBED_DIM
         try:
             await db.execute(
                 text(
-                    "ALTER TABLE ai_knowledge_chunks "
-                    "ADD COLUMN IF NOT EXISTS embedding vector(256)"
+                    f"ALTER TABLE ai_knowledge_chunks "
+                    f"ADD COLUMN IF NOT EXISTS embedding vector({dim})"
                 )
             )
-            await db.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS idx_chunk_embedding "
-                    "ON ai_knowledge_chunks USING hnsw (embedding vector_cosine_ops)"
+            if dim <= 2000:
+                await db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_chunk_embedding "
+                        "ON ai_knowledge_chunks USING hnsw (embedding vector_cosine_ops)"
+                    )
                 )
-            )
-            # 从现有 JSONB vector 迁移一次（254+ 维才填，避免缩小）
+            # 从现有 JSONB vector 迁移一次（<=dim 维才填，避免缩小）
             await db.execute(
                 text(
                     "UPDATE ai_knowledge_chunks SET embedding = vector(v.vec::text) "
                     "FROM (SELECT id, vector AS vec FROM ai_knowledge_chunks "
                     "      WHERE vector IS NOT NULL AND embedding IS NULL) v "
                     "WHERE ai_knowledge_chunks.id = v.id AND "
-                    "      jsonb_array_length(v.vec::jsonb) BETWEEN 1 AND 256"
+                    f"      jsonb_array_length(v.vec::jsonb) BETWEEN 1 AND {dim}"
                 )
             )
             await db.commit()
@@ -1427,9 +1434,7 @@ class AiKnowledgeService:
                 build_headers,
             )
 
-            runtime = await AiModelService.get_runtime_model(
-                model_id=await cls._kb_model_id([kb_id])
-            )
+            runtime = await AiModelService.get_runtime_model(usage="chat")
             if runtime:
                 import httpx
 

@@ -11,22 +11,34 @@ import math
 #: 回退哈希向量的固定维度
 FALLBACK_DIM = 256
 
+#: 知识库向量入库的统一维度（用户指定 2560；注意 pgvector HNSW 索引上限 2000，
+#: 该维度下将顺序扫描而非 ANN 索引）
+EMBED_DIM = 2560
+
+
+def _fit_dim(v: list[float]) -> list[float]:
+    """把向量统一到 EMBED_DIM 维（超出截断、不足补零），保证入库维度一致。"""
+    if len(v) >= EMBED_DIM:
+        return v[:EMBED_DIM]
+    return list(v) + [0.0] * (EMBED_DIM - len(v))
+
 
 async def embed_texts(texts: list[str], model_id: int | None = None) -> list[list[float]]:
     """把文本列表转为向量列表。
 
     优先用知识库配置的嵌入模型（OpenAI 兼容 ``/embeddings``）；
     任意环节失败则回退为确定性哈希向量（特征哈希 + L2 归一化）。
+    统一输出 ``EMBED_DIM`` 维。
     """
     if not texts:
         return []
     try:
         vectors = await _embed_openai(texts, model_id)
         if vectors and any(v for v in vectors):
-            return vectors
+            return [_fit_dim(v) for v in vectors]
     except Exception:  # noqa: BLE001
         pass
-    return [_hash_embed(t) for t in texts]
+    return [_fit_dim(_hash_embed(t)) for t in texts]
 
 
 async def _embed_openai(texts: list[str], model_id: int | None) -> list[list[float]]:
