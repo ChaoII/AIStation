@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 from sqlalchemy import func, select, text
 
@@ -30,18 +31,49 @@ def _cosine(a: list[float], b: list[float]) -> float | None:
     return max(-1.0, min(1.0, sim))
 
 
-def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
-    """按字符分块（带重叠），保证相邻块有上下文衔接。"""
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed") -> list[str]:
+    """分块：fixed(定长+重叠) / paragraph(按段落) / sentence(按句子)。"""
     text = (text or "").strip()
     if not text:
         return []
+    if strategy == "paragraph":
+        paras = re.split(r"\n\s*\n", text)
+        out: list[str] = []
+        for p in paras:
+            p = p.strip()
+            if p:
+                if len(p) > chunk_size:
+                    out.extend(_fixed_chunk(p, chunk_size, overlap))
+                else:
+                    out.append(p)
+        return out
+    if strategy == "sentence":
+        sents = re.split(r"(?<=[。！？!?；;])", text)
+        out = []
+        buf = ""
+        for s in sents:
+            s = s.strip()
+            if not s:
+                continue
+            if len(buf) + len(s) > chunk_size and buf:
+                out.append(buf.strip())
+                buf = ""
+            buf += s
+        if buf.strip():
+            out.append(buf.strip())
+        if len(out) > 1 and len(out[-1]) <= overlap:
+            out.pop()
+        return out
+    return _fixed_chunk(text, chunk_size, overlap)
+
+
+def _fixed_chunk(text: str, chunk_size: int, overlap: int) -> list[str]:
     step = max(1, chunk_size - overlap)
     chunks: list[str] = []
     for i in range(0, len(text), step):
         piece = text[i : i + chunk_size].strip()
         if piece:
             chunks.append(piece)
-    # 去掉被上一块重叠区域覆盖、内容过短的尾块，避免产生无意义碎片
     if len(chunks) > 1 and len(chunks[-1]) <= overlap:
         chunks.pop()
     return chunks
@@ -280,13 +312,13 @@ class AiKnowledgeService:
         return {"chunks": saved}
 
     @classmethod
-    async def search(cls, kb_ids: list[int], query: str, top_k: int = 5, use_graph: bool = True) -> list[dict]:
-        """知识检索（全链路，自动选路）。"""
+    async def search(cls, kb_ids: list[int], query: str, top_k: int = 5, use_graph: bool = True, mode: str = "hybrid") -> list[dict]:
+        """知识检索（多模态，自动选路）。mode: vector/fulltext/hybrid/graph/grep。"""
         if not kb_ids or not query:
             return []
-        if cls._is_postgres() and await cls._pg_ext("vector"):
-            return await cls._pg_search(kb_ids, query, top_k, use_graph)
-        return await cls._py_search(kb_ids, query, top_k, use_graph)
+        if cls._is_postgres():
+            return await cls._pg_search(kb_ids, query, top_k, use_graph, mode)
+        return await cls._py_search(kb_ids, query, top_k, use_graph, mode)
 
     @staticmethod
     def _is_postgres() -> bool:
@@ -314,30 +346,102 @@ class AiKnowledgeService:
             return False
 
     @classmethod
-    async def _pg_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool) -> list[dict]:
-        """PostgreSQL 全链路：jieba 全文 + pgvector 向量 + AGE/自有图多跳。"""
+    async def _pg_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool, mode: str = "hybrid") -> list[dict]:
+        """PostgreSQL 多模态检索：vector / fulltext(jiebacfg) / hybrid / graph / grep(ILIKE)。"""
         results: list[dict] = []
         seen: set[int] = set()
+        do_vec = mode in ("vector", "hybrid")
+        do_ft = mode in ("fulltext", "hybrid")
+        do_graph = mode in ("graph", "hybrid") and (use_graph or mode == "graph")
 
-        # 1) jieba 中文全文检索
-        try:
-            if await cls._pg_ext("pg_jieba"):
+        # grep / 子串全文（WikiLLM 式，正则/包含）
+        if mode == "grep":
+            try:
                 async with async_db_session() as db:
                     rows = (
                         await db.execute(
                             text(
-                                "SELECT id, knowledge_base_id, file_name, content, "
-                                "ts_rank(to_tsvector('jiebacfg', content), plainto_tsquery('jiebacfg', :q)) AS score "
+                                "SELECT id, knowledge_base_id, file_name, content, 1.0 AS score "
                                 "FROM ai_knowledge_chunks "
                                 "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
-                                "AND to_tsvector('jiebacfg', content) @@ plainto_tsquery('jiebacfg', :q) "
-                                "ORDER BY score DESC LIMIT :k"
+                                "AND content ILIKE '%' || :q || '%' ORDER BY id LIMIT :k"
                             ),
                             {"ids": kb_ids, "q": query, "k": top_k},
                         )
                     ).mappings().all()
                     for r in rows:
+                        seen.add(int(r["id"]))
+                        results.append(
+                            {
+                                "chunk_id": int(r["id"]),
+                                "knowledge_base_id": int(r["knowledge_base_id"]),
+                                "file_name": r["file_name"] or "",
+                                "content": r["content"],
+                                "score": round(float(r["score"] or 0), 4),
+                                "engine": "grep",
+                            }
+                        )
+            except Exception:  # noqa: BLE001
+                pass
+            return results[:top_k]
+
+        # fulltext / jieba 中文全文
+        if do_ft:
+            try:
+                if await cls._pg_ext("pg_jieba"):
+                    async with async_db_session() as db:
+                        rows = (
+                            await db.execute(
+                                text(
+                                    "SELECT id, knowledge_base_id, file_name, content, "
+                                    "ts_rank(to_tsvector('jiebacfg', content), plainto_tsquery('jiebacfg', :q)) AS score "
+                                    "FROM ai_knowledge_chunks "
+                                    "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
+                                    "AND to_tsvector('jiebacfg', content) @@ plainto_tsquery('jiebacfg', :q) "
+                                    "ORDER BY score DESC LIMIT :k"
+                                ),
+                                {"ids": kb_ids, "q": query, "k": top_k},
+                            )
+                        ).mappings().all()
+                        for r in rows:
+                            seen.add(int(r["id"]))
+                            results.append(
+                                {
+                                    "chunk_id": int(r["id"]),
+                                    "knowledge_base_id": int(r["knowledge_base_id"]),
+                                    "file_name": r["file_name"] or "",
+                                    "content": r["content"],
+                                    "score": round(float(r["score"] or 0), 4),
+                                    "engine": "jieba_fulltext",
+                                }
+                            )
+            except Exception:  # noqa: BLE001
+                pass
+            if mode == "fulltext":
+                return results[:top_k]
+
+        # vector / pgvector
+        if do_vec:
+            try:
+                qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
+                async with async_db_session() as db:
+                    await cls._ensure_vector_col(db)
+                    rows = (
+                        await db.execute(
+                            text(
+                                "SELECT id, knowledge_base_id, file_name, content, "
+                                "(1 - (embedding <=> :qv)) AS score "
+                                "FROM ai_knowledge_chunks "
+                                "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false AND embedding IS NOT NULL "
+                                "ORDER BY embedding <=> :qv LIMIT :k"
+                            ),
+                            {"ids": kb_ids, "qv": str(qvec), "k": top_k},
+                        )
+                    ).mappings().all()
+                    for r in rows:
                         rid = int(r["id"])
+                        if rid in seen:
+                            continue
                         seen.add(rid)
                         results.append(
                             {
@@ -346,55 +450,21 @@ class AiKnowledgeService:
                                 "file_name": r["file_name"] or "",
                                 "content": r["content"],
                                 "score": round(float(r["score"] or 0), 4),
-                                "engine": "jieba_fulltext",
+                                "engine": "pgvector",
                             }
                         )
-        except Exception:  # noqa: BLE001
-            pass
+            except Exception:  # noqa: BLE001
+                py = await cls._py_search_vector(kb_ids, query, top_k)
+                for r in py:
+                    rid = r["chunk_id"]
+                    if rid not in seen:
+                        seen.add(rid)
+                        results.append(r)
+            if mode == "vector":
+                return results[:top_k]
 
-        # 2) pgvector 向量检索（惰性建 embedding 列，失败则回退 Python 余弦）
-        try:
-            qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
-            async with async_db_session() as db:
-                await cls._ensure_vector_col(db)
-                rows = (
-                    await db.execute(
-                        text(
-                            "SELECT id, knowledge_base_id, file_name, content, "
-                            "(1 - (embedding <=> :qv)) AS score "
-                            "FROM ai_knowledge_chunks "
-                            "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false AND embedding IS NOT NULL "
-                            "ORDER BY embedding <=> :qv LIMIT :k"
-                        ),
-                        {"ids": kb_ids, "qv": str(qvec), "k": top_k},
-                    )
-                ).mappings().all()
-                for r in rows:
-                    rid = int(r["id"])
-                    if rid in seen:
-                        continue
-                    seen.add(rid)
-                    results.append(
-                        {
-                            "chunk_id": rid,
-                            "knowledge_base_id": int(r["knowledge_base_id"]),
-                            "file_name": r["file_name"] or "",
-                            "content": r["content"],
-                            "score": round(float(r["score"] or 0), 4),
-                            "engine": "pgvector",
-                        }
-                    )
-        except Exception:  # noqa: BLE001
-            # 无 vector 列/冲突 → 回退 Python 余弦
-            py = await cls._py_search_vector(kb_ids, query, top_k)
-            for r in py:
-                rid = r["chunk_id"]
-                if rid not in seen:
-                    seen.add(rid)
-                    results.append(r)
-
-        # 3) GraphRAG 多跳（AGE 优先）
-        if use_graph:
+        # graph 多跳
+        if do_graph:
             try:
                 gh = await graphrag.graph_retrieve(kb_ids, query, top_k)
                 for hit in gh:
@@ -480,10 +550,37 @@ class AiKnowledgeService:
         return scored[:top_k]
 
     @classmethod
-    async def _py_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool) -> list[dict]:
-        """全可移植回退（SQLite / 无扩展）：Python 余弦 + 自有表共现图。"""
-        results = await cls._py_search_vector(kb_ids, query, top_k)
-        if use_graph:
+    async def _py_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool, mode: str = "hybrid") -> list[dict]:
+        """全可移植回退（SQLite / 无扩展）：子串(grep)/余弦/共现图。"""
+        results: list[dict] = []
+        if mode == "grep":
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.knowledge_base_id.in_(kb_ids),
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalars().all()
+            for c in rows:
+                if query in (c.content or ""):
+                    results.append(
+                        {
+                            "chunk_id": c.id,
+                            "knowledge_base_id": c.knowledge_base_id,
+                            "file_name": c.file_name or "",
+                            "content": c.content,
+                            "score": 1.0,
+                            "engine": "grep",
+                        }
+                    )
+            return results[:top_k]
+
+        if mode in ("vector", "hybrid"):
+            results = await cls._py_search_vector(kb_ids, query, top_k)
+
+        if mode == "graph" or (use_graph and mode == "hybrid"):
             try:
                 gh = await graphrag.graph_retrieve(kb_ids, query, top_k)
                 seen = {r["chunk_id"] for r in results}
@@ -498,11 +595,35 @@ class AiKnowledgeService:
                                     "content": c["content"],
                                     "score": 0,
                                     "graph_entity": hit.get("name"),
+                                    "engine": "graphrag",
                                 }
                             )
                             seen.add(c["chunk_id"])
             except Exception:  # noqa: BLE001
                 pass
+        if mode == "fulltext":
+            # 无 pg_jieba 时用 Python jieba 分词做子串命中的近似关键词
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.knowledge_base_id.in_(kb_ids),
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalars().all()
+            for c in rows:
+                if query in (c.content or ""):
+                    results.append(
+                        {
+                            "chunk_id": c.id,
+                            "knowledge_base_id": c.knowledge_base_id,
+                            "file_name": c.file_name or "",
+                            "content": c.content,
+                            "score": 1.0,
+                            "engine": "jieba_fulltext",
+                        }
+                    )
         return results[: top_k * 3]
 
     @classmethod
@@ -832,6 +953,35 @@ class AiKnowledgeService:
             await graphrag.age_sync_graph(kb_id)  # AGE 可用则同步图库
         except Exception:  # noqa: BLE001  图谱构建失败不影响主入库
             pass
+
+    @classmethod
+    async def rebuild_index(cls, kb_id: int) -> dict:
+        """重建索引：重新向量化所有分块 + 重建图谱。"""
+        async with async_db_session() as db:
+            chunks = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        if not chunks:
+            return {"chunks": 0}
+        texts = [c.content for c in chunks]
+        model_id = await cls._kb_model_id([kb_id])
+        vecs = await embedding.embed_texts(texts, model_id=model_id)
+        async with async_db_session.begin() as db:
+            for c, v in zip(chunks, vecs, strict=False):
+                row = await db.get(AiKnowledgeChunkModel, c.id)
+                row.vector = v
+                row.dimension = len(v) if v else None
+        await cls._rebuild_graph(kb_id)
+        return {"chunks": len(chunks)}
 
 
 async def _probe_db(d: AiDatasourceModel) -> list[str]:

@@ -99,7 +99,9 @@ async def search(
     data: AiKnowledgeSearchSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
 ) -> JSONResponse:
-    results = await AiKnowledgeService.search([kb_id], data.query, data.top_k, use_graph=data.use_graph)
+    results = await AiKnowledgeService.search(
+        [kb_id], data.query, data.top_k, use_graph=data.use_graph, mode=data.mode
+    )
     return SuccessResponse(data=results, msg="检索成功")
 
 
@@ -164,6 +166,16 @@ async def delete_graph_relations(
 ) -> JSONResponse:
     await AiKnowledgeService.delete_graph_relations(kb_id, ids)
     return SuccessResponse(data=None, msg="已删除")
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/rebuild", summary="重建索引（重新向量化+重建图谱）")
+async def rebuild_index(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.rebuild_index(kb_id), msg="重建完成"
+    )
 
 
 @KnowledgeRouter.get("/bases/{kb_id}/chunks", summary="分块列表")
