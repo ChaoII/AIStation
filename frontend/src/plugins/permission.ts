@@ -5,8 +5,8 @@ import router from "@/router";
 import { usePermissionStore, useUserStore } from "@/store";
 
 export function setupPermission() {
-  // 白名单路由
-  const whiteList = ["/login"];
+  // 白名单路由（免登录：登录页 + 公开分享运行页）
+  const whiteList = ["/login", "/share"];
 
   router.beforeEach(async (to, from, next) => {
     NProgress.start();

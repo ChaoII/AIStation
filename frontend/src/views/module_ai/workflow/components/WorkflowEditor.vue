@@ -1262,8 +1262,7 @@ async function openShare() {
     shareError.value = "";
     shareTrace.value = [];
     shareRunVisible.value = true;
-    const base = import.meta.env.VITE_APP_BASE_API || "/api/v1";
-    const link = `${location.origin}${base}#/ai/share?token=${token}`;
+    const link = `${location.origin}/#/share?token=${token}`;
     await navigator.clipboard.writeText(link);
     ElMessage.success("分享链接已复制（匿名受限运行）");
   } catch (e: any) {
@@ -1473,8 +1472,50 @@ function scheduleHistory() {
 function onNodeDragStart() {
   pushHistory();
 }
-function onNodeDragStop() {
-  /* 拖动结束由 drag-start 已记录一次，这里无需重复 */
+function onNodeDragStop(payload: any) {
+  const id = payload?.node?.id;
+  if (id) snapNodeToGroup(id);
+}
+
+// 拖拽吸附：松手时若节点中心进入某分组且未归组则自动加入，拖出则移出
+function snapNodeToGroup(id: string) {
+  const n = nodes.value.find((x) => x.id === id);
+  if (!n || n.type === "group") return;
+  const abs = n.parentNode
+    ? (() => {
+        const p = nodes.value.find((x) => x.id === n.parentNode);
+        return {
+          x: (n.position?.x ?? 0) + (p?.position?.x ?? 0),
+          y: (n.position?.y ?? 0) + (p?.position?.y ?? 0),
+        };
+      })()
+    : { x: n.position?.x ?? 0, y: n.position?.y ?? 0 };
+  const cx = abs.x + 100;
+  const cy = abs.y + 30;
+  let target: Node | undefined;
+  for (const g of nodes.value) {
+    if (g.type !== "group") continue;
+    const gw = g.data?.width ?? 640;
+    const gh = g.data?.height ?? 420;
+    const gx = g.position?.x ?? 0;
+    const gy = g.position?.y ?? 0;
+    if (cx >= gx && cx <= gx + gw && cy >= gy && cy <= gy + gh) {
+      target = g;
+      break;
+    }
+  }
+  if (target) {
+    if (n.parentNode !== target.id) {
+      pushHistory();
+      n.parentNode = target.id;
+      n.position = { x: abs.x - (target.position?.x ?? 0), y: abs.y - (target.position?.y ?? 0) };
+    }
+  } else if (n.parentNode) {
+    // 拖出分组：转回绝对坐标并解绑
+    pushHistory();
+    n.position = abs;
+    n.parentNode = undefined;
+  }
 }
 
 function onKeydown(e: KeyboardEvent) {
