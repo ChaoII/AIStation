@@ -13,6 +13,7 @@ import ast
 import asyncio
 import json
 import re
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -137,6 +138,7 @@ class WorkflowEngine:
         initial_visited: set | None = None,
         initial_stack: list | None = None,
         restricted: bool = False,
+        timeout_seconds: int | None = None,
     ) -> None:
         self.graph = graph or {}
         self.nodes: dict[str, dict] = {
@@ -149,6 +151,10 @@ class WorkflowEngine:
         self.state = state
         self.user_id = user_id
         self.restricted = restricted
+        self.timeout_seconds = timeout_seconds
+        self._deadline = (
+            time.monotonic() + timeout_seconds if timeout_seconds else None
+        )
         self.outputs: dict[str, Any] = dict(initial_outputs or {})
         self._initial_visited = set(initial_visited or [])
         self._initial_stack = list(initial_stack or [])
@@ -1295,6 +1301,14 @@ class WorkflowEngine:
             node = self._node(node_id)
             ntype = node.get("type") or "start"
             label = _NODE_LABELS.get(ntype, ntype)
+            # 超时检查
+            if self._deadline is not None and time.monotonic() > self._deadline:
+                yield self.ms.node_status(
+                    node_id, "error", label, error="运行超时", input=self._node_input(node)
+                )
+                self.state["error"] = "运行超时"
+                yield self.ms.error("运行超时")
+                break
             executed += 1
             # 受限模式：非白名单节点直接跳过（防匿名触发代码/网络/数据等高危操作）
             if self.restricted and ntype not in _RESTRICTED_ALLOW:
@@ -1318,9 +1332,7 @@ class WorkflowEngine:
                 if budget is not None and executed >= budget:
                     break
                 continue
-            import time as _time
-
-            node_t0 = _time.perf_counter()
+            node_t0 = time.perf_counter()
             yield self.ms.node_status(node_id, "running", label, input=self._node_input(node))
             try:
                 if ntype == "start":
@@ -1450,12 +1462,12 @@ class WorkflowEngine:
                 elif ntype == "end":
                     await self._exec_end(node)
             except Exception as e:  # noqa: BLE001
-                yield self.ms.node_status(node_id, "error", label, error=str(e), input=self._node_input(node), duration_ms=int((_time.perf_counter() - node_t0) * 1000))
+                yield self.ms.node_status(node_id, "error", label, error=str(e), input=self._node_input(node), duration_ms=int((time.perf_counter() - node_t0) * 1000))
                 self.state["error"] = str(e)
                 yield self.ms.error(str(e))
                 break
             yield self.ms.node_status(
-                node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id)), duration_ms=int((_time.perf_counter() - node_t0) * 1000)
+                node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id)), duration_ms=int((time.perf_counter() - node_t0) * 1000)
             )
             visited.add(node_id)
             _snapshot_frontier()

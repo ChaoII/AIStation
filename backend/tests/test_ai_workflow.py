@@ -1548,3 +1548,28 @@ def test_workflow_share(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_timeout(test_client, auth_headers):
+    """超时：timeout_seconds 较小且有耗时代码节点时，后续节点触发超时中止。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "code", "type": "code",
+                 "data": {"code": "x=0\nwhile x < 80000000: x += 1", "inputs": {}, "output_variable": "x"}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{x}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "code"},
+                      {"id": "e2", "source": "code", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}],
+                  "timeout_seconds": 1},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert "运行超时" in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

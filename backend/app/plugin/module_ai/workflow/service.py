@@ -193,6 +193,7 @@ class AiWorkflowService:
         variables: dict | None = None,
         session_id: int | None = None,
         redis=None,
+        timeout_seconds: int | None = None,
     ) -> AsyncIterator[str]:
         """运行工作流：实例化引擎并流式产出 UI Message Stream 帧。
 
@@ -243,6 +244,7 @@ class AiWorkflowService:
                 ms=ms,
                 state=state,
                 user_id=uid,
+                timeout_seconds=timeout_seconds,
             )
             async for frame in engine.run():
                 yield frame

@@ -399,6 +399,12 @@
                 :rows="3"
                 placeholder='如 {"query":"你好", "items":[1,2,3]}'
               />
+              <el-input
+                v-model="runTimeout"
+                class="chat-timeout"
+                placeholder="运行超时（秒，可选 1-600）"
+                size="small"
+              />
             </el-collapse-item>
           </el-collapse>
           <div class="chat-input__row">
@@ -956,6 +962,7 @@ const runVisible = ref(false);
 const running = ref(false);
 const runInput = ref("");
 const runVariables = ref("{}");
+const runTimeout = ref("");
 const approving = ref(false);
 const runListRef = ref<HTMLElement>();
 
@@ -2806,6 +2813,7 @@ async function sendChat() {
       body: JSON.stringify({
         messages: [{ role: "user", parts: [{ type: "text", text }] }],
         variables,
+        timeout_seconds: runTimeout.value ? Number(runTimeout.value) || undefined : undefined,
       }),
     });
     if (!resp.ok || !resp.body) {
@@ -3235,6 +3243,10 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .chat-vars {
     margin-bottom: 8px;
+  }
+
+  .chat-timeout {
+    margin-top: 8px;
   }
 
   .chat-input__row {

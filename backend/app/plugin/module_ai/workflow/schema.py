@@ -24,6 +24,7 @@ class AiWorkflowRunSchema(BaseModel):
     messages: list[dict] = Field(default_factory=list)
     variables: dict | None = None
     session_id: int | None = None
+    timeout_seconds: int | None = Field(default=None, ge=1, le=600)
 
 
 class AiWorkflowDebugNodeSchema(BaseModel):

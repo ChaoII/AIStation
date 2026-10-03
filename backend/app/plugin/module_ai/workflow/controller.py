@@ -189,6 +189,7 @@ async def run_workflow_stream(
             data.variables,
             data.session_id,
             redis=request.app.state.redis,
+            timeout_seconds=data.timeout_seconds,
         )
     )
 
