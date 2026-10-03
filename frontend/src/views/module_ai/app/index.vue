@@ -45,6 +45,13 @@
               </template>
             </el-table-column>
             <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />
+            <el-table-column label="类型" width="120" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="typeTagType(row.app_type)" effect="plain">
+                  {{ typeLabel(row.app_type) }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="模型" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">{{ modelName(row.model_id) }}</template>
             </el-table-column>
@@ -342,6 +349,18 @@ function promptName(id: number | null) {
 }
 function formatLabel(fmt: string) {
   return { text: "文本", table: "表格", report: "报告" }[fmt || "text"] || fmt;
+}
+function typeLabel(t: string) {
+  return { chat: "聊天", agent: "智能体", workflow: "工作流", kb: "知识库" }[t || "chat"] || t;
+}
+function typeTagType(t: string): "primary" | "success" | "warning" | "danger" | "info" {
+  const m: Record<string, "primary" | "success" | "warning" | "danger"> = {
+    chat: "primary",
+    agent: "success",
+    workflow: "warning",
+    kb: "danger",
+  };
+  return m[t || "chat"] || "info";
 }
 
 async function loadOptions() {
