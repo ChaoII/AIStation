@@ -818,6 +818,25 @@
               <el-button size="small" @click="() => graphCanvasRef?.zoom?.(1.25)">放大</el-button>
               <el-button size="small" @click="() => graphCanvasRef?.zoom?.(0.8)">缩小</el-button>
               <el-button size="small" @click="() => graphCanvasRef?.center?.()">居中</el-button>
+              <el-input
+                v-model="graphSearch"
+                size="small"
+                placeholder="搜索节点"
+                style="width: 130px"
+                clearable
+                @keyup.enter="onGraphSearch"
+              >
+                <template #prefix>
+                  <el-icon><component :is="'Search'" /></el-icon>
+                </template>
+              </el-input>
+              <el-switch
+                v-model="shortestMode"
+                size="small"
+                active-text="最短路径"
+                @change="graphCanvasRef?.fit?.()"
+              />
+              <el-button size="small" @click="graphStatsVisible = true">统计</el-button>
             </div>
             <div class="graph-legend">
               <span v-for="lg in graphLegend" :key="lg.label" class="graph-legend__item">
@@ -843,6 +862,7 @@
               :highlight="graphHighlight"
               :layout-name="graphLayout"
               :link-mode="linkMode"
+              :shortest-mode="shortestMode"
               @node-tap="onGraphNodeTap"
               @node-dbltap="onGraphNodeDbltap"
               @node-ctx="onGraphNodeCtx"
@@ -850,6 +870,7 @@
               @blank-ctx="onGraphBlankCtx"
               @layout="onGraphLayout"
               @link-draw="onGraphLinkDraw"
+              @path-found="onGraphPathFound"
             />
             <!-- 图上右键菜单 -->
             <div
@@ -1119,10 +1140,12 @@
           :highlight="graphHighlight"
           :layout-name="graphLayout"
           :link-mode="linkMode"
+          :shortest-mode="shortestMode"
           :height="`calc(100vh - 210px)`"
           @node-tap="onGraphNodeTap"
           @node-dbltap="onGraphNodeDbltap"
           @link-draw="onGraphLinkDraw"
+          @path-found="onGraphPathFound"
           @node-ctx="onGraphNodeCtx"
           @edge-ctx="onGraphEdgeCtx"
           @blank-ctx="onGraphBlankCtx"
@@ -1181,6 +1204,43 @@
       </el-table>
       <template #footer>
         <el-button @click="relationTypeDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 图谱统计 -->
+    <el-dialog v-model="graphStatsVisible" title="图谱统计" width="560px" append-to-body>
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="实体节点">{{ graphStatsDetail.nodes }}</el-descriptions-item>
+        <el-descriptions-item label="关系边">{{ graphStatsDetail.edges }}</el-descriptions-item>
+        <el-descriptions-item label="平均度">{{ graphStatsDetail.avgDegree }}</el-descriptions-item>
+        <el-descriptions-item label="连接组件">—</el-descriptions-item>
+      </el-descriptions>
+      <div class="stat-block">
+        <div class="stat-block__title">实体类型分布</div>
+        <el-tag
+          v-for="(c, t) in graphStatsDetail.typeCount"
+          :key="t"
+          size="small"
+          effect="plain"
+          class="stat-tag"
+        >
+          {{ typeLabel(String(t)) }} × {{ c }}
+        </el-tag>
+      </div>
+      <div class="stat-block">
+        <div class="stat-block__title">关系类型分布</div>
+        <el-tag
+          v-for="(c, r) in graphStatsDetail.relCount"
+          :key="r"
+          size="small"
+          effect="plain"
+          class="stat-tag"
+        >
+          {{ r }} × {{ c }}
+        </el-tag>
+      </div>
+      <template #footer>
+        <el-button @click="graphStatsVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -1560,6 +1620,46 @@ const graphEdges = ref<any[]>([]);
 const graphKbId = ref<number>();
 const graphUsePreset = ref(false);
 const graphLayout = ref("cose");
+const graphSearch = ref("");
+const shortestMode = ref(false);
+const graphStatsVisible = ref(false);
+const graphStatsDetail = computed(() => {
+  const typeCount: Record<string, number> = {};
+  graphNodes.value.forEach((n: any) => {
+    const t = n.etype || "keyword";
+    typeCount[t] = (typeCount[t] || 0) + 1;
+  });
+  const relCount: Record<string, number> = {};
+  graphEdges.value.forEach((e: any) => {
+    const r = e.rtype || "related";
+    relCount[r] = (relCount[r] || 0) + 1;
+  });
+  const nodes = graphNodes.value.length;
+  const edges = graphEdges.value.length;
+  return {
+    nodes,
+    edges,
+    typeCount,
+    relCount,
+    avgDegree: nodes ? Math.round(((edges * 2) / nodes) * 10) / 10 : 0,
+  };
+});
+function onGraphSearch() {
+  graphCanvasRef.value?.search?.(graphSearch.value);
+}
+function onGraphPathFound(a: string, b: string, length: number) {
+  if (length < 0) {
+    ElMessage.info(`${a} → ${b} 无连通路径`);
+  } else {
+    ElMessage.success(`最短路径：${a} → ${b}，${length} 跳`);
+  }
+}
+function typeLabel(t: string) {
+  if (t === "annotation") return "标注/关联分块";
+  if (t === "custom") return "自定义";
+  if (t === "keyword") return "关键词";
+  return t;
+}
 // 连线模式：第一次点击记源节点，第二次点击记目标节点建边
 const linkMode = ref(false);
 const linkSource = ref<string | null>(null);
@@ -2854,6 +2954,19 @@ onMounted(() => {
       display: inline-block;
     }
   }
+}
+
+.stat-block {
+  margin-top: 14px;
+
+  .stat-block__title {
+    font-size: var(--el-font-size-base);
+    color: var(--el-text-color-regular);
+    margin-bottom: 8px;
+  }
+}
+.stat-tag {
+  margin: 0 6px 6px 0;
 }
 
 .graph-ctx {

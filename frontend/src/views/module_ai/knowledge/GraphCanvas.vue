@@ -30,6 +30,7 @@ const props = defineProps<{
   height?: string;
   layoutName?: string;
   linkMode?: boolean;
+  shortestMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   (e: "blank-ctx", x: number, y: number): void;
   (e: "layout", items: { id: number; x: number; y: number }[]): void;
   (e: "link-draw", source: string, target: string): void;
+  (e: "path-found", a: string, b: string, length: number): void;
 }>();
 
 const container = ref<HTMLDivElement>();
@@ -189,6 +191,18 @@ const graphStyle: any[] = [
     selector: "edge.tmp-edge",
     style: { width: 2, "line-color": "#f56c6c", "target-arrow-shape": "none", opacity: 0.7 },
   },
+  {
+    selector: "node.path",
+    style: { "border-width": 5, "border-color": "#f56c6c", "background-color": "#ffd8cc" },
+  },
+  {
+    selector: "edge.path",
+    style: { width: 4, "line-color": "#f56c6c", opacity: 1 },
+  },
+  {
+    selector: "node.spA",
+    style: { "border-width": 5, "border-color": "#67c23a" },
+  },
 ];
 
 function runLayout() {
@@ -298,6 +312,10 @@ function bind() {
   });
   // 单击节点
   c.on("tap", "node", (e) => {
+    if (props.shortestMode) {
+      handleSP(e.target);
+      return;
+    }
     emit("node-tap", e.target.data("name") as string);
   });
   // 双击节点：打开详情
@@ -326,6 +344,112 @@ function bind() {
   initLinkDraw(c);
   // 浏览器默认右键屏蔽（在容器上）
   container.value?.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+function findShortestPath(c: Core, aName: string, bName: string) {
+  const adj: Record<string, Set<string>> = {};
+  c.nodes().forEach((n) => {
+    adj[n.id()] = new Set();
+  });
+  c.edges().forEach((ed) => {
+    const s = ed.source().id();
+    const t = ed.target().id();
+    adj[s] = adj[s] || new Set();
+    adj[t] = adj[t] || new Set();
+    adj[s].add(t);
+    adj[t].add(s);
+  });
+  const start = aName;
+  const goal = bName;
+  const prev: Record<string, string> = {};
+  const queue = [start];
+  const visited = new Set([start]);
+  while (queue.length) {
+    const cur = queue.shift() as string;
+    if (cur === goal) break;
+    (adj[cur] || []).forEach((nei) => {
+      if (!visited.has(nei)) {
+        visited.add(nei);
+        prev[nei] = cur;
+        queue.push(nei);
+      }
+    });
+  }
+  if (!visited.has(goal)) return null;
+  const nodes: string[] = [goal];
+  let cur = goal;
+  while (cur !== start) {
+    cur = prev[cur];
+    nodes.push(cur);
+  }
+  nodes.reverse();
+  const edges: string[] = [];
+  c.edges().forEach((ed) => {
+    const s = ed.source().id();
+    const t = ed.target().id();
+    const si = nodes.indexOf(s);
+    if (si >= 0 && (nodes[si - 1] === t || nodes[si + 1] === t)) {
+      edges.push(ed.id());
+    }
+  });
+  return { nodes, edges };
+}
+function clearPath(c: Core) {
+  c.elements().removeClass("path");
+}
+let spA: any = null;
+function handleSP(node: any) {
+  const c = cy;
+  if (!c) return;
+  if (!spA) {
+    c.elements().removeClass("spA");
+    spA = node;
+    node.addClass("spA");
+    return;
+  }
+  const aName = spA.data("name");
+  const bName = node.data("name");
+  clearPath(c);
+  const path = findShortestPath(c, aName, bName);
+  if (path) {
+    path.nodes.forEach((id) => {
+      const el = c.getElementById(id);
+      if (el.length) el.addClass("path");
+    });
+    path.edges.forEach((id) => {
+      const el = c.getElementById(id);
+      if (el.length) el.addClass("path");
+    });
+    emit("path-found", aName, bName, path.nodes.length - 1);
+  } else {
+    emit("path-found", aName, bName, -1);
+  }
+  node.removeClass("spA");
+  spA = null;
+}
+function search(name: string) {
+  const c = cy;
+  if (!c || !name) return;
+  const el = c.getElementById(String(name));
+  if (el.length) {
+    clearPath(c);
+    c.fit(el, 60);
+    c.elements().removeClass("selected");
+    el.select();
+  } else {
+    let best: any = null;
+    c.nodes().forEach((n) => {
+      if ((n.data("name") as string).includes(name)) {
+        if (!best) best = n;
+      }
+    });
+    if (best) {
+      clearPath(c);
+      c.fit(best, 60);
+      c.elements().removeClass("selected");
+      best.select();
+    }
+  }
 }
 
 function initLinkDraw(c: Core) {
@@ -420,7 +544,7 @@ function png(): string {
   return (cy.png as any)({ output: "dataurl", full: true, scale: 2 }) as string;
 }
 
-defineExpose({ emitPositions, png, setLayout, fit, center, zoom });
+defineExpose({ emitPositions, png, setLayout, fit, center, zoom, search });
 
 onBeforeUnmount(() => {
   cy?.destroy();
