@@ -2777,6 +2777,7 @@ onMounted(() => {
 
 .graph-stats {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
