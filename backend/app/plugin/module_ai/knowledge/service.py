@@ -7,8 +7,14 @@ from sqlalchemy import func, select
 
 from app.core.database import async_db_session
 
-from . import embedding
-from .model import AiDatasourceModel, AiKnowledgeBaseModel, AiKnowledgeChunkModel
+from . import embedding, graphrag
+from .model import (
+    AiDatasourceModel,
+    AiKnowledgeBaseModel,
+    AiKnowledgeChunkModel,
+    AiKnowledgeEntityModel,
+    AiKnowledgeRelationModel,
+)
 
 
 def _cosine(a: list[float], b: list[float]) -> float | None:
@@ -210,11 +216,12 @@ class AiKnowledgeService:
                 saved += 1
             b.chunk_count = (b.chunk_count or 0) + saved
             b.updated_id = auth.user.id
+        await cls._rebuild_graph(kb_id)
         return {"chunks": saved}
 
     @classmethod
-    async def search(cls, kb_ids: list[int], query: str, top_k: int = 5) -> list[dict]:
-        """在指定知识库内做余弦检索，返回 top_k 分块。"""
+    async def search(cls, kb_ids: list[int], query: str, top_k: int = 5, use_graph: bool = True) -> list[dict]:
+        """在指定知识库内做余弦检索，返回 top_k 分块；可选并入 GraphRAG 实体扩展。"""
         if not kb_ids or not query:
             return []
         qvec = (await embedding.embed_texts([query], model_id=await cls._kb_model_id(kb_ids)))[0]
@@ -243,7 +250,64 @@ class AiKnowledgeService:
                 }
             )
         scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+        results = scored[:top_k]
+        if use_graph:
+            try:
+                gh = await graphrag.graph_retrieve(kb_ids, query, top_k)
+                seen = {r["chunk_id"] for r in results}
+                for hit in gh:
+                    for c in hit.get("chunks") or []:
+                        if c.get("chunk_id") not in seen:
+                            results.append(
+                                {
+                                    "chunk_id": c["chunk_id"],
+                                    "knowledge_base_id": kb_ids[0],
+                                    "file_name": c.get("file_name") or "",
+                                    "content": c["content"],
+                                    "score": 0,
+                                    "graph_entity": hit.get("name"),
+                                }
+                            )
+                            seen.add(c["chunk_id"])
+            except Exception:  # noqa: BLE001
+                pass
+        return results[: top_k * 3]
+
+    @classmethod
+    async def get_graph(cls, kb_id: int) -> dict:
+        """返回知识库图谱（实体 + 关系），供前端可视化。"""
+        async with async_db_session() as db:
+            ents = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeEntityModel).where(
+                            AiKnowledgeEntityModel.knowledge_base_id == kb_id,
+                            AiKnowledgeEntityModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            rels = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeRelationModel).where(
+                            AiKnowledgeRelationModel.knowledge_base_id == kb_id,
+                            AiKnowledgeRelationModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return {
+            "nodes": [{"id": e.name, "name": e.name, "weight": e.weight or 1} for e in ents],
+            "edges": [
+                {"source": r.source, "target": r.target, "weight": r.weight or 1}
+                for r in rels
+            ],
+        }
 
     @classmethod
     async def list_chunks(cls, kb_id: int) -> list[dict]:
@@ -444,7 +508,29 @@ class AiKnowledgeService:
                     )
                 )
             b.chunk_count = (b.chunk_count or 0) + len(chunks)
+        await cls._rebuild_graph(kb_id)
         return len(chunks)
+
+    @classmethod
+    async def _rebuild_graph(cls, kb_id: int) -> None:
+        """重算知识库图谱（删除旧实体/关系后重建）。"""
+        async with async_db_session.begin() as db:
+            from sqlalchemy import delete as _delete
+
+            await db.execute(
+                _delete(AiKnowledgeEntityModel).where(
+                    AiKnowledgeEntityModel.knowledge_base_id == kb_id
+                )
+            )
+            await db.execute(
+                _delete(AiKnowledgeRelationModel).where(
+                    AiKnowledgeRelationModel.knowledge_base_id == kb_id
+                )
+            )
+        try:
+            await graphrag.build_graph(kb_id)
+        except Exception:  # noqa: BLE001  图谱构建失败不影响主入库
+            pass
 
 
 async def _probe_db(d: AiDatasourceModel) -> list[str]:
@@ -457,16 +543,30 @@ async def _probe_db(d: AiDatasourceModel) -> list[str]:
     return []
 
 
-async def retrieve(knowledge_ids: list[int], query: str, top_k: int = 5) -> str:
+async def retrieve(knowledge_ids: list[int], query: str, top_k: int = 5, use_graph: bool = True) -> str:
     """供工作流引擎 / Agent 运行注入的检索上下文（拼接返回）。
 
-    检索无结果时返回空串，调用方可跳过注入。
+    检索无结果时返回空串，调用方可跳过注入。开启 ``use_graph`` 时，
+    额外用 GraphRAG 扩展实体邻居，把相关实体及其分块注入上下文。
     """
     if not knowledge_ids or not query:
         return ""
+    parts: list[str] = []
     results = await AiKnowledgeService.search(knowledge_ids, query, top_k)
-    if not results:
-        return ""
-    return "\n\n".join(
-        f"[来源: {r.get('file_name') or '未知'}] {r.get('content')}" for r in results
-    )
+    for r in results:
+        parts.append(f"[来源: {r.get('file_name') or '未知'}] {r.get('content')}")
+    if use_graph:
+        try:
+            graph_hits = await graphrag.graph_retrieve(knowledge_ids, query, top_k)
+            extra: list[str] = []
+            for gh in graph_hits:
+                for c in gh.get("chunks") or []:
+                    extra.append(
+                        f"[图谱实体: {gh.get('name')} · {c.get('file_name') or '未知'}] {c.get('content')}"
+                    )
+            for e in extra:
+                if e not in parts:
+                    parts.append(e)
+        except Exception:  # noqa: BLE001
+            pass
+    return "\n\n".join(parts)

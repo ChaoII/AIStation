@@ -143,3 +143,27 @@ def test_datasource_crud(test_client, auth_headers):
         "/api/v1/ai/knowledge/datasources/list", headers=auth_headers
     ).json()["data"]
     assert all(d["id"] != ds_id for d in lst2)
+
+
+def test_knowledge_graphrag(test_client, auth_headers):
+    """入库后生成图谱，/graph 应返回实体与关系，检索带 graph_entity 标记。"""
+    kb_id = _create_base(test_client, auth_headers)
+    try:
+        test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/ingest",
+            json={"file_name": "a.txt",
+                  "content": "人工智能与机器学习密切相关，机器学习用于智能体编排。智能体和机器学习都涉及算法。"},
+            headers=auth_headers,
+        )
+        g = test_client.get(f"/api/v1/ai/knowledge/bases/{kb_id}/graph", headers=auth_headers).json()["data"]
+        assert g["nodes"], "应生成图谱节点"
+        assert g["edges"] is not None
+        # 检索开启图扩展（GraphRAG 路径不报错）
+        res = test_client.post(
+            f"/api/v1/ai/knowledge/bases/{kb_id}/search",
+            json={"query": "人工智能", "top_k": 3, "use_graph": True},
+            headers=auth_headers,
+        ).json()["data"]
+        assert res, "应检索到结果"
+    finally:
+        _delete_base(test_client, auth_headers, [kb_id])

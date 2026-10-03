@@ -76,12 +76,20 @@ def _hash_embed(text: str) -> list[float]:
 
 
 def _tokenize(text: str) -> list[str]:
-    """简易分词：按非字母数字切分，也保留连续的中文子串。"""
+    """分词：jieba 中文分词 + 拼音/数字切分，补充 2-gram 增强中文关联。"""
     import re
 
-    parts = re.split(r"[\s\W_]+", text or "", flags=re.UNICODE)
-    tokens = [p for p in parts if p]
-    # 补充 2-gram 以增强中文本地性
+    tokens: list[str] = []
+    try:
+        import jieba
+
+        for w in jieba.cut(text or ""):
+            w = w.strip()
+            if w and re.search(r"[\w\u4e00-\u9fa5]", w):
+                tokens.append(w)
+    except Exception:  # noqa: BLE001
+        parts = re.split(r"[\s\W_]+", text or "", flags=re.UNICODE)
+        tokens = [p for p in parts if p]
     compact = "".join(tokens)
     for i in range(len(compact) - 1):
         tokens.append(compact[i : i + 2])

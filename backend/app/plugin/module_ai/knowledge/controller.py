@@ -97,8 +97,16 @@ async def search(
     data: AiKnowledgeSearchSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
 ) -> JSONResponse:
-    results = await AiKnowledgeService.search([kb_id], data.query, data.top_k)
+    results = await AiKnowledgeService.search([kb_id], data.query, data.top_k, use_graph=data.use_graph)
     return SuccessResponse(data=results, msg="检索成功")
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/graph", summary="知识图谱（GraphRAG）")
+async def get_graph(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiKnowledgeService.get_graph(kb_id), msg="查询成功")
 
 
 @KnowledgeRouter.get("/bases/{kb_id}/chunks", summary="分块列表")

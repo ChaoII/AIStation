@@ -59,7 +59,6 @@ class AiKnowledgeChunkModel(ModelMixin):
 
 class AiDatasourceModel(ModelMixin, UserMixin):
     """数据源：数据库（SQL）或 API，可同步到知识库。"""
-
     __tablename__ = "ai_datasources"
     __table_args__ = ({"comment": "AI 数据源表"},)
 
@@ -83,3 +82,33 @@ class AiDatasourceModel(ModelMixin, UserMixin):
         comment="同步目标知识库"
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+
+
+class AiKnowledgeEntityModel(ModelMixin):
+    """知识图谱实体（GraphRAG 节点）。"""
+
+    __tablename__ = "ai_knowledge_entities"
+    __table_args__ = ({"comment": "AI 知识库图谱实体表"},)
+
+    knowledge_base_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_knowledge_bases.id"), nullable=False, comment="知识库 ID"
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False, comment="实体名")
+    etype: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default="keyword", comment="实体类型"
+    )
+    weight: Mapped[int] = mapped_column(Integer, default=1, comment="实体权重（出现次数）")
+
+
+class AiKnowledgeRelationModel(ModelMixin):
+    """知识图谱关系（GraphRAG 边）。"""
+
+    __tablename__ = "ai_knowledge_relations"
+    __table_args__ = ({"comment": "AI 知识库图谱关系表"},)
+
+    knowledge_base_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_knowledge_bases.id"), nullable=False, comment="知识库 ID"
+    )
+    source: Mapped[str] = mapped_column(String(256), nullable=False, comment="源实体")
+    target: Mapped[str] = mapped_column(String(256), nullable=False, comment="目标实体")
+    weight: Mapped[int] = mapped_column(Integer, default=1, comment="共现权重")
