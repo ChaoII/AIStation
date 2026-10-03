@@ -105,7 +105,7 @@
               >
                 <Controls />
                 <Background pattern-color="#aaa" :gap="16" />
-                <MiniMap pannable zoomable />
+                <MiniMap pannable zoomable :node-color="minimapColor" />
                 <Panel position="top-right" class="wf-toolbar">
                   <el-button size="small" :icon="RefreshLeft" :disabled="!canUndo" @click="undo">
                     撤销
@@ -114,6 +114,14 @@
                     重做
                   </el-button>
                   <el-button size="small" :icon="FullScreen" @click="fitView()">适配视图</el-button>
+                  <el-button
+                    size="small"
+                    :icon="Aim"
+                    :disabled="!selectedCount"
+                    @click="focusSelection"
+                  >
+                    聚焦选中
+                  </el-button>
                   <el-button size="small" :icon="Promotion" @click="autoLayout">自动布局</el-button>
                   <el-button
                     size="small"
@@ -827,6 +835,7 @@ import {
   ArrowRight,
   DataAnalysis,
   Link,
+  Aim,
   Operation,
   SwitchFilled,
   DataLine,
@@ -1812,6 +1821,11 @@ function iconOf(type: string) {
   return m[type as WorkflowNodeType] || Cpu;
 }
 
+// 小地图节点按类型着色
+function minimapColor(node: any): string {
+  return nodeDefOf(node?.type || "llm").color;
+}
+
 // 载入模型 / 工具选项供 LLM / 工具节点使用
 const loadOptions = async () => {
   try {
@@ -2566,6 +2580,12 @@ function ctxRemoveGroup() {
 
 // ---------- 批量操作 ----------
 const selectedCount = computed(() => (getSelectedNodes.value || []).length);
+function focusSelection() {
+  const sel = (getSelectedNodes.value || []) as any[];
+  if (!sel.length) return;
+  // 聚焦到选中节点：若 VueFlow 支持 nodes 过滤则用之，否则整体适配
+  fitView({ padding: 0.2, maxZoom: 1.5, nodes: sel.map((n: any) => n.id) } as any);
+}
 function _selectedIds(): string[] {
   return (getSelectedNodes.value || []).map((n: any) => n.id).filter(Boolean);
 }
