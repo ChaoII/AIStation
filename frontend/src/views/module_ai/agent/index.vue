@@ -127,6 +127,9 @@
                 >
                   对话
                 </el-button>
+                <el-button v-hasPerm="['module_ai:agent:query']" size="small" @click="viewAgent(a)">
+                  详情
+                </el-button>
                 <el-button
                   v-hasPerm="['module_ai:agent:update']"
                   size="small"
@@ -134,6 +137,14 @@
                   @click="openAgentDialog(a)"
                 >
                   编辑
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:agent:create']"
+                  size="small"
+                  :icon="CopyDocument"
+                  @click="copyAgent(a)"
+                >
+                  复制
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:agent:delete']"
@@ -279,6 +290,51 @@
       </template>
     </el-dialog>
 
+    <!-- 智能体详情预览 -->
+    <el-dialog
+      v-model="detailVisible"
+      :title="detail?.agent_name || '智能体'"
+      width="560px"
+      append-to-body
+    >
+      <el-descriptions v-if="detail" :column="2" border size="small">
+        <el-descriptions-item label="名称" :span="2">{{ detail.agent_name }}</el-descriptions-item>
+        <el-descriptions-item label="角色" :span="2">
+          {{ detail.agent_role || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="运行方式">
+          {{ detail.workflow_id ? "工作流" : "模型+提示词" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="启用">
+          <el-tag size="small" :type="detail.enabled ? 'success' : 'info'">
+            {{ detail.enabled ? "启用" : "停用" }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="模型">
+          {{ modelName(detail.model_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="温度">{{ detail.temperature ?? "—" }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.workflow_id" label="工作流" :span="2">
+          {{ workflowName(detail.workflow_id) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="工具数" :span="2">
+          {{ (detail.tool_ids || []).length }}
+        </el-descriptions-item>
+        <el-descriptions-item label="技能数" :span="2">
+          {{ (detail.skill_ids || []).length }}
+        </el-descriptions-item>
+        <el-descriptions-item label="知识库数" :span="2">
+          {{ (detail.knowledge_ids || []).length }}
+        </el-descriptions-item>
+        <el-descriptions-item label="Markdown" :span="2">
+          {{ detail.markdown ? "是" : "否" }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 分类弹窗 -->
     <el-dialog
       v-model="catDialogVisible"
@@ -302,7 +358,15 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Search, MoreFilled, ChatDotRound, Edit, Delete } from "@element-plus/icons-vue";
+import {
+  Plus,
+  Search,
+  MoreFilled,
+  ChatDotRound,
+  Edit,
+  Delete,
+  CopyDocument,
+} from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import {
   getAiAgentList,
@@ -468,6 +532,46 @@ async function saveAgent() {
 
 function runAgent(a: any) {
   router.push({ path: "/ai/chat", query: { agent_id: a.id } });
+}
+
+// ---- 详情 / 复制 ----
+const detailVisible = ref(false);
+const detail = ref<any>(null);
+function viewAgent(a: any) {
+  detail.value = a;
+  detailVisible.value = true;
+}
+function modelName(id: number | null) {
+  if (!id) return "默认";
+  return detail.value?.model_name || `#${id}`;
+}
+function workflowName(id: number | null) {
+  if (!id) return "—";
+  return detail.value?.workflow_name || `#${id}`;
+}
+async function copyAgent(a: any) {
+  try {
+    await createAiAgent({
+      agent_name: `${a.agent_name}（副本）`,
+      agent_role: a.agent_role,
+      category_id: a.category_id,
+      workflow_id: a.workflow_id,
+      model_id: a.model_id,
+      prompt_id: a.prompt_id,
+      tool_ids: a.tool_ids || [],
+      skill_ids: a.skill_ids || [],
+      knowledge_ids: a.knowledge_ids || [],
+      temperature: a.temperature,
+      color: a.color,
+      markdown: a.markdown,
+      enabled: a.enabled,
+      order: 0,
+    });
+    ElMessage.success("已复制智能体");
+    loadData();
+  } catch {
+    ElMessage.error("复制失败");
+  }
 }
 
 function deleteAgent(a: any) {
