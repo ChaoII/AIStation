@@ -21,6 +21,15 @@
       </el-col>
       <el-col :md="9">
         <el-card shadow="never" class="ov-chart-card">
+          <template #header>模型用量对比</template>
+          <div ref="modelRef" class="ov-chart" />
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="12" class="ov-body">
+      <el-col :md="12">
+        <el-card shadow="never" class="ov-chart-card">
           <template #header>快捷入口</template>
           <div class="ov-entry-list">
             <div v-for="e in entries" :key="e.path" class="ov-entry" @click="$router.push(e.path)">
@@ -29,6 +38,29 @@
                 <div class="ov-entry__name">{{ e.name }}</div>
                 <div class="ov-entry__desc">{{ e.desc }}</div>
               </div>
+            </div>
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :md="12">
+        <el-card shadow="never" class="ov-chart-card">
+          <template #header>用量与成本</template>
+          <div class="ov-usage-list">
+            <div class="ov-usage-row">
+              <span>调用模型</span>
+              <b>{{ (stats.by_model || []).length }}</b>
+            </div>
+            <div class="ov-usage-row">
+              <span>总输入 token</span>
+              <b>{{ sumTokens(stats.by_model, "prompt_tokens") }}</b>
+            </div>
+            <div class="ov-usage-row">
+              <span>总输出 token</span>
+              <b>{{ sumTokens(stats.by_model, "completion_tokens") }}</b>
+            </div>
+            <div class="ov-usage-row">
+              <span>总成本(元)</span>
+              <b>{{ sumCost(stats.by_model) }}</b>
             </div>
           </div>
         </el-card>
@@ -81,7 +113,17 @@ defineOptions({ name: "AiOverview" });
 
 const stats = reactive<any>({});
 const trendRef = ref<HTMLElement>();
+const modelRef = ref<HTMLElement>();
 let trendChart: echarts.ECharts | null = null;
+let modelChart: echarts.ECharts | null = null;
+
+function sumTokens(list: any[], key: string) {
+  return (list || []).reduce((s, x) => s + (x[key] || 0), 0);
+}
+function sumCost(list: any[]) {
+  const v = (list || []).reduce((s, x) => s + (x.cost || 0), 0);
+  return v.toFixed(2);
+}
 
 const cards = [
   { key: "models", title: "模型配置", hint: "已接入大模型", route: "/ai/model", icon: Cpu },
@@ -125,29 +167,49 @@ async function load() {
 }
 
 function render() {
-  if (!trendRef.value) return;
-  trendChart = trendChart || echarts.init(trendRef.value);
-  const t = stats.trend || [];
-  trendChart.setOption({
-    tooltip: { trigger: "axis" },
-    legend: { data: ["调用", "失败"] },
-    grid: { left: 40, right: 16, top: 30, bottom: 24 },
-    xAxis: { type: "category", data: t.map((x: any) => x.date) },
-    yAxis: { type: "value" },
-    series: [
-      {
-        name: "调用",
-        type: "bar",
-        data: t.map((x: any) => x.count),
-        itemStyle: { color: "#409eff" },
-      },
-      { name: "失败", type: "line", smooth: true, data: t.map((x: any) => x.error) },
-    ],
-  });
+  if (trendRef.value) {
+    trendChart = trendChart || echarts.init(trendRef.value);
+    const t = stats.trend || [];
+    trendChart.setOption({
+      tooltip: { trigger: "axis" },
+      legend: { data: ["调用", "失败"] },
+      grid: { left: 40, right: 16, top: 30, bottom: 24 },
+      xAxis: { type: "category", data: t.map((x: any) => x.date) },
+      yAxis: { type: "value" },
+      series: [
+        {
+          name: "调用",
+          type: "bar",
+          data: t.map((x: any) => x.count),
+          itemStyle: { color: "#409eff" },
+        },
+        { name: "失败", type: "line", smooth: true, data: t.map((x: any) => x.error) },
+      ],
+    });
+  }
+  if (modelRef.value) {
+    modelChart = modelChart || echarts.init(modelRef.value);
+    const m = stats.by_model || [];
+    modelChart.setOption({
+      tooltip: { trigger: "axis" },
+      grid: { left: 40, right: 16, top: 30, bottom: 40 },
+      xAxis: { type: "category", data: m.map((x: any) => x.name), axisLabel: { rotate: 20 } },
+      yAxis: { type: "value" },
+      series: [
+        {
+          name: "调用",
+          type: "bar",
+          data: m.map((x: any) => x.count),
+          itemStyle: { color: "#67c23a" },
+        },
+      ],
+    });
+  }
 }
 
 function resize() {
   trendChart?.resize();
+  modelChart?.resize();
 }
 
 onMounted(() => {
@@ -157,6 +219,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("resize", resize);
   trendChart?.dispose();
+  modelChart?.dispose();
 });
 </script>
 
@@ -218,6 +281,23 @@ onBeforeUnmount(() => {
 .ov-entry__desc {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.ov-usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+.ov-usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+}
+.ov-usage-row b {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
 }
 .ov-recent-card {
   margin-bottom: 12px;

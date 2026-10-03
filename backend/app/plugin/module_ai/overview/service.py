@@ -18,9 +18,23 @@ class AiOverviewService:
         error: str | None = None,
         app_id: int | None = None,
         user_id: int | None = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cost: float = 0.0,
     ) -> None:
         try:
+            from sqlalchemy import text as _t
+
             async with async_db_session.begin() as db:
+                # 幂等补列（新库由 create_all 建，旧库这里补齐）
+                for col, ddl in (
+                    ("prompt_tokens", "INTEGER DEFAULT 0"),
+                    ("completion_tokens", "INTEGER DEFAULT 0"),
+                    ("cost", "NUMERIC DEFAULT 0"),
+                ):
+                    await db.execute(
+                        _t(f"ALTER TABLE ai_call_logs ADD COLUMN IF NOT EXISTS {col} {ddl}")
+                    )
                 db.add(
                     AiCallLogModel(
                         model_name=model_name or "",
@@ -30,6 +44,9 @@ class AiOverviewService:
                         error=(error or "")[:2000] or None,
                         app_id=app_id,
                         user_id=user_id,
+                        prompt_tokens=int(prompt_tokens or 0),
+                        completion_tokens=int(completion_tokens or 0),
+                        cost=float(cost or 0.0),
                     )
                 )
         except Exception as e:
@@ -116,6 +133,21 @@ class AiOverviewService:
                     .order_by(func.date(AiCallLogModel.created_time))
                 )
             ).all()
+            by_model_rows = (
+                await db.execute(
+                    select(
+                        AiCallLogModel.model_name,
+                        func.count().label("n"),
+                        func.count().filter(AiCallLogModel.result == "error").label("e"),
+                        func.sum(AiCallLogModel.prompt_tokens).label("pt"),
+                        func.sum(AiCallLogModel.completion_tokens).label("ct"),
+                        func.sum(AiCallLogModel.cost).label("cost"),
+                    )
+                    .where(AiCallLogModel.is_deleted.is_(False))
+                    .group_by(AiCallLogModel.model_name)
+                    .order_by(func.count().desc())
+                )
+            ).all()
             rows = (
                 await db.execute(
                     select(AiCallLogModel)
@@ -151,6 +183,17 @@ class AiOverviewService:
                 "trend": [
                     {"date": str(r[0]), "count": int(r[1]), "error": int(r[2])}
                     for r in trend_rows
+                ],
+                "by_model": [
+                    {
+                        "name": r[0] or "—",
+                        "count": int(r[1]),
+                        "error": int(r[2]),
+                        "prompt_tokens": int(r[3] or 0),
+                        "completion_tokens": int(r[4] or 0),
+                        "cost": float(r[5] or 0.0),
+                    }
+                    for r in by_model_rows
                 ],
                 "recent_calls": recent,
             }

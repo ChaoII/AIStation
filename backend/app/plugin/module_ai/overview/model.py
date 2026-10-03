@@ -17,3 +17,6 @@ class AiCallLogModel(ModelMixin):
     error: Mapped[str | None] = mapped_column(Text, nullable=True, comment="错误信息")
     app_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="应用ID")
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True, comment="调用用户ID")
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, comment="输入token")
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, comment="输出token")
+    cost: Mapped[float] = mapped_column(Integer, default=0, comment="费用(元)")
