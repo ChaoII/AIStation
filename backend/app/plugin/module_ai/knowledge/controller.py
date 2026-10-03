@@ -19,6 +19,7 @@ from .schema import (
     AiKnowledgeGraphRelationSchema,
     AiKnowledgeIngestSchema,
     AiKnowledgeSearchSchema,
+    AiKnowledgeUpdateChunkSchema,
 )
 from .service import AiKnowledgeService
 
@@ -194,6 +195,19 @@ async def delete_chunk(
 ) -> JSONResponse:
     await AiKnowledgeService.delete_chunk(chunk_id)
     return SuccessResponse(msg="删除成功")
+
+
+@KnowledgeRouter.put("/bases/{kb_id}/chunks/{chunk_id}", summary="编辑分块并重向量化")
+async def update_chunk(
+    kb_id: int,
+    chunk_id: int,
+    data: AiKnowledgeUpdateChunkSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.update_chunk(kb_id, chunk_id, data.content),
+        msg="已更新并重向量化",
+    )
 
 
 # ---------------------------------------------------------------- #

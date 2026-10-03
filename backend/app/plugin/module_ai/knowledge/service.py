@@ -276,7 +276,7 @@ class AiKnowledgeService:
     @classmethod
     async def ingest(cls, kb_id: int, data, auth) -> dict:
         """文本 → 分块 → 向量化 → 入库，返回写入分块数。"""
-        chunks = chunk_text(data.content, data.chunk_size, data.overlap)
+        chunks = chunk_text(data.content, data.chunk_size, data.overlap, data.strategy)
         if not chunks:
             return {"chunks": 0}
         model_id = await cls._kb_model_id([kb_id])
@@ -751,6 +751,20 @@ class AiKnowledgeService:
             c = await db.get(AiKnowledgeChunkModel, chunk_id)
             if c:
                 await db.delete(c)
+
+    @classmethod
+    async def update_chunk(cls, kb_id: int, chunk_id: int, content: str) -> dict:
+        """编辑分块内容并重新向量化该分块。"""
+        async with async_db_session.begin() as db:
+            c = await db.get(AiKnowledgeChunkModel, chunk_id)
+            if not c or c.knowledge_base_id != kb_id:
+                raise ValueError("分块不存在")
+            model_id = await cls._kb_model_id([kb_id])
+            vec = (await embedding.embed_texts([content], model_id=model_id))[0]
+            c.content = content
+            c.vector = vec
+            c.dimension = len(vec) if vec else None
+        return {"chunk_id": chunk_id}
 
     # ------------------------------------------------------------ #
     # 数据源

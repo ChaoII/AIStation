@@ -25,6 +25,11 @@ class AiKnowledgeIngestSchema(BaseModel):
     content: str = Field(..., description="待入库文本内容")
     chunk_size: int = Field(default=500, ge=100, le=2000)
     overlap: int = Field(default=50, ge=0, le=400)
+    strategy: str = Field(default="fixed", description="fixed/paragraph/sentence")
+
+
+class AiKnowledgeUpdateChunkSchema(BaseModel):
+    content: str = Field(..., min_length=1, description="分块内容")
 
 
 class AiKnowledgeSearchSchema(BaseModel):
