@@ -39,9 +39,12 @@ class AiOverviewService:
 
     @classmethod
     async def stats(cls) -> dict:
+        from app.plugin.module_ai.apps.model import AiAppModel
+        from app.plugin.module_ai.knowledge.model import AiKnowledgeBaseModel
         from app.plugin.module_ai.provider.model import AiModelModel
         from app.plugin.module_ai.providers.model import AiProviderModel
         from app.plugin.module_ai.report.model import AiReportModel
+        from app.plugin.module_ai.workflow.model import AiWorkflowModel
 
         async with async_db_session() as db:
             providers = await db.scalar(
@@ -74,6 +77,45 @@ class AiOverviewService:
                     AiCallLogModel.is_deleted.is_(False), AiCallLogModel.result == "success"
                 )
             )
+            kbs = await db.scalar(
+                select(func.count()).select_from(AiKnowledgeBaseModel).where(
+                    AiKnowledgeBaseModel.is_deleted.is_(False)
+                )
+            )
+            apps = await db.scalar(
+                select(func.count()).select_from(AiAppModel).where(
+                    AiAppModel.is_deleted.is_(False)
+                )
+            )
+            workflows = await db.scalar(
+                select(func.count()).select_from(AiWorkflowModel).where(
+                    AiWorkflowModel.is_deleted.is_(False)
+                )
+            )
+            from datetime import datetime, timedelta
+
+            since = datetime.now() - timedelta(days=7)
+            today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            today = await db.scalar(
+                select(func.count()).select_from(AiCallLogModel).where(
+                    AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= today_start
+                )
+            )
+            trend_rows = (
+                await db.execute(
+                    select(
+                        func.date(AiCallLogModel.created_time).label("d"),
+                        func.count().label("n"),
+                        func.count().filter(AiCallLogModel.result == "error").label("e"),
+                    )
+                    .where(
+                        AiCallLogModel.is_deleted.is_(False),
+                        AiCallLogModel.created_time >= since,
+                    )
+                    .group_by(func.date(AiCallLogModel.created_time))
+                    .order_by(func.date(AiCallLogModel.created_time))
+                )
+            ).all()
             rows = (
                 await db.execute(
                     select(AiCallLogModel)
@@ -101,5 +143,14 @@ class AiOverviewService:
                 "calls": calls or 0,
                 "errors": errors or 0,
                 "avg_latency_ms": int(avg_latency or 0),
+                "knowledge_bases": kbs or 0,
+                "apps": apps or 0,
+                "workflows": workflows or 0,
+                "today_calls": int(today or 0),
+                "success_rate": round((calls - errors) / calls, 4) if calls else 0,
+                "trend": [
+                    {"date": str(r[0]), "count": int(r[1]), "error": int(r[2])}
+                    for r in trend_rows
+                ],
                 "recent_calls": recent,
             }
