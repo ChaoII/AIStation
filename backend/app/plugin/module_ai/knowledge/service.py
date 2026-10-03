@@ -412,7 +412,7 @@ class AiKnowledgeService:
                     rows = (
                         await db.execute(
                             text(
-                                "SELECT id, knowledge_base_id, file_name, content, 1.0 AS score "
+                                "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, 1.0 AS score "
                                 "FROM ai_knowledge_chunks "
                                 "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
                                 "AND (content ILIKE '%' || :q || '%' OR " + _ANN_SQL + " ILIKE '%' || :q || '%') "
@@ -427,6 +427,9 @@ class AiKnowledgeService:
                                 "chunk_id": int(r["id"]),
                                 "knowledge_base_id": int(r["knowledge_base_id"]),
                                 "file_name": r["file_name"] or "",
+                                "document_id": r["document_id"],
+                                "start_line": r["start_line"],
+                                "page": r["page"],
                                 "content": r["content"],
                                 "score": round(float(r["score"] or 0), 4),
                                 "engine": "grep",
@@ -447,7 +450,7 @@ class AiKnowledgeService:
                         rows = (
                             await db.execute(
                                 text(
-                                    "SELECT id, knowledge_base_id, file_name, content, "
+                                    "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, "
                                     "ts_rank(to_tsvector('jiebacfg', content || ' ' || " + _ANN_SQL + "), plainto_tsquery('jiebacfg', :q)) AS score "
                                     "FROM ai_knowledge_chunks "
                                     "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false "
@@ -463,6 +466,9 @@ class AiKnowledgeService:
                                     "chunk_id": int(r["id"]),
                                     "knowledge_base_id": int(r["knowledge_base_id"]),
                                     "file_name": r["file_name"] or "",
+                                    "document_id": r["document_id"],
+                                    "start_line": r["start_line"],
+                                    "page": r["page"],
                                     "content": r["content"],
                                     "score": round(float(r["score"] or 0), 4),
                                     "engine": "jieba_fulltext",
@@ -482,7 +488,7 @@ class AiKnowledgeService:
                     rows = (
                         await db.execute(
                             text(
-                                "SELECT id, knowledge_base_id, file_name, content, "
+                                "SELECT id, knowledge_base_id, file_name, document_id, start_line, page, content, "
                                 "(1 - (embedding <=> :qv)) AS score "
                                 "FROM ai_knowledge_chunks "
                                 "WHERE knowledge_base_id = ANY(:ids) AND is_deleted = false AND embedding IS NOT NULL "
@@ -497,6 +503,9 @@ class AiKnowledgeService:
                                 "chunk_id": int(r["id"]),
                                 "knowledge_base_id": int(r["knowledge_base_id"]),
                                 "file_name": r["file_name"] or "",
+                                "document_id": r["document_id"],
+                                "start_line": r["start_line"],
+                                "page": r["page"],
                                 "content": r["content"],
                                 "score": round(float(r["score"] or 0), 4),
                                 "engine": "pgvector",
@@ -1007,31 +1016,68 @@ class AiKnowledgeService:
 
     # ---------- 文档管理（wikiLLM / ima 式） ----------
     @staticmethod
-    def _extract_text(filename: str, data: bytes) -> str:
-        """按扩展名提取全文：txt/md/csv/docx/pdf。"""
+    def _extract_doc(filename: str, data: bytes) -> tuple[str, list[int]]:
+        """按扩展名提取全文，返回 ``(文本, 每页起始字符偏移)``。
+
+        页码偏移用于引用溯源：把分块定位到原文档的某一页。
+        非 PDF 返回 ``[0]``（视为单页，行号仍精确）。
+        """
         lower = (filename or "").lower()
         ext = lower.rsplit(".", 1)[-1] if "." in lower else "txt"
         if ext in ("txt", "md", "csv", "json", "log"):
             try:
-                return data.decode("utf-8", errors="ignore")
+                return data.decode("utf-8", errors="ignore"), [0]
             except Exception:  # noqa: BLE001
-                return data.decode("gbk", errors="ignore")
+                return data.decode("gbk", errors="ignore"), [0]
         if ext == "docx":
             import io
 
             from docx import Document
 
             doc = Document(io.BytesIO(data))
-            return "\n".join(p.text for p in doc.paragraphs)
+            text = "\n".join(p.text for p in doc.paragraphs)
+            return text, [0]
         if ext == "pdf":
             import io
 
             from pypdf import PdfReader
 
             reader = PdfReader(io.BytesIO(data))
-            return "\n".join((page.extract_text() or "") for page in reader.pages)
+            parts: list[str] = []
+            offsets: list[int] = []
+            acc = 0
+            for page in reader.pages:
+                offsets.append(acc)
+                t = page.extract_text() or ""
+                parts.append(t)
+                acc += len(t) + 1
+            return "\n".join(parts), offsets
         # 未知类型退回当作 utf-8 文本
-        return data.decode("utf-8", errors="ignore")
+        return data.decode("utf-8", errors="ignore"), [0]
+
+    @staticmethod
+    def _chunk_spans(
+        text: str, chunks: list[str], page_offsets: list[int] | None = None,
+    ) -> tuple[list[int | None], list[int | None]]:
+        """根据分块内容在原文中的位置，计算每块的 ``(起始行, 页码)``。
+
+        用 ``text.find`` 定位每块首次出现的起始字符；行号为前缀换行数 +1，
+        页码由 ``page_offsets`` 二分确定（默认视为单页）。
+        """
+        import bisect
+
+        offsets = page_offsets or [0]
+        lines: list[int | None] = []
+        pages: list[int | None] = []
+        pos = 0
+        for ch in chunks:
+            idx = text.find(ch, pos if pos < len(text) else 0)
+            if idx < 0:
+                idx = 0
+            pos = idx
+            lines.append(text[:idx].count("\n") + 1)
+            pages.append(bisect.bisect_right(offsets, idx) - 1 if idx >= 0 else 1)
+        return lines, pages
 
     @classmethod
     async def upload_document(
@@ -1039,7 +1085,7 @@ class AiKnowledgeService:
         chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",
     ) -> dict:
         """上传文档→提取全文→分块向量化→入库。"""
-        text = cls._extract_text(filename, data)
+        text, page_offsets = cls._extract_doc(filename, data)
         if not text.strip():
             raise ValueError("文档无有效文本")
         ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else "txt"
@@ -1056,10 +1102,14 @@ class AiKnowledgeService:
             await db.flush()
             doc_id = doc.id
             doc.object_key = await cls._upload_to_rustfs(kb_id, filename or "文档", data)
+        # 计算每块的起始行/页码，用于引用溯源
+        chunks = chunk_text(text, chunk_size, overlap, strategy)
+        start_lines, pages = cls._chunk_spans(text, chunks, page_offsets)
         # 分块向量化入库
         result = await cls.ingest_text(
             kb_id, text, file_name=filename or "文档", auth=auth,
             chunk_size=chunk_size, overlap=overlap, strategy=strategy,
+            document_id=doc_id, start_lines=start_lines, pages=pages,
         )
         async with async_db_session.begin() as db:
             d = await db.get(AiKnowledgeDocumentModel, doc_id)
@@ -1219,8 +1269,11 @@ class AiKnowledgeService:
     async def ingest_text(
         cls, kb_id: int, text: str, file_name: str, auth,
         chunk_size: int = 500, overlap: int = 50, strategy: str = "fixed",
+        document_id: int | None = None,
+        start_lines: list[int] | None = None,
+        pages: list[int] | None = None,
     ) -> dict:
-        """文本→分块→向量化→入库（文档复用）。"""
+        """文本→分块→向量化→入库（文档复用）。支持引用溯源字段。"""
         chunks = chunk_text(text, chunk_size, overlap, strategy)
         if not chunks:
             return {"chunks": 0}
@@ -1243,6 +1296,9 @@ class AiKnowledgeService:
                     AiKnowledgeChunkModel(
                         knowledge_base_id=kb_id,
                         file_name=file_name,
+                        document_id=document_id,
+                        start_line=(start_lines[i - existing - 1] if start_lines and i - existing - 1 < len(start_lines) else None),
+                        page=(pages[i - existing - 1] if pages and i - existing - 1 < len(pages) else None),
                         chunk_index=i,
                         content=chunk,
                         meta={"file_name": file_name},
@@ -1255,6 +1311,113 @@ class AiKnowledgeService:
             b.updated_id = auth.user.id
         await cls._rebuild_graph(kb_id)
         return {"chunks": saved}
+
+    @classmethod
+    async def ask(cls, kb_id: int, query: str, top_k: int = 6, auth=None, mode: str = "hybrid") -> dict:
+        """引用溯源问答：检索→组装带编号的上下文→LLM 生成→返回引用列表。
+
+        ``references`` 每项含 文件/文档ID/起始行/页码/RustFS 链接，供前端
+        渲染「角标→弹窗看行页→末尾原文档链接」。
+        """
+        hits = await cls.search([kb_id], query, top_k=top_k, use_graph=True, mode=mode)
+        if not hits:
+            return {"answer": "未检索到相关知识，请换个问法或上传更多文档。", "references": []}
+        # 取文档表，生成 RustFS 原文档链接
+        async with async_db_session() as db:
+            doc_ids = {h.get("document_id") for h in hits if h.get("document_id")}
+            docs: dict[int, AiKnowledgeDocumentModel] = {}
+            if doc_ids:
+                rows = (
+                    await db.execute(
+                        select(AiKnowledgeDocumentModel).where(
+                            AiKnowledgeDocumentModel.id.in_(list(doc_ids))
+                        )
+                    )
+                ).scalars().all()
+                docs = {d.id: d for d in rows}
+        refs: list[dict] = []
+        context_parts: list[str] = []
+        for i, h in enumerate(hits, start=1):
+            did = h.get("document_id")
+            doc = docs.get(did) if did else None
+            rust = cls._presigned(doc.object_key) if doc and doc.object_key else None
+            refs.append(
+                {
+                    "index": i,
+                    "chunk_id": h["chunk_id"],
+                    "file": h.get("file_name") or (doc.name if doc else "未知"),
+                    "document_id": did,
+                    "start_line": h.get("start_line"),
+                    "page": h.get("page"),
+                    "content": h["content"],
+                    "rustfs_url": rust,
+                }
+            )
+            context_parts.append(f"[{i}] {h['content']}")
+        answer = await cls._generate_answer(kb_id, query, context_parts, refs)
+        return {"answer": answer, "references": refs}
+
+    @classmethod
+    async def _generate_answer(cls, kb_id: int, query: str, context_parts: list[str], refs: list[dict]) -> str:
+        """用知识库配置的模型生成带引用编号的回答；不可用时回退为引用式摘要。
+
+        回退答案同样在文本中保留 ``[n]`` 编号，前端统一渲染成可点击角标。
+        """
+        # 先尝试 LLM（OpenAI 兼容 /chat/completions）
+        try:
+            from app.plugin.module_ai.provider.service import (
+                AiModelService,
+                build_headers,
+            )
+
+            runtime = await AiModelService.get_runtime_model(
+                model_id=await cls._kb_model_id([kb_id])
+            )
+            if runtime:
+                import httpx
+
+                base = runtime["base_url"].rstrip("/")
+                url = f"{base}/chat/completions"
+                system = (
+                    "你是知识库问答助手。请仅依据提供的参考资料回答问题；"
+                    "引用资料时在对应句子后用[n]标注来源编号，n 与资料编号一致；"
+                    "若资料不足则明确说明，不要编造。用中文回答。"
+                )
+                user = f"问题：{query}\n\n参考资料：\n" + "\n\n".join(context_parts)
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(
+                        url,
+                        headers={
+                            "Authorization": f"Bearer {runtime.get('api_key') or 'sk-none'}",
+                            **build_headers(base, runtime.get("extra_headers"), "aistation-rag"),
+                        },
+                        json={
+                            "model": runtime["model"],
+                            "messages": [
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": user},
+                            ],
+                        },
+                    )
+                    resp.raise_for_status()
+                    ans = (resp.json()["choices"][0]["message"]["content"] or "").strip()
+                    if ans:
+                        return ans
+        except Exception:  # noqa: BLE001
+            pass
+        # 回退：引用式摘要（保留 [n] 编号供前端渲染角标）
+        lines = [f"根据知识库检索到与「{query}」相关的以下资料（点击引用可查看来源位置）："]
+        for r in refs:
+            loc = ""
+            if r.get("page"):
+                loc += f"第{r['page']}页"
+            if r.get("start_line"):
+                loc += (f"，第{r['start_line']}行" if loc else f"第{r['start_line']}行")
+            lines.append(
+                f"[{r['index']}] 《{r['file']}》{('（' + loc + '）') if loc else ''}"
+            )
+            lines.append((r["content"] or "").strip()[:400])
+        return "\n\n".join(lines)
 
     @classmethod
     async def suggest_annotate(cls, kb_id: int, query: str, top_n: int = 5) -> list[dict]:

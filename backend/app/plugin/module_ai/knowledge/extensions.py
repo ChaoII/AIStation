@@ -42,6 +42,9 @@ async def ensure_extensions() -> None:
     )
     # 知识库：确保分块标注列 + 实体-分块绑定表存在（幂等）
     await _run_sql("ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS annotations jsonb")
+    await _run_sql("ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS document_id integer")
+    await _run_sql("ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS start_line integer")
+    await _run_sql("ALTER TABLE ai_knowledge_chunks ADD COLUMN IF NOT EXISTS page integer")
     await _run_sql("ALTER TABLE ai_knowledge_relations ADD COLUMN IF NOT EXISTS rtype varchar(64)")
     await _run_sql("ALTER TABLE ai_knowledge_entities ADD COLUMN IF NOT EXISTS description text")
     await _run_sql("ALTER TABLE ai_knowledge_entities ADD COLUMN IF NOT EXISTS layout jsonb")

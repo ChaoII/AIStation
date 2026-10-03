@@ -44,6 +44,15 @@ class AiKnowledgeChunkModel(ModelMixin):
     file_name: Mapped[str | None] = mapped_column(
         String(256), nullable=True, default="", comment="来源文件名"
     )
+    document_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="来源文档 ID（引用溯源）"
+    )
+    start_line: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="分块在原文起始行（引用溯源）"
+    )
+    page: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="分块所在页码（PDF/Word，引用溯源）"
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, default=0, comment="分块序号")
     content: Mapped[str] = mapped_column(Text, nullable=False, comment="分块内容")
     annotations: Mapped[list | None] = mapped_column(

@@ -52,6 +52,14 @@ export function searchAiKnowledge(
   });
 }
 
+export function askAiKnowledge(id: number, query: string, topK = 6, mode = "hybrid") {
+  return request({
+    url: `${BASE}/${id}/ask`,
+    method: "post",
+    data: { query, top_k: topK, mode },
+  });
+}
+
 export function rebuildAiKnowledge(id: number) {
   return request({ url: `${BASE}/${id}/rebuild`, method: "post" });
 }

@@ -121,6 +121,25 @@ async def search(
     return SuccessResponse(data=results, msg="检索成功")
 
 
+@KnowledgeRouter.post("/bases/{kb_id}/ask", summary="引用溯源问答")
+async def ask(
+    kb_id: int,
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    try:
+        data = await AiKnowledgeService.ask(
+            kb_id,
+            body.get("query") or "",
+            top_k=int(body.get("top_k") or 6),
+            auth=auth,
+            mode=body.get("mode") or "hybrid",
+        )
+        return SuccessResponse(data=data, msg="问答成功")
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+
+
 @KnowledgeRouter.get("/bases/{kb_id}/search-stats", summary="检索统计")
 async def get_search_stats(
     kb_id: int,

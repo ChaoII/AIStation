@@ -539,24 +539,35 @@
 
           <el-divider />
           <div class="qa-block">
-            <div class="qa-block__title">跨文档交叉问答</div>
+            <div class="qa-block__title">引用溯源问答</div>
             <div class="dt-search">
               <el-input
                 v-model="qaQuery"
-                placeholder="输入问题，检索全部文档"
+                placeholder="输入问题，AI 结合知识库回答并标注引用来源"
                 @keyup.enter="doQaSearch"
               />
               <el-button type="primary" :loading="qaSearching" @click="doQaSearch">问答</el-button>
             </div>
-            <div v-for="(h, i) in qaResults" :key="i" class="search-hit">
-              <div class="search-hit__meta">
-                <span class="search-hit__file">{{ h.file_name || "未知" }}</span>
-                <span class="search-hit__score">得分 {{ h.score }}</span>
-                <el-tag size="small" effect="plain" :type="engineType(h.engine)">
-                  {{ engineLabel(h.engine) }}
-                </el-tag>
+            <div v-if="qaAnswer" class="qa-answer" @click="onQaClick" v-html="qaAnswerHtml"></div>
+            <div v-if="qaRefs.length" class="qa-refs">
+              <div class="qa-refs__title">引用来源（点击回答中的角标查看位置）</div>
+              <div v-for="ref in qaRefs" :key="ref.index" class="qa-ref">
+                <el-tag size="small" type="info" effect="plain">[{{ ref.index }}]</el-tag>
+                <span class="qa-ref__file">{{ ref.file }}</span>
+                <span v-if="ref.page || ref.start_line" class="qa-ref__loc">
+                  {{ ref.page ? `第${ref.page}页` : "" }}{{ ref.page && ref.start_line ? "，" : ""
+                  }}{{ ref.start_line ? `第${ref.start_line}行` : "" }}
+                </span>
+                <el-button
+                  v-if="ref.rustfs_url"
+                  link
+                  type="primary"
+                  size="small"
+                  @click="openRustfs(ref.rustfs_url)"
+                >
+                  原文档
+                </el-button>
               </div>
-              <div class="search-hit__content" v-html="highlight(h.content, qaQuery)"></div>
             </div>
           </div>
         </el-tab-pane>
@@ -1394,6 +1405,25 @@
       </template>
     </el-dialog>
 
+    <!-- 引用来源弹窗 -->
+    <el-dialog v-model="qaCiteVisible" title="引用来源" width="560px" append-to-body>
+      <el-descriptions v-if="qaCite" :column="1" size="small" border>
+        <el-descriptions-item label="来源文档">{{ qaCite.file }}</el-descriptions-item>
+        <el-descriptions-item label="位置">
+          {{ qaCite.page ? `第${qaCite.page}页` : ""
+          }}{{ qaCite.page && qaCite.start_line ? "，" : ""
+          }}{{ qaCite.start_line ? `第${qaCite.start_line}行` : "（无法定位行/页）" }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <div class="qa-cite-content">{{ qaCite?.content }}</div>
+      <template #footer>
+        <el-button v-if="qaCite?.rustfs_url" type="primary" @click="openRustfs(qaCite.rustfs_url)">
+          打开原文档(RustFS)
+        </el-button>
+        <el-button @click="qaCiteVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 连线样式设置 -->
     <el-dialog v-model="edgeStyleVisible" title="连线样式设置" width="560px" append-to-body>
       <el-form label-width="90px" size="default">
@@ -1639,6 +1669,7 @@ import {
   deleteAiKnowledge,
   ingestAiKnowledge,
   searchAiKnowledge,
+  askAiKnowledge,
   rebuildAiKnowledge,
   getAiKnowledgeChunks,
   deleteAiKnowledgeChunk,
@@ -2696,17 +2727,36 @@ async function exportFaq() {
     faqLoading.value = false;
   }
 }
-// 跨文档交叉问答
+// 引用溯源问答（跨文档交叉问答 → 带角标引用）
 const qaQuery = ref("");
 const qaSearching = ref(false);
-const qaResults = ref<any[]>([]);
+const qaAnswer = ref("");
+const qaRefs = ref<any[]>([]);
+const qaCiteVisible = ref(false);
+const qaCite = ref<any>(null);
+// 把回答中 [n] 渲染成可点击角标
+const qaAnswerHtml = computed(() => {
+  let s = qaAnswer.value || "";
+  s = escapeHtml(s);
+  s = s.replace(/\[(\d+)\]/g, '<span class="qa-cite" data-cite="$1">[$1]</span>');
+  return s.replace(/\n/g, "<br />");
+});
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 async function doQaSearch() {
   if (!detailKb.value || !qaQuery.value.trim()) return;
   qaSearching.value = true;
   try {
-    const r = await searchAiKnowledge(detailKb.value.id, qaQuery.value, 12, true, "hybrid");
-    qaResults.value = r.data?.data || [];
-    if (!qaResults.value.length) {
+    const r = await askAiKnowledge(detailKb.value.id, qaQuery.value, 6, "hybrid");
+    const d = r.data?.data || {};
+    qaAnswer.value = d.answer || "";
+    qaRefs.value = d.references || [];
+    if (!qaRefs.value.length) {
       ElMessage.info("未检索到相关内容，可换个问法或给分块加标注");
     }
   } catch (e: any) {
@@ -2714,6 +2764,22 @@ async function doQaSearch() {
   } finally {
     qaSearching.value = false;
   }
+}
+function showCite(idx: string | number) {
+  const i = Number(idx) - 1;
+  const ref = qaRefs.value[i];
+  if (!ref) return;
+  qaCite.value = ref;
+  qaCiteVisible.value = true;
+}
+function onQaClick(ev: Event) {
+  const t = ev.target as HTMLElement;
+  if (t.classList.contains("qa-cite")) {
+    showCite(t.getAttribute("data-cite") || "");
+  }
+}
+function openRustfs(url: string) {
+  window.open(url, "_blank");
 }
 
 // ---------- 检索统计 ----------
@@ -3482,6 +3548,72 @@ onMounted(() => {
     margin-bottom: 8px;
     font-weight: 600;
   }
+}
+.qa-answer {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+  line-height: 1.8;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+  word-break: break-word;
+}
+.qa-cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  margin: 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 4px;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.qa-cite:hover {
+  background: var(--el-color-primary-light-7);
+}
+.qa-refs {
+  margin-top: 12px;
+}
+.qa-refs__title {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  margin-bottom: 6px;
+}
+.qa-ref {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+  font-size: var(--el-font-size-base);
+}
+.qa-ref__file {
+  color: var(--el-text-color-primary);
+}
+.qa-ref__loc {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.qa-cite-content {
+  margin-top: 12px;
+  max-height: 40vh;
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  line-height: 1.7;
+  font-size: var(--el-font-size-base);
+  white-space: pre-wrap;
+  color: var(--el-text-color-regular);
 }
 .faq-bar {
   margin: 12px 0;
