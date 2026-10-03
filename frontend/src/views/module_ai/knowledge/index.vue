@@ -470,8 +470,11 @@
             <el-table-column label="内容" min-width="200">
               <template #default="{ row }">{{ row.content }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="70" align="center">
+            <el-table-column label="操作" width="110" align="center">
               <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openChunkEdit(row)">
+                  编辑
+                </el-button>
                 <el-button
                   link
                   type="danger"
@@ -521,26 +524,96 @@
                 图谱：{{ h.graph_entity }}
               </el-tag>
             </div>
-            <div class="search-hit__content">{{ h.content }}</div>
+            <div class="search-hit__content" v-html="highlight(h.content, detailQuery)"></div>
           </div>
         </el-tab-pane>
 
-        <!-- 图谱 -->
+        <!-- 图谱（内嵌可视化 + 编辑） -->
         <el-tab-pane label="图谱" name="graph">
-          <div class="graph-stats">
-            <el-tag type="success" effect="plain">{{ detailGraphNodes }} 个实体节点</el-tag>
-            <el-tag type="warning" effect="plain">{{ detailGraphEdges }} 条关系边</el-tag>
-            <el-button size="small" @click="openGraph(detailKb)">打开图谱编辑</el-button>
+          <div v-loading="graphLoading" class="graph-view">
+            <div class="graph-stats">
+              <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
+              <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+              <span class="kb-opt-hint">
+                拖动节点可微调布局；下方可直接编辑图谱（保存后同步 AGE）。
+              </span>
+            </div>
+            <el-collapse class="graph-edit">
+              <el-collapse-item title="编辑实体 / 关系" name="edit">
+                <div class="ge-row">
+                  <el-input
+                    v-model="newEntityName"
+                    placeholder="实体名"
+                    size="small"
+                    style="flex: 1"
+                  />
+                  <el-input
+                    v-model="newEntityType"
+                    placeholder="类型(keyword)"
+                    size="small"
+                    style="width: 120px"
+                  />
+                  <el-button size="small" type="primary" @click="addGraphEntity">加实体</el-button>
+                </div>
+                <div v-for="n in graphNodes" :key="n.id" class="ge-item">
+                  <span class="ge-item__name">{{ n.name }}</span>
+                  <span v-if="n.weight" class="ge-item__w">w={{ n.weight }}</span>
+                  <el-button link type="danger" size="small" @click="delGraphEntity(n)">
+                    删除
+                  </el-button>
+                </div>
+                <el-divider />
+                <div class="ge-row">
+                  <el-select v-model="newRelSource" placeholder="源" size="small" style="flex: 1">
+                    <el-option
+                      v-for="n in graphNodes"
+                      :key="n.id"
+                      :label="n.name"
+                      :value="n.name"
+                    />
+                  </el-select>
+                  <el-select v-model="newRelTarget" placeholder="目标" size="small" style="flex: 1">
+                    <el-option
+                      v-for="n in graphNodes"
+                      :key="n.id"
+                      :label="n.name"
+                      :value="n.name"
+                    />
+                  </el-select>
+                  <el-button size="small" type="primary" @click="addGraphRelation">
+                    加关系
+                  </el-button>
+                </div>
+                <div v-for="e in graphEdges" :key="e.id" class="ge-item">
+                  <span class="ge-item__name">{{ e.source }} → {{ e.target }}</span>
+                  <span v-if="e.weight" class="ge-item__w">w={{ e.weight }}</span>
+                  <el-button link type="danger" size="small" @click="delGraphRelation(e)">
+                    删除
+                  </el-button>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+            <VChart v-if="graphOption" class="graph-chart" :option="graphOption" autoresize />
           </div>
-          <el-alert
-            type="info"
-            :closable="false"
-            show-icon
-            title="点击「打开图谱编辑」查看可视化并增删实体/关系。"
-          />
         </el-tab-pane>
       </el-tabs>
     </el-drawer>
+
+    <!-- 编辑分块 -->
+    <el-dialog v-model="chunkEditVisible" title="编辑分块" width="640px" append-to-body>
+      <el-input
+        v-model="chunkEditContent"
+        type="textarea"
+        :rows="8"
+        placeholder="编辑分块内容，保存后将重新向量化该分块"
+      />
+      <template #footer>
+        <el-button @click="chunkEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="chunkEditing" @click="saveChunkEdit">
+          保存并重向量化
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="dsDialogVisible"
@@ -638,9 +711,9 @@ import {
   rebuildAiKnowledge,
   getAiKnowledgeChunks,
   deleteAiKnowledgeChunk,
+  updateAiKnowledgeChunk,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
-  updateAiKnowledgeGraphEntity,
   deleteAiKnowledgeGraphEntities,
   createAiKnowledgeGraphRelation,
   deleteAiKnowledgeGraphRelations,
@@ -1013,6 +1086,17 @@ async function openDetail(row: any) {
   detailTab.value = "overview";
   detailVisible.value = true;
   await loadDetailStats(row.id);
+  // 预加载图谱到共享状态（图谱 tab 内嵌可视化）
+  graphKbId.value = row.id;
+  graphLoading.value = true;
+  try {
+    const r = await getAiKnowledgeGraph(row.id);
+    await loadGraph(r.data?.data || { nodes: [], edges: [] });
+  } catch (e: any) {
+    ElMessage.error(e?.message || "加载图谱失败");
+  } finally {
+    graphLoading.value = false;
+  }
 }
 
 async function saveDetailOverview() {
@@ -1069,6 +1153,35 @@ async function deleteChunkFromDetail(row: any) {
   await loadDetailStats(detailKb.value.id);
 }
 
+// 编辑分块
+const chunkEditVisible = ref(false);
+const chunkEditContent = ref("");
+const chunkEditId = ref<number>();
+const chunkEditing = ref(false);
+function openChunkEdit(row: any) {
+  chunkEditId.value = row.id;
+  chunkEditContent.value = row.content;
+  chunkEditVisible.value = true;
+}
+async function saveChunkEdit() {
+  if (!detailKb.value || !chunkEditId.value) return;
+  if (!chunkEditContent.value.trim()) {
+    ElMessage.warning("内容不能为空");
+    return;
+  }
+  chunkEditing.value = true;
+  try {
+    await updateAiKnowledgeChunk(detailKb.value.id, chunkEditId.value, chunkEditContent.value);
+    ElMessage.success("已保存并重向量化");
+    chunkEditVisible.value = false;
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  } finally {
+    chunkEditing.value = false;
+  }
+}
+
 async function doDetailSearch() {
   if (!detailKb.value || !detailQuery.value.trim()) return;
   detailSearching.value = true;
@@ -1086,6 +1199,15 @@ async function doDetailSearch() {
   } finally {
     detailSearching.value = false;
   }
+}
+
+function highlight(text: string, q: string): string {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const et = esc(text || "");
+  const qq = (q || "").trim();
+  if (!qq) return et;
+  const escq = esc(qq).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return et.replace(new RegExp(`(${escq})`, "gi"), "<mark>$1</mark>");
 }
 
 // ---------- 分块 ----------
@@ -1297,6 +1419,13 @@ onMounted(loadData);
     font-size: var(--el-font-size-base);
     color: var(--el-text-color-regular);
     line-height: 1.6;
+
+    mark {
+      background: var(--el-color-warning-light-7);
+      color: var(--el-color-warning-dark-2);
+      border-radius: 2px;
+      padding: 0 2px;
+    }
   }
 }
 
@@ -1378,5 +1507,11 @@ onMounted(loadData);
 .graph-chart {
   width: 100%;
   height: 100%;
+}
+
+.graph-view {
+  .graph-chart {
+    height: 360px;
+  }
 }
 </style>

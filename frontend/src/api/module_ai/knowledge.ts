@@ -82,6 +82,14 @@ export function deleteAiKnowledgeChunk(id: number, chunkId: number) {
   return request({ url: `${BASE}/${id}/chunks/${chunkId}`, method: "delete" });
 }
 
+export function updateAiKnowledgeChunk(id: number, chunkId: number, content: string) {
+  return request({
+    url: `${BASE}/${id}/chunks/${chunkId}`,
+    method: "put",
+    data: { content },
+  });
+}
+
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {
   return request({ url: `${DS}/list`, method: "get" });
