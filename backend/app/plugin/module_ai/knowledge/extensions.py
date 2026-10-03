@@ -57,3 +57,10 @@ async def ensure_extensions() -> None:
         "action VARCHAR(16), text TEXT, kind VARCHAR(32), query TEXT, "
         "source VARCHAR(32), user_id INTEGER)"
     )
+    await _run_sql(
+        "CREATE TABLE IF NOT EXISTS ai_search_logs ("
+        "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
+        "deleted_time TIMESTAMP, knowledge_base_id INTEGER, query TEXT, mode VARCHAR(32), "
+        "top_k INTEGER, hit_count INTEGER, engines JSONB, user_id INTEGER)"
+    )

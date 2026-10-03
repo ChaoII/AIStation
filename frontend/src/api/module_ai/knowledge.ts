@@ -130,6 +130,13 @@ export function suggestAiKnowledgeAnnotate(id: number, query: string, topN = 5) 
 export function getAiKnowledgeAnnotationLogs(id: number) {
   return request({ url: `${BASE}/${id}/annotation-logs`, method: "get" });
 }
+export function getAiKnowledgeSearchStats(id: number, days = 30) {
+  return request({
+    url: `${BASE}/${id}/search-stats`,
+    method: "get",
+    params: { days },
+  });
+}
 export function getAiKnowledgeChunkEntities(id: number, chunkId: number) {
   return request({ url: `${BASE}/${id}/chunks/${chunkId}/entities`, method: "get" });
 }

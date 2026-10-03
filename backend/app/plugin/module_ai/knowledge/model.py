@@ -107,6 +107,29 @@ class AiChunkAnnotationLogModel(ModelMixin):
     )
 
 
+class AiSearchLogModel(ModelMixin):
+    """知识库检索日志：用于检索趋势统计与命中率分析。"""
+
+    __tablename__ = "ai_search_logs"
+    __table_args__ = ({"comment": "AI 知识库检索日志表"},)
+
+    knowledge_base_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="知识库 ID"
+    )
+    query: Mapped[str] = mapped_column(Text, nullable=False, comment="检索查询")
+    mode: Mapped[str | None] = mapped_column(
+        String(32), default="hybrid", comment="检索模式"
+    )
+    top_k: Mapped[int] = mapped_column(Integer, default=5, comment="请求条数")
+    hit_count: Mapped[int] = mapped_column(Integer, default=0, comment="命中条数")
+    engines: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="命中的引擎集合"
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="检索用户 ID"
+    )
+
+
 class AiDatasourceModel(ModelMixin, UserMixin):
     """数据源：数据库（SQL）或 API，可同步到知识库。"""
     __tablename__ = "ai_datasources"

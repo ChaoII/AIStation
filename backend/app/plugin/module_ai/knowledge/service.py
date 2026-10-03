@@ -17,6 +17,7 @@ from .model import (
     AiKnowledgeEntityChunkModel,
     AiKnowledgeEntityModel,
     AiKnowledgeRelationModel,
+    AiSearchLogModel,
 )
 
 
@@ -920,6 +921,11 @@ class AiKnowledgeService:
                     text=text, kind=kind, query=query, source=source, user_id=user_id,
                 )
             )
+        # 标注关键词自动纳入图谱实体并绑定分块
+        try:
+            await graphrag.sync_annotation_entities(kb_id, chunk_id, [text])
+        except Exception:  # noqa: BLE001
+            pass
         return {"chunk_id": chunk_id, "annotations": anns}
 
     @classmethod
@@ -1009,6 +1015,98 @@ class AiKnowledgeService:
                 }
             )
         return out
+
+    @classmethod
+    async def log_search(
+        cls, kb_id: int, query: str, mode: str, top_k: int,
+        results: list[dict], user_id: int | None = None,
+    ) -> None:
+        """记录一次检索（供检索趋势统计）。"""
+        try:
+
+            async with async_db_session() as db:
+                engines = list(
+                    dict.fromkeys(r.get("engine") for r in results if r.get("engine"))
+                )
+                db.add(
+                    AiSearchLogModel(
+                        knowledge_base_id=kb_id, query=query, mode=mode,
+                        top_k=top_k, hit_count=len(results), engines=engines,
+                        user_id=user_id,
+                    )
+                )
+        except Exception:  # noqa: BLE001  检索日志失败不影响主流程
+            pass
+
+    @classmethod
+    async def search_stats(cls, kb_id: int, days: int = 30) -> dict:
+        """知识库检索统计：总量/命中率/平均命中/引擎分布/近 N 天趋势。"""
+        from sqlalchemy import func as _func
+
+        async with async_db_session() as db:
+            total = (
+                await db.execute(
+                    select(_func.count()).where(
+                        AiSearchLogModel.knowledge_base_id == kb_id
+                    )
+                )
+            ).scalar() or 0
+            hits = (
+                await db.execute(
+                    select(_func.sum(AiSearchLogModel.hit_count)).where(
+                        AiSearchLogModel.knowledge_base_id == kb_id
+                    )
+                )
+            ).scalar() or 0
+            zero_hits = (
+                await db.execute(
+                    select(_func.count()).where(
+                        AiSearchLogModel.knowledge_base_id == kb_id,
+                        AiSearchLogModel.hit_count == 0,
+                    )
+                )
+            ).scalar() or 0
+            # 引擎分布
+            en_rows = (
+                await db.execute(
+                    select(AiSearchLogModel.engines, _func.count()).where(
+                        AiSearchLogModel.knowledge_base_id == kb_id
+                    ).group_by(AiSearchLogModel.engines)
+                )
+            ).all()
+            engine_dist: dict[str, int] = {}
+            for eng, cnt in en_rows:
+                for e in (eng or []):
+                    engine_dist[e] = engine_dist.get(e, 0) + int(cnt)
+            # 按天趋势
+            day_rows = (
+                await db.execute(
+                    select(
+                        _func.date(AiSearchLogModel.created_time).label("d"),
+                        _func.count().label("n"),
+                        _func.sum(AiSearchLogModel.hit_count).label("hits"),
+                    )
+                    .where(
+                        AiSearchLogModel.knowledge_base_id == kb_id,
+                        AiSearchLogModel.created_time >= _func.now() - _func.make_interval(0, 0, 0, 0, 0, 0, days),
+                    )
+                    .group_by("d")
+                    .order_by("d")
+                )
+            ).all()
+        avg_hits = round(int(hits) / int(total), 2) if total else 0
+        return {
+            "total": int(total),
+            "hit_count": int(hits),
+            "zero_hit_count": int(zero_hits),
+            "avg_hits": avg_hits,
+            "hit_rate": round(1 - (int(zero_hits) / int(total)), 2) if total else 0,
+            "engine_dist": engine_dist,
+            "trend": [
+                {"date": str(r[0]), "count": int(r[1]), "hits": int(r[2] or 0)}
+                for r in day_rows
+            ],
+        }
 
     @classmethod
     async def bind_entity_chunks(cls, kb_id: int, entity_id: int, chunk_ids: list[int]) -> dict:

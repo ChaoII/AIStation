@@ -695,6 +695,56 @@
           </el-table>
         </el-tab-pane>
 
+        <!-- 检索统计 -->
+        <el-tab-pane label="检索统计" name="stats">
+          <el-form inline size="small" class="stats-days">
+            <el-form-item label="近">
+              <el-input-number v-model="statsDays" :min="7" :max="90" :step="1" size="small" />
+            </el-form-item>
+            <el-form-item label="天">
+              <el-button type="primary" size="small" :loading="loadingStats" @click="loadStats">
+                刷新
+              </el-button>
+            </el-form-item>
+          </el-form>
+          <div v-loading="loadingStats" class="stats-cards">
+            <el-statistic title="检索次数" :value="searchStats.total" />
+            <el-statistic
+              title="命中率"
+              :value="(searchStats.hit_rate || 0) * 100"
+              :precision="0"
+              suffix="%"
+            />
+            <el-statistic title="平均命中" :value="searchStats.avg_hits" />
+            <el-statistic title="空命中" :value="searchStats.zero_hit_count" />
+          </div>
+          <div class="stats-engine">
+            <span class="stats-engine__label">引擎分布：</span>
+            <el-tag
+              v-for="(cnt, eng) in searchStats.engine_dist"
+              :key="eng"
+              size="small"
+              effect="plain"
+              class="stats-engine__tag"
+            >
+              {{ engineLabel(String(eng)) }} × {{ cnt }}
+            </el-tag>
+            <span v-if="!Object.keys(searchStats.engine_dist || {}).length" class="kb-opt-hint">
+              暂无数据
+            </span>
+          </div>
+          <el-table :data="searchStats.trend || []" size="small" max-height="40vh">
+            <el-table-column prop="date" label="日期" width="150" />
+            <el-table-column prop="count" label="检索次数" width="100" align="center" />
+            <el-table-column prop="hits" label="命中总数" width="100" align="center" />
+          </el-table>
+          <el-empty
+            v-if="!(searchStats.trend || []).length"
+            description="暂无检索记录"
+            :image-size="60"
+          />
+        </el-tab-pane>
+
         <!-- 图谱（内嵌可视化 + 编辑） -->
         <el-tab-pane label="图谱" name="graph">
           <div v-loading="graphLoading" class="graph-view">
@@ -1050,6 +1100,7 @@ import {
   removeAiKnowledgeChunkAnnotation,
   suggestAiKnowledgeAnnotate,
   getAiKnowledgeAnnotationLogs,
+  getAiKnowledgeSearchStats,
   getAiKnowledgeEntityChunks,
   bindAiKnowledgeEntityChunks,
   unbindAiKnowledgeEntityChunks,
@@ -1578,6 +1629,7 @@ async function openDetail(row: any) {
   suggestList.value = [];
   suggestHint.value = "";
   loadLogs();
+  loadStats();
 }
 
 async function saveDetailOverview() {
@@ -1778,6 +1830,30 @@ async function loadLogs() {
     annotationLogs.value = [];
   } finally {
     loadingLogs.value = false;
+  }
+}
+
+// ---------- 检索统计 ----------
+const statsDays = ref(30);
+const loadingStats = ref(false);
+const searchStats = ref<any>({
+  total: 0,
+  hit_rate: 0,
+  avg_hits: 0,
+  zero_hit_count: 0,
+  engine_dist: {},
+  trend: [],
+});
+async function loadStats() {
+  if (!detailKb.value) return;
+  loadingStats.value = true;
+  try {
+    const r = await getAiKnowledgeSearchStats(detailKb.value.id, statsDays.value);
+    searchStats.value = r.data?.data || searchStats.value;
+  } catch (e: any) {
+    ElMessage.error(e?.message || "加载统计失败");
+  } finally {
+    loadingStats.value = false;
   }
 }
 
@@ -2127,6 +2203,22 @@ onMounted(loadData);
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
+  }
+  .stats-cards {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 14px;
+  }
+  .stats-engine {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+
+    .stats-engine__label {
+      font-size: var(--el-font-size-base);
+      color: var(--el-text-color-regular);
+    }
   }
 }
 

@@ -237,6 +237,56 @@ async def _age_neighbors(kb_id: int, qwords: list[str], hops: int = 1) -> list[s
         return []
 
 
+async def sync_annotation_entities(kb_id: int, chunk_id: int, texts: list[str]) -> list[str]:
+    """把分块标注文本的关键词作为图谱实体，并绑定到该分块（标注自动纳入图谱）。"""
+    names: list[str] = []
+    for t in texts or []:
+        for kw in extract_keywords(t, topk=10):
+            if len(kw) >= 2:
+                names.append(kw)
+    names = list(dict.fromkeys(names))
+    if not names:
+        return []
+    async with async_db_session.begin() as db:
+        ents = (
+            (
+                await db.execute(
+                    select(AiKnowledgeEntityModel).where(
+                        AiKnowledgeEntityModel.knowledge_base_id == kb_id,
+                        AiKnowledgeEntityModel.is_deleted.is_(False),
+                        AiKnowledgeEntityModel.name.in_(names),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        ent_map = {e.name: e.id for e in ents}
+        created = []
+        for name in names:
+            eid = ent_map.get(name)
+            if eid is None:
+                e = AiKnowledgeEntityModel(knowledge_base_id=kb_id, name=name, etype="annotation", weight=1)
+                db.add(e)
+                await db.flush()
+                eid = e.id
+                ent_map[name] = eid
+                created.append(name)
+            exists = (
+                await db.execute(
+                    select(AiKnowledgeEntityChunkModel.id).where(
+                        AiKnowledgeEntityChunkModel.entity_id == eid,
+                        AiKnowledgeEntityChunkModel.chunk_id == chunk_id,
+                        AiKnowledgeEntityChunkModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if not exists:
+                db.add(AiKnowledgeEntityChunkModel(entity_id=eid, chunk_id=chunk_id))
+    await age_sync_graph(kb_id)
+    return created
+
+
 async def graph_retrieve(kb_ids: list[int], query: str, top_k: int = 5, hops: int = 1) -> list[dict]:
     """图谱检索：查询词匹配实体 → 扩展邻居 → 收集相关实体及其所在分块。
 

@@ -112,7 +112,22 @@ async def search(
         vector_weight=data.vector_weight,
         fulltext_weight=data.fulltext_weight,
     )
+    # 记录检索日志（供检索趋势统计）
+    await AiKnowledgeService.log_search(
+        kb_id, data.query, data.mode, data.top_k, results, user_id=auth.user.id
+    )
     return SuccessResponse(data=results, msg="检索成功")
+
+
+@KnowledgeRouter.get("/bases/{kb_id}/search-stats", summary="检索统计")
+async def get_search_stats(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+    days: int = 30,
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.search_stats(kb_id, days), msg="查询成功"
+    )
 
 
 @KnowledgeRouter.get("/bases/{kb_id}/graph", summary="知识图谱（GraphRAG）")
