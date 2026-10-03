@@ -101,7 +101,13 @@ async def search(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
 ) -> JSONResponse:
     results = await AiKnowledgeService.search(
-        [kb_id], data.query, data.top_k, use_graph=data.use_graph, mode=data.mode
+        [kb_id],
+        data.query,
+        data.top_k,
+        use_graph=data.use_graph,
+        mode=data.mode,
+        vector_weight=data.vector_weight,
+        fulltext_weight=data.fulltext_weight,
     )
     return SuccessResponse(data=results, msg="检索成功")
 

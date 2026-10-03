@@ -312,12 +312,23 @@ class AiKnowledgeService:
         return {"chunks": saved}
 
     @classmethod
-    async def search(cls, kb_ids: list[int], query: str, top_k: int = 5, use_graph: bool = True, mode: str = "hybrid") -> list[dict]:
+    async def search(
+        cls,
+        kb_ids: list[int],
+        query: str,
+        top_k: int = 5,
+        use_graph: bool = True,
+        mode: str = "hybrid",
+        vector_weight: float = 0.5,
+        fulltext_weight: float = 0.5,
+    ) -> list[dict]:
         """知识检索（多模态，自动选路）。mode: vector/fulltext/hybrid/graph/grep。"""
         if not kb_ids or not query:
             return []
         if cls._is_postgres():
-            return await cls._pg_search(kb_ids, query, top_k, use_graph, mode)
+            return await cls._pg_search(
+                kb_ids, query, top_k, use_graph, mode, vector_weight, fulltext_weight
+            )
         return await cls._py_search(kb_ids, query, top_k, use_graph, mode)
 
     @staticmethod
@@ -346,13 +357,22 @@ class AiKnowledgeService:
             return False
 
     @classmethod
-    async def _pg_search(cls, kb_ids: list[int], query: str, top_k: int, use_graph: bool, mode: str = "hybrid") -> list[dict]:
-        """PostgreSQL 多模态检索：vector / fulltext(jiebacfg) / hybrid / graph / grep(ILIKE)。"""
+    async def _pg_search(
+        cls,
+        kb_ids: list[int],
+        query: str,
+        top_k: int,
+        use_graph: bool,
+        mode: str = "hybrid",
+        vector_weight: float = 0.5,
+        fulltext_weight: float = 0.5,
+    ) -> list[dict]:
+        """PostgreSQL 多模态检索：vector / fulltext(jiebacfg) / hybrid(加权融合) / graph / grep(ILIKE)。"""
         results: list[dict] = []
         seen: set[int] = set()
-        do_vec = mode in ("vector", "hybrid")
         do_ft = mode in ("fulltext", "hybrid")
-        do_graph = mode in ("graph", "hybrid") and (use_graph or mode == "graph")
+        do_vec = mode in ("vector", "hybrid")
+        do_graph = mode == "graph" or (mode == "hybrid" and use_graph)
 
         # grep / 子串全文（WikiLLM 式，正则/包含）
         if mode == "grep":
@@ -370,7 +390,6 @@ class AiKnowledgeService:
                         )
                     ).mappings().all()
                     for r in rows:
-                        seen.add(int(r["id"]))
                         results.append(
                             {
                                 "chunk_id": int(r["id"]),
@@ -384,6 +403,9 @@ class AiKnowledgeService:
             except Exception:  # noqa: BLE001
                 pass
             return results[:top_k]
+
+        ft_list: list[dict] = []
+        vec_list: list[dict] = []
 
         # fulltext / jieba 中文全文
         if do_ft:
@@ -404,8 +426,7 @@ class AiKnowledgeService:
                             )
                         ).mappings().all()
                         for r in rows:
-                            seen.add(int(r["id"]))
-                            results.append(
+                            ft_list.append(
                                 {
                                     "chunk_id": int(r["id"]),
                                     "knowledge_base_id": int(r["knowledge_base_id"]),
@@ -418,7 +439,7 @@ class AiKnowledgeService:
             except Exception:  # noqa: BLE001
                 pass
             if mode == "fulltext":
-                return results[:top_k]
+                return ft_list[:top_k]
 
         # vector / pgvector
         if do_vec:
@@ -439,13 +460,9 @@ class AiKnowledgeService:
                         )
                     ).mappings().all()
                     for r in rows:
-                        rid = int(r["id"])
-                        if rid in seen:
-                            continue
-                        seen.add(rid)
-                        results.append(
+                        vec_list.append(
                             {
-                                "chunk_id": rid,
+                                "chunk_id": int(r["id"]),
                                 "knowledge_base_id": int(r["knowledge_base_id"]),
                                 "file_name": r["file_name"] or "",
                                 "content": r["content"],
@@ -454,14 +471,17 @@ class AiKnowledgeService:
                             }
                         )
             except Exception:  # noqa: BLE001
-                py = await cls._py_search_vector(kb_ids, query, top_k)
-                for r in py:
-                    rid = r["chunk_id"]
-                    if rid not in seen:
-                        seen.add(rid)
-                        results.append(r)
+                vec_list = await cls._py_search_vector(kb_ids, query, top_k)
             if mode == "vector":
-                return results[:top_k]
+                return vec_list[:top_k]
+
+        # hybrid：向量 + 全文加权融合（min-max 归一化后按权重合成）
+        if mode == "hybrid":
+            results = cls._fuse_weighted(vec_list, ft_list, vector_weight, fulltext_weight)
+            seen = {r["chunk_id"] for r in results}
+        else:
+            results = vec_list + ft_list
+            seen = {r["chunk_id"] for r in results}
 
         # graph 多跳
         if do_graph:
@@ -487,6 +507,37 @@ class AiKnowledgeService:
             except Exception:  # noqa: BLE001
                 pass
         return results[: top_k * 3]
+
+    @staticmethod
+    def _minmax_scores(items: list[dict]) -> dict[int, float]:
+        """按分块得分清单做 min-max 归一化。"""
+        if not items:
+            return {}
+        scores = [it.get("score", 0.0) or 0.0 for it in items]
+        lo, hi = min(scores), max(scores)
+        rng = (hi - lo) or 1.0
+        return {it["chunk_id"]: ((it.get("score", 0.0) or 0.0) - lo) / rng for it in items}
+
+    @classmethod
+    def _fuse_weighted(
+        cls,
+        vec_list: list[dict],
+        ft_list: list[dict],
+        vec_w: float,
+        ft_w: float,
+    ) -> list[dict]:
+        """混合检索：向量 + 全文按权重融合（缺失侧贡献 0）。"""
+        vn = cls._minmax_scores(vec_list)
+        fn = cls._minmax_scores(ft_list)
+        info: dict[int, dict] = {}
+        for it in vec_list + ft_list:
+            info.setdefault(it["chunk_id"], it)
+        fused: list[dict] = []
+        for cid, it in info.items():
+            combined = vn.get(cid, 0.0) * vec_w + fn.get(cid, 0.0) * ft_w
+            fused.append({**it, "score": round(combined, 4)})
+        fused.sort(key=lambda x: x["score"], reverse=True)
+        return fused
 
     @classmethod
     async def _ensure_vector_col(cls, db) -> None:
@@ -682,12 +733,33 @@ class AiKnowledgeService:
             e = await db.get(AiKnowledgeEntityModel, entity_id)
             if not e or e.is_deleted or e.knowledge_base_id != kb_id:
                 return None
+            old_name = e.name
             if data.name:
                 e.name = data.name
             if data.etype:
                 e.etype = data.etype
             if data.weight:
                 e.weight = data.weight
+            # 改名时联动更新关系边的 source/target（保持图谱连边不悬空）
+            if data.name and data.name != old_name:
+                from sqlalchemy import update as _update
+
+                await db.execute(
+                    _update(AiKnowledgeRelationModel)
+                    .where(
+                        AiKnowledgeRelationModel.knowledge_base_id == kb_id,
+                        AiKnowledgeRelationModel.source == old_name,
+                    )
+                    .values(source=data.name)
+                )
+                await db.execute(
+                    _update(AiKnowledgeRelationModel)
+                    .where(
+                        AiKnowledgeRelationModel.knowledge_base_id == kb_id,
+                        AiKnowledgeRelationModel.target == old_name,
+                    )
+                    .values(target=data.name)
+                )
         await graphrag.age_sync_graph(kb_id)
         return {"id": e.id, "name": e.name, "etype": e.etype or "keyword", "weight": e.weight or 1}
 

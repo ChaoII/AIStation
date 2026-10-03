@@ -37,6 +37,8 @@ class AiKnowledgeSearchSchema(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     use_graph: bool = True
     mode: str = Field(default="hybrid", description="vector/fulltext/hybrid/graph/grep")
+    vector_weight: float = Field(default=0.5, ge=0.0, le=1.0, description="混合检索：向量权重")
+    fulltext_weight: float = Field(default=0.5, ge=0.0, le=1.0, description="混合检索：全文权重")
 
 
 class AiDatasourceCreateSchema(BaseModel):
