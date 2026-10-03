@@ -468,6 +468,63 @@
           </el-form>
         </el-tab-pane>
 
+        <!-- 文档管理（wikiLLM/ima 式） -->
+        <el-tab-pane label="文档" name="documents">
+          <el-upload
+            drag
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="onUploadFile"
+            accept=".txt,.md,.csv,.json,.docx,.pdf"
+            multiple
+            class="doc-upload"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">
+              拖拽文件到此处，或
+              <em>点击上传</em>
+              （txt/md/docx/pdf）
+            </div>
+          </el-upload>
+          <div class="doc-searchbar">
+            <el-select v-model="docChunkSize" size="small" style="width: 130px">
+              <el-option label="块大小 200" :value="200" />
+              <el-option label="块大小 500" :value="500" />
+              <el-option label="块大小 1000" :value="1000" />
+            </el-select>
+            <el-select v-model="docStrategy" size="small" style="width: 130px">
+              <el-option label="定长+重叠" value="fixed" />
+              <el-option label="按段落" value="paragraph" />
+              <el-option label="按句子" value="sentence" />
+            </el-select>
+          </div>
+          <el-table v-loading="loadingDocs" :data="documents" size="small" max-height="50vh">
+            <el-table-column prop="name" label="文档" min-width="180" show-overflow-tooltip />
+            <el-table-column label="类型" width="70" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" type="info" effect="plain">{{ row.file_type }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="大小" width="90" align="center">
+              <template #default="{ row }">{{ fmtSize(row.size) }}</template>
+            </el-table-column>
+            <el-table-column prop="chunk_count" label="分块" width="70" align="center" />
+            <el-table-column label="时间" width="150">
+              <template #default="{ row }">{{ row.created_time }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center">
+              <template #default="{ row }">
+                <el-button link type="danger" size="small" @click="deleteDoc(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty
+            v-if="!documents.length && !loadingDocs"
+            description="暂无文档"
+            :image-size="60"
+          />
+        </el-tab-pane>
+
         <!-- 分块 -->
         <el-tab-pane label="分块" name="chunks">
           <el-table v-loading="loadingChunks" :data="detailChunks" size="small" max-height="60vh">
@@ -1512,6 +1569,7 @@ import {
   Connection,
   Refresh,
   Share,
+  UploadFilled,
 } from "@element-plus/icons-vue";
 import {
   getAiKnowledgeList,
@@ -1538,6 +1596,9 @@ import {
   getAiRelationTypes,
   createAiRelationType,
   deleteAiRelationType,
+  getAiKnowledgeDocuments,
+  uploadAiKnowledgeDocument,
+  deleteAiKnowledgeDocument,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
@@ -2203,6 +2264,7 @@ async function openDetail(row: any) {
   suggestHint.value = "";
   loadLogs();
   loadStats();
+  loadDocs();
 }
 
 async function saveDetailOverview() {
@@ -2403,6 +2465,72 @@ async function loadLogs() {
     annotationLogs.value = [];
   } finally {
     loadingLogs.value = false;
+  }
+}
+
+// ---------- 文档管理（wikiLLM/ima 式） ----------
+const documents = ref<any[]>([]);
+const loadingDocs = ref(false);
+const uploadingDoc = ref(false);
+const docChunkSize = ref(500);
+const docOverlap = ref(50);
+const docStrategy = ref("fixed");
+function fmtSize(n: number) {
+  if (!n) return "0B";
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / 1024 / 1024).toFixed(1)}MB`;
+}
+async function loadDocs() {
+  if (!detailKb.value) return;
+  loadingDocs.value = true;
+  try {
+    const r = await getAiKnowledgeDocuments(detailKb.value.id);
+    documents.value = r.data?.data || [];
+  } catch {
+    documents.value = [];
+  } finally {
+    loadingDocs.value = false;
+  }
+}
+async function onUploadFile(file: any) {
+  if (!detailKb.value) return;
+  uploadingDoc.value = true;
+  try {
+    await uploadAiKnowledgeDocument(
+      detailKb.value.id,
+      file.raw,
+      docChunkSize.value,
+      docOverlap.value,
+      docStrategy.value
+    );
+    ElMessage.success(`已上传「${file.name}」并索引`);
+    await loadDocs();
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "上传失败");
+  } finally {
+    uploadingDoc.value = false;
+  }
+}
+async function deleteDoc(row: any) {
+  if (!detailKb.value) return;
+  try {
+    await ElMessageBox.confirm(
+      `确定删除文档「${row.name}」吗？其索引分块将一并移除，不可恢复。`,
+      "删除文档",
+      { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await deleteAiKnowledgeDocument(detailKb.value.id, row.id);
+    ElMessage.success("已删除");
+    await loadDocs();
+    await loadDetailStats(detailKb.value.id);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "删除失败");
   }
 }
 
@@ -3142,6 +3270,17 @@ onMounted(() => {
 }
 .stat-tag {
   margin: 0 6px 6px 0;
+}
+.doc-upload {
+  margin-bottom: 12px;
+  .el-upload-dragger {
+    padding: 26px;
+  }
+}
+.doc-searchbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .graph-ctx {

@@ -191,6 +191,32 @@ export function createAiRelationType(data: { name: string; color?: string }) {
 export function deleteAiRelationType(rid: number) {
   return request({ url: `/ai/knowledge/relation-types/${rid}`, method: "delete" });
 }
+// ---------- 文档管理（wikiLLM/ima 式） ----------
+export function getAiKnowledgeDocuments(id: number) {
+  return request({ url: `${BASE}/${id}/documents`, method: "get" });
+}
+export function uploadAiKnowledgeDocument(
+  id: number,
+  file: File,
+  chunkSize = 500,
+  overlap = 50,
+  strategy = "fixed"
+) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("chunk_size", String(chunkSize));
+  form.append("overlap", String(overlap));
+  form.append("strategy", strategy);
+  return request({
+    url: `${BASE}/${id}/documents/upload`,
+    method: "post",
+    data: form,
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}
+export function deleteAiKnowledgeDocument(id: number, docId: number) {
+  return request({ url: `${BASE}/${id}/documents/${docId}`, method: "delete" });
+}
 
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {
