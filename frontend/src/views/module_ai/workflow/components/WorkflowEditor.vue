@@ -155,11 +155,27 @@
                       </div>
                       <el-button size="small" @click="batchSetEnabled(true)">批量启用</el-button>
                       <el-button size="small" @click="batchSetEnabled(false)">批量禁用</el-button>
+                      <el-button size="small" @click="saveSelectionAsTemplate">
+                        保存为模板
+                      </el-button>
                       <el-button size="small" type="danger" @click="batchDelete">
                         批量删除
                       </el-button>
                     </div>
                   </el-popover>
+                  <el-dropdown trigger="click" @command="insertTemplate">
+                    <el-button size="small" :icon="Collection">模板库</el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item v-for="(tpl, i) in userTemplates" :key="i" :command="tpl">
+                          {{ tpl.name }}（{{ tpl.nodes.length }} 节点）
+                        </el-dropdown-item>
+                        <el-dropdown-item v-if="!userTemplates.length" disabled>
+                          暂无自定义模板
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                   <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
                   <el-button size="small" :icon="DocumentCopy" @click="handleExportDoc">
                     文档
@@ -2598,6 +2614,92 @@ function batchDelete() {
     .catch(() => {
       /* 取消 */
     });
+}
+
+// ---------- 节点模板库（自定义可复用子图） ----------
+type UserTemplate = {
+  name: string;
+  nodes: Array<{ id: string; type: string; data: any; x: number; y: number; parentNode?: string }>;
+  edges: Array<{ source: string; target: string; sourceHandle?: string | null }>;
+};
+const USER_TEMPLATE_KEY = "wf_user_templates";
+function loadUserTemplates(): UserTemplate[] {
+  try {
+    return JSON.parse(localStorage.getItem(USER_TEMPLATE_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+function saveUserTemplates(list: UserTemplate[]) {
+  localStorage.setItem(USER_TEMPLATE_KEY, JSON.stringify(list));
+}
+const userTemplates = ref<UserTemplate[]>(loadUserTemplates());
+function saveSelectionAsTemplate() {
+  const ids = new Set(_selectedIds());
+  const selNodes = nodes.value.filter((n) => ids.has(n.id));
+  if (!selNodes.length) {
+    ElMessage.info("请先选节点（Shift/Ctrl 多选）再保存为模板");
+    return;
+  }
+  const selEdges = edges.value.filter((e) => ids.has(e.source) && ids.has(e.target));
+  ElMessageBox.prompt("模板名称", "保存为模板", {
+    confirmButtonText: "保存",
+    cancelButtonText: "取消",
+    inputPlaceholder: "如：检索问答子图",
+    inputValue: "我的模板",
+  })
+    .then(({ value }) => {
+      const tpl: UserTemplate = {
+        name: value || "未命名",
+        nodes: selNodes.map((n) => ({
+          id: n.id,
+          type: n.type as string,
+          data: JSON.parse(JSON.stringify(n.data || {})),
+          x: n.position?.x ?? 0,
+          y: n.position?.y ?? 0,
+          parentNode: n.parentNode,
+        })),
+        edges: selEdges.map((e) => ({
+          source: e.source,
+          target: e.target,
+          sourceHandle: e.sourceHandle,
+        })),
+      };
+      const list = loadUserTemplates();
+      list.push(tpl);
+      saveUserTemplates(list);
+      ElMessage.success("已保存模板");
+    })
+    .catch(() => {
+      /* 取消 */
+    });
+}
+function insertTemplate(tpl: UserTemplate) {
+  if (!tpl.nodes.length) return;
+  pushHistory();
+  const t = Date.now();
+  const idMap: Record<string, string> = {};
+  const newNodes = tpl.nodes.map((n, i) => {
+    const nid = `node_${t}_${i}`;
+    idMap[n.id] = nid;
+    return {
+      id: nid,
+      type: n.type,
+      position: { x: (n.x ?? 0) + 120, y: (n.y ?? 0) + 120 },
+      data: JSON.parse(JSON.stringify(n.data || {})),
+    } as Node;
+  });
+  const newEdges = tpl.edges.map((e, i) => ({
+    id: `edge_${t}_${i}`,
+    source: idMap[e.source],
+    target: idMap[e.target],
+    sourceHandle: e.sourceHandle,
+    type: defaultEdgeOptions.type,
+    animated: true,
+  }));
+  addNodes(newNodes);
+  newEdges.forEach((ed) => addEdges(ed));
+  ElMessage.success(`已插入模板「${tpl.name}」（${newNodes.length} 个节点）`);
 }
 
 function autoLayout() {
