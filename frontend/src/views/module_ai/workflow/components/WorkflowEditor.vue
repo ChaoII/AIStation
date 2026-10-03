@@ -142,6 +142,7 @@
                   <el-button size="small" :icon="Link" :disabled="!workflowId" @click="openShare">
                     分享
                   </el-button>
+                  <el-button size="small" :icon="Share" @click="topoVisible = true">拓扑</el-button>
                   <el-popover trigger="click" placement="bottom-end" :disabled="!selectedCount">
                     <template #reference>
                       <el-button size="small" :icon="Grid" :disabled="!selectedCount">
@@ -765,6 +766,19 @@
         <span class="compare-detail">{{ d.detail }}</span>
       </div>
     </el-dialog>
+
+    <!-- 拓扑只读总览 -->
+    <el-dialog
+      v-model="topoVisible"
+      title="DAG 拓扑总览"
+      width="800px"
+      height="600px"
+      append-to-body
+    >
+      <div class="topo-dialog">
+        <TopoView :nodes="nodes" :edges="edges" />
+      </div>
+    </el-dialog>
   </el-drawer>
 </template>
 
@@ -820,6 +834,7 @@ import "@vue-flow/minimap/dist/style.css";
 
 import WorkflowNode from "./WorkflowNode.vue";
 import NodeConfigPanel from "./NodeConfigPanel.vue";
+import TopoView from "./TopoView.vue";
 import { NODE_DEFS, NODE_CATEGORIES, nodeDefOf, categoryOf, type WorkflowNodeType } from "../nodes";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiToolList } from "@/api/module_ai/tool";
@@ -1182,6 +1197,7 @@ function stopReplay() {
 }
 const statsVisible = ref(false);
 const statsLoading = ref(false);
+const topoVisible = ref(false);
 const stats = ref<{
   total: number;
   success: number;
@@ -3467,6 +3483,11 @@ async function handleApprove(decision: "approve" | "reject") {
     color: var(--el-text-color-secondary);
     font-size: 12px;
   }
+}
+
+.topo-dialog {
+  width: 100%;
+  height: 520px;
 }
 
 .history-detail {

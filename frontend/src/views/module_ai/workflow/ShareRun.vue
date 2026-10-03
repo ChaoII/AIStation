@@ -54,6 +54,15 @@
             </div>
           </div>
         </div>
+        <div class="share-captcha">
+          <span class="share-captcha__q">验证：{{ captchaA }} + {{ captchaB }} = ?</span>
+          <el-input
+            v-model="captchaAnswer"
+            size="small"
+            class="share-captcha__input"
+            placeholder="答案"
+          />
+        </div>
         <div class="share-input">
           <el-input
             v-model="inputText"
@@ -89,9 +98,19 @@ const messages = ref<
   }>
 >([]);
 const detail = ref<Record<string, boolean>>({});
+// 人机校验（算术）
+const captchaA = ref(0);
+const captchaB = ref(0);
+const captchaAnswer = ref("");
+function newCaptcha() {
+  captchaA.value = Math.floor(Math.random() * 8) + 1;
+  captchaB.value = Math.floor(Math.random() * 8) + 1;
+  captchaAnswer.value = "";
+}
 
 onMounted(() => {
   token.value = (route.query.token as string) || "";
+  newCaptcha();
 });
 
 function openDetail(i: number, ti: number) {
@@ -139,6 +158,11 @@ async function send() {
   const text = inputText.value.trim();
   if (!text) return;
   if (!token.value) return;
+  if (Number(captchaAnswer.value.trim()) !== captchaA.value + captchaB.value) {
+    captchaAnswer.value = "";
+    return;
+  }
+  newCaptcha();
   messages.value.push({ role: "user", text });
   inputText.value = "";
   const msg = { role: "assistant", text: "", trace: [], running: true } as any;
@@ -352,5 +376,20 @@ async function send() {
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--el-border-color-light);
+}
+
+.share-captcha {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 0 20px 8px;
+
+  .share-captcha__q {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+  .share-captcha__input {
+    width: 90px;
+  }
 }
 </style>
