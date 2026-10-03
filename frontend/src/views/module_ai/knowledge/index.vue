@@ -322,45 +322,39 @@
         <div class="graph-stats">
           <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
           <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
-          <span class="kb-opt-hint">拖动节点可微调布局；下方可编辑图谱。</span>
+          <span class="kb-opt-hint">
+            右键节点可编辑属性/绑定分块/加关系/删除，右键空白新建节点。
+          </span>
         </div>
-        <el-collapse class="graph-edit">
-          <el-collapse-item title="编辑实体 / 关系（保存后同步 AGE）" name="edit">
-            <div class="ge-row">
-              <el-input v-model="newEntityName" placeholder="实体名" size="small" style="flex: 1" />
-              <el-input
-                v-model="newEntityType"
-                placeholder="类型(keyword)"
-                size="small"
-                style="width: 120px"
-              />
-              <el-button size="small" type="primary" @click="addGraphEntity">加实体</el-button>
-            </div>
-            <div v-for="n in graphNodes" :key="n.id" class="ge-item">
-              <span class="ge-item__name">{{ n.name }}</span>
-              <span v-if="n.weight" class="ge-item__w">w={{ n.weight }}</span>
-              <el-button link type="danger" size="small" @click="delGraphEntity(n)">删除</el-button>
-            </div>
-            <el-divider />
-            <div class="ge-row">
-              <el-select v-model="newRelSource" placeholder="源" size="small" style="flex: 1">
-                <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
-              </el-select>
-              <el-select v-model="newRelTarget" placeholder="目标" size="small" style="flex: 1">
-                <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
-              </el-select>
-              <el-button size="small" type="primary" @click="addGraphRelation">加关系</el-button>
-            </div>
-            <div v-for="e in graphEdges" :key="e.id" class="ge-item">
-              <span class="ge-item__name">{{ e.source }} → {{ e.target }}</span>
-              <span v-if="e.weight" class="ge-item__w">w={{ e.weight }}</span>
-              <el-button link type="danger" size="small" @click="delGraphRelation(e)">
-                删除
-              </el-button>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
-        <VChart v-if="graphOption" class="graph-chart" :option="graphOption" autoresize />
+        <VChart
+          v-if="graphOption"
+          class="graph-chart"
+          :option="graphOption"
+          autoresize
+          @click="onGraphNodeClick"
+          @contextmenu="onGraphContextmenu"
+        />
+        <!-- 图上右键菜单 -->
+        <div
+          v-if="ctxMenu.visible"
+          class="graph-ctx"
+          :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+          @click.stop
+        >
+          <template v-if="ctxMenu.kind === 'node'">
+            <div class="graph-ctx__item" @click="ctxEditNode">编辑节点属性</div>
+            <div class="graph-ctx__item" @click="ctxBindNode">绑定分块</div>
+            <div class="graph-ctx__item" @click="ctxAddRel">添加关系</div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelNode">删除节点</div>
+          </template>
+          <template v-else-if="ctxMenu.kind === 'edge'">
+            <div class="graph-ctx__item" @click="ctxEditRel">编辑关系</div>
+            <div class="graph-ctx__item graph-ctx__danger" @click="ctxDelRel">删除关系</div>
+          </template>
+          <template v-else>
+            <div class="graph-ctx__item" @click="ctxNewNode">新建节点</div>
+          </template>
+        </div>
       </div>
     </el-dialog>
 
@@ -755,25 +749,6 @@
                 拖动节点可微调布局；下方可直接编辑图谱（保存后同步 AGE）。
               </span>
             </div>
-            <el-collapse class="graph-edit">
-              <el-collapse-item title="编辑实体 / 关系" name="edit">
-                <div class="ge-row">
-                  <el-input
-                    v-model="newEntityName"
-                    placeholder="实体名"
-                    size="small"
-                    style="flex: 1"
-                  />
-                  <el-input
-                    v-model="newEntityType"
-                    placeholder="类型(keyword)"
-                    size="small"
-                    style="width: 120px"
-                  />
-                  <el-button size="small" type="primary" @click="addGraphEntity">加实体</el-button>
-                </div>
-              </el-collapse-item>
-            </el-collapse>
             <VChart
               v-if="graphOption"
               class="graph-chart"
@@ -1468,20 +1443,6 @@ async function reloadGraph(hint?: string) {
     ElMessage.error(e?.message || "刷新图谱失败");
   }
 }
-async function addGraphEntity() {
-  const name = newEntityName.value.trim();
-  if (!name || !graphKbId.value) return;
-  try {
-    await createAiKnowledgeGraphEntity(graphKbId.value, {
-      name,
-      etype: newEntityType.value || "keyword",
-    });
-    newEntityName.value = "";
-    await reloadGraph("已新增实体");
-  } catch (e: any) {
-    ElMessage.error(e?.message || "新增失败");
-  }
-}
 async function delGraphEntity(n: any) {
   if (!graphKbId.value) return;
   try {
@@ -1600,19 +1561,6 @@ async function saveRenameEntity() {
     ElMessage.error(e?.message || "更新失败");
   } finally {
     renamingEntity.value = false;
-  }
-}
-async function addGraphRelation() {
-  const s = newRelSource.value;
-  const t = newRelTarget.value;
-  if (!s || !t || !graphKbId.value) return;
-  try {
-    await createAiKnowledgeGraphRelation(graphKbId.value, { source: s, target: t });
-    newRelSource.value = "";
-    newRelTarget.value = "";
-    await reloadGraph("已新增关系");
-  } catch (e: any) {
-    ElMessage.error(e?.message || "新增关系失败");
   }
 }
 async function delGraphRelation(e: any) {
@@ -2441,7 +2389,7 @@ onMounted(loadData);
 
 .graph-view {
   .graph-chart {
-    height: 360px;
+    height: 480px;
   }
 }
 
