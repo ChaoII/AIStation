@@ -1573,3 +1573,27 @@ def test_workflow_timeout(test_client, auth_headers):
         assert "data: [DONE]" in r.text
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+
+def test_workflow_node_retry(test_client, auth_headers):
+    """节点重试：retry 配置下失败节点重试后仍失败会中止（不崩溃）。"""
+    wf = test_client.post("/api/v1/ai/workflows/create",
+        json={"name": _new_name(), "graph": {
+            "nodes": [
+                {"id": "start", "type": "start", "data": {"variables": []}},
+                {"id": "code", "type": "code",
+                 "data": {"code": "x = 1/0", "inputs": {}, "output_variable": "x", "retry": 2}},
+                {"id": "end", "type": "end", "data": {"output_template": "{{x}}"}},
+            ],
+            "edges": [{"id": "e1", "source": "start", "target": "code"},
+                      {"id": "e2", "source": "code", "target": "end"}],
+        }}, headers=auth_headers).json()["data"]["id"]
+    try:
+        r = test_client.post(f"/api/v1/ai/workflows/{wf}/run/stream",
+            json={"messages": [{"role": "user", "parts": [{"type": "text", "text": "hi"}]}]},
+            headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert '"status": "error"' in r.text
+        assert "data: [DONE]" in r.text
+    finally:
+        _delete_wf(test_client, auth_headers, [wf])

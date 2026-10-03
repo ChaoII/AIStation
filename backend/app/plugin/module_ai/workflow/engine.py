@@ -1462,6 +1462,36 @@ class WorkflowEngine:
                 elif ntype == "end":
                     await self._exec_end(node)
             except Exception as e:  # noqa: BLE001
+                retry_n = int((node.get("data") or {}).get("retry", 0) or 0)
+                ok = False
+                if retry_n > 0:
+                    for _ in range(retry_n):
+                        self.outputs.pop(node_id, None)
+                        try:
+                            async for rf in self._exec_single(node):
+                                yield rf
+                            ok = True
+                            break
+                        except Exception:  # noqa: BLE001
+                            continue
+                if ok:
+                    # 重试成功：按类型计算下游边并续跑
+                    result = self.outputs.get(node_id)
+                    if ntype in ("condition", "classifier"):
+                        handle = "true" if result else "false"
+                        next_id = self._edge_target(node_id, handle) or self._edge_target(node_id)
+                    else:
+                        next_id = self._edge_target(node_id)
+                    if next_id and next_id not in visited:
+                        stack.append(next_id)
+                    yield self.ms.node_status(
+                        node_id, "success", label, input=self._node_input(node), output=_snapshot(self.outputs.get(node_id)), duration_ms=int((time.perf_counter() - node_t0) * 1000)
+                    )
+                    visited.add(node_id)
+                    _snapshot_frontier()
+                    if budget is not None and executed >= budget:
+                        break
+                    continue
                 yield self.ms.node_status(node_id, "error", label, error=str(e), input=self._node_input(node), duration_ms=int((time.perf_counter() - node_t0) * 1000))
                 self.state["error"] = str(e)
                 yield self.ms.error(str(e))

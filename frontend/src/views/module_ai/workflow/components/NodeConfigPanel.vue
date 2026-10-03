@@ -15,6 +15,11 @@
     <el-form-item label="节点备注">
       <el-input v-model="d.note" placeholder="给该节点加一条备注（可选）" size="small" />
     </el-form-item>
+    <!-- 失败重试次数 -->
+    <el-form-item label="失败重试次数">
+      <el-input-number v-model="d.retry" :min="0" :max="5" size="small" />
+      <span class="node-disabled-tip">节点执行失败时自动重跑该节点并续跑下游</span>
+    </el-form-item>
     <!-- 上游调用链 -->
     <el-form-item v-if="props.nodeChain && props.nodeChain.length > 1" label="上游调用链">
       <div class="chain-text">{{ props.nodeChain.join(" → ") }}</div>
