@@ -139,7 +139,31 @@ import WorkflowEditor from "./components/WorkflowEditor.vue";
 
 defineOptions({ name: "AiWorkflow" });
 
-const searchConfig = reactive<ISearchConfig>({ formItems: [] });
+const searchConfig = reactive<ISearchConfig>({
+  permPrefix: "module_ai:workflow",
+  colon: true,
+  isExpandable: true,
+  showNumber: 2,
+  form: { labelWidth: "auto" },
+  formItems: [
+    {
+      prop: "name",
+      label: "名称",
+      type: "input",
+      attrs: { placeholder: "工作流名称", clearable: true, style: { width: "200px" } },
+    },
+    {
+      prop: "enabled",
+      label: "启用",
+      type: "select",
+      options: [
+        { label: "启用", value: "true" },
+        { label: "停用", value: "false" },
+      ],
+      attrs: { placeholder: "状态", clearable: true, style: { width: "160px" } },
+    },
+  ],
+});
 
 const contentConfig = reactive<IContentConfig>({
   permPrefix: "module_ai:workflow",
@@ -148,10 +172,21 @@ const contentConfig = reactive<IContentConfig>({
   hideColumnFilter: true,
   toolbar: [],
   defaultToolbar: ["refresh"],
-  pagination: false,
-  indexAction: async () => {
+  pagination: { pageSize: 10, pageSizes: [10, 20, 50] },
+  request: { page_no: "page_no", page_size: "page_size" },
+  indexAction: async (params: any) => {
     const res = await getAiWorkflowList();
-    return res.data?.data || [];
+    let list = res.data?.data || [];
+    const name = (params?.name || "").trim().toLowerCase();
+    if (name) list = list.filter((w: any) => (w.name || "").toLowerCase().includes(name));
+    const en = params?.enabled;
+    if (en !== undefined && en !== "") {
+      list = list.filter((w: any) => String(w.enabled) === String(en));
+    }
+    const pn = Number(params?.page_no || 1);
+    const ps = Number(params?.page_size || 10);
+    const total = list.length;
+    return { total, list: list.slice((pn - 1) * ps, pn * ps) };
   },
   deleteAction: async (ids: string) => {
     const idList = ids
