@@ -60,6 +60,18 @@ async def remote_models(
     return SuccessResponse(data=await AiProviderService.remote_models(provider_id), msg="查询成功")
 
 
+@AiProviderRouter.post("/remote-models/{provider_id}/import", summary="一键导入远端模型为模型配置")
+async def import_remote_models(
+    provider_id: int,
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:model:create"]))],
+) -> JSONResponse:
+    result = await AiProviderService.import_remote_models(
+        provider_id, body.get("usage") or "chat", auth
+    )
+    return SuccessResponse(data=result, msg="导入完成")
+
+
 @AiProviderRouter.get("/test/{provider_id}", summary="测试供应商连通性")
 async def test_provider(
     provider_id: int,

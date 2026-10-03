@@ -128,6 +128,42 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <!-- 远端模型 -> 一键导入为模型配置 -->
+    <el-dialog
+      v-model="pullVisible"
+      :title="`远端模型列表 · ${pullProvider?.name || ''}`"
+      width="560px"
+      append-to-body
+    >
+      <p class="pull-intro">
+        共发现
+        <b>{{ pullModels.length }}</b>
+        个模型，导入时将作为「模型配置」创建（自动去重）。
+      </p>
+      <el-form label-width="90px">
+        <el-form-item label="用途">
+          <el-select v-model="pullUsage" style="width: 100%">
+            <el-option label="聊天 chat" value="chat" />
+            <el-option label="助手 assistant" value="assistant" />
+            <el-option label="嵌入 embedding" value="embedding" />
+            <el-option label="语音识别 asr" value="asr" />
+            <el-option label="语音合成 tts" value="tts" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <el-scrollbar max-height="40vh">
+        <div class="pull-models">
+          <div v-for="m in pullModels" :key="m" class="pull-model-row">{{ m }}</div>
+        </div>
+      </el-scrollbar>
+      <template #footer>
+        <el-button @click="pullVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pullImporting" @click="onImportModels">
+          一键导入为模型配置
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -140,6 +176,7 @@ import {
   deleteAiProvider,
   getAiProviderList,
   getAiProviderRemoteModels,
+  importAiProviderRemoteModels,
   testAiProvider,
   updateAiProvider,
 } from "@/api/module_ai/provider";
@@ -297,16 +334,37 @@ async function onPullModels(row: any) {
     if (!models.length) {
       ElMessage.warning("未拉取到模型，请检查供应商连通与鉴权");
     } else {
-      ElMessageBox.alert(
-        `供应商「${row.name}」发现 ${models.length} 个模型：\n` + models.join("、"),
-        "远端模型列表",
-        { confirmButtonText: "知道了" }
-      );
+      pullProvider.value = row;
+      pullModels.value = models;
+      pullUsage.value = "chat";
+      pullVisible.value = true;
     }
   } catch (e: any) {
     ElMessage.error(e?.msg || e?.message || "拉取失败");
   } finally {
     pullingId.value = null;
+  }
+}
+
+const pullVisible = ref(false);
+const pullProvider = ref<any>(null);
+const pullModels = ref<string[]>([]);
+const pullUsage = ref("chat");
+const pullImporting = ref(false);
+async function onImportModels() {
+  if (!pullProvider.value) return;
+  pullImporting.value = true;
+  try {
+    const r = await importAiProviderRemoteModels(pullProvider.value.id, pullUsage.value);
+    const d = r.data?.data || {};
+    ElMessage.success(
+      `已导入 ${d.imported} 个模型${d.skipped ? `，跳过 ${d.skipped} 个已存在` : ""}`
+    );
+    pullVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "导入失败");
+  } finally {
+    pullImporting.value = false;
   }
 }
 
@@ -347,6 +405,26 @@ onMounted(() => {
 <style scoped>
 .ai-provider-page {
   padding: 0;
+}
+
+.pull-intro {
+  margin: 0 0 12px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+}
+.pull-models {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.pull-model-row {
+  padding: 8px 12px;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+}
+.pull-model-row:last-child {
+  border-bottom: none;
 }
 
 .provider-toolbar {

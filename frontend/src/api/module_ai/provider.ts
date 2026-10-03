@@ -22,6 +22,14 @@ export function getAiProviderRemoteModels(id: number) {
   return request({ url: `${API_PATH}/remote-models/${id}`, method: "get" });
 }
 
+export function importAiProviderRemoteModels(id: number, usage = "chat") {
+  return request({
+    url: `${API_PATH}/remote-models/${id}/import`,
+    method: "post",
+    data: { usage },
+  });
+}
+
 export function testAiProvider(id: number) {
   return request({
     url: `${API_PATH}/test/${id}`,
