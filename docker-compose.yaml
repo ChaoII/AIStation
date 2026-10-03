@@ -1,22 +1,23 @@
 services:
-  # 一体化 PostgreSQL 18：pgvector 0.8.6 + pg_jieba + Apache AGE（RAG 用）
+  # 一体化 PostgreSQL 18：pgvector 0.8.6 + pg_jieba + Apache AGE（RAG 用，PG17 已下线）
   # 构建：docker build -f devops/postgres/Dockerfile -t aistation-pg-rag:18 devops/postgres
-  # 注意：旧 aistation-pg(postgres:17) 数据在 ./devops/postgres/data，PG17→18 数据目录不兼容；
-  #       此服务用新卷 data18 + 端口 5433（保留旧 5432 不占用）。迁移完成后可停旧容器并把端口改回 5432。
+  # 注意：旧 aistation-pg(postgres:17) 数据在 ./devops/postgres/data（保留作迁移备份，勿删），
+  #       PG17→18 数据目录不兼容，本服务用新卷 data18（首次启动自动建扩展）。
   postgres:
     container_name: aistation-pg-rag
     image: aistation-pg-rag:18
     restart: always
-    command: postgres -c shared_preload_libraries=age
+    command: postgres -c shared_preload_libraries=age,pg_jieba
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: ServBay.dev
       POSTGRES_DB: aistation
       TZ: Asia/Shanghai
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
-      - ./devops/postgres/data18:/var/lib/postgresql/data
+      # PG18+ 镜像要求挂 /var/lib/postgresql（数据在子目录），不支持 /var/lib/postgresql/data
+      - ./devops/postgres/data18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U root -d aistation"]
       interval: 5s
