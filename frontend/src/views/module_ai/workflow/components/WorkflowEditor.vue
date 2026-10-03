@@ -1736,6 +1736,18 @@ function filteredPalette(catKey: string): typeof NODE_DEFS {
   );
 }
 
+function uniqueOutputVar(type: string): string {
+  const base = AUTO_OUTPUT_VAR[type];
+  if (!base) return "";
+  const used = new Set(
+    nodes.value.map((n) => n.data?.output_variable).filter((v): v is string => !!v)
+  );
+  let name = base;
+  let i = 2;
+  while (used.has(name)) name = `${base}_${i++}`;
+  return name;
+}
+
 function onPaletteClick(type: string) {
   const position = screenToFlowCoordinate({
     x: window.innerWidth / 2,
@@ -1743,6 +1755,7 @@ function onPaletteClick(type: string) {
   });
   const id = `node_${Date.now()}`;
   const data = defaultData(type);
+  if (AUTO_OUTPUT_VAR[type]) data.output_variable = uniqueOutputVar(type);
   const node = {
     id,
     type,
@@ -1767,6 +1780,7 @@ function onDrop(event: DragEvent) {
   const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
   const id = `node_${Date.now()}`;
   const data = defaultData(type);
+  if (AUTO_OUTPUT_VAR[type]) data.output_variable = uniqueOutputVar(type);
   pushHistory();
   addNodes([
     {
