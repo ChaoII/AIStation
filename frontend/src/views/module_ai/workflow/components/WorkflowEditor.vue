@@ -1808,6 +1808,7 @@ function uniqueOutputVar(type: string): string {
 }
 
 function onPaletteClick(type: string) {
+  const from = selectedNode.value;
   const position = screenToFlowCoordinate({
     x: window.innerWidth / 2,
     y: window.innerHeight / 2,
@@ -1825,7 +1826,19 @@ function onPaletteClick(type: string) {
   pushHistory();
   addNodes([node]);
   selectedNode.value = node;
-  ElMessage.success(`已添加「${nodeDefOf(type).label}」节点，请在右侧编辑`);
+  if (from && from.id !== id && from.type !== "group" && type !== "group") {
+    addEdges({
+      id: `edge_${Date.now()}`,
+      source: from.id,
+      target: id,
+      type: defaultEdgeOptions.type,
+      animated: true,
+    });
+    autoFillOnConnect({ source: from.id, target: id });
+    ElMessage.success(`已连接「${nodeDefOf(from.type || "llm").label}」→ 新节点`);
+  } else {
+    ElMessage.success(`已添加「${nodeDefOf(type).label}」节点，请在右侧编辑`);
+  }
 }
 
 function onDragOver(event: DragEvent) {
@@ -1836,6 +1849,7 @@ function onDragOver(event: DragEvent) {
 function onDrop(event: DragEvent) {
   const type = event.dataTransfer?.getData("application/aiworkflow");
   if (!type) return;
+  const from = selectedNode.value;
   const position = screenToFlowCoordinate({ x: event.clientX, y: event.clientY });
   const id = `node_${Date.now()}`;
   const data = defaultData(type);
@@ -1850,6 +1864,16 @@ function onDrop(event: DragEvent) {
       ...(type === "group" ? { width: data.width, height: data.height } : {}),
     } as Node,
   ]);
+  if (from && from.id !== id && from.type !== "group" && type !== "group") {
+    addEdges({
+      id: `edge_${Date.now()}`,
+      source: from.id,
+      target: id,
+      type: defaultEdgeOptions.type,
+      animated: true,
+    });
+    autoFillOnConnect({ source: from.id, target: id });
+  }
 }
 
 function defaultData(type: string): Record<string, any> {
