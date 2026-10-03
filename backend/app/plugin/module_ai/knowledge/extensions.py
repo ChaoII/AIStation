@@ -83,5 +83,7 @@ async def ensure_extensions() -> None:
         "id SERIAL PRIMARY KEY, uuid VARCHAR(64), status VARCHAR(32) DEFAULT '0', "
         "created_time TIMESTAMP, updated_time TIMESTAMP, is_deleted BOOLEAN DEFAULT false, "
         "deleted_time TIMESTAMP, knowledge_base_id INTEGER, name VARCHAR(256), "
-        "file_type VARCHAR(16), size INTEGER, content TEXT, chunk_count INTEGER, doc_status VARCHAR(16), file_path VARCHAR(512))"
+        "file_type VARCHAR(16), size INTEGER, content TEXT, chunk_count INTEGER, "
+        "doc_status VARCHAR(16), file_path VARCHAR(512))"
     )
+    await _run_sql("ALTER TABLE ai_knowledge_documents ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)")
