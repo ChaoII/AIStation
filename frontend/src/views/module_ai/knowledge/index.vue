@@ -58,9 +58,17 @@
               <template #default="{ row }">{{ row.description || "—" }}</template>
             </el-table-column>
             <el-table-column prop="chunk_count" label="分块数" width="90" align="center" />
-            <el-table-column label="图谱" width="130" align="center">
+            <el-table-column label="图谱" width="150" align="center">
               <template #default="{ row }">
-                <el-tag v-if="row.graph_nodes" size="small" type="success" effect="plain">
+                <el-tag
+                  v-if="row.graph_nodes"
+                  size="small"
+                  type="success"
+                  effect="plain"
+                  class="kb-graph-cell"
+                  title="点击查看图谱"
+                  @click.stop="openGraph(row)"
+                >
                   {{ row.graph_nodes }} 节点 / {{ row.graph_edges }} 边
                 </el-tag>
                 <span v-else class="kb-opt-hint">—</span>
@@ -305,8 +313,44 @@
         <div class="graph-stats">
           <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
           <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
-          <span class="kb-opt-hint">拖动节点可微调布局；检索可走图谱多跳。</span>
+          <span class="kb-opt-hint">拖动节点可微调布局；下方可编辑图谱。</span>
         </div>
+        <el-collapse class="graph-edit">
+          <el-collapse-item title="编辑实体 / 关系（保存后同步 AGE）" name="edit">
+            <div class="ge-row">
+              <el-input v-model="newEntityName" placeholder="实体名" size="small" style="flex: 1" />
+              <el-input
+                v-model="newEntityType"
+                placeholder="类型(keyword)"
+                size="small"
+                style="width: 120px"
+              />
+              <el-button size="small" type="primary" @click="addGraphEntity">加实体</el-button>
+            </div>
+            <div v-for="n in graphNodes" :key="n.id" class="ge-item">
+              <span class="ge-item__name">{{ n.name }}</span>
+              <span v-if="n.weight" class="ge-item__w">w={{ n.weight }}</span>
+              <el-button link type="danger" size="small" @click="delGraphEntity(n)">删除</el-button>
+            </div>
+            <el-divider />
+            <div class="ge-row">
+              <el-select v-model="newRelSource" placeholder="源" size="small" style="flex: 1">
+                <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
+              </el-select>
+              <el-select v-model="newRelTarget" placeholder="目标" size="small" style="flex: 1">
+                <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
+              </el-select>
+              <el-button size="small" type="primary" @click="addGraphRelation">加关系</el-button>
+            </div>
+            <div v-for="e in graphEdges" :key="e.id" class="ge-item">
+              <span class="ge-item__name">{{ e.source }} → {{ e.target }}</span>
+              <span v-if="e.weight" class="ge-item__w">w={{ e.weight }}</span>
+              <el-button link type="danger" size="small" @click="delGraphRelation(e)">
+                删除
+              </el-button>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
         <VChart v-if="graphOption" class="graph-chart" :option="graphOption" autoresize />
       </div>
     </el-dialog>
@@ -432,6 +476,11 @@ import {
   getAiKnowledgeChunks,
   deleteAiKnowledgeChunk,
   getAiKnowledgeGraph,
+  createAiKnowledgeGraphEntity,
+  updateAiKnowledgeGraphEntity,
+  deleteAiKnowledgeGraphEntities,
+  createAiKnowledgeGraphRelation,
+  deleteAiKnowledgeGraphRelations,
   getAiDatasourceList,
   createAiDatasource,
   updateAiDatasource,
@@ -637,48 +686,122 @@ const graphVisible = ref(false);
 const graphLoading = ref(false);
 const graphOption = ref<any>(null);
 const graphStats = ref({ nodes: 0, edges: 0 });
+const graphNodes = ref<any[]>([]);
+const graphEdges = ref<any[]>([]);
+const graphKbId = ref<number>();
+// 编辑表单
+const newEntityName = ref("");
+const newEntityType = ref("keyword");
+const newRelSource = ref("");
+const newRelTarget = ref("");
+async function loadGraph(g: any) {
+  graphStats.value = { nodes: (g.nodes || []).length, edges: (g.edges || []).length };
+  graphNodes.value = (g.nodes || []).map((n: any) => ({ ...n, id: n.id ?? n.name }));
+  graphEdges.value = (g.edges || []).map((e: any, i: number) => ({
+    ...e,
+    id: e.id ?? `${e.source}_${e.target}_${i}`,
+  }));
+  const nodes = graphNodes.value.map((n: any) => ({
+    id: String(n.id),
+    name: n.name,
+    symbolSize: Math.min(20 + (n.weight || 1) * 2, 40),
+    itemStyle: { color: "#409eff" },
+  }));
+  const links = graphEdges.value.map((e: any) => ({
+    source: String(e.source),
+    target: String(e.target),
+    lineStyle: { width: 1 + Math.min((e.weight || 1) / 3, 2), opacity: 0.7 },
+  }));
+  graphOption.value = {
+    tooltip: { show: true },
+    series: [
+      {
+        type: "graph",
+        layout: "force",
+        roam: true,
+        draggable: true,
+        data: nodes,
+        links,
+        force: { repulsion: 120, edgeLength: 80 },
+        label: { show: true, position: "right", fontSize: 11 },
+      },
+    ],
+  };
+}
+
 async function openGraph(kb: any) {
   const kbId = kb?.id || selectedKb.value?.id;
   if (!kbId) return;
   selectedKb.value = kb;
+  graphKbId.value = kbId;
   graphVisible.value = true;
   graphLoading.value = true;
-  graphOption.value = null;
-  graphStats.value = { nodes: 0, edges: 0 };
+  newEntityName.value = "";
+  newEntityType.value = "keyword";
+  newRelSource.value = "";
+  newRelTarget.value = "";
   try {
     const r = await getAiKnowledgeGraph(kbId);
-    const g = r.data?.data || { nodes: [], edges: [] };
-    graphStats.value = { nodes: (g.nodes || []).length, edges: (g.edges || []).length };
-    const nodes = (g.nodes || []).map((n: any) => ({
-      id: String(n.id),
-      name: n.name,
-      symbolSize: Math.min(20 + (n.weight || 1) * 2, 40),
-      itemStyle: { color: "#409eff" },
-    }));
-    const links = (g.edges || []).map((e: any) => ({
-      source: String(e.source),
-      target: String(e.target),
-      lineStyle: { width: 1 + Math.min((e.weight || 1) / 3, 2), opacity: 0.7 },
-    }));
-    graphOption.value = {
-      tooltip: { show: true },
-      series: [
-        {
-          type: "graph",
-          layout: "force",
-          roam: true,
-          draggable: true,
-          data: nodes,
-          links,
-          force: { repulsion: 120, edgeLength: 80 },
-          label: { show: true, position: "right", fontSize: 11 },
-        },
-      ],
-    };
+    await loadGraph(r.data?.data || { nodes: [], edges: [] });
   } catch (e: any) {
     ElMessage.error(e?.message || "加载图谱失败");
   } finally {
     graphLoading.value = false;
+  }
+}
+async function reloadGraph(hint?: string) {
+  if (!graphKbId.value) return;
+  try {
+    const r = await getAiKnowledgeGraph(graphKbId.value);
+    await loadGraph(r.data?.data || { nodes: [], edges: [] });
+    if (hint) ElMessage.success(hint);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "刷新图谱失败");
+  }
+}
+async function addGraphEntity() {
+  const name = newEntityName.value.trim();
+  if (!name || !graphKbId.value) return;
+  try {
+    await createAiKnowledgeGraphEntity(graphKbId.value, {
+      name,
+      etype: newEntityType.value || "keyword",
+    });
+    newEntityName.value = "";
+    await reloadGraph("已新增实体");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "新增失败");
+  }
+}
+async function delGraphEntity(n: any) {
+  if (!graphKbId.value) return;
+  try {
+    await deleteAiKnowledgeGraphEntities(graphKbId.value, [n.id]);
+    await reloadGraph("已删除实体");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "删除失败");
+  }
+}
+async function addGraphRelation() {
+  const s = newRelSource.value;
+  const t = newRelTarget.value;
+  if (!s || !t || !graphKbId.value) return;
+  try {
+    await createAiKnowledgeGraphRelation(graphKbId.value, { source: s, target: t });
+    newRelSource.value = "";
+    newRelTarget.value = "";
+    await reloadGraph("已新增关系");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "新增关系失败");
+  }
+}
+async function delGraphRelation(e: any) {
+  if (!graphKbId.value) return;
+  try {
+    await deleteAiKnowledgeGraphRelations(graphKbId.value, [e.id]);
+    await reloadGraph("已删除关系");
+  } catch (err: any) {
+    ElMessage.error(err?.message || "删除关系失败");
   }
 }
 
@@ -925,6 +1048,33 @@ onMounted(loadData);
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.graph-edit {
+  margin-bottom: 8px;
+
+  .ge-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .ge-item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 2px 0;
+
+    .ge-item__name {
+      flex: 1;
+      font-size: 13px;
+    }
+    .ge-item__w {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
 }
 .graph-chart {
   width: 100%;

@@ -41,6 +41,29 @@ export function getAiKnowledgeGraph(id: number) {
   return request({ url: `${BASE}/${id}/graph`, method: "get" });
 }
 
+// ---------- 图谱编辑（实体/关系 CRUD） ----------
+export function createAiKnowledgeGraphEntity(
+  id: number,
+  data: { name: string; etype?: string; weight?: number }
+) {
+  return request({ url: `${BASE}/${id}/graph/entity`, method: "post", data });
+}
+export function updateAiKnowledgeGraphEntity(id: number, entityId: number, data: any) {
+  return request({ url: `${BASE}/${id}/graph/entity/${entityId}`, method: "put", data });
+}
+export function deleteAiKnowledgeGraphEntities(id: number, ids: number[]) {
+  return request({ url: `${BASE}/${id}/graph/entity`, method: "delete", data: ids });
+}
+export function createAiKnowledgeGraphRelation(
+  id: number,
+  data: { source: string; target: string; weight?: number }
+) {
+  return request({ url: `${BASE}/${id}/graph/relation`, method: "post", data });
+}
+export function deleteAiKnowledgeGraphRelations(id: number, ids: number[]) {
+  return request({ url: `${BASE}/${id}/graph/relation`, method: "delete", data: ids });
+}
+
 export function getAiKnowledgeChunks(id: number) {
   return request({ url: `${BASE}/${id}/chunks`, method: "get" });
 }

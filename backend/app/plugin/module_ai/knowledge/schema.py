@@ -58,3 +58,17 @@ class AiDatasourceSyncSchema(BaseModel):
 
     table: str | None = Field(default=None, max_length=128, description="数据库表名/查询")
     limit: int = Field(default=50, ge=1, le=500)
+
+
+class AiKnowledgeGraphEntitySchema(BaseModel):
+    """图谱实体：名称 + 类型 + 权重。"""
+    name: str = Field(..., max_length=256)
+    etype: str | None = Field(default="keyword", max_length=64)
+    weight: int = Field(default=1, ge=1)
+
+
+class AiKnowledgeGraphRelationSchema(BaseModel):
+    """图谱关系：源 + 目标 + 权重。"""
+    source: str = Field(..., max_length=256)
+    target: str = Field(..., max_length=256)
+    weight: int = Field(default=1, ge=1)

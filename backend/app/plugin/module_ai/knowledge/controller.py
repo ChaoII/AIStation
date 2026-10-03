@@ -15,6 +15,8 @@ from .schema import (
     AiDatasourceUpdateSchema,
     AiKnowledgeBaseCreateSchema,
     AiKnowledgeBaseUpdateSchema,
+    AiKnowledgeGraphEntitySchema,
+    AiKnowledgeGraphRelationSchema,
     AiKnowledgeIngestSchema,
     AiKnowledgeSearchSchema,
 )
@@ -107,6 +109,61 @@ async def get_graph(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiKnowledgeService.get_graph(kb_id), msg="查询成功")
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/graph/entity", summary="新增图谱实体")
+async def create_graph_entity(
+    kb_id: int,
+    data: AiKnowledgeGraphEntitySchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.create_graph_entity(kb_id, data), msg="已新增实体"
+    )
+
+
+@KnowledgeRouter.put("/bases/{kb_id}/graph/entity/{entity_id}", summary="更新图谱实体")
+async def update_graph_entity(
+    kb_id: int,
+    entity_id: int,
+    data: AiKnowledgeGraphEntitySchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    r = await AiKnowledgeService.update_graph_entity(kb_id, entity_id, data)
+    if not r:
+        return ErrorResponse(msg="实体不存在")
+    return SuccessResponse(data=r, msg="已更新")
+
+
+@KnowledgeRouter.delete("/bases/{kb_id}/graph/entity", summary="删除图谱实体")
+async def delete_graph_entities(
+    kb_id: int,
+    ids: list[int],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    await AiKnowledgeService.delete_graph_entities(kb_id, ids)
+    return SuccessResponse(data=None, msg="已删除")
+
+
+@KnowledgeRouter.post("/bases/{kb_id}/graph/relation", summary="新增图谱关系")
+async def create_graph_relation(
+    kb_id: int,
+    data: AiKnowledgeGraphRelationSchema,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiKnowledgeService.create_graph_relation(kb_id, data), msg="已新增关系"
+    )
+
+
+@KnowledgeRouter.delete("/bases/{kb_id}/graph/relation", summary="删除图谱关系")
+async def delete_graph_relations(
+    kb_id: int,
+    ids: list[int],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:update"]))],
+) -> JSONResponse:
+    await AiKnowledgeService.delete_graph_relations(kb_id, ids)
+    return SuccessResponse(data=None, msg="已删除")
 
 
 @KnowledgeRouter.get("/bases/{kb_id}/chunks", summary="分块列表")

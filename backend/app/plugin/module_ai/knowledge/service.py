@@ -541,6 +541,74 @@ class AiKnowledgeService:
             ],
         }
 
+    # ---------- 图谱编辑（实体 / 关系 CRUD + AGE 同步） ----------
+    @classmethod
+    async def create_graph_entity(cls, kb_id: int, data) -> dict:
+        async with async_db_session.begin() as db:
+            e = AiKnowledgeEntityModel(
+                knowledge_base_id=kb_id, name=data.name, etype=data.etype or "keyword",
+                weight=data.weight or 1,
+            )
+            db.add(e)
+            await db.flush()
+            eid = e.id
+        await graphrag.age_sync_graph(kb_id)
+        return {"id": eid, "name": data.name, "etype": data.etype or "keyword", "weight": data.weight or 1}
+
+    @classmethod
+    async def update_graph_entity(cls, kb_id: int, entity_id: int, data) -> dict | None:
+        async with async_db_session.begin() as db:
+            e = await db.get(AiKnowledgeEntityModel, entity_id)
+            if not e or e.is_deleted or e.knowledge_base_id != kb_id:
+                return None
+            if data.name:
+                e.name = data.name
+            if data.etype:
+                e.etype = data.etype
+            if data.weight:
+                e.weight = data.weight
+        await graphrag.age_sync_graph(kb_id)
+        return {"id": e.id, "name": e.name, "etype": e.etype or "keyword", "weight": e.weight or 1}
+
+    @classmethod
+    async def delete_graph_entities(cls, kb_id: int, ids: list[int]) -> None:
+        from sqlalchemy import delete as _delete
+
+        async with async_db_session.begin() as db:
+            await db.execute(
+                _delete(AiKnowledgeEntityModel).where(
+                    AiKnowledgeEntityModel.id.in_(ids),
+                    AiKnowledgeEntityModel.knowledge_base_id == kb_id,
+                )
+            )
+        await graphrag.age_sync_graph(kb_id)
+
+    @classmethod
+    async def create_graph_relation(cls, kb_id: int, data) -> dict:
+        async with async_db_session.begin() as db:
+            r = AiKnowledgeRelationModel(
+                knowledge_base_id=kb_id, source=data.source, target=data.target,
+                weight=data.weight or 1,
+            )
+            db.add(r)
+            await db.flush()
+            rid = r.id
+        await graphrag.age_sync_graph(kb_id)
+        return {"id": rid, "source": data.source, "target": data.target, "weight": data.weight or 1}
+
+    @classmethod
+    async def delete_graph_relations(cls, kb_id: int, ids: list[int]) -> None:
+        from sqlalchemy import delete as _delete
+
+        async with async_db_session.begin() as db:
+            await db.execute(
+                _delete(AiKnowledgeRelationModel).where(
+                    AiKnowledgeRelationModel.id.in_(ids),
+                    AiKnowledgeRelationModel.knowledge_base_id == kb_id,
+                )
+            )
+        await graphrag.age_sync_graph(kb_id)
+
     @classmethod
     async def list_chunks(cls, kb_id: int) -> list[dict]:
         async with async_db_session() as db:
