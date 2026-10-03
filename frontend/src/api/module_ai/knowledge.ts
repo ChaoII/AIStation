@@ -63,11 +63,15 @@ export function getAiKnowledgeGraph(id: number) {
 // ---------- 图谱编辑（实体/关系 CRUD） ----------
 export function createAiKnowledgeGraphEntity(
   id: number,
-  data: { name: string; etype?: string; weight?: number }
+  data: { name: string; etype?: string; weight?: number; description?: string }
 ) {
   return request({ url: `${BASE}/${id}/graph/entity`, method: "post", data });
 }
-export function updateAiKnowledgeGraphEntity(id: number, entityId: number, data: any) {
+export function updateAiKnowledgeGraphEntity(
+  id: number,
+  entityId: number,
+  data: { name?: string; etype?: string; weight?: number; description?: string }
+) {
   return request({ url: `${BASE}/${id}/graph/entity/${entityId}`, method: "put", data });
 }
 export function deleteAiKnowledgeGraphEntities(id: number, ids: number[]) {

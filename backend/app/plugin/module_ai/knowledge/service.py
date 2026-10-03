@@ -761,6 +761,7 @@ class AiKnowledgeService:
                     "name": e.name,
                     "etype": e.etype or "keyword",
                     "weight": e.weight or 1,
+                    "description": e.description or "",
                     "chunk_count": chunk_count.get(e.id, 0),
                 }
                 for e in ents
@@ -783,13 +784,14 @@ class AiKnowledgeService:
         async with async_db_session.begin() as db:
             e = AiKnowledgeEntityModel(
                 knowledge_base_id=kb_id, name=data.name, etype=data.etype or "keyword",
-                weight=data.weight or 1,
+                weight=data.weight or 1, description=data.description or "",
             )
             db.add(e)
             await db.flush()
             eid = e.id
         await graphrag.age_sync_graph(kb_id)
-        return {"id": eid, "name": data.name, "etype": data.etype or "keyword", "weight": data.weight or 1}
+        return {"id": eid, "name": data.name, "etype": data.etype or "keyword",
+                "weight": data.weight or 1, "description": data.description or ""}
 
     @classmethod
     async def update_graph_entity(cls, kb_id: int, entity_id: int, data) -> dict | None:
@@ -804,6 +806,8 @@ class AiKnowledgeService:
                 e.etype = data.etype
             if data.weight:
                 e.weight = data.weight
+            if data.description is not None:
+                e.description = data.description
             # 改名时联动更新关系边的 source/target（保持图谱连边不悬空）
             if data.name and data.name != old_name:
                 from sqlalchemy import update as _update
@@ -825,7 +829,10 @@ class AiKnowledgeService:
                     .values(target=data.name)
                 )
         await graphrag.age_sync_graph(kb_id)
-        return {"id": e.id, "name": e.name, "etype": e.etype or "keyword", "weight": e.weight or 1}
+        return {
+            "id": e.id, "name": e.name, "etype": e.etype or "keyword",
+            "weight": e.weight or 1, "description": e.description or "",
+        }
 
     @classmethod
     async def delete_graph_entities(cls, kb_id: int, ids: list[int]) -> None:

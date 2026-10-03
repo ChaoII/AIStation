@@ -90,10 +90,11 @@ class AiDatasourceSyncSchema(BaseModel):
 
 
 class AiKnowledgeGraphEntitySchema(BaseModel):
-    """图谱实体：名称 + 类型 + 权重。"""
+    """图谱实体：名称 + 类型 + 权重 + 备注。"""
     name: str = Field(..., max_length=256)
     etype: str | None = Field(default="keyword", max_length=64)
     weight: int = Field(default=1, ge=1)
+    description: str | None = Field(default=None, max_length=1000, description="实体备注/描述")
 
 
 class AiKnowledgeGraphRelationSchema(BaseModel):

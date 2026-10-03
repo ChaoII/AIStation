@@ -745,6 +745,12 @@
             <div class="graph-stats">
               <el-tag type="success" effect="plain">{{ graphStats.nodes }} 个实体节点</el-tag>
               <el-tag type="warning" effect="plain">{{ graphStats.edges }} 条关系边</el-tag>
+              <el-button size="small" type="primary" plain @click="ctxNewNode">
+                + 新建节点
+              </el-button>
+              <el-button size="small" type="success" plain @click="openAddRel">
+                + 新建关系
+              </el-button>
               <el-switch
                 v-model="linkMode"
                 size="small"
@@ -752,7 +758,7 @@
                 @change="linkSource = null"
               />
               <span class="kb-opt-hint">
-                右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；连线模式下点两个节点拉关系。
+                右键节点编辑属性/绑定分块/加关系/删除，右键空白新建节点；「新建关系」选两个节点+关系类型自动连线。
               </span>
             </div>
             <VChart
@@ -806,16 +812,19 @@
     </el-dialog>
 
     <!-- 图谱实体重命名 -->
-    <el-dialog v-model="renameEntityVisible" title="编辑图谱实体" width="480px" append-to-body>
+    <el-dialog v-model="renameEntityVisible" title="节点属性" width="520px" append-to-body>
       <el-form label-width="90px" size="default">
-        <el-form-item label="实体名" required>
-          <el-input v-model="renameForm.name" placeholder="实体名称" />
+        <el-form-item label="节点名" required>
+          <el-input v-model="renameForm.name" placeholder="节点名称" />
         </el-form-item>
         <el-form-item label="类型">
           <el-input v-model="renameForm.etype" placeholder="keyword" />
         </el-form-item>
         <el-form-item label="权重">
           <el-input-number v-model="renameForm.weight" :min="1" :max="9999" />
+        </el-form-item>
+        <el-form-item label="备注/描述">
+          <el-input v-model="renameForm.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="关联分块">
           <div class="bind-chunks">
@@ -943,6 +952,9 @@
         <el-form-item label="权重">
           <el-input-number v-model="nodeNewForm.weight" :min="1" :max="9999" />
         </el-form-item>
+        <el-form-item label="备注/描述">
+          <el-input v-model="nodeNewForm.description" type="textarea" :rows="2" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="nodeNewVisible = false">取消</el-button>
@@ -950,17 +962,24 @@
       </template>
     </el-dialog>
 
-    <!-- 添加关系（图上右键节点） -->
-    <el-dialog v-model="relAddVisible" title="添加关系" width="480px" append-to-body>
+    <!-- 新建关系（选两个节点 + 关系类型，自动连线） -->
+    <el-dialog v-model="relAddVisible" title="新建关系" width="480px" append-to-body>
       <el-form label-width="90px" size="default">
-        <el-form-item label="源实体">
-          <el-input :model-value="relAddForm.source" disabled />
+        <el-form-item label="源节点">
+          <el-select
+            v-model="relAddForm.source"
+            filterable
+            placeholder="选择源节点"
+            style="width: 100%"
+          >
+            <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="目标实体">
+        <el-form-item label="目标节点">
           <el-select
             v-model="relAddForm.target"
             filterable
-            placeholder="选择目标"
+            placeholder="选择目标节点"
             style="width: 100%"
           >
             <el-option v-for="n in graphNodes" :key="n.id" :label="n.name" :value="n.name" />
@@ -1479,7 +1498,13 @@ async function delGraphEntity(n: any) {
 }
 // 图谱实体重命名
 const renameEntityVisible = ref(false);
-const renameForm = reactive<any>({ id: null, name: "", etype: "keyword", weight: 1 });
+const renameForm = reactive<any>({
+  id: null,
+  name: "",
+  etype: "keyword",
+  weight: 1,
+  description: "",
+});
 const renamingEntity = ref(false);
 // 实体绑定分块
 const entityBoundChunks = ref<any[]>([]);
@@ -1523,6 +1548,7 @@ function openRenameEntity(n: any) {
   renameForm.name = n.name;
   renameForm.etype = n.etype || "keyword";
   renameForm.weight = n.weight || 1;
+  renameForm.description = n.description || "";
   renameEntityVisible.value = true;
   loadEntityChunks();
 }
@@ -1578,6 +1604,7 @@ async function saveRenameEntity() {
       name: renameForm.name.trim(),
       etype: renameForm.etype,
       weight: renameForm.weight,
+      description: renameForm.description,
     });
     renameEntityVisible.value = false;
     await reloadGraph("已更新实体（含关系联动）");
@@ -1958,11 +1985,11 @@ function findNodeByName(name: string) {
 }
 // 右键：新建节点
 const nodeNewVisible = ref(false);
-const nodeNewForm = reactive<any>({ name: "", etype: "keyword", weight: 1 });
+const nodeNewForm = reactive<any>({ name: "", etype: "keyword", weight: 1, description: "" });
 const addingNode = ref(false);
 function ctxNewNode() {
   closeCtxMenu();
-  Object.assign(nodeNewForm, { name: "", etype: "keyword", weight: 1 });
+  Object.assign(nodeNewForm, { name: "", etype: "keyword", weight: 1, description: "" });
   nodeNewVisible.value = true;
 }
 async function saveNewNode() {
@@ -1973,6 +2000,7 @@ async function saveNewNode() {
       name: nodeNewForm.name.trim(),
       etype: nodeNewForm.etype,
       weight: nodeNewForm.weight,
+      description: nodeNewForm.description,
     });
     nodeNewVisible.value = false;
     ElMessage.success("已新建节点");
@@ -1998,6 +2026,14 @@ function ctxBindNode() {
 const relAddVisible = ref(false);
 const relAddForm = reactive<any>({ source: "", target: "", rtype: "related", weight: 1 });
 const addingRel = ref(false);
+function openAddRel() {
+  if (!graphKbId.value) return;
+  relAddForm.source = "";
+  relAddForm.target = "";
+  relAddForm.rtype = "related";
+  relAddForm.weight = 1;
+  relAddVisible.value = true;
+}
 function ctxAddRel() {
   closeCtxMenu();
   const n = findNodeByName(ctxMenu.node?.name);

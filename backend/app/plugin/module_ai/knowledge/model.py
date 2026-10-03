@@ -171,6 +171,9 @@ class AiKnowledgeEntityModel(ModelMixin):
         String(64), nullable=True, default="keyword", comment="实体类型"
     )
     weight: Mapped[int] = mapped_column(Integer, default=1, comment="实体权重（出现次数）")
+    description: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="实体备注/描述"
+    )
 
 
 class AiKnowledgeRelationModel(ModelMixin):
