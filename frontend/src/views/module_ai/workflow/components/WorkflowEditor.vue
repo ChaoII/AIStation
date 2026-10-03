@@ -142,6 +142,23 @@
                   <el-button size="small" :icon="Link" :disabled="!workflowId" @click="openShare">
                     分享
                   </el-button>
+                  <el-popover trigger="click" placement="bottom-end" :disabled="!selectedCount">
+                    <template #reference>
+                      <el-button size="small" :icon="Grid" :disabled="!selectedCount">
+                        批量({{ selectedCount }})
+                      </el-button>
+                    </template>
+                    <div class="batch-menu">
+                      <div class="batch-menu__tip">
+                        已选 {{ selectedCount }} 个节点（Shift/Ctrl 多选）
+                      </div>
+                      <el-button size="small" @click="batchSetEnabled(true)">批量启用</el-button>
+                      <el-button size="small" @click="batchSetEnabled(false)">批量禁用</el-button>
+                      <el-button size="small" type="danger" @click="batchDelete">
+                        批量删除
+                      </el-button>
+                    </div>
+                  </el-popover>
                   <el-button size="small" :icon="Download" @click="handleExport">导出</el-button>
                   <el-button size="small" :icon="Upload" @click="triggerImport">导入</el-button>
                   <el-button size="small" :icon="VideoPlay" type="success" @click="openRun">
@@ -858,6 +875,7 @@ const {
   screenToFlowCoordinate,
   addNodes,
   fitView,
+  getSelectedNodes,
 } = useVueFlow();
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
@@ -2420,6 +2438,58 @@ function ctxRemoveGroup() {
   ElMessage.success("已移出分组");
 }
 
+// ---------- 批量操作 ----------
+const selectedCount = computed(() => (getSelectedNodes.value || []).length);
+function _selectedIds(): string[] {
+  return (getSelectedNodes.value || []).map((n: any) => n.id).filter(Boolean);
+}
+function batchSetEnabled(enabled: boolean) {
+  const ids = new Set(_selectedIds());
+  if (!ids.size) {
+    ElMessage.info("请先选节点（Shift/Ctrl 多选）");
+    return;
+  }
+  pushHistory();
+  nodes.value.forEach((n) => {
+    if (ids.has(n.id)) n.data = { ...(n.data || {}), enabled };
+  });
+  ElMessage.success(enabled ? "已批量启用" : "已批量禁用");
+}
+function batchDelete() {
+  const ids = new Set(_selectedIds());
+  if (!ids.size) {
+    ElMessage.info("请先选节点（Shift/Ctrl 多选）");
+    return;
+  }
+  ElMessageBox.confirm(
+    `将删除选中的 ${ids.size} 个节点及其关联连线，且不可恢复。是否继续？`,
+    "批量删除",
+    { confirmButtonText: "删除", cancelButtonText: "取消", type: "warning" }
+  )
+    .then(() => {
+      pushHistory();
+      nodes.value.forEach((n) => {
+        if (ids.has(n.id) && n.type === "group") {
+          const gx = n.position?.x ?? 0;
+          const gy = n.position?.y ?? 0;
+          nodes.value.forEach((c) => {
+            if (c.parentNode === n.id) {
+              c.position = { x: (c.position?.x ?? 0) + gx, y: (c.position?.y ?? 0) + gy };
+              c.parentNode = undefined;
+            }
+          });
+        }
+      });
+      nodes.value = nodes.value.filter((n) => !ids.has(n.id));
+      edges.value = edges.value.filter((e) => !ids.has(e.source) && !ids.has(e.target));
+      selectedNode.value = undefined;
+      ElMessage.success("已批量删除");
+    })
+    .catch(() => {
+      /* 取消 */
+    });
+}
+
 function autoLayout() {
   if (nodes.value.length === 0) {
     ElMessage.warning("画布中没有节点");
@@ -3316,6 +3386,18 @@ async function handleApprove(decision: "approve" | "reject") {
     }
   }
 }
+
+.batch-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .batch-menu__tip {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+}
+
 .compare-item {
   display: flex;
   gap: 8px;
