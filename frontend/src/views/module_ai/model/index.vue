@@ -39,6 +39,17 @@
             <el-table-column type="selection" width="55" align="center" />
             <el-table-column label="配置名称" prop="name" min-width="140" show-overflow-tooltip />
             <el-table-column label="模型" prop="model" min-width="140" show-overflow-tooltip />
+            <el-table-column label="用途" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ usageLabel(row.usage) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="上下文窗口" width="120" align="center">
+              <template #default="{ row }">
+                <span v-if="row.context_window">{{ row.context_window }}</span>
+                <span v-else class="muted">—</span>
+              </template>
+            </el-table-column>
             <el-table-column
               label="API 基址"
               prop="base_url"
@@ -60,8 +71,11 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="260" align="center">
+            <el-table-column label="操作" fixed="right" width="300" align="center">
               <template #default="scope">
+                <el-button size="small" link type="primary" @click="openDetail(scope.row)">
+                  详情
+                </el-button>
                 <el-button size="small" link type="primary" @click="handleTest(scope.row)">
                   测试
                 </el-button>
@@ -222,6 +236,56 @@
         <el-button type="primary" :loading="submitLoading" @click="handleSubmit">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <!-- 模型配置详情抽屉 -->
+    <el-drawer
+      v-model="detailVisible"
+      :title="detail?.name || '模型配置'"
+      size="480px"
+      append-to-body
+    >
+      <el-descriptions v-if="detail" :column="1" border size="small">
+        <el-descriptions-item label="配置名称">{{ detail.name }}</el-descriptions-item>
+        <el-descriptions-item label="模型">{{ detail.model }}</el-descriptions-item>
+        <el-descriptions-item label="用途">
+          <el-tag size="small" effect="plain">{{ usageLabel(detail.usage) }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="能力标签">
+          <span v-if="(detail.capabilities || []).length">
+            <el-tag
+              v-for="c in detail.capabilities"
+              :key="c"
+              size="small"
+              type="info"
+              class="cap-tag"
+            >
+              {{ c }}
+            </el-tag>
+          </span>
+          <span v-else class="muted">—</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="上下文窗口">
+          {{ detail.context_window || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="API 基址">{{ detail.base_url }}</el-descriptions-item>
+        <el-descriptions-item label="API Key">
+          {{ detail.api_key_masked || "—" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="温度">{{ detail.temperature }}</el-descriptions-item>
+        <el-descriptions-item label="最大 token">{{ detail.max_tokens }}</el-descriptions-item>
+        <el-descriptions-item label="设为默认">
+          <el-tag v-if="detail.is_default" type="success" size="small">默认</el-tag>
+          <span v-else class="muted">否</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="启用">
+          <el-tag :type="detail.enabled ? 'success' : 'info'" size="small">
+            {{ detail.enabled ? "启用" : "停用" }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="备注">{{ detail.description || "—" }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ detail.created_time }}</el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
   </div>
 </template>
 
@@ -332,6 +396,16 @@ const formData = reactive<any>(emptyForm());
 const providers = ref<any[]>([]);
 const remoteModels = ref<string[]>([]);
 const pulling = ref(false);
+
+const detailVisible = ref(false);
+const detail = ref<any>(null);
+function openDetail(row: any) {
+  detail.value = row;
+  detailVisible.value = true;
+}
+function usageLabel(u: string) {
+  return { chat: "对话", assistant: "助手", embedding: "嵌入", asr: "识别", tts: "合成" }[u] || u;
+}
 
 async function loadProviders() {
   try {
@@ -513,5 +587,9 @@ onMounted(() => {
 <style scoped>
 .muted {
   color: var(--el-text-color-placeholder);
+}
+.cap-tag {
+  margin-right: 4px;
+  margin-bottom: 2px;
 }
 </style>
