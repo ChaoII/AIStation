@@ -223,6 +223,16 @@ export function getAiKnowledgeDocumentContent(id: number, docId: number) {
 export function reparseAiKnowledgeDocument(id: number, docId: number) {
   return request({ url: `${BASE}/${id}/documents/${docId}/reparse`, method: "post" });
 }
+export function downloadAiKnowledgeDocument(id: number, docId: number) {
+  return request({
+    url: `${BASE}/${id}/documents/${docId}/download`,
+    method: "get",
+    responseType: "blob",
+  });
+}
+export function getAiKnowledgeFaq(id: number, format = "json") {
+  return request({ url: `${BASE}/${id}/faq`, method: "get", params: { format } });
+}
 
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {

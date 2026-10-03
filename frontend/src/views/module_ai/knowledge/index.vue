@@ -512,7 +512,7 @@
             <el-table-column label="时间" width="150">
               <template #default="{ row }">{{ row.created_time }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="160" align="center">
+            <el-table-column label="操作" width="210" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="previewDoc(row)">
                   预览
@@ -520,6 +520,7 @@
                 <el-button link type="warning" size="small" @click="reparseDoc(row)">
                   重建
                 </el-button>
+                <el-button link size="small" @click="downloadDoc(row)">下载</el-button>
                 <el-button link type="danger" size="small" @click="deleteDoc(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -529,6 +530,12 @@
             description="暂无文档"
             :image-size="60"
           />
+
+          <div class="faq-bar">
+            <el-button size="small" type="primary" plain :loading="faqLoading" @click="exportFaq">
+              导出 FAQ 缓存
+            </el-button>
+          </div>
 
           <el-divider />
           <div class="qa-block">
@@ -1373,9 +1380,14 @@
     </el-dialog>
 
     <!-- 文档内容预览 -->
-    <el-dialog v-model="docPreviewVisible" :title="docPreviewName" width="720px" append-to-body>
+    <el-dialog v-model="docPreviewVisible" :title="docPreviewName" width="760px" append-to-body>
       <div v-loading="docPreviewLoading" class="doc-preview">
-        {{ docPreviewContent || "（空文档）" }}
+        <VuePdfEmbed
+          v-if="docPreviewKind === 'pdf' && docPreviewPdfUrl"
+          :source="docPreviewPdfUrl"
+        />
+        <div v-else-if="docPreviewKind === 'docx'" class="doc-html" v-html="docPreviewHtml" />
+        <div v-else class="doc-text">{{ docPreviewContent || "（空文档）" }}</div>
       </div>
       <template #footer>
         <el-button @click="docPreviewVisible = false">关闭</el-button>
@@ -1598,6 +1610,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import GraphCanvas from "./GraphCanvas.vue";
+import VuePdfEmbed from "vue-pdf-embed";
+import mammoth from "mammoth";
 
 const graphCanvasRef = ref<any>();
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -1648,6 +1662,8 @@ import {
   deleteAiKnowledgeDocument,
   getAiKnowledgeDocumentContent,
   reparseAiKnowledgeDocument,
+  downloadAiKnowledgeDocument,
+  getAiKnowledgeFaq,
   getAiKnowledgeGraph,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
@@ -2588,16 +2604,38 @@ const docPreviewVisible = ref(false);
 const docPreviewName = ref("");
 const docPreviewContent = ref("");
 const docPreviewLoading = ref(false);
+const docPreviewKind = ref("text");
+const docPreviewPdfUrl = ref("");
+const docPreviewHtml = ref("");
 async function previewDoc(row: any) {
   if (!detailKb.value) return;
   docPreviewVisible.value = true;
   docPreviewName.value = row.name;
   docPreviewContent.value = "";
+  docPreviewHtml.value = "";
+  docPreviewPdfUrl.value = "";
   docPreviewLoading.value = true;
+  const ft = (row.file_type || "").toLowerCase();
   try {
-    const r = await getAiKnowledgeDocumentContent(detailKb.value.id, row.id);
-    docPreviewContent.value = r.data?.data?.content || "";
+    if (ft === "pdf" || ft === "docx") {
+      docPreviewKind.value = ft;
+      const r: any = await downloadAiKnowledgeDocument(detailKb.value.id, row.id);
+      const blob = r.data instanceof Blob ? r.data : new Blob([r.data]);
+      const ab = await blob.arrayBuffer();
+      if (ft === "pdf") {
+        docPreviewPdfUrl.value = URL.createObjectURL(blob);
+      } else {
+        const res = await mammoth.convertToHtml({ arrayBuffer: ab });
+        docPreviewHtml.value = res.value || "";
+      }
+    } else {
+      docPreviewKind.value = "text";
+      const r = await getAiKnowledgeDocumentContent(detailKb.value.id, row.id);
+      docPreviewContent.value = r.data?.data?.content || "";
+    }
   } catch (e: any) {
+    docPreviewKind.value = "text";
+    docPreviewContent.value = "";
     ElMessage.error(e?.message || "预览失败");
   } finally {
     docPreviewLoading.value = false;
@@ -2612,6 +2650,45 @@ async function reparseDoc(row: any) {
     await loadDetailStats(detailKb.value.id);
   } catch (e: any) {
     ElMessage.error(e?.message || "重建失败");
+  }
+}
+async function downloadDoc(row: any) {
+  if (!detailKb.value) return;
+  try {
+    const r: any = await downloadAiKnowledgeDocument(detailKb.value.id, row.id);
+    const blob = r.data instanceof Blob ? r.data : new Blob([r.data]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = row.name || "document";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "下载失败");
+  }
+}
+const faqLoading = ref(false);
+const faqText = ref("");
+async function exportFaq() {
+  if (!detailKb.value) return;
+  faqLoading.value = true;
+  try {
+    const r = await getAiKnowledgeFaq(detailKb.value.id, "md");
+    const md = r.data?.data?.markdown || "";
+    faqText.value = md;
+    // 下载 md
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `知识库FAQ_${detailKb.value.name || ""}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success(`已导出 FAQ（${r.data?.data?.count || 0} 条）`);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "导出失败");
+  } finally {
+    faqLoading.value = false;
   }
 }
 // 跨文档交叉问答
@@ -3400,6 +3477,22 @@ onMounted(() => {
     margin-bottom: 8px;
     font-weight: 600;
   }
+}
+.faq-bar {
+  margin: 12px 0;
+}
+.doc-html {
+  img {
+    max-width: 100%;
+  }
+}
+.doc-text {
+  max-height: 70vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: var(--el-font-size-base);
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
 }
 
 .graph-ctx {
