@@ -802,6 +802,22 @@
                 active-text="连线模式"
                 @change="linkSource = null"
               />
+              <el-select
+                v-model="graphLayout"
+                size="small"
+                style="width: 110px"
+                @change="onGraphLayoutChange"
+              >
+                <el-option label="力导向" value="cose" />
+                <el-option label="同心圆" value="concentric" />
+                <el-option label="网格" value="grid" />
+                <el-option label="环形" value="circle" />
+                <el-option label="层级" value="breadthfirst" />
+              </el-select>
+              <el-button size="small" @click="() => graphCanvasRef?.fit?.()">适配</el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.zoom?.(1.25)">放大</el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.zoom?.(0.8)">缩小</el-button>
+              <el-button size="small" @click="() => graphCanvasRef?.center?.()">居中</el-button>
             </div>
             <div class="graph-legend">
               <span v-for="lg in graphLegend" :key="lg.label" class="graph-legend__item">
@@ -825,12 +841,15 @@
               :edges="graphEdges"
               :use-preset="graphUsePreset"
               :highlight="graphHighlight"
+              :layout-name="graphLayout"
+              :link-mode="linkMode"
               @node-tap="onGraphNodeTap"
               @node-dbltap="onGraphNodeDbltap"
               @node-ctx="onGraphNodeCtx"
               @edge-ctx="onGraphEdgeCtx"
               @blank-ctx="onGraphBlankCtx"
               @layout="onGraphLayout"
+              @link-draw="onGraphLinkDraw"
             />
             <!-- 图上右键菜单 -->
             <div
@@ -1098,9 +1117,12 @@
           :edges="graphEdges"
           :use-preset="graphUsePreset"
           :highlight="graphHighlight"
+          :layout-name="graphLayout"
+          :link-mode="linkMode"
           :height="`calc(100vh - 210px)`"
           @node-tap="onGraphNodeTap"
           @node-dbltap="onGraphNodeDbltap"
+          @link-draw="onGraphLinkDraw"
           @node-ctx="onGraphNodeCtx"
           @edge-ctx="onGraphEdgeCtx"
           @blank-ctx="onGraphBlankCtx"
@@ -1537,6 +1559,7 @@ const graphNodes = ref<any[]>([]);
 const graphEdges = ref<any[]>([]);
 const graphKbId = ref<number>();
 const graphUsePreset = ref(false);
+const graphLayout = ref("cose");
 // 连线模式：第一次点击记源节点，第二次点击记目标节点建边
 const linkMode = ref(false);
 const linkSource = ref<string | null>(null);
@@ -2189,6 +2212,25 @@ const ctxMenu = reactive({
   edge: null as any,
 });
 // Cytoscape 事件适配
+function onGraphLayoutChange(name: string) {
+  graphCanvasRef.value?.setLayout?.(name);
+}
+function onGraphLinkDraw(source: string, target: string) {
+  if (!graphKbId.value || !source || !target || source === target) return;
+  try {
+    createAiKnowledgeGraphRelation(graphKbId.value, {
+      source,
+      target,
+      rtype: "related",
+      weight: 1,
+    }).then(() => {
+      ElMessage.success("已连线");
+      reloadGraph();
+    });
+  } catch (e: any) {
+    ElMessage.error(e?.message || "连线失败");
+  }
+}
 function onGraphNodeTap(name: string) {
   closeCtxMenu();
   if (!graphKbId.value) return;

@@ -28,6 +28,8 @@ const props = defineProps<{
   usePreset?: boolean;
   highlight?: string[];
   height?: string;
+  layoutName?: string;
+  linkMode?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -37,12 +39,18 @@ const emit = defineEmits<{
   (e: "edge-ctx", source: string, target: string, x: number, y: number): void;
   (e: "blank-ctx", x: number, y: number): void;
   (e: "layout", items: { id: number; x: number; y: number }[]): void;
+  (e: "link-draw", source: string, target: string): void;
 }>();
 
 const container = ref<HTMLDivElement>();
 const heightStyle = computed(() => props.height || "480px");
 const tooltip = ref({ show: false, x: 0, y: 0, html: "" });
 let cy: Core | null = null;
+// 拖拽建边状态
+let dragSource: any = null;
+let dragTarget: any = null;
+const dragTmpId = "tmp_target";
+const dragEdgeId = "tmp_edge";
 
 function colorFor(etype?: string, hasChunk = false) {
   if (hasChunk) return "#f7a733";
@@ -106,7 +114,12 @@ const graphStyle: any[] = [
       "text-max-width": 120,
       width: (ele: any) => nodeSize(ele.data("weight")),
       height: (ele: any) => nodeSize(ele.data("weight")),
-      shape: "ellipse",
+      shape: (ele: any) => {
+        const t = ele.data("etype");
+        if (t === "annotation") return "round-rectangle";
+        if (t === "custom") return "diamond";
+        return "ellipse";
+      },
       "background-color": (ele: any) => colorFor(ele.data("etype"), ele.data("chunk_count") > 0),
       "border-width": 2,
       "border-color": "#ffffff",
@@ -126,7 +139,7 @@ const graphStyle: any[] = [
       "target-arrow-shape": "triangle",
       "target-arrow-color": (ele: any) => edgeColor(ele.data("rtype")),
       "arrow-scale": 0.9,
-      label: "data(label)",
+      label: (ele: any) => ((ele.data("rtype") || "") === "related" ? "" : ele.data("label")),
       "font-size": 9,
       color: "#7f8fa6",
       "text-background-color": "#ffffff",
@@ -164,29 +177,62 @@ const graphStyle: any[] = [
     selector: "node.highlight",
     style: { "border-width": 5, "border-color": "#f5b942", "background-color": "#f5b942" },
   },
+  {
+    selector: "node.dragging",
+    style: { "border-width": 4, "border-color": "#f56c6c" },
+  },
+  {
+    selector: "node.tmp-node",
+    style: { opacity: 0.6, width: 10, height: 10, "background-color": "#f56c6c" },
+  },
+  {
+    selector: "edge.tmp-edge",
+    style: { width: 2, "line-color": "#f56c6c", "target-arrow-shape": "none", opacity: 0.7 },
+  },
 ];
 
 function runLayout() {
   const c = cy;
   if (!c) return;
   const preset = props.usePreset && props.nodes.every((n) => n.x != null && n.y != null);
+  const name = (props.layoutName || "cose") as string;
+  const base = { animate: true, animationDuration: 500, fit: true, padding: 30 };
+  const opts: any = { ...base };
+  if (preset && name === "cose") opts.name = "preset";
+  else opts.name = name;
+  if (name === "cose") {
+    opts.nodeRepulsion = 40000;
+    opts.idealEdgeLength = 110;
+    opts.gravity = 0.35;
+    opts.numIter = 2500;
+    opts.nodeOverlap = 20;
+    opts.spacingFactor = 1.2;
+  }
+  if (name === "concentric") opts.minNodeSpacing = 26;
+  if (name === "breadthfirst") opts.spacingFactor = 1.2;
+  if (name === "grid") opts.avoidOverlap = true;
+  c.layout(opts).run();
+}
+function setLayout(name: string) {
+  const c = cy;
+  if (!c) return;
   c.layout({
-    name: preset ? "preset" : "cose",
-    animate: !preset ? true : false,
-    animationDuration: 600,
-    padding: 30,
+    name,
+    animate: true,
+    animationDuration: 400,
     fit: true,
-    ...(preset
-      ? {}
-      : {
-          nodeRepulsion: 40000,
-          idealEdgeLength: 110,
-          gravity: 0.35,
-          numIter: 2500,
-          nodeOverlap: 20,
-          spacingFactor: 1.2,
-        }),
-  }).run();
+    padding: 30,
+  } as any).run();
+}
+function fit() {
+  cy?.fit(undefined, 30);
+}
+function center() {
+  cy?.center();
+}
+function zoom(level: number) {
+  if (!cy) return;
+  cy.zoom(cy.zoom() * level);
 }
 
 function emitPositions() {
@@ -277,8 +323,59 @@ function bind() {
       emit("blank-ctx", rp.x, rp.y);
     }
   });
+  initLinkDraw(c);
   // 浏览器默认右键屏蔽（在容器上）
   container.value?.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
+function initLinkDraw(c: Core) {
+  const cleanupTmp = () => {
+    const tn = c.getElementById(dragTmpId);
+    if (tn.length) tn.remove();
+    const te = c.getElementById(dragEdgeId);
+    if (te.length) te.remove();
+  };
+  c.on("grab", "node", (e) => {
+    if (!props.linkMode) return;
+    dragSource = e.target;
+    dragTarget = null;
+    // 临时目标节点跟随鼠标
+    if (!c.getElementById(dragTmpId).length) {
+      c.add({
+        group: "nodes",
+        data: { id: dragTmpId },
+        classes: "tmp-node",
+        position: { x: 0, y: 0 },
+      });
+    }
+    if (!c.getElementById(dragEdgeId).length) {
+      c.add({
+        group: "edges",
+        data: { id: dragEdgeId, source: dragSource.id(), target: dragTmpId },
+        classes: "tmp-edge",
+      });
+    }
+    dragSource.addClass("dragging");
+  });
+  c.on("mousemove", (e) => {
+    const tn = c.getElementById(dragTmpId);
+    if (dragSource && tn.length) tn.position({ x: e.position.x, y: e.position.y });
+  });
+  c.on("mouseover", "node", (e) => {
+    if (dragSource && e.target.id() !== dragSource.id() && e.target.id() !== dragTmpId) {
+      dragTarget = e.target;
+    }
+  });
+  c.on("free", "node", (e) => {
+    if (!dragSource || e.target.id() !== dragSource.id()) return;
+    const sName = dragSource.data("name");
+    const tName = dragTarget ? String(dragTarget.data("name")) : "";
+    dragSource.removeClass("dragging");
+    cleanupTmp();
+    dragSource = null;
+    dragTarget = null;
+    if (sName && tName && sName !== tName) emit("link-draw", sName, tName);
+  });
 }
 
 function applyElements() {
@@ -323,7 +420,7 @@ function png(): string {
   return (cy.png as any)({ output: "dataurl", full: true, scale: 2 }) as string;
 }
 
-defineExpose({ emitPositions, png });
+defineExpose({ emitPositions, png, setLayout, fit, center, zoom });
 
 onBeforeUnmount(() => {
   cy?.destroy();
