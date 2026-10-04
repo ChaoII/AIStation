@@ -42,6 +42,24 @@ export function saveQueryDatasource(data: any) {
 export function deleteQueryDatasources(ids: number[]) {
   return request({ url: `${API_PATH}/datasources/delete`, method: "delete", data: ids });
 }
+export function testQueryDatasource(id: number) {
+  return request({
+    url: `${API_PATH}/datasources/${id}/test`,
+    method: "post",
+    headers: { _silent: "true" },
+    timeout: 20000,
+  });
+}
+export function syncQueryDatasourceSchema(id: number) {
+  return request({
+    url: `${API_PATH}/datasources/${id}/sync-schema`,
+    method: "post",
+    timeout: 60000,
+  });
+}
+export function getQueryDatasourceSchema(id: number) {
+  return request({ url: `${API_PATH}/datasources/${id}/schema`, method: "get" });
+}
 
 // 会话
 export function getQuerySessions() {

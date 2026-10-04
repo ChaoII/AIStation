@@ -201,8 +201,26 @@
                 <el-switch v-model="row.enabled" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="130">
+            <el-table-column label="操作" width="220">
               <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="testingDsId === row.id"
+                  @click="testDs(row)"
+                >
+                  测试
+                </el-button>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="syncingDsId === row.id"
+                  @click="syncDs(row)"
+                >
+                  同步结构
+                </el-button>
                 <el-button link type="primary" size="small" @click="openDsEdit(row)">
                   编辑
                 </el-button>
@@ -385,6 +403,8 @@ import {
   getQueryDatasources,
   saveQueryDatasource,
   deleteQueryDatasources,
+  testQueryDatasource,
+  syncQueryDatasourceSchema,
   queryFeedback,
 } from "@/api/module_ai/query";
 
@@ -706,6 +726,34 @@ async function saveDs(row: any) {
 async function removeDs(row: any) {
   await deleteQueryDatasources([row.id]);
   loadDatasources();
+}
+const testingDsId = ref<number | null>(null);
+const syncingDsId = ref<number | null>(null);
+async function testDs(row: any) {
+  testingDsId.value = row.id;
+  try {
+    const r = await testQueryDatasource(row.id);
+    const d = r.data?.data || {};
+    if (d.ok) ElMessage.success(d.message || "连接成功");
+    else ElMessage.error(d.message || "连接失败");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "测试失败");
+  } finally {
+    testingDsId.value = null;
+  }
+}
+async function syncDs(row: any) {
+  syncingDsId.value = row.id;
+  try {
+    const r = await syncQueryDatasourceSchema(row.id);
+    const d = r.data?.data || {};
+    ElMessage.success(`同步完成，共 ${d.tables ?? 0} 张表`);
+    row.syncedTables = d.tables ?? 0;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "同步失败");
+  } finally {
+    syncingDsId.value = null;
+  }
 }
 
 onMounted(() => {

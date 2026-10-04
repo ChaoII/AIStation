@@ -126,5 +126,54 @@ class TestMatchMetric:
         assert _match_metric("我想知道天气", _mk_metrics(), []) is None
 
 
+# ---------------------------------------------------------------------------
+# 阶段B：自定义数据源连接串
+# ---------------------------------------------------------------------------
+class TestDsUrl:
+    def test_postgres_url(self):
+        from app.plugin.module_ai.query.executor import _url
+
+        u = _url({"type": "postgres", "host": "h", "port": 5432, "database": "db",
+                  "username": "u", "password": "p"})
+        assert u == "postgresql+asyncpg://u:p@h:5432/db"
+
+    def test_mysql_url(self):
+        from app.plugin.module_ai.query.executor import _url
+
+        u = _url({"type": "mysql", "host": "h", "port": 3306, "database": "db",
+                  "username": "u", "password": "p"})
+        assert u == "mysql+asyncmy://u:p@h:3306/db"
+
+    def test_sqlite_url(self):
+        from app.plugin.module_ai.query.executor import _url
+
+        u = _url({"type": "sqlite", "database": "/tmp/a.db"})
+        assert u == "sqlite+aiosqlite:////tmp/a.db"
+
+    def test_unsupported_type(self):
+        from app.plugin.module_ai.query.executor import _url
+
+        assert _url({"type": "api"}) is None
+
+
+class TestCustomDsValidate:
+    def test_custom_allowed_table_pass(self):
+        out = validate_sql("SELECT * FROM sales", {"sales"})
+        assert "LIMIT" in out
+
+    def test_custom_unknown_table_reject(self):
+        with pytest.raises(Exception):
+            validate_sql("SELECT * FROM secret", {"sales"})
+
+    def test_render_uses_sanitize(self):
+        from app.plugin.module_ai.query.service import _render_template
+
+        sql = _render_template(
+            "SELECT COUNT(*) FROM t WHERE day >= CURRENT_DATE - INTERVAL '{days}' DAY",
+            {"days": 7},
+        )
+        assert "7" in sql
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

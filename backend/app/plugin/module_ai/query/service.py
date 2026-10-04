@@ -22,6 +22,7 @@ from .model import (
     AiQueryDictionaryModel,
     AiQueryMessageModel,
     AiQueryMetricModel,
+    AiQuerySchemaModel,
     AiQuerySessionModel,
 )
 
@@ -54,6 +55,84 @@ SYSTEM_ALLOWED_TABLES = {
     "video_record_files", "video_record_plans", "video_record_execution_logs",
     "sys_user", "sys_user_notification",
 }
+
+
+# ---------------------------------------------------------------------------
+# 自定义数据源连接/执行（阶段B）
+# ---------------------------------------------------------------------------
+def _ds_cfg_from_model(ds) -> dict:
+    return {
+        "type": ds.type or "postgres", "host": ds.host or "", "port": ds.port or 0,
+        "database": ds.database or "", "username": ds.username or "",
+        "password": ds.password or "",
+    }
+
+
+def _ds_code(datasource_id: int) -> str:
+    return f"ds:{datasource_id}"
+
+
+async def _load_ds(datasource_id: int):
+    async with async_db_session() as db:
+        ds = await db.get(AiQueryDatasourceModel, datasource_id)
+        if not ds or ds.is_deleted:
+            raise CustomException(msg="数据源不存在")
+        return ds
+
+
+async def test_datasource_conn(datasource_id: int) -> dict:
+    ds = await _load_ds(datasource_id)
+    from . import executor as _ex
+
+    return await _ex.test_connection(_ds_cfg_from_model(ds))
+
+
+async def sync_datasource_schema(datasource_id: int) -> dict:
+    ds = await _load_ds(datasource_id)
+    from . import executor as _ex
+
+    tables = await _ex.introspect_schema(_ds_cfg_from_model(ds))
+    code = _ds_code(datasource_id)
+    async with async_db_session.begin() as db:
+        from sqlalchemy import delete
+
+        await db.execute(
+            delete(AiQuerySchemaModel).where(AiQuerySchemaModel.datasource == code)
+        )
+        for t in tables:
+            db.add(
+                AiQuerySchemaModel(
+                    datasource=code, table_name=t["table"], columns=t["columns"]
+                )
+            )
+    return {"tables": len(tables)}
+
+
+async def list_ds_schema(datasource_id: int) -> list[dict]:
+    code = _ds_code(datasource_id)
+    async with async_db_session() as db:
+        from sqlalchemy import select
+
+        rows = (
+            await db.execute(
+                select(AiQuerySchemaModel).where(
+                    AiQuerySchemaModel.datasource == code,
+                    AiQuerySchemaModel.is_deleted.is_(False),
+                )
+            )
+        ).scalars().all()
+    return [{"table": r.table_name, "columns": r.columns or []} for r in rows]
+
+
+async def _execute_custom_ds_sql(datasource_id: int, sql: str) -> dict:
+    """对自定义数据源执行只读 SQL（含 schema 白名单校验）。"""
+    ds = await _load_ds(datasource_id)
+    schema_rows = await list_ds_schema(datasource_id)
+    allowed = {r["table"] for r in schema_rows}
+    from . import executor as _ex
+
+    sql = validate_sql(sql, allowed)
+    return await _ex.execute_select(_ds_cfg_from_model(ds), sql)
 
 
 def _to_metric_dict(m: AiQueryMetricModel) -> dict:
@@ -239,10 +318,19 @@ async def _execute_sql(sql: str) -> dict:
 
 async def _execute_metric(metric: dict, params: dict[str, Any]) -> dict:
     sql = _render_template(metric["sql_template"], params)
-    table = SYSTEM_ALLOWED_TABLES if metric["datasource"] == SYSTEM_DS else set()
-    sql = validate_sql(sql, table)
-    res = await _execute_sql(sql)
-    res["sql"] = sql
+    ds_code = metric.get("datasource") or SYSTEM_DS
+    if ds_code == SYSTEM_DS:
+        sql = validate_sql(sql, SYSTEM_ALLOWED_TABLES)
+        res = await _execute_sql(sql)
+    else:
+        # 自定义数据源：ds:{id}，走独立连接 + schema 白名单
+        try:
+            ds_id = int(ds_code.split(":")[-1])
+        except ValueError:
+            raise CustomException(msg=f"数据源编码异常：{ds_code}")
+        res = await _execute_custom_ds_sql(ds_id, sql)
+        res["sql"] = res.get("sql", sql)
+    res["sql"] = res.get("sql") or sql
     return res
 
 
@@ -646,7 +734,14 @@ class AiQueryService:
     async def _slow_path(cls, question: str, session_id: int, datasource: str, auth) -> dict:
         sql = await cls._nl2sql(question, datasource)
         try:
-            res = await _execute_sql(sql)
+            if datasource and datasource != SYSTEM_DS:
+                try:
+                    ds_id = int(datasource.split(":")[-1])
+                except ValueError:
+                    raise CustomException(msg="数据源编码异常")
+                res = await _execute_custom_ds_sql(ds_id, sql)
+            else:
+                res = await _execute_sql(sql)
             msg = await cls._save_message(
                 session_id, question, path="slow", datasource=datasource,
                 sql=sql, columns=res["columns"], rows=res["rows"],

@@ -32,6 +32,21 @@ class AiQueryDatasourceModel(ModelMixin, UserMixin):
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="备注")
 
 
+class AiQuerySchemaModel(ModelMixin, UserMixin):
+    """数据源已同步的表/字段目录（用于权限白名单与语义注入）。"""
+
+    __tablename__ = "ai_query_schema"
+    __table_args__ = ({"comment": "智能问数-数据源 schema 同步表"},)
+
+    datasource: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="数据源编码"
+    )
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False, comment="表名")
+    columns: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list, comment="字段 [{name,type,comment,is_sensitive}]"
+    )
+
+
 class AiQueryMetricModel(ModelMixin, UserMixin):
     """语义指标：可参数化 SQL 模板 + 口径。"""
 
