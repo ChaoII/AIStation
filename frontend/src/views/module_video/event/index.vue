@@ -204,12 +204,54 @@
           </el-select>
         </el-form-item>
         <el-form-item label="动作参数" prop="action_params">
-          <el-input
-            v-model="actionParamsText"
-            type="textarea"
-            :rows="3"
-            placeholder='JSON格式动作参数，例如：{"storage_days": 30}'
-          />
+          <div class="action-params">
+            <template v-if="formData.action_type === 'RECORD'">
+              <div class="action-params__row">
+                <span class="action-params__label">录像保留天数</span>
+                <el-input-number
+                  v-model="formData.action_params.storage_days"
+                  :min="1"
+                  :max="365"
+                />
+              </div>
+            </template>
+            <template v-else-if="formData.action_type === 'PTZ'">
+              <div class="action-params__row">
+                <span class="action-params__label">预置位编号</span>
+                <el-input-number v-model="formData.action_params.preset_id" :min="0" />
+              </div>
+            </template>
+            <template v-else-if="formData.action_type === 'ALERT'">
+              <div class="action-params__row">
+                <span class="action-params__label">告警级别</span>
+                <el-select v-model="formData.action_params.level" style="width: 140px">
+                  <el-option label="中" value="middle" />
+                  <el-option label="高" value="high" />
+                  <el-option label="严重" value="critical" />
+                </el-select>
+              </div>
+            </template>
+            <template v-else-if="formData.action_type === 'PUSH'">
+              <div class="action-params__row">
+                <span class="action-params__label">推送渠道</span>
+                <el-input
+                  v-model="formData.action_params.channel"
+                  placeholder="如 webhook_target"
+                  style="width: 200px"
+                />
+              </div>
+            </template>
+            <el-collapse class="action-params__advanced">
+              <el-collapse-item title="高级 JSON（可选，覆盖上方字段）">
+                <el-input
+                  v-model="actionParamsText"
+                  type="textarea"
+                  :rows="2"
+                  placeholder='当有更复杂参数时填写，如 {"storage_days": 30}'
+                />
+              </el-collapse-item>
+            </el-collapse>
+          </div>
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-switch v-model="formData.status" />
@@ -327,7 +369,11 @@ const contentConfig = reactive<IContentConfig<TablePageQuery>>({
         .filter((n) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选数据吗？删除后不可恢复。", type: "warning" },
+  deleteConfirm: {
+    title: "警告",
+    message: "确认删除所选数据吗？删除后不可恢复。",
+    type: "warning",
+  },
 });
 
 function handleRowDelete(id: number) {
@@ -358,7 +404,7 @@ const formData = reactive({
   trigger_event: "ALARM",
   action_type: "RECORD",
   trigger_camera_ids: [] as number[],
-  action_params: {} as Record<string, any> | undefined,
+  action_params: {} as Record<string, any>,
   status: true,
   description: undefined as string | undefined,
 });
@@ -371,7 +417,7 @@ const initialFormData = {
   trigger_event: "ALARM" as const,
   action_type: "RECORD" as const,
   trigger_camera_ids: [] as number[],
-  action_params: undefined as Record<string, any> | undefined,
+  action_params: {} as Record<string, any>,
   status: true,
   description: undefined as string | undefined,
 };
@@ -382,6 +428,7 @@ async function resetForm() {
     dataFormRef.value.clearValidate();
   }
   Object.assign(formData, initialFormData);
+  formData.action_params = {};
   actionParamsText.value = "";
 }
 
@@ -399,6 +446,7 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
     const item = res.data.data.items.find((i: any) => i.id === id);
     if (item) {
       Object.assign(formData, item);
+      formData.action_params = item.action_params || {};
       actionParamsText.value = item.action_params
         ? JSON.stringify(item.action_params, null, 2)
         : "";
@@ -414,12 +462,11 @@ async function handleSubmit() {
   submitLoading.value = true;
   const id = formData.id;
   try {
-    if (actionParamsText.value) {
+    if (actionParamsText.value && actionParamsText.value.trim()) {
       try {
         formData.action_params = JSON.parse(actionParamsText.value);
       } catch {
-        ElMessage.warning("动作参数JSON格式错误，已忽略");
-        formData.action_params = {};
+        ElMessage.warning("高级 JSON 格式错误，已忽略");
       }
     }
     if (id) {
@@ -481,3 +528,22 @@ function actionTag(type: string): any {
   return map[type] || "";
 }
 </script>
+
+<style scoped>
+.action-params {
+  width: 100%;
+}
+.action-params__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.action-params__label {
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+}
+.action-params__advanced {
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+</style>
