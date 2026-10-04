@@ -356,6 +356,63 @@ _NL2SQL_FEWSHOT = [
         "q": "9月16日当天共有多少条告警",
         "sql": "SELECT COUNT(*) AS c FROM video_alarm_records WHERE alarm_time >= '2026-09-16' AND alarm_time < '2026-09-17'",
     },
+    # ---- 设备 / 合成 / 摄像头 / 边缘延迟TOP-N / 联表取名称 / 显式日期 ----
+    {
+        "q": "列出当前离线的边缘设备",
+        "sql": "SELECT name, code FROM video_edge_devices WHERE status='offline' ORDER BY name",
+    },
+    {
+        "q": "在线和离线的边缘设备各有多少",
+        "sql": "SELECT status, COUNT(*) AS c FROM video_edge_devices GROUP BY status",
+    },
+    {
+        "q": "距上次心跳最久的10台边缘设备",
+        "sql": "SELECT name, last_heartbeat FROM video_edge_devices ORDER BY last_heartbeat ASC NULLS LAST LIMIT 10",
+    },
+    {
+        "q": "各合成算法供应商的完成总量",
+        "sql": "SELECT provider, SUM(done) AS done, SUM(total) AS total FROM synthesis_job GROUP BY provider",
+    },
+    {
+        "q": "当前离线的摄像头有多少",
+        "sql": "SELECT COUNT(*) AS c FROM video_cameras WHERE status='OFFLINE'",
+    },
+    {
+        "q": "各状态下的摄像头数量",
+        "sql": "SELECT status, COUNT(*) AS c FROM video_cameras GROUP BY status",
+    },
+    {
+        "q": "处理延迟最高的10条边缘事件",
+        "sql": "SELECT id, latency_ms FROM video_edge_events WHERE latency_ms IS NOT NULL ORDER BY latency_ms DESC LIMIT 10",
+    },
+    {
+        "q": "各算法类型的平均延迟，取前5名",
+        "sql": "SELECT algorithm_type, ROUND(AVG(latency_ms)::numeric,2) AS a FROM video_edge_events WHERE latency_ms IS NOT NULL GROUP BY algorithm_type ORDER BY a DESC LIMIT 5",
+    },
+    {
+        "q": "边缘事件每天有多少条",
+        "sql": "SELECT date(ts) AS d, COUNT(*) AS c FROM video_edge_events GROUP BY d ORDER BY d",
+    },
+    {
+        "q": "运行中的算法任务对应哪些摄像头",
+        "sql": "SELECT c.name, t.id FROM video_algorithm_tasks t LEFT JOIN video_cameras c ON c.id=t.camera_id WHERE t.status='RUNNING'",
+    },
+    {
+        "q": "每个算法被多少个任务使用",
+        "sql": "SELECT alg.name, COUNT(t.id) AS c FROM video_algorithms alg LEFT JOIN video_algorithm_tasks t ON t.algorithm_id=alg.id GROUP BY alg.name ORDER BY c DESC",
+    },
+    {
+        "q": "各算法类型分别挂了多少任务",
+        "sql": "SELECT alg.algorithm_type, COUNT(t.id) AS c FROM video_algorithms alg LEFT JOIN video_algorithm_tasks t ON t.algorithm_id=alg.id GROUP BY alg.algorithm_type ORDER BY c DESC",
+    },
+    {
+        "q": "9月15号每个摄像头的告警数量",
+        "sql": "SELECT c.name, COUNT(*) AS c FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id WHERE r.alarm_time >= '2026-09-15' AND r.alarm_time < '2026-09-16' GROUP BY c.name ORDER BY c DESC",
+    },
+    {
+        "q": "每个标注数据集下各有多少标注任务",
+        "sql": "SELECT ds.name, COUNT(t.id) AS c FROM annotation_dataset ds LEFT JOIN annotation_task t ON t.dataset_id=ds.id WHERE ds.is_deleted=false GROUP BY ds.name ORDER BY c DESC",
+    },
 ]
 
 
