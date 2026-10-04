@@ -64,6 +64,7 @@ class QueryAskRequest(BaseModel):
     session_id: int | None = None
     datasource: str | None = None  # 未指定则自动判定
     stream: bool = False
+    force_slow: bool = False  # True 则跳过快路径模板，强制走 LLM 生成 SQL（评测用）
 
 
 class QueryFeedbackRequest(BaseModel):

@@ -35,6 +35,8 @@ QUERY_TIMEOUT = 10  # 秒
 
 # 模块级标记：系统种子仅首次执行，避免每次 ask 都做 upsert 拖慢快路径
 _SEED_DONE = False
+# 进程级缓存：系统表真实列 schema（供 NL2SQL 注入）
+_SCHEMA_CACHE: dict | None = None
 
 # 禁止出现的 SQL 关键片段（防 DDL/DML/多语句/写操作）
 _FORBIDDEN = re.compile(
@@ -738,7 +740,7 @@ class AiQueryService:
     # ---- 核心：问答入口 ----
     @classmethod
     async def ask(cls, question: str, auth, session_id: int | None = None,
-                  datasource: str | None = None, redis=None) -> dict:
+                  datasource: str | None = None, redis=None, force_slow: bool = False) -> dict:
         """主入口：意图路由 → 快/慢路径 → 执行 → 落库。"""
         await cls.ensure_system_seed()
         question = (question or "").strip()
@@ -749,6 +751,10 @@ class AiQueryService:
 
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
+
+        # 评测强制慢路径：跳过模板匹配，直接用 LLM 生成 SQL
+        if force_slow:
+            return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
 
         # 快路径匹配
         metric = _match_metric(question, metrics, terms)
@@ -853,7 +859,7 @@ class AiQueryService:
             raise CustomException(msg=f"未配置可用的问答模型：{e}")
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
-        schema_ctx = cls._build_schema_context(datasource, metrics, terms)
+        schema_ctx = await cls._build_schema_context(datasource, metrics, terms)
         system_prompt = (
             "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
             "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
@@ -900,7 +906,33 @@ class AiQueryService:
         return s.rstrip(";")
 
     @classmethod
-    def _build_schema_context(cls, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
+    @staticmethod
+    async def _system_schema() -> dict:
+        """一次性拉取系统可查表的真实列（带类型），缓存到进程级，供 LLM 生成准确 SQL。"""
+        global _SCHEMA_CACHE
+        if _SCHEMA_CACHE is not None:
+            return _SCHEMA_CACHE
+        async with async_db_session() as db:
+            from sqlalchemy import text as _text
+
+            result = await db.execute(
+                _text(
+                    "SELECT table_name, column_name, data_type "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name = ANY(:tables) "
+                    "ORDER BY table_name, ordinal_position"
+                ),
+                {"tables": list(SYSTEM_ALLOWED_TABLES)},
+            )
+            rows = result.fetchall()
+        schema: dict[str, list[str]] = {}
+        for t, c, ty in rows:
+            schema.setdefault(t, []).append(f"{c}({ty})")
+        _SCHEMA_CACHE = schema
+        return schema
+
+    @classmethod
+    async def _build_schema_context(cls, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         lines = ["【可用指标】"]
         for m in metrics:
             if m["enabled"]:
@@ -908,10 +940,12 @@ class AiQueryService:
         lines.append("【术语】")
         for t in terms:
             lines.append(f"- {t['term']} -> {t['metric_key'] or t['field_path']}")
-        lines.append("【可查询表】")
+        lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
+            schema = await cls._system_schema()
             for t in sorted(SYSTEM_ALLOWED_TABLES):
-                lines.append(f"- {t}")
+                cols = schema.get(t, [])
+                lines.append(f"- {t}: {', '.join(cols) if cols else '(无列信息)'}")
         return "\n".join(lines)
 
     @classmethod

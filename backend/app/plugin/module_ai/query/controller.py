@@ -30,7 +30,8 @@ async def ask(
 ) -> JSONResponse:
     try:
         result = await AiQueryService.ask(
-            data.question, auth, data.session_id, data.datasource, redis=redis
+            data.question, auth, data.session_id, data.datasource,
+            redis=redis, force_slow=data.force_slow,
         )
     except Exception as e:  # noqa: BLE001
         return ErrorResponse(msg=str(getattr(e, "msg", e)))
