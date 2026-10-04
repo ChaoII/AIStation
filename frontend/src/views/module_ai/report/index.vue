@@ -10,6 +10,7 @@
         style="width: 260px"
       />
       <el-button :icon="Refresh" @click="load">刷新</el-button>
+      <el-button type="primary" :icon="TrendCharts" @click="goQuery">智能问数</el-button>
     </div>
 
     <el-table v-loading="loading" :data="pagedList" border stripe>
@@ -56,8 +57,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Refresh, Search } from "@element-plus/icons-vue";
+import { Refresh, Search, TrendCharts } from "@element-plus/icons-vue";
 import MarkdownIt from "markdown-it";
 import { deleteAiReport, getAiReportDetail, getAiReportList } from "@/api/module_ai/report";
 
@@ -66,6 +68,10 @@ defineOptions({ name: "AiReport" });
 const loading = ref(false);
 const reports = ref<any[]>([]);
 const keyword = ref("");
+const router = useRouter();
+function goQuery() {
+  router.push("/ai/query");
+}
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
 function renderMd(text: string) {
   return md.render(text || "");

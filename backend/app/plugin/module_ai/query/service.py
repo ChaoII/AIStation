@@ -277,6 +277,10 @@ _NL2SQL_FEWSHOT = [
         "q": "平均每次模型调用的耗时",
         "sql": "SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms, COUNT(*) AS 次数 FROM ai_call_logs WHERE is_deleted = false",
     },
+    {
+        "q": "模型调用平均耗时（毫秒）是多少",
+        "sql": "SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms FROM ai_call_logs WHERE is_deleted = false",
+    },
 ]
 
 
