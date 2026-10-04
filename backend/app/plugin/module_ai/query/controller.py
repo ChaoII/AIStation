@@ -3,10 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
+from redis.asyncio.client import Redis
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
-from app.core.dependencies import AuthPermission
+from app.core.dependencies import AuthPermission, redis_getter
 from app.core.router_class import OperationLogRoute
 
 from .schema import (
@@ -25,10 +26,11 @@ AiQueryRouter = APIRouter(route_class=OperationLogRoute, prefix="/query", tags=[
 async def ask(
     data: QueryAskRequest,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    redis: Annotated[Redis, Depends(redis_getter)],
 ) -> JSONResponse:
     try:
         result = await AiQueryService.ask(
-            data.question, auth, data.session_id, data.datasource
+            data.question, auth, data.session_id, data.datasource, redis=redis
         )
     except Exception as e:  # noqa: BLE001
         return ErrorResponse(msg=str(getattr(e, "msg", e)))

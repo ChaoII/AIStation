@@ -58,9 +58,21 @@
                   赞
                 </span>
                 <span class="msg-a__fb" @click="feedback(m, 'down')">踩</span>
+                <span
+                  v-if="m.columns?.length && (m.rows || []).length"
+                  class="msg-a__export"
+                  @click="exportCsv(m)"
+                >
+                  导出CSV
+                </span>
               </div>
 
               <div v-if="m.summary" class="msg-a__summary">{{ m.summary }}</div>
+
+              <template v-if="showChart(m)">
+                <div class="msg-a__chart-title">可视化</div>
+                <ECharts :options="chartOption(m)" height="240px" />
+              </template>
 
               <div v-if="m._showSql" class="msg-a__code">
                 <pre>{{ m.sql }}</pre>
@@ -389,6 +401,7 @@
 import { nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Delete, Setting, Loading } from "@element-plus/icons-vue";
+import ECharts from "@/components/ECharts/index.vue";
 import {
   queryAsk,
   getQuerySessions,
@@ -528,6 +541,54 @@ function rowsToItems(m: any) {
 }
 function toggleSql(m: any) {
   m._showSql = !m._showSql;
+}
+
+// ---- 可视化 ----
+function showChart(m: any) {
+  return !m.is_error && (m.columns || []).length >= 2 && (m.rows || []).length >= 2;
+}
+function isNumeric(v: any) {
+  return typeof v === "number" || (typeof v === "string" && v !== "" && !Number.isNaN(Number(v)));
+}
+const chartOption = (m: any) => {
+  const cols = m.columns || [];
+  const rows = m.rows || [];
+  const xData = rows.map((r: any[]) => String(r[0]));
+  const series = cols.slice(1).map((c: string, ci: number) => ({
+    name: String(c),
+    type: "bar",
+    barMaxWidth: 30,
+    data: rows.map((r: any[]) => Number(r[ci + 1]) || 0),
+  }));
+  const allNum = series.length > 0 && rows.every((r: any[]) => isNumeric(r[1]));
+  return {
+    tooltip: { trigger: "axis" },
+    grid: { left: 40, right: 20, top: 30, bottom: 40 },
+    xAxis: {
+      type: "category",
+      data: xData,
+      axisLabel: { interval: 0, rotate: xData.length > 8 ? 30 : 0 },
+    },
+    yAxis: { type: "value" },
+    series: allNum ? series : [],
+  };
+};
+
+// ---- 导出 CSV ----
+function exportCsv(m: any) {
+  const cols = m.columns || [];
+  const rows = m.rows || [];
+  const escape = (v: any) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [cols.map(escape).join(","), ...rows.map((r: any[]) => r.map(escape).join(","))];
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `问数结果_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 async function feedback(m: any, fb: string) {
   if (m.id == null || String(m.id).startsWith("tmp") || String(m.id).startsWith("err")) return;
@@ -864,7 +925,8 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
 }
 .msg-a__sql,
-.msg-a__fb {
+.msg-a__fb,
+.msg-a__export {
   font-size: 12px;
   color: var(--el-color-primary);
   cursor: pointer;
@@ -873,6 +935,15 @@ onMounted(() => {
 .msg-a__summary {
   margin-bottom: 8px;
   color: var(--el-text-color-primary);
+}
+.msg-a__export {
+  margin-left: 8px;
+  color: var(--el-color-success);
+}
+.msg-a__chart-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
 }
 .msg-a__code {
   background: var(--el-fill-color-light);

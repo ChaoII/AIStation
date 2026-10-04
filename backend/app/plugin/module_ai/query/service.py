@@ -693,7 +693,7 @@ class AiQueryService:
     # ---- 核心：问答入口 ----
     @classmethod
     async def ask(cls, question: str, auth, session_id: int | None = None,
-                  datasource: str | None = None) -> dict:
+                  datasource: str | None = None, redis=None) -> dict:
         """主入口：意图路由 → 快/慢路径 → 执行 → 落库。"""
         await cls.ensure_system_seed()
         question = (question or "").strip()
@@ -710,11 +710,21 @@ class AiQueryService:
         if metric:
             params = _build_params(metric, question)
             try:
-                res = await _execute_metric(metric, params)
+                cache_key, cached = None, False
+                ttl = metric.get("cache_ttl") or 0
+                if redis and ttl:
+                    cache_key = cls._cache_key(metric, params)
+                    hit = await cls._cache_get(redis, cache_key)
+                    if hit is not None:
+                        res, cached = hit, True
+                if res is None:
+                    res = await _execute_metric(metric, params)
+                    if redis and ttl and cache_key:
+                        await cls._cache_set(redis, cache_key, res, ttl)
                 msg = await cls._save_message(
                     sess["id"], question, path="fast", datasource=metric["datasource"],
                     sql=res["sql"], columns=res["columns"], rows=res["rows"],
-                    result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
+                    result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=cached,
                     summary=cls._summarize(metric, res),
                 )
                 return cls._answer(msg, metric=metric)
@@ -729,6 +739,39 @@ class AiQueryService:
 
         # 慢路径
         return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
+
+    @staticmethod
+    def _cache_key(metric: dict, params: dict) -> str:
+        import hashlib
+        import json
+
+        raw = json.dumps(
+            {"ds": metric.get("datasource"), "key": metric.get("key"),
+             "params": sorted(params.items())},
+            ensure_ascii=False, sort_keys=True, default=str,
+        )
+        return f"ai:query:{hashlib.md5(raw.encode()).hexdigest()}"
+
+    @staticmethod
+    async def _cache_get(redis, key: str):
+        try:
+            val = await redis.get(key)
+            if not val:
+                return None
+            import json
+
+            return json.loads(val)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    async def _cache_set(redis, key: str, res: dict, ttl: int) -> None:
+        try:
+            import json
+
+            await redis.set(key, json.dumps(res, ensure_ascii=False, default=str), ex=max(ttl, 1))
+        except Exception:  # noqa: BLE001
+            pass
 
     @classmethod
     async def _slow_path(cls, question: str, session_id: int, datasource: str, auth) -> dict:

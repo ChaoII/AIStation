@@ -175,5 +175,25 @@ class TestCustomDsValidate:
         assert "7" in sql
 
 
+# ---------------------------------------------------------------------------
+# 阶段C：Redis 缓存 key 确定性
+# ---------------------------------------------------------------------------
+class TestCacheKey:
+    def test_deterministic(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        k1 = AiQueryService._cache_key({"datasource": "system", "key": "alert_count_today"}, {"days": 7})
+        k2 = AiQueryService._cache_key({"datasource": "system", "key": "alert_count_today"}, {"days": 7})
+        assert k1 == k2
+        assert k1.startswith("ai:query:")
+
+    def test_diff_params_diff_key(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        k1 = AiQueryService._cache_key({"datasource": "system", "key": "k"}, {"days": 7})
+        k2 = AiQueryService._cache_key({"datasource": "system", "key": "k"}, {"days": 30})
+        assert k1 != k2
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
