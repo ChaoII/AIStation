@@ -43,6 +43,8 @@ _SEED_DONE = False
 _SCHEMA_CACHE: dict | None = None
 # 进程级缓存：embedding schema 向量索引（供语义检索）
 _SEMANTIC_INDEX: list | None = None
+# pgvector 是否已播种资产向量
+_VECTOR_SEEDED = False
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -897,21 +899,30 @@ class AiQueryService:
                 base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
                 default_headers=build_headers(runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
             )
-            prompt = (
-                "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
-                "指标必须是常见的统计口径(如总数、某类型数量、平均、分布)，且能用给出的表/字段实现。"
-                '严格返回 JSON：{"metrics":[{"name":"<指标名>","sql":"<SELECT COUNT/AVG> FROM <表> ...","agg":"count|avg|group"}],'
-                '"terms":[{"term":"<口语叫法>","type":"metric","target":"<指标名或 表.字段>"}]}'
-                f"\n数据字典：\n{dict_text}"
-            )
-            resp = await client.chat.completions.create(
-                model=runtime["model"], messages=[{"role": "user", "content": prompt}],
-                temperature=0.3, max_tokens=1600,
-            )
-            data = cls._parse_dict(resp.choices[0].message.content or "")
+            data: dict = {}
+            for attempt in range(2):
+                prompt = (
+                    "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
+                    "指标必须是常见统计口径(总数/某类型数量/平均/分布)，且能用给出的表/字段实现。"
+                    "**只返回一个 JSON 对象，不要任何解释、不要 markdown 代码块**，格式严格为："
+                    '{"metrics":[{"name":"<指标名>","sql":"<SELECT COUNT/AVG> FROM <表>...","agg":"count|avg|group"}],'
+                    '"terms":[{"term":"<口语叫法>","type":"metric|dimension","target":"<指标名或 表.字段>"}]}'
+                    + ("\n\n注意：你上次输出不是合法 JSON，请严格按上面的 JSON 结构重新输出，不要多余文字。\n" if attempt else "")
+                    + f"\n数据字典：\n{dict_text}"
+                )
+                resp = await client.chat.completions.create(
+                    model=runtime["model"], messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2, max_tokens=1600,
+                )
+                data = cls._parse_dict(resp.choices[0].message.content or "")
+                if data or attempt == 1:
+                    break
         except Exception as e:  # noqa: BLE001
             raise CustomException(msg=f"推荐失败：{e}")
-        return {"metrics": data.get("metrics", []) or [], "terms": data.get("terms", []) or []}
+        return {
+            "metrics": data.get("metrics") or [],
+            "terms": data.get("terms") or [],
+        }
 
     @staticmethod
     def _parse_dict(text: str) -> dict:
@@ -1602,8 +1613,102 @@ class AiQueryService:
         return _SEMANTIC_INDEX
 
     @classmethod
+    async def _ensure_vector_table(cls) -> None:
+        """确保 pgvector 资产向量表存在（vector 扩展需已启用）。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _text
+
+            await db.execute(
+                _text(
+                    "CREATE TABLE IF NOT EXISTS ai_query_asset_vectors ("
+                    "id BIGSERIAL PRIMARY KEY, asset_type VARCHAR(32), ref VARCHAR(256) UNIQUE, "
+                    "txt TEXT, tables JSONB, embedding vector(2560))"
+                )
+            )
+            await db.execute(
+                _text("CREATE INDEX IF NOT EXISTS idx_aqv_embedding ON ai_query_asset_vectors USING hnsw (embedding vector_cosine_ops)")
+            )
+            await db.commit()
+
+    @classmethod
+    async def _seed_vectors(cls) -> int:
+        """把资产单元向量写入 pgvector（幂等：按 ref upsert）。"""
+        try:
+            await cls._ensure_vector_table()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 创建 pgvector 表失败: {e}")
+            return 0
+        index = await cls._semantic_index()
+        if not index:
+            return 0
+        # 只保留带 tables 的单元
+        rows = [u for u in index if u.get("tables")]
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _text
+
+            for u in rows:
+                ref = u["text"][:220]
+                vec = str(u["vector"])
+                tables = list(u["tables"])
+                await db.execute(
+                    _text(
+                        "INSERT INTO ai_query_asset_vectors(asset_type, ref, txt, tables, embedding) "
+                        "VALUES ('unit', :ref, :txt, :tables::jsonb, :vec::vector) "
+                        "ON CONFLICT (ref) DO UPDATE SET txt=EXCLUDED.txt, tables=EXCLUDED.tables, embedding=EXCLUDED.embedding"
+                    ),
+                    {"ref": ref, "txt": u["text"], "tables": tables, "vec": vec},
+                )
+        return len(rows)
+
+    @classmethod
+    async def _pgv_search(cls, question: str, top_k: int = 12) -> list[str]:
+        """pgvector 向量检索：返回最相关表（HNSW 余弦）。"""
+        try:
+            await cls._ensure_vector_table()
+        except Exception:  # noqa: BLE001
+            return []
+        try:
+            from app.plugin.module_ai.knowledge.embedding import embed_texts
+
+            qvec = (await embed_texts([question]))[0]
+        except Exception:  # noqa: BLE001
+            return []
+        async with async_db_session() as db:
+            from sqlalchemy import text as _text
+
+            r = await db.execute(
+                _text(
+                    "SELECT tables FROM ai_query_asset_vectors "
+                    "ORDER BY embedding <-> :q::vector LIMIT :k"
+                ),
+                {"q": str(qvec), "k": top_k},
+            )
+            rows = r.fetchall()
+        tables: set[str] = set()
+        for row in rows:
+            t = row[0]
+            if t:
+                tables.update(t)
+        return list(tables)
+
+    @classmethod
     async def _semantic_tables(cls, question: str) -> list[str]:
-        """分层检索（jieba 关键词 + embedding 语义融合）：召回最相关表。"""
+        """分层检索：优先 pgvector 落库(HNSW)，回退内存融合(jieba+embedding)。"""
+        global _VECTOR_SEEDED
+        try:
+            if not _VECTOR_SEEDED:
+                try:
+                    n = await cls._seed_vectors()
+                    _VECTOR_SEEDED = True
+                    log.info(f"[query] 资产向量已落 pgvector: {n} 条")
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"[query] pgvector 播种失败: {e}")
+            rows = await cls._pgv_search(question, top_k=12)
+            if rows:
+                return rows
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] pgvector 检索失败: {e}")
+        # 回退：内存融合（jieba + embedding）
         try:
             index = await cls._semantic_index()
             if not index:
