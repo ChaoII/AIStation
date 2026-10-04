@@ -385,6 +385,18 @@
         <el-form-item label="只读">
           <el-switch v-model="dsForm.read_only" />
         </el-form-item>
+        <el-form-item label="授权角色">
+          <el-select
+            v-model="dsForm.allowed_roles"
+            multiple
+            clearable
+            filterable
+            placeholder="不选=所有角色可访问"
+            style="width: 100%"
+          >
+            <el-option v-for="r in queryRoles" :key="r.code" :label="r.name" :value="r.code" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="dsForm.remark" type="textarea" :rows="2" />
         </el-form-item>
@@ -418,6 +430,7 @@ import {
   deleteQueryDatasources,
   testQueryDatasource,
   syncQueryDatasourceSchema,
+  getQueryRoles,
   queryFeedback,
 } from "@/api/module_ai/query";
 
@@ -737,6 +750,15 @@ async function removeTerm(row: any) {
 // ---- 数据源 ----
 const dsEditVisible = ref(false);
 const dsForm = reactive<any>({});
+const queryRoles = ref<any[]>([]);
+async function loadQueryRoles() {
+  try {
+    const r = await getQueryRoles();
+    queryRoles.value = r.data?.data || [];
+  } catch {
+    queryRoles.value = [];
+  }
+}
 function openDsEdit(row?: any) {
   if (row) Object.assign(dsForm, row);
   else
@@ -751,8 +773,10 @@ function openDsEdit(row?: any) {
       password: "",
       read_only: true,
       enabled: true,
+      allowed_roles: [],
       remark: "",
     });
+  loadQueryRoles();
   dsEditVisible.value = true;
 }
 async function saveDs(row: any) {
@@ -773,6 +797,7 @@ async function saveDs(row: any) {
       password: row.password || "",
       read_only: row.read_only !== false,
       enabled: row.enabled !== false,
+      allowed_roles: row.allowed_roles || [],
       remark: row.remark || "",
     });
     ElMessage.success("已保存");

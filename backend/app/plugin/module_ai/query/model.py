@@ -29,6 +29,9 @@ class AiQueryDatasourceModel(ModelMixin, UserMixin):
     read_only: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否只读")
     default: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否默认")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+    allowed_roles: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list, comment="允许访问的角色 code 列表，空=所有"
+    )
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="备注")
 
 

@@ -195,5 +195,27 @@ class TestCacheKey:
         assert k1 != k2
 
 
+# ---------------------------------------------------------------------------
+# 阶段：数据源角色授权
+# ---------------------------------------------------------------------------
+class _R:
+    def __init__(self, code):
+        self.code = code
+
+
+class TestDsRoleAuth:
+    def test_user_role_codes(self):
+        from app.plugin.module_ai.query.service import _user_role_codes
+
+        auth = type("A", (), {"user": type("U", (), {"roles": [_R("admin"), _R("viewer")]})()})()
+        assert _user_role_codes(auth) == {"admin", "viewer"}
+
+    def test_user_role_codes_empty(self):
+        from app.plugin.module_ai.query.service import _user_role_codes
+
+        auth = type("A", (), {"user": type("U", (), {"roles": None})()})()
+        assert _user_role_codes(auth) == set()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -60,6 +60,9 @@ export function syncQueryDatasourceSchema(id: number) {
 export function getQueryDatasourceSchema(id: number) {
   return request({ url: `${API_PATH}/datasources/${id}/schema`, method: "get" });
 }
+export function getQueryRoles() {
+  return request({ url: `${API_PATH}/datasources/roles`, method: "get" });
+}
 
 // 会话
 export function getQuerySessions() {

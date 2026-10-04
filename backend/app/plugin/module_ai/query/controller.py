@@ -91,6 +91,13 @@ async def delete_terms(
 
 
 # ---- 数据源 ----
+@AiQueryRouter.get("/datasources/roles", summary="可授权角色列表")
+async def list_query_roles(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_roles(), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/list", summary="数据源列表")
 async def list_datasources(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

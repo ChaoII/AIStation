@@ -129,8 +129,29 @@ async def list_ds_schema(datasource_id: int) -> list[dict]:
     return [{"table": r.table_name, "columns": r.columns or []} for r in rows]
 
 
-async def _execute_custom_ds_sql(datasource_id: int, sql: str) -> dict:
-    """对自定义数据源执行只读 SQL（含 schema 白名单校验）。"""
+def _user_role_codes(auth) -> set[str]:
+    try:
+        return {getattr(r, "code", "") for r in getattr(getattr(auth, "user", None), "roles", []) or []}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+async def _assert_ds_access(datasource_id: int, auth) -> None:
+    """校验当前用户是否有权访问该自定义数据源；超管/未限角色直接放行。"""
+    ds = await _load_ds(datasource_id)
+    allowed = ds.allowed_roles or []
+    if not allowed:
+        return
+    if getattr(getattr(auth, "user", None), "is_superuser", False):
+        return
+    if not (_user_role_codes(auth) & set(allowed)):
+        raise CustomException(msg="您无权限访问该数据源")
+
+
+async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dict:
+    """对自定义数据源执行只读 SQL（含 schema 白名单校验 + 角色授权）。"""
+    if auth is not None:
+        await _assert_ds_access(datasource_id, auth)
     ds = await _load_ds(datasource_id)
     schema_rows = await list_ds_schema(datasource_id)
     allowed = {r["table"] for r in schema_rows}
@@ -338,19 +359,19 @@ async def _execute_sql(sql: str) -> dict:
     return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000)}
 
 
-async def _execute_metric(metric: dict, params: dict[str, Any]) -> dict:
+async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> dict:
     sql = _render_template(metric["sql_template"], params)
     ds_code = metric.get("datasource") or SYSTEM_DS
     if ds_code == SYSTEM_DS:
         sql = validate_sql(sql, SYSTEM_ALLOWED_TABLES)
         res = await _execute_sql(sql)
     else:
-        # 自定义数据源：ds:{id}，走独立连接 + schema 白名单
+        # 自定义数据源：ds:{id}，走独立连接 + schema 白名单 + 角色授权
         try:
             ds_id = int(ds_code.split(":")[-1])
         except ValueError:
             raise CustomException(msg=f"数据源编码异常：{ds_code}")
-        res = await _execute_custom_ds_sql(ds_id, sql)
+        res = await _execute_custom_ds_sql(ds_id, sql, auth)
         res["sql"] = res.get("sql", sql)
     res["sql"] = res.get("sql") or sql
     return res
@@ -618,6 +639,30 @@ class AiQueryService:
                 if t:
                     await db.delete(t)
 
+    @classmethod
+    async def list_roles(cls) -> list[dict]:
+        """获取系统角色（用于数据源授权选择）。"""
+        try:
+            from app.api.v1.module_system.role.model import RoleModel
+
+            async with async_db_session() as db:
+                from sqlalchemy import select
+
+                rows = (
+                    await db.execute(
+                        select(RoleModel).where(RoleModel.is_deleted.is_(False))
+                        .order_by(RoleModel.id)
+                        .limit(200)
+                    )
+                ).scalars().all()
+                return [
+                    {"id": r.id, "name": r.name, "code": getattr(r, "code", "") or r.name}
+                    for r in rows
+                ]
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 获取角色列表失败: {e}")
+            return []
+
     # ---- 数据源 ----
     @classmethod
     async def list_datasources(cls) -> list[dict]:
@@ -635,7 +680,8 @@ class AiQueryService:
                 {"id": d.id, "name": d.name, "code": d.code, "type": d.type,
                  "host": d.host, "port": d.port, "database": d.database,
                  "username": d.username, "read_only": d.read_only, "default": d.default,
-                 "enabled": d.enabled, "remark": d.remark or ""}
+                 "enabled": d.enabled, "allowed_roles": d.allowed_roles or [],
+                 "remark": d.remark or ""}
                 for d in rows
             ]
 
@@ -657,6 +703,7 @@ class AiQueryService:
                 for k in ("name", "type", "host", "port", "database", "username",
                           "read_only", "default", "enabled", "remark"):
                     setattr(existing, k, getattr(data, k))
+                existing.allowed_roles = data.allowed_roles or []
                 if data.password:
                     existing.password = data.password
                 existing.updated_id = auth.user.id
@@ -666,8 +713,8 @@ class AiQueryService:
                     name=data.name, code=data.code, type=data.type, host=data.host,
                     port=data.port, database=data.database, username=data.username,
                     password=data.password, read_only=data.read_only, default=data.default,
-                    enabled=data.enabled, remark=data.remark,
-                    created_id=auth.user.id, updated_id=auth.user.id,
+                    enabled=data.enabled, allowed_roles=data.allowed_roles or [],
+                    remark=data.remark, created_id=auth.user.id, updated_id=auth.user.id,
                 )
                 db.add(obj)
             await db.flush()
@@ -785,7 +832,7 @@ class AiQueryService:
                     if hit is not None:
                         res, cached = hit, True
                 if res is None:
-                    res = await _execute_metric(metric, params)
+                    res = await _execute_metric(metric, params, auth)
                     if redis and ttl and cache_key:
                         await cls._cache_set(redis, cache_key, res, ttl)
                 msg = await cls._save_message(
@@ -853,7 +900,7 @@ class AiQueryService:
                         ds_id = int(datasource.split(":")[-1])
                     except ValueError:
                         raise CustomException(msg="数据源编码异常")
-                    res = await _execute_custom_ds_sql(ds_id, sql)
+                    res = await _execute_custom_ds_sql(ds_id, sql, auth)
                 else:
                     res = await _execute_sql(sql)
                 msg = await cls._save_message(
@@ -1031,7 +1078,7 @@ class AiQueryService:
         metric = next((m for m in metrics if m["key"] == metric_key), None)
         if not metric:
             raise CustomException(msg=f"指标「{metric_key}」不存在")
-        res = await _execute_metric(metric, params or {})
+        res = await _execute_metric(metric, params or {}, auth)
         return res
 
     # ---- 反馈 ----

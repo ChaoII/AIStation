@@ -56,6 +56,7 @@ class QueryDatasourceUpsert(BaseModel):
     read_only: bool = True
     default: bool = False
     enabled: bool = True
+    allowed_roles: list[str] = Field(default_factory=list)
     remark: str = ""
 
 
