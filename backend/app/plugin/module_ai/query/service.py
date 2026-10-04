@@ -72,10 +72,10 @@ def _to_metric_dict(m: AiQueryMetricModel) -> dict:
 _SYSTEM_METRICS = [
     {
         "key": "alert_count_today", "name": "今日告警数", "agg": "count", "unit": "条",
-        "description": "今天产生的视频告警总数（created_time>=当天零点）",
+        "description": "今天产生的视频告警总数（按告警时间 alarm_time）",
         "sql_template": (
             "SELECT COUNT(*) AS 数值 FROM video_alarm_records "
-            "WHERE created_time >= CURRENT_DATE AND is_deleted = false"
+            "WHERE alarm_time >= CURRENT_DATE"
         ),
         "params": [], "dimensions": [], "cache_ttl": 30,
     },
@@ -84,18 +84,17 @@ _SYSTEM_METRICS = [
         "description": "本自然月产生的视频告警总数",
         "sql_template": (
             "SELECT COUNT(*) AS 数值 FROM video_alarm_records "
-            "WHERE created_time >= date_trunc('month', CURRENT_DATE) AND is_deleted = false"
+            "WHERE alarm_time >= date_trunc('month', CURRENT_DATE)"
         ),
         "params": [], "dimensions": [], "cache_ttl": 60,
     },
     {
-        "key": "alert_by_type", "name": "按算法类型的告警分布", "agg": "group",
-        "unit": "条",
-        "description": "按算法/类型分组的告警数量，可过滤最近N天",
+        "key": "alert_by_type", "name": "按告警类型的分布", "agg": "group", "unit": "条",
+        "description": "按告警类型分组的告警数量，可过滤最近N天",
         "sql_template": (
-            "SELECT COALESCE(algorithm_name, '未知') AS 类型, COUNT(*) AS 数量 "
-            "FROM video_alarm_records WHERE is_deleted = false "
-            "AND created_time >= CURRENT_DATE - INTERVAL '{days}' DAY "
+            "SELECT COALESCE(alarm_type, '未知') AS 类型, COUNT(*) AS 数量 "
+            "FROM video_alarm_records "
+            "WHERE alarm_time >= CURRENT_DATE - INTERVAL '{days}' DAY "
             "GROUP BY 类型 ORDER BY 数量 DESC LIMIT 50"
         ),
         "params": [{"key": "days", "label": "最近天数", "type": "value"}],
@@ -104,11 +103,8 @@ _SYSTEM_METRICS = [
     },
     {
         "key": "camera_online_count", "name": "在线摄像头数", "agg": "count", "unit": "台",
-        "description": "当前在线状态的摄像头数量",
-        "sql_template": (
-            "SELECT COUNT(*) AS 数值 FROM video_cameras "
-            "WHERE is_deleted = false AND COALESCE(status,'') <> 'offline'"
-        ),
+        "description": "摄像头总数（未删除）",
+        "sql_template": "SELECT COUNT(*) AS 数值 FROM video_cameras WHERE is_deleted = false",
         "params": [], "dimensions": [], "cache_ttl": 30,
     },
     {
@@ -304,20 +300,28 @@ class AiQueryService:
     async def ensure_system_seed(cls) -> None:
         """幂等写入本系统数据源的预置指标与术语（系统数据源无指标时）。"""
         async with async_db_session.begin() as db:
-            from sqlalchemy import func, select
+            from sqlalchemy import select
 
-            cnt = (
-                await db.execute(
-                    select(func.count())
-                    .select_from(AiQueryMetricModel)
-                    .where(
-                        AiQueryMetricModel.datasource == SYSTEM_DS,
-                        AiQueryMetricModel.is_deleted.is_(False),
+            for m in _SYSTEM_METRICS:
+                existing = (
+                    await db.execute(
+                        select(AiQueryMetricModel).where(
+                            AiQueryMetricModel.datasource == SYSTEM_DS,
+                            AiQueryMetricModel.key == m["key"],
+                            AiQueryMetricModel.is_deleted.is_(False),
+                        )
                     )
-                )
-            ).scalar_one()
-            if cnt == 0:
-                for m in _SYSTEM_METRICS:
+                ).scalar_one_or_none()
+                if existing:
+                    existing.name = m["name"]
+                    existing.description = m.get("description", "")
+                    existing.sql_template = m["sql_template"]
+                    existing.params = m.get("params") or []
+                    existing.dimensions = m.get("dimensions") or []
+                    existing.agg = m.get("agg", "count")
+                    existing.unit = m.get("unit", "")
+                    existing.cache_ttl = m.get("cache_ttl", 0)
+                else:
                     db.add(
                         AiQueryMetricModel(
                             datasource=SYSTEM_DS, key=m["key"], name=m["name"],
@@ -328,18 +332,20 @@ class AiQueryService:
                             enabled=True, sort=0, cache_ttl=m.get("cache_ttl", 0),
                         )
                     )
-            cnt_t = (
-                await db.execute(
-                    select(func.count())
-                    .select_from(AiQueryDictionaryModel)
-                    .where(
-                        AiQueryDictionaryModel.datasource == SYSTEM_DS,
-                        AiQueryDictionaryModel.is_deleted.is_(False),
+            for t in _SYSTEM_TERMS:
+                existing = (
+                    await db.execute(
+                        select(AiQueryDictionaryModel).where(
+                            AiQueryDictionaryModel.datasource == SYSTEM_DS,
+                            AiQueryDictionaryModel.term == t["term"],
+                            AiQueryDictionaryModel.is_deleted.is_(False),
+                        )
                     )
-                )
-            ).scalar_one()
-            if cnt_t == 0:
-                for t in _SYSTEM_TERMS:
+                ).scalar_one_or_none()
+                if existing:
+                    existing.metric_key = t.get("metric_key", "")
+                    existing.type = t.get("type", "term")
+                else:
                     db.add(
                         AiQueryDictionaryModel(
                             datasource=SYSTEM_DS, term=t["term"],
@@ -666,7 +672,8 @@ class AiQueryService:
         terms = await cls.list_terms(datasource or None)
         schema_ctx = cls._build_schema_context(datasource, metrics, terms)
         system_prompt = (
-            "你是数据库查询助手。根据用户问题生成只读 SELECT 查询。"
+            "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
+            "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
             "只能引用以下给定的表/字段与语义指标。只返回一条 SQL，不要多余解释，"
             f"不要使用 DELETE/UPDATE/INSERT/DDL。\n{schema_ctx}"
         )
