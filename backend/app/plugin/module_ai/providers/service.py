@@ -18,6 +18,7 @@ def _to_dict(p: AiProviderModel) -> dict:
         "extra_headers": p.extra_headers,
         "description": p.description,
         "api_key_masked": _mask(p.api_key),
+        "created_time": p.created_time,
     }
 
 
