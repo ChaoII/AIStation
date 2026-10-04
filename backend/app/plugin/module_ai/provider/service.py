@@ -204,6 +204,19 @@ class AiModelService:
             return _to_dict(m)
 
     @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用模型配置。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for mid in ids:
+                m = await db.get(AiModelModel, mid)
+                if m and not m.is_deleted:
+                    m.enabled = enabled
+                    m.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                    count += 1
+            return count
+
+    @classmethod
     async def delete(cls, ids: list[int]) -> None:
         async with async_db_session.begin() as db:
             for mid in ids:

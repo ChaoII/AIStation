@@ -22,6 +22,10 @@ export function setDefaultAiModel(id: number) {
   return request({ url: `${API_PATH}/set-default/${id}`, method: "post" });
 }
 
+export function batchModelStatus(ids: number[], enabled: boolean) {
+  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
+}
+
 export function testAiModel(data: any) {
   return request({
     url: `${API_PATH}/test`,

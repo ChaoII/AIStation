@@ -16,11 +16,18 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
+        <span class="batch-ac">
+          <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(true)">
+            批量启用
+          </el-button>
+          <el-button size="small" :disabled="!modelSelIds.length" @click="batchEnable(false)">
+            批量停用
+          </el-button>
+        </span>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
-
       <template #table="{ data, loading, tableRef, onSelectionChange }">
         <div class="data-table__content">
           <el-table
@@ -31,7 +38,7 @@
             height="100%"
             border
             stripe
-            @selection-change="onSelectionChange"
+            @selection-change="onModelSel"
           >
             <template #empty>
               <el-empty :image-size="80" description="暂无模型配置，点击「新增」创建" />
@@ -313,6 +320,7 @@ import {
   updateAiModel,
   deleteAiModel,
   setDefaultAiModel,
+  batchModelStatus,
   testAiModel,
 } from "@/api/module_ai/model";
 import { getAiProviderList, getAiProviderRemoteModels } from "@/api/module_ai/provider";
@@ -567,6 +575,20 @@ async function handleTest(row: any) {
 }
 
 const testing = ref(false);
+const modelSelIds = ref<number[]>([]);
+function onModelSel(sel: any[]) {
+  modelSelIds.value = sel.map((s: any) => s.id);
+}
+async function batchEnable(enabled: boolean) {
+  if (!modelSelIds.value.length) return;
+  try {
+    const r = await batchModelStatus(modelSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个配置`);
+    refreshList();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
 
 function buildObjectFromRows(
   rows: { key: string; value: string }[]
@@ -627,5 +649,8 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+.batch-ac {
+  margin-left: 8px;
 }
 </style>
