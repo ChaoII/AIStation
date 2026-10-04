@@ -241,6 +241,9 @@ export function downloadAiKnowledgeDocument(id: number, docId: number) {
 export function getAiKnowledgeFaq(id: number, format = "json") {
   return request({ url: `${BASE}/${id}/faq`, method: "get", params: { format } });
 }
+export function copyAiKnowledge(id: number) {
+  return request({ url: `${BASE}/${id}/copy`, method: "post" });
+}
 
 // ---------- 数据源 ----------
 export function getAiDatasourceList() {

@@ -89,9 +89,17 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="220" align="center" fixed="right">
+            <el-table-column label="操作" width="280" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button size="small" type="primary" @click="openDetail(row)">详情</el-button>
+                <el-button
+                  v-hasPerm="['module_ai:knowledge:create']"
+                  size="small"
+                  :icon="CopyDocument"
+                  @click="copyBase(row)"
+                >
+                  复制
+                </el-button>
                 <el-button
                   v-hasPerm="['module_ai:knowledge:update']"
                   size="small"
@@ -1677,6 +1685,7 @@ import {
   Refresh,
   Share,
   UploadFilled,
+  CopyDocument,
 } from "@element-plus/icons-vue";
 import {
   getAiKnowledgeList,
@@ -1712,6 +1721,7 @@ import {
   downloadAiKnowledgeDocument,
   getAiKnowledgeFaq,
   getAiKnowledgeGraph,
+  copyAiKnowledge,
   createAiKnowledgeGraphEntity,
   updateAiKnowledgeGraphEntity,
   deleteAiKnowledgeGraphEntities,
@@ -1846,6 +1856,17 @@ function deleteBases(row: any) {
     .catch(() => {
       /* 取消 */
     });
+}
+
+async function copyBase(row: any) {
+  try {
+    const r = await copyAiKnowledge(row.id);
+    const d = r.data?.data || {};
+    ElMessage.success(`已复制为「${d.name}」（${d.chunks} 个分块）`);
+    loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "复制失败");
+  }
 }
 
 // ---------- 入库 ----------

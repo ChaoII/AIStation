@@ -290,6 +290,62 @@ class AiKnowledgeService:
                 except Exception:  # noqa: BLE001
                     pass
 
+    @classmethod
+    async def copy_kb(cls, kb_id: int, auth) -> dict:
+        """复制知识库：新建副本并连同分块内容/向量/溯源一起复制（图谱另同步）。"""
+        async with async_db_session.begin() as db:
+            src = await db.get(AiKnowledgeBaseModel, kb_id)
+            if not src or src.is_deleted:
+                raise ValueError("知识库不存在")
+            new = AiKnowledgeBaseModel(
+                name=f"{src.name}（副本）",
+                description=src.description,
+                model_id=src.model_id,
+                file_type=src.file_type,
+                enabled=True,
+                chunk_count=0,
+                created_id=auth.user.id,
+                updated_id=auth.user.id,
+            )
+            db.add(new)
+            await db.flush()
+            new_id = new.id
+            chunks = (
+                (
+                    await db.execute(
+                        select(AiKnowledgeChunkModel).where(
+                            AiKnowledgeChunkModel.knowledge_base_id == kb_id,
+                            AiKnowledgeChunkModel.is_deleted.is_(False),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            copied = 0
+            for c in chunks:
+                db.add(
+                    AiKnowledgeChunkModel(
+                        knowledge_base_id=new_id,
+                        file_name=c.file_name,
+                        document_id=c.document_id,
+                        start_line=c.start_line,
+                        page=c.page,
+                        chunk_index=c.chunk_index,
+                        content=c.content,
+                        annotations=c.annotations,
+                        meta=c.meta,
+                        vector=c.vector,
+                        dimension=c.dimension,
+                        created_id=auth.user.id,
+                        updated_id=auth.user.id,
+                    )
+                )
+                copied += 1
+            new.chunk_count = copied
+        await cls._rebuild_graph(new_id)
+        return {"id": new_id, "name": new.name, "chunks": copied}
+
     # ------------------------------------------------------------ #
     # 入库 / 检索
     # ------------------------------------------------------------ #

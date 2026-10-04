@@ -83,6 +83,18 @@ async def delete_bases(
     return SuccessResponse(msg="删除成功")
 
 
+@KnowledgeRouter.post("/bases/{kb_id}/copy", summary="复制知识库")
+async def copy_kb(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:create"]))],
+) -> JSONResponse:
+    try:
+        data = await AiKnowledgeService.copy_kb(kb_id, auth)
+        return SuccessResponse(data=data, msg="复制成功")
+    except ValueError as e:
+        return ErrorResponse(msg=str(e))
+
+
 # ---------------------------------------------------------------- #
 # 入库 / 检索 / 分块
 # ---------------------------------------------------------------- #
