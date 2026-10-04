@@ -51,13 +51,7 @@
       stroke-dasharray="4 3"
     />
     <!-- 鼠标跟随点 -->
-    <circle
-      v-if="cursor"
-      :cx="cursor.x * cw"
-      :cy="cursor.y * ch"
-      r="3.5"
-      fill="#3b82f6"
-    />
+    <circle v-if="cursor" :cx="cursor.x * cw" :cy="cursor.y * ch" r="3.5" fill="#3b82f6" />
   </g>
 </template>
 <script setup lang="ts">
@@ -70,11 +64,8 @@ const points = computed<Point[]>(() => unref(props.state?.points) ?? []);
 const cursor = computed<Point | null>(() => unref(props.state?.cursor) ?? null);
 const closeRadiusPx = computed<number>(() => unref(props.state?.closeRadiusPx) ?? 14);
 
-const fixedPts = computed(
-  () =>
-    points.value
-      .map((p: Point) => `${p.x * props.cw},${p.y * props.ch}`)
-      .join(" ")
+const fixedPts = computed(() =>
+  points.value.map((p: Point) => `${p.x * props.cw},${p.y * props.ch}`).join(" ")
 );
 
 // 鼠标是否靠近首点（屏幕像素距离），用于首点圈放大提示

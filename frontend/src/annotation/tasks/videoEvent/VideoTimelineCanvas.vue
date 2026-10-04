@@ -1,7 +1,12 @@
 <template>
   <div class="video-timeline-canvas">
     <div ref="trackRef" class="vtc-track" @mousedown="onTrackMouseDown">
-      <div v-for="seg in props.segments" :key="seg.id" class="vtc-region-wrap" :style="pos(seg.start, seg.end)">
+      <div
+        v-for="seg in props.segments"
+        :key="seg.id"
+        class="vtc-region-wrap"
+        :style="pos(seg.start, seg.end)"
+      >
         <div
           class="vtc-region"
           :class="{ active: seg.id === props.selectedId }"
@@ -19,8 +24,16 @@
           />
         </div>
       </div>
-      <div v-if="previewRange" class="vtc-region vtc-preview" :style="pos(previewRange.start, previewRange.end)" />
-      <div v-if="draftRange" class="vtc-region vtc-draft" :style="pos(draftRange.start, draftRange.end)" />
+      <div
+        v-if="previewRange"
+        class="vtc-region vtc-preview"
+        :style="pos(previewRange.start, previewRange.end)"
+      />
+      <div
+        v-if="draftRange"
+        class="vtc-region vtc-draft"
+        :style="pos(draftRange.start, draftRange.end)"
+      />
     </div>
     <div class="vtc-scale" :class="{ 'is-empty': !duration }">
       <span class="vtc-scale-item">{{ formatTime(0) }}</span>

@@ -23,7 +23,9 @@
       </div>
       <div class="tsp-meta-item">
         <span class="tsp-meta-label">时间范围</span>
-        <span class="tsp-meta-value">{{ formatStart(rangeStart) }} - {{ formatStart(rangeEnd) }}</span>
+        <span class="tsp-meta-value">
+          {{ formatStart(rangeStart) }} - {{ formatStart(rangeEnd) }}
+        </span>
       </div>
       <div class="tsp-meta-item">
         <span class="tsp-meta-label">时间单位</span>

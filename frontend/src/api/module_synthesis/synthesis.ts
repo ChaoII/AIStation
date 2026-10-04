@@ -86,7 +86,14 @@ export const SynthesisAPI = {
     width?: number;
     height?: number;
   }) {
-    return request<ApiResponse<{ provider: string; job_id: number | null; uploaded: boolean; items: GeneratedPlateItem[] }>>({
+    return request<
+      ApiResponse<{
+        provider: string;
+        job_id: number | null;
+        uploaded: boolean;
+        items: GeneratedPlateItem[];
+      }>
+    >({
       url: `${API_PATH}/license-plate/generate`,
       method: "post",
       data,

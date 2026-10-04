@@ -123,9 +123,7 @@ const filtered = computed(() => {
 const allSelected = computed(
   () => filtered.value.length > 0 && filtered.value.every((i) => selectedIds.value.includes(i.id))
 );
-const someSelected = computed(
-  () => selectedIds.value.length > 0 && !allSelected.value
-);
+const someSelected = computed(() => selectedIds.value.length > 0 && !allSelected.value);
 
 function toggle(id: number, checked: boolean) {
   if (checked) {

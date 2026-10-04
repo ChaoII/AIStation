@@ -9,7 +9,14 @@ export const keypointPlugin: AnnotationTaskPlugin = {
   label: "关键点",
   color: "danger",
   renderer: KeypointCanvas,
-  tools: [{ name: "keypoint", label: "关键点", title: "在画布逐点放置关键点，放满该类别的关键点数后自动进入矩形框绑定，拖出矩形即完成一个对象（归属当前类别）" }],
+  tools: [
+    {
+      name: "keypoint",
+      label: "关键点",
+      title:
+        "在画布逐点放置关键点，放满该类别的关键点数后自动进入矩形框绑定，拖出矩形即完成一个对象（归属当前类别）",
+    },
+  ],
   create(shape: Annotation): boolean {
     if (shape.type !== "Keypoint") return false;
     const kps = shape.keypoints || [];
@@ -23,7 +30,13 @@ export const keypointPlugin: AnnotationTaskPlugin = {
     return {
       name: "keypoint",
       preview: KeypointPreview,
-      state: { pending: kp.pending, boxStart: kp.boxStart, boxEnd: kp.boxEnd, boxDrafting, boxMode: kp.boxMode },
+      state: {
+        pending: kp.pending,
+        boxStart: kp.boxStart,
+        boxEnd: kp.boxEnd,
+        boxDrafting,
+        boxMode: kp.boxMode,
+      },
       down(ctx) {
         const p = ctx.point;
         if (!p) return null;

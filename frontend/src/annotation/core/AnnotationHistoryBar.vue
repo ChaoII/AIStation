@@ -29,7 +29,9 @@
         保存
       </el-button>
       <div class="sep" />
-      <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">历史</el-button>
+      <el-button size="small" :disabled="!hasCurrentImage" @click="$emit('history')">
+        历史
+      </el-button>
       <div class="sep" />
       <el-button size="small" circle @click="$emit('help')">
         <el-icon><QuestionFilled /></el-icon>

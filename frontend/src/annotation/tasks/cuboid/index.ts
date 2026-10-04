@@ -14,7 +14,11 @@ export const cuboidPlugin: AnnotationTaskPlugin = {
   color: "danger",
   renderer: CuboidCanvas,
   tools: [
-    { name: "cuboid", label: "3D 目标检测", title: "分 4 步画：放底面 3 个角点（平行四边形）→ 向上拖出高度" },
+    {
+      name: "cuboid",
+      label: "3D 目标检测",
+      title: "分 4 步画：放底面 3 个角点（平行四边形）→ 向上拖出高度",
+    },
   ],
   panel: CuboidPanel,
   create(shape: Annotation): boolean {

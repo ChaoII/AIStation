@@ -55,9 +55,9 @@
           @select-entity="store.selectedAnnotationId = $event"
           @new-relation="openRelationDialog"
           @delete-entity="deleteEntity"
-        @delete-relation="deleteRelation"
-        @click-relation="activeRelationId = $event"
-      />
+          @delete-relation="deleteRelation"
+          @click-relation="activeRelationId = $event"
+        />
       </template>
       <template v-else-if="isAudioTask">
         <main class="ann-canvas-area audio-main">
@@ -144,171 +144,183 @@
         />
       </template>
       <template v-else>
-      <AnnotationToolbar
-        :tools="displayTools"
-        :current-tool="currentToolForBar"
-        @select="setTool"
-        @undo="undo"
-        @redo="redo"
-        @delete="deleteSelected"
-      />
-      <main ref="canvasAreaRef" class="ann-canvas-area">
-        <AnnotationCanvas
-          ref="canvasRef"
-          :img-url="imgUrl"
-          :video-url="videoUrl"
-          :media="isVideoTask ? 'video' : 'image'"
-          :image-loaded="imageLoaded"
-          :cursor="toolCursor"
-          :canvas="canvas"
-          @img-load="onImgLoad"
-          @img-error="onImgError"
-          @video-loaded="onVideoLoaded"
-          @video-seeked="onVideoSeeked"
-          @mousedown="onCanvasDown"
-          @dblclick="onDblClick"
-          @wheel="onWheel"
-          @contextmenu.prevent="onRootContextmenu"
-        >
-          <DetectionTrackOverlay
-            v-if="isVideoTask && trackShow"
-            :paths="trackPaths"
-            :cw="cw"
-            :ch="ch"
-          />
-          <component
-            :is="plugin.renderer"
-            :annotations="displayAnnotations"
-            :cw="cw"
-            :ch="ch"
-            :selected-id="store.selectedAnnotationId"
-            :color="clsColor"
-            :cls-name="clsName"
-            :font-size="fontSize"
-            :tag-h="tagH"
-            :stroke="strokeW"
-            :sel-stroke="selStrokeW"
-            :pointer-none="isDrawing"
-            @ann-down="onAnnDown"
-            @handle-down="onHandleDown"
-            @rotate-down="onRotateDown"
-          />
-          <component
-            :is="activeTool?.preview"
-            v-if="activeTool && activeTool.preview"
-            :state="activeTool.state"
-            :cw="cw"
-            :ch="ch"
-            :zoom="canvas.zoom.value"
-            :font-size="fontSize"
-          />
-          <line
-            v-if="crossVisible"
-            :x1="crosshair.x * cw"
-            :y1="0"
-            :x2="crosshair.x * cw"
-            :y2="ch"
-            :stroke="currentClassColor"
-            stroke-width="1"
-            stroke-dasharray="3 3"
-            class="cross-svg"
-          />
-          <line
-            v-if="crossVisible"
-            :x1="0"
-            :y1="crosshair.y * ch"
-            :x2="cw"
-            :y2="crosshair.y * ch"
-            :stroke="currentClassColor"
-            stroke-width="1"
-            stroke-dasharray="3 3"
-            class="cross-svg"
-          />
-        </AnnotationCanvas>
-        <div v-if="isVideoTask" class="track-bar">
-          <el-switch v-model="trackShow" size="small" active-text="显示轨迹" />
-          <el-select
-            v-model="selectedTrackId"
-            size="small"
-            clearable
-            placeholder="选择轨迹"
-            class="track-select"
+        <AnnotationToolbar
+          :tools="displayTools"
+          :current-tool="currentToolForBar"
+          @select="setTool"
+          @undo="undo"
+          @redo="redo"
+          @delete="deleteSelected"
+        />
+        <main ref="canvasAreaRef" class="ann-canvas-area">
+          <AnnotationCanvas
+            ref="canvasRef"
+            :img-url="imgUrl"
+            :video-url="videoUrl"
+            :media="isVideoTask ? 'video' : 'image'"
+            :image-loaded="imageLoaded"
+            :cursor="toolCursor"
+            :canvas="canvas"
+            @img-load="onImgLoad"
+            @img-error="onImgError"
+            @video-loaded="onVideoLoaded"
+            @video-seeked="onVideoSeeked"
+            @mousedown="onCanvasDown"
+            @dblclick="onDblClick"
+            @wheel="onWheel"
+            @contextmenu.prevent="onRootContextmenu"
           >
-            <el-option v-for="tid in trackOptions" :key="tid" :label="`轨迹 ${shortTrack(tid)}`" :value="tid" />
-          </el-select>
-          <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(-1)">上一帧</el-button>
-          <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(1)">下一帧</el-button>
-          <el-button size="small" :disabled="!selectedTrackId" @click="openInterpolateDialog">插值中间帧</el-button>
-        </div>
-        <div class="ann-label-layer">
-          <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
-            {{ clsName(a) }}
-          </div>
-        </div>
-        <div
-          v-if="brushPopover.visible"
-          class="brush-popover"
-          :style="{ left: brushPopover.x + 'px', top: brushPopover.y + 'px' }"
-          @click.stop
-          @contextmenu.prevent
-        >
-          <div class="brush-popover-head">画笔大小</div>
-          <div class="brush-popover-mode">
-            <el-radio-group v-model="brushMode" size="small">
-              <el-radio-button value="paint">涂抹</el-radio-button>
-              <el-radio-button value="lasso">套索</el-radio-button>
-            </el-radio-group>
-          </div>
-          <div class="brush-popover-body">
-            <div
-              class="brush-cursor-preview"
-              :style="{
-                width: Math.min(Math.max(brushSizeVal * (canvas.zoom.value || 1), 6), 120) + 'px',
-                height: Math.min(Math.max(brushSizeVal * (canvas.zoom.value || 1), 6), 120) + 'px'
-              }"
+            <DetectionTrackOverlay
+              v-if="isVideoTask && trackShow"
+              :paths="trackPaths"
+              :cw="cw"
+              :ch="ch"
             />
-            <el-slider
-              :model-value="brushSizeVal"
-              @input="setBrushSize"
-              :min="1"
-              :max="80"
+            <component
+              :is="plugin.renderer"
+              :annotations="displayAnnotations"
+              :cw="cw"
+              :ch="ch"
+              :selected-id="store.selectedAnnotationId"
+              :color="clsColor"
+              :cls-name="clsName"
+              :font-size="fontSize"
+              :tag-h="tagH"
+              :stroke="strokeW"
+              :sel-stroke="selStrokeW"
+              :pointer-none="isDrawing"
+              @ann-down="onAnnDown"
+              @handle-down="onHandleDown"
+              @rotate-down="onRotateDown"
+            />
+            <component
+              :is="activeTool?.preview"
+              v-if="activeTool && activeTool.preview"
+              :state="activeTool.state"
+              :cw="cw"
+              :ch="ch"
+              :zoom="canvas.zoom.value"
+              :font-size="fontSize"
+            />
+            <line
+              v-if="crossVisible"
+              :x1="crosshair.x * cw"
+              :y1="0"
+              :x2="crosshair.x * cw"
+              :y2="ch"
+              :stroke="currentClassColor"
+              stroke-width="1"
+              stroke-dasharray="3 3"
+              class="cross-svg"
+            />
+            <line
+              v-if="crossVisible"
+              :x1="0"
+              :y1="crosshair.y * ch"
+              :x2="cw"
+              :y2="crosshair.y * ch"
+              :stroke="currentClassColor"
+              stroke-width="1"
+              stroke-dasharray="3 3"
+              class="cross-svg"
+            />
+          </AnnotationCanvas>
+          <div v-if="isVideoTask" class="track-bar">
+            <el-switch v-model="trackShow" size="small" active-text="显示轨迹" />
+            <el-select
+              v-model="selectedTrackId"
               size="small"
-              class="brush-popover-slider"
-            />
-            <span class="brush-popover-val">{{ brushSizeVal }}px</span>
+              clearable
+              placeholder="选择轨迹"
+              class="track-select"
+            >
+              <el-option
+                v-for="tid in trackOptions"
+                :key="tid"
+                :label="`轨迹 ${shortTrack(tid)}`"
+                :value="tid"
+              />
+            </el-select>
+            <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(-1)">
+              上一帧
+            </el-button>
+            <el-button size="small" :disabled="!selectedTrackId" @click="goTrackFrame(1)">
+              下一帧
+            </el-button>
+            <el-button size="small" :disabled="!selectedTrackId" @click="openInterpolateDialog">
+              插值中间帧
+            </el-button>
           </div>
-          <div class="brush-popover-tip">左键描画 · 按 [ ] 调整 · 右键再开</div>
-        </div>
-      </main>
-      <AnnotationRightPanel
-        :ann-settings="annSettings"
-        :image-filter="imageFilter"
-        :filtered-images="filteredImages"
-        :images="store.images"
-        :current-image-id="store.currentImage?.id ?? null"
-        :task-classes="taskClasses"
-        :selected-class-id="selectedClassId"
-        :plugin-name="plugin.name"
-        :classification-mode="config.classificationMode"
-        :annotations="store.annotations"
-        :selected-annotation-id="store.selectedAnnotationId"
-        :cls-color="clsColor"
-        :cls-name="clsName"
-        :cls-count="clsCount"
-        :is-cls-selected="isClsSelected"
-        @update-image-filter="imageFilter = $event"
-        @go-image="goToImage"
-        @add-class="openAddClass"
-        @edit-class="openEditClass"
-        @select-class="selectedClassId = $event"
-        @remove-class="removeClass"
-        @change-class-color="changeClassColor"
-        @toggle-classification="toggleClassification"
-        @select-annotation="store.selectedAnnotationId = $event"
-        @edit-annotation="openEditDialog"
-        @contextmenu-annotation="openContextMenu"
-        @delete-annotation="deleteById"
-      />
+          <div class="ann-label-layer">
+            <div v-for="a in displayAnnotations" :key="a.id" class="ann-tag" :style="tagStyle(a)">
+              {{ clsName(a) }}
+            </div>
+          </div>
+          <div
+            v-if="brushPopover.visible"
+            class="brush-popover"
+            :style="{ left: brushPopover.x + 'px', top: brushPopover.y + 'px' }"
+            @click.stop
+            @contextmenu.prevent
+          >
+            <div class="brush-popover-head">画笔大小</div>
+            <div class="brush-popover-mode">
+              <el-radio-group v-model="brushMode" size="small">
+                <el-radio-button value="paint">涂抹</el-radio-button>
+                <el-radio-button value="lasso">套索</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="brush-popover-body">
+              <div
+                class="brush-cursor-preview"
+                :style="{
+                  width: Math.min(Math.max(brushSizeVal * (canvas.zoom.value || 1), 6), 120) + 'px',
+                  height:
+                    Math.min(Math.max(brushSizeVal * (canvas.zoom.value || 1), 6), 120) + 'px',
+                }"
+              />
+              <el-slider
+                :model-value="brushSizeVal"
+                :min="1"
+                :max="80"
+                size="small"
+                class="brush-popover-slider"
+                @input="setBrushSize"
+              />
+              <span class="brush-popover-val">{{ brushSizeVal }}px</span>
+            </div>
+            <div class="brush-popover-tip">左键描画 · 按 [ ] 调整 · 右键再开</div>
+          </div>
+        </main>
+        <AnnotationRightPanel
+          :ann-settings="annSettings"
+          :image-filter="imageFilter"
+          :filtered-images="filteredImages"
+          :images="store.images"
+          :current-image-id="store.currentImage?.id ?? null"
+          :task-classes="taskClasses"
+          :selected-class-id="selectedClassId"
+          :plugin-name="plugin.name"
+          :classification-mode="config.classificationMode"
+          :annotations="store.annotations"
+          :selected-annotation-id="store.selectedAnnotationId"
+          :cls-color="clsColor"
+          :cls-name="clsName"
+          :cls-count="clsCount"
+          :is-cls-selected="isClsSelected"
+          @update-image-filter="imageFilter = $event"
+          @go-image="goToImage"
+          @add-class="openAddClass"
+          @edit-class="openEditClass"
+          @select-class="selectedClassId = $event"
+          @remove-class="removeClass"
+          @change-class-color="changeClassColor"
+          @toggle-classification="toggleClassification"
+          @select-annotation="store.selectedAnnotationId = $event"
+          @edit-annotation="openEditDialog"
+          @contextmenu-annotation="openContextMenu"
+          @delete-annotation="deleteById"
+        />
       </template>
     </div>
     <VideoPlayerBar
@@ -328,7 +340,9 @@
       @zoom-out="zoomStep(1 / 1.2)"
     />
     <AnnotationHistoryBar
-      :has-current-image="!!store.currentImage || isVideoTask || isAudioTask || isTextTask || isTimeSeriesTask"
+      :has-current-image="
+        !!store.currentImage || isVideoTask || isAudioTask || isTextTask || isTimeSeriesTask
+      "
       :current-index="store.currentImageIndex"
       :total="store.images.length"
       :unsaved="store.unsaved"
@@ -556,7 +570,12 @@
             style="width: 100%"
             placeholder="选择已有轨迹"
           >
-            <el-option v-for="tid in trackOptions" :key="tid" :label="`轨迹 ${shortTrack(tid)}`" :value="tid" />
+            <el-option
+              v-for="tid in trackOptions"
+              :key="tid"
+              :label="`轨迹 ${shortTrack(tid)}`"
+              :value="tid"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -573,13 +592,33 @@
           <el-tag size="small">轨迹 {{ shortTrack(selectedTrackId) }}</el-tag>
         </el-form-item>
         <el-form-item label="关键帧 A">
-          <el-select v-model="interpolateFrameA" size="small" style="width: 100%" placeholder="选择关键帧 A">
-            <el-option v-for="f in interpolateFrameOptions" :key="f" :label="`第 ${f} 帧`" :value="f" />
+          <el-select
+            v-model="interpolateFrameA"
+            size="small"
+            style="width: 100%"
+            placeholder="选择关键帧 A"
+          >
+            <el-option
+              v-for="f in interpolateFrameOptions"
+              :key="f"
+              :label="`第 ${f} 帧`"
+              :value="f"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="关键帧 B">
-          <el-select v-model="interpolateFrameB" size="small" style="width: 100%" placeholder="选择关键帧 B">
-            <el-option v-for="f in interpolateFrameOptions" :key="f" :label="`第 ${f} 帧`" :value="f" />
+          <el-select
+            v-model="interpolateFrameB"
+            size="small"
+            style="width: 100%"
+            placeholder="选择关键帧 B"
+          >
+            <el-option
+              v-for="f in interpolateFrameOptions"
+              :key="f"
+              :label="`第 ${f} 帧`"
+              :value="f"
+            />
           </el-select>
         </el-form-item>
         <el-alert
@@ -591,7 +630,9 @@
       </el-form>
       <template #footer>
         <el-button @click="interpolateDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="interpolateLoading" @click="confirmInterpolate">插值</el-button>
+        <el-button type="primary" :loading="interpolateLoading" @click="confirmInterpolate">
+          插值
+        </el-button>
       </template>
     </el-dialog>
 
@@ -600,17 +641,19 @@
       <el-form label-width="80px">
         <el-form-item label="实体类型">
           <el-select v-model="entityLabelId" size="small" style="width: 100%">
-            <el-option
-              v-for="c in textEntityClasses"
-              :key="c.id"
-              :label="c.name"
-              :value="c.id"
-            />
+            <el-option v-for="c in textEntityClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="entityDialogVisible = false; selRange = null">取消</el-button>
+        <el-button
+          @click="
+            entityDialogVisible = false;
+            selRange = null;
+          "
+        >
+          取消
+        </el-button>
         <el-button type="primary" @click="confirmEntity">确定</el-button>
       </template>
     </el-dialog>
@@ -620,12 +663,7 @@
       <el-form label-width="80px">
         <el-form-item label="实体类型">
           <el-select v-model="editSpanLabelId" size="small" style="width: 100%">
-            <el-option
-              v-for="c in textEntityClasses"
-              :key="c.id"
-              :label="c.name"
-              :value="c.id"
-            />
+            <el-option v-for="c in textEntityClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -656,7 +694,12 @@
           </el-select>
         </el-form-item>
         <el-form-item label="终点实体">
-          <el-select v-model="relationForm.to" size="small" style="width: 100%" placeholder="选择终点实体">
+          <el-select
+            v-model="relationForm.to"
+            size="small"
+            style="width: 100%"
+            placeholder="选择终点实体"
+          >
             <el-option
               v-for="e in relationToCandidates"
               :key="e.id"
@@ -666,13 +709,13 @@
           </el-select>
         </el-form-item>
         <el-form-item label="关系类型">
-          <el-select v-model="relationForm.relation_type" size="small" style="width: 100%" placeholder="选择关系类型">
-            <el-option
-              v-for="r in textRelationClasses"
-              :key="r.id"
-              :label="r.name"
-              :value="r.id"
-            />
+          <el-select
+            v-model="relationForm.relation_type"
+            size="small"
+            style="width: 100%"
+            placeholder="选择关系类型"
+          >
+            <el-option v-for="r in textRelationClasses" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -713,7 +756,12 @@
           />
         </el-form-item>
         <el-form-item label="事件类别">
-          <el-select v-model="audioDialogLabelId" size="small" style="width: 100%" placeholder="选择事件类别">
+          <el-select
+            v-model="audioDialogLabelId"
+            size="small"
+            style="width: 100%"
+            placeholder="选择事件类别"
+          >
             <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
@@ -723,11 +771,16 @@
         <el-button
           v-if="audioDialogMode === 'edit'"
           type="danger"
-          @click="audioDialogVisible = false; deleteAudioSegment(audioDialogId)"
+          @click="
+            audioDialogVisible = false;
+            deleteAudioSegment(audioDialogId);
+          "
         >
           删除
         </el-button>
-        <el-button v-if="audioDialogMode === 'edit'" type="primary" @click="confirmAudioDialog">保存</el-button>
+        <el-button v-if="audioDialogMode === 'edit'" type="primary" @click="confirmAudioDialog">
+          保存
+        </el-button>
         <el-button v-else type="primary" @click="confirmAudioDialog">确定</el-button>
       </template>
     </el-dialog>
@@ -763,7 +816,12 @@
           />
         </el-form-item>
         <el-form-item label="事件类别">
-          <el-select v-model="videoEventDialogLabelId" size="small" style="width: 100%" placeholder="选择事件类别">
+          <el-select
+            v-model="videoEventDialogLabelId"
+            size="small"
+            style="width: 100%"
+            placeholder="选择事件类别"
+          >
             <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
@@ -773,11 +831,20 @@
         <el-button
           v-if="videoEventDialogMode === 'edit'"
           type="danger"
-          @click="videoEventDialogVisible = false; deleteVideoEventSegment(videoEventDialogId)"
+          @click="
+            videoEventDialogVisible = false;
+            deleteVideoEventSegment(videoEventDialogId);
+          "
         >
           删除
         </el-button>
-        <el-button v-if="videoEventDialogMode === 'edit'" type="primary" @click="confirmVideoEventDialog">保存</el-button>
+        <el-button
+          v-if="videoEventDialogMode === 'edit'"
+          type="primary"
+          @click="confirmVideoEventDialog"
+        >
+          保存
+        </el-button>
         <el-button v-else type="primary" @click="confirmVideoEventDialog">确定</el-button>
       </template>
     </el-dialog>
@@ -809,7 +876,12 @@
           />
         </el-form-item>
         <el-form-item label="事件类别">
-          <el-select v-model="tsDialogLabelId" size="small" style="width: 100%" placeholder="选择事件类别">
+          <el-select
+            v-model="tsDialogLabelId"
+            size="small"
+            style="width: 100%"
+            placeholder="选择事件类别"
+          >
             <el-option v-for="c in taskClasses" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
@@ -819,11 +891,16 @@
         <el-button
           v-if="tsDialogMode === 'edit'"
           type="danger"
-          @click="tsDialogVisible = false; deleteTimeSeriesSegment(tsDialogId)"
+          @click="
+            tsDialogVisible = false;
+            deleteTimeSeriesSegment(tsDialogId);
+          "
         >
           删除
         </el-button>
-        <el-button v-if="tsDialogMode === 'edit'" type="primary" @click="confirmTimeSeriesDialog">保存</el-button>
+        <el-button v-if="tsDialogMode === 'edit'" type="primary" @click="confirmTimeSeriesDialog">
+          保存
+        </el-button>
         <el-button v-else type="primary" @click="confirmTimeSeriesDialog">确定</el-button>
       </template>
     </el-dialog>
@@ -1182,7 +1259,7 @@ const currentToolForBar = computed(() => {
 // 当前高亮/选中类别的颜色（用于十字线等）
 const currentClassColor = computed(() =>
   selectedClassId.value != null
-    ? taskClasses.value.find((c) => c.id === selectedClassId.value)?.color ?? "#909399"
+    ? (taskClasses.value.find((c) => c.id === selectedClassId.value)?.color ?? "#909399")
     : "#909399"
 );
 
@@ -1230,13 +1307,11 @@ const hintText = computed(() => {
   // 关键点：动态显示「放置进度 + 名称」或「矩形绑定」提示
   if (currentTool.value === "keypoint") {
     const kpState = activeTool.value?.state as any;
-    if (kpState?.boxMode?.value)
-      return "关键点已放满，请拖出矩形框绑定为对象（完成）";
+    if (kpState?.boxMode?.value) return "关键点已放满，请拖出矩形框绑定为对象（完成）";
     const n = kpState?.pending?.value?.length ?? 0;
     const names: string[] =
       taskClasses.value.find((c: any) => c.id === selectedClassId.value)?.keypoint_names ?? [];
-    if (names.length)
-      return `请逐点放置关键点（${n}/${names.length}）：${names.join("、")}`;
+    if (names.length) return `请逐点放置关键点（${n}/${names.length}）：${names.join("、")}`;
   }
   // 3D 目标检测：动态绘制步骤提示
   if (currentTool.value === "cuboid") {
@@ -1442,8 +1517,9 @@ function lockCurrentTimeSeries(id: number) {
     .catch(() => {});
 }
 
-const audioSegments = computed<AudioSegment[]>(() =>
-  store.annotations.filter((a) => (a as any).type === "AudioSegment") as unknown as AudioSegment[]
+const audioSegments = computed<AudioSegment[]>(
+  () =>
+    store.annotations.filter((a) => (a as any).type === "AudioSegment") as unknown as AudioSegment[]
 );
 function audioSegmentColor(segment: AudioSegment, classes: any[]): string {
   const c = classes.find((x) => x.id === segment.label_id);
@@ -1451,8 +1527,11 @@ function audioSegmentColor(segment: AudioSegment, classes: any[]): string {
   return "var(--el-color-primary)";
 }
 
-const timeSeriesSegments = computed<TimeSeriesSegment[]>(() =>
-  store.annotations.filter((a) => (a as any).type === "TimeSeriesSegment") as unknown as TimeSeriesSegment[]
+const timeSeriesSegments = computed<TimeSeriesSegment[]>(
+  () =>
+    store.annotations.filter(
+      (a) => (a as any).type === "TimeSeriesSegment"
+    ) as unknown as TimeSeriesSegment[]
 );
 // 时间序列事件片段类别颜色：优先用户类别色，缺失回退 Element 主色变量
 function timeSeriesSegmentColor(segment: TimeSeriesSegment, classes: any[]): string {
@@ -1461,8 +1540,9 @@ function timeSeriesSegmentColor(segment: TimeSeriesSegment, classes: any[]): str
   return "var(--el-color-primary)";
 }
 
-const videoEventSegments = computed<VideoSegment[]>(() =>
-  store.annotations.filter((a) => (a as any).type === "VideoSegment") as unknown as VideoSegment[]
+const videoEventSegments = computed<VideoSegment[]>(
+  () =>
+    store.annotations.filter((a) => (a as any).type === "VideoSegment") as unknown as VideoSegment[]
 );
 // 视频事件片段类别颜色：优先用户类别色，缺失回退 Element 主色变量
 function videoSegmentColor(segment: VideoSegment, classes: any[]): string {
@@ -1605,7 +1685,8 @@ function confirmAudioDialog() {
       ElMessage.warning("调整后的区间与已有事件片段重叠，无法保存");
       return;
     }
-    const seg = store.annotations.find((a) => a.id === audioDialogId.value) as AudioSegment | undefined;
+    const seg = store.annotations.find((a) => a.id === audioDialogId.value) as
+      AudioSegment | undefined;
     if (seg && labelId != null) {
       seg.start = start;
       seg.end = end;
@@ -1774,7 +1855,8 @@ function confirmVideoEventDialog() {
       ElMessage.warning("调整后的区间与已有事件片段重叠，无法保存");
       return;
     }
-    const seg = store.annotations.find((a) => a.id === videoEventDialogId.value) as VideoSegment | undefined;
+    const seg = store.annotations.find((a) => a.id === videoEventDialogId.value) as
+      VideoSegment | undefined;
     if (seg && labelId != null) {
       seg.start = start;
       seg.end = end;
@@ -1953,7 +2035,8 @@ function confirmTimeSeriesDialog() {
       ElMessage.warning("调整后的区间与已有事件区间重叠，无法保存");
       return;
     }
-    const seg = store.annotations.find((a) => a.id === tsDialogId.value) as TimeSeriesSegment | undefined;
+    const seg = store.annotations.find((a) => a.id === tsDialogId.value) as
+      TimeSeriesSegment | undefined;
     if (seg && labelId != null) {
       seg.start = start;
       seg.end = end;
@@ -2157,7 +2240,9 @@ const relationToCandidates = computed<any[]>(() => {
   if (!relationForm.from) return textEntities.value;
   const from = textEntities.value.find((e) => e.id === relationForm.from);
   if (!from) return textEntities.value;
-  return textEntities.value.filter((e) => e.id !== from.id && sameSentence(docContent.value, from, e));
+  return textEntities.value.filter(
+    (e) => e.id !== from.id && sameSentence(docContent.value, from, e)
+  );
 });
 function onRelationFromChange() {
   if (!relationForm.to) return;
@@ -2169,7 +2254,8 @@ function onRelationFromChange() {
 function entityLabelName(e: EntitySpan): string {
   return textEntityClasses.value.find((c) => c.id === e.label_id)?.name ?? `#${e.label_id}`;
 }
-function onTextSelect(range: { from: number; to: number }) {  if (lockedByOther.value) return;
+function onTextSelect(range: { from: number; to: number }) {
+  if (lockedByOther.value) return;
   if (!range || range.to <= range.from) return;
   const overlap = findOverlappingSpan(textEntities.value, range.from, range.to);
   if (overlap) {
@@ -2214,9 +2300,7 @@ function deleteEditSpan() {
 function deleteEntity(id: string) {
   const ent = textEntities.value.find((e) => e.id === id);
   if (!ent) return;
-  const relCount = textRelations.value.filter(
-    (r) => r.from === id || r.to === id
-  ).length;
+  const relCount = textRelations.value.filter((r) => r.from === id || r.to === id).length;
   ElMessageBox.confirm(
     `将删除实体「${ent.text || "?"}」及关联的 ${relCount} 个关系，且不可恢复。`,
     "删除实体",
@@ -2303,7 +2387,6 @@ function deleteRelation(id: string) {
     .catch(() => {});
 }
 
-
 // 复制 / 粘贴标注
 let annClipboard: any = null;
 function copySelected() {
@@ -2347,7 +2430,9 @@ function pasteCopied() {
   pushHistory();
 }
 
-const taskClasses = ref<any[]>(Array.isArray(props.config.classes) ? [...(props.config.classes || [])] : []);
+const taskClasses = ref<any[]>(
+  Array.isArray(props.config.classes) ? [...(props.config.classes || [])] : []
+);
 watch(
   () => props.config.classes,
   (val) => {
@@ -2374,11 +2459,11 @@ const textRelationClasses = computed<any[]>(() => {
   if (!isTextTask.value || !c || Array.isArray(c)) return [];
   return c.relations || [];
 });
-const textEntities = computed<EntitySpan[]>(() =>
-  store.annotations.filter((a) => (a as any).type === "EntitySpan") as unknown as EntitySpan[]
+const textEntities = computed<EntitySpan[]>(
+  () => store.annotations.filter((a) => (a as any).type === "EntitySpan") as unknown as EntitySpan[]
 );
-const textRelations = computed<Relation[]>(() =>
-  store.annotations.filter((a) => (a as any).type === "Relation") as unknown as Relation[]
+const textRelations = computed<Relation[]>(
+  () => store.annotations.filter((a) => (a as any).type === "Relation") as unknown as Relation[]
 );
 // 实体颜色：优先用类别 color，缺失回退固定色（避免与 Element 主色冲突）
 const TEXT_PRESET = ["#409eff", "#67c23a", "#e6a23c", "#f56c6c", "#9b59b6", "#00bcd4"];
@@ -2705,7 +2790,12 @@ const currentTrackIds = computed(() => {
 /** 待绘制轨迹路径：当前帧的轨迹 + 选中的轨迹（高亮），取其中心点跨帧连线。 */
 const trackPaths = computed(() => {
   void trackTick.value;
-  const out: { trackId: string; points: { x: number; y: number }[]; color: string; selected: boolean }[] = [];
+  const out: {
+    trackId: string;
+    points: { x: number; y: number }[];
+    color: string;
+    selected: boolean;
+  }[] = [];
   for (const [tid, frames] of trackFrameMap.value) {
     if (!currentTrackIds.value.has(tid) && tid !== selectedTrackId.value) continue;
     const path = trackPathFromFrames(frames);
@@ -3237,8 +3327,7 @@ async function saveAnn() {
     const hasData = store.annotations.length > 0;
     img.status = hasData ? "annotated" : "unannotated";
     const ui = useUserStore().basicInfo;
-    img.updated_by =
-      hasData && ui?.id ? { id: ui.id, name: ui.name || ui.username } : null;
+    img.updated_by = hasData && ui?.id ? { id: ui.id, name: ui.name || ui.username } : null;
     img.updated_time = hasData ? new Date().toISOString() : null;
   }
   fetchTaskProgress();

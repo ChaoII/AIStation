@@ -42,7 +42,11 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="数据集" required>
-          <el-select v-model="form.dataset_id" filterable style="width: 100%" placeholder="选择数据集"
+          <el-select
+            v-model="form.dataset_id"
+            filterable
+            style="width: 100%"
+            placeholder="选择数据集"
             @visible-change="(v: boolean) => v && loadDatasets()"
           >
             <el-option v-for="d in datasets" :key="d.id" :label="d.name" :value="d.id" />
@@ -118,7 +122,8 @@ async function loadDatasets() {
   try {
     datasets.value = await cachedOptions(
       "annotation:datasets",
-      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+      async () =>
+        (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
     );
   } catch {
     datasetsLoaded = false;

@@ -61,5 +61,5 @@ RUN git clone --branch "${AGE_BRANCH}" --depth 1 \
 # 首次建库自动启用扩展
 COPY init-extensions.sql /docker-entrypoint-initdb.d/10-init-extensions.sql
 
-# 默认启用 AGE 为共享预加载扩展（可用容器参数覆盖）
-CMD ["postgres", "-c", "shared_preload_libraries=age"]
+# 默认启用 AGE + pg_jieba 为共享预加载扩展（可用容器参数覆盖）
+CMD ["postgres", "-c", "shared_preload_libraries=age,pg_jieba"]

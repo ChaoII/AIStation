@@ -31,7 +31,10 @@ export const segmentationPlugin: AnnotationTaskPlugin = {
           const p = ctx.point;
           if (p) {
             // 点击首点附近且已有点数足够 → 闭合；否则继续加点
-            if (seg.points.value.length >= 3 && seg.isNearFirst(p, ctx.cw ?? 0, ctx.ch ?? 0, ctx.zoom ?? 1)) {
+            if (
+              seg.points.value.length >= 3 &&
+              seg.isNearFirst(p, ctx.cw ?? 0, ctx.ch ?? 0, ctx.zoom ?? 1)
+            ) {
               return seg.closePolygon();
             }
             seg.addPoint(p);
@@ -55,10 +58,25 @@ export const segmentationPlugin: AnnotationTaskPlugin = {
           mode: brush.mode,
           setBrushMode: brush.setBrushMode,
         },
-        down(ctx) { const p = ctx.point; if (p) brush.start(p); return null; },
-        move(ctx) { const p = ctx.point; if (p) brush.move(p); },
-        up(ctx) { if (!ctx.cw || !ctx.ch) { brush.reset(); return null; } return brush.end(ctx.cw, ctx.ch); },
-        reset() { brush.reset(); },
+        down(ctx) {
+          const p = ctx.point;
+          if (p) brush.start(p);
+          return null;
+        },
+        move(ctx) {
+          const p = ctx.point;
+          if (p) brush.move(p);
+        },
+        up(ctx) {
+          if (!ctx.cw || !ctx.ch) {
+            brush.reset();
+            return null;
+          }
+          return brush.end(ctx.cw, ctx.ch);
+        },
+        reset() {
+          brush.reset();
+        },
       },
     };
   })(),

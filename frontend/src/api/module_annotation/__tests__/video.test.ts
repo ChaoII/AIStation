@@ -22,7 +22,21 @@ describe("视频关键帧批量插值 API", () => {
       frame_a: 0,
       frame_b: 10,
       frames: [
-        { frame_index: 5, annotations: [{ id: "x", type: "AxisAlignedBox", class_id: 3, x1: 0.1, y1: 0.2, x2: 0.5, y2: 0.8, track_id: "t1" }] },
+        {
+          frame_index: 5,
+          annotations: [
+            {
+              id: "x",
+              type: "AxisAlignedBox",
+              class_id: 3,
+              x1: 0.1,
+              y1: 0.2,
+              x2: 0.5,
+              y2: 0.8,
+              track_id: "t1",
+            },
+          ],
+        },
       ],
     };
     await interpolateVideoFrames(payload);

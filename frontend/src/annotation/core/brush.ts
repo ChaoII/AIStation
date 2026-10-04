@@ -41,12 +41,7 @@ function distToSegmentSq(p: Point, a: Point, b: Point): number {
 }
 
 /** 二值掩码(1=前景) → 最大连通域外边界 → 简化(像素坐标) → 归一化折线。 */
-export function maskToPolygon(
-  mask: Uint8Array,
-  cw: number,
-  ch: number,
-  tol = 1.0
-): Point[] {
+export function maskToPolygon(mask: Uint8Array, cw: number, ch: number, tol = 1.0): Point[] {
   const grid = new Uint8Array(mask.length);
   for (let i = 0; i < mask.length; i++) grid[i] = mask[i] ? 1 : 0;
 
@@ -66,9 +61,7 @@ export function maskToPolygon(
   // 3) 在像素坐标下简化（tol 以像素为单位），再归一化 [0,1]
   const closedLoop = [...boundary, boundary[0]];
   const simp = simplifyPolygon(closedLoop, tol);
-  return simp
-    .slice(0, Math.max(simp.length - 1, 0))
-    .map((p) => ({ x: p.x / cw, y: p.y / ch }));
+  return simp.slice(0, Math.max(simp.length - 1, 0)).map((p) => ({ x: p.x / cw, y: p.y / ch }));
 }
 
 /**
@@ -104,17 +97,20 @@ function convexHull(comp: Set<number>, cw: number, ch: number): Point[] {
   return lower.concat(upper).map((p) => ({ x: p.x / cw, y: p.y / ch }));
 }
 
-function largestComponent(
-  grid: Uint8Array,
-  cw: number,
-  ch: number
-): Set<number> {
+function largestComponent(grid: Uint8Array, cw: number, ch: number): Set<number> {
   const visited = new Uint8Array(grid.length);
   let best = new Set<number>();
   // 用 8-连通（与 traceBoundary 的 8 邻域一致），避免细长/斜向笔画因连通性不一致
   // 导致边界追踪陷入内环、无法走完整条外边界。
   const dirs = [
-    [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1],
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
   ];
   for (let i = 0; i < grid.length; i++) {
     if (!grid[i] || visited[i]) continue;
@@ -171,8 +167,14 @@ function traceBoundary(
 
   // 8 方向，顺时针（屏幕坐标 y 向下）：N NE E SE S SW W NW
   const dirs = [
-    [0, -1], [1, -1], [1, 0], [1, 1],
-    [0, 1], [-1, 1], [-1, 0], [-1, -1],
+    [0, -1],
+    [1, -1],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1],
   ];
   // 起点西侧必为背景（b0 是最左列前景），作为初始背景邻域方向
   let b = { x: sx, y: sy };

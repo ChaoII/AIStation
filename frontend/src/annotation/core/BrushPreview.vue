@@ -43,9 +43,7 @@ const peStyle = computed(() => (props.pointerNone ? { pointerEvents: "none" as c
 const strokes = computed<Point[][]>(() => unref(props.state?.strokes) ?? []);
 const isLasso = computed(() => unref(props.state?.mode) === "lasso");
 const lassoColor = "#3b82f6";
-const strokeWidth = computed(
-  () => unref(props.state?.brushSize) ?? unref(props.brushSize) ?? 8
-);
+const strokeWidth = computed(() => unref(props.state?.brushSize) ?? unref(props.brushSize) ?? 8);
 // 套索闭合预览：首条第一点 → 末条最后一点
 const closePreview = computed(() => {
   const s = strokes.value;
@@ -62,8 +60,6 @@ const closePreview = computed(() => {
 });
 function strokePts(stroke: any[]): string {
   if (!stroke || stroke.length === 0) return "";
-  return stroke
-    .map((p) => `${p.x * props.cw},${p.y * props.ch}`)
-    .join(" ");
+  return stroke.map((p) => `${p.x * props.cw},${p.y * props.ch}`).join(" ");
 }
 </script>

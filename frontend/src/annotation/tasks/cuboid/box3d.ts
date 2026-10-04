@@ -193,8 +193,8 @@ export function deriveXYFromQuad(
   const f = 0.9 * imgW;
   const zc = Math.max(z, 1e-3);
   return {
-    x: (((ann.cx * imgW - imgW / 2) * zc) / f),
-    y: (((ann.cy * imgH - imgH / 2) * zc) / f),
+    x: ((ann.cx * imgW - imgW / 2) * zc) / f,
+    y: ((ann.cy * imgH - imgH / 2) * zc) / f,
   };
 }
 

@@ -29,7 +29,8 @@ export function parseSeriesCsv(
     .split("\n");
   const valueColumns = meta.value_columns?.length ? [...meta.value_columns] : [];
   const timeColumn = meta.time_column ?? "";
-  const vc = valueColumn && valueColumns.includes(valueColumn) ? valueColumn : (valueColumns[0] ?? "");
+  const vc =
+    valueColumn && valueColumns.includes(valueColumn) ? valueColumn : (valueColumns[0] ?? "");
   let headerIdx = -1;
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].trim() !== "") {
@@ -53,12 +54,7 @@ export function parseSeriesCsv(
       const valueCell = cells[valueIdx];
       const time = Number(timeCell);
       const value = Number(valueCell);
-      if (
-        timeCell !== "" &&
-        valueCell !== "" &&
-        Number.isFinite(time) &&
-        Number.isFinite(value)
-      )
+      if (timeCell !== "" && valueCell !== "" && Number.isFinite(time) && Number.isFinite(value))
         points.push({ time, value });
     }
   }

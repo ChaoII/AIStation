@@ -39,7 +39,13 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
         if (!p) return;
         last.value = p;
         if (rot.pt1.value && rot.pt2.value) {
-          const g = rotatedBoxFromEdgeAndPoint(rot.pt1.value, rot.pt2.value, p, ctx.cw ?? 1, ctx.ch ?? 1);
+          const g = rotatedBoxFromEdgeAndPoint(
+            rot.pt1.value,
+            rot.pt2.value,
+            p,
+            ctx.cw ?? 1,
+            ctx.ch ?? 1
+          );
           if (g) preview.value = { ...g };
         }
       },
@@ -70,8 +76,8 @@ export const rotatedBoxPlugin: AnnotationTaskPlugin = {
       // 像素(viewBox)空间计算，避免非方形图片在归一化坐标下旋转/缩放错位
       const hw = (o.width * cw) / 2;
       const hh = (o.height * ch) / 2;
-      const fixX = o.cx * cw + (fx * hw) * cos - (fy * hh) * sin;
-      const fixY = o.cy * ch + (fx * hw) * sin + (fy * hh) * cos;
+      const fixX = o.cx * cw + fx * hw * cos - fy * hh * sin;
+      const fixY = o.cy * ch + fx * hw * sin + fy * hh * cos;
       const mx = point.x * cw;
       const my = point.y * ch;
       const newCxPx = (fixX + mx) / 2;

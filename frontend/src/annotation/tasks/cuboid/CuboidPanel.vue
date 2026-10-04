@@ -19,7 +19,8 @@
         </el-form-item>
         <el-form-item label="底面朝向">
           <span class="text-regular">{{ formatAngle(angle1) }} / {{ formatAngle(angle2) }}</span>
-        </el-form-item>      </el-form>
+        </el-form-item>
+      </el-form>
 
       <el-divider />
 
@@ -114,9 +115,13 @@
         <div class="actions">
           <el-button size="small" @click="syncFromQuad">按画布底面推算 x / y</el-button>
           <el-button size="small" @click="alignRyWithQuad">用底面朝向对齐 ry</el-button>
-          <el-button size="small" type="primary" plain @click="applyToCanvas">写回画布投影</el-button>
+          <el-button size="small" type="primary" plain @click="applyToCanvas">
+            写回画布投影
+          </el-button>
         </div>
-        <div class="coord-hint">「写回画布投影」会用 3D 参数重新投影底面四边形，让画布与数值保持一致。</div>
+        <div class="coord-hint">
+          「写回画布投影」会用 3D 参数重新投影底面四边形，让画布与数值保持一致。
+        </div>
 
         <el-collapse :model-value="['out']">
           <el-collapse-item name="out" title="导出给 TorchKiln 时（LiDAR 系 · 米）">
@@ -124,8 +129,8 @@
               <code>{{ exportText }}</code>
             </div>
             <div class="coord-hint">
-              相机系 x右/y下/z前 → LiDAR 系 x前/y左/z上，并把底面**抬升半个身高**成中心
-              （TorchKiln 要的是框中心）。航向角随换轴改为 ry − π/2。
+              相机系 x右/y下/z前 → LiDAR 系 x前/y左/z上，并把底面**抬升半个身高**成中心 （TorchKiln
+              要的是框中心）。航向角随换轴改为 ry − π/2。
             </div>
           </el-collapse-item>
         </el-collapse>
@@ -195,8 +200,10 @@ const angle2 = computed(() => {
 /** 导出给 TorchKiln 的实际数值（核对用；类 id 由后端按 names 顺序填，这里占位） */
 const exportText = computed(() => {
   const v = box3dToLidar(box);
-  return `x=${v[0].toFixed(2)}  y=${v[1].toFixed(2)}  z=${v[2].toFixed(2)}  ` +
-    `l=${v[3].toFixed(2)}  w=${v[4].toFixed(2)}  h=${v[5].toFixed(2)}  yaw=${v[6].toFixed(3)}`;
+  return (
+    `x=${v[0].toFixed(2)}  y=${v[1].toFixed(2)}  z=${v[2].toFixed(2)}  ` +
+    `l=${v[3].toFixed(2)}  w=${v[4].toFixed(2)}  h=${v[5].toFixed(2)}  yaw=${v[6].toFixed(3)}`
+  );
 });
 
 function refresh() {

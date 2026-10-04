@@ -1,6 +1,6 @@
 <template>
   <div class="time-series-canvas">
-    <v-chart
+    <VChart
       ref="chartRef"
       class="time-series-canvas__chart"
       :option="option"
@@ -34,7 +34,14 @@ import {
 import type { TimeSeriesSegment } from "../../../api/module_annotation/timeSeries";
 import { clampTimeRange, type TimeRange } from "./useTimeSeriesEventTool";
 
-use([CanvasRenderer, LineChart, GridComponent, TooltipComponent, DataZoomComponent, MarkAreaComponent]);
+use([
+  CanvasRenderer,
+  LineChart,
+  GridComponent,
+  TooltipComponent,
+  DataZoomComponent,
+  MarkAreaComponent,
+]);
 
 /** 已创建区间（由用户拖选产生，尚未落入外部 segments）。 */
 export interface CreatedRegion extends TimeRange {

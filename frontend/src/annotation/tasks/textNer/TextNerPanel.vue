@@ -4,7 +4,9 @@
     <div class="tacc" :class="{ open: open === 'entities' }">
       <div class="tacc-head" @click="toggle('entities')">
         <span>实体（{{ entities.length }}）</span>
-        <el-icon :size="13"><component :is="open === 'entities' ? ArrowDown : ArrowRight" /></el-icon>
+        <el-icon :size="13">
+          <component :is="open === 'entities' ? ArrowDown : ArrowRight" />
+        </el-icon>
       </div>
       <div v-show="open === 'entities'" class="tacc-body">
         <div
@@ -31,7 +33,9 @@
       <div class="tacc-head" @click="toggle('relations')">
         <span>关系（{{ relations.length }}）</span>
         <span class="head-actions" @click.stop>
-          <el-button link type="primary" size="small" @click="$emit('new-relation')">+ 新建</el-button>
+          <el-button link type="primary" size="small" @click="$emit('new-relation')">
+            + 新建
+          </el-button>
           <el-icon :size="13">
             <component :is="open === 'relations' ? ArrowDown : ArrowRight" />
           </el-icon>
@@ -51,7 +55,12 @@
           <span class="rel-arrow">→</span>
           <span class="rel-node">{{ entityById(r.to) }}</span>
           <span class="titem-type">{{ relationName(r) }}</span>
-          <el-button text size="small" class="titem-del" @click.stop="$emit('delete-relation', r.id)">
+          <el-button
+            text
+            size="small"
+            class="titem-del"
+            @click.stop="$emit('delete-relation', r.id)"
+          >
             ×
           </el-button>
         </div>
@@ -103,7 +112,7 @@ function entityText(e: EntitySpan): string {
 
 function entityById(id: string): string {
   const e = props.entities.find((x) => x.id === id);
-  return e ? (e.text || "…") : "…";
+  return e ? e.text || "…" : "…";
 }
 
 function relationName(r: Relation): string {

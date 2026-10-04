@@ -262,7 +262,12 @@
         </el-form-item>
         <el-form-item label="GPU 设备">
           <el-select v-model="createForm.device" placeholder="选择设备" style="width: 100%">
-            <el-option v-for="n in deviceOptions" :key="n" :label="n === 'cpu' ? 'CPU' : `GPU ${n}`" :value="n" />
+            <el-option
+              v-for="n in deviceOptions"
+              :key="n"
+              :label="n === 'cpu' ? 'CPU' : `GPU ${n}`"
+              :value="n"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="端口">

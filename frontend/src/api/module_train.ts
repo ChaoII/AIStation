@@ -377,6 +377,10 @@ export const TrainAPI = {
     });
   },
   deleteTrainSchedule(ids: number[]) {
-    return request<ApiResponse>({ url: `${API_PATH}/schedule/delete`, method: "delete", data: ids });
+    return request<ApiResponse>({
+      url: `${API_PATH}/schedule/delete`,
+      method: "delete",
+      data: ids,
+    });
   },
 };

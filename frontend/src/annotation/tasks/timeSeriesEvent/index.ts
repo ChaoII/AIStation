@@ -13,7 +13,9 @@ export const timeSeriesEventPlugin: AnnotationTaskPlugin = {
   color: "primary",
   media: "time_series",
   renderer: TimeSeriesCanvas,
-  tools: [{ name: "time_series_event", label: "拖选区间", title: "在折线图上拖选生成时间序列事件" }],
+  tools: [
+    { name: "time_series_event", label: "拖选区间", title: "在折线图上拖选生成时间序列事件" },
+  ],
   create(shape: Annotation): boolean {
     const seg = shape as { type?: string; start?: unknown; end?: unknown; label_id?: unknown };
     if (!isTimeSeriesSegment(seg as Annotation)) return false;

@@ -4,7 +4,13 @@ import type { Annotation, Point } from "../../core/types";
 // 三步旋转框：p1(边起点) → p2(边终点) → p3(垂直方向点)
 // 全部在像素(viewBox)空间计算，避免非方形图片在归一化坐标下旋转/距离失真，
 // 使生成的框底边即为 p1-p2 线段、宽高/角度与像素几何严格一致。
-export function rotatedBoxFromEdgeAndPoint(p1: Point, p2: Point, p3: Point, cw: number, ch: number) {
+export function rotatedBoxFromEdgeAndPoint(
+  p1: Point,
+  p2: Point,
+  p3: Point,
+  cw: number,
+  ch: number
+) {
   const p1x = p1.x * cw;
   const p1y = p1.y * ch;
   const p2x = p2.x * cw;

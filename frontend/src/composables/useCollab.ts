@@ -49,10 +49,7 @@ export function useCollab() {
       if (msg.type === "room:presence") {
         onlineUsers.value = msg.users || [];
       } else if (msg.type === "user:join") {
-        onlineUsers.value = [
-          ...onlineUsers.value.filter((u) => u.id !== msg.user.id),
-          msg.user,
-        ];
+        onlineUsers.value = [...onlineUsers.value.filter((u) => u.id !== msg.user.id), msg.user];
       } else if (msg.type === "user:leave") {
         onlineUsers.value = onlineUsers.value.filter((u) => u.id !== msg.user.id);
       } else if (msg.type === "image:focus") {

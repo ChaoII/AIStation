@@ -1,30 +1,53 @@
 <template>
-  <el-dialog v-model="visible" title="导出模型" width="600px" :close-on-click-modal="false" :closeable="!exporting">
+  <el-dialog
+    v-model="visible"
+    title="导出模型"
+    width="600px"
+    :close-on-click-modal="false"
+    :closeable="!exporting"
+  >
     <template v-if="!exporting && !result">
-      <div style="margin-bottom:12px">
+      <div style="margin-bottom: 12px">
         <el-button size="small" type="info" plain @click="showCmdPreview = !showCmdPreview">
           {{ showCmdPreview ? "隐藏" : "查看" }} Docker 命令
         </el-button>
       </div>
-      <div v-if="showCmdPreview" style="margin-bottom:16px">
-        <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;border-radius:6px;font-size:12px;line-height:1.6;font-family:'Cascadia Code','Fira Code',monospace;white-space:pre-wrap;word-break:break-all">{{ dockerCmd }}</pre>
+      <div v-if="showCmdPreview" style="margin-bottom: 16px">
+        <pre
+          style="
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.6;
+            font-family: &quot;Cascadia Code&quot;, &quot;Fira Code&quot;, monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+          "
+          >{{ dockerCmd }}</pre>
       </div>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="基本" name="basic">
           <el-form label-width="120px" size="small">
             <el-form-item label="导出格式">
-              <el-select v-model="form.format" style="width:100%">
-                <el-option v-for="fmt in formats" :key="fmt.value" :label="fmt.label" :value="fmt.value" />
+              <el-select v-model="form.format" style="width: 100%">
+                <el-option
+                  v-for="fmt in formats"
+                  :key="fmt.value"
+                  :label="fmt.label"
+                  :value="fmt.value"
+                />
               </el-select>
             </el-form-item>
             <el-form-item label="输入尺寸">
-              <el-input-number v-model="form.imgsz" :min="32" :step="32" style="width:100%" />
+              <el-input-number v-model="form.imgsz" :min="32" :step="32" style="width: 100%" />
             </el-form-item>
             <el-form-item label="批量大小">
-              <el-input-number v-model="form.batch" :min="1" :max="32" style="width:100%" />
+              <el-input-number v-model="form.batch" :min="1" :max="32" style="width: 100%" />
             </el-form-item>
             <el-form-item label="导出设备">
-              <el-select v-model="form.device" style="width:100%">
+              <el-select v-model="form.device" style="width: 100%">
                 <el-option label="CPU" value="cpu" />
                 <el-option label="GPU 0" value="0" />
                 <el-option label="GPU 1" value="1" />
@@ -35,7 +58,12 @@
         <el-tab-pane label="优化" name="optimize">
           <el-form label-width="140px" size="small">
             <el-form-item v-if="hasParam('quantize')" label="量化精度">
-              <el-select v-model="form.quantize" placeholder="无（FP32）" clearable style="width:100%">
+              <el-select
+                v-model="form.quantize"
+                placeholder="无（FP32）"
+                clearable
+                style="width: 100%"
+              >
                 <el-option label="FP32（无量化）" value="" />
                 <el-option label="FP16（半精度）" value="16" />
                 <el-option label="INT8（整数量化）" value="8" />
@@ -44,13 +72,15 @@
             </el-form-item>
             <el-form-item v-if="hasParam('dynamic')" label="动态输入尺寸">
               <el-switch v-model="form.dynamic" />
-              <span style="margin-left:8px;font-size:12px;color:#909399">允许输入不同尺寸的图片</span>
+              <span style="margin-left: 8px; font-size: 12px; color: #909399">
+                允许输入不同尺寸的图片
+              </span>
             </el-form-item>
             <el-form-item v-if="hasParam('simplify')" label="ONNX 图简化">
               <el-switch v-model="form.simplify" />
             </el-form-item>
             <el-form-item v-if="hasParam('opset')" label="ONNX Opset 版本">
-              <el-select v-model="form.opset" placeholder="自动" clearable style="width:100%">
+              <el-select v-model="form.opset" placeholder="自动" clearable style="width: 100%">
                 <el-option label="自动（推荐）" value="" />
                 <el-option label="15" value="15" />
                 <el-option label="16" value="16" />
@@ -60,11 +90,14 @@
               </el-select>
             </el-form-item>
             <el-form-item v-if="hasParam('workspace')" label="TensorRT 工作空间">
-              <el-input-number v-model="wsVal" :min="1" :max="32" style="width:100%" /> GiB
+              <el-input-number v-model="wsVal" :min="1" :max="32" style="width: 100%" />
+              GiB
             </el-form-item>
             <el-form-item v-if="hasParam('optimize')" label="移动端优化">
               <el-switch v-model="form.optimize" />
-              <span style="margin-left:8px;font-size:12px;color:#909399">TorchScript 移动端优化</span>
+              <span style="margin-left: 8px; font-size: 12px; color: #909399">
+                TorchScript 移动端优化
+              </span>
             </el-form-item>
             <el-form-item v-if="hasParam('keras')" label="Keras 格式">
               <el-switch v-model="form.keras" />
@@ -75,17 +108,34 @@
           <el-form label-width="140px" size="small">
             <el-form-item v-if="hasParam('nms')" label="内置 NMS">
               <el-switch v-model="form.nms" />
-              <span style="margin-left:8px;font-size:12px;color:#909399">将 NMS 嵌入导出模型</span>
+              <span style="margin-left: 8px; font-size: 12px; color: #909399">
+                将 NMS 嵌入导出模型
+              </span>
             </el-form-item>
             <el-form-item v-if="hasParam('end2end')" label="端到端模式">
-              <el-select v-model="form.end2end" placeholder="使用模型默认" clearable style="width:100%">
+              <el-select
+                v-model="form.end2end"
+                placeholder="使用模型默认"
+                clearable
+                style="width: 100%"
+              >
                 <el-option label="使用模型默认" value="" />
                 <el-option label="启用" :value="true" />
                 <el-option label="禁用" :value="false" />
               </el-select>
             </el-form-item>
           </el-form>
-          <div v-if="hasParam('quantize') && form.quantize === 8" style="margin-top:12px;padding:8px 12px;background:#fef0f0;border-radius:4px;color:#f56c6c;font-size:12px">
+          <div
+            v-if="hasParam('quantize') && form.quantize === 8"
+            style="
+              margin-top: 12px;
+              padding: 8px 12px;
+              background: #fef0f0;
+              border-radius: 4px;
+              color: #f56c6c;
+              font-size: 12px;
+            "
+          >
             INT8 量化需要校准数据集。确保训练时使用的数据集 YAML 在容器中可访问。
           </div>
         </el-tab-pane>
@@ -93,41 +143,65 @@
     </template>
 
     <template v-else-if="exporting">
-      <div style="text-align:center;padding:40px 0">
+      <div style="text-align: center; padding: 40px 0">
         <el-progress type="circle" :percentage="100" :stroke-width="8" status="warning" />
-        <p style="margin-top:16px;color:#909399;font-size:14px">正在导出模型...<br><span style="font-size:12px">{{ statusText }}</span></p>
+        <p style="margin-top: 16px; color: #909399; font-size: 14px">
+          正在导出模型...
+          <br />
+          <span style="font-size: 12px">{{ statusText }}</span>
+        </p>
       </div>
     </template>
 
     <template v-else-if="exportError">
-      <div style="padding:20px 0">
-        <div style="text-align:center;margin-bottom:16px">
+      <div style="padding: 20px 0">
+        <div style="text-align: center; margin-bottom: 16px">
           <el-icon :size="48" color="#f56c6c"><CircleCloseFilled /></el-icon>
-          <p style="margin:12px 0 8px;font-size:16px;font-weight:600">导出失败</p>
+          <p style="margin: 12px 0 8px; font-size: 16px; font-weight: 600">导出失败</p>
         </div>
         <el-divider>Docker 日志（最后 200 行）</el-divider>
-        <pre style="background:#1e1e1e;color:#d4d4d4;padding:12px 16px;border-radius:6px;font-size:12px;line-height:1.6;max-height:300px;overflow-y:auto;margin:0 20px 16px;font-family:'Cascadia Code','Fira Code',monospace;white-space:pre-wrap;word-break:break-all">{{ exportLog }}</pre>
-        <div style="text-align:center">
+        <pre
+          style="
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 0 20px 16px;
+            font-family: &quot;Cascadia Code&quot;, &quot;Fira Code&quot;, monospace;
+            white-space: pre-wrap;
+            word-break: break-all;
+          "
+          >{{ exportLog }}</pre>
+        <div style="text-align: center">
           <el-button type="primary" @click="handleRetry">重新导出</el-button>
         </div>
       </div>
     </template>
 
     <template v-else-if="result">
-      <div style="text-align:center;padding:24px 0 16px">
+      <div style="text-align: center; padding: 24px 0 16px">
         <el-icon :size="48" color="#67c23a"><CircleCheckFilled /></el-icon>
-        <p style="margin:12px 0 4px;font-size:16px;font-weight:600">导出完成</p>
-        <p style="color:#909399;font-size:13px">格式: {{ result.format }} | 大小: {{ formatSize(result.file_size) }}</p>
-        <div style="margin-top:16px;display:flex;justify-content:center;gap:12px">
-          <el-button type="primary" @click="handleDownload"><el-icon><Download /></el-icon> 下载文件</el-button>
+        <p style="margin: 12px 0 4px; font-size: 16px; font-weight: 600">导出完成</p>
+        <p style="color: #909399; font-size: 13px">
+          格式: {{ result.format }} | 大小: {{ formatSize(result.file_size) }}
+        </p>
+        <div style="margin-top: 16px; display: flex; justify-content: center; gap: 12px">
+          <el-button type="primary" @click="handleDownload">
+            <el-icon><Download /></el-icon>
+            下载文件
+          </el-button>
           <el-button @click="visible = false">关闭</el-button>
         </div>
       </div>
     </template>
 
-    <template #footer v-if="!exporting && !result">
+    <template v-if="!exporting && !result" #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="handleExport" :loading="exporting">开始导出</el-button>
+      <el-button type="primary" :loading="exporting" @click="handleExport">开始导出</el-button>
     </template>
   </el-dialog>
 </template>
@@ -146,7 +220,9 @@ const showCmdPreview = ref(false);
 const tempDir = ref("/tmp");
 
 TrainAPI.getTempDir()
-  .then(res => { if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir; })
+  .then((res) => {
+    if (res?.data?.data?.tempdir) tempDir.value = res.data.data.tempdir;
+  })
   .catch(() => {});
 const activeTab = ref("basic");
 const exporting = ref(false);
@@ -187,7 +263,9 @@ const form = reactive<any>({
 
 const wsVal = computed({
   get: () => form.workspace || 4,
-  set: (v) => { form.workspace = v; },
+  set: (v) => {
+    form.workspace = v;
+  },
 });
 
 // Per-format supported parameters (simplified)
@@ -213,7 +291,10 @@ const dockerCmd = computed(() => {
   const cmdArgs: string[] = [];
   for (const [k, v] of Object.entries(form)) {
     if (v === null || v === undefined || v === "") continue;
-    if (k === "format") { cmdArgs.push(`format=${v}`); continue; }
+    if (k === "format") {
+      cmdArgs.push(`format=${v}`);
+      continue;
+    }
     if (!hasParam(k)) continue;
     if (v === true) cmdArgs.push(`${k}=true`);
     else if (v === false) continue;
@@ -243,7 +324,7 @@ function formatSize(bytes: number) {
   return (bytes / 1048576).toFixed(1) + " MB";
 }
 
-let statusText = ref("准备中...");
+const statusText = ref("准备中...");
 
 async function handleExport() {
   exporting.value = true;
@@ -278,7 +359,15 @@ function handleRetry() {
   handleExport();
 }
 
-watch(() => visible.value, (v) => {
-  if (!v) { result.value = null; exporting.value = false; exportError.value = ""; exportLog.value = ""; }
-});
+watch(
+  () => visible.value,
+  (v) => {
+    if (!v) {
+      result.value = null;
+      exporting.value = false;
+      exportError.value = "";
+      exportLog.value = "";
+    }
+  }
+);
 </script>

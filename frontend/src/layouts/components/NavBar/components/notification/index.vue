@@ -9,17 +9,23 @@
     <div class="notif-popover">
       <div class="notif-header">
         <span class="notif-title">通知</span>
-        <el-button v-if="unread > 0" text size="small" @click="handleMarkAllRead">全部已读</el-button>
+        <el-button v-if="unread > 0" text size="small" @click="handleMarkAllRead">
+          全部已读
+        </el-button>
       </div>
-      <div v-if="loading" style="text-align:center;padding:20px;color:#909399">加载中...</div>
-      <div v-else-if="list.length === 0" style="text-align:center;padding:20px;color:#c0c4cc">暂无通知</div>
+      <div v-if="loading" style="text-align: center; padding: 20px; color: #909399">加载中...</div>
+      <div v-else-if="list.length === 0" style="text-align: center; padding: 20px; color: #c0c4cc">
+        暂无通知
+      </div>
       <div v-else class="notif-list">
         <div
-          v-for="item in list" :key="item.id"
-          class="notif-item" :class="{ 'notif-item--unread': !item.is_read }"
+          v-for="item in list"
+          :key="item.id"
+          class="notif-item"
+          :class="{ 'notif-item--unread': !item.is_read }"
           @click="handleClick(item)"
         >
-          <div class="notif-item__dot" v-if="!item.is_read" />
+          <div v-if="!item.is_read" class="notif-item__dot" />
           <div class="notif-item__body">
             <div class="notif-item__title">{{ item.title }}</div>
             <div class="notif-item__time">{{ timeAgo(item.created_time) }}</div>
@@ -62,15 +68,20 @@ async function fetchList() {
     const d = r.data?.data;
     list.value = d?.items || [];
     hasMore.value = d?.has_next || false;
-  } catch { list.value = []; }
-  finally { loading.value = false; }
+  } catch {
+    list.value = [];
+  } finally {
+    loading.value = false;
+  }
 }
 
 async function fetchUnread() {
   try {
     const r = await NotificationAPI.unreadCount();
     unread.value = r.data?.data?.count || 0;
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 }
 
 async function handleClick(item: any) {
@@ -99,22 +110,87 @@ onMounted(() => {
   fetchUnread();
   pollTimer = setInterval(fetchUnread, 30000);
 });
-onUnmounted(() => { if (pollTimer) clearInterval(pollTimer); });
+onUnmounted(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
 </script>
 
 <style scoped>
-.notif-badge { cursor: pointer; display: inline-flex; align-items: center; }
-.notif-popover { max-height: 400px; overflow: hidden; display: flex; flex-direction: column; }
-.notif-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 8px; border-bottom: 1px solid #ebeef5; }
-.notif-title { font-weight: 600; font-size: 14px; color: #303133; }
-.notif-list { overflow-y: auto; max-height: 300px; margin: 0 -12px; }
-.notif-item { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f2f2f2; transition: background .15s; }
-.notif-item:hover { background: #f5f7fa; }
-.notif-item--unread { background: #f0f7ff; }
-.notif-item--unread:hover { background: #e6f0ff; }
-.notif-item__dot { width: 6px; height: 6px; border-radius: 50%; background: #409eff; flex-shrink: 0; margin-top: 6px; }
-.notif-item__body { flex: 1; min-width: 0; }
-.notif-item__title { font-size: 13px; color: #303133; line-height: 1.4; word-break: break-all; }
-.notif-item__time { font-size: 11px; color: #c0c4cc; margin-top: 2px; }
-.notif-footer { text-align: center; padding: 8px 0 0; font-size: 12px; color: #409eff; cursor: pointer; border-top: 1px solid #ebeef5; }
+.notif-badge {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.notif-popover {
+  max-height: 400px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.notif-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #ebeef5;
+}
+.notif-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #303133;
+}
+.notif-list {
+  overflow-y: auto;
+  max-height: 300px;
+  margin: 0 -12px;
+}
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f2f2f2;
+  transition: background 0.15s;
+}
+.notif-item:hover {
+  background: #f5f7fa;
+}
+.notif-item--unread {
+  background: #f0f7ff;
+}
+.notif-item--unread:hover {
+  background: #e6f0ff;
+}
+.notif-item__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #409eff;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+.notif-item__body {
+  flex: 1;
+  min-width: 0;
+}
+.notif-item__title {
+  font-size: 13px;
+  color: #303133;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.notif-item__time {
+  font-size: 11px;
+  color: #c0c4cc;
+  margin-top: 2px;
+}
+.notif-footer {
+  text-align: center;
+  padding: 8px 0 0;
+  font-size: 12px;
+  color: #409eff;
+  cursor: pointer;
+  border-top: 1px solid #ebeef5;
+}
 </style>
