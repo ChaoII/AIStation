@@ -24,6 +24,10 @@
             批量停用
           </el-button>
         </span>
+        <el-tag size="small" type="info" effect="plain" class="summary-tag">
+          共 {{ modelSummary.total }} 个配置 · 启用 {{ modelSummary.enabled }} · 停用
+          {{ modelSummary.disabled }}
+        </el-tag>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
@@ -628,7 +632,23 @@ async function handleTestForm() {
 
 onMounted(() => {
   loadProviders();
+  loadModelSummary();
 });
+
+const modelSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+async function loadModelSummary() {
+  try {
+    const r = await getAiModelList({ page_no: 1, page_size: 999 });
+    const list = r.data?.data || [];
+    modelSummary.value = {
+      total: list.length,
+      enabled: list.filter((m: any) => m.enabled).length,
+      disabled: list.filter((m: any) => !m.enabled).length,
+    };
+  } catch {
+    /* 忽略 */
+  }
+}
 </script>
 
 <style scoped>
@@ -651,6 +671,9 @@ onMounted(() => {
   align-items: center;
 }
 .batch-ac {
+  margin-left: 8px;
+}
+.summary-tag {
   margin-left: 8px;
 }
 </style>
