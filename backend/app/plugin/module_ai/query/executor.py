@@ -65,7 +65,28 @@ async def execute_select(cfg: dict, sql: str) -> dict:
             cols = list(result.keys())
     finally:
         await eng.dispose()
-    return {"columns": cols, "rows": [list(r) for r in rows[:MAX_ROWS]]}
+    return {"columns": cols, "rows": [[_json_cell(v) for v in r] for r in rows[:MAX_ROWS]]}
+
+
+def _json_cell(v):
+    """把返回值转成 JSON 安全类型（Decimal→float、日期→iso 等）。"""
+    if v is None:
+        return None
+    if isinstance(v, bool) or isinstance(v, (int, float, str)):
+        return v
+    from decimal import Decimal
+
+    if isinstance(v, Decimal):
+        return float(v)
+    from datetime import date, datetime, time
+
+    if isinstance(v, (datetime, date, time)):
+        return v.isoformat()
+    if isinstance(v, (list, tuple)):
+        return [_json_cell(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): _json_cell(x) for k, x in v.items()}
+    return str(v)
 
 
 async def introspect_schema(cfg: dict) -> list[dict]:

@@ -412,6 +412,27 @@ def _render_template(template: str, params: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # 查询执行（只读、超时、行数上限）
 # ---------------------------------------------------------------------------
+def _json_cell(v):
+    """把数据库返回值转成 JSON 安全类型（Decimal→float、日期→iso 等）。"""
+    if v is None:
+        return None
+    if isinstance(v, bool) or isinstance(v, (int, float, str)):
+        return v
+    from decimal import Decimal
+
+    if isinstance(v, Decimal):
+        return float(v)
+    from datetime import date, datetime, time
+
+    if isinstance(v, (datetime, date, time)):
+        return v.isoformat()
+    if isinstance(v, (list, tuple)):
+        return [_json_cell(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): _json_cell(x) for k, x in v.items()}
+    return str(v)
+
+
 async def _execute_sql(sql: str) -> dict:
     start = time.time()
     try:
@@ -422,7 +443,7 @@ async def _execute_sql(sql: str) -> dict:
     except Exception as e:  # noqa: BLE001
         log.warning(f"[query] 执行失败: {e}")
         raise CustomException(msg=f"查询执行失败：{e}")
-    data = [list(r) for r in rows[:MAX_ROWS]]
+    data = [[_json_cell(v) for v in r] for r in rows[:MAX_ROWS]]
     return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000)}
 
 
@@ -1426,7 +1447,12 @@ class AiQueryService:
         last_err: str | None = None
         sql = ""
         for attempt in range(2):
-            sql = await cls._nl2sql(question, datasource, prev_error=last_err)
+            try:
+                sql = await cls._nl2sql(question, datasource, prev_error=last_err)
+            except CustomException as e:
+                last_err = e.msg
+                log.warning(f"[query] NL2SQL 生成/校验失败第 {attempt + 1} 轮: {e.msg}")
+                continue
             try:
                 if datasource and datasource != SYSTEM_DS:
                     try:
@@ -1467,7 +1493,13 @@ class AiQueryService:
             "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
             "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
             "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
-            f"不要使用 DELETE/UPDATE/INSERT/DDL。\n{schema_ctx}"
+            "不要使用 DELETE/UPDATE/INSERT/DDL。\n"
+            "注意：（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
+            "应 JOIN 对应表用其 \u300cname\u300d 列，而不是直接返回外键 id；"
+            "（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；"
+            "（3）占比用 \u201cCOUNT(*) * 100.0 / 总数 \u201d 或 \u201cFILTER (WHERE ...)\u201d 计算；"
+            "（4）多行 SQL 直接换行输出即可，不要加注释。\n"
+            f"{schema_ctx}"
         )
         user_msg = question
         if prev_error:
@@ -1505,14 +1537,15 @@ class AiQueryService:
 
     @classmethod
     def _extract_sql(cls, s: str) -> str:
-        # 去除 markdown 代码块
-        s = re.sub(r"```(?:sql)?", "", s).strip()
-        # 取第一个 SELECT 起到行尾
+        # 去除 markdown 代码块围栏
+        s = re.sub(r"```[a-zA-Z]*", "", s or "").strip()
+        # 取第一个 SELECT 开始
         idx = s.lower().find("select")
         if idx >= 0:
             s = s[idx:]
-        s = s.split("\n")[0].strip()
-        return s.rstrip(";")
+        # 截到第一个分号，保留多行 SQL（JOIN/GROUP BY/窗口函数通常跨行）
+        s = re.split(r";", s, maxsplit=1)[0].strip()
+        return s
 
     @classmethod
     async def _system_schema(cls) -> dict:
@@ -1562,9 +1595,11 @@ class AiQueryService:
             )
             rows = result.fetchall()
         schema: dict[str, list[str]] = {}
+        coltype: dict[tuple[str, str], str] = {}
         for t, c, ty in rows:
             if t not in tables:
                 continue
+            coltype[(t, c)] = (ty or "").lower()
             label = f"{c}({ty})"
             ac = colmap.get((t, c))
             if ac and ac.description:
@@ -1572,6 +1607,40 @@ class AiQueryService:
             if ac and ac.sensitive:
                 label += "[敏感]"
             schema.setdefault(t, []).append(label)
+        # 3) 低基数枚举列：注入真实取值，帮助 LLM 使用正确枚举值（如 status=ERROR/RUNNING/STOPPED）
+        try:
+            _enum_re = re.compile(
+                r"(^|_)(status|framework|severity|task_type|kind|usage|scene_type|state|result|level|format|stream_type)$",
+                re.IGNORECASE,
+            )
+            from sqlalchemy import text as _text2
+
+            async with async_db_session() as db:
+                for t, labels in list(schema.items()):
+                    for i, lab in enumerate(labels):
+                        c = lab.split("(")[0]
+                        if not _enum_re.search(c):
+                            continue
+                        # 跳过 json/jsonb/text/数组等高基数/大字段，避免把大段数据写入 prompt
+                        if coltype.get((t, c)) in {
+                            "json", "jsonb", "text", "bytea", "character varying[]",
+                            "jsonb[]", "uuid",
+                        }:
+                            continue
+                        try:
+                            vals = await db.execute(
+                                _text2(
+                                    f'SELECT DISTINCT "{c}" AS v FROM "{t}" '
+                                    f'WHERE "{c}" IS NOT NULL LIMIT 16'
+                                )
+                            )
+                            vs = [str(r[0]) for r in vals.fetchall() if r[0] is not None]
+                            if vs:
+                                labels[i] = lab + f"【取值:{','.join(vs)}】"
+                        except Exception:  # noqa: BLE001
+                            continue
+        except Exception:  # noqa: BLE001
+            pass
         _SCHEMA_CACHE = schema
         return schema
 
