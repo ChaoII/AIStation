@@ -108,13 +108,27 @@
             :placeholder="isEdit ? '留空表示不修改' : 'sk-...'"
           />
         </el-form-item>
-        <el-form-item label="自定义头 JSON">
-          <el-input
-            v-model="form.headers_text"
-            type="textarea"
-            :rows="2"
-            placeholder='可选，如 {"x-api-key":"xxx"}'
-          />
+        <el-form-item label="自定义请求头">
+          <div class="header-builder">
+            <div v-for="(h, i) in form.headerFields" :key="i" class="header-row">
+              <el-input v-model="h.key" placeholder="请求头名，如 x-api-key" />
+              <el-input v-model="h.value" placeholder="值" />
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                @click="form.headerFields.splice(i, 1)"
+              />
+            </div>
+            <el-button
+              text
+              type="primary"
+              :icon="Plus"
+              @click="form.headerFields.push({ key: '', value: '' })"
+            >
+              添加请求头
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
@@ -170,7 +184,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus } from "@element-plus/icons-vue";
+import { Plus, Delete } from "@element-plus/icons-vue";
 import {
   createAiProvider,
   deleteAiProvider,
@@ -209,7 +223,7 @@ const form = reactive({
   protocol: "openai_compatible",
   base_url: "",
   api_key: "",
-  headers_text: "",
+  headerFields: [] as { key: string; value: string }[],
   enabled: true,
   description: "",
 });
@@ -233,7 +247,7 @@ function resetForm() {
     protocol: "openai_compatible",
     base_url: "",
     api_key: "",
-    headers_text: "",
+    headerFields: [],
     enabled: true,
     description: "",
   });
@@ -256,26 +270,24 @@ function openEdit(row: any) {
     protocol: row.protocol || "openai_compatible",
     base_url: row.base_url || "",
     api_key: "",
-    headers_text: row.extra_headers ? JSON.stringify(row.extra_headers, null, 2) : "",
+    headerFields: Object.entries(row.extra_headers || {}).map(([k, v]) => ({
+      key: k,
+      value: String(v),
+    })),
     enabled: row.enabled !== false,
     description: row.description || "",
   });
   dialog.visible = true;
 }
 
-function parseHeaders(): Record<string, string> | undefined {
-  const text = form.headers_text.trim();
-  if (!text) return undefined;
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      throw new Error("必须是 JSON 对象");
-    }
-    return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)]));
-  } catch (e: any) {
-    ElMessage.error(`请求头 JSON 解析失败：${e?.message || e}`);
-    return undefined; // 返回 undefined 标记失败
+function buildHeaders(): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const r of form.headerFields || []) {
+    const k = (r.key || "").trim();
+    if (!k) continue;
+    out[k] = r.value;
   }
+  return Object.keys(out).length ? out : undefined;
 }
 
 async function handleSubmit() {
@@ -287,8 +299,7 @@ async function handleSubmit() {
     ElMessage.warning("请填写 API 基址");
     return;
   }
-  const headers = parseHeaders();
-  if (headers === undefined && form.headers_text.trim()) return;
+  const headers = buildHeaders();
   const payload: any = {
     name: form.name.trim(),
     protocol: form.protocol || "openai_compatible",
@@ -425,6 +436,17 @@ onMounted(() => {
 }
 .pull-model-row:last-child {
   border-bottom: none;
+}
+.header-builder {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.header-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .provider-toolbar {
