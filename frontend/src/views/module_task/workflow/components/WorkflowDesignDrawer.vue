@@ -649,8 +649,8 @@ function handleDeleteNode() {
   const nodeId = selectedNode.value!.id;
   if (!nodeId) return;
 
-  ElMessageBox.confirm("确定要删除该节点吗？", "提示", {
-    confirmButtonText: "确定",
+  ElMessageBox.confirm("确定要删除该节点吗？删除后不可恢复。", "删除节点", {
+    confirmButtonText: "删除",
     cancelButtonText: "取消",
     type: "warning",
   }).then(() => {
@@ -674,8 +674,8 @@ function handleDeleteEdge() {
   const edgeId = selectedEdge.value!.id;
   if (!edgeId) return;
 
-  ElMessageBox.confirm("确定要删除该连线吗？", "提示", {
-    confirmButtonText: "确定",
+  ElMessageBox.confirm("确定要删除该连线吗？删除后不可恢复。", "删除连线", {
+    confirmButtonText: "删除",
     cancelButtonText: "取消",
     type: "warning",
   }).then(() => {

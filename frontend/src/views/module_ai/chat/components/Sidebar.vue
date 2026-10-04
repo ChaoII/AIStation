@@ -267,8 +267,8 @@ const handleSessionCommand = async (command: string, session: AiSessionItem) => 
   }
   if (command === "delete") {
     try {
-      await ElMessageBox.confirm("确定要删除此会话吗？", "确认删除", {
-        confirmButtonText: "确定",
+      await ElMessageBox.confirm("确定要删除此会话吗？删除后不可恢复。", "确认删除", {
+        confirmButtonText: "删除",
         cancelButtonText: "取消",
         type: "warning",
       });
