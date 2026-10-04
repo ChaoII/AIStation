@@ -274,11 +274,17 @@ def run(client: httpx.Client, tag: str | None = None) -> dict:
 
 
 async def _run_gold(sql: str) -> tuple[list, list]:
-    """执行手写金标 SQL，返回 (列名, 排序后的行元组列表) 作为期望结果。"""
+    """执行手写金标 SQL，返回 (列名, 排序后的行元组列表) 作为期望结果。
+
+    值统一用 _json_cell 归一化（与 _execute_sql 一致），保证 datetime/Decimal
+    等类型的字符串表示与 LLM 实际结果可比对（否则时间戳列永远不一致）。
+    """
+    from .service import _json_cell
+
     async with async_db_session() as db:
         result = await db.execute(text(sql))
         cols = list(result.keys())
-        rows = [tuple(str(v) for v in r) for r in result.fetchall()]
+        rows = [tuple(str(_json_cell(v)) for v in r) for r in result.fetchall()]
     return cols, sorted(rows)
 
 
