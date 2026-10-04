@@ -12,7 +12,7 @@
       <el-button :icon="Refresh" @click="load">刷新</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="filtered" border stripe>
+    <el-table v-loading="loading" :data="pagedList" border stripe>
       <template #empty><el-empty :image-size="80" description="暂无 AI 报告" /></template>
       <el-table-column prop="title" label="标题" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
@@ -30,6 +30,15 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <el-pagination
+      v-model:current-page="page"
+      v-model:page-size="pageSize"
+      :total="filtered.length"
+      :page-sizes="[10, 20, 50]"
+      layout="total, sizes, prev, pager, next"
+      style="margin-top: 12px; justify-content: flex-end"
+    />
 
     <el-dialog
       v-model="detailVisible"
@@ -72,6 +81,11 @@ const filtered = computed(() => {
   if (!kw) return reports.value;
   return reports.value.filter((r) => (r.title || "").toLowerCase().includes(kw));
 });
+const page = ref(1);
+const pageSize = ref(10);
+const pagedList = computed(() =>
+  filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value)
+);
 
 async function load() {
   loading.value = true;
