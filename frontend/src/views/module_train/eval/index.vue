@@ -284,7 +284,18 @@
           <el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" />
         </el-form-item>
         <el-form-item label="GPU 设备">
-          <el-input v-model="createForm.hyperparams.device" placeholder="如: 0" />
+          <el-select
+            v-model="createForm.hyperparams.device"
+            placeholder="选择设备"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="n in deviceOptions"
+              :key="n"
+              :label="n === 'cpu' ? 'CPU' : `GPU ${n}`"
+              :value="n"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -331,6 +342,7 @@ function onEvalModelChange(modelId: number | null) {
   const m = modelVersions.value.find((x: any) => x.id === modelId);
   selectedModelFramework.value = m?.framework || "";
 }
+const deviceOptions = ["0", "1", "2", "3", "4", "5", "6", "7", "cpu"];
 const createForm = reactive({
   modelId: null as number | null,
   evalDatasetId: null as number | null,
