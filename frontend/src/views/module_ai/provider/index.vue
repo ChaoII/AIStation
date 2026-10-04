@@ -16,10 +16,23 @@
       >
         新增供应商
       </el-button>
+      <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(true)">
+        批量启用
+      </el-button>
+      <el-button size="small" :disabled="!providerSelIds.length" @click="batchProvider(false)">
+        批量停用
+      </el-button>
     </div>
 
     <!-- 列表 -->
-    <el-table v-loading="loading" :data="rows" row-key="id" stripe>
+    <el-table
+      v-loading="loading"
+      :data="rows"
+      row-key="id"
+      stripe
+      @selection-change="(sel: any[]) => (providerSelIds = sel.map((s) => s.id))"
+    >
+      <el-table-column type="selection" width="45" />
       <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
       <el-table-column label="协议" width="160">
         <template #default="{ row }">
@@ -191,6 +204,7 @@ import {
   getAiProviderList,
   getAiProviderRemoteModels,
   importAiProviderRemoteModels,
+  batchProviderStatus,
   testAiProvider,
   updateAiProvider,
 } from "@/api/module_ai/provider";
@@ -211,6 +225,17 @@ interface ProviderRow {
 
 const loading = ref(false);
 const rows = ref<ProviderRow[]>([]);
+const providerSelIds = ref<number[]>([]);
+async function batchProvider(enabled: boolean) {
+  if (!providerSelIds.value.length) return;
+  try {
+    const r = await batchProviderStatus(providerSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个供应商`);
+    await refreshList();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
 const testingId = ref<number | null>(null);
 const pullingId = ref<number | null>(null);
 const submitLoading = ref(false);

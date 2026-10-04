@@ -71,6 +71,19 @@ class AiProviderService:
             return _to_dict(p)
 
     @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用供应商。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for pid in ids:
+                p = await db.get(AiProviderModel, pid)
+                if p and not p.is_deleted:
+                    p.enabled = enabled
+                    p.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                    count += 1
+            return count
+
+    @classmethod
     async def delete(cls, ids: list[int]) -> None:
         async with async_db_session.begin() as db:
             for pid in ids:

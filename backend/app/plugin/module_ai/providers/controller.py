@@ -52,6 +52,17 @@ async def delete_providers(
     return SuccessResponse(msg="删除成功")
 
 
+@AiProviderRouter.put("/batch/status", summary="批量启用/停用提供商")
+async def batch_provider_status(
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:provider:update"]))],
+) -> JSONResponse:
+    ids = [int(x) for x in (body.get("ids") or [])]
+    enabled = bool(body.get("enabled"))
+    count = await AiProviderService.batch_status(ids, enabled, auth)
+    return SuccessResponse(data={"count": count}, msg=f"已{'启用' if enabled else '停用'} {count} 个供应商")
+
+
 @AiProviderRouter.get("/remote-models/{provider_id}", summary="拉取远端模型列表")
 async def remote_models(
     provider_id: int,

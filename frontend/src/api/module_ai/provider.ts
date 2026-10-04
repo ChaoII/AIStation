@@ -38,3 +38,7 @@ export function testAiProvider(id: number) {
     timeout: 20000,
   });
 }
+
+export function batchProviderStatus(ids: number[], enabled: boolean) {
+  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
+}
