@@ -33,6 +33,9 @@ SYSTEM_DS = "system"
 MAX_ROWS = 1000
 QUERY_TIMEOUT = 10  # 秒
 
+# 模块级标记：系统种子仅首次执行，避免每次 ask 都做 upsert 拖慢快路径
+_SEED_DONE = False
+
 # 禁止出现的 SQL 关键片段（防 DDL/DML/多语句/写操作）
 _FORBIDDEN = re.compile(
     r"\b(insert|update|delete|drop|alter|create|truncate|replace|merge|grant|revoke|"
@@ -222,6 +225,7 @@ _SYSTEM_TERMS = [
     {"term": "调用量", "metric_key": "call_count_7d", "type": "metric"},
     {"term": "用户数", "metric_key": "user_count", "type": "metric"},
     {"term": "人数", "metric_key": "user_count", "type": "metric"},
+    {"term": "用户", "metric_key": "user_count", "type": "metric"},
 ]
 
 
@@ -337,33 +341,70 @@ async def _execute_metric(metric: dict, params: dict[str, Any]) -> dict:
 # ---------------------------------------------------------------------------
 # 语义匹配（快路径）：术语/指标名 → 指标 + 参数
 # ---------------------------------------------------------------------------
-def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
+def _detect_time_frame(question: str) -> str:
+    """识别问句的时间语境，用于指标维度对齐。"""
     q = question.lower()
-    # 1) 术语 → 指标
-    for t in terms:
-        if not t.get("metric_key"):
-            continue
-        if t["term"] and t["term"].lower() in q:
-            for m in metrics:
-                if m["key"] == t["metric_key"] and m["enabled"]:
-                    return m
-    # 2) 指标名/别名直接命中
+    if re.search(r"本月|这个月|当月", q):
+        return "month"
+    if re.search(r"今天|今日", q):
+        return "today"
+    if re.search(r"近7|最近7|近七|最近七|过去7", q):
+        return "days"
+    return ""
+
+
+def _metric_time_hint(m: dict) -> str:
+    """从指标 key/name/描述推断其时间维度，用于对齐问句时间语境。"""
+    s = f"{m.get('key', '')} {m.get('name', '')} {m.get('description', '')}".lower()
+    if "month" in s or "本月" in s or "当月" in s:
+        return "month"
+    if "7d" in s or "最近" in s or "近7" in s or "近七" in s:
+        return "days"
+    if "today" in s or "今日" in s or "今天" in s:
+        return "today"
+    return ""
+
+
+def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
+    """按得分选指标：名词/key/术语命中 + 时间语境对齐。
+
+    时间语境：问句带明确时间（本月→month / 今天→today / 最近7天→days）时，
+    优先选择时间维度一致且未带其它时间限制的指标，避免「本月报警」被默认
+    「今日告警」抢占。
+    """
+    q = question.lower()
+    frame = _detect_time_frame(question)
     best = None
+    best_score = 0
     for m in metrics:
         if not m["enabled"]:
             continue
-        if m["name"] and m["name"].lower() in q:
-            return m
-        if m["key"] and m["key"].lower() in q:
-            return m
-        # 名称含关键词（长度>1 避免过短误配）
-        for k in (m["name"] or "").split():
-            if len(k) >= 2 and k.lower() in q:
-                best = best or m
-        for alias in m.get("aliases", []) or []:
-            if alias and alias.lower() in q:
-                return m
-    return best
+        score = 0
+        name = (m.get("name") or "").lower()
+        key = (m.get("key") or "").lower()
+        desc = (m.get("description") or "").lower()
+        if name and name in q:
+            score += 5
+        if key and key in q:
+            score += 4
+        for t in terms:
+            if t.get("metric_key") == m["key"] and t.get("term") and t["term"].lower() in q:
+                score += 3
+        # 名称/描述关键词重叠（如「按告警类型分布」↔ 指标名「按告警类型的分布」）
+        for kw in ("类型", "分布", "按", "占比", "趋势", "数量", "多少", "各类"):
+            if kw in q and (kw in name or kw in desc):
+                score += 2
+        # 时间语境对齐
+        mtime = _metric_time_hint(m)
+        if frame:
+            if frame == mtime:
+                score += 4
+            elif mtime and frame != mtime:
+                score -= 2  # 问本月却选了「今日」指标 → 减分
+        if score > best_score:
+            best_score = score
+            best = m
+    return best if best and best_score > 0 else None
 
 
 def _build_params(metric: dict, question: str) -> dict[str, Any]:
@@ -386,7 +427,10 @@ class AiQueryService:
 
     @classmethod
     async def ensure_system_seed(cls) -> None:
-        """幂等写入本系统数据源的预置指标与术语（系统数据源无指标时）。"""
+        """首次执行时写入系统数据源预置指标与术语；之后跳过（避免拖慢快路径）。"""
+        global _SEED_DONE
+        if _SEED_DONE:
+            return
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
@@ -441,6 +485,7 @@ class AiQueryService:
                             type=t.get("type", "term"),
                         )
                     )
+        _SEED_DONE = True
 
     # ---- 指标 ----
     @classmethod
