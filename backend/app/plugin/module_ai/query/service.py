@@ -710,7 +710,7 @@ class AiQueryService:
         if metric:
             params = _build_params(metric, question)
             try:
-                cache_key, cached = None, False
+                cache_key, cached, res = None, False, None
                 ttl = metric.get("cache_ttl") or 0
                 if redis and ttl:
                     cache_key = cls._cache_key(metric, params)
