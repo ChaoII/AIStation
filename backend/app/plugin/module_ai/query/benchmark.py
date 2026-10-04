@@ -118,6 +118,48 @@ NL2SQL_GOLDEN = [
         "q": "告警记录总数是多少",
         "gold": "SELECT COUNT(*) AS 总数 FROM video_alarm_records",
     },
+    # ---- 复杂自定义报表（联表/多维度/时间窗口）----
+    {
+        "q": "统计最近一个月各严重程度的告警数量",
+        "gold": ("SELECT COALESCE(severity,'未知') AS 级别, COUNT(*) AS 数量 "
+                 "FROM video_alarm_records WHERE alarm_time >= CURRENT_DATE - INTERVAL '1 month' "
+                 "GROUP BY 级别 ORDER BY 数量 DESC LIMIT 50"),
+    },
+    {
+        "q": "按摄像头组统计告警数",
+        "gold": ("SELECT COALESCE(g.name,'未分组') AS 摄像头组, COUNT(r.id) AS 告警数 "
+                 "FROM video_cameras c LEFT JOIN video_camera_groups g ON c.group_id=g.id "
+                 "LEFT JOIN video_alarm_records r ON r.camera_id=c.id "
+                 "GROUP BY 摄像头组 ORDER BY 告警数 DESC LIMIT 50"),
+    },
+    {
+        "q": "各算法类型的边缘事件有多少",
+        "gold": ("SELECT COALESCE(algorithm_type,'未知') AS 算法类型, COUNT(*) AS 事件数 "
+                 "FROM video_edge_events GROUP BY 算法类型 ORDER BY 事件数 DESC LIMIT 50"),
+    },
+    {
+        "q": "平均每次模型调用耗时多少毫秒",
+        "gold": ("SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms, COUNT(*) AS 次数 "
+                 "FROM ai_call_logs WHERE is_deleted = false"),
+    },
+    {
+        "q": "最近7天每天的告警数量",
+        "gold": ("SELECT TO_CHAR(alarm_time,'YYYY-MM-DD') AS 日期, COUNT(*) AS 告警数 "
+                 "FROM video_alarm_records WHERE alarm_time >= CURRENT_DATE - 7 "
+                 "GROUP BY 日期 ORDER BY 日期 LIMIT 50"),
+    },
+    {
+        "q": "列出最近10个训练任务的名称和状态",
+        "gold": ("SELECT name, status FROM train_tasks WHERE is_deleted = false "
+                 "ORDER BY created_time DESC LIMIT 10"),
+    },
+    {
+        "q": "哪个摄像头组产生的告警最多",
+        "gold": ("SELECT COALESCE(g.name,'未分组') AS 摄像头组, COUNT(r.id) AS 告警数 "
+                 "FROM video_cameras c LEFT JOIN video_camera_groups g ON c.group_id=g.id "
+                 "LEFT JOIN video_alarm_records r ON r.camera_id=c.id "
+                 "GROUP BY 摄像头组 ORDER BY 告警数 DESC LIMIT 1"),
+    },
 ]
 
 

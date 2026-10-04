@@ -251,7 +251,7 @@ _SYSTEM_TERMS = [
     {"term": "用户", "metric_key": "user_count", "type": "metric"},
 ]
 
-# NL2SQL few-shot 示例：引导模型写出正确的 FROM/列名（针对本系统表）
+# NL2SQL few-shot 示例：覆盖 JOIN / 时间序列 / 分组聚合 等常用报表模式
 _NL2SQL_FEWSHOT = [
     {
         "q": "按告警类型统计各类告警的数量",
@@ -262,8 +262,20 @@ _NL2SQL_FEWSHOT = [
         "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头 ORDER BY 告警数 DESC LIMIT 50",
     },
     {
-        "q": "告警记录总数是多少",
-        "sql": "SELECT COUNT(*) AS 总数 FROM video_alarm_records",
+        "q": "各摄像头组的告警数量",
+        "sql": "SELECT COALESCE(g.name,'未分组') AS 摄像头组, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_camera_groups g ON c.group_id=g.id LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头组 ORDER BY 告警数 DESC LIMIT 50",
+    },
+    {
+        "q": "最近7天每天的告警量走势",
+        "sql": "SELECT TO_CHAR(alarm_time,'YYYY-MM-DD') AS 日期, COUNT(*) AS 告警数 FROM video_alarm_records WHERE alarm_time >= CURRENT_DATE - 7 GROUP BY 日期 ORDER BY 日期 LIMIT 50",
+    },
+    {
+        "q": "各算法类型的边缘事件数量",
+        "sql": "SELECT COALESCE(algorithm_type,'未知') AS 算法类型, COUNT(*) AS 事件数 FROM video_edge_events GROUP BY 算法类型 ORDER BY 事件数 DESC LIMIT 50",
+    },
+    {
+        "q": "平均每次模型调用的耗时",
+        "sql": "SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms, COUNT(*) AS 次数 FROM ai_call_logs WHERE is_deleted = false",
     },
 ]
 
