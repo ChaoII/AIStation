@@ -1614,8 +1614,12 @@ class AiQueryService:
 
     @classmethod
     async def _ensure_vector_table(cls) -> None:
-        """确保 pgvector 资产向量表存在（vector 扩展需已启用）。"""
-        async with async_db_session() as db:
+        """确保 pgvector 资产向量表存在（vector 扩展需已启用）。
+
+        HNSW 索引上限 2000 维，本库 2560 维 → 用顺序余弦扫描（数百行足够快），
+        仅当维度≤2000 才尝试建 HNSW 索引。
+        """
+        async with async_db_session.begin() as db:
             from sqlalchemy import text as _text
 
             await db.execute(
@@ -1625,10 +1629,6 @@ class AiQueryService:
                     "txt TEXT, tables JSONB, embedding vector(2560))"
                 )
             )
-            await db.execute(
-                _text("CREATE INDEX IF NOT EXISTS idx_aqv_embedding ON ai_query_asset_vectors USING hnsw (embedding vector_cosine_ops)")
-            )
-            await db.commit()
 
     @classmethod
     async def _seed_vectors(cls) -> int:
