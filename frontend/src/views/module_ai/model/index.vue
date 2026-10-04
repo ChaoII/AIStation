@@ -539,14 +539,22 @@ async function handleSubmit() {
     else await createAiModel(payload);
     dialogVisible.visible = false;
     refreshList();
+    ElMessage.success("已保存");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "保存失败");
   } finally {
     submitLoading.value = false;
   }
 }
 
 async function handleSetDefault(id: number) {
-  await setDefaultAiModel(id);
-  refreshList();
+  try {
+    await setDefaultAiModel(id);
+    ElMessage.success("已设为默认模型");
+    refreshList();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "设置失败");
+  }
 }
 
 async function handleTest(row: any) {

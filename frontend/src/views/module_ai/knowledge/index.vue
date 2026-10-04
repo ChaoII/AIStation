@@ -2433,6 +2433,15 @@ async function saveDetailOverview() {
 
 async function rebuildDetail() {
   if (!detailKb.value) return;
+  try {
+    await ElMessageBox.confirm(
+      `将在知识库「${detailKb.value.name}」重新向量化所有分块并重建图谱，耗时较长，且可能影响检索结果。确认重建？`,
+      "重建索引确认",
+      { confirmButtonText: "重建", cancelButtonText: "取消", type: "warning" }
+    );
+  } catch {
+    return;
+  }
   rebuilding.value = true;
   try {
     const r = await rebuildAiKnowledge(detailKb.value.id);
@@ -2466,6 +2475,15 @@ async function doDetailIngest() {
 
 async function deleteChunkFromDetail(row: any) {
   if (!detailKb.value) return;
+  try {
+    await ElMessageBox.confirm("确定删除该分块吗？其向量与绑定将一并移除，不可恢复。", "删除分块", {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    return;
+  }
   await deleteAiKnowledgeChunk(detailKb.value.id, row.id);
   ElMessage.success("已删除分块");
   await loadDetailStats(detailKb.value.id);
