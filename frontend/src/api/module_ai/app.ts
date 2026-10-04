@@ -21,3 +21,7 @@ export function updateAiApp(id: number, data: any) {
 export function deleteAiApp(ids: number[]) {
   return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
 }
+
+export function batchAppStatus(ids: number[], enabled: boolean) {
+  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
+}

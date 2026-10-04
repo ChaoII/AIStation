@@ -170,6 +170,19 @@ class AiAppService:
                 if a:
                     await db.delete(a)
 
+    @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用组件。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for app_id in ids:
+                a = await db.get(AiAppModel, app_id)
+                if a and not a.is_deleted:
+                    a.enabled = enabled
+                    a.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                    count += 1
+            return count
+
 
 async def _build_app_tools(names: list[str] | None):
     """按应用绑定工具名解析 schema 与执行器：内置/Agno/HTTP 均须 ai_tools 行存在且启用。"""

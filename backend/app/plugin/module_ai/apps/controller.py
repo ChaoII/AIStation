@@ -62,6 +62,17 @@ async def delete_apps(
     return SuccessResponse(msg="删除成功")
 
 
+@AiAppRouter.put("/batch/status", summary="批量启用/停用组件")
+async def batch_app_status(
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:app:update"]))],
+) -> JSONResponse:
+    ids = [int(x) for x in (body.get("ids") or [])]
+    enabled = bool(body.get("enabled"))
+    count = await AiAppService.batch_status(ids, enabled, auth)
+    return SuccessResponse(data={"count": count}, msg=f"已{'启用' if enabled else '停用'} {count} 个组件")
+
+
 @AiAppRouter.post("/{app_id}/run/stream", summary="运行应用（AI SDK UI Message Stream）")
 async def run_app_stream(
     app_id: int,

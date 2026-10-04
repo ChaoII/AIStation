@@ -24,6 +24,14 @@
 
       <template #table="{ data, loading, tableRef, onSelectionChange }">
         <div class="data-table__content">
+          <div class="batch-bar">
+            <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(true)">
+              批量启用
+            </el-button>
+            <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(false)">
+              批量停用
+            </el-button>
+          </div>
           <el-table
             :ref="tableRef as any"
             v-loading="loading"
@@ -32,7 +40,7 @@
             height="100%"
             border
             stripe
-            @selection-change="onSelectionChange"
+            @selection-change="onAppSel"
           >
             <template #empty>
               <el-empty :image-size="80" description="暂无组件，点击右上「新增」创建" />
@@ -413,7 +421,13 @@ import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import EnhancedDialog from "@/components/CURD/EnhancedDialog.vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
-import { createAiApp, deleteAiApp, getAiAppList, updateAiApp } from "@/api/module_ai/app";
+import {
+  createAiApp,
+  deleteAiApp,
+  getAiAppList,
+  updateAiApp,
+  batchAppStatus,
+} from "@/api/module_ai/app";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiPromptList } from "@/api/module_ai/prompt";
 import { getAiToolList } from "@/api/module_ai/tool";
@@ -520,6 +534,20 @@ const emptyForm = () => ({
 
 const formData = reactive(emptyForm());
 const tagsInput = ref("");
+const appSelIds = ref<number[]>([]);
+function onAppSel(sel: any[]) {
+  appSelIds.value = sel.map((s: any) => s.id);
+}
+async function batchApp(enabled: boolean) {
+  if (!appSelIds.value.length) return;
+  try {
+    const r = await batchAppStatus(appSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个组件`);
+    refreshList();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
 function tagsInputToArray() {
   formData.tags = (tagsInput.value || "")
     .split(/[,，]/)
@@ -843,6 +871,9 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.batch-bar {
+  margin-bottom: 8px;
 }
 .field-builder {
   width: 100%;
