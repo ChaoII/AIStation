@@ -17,12 +17,24 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
+        <span class="batch-ac">
+          <el-button size="small" :disabled="!promptSelIds.length" @click="batchPrompt(true)">
+            批量启用
+          </el-button>
+          <el-button size="small" :disabled="!promptSelIds.length" @click="batchPrompt(false)">
+            批量停用
+          </el-button>
+        </span>
+        <el-tag size="small" type="info" effect="plain" class="summary-tag">
+          共 {{ promptSummary.total }} 个提示词 · 启用 {{ promptSummary.enabled }} · 停用
+          {{ promptSummary.disabled }}
+        </el-tag>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
       </template>
 
-      <template #table="{ data, loading, tableRef, onSelectionChange }">
+      <template #table="{ data, loading, tableRef }">
         <div class="data-table__content">
           <el-table
             :ref="tableRef as any"
@@ -32,7 +44,7 @@
             height="100%"
             border
             stripe
-            @selection-change="onSelectionChange"
+            @selection-change="onPromptSel"
           >
             <template #empty>
               <el-empty :image-size="80" description="暂无提示词，点击「新建」创建" />
@@ -52,8 +64,17 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" fixed="right" width="160" align="center">
+            <el-table-column label="操作" fixed="right" width="230" align="center">
               <template #default="{ row }">
+                <el-button
+                  v-hasPerm="['module_ai:prompt:query']"
+                  size="small"
+                  link
+                  type="primary"
+                  @click="openDetail(row)"
+                >
+                  详情
+                </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:update']"
                   size="small"
@@ -62,6 +83,14 @@
                   @click="handleOpenDialog('update', row.id)"
                 >
                   编辑
+                </el-button>
+                <el-button
+                  v-hasPerm="['module_ai:prompt:create']"
+                  size="small"
+                  link
+                  @click="doCopy(row)"
+                >
+                  复制
                 </el-button>
                 <el-button
                   v-hasPerm="['module_ai:prompt:delete']"
@@ -213,11 +242,55 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </EnhancedDialog>
+
+    <!-- 提示词详情预览抽屉 -->
+    <el-drawer
+      v-model="detailVisible"
+      :title="detail?.name || '提示词详情'"
+      size="480px"
+      append-to-body
+    >
+      <el-descriptions v-if="detail" :column="1" border size="small">
+        <el-descriptions-item label="名称">{{ detail.name }}</el-descriptions-item>
+        <el-descriptions-item label="分类">{{ detail.category || "—" }}</el-descriptions-item>
+        <el-descriptions-item label="版本">v{{ detail.version ?? 1 }}</el-descriptions-item>
+        <el-descriptions-item label="启用">
+          <el-tag :type="detail.enabled ? 'success' : 'info'" size="small">
+            {{ detail.enabled ? "启用" : "停用" }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="变量">
+          <template v-if="(detail.variables || []).length">
+            <el-tag
+              v-for="v in detail.variables"
+              :key="v"
+              size="small"
+              effect="plain"
+              class="cap-tag"
+            >
+              {{ v }}
+            </el-tag>
+          </template>
+          <span v-else class="muted">—</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="提示词内容" :span="1">
+          <div v-if="(detail.blocks || []).length" class="prompt-block-list">
+            <div v-for="(b, i) in detail.blocks" :key="i" class="prompt-block">
+              <div class="prompt-block__head">
+                <el-tag size="small" effect="plain">{{ typeLabel(b.type) }}</el-tag>
+              </div>
+              <div class="prompt-block__body" v-html="renderMd(b.content || '')"></div>
+            </div>
+          </div>
+          <span v-else class="muted">—</span>
+        </el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import draggable from "vuedraggable";
 import PageSearch from "@/components/CURD/PageSearch.vue";
@@ -234,6 +307,7 @@ import {
   getAiPromptDetail,
   getAiPromptList,
   updateAiPrompt,
+  batchPromptStatus,
 } from "@/api/module_ai/prompt";
 
 defineOptions({ name: "AiPrompt" });
@@ -399,6 +473,72 @@ function handleRowDelete(id: number) {
   contentRef.value?.handleDelete(id);
 }
 
+// ---- 批量启停 / 统计摘要 ----
+const promptSelIds = ref<number[]>([]);
+function onPromptSel(sel: any[]) {
+  promptSelIds.value = sel.map((s: any) => s.id);
+}
+const promptSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+async function loadPromptSummary() {
+  try {
+    const res = await getAiPromptList();
+    const list = res.data?.data || [];
+    promptSummary.value = {
+      total: list.length,
+      enabled: list.filter((x: any) => x.enabled).length,
+      disabled: list.filter((x: any) => !x.enabled).length,
+    };
+  } catch {
+    /* 忽略 */
+  }
+}
+async function batchPrompt(enabled: boolean) {
+  if (!promptSelIds.value.length) return;
+  try {
+    const r = await batchPromptStatus(promptSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个提示词`);
+    refreshList();
+    loadPromptSummary();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
+
+// ---- 详情预览 ----
+const detailVisible = ref(false);
+const detail = ref<any>(null);
+async function openDetail(row: any) {
+  try {
+    const res = await getAiPromptDetail(row.id);
+    detail.value = res.data?.data || row;
+  } catch {
+    detail.value = row;
+  }
+  detailVisible.value = true;
+}
+
+// ---- 复制 ----
+async function doCopy(row: any) {
+  try {
+    await createAiPrompt({
+      name: `${row.name}（副本）`,
+      category: row.category || "",
+      enabled: row.enabled !== false,
+      blocks: (row.blocks || []).map((b: any) => ({ type: b.type, content: b.content })),
+      variables: row.variables || [],
+    });
+    ElMessage.success("已复制提示词");
+    refreshList();
+    loadPromptSummary();
+  } catch {
+    ElMessage.error("复制失败");
+  }
+}
+
+onMounted(() => {
+  loadPromptSummary();
+});
+
 async function handleOpenDialog(type: "create" | "update", id?: number) {
   resetForm();
   if (type === "update" && id) {
@@ -462,6 +602,45 @@ async function handleSave() {
 <style scoped>
 .col-card {
   margin-bottom: 12px;
+}
+
+.batch-ac {
+  margin-left: 8px;
+}
+.summary-tag {
+  margin-left: 8px;
+}
+.cap-tag {
+  margin-right: 4px;
+  margin-bottom: 2px;
+}
+.muted {
+  color: var(--el-text-color-placeholder);
+}
+.prompt-block-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.prompt-block__body {
+  margin-top: 4px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  word-break: break-word;
+}
+.prompt-block__body :deep(pre) {
+  background: var(--el-fill-color-light);
+  padding: 8px;
+  border-radius: 6px;
+  overflow: auto;
+}
+.prompt-block__body :deep(code) {
+  font-family: var(--el-font-family-mono, monospace);
+}
+.prompt-block__body :deep(h1),
+.prompt-block__body :deep(h2),
+.prompt-block__body :deep(h3) {
+  margin: 0.5em 0;
 }
 
 .block-item {

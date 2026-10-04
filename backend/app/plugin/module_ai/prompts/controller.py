@@ -59,3 +59,16 @@ async def delete_prompts(
 ) -> JSONResponse:
     await AiPromptService.delete(ids)
     return SuccessResponse(msg="删除成功")
+
+
+@AiPromptRouter.put("/batch/status", summary="批量启用/停用提示词")
+async def batch_prompt_status(
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:prompt:update"]))],
+) -> JSONResponse:
+    ids = [int(x) for x in (body.get("ids") or [])]
+    enabled = bool(body.get("enabled"))
+    count = await AiPromptService.batch_status(ids, enabled, auth)
+    return SuccessResponse(
+        data={"count": count}, msg=f"已{'启用' if enabled else '停用'} {count} 个提示词"
+    )

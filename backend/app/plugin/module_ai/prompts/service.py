@@ -103,3 +103,16 @@ class AiPromptService:
                 p = await db.get(AiPromptModel, pid)
                 if p:
                     await db.delete(p)
+
+    @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用提示词。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for pid in ids:
+                p = await db.get(AiPromptModel, pid)
+                if p and not p.is_deleted:
+                    p.enabled = enabled
+                    p.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                    count += 1
+            return count
