@@ -421,6 +421,97 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
+
+        <el-tab-pane label="基准测试" name="benchmark">
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="对内置 20 道快路径 + 60 道复杂报表基准，逐一用真实 LLM 跑一遍并输出精度/耗时。约需数分钟，请保持页面打开。"
+          />
+          <div class="bm-actions">
+            <el-button
+              type="primary"
+              :loading="bmRunning"
+              :disabled="bmRunning"
+              @click="runBenchmark"
+            >
+              {{ bmRunning ? "基准运行中…" : "运行基准测试" }}
+            </el-button>
+            <el-progress
+              v-if="bmRunning || bmFinished"
+              :percentage="bmPercent"
+              :status="bmError ? 'exception' : bmFinished ? 'success' : ''"
+              style="flex: 1"
+            />
+          </div>
+          <div v-if="bmState" class="bm-meta">
+            阶段：{{ bmStage }} | 当前：{{ bmState.current || "-" }} | 进度：{{ bmDoneCount }}/{{
+              bmTotal
+            }}
+          </div>
+          <template v-if="bmReport">
+            <el-divider content-position="left">快路径（指标模板）</el-divider>
+            <el-row :gutter="12" class="ops-stats">
+              <el-col :span="6"><el-statistic title="题数" :value="bmReport.fast.total" /></el-col>
+              <el-col :span="6">
+                <el-statistic title="语义精度" :value="bmReport.fast.semantic_accuracy" />
+              </el-col>
+              <el-col :span="6">
+                <el-statistic title="快路径命中" :value="bmReport.fast.fast_path_rate" />
+              </el-col>
+              <el-col :span="6">
+                <el-statistic title="P50" :value="bmReport.fast.p50_ms" :suffix="'ms'" />
+              </el-col>
+            </el-row>
+            <el-divider content-position="left">NL2SQL 复杂报表（宽松比对）</el-divider>
+            <el-row :gutter="12" class="ops-stats">
+              <el-col :span="6">
+                <el-statistic title="题数" :value="bmReport.nl2sql.total" />
+              </el-col>
+              <el-col :span="6">
+                <el-statistic title="数据精度" :value="bmReport.nl2sql.accuracy" />
+              </el-col>
+              <el-col :span="6">
+                <el-statistic title="慢路径占比" :value="bmReport.nl2sql.slow_rate" />
+              </el-col>
+              <el-col :span="6">
+                <el-statistic title="P50" :value="bmReport.nl2sql.p50_ms" :suffix="'ms'" />
+              </el-col>
+            </el-row>
+            <div v-if="Object.keys(bmReport.nl2sql.by_tag || {}).length" class="bm-tags">
+              <el-tag
+                v-for="(b, tag) in bmReport.nl2sql.by_tag"
+                :key="tag"
+                :type="b.acc >= 0.8 ? 'success' : b.acc >= 0.5 ? 'warning' : 'danger'"
+                class="bm-tag"
+              >
+                {{ tag }} {{ b.correct }}/{{ b.total }} = {{ (b.acc * 100).toFixed(0) }}%
+              </el-tag>
+            </div>
+            <el-divider content-position="left">逐题明细</el-divider>
+            <el-table :data="bmFailRows" size="small" border>
+              <el-table-column prop="q" label="问题" min-width="200" show-overflow-tooltip />
+              <el-table-column prop="tag" label="类别" width="90" />
+              <el-table-column label="结果" width="80" align="center">
+                <template #default="{ row }">
+                  <el-tag :type="row.correct ? 'success' : 'danger'" size="small">
+                    {{ row.correct ? "通过" : "失败" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="ms" label="耗时(ms)" width="90" />
+            </el-table>
+          </template>
+          <el-alert
+            v-if="bmError"
+            type="error"
+            :closable="false"
+            show-icon
+            :title="bmError"
+            style="margin-top: 8px"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -648,7 +739,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Delete, Setting, Loading, Refresh, MagicStick } from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
@@ -683,6 +774,8 @@ import {
   getQuerySettings,
   saveQuerySetting,
   queryFeedback,
+  runQueryBenchmark,
+  getQueryBenchmarkStatus,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
@@ -1242,6 +1335,76 @@ async function saveSettings() {
     ElMessage.error(e?.msg || "保存失败");
   } finally {
     savingSettings.value = false;
+  }
+}
+
+// ---- 基准测试 ----
+const bmRunning = ref(false);
+const bmFinished = ref(false);
+const bmError = ref("");
+const bmState = ref<any>(null);
+const bmReport = ref<any>(null);
+const bmRunId = ref("");
+const bmTimer = ref<any>(null);
+const bmTotal = computed(() => bmState.value?.total || 80);
+const bmDoneCount = computed(() => bmState.value?.done || 0);
+const bmPercent = computed(() => {
+  const t = bmTotal.value;
+  return t ? Math.round((bmDoneCount.value / t) * 100) : 0;
+});
+const bmStage = computed(() => {
+  const s = bmState.value?.stage;
+  if (s === "fast") return "快路径";
+  if (s === "nl2sql") return "NL2SQL 复杂报表";
+  return s || "-";
+});
+const bmFailRows = computed(() => {
+  const rs = bmReport.value?.nl2sql?.results || [];
+  return rs.slice().sort((a: any, b: any) => (a.correct === b.correct ? 0 : a.correct ? 1 : -1));
+});
+
+function clearBmTimer() {
+  if (bmTimer.value) {
+    clearInterval(bmTimer.value);
+    bmTimer.value = null;
+  }
+}
+async function pollBenchmark() {
+  try {
+    const r = await getQueryBenchmarkStatus(bmRunId.value);
+    const d = r.data?.data;
+    bmState.value = d;
+    if (d?.status === "done" && d.report) {
+      bmReport.value = d.report;
+      bmFinished.value = true;
+      bmRunning.value = false;
+      clearBmTimer();
+      ElMessage.success("基准测试完成");
+    } else if (d?.status === "error") {
+      bmError.value = d.error || "运行失败";
+      bmRunning.value = false;
+      clearBmTimer();
+    }
+  } catch (e: any) {
+    bmError.value = e?.msg || "轮询失败";
+    bmRunning.value = false;
+    clearBmTimer();
+  }
+}
+async function runBenchmark() {
+  try {
+    bmRunning.value = true;
+    bmFinished.value = false;
+    bmError.value = "";
+    bmReport.value = null;
+    const r = await runQueryBenchmark();
+    bmRunId.value = r.data?.data?.run_id || "";
+    bmState.value = { status: "running", stage: "fast", done: 0, total: 80 };
+    clearBmTimer();
+    bmTimer.value = setInterval(pollBenchmark, 3000);
+  } catch (e: any) {
+    bmRunning.value = false;
+    ElMessage.error(e?.msg || "启动基准失败");
   }
 }
 

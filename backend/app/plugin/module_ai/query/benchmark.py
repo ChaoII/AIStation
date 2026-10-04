@@ -273,23 +273,65 @@ def run(client: httpx.Client, tag: str | None = None) -> dict:
     }
 
 
-async def _run_gold(sql: str) -> list:
-    """执行手写金标 SQL，返回排序后的行元组列表作为期望结果。"""
+async def _run_gold(sql: str) -> tuple[list, list]:
+    """执行手写金标 SQL，返回 (列名, 排序后的行元组列表) 作为期望结果。"""
     async with async_db_session() as db:
         result = await db.execute(text(sql))
+        cols = list(result.keys())
         rows = [tuple(str(v) for v in r) for r in result.fetchall()]
-    return sorted(rows)
+    return cols, sorted(rows)
 
 
 def _norm(rows: list) -> list:
     return sorted(tuple(str(v) for v in r) for r in rows)
 
 
+def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: list) -> bool:
+    """宽松比对：忽略列顺序与冗余列，只比较金标所需信息。
+
+    规则：
+      - 结果行数（multiset 基数）必须一致；
+      - 优先按「列名对齐」把 LLM 结果投影到金标列集合，再逐行比较；
+      - 列名对齐失败时，退化为取 LLM 前 N 列（N=金标列数）做位置前缀投影，忽略尾部冗余列。
+    """
+    gset = sorted(tuple(str(v) for v in r) for r in (gold_rows or []))
+    if not gset:
+        return not (llm_rows or [])
+    if len(gset) != len(llm_rows or []):
+        return False
+    k = len(gold_cols)
+    if not llm_cols:
+        return sorted(tuple(str(v) for v in r) for r in llm_rows) == gset
+    # (1) 列名对齐投影
+    used: set[int] = set()
+    order: list[int] = []
+    for gc in gold_cols:
+        idx = next(
+            (i for i, lc in enumerate(llm_cols)
+             if i not in used and str(lc).strip() == str(gc).strip()),
+            None,
+        )
+        if idx is None:
+            break
+        used.add(idx)
+        order.append(idx)
+    if len(order) == k and all(len(r) >= k for r in llm_rows):
+        proj = sorted(tuple(str(r[i]) for i in order) for r in llm_rows)
+        if proj == gset:
+            return True
+    # (2) 位置前缀投影（忽略尾部冗余列）
+    if all(len(r) >= k for r in llm_rows):
+        proj = sorted(tuple(str(v) for v in row[:k]) for row in llm_rows)
+        if proj == gset:
+            return True
+    return False
+
+
 async def run_nl2sql(client: httpx.Client, tag: str | None = None) -> dict:
     items = [x for x in NL2SQL_GOLDEN if tag is None or x.get("tag") == tag]
     results = []
     for i, item in enumerate(items, 1):
-        expected = await _run_gold(item["gold"])
+        gold_cols, expected = await _run_gold(item["gold"])
         t0 = time.perf_counter()
         r = client.post(
             "/api/v1/ai/query/ask",
@@ -299,13 +341,14 @@ async def run_nl2sql(client: httpx.Client, tag: str | None = None) -> dict:
         ms = (time.perf_counter() - t0) * 1000
         j = r.json()
         d = j.get("data") or {}
-        actual = _norm(d.get("rows") or [])
-        correct = actual == expected and not d.get("is_error")
+        actual_rows = _norm(d.get("rows") or [])
+        correct = lenient_match(gold_cols, expected, d.get("columns") or [], d.get("rows") or []) \
+            and not d.get("is_error")
         results.append(
             {
                 "q": item["q"], "tag": item.get("tag"), "correct": correct,
                 "path": d.get("path"), "ok": not d.get("is_error") and r.status_code == 200,
-                "ms": round(ms, 1), "n_rows": len(actual),
+                "ms": round(ms, 1), "n_rows": len(actual_rows),
                 "sql": d.get("sql", ""),
             }
         )

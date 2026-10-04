@@ -287,3 +287,29 @@ async def feedback(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.feedback(data.message_id, data.feedback, data.correct_sql, auth), msg="已记录")
+
+
+# ---- 基准测试（UI 入口）----
+@AiQueryRouter.post("/benchmark/run", summary="运行智能问数基准测试")
+async def benchmark_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .benchmark_runner import start_run
+
+    run_id = start_run(getattr(auth.user, "id", None))
+    return SuccessResponse(data={"run_id": run_id}, msg="已启动基准测试，请轮询状态")
+
+
+@AiQueryRouter.get("/benchmark/status", summary="查询基准测试进度")
+async def benchmark_status(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    run_id: str | None = None,
+) -> JSONResponse:
+    from .benchmark_runner import get_status
+
+    if not run_id:
+        return ErrorResponse(msg="缺少 run_id 参数")
+    st = get_status(run_id)
+    if not st:
+        return ErrorResponse(msg="基准运行不存在或已过期")
+    return SuccessResponse(data=st, msg="查询成功")

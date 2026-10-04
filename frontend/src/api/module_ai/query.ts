@@ -137,3 +137,11 @@ export function saveQueryAssetColumn(data: {
 }) {
   return request({ url: `${API_PATH}/assets/column/save`, method: "post", data });
 }
+
+// 基准测试
+export function runQueryBenchmark() {
+  return request({ url: `${API_PATH}/benchmark/run`, method: "post" });
+}
+export function getQueryBenchmarkStatus(run_id: string) {
+  return request({ url: `${API_PATH}/benchmark/status`, method: "get", params: { run_id } });
+}
