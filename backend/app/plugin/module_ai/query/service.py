@@ -299,6 +299,63 @@ _NL2SQL_FEWSHOT = [
         "q": "模型调用平均耗时（毫秒）是多少",
         "sql": "SELECT ROUND(AVG(latency_ms),1) AS 平均耗时ms FROM ai_call_logs WHERE is_deleted = false",
     },
+    # ---- 复杂报表模式：占比 / 窗口函数 / 联表取名称 / 多表对比 / 枚举 / 显式日期 ----
+    {
+        "q": "告警中 DET_ZONE 类型占比多少",
+        "sql": "SELECT ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM video_alarm_records),2) AS pct FROM video_alarm_records WHERE alarm_type='DET_ZONE'",
+    },
+    {
+        "q": "在线摄像头占全部摄像头的比例",
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE status='ONLINE')*100.0/COUNT(*),2) AS pct FROM video_cameras WHERE is_deleted=false",
+    },
+    {
+        "q": "平均每个摄像头产生多少条告警",
+        "sql": "SELECT ROUND(COUNT(*)*1.0/COUNT(DISTINCT camera_id),1) AS avg_cam FROM video_alarm_records WHERE camera_id IS NOT NULL",
+    },
+    {
+        "q": "给每种告警类型按数量排名",
+        "sql": "SELECT alarm_type, COUNT(*) AS c, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS rn FROM video_alarm_records GROUP BY alarm_type ORDER BY rn",
+    },
+    {
+        "q": "各告警类型数量及累计占比",
+        "sql": "SELECT alarm_type, COUNT(*) AS c, ROUND(100.0*SUM(COUNT(*)) OVER (ORDER BY COUNT(*) DESC)/SUM(COUNT(*)) OVER (),2) AS cum_pct FROM video_alarm_records GROUP BY alarm_type ORDER BY c DESC",
+    },
+    {
+        "q": "按告警数量给摄像头排名",
+        "sql": "SELECT c.name, COUNT(r.id) AS c, RANK() OVER (ORDER BY COUNT(r.id) DESC) AS rk FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY c.name ORDER BY rk",
+    },
+    {
+        "q": "每个边缘设备各产生多少边缘事件",
+        "sql": "SELECT COALESCE(d.name,'未知') AS 设备, COUNT(e.id) AS c FROM video_edge_devices d LEFT JOIN video_edge_events e ON e.edge_code=d.code GROUP BY 设备 ORDER BY c DESC",
+    },
+    {
+        "q": "每个摄像头各有多少边缘事件",
+        "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(e.id) AS c FROM video_cameras c LEFT JOIN video_edge_events e ON e.camera_id=c.id GROUP BY 摄像头 ORDER BY c DESC",
+    },
+    {
+        "q": "触发告警最多的前3条告警规则",
+        "sql": "SELECT r.name, COUNT(a.id) AS c FROM video_alarm_rules r JOIN video_alarm_records a ON a.rule_id=r.id GROUP BY r.name ORDER BY c DESC LIMIT 3",
+    },
+    {
+        "q": "各摄像头告警数与边缘事件数对比，取告警最多前5",
+        "sql": "SELECT c.name, COUNT(DISTINCT r.id) AS alarms, COUNT(DISTINCT e.id) AS events FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id LEFT JOIN video_edge_events e ON e.camera_id=c.id GROUP BY c.name ORDER BY alarms DESC LIMIT 5",
+    },
+    {
+        "q": "当前正在运行的视频算法任务有多少",
+        "sql": "SELECT COUNT(*) AS c FROM video_algorithm_tasks WHERE status='RUNNING'",
+    },
+    {
+        "q": "运行失败的算法任务编号",
+        "sql": "SELECT id FROM video_algorithm_tasks WHERE status='ERROR' ORDER BY id",
+    },
+    {
+        "q": "边缘事件的平均处理延迟是多少毫秒",
+        "sql": "SELECT ROUND(AVG(latency_ms)::numeric,2) AS avg FROM video_edge_events WHERE latency_ms IS NOT NULL",
+    },
+    {
+        "q": "9月16日当天共有多少条告警",
+        "sql": "SELECT COUNT(*) AS c FROM video_alarm_records WHERE alarm_time >= '2026-09-16' AND alarm_time < '2026-09-17'",
+    },
 ]
 
 
