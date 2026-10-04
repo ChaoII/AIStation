@@ -37,9 +37,30 @@
       </el-form-item>
     </el-form>
 
+    <!-- 批量操作 / 统计摘要 -->
+    <div class="tool-batchbar">
+      <el-checkbox
+        :model-value="allSelected"
+        :indeterminate="isIndeterminate"
+        @change="toggleSelectAll"
+      >
+        全选
+      </el-checkbox>
+      <el-button size="small" :disabled="!toolSelIds.length" @click="batchTool(true)">
+        批量启用
+      </el-button>
+      <el-button size="small" :disabled="!toolSelIds.length" @click="batchTool(false)">
+        批量停用
+      </el-button>
+      <el-tag size="small" type="info" effect="plain" class="summary-tag">
+        共 {{ toolSummary.total }} 个工具 · 启用 {{ toolSummary.enabled }} · 停用
+        {{ toolSummary.disabled }}
+      </el-tag>
+    </div>
+
     <!-- 工具卡片网格 -->
     <el-row v-loading="loading" :gutter="12" class="tool-grid">
-      <el-col v-for="tool in filteredTools" :key="tool.id" :xs="24" :sm="12" :md="8" :lg="6">
+      <el-col v-for="tool in pagedTools" :key="tool.id" :xs="24" :sm="12" :md="8" :lg="6">
         <el-card
           shadow="hover"
           class="tool-card"
@@ -48,6 +69,11 @@
         >
           <template #header>
             <div class="tool-card__hd">
+              <el-checkbox
+                :model-value="isSelected(tool)"
+                class="tool-card__check"
+                @change="toggleSelect(tool)"
+              />
               <el-avatar :size="32" :icon="iconOf(tool)" class="tool-card__avatar">
                 {{ iconOf(tool) ? "" : firstChar(tool) }}
               </el-avatar>
@@ -128,6 +154,17 @@
         <el-empty :image-size="80" description="暂无工具，点击「新增工具」创建" />
       </el-col>
     </el-row>
+
+    <div v-if="filteredTools.length > 0" class="tool-pagination">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="filteredTools.length"
+        :page-sizes="[12, 24, 48]"
+        layout="total, sizes, prev, pager, next"
+        background
+      />
+    </div>
 
     <!-- 新增 / 编辑 / 配置 弹窗 -->
     <EnhancedDialog
@@ -313,7 +350,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, type Component } from "vue";
+import { computed, onMounted, reactive, ref, watch, type Component } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Cloudy,
@@ -341,6 +378,7 @@ import {
   testAiTool,
   toggleAiTool,
   updateAiTool,
+  batchToolStatus,
   type AiToolConfigField,
   type AiToolRow,
 } from "@/api/module_ai/tool";
@@ -422,6 +460,63 @@ const filteredTools = computed(() => {
   });
 });
 
+// ---- 分页 ----
+const page = ref(1);
+const pageSize = ref(12);
+const pagedTools = computed(() => {
+  const start = (page.value - 1) * pageSize.value;
+  return filteredTools.value.slice(start, start + pageSize.value);
+});
+
+// ---- 批量选择 / 启停 ----
+const toolSelIds = ref<number[]>([]);
+const toolSelSet = computed(() => new Set(toolSelIds.value));
+function isSelected(tool: AiToolRow) {
+  return toolSelSet.value.has(tool.id);
+}
+function toggleSelect(tool: AiToolRow) {
+  toolSelIds.value = toolSelIds.value.includes(tool.id)
+    ? toolSelIds.value.filter((id) => id !== tool.id)
+    : [...toolSelIds.value, tool.id];
+}
+const allSelected = computed(() => {
+  const ids = filteredTools.value.map((t) => t.id);
+  return ids.length > 0 && ids.every((id) => toolSelSet.value.has(id));
+});
+const isIndeterminate = computed(() => {
+  const ids = filteredTools.value.map((t) => t.id);
+  const n = ids.filter((id) => toolSelSet.value.has(id)).length;
+  return n > 0 && n < ids.length;
+});
+function toggleSelectAll(checked: boolean | string | number) {
+  if (checked) {
+    const ids = filteredTools.value.map((t) => t.id);
+    toolSelIds.value = Array.from(new Set([...toolSelIds.value, ...ids]));
+  } else {
+    const pageIds = new Set(filteredTools.value.map((t) => t.id));
+    toolSelIds.value = toolSelIds.value.filter((id) => !pageIds.has(id));
+  }
+}
+
+// ---- 统计摘要 ----
+const toolSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+async function batchTool(enabled: boolean) {
+  if (!toolSelIds.value.length) return;
+  try {
+    const r = await batchToolStatus(toolSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个工具`);
+    toolSelIds.value = [];
+    await refreshList();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
+
+// 切换筛选时回到第一页
+watch(searchForm, () => {
+  page.value = 1;
+});
+
 function sourceLabel(source: string): string {
   if (source === "agno") return "Agno";
   if (source === "http") return "HTTP";
@@ -460,6 +555,11 @@ async function refreshList() {
   try {
     const res = await getAiToolList();
     allTools.value = (res.data?.data || []) as AiToolRow[];
+    toolSummary.value = {
+      total: allTools.value.length,
+      enabled: allTools.value.filter((t: AiToolRow) => t.enabled).length,
+      disabled: allTools.value.filter((t: AiToolRow) => !t.enabled).length,
+    };
   } catch (e: any) {
     ElMessage.error(e?.msg || "加载失败");
   } finally {
@@ -569,16 +669,6 @@ function removeCustomParam(index: number) {
 function handleCloseDialog() {
   dialog.visible = false;
   currentTool.value = null;
-}
-
-function parseJson(text: string): Record<string, any> | undefined {
-  const trimmed = (text || "").trim();
-  if (!trimmed) return undefined;
-  const parsed = JSON.parse(trimmed);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("必须是 JSON 对象");
-  }
-  return parsed;
 }
 
 function buildObjectFromRows(
@@ -784,6 +874,28 @@ onMounted(() => {
 <style scoped>
 .tool-search {
   margin-bottom: 4px;
+}
+
+.tool-batchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.tool-card__check {
+  flex-shrink: 0;
+}
+
+.summary-tag {
+  margin-left: 4px;
+}
+
+.tool-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 .tool-grid {

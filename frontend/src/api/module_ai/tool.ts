@@ -64,6 +64,10 @@ export function toggleAiTool(id: number, enabled: boolean) {
   return request({ url: `${API_PATH}/toggle/${id}`, method: "put", data: { enabled } });
 }
 
+export function batchToolStatus(ids: number[], enabled: boolean) {
+  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
+}
+
 export function testAiTool(id: number) {
   return request({
     url: `${API_PATH}/test/${id}`,

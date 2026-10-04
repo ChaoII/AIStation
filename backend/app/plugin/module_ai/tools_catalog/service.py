@@ -397,6 +397,25 @@ class AiToolService:
             return _to_dict(t)
 
     @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用工具。启用时跳过未就绪(高危/缺配置)的项。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for tid in ids:
+                t = await db.get(AiToolModel, tid)
+                if not t or t.is_deleted:
+                    continue
+                if enabled:
+                    try:
+                        _assert_enableable(t)
+                    except CustomException:
+                        continue  # 未就绪项跳过，不阻断其它
+                t.enabled = bool(enabled)
+                t.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                count += 1
+            return count
+
+    @classmethod
     async def test(cls, tool_id: int) -> dict:
         """测试工具：内置工具返回 schema，HTTP 工具发起一次真实请求。"""
         t = await cls._load(tool_id)

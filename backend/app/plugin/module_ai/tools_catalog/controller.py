@@ -61,6 +61,19 @@ async def delete_tools(
     return SuccessResponse(msg="删除成功")
 
 
+@AiToolRouter.put("/batch/status", summary="批量启用/停用工具")
+async def batch_tool_status(
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:tool:update"]))],
+) -> JSONResponse:
+    ids = [int(x) for x in (body.get("ids") or [])]
+    enabled = bool(body.get("enabled"))
+    count = await AiToolService.batch_status(ids, enabled, auth)
+    return SuccessResponse(
+        data={"count": count}, msg=f"已{'启用' if enabled else '停用'} {count} 个工具"
+    )
+
+
 @AiToolRouter.put("/toggle/{tool_id}", summary="启停工具")
 async def toggle_tool(
     tool_id: int,
