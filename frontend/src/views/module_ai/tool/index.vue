@@ -185,21 +185,60 @@
             placeholder="如 https://api.example.com/items/{id}，{id} 会被入参替换"
           />
         </el-form-item>
-        <el-form-item label="请求头 JSON">
-          <el-input
-            v-model="httpForm.headers_text"
-            type="textarea"
-            :rows="2"
-            placeholder='可选，如 {"Authorization":"Bearer xxx"}'
-          />
+        <el-form-item label="请求头">
+          <div class="header-builder">
+            <div v-for="(h, i) in httpForm.headerFields" :key="i" class="header-row">
+              <el-input v-model="h.key" placeholder="请求头名，如 Authorization" />
+              <el-input v-model="h.value" placeholder="值" />
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                @click="httpForm.headerFields.splice(i, 1)"
+              />
+            </div>
+            <el-button
+              text
+              type="primary"
+              :icon="Plus"
+              @click="httpForm.headerFields.push({ key: '', value: '' })"
+            >
+              添加请求头
+            </el-button>
+          </div>
         </el-form-item>
-        <el-form-item label="入参 JSON Schema">
-          <el-input
-            v-model="httpForm.params_schema_text"
-            type="textarea"
-            :rows="4"
-            placeholder='如 {"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}'
-          />
+        <el-form-item label="入参字段">
+          <div class="header-builder">
+            <div v-for="(p, i) in httpForm.paramFields" :key="i" class="field-param-row">
+              <el-input v-model="p.key" placeholder="字段名，如 id" class="field-row__key" />
+              <el-select v-model="p.type" class="field-row__type">
+                <el-option label="文本" value="string" />
+                <el-option label="整数" value="integer" />
+                <el-option label="数值" value="number" />
+                <el-option label="布尔" value="boolean" />
+                <el-option label="数组" value="array" />
+                <el-option label="对象" value="object" />
+              </el-select>
+              <el-input v-model="p.default" placeholder="默认值" class="field-row__default" />
+              <el-checkbox v-model="p.required" class="field-row__req">必填</el-checkbox>
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                @click="httpForm.paramFields.splice(i, 1)"
+              />
+            </div>
+            <el-button
+              text
+              type="primary"
+              :icon="Plus"
+              @click="
+                httpForm.paramFields.push({ key: '', type: 'string', default: '', required: false })
+              "
+            >
+              添加字段
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="httpForm.enabled" />
@@ -360,7 +399,9 @@ const httpForm = reactive({
   method: "GET",
   url: "",
   headers_text: "",
+  headerFields: [] as { key: string; value: string }[],
   params_schema_text: "",
+  paramFields: [] as { key: string; type: string; default: string; required: boolean }[],
   enabled: true,
 });
 
@@ -456,7 +497,9 @@ function resetHttpForm() {
     method: "GET",
     url: "",
     headers_text: "",
+    headerFields: [],
     params_schema_text: "",
+    paramFields: [],
     enabled: true,
   });
 }
@@ -479,8 +522,11 @@ function openEdit(tool: AiToolRow) {
     name: tool.name,
     method: tool.method || "GET",
     url: tool.url || "",
-    headers_text: tool.headers ? JSON.stringify(tool.headers, null, 2) : "",
-    params_schema_text: tool.params_schema ? JSON.stringify(tool.params_schema, null, 2) : "",
+    headerFields: Object.entries(tool.headers || {}).map(([k, v]) => ({
+      key: k,
+      value: String(v),
+    })),
+    paramFields: schemaToParamFields(tool.params_schema),
     enabled: tool.enabled !== false,
   });
   dialog.visible = true;
@@ -535,6 +581,64 @@ function parseJson(text: string): Record<string, any> | undefined {
   return parsed;
 }
 
+function buildObjectFromRows(
+  rows: { key: string; value: string }[]
+): Record<string, any> | undefined {
+  const out: Record<string, any> = {};
+  for (const r of rows || []) {
+    const k = (r.key || "").trim();
+    if (!k) continue;
+    out[k] = r.value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+function schemaToParamFields(
+  schema: any
+): { key: string; type: string; default: string; required: boolean }[] {
+  if (!schema || typeof schema !== "object") return [];
+  const props = schema.properties || {};
+  const required = new Set(schema.required || []);
+  return Object.entries<any>(props).map(([key, spec]) => ({
+    key,
+    type: spec?.type || "string",
+    default: spec?.default === undefined ? "" : String(spec.default),
+    required: required.has(key),
+  }));
+}
+function coerceDefault(v: string, type: string): any {
+  if (v === "" || v === undefined) return undefined;
+  if (type === "integer" || type === "number") {
+    const n = Number(v);
+    return Number.isNaN(n) ? v : n;
+  }
+  if (type === "boolean") return v === "true" || v === "1";
+  if (type === "array") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+}
+function paramFieldsToSchema(fields: any[]): Record<string, any> | undefined {
+  const properties: Record<string, any> = {};
+  const required: string[] = [];
+  for (const f of fields || []) {
+    const key = (f.key || "").trim();
+    if (!key) continue;
+    const p: Record<string, any> = { type: f.type || "string" };
+    const dv = coerceDefault(f.default, f.type);
+    if (dv !== undefined) p.default = dv;
+    if (f.required) required.push(key);
+    properties[key] = p;
+  }
+  if (!Object.keys(properties).length) return undefined;
+  const schema: Record<string, any> = { type: "object", properties };
+  if (required.length) schema.required = required;
+  return schema;
+}
+
 async function handleSubmit() {
   if (dialog.mode === "agno-config") {
     await submitAgnoConfig();
@@ -582,15 +686,8 @@ async function submitHttpForm() {
     ElMessage.warning("请填写请求地址");
     return;
   }
-  let headers: Record<string, any> | undefined;
-  let paramsSchema: Record<string, any> | undefined;
-  try {
-    headers = parseJson(httpForm.headers_text);
-    paramsSchema = parseJson(httpForm.params_schema_text);
-  } catch (e: any) {
-    ElMessage.error(`JSON 解析失败：${e?.message || e}`);
-    return;
-  }
+  const headers = buildObjectFromRows(httpForm.headerFields);
+  const paramsSchema = paramFieldsToSchema(httpForm.paramFields);
   const payload: any = {
     name: httpForm.name.trim(),
     kind: "http",
@@ -784,5 +881,33 @@ onMounted(() => {
 .tool-params__desc,
 .tool-params__val {
   color: var(--el-text-color-regular);
+}
+.header-builder {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.header-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.field-param-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.field-row__key {
+  width: 130px;
+}
+.field-row__type {
+  width: 92px;
+}
+.field-row__default {
+  flex: 1;
+}
+.field-row__req {
+  flex-shrink: 0;
 }
 </style>
