@@ -272,6 +272,48 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <div class="form-section-title">参数配置（动态表单）</div>
+            <el-form-item v-for="(meta, key) in paramsMeta" :key="key" :label="meta.label || key">
+              <template v-if="meta.type === 'bool'">
+                <el-switch v-model="algoForm.params[key]" />
+              </template>
+              <template v-else-if="meta.type === 'select'">
+                <el-select v-model="algoForm.params[key]" style="width: 100%">
+                  <el-option
+                    v-for="o in meta.options || []"
+                    :key="o.value"
+                    :label="o.label"
+                    :value="o.value"
+                  />
+                </el-select>
+              </template>
+              <template v-else-if="meta.type === 'multi-select'">
+                <el-select v-model="algoForm.params[key]" multiple style="width: 100%">
+                  <el-option
+                    v-for="o in meta.options || []"
+                    :key="o.value"
+                    :label="o.label"
+                    :value="o.value"
+                  />
+                </el-select>
+              </template>
+              <template v-else-if="meta.type === 'float' || meta.type === 'int'">
+                <el-input-number
+                  v-model="algoForm.params[key]"
+                  :min="meta.min"
+                  :max="meta.max"
+                  :step="meta.step"
+                  controls-position="right"
+                  style="width: 220px"
+                />
+                <span v-if="meta.unit" class="param-unit">{{ meta.unit }}</span>
+              </template>
+              <template v-else>
+                <el-input v-model="algoForm.params[key]" style="width: 260px" />
+              </template>
+              <div v-if="meta.hint" class="param-hint">{{ meta.hint }}</div>
+            </el-form-item>
+
             <div class="code-editor-wrap">
               <CodeEditor
                 v-model="algoForm.configJson"
@@ -324,7 +366,7 @@ import {
   retryDispatchAlgorithm,
   type AlgorithmDispatchResult,
 } from "@/api/module_video/algorithm";
-import { configTemplates, algoTypeLabels } from "@/config/algoTemplates";
+import { configTemplates, algoTypeLabels, paramMetaTemplates } from "@/config/algoTemplates";
 import type { ISearchConfig, IContentConfig } from "@/components/CURD/types";
 import CodeEditor from "@/components/CodeEditor/index.vue";
 import { useSettingsStore } from "@/store";
@@ -546,6 +588,7 @@ const algoForm = reactive({
   configJson: JSON.stringify(configTemplates.INTRUSION, null, 2),
   runtimeEngine: "pytorch",
   runtimeDevice: "cpu",
+  params: {} as Record<string, any>,
   status: true,
   description: undefined as string | undefined,
 });
@@ -561,9 +604,36 @@ const initialAlgoForm = {
   configJson: JSON.stringify(configTemplates.INTRUSION, null, 2),
   runtimeEngine: "pytorch" as const,
   runtimeDevice: "cpu" as const,
+  params: {} as Record<string, any>,
   status: true,
   description: undefined as string | undefined,
 };
+
+const paramsMeta = computed(() => paramMetaTemplates[algoForm.algorithm_type] || {});
+function syncParamsFromConfig() {
+  try {
+    const cfg = JSON.parse(algoForm.configJson);
+    const tmpl = configTemplates[algoForm.algorithm_type]?.params || {};
+    const meta = paramsMeta.value;
+    const out: Record<string, any> = {};
+    for (const key of Object.keys(meta)) {
+      const src = cfg.params?.[key] !== undefined ? cfg.params[key] : meta[key]?.default;
+      out[key] = src;
+    }
+    algoForm.params = out;
+  } catch {
+    algoForm.params = {};
+  }
+}
+function settingsParamsIntoConfig() {
+  try {
+    const cfg = JSON.parse(algoForm.configJson);
+    cfg.params = { ...(cfg.params || {}), ...algoForm.params };
+    algoForm.configJson = JSON.stringify(cfg, null, 2);
+  } catch {
+    /* 忽略 */
+  }
+}
 
 async function resetAlgoForm() {
   if (algoFormRef.value) {
@@ -578,6 +648,7 @@ function loadConfigTemplate() {
   if (tmpl) {
     algoForm.configJson = JSON.stringify(tmpl, null, 2);
   }
+  syncParamsFromConfig();
 }
 
 function onAlgoTypeChange() {
@@ -665,6 +736,7 @@ async function handleOpenAlgoDialog(type: "create" | "update", id?: number) {
       algoForm.configJson = JSON.stringify(config, null, 2);
       algoForm.runtimeEngine = config.runtime?.engine || "pytorch";
       algoForm.runtimeDevice = config.runtime?.device || "cpu";
+      syncParamsFromConfig();
     }
   } else {
     algoDialogVisible.title = "新增算法";
@@ -690,6 +762,8 @@ async function handleSubmitAlgo() {
       engine: algoForm.runtimeEngine,
       device: algoForm.runtimeDevice,
     };
+    // 参数动态表单写回 config.params
+    config.params = { ...(config.params || {}), ...algoForm.params };
     const payload: any = {
       name: algoForm.name,
       code: algoForm.code,
@@ -785,5 +859,16 @@ onBeforeMount(async () => {
 .rollback-trigger {
   display: inline-flex;
   align-items: center;
+}
+.param-unit {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.param-hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>
