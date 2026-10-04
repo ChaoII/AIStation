@@ -261,7 +261,9 @@
           <el-input v-model="createForm.name" placeholder="留空自动生成" />
         </el-form-item>
         <el-form-item label="GPU 设备">
-          <el-input v-model="createForm.device" placeholder="如: 0 或 cpu" />
+          <el-select v-model="createForm.device" placeholder="选择设备" style="width: 100%">
+            <el-option v-for="n in deviceOptions" :key="n" :label="n === 'cpu' ? 'CPU' : `GPU ${n}`" :value="n" />
+          </el-select>
         </el-form-item>
         <el-form-item label="端口">
           <el-input-number
@@ -352,6 +354,7 @@ const showCreateDialog = ref(false);
 const showKeyDialog = ref(false);
 const keyInfo = reactive({ apiKey: "", apiUrl: "" });
 
+const deviceOptions = ["0", "1", "2", "3", "4", "5", "6", "7", "cpu"];
 const createForm = reactive({
   modelId: null as number | null,
   recModelId: null as number | null,
