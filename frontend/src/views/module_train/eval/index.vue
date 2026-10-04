@@ -74,7 +74,13 @@
                   :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
                   size="small"
                 >
-                  {{ scope.row.framework === "ultralytics" ? "YOLO" : scope.row.framework === "paddlex" ? "PaddleX" : "TorchKiln" }}
+                  {{
+                    scope.row.framework === "ultralytics"
+                      ? "YOLO"
+                      : scope.row.framework === "paddlex"
+                        ? "PaddleX"
+                        : "TorchKiln"
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -346,7 +352,8 @@ async function loadDatasets() {
   try {
     datasets.value = await cachedOptions(
       "annotation:datasets",
-      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+      async () =>
+        (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
     );
   } catch {
     datasetsLoaded = false;
@@ -357,7 +364,8 @@ async function loadModelVersions() {
   try {
     modelVersions.value = await cachedOptions(
       "train:models",
-      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+      async () =>
+        (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
     );
   } catch {
     /* 模型列表加载失败不阻塞页面与自动开窗 */

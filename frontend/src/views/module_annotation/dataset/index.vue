@@ -19,7 +19,13 @@
           :indeterminate="t.indeterminate"
         />
         <span class="task-banner-meta">已用 {{ t.elapsed }}</span>
-        <el-button v-if="t.kind !== 'purge'" size="small" link type="primary" @click="openTaskBanner(t.id, t.name)">
+        <el-button
+          v-if="t.kind !== 'purge'"
+          size="small"
+          link
+          type="primary"
+          @click="openTaskBanner(t.id, t.name)"
+        >
           查看
         </el-button>
       </div>
@@ -109,9 +115,13 @@
               min-width="320"
             >
               <template #default="scope">
-                <div v-if="scope.row.tasks?.length" style="display:flex;flex-wrap:wrap;gap:4px">
+                <div
+                  v-if="scope.row.tasks?.length"
+                  style="display: flex; flex-wrap: wrap; gap: 4px"
+                >
                   <div
-                    v-for="t in scope.row.tasks" :key="t.id"
+                    v-for="t in scope.row.tasks"
+                    :key="t.id"
                     class="task-badge"
                     :style="{
                       borderColor: taskTagColor(t.task_type),
@@ -121,10 +131,16 @@
                   >
                     <span class="task-badge-name">{{ t.name }}</span>
                     <span class="task-badge-pct">{{ t.progress ?? 0 }}%</span>
-                    <span class="task-badge-fill" :style="{ width: (t.progress ?? 0) + '%', background: taskTagColor(t.task_type) + '22' }" />
+                    <span
+                      class="task-badge-fill"
+                      :style="{
+                        width: (t.progress ?? 0) + '%',
+                        background: taskTagColor(t.task_type) + '22',
+                      }"
+                    />
                   </div>
                 </div>
-                <span v-else style="color:var(--el-text-color-secondary);font-size:12px">—</span>
+                <span v-else style="color: var(--el-text-color-secondary); font-size: 12px">—</span>
               </template>
             </el-table-column>
             <el-table-column
@@ -180,7 +196,9 @@
                         size="small"
                         link
                         type="success"
-                        @click="router.push(`/annotation/workbench/${rowImport(scope.row)?.taskId}`)"
+                        @click="
+                          router.push(`/annotation/workbench/${rowImport(scope.row)?.taskId}`)
+                        "
                       >
                         打开任务
                       </el-button>
@@ -254,14 +272,20 @@
                         v-hasPerm="['module_annotation:dataset:upload']"
                         command="upload"
                         icon="Upload"
-                      >上传图片</el-dropdown-item>
+                      >
+                        上传图片
+                      </el-dropdown-item>
                       <el-dropdown-item
                         v-hasPerm="['module_annotation:dataset:upload']"
                         command="import"
                         icon="Upload"
-                      >导入标注</el-dropdown-item>
+                      >
+                        导入标注
+                      </el-dropdown-item>
                       <el-dropdown-item command="export" icon="Download">导出</el-dropdown-item>
-                      <el-dropdown-item command="exportHistory" icon="Clock">导出历史</el-dropdown-item>
+                      <el-dropdown-item command="exportHistory" icon="Clock">
+                        导出历史
+                      </el-dropdown-item>
                       <el-dropdown-item command="clean" icon="Brush">数据清洗</el-dropdown-item>
                       <el-dropdown-item command="preprocess" icon="Crop">数据落地</el-dropdown-item>
                       <el-dropdown-item command="train" icon="Aim">去训练</el-dropdown-item>
@@ -270,7 +294,9 @@
                         command="purge"
                         icon="Delete"
                         divided
-                      >彻底删除</el-dropdown-item>
+                      >
+                        彻底删除
+                      </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -383,7 +409,8 @@
           压缩包需包含图片与同名 .json 标注文件，大小不超过 {{ importMaxMb }}MB。
         </p>
         <p v-if="importFile" class="import-file">
-          已选：<span class="import-file-name">{{ importFile.name }}</span>
+          已选：
+          <span class="import-file-name">{{ importFile.name }}</span>
           <span class="import-file-size">{{ importFileMb }} MB</span>
         </p>
         <el-checkbox v-model="importClearExisting" class="import-clear">
@@ -420,9 +447,10 @@
           class="import-alert"
         >
           <template #title>
-            导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注<template
-              v-if="dialogImport.skippedDuplicate"
-            >，跳过 {{ dialogImport.skippedDuplicate }} 张重复</template>
+            导入完成：{{ dialogImport.imported }} 张图片，{{ dialogImport.totalAnnotations }} 个标注
+            <template v-if="dialogImport.skippedDuplicate">
+              ，跳过 {{ dialogImport.skippedDuplicate }} 张重复
+            </template>
           </template>
         </el-alert>
       </div>
@@ -453,37 +481,79 @@
     </el-dialog>
 
     <!-- Export Dialog -->
-    <el-dialog v-model="exportDialogVisible" title="导出数据集" width="500px" :close-on-click-modal="!exporting" :close-on-press-escape="!exporting" :show-close="!exporting">
+    <el-dialog
+      v-model="exportDialogVisible"
+      title="导出数据集"
+      width="500px"
+      :close-on-click-modal="!exporting"
+      :close-on-press-escape="!exporting"
+      :show-close="!exporting"
+    >
       <el-form label-width="120px">
-        <el-form-item label="数据集"><span>{{ exportDatasetName }}</span></el-form-item>
+        <el-form-item label="数据集">
+          <span>{{ exportDatasetName }}</span>
+        </el-form-item>
         <el-form-item label="标注任务" required>
-          <el-select v-model="exportTaskId" placeholder="请选择标注任务" filterable style="width:100%" @change="onTaskChange">
-            <el-option v-for="t in exportRowTasks" :key="t.id" :value="t.id" :label="`${t.name}（${taskTypeLabel(t.task_type)}）`" />
+          <el-select
+            v-model="exportTaskId"
+            placeholder="请选择标注任务"
+            filterable
+            style="width: 100%"
+            @change="onTaskChange"
+          >
+            <el-option
+              v-for="t in exportRowTasks"
+              :key="t.id"
+              :value="t.id"
+              :label="`${t.name}（${taskTypeLabel(t.task_type)}）`"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="导出格式" required>
-          <el-select v-model="exportFormat" style="width:100%">
-            <el-option v-for="opt in filteredExportFormats" :key="opt.value" :value="opt.value" :label="opt.label" />
+          <el-select v-model="exportFormat" style="width: 100%">
+            <el-option
+              v-for="opt in filteredExportFormats"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
           </el-select>
           <div
             v-if="exportFormat === 'paddle-ocr' || exportFormat === 'torchkiln-ocr'"
-            style="margin-top:8px"
+            style="margin-top: 8px"
           >
-            <el-checkbox v-model="ocrExportDet" label="导出检测数据集 (det)" border size="small" style="margin-right:8px" />
+            <el-checkbox
+              v-model="ocrExportDet"
+              label="导出检测数据集 (det)"
+              border
+              size="small"
+              style="margin-right: 8px"
+            />
             <el-checkbox v-model="ocrExportRec" label="导出识别数据集 (rec)" border size="small" />
           </div>
         </el-form-item>
         <el-form-item v-if="isYoloOrPaddleFormat" label="训练集比例">
-          <el-slider v-model="trainRatio" :min="50" :max="95" :step="5" show-input style="width:200px" />
-          <span style="margin-left:8px;font-size:12px;color:#909399">剩余 {{ 100 - trainRatio }}% 为验证集</span>
+          <el-slider
+            v-model="trainRatio"
+            :min="50"
+            :max="95"
+            :step="5"
+            show-input
+            style="width: 200px"
+          />
+          <span style="margin-left: 8px; font-size: 12px; color: #909399">
+            剩余 {{ 100 - trainRatio }}% 为验证集
+          </span>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>
         </el-alert>
       </el-form>
       <template #footer>
-        <el-button @click="exportDialogVisible = false" :disabled="exporting">取消</el-button>
-        <el-button type="warning" :loading="exporting" @click="handleExportSubmit">{{ exporting ? "导出中..." : "导出并下载" }}</el-button>
+        <el-button :disabled="exporting" @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="warning" :loading="exporting" @click="handleExportSubmit">
+          {{ exporting ? "导出中..." : "导出并下载" }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -520,13 +590,52 @@ import { WarningFilled } from "@element-plus/icons-vue";
 const router = useRouter();
 
 function taskTagType(t: string) {
-  return ({ detection: "primary", rotated_detection: "warning", segmentation: "success", keypoint: "danger", ocr: "info", classification: "", cuboid: "danger" } as any)[t] || "";
+  return (
+    (
+      {
+        detection: "primary",
+        rotated_detection: "warning",
+        segmentation: "success",
+        keypoint: "danger",
+        ocr: "info",
+        classification: "",
+        cuboid: "danger",
+      } as any
+    )[t] || ""
+  );
 }
 function taskTagColor(t: string) {
-  return ({ detection: "#409eff", rotated_detection: "#e6a23c", segmentation: "#67c23a", keypoint: "#f56c6c", ocr: "#909399", classification: "#b37feb", cuboid: "#f56c6c" } as any)[t] || "#909399";
+  return (
+    (
+      {
+        detection: "#409eff",
+        rotated_detection: "#e6a23c",
+        segmentation: "#67c23a",
+        keypoint: "#f56c6c",
+        ocr: "#909399",
+        classification: "#b37feb",
+        cuboid: "#f56c6c",
+      } as any
+    )[t] || "#909399"
+  );
 }
 function taskTypeLabel(t: string) {
-  return ({ detection: "检测", rotated_detection: "旋转框", segmentation: "分割", keypoint: "关键点", ocr: "OCR", classification: "分类", cuboid: "3D 目标检测", time_series_event: "时间序列", video_event: "视频事件", video_detection: "视频检测" } as any)[t] || t;
+  return (
+    (
+      {
+        detection: "检测",
+        rotated_detection: "旋转框",
+        segmentation: "分割",
+        keypoint: "关键点",
+        ocr: "OCR",
+        classification: "分类",
+        cuboid: "3D 目标检测",
+        time_series_event: "时间序列",
+        video_event: "视频事件",
+        video_detection: "视频检测",
+      } as any
+    )[t] || t
+  );
 }
 
 defineOptions({
@@ -864,13 +973,7 @@ function handleMoreCommand(cmd: string, row: any) {
 }
 
 // ── X-AnyLabeling 导入：页面级状态（弹窗关闭后仍在）+ 三段进度 ──
-type ImportPhase =
-  | "uploading"
-  | "scanning"
-  | "importing"
-  | "done"
-  | "failed"
-  | "cancelled";
+type ImportPhase = "uploading" | "scanning" | "importing" | "done" | "failed" | "cancelled";
 
 interface ActiveImport {
   jobId: string | null;
@@ -992,9 +1095,9 @@ function rowImport(row: any): ActiveImport | null {
       uploadTotal: j.file_size || 0,
       processed: j.processed || 0,
       total: j.total || 0,
-    imported: j.imported || 0,
-    skippedDuplicate: j.skipped_duplicate || 0,
-    totalAnnotations: j.total_annotations || 0,
+      imported: j.imported || 0,
+      skippedDuplicate: j.skipped_duplicate || 0,
+      totalAnnotations: j.total_annotations || 0,
       taskId: j.task_id ?? null,
       taskName: j.task_name || "",
       error: j.error || "",
@@ -1093,7 +1196,7 @@ function rowImportIndeterminate(row: any): boolean {
 
 // 弹窗（当前数据集）
 const dialogImport = computed<ActiveImport | null>(() =>
-  importDatasetId.value != null ? activeImports[importDatasetId.value] ?? null : null
+  importDatasetId.value != null ? (activeImports[importDatasetId.value] ?? null) : null
 );
 const importStep = computed(() => {
   const p = dialogImport.value?.phase;
@@ -1112,20 +1215,23 @@ const dialogProgressStatus = computed<any>(() => {
 const dialogPhaseText = computed(() => {
   const p = dialogImport.value?.phase;
   return (
-    ({
-      uploading: "正在上传 ZIP…",
-      scanning: "服务端解析中…",
-      importing: "正在导入图片…",
-      done: "导入完成",
-      failed: "导入失败",
-      cancelled: "已取消",
-    } as Record<string, string>)[p || ""] || ""
+    (
+      {
+        uploading: "正在上传 ZIP…",
+        scanning: "服务端解析中…",
+        importing: "正在导入图片…",
+        done: "导入完成",
+        failed: "导入失败",
+        cancelled: "已取消",
+      } as Record<string, string>
+    )[p || ""] || ""
   );
 });
 const dialogDetailText = computed(() => {
   const a = dialogImport.value;
   if (!a) return "";
-  if (a.phase === "uploading") return `已发送 ${fmtMB(a.uploadLoaded)} / ${fmtMB(a.uploadTotal)} MB`;
+  if (a.phase === "uploading")
+    return `已发送 ${fmtMB(a.uploadLoaded)} / ${fmtMB(a.uploadTotal)} MB`;
   if (a.phase === "importing") return `已导入 ${a.processed} / ${a.total}`;
   if (a.phase === "done") return `共 ${a.imported} 张 · ${a.totalAnnotations} 个标注`;
   return "";
@@ -1230,7 +1336,7 @@ async function handleImportSubmit() {
   };
   startTicker();
   try {
-  const r = await AnnotationAPI.importXAnyLabeling(dsId, file, {
+    const r = await AnnotationAPI.importXAnyLabeling(dsId, file, {
       signal: importAbort.signal,
       clearExisting: importClearExisting.value,
       onUploadProgress: (e: any) => {
@@ -1322,7 +1428,7 @@ function applyJob(dsId: number, job: any) {
     if (a.kind === "purge") {
       ElMessage.success("已彻底删除");
       delete activeImports[dsId];
-      }
+    }
     refreshList();
   }
 }
@@ -1349,11 +1455,11 @@ async function handleImportDialogClose(done: () => void) {
   }
   // 尚未开始处理（上传/解析中）：关闭＝取消
   try {
-    await ElMessageBox.confirm(
-      "上传/解析尚未完成，关闭会取消本次导入。是否取消？",
-      "取消导入",
-      { type: "warning", confirmButtonText: "取消导入", cancelButtonText: "继续导入" }
-    );
+    await ElMessageBox.confirm("上传/解析尚未完成，关闭会取消本次导入。是否取消？", "取消导入", {
+      type: "warning",
+      confirmButtonText: "取消导入",
+      cancelButtonText: "继续导入",
+    });
   } catch {
     return;
   }
@@ -1444,7 +1550,15 @@ const FORMAT_TASK_MAP: Record<string, string[]> = {
   "yolo-cls": ["classification"],
   "paddle-mlcls": ["classification"],
   "paddle-ocr": ["ocr"],
-  "x-anylabeling": ["detection", "rotated_detection", "segmentation", "keypoint", "ocr", "classification", "cuboid"],
+  "x-anylabeling": [
+    "detection",
+    "rotated_detection",
+    "segmentation",
+    "keypoint",
+    "ocr",
+    "classification",
+    "cuboid",
+  ],
   "coco-panoptic": ["panoptic_segmentation"],
   "audio-event": ["audio_event"],
   "audio-csv": ["audio_event"],
@@ -1472,12 +1586,12 @@ const FORMAT_TASK_MAP: Record<string, string[]> = {
 const filteredExportFormats = computed(() => {
   const task = exportRowTasks.value.find((t: any) => t.id === exportTaskId.value);
   if (!task) return exportFormatOptions;
-  return exportFormatOptions.filter(opt => FORMAT_TASK_MAP[opt.value]?.includes(task.task_type));
+  return exportFormatOptions.filter((opt) => FORMAT_TASK_MAP[opt.value]?.includes(task.task_type));
 });
 
 function onTaskChange() {
   const avail = filteredExportFormats.value;
-  if (avail.length > 0 && !avail.find(o => o.value === exportFormat.value)) {
+  if (avail.length > 0 && !avail.find((o) => o.value === exportFormat.value)) {
     exportFormat.value = avail[0].value;
   }
 }
@@ -1524,7 +1638,10 @@ function handleOpenExport(row: any) {
 
 async function handleExportSubmit() {
   if (!exportDatasetId.value) return;
-  if (!exportTaskId.value) { ElMessage.warning("请选择标注任务"); return; }
+  if (!exportTaskId.value) {
+    ElMessage.warning("请选择标注任务");
+    return;
+  }
   exporting.value = true;
   try {
     const { TrainAPI } = await import("@/api/module_train");
@@ -1673,25 +1790,49 @@ async function handleExportSubmit() {
   gap: 8px;
 }
 .task-badge {
-  position: relative; display: inline-flex; align-items: center; gap: 4px;
-  padding: 0 8px; border-radius: 4px; font-size: 12px; line-height: 22px;
-  cursor: pointer; overflow: hidden;
-  background: #f5f7fa; border: 1.5px solid #e4e7ed;
-  transition: border-color .15s;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 22px;
+  cursor: pointer;
+  overflow: hidden;
+  background: #f5f7fa;
+  border: 1.5px solid #e4e7ed;
+  transition: border-color 0.15s;
   width: 130px;
 }
-.task-badge:hover { filter: brightness(.96); }
+.task-badge:hover {
+  filter: brightness(0.96);
+}
 .task-badge-name {
-  position: relative; z-index: 1; font-weight: 600;
-  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  position: relative;
+  z-index: 1;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .task-badge-pct {
-  position: relative; z-index: 1; font-size: 10px; opacity: .6;
-  font-variant-numeric: tabular-nums; min-width: 28px; text-align: right;
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  text-align: right;
 }
 .task-badge-fill {
-  position: absolute; top: 0; left: 0; bottom: 0;
-  border-radius: 3px; transition: width .5s ease;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border-radius: 3px;
+  transition: width 0.5s ease;
   pointer-events: none;
 }
 </style>

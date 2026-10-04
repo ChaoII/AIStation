@@ -280,7 +280,8 @@ async function loadDatasets() {
   try {
     datasets.value = await cachedOptions(
       "annotation:datasets",
-      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+      async () =>
+        (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
     );
   } catch {
     datasetsLoaded = false;

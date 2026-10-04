@@ -2,286 +2,281 @@
   <div>
     <div class="train-detail-page">
       <div class="detail-header">
-      <el-button text size="small" @click="router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-      </el-button>
-      <span class="task-name">{{ task?.name }}</span>
-      <el-tag
-        :type="(task?.framework === 'ultralytics' ? 'success' : 'primary') as any"
-        size="small"
-        effect="plain"
-      >
-        {{ frameworkLabel(task?.framework) }}
-      </el-tag>
-      <el-tag
-        :type="statusTag(task?.status || '') as any"
-        size="small"
-        :effect="task?.status === 'running' ? 'dark' : 'plain'"
-      >
-        {{ statusLabel(task?.status || "") }}
-      </el-tag>
-      <span v-if="displayProgress > 0" class="progress-text">{{ displayProgress }}%</span>
-    </div>
-
-    <el-row :gutter="16">
-      <el-col :xs="24" :md="12">
-        <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">任务信息</span></template>
-          <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="数据集">{{
-              task?.dataset_name || `#${task?.dataset_id}`
-            }}</el-descriptions-item>
-            <el-descriptions-item label="创建时间">{{ task?.created_time }}</el-descriptions-item>
-            <el-descriptions-item label="Docker 镜像">
-              <code class="docker-tag">{{ task?.docker_image }}</code>
-            </el-descriptions-item>
-            <el-descriptions-item label="Docker 命令">
-              <pre
-                style="
-                  margin: 0;
-                  font-size: 11px;
-                  line-height: 1.4;
-                  background: #f5f7fa;
-                  padding: 6px 8px;
-                  border-radius: 4px;
-                  white-space: pre-wrap;
-                  word-break: break-all;
-                  max-width: 500px;
-                "
-                >{{ dockerCmd || "—" }}</pre>
-            </el-descriptions-item>
-            <el-descriptions-item label="创建者 ID">{{ task?.created_id }}</el-descriptions-item>
-            <el-descriptions-item label="开始时间">
-              {{ task?.started_at || "—" }}
-            </el-descriptions-item>
-            <el-descriptions-item label="结束时间">
-              {{ task?.finished_at || "—" }}
-            </el-descriptions-item>
-            <el-descriptions-item label="耗时">{{ durationText }}</el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :md="12">
-        <el-card shadow="never" class="info-card">
-          <template #header><span class="card-title">超参数</span></template>
-          <el-descriptions v-if="task?.hyperparams" :column="1" size="small" border>
-            <el-descriptions-item
-              v-for="(val, key) in task.hyperparams"
-              :key="String(key)"
-              :label="String(key)"
-            >
-              <template v-if="typeof val === 'boolean'">
-                <el-tag :type="val ? 'success' : 'info'" size="small">
-                  {{ val ? "是" : "否" }}
-                </el-tag>
-              </template>
-              <template v-else>{{ val }}</template>
-            </el-descriptions-item>
-          </el-descriptions>
-          <el-empty v-else :image-size="40" description="无超参数" />
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">操作</span></template>
-      <div class="action-buttons">
-        <template v-if="task?.status === 'pending'">
-          <el-button type="primary" size="default" @click="handleStart">开始训练</el-button>
-          <el-button size="default" @click="handleEditParams">编辑参数</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
-        </template>
-        <template v-else-if="task?.status === 'running'">
-          <el-button type="danger" size="default" @click="handleStop">停止训练</el-button>
-        </template>
-        <template v-else-if="task?.status === 'success'">
-          <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
-          <el-button size="default" @click="handleEvaluate">评估模型</el-button>
-          <el-button size="default" @click="handleExport">导出模型</el-button>
-          <el-button size="default" @click="handleRetrain">重新训练</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
-        </template>
-        <template v-else-if="task?.status === 'failed'">
-          <el-button type="primary" size="default" @click="handleRetrain">重新训练</el-button>
-          <el-button size="default" @click="scrollToLog">查看日志</el-button>
-          <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
-        </template>
-        <template v-else-if="task?.status === 'cancelled'">
-          <el-button type="primary" size="default" @click="handleRetrain">重新训练</el-button>
-        </template>
+        <el-button text size="small" @click="router.back()">
+          <el-icon><ArrowLeft /></el-icon>
+        </el-button>
+        <span class="task-name">{{ task?.name }}</span>
+        <el-tag
+          :type="(task?.framework === 'ultralytics' ? 'success' : 'primary') as any"
+          size="small"
+          effect="plain"
+        >
+          {{ frameworkLabel(task?.framework) }}
+        </el-tag>
+        <el-tag
+          :type="statusTag(task?.status || '') as any"
+          size="small"
+          :effect="task?.status === 'running' ? 'dark' : 'plain'"
+        >
+          {{ statusLabel(task?.status || "") }}
+        </el-tag>
+        <span v-if="displayProgress > 0" class="progress-text">{{ displayProgress }}%</span>
       </div>
-    </el-card>
 
-    <el-card v-if="displayProgress > 0" shadow="never" class="section-card">
-      <template #header><span class="card-title">训练进度</span></template>
-      <el-progress
-        :percentage="displayProgress"
-        :stroke-width="20"
-        :text-inside="true"
-        :status="
-          task?.status === 'success'
-            ? 'success'
-            : task?.status === 'failed'
-              ? 'exception'
-              : 'warning'
-        "
-      />
-      <div v-if="task?.status === 'running'" class="progress-eta">
-        <span class="pulse-dot" />
-        训练中，预计剩余 {{ estimatedEta }}
-      </div>
-    </el-card>
-
-    <el-card shadow="never" class="section-card">
-      <template #header><span class="card-title">训练指标</span></template>
-      <el-row :gutter="12">
-        <el-col :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" style="color: #909399; margin-bottom: 4px"><Clock /></el-icon>
-            <span class="metric-val">{{ displayMetrics.epoch }}</span>
-            <span class="metric-lbl">Epoch</span>
-          </div>
+      <el-row :gutter="16">
+        <el-col :xs="24" :md="12">
+          <el-card shadow="never" class="info-card">
+            <template #header><span class="card-title">任务信息</span></template>
+            <el-descriptions :column="1" size="small" border>
+              <el-descriptions-item label="数据集">
+                {{ task?.dataset_name || `#${task?.dataset_id}` }}
+              </el-descriptions-item>
+              <el-descriptions-item label="创建时间">{{ task?.created_time }}</el-descriptions-item>
+              <el-descriptions-item label="Docker 镜像">
+                <code class="docker-tag">{{ task?.docker_image }}</code>
+              </el-descriptions-item>
+              <el-descriptions-item label="Docker 命令">
+                <pre
+                  style="
+                    margin: 0;
+                    font-size: 11px;
+                    line-height: 1.4;
+                    background: #f5f7fa;
+                    padding: 6px 8px;
+                    border-radius: 4px;
+                    white-space: pre-wrap;
+                    word-break: break-all;
+                    max-width: 500px;
+                  "
+                  >{{ dockerCmd || "—" }}</pre>
+              </el-descriptions-item>
+              <el-descriptions-item label="创建者 ID">{{ task?.created_id }}</el-descriptions-item>
+              <el-descriptions-item label="开始时间">
+                {{ task?.started_at || "—" }}
+              </el-descriptions-item>
+              <el-descriptions-item label="结束时间">
+                {{ task?.finished_at || "—" }}
+              </el-descriptions-item>
+              <el-descriptions-item label="耗时">{{ durationText }}</el-descriptions-item>
+            </el-descriptions>
+          </el-card>
         </el-col>
-        <!-- 损失卡片：按框架选择（PaddleX 单一 Loss / YOLO box-cls-dfl） -->
-        <el-col v-for="s in lossSpec" :key="s.key" :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
-              <component :is="s.icon" />
-            </el-icon>
-            <span class="metric-val">{{ displayMetrics[s.key] }}</span>
-            <span class="metric-lbl">{{ s.label }}</span>
-          </div>
-        </el-col>
-        <!-- 主指标卡片：按框架选择（PaddleX hmean/acc、YOLO mAP/PR、分类 top1/top5） -->
-        <el-col v-for="s in metricSpec" :key="s.key" :xs="24" :sm="12" :md="6">
-          <div class="metric-item">
-            <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
-              <component :is="s.icon" />
-            </el-icon>
-            <span class="metric-val" :style="{ color: s.color }">{{ displayMetrics[s.key] }}</span>
-            <span class="metric-lbl">{{ s.label }}</span>
-          </div>
+        <el-col :xs="24" :md="12">
+          <el-card shadow="never" class="info-card">
+            <template #header><span class="card-title">超参数</span></template>
+            <el-descriptions v-if="task?.hyperparams" :column="1" size="small" border>
+              <el-descriptions-item
+                v-for="(val, key) in task.hyperparams"
+                :key="String(key)"
+                :label="String(key)"
+              >
+                <template v-if="typeof val === 'boolean'">
+                  <el-tag :type="val ? 'success' : 'info'" size="small">
+                    {{ val ? "是" : "否" }}
+                  </el-tag>
+                </template>
+                <template v-else>{{ val }}</template>
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-empty v-else :image-size="40" description="无超参数" />
+          </el-card>
         </el-col>
       </el-row>
-    </el-card>
 
-    <el-alert
-      v-if="task?.error_log"
-      title="训练失败"
-      type="error"
-      :description="task.error_log.slice(0, 500)"
-      show-icon
-      closable
-      style="margin-bottom: 16px"
-    />
+      <el-card shadow="never" class="section-card">
+        <template #header><span class="card-title">操作</span></template>
+        <div class="action-buttons">
+          <template v-if="task?.status === 'pending'">
+            <el-button type="primary" size="default" @click="handleStart">开始训练</el-button>
+            <el-button size="default" @click="handleEditParams">编辑参数</el-button>
+            <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          </template>
+          <template v-else-if="task?.status === 'running'">
+            <el-button type="danger" size="default" @click="handleStop">停止训练</el-button>
+          </template>
+          <template v-else-if="task?.status === 'success'">
+            <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
+            <el-button size="default" @click="handleEvaluate">评估模型</el-button>
+            <el-button size="default" @click="handleExport">导出模型</el-button>
+            <el-button size="default" @click="handleRetrain">重新训练</el-button>
+            <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          </template>
+          <template v-else-if="task?.status === 'failed'">
+            <el-button type="primary" size="default" @click="handleRetrain">重新训练</el-button>
+            <el-button size="default" @click="scrollToLog">查看日志</el-button>
+            <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
+          </template>
+          <template v-else-if="task?.status === 'cancelled'">
+            <el-button type="primary" size="default" @click="handleRetrain">重新训练</el-button>
+          </template>
+        </div>
+      </el-card>
 
-    <!--
+      <el-card v-if="displayProgress > 0" shadow="never" class="section-card">
+        <template #header><span class="card-title">训练进度</span></template>
+        <el-progress
+          :percentage="displayProgress"
+          :stroke-width="20"
+          :text-inside="true"
+          :status="
+            task?.status === 'success'
+              ? 'success'
+              : task?.status === 'failed'
+                ? 'exception'
+                : 'warning'
+          "
+        />
+        <div v-if="task?.status === 'running'" class="progress-eta">
+          <span class="pulse-dot" />
+          训练中，预计剩余 {{ estimatedEta }}
+        </div>
+      </el-card>
+
+      <el-card shadow="never" class="section-card">
+        <template #header><span class="card-title">训练指标</span></template>
+        <el-row :gutter="12">
+          <el-col :xs="24" :sm="12" :md="6">
+            <div class="metric-item">
+              <el-icon :size="22" style="color: #909399; margin-bottom: 4px"><Clock /></el-icon>
+              <span class="metric-val">{{ displayMetrics.epoch }}</span>
+              <span class="metric-lbl">Epoch</span>
+            </div>
+          </el-col>
+          <!-- 损失卡片：按框架选择（PaddleX 单一 Loss / YOLO box-cls-dfl） -->
+          <el-col v-for="s in lossSpec" :key="s.key" :xs="24" :sm="12" :md="6">
+            <div class="metric-item">
+              <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
+                <component :is="s.icon" />
+              </el-icon>
+              <span class="metric-val">{{ displayMetrics[s.key] }}</span>
+              <span class="metric-lbl">{{ s.label }}</span>
+            </div>
+          </el-col>
+          <!-- 主指标卡片：按框架选择（PaddleX hmean/acc、YOLO mAP/PR、分类 top1/top5） -->
+          <el-col v-for="s in metricSpec" :key="s.key" :xs="24" :sm="12" :md="6">
+            <div class="metric-item">
+              <el-icon :size="22" :style="{ color: s.color, marginBottom: '4px' }">
+                <component :is="s.icon" />
+              </el-icon>
+              <span class="metric-val" :style="{ color: s.color }">
+                {{ displayMetrics[s.key] }}
+              </span>
+              <span class="metric-lbl">{{ s.label }}</span>
+            </div>
+          </el-col>
+        </el-row>
+      </el-card>
+
+      <el-alert
+        v-if="task?.error_log"
+        title="训练失败"
+        type="error"
+        :description="task.error_log.slice(0, 500)"
+        show-icon
+        closable
+        style="margin-bottom: 16px"
+      />
+
+      <!--
       每指标一张小图（TensorBoard 式）：训练指标 / 评估指标各一组。
       指标随模型而变、可能有十几个，塞进一张图会因为量纲不同（loss 3.0 vs mAP 0.5）
       要开双 Y 轴、可读性很差；每指标独立小图各自 scale，最直观。
     -->
-    <el-card
-      v-for="g in chartGroups"
-      :key="g.title"
-      shadow="never"
-      class="section-card"
-    >
-      <template #header><span class="card-title">{{ g.title }}</span></template>
-      <el-row :gutter="12">
-        <el-col v-for="s in g.items" :key="s.key" :xs="24" :sm="12" :md="8" :lg="6">
-          <el-card shadow="never" class="mini-chart-card">
-            <div class="mini-head">
-              <span class="mini-name" :style="{ color: s.color }">{{ s.label }}</span>
-              <span class="mini-val">{{ latestValues[s.key] ?? "—" }}</span>
+      <el-card v-for="g in chartGroups" :key="g.title" shadow="never" class="section-card">
+        <template #header>
+          <span class="card-title">{{ g.title }}</span>
+        </template>
+        <el-row :gutter="12">
+          <el-col v-for="s in g.items" :key="s.key" :xs="24" :sm="12" :md="8" :lg="6">
+            <el-card shadow="never" class="mini-chart-card">
+              <div class="mini-head">
+                <span class="mini-name" :style="{ color: s.color }">{{ s.label }}</span>
+                <span class="mini-val">{{ latestValues[s.key] ?? "—" }}</span>
+              </div>
+              <MetricMiniChart :points="miniSeries[s.key] || []" :color="s.color" :height="132" />
+            </el-card>
+          </el-col>
+        </el-row>
+      </el-card>
+
+      <el-card v-if="compareTableData.length" shadow="never" class="section-card">
+        <template #header><span class="card-title">指标对比</span></template>
+        <el-table :data="compareTableData" border size="small" style="width: 100%">
+          <el-table-column prop="label" label="指标" width="140" />
+          <el-table-column label="最优值">
+            <template #default="{ row }">
+              <span v-if="row.bestRow && row.getter(row.bestRow) != null" class="mono">
+                {{ row.fmt(row.getter(row.bestRow)) }}
+              </span>
+              <span v-else class="text-muted">—</span>
+              <span v-if="row.bestRow?.epoch" class="text-muted sub-epoch">
+                epoch {{ row.bestRow.epoch }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="最终值">
+            <template #default="{ row }">
+              <span v-if="row.lastRow && row.getter(row.lastRow) != null" class="mono">
+                {{ row.fmt(row.getter(row.lastRow)) }}
+              </span>
+              <span v-else class="text-muted">—</span>
+              <span v-if="row.lastRow?.epoch" class="text-muted sub-epoch">
+                epoch {{ row.lastRow.epoch }}
+              </span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
+
+      <el-card shadow="never" class="section-card">
+        <template #header>
+          <div class="log-header">
+            <span class="card-title">训练日志</span>
+            <div class="log-controls">
+              <span class="log-status" :class="{ connected: wsConnected }">
+                {{ wsConnected ? "已连接" : "未连接" }}
+              </span>
+              <span class="log-line-count">{{ logLineCount }} 行</span>
+              <el-switch
+                v-model="autoScroll"
+                active-text="自动滚动"
+                size="small"
+                style="margin-right: 8px"
+              />
+              <el-button size="small" text icon="Delete" @click="clearLogs">清空</el-button>
             </div>
-            <MetricMiniChart
-              :points="miniSeries[s.key] || []"
-              :color="s.color"
-              :height="132"
-            />
-          </el-card>
-        </el-col>
-      </el-row>
-    </el-card>
-
-    <el-card v-if="compareTableData.length" shadow="never" class="section-card">
-      <template #header><span class="card-title">指标对比</span></template>
-      <el-table :data="compareTableData" border size="small" style="width: 100%">
-        <el-table-column prop="label" label="指标" width="140" />
-        <el-table-column label="最优值">
-          <template #default="{ row }">
-            <span v-if="row.bestRow && row.getter(row.bestRow) != null" class="mono">
-              {{ row.fmt(row.getter(row.bestRow)) }}
-            </span>
-            <span v-else class="text-muted">—</span>
-            <span v-if="row.bestRow?.epoch" class="text-muted sub-epoch">
-              epoch {{ row.bestRow.epoch }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column label="最终值">
-          <template #default="{ row }">
-            <span v-if="row.lastRow && row.getter(row.lastRow) != null" class="mono">
-              {{ row.fmt(row.getter(row.lastRow)) }}
-            </span>
-            <span v-else class="text-muted">—</span>
-            <span v-if="row.lastRow?.epoch" class="text-muted sub-epoch">
-              epoch {{ row.lastRow.epoch }}
-            </span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-card shadow="never" class="section-card">
-      <template #header>
-        <div class="log-header">
-          <span class="card-title">训练日志</span>
-          <div class="log-controls">
-            <span class="log-status" :class="{ connected: wsConnected }">
-              {{ wsConnected ? "已连接" : "未连接" }}
-            </span>
-            <span class="log-line-count">{{ logLineCount }} 行</span>
-            <el-switch
-              v-model="autoScroll"
-              active-text="自动滚动"
-              size="small"
-              style="margin-right: 8px"
-            />
-            <el-button size="small" text icon="Delete" @click="clearLogs">清空</el-button>
           </div>
+        </template>
+        <div ref="logRef" class="log-container">
+          <pre class="log-text">{{ logText || "等待日志..." }}</pre>
         </div>
-      </template>
-      <div ref="logRef" class="log-container">
-        <pre class="log-text">{{ logText || "等待日志..." }}</pre>
-      </div>
-    </el-card>
+      </el-card>
 
-    <el-card
-      v-if="task?.status === 'success' && task?.model_repo_id"
-      shadow="never"
-      class="section-card"
-    >
-      <template #header><span class="card-title">模型输出</span></template>
-      <el-descriptions :column="2" size="small" border>
-        <el-descriptions-item label="模型仓库 ID">
-          <el-tag size="small">{{ task.model_repo_id }}</el-tag>
-        </el-descriptions-item>
-      </el-descriptions>
-      <div style="margin-top: 12px">
-        <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
-        <el-button size="default" @click="handleExport">导出模型</el-button>
-        <el-button size="default" @click="handleEvaluate">评估模型</el-button>
-      </div>
-    </el-card>
-  </div>
+      <el-card
+        v-if="task?.status === 'success' && task?.model_repo_id"
+        shadow="never"
+        class="section-card"
+      >
+        <template #header><span class="card-title">模型输出</span></template>
+        <el-descriptions :column="2" size="small" border>
+          <el-descriptions-item label="模型仓库 ID">
+            <el-tag size="small">{{ task.model_repo_id }}</el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+        <div style="margin-top: 12px">
+          <el-button type="primary" size="default" @click="handleViewModel">查看模型</el-button>
+          <el-button size="default" @click="handleExport">导出模型</el-button>
+          <el-button size="default" @click="handleEvaluate">评估模型</el-button>
+        </div>
+      </el-card>
+    </div>
 
-  <ModelExportDialog
-    v-model:visible="exportDialogVisible"
-    :model-id="task?.model_repo_id || 0"
-    :model-name="task?.name"
-    @done="loadTask"
-  />
+    <ModelExportDialog
+      v-model:visible="exportDialogVisible"
+      :model-id="task?.model_repo_id || 0"
+      :model-name="task?.name"
+      @done="loadTask"
+    />
   </div>
 </template>
 
@@ -298,14 +293,10 @@ import {
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import {
-  ArrowLeft,
-  Clock,
-  TrendCharts,
-  DataBoard,
-  DataAnalysis,
-} from "@element-plus/icons-vue";
+import { ArrowLeft, Clock, TrendCharts, DataBoard, DataAnalysis } from "@element-plus/icons-vue";
 import { TrainAPI } from "@/api/module_train";
+import { Auth } from "@/utils/auth";
+import { streamSSE } from "@/utils/sse";
 import {
   resolveMainMetricSpec,
   buildMetricSpecFromKeys,
@@ -409,12 +400,16 @@ function statusLabel(s: string) {
 
 function frameworkLabel(fw?: string) {
   return (
-    {
-      ultralytics: "Ultralytics",
-      paddlex: "PaddleX",
-      torchkiln: "TorchKiln",
-    } as any
-  )[fw || ""] || fw || "—";
+    (
+      {
+        ultralytics: "Ultralytics",
+        paddlex: "PaddleX",
+        torchkiln: "TorchKiln",
+      } as any
+    )[fw || ""] ||
+    fw ||
+    "—"
+  );
 }
 
 const durationText = computed(() => {
@@ -448,9 +443,34 @@ const dockerCmd = computed(() => {
   return "";
 });
 
+/**
+ * 训练进度（百分比）。
+ *
+ * ⚠️ 只能从 `metrics_log` 的 `epoch / total_epochs` 推算，**不要**去解析日志文本。
+ *
+ * 以前这里是 `yoloMetrics`，而 `yoloMetrics` 由 `parseYoloMetrics` 从原始日志
+ * 正则抠出来：
+ *
+ *     const m = line.match(/\s*(\d+)\/(\d+)\s+/);
+ *     if (m && line.includes("G") && (line.includes("loss") || …))
+ *
+ * `G` 匹配的是 **"GPU" 里那个 G**，`(\d+)/(\d+)` 又是通用模式，于是任何含 "GPU"
+ * 且带小数对的日志行都会被误命中——实测出现过 `epoch=10, total=1`，
+ * 进度条显示 **1000%**。同一个 `yoloMetrics` 还被 loss/cls/dfl 卡片共用，
+ * 日志格式一变这些卡片一起失真。
+ *
+ * 现在后端把进度按 epoch/total_epochs 直接写进 `TrainTask.progress`（列表页读它），
+ * 详情页与它对齐；指标行缺失时退回任务字段。
+ */
 const displayProgress = computed(() => {
-  if (yoloMetrics.epoch > 0 && yoloMetrics.totalEpochs > 0)
-    return Math.round((yoloMetrics.epoch / yoloMetrics.totalEpochs) * 100);
+  const rows = chartLog.value;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const ep = rows[i]?.epoch;
+    const tot = rows[i]?.total_epochs;
+    // `_kind="best"` 的行不带 total_epochs，必须跳过而不是只看最后一行
+    if (typeof ep !== "number" || typeof tot !== "number" || tot <= 0) continue;
+    return Math.max(0, Math.min(100, Math.round((ep / tot) * 100)));
+  }
   return task.value?.progress || 0;
 });
 
@@ -749,9 +769,7 @@ function fmtDecimal(v: any): string {
 }
 
 // 运行中实时值（来自 WS 解析）；否则取最终一轮（last_metrics）
-const liveMetricsActive = computed(
-  () => task.value?.status === "running" && yoloMetrics.epoch > 0
-);
+const liveMetricsActive = computed(() => task.value?.status === "running" && yoloMetrics.epoch > 0);
 
 function liveMetricValue(key: string): any {
   return (yoloMetrics as any)[key];
@@ -1431,12 +1449,14 @@ function stopPoll() {
 //   整表重拉会让整块区域重新渲染 —— 闪烁、丢滚动位置、丢选中态。
 //   SSE 是**局部增量**：新事件只追加到 liveMetricsLog，曲线/卡片各自重算。
 //
+// 为什么用 fetch 而不是原生 EventSource：EventSource 不能自定义请求头，
+// 本项目只认 `Authorization: Bearer`，用它开流恒定 401——指标从未实时到达过。
 // 为什么带 offset：
 //   刷新页面/断网重连时带 lastSeq，服务端先补发缺口再切实时，不丢不重。
-//   EventSource 会自动重连，但**不会**自动带我们自定义的 offset，
-//   所以重连成功后要主动用新的 lastSeq 重新开流。
+//   主动收流后重连要重新计算 offset（EventSource 的自动重连帮不上忙）。
 // ==================================================================
-let metricEs: EventSource | null = null;
+/** 当前流的 AbortController；换流/收流时 abort 掉上一条，避免在途回调串扰。 */
+let metricAbort: AbortController | null = null;
 let metricReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 const metricConnected = ref(false);
 /** 已消费的最大 seq（用于断点续传；-1=从头） */
@@ -1460,9 +1480,10 @@ function stopMetricStream() {
     clearTimeout(metricReconnectTimer);
     metricReconnectTimer = null;
   }
-  if (metricEs) {
-    metricEs.close();
-    metricEs = null;
+  if (metricAbort) {
+    // abort 而非 close：fetch 流只能靠 AbortController 收
+    metricAbort.abort();
+    metricAbort = null;
   }
   metricConnected.value = false;
 }
@@ -1595,26 +1616,15 @@ function startMetricStream(taskId: number) {
   stopMetricStream();
   const base = import.meta.env.VITE_API_BASE || "/api/v1";
   const url = `${base}/train/task/${taskId}/metrics/stream?offset=${lastSeq}`;
-  let es: EventSource;
-  try {
-    es = new EventSource(url, { withCredentials: true });
-  } catch {
-    scheduleMetricReconnect(taskId);
-    return;
-  }
-  metricEs = es;
+  // ⚠️ 这里**必须**用 fetch 而非原生 EventSource：EventSource 无法设置请求头，
+  // 而本项目只认 `Authorization: Bearer`（无 cookie 认证），用它开流恒定 401。
+  // 以前用 EventSource 时指标从未实时到达过，页面显示的全靠下面 pollStatus 轮询。
+  const ctrl = new AbortController();
+  metricAbort = ctrl;
 
-  es.onopen = () => {
-    metricConnected.value = true;
-  };
-  es.onerror = () => {
-    metricConnected.value = false;
-    // EventSource 会自己重连，但不会带 offset；主动关掉后按新 lastSeq 重开
-    es.close();
-    if (metricEs === es) metricEs = null;
-    scheduleMetricReconnect(taskId);
-  };
-  const onData = (e: MessageEvent) => {
+  const onEvent = (e: { event: string; data: string; id?: string }) => {
+    // 只有本流的数据才处理：重连时旧流可能还有在途的回调
+    if (metricAbort !== ctrl) return;
     let ev: any;
     try {
       ev = JSON.parse(e.data);
@@ -1622,7 +1632,7 @@ function startMetricStream(taskId: number) {
       return;
     }
     if (ev && typeof ev.seq === "number") lastSeq = Math.max(lastSeq, ev.seq);
-    if (ev?.type === "end" || ev?.__end__) {
+    if (ev?.type === "end" || ev?._kind === "end" || e.event === "end") {
       // 作业终结：收流并刷新一次任务详情拿最终状态
       stopMetricStream();
       void loadTask();
@@ -1630,9 +1640,28 @@ function startMetricStream(taskId: number) {
     }
     appendMetricRow(metricEventToRow(ev));
   };
-  for (const t of ["step", "eval", "best", "end", "metric"]) {
-    es.addEventListener(t, onData as EventListener);
-  }
+
+  void streamSSE(url, {
+    headers: { Authorization: `Bearer ${Auth.getAccessToken()}` },
+    signal: ctrl.signal,
+    onOpen: () => {
+      if (metricAbort === ctrl) metricConnected.value = true;
+    },
+    onEvent,
+  })
+    .then(() => {
+      // 服务端主动收流（终态作业补一帧 end 后就关）：
+      // 如果没收到过 end，说明是被异常掐断，按断线处理以便重连续传
+      if (metricAbort === ctrl && isRunningStatus(task.value?.status)) {
+        metricConnected.value = false;
+        scheduleMetricReconnect(taskId);
+      }
+    })
+    .catch(() => {
+      if (ctrl.signal.aborted || metricAbort !== ctrl) return; // 主动收流，不算异常
+      metricConnected.value = false;
+      scheduleMetricReconnect(taskId);
+    });
 }
 
 function scheduleMetricReconnect(taskId: number) {
@@ -1718,7 +1747,7 @@ async function handleRetrain() {
     clearLogs();
     liveMetricsLog.value = [];
     rebuildMetricRowIndex();
-    syncChartLog();   // 重新训练后清图表（否则节流快照还留着上一轮的曲线）
+    syncChartLog(); // 重新训练后清图表（否则节流快照还留着上一轮的曲线）
     Object.assign(yoloMetrics, {
       epoch: 0,
       totalEpochs: 0,
@@ -1770,15 +1799,17 @@ function handleExport() {
     return;
   }
   // 先验证模型是否存在
-  TrainAPI.getModelDetail(task.value.model_repo_id).then(res => {
-    if (res.data?.data) {
-      exportDialogVisible.value = true;
-    } else {
+  TrainAPI.getModelDetail(task.value.model_repo_id)
+    .then((res) => {
+      if (res.data?.data) {
+        exportDialogVisible.value = true;
+      } else {
+        ElMessage.error("关联模型已不存在，请重新训练");
+      }
+    })
+    .catch(() => {
       ElMessage.error("关联模型已不存在，请重新训练");
-    }
-  }).catch(() => {
-    ElMessage.error("关联模型已不存在，请重新训练");
-  });
+    });
 }
 
 onMounted(async () => {
@@ -1790,9 +1821,7 @@ onMounted(async () => {
     try {
       const r = await TrainAPI.getTaskLogs(id);
       if (r.data?.data?.logs) {
-        const cleaned = r.data.data.logs
-          .replace(/\r/g, "")
-          .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+        const cleaned = r.data.data.logs.replace(/\r/g, "").replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
         // 历史日志同样走缓冲并只保留末尾 LOG_MAX_LINES 行：整份塞进响应式字符串
         // 会让 <pre> 首屏就渲染一个几十 MB 的文本节点。
         const all = cleaned.split("\n");

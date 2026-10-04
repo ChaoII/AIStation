@@ -259,10 +259,30 @@ let ws: WebSocket | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function tagType(s: string) {
-  return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info";
+  return (
+    (
+      {
+        pending: "info",
+        running: "warning",
+        success: "success",
+        failed: "danger",
+        cancelled: "info",
+      } as any
+    )[s] || "info"
+  );
 }
 function tagLabel(s: string) {
-  return ({ pending: "待开始", running: "评估中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s;
+  return (
+    (
+      {
+        pending: "待开始",
+        running: "评估中",
+        success: "已完成",
+        failed: "失败",
+        cancelled: "已取消",
+      } as any
+    )[s] || s
+  );
 }
 function fmtPct(v: number | undefined) {
   return v != null ? (v * 100).toFixed(1) + "%" : "—";
@@ -378,7 +398,9 @@ const classTableData = computed(() => {
 const durationText = computed(() => {
   if (!evalData.value?.started_at) return "—";
   const start = new Date(evalData.value.started_at).getTime();
-  const end = evalData.value.finished_at ? new Date(evalData.value.finished_at).getTime() : Date.now();
+  const end = evalData.value.finished_at
+    ? new Date(evalData.value.finished_at).getTime()
+    : Date.now();
   const diff = Math.floor((end - start) / 1000);
   if (diff < 60) return `${diff}秒`;
   if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`;
@@ -457,7 +479,9 @@ async function handleStart() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定开始评估任务 #${evalData.value?.id}？`, "提示", { type: "info" });
+    await ElMessageBox.confirm(`确定开始评估任务 #${evalData.value?.id}？`, "提示", {
+      type: "info",
+    });
     await TrainAPI.startEval(evalData.value.id);
     await loadEval();
     connectWs(evalData.value.id);
@@ -531,7 +555,8 @@ async function handleReEval() {
 }
 
 function handleViewModel() {
-  if (evalData.value?.model_repo_id) router.push(`/train/repo?model_id=${evalData.value.model_repo_id}`);
+  if (evalData.value?.model_repo_id)
+    router.push(`/train/repo?model_id=${evalData.value.model_repo_id}`);
   else ElMessage.warning("暂无关联模型");
 }
 
@@ -558,15 +583,17 @@ function handleExport() {
     return;
   }
   // 导出需要版本 id（model_id），仓库 id 不能用于 export 接口
-  TrainAPI.getModelDetail(evalData.value.model_id).then(res => {
-    if (res.data?.data) {
-      exportDialogVisible.value = true;
-    } else {
+  TrainAPI.getModelDetail(evalData.value.model_id)
+    .then((res) => {
+      if (res.data?.data) {
+        exportDialogVisible.value = true;
+      } else {
+        ElMessage.error("关联模型已不存在");
+      }
+    })
+    .catch(() => {
       ElMessage.error("关联模型已不存在");
-    }
-  }).catch(() => {
-    ElMessage.error("关联模型已不存在");
-  });
+    });
 }
 
 onMounted(async () => {

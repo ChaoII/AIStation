@@ -235,7 +235,12 @@
                   :key="`${entity.id}-${index}`"
                   style="display: flex; align-items: center; gap: 8px"
                 >
-                  <el-tag :color="entity.color" effect="dark" closable @close="handleRemoveEntity(index)">
+                  <el-tag
+                    :color="entity.color"
+                    effect="dark"
+                    closable
+                    @close="handleRemoveEntity(index)"
+                  >
                     {{ entity.name }}
                   </el-tag>
                 </div>
@@ -283,7 +288,12 @@
                   :key="`${cls.id}-${index}`"
                   style="display: flex; align-items: center; gap: 8px"
                 >
-                  <el-tag :color="cls.color" effect="dark" closable @close="handleRemoveClass(index)">
+                  <el-tag
+                    :color="cls.color"
+                    effect="dark"
+                    closable
+                    @close="handleRemoveClass(index)"
+                  >
                     {{ cls.name }}
                   </el-tag>
                   <el-switch
@@ -294,9 +304,7 @@
                   />
                 </div>
               </div>
-              <span v-else class="ner-empty">
-                暂无类别，添加后可在标注工作台使用
-              </span>
+              <span v-else class="ner-empty">暂无类别，添加后可在标注工作台使用</span>
             </template>
           </div>
         </el-form-item>
@@ -485,7 +493,7 @@ const contentConfig = reactive<IContentConfig<TaskPageQuery>>({
   },
   deleteConfirm: {
     title: "警告",
-    message: "确认删除该项数据?",
+    message: "确认删除所选数据吗？删除后不可恢复。",
     type: "warning",
   },
 });
@@ -664,11 +672,11 @@ async function handleRemoveEntity(index: number) {
   const entity = entities.value[index];
   if (!entity) return;
   try {
-    await ElMessageBox.confirm(
-      `确认删除实体类型「${entity.name}」？该操作不可恢复。`,
-      "警告",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
-    );
+    await ElMessageBox.confirm(`确认删除实体类型「${entity.name}」？该操作不可恢复。`, "警告", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
   } catch {
     return;
   }
@@ -694,11 +702,11 @@ async function handleRemoveRelation(index: number) {
   const relation = relations.value[index];
   if (!relation) return;
   try {
-    await ElMessageBox.confirm(
-      `确认删除关系类型「${relation.name}」？该操作不可恢复。`,
-      "警告",
-      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
-    );
+    await ElMessageBox.confirm(`确认删除关系类型「${relation.name}」？该操作不可恢复。`, "警告", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
   } catch {
     return;
   }

@@ -84,7 +84,13 @@
                   :type="scope.row.framework === 'ultralytics' ? 'success' : 'primary'"
                   size="small"
                 >
-                  {{ scope.row.framework === "ultralytics" ? "YOLO" : scope.row.framework === "paddlex" ? "PaddleX" : "TorchKiln" }}
+                  {{
+                    scope.row.framework === "ultralytics"
+                      ? "YOLO"
+                      : scope.row.framework === "paddlex"
+                        ? "PaddleX"
+                        : "TorchKiln"
+                  }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -97,8 +103,10 @@
               show-overflow-tooltip
             >
               <template #default="scope">
-                <span v-if="scope.row.api_url" style="font-family:monospace;font-size:12px">{{ scope.row.api_url }}</span>
-                <span v-else style="color:var(--el-text-color-secondary)">--</span>
+                <span v-if="scope.row.api_url" style="font-family: monospace; font-size: 12px">
+                  {{ scope.row.api_url }}
+                </span>
+                <span v-else style="color: var(--el-text-color-secondary)">--</span>
               </template>
             </el-table-column>
             <el-table-column
@@ -219,13 +227,34 @@
     <EnhancedDialog v-model="showCreateDialog" title="新建部署" append-to-body width="560px">
       <el-form label-width="120px">
         <el-form-item label="选择模型" required>
-          <el-select v-model="createForm.modelId" filterable style="width:100%" placeholder="选择模型版本" @change="onDeployModelChange">
-            <el-option v-for="m in models" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
+          <el-select
+            v-model="createForm.modelId"
+            filterable
+            style="width: 100%"
+            placeholder="选择模型版本"
+            @change="onDeployModelChange"
+          >
+            <el-option
+              v-for="m in models"
+              :key="m.id"
+              :label="`${m.name} v${m.version}`"
+              :value="m.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item v-if="needsRecModel" label="识别模型" required>
-          <el-select v-model="createForm.recModelId" filterable style="width:100%" placeholder="选择识别(rec)模型版本">
-            <el-option v-for="m in recModels" :key="m.id" :label="`${m.name} v${m.version}`" :value="m.id" />
+          <el-select
+            v-model="createForm.recModelId"
+            filterable
+            style="width: 100%"
+            placeholder="选择识别(rec)模型版本"
+          >
+            <el-option
+              v-for="m in recModels"
+              :key="m.id"
+              :label="`${m.name} v${m.version}`"
+              :value="m.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="部署名称">
@@ -235,12 +264,28 @@
           <el-input v-model="createForm.device" placeholder="如: 0 或 cpu" />
         </el-form-item>
         <el-form-item label="端口">
-          <el-input-number v-model="createForm.hostPort" :min="9001" :max="9999" placeholder="留空自动分配" />
+          <el-input-number
+            v-model="createForm.hostPort"
+            :min="9001"
+            :max="9999"
+            placeholder="留空自动分配"
+          />
         </el-form-item>
         <el-divider>推理参数</el-divider>
-        <el-form-item label="conf"><el-input-number v-model="createForm.hyperparams.conf" :min="0.01" :max="1" :step="0.05" /></el-form-item>
-        <el-form-item label="iou"><el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" /></el-form-item>
-        <el-form-item label="imgsz"><el-input-number v-model="createForm.hyperparams.imgsz" :min="32" :step="32" /></el-form-item>
+        <el-form-item label="conf">
+          <el-input-number
+            v-model="createForm.hyperparams.conf"
+            :min="0.01"
+            :max="1"
+            :step="0.05"
+          />
+        </el-form-item>
+        <el-form-item label="iou">
+          <el-input-number v-model="createForm.hyperparams.iou" :min="0.1" :max="1" :step="0.05" />
+        </el-form-item>
+        <el-form-item label="imgsz">
+          <el-input-number v-model="createForm.hyperparams.imgsz" :min="32" :step="32" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showCreateDialog = false">取消</el-button>
@@ -249,14 +294,22 @@
     </EnhancedDialog>
 
     <el-dialog v-model="showKeyDialog" title="部署成功" width="480px" :close-on-click-modal="false">
-      <el-alert type="success" title="API Key 已生成" :description="'API URL: ' + (keyInfo.apiUrl || '待启动')" show-icon style="margin-bottom:16px" />
-      <div style="margin-bottom:8px;font-weight:600">API Key（请立即复制，关闭后不再显示）：</div>
-      <el-input v-model="keyInfo.apiKey" readonly style="font-family:monospace">
+      <el-alert
+        type="success"
+        title="API Key 已生成"
+        :description="'API URL: ' + (keyInfo.apiUrl || '待启动')"
+        show-icon
+        style="margin-bottom: 16px"
+      />
+      <div style="margin-bottom: 8px; font-weight: 600">
+        API Key（请立即复制，关闭后不再显示）：
+      </div>
+      <el-input v-model="keyInfo.apiKey" readonly style="font-family: monospace">
         <template #append>
           <el-button @click="copyText(keyInfo.apiKey)">复制</el-button>
         </template>
       </el-input>
-      <div style="margin-top:12px;font-size:12px;color:#909399">
+      <div style="margin-top: 12px; font-size: 12px; color: #909399">
         <el-icon><WarningFilled /></el-icon>
         密钥仅显示一次，关闭后可在管理页面重新生成。
       </div>
@@ -283,7 +336,11 @@ import CrudToolbarLeft from "@/components/CURD/CrudToolbarLeft.vue";
 import CrudToolbarRight from "@/components/CURD/CrudToolbarRight.vue";
 import { TrainAPI } from "@/api/module_train";
 
-interface TablePageQuery { page_no: number; page_size: number; [key: string]: any }
+interface TablePageQuery {
+  page_no: number;
+  page_size: number;
+  [key: string]: any;
+}
 
 const router = useRouter();
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
@@ -315,10 +372,30 @@ const needsRecModel = computed(() => ["paddlex"].includes(selectedDeployFramewor
 const recModels = computed(() => models.value.filter((m: any) => m.framework === "paddlex"));
 
 function statusTag(s: string) {
-  return ({ pending: "info", deploying: "warning", running: "success", stopped: "info", failed: "danger" } as any)[s] || "info";
+  return (
+    (
+      {
+        pending: "info",
+        deploying: "warning",
+        running: "success",
+        stopped: "info",
+        failed: "danger",
+      } as any
+    )[s] || "info"
+  );
 }
 function statusLabel(s: string) {
-  return ({ pending: "待部署", deploying: "部署中", running: "运行中", stopped: "已停止", failed: "失败" } as any)[s] || s;
+  return (
+    (
+      {
+        pending: "待部署",
+        deploying: "部署中",
+        running: "运行中",
+        stopped: "已停止",
+        failed: "失败",
+      } as any
+    )[s] || s
+  );
 }
 
 const searchConfig = reactive<ISearchConfig>({
@@ -348,9 +425,7 @@ const searchConfig = reactive<ISearchConfig>({
   ],
 });
 
-const contentCols = reactive<
-  Array<{ prop?: string; label?: string; show?: boolean }>
->([
+const contentCols = reactive<Array<{ prop?: string; label?: string; show?: boolean }>>([
   { prop: "selection", label: "选择框", show: true },
   { prop: "index", label: "序号", show: true },
   { prop: "name", label: "部署名称", show: true },
@@ -387,7 +462,8 @@ async function loadModels() {
   try {
     models.value = await cachedOptions(
       "train:models",
-      async () => (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+      async () =>
+        (await TrainAPI.getModelList({ page_no: 1, page_size: 100 })).data?.data?.items || []
     );
   } catch {
     modelsLoaded = false;
@@ -398,9 +474,13 @@ watch(showCreateDialog, (v) => {
 });
 
 async function handleCreate() {
-  if (!createForm.modelId) { ElMessage.warning("请选择模型"); return; }
+  if (!createForm.modelId) {
+    ElMessage.warning("请选择模型");
+    return;
+  }
   if (needsRecModel.value && !createForm.recModelId) {
-    ElMessage.warning("OCR 部署需要选择识别(rec)模型"); return;
+    ElMessage.warning("OCR 部署需要选择识别(rec)模型");
+    return;
   }
   creating.value = true;
   try {
@@ -424,7 +504,9 @@ async function handleCreate() {
     // 自动启动部署（否则需手动点"部署"）
     if (d?.id) {
       TrainAPI.startDeploy(d.id)
-        .then(() => { keyInfo.apiUrl = keyInfo.apiUrl || `http://127.0.0.1:${d.host_port || ""}`; })
+        .then(() => {
+          keyInfo.apiUrl = keyInfo.apiUrl || `http://127.0.0.1:${d.host_port || ""}`;
+        })
         .catch(() => {})
         .finally(() => refreshList());
     }
@@ -435,7 +517,11 @@ async function handleCreate() {
     createForm.hostPort = null;
     createForm.hyperparams = { conf: 0.25, iou: 0.45, imgsz: 640 };
     refreshList();
-  } catch { /* */ } finally { creating.value = false; }
+  } catch {
+    /* */
+  } finally {
+    creating.value = false;
+  }
 }
 
 function onKeyDialogClose() {
@@ -461,7 +547,9 @@ async function handleStop(id: number) {
     );
     await TrainAPI.stopDeploy(id);
     refreshList();
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 }
 
 async function handleRenewKey(id: number) {
@@ -473,7 +561,9 @@ async function handleRenewKey(id: number) {
       showKeyDialog.value = true;
     }
     refreshList();
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 }
 
 function copyApiUrl(row: any) {
@@ -481,7 +571,10 @@ function copyApiUrl(row: any) {
 }
 
 function copyText(t: string) {
-  navigator.clipboard.writeText(t).then(() => ElMessage.success("已复制")).catch(() => ElMessage.warning("复制失败，请手动复制"));
+  navigator.clipboard
+    .writeText(t)
+    .then(() => ElMessage.success("已复制"))
+    .catch(() => ElMessage.warning("复制失败，请手动复制"));
 }
 
 async function handleDelete(ids: number[]) {
@@ -493,7 +586,9 @@ async function handleDelete(ids: number[]) {
     );
     await TrainAPI.deleteDeploy(ids);
     refreshList();
-  } catch { /* */ }
+  } catch {
+    /* */
+  }
 }
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;

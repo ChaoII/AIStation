@@ -16,7 +16,9 @@
           <template #header><span class="card-title">预测信息</span></template>
           <el-descriptions :column="1" size="small" border>
             <el-descriptions-item label="模型版本 ID">{{ predict?.model_id }}</el-descriptions-item>
-            <el-descriptions-item label="模型仓库 ID">{{ predict?.model_repo_id }}</el-descriptions-item>
+            <el-descriptions-item label="模型仓库 ID">
+              {{ predict?.model_repo_id }}
+            </el-descriptions-item>
             <el-descriptions-item label="图片来源">
               {{ predict?.source_type === "dataset" ? "数据集" : "上传图片" }}
             </el-descriptions-item>
@@ -72,7 +74,14 @@
           <el-button type="danger" size="default" @click="handleStop">停止预测</el-button>
         </template>
         <template v-else-if="predict?.status === 'success'">
-          <el-button v-if="predict?.result_zip_path" type="primary" size="default" @click="downloadZip(predict.result_zip_path)">下载结果</el-button>
+          <el-button
+            v-if="predict?.result_zip_path"
+            type="primary"
+            size="default"
+            @click="downloadZip(predict.result_zip_path)"
+          >
+            下载结果
+          </el-button>
           <el-button type="danger" size="default" @click="handleDelete">删除</el-button>
         </template>
         <template v-else-if="predict?.status === 'failed'">
@@ -100,7 +109,11 @@
           </div>
         </el-col>
       </el-row>
-      <el-empty v-if="!predict.result_images || predict.result_images.length === 0" :image-size="40" description="暂无预测结果" />
+      <el-empty
+        v-if="!predict.result_images || predict.result_images.length === 0"
+        :image-size="40"
+        description="暂无预测结果"
+      />
     </el-card>
 
     <el-alert
@@ -159,16 +172,38 @@ let ws: WebSocket | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 function tagType(s: string) {
-  return ({ pending: "info", running: "warning", success: "success", failed: "danger", cancelled: "info" } as any)[s] || "info";
+  return (
+    (
+      {
+        pending: "info",
+        running: "warning",
+        success: "success",
+        failed: "danger",
+        cancelled: "info",
+      } as any
+    )[s] || "info"
+  );
 }
 function tagLabel(s: string) {
-  return ({ pending: "待开始", running: "预测中", success: "已完成", failed: "失败", cancelled: "已取消" } as any)[s] || s;
+  return (
+    (
+      {
+        pending: "待开始",
+        running: "预测中",
+        success: "已完成",
+        failed: "失败",
+        cancelled: "已取消",
+      } as any
+    )[s] || s
+  );
 }
 
 const durationText = computed(() => {
   if (!predict.value?.started_at) return "—";
   const start = new Date(predict.value.started_at).getTime();
-  const end = predict.value.finished_at ? new Date(predict.value.finished_at).getTime() : Date.now();
+  const end = predict.value.finished_at
+    ? new Date(predict.value.finished_at).getTime()
+    : Date.now();
   const diff = Math.floor((end - start) / 1000);
   if (diff < 60) return `${diff}秒`;
   if (diff < 3600) return `${Math.floor(diff / 60)}分${diff % 60}秒`;
@@ -244,7 +279,9 @@ async function handleStart() {
   if (submitting.value) return;
   submitting.value = true;
   try {
-    await ElMessageBox.confirm(`确定开始预测任务 #${predict.value?.id}？`, "提示", { type: "info" });
+    await ElMessageBox.confirm(`确定开始预测任务 #${predict.value?.id}？`, "提示", {
+      type: "info",
+    });
     await TrainAPI.startPredict(predict.value.id);
     await loadPredict();
     connectWs(predict.value.id);

@@ -413,7 +413,7 @@ const contentConfig = reactive<IContentConfig<PositionPageQuery>>({
   },
   deleteConfirm: {
     title: "警告",
-    message: "确认删除该项数据?",
+    message: "确认删除所选数据吗？删除后不可恢复。",
     type: "warning",
   },
 });

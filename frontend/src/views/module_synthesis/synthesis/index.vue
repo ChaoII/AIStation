@@ -4,7 +4,9 @@
       <template #header>
         <div class="card-header">
           <span>车牌数据合成</span>
-          <span class="card-sub">生成国内各类车牌（蓝/新能源/黄/双层/黑/教练/警用），带透视、旋转、噪点、污渍、遮挡、模糊等扰动，并产出检测框标注</span>
+          <span class="card-sub">
+            生成国内各类车牌（蓝/新能源/黄/双层/黑/教练/警用），带透视、旋转、噪点、污渍、遮挡、模糊等扰动，并产出检测框标注
+          </span>
         </div>
       </template>
 
@@ -19,7 +21,12 @@
           </el-col>
           <el-col :xs="24" :md="8">
             <el-form-item label="目标数据集">
-              <el-select v-model="form.dataset_id" placeholder="写入的数据集" clearable style="width: 100%">
+              <el-select
+                v-model="form.dataset_id"
+                placeholder="写入的数据集"
+                clearable
+                style="width: 100%"
+              >
                 <el-option v-for="d in datasetOptions" :key="d.id" :label="d.name" :value="d.id" />
               </el-select>
             </el-form-item>
@@ -31,7 +38,12 @@
           </el-col>
           <el-col :xs="12" :md="4">
             <el-form-item label="随机种子">
-              <el-input-number v-model="form.seed" :min="0" :max="999999" controls-position="right" />
+              <el-input-number
+                v-model="form.seed"
+                :min="0"
+                :max="999999"
+                controls-position="right"
+              />
             </el-form-item>
           </el-col>
         </el-row>
@@ -46,7 +58,14 @@
                       <el-switch v-model="form.disturbances[d.key]" />
                     </span>
                     <span class="disturb-name">{{ d.label }}</span>
-                    <el-tag v-if="form.disturbances[d.key] === false" size="small" type="info" effect="plain">已关闭</el-tag>
+                    <el-tag
+                      v-if="form.disturbances[d.key] === false"
+                      size="small"
+                      type="info"
+                      effect="plain"
+                    >
+                      已关闭
+                    </el-tag>
                     <span class="disturb-sum">{{ disturbSummary(d) }}</span>
                   </span>
                 </template>
@@ -54,9 +73,25 @@
                   <el-col v-for="pm in d.params" :key="pm.key" :xs="24" :md="12">
                     <div class="param-row">
                       <span class="param-label">{{ pm.label }}</span>
-                      <el-input-number v-model="form.params[pm.key][0]" :min="pm.min" :max="pm.max" :step="pm.step" :precision="precisionOf(pm.step)" controls-position="right" class="param-num" />
+                      <el-input-number
+                        v-model="form.params[pm.key][0]"
+                        :min="pm.min"
+                        :max="pm.max"
+                        :step="pm.step"
+                        :precision="precisionOf(pm.step)"
+                        controls-position="right"
+                        class="param-num"
+                      />
                       <span class="param-tilde">~</span>
-                      <el-input-number v-model="form.params[pm.key][1]" :min="pm.min" :max="pm.max" :step="pm.step" :precision="precisionOf(pm.step)" controls-position="right" class="param-num" />
+                      <el-input-number
+                        v-model="form.params[pm.key][1]"
+                        :min="pm.min"
+                        :max="pm.max"
+                        :step="pm.step"
+                        :precision="precisionOf(pm.step)"
+                        controls-position="right"
+                        class="param-num"
+                      />
                     </div>
                   </el-col>
                 </el-row>
@@ -64,14 +99,21 @@
             </el-collapse>
             <div style="margin-top: 6px">
               <el-button size="small" link type="primary" @click="resetParams">恢复默认</el-button>
-              <el-button size="small" link @click="toggleAll">{{ activeDisturbs.length ? "收起全部" : "展开全部" }}</el-button>
+              <el-button size="small" link @click="toggleAll">
+                {{ activeDisturbs.length ? "收起全部" : "展开全部" }}
+              </el-button>
               <span class="disturb-hint">关闭的扰动不参与生成；参数为随机区间 [下限 ~ 上限]</span>
             </div>
           </div>
         </el-form-item>
 
         <el-form-item label="输出">
-          <el-switch v-model="form.upload" active-text="写入数据集" inactive-text="仅预览" style="margin-right: 20px" />
+          <el-switch
+            v-model="form.upload"
+            active-text="写入数据集"
+            inactive-text="仅预览"
+            style="margin-right: 20px"
+          />
           <el-switch v-model="form.with_annotation" active-text="写标注" inactive-text="不写标注" />
         </el-form-item>
 
@@ -90,7 +132,9 @@
       <template #header>
         <div class="card-header">
           <span>合成结果（{{ items.length }} 张）</span>
-          <span class="card-sub">{{ uploaded ? "已写入数据集" : "未写入（仅预览）" }} · 任务 #{{ lastJobId }}</span>
+          <span class="card-sub">
+            {{ uploaded ? "已写入数据集" : "未写入（仅预览）" }} · 任务 #{{ lastJobId }}
+          </span>
         </div>
       </template>
       <el-row :gutter="12">
@@ -101,7 +145,10 @@
               <div class="result-text">
                 <el-tag size="small" effect="plain">{{ it.text || it.label }}</el-tag>
               </div>
-              <div class="result-sub">bbox ({{ fmt(it.bbox.x1) }}, {{ fmt(it.bbox.y1) }}, {{ fmt(it.bbox.x2) }}, {{ fmt(it.bbox.y2) }})</div>
+              <div class="result-sub">
+                bbox ({{ fmt(it.bbox.x1) }}, {{ fmt(it.bbox.y1) }}, {{ fmt(it.bbox.x2) }},
+                {{ fmt(it.bbox.y2) }})
+              </div>
               <div v-if="it.image_id" class="result-sub">已入库 #{{ it.image_id }}</div>
             </div>
           </div>
@@ -127,7 +174,18 @@
         <el-table-column prop="total" label="数量" width="70" />
         <el-table-column prop="status" label="状态" width="90">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.status === 'completed' ? 'success' : row.status === 'running' ? 'warning' : row.status === 'failed' ? 'danger' : 'info'">
+            <el-tag
+              size="small"
+              :type="
+                row.status === 'completed'
+                  ? 'success'
+                  : row.status === 'running'
+                    ? 'warning'
+                    : row.status === 'failed'
+                      ? 'danger'
+                      : 'info'
+              "
+            >
               {{ statusText(row.status) }}
             </el-tag>
           </template>
@@ -142,11 +200,28 @@
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { MagicStick, Refresh } from "@element-plus/icons-vue";
-import { SynthesisAPI, type GeneratedPlateItem, type PlateTypeOption, type SynthesisJob } from "@/api/module_synthesis/synthesis";
+import {
+  SynthesisAPI,
+  type GeneratedPlateItem,
+  type PlateTypeOption,
+  type SynthesisJob,
+} from "@/api/module_synthesis/synthesis";
 import { getDatasetOptions } from "@/api/module_synthesis/dataset";
 
-interface DisturbParam { key: string; label: string; lo: number; hi: number; min: number; max: number; step: number }
-interface DisturbDef { key: string; label: string; params: DisturbParam[] }
+interface DisturbParam {
+  key: string;
+  label: string;
+  lo: number;
+  hi: number;
+  min: number;
+  max: number;
+  step: number;
+}
+interface DisturbDef {
+  key: string;
+  label: string;
+  params: DisturbParam[];
+}
 
 const disturbanceDefs = ref<DisturbDef[]>([]);
 
@@ -213,7 +288,14 @@ function fmt(v?: number) {
   return v == null ? "-" : v.toFixed(2);
 }
 function statusText(s: string) {
-  return ({ completed: "已完成", running: "进行中", failed: "失败", pending: "待生成" } as Record<string, string>)[s] || s;
+  return (
+    (
+      { completed: "已完成", running: "进行中", failed: "失败", pending: "待生成" } as Record<
+        string,
+        string
+      >
+    )[s] || s
+  );
 }
 function plateTypeLabel(key: string) {
   return plateTypes.value.find((t) => t.key === key)?.label || key;
@@ -245,7 +327,10 @@ async function loadJobs() {
   try {
     const res = await SynthesisAPI.getJobs();
     const list = res.data?.data?.items ?? [];
-    jobs.value = list.map((j) => ({ ...j, plate_type_label: plateTypeLabel(j.params?.plate_type) }));
+    jobs.value = list.map((j) => ({
+      ...j,
+      plate_type_label: plateTypeLabel(j.params?.plate_type),
+    }));
   } catch {
     jobs.value = [];
   }

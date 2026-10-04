@@ -2,204 +2,204 @@
   <div class="app-container">
     <el-tabs v-model="activeTab" type="border-card" class="train-task-tabs">
       <el-tab-pane label="训练任务" name="task">
-    <PageSearch
-      ref="searchRef"
-      :search-config="searchConfig"
-      @query-click="handleQueryClick"
-      @reset-click="handleResetClick"
-    />
-
-    <PageContent ref="contentRef" :content-config="contentConfig">
-      <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
-        <CrudToolbarLeft
-          :remove-ids="removeIds"
-          :perm-create="['module_train:task:create']"
-          @add="handleOpenDialog('create')"
+        <PageSearch
+          ref="searchRef"
+          :search-config="searchConfig"
+          @query-click="handleQueryClick"
+          @reset-click="handleResetClick"
         />
-        <div class="data-table__toolbar--right">
-          <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
-        </div>
-      </template>
 
-      <template #table="{ data, loading, tableRef, onSelectionChange, pagination }">
-        <div class="data-table__content">
-          <el-table
-            :ref="tableRef as any"
-            v-loading="loading"
-            row-key="id"
-            :data="data"
-            height="100%"
-            border
-            stripe
-            @selection-change="onSelectionChange"
-          >
-            <template #empty>
-              <el-empty :image-size="80" description="暂无数据" />
-            </template>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'selection')?.show"
-              type="selection"
-              width="55"
-              align="center"
+        <PageContent ref="contentRef" :content-config="contentConfig">
+          <template #toolbar="{ toolbarRight, onToolbar, removeIds, cols }">
+            <CrudToolbarLeft
+              :remove-ids="removeIds"
+              :perm-create="['module_train:task:create']"
+              @add="handleOpenDialog('create')"
             />
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'index')?.show"
-              fixed
-              label="序号"
-              width="60"
-            >
-              <template #default="scope">
-                {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'name')?.show"
-              key="name"
-              label="任务名称"
-              prop="name"
-              min-width="160"
-              show-overflow-tooltip
-            />
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'framework')?.show"
-              key="framework"
-              label="框架"
-              prop="framework"
-              width="100"
-            >
-              <template #default="scope">
-                <el-tag
-                  :type="
-                    scope.row.framework === 'ultralytics'
-                      ? 'success'
-                      : scope.row.framework === 'torchkiln'
-                        ? 'warning'
-                        : 'primary'
-                  "
-                  size="small"
-                >
-                  {{ frameworkLabel(scope.row.framework) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'dataset_id')?.show"
-              key="dataset_id"
-              label="数据集"
-              min-width="140"
-              show-overflow-tooltip
-            >
-              <template #default="scope">
-                {{ scope.row.dataset_name || `#${scope.row.dataset_id}` }}
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'status')?.show"
-              key="status"
-              label="状态"
-              prop="status"
-              width="110"
-              align="center"
-            >
-              <template #default="scope">
-                <el-tag :type="statusTag(scope.row.status)" size="small">
-                  {{ statusLabel(scope.row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'progress')?.show"
-              key="progress"
-              label="进度"
-              prop="progress"
-              width="180"
-            >
-              <template #default="scope">
-                <el-progress
-                  :percentage="scope.row.progress || 0"
-                  :stroke-width="14"
-                  :text-inside="true"
-                  :status="
-                    scope.row.status === 'failed'
-                      ? 'exception'
-                      : scope.row.status === 'success'
-                        ? 'success'
-                        : undefined
-                  "
+            <div class="data-table__toolbar--right">
+              <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
+            </div>
+          </template>
+
+          <template #table="{ data, loading, tableRef, onSelectionChange, pagination }">
+            <div class="data-table__content">
+              <el-table
+                :ref="tableRef as any"
+                v-loading="loading"
+                row-key="id"
+                :data="data"
+                height="100%"
+                border
+                stripe
+                @selection-change="onSelectionChange"
+              >
+                <template #empty>
+                  <el-empty :image-size="80" description="暂无数据" />
+                </template>
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'selection')?.show"
+                  type="selection"
+                  width="55"
+                  align="center"
                 />
-              </template>
-            </el-table-column>
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
-              key="created_time"
-              label="创建时间"
-              prop="created_time"
-              min-width="170"
-            />
-            <el-table-column
-              v-if="contentCols.find((col) => col.prop === 'operation')?.show"
-              fixed="right"
-              label="操作"
-              align="center"
-              min-width="220"
-            >
-              <template #default="scope">
-                <el-button
-                  v-if="scope.row.status === 'pending'"
-                  v-hasPerm="['module_train:task:update']"
-                  size="small"
-                  type="primary"
-                  link
-                  icon="VideoPlay"
-                  @click="handleStart(scope.row)"
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'index')?.show"
+                  fixed
+                  label="序号"
+                  width="60"
                 >
-                  开始训练
-                </el-button>
-                <el-button
-                  v-if="scope.row.status === 'running'"
-                  v-hasPerm="['module_train:task:update']"
-                  size="small"
-                  type="danger"
-                  link
-                  icon="VideoPause"
-                  @click="handleStop(scope.row.id)"
+                  <template #default="scope">
+                    {{ (pagination.currentPage - 1) * pagination.pageSize + scope.$index + 1 }}
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'name')?.show"
+                  key="name"
+                  label="任务名称"
+                  prop="name"
+                  min-width="160"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'framework')?.show"
+                  key="framework"
+                  label="框架"
+                  prop="framework"
+                  width="100"
                 >
-                  停止
-                </el-button>
-                <el-button
-                  v-hasPerm="['module_train:task:query']"
-                  size="small"
-                  link
-                  icon="Search"
-                  @click="router.push('/train/task/' + scope.row.id)"
+                  <template #default="scope">
+                    <el-tag
+                      :type="
+                        scope.row.framework === 'ultralytics'
+                          ? 'success'
+                          : scope.row.framework === 'torchkiln'
+                            ? 'warning'
+                            : 'primary'
+                      "
+                      size="small"
+                    >
+                      {{ frameworkLabel(scope.row.framework) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'dataset_id')?.show"
+                  key="dataset_id"
+                  label="数据集"
+                  min-width="140"
+                  show-overflow-tooltip
                 >
-                  详情
-                </el-button>
-                <el-popconfirm
-                  title="确定删除该任务？"
-                  confirm-button-text="删除"
-                  cancel-button-text="取消"
+                  <template #default="scope">
+                    {{ scope.row.dataset_name || `#${scope.row.dataset_id}` }}
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'status')?.show"
+                  key="status"
+                  label="状态"
+                  prop="status"
+                  width="110"
+                  align="center"
+                >
+                  <template #default="scope">
+                    <el-tag :type="statusTag(scope.row.status)" size="small">
+                      {{ statusLabel(scope.row.status) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'progress')?.show"
+                  key="progress"
+                  label="进度"
+                  prop="progress"
                   width="180"
-                  @confirm="handleDelete(scope.row.id)"
                 >
-                  <template #reference>
+                  <template #default="scope">
+                    <el-progress
+                      :percentage="scope.row.progress || 0"
+                      :stroke-width="14"
+                      :text-inside="true"
+                      :status="
+                        scope.row.status === 'failed'
+                          ? 'exception'
+                          : scope.row.status === 'success'
+                            ? 'success'
+                            : undefined
+                      "
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'created_time')?.show"
+                  key="created_time"
+                  label="创建时间"
+                  prop="created_time"
+                  min-width="170"
+                />
+                <el-table-column
+                  v-if="contentCols.find((col) => col.prop === 'operation')?.show"
+                  fixed="right"
+                  label="操作"
+                  align="center"
+                  min-width="220"
+                >
+                  <template #default="scope">
                     <el-button
-                      v-hasPerm="['module_train:task:delete']"
+                      v-if="scope.row.status === 'pending'"
+                      v-hasPerm="['module_train:task:update']"
+                      size="small"
+                      type="primary"
+                      link
+                      icon="VideoPlay"
+                      @click="handleStart(scope.row)"
+                    >
+                      开始训练
+                    </el-button>
+                    <el-button
+                      v-if="scope.row.status === 'running'"
+                      v-hasPerm="['module_train:task:update']"
                       size="small"
                       type="danger"
                       link
-                      icon="Delete"
+                      icon="VideoPause"
+                      @click="handleStop(scope.row.id)"
                     >
-                      删除
+                      停止
                     </el-button>
+                    <el-button
+                      v-hasPerm="['module_train:task:query']"
+                      size="small"
+                      link
+                      icon="Search"
+                      @click="router.push('/train/task/' + scope.row.id)"
+                    >
+                      详情
+                    </el-button>
+                    <el-popconfirm
+                      title="确定删除该任务？"
+                      confirm-button-text="删除"
+                      cancel-button-text="取消"
+                      width="180"
+                      @confirm="handleDelete(scope.row.id)"
+                    >
+                      <template #reference>
+                        <el-button
+                          v-hasPerm="['module_train:task:delete']"
+                          size="small"
+                          type="danger"
+                          link
+                          icon="Delete"
+                        >
+                          删除
+                        </el-button>
+                      </template>
+                    </el-popconfirm>
                   </template>
-                </el-popconfirm>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </template>
-    </PageContent>
+                </el-table-column>
+              </el-table>
+            </div>
+          </template>
+        </PageContent>
       </el-tab-pane>
       <el-tab-pane label="定时训练" name="schedule" lazy>
         <SchedulePanel />
@@ -266,8 +266,7 @@
           </el-select>
           <div
             v-if="
-              formData.framework === 'torchkiln' &&
-              annoTasksForFramework.length < annoTasks.length
+              formData.framework === 'torchkiln' && annoTasksForFramework.length < annoTasks.length
             "
             class="form-tip"
           >
@@ -317,11 +316,7 @@
               placeholder="请选择 TorchKiln 模型"
               @change="onTkModelChange"
             >
-              <el-option-group
-                v-for="g in tkModelGroups"
-                :key="g.label"
-                :label="g.label"
-              >
+              <el-option-group v-for="g in tkModelGroups" :key="g.label" :label="g.label">
                 <el-option
                   v-for="m in g.items"
                   :key="m.model_name"
@@ -329,7 +324,9 @@
                   :value="m.model_name"
                 >
                   <span>{{ m.model_name }}</span>
-                  <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">
+                  <span
+                    style="float: right; color: var(--el-text-color-secondary); font-size: 12px"
+                  >
                     {{ m.task }} · {{ m.main_indicator || "—" }}
                   </span>
                 </el-option>
@@ -375,10 +372,7 @@
                     style="margin-bottom: 12px"
                   >
                     <el-form-item :label="p.label" :title="p.key">
-                      <el-switch
-                        v-if="p.widget === 'switch'"
-                        v-model="tkParams[p.key]"
-                      />
+                      <el-switch v-if="p.widget === 'switch'" v-model="tkParams[p.key]" />
                       <el-slider
                         v-else-if="p.widget === 'slider'"
                         v-model="tkParams[p.key]"
@@ -578,9 +572,7 @@ const TK_SUPPORTED_TASK_TYPES = [
 /** 按当前框架过滤标注任务下拉：选 TorchKiln 时只给支持的任务类型。 */
 const annoTasksForFramework = computed<any[]>(() => {
   if (formData.framework !== "torchkiln") return annoTasks.value;
-  return annoTasks.value.filter((t: any) =>
-    TK_SUPPORTED_TASK_TYPES.includes(String(t.task_type))
-  );
+  return annoTasks.value.filter((t: any) => TK_SUPPORTED_TASK_TYPES.includes(String(t.task_type)));
 });
 
 const modelOptions = computed(() => {
@@ -612,7 +604,8 @@ async function loadDatasets() {
   try {
     datasets.value = await cachedOptions(
       "annotation:datasets",
-      async () => (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
+      async () =>
+        (await AnnotationAPI.getDatasetList({ page_no: 1, page_size: 100 })).data?.data?.items || []
     );
   } catch {
     datasetsLoaded = false;
@@ -833,7 +826,6 @@ async function onTkModelChange(name: string) {
   }
 }
 
-
 const tempDir = ref("${TEMP_DIR}");
 
 TrainAPI.getTempDir()
@@ -889,12 +881,16 @@ function statusLabel(s: string) {
 
 function frameworkLabel(fw?: string) {
   return (
-    {
-      ultralytics: "Ultralytics",
-      paddlex: "PaddleX",
-      torchkiln: "TorchKiln",
-    } as any
-  )[fw || ""] || fw || "—";
+    (
+      {
+        ultralytics: "Ultralytics",
+        paddlex: "PaddleX",
+        torchkiln: "TorchKiln",
+      } as any
+    )[fw || ""] ||
+    fw ||
+    "—"
+  );
 }
 
 function onFrameworkChange(fw: string) {
