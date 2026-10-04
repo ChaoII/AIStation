@@ -335,6 +335,28 @@ def validate_sql(sql: str, allowed_tables: set[str]) -> str:
         base = tbl.split(".")[-1].strip().strip('"')
         if allowed_tables and base not in allowed_tables:
             raise CustomException(msg=f"表「{base}」不在可查询白名单内")
+    # AST 级校验（sqlglot）：确保是合法且仅 SELECT 的单条语句
+    try:
+        import sqlglot
+        from sqlglot import exp as sql_exp
+
+        parsed = sqlglot.parse_one(removed_semis, read="postgres")
+        if parsed is None:
+            raise CustomException(msg="生成的 SQL 无法解析")
+        # 任意位置出现写/DML 节点一律拒绝（容错过滤不存在的节点类）
+        dml_nodes = [
+            getattr(sql_exp, n, None)
+            for n in ("Insert", "Update", "Delete", "Drop", "Create", "Alter", "Merge", "Grant")
+        ]
+        dml_nodes = [n for n in dml_nodes if n is not None]
+        if any(parsed.find(n) for n in dml_nodes):
+            raise CustomException(msg="查询包含被禁止的写/DDL 语句")
+        if not parsed.find(sql_exp.Select):
+            raise CustomException(msg="仅允许 SELECT 查询")
+    except CustomException:
+        raise
+    except ImportError:
+        pass  # 未安装 sqlglot 时跳过 AST 校验，交给正则层
     # 限制行数
     if not re.search(r"\blimit\s+\d+", removed_semis, re.IGNORECASE):
         removed_semis = removed_semis + f" LIMIT {MAX_ROWS}"
@@ -945,7 +967,7 @@ class AiQueryService:
             raise CustomException(msg=f"未配置可用的问答模型：{e}")
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
-        schema_ctx = await cls._build_schema_context(datasource, metrics, terms)
+        schema_ctx = await cls._build_schema_context(question, datasource, metrics, terms)
         system_prompt = (
             "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
             "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
@@ -1021,8 +1043,40 @@ class AiQueryService:
         _SCHEMA_CACHE = schema
         return schema
 
+    @staticmethod
+    def _relevant_tables(question: str, schema: dict, metrics: list[dict], terms: list[dict]) -> list[str]:
+        """依据问题关键词，只挑相关的表（列名/表名命中），控制注入 token 并聚焦。"""
+        q = question.lower()
+        scores: dict[str, float] = {}
+        for t in schema:
+            s = 0.0
+            tname = t.lower()
+            if tname in q:
+                s += 6.0
+            for col in schema[t]:
+                colname = col.split("(")[0].lower()
+                if len(colname) >= 3 and colname in q:
+                    s += 3.0
+                for seg in colname.split("_"):
+                    if len(seg) >= 3 and seg in q:
+                        s += 1.0
+            if s > 0:
+                scores[t] = s
+        # 命中太少则回退到核心业务表 + 指标涉及的表
+        if len(scores) < 3:
+            core = [
+                "video_alarm_records", "video_cameras", "video_camera_groups",
+                "train_tasks", "ai_call_logs", "sys_user", "video_edge_events",
+            ]
+            for c in core:
+                if c in schema:
+                    scores[c] = scores.get(c, 0.0) + 1.0
+        if not scores:
+            return []
+        return sorted(scores, key=lambda t: -scores[t])[:12]
+
     @classmethod
-    async def _build_schema_context(cls, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
+    async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         lines = ["【可用指标】"]
         for m in metrics:
             if m["enabled"]:
@@ -1033,9 +1087,10 @@ class AiQueryService:
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
             schema = await cls._system_schema()
-            for t in sorted(SYSTEM_ALLOWED_TABLES):
+            rel = cls._relevant_tables(question, schema, metrics, terms)
+            for t in rel:
                 cols = schema.get(t, [])
-                lines.append(f"- {t}: {', '.join(cols) if cols else '(无列信息)'}")
+                lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
         lines.append("【示例问题→SQL】")
         for eg in _NL2SQL_FEWSHOT:
             lines.append(f"问：{eg['q']}")

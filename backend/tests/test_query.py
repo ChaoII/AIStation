@@ -217,5 +217,32 @@ class TestDsRoleAuth:
         assert _user_role_codes(auth) == set()
 
 
+# ---------------------------------------------------------------------------
+# 阶段：schema 裁剪 + sqlglot AST 校验
+# ---------------------------------------------------------------------------
+class TestSchemaPrune:
+    def test_relevant_tables_alarm(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        schema = {
+            "video_alarm_records": ["alarm_time(timestamp)", "alarm_type(varchar)", "camera_id(int)"],
+            "video_cameras": ["name(varchar)", "group_id(int)"],
+            "train_tasks": ["name(varchar)", "status(varchar)"],
+            "sys_user": ["username(varchar)"],
+        }
+        rel = AiQueryService._relevant_tables("统计告警数量", schema, [], [])
+        assert "video_alarm_records" in rel
+        assert "video_cameras" in rel or "train_tasks" in rel or "sys_user" in rel
+
+
+class TestSqlglotValidate:
+    def test_accept_select(self):
+        assert "LIMIT" in validate_sql("SELECT * FROM video_cameras", SYSTEM_ALLOWED_TABLES)
+
+    def test_reject_insert_via_ast(self):
+        with pytest.raises(Exception):
+            validate_sql("INSERT INTO t VALUES (1)", SYSTEM_ALLOWED_TABLES)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
