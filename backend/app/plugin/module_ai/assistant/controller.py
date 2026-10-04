@@ -44,30 +44,17 @@ async def assistant_stream(
     data: AssistantUIStreamSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> StreamingResponse:
-    import time
 
     from app.plugin.module_ai.streaming import ui_stream_response
 
-    uid = getattr(getattr(auth, "user", None), "id", None)
-
     async def _gen():
-        t0 = time.perf_counter()
-        ok, err = True, None
         try:
             async for item in run_assistant_ui_stream(
                 data.messages, auth, data.session_id, data.knowledge_ids, data.model_id
             ):
-                if '"type": "error"' in item:
-                    ok = False
-                    err = item
                 yield item
-        except Exception as e:  # noqa: BLE001
-            ok, err = False, str(e)
+        except Exception:  # noqa: BLE001
+            # 日志已在 run_assistant_ui_stream 的 finally 落库，这里仅透传异常
             raise
-        finally:
-            await AiOverviewService.add_log(
-                "assistant", "chat", int((time.perf_counter() - t0) * 1000),
-                "success" if ok else "error", err, user_id=uid,
-            )
 
     return ui_stream_response(_gen())

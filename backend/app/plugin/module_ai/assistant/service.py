@@ -108,6 +108,7 @@ async def run_agent_ui_stream(
             "temperature": runtime["temperature"],
             "max_tokens": runtime["max_tokens"],
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if tool_schemas:
             kwargs["tools"] = tool_schemas
@@ -132,8 +133,14 @@ async def run_agent_ui_stream(
 
         content = ""
         tool_calls: dict = {}
-        async for chunk in stream:
+        for chunk in stream:
             if not chunk.choices:
+                # 流式 usage 在末 chunk（无 choices）携带
+                if getattr(chunk, "usage", None):
+                    state["usage"] = {
+                        "prompt_tokens": int(chunk.usage.prompt_tokens or 0),
+                        "completion_tokens": int(chunk.usage.completion_tokens or 0),
+                    }
                 continue
             delta = chunk.choices[0].delta
             rc = getattr(delta, "reasoning_content", None)
@@ -378,6 +385,10 @@ async def run_assistant_ui_stream(
     ms = UiMessageStream()
     user_text = last_user_text(ui_messages)
     user_id = getattr(getattr(auth, "user", None), "id", None)
+    runtime = None
+    import time
+
+    t0 = time.perf_counter()
     # 累积流出的 assistant 文本：即使中途异常，finally 也能落下已产出的内容
     state: dict = {
         "assistant_text": "",
@@ -459,3 +470,21 @@ async def run_assistant_ui_stream(
         await persist_session_exchange(
             session_id, user_text, state["assistant_text"], user_id=user_id
         )
+        # 真实 token/耗时落库（成本统计）
+        try:
+            from app.plugin.module_ai.overview.service import AiOverviewService
+
+            if runtime:
+                u = state.get("usage") or {}
+                await AiOverviewService.add_log(
+                    model_name=runtime.get("model") or "assistant",
+                    usage="chat",
+                    latency_ms=int((time.perf_counter() - t0) * 1000),
+                    result="success" if state.get("error") is None else "error",
+                    error=state.get("error"),
+                    user_id=user_id,
+                    prompt_tokens=u.get("prompt_tokens", 0),
+                    completion_tokens=u.get("completion_tokens", 0),
+                )
+        except Exception:  # noqa: BLE001
+            pass
