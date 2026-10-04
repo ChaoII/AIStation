@@ -367,6 +367,7 @@ async def run_app_ui_stream(
         yield ms.finish()
         yield ms.done()
     finally:
+        u = state.get("usage") or {}
         await AiOverviewService.add_log(
             model_name,
             "app",
@@ -375,6 +376,8 @@ async def run_app_ui_stream(
             state["error"],
             app_id=app_id,
             user_id=uid,
+            prompt_tokens=u.get("prompt_tokens", 0),
+            completion_tokens=u.get("completion_tokens", 0),
         )
         await persist_session_exchange(
             session_id, user_text, state["assistant_text"], app_id=app_id, user_id=uid
