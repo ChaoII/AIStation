@@ -103,3 +103,31 @@ export function getQuerySettings() {
 export function saveQuerySetting(data: { key: string; value: string; remark: string }) {
   return request({ url: `${API_PATH}/settings/save`, method: "post", data });
 }
+
+// 数据资产目录
+export function syncQueryAssets() {
+  return request({ url: `${API_PATH}/assets/sync`, method: "post", timeout: 60000 });
+}
+export function getQueryAssets() {
+  return request({ url: `${API_PATH}/assets/list`, method: "get" });
+}
+export function getQueryAssetColumns(tableName: string) {
+  return request({ url: `${API_PATH}/assets/${tableName}/columns`, method: "get" });
+}
+export function saveQueryAsset(data: {
+  table_name: string;
+  description: string;
+  included: boolean;
+  remark: string;
+}) {
+  return request({ url: `${API_PATH}/assets/save`, method: "post", data });
+}
+export function saveQueryAssetColumn(data: {
+  table_name: string;
+  column_name: string;
+  description: string;
+  included: boolean;
+  sensitive: boolean;
+}) {
+  return request({ url: `${API_PATH}/assets/column/save`, method: "post", data });
+}

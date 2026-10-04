@@ -81,6 +81,21 @@ class QueryFewshotUpsert(BaseModel):
     enabled: bool = True
 
 
+class QueryAssetUpsert(BaseModel):
+    table_name: str
+    description: str = ""
+    included: bool = True
+    remark: str = ""
+
+
+class QueryAssetColumnUpsert(BaseModel):
+    table_name: str
+    column_name: str
+    description: str = ""
+    included: bool = True
+    sensitive: bool = False
+
+
 class QuerySettingUpsert(BaseModel):
     key: str
     value: str = ""

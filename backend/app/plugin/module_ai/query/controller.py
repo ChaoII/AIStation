@@ -12,6 +12,8 @@ from app.core.router_class import OperationLogRoute
 
 from .schema import (
     QueryAskRequest,
+    QueryAssetColumnUpsert,
+    QueryAssetUpsert,
     QueryDatasourceUpsert,
     QueryFeedbackRequest,
     QueryFewshotUpsert,
@@ -146,6 +148,45 @@ async def datasource_schema(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.list_ds_schema(datasource_id), msg="查询成功")
+
+
+# ---- 数据资产目录 ----
+@AiQueryRouter.post("/assets/sync", summary="同步数据资产目录")
+async def sync_query_assets(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.sync_assets(auth), msg="同步完成")
+
+
+@AiQueryRouter.get("/assets/list", summary="数据资产(表)列表")
+async def list_query_assets(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_assets(), msg="查询成功")
+
+
+@AiQueryRouter.get("/assets/{table_name}/columns", summary="数据资产(字段)列表")
+async def list_asset_columns(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_asset_columns(table_name), msg="查询成功")
+
+
+@AiQueryRouter.post("/assets/save", summary="数据资产(表)保存")
+async def save_query_asset(
+    data: QueryAssetUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.upsert_asset(data, auth), msg="保存成功")
+
+
+@AiQueryRouter.post("/assets/column/save", summary="数据资产(字段)保存")
+async def save_query_asset_column(
+    data: QueryAssetColumnUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.upsert_asset_column(data, auth), msg="保存成功")
 
 
 # ---- 示例工程（few-shot）----

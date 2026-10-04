@@ -18,6 +18,8 @@ from app.core.exceptions import CustomException
 from app.core.logger import log
 
 from .model import (
+    AiQueryAssetColumnModel,
+    AiQueryAssetModel,
     AiQueryDatasourceModel,
     AiQueryDictionaryModel,
     AiQueryFewshotModel,
@@ -699,6 +701,153 @@ class AiQueryService:
                     "metric_key": obj.metric_key or "", "field_path": obj.field_path or "",
                     "type": obj.type}
 
+    # ---- 数据资产目录（表/字段筛选 + 中文描述维护）----
+    @classmethod
+    async def list_assets(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            rows = (
+                await db.execute(
+                    select(AiQueryAssetModel)
+                    .where(AiQueryAssetModel.is_deleted.is_(False))
+                    .order_by(AiQueryAssetModel.table_name)
+                )
+            ).scalars().all()
+            out = []
+            for a in rows:
+                cnt = (await db.execute(
+                    select(AiQueryAssetColumnModel)
+                    .where(
+                        AiQueryAssetColumnModel.table_name == a.table_name,
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    )
+                )).scalars().all()
+                out.append({
+                    "table_name": a.table_name, "description": a.description or "",
+                    "included": a.included, "remark": a.remark or "",
+                    "column_count": len(cnt),
+                    "included_columns": sum(1 for c in cnt if c.included),
+                })
+            return out
+
+    @classmethod
+    async def list_asset_columns(cls, table_name: str) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            rows = (
+                await db.execute(
+                    select(AiQueryAssetColumnModel)
+                    .where(
+                        AiQueryAssetColumnModel.table_name == table_name,
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    )
+                    .order_by(AiQueryAssetColumnModel.id)
+                )
+            ).scalars().all()
+            return [
+                {"table_name": c.table_name, "column_name": c.column_name,
+                 "description": c.description or "", "included": c.included,
+                 "sensitive": c.sensitive}
+                for c in rows
+            ]
+
+    @classmethod
+    async def upsert_asset(cls, data, auth) -> dict:
+        global _SCHEMA_CACHE, _SEMANTIC_INDEX
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select
+
+            existing = (
+                await db.execute(
+                    select(AiQueryAssetModel).where(AiQueryAssetModel.table_name == data.table_name,
+                                                    AiQueryAssetModel.is_deleted.is_(False))
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.description = data.description
+                existing.included = data.included
+                existing.remark = data.remark
+                existing.updated_id = auth.user.id
+            else:
+                db.add(AiQueryAssetModel(table_name=data.table_name, description=data.description,
+                                         included=data.included, remark=data.remark,
+                                         created_id=auth.user.id, updated_id=auth.user.id))
+            await db.flush()
+        _SCHEMA_CACHE = None
+        _SEMANTIC_INDEX = None
+        return {"table_name": data.table_name, "included": data.included}
+
+    @classmethod
+    async def upsert_asset_column(cls, data, auth) -> dict:
+        global _SEMANTIC_INDEX, _SCHEMA_CACHE
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select
+
+            existing = (
+                await db.execute(
+                    select(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.table_name == data.table_name,
+                        AiQueryAssetColumnModel.column_name == data.column_name,
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.description = data.description
+                existing.included = data.included
+                existing.sensitive = data.sensitive
+                existing.updated_id = auth.user.id
+            else:
+                db.add(AiQueryAssetColumnModel(table_name=data.table_name, column_name=data.column_name,
+                                               description=data.description, included=data.included,
+                                               sensitive=data.sensitive,
+                                               created_id=auth.user.id, updated_id=auth.user.id))
+            await db.flush()
+        _SEMANTIC_INDEX = None
+        _SCHEMA_CACHE = None
+        return {"table_name": data.table_name, "column_name": data.column_name}
+
+    @classmethod
+    async def sync_assets(cls, auth) -> dict:
+        """从数据库 information_schema 全量同步表/字段到资产目录；已在白名单的表默认纳入。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _text
+
+            result = await db.execute(
+                _text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name")
+            )
+            tables = [r[0] for r in result.fetchall()]
+            colr = await db.execute(
+                _text("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position")
+            )
+            cols = [(r[0], r[1]) for r in colr.fetchall()]
+        upserted = 0
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select
+
+            for t in tables:
+                inc = t in SYSTEM_ALLOWED_TABLES
+                exists = (
+                    await db.execute(select(AiQueryAssetModel).where(AiQueryAssetModel.table_name == t))
+                ).scalar_one_or_none()
+                if not exists:
+                    db.add(AiQueryAssetModel(table_name=t, description="", included=inc,
+                                             remark="", created_id=auth.user.id, updated_id=auth.user.id))
+                    upserted += 1
+            for t, c in cols:
+                exists = (
+                    await db.execute(select(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.table_name == t,
+                        AiQueryAssetColumnModel.column_name == c))
+                ).scalar_one_or_none()
+                if not exists:
+                    db.add(AiQueryAssetColumnModel(table_name=t, column_name=c, description="",
+                                                   included=True, sensitive=False,
+                                                   created_id=auth.user.id, updated_id=auth.user.id))
+        return {"tables": len(tables), "columns": len(cols), "new_tables": upserted}
+
     # ---- 示例工程（few-shot）----
     @classmethod
     async def list_fewshots(cls, datasource: str | None = None) -> list[dict]:
@@ -1204,12 +1353,42 @@ class AiQueryService:
         s = s.split("\n")[0].strip()
         return s.rstrip(";")
 
-    @staticmethod
-    async def _system_schema() -> dict:
-        """一次性拉取系统可查表的真实列（带类型），缓存到进程级，供 LLM 生成准确 SQL。"""
+    @classmethod
+    async def _system_schema(cls) -> dict:
+        """拉取系统可查表的真实列（带类型）+ 资产目录筛选/中文描述。
+
+        仅纳入数据资产目录中 included 的表/字段；字段有中文描述时附加，敏感字段标注。
+        未同步资产目录时回退到内置白名单。结果缓存到进程级。
+        """
         global _SCHEMA_CACHE
         if _SCHEMA_CACHE is not None:
             return _SCHEMA_CACHE
+        # 1) 资产目录（已纳入的表 + 字段描述/敏感）
+        async with async_db_session() as db:
+            from sqlalchemy import select as _sel
+
+            asset_rows = (
+                await db.execute(
+                    _sel(AiQueryAssetModel).where(
+                        AiQueryAssetModel.included.is_(True),
+                        AiQueryAssetModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+            col_rows = (
+                await db.execute(
+                    _sel(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.included.is_(True),
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+        if asset_rows:
+            tables = {a.table_name for a in asset_rows}
+        else:
+            tables = set(SYSTEM_ALLOWED_TABLES)
+        colmap = {(c.table_name, c.column_name): c for c in col_rows}
+        # 2) 拉真实列类型
         async with async_db_session() as db:
             from sqlalchemy import text as _text
 
@@ -1223,8 +1402,15 @@ class AiQueryService:
             rows = result.fetchall()
         schema: dict[str, list[str]] = {}
         for t, c, ty in rows:
-            if t in SYSTEM_ALLOWED_TABLES:
-                schema.setdefault(t, []).append(f"{c}({ty})")
+            if t not in tables:
+                continue
+            label = f"{c}({ty})"
+            ac = colmap.get((t, c))
+            if ac and ac.description:
+                label += f"【{ac.description}】"
+            if ac and ac.sensitive:
+                label += "[敏感]"
+            schema.setdefault(t, []).append(label)
         _SCHEMA_CACHE = schema
         return schema
 

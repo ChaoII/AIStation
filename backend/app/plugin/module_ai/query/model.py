@@ -119,6 +119,37 @@ class AiQueryFewshotModel(ModelMixin, UserMixin):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
 
 
+class AiQueryAssetModel(ModelMixin, UserMixin):
+    """问数可查数据资产（表级）：维护中文业务描述 + 是否纳入可查目录。"""
+
+    __tablename__ = "ai_query_assets"
+    __table_args__ = ({"comment": "智能问数-表资产目录"},)
+
+    table_name: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, comment="表名"
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="中文业务描述（供检索/模型）"
+    )
+    included: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否纳入可查目录")
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="备注")
+
+
+class AiQueryAssetColumnModel(ModelMixin, UserMixin):
+    """问数可查数据资产（字段级）：字段业务描述 + 是否纳入。"""
+
+    __tablename__ = "ai_query_asset_columns"
+    __table_args__ = ({"comment": "智能问数-字段资产目录"},)
+
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False, comment="表名")
+    column_name: Mapped[str] = mapped_column(String(128), nullable=False, comment="字段名")
+    description: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="中文业务描述"
+    )
+    included: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否纳入")
+    sensitive: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否敏感字段")
+
+
 class AiQuerySettingModel(ModelMixin, UserMixin):
     """智能问数全局配置（查询限额/超时等 KV）。"""
 

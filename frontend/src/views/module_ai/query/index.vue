@@ -242,6 +242,49 @@
           </el-table>
         </el-tab-pane>
 
+        <el-tab-pane label="数据资产" name="asset">
+          <div class="ops-bar">
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Refresh"
+              :loading="syncingAssets"
+              @click="syncAssets"
+            >
+              从数据库同步
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              已纳入 {{ assets.filter((a) => a.included).length }}/{{ assets.length }} 张表 ·
+              维护中文描述利于检索
+            </el-tag>
+          </div>
+          <el-table :data="assets" size="small" border max-height="420">
+            <el-table-column prop="table_name" label="表名" min-width="180" show-overflow-tooltip />
+            <el-table-column label="中文描述" min-width="200">
+              <template #default="{ row }">
+                <el-input
+                  v-model="row.description"
+                  size="small"
+                  placeholder="填写中文业务描述"
+                  @change="saveAsset(row)"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="纳入" width="80" align="center">
+              <template #default="{ row }">
+                <el-switch v-model="row.included" @change="saveAsset(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="字段" width="110" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openAssetColumns(row)">
+                  {{ row.included_columns }}/{{ row.column_count }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
         <el-tab-pane label="示例工程" name="fewshot">
           <div class="ops-bar">
             <el-button type="primary" size="small" :icon="Plus" @click="openFewshotEdit()">
@@ -392,6 +435,38 @@
       </template>
     </el-dialog>
 
+    <!-- 资产字段抽屉 -->
+    <el-drawer
+      v-model="assetColumnsVisible"
+      :title="`字段资产 · ${assetColumnsTable}`"
+      size="640px"
+      append-to-body
+    >
+      <el-table :data="assetColumns" size="small" border max-height="70vh">
+        <el-table-column prop="column_name" label="字段名" min-width="140" />
+        <el-table-column label="中文描述" min-width="180">
+          <template #default="{ row }">
+            <el-input
+              v-model="row.description"
+              size="small"
+              placeholder="填写中文业务描述"
+              @change="saveAssetColumn(row)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="纳入" width="70" align="center">
+          <template #default="{ row }">
+            <el-switch v-model="row.included" @change="saveAssetColumn(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="敏感" width="60" align="center">
+          <template #default="{ row }">
+            <el-checkbox v-model="row.sensitive" @change="saveAssetColumn(row)" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-drawer>
+
     <!-- 示例编辑 -->
     <el-dialog
       v-model="fewshotEditVisible"
@@ -525,7 +600,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Delete, Setting, Loading } from "@element-plus/icons-vue";
+import { Plus, Delete, Setting, Loading, Refresh } from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
 import {
   queryAsk,
@@ -544,6 +619,11 @@ import {
   testQueryDatasource,
   syncQueryDatasourceSchema,
   getQueryRoles,
+  syncQueryAssets,
+  getQueryAssets,
+  getQueryAssetColumns,
+  saveQueryAsset,
+  saveQueryAssetColumn,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -754,6 +834,7 @@ async function openOps() {
   loadFewshots();
   loadStats();
   loadSettings();
+  loadAssets();
 }
 const metricEditVisible = ref(false);
 const metricForm = reactive<any>({});
@@ -867,6 +948,71 @@ async function saveTerm(row: any) {
 async function removeTerm(row: any) {
   await deleteQueryTerms([row.id]);
   loadTerms();
+}
+
+// ---- 数据资产目录 ----
+const assets = ref<any[]>([]);
+const syncingAssets = ref(false);
+async function loadAssets() {
+  try {
+    const r = await getQueryAssets();
+    assets.value = r.data?.data || [];
+  } catch {
+    assets.value = [];
+  }
+}
+async function syncAssets() {
+  syncingAssets.value = true;
+  try {
+    const r = await syncQueryAssets();
+    const d = r.data?.data || {};
+    ElMessage.success(`同步完成：${d.tables ?? 0} 表 / ${d.columns ?? 0} 字段`);
+    loadAssets();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "同步失败");
+  } finally {
+    syncingAssets.value = false;
+  }
+}
+async function saveAsset(row: any) {
+  try {
+    await saveQueryAsset({
+      table_name: row.table_name,
+      description: row.description || "",
+      included: row.included,
+      remark: row.remark || "",
+    });
+    ElMessage.success(`已保存「${row.table_name}」`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+const assetColumnsVisible = ref(false);
+const assetColumns = ref<any[]>([]);
+const assetColumnsTable = ref("");
+async function openAssetColumns(row: any) {
+  assetColumnsTable.value = row.table_name;
+  try {
+    const r = await getQueryAssetColumns(row.table_name);
+    assetColumns.value = r.data?.data || [];
+  } catch {
+    assetColumns.value = [];
+  }
+  assetColumnsVisible.value = true;
+}
+async function saveAssetColumn(col: any) {
+  try {
+    await saveQueryAssetColumn({
+      table_name: assetColumnsTable.value,
+      column_name: col.column_name,
+      description: col.description || "",
+      included: col.included,
+      sensitive: col.sensitive,
+    });
+    ElMessage.success(`字段「${col.column_name}」已保存`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
 }
 
 // ---- 示例工程（few-shot）----
