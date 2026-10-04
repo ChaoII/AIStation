@@ -230,6 +230,22 @@ _SYSTEM_TERMS = [
     {"term": "用户", "metric_key": "user_count", "type": "metric"},
 ]
 
+# NL2SQL few-shot 示例：引导模型写出正确的 FROM/列名（针对本系统表）
+_NL2SQL_FEWSHOT = [
+    {
+        "q": "按告警类型统计各类告警的数量",
+        "sql": "SELECT alarm_type AS 类型, COUNT(*) AS 数量 FROM video_alarm_records GROUP BY 类型 ORDER BY 数量 DESC LIMIT 50",
+    },
+    {
+        "q": "每个摄像头各产生多少条告警",
+        "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头 ORDER BY 告警数 DESC LIMIT 50",
+    },
+    {
+        "q": "告警记录总数是多少",
+        "sql": "SELECT COUNT(*) AS 总数 FROM video_alarm_records",
+    },
+]
+
 
 # ---------------------------------------------------------------------------
 # 时间/参数解析
@@ -826,33 +842,40 @@ class AiQueryService:
 
     @classmethod
     async def _slow_path(cls, question: str, session_id: int, datasource: str, auth) -> dict:
-        sql = await cls._nl2sql(question, datasource)
-        try:
-            if datasource and datasource != SYSTEM_DS:
-                try:
-                    ds_id = int(datasource.split(":")[-1])
-                except ValueError:
-                    raise CustomException(msg="数据源编码异常")
-                res = await _execute_custom_ds_sql(ds_id, sql)
-            else:
-                res = await _execute_sql(sql)
-            msg = await cls._save_message(
-                session_id, question, path="slow", datasource=datasource,
-                sql=sql, columns=res["columns"], rows=res["rows"],
-                result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
-                summary="以下是根据你的问题生成的结果：",
-            )
-            return cls._answer(msg, sql=sql)
-        except CustomException as e:
-            await cls._save_message(
-                session_id, question, path="slow", datasource=datasource,
-                sql=sql, rows=[], is_error=True, summary=f"查询失败：{e.msg}",
-            )
-            return {"path": "slow", "is_error": True, "answer": f"查询失败：{e.msg}", "sql": sql}
+        """LLM 生成 SQL + 自纠错重试（最多 2 轮）。"""
+        last_err: str | None = None
+        sql = ""
+        for attempt in range(2):
+            sql = await cls._nl2sql(question, datasource, prev_error=last_err)
+            try:
+                if datasource and datasource != SYSTEM_DS:
+                    try:
+                        ds_id = int(datasource.split(":")[-1])
+                    except ValueError:
+                        raise CustomException(msg="数据源编码异常")
+                    res = await _execute_custom_ds_sql(ds_id, sql)
+                else:
+                    res = await _execute_sql(sql)
+                msg = await cls._save_message(
+                    session_id, question, path="slow", datasource=datasource,
+                    sql=sql, columns=res["columns"], rows=res["rows"],
+                    result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
+                    summary="以下是根据你的问题生成的结果：",
+                )
+                return cls._answer(msg, sql=sql)
+            except CustomException as e:
+                last_err = e.msg
+                log.warning(f"[query] NL2SQL 自纠错第 {attempt + 1} 轮失败: {e.msg}")
+                continue
+        await cls._save_message(
+            session_id, question, path="slow", datasource=datasource,
+            sql=sql, rows=[], is_error=True, summary=f"查询失败：{last_err}",
+        )
+        return {"path": "slow", "is_error": True, "answer": f"查询失败：{last_err}", "sql": sql}
 
     @classmethod
-    async def _nl2sql(cls, question: str, datasource: str) -> str:
-        """LLM 生成 SQL（慢路径）。"""
+    async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None) -> str:
+        """LLM 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
         try:
             runtime = await cls._get_runtime()
         except Exception as e:  # noqa: BLE001
@@ -863,9 +886,15 @@ class AiQueryService:
         system_prompt = (
             "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
             "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
-            "只能引用以下给定的表/字段与语义指标。只返回一条 SQL，不要多余解释，"
+            "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
             f"不要使用 DELETE/UPDATE/INSERT/DDL。\n{schema_ctx}"
         )
+        user_msg = question
+        if prev_error:
+            user_msg = (
+                f"{question}\n\n注意：你上次生成的 SQL 执行失败，错误如下：\n{prev_error}\n"
+                "请修正 SQL（补全 FROM、改用正确表/列名）后重新只返回一条 SQL。"
+            )
         try:
             from openai import AsyncOpenAI
 
@@ -882,10 +911,10 @@ class AiQueryService:
                 model=runtime["model"],
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": question},
+                    {"role": "user", "content": user_msg},
                 ],
                 temperature=0,
-                max_tokens=1000,
+                max_tokens=1200,
             )
             sql = (resp.choices[0].message.content or "").strip()
         except Exception as e:  # noqa: BLE001
@@ -905,7 +934,6 @@ class AiQueryService:
         s = s.split("\n")[0].strip()
         return s.rstrip(";")
 
-    @classmethod
     @staticmethod
     async def _system_schema() -> dict:
         """一次性拉取系统可查表的真实列（带类型），缓存到进程级，供 LLM 生成准确 SQL。"""
@@ -919,15 +947,14 @@ class AiQueryService:
                 _text(
                     "SELECT table_name, column_name, data_type "
                     "FROM information_schema.columns "
-                    "WHERE table_schema='public' AND table_name = ANY(:tables) "
-                    "ORDER BY table_name, ordinal_position"
-                ),
-                {"tables": list(SYSTEM_ALLOWED_TABLES)},
+                    "WHERE table_schema='public' ORDER BY table_name, ordinal_position"
+                )
             )
             rows = result.fetchall()
         schema: dict[str, list[str]] = {}
         for t, c, ty in rows:
-            schema.setdefault(t, []).append(f"{c}({ty})")
+            if t in SYSTEM_ALLOWED_TABLES:
+                schema.setdefault(t, []).append(f"{c}({ty})")
         _SCHEMA_CACHE = schema
         return schema
 
@@ -946,6 +973,10 @@ class AiQueryService:
             for t in sorted(SYSTEM_ALLOWED_TABLES):
                 cols = schema.get(t, [])
                 lines.append(f"- {t}: {', '.join(cols) if cols else '(无列信息)'}")
+        lines.append("【示例问题→SQL】")
+        for eg in _NL2SQL_FEWSHOT:
+            lines.append(f"问：{eg['q']}")
+            lines.append(f"SQL：{eg['sql']}")
         return "\n".join(lines)
 
     @classmethod
