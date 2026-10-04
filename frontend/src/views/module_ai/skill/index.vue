@@ -31,15 +31,50 @@
       </div>
     </el-card>
 
+    <!-- 批量操作 / 统计摘要 -->
+    <div class="skill-batchbar">
+      <el-checkbox
+        :model-value="allSelected"
+        :indeterminate="isIndeterminate"
+        @change="toggleSelectAll"
+      >
+        全选
+      </el-checkbox>
+      <el-button size="small" :disabled="!skillSelIds.length" @click="batchSkill(true)">
+        批量启用
+      </el-button>
+      <el-button size="small" :disabled="!skillSelIds.length" @click="batchSkill(false)">
+        批量停用
+      </el-button>
+      <el-tag size="small" type="info" effect="plain" class="summary-tag">
+        共 {{ skillSummary.total }} 个技能 · 启用 {{ skillSummary.enabled }} · 停用
+        {{ skillSummary.disabled }}
+      </el-tag>
+    </div>
+
     <el-row v-loading="loading" :gutter="12">
-      <el-col v-for="s in filteredSkills" :key="s.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
+      <el-col v-for="s in pagedSkills" :key="s.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
         <el-card shadow="hover" class="skill-card" :body-style="{ padding: '16px' }">
           <div class="skill-card__head">
+            <el-checkbox
+              :model-value="isSelected(s)"
+              class="skill-card__check"
+              @change="toggleSelect(s)"
+            />
             <div class="skill-icon">{{ s.icon || "🧩" }}</div>
             <div class="skill-card__meta">
               <div class="skill-card__name">
                 {{ s.name }}
                 <el-tag v-if="s.featured" size="small" type="warning" effect="plain">精选</el-tag>
+                <el-tag
+                  v-if="!s.enabled"
+                  size="small"
+                  type="info"
+                  effect="plain"
+                  class="skill-card__off"
+                >
+                  停用
+                </el-tag>
               </div>
               <div class="skill-card__sub">
                 <el-tag size="small" effect="plain">{{ skillTypeLabel(s.skill_type) }}</el-tag>
@@ -108,6 +143,17 @@
         <el-empty description="暂无技能，点击「新建技能」创建" />
       </el-col>
     </el-row>
+
+    <div v-if="filteredSkills.length > 0" class="skill-pagination">
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :total="filteredSkills.length"
+        :page-sizes="[12, 24, 48]"
+        layout="total, sizes, prev, pager, next"
+        background
+      />
+    </div>
 
     <!-- 技能编辑弹窗 -->
     <el-dialog
@@ -231,7 +277,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Plus,
@@ -253,6 +299,7 @@ import {
   deleteAiSkill,
   toggleAiSkillFeatured,
   installAiSkillToAgent,
+  batchSkillStatus,
 } from "@/api/module_ai/skill";
 import { getAiAgentList } from "@/api/module_ai/agent";
 
@@ -329,6 +376,64 @@ const filteredSkills = computed(() => {
   return list;
 });
 
+// ---- 分页 ----
+const page = ref(1);
+const pageSize = ref(12);
+const pagedSkills = computed(() => {
+  const start = (page.value - 1) * pageSize.value;
+  return filteredSkills.value.slice(start, start + pageSize.value);
+});
+
+// ---- 批量选择 / 启停 ----
+const skillSelIds = ref<number[]>([]);
+const skillSelSet = computed(() => new Set(skillSelIds.value));
+function isSelected(s: any) {
+  return skillSelSet.value.has(s.id);
+}
+function toggleSelect(s: any) {
+  skillSelIds.value = skillSelIds.value.includes(s.id)
+    ? skillSelIds.value.filter((id) => id !== s.id)
+    : [...skillSelIds.value, s.id];
+}
+const allSelected = computed(() => {
+  const ids = filteredSkills.value.map((s) => s.id);
+  return ids.length > 0 && ids.every((id) => skillSelSet.value.has(id));
+});
+const isIndeterminate = computed(() => {
+  const ids = filteredSkills.value.map((s) => s.id);
+  const n = ids.filter((id) => skillSelSet.value.has(id)).length;
+  return n > 0 && n < ids.length;
+});
+function toggleSelectAll(checked: boolean | string | number) {
+  if (checked) {
+    const ids = filteredSkills.value.map((s) => s.id);
+    skillSelIds.value = Array.from(new Set([...skillSelIds.value, ...ids]));
+  } else {
+    const pageIds = new Set(filteredSkills.value.map((s) => s.id));
+    skillSelIds.value = skillSelIds.value.filter((id) => !pageIds.has(id));
+  }
+}
+
+// ---- 统计摘要 ----
+const skillSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+
+async function batchSkill(enabled: boolean) {
+  if (!skillSelIds.value.length) return;
+  try {
+    const r = await batchSkillStatus(skillSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个技能`);
+    skillSelIds.value = [];
+    await loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
+
+// 切换分类/关键字时回到第一页
+watch([activeTab, searchKeyword], () => {
+  page.value = 1;
+});
+
 async function copySkill(s: any) {
   try {
     await createAiSkill({
@@ -356,6 +461,11 @@ const loadData = async () => {
     const [sr, cr] = await Promise.all([getAiSkillList({}), getAiSkillCategories()]);
     skills.value = sr.data?.data || [];
     categories.value = cr.data?.data || [];
+    skillSummary.value = {
+      total: skills.value.length,
+      enabled: skills.value.filter((x: any) => x.enabled).length,
+      disabled: skills.value.filter((x: any) => !x.enabled).length,
+    };
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -476,6 +586,32 @@ onMounted(loadData);
 .ai-skill-page {
   height: 100%;
   overflow: auto;
+}
+
+.skill-batchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.skill-card__check {
+  flex-shrink: 0;
+}
+
+.skill-card__off {
+  margin-left: 4px;
+}
+
+.summary-tag {
+  margin-left: 4px;
+}
+
+.skill-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 .skill-cat-card {

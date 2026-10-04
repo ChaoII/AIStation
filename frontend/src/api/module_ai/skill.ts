@@ -30,6 +30,10 @@ export function toggleAiSkillFeatured(id: number, featured: boolean) {
   return request({ url: `${API_PATH}/toggle/${id}`, method: "put", params: { featured } });
 }
 
+export function batchSkillStatus(ids: number[], enabled: boolean) {
+  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
+}
+
 /** 安装技能到智能体（同步 agent.skill_ids 并累加安装次数）。 */
 export function installAiSkillToAgent(agentId: number, skillId: number) {
   return request({

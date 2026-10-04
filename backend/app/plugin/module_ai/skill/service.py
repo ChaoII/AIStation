@@ -136,6 +136,19 @@ class AiSkillService:
                     await db.delete(s)
 
     @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用技能。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for sid in ids:
+                s = await db.get(AiSkillModel, sid)
+                if s and not s.is_deleted:
+                    s.enabled = enabled
+                    s.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                    count += 1
+            return count
+
+    @classmethod
     async def toggle_featured(cls, skill_id: int, featured: bool, auth) -> dict | None:
         async with async_db_session.begin() as db:
             s = await db.get(AiSkillModel, skill_id)
