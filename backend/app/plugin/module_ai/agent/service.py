@@ -176,6 +176,19 @@ class AiAgentService:
                     await db.delete(a)
 
     @classmethod
+    async def batch_status(cls, ids: list[int], enabled: bool, auth) -> int:
+        """批量启用/停用智能体。"""
+        async with async_db_session.begin() as db:
+            count = 0
+            for aid in ids:
+                a = await db.get(AiAgentModel, aid)
+                if a and not a.is_deleted:
+                    a.enabled = enabled
+                    a.updated_id = getattr(getattr(auth, "user", None), "id", None)
+                    count += 1
+            return count
+
+    @classmethod
     async def install_skill(cls, agent_id: int, skill_id: int, auth) -> bool | None:
         """把技能关联到智能体并返回 True；智能体不存在返回 None。"""
         async with async_db_session.begin() as db:

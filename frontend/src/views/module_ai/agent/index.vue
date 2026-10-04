@@ -77,10 +77,35 @@
           </div>
         </div>
 
+        <div class="agent-batchbar">
+          <el-checkbox
+            :model-value="allSelected"
+            :indeterminate="isIndeterminate"
+            @change="toggleSelectAll"
+          >
+            全选
+          </el-checkbox>
+          <el-button size="small" :disabled="!agentSelIds.length" @click="batchAgent(true)">
+            批量启用
+          </el-button>
+          <el-button size="small" :disabled="!agentSelIds.length" @click="batchAgent(false)">
+            批量停用
+          </el-button>
+          <el-tag size="small" type="info" effect="plain" class="summary-tag">
+            共 {{ agentSummary.total }} 个智能体 · 启用 {{ agentSummary.enabled }} · 停用
+            {{ agentSummary.disabled }}
+          </el-tag>
+        </div>
+
         <el-row v-loading="loading" :gutter="12">
-          <el-col v-for="a in filteredAgents" :key="a.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
+          <el-col v-for="a in pagedAgents" :key="a.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
             <el-card shadow="hover" class="agent-card" :body-style="{ padding: '16px' }">
               <div class="agent-card__head">
+                <el-checkbox
+                  :model-value="isSelected(a)"
+                  class="agent-card__check"
+                  @change="toggleSelect(a)"
+                />
                 <div class="agent-avatar" :style="{ background: a.color || '#409eff' }">
                   {{ a.agent_name.slice(0, 1) }}
                 </div>
@@ -160,6 +185,17 @@
             <el-empty description="暂无智能体，点击「新建智能体」创建" />
           </el-col>
         </el-row>
+
+        <div v-if="filteredAgents.length > 0" class="agent-pagination">
+          <el-pagination
+            v-model:current-page="page"
+            v-model:page-size="pageSize"
+            :total="filteredAgents.length"
+            :page-sizes="[12, 24, 48]"
+            layout="total, sizes, prev, pager, next"
+            background
+          />
+        </div>
       </el-col>
     </el-row>
 
@@ -377,7 +413,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Plus,
@@ -399,6 +435,7 @@ import {
   createAgentCategory,
   updateAgentCategory,
   deleteAgentCategory,
+  batchAgentStatus,
 } from "@/api/module_ai/agent";
 import { getAiModelList } from "@/api/module_ai/model";
 import { getAiPromptList } from "@/api/module_ai/prompt";
@@ -435,6 +472,63 @@ const filteredAgents = computed(() => {
   return list;
 });
 
+// ---- 分页 ----
+const page = ref(1);
+const pageSize = ref(12);
+const pagedAgents = computed(() => {
+  const start = (page.value - 1) * pageSize.value;
+  return filteredAgents.value.slice(start, start + pageSize.value);
+});
+
+// ---- 批量选择 / 启停 ----
+const agentSelIds = ref<number[]>([]);
+const agentSelSet = computed(() => new Set(agentSelIds.value));
+function isSelected(a: any) {
+  return agentSelSet.value.has(a.id);
+}
+function toggleSelect(a: any) {
+  agentSelIds.value = agentSelIds.value.includes(a.id)
+    ? agentSelIds.value.filter((id) => id !== a.id)
+    : [...agentSelIds.value, a.id];
+}
+const allSelected = computed(() => {
+  const ids = filteredAgents.value.map((a) => a.id);
+  return ids.length > 0 && ids.every((id) => agentSelSet.value.has(id));
+});
+const isIndeterminate = computed(() => {
+  const ids = filteredAgents.value.map((a) => a.id);
+  const n = ids.filter((id) => agentSelSet.value.has(id)).length;
+  return n > 0 && n < ids.length;
+});
+function toggleSelectAll(checked: boolean | string | number) {
+  if (checked) {
+    const ids = filteredAgents.value.map((a) => a.id);
+    agentSelIds.value = Array.from(new Set([...agentSelIds.value, ...ids]));
+  } else {
+    const pageIds = new Set(filteredAgents.value.map((a) => a.id));
+    agentSelIds.value = agentSelIds.value.filter((id) => !pageIds.has(id));
+  }
+}
+
+// ---- 统计摘要 ----
+const agentSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+async function batchAgent(enabled: boolean) {
+  if (!agentSelIds.value.length) return;
+  try {
+    const r = await batchAgentStatus(agentSelIds.value, enabled);
+    ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个智能体`);
+    agentSelIds.value = [];
+    await loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
+
+// 切换分类/关键字时回到第一页
+watch([currentCategory, keyword], () => {
+  page.value = 1;
+});
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -450,6 +544,11 @@ const loadData = async () => {
     ]);
     agents.value = ar.data?.data || [];
     categories.value = cr.data?.data || [];
+    agentSummary.value = {
+      total: agents.value.length,
+      enabled: agents.value.filter((x: any) => x.enabled).length,
+      disabled: agents.value.filter((x: any) => !x.enabled).length,
+    };
     modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
     promptOptions.value = (pr.data?.data || []).map((p: any) => ({ id: p.id, name: p.name }));
     toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
@@ -787,6 +886,28 @@ onMounted(loadData);
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+
+.agent-batchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.agent-card__check {
+  flex-shrink: 0;
+}
+
+.summary-tag {
+  margin-left: 4px;
+}
+
+.agent-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
 }
 
 .agent-card {

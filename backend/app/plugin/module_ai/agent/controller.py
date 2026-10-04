@@ -115,6 +115,19 @@ async def delete_agents(
     return SuccessResponse(msg="删除成功")
 
 
+@AiAgentRouter.put("/batch/status", summary="批量启用/停用智能体")
+async def batch_agent_status(
+    body: dict,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:update"]))],
+) -> JSONResponse:
+    ids = [int(x) for x in (body.get("ids") or [])]
+    enabled = bool(body.get("enabled"))
+    count = await AiAgentService.batch_status(ids, enabled, auth)
+    return SuccessResponse(
+        data={"count": count}, msg=f"已{'启用' if enabled else '停用'} {count} 个智能体"
+    )
+
+
 @AiAgentRouter.post("/{agent_id}/install-skill", summary="安装技能到智能体")
 async def install_skill(
     agent_id: int,

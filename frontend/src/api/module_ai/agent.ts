@@ -24,6 +24,10 @@ export function deleteAiAgent(ids: number[]) {
   return request({ url: `${API_PATH}/delete`, method: "delete", data: ids });
 }
 
+export function batchAgentStatus(ids: number[], enabled: boolean) {
+  return request({ url: `${API_PATH}/batch/status`, method: "put", data: { ids, enabled } });
+}
+
 // ---------- 智能体分类 ----------
 export function getAgentCategoryList() {
   return request({ url: `${CAT_PATH}/list`, method: "get" });
