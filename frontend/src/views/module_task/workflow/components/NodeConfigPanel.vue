@@ -30,13 +30,26 @@
         </ElFormItem>
 
         <ElFormItem label="关键字参数">
-          <ElInput
-            v-model="formData.kwargsStr"
-            type="textarea"
-            :rows="4"
-            placeholder='JSON格式，如: {"key": "value", "count": 10}'
-          />
-          <div class="field-hint">JSON 格式的关键字参数</div>
+          <div class="kv-editor">
+            <div v-for="(row, i) in formData.kvRows" :key="i" class="kv-row">
+              <ElInput v-model="row.key" placeholder="键" class="kv-row__key" />
+              <ElInput
+                v-model="row.value"
+                :placeholder="'值（支持 {{变量}} 插值）'"
+                class="kv-row__val"
+              />
+              <ElButton text type="danger" :icon="Delete" @click="formData.kvRows.splice(i, 1)" />
+            </div>
+            <ElButton
+              text
+              type="primary"
+              :icon="Plus"
+              @click="formData.kvRows.push({ key: '', value: '' })"
+            >
+              添加参数
+            </ElButton>
+          </div>
+          <div class="field-hint">键值对形式的关键字参数，可变值可引用其他变量</div>
         </ElFormItem>
 
         <ElFormItem label="描述">
@@ -69,7 +82,7 @@ import {
   ElMessage,
   ElIcon,
 } from "element-plus";
-import { Close } from "@element-plus/icons-vue";
+import { Close, Delete, Plus } from "@element-plus/icons-vue";
 import WorkflowNodeTypeAPI, {
   type WorkflowNodeTypeOption,
 } from "@/api/module_task/workflow/node-type";
@@ -89,9 +102,23 @@ const formData = ref({
   type: props.node?.type || "",
   label: props.node?.data?.label || "",
   args: props.node?.data?.args || "",
-  kwargsStr: props.node?.data?.kwargsStr || "{}",
+  kvRows: [] as { key: string; value: string }[],
   description: props.node?.data?.description || "",
 });
+
+function objToRows(obj: any): { key: string; value: string }[] {
+  if (!obj || typeof obj !== "object") return [];
+  return Object.entries(obj).map(([k, v]) => ({ key: k, value: String(v) }));
+}
+function rowsToObj(rows: { key: string; value: string }[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of rows || []) {
+    const k = (r.key || "").trim();
+    if (!k) continue;
+    out[k] = r.value;
+  }
+  return out;
+}
 
 const loadNodeTypes = async () => {
   try {
@@ -108,7 +135,7 @@ const handleTypeChange = async (typeCode: string) => {
   const nodeType = nodeTypes.value.find((t) => t.code === typeCode);
   if (nodeType) {
     formData.value.args = nodeType.args || "";
-    formData.value.kwargsStr = nodeType.kwargs || "{}";
+    formData.value.kvRows = objToRows(nodeType.kwargs);
   }
 };
 
@@ -116,21 +143,11 @@ watch(
   () => props.node,
   (newNode) => {
     if (newNode) {
-      const kwargsData = newNode.data?.kwargs;
-      let kwargsStr = "{}";
-      if (kwargsData) {
-        if (typeof kwargsData === "string") {
-          kwargsStr = kwargsData;
-        } else if (typeof kwargsData === "object") {
-          kwargsStr = JSON.stringify(kwargsData, null, 2);
-        }
-      }
-
       formData.value = {
         type: newNode.type || "",
         label: newNode.data?.label || "",
         args: newNode.data?.args || "",
-        kwargsStr,
+        kvRows: objToRows(newNode.data?.kwargs),
         description: newNode.data?.description || "",
       };
     }
@@ -143,20 +160,11 @@ function handleClose() {
 }
 
 function handleSave() {
-  try {
-    if (formData.value.kwargsStr && formData.value.kwargsStr.trim()) {
-      JSON.parse(formData.value.kwargsStr);
-    }
-  } catch {
-    ElMessage.error("关键字参数 JSON 格式错误");
-    return;
-  }
-
   emit("save", {
     type: formData.value.type,
     label: formData.value.label,
     args: formData.value.args,
-    kwargs: formData.value.kwargsStr,
+    kwargs: rowsToObj(formData.value.kvRows),
     description: formData.value.description,
   });
   ElMessage.success("保存成功");
@@ -214,6 +222,23 @@ onMounted(() => {
 }
 
 .panel-actions .el-button {
+  flex: 1;
+}
+.kv-editor {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kv-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.kv-row__key {
+  width: 40%;
+}
+.kv-row__val {
   flex: 1;
 }
 </style>
