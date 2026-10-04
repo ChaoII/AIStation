@@ -79,6 +79,25 @@ SYSTEM_ALLOWED_TABLES = {
     "sys_user", "sys_user_notification",
 }
 
+#: 实体名词 → 相关表（保证联表取名称时，name 承载表一定进入 schema 上下文）
+_ENTITY_TABLE: dict[str, set[str]] = {
+    "摄像头": {"video_cameras", "video_camera_groups"},
+    "设备": {"video_edge_devices"},
+    "算法": {"video_algorithms"},
+    "任务": {"video_algorithm_tasks", "annotation_task", "train_tasks"},
+    "数据集": {"annotation_dataset"},
+    "规则": {"video_alarm_rules"},
+    "标注": {"annotation_dataset", "annotation_task", "annotation_record"},
+    "告警": {"video_alarm_records"},
+    "报警": {"video_alarm_records"},
+    "事件": {"video_edge_events"},
+    "模型": {"ai_models", "ai_call_logs"},
+    "用户": {"sys_user"},
+    "合成": {"synthesis_job"},
+    "报表": {"ai_reports"},
+    "工作流": {"ai_workflows"},
+}
+
 
 # ---------------------------------------------------------------------------
 # 自定义数据源连接/执行（阶段B）
@@ -277,7 +296,7 @@ _NL2SQL_FEWSHOT = [
     },
     {
         "q": "每个摄像头各产生多少条告警",
-        "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头 ORDER BY 告警数 DESC LIMIT 50",
+        "sql": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头 ORDER BY 告警数 DESC",
     },
     {
         "q": "各摄像头组的告警数量",
@@ -1613,6 +1632,8 @@ class AiQueryService:
             "（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；"
             "（3）占比用 \u201cCOUNT(*) * 100.0 / 总数 \u201d 或 \u201cFILTER (WHERE ...)\u201d 计算；"
             "（4）多行 SQL 直接换行输出即可，不要加注释。\n"
+            "注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
+            "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n"
             f"{schema_ctx}"
         )
         user_msg = question
@@ -1897,9 +1918,24 @@ class AiQueryService:
         return list(tables)
 
     @classmethod
-    async def _semantic_tables(cls, question: str) -> list[str]:
-        """分层检索：优先 pgvector 落库(HNSW)，回退内存融合(jieba+embedding)。"""
+    async def _semantic_tables(cls, question: str, schema: dict | None = None,
+                               metrics: list[dict] | None = None,
+                               terms: list[dict] | None = None) -> list[str]:
+        """分层检索 + 关键词 + 实体表基线，合并出联表所需的表集合。
+
+        优先 pgvector，回退内存融合(jieba+embedding)；再并上关键词相关表，
+        并按「实体名词→表」映射把联表取名称所需的 name 承载表兜底加入；
+        最后按 token 量裁剪到前 16 张，避免 prompt 过大。
+        """
         global _VECTOR_SEEDED
+        if schema is None:
+            schema = await cls._system_schema()
+        if metrics is None:
+            metrics = await cls.list_metrics(SYSTEM_DS)
+        if terms is None:
+            terms = await cls.list_terms(SYSTEM_DS)
+        tables: set[str] = set()
+        # 1) 语义召回
         try:
             if not _VECTOR_SEEDED:
                 try:
@@ -1908,27 +1944,37 @@ class AiQueryService:
                     log.info(f"[query] 资产向量已落 pgvector: {n} 条")
                 except Exception as e:  # noqa: BLE001
                     log.warning(f"[query] pgvector 播种失败: {e}")
-            rows = await cls._pgv_search(question, top_k=12)
-            if rows:
-                return rows
+            rows = await cls._pgv_search(question, top_k=16)
+            tables.update(rows)
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] pgvector 检索失败: {e}")
-        # 回退：内存融合（jieba + embedding）
-        try:
-            index = await cls._semantic_index()
-            if not index:
-                return []
-            from . import retrieval as _ret
+        # 2) 内存融合回退
+        if not tables:
+            try:
+                index = await cls._semantic_index()
+                if index:
+                    from . import retrieval as _ret
 
-            units = [{"text": u["text"], "vector": u.get("vector"), "meta": u["tables"]} for u in index]
-            top = await _ret.retrieve(question, units, top_k=12, embed_model_id=await cls._embedding_mid())
-            tables: set[str] = set()
-            for u in top:
-                tables.update(u.get("meta") or set())
-            return list(tables)
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] 语义检索失败: {e}")
-            return []
+                    units = [
+                        {"text": u["text"], "vector": u.get("vector"), "meta": u["tables"]}
+                        for u in index
+                    ]
+                    top = await _ret.retrieve(question, units, top_k=16,
+                                              embed_model_id=await cls._embedding_mid())
+                    for u in top:
+                        tables.update(u.get("meta") or set())
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 语义检索失败: {e}")
+        # 3) 关键词相关表
+        try:
+            tables.update(cls._relevant_tables(question, schema, metrics, terms))
+        except Exception:  # noqa: BLE001
+            pass
+        # 4) 实体名词 → 表 基线（保证联表取名称的表在上下文）
+        for noun, ts in _ENTITY_TABLE.items():
+            if noun in question:
+                tables.update(t for t in ts if t in schema)
+        return sorted(tables)[:16]
 
     @staticmethod
     def _relevant_tables(question: str, schema: dict, metrics: list[dict], terms: list[dict]) -> list[str]:
@@ -1974,9 +2020,7 @@ class AiQueryService:
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
             schema = await cls._system_schema()
-            rel = await cls._semantic_tables(question)
-            if not rel:
-                rel = cls._relevant_tables(question, schema, metrics, terms)
+            rel = await cls._semantic_tables(question, schema, metrics, terms)
             for t in rel:
                 cols = schema.get(t, [])
                 lines.append(f"- {t}: {', '.join(cols) if cols else ''}")

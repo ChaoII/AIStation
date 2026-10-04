@@ -119,7 +119,7 @@ NL2SQL_GOLDEN = [
     {"tag": "联表", "q": "每个摄像头各有多少边缘事件",
      "gold": "SELECT COALESCE(c.name,'未知') AS 摄像头, COUNT(e.id) AS c FROM video_cameras c LEFT JOIN video_edge_events e ON e.camera_id=c.id GROUP BY 摄像头 ORDER BY c DESC"},
     {"tag": "联表", "q": "每个标注数据集下各有多少标注任务",
-     "gold": "SELECT ds.name, COUNT(t.id) AS c FROM annotation_dataset ds LEFT JOIN annotation_task t ON t.dataset_id=ds.id GROUP BY ds.name ORDER BY c DESC LIMIT 20"},
+     "gold": "SELECT ds.name, COUNT(t.id) AS c FROM annotation_dataset ds LEFT JOIN annotation_task t ON t.dataset_id=ds.id GROUP BY ds.name ORDER BY c DESC"},
     {"tag": "联表", "q": "按摄像头组统计告警数",
      "gold": "SELECT COALESCE(g.name,'未分组') AS 摄像头组, COUNT(r.id) AS 告警数 FROM video_cameras c LEFT JOIN video_camera_groups g ON c.group_id=g.id LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY 摄像头组 ORDER BY 告警数 DESC"},
     # ===== 时间窗口 / 趋势 =====
