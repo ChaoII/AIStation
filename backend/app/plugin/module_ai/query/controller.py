@@ -172,6 +172,13 @@ async def generate_asset_desc(
     return SuccessResponse(data=await AiQueryService.generate_asset_descriptions(auth), msg="生成完成")
 
 
+@AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")
+async def suggest_assets(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.suggest_metrics_terms(auth), msg="推荐完成")
+
+
 @AiQueryRouter.get("/assets/{table_name}/columns", summary="数据资产(字段)列表")
 async def list_asset_columns(
     table_name: str,

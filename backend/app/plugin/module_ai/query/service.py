@@ -856,6 +856,63 @@ class AiQueryService:
                         updated_cols += 1
         return {"tables": updated_tables, "columns": updated_cols}
 
+    @classmethod
+    async def suggest_metrics_terms(cls, auth) -> dict:
+        """用 LLM 从数据字典(中文描述)生成候选指标/术语，供用户一键采纳。"""
+        # 1) 组装已纳入资产的中文词典
+        async with async_db_session() as db:
+            from sqlalchemy import select as _sel
+
+            tables = (
+                await db.execute(
+                    _sel(AiQueryAssetModel).where(
+                        AiQueryAssetModel.is_deleted.is_(False),
+                        AiQueryAssetModel.included.is_(True),
+                    )
+                )
+            ).scalars().all()
+            columns = (
+                await db.execute(
+                    _sel(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                        AiQueryAssetColumnModel.included.is_(True),
+                    )
+                )
+            ).scalars().all()
+        colmap: dict[str, list[str]] = {}
+        for c in columns:
+            colmap.setdefault(c.table_name, []).append(c.column_name)
+        dict_lines = []
+        for t in tables:
+            dict_lines.append(f"表 {t.table_name}：{(t.description or '').strip() or '-'} | 字段: {', '.join(colmap.get(t.table_name, []))}")
+        dict_text = "\n".join(dict_lines[:120])
+        # 2) LLM 生成建议
+        runtime = await cls._get_runtime()
+        try:
+            from openai import AsyncOpenAI
+
+            from app.plugin.module_ai.provider.service import build_headers
+
+            client = AsyncOpenAI(
+                base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
+                default_headers=build_headers(runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
+            )
+            prompt = (
+                "你是数据分析师。根据下面的数据库表/字段中文词典，推荐 6~10 个高频业务指标和 6~10 个业务术语。"
+                "指标必须是常见的统计口径(如总数、某类型数量、平均、分布)，且能用给出的表/字段实现。"
+                '严格返回 JSON：{"metrics":[{"name":"<指标名>","sql":"<SELECT COUNT/AVG> FROM <表> ...","agg":"count|avg|group"}],'
+                '"terms":[{"term":"<口语叫法>","type":"metric","target":"<指标名或 表.字段>"}]}'
+                f"\n数据字典：\n{dict_text}"
+            )
+            resp = await client.chat.completions.create(
+                model=runtime["model"], messages=[{"role": "user", "content": prompt}],
+                temperature=0.3, max_tokens=1600,
+            )
+            data = cls._parse_dict(resp.choices[0].message.content or "")
+        except Exception as e:  # noqa: BLE001
+            raise CustomException(msg=f"推荐失败：{e}")
+        return {"metrics": data.get("metrics", []) or [], "terms": data.get("terms", []) or []}
+
     @staticmethod
     def _parse_dict(text: str) -> dict:
         import json

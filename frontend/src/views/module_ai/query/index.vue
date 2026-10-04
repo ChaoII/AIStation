@@ -293,6 +293,48 @@
           </el-table>
         </el-tab-pane>
 
+        <el-tab-pane label="智能推荐" name="suggest">
+          <div class="ops-bar">
+            <el-button
+              type="primary"
+              size="small"
+              :icon="MagicStick"
+              :loading="suggesting"
+              @click="loadSuggest"
+            >
+              生成指标/术语建议
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">基于数据字典，支持一键采纳</el-tag>
+          </div>
+          <div v-if="suggested.metrics?.length || suggested.terms?.length">
+            <el-divider content-position="left">指标建议</el-divider>
+            <el-table :data="suggested.metrics" size="small" border>
+              <el-table-column prop="name" label="指标名" min-width="140" />
+              <el-table-column prop="sql" label="SQL" min-width="240" show-overflow-tooltip />
+              <el-table-column label="采纳" width="80" align="center">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="adoptSugMetric(row)">
+                    采纳
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-divider content-position="left">术语建议</el-divider>
+            <el-table :data="suggested.terms" size="small" border>
+              <el-table-column prop="term" label="术语" min-width="120" />
+              <el-table-column prop="target" label="对应(指标/字段)" min-width="180" />
+              <el-table-column label="采纳" width="80" align="center">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click="adoptSugTerm(row)">
+                    采纳
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <el-empty v-else description="点击「生成指标/术语建议」" :image-size="50" />
+        </el-tab-pane>
+
         <el-tab-pane label="示例工程" name="fewshot">
           <div class="ops-bar">
             <el-button type="primary" size="small" :icon="Plus" @click="openFewshotEdit()">
@@ -633,6 +675,7 @@ import {
   saveQueryAsset,
   saveQueryAssetColumn,
   generateQueryAssetDesc,
+  suggestQueryAssets,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1035,6 +1078,64 @@ async function saveAssetColumn(col: any) {
     ElMessage.success(`字段「${col.column_name}」已保存`);
   } catch (e: any) {
     ElMessage.error(e?.msg || "保存失败");
+  }
+}
+
+// ---- 智能推荐 ----
+const suggesting = ref(false);
+const suggested = ref<any>({ metrics: [], terms: [] });
+async function loadSuggest() {
+  suggesting.value = true;
+  try {
+    const r = await suggestQueryAssets();
+    suggested.value = r.data?.data || { metrics: [], terms: [] };
+    if (!suggested.value.metrics?.length && !suggested.value.terms?.length) {
+      ElMessage.warning("暂无建议，可先同步/维护数据资产描述");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "生成失败");
+  } finally {
+    suggesting.value = false;
+  }
+}
+async function adoptSugMetric(row: any) {
+  const key = (row.name || "").replace(/[^a-z0-9_]/gi, "_").toLowerCase() || `metric_${Date.now()}`;
+  try {
+    await saveQueryMetric({
+      datasource: "system",
+      key,
+      name: row.name,
+      description: row.description || "智能推荐",
+      sql_template: (row.sql || "").includes("SELECT")
+        ? row.sql
+        : `SELECT COUNT(*) AS 数值 FROM ${row.sql}`,
+      params: [],
+      dimensions: [],
+      agg: row.agg || "count",
+      unit: row.unit || "",
+      enabled: true,
+      sort: 0,
+      cache_ttl: 0,
+    });
+    ElMessage.success(`已采纳指标「${row.name}」`);
+    loadMetrics();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "采纳失败");
+  }
+}
+async function adoptSugTerm(row: any) {
+  try {
+    await saveQueryTerm({
+      datasource: "system",
+      term: row.term,
+      metric_key: "",
+      field_path: row.target || "",
+      type: row.type === "dimension" ? "dimension" : "metric",
+    });
+    ElMessage.success(`已采纳术语「${row.term}」`);
+    loadTerms();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "采纳失败");
   }
 }
 
