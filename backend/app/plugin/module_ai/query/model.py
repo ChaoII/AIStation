@@ -104,6 +104,32 @@ class AiQueryDictionaryModel(ModelMixin, UserMixin):
     )
 
 
+class AiQueryFewshotModel(ModelMixin, UserMixin):
+    """NL2SQL 示例（问题→正确SQL），用于动态 few-shot 引导。"""
+
+    __tablename__ = "ai_query_fewshot"
+    __table_args__ = ({"comment": "智能问数-示例库"},)
+
+    datasource: Mapped[str] = mapped_column(
+        String(64), default="system", comment="数据源编码"
+    )
+    question: Mapped[str] = mapped_column(Text, comment="示例问题")
+    sql: Mapped[str] = mapped_column(Text, comment="示例正确 SQL")
+
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+
+
+class AiQuerySettingModel(ModelMixin, UserMixin):
+    """智能问数全局配置（查询限额/超时等 KV）。"""
+
+    __tablename__ = "ai_query_settings"
+    __table_args__ = ({"comment": "智能问数-设置项"},)
+
+    key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, comment="配置键")
+    value: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="配置值")
+    remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="说明")
+
+
 class AiQuerySessionModel(ModelMixin, UserMixin):
     """问数会话。"""
 

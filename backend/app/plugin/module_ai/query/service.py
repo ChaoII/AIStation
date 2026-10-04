@@ -20,10 +20,12 @@ from app.core.logger import log
 from .model import (
     AiQueryDatasourceModel,
     AiQueryDictionaryModel,
+    AiQueryFewshotModel,
     AiQueryMessageModel,
     AiQueryMetricModel,
     AiQuerySchemaModel,
     AiQuerySessionModel,
+    AiQuerySettingModel,
 )
 
 # ---------------------------------------------------------------------------
@@ -562,6 +564,21 @@ class AiQueryService:
                             type=t.get("type", "term"),
                         )
                     )
+            for eg in _NL2SQL_FEWSHOT:
+                exists_fs = (
+                    await db.execute(
+                        select(AiQueryFewshotModel).where(
+                            AiQueryFewshotModel.question == eg["q"],
+                            AiQueryFewshotModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if not exists_fs:
+                    db.add(
+                        AiQueryFewshotModel(
+                            datasource=SYSTEM_DS, question=eg["q"], sql=eg["sql"], enabled=True
+                        )
+                    )
         _SEED_DONE = True
 
     # ---- 指标 ----
@@ -660,10 +677,156 @@ class AiQueryService:
                     "metric_key": obj.metric_key or "", "field_path": obj.field_path or "",
                     "type": obj.type}
 
+    # ---- 示例工程（few-shot）----
+    @classmethod
+    async def list_fewshots(cls, datasource: str | None = None) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            q = select(AiQueryFewshotModel).where(AiQueryFewshotModel.is_deleted.is_(False))
+            if datasource:
+                q = q.where(AiQueryFewshotModel.datasource == datasource)
+            q = q.order_by(AiQueryFewshotModel.id.desc())
+            rows = (await db.execute(q)).scalars().all()
+            return [
+                {"id": f.id, "datasource": f.datasource, "question": f.question,
+                 "sql": f.sql, "enabled": f.enabled}
+                for f in rows
+            ]
+
+    @classmethod
+    async def upsert_fewshot(cls, data, auth) -> dict:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select
+
+            existing = (
+                await db.execute(
+                    select(AiQueryFewshotModel).where(
+                        AiQueryFewshotModel.question == data.question,
+                        AiQueryFewshotModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.sql = data.sql
+                existing.enabled = data.enabled
+                existing.datasource = data.datasource
+                existing.updated_id = auth.user.id
+                obj = existing
+            else:
+                obj = AiQueryFewshotModel(
+                    datasource=data.datasource, question=data.question, sql=data.sql,
+                    enabled=data.enabled, created_id=auth.user.id, updated_id=auth.user.id,
+                )
+                db.add(obj)
+            await db.flush()
+            return {"id": obj.id, "question": obj.question, "sql": obj.sql, "enabled": obj.enabled}
+
+    @classmethod
+    async def delete_fewshot(cls, ids: list[int]) -> None:
+        async with async_db_session.begin() as db:
+            for fid in ids:
+                f = await db.get(AiQueryFewshotModel, fid)
+                if f:
+                    await db.delete(f)
+
+    @classmethod
+    async def _dynamic_fewshots(cls, question: str, datasource: str | None = None) -> list[dict]:
+        """按问题关键词与示例相关度挑 top-K，动态引导 NL2SQL。"""
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            rows = (
+                await db.execute(
+                    select(AiQueryFewshotModel)
+                    .where(
+                        AiQueryFewshotModel.is_deleted.is_(False),
+                        AiQueryFewshotModel.enabled.is_(True),
+                    )
+                    .order_by(AiQueryFewshotModel.id)
+                    .limit(300)
+                )
+            ).scalars().all()
+        raw_q = re.findall(r"[\w\u4e00-\u9fa5]{2,}", question.lower())
+        scored = []
+        for f in rows:
+            fq = f.question.lower()
+            s = sum(1 for tok in raw_q if tok in fq)
+            if f.datasource == datasource or datasource is None or datasource == SYSTEM_DS:
+                s += 1
+            scored.append((s, f))
+        scored.sort(key=lambda x: -x[0])
+        return [{"q": f.question, "sql": f.sql} for _, f in scored[:4]]
+
+    # ---- 查询限额配置 ----
+    @classmethod
+    async def get_settings(cls) -> dict:
+        defaults = {
+            "query_max_rows": "1000",
+            "query_timeout_sec": "10",
+            "nl2sql_retry": "2",
+            "nl2sql_max_tokens": "1200",
+        }
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            rows = (
+                await db.execute(
+                    select(AiQuerySettingModel).where(AiQuerySettingModel.is_deleted.is_(False))
+                )
+            ).scalars().all()
+            for r in rows:
+                defaults[r.key] = r.value or defaults.get(r.key, "")
+        return defaults
+
+    @classmethod
+    async def save_setting(cls, key: str, value: str, remark: str, auth) -> dict:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select
+
+            existing = (
+                await db.execute(
+                    select(AiQuerySettingModel).where(
+                        AiQuerySettingModel.key == key,
+                        AiQuerySettingModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.value = value
+                existing.remark = remark
+                existing.updated_id = auth.user.id
+            else:
+                db.add(AiQuerySettingModel(key=key, value=value, remark=remark,
+                                           created_id=auth.user.id, updated_id=auth.user.id))
+            await db.flush()
+        return {"key": key, "value": value}
+
+    # ---- 使用统计 / 反馈闭环 ----
+    @classmethod
+    async def stats(cls) -> dict:
+        async with async_db_session() as db:
+            from sqlalchemy import func, select
+
+            total = (await db.execute(
+                select(func.count()).select_from(AiQueryMessageModel)
+                .where(AiQueryMessageModel.is_deleted.is_(False)))).scalar_one()
+            fast = (await db.execute(
+                select(func.count()).select_from(AiQueryMessageModel)
+                .where(AiQueryMessageModel.is_deleted.is_(False),
+                       AiQueryMessageModel.path == "fast"))).scalar_one()
+            errors = (await db.execute(
+                select(func.count()).select_from(AiQueryMessageModel)
+                .where(AiQueryMessageModel.is_deleted.is_(False),
+                       AiQueryMessageModel.is_error.is_(True)))).scalar_one()
+        return {
+            "total": total, "fast": fast, "slow": max(0, total - fast),
+            "errors": errors, "ok": max(0, total - errors),
+        }
+
     @classmethod
     async def delete_metric(cls, ids: list[int]) -> None:
         async with async_db_session.begin() as db:
-
             for mid in ids:
                 m = await db.get(AiQueryMetricModel, mid)
                 if m:
@@ -1092,7 +1255,7 @@ class AiQueryService:
                 cols = schema.get(t, [])
                 lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
         lines.append("【示例问题→SQL】")
-        for eg in _NL2SQL_FEWSHOT:
+        for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")
             lines.append(f"SQL：{eg['sql']}")
         return "\n".join(lines)
@@ -1155,6 +1318,8 @@ class AiQueryService:
     # ---- 反馈 ----
     @classmethod
     async def feedback(cls, message_id: int, feedback: str, correct_sql: str | None, auth) -> dict:
+        from sqlalchemy import select as _sel
+
         async with async_db_session.begin() as db:
             m = await db.get(AiQueryMessageModel, message_id)
             if not m:
@@ -1163,6 +1328,22 @@ class AiQueryService:
             m.updated_id = auth.user.id
             if correct_sql:
                 m.correct_sql = correct_sql
-                # 反向沉淀：若 slow 且用户给出正确 SQL，可据此新增/修正指标
+                # 反馈闭环：把用户修正的正确 SQL 沉淀进示例库，后续可被动态 few-shot 复用
+                exists = (
+                    await db.execute(
+                        _sel(AiQueryFewshotModel).where(
+                            AiQueryFewshotModel.question == m.question,
+                            AiQueryFewshotModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if not exists:
+                    db.add(
+                        AiQueryFewshotModel(
+                            datasource=m.datasource, question=m.question,
+                            sql=correct_sql, enabled=True,
+                            created_id=auth.user.id, updated_id=auth.user.id,
+                        )
+                    )
             await db.flush()
-            return {"id": m.id, "feedback": feedback}
+            return {"id": m.id, "feedback": feedback, "sunk": bool(correct_sql)}

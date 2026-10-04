@@ -83,3 +83,23 @@ export function queryFeedback(data: {
 }) {
   return request({ url: `${API_PATH}/feedback`, method: "post", data });
 }
+
+// 示例工程 / 统计 / 限额
+export function getQueryFewshots(params?: any) {
+  return request({ url: `${API_PATH}/fewshots/list`, method: "get", params });
+}
+export function saveQueryFewshot(data: any) {
+  return request({ url: `${API_PATH}/fewshots/save`, method: "post", data });
+}
+export function deleteQueryFewshots(ids: number[]) {
+  return request({ url: `${API_PATH}/fewshots/delete`, method: "delete", data: ids });
+}
+export function getQueryStats() {
+  return request({ url: `${API_PATH}/stats`, method: "get" });
+}
+export function getQuerySettings() {
+  return request({ url: `${API_PATH}/settings`, method: "get" });
+}
+export function saveQuerySetting(data: { key: string; value: string; remark: string }) {
+  return request({ url: `${API_PATH}/settings/save`, method: "post", data });
+}

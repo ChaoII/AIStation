@@ -74,6 +74,19 @@ class QueryFeedbackRequest(BaseModel):
     correct_sql: str | None = None
 
 
+class QueryFewshotUpsert(BaseModel):
+    datasource: str = "system"
+    question: str
+    sql: str
+    enabled: bool = True
+
+
+class QuerySettingUpsert(BaseModel):
+    key: str
+    value: str = ""
+    remark: str = ""
+
+
 class QueryRunRequest(BaseModel):
     """直接用指标/数据源执行（调试用）。"""
 

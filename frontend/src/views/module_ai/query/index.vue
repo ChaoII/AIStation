@@ -241,6 +241,93 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+
+        <el-tab-pane label="示例工程" name="fewshot">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openFewshotEdit()">
+              新增示例
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              {{ fewshots.length }} 条 · 按相关问题动态注入 NL2SQL
+            </el-tag>
+          </div>
+          <el-table :data="fewshots" size="small" border>
+            <el-table-column
+              prop="question"
+              label="示例问题"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="sql" label="正确 SQL" min-width="240" show-overflow-tooltip />
+            <el-table-column label="启用" width="70">
+              <template #default="{ row }">
+                <el-switch v-model="row.enabled" @change="saveFewshot(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="130">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openFewshotEdit(row)">
+                  编辑
+                </el-button>
+                <el-button link type="danger" size="small" @click="removeFewshot(row)">
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+
+        <el-tab-pane label="反馈统计" name="stats">
+          <el-row :gutter="12" class="ops-stats">
+            <el-col :span="6"><el-statistic title="累计问答" :value="stats.total" /></el-col>
+            <el-col :span="6"><el-statistic title="快路径" :value="stats.fast" /></el-col>
+            <el-col :span="6"><el-statistic title="慢路径(NL2SQL)" :value="stats.slow" /></el-col>
+            <el-col :span="6"><el-statistic title="失败" :value="stats.errors" /></el-col>
+          </el-row>
+          <el-alert
+            type="success"
+            :closable="false"
+            show-icon
+            title="反馈闭环：在问答结果里「点赞」并填正确 SQL 会沉淀为示例，供后续动态复用"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane label="查询限额" name="settings">
+          <el-form :model="settingsForm" label-width="140px" size="default">
+            <el-form-item label="结果最大行数">
+              <el-input-number
+                v-model="settingsForm.query_max_rows"
+                :min="10"
+                :max="10000"
+                :step="100"
+              />
+            </el-form-item>
+            <el-form-item label="查询超时(秒)">
+              <el-input-number
+                v-model="settingsForm.query_timeout_sec"
+                :min="1"
+                :max="120"
+                :step="1"
+              />
+            </el-form-item>
+            <el-form-item label="NL2SQL 自纠错轮数">
+              <el-input-number v-model="settingsForm.nl2sql_retry" :min="0" :max="5" :step="1" />
+            </el-form-item>
+            <el-form-item label="NL2SQL max_tokens">
+              <el-input-number
+                v-model="settingsForm.nl2sql_max_tokens"
+                :min="256"
+                :max="8192"
+                :step="128"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="savingSettings" @click="saveSettings">
+                保存限额
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -302,6 +389,32 @@
       <template #footer>
         <el-button @click="metricEditVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveMetric(metricForm)">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 示例编辑 -->
+    <el-dialog
+      v-model="fewshotEditVisible"
+      :title="fewshotForm.id ? '编辑示例' : '新增示例'"
+      width="560px"
+      append-to-body
+    >
+      <el-form :model="fewshotForm" label-width="90px">
+        <el-form-item label="示例问题" required>
+          <el-input v-model="fewshotForm.question" placeholder="如：每个摄像头组的告警数量" />
+        </el-form-item>
+        <el-form-item label="正确 SQL" required>
+          <el-input v-model="fewshotForm.sql" type="textarea" :rows="4" placeholder="SELECT ..." />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="fewshotForm.enabled" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fewshotEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveFewshot(fewshotForm)">
+          保存
+        </el-button>
       </template>
     </el-dialog>
 
@@ -431,6 +544,12 @@ import {
   testQueryDatasource,
   syncQueryDatasourceSchema,
   getQueryRoles,
+  getQueryFewshots,
+  saveQueryFewshot,
+  deleteQueryFewshots,
+  getQueryStats,
+  getQuerySettings,
+  saveQuerySetting,
   queryFeedback,
 } from "@/api/module_ai/query";
 
@@ -632,6 +751,9 @@ async function openOps() {
   opsVisible.value = true;
   loadMetrics();
   loadTerms();
+  loadFewshots();
+  loadStats();
+  loadSettings();
 }
 const metricEditVisible = ref(false);
 const metricForm = reactive<any>({});
@@ -745,6 +867,112 @@ async function saveTerm(row: any) {
 async function removeTerm(row: any) {
   await deleteQueryTerms([row.id]);
   loadTerms();
+}
+
+// ---- 示例工程（few-shot）----
+const fewshots = ref<any[]>([]);
+async function loadFewshots() {
+  try {
+    const r = await getQueryFewshots({});
+    fewshots.value = r.data?.data || [];
+  } catch {
+    fewshots.value = [];
+  }
+}
+const fewshotEditVisible = ref(false);
+const fewshotForm = reactive<any>({});
+function openFewshotEdit(row?: any) {
+  if (row) Object.assign(fewshotForm, row);
+  else
+    Object.assign(fewshotForm, {
+      id: undefined,
+      datasource: "system",
+      question: "",
+      sql: "",
+      enabled: true,
+    });
+  fewshotEditVisible.value = true;
+}
+async function saveFewshot(row: any) {
+  if (!row.question || !row.sql) {
+    ElMessage.warning("请填写问题与正确 SQL");
+    return;
+  }
+  saving.value = true;
+  try {
+    await saveQueryFewshot({
+      datasource: row.datasource || "system",
+      question: row.question,
+      sql: row.sql,
+      enabled: row.enabled !== false,
+    });
+    ElMessage.success("已保存");
+    fewshotEditVisible.value = false;
+    loadFewshots();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    saving.value = false;
+  }
+}
+async function removeFewshot(row: any) {
+  await deleteQueryFewshots([row.id]);
+  loadFewshots();
+}
+
+// ---- 反馈统计 / 限额 ----
+const stats = ref({ total: 0, fast: 0, slow: 0, errors: 0 });
+async function loadStats() {
+  try {
+    const r = await getQueryStats();
+    stats.value = r.data?.data || stats.value;
+  } catch {
+    /* 忽略 */
+  }
+}
+const settingsForm = reactive<any>({});
+const savingSettings = ref(false);
+async function loadSettings() {
+  try {
+    const r = await getQuerySettings();
+    const d = r.data?.data || {};
+    settingsForm.query_max_rows = Number(d.query_max_rows || 1000);
+    settingsForm.query_timeout_sec = Number(d.query_timeout_sec || 10);
+    settingsForm.nl2sql_retry = Number(d.nl2sql_retry || 2);
+    settingsForm.nl2sql_max_tokens = Number(d.nl2sql_max_tokens || 1200);
+  } catch {
+    /* 忽略 */
+  }
+}
+async function saveSettings() {
+  savingSettings.value = true;
+  try {
+    await saveQuerySetting({
+      key: "query_max_rows",
+      value: String(settingsForm.query_max_rows),
+      remark: "结果最大行数",
+    });
+    await saveQuerySetting({
+      key: "query_timeout_sec",
+      value: String(settingsForm.query_timeout_sec),
+      remark: "查询超时秒",
+    });
+    await saveQuerySetting({
+      key: "nl2sql_retry",
+      value: String(settingsForm.nl2sql_retry),
+      remark: "NL2SQL 自纠错轮数",
+    });
+    await saveQuerySetting({
+      key: "nl2sql_max_tokens",
+      value: String(settingsForm.nl2sql_max_tokens),
+      remark: "NL2SQL max_tokens",
+    });
+    ElMessage.success("已保存限额");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingSettings.value = false;
+  }
 }
 
 // ---- 数据源 ----

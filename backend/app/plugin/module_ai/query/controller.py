@@ -14,7 +14,9 @@ from .schema import (
     QueryAskRequest,
     QueryDatasourceUpsert,
     QueryFeedbackRequest,
+    QueryFewshotUpsert,
     QueryMetricUpsert,
+    QuerySettingUpsert,
     QueryTermUpsert,
 )
 from .service import AiQueryService
@@ -144,6 +146,58 @@ async def datasource_schema(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.list_ds_schema(datasource_id), msg="查询成功")
+
+
+# ---- 示例工程（few-shot）----
+@AiQueryRouter.get("/fewshots/list", summary="NL2SQL 示例列表")
+async def list_fewshots(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str | None = None,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_fewshots(datasource), msg="查询成功")
+
+
+@AiQueryRouter.post("/fewshots/save", summary="NL2SQL 示例保存")
+async def save_fewshot(
+    data: QueryFewshotUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.upsert_fewshot(data, auth), msg="保存成功")
+
+
+@AiQueryRouter.delete("/fewshots/delete", summary="NL2SQL 示例删除")
+async def delete_fewshots(
+    ids: Annotated[list[int], Body(description="ID列表")],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    await AiQueryService.delete_fewshot(ids)
+    return SuccessResponse(msg="删除成功")
+
+
+# ---- 使用统计 / 设置 ----
+@AiQueryRouter.get("/stats", summary="问数使用统计")
+async def query_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.stats(), msg="查询成功")
+
+
+@AiQueryRouter.get("/settings", summary="问数限额配置")
+async def query_settings(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.get_settings(), msg="查询成功")
+
+
+@AiQueryRouter.post("/settings/save", summary="问数限额保存")
+async def save_query_setting(
+    data: QuerySettingUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiQueryService.save_setting(data.key, data.value, data.remark, auth),
+        msg="保存成功",
+    )
 
 
 # ---- 会话/历史 ----
