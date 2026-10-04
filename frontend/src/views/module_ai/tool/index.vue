@@ -125,7 +125,7 @@
       </el-col>
 
       <el-col v-if="!loading && !filteredTools.length" :span="24">
-        <el-empty :image-size="80" description="暂无工具" />
+        <el-empty :image-size="80" description="暂无工具，点击「新增工具」创建" />
       </el-col>
     </el-row>
 

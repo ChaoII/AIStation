@@ -105,7 +105,7 @@
         </el-card>
       </el-col>
       <el-col v-if="!loading && filteredSkills.length === 0" :span="24">
-        <el-empty description="暂无技能" />
+        <el-empty description="暂无技能，点击「新建技能」创建" />
       </el-col>
     </el-row>
 

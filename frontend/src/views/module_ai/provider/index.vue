@@ -78,7 +78,7 @@
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty :image-size="80" description="暂无供应商" />
+        <el-empty :image-size="80" description="暂无供应商，点击「新增」创建" />
       </template>
     </el-table>
 

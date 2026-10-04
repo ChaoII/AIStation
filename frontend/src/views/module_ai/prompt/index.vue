@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无提示词" />
+              <el-empty :image-size="80" description="暂无提示词，点击「新建」创建" />
             </template>
             <el-table-column type="selection" width="55" align="center" />
             <el-table-column label="名称" prop="name" min-width="160" show-overflow-tooltip />

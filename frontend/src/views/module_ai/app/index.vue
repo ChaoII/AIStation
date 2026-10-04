@@ -35,7 +35,7 @@
             @selection-change="onSelectionChange"
           >
             <template #empty>
-              <el-empty :image-size="80" description="暂无 AI 应用" />
+              <el-empty :image-size="80" description="暂无组件，点击右上「新增」创建" />
             </template>
             <el-table-column type="selection" width="55" align="center" />
             <el-table-column label="图标" width="80" align="center">
