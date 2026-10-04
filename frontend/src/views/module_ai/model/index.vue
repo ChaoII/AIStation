@@ -222,12 +222,26 @@
           <el-input v-model="formData.description" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="自定义请求头">
-          <el-input
-            v-model="formData.extra_headers_text"
-            type="textarea"
-            :rows="2"
-            placeholder='可选 JSON，如 {"x-opencode-session":"my-session"}；opencode 网关会自动注入该头'
-          />
+          <div class="header-builder">
+            <div v-for="(h, i) in formData.headerFields" :key="i" class="header-row">
+              <el-input v-model="h.key" placeholder="请求头名，如 x-opencode-session" />
+              <el-input v-model="h.value" placeholder="值" />
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                @click="formData.headerFields.splice(i, 1)"
+              />
+            </div>
+            <el-button
+              text
+              type="primary"
+              :icon="Plus"
+              @click="formData.headerFields.push({ key: '', value: '' })"
+            >
+              添加请求头
+            </el-button>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -292,7 +306,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage } from "element-plus";
-import { Refresh } from "@element-plus/icons-vue";
+import { Refresh, Delete, Plus } from "@element-plus/icons-vue";
 import {
   getAiModelList,
   createAiModel,
@@ -390,6 +404,7 @@ const emptyForm = () => ({
   enabled: true,
   is_default: false,
   extra_headers_text: "",
+  headerFields: [] as { key: string; value: string }[],
   description: undefined as string | undefined,
 });
 const formData = reactive<any>(emptyForm());
@@ -471,7 +486,10 @@ async function handleOpenDialog(type: "create" | "update", id?: number) {
         max_tokens: item.max_tokens,
         enabled: item.enabled,
         is_default: item.is_default,
-        extra_headers_text: item.extra_headers ? JSON.stringify(item.extra_headers) : "",
+        headerFields: Object.entries(item.extra_headers || {}).map(([k, v]) => ({
+          key: k,
+          value: String(v),
+        })),
         description: item.description,
       });
     }
@@ -494,16 +512,7 @@ async function handleSubmit() {
   }
   submitLoading.value = true;
   try {
-    let extraHeaders: any = undefined;
-    if (formData.extra_headers_text && formData.extra_headers_text.trim()) {
-      try {
-        extraHeaders = JSON.parse(formData.extra_headers_text);
-      } catch {
-        ElMessage.error("自定义请求头不是合法 JSON");
-        submitLoading.value = false;
-        return;
-      }
-    }
+    const extraHeaders = buildObjectFromRows(formData.headerFields);
     const payload: any = {
       name: formData.name,
       provider: "openai_compatible",
@@ -551,17 +560,25 @@ async function handleTest(row: any) {
 
 const testing = ref(false);
 
+function buildObjectFromRows(
+  rows: { key: string; value: string }[]
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const r of rows || []) {
+    const k = (r.key || "").trim();
+    if (!k) continue;
+    out[k] = r.value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 // 弹窗内测试：有 Key 用当前表单值；编辑态未改 Key 则用已保存配置
 async function handleTestForm() {
-  const payload: any = { base_url: formData.base_url, model: formData.model };
-  if (formData.extra_headers_text && formData.extra_headers_text.trim()) {
-    try {
-      payload.extra_headers = JSON.parse(formData.extra_headers_text);
-    } catch {
-      ElMessage.error("自定义请求头不是合法 JSON");
-      return;
-    }
-  }
+  const payload: any = {
+    base_url: formData.base_url,
+    model: formData.model,
+    extra_headers: buildObjectFromRows(formData.headerFields),
+  };
   if (formData.api_key) payload.api_key = formData.api_key;
   else if (formData.id) payload.id = formData.id;
   else {
@@ -591,5 +608,16 @@ onMounted(() => {
 .cap-tag {
   margin-right: 4px;
   margin-bottom: 2px;
+}
+.header-builder {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.header-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 </style>
