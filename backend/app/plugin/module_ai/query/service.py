@@ -1454,19 +1454,18 @@ class AiQueryService:
 
     @classmethod
     async def _semantic_tables(cls, question: str) -> list[str]:
-        """embedding 语义检索：召回与问题最相关的表（schema linking）。"""
+        """分层检索（jieba 关键词 + embedding 语义融合）：召回最相关表。"""
         try:
             index = await cls._semantic_index()
             if not index:
                 return []
-            from app.plugin.module_ai.knowledge.embedding import embed_texts
+            from . import retrieval as _ret
 
-            qvec = (await embed_texts([question]))[0]
-            scored = [(_cosine(qvec, u["vector"]), u) for u in index]
-            scored.sort(key=lambda x: -x[0])
+            units = [{"text": u["text"], "vector": u.get("vector"), "meta": u["tables"]} for u in index]
+            top = await _ret.retrieve(question, units, top_k=12)
             tables: set[str] = set()
-            for _, u in scored[:15]:
-                tables.update(u["tables"])
+            for u in top:
+                tables.update(u.get("meta") or set())
             return list(tables)
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] 语义检索失败: {e}")

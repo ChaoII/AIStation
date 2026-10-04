@@ -268,5 +268,30 @@ class TestSemanticHelpers:
         assert "video_cameras" in ts and "video_alarm_records" in ts
 
 
+# ---------------------------------------------------------------------------
+# 分层检索（jieba + 融合）
+# ---------------------------------------------------------------------------
+class TestRetrieval:
+    def test_tokenize_includes_chinese_and_latin(self):
+        from app.plugin.module_ai.query.retrieval import tokenize
+
+        toks = tokenize("每个摄像头组的告警数量 video_alarm")
+        assert any("告警" in t or "告警" == t for t in toks)
+        assert "video_alarm" in toks
+
+    def test_keyword_score_higher_on_overlap(self):
+        from app.plugin.module_ai.query.retrieval import keyword_score
+
+        s1 = keyword_score("告警数量", "每告警数量统计")
+        s2 = keyword_score("告警数量", "训练任务进度")
+        assert s1 > s2
+
+    def test_cosine(self):
+        from app.plugin.module_ai.query.retrieval import _cosine
+
+        assert abs(_cosine([1, 0], [1, 0]) - 1.0) < 1e-6
+        assert abs(_cosine([1, 0], [0, 1])) < 1e-6
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
