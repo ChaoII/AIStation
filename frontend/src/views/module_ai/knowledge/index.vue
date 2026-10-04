@@ -614,6 +614,11 @@
 
         <!-- 分块 -->
         <el-tab-pane label="分块" name="chunks">
+          <div class="chunk-toolbar">
+            <el-button size="small" :disabled="!detailChunks.length" @click="exportChunksCsv">
+              导出 CSV
+            </el-button>
+          </div>
           <el-table v-loading="loadingChunks" :data="detailChunks" size="small" max-height="60vh">
             <el-table-column prop="chunk_index" label="#" width="60" align="center" />
             <el-table-column prop="file_name" label="来源" width="120" show-overflow-tooltip />
@@ -2371,6 +2376,27 @@ const detailIngest = reactive<any>({
 });
 const detailIngesting = ref(false);
 const detailChunks = ref<any[]>([]);
+
+function exportChunksCsv() {
+  const cols = ["chunk_index", "file_name", "content", "annotations"];
+  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = detailChunks.value.map((c: any) => [
+    c.chunk_index,
+    c.file_name,
+    c.content,
+    JSON.stringify(c.annotations || []),
+  ]);
+  const csv =
+    "\ufeff" + cols.join(",") + "\n" + rows.map((r: any) => r.map(esc).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `知识库分块_${detailKb.value?.name || ""}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  ElMessage.success(`已导出 ${rows.length} 个分块`);
+}
 const detailSearchMode = ref("hybrid");
 const detailQuery = ref("");
 const detailSearching = ref(false);
@@ -3710,6 +3736,9 @@ onMounted(() => {
 }
 .faq-bar {
   margin: 12px 0;
+}
+.chunk-toolbar {
+  margin-bottom: 8px;
 }
 .doc-html {
   img {
