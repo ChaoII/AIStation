@@ -825,9 +825,17 @@
     </el-dialog>
 
     <!-- 定时调度 -->
-    <el-dialog v-model="scheduleVisible" title="定时调度" width="460px" append-to-body>
+    <el-dialog v-model="scheduleVisible" title="定时调度" width="500px" append-to-body>
       <el-form label-position="top" size="small">
-        <el-form-item label="cron 表达式（分 时 日 月 周）">
+        <el-form-item label="常用模板">
+          <el-radio-group v-model="scheduleCron" size="small" class="schedule-presets">
+            <el-radio-button label="0 9 * * *">每天 09:00</el-radio-button>
+            <el-radio-button label="0 */30 * * * ?">每 30 分钟</el-radio-button>
+            <el-radio-button label="0 0 * * *">每天 00:00</el-radio-button>
+            <el-radio-button label="0 9 * * 1">每周一 09:00</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="cron 表达式（秒 分 时 日 月 周）">
           <el-input v-model="scheduleCron" placeholder="如：0 9 * * *（每天 09:00）" />
         </el-form-item>
         <el-form-item label="启用">
@@ -3832,6 +3840,9 @@ async function handleApprove(decision: "approve" | "reject") {
   margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.schedule-presets {
+  flex-wrap: wrap;
 }
 
 .history-detail {
