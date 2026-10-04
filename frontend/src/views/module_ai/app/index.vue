@@ -212,13 +212,37 @@
             <el-option label="报告" value="report" />
           </el-select>
         </el-form-item>
-        <el-form-item label="入参 JSON">
-          <el-input
-            v-model="formData.input_schema_text"
-            type="textarea"
-            :rows="4"
-            placeholder='可选，如 {"type":"object","properties":{"question":{"type":"string"}}}'
-          />
+        <el-form-item label="入参字段">
+          <div class="field-builder">
+            <div v-for="(f, i) in formData.inputFields" :key="i" class="field-row">
+              <el-input v-model="f.key" placeholder="字段名" class="field-row__key" />
+              <el-select v-model="f.type" class="field-row__type">
+                <el-option label="文本" value="string" />
+                <el-option label="数值" value="number" />
+                <el-option label="布尔" value="boolean" />
+                <el-option label="数组" value="array" />
+                <el-option label="对象" value="object" />
+              </el-select>
+              <el-input v-model="f.default" placeholder="默认值" class="field-row__default" />
+              <el-checkbox v-model="f.required" class="field-row__req">必填</el-checkbox>
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                @click="formData.inputFields.splice(i, 1)"
+              />
+            </div>
+            <el-button
+              text
+              type="primary"
+              :icon="Plus"
+              @click="
+                formData.inputFields.push({ key: '', type: 'string', default: '', required: false })
+              "
+            >
+              添加字段
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="formData.order" :min="0" />
@@ -298,6 +322,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { Auth } from "@/utils/auth";
+import { Delete, Plus } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -396,6 +421,7 @@ const emptyForm = () => ({
   tools: [] as string[],
   output_format: "text",
   input_schema_text: "",
+  inputFields: [] as { key: string; type: string; default: string; required: boolean }[],
   order: 0,
   enabled: true,
   app_type: "chat",
@@ -475,7 +501,7 @@ function handleOpenDialog(row?: any) {
     formData.prompt_id = row.prompt_id ?? null;
     formData.tools = [...(row.tools || [])];
     formData.output_format = row.output_format || "text";
-    formData.input_schema_text = row.input_schema ? JSON.stringify(row.input_schema, null, 2) : "";
+    formData.inputFields = schemaToFields(row.input_schema);
     formData.order = row.order ?? 0;
     formData.enabled = row.enabled !== false;
     formData.app_type = row.app_type || "chat";
@@ -492,14 +518,51 @@ function handleCloseDialog() {
   Object.assign(formData, emptyForm());
 }
 
-function parseJson(text: string): Record<string, any> | undefined {
-  const trimmed = (text || "").trim();
-  if (!trimmed) return undefined;
-  const parsed = JSON.parse(trimmed);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error("必须是 JSON 对象");
+function coerceDefault(v: string, type: string): any {
+  if (v === "" || v === undefined || v === null) return undefined;
+  if (type === "number") {
+    const n = Number(v);
+    return Number.isNaN(n) ? v : n;
   }
-  return parsed;
+  if (type === "boolean") return v === "true" || v === "1";
+  if (type === "array") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  }
+  return v;
+}
+function schemaToFields(
+  schema: any
+): { key: string; type: string; default: string; required: boolean }[] {
+  if (!schema || typeof schema !== "object") return [];
+  const props = schema.properties || {};
+  const required = new Set(schema.required || []);
+  return Object.entries<any>(props).map(([key, spec]) => ({
+    key,
+    type: spec?.type || "string",
+    default: spec?.default === undefined ? "" : String(spec.default),
+    required: required.has(key),
+  }));
+}
+function fieldsToSchema(fields: any[]): Record<string, any> | undefined {
+  const properties: Record<string, any> = {};
+  const required: string[] = [];
+  for (const f of fields || []) {
+    const key = (f.key || "").trim();
+    if (!key) continue;
+    const p: Record<string, any> = { type: f.type || "string" };
+    const dv = coerceDefault(f.default, f.type);
+    if (dv !== undefined) p.default = dv;
+    if (f.required) required.push(key);
+    properties[key] = p;
+  }
+  if (!Object.keys(properties).length) return undefined;
+  const schema: Record<string, any> = { type: "object", properties, additionalProperties: false };
+  if (required.length) schema.required = required;
+  return schema;
 }
 
 async function handleSubmit() {
@@ -507,13 +570,7 @@ async function handleSubmit() {
     ElMessage.warning("请填写名称");
     return;
   }
-  let inputSchema: Record<string, any> | undefined;
-  try {
-    inputSchema = parseJson(formData.input_schema_text);
-  } catch (e: any) {
-    ElMessage.error(`入参 JSON 解析失败：${e?.message || e}`);
-    return;
-  }
+  const inputSchema = fieldsToSchema(formData.inputFields);
   const payload: any = {
     name: formData.name.trim(),
     icon: formData.icon.trim(),
@@ -669,5 +726,28 @@ onMounted(() => {
   color: var(--el-text-color-primary);
   word-break: break-word;
   white-space: pre-wrap;
+}
+.field-builder {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.field-row__key {
+  width: 160px;
+}
+.field-row__type {
+  width: 100px;
+}
+.field-row__default {
+  flex: 1;
+}
+.field-row__req {
+  flex-shrink: 0;
 }
 </style>
