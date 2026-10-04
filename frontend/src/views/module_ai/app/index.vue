@@ -22,7 +22,7 @@
         </div>
       </template>
 
-      <template #table="{ data, loading, tableRef, onSelectionChange }">
+      <template #table="{ data, loading, tableRef }">
         <div class="data-table__content">
           <div class="batch-bar">
             <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(true)">
@@ -31,6 +31,10 @@
             <el-button size="small" :disabled="!appSelIds.length" @click="batchApp(false)">
               批量停用
             </el-button>
+            <el-tag size="small" type="info" effect="plain" class="summary-tag">
+              共 {{ appSummary.total }} 个组件 · 启用 {{ appSummary.enabled }} · 停用
+              {{ appSummary.disabled }}
+            </el-tag>
           </div>
           <el-table
             :ref="tableRef as any"
@@ -544,8 +548,23 @@ async function batchApp(enabled: boolean) {
     const r = await batchAppStatus(appSelIds.value, enabled);
     ElMessage.success(`已${enabled ? "启用" : "停用"} ${r.data?.data?.count || 0} 个组件`);
     refreshList();
+    loadAppSummary();
   } catch (e: any) {
     ElMessage.error(e?.msg || e?.message || "操作失败");
+  }
+}
+const appSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+async function loadAppSummary() {
+  try {
+    const res = await getAiAppList();
+    const list = res.data?.data || [];
+    appSummary.value = {
+      total: list.length,
+      enabled: list.filter((x: any) => x.enabled).length,
+      disabled: list.filter((x: any) => !x.enabled).length,
+    };
+  } catch {
+    /* 忽略 */
   }
 }
 function tagsInputToArray() {
@@ -836,6 +855,7 @@ async function runDebug() {
 
 onMounted(() => {
   loadOptions();
+  loadAppSummary();
 });
 </script>
 
@@ -874,6 +894,9 @@ onMounted(() => {
 }
 .batch-bar {
   margin-bottom: 8px;
+}
+.summary-tag {
+  margin-left: 8px;
 }
 .field-builder {
   width: 100%;
