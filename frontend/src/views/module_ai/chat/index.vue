@@ -32,6 +32,9 @@
           />
         </el-main>
         <el-footer class="chat-footer">
+          <div v-if="canRegenerate" class="chat-regen-bar">
+            <el-button size="small" @click="handleRegenerate">重新生成</el-button>
+          </div>
           <div v-if="!appId && !agentId" class="chat-kb-bar">
             <span class="chat-kb-label">关联知识库</span>
             <el-select
@@ -214,6 +217,14 @@ const chat = useAiChat(() => ({
 const isSending = computed(
   () => chat.status.value === "submitted" || chat.status.value === "streaming"
 );
+const canRegenerate = computed(() => {
+  const msgs = displayMessages.value;
+  const last = msgs[msgs.length - 1];
+  return !!last && last.type === "assistant" && !isSending.value;
+});
+const handleRegenerate = () => {
+  if (canRegenerate.value) (chat as any).regenerate?.();
+};
 
 // Refs
 const chatMessagesRef = ref<{ scrollToBottom: () => void }>();
