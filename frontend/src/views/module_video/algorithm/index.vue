@@ -250,6 +250,28 @@
             </div>
           </el-form-item>
           <el-form-item label="配置内容">
+            <div class="form-section-title">运行环境</div>
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="推理引擎">
+                  <el-select v-model="algoForm.runtimeEngine" style="width: 100%">
+                    <el-option label="PyTorch" value="pytorch" />
+                    <el-option label="TensorRT" value="tensorrt" />
+                    <el-option label="ONNX Runtime" value="onnx" />
+                    <el-option label="OpenVINO" value="openvino" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="运行设备">
+                  <el-select v-model="algoForm.runtimeDevice" style="width: 100%">
+                    <el-option label="CPU" value="cpu" />
+                    <el-option label="GPU 0" value="0" />
+                    <el-option label="GPU 1" value="1" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+            </el-row>
             <div class="code-editor-wrap">
               <CodeEditor
                 v-model="algoForm.configJson"
@@ -392,7 +414,11 @@ const algoContentConfig = reactive<IContentConfig<TablePageQuery>>({
         .filter((n) => !Number.isNaN(n))
     );
   },
-  deleteConfirm: { title: "警告", message: "确认删除所选数据吗？删除后不可恢复。", type: "warning" },
+  deleteConfirm: {
+    title: "警告",
+    message: "确认删除所选数据吗？删除后不可恢复。",
+    type: "warning",
+  },
 });
 
 function handleAlgoDelete(id: number) {
@@ -518,6 +544,8 @@ const algoForm = reactive({
   model_path: undefined as string | undefined,
   plugin_path: undefined as string | undefined,
   configJson: JSON.stringify(configTemplates.INTRUSION, null, 2),
+  runtimeEngine: "pytorch",
+  runtimeDevice: "cpu",
   status: true,
   description: undefined as string | undefined,
 });
@@ -531,6 +559,8 @@ const initialAlgoForm = {
   model_path: undefined as string | undefined,
   plugin_path: undefined as string | undefined,
   configJson: JSON.stringify(configTemplates.INTRUSION, null, 2),
+  runtimeEngine: "pytorch" as const,
+  runtimeDevice: "cpu" as const,
   status: true,
   description: undefined as string | undefined,
 };
@@ -633,6 +663,8 @@ async function handleOpenAlgoDialog(type: "create" | "update", id?: number) {
       config.params = item.preset_params || configTemplates[item.algorithm_type]?.params;
       config.output = item.output_schema || configTemplates[item.algorithm_type]?.output;
       algoForm.configJson = JSON.stringify(config, null, 2);
+      algoForm.runtimeEngine = config.runtime?.engine || "pytorch";
+      algoForm.runtimeDevice = config.runtime?.device || "cpu";
     }
   } else {
     algoDialogVisible.title = "新增算法";
@@ -652,6 +684,12 @@ async function handleSubmitAlgo() {
     } catch {
       config = {};
     }
+    // 运行环境可视化字段写入 runtime
+    config.runtime = {
+      ...(config.runtime || {}),
+      engine: algoForm.runtimeEngine,
+      device: algoForm.runtimeDevice,
+    };
     const payload: any = {
       name: algoForm.name,
       code: algoForm.code,
