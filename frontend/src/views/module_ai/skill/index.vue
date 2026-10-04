@@ -149,12 +149,20 @@
           />
         </el-form-item>
         <el-form-item label="技能内容">
-          <el-input
-            v-model="skillForm.content"
-            type="textarea"
-            :rows="6"
-            placeholder="Markdown 指令/使用说明，绑定到智能体后并入系统提示词"
-          />
+          <div class="skill-md-editor">
+            <el-radio-group v-model="skillContentMode" size="small" class="skill-md-editor__tabs">
+              <el-radio-button label="edit">编辑</el-radio-button>
+              <el-radio-button label="preview">预览</el-radio-button>
+            </el-radio-group>
+            <el-input
+              v-if="skillContentMode === 'edit'"
+              v-model="skillForm.content"
+              type="textarea"
+              :rows="8"
+              placeholder="Markdown 指令/使用说明，支持 {{变量}}，绑定到智能体后并入系统提示词"
+            />
+            <div v-else class="skill-md-editor__preview" v-html="renderMd(skillForm.content)"></div>
+          </div>
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="skillForm.sort_order" :min="0" />
@@ -256,6 +264,7 @@ const categories = ref<any[]>([]);
 const activeTab = ref("all");
 const searchKeyword = ref("");
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+const skillContentMode = ref("edit");
 function renderMd(text: string) {
   return md.render(text || "");
 }
@@ -588,6 +597,30 @@ onMounted(loadData);
   font-size: var(--el-font-size-base);
   color: var(--el-text-color-regular);
   word-break: break-word;
+}
+.skill-md-editor {
+  width: 100%;
+}
+.skill-md-editor__tabs {
+  margin: 6px 0 8px;
+}
+.skill-md-editor__preview {
+  min-height: 160px;
+  line-height: 1.7;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+  word-break: break-word;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 10px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.skill-md-editor__preview :deep(pre) {
+  background: var(--el-fill-color-light);
+  padding: 8px;
+  border-radius: 6px;
+  overflow: auto;
 }
 .skill-md :deep(pre) {
   background: var(--el-fill-color-light);
