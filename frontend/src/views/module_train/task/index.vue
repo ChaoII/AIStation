@@ -275,13 +275,21 @@
           </div>
         </el-form-item>
         <el-form-item label="基础模型">
-          <el-input-number
+          <el-select
             v-model="formData.base_model_id"
-            :min="0"
-            :controls="false"
+            :loading="modelVersionsLoading"
+            clearable
+            filterable
+            placeholder="留空表示从零训练；或从模型仓库选择版本"
             style="width: 100%"
-            placeholder="留空表示从零训练；可填模型版本 ID"
-          />
+          >
+            <el-option
+              v-for="m in modelVersions"
+              :key="m.id"
+              :label="modelVersionLabel(m)"
+              :value="m.id"
+            />
+          </el-select>
         </el-form-item>
         <el-divider>超参数配置</el-divider>
 
@@ -574,6 +582,24 @@ const annoTasksForFramework = computed<any[]>(() => {
   if (formData.framework !== "torchkiln") return annoTasks.value;
   return annoTasks.value.filter((t: any) => TK_SUPPORTED_TASK_TYPES.includes(String(t.task_type)));
 });
+
+const modelVersions = ref<any[]>([]);
+const modelVersionsLoading = ref(false);
+async function loadModelVersions() {
+  modelVersionsLoading.value = true;
+  try {
+    const res = await TrainAPI.getModelList({ page_no: 1, page_size: 200 });
+    modelVersions.value = res.data?.data?.items || [];
+  } catch {
+    modelVersions.value = [];
+  } finally {
+    modelVersionsLoading.value = false;
+  }
+}
+function modelVersionLabel(m: any) {
+  const v = m.version ? `v${m.version}` : "";
+  return `${m.name || m.id}${v ? " " + v : ""}`;
+}
 
 const modelOptions = computed(() => {
   const activeTask = annoTasks.value.find((t: any) => t.id === formData.annotation_task_id);
@@ -1083,6 +1109,7 @@ function stopPoll() {
 }
 
 onMounted(() => {
+  loadModelVersions();
   startPoll();
   // 从任务详情"编辑参数"进入：自动打开编辑对话框
   const editId = Number(route.query.edit_id || 0);
