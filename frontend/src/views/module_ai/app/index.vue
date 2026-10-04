@@ -194,6 +194,88 @@
             <el-option v-for="p in promptOptions" :key="p.id" :label="p.name" :value="p.id" />
           </el-select>
         </el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="温度">
+              <el-input-number
+                v-model="formData.temperature"
+                :min="0"
+                :max="2"
+                :step="0.1"
+                controls-position="right"
+                style="width: 100%"
+                placeholder="留空用模型默认"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="最大 token">
+              <el-input-number
+                v-model="formData.max_tokens"
+                :min="64"
+                :max="32768"
+                :step="128"
+                controls-position="right"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="上下文窗口">
+              <el-input-number
+                v-model="formData.context_window"
+                :min="0"
+                :step="1024"
+                :controls="false"
+                style="width: 100%"
+                placeholder="如 128000"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="超时(秒)">
+              <el-input-number
+                v-model="formData.timeout"
+                :min="5"
+                :max="600"
+                :step="5"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="系统提示词">
+          <el-input
+            v-model="formData.system_prompt"
+            type="textarea"
+            :rows="3"
+            placeholder="自定义系统提示词（覆盖所选提示词）；留空用默认"
+          />
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-input
+            v-model="tagsInput"
+            placeholder="逗号分隔多个标签，如 客服, 销售"
+            clearable
+            @change="tagsInputToArray"
+          />
+          <div v-if="formData.tags.length" class="app-tags">
+            <el-tag
+              v-for="(t, i) in formData.tags"
+              :key="i"
+              size="small"
+              closable
+              @close="formData.tags.splice(i, 1)"
+            >
+              {{ t }}
+            </el-tag>
+          </div>
+        </el-form-item>
+        <el-form-item label="多轮记忆">
+          <el-switch v-model="formData.memory" />
+        </el-form-item>
         <el-form-item label="工具集">
           <el-select
             v-model="formData.tools"
@@ -427,9 +509,23 @@ const emptyForm = () => ({
   app_type: "chat",
   kb_id: null as number | null,
   workflow_id: null as number | null,
+  temperature: null as number | null,
+  max_tokens: null as number | null,
+  context_window: null as number | null,
+  system_prompt: "",
+  tags: [] as string[],
+  memory: true,
+  timeout: 60,
 });
 
 const formData = reactive(emptyForm());
+const tagsInput = ref("");
+function tagsInputToArray() {
+  formData.tags = (tagsInput.value || "")
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 const modelMap = computed(() => {
   const map: Record<number, string> = {};
@@ -507,6 +603,14 @@ function handleOpenDialog(row?: any) {
     formData.app_type = row.app_type || "chat";
     formData.kb_id = row.kb_id ?? null;
     formData.workflow_id = row.workflow_id ?? null;
+    formData.temperature = row.temperature ?? null;
+    formData.max_tokens = row.max_tokens ?? null;
+    formData.context_window = row.context_window ?? null;
+    formData.system_prompt = row.system_prompt || "";
+    formData.tags = [...(row.tags || [])];
+    formData.memory = row.memory !== false;
+    formData.timeout = row.timeout || 60;
+    tagsInput.value = (row.tags || []).join(",");
   } else {
     dialogTitle.value = "新增应用";
   }
@@ -585,6 +689,13 @@ async function handleSubmit() {
     app_type: formData.app_type,
     kb_id: formData.app_type === "kb" ? formData.kb_id : null,
     workflow_id: formData.workflow_id,
+    temperature: formData.temperature,
+    max_tokens: formData.max_tokens,
+    context_window: formData.context_window,
+    system_prompt: formData.system_prompt || null,
+    tags: formData.tags,
+    memory: formData.memory,
+    timeout: formData.timeout,
   };
   submitLoading.value = true;
   try {
@@ -726,6 +837,12 @@ onMounted(() => {
   color: var(--el-text-color-primary);
   word-break: break-word;
   white-space: pre-wrap;
+}
+.app-tags {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .field-builder {
   width: 100%;

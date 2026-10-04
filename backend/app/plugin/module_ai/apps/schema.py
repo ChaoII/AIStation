@@ -19,6 +19,13 @@ class AiAppCreateSchema(BaseModel):
     app_type: str = Field(default="chat", max_length=16, description="组件类型: chat/agent/workflow/kb")
     kb_id: int | None = Field(default=None, description="绑定知识库ID(类型=kb)")
     workflow_id: int | None = Field(default=None, description="绑定工作流ID(类型=workflow或有工作流)")
+    temperature: float | None = Field(default=None, ge=0, le=2, description="温度")
+    max_tokens: int | None = Field(default=None, ge=64, description="最大输出token")
+    context_window: int | None = Field(default=None, ge=0, description="上下文窗口")
+    system_prompt: str | None = Field(default=None, description="自定义系统提示词")
+    tags: list | None = Field(default=None, description="标签")
+    memory: bool = Field(default=True, description="多轮记忆")
+    timeout: int = Field(default=60, ge=5, le=600, description="超时(秒)")
 
 
 class AiAppUpdateSchema(BaseModel):
@@ -37,6 +44,13 @@ class AiAppUpdateSchema(BaseModel):
     app_type: str | None = Field(default=None, max_length=16)
     kb_id: int | None = None
     workflow_id: int | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    context_window: int | None = None
+    system_prompt: str | None = None
+    tags: list | None = None
+    memory: bool | None = None
+    timeout: int | None = None
 
 
 class AiAppRunSchema(BaseModel):

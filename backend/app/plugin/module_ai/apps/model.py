@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Integer, String
+from sqlalchemy import Boolean, Float, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,3 +37,20 @@ class AiAppModel(ModelMixin, UserMixin):
     workflow_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, default=None, comment="绑定工作流ID(有工作流时)"
     )
+    temperature: Mapped[float | None] = mapped_column(
+        Float, nullable=True, default=None, comment="温度(留空用模型默认)"
+    )
+    max_tokens: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="最大输出token(留空用模型默认)"
+    )
+    context_window: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None, comment="上下文窗口(可达性提示)"
+    )
+    system_prompt: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None, comment="自定义系统提示词(覆盖prompt_id)"
+    )
+    tags: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list, comment="标签"
+    )
+    memory: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否开启多轮记忆")
+    timeout: Mapped[int] = mapped_column(Integer, default=60, comment="超时(秒)")

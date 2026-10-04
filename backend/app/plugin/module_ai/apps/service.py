@@ -27,6 +27,13 @@ def _to_dict(a: AiAppModel) -> dict:
         "app_type": a.app_type or "chat",
         "kb_id": a.kb_id,
         "workflow_id": a.workflow_id,
+        "temperature": a.temperature,
+        "max_tokens": a.max_tokens,
+        "context_window": a.context_window,
+        "system_prompt": a.system_prompt,
+        "tags": a.tags or [],
+        "memory": a.memory if a.memory is not None else True,
+        "timeout": a.timeout or 60,
         "created_time": a.created_time,
         "updated_time": a.updated_time,
     }
@@ -44,6 +51,13 @@ async def _ensure_app_columns() -> None:
                 ("app_type", "VARCHAR(16) DEFAULT 'chat'"),
                 ("kb_id", "INTEGER"),
                 ("workflow_id", "INTEGER"),
+                ("temperature", "FLOAT"),
+                ("max_tokens", "INTEGER"),
+                ("context_window", "INTEGER"),
+                ("system_prompt", "TEXT"),
+                ("tags", "JSONB"),
+                ("memory", "BOOLEAN DEFAULT true"),
+                ("timeout", "INTEGER DEFAULT 60"),
             ):
                 await db.execute(
                     _text(f"ALTER TABLE ai_apps ADD COLUMN IF NOT EXISTS {col} {ddl}")
@@ -93,6 +107,13 @@ class AiAppService:
                 app_type=data.app_type or "chat",
                 kb_id=getattr(data, "kb_id", None),
                 workflow_id=getattr(data, "workflow_id", None),
+                temperature=getattr(data, "temperature", None),
+                max_tokens=getattr(data, "max_tokens", None),
+                context_window=getattr(data, "context_window", None),
+                system_prompt=getattr(data, "system_prompt", None),
+                tags=getattr(data, "tags", None) or [],
+                memory=getattr(data, "memory", True),
+                timeout=getattr(data, "timeout", 60) or 60,
                 created_id=auth.user.id,
                 updated_id=auth.user.id,
             )
@@ -108,7 +129,7 @@ class AiAppService:
             if not a or a.is_deleted:
                 return None
             provided = getattr(data, "model_fields_set", set())
-            nullable = {"description", "model_id", "prompt_id", "input_schema", "kb_id", "workflow_id"}
+            nullable = {"description", "model_id", "prompt_id", "input_schema", "kb_id", "workflow_id", "temperature", "max_tokens", "context_window", "system_prompt"}
             for key in (
                 "name",
                 "icon",
@@ -123,6 +144,13 @@ class AiAppService:
                 "app_type",
                 "kb_id",
                 "workflow_id",
+                "temperature",
+                "max_tokens",
+                "context_window",
+                "system_prompt",
+                "tags",
+                "memory",
+                "timeout",
             ):
                 if key not in provided:
                     continue
