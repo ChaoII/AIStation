@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 from typing import Any
@@ -1600,7 +1601,7 @@ class AiQueryService:
         try:
             from app.plugin.module_ai.knowledge.embedding import embed_texts
 
-            vecs = await embed_texts([u["text"] for u in units])
+            vecs = await embed_texts([u["text"] for u in units], model_id=await cls._embedding_mid())
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] schema 向量化失败，退化为关键字: {e}")
             return []
@@ -1611,6 +1612,27 @@ class AiQueryService:
             for u, v in zip(units, vecs, strict=False)
         ]
         return _SEMANTIC_INDEX
+
+    @staticmethod
+    async def _embedding_mid() -> int | None:
+        """解析 usage='embedding' 的模型 id（供 embed_texts 使用），无则 None。"""
+        try:
+            from sqlalchemy import text as _t
+
+            async with async_db_session() as db:
+                m = (
+                    await db.execute(
+                        _t(
+                            "SELECT id FROM ai_models "
+                            "WHERE usage=:usage AND enabled=true AND is_deleted=false "
+                            "ORDER BY is_default DESC, id DESC LIMIT 1"
+                        ),
+                        {"usage": "embedding"},
+                    )
+                ).scalar_one_or_none()
+                return int(m) if m else None
+        except Exception:  # noqa: BLE001
+            return None
 
     @classmethod
     async def _ensure_vector_table(cls) -> None:
@@ -1653,10 +1675,10 @@ class AiQueryService:
                 await db.execute(
                     _text(
                         "INSERT INTO ai_query_asset_vectors(asset_type, ref, txt, tables, embedding) "
-                        "VALUES ('unit', :ref, :txt, :tables::jsonb, :vec::vector) "
+                        "VALUES ('unit', :ref, :txt, CAST(:tables AS jsonb), CAST(:vec AS vector)) "
                         "ON CONFLICT (ref) DO UPDATE SET txt=EXCLUDED.txt, tables=EXCLUDED.tables, embedding=EXCLUDED.embedding"
                     ),
-                    {"ref": ref, "txt": u["text"], "tables": tables, "vec": vec},
+                    {"ref": ref, "txt": u["text"], "tables": json.dumps(tables, ensure_ascii=False), "vec": vec},
                 )
         return len(rows)
 
@@ -1670,7 +1692,7 @@ class AiQueryService:
         try:
             from app.plugin.module_ai.knowledge.embedding import embed_texts
 
-            qvec = (await embed_texts([question]))[0]
+            qvec = (await embed_texts([question], model_id=await cls._embedding_mid()))[0]
         except Exception:  # noqa: BLE001
             return []
         async with async_db_session() as db:
@@ -1679,7 +1701,7 @@ class AiQueryService:
             r = await db.execute(
                 _text(
                     "SELECT tables FROM ai_query_asset_vectors "
-                    "ORDER BY embedding <-> :q::vector LIMIT :k"
+                    "ORDER BY embedding <-> CAST(:q AS vector) LIMIT :k"
                 ),
                 {"q": str(qvec), "k": top_k},
             )
@@ -1716,7 +1738,7 @@ class AiQueryService:
             from . import retrieval as _ret
 
             units = [{"text": u["text"], "vector": u.get("vector"), "meta": u["tables"]} for u in index]
-            top = await _ret.retrieve(question, units, top_k=12)
+            top = await _ret.retrieve(question, units, top_k=12, embed_model_id=await cls._embedding_mid())
             tables: set[str] = set()
             for u in top:
                 tables.update(u.get("meta") or set())

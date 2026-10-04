@@ -17,7 +17,15 @@ os.environ["ENVIRONMENT"] = os.environ.get("ENVIRONMENT", "dev")
 
 import asyncio
 import statistics
+import sys
 import time
+
+# Windows GBK 控制台无法打印 ✓ 等字符，强制 UTF-8
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
 
 import httpx
 from sqlalchemy import text

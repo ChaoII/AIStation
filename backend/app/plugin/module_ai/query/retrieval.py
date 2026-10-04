@@ -66,6 +66,7 @@ async def retrieve(
     units: list[dict],
     top_k: int = 10,
     semantic_weight: float | None = None,
+    embed_model_id: int | None = None,
 ) -> list[dict]:
     """分层检索：融合关键词 + 语义，返回 top-k。
 
@@ -77,7 +78,7 @@ async def retrieve(
     try:
         from app.plugin.module_ai.knowledge.embedding import embed_texts
 
-        qvec = (await embed_texts([question]))[0]
+        qvec = (await embed_texts([question], model_id=embed_model_id))[0]
     except Exception:  # noqa: BLE001
         qvec = None
     scored: list[tuple[float, dict]] = []
