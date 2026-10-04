@@ -244,5 +244,29 @@ class TestSqlglotValidate:
             validate_sql("INSERT INTO t VALUES (1)", SYSTEM_ALLOWED_TABLES)
 
 
+# ---------------------------------------------------------------------------
+# 阶段：embedding 语义检索（schema linking）辅助函数
+# ---------------------------------------------------------------------------
+class TestSemanticHelpers:
+    def test_cosine_identical(self):
+        from app.plugin.module_ai.query.service import _cosine
+
+        v = [1.0, 2.0, 3.0]
+        assert abs(_cosine(v, v) - 1.0) < 1e-6
+
+    def test_cosine_orthogonal(self):
+        from app.plugin.module_ai.query.service import _cosine
+
+        assert abs(_cosine([1.0, 0.0], [0.0, 1.0])) < 1e-6
+
+    def test_tables_in_sql(self):
+        from app.plugin.module_ai.query.service import _tables_in_sql
+
+        ts = _tables_in_sql(
+            "SELECT c.name FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id"
+        )
+        assert "video_cameras" in ts and "video_alarm_records" in ts
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

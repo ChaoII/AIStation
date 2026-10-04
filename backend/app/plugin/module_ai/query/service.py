@@ -39,6 +39,17 @@ QUERY_TIMEOUT = 10  # 秒
 _SEED_DONE = False
 # 进程级缓存：系统表真实列 schema（供 NL2SQL 注入）
 _SCHEMA_CACHE: dict | None = None
+# 进程级缓存：embedding schema 向量索引（供语义检索）
+_SEMANTIC_INDEX: list | None = None
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    if not a or not b:
+        return 0.0
+    return sum(x * y for x, y in zip(a, b, strict=False)) / (
+        (sum(x * x for x in a) ** 0.5) * (sum(y * y for y in b) ** 0.5) + 1e-9
+    )
+
 
 # 禁止出现的 SQL 关键片段（防 DDL/DML/多语句/写操作）
 _FORBIDDEN = re.compile(
@@ -363,6 +374,17 @@ def validate_sql(sql: str, allowed_tables: set[str]) -> str:
     if not re.search(r"\blimit\s+\d+", removed_semis, re.IGNORECASE):
         removed_semis = removed_semis + f" LIMIT {MAX_ROWS}"
     return removed_semis
+
+
+def _tables_in_sql(sql: str) -> set[str]:
+    """从指标 SQL 提取涉及的系统表（含 FROM/JOIN）。"""
+    names = {
+        m.group(1)
+        for m in re.finditer(
+            r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)", sql or "", re.IGNORECASE
+        )
+    }
+    return {n for n in names if n in SYSTEM_ALLOWED_TABLES}
 
 
 def _render_template(template: str, params: dict[str, Any]) -> str:
@@ -1206,6 +1228,64 @@ class AiQueryService:
         _SCHEMA_CACHE = schema
         return schema
 
+    @classmethod
+    async def _semantic_index(cls) -> list | None:
+        """把表/列/指标/术语编码成向量索引（进程级缓存，仅首次构建）。"""
+        global _SEMANTIC_INDEX
+        if _SEMANTIC_INDEX is not None:
+            return _SEMANTIC_INDEX
+        schema = await cls._system_schema()
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        terms = await cls.list_terms(SYSTEM_DS)
+        units: list[dict] = []
+        for t in schema:
+            units.append({"text": f"数据表 {t}", "tables": {t}})
+            for col in schema[t]:
+                cname = col.split("(")[0]
+                units.append({"text": f"表 {t} 的字段 {cname}", "tables": {t}})
+        for m in metrics:
+            units.append(
+                {"text": f"统计指标 {m['name']}：{m['description']}", "tables": _tables_in_sql(m.get("sql_template", ""))}
+            )
+        for tm in terms:
+            units.append(
+                {"text": f"业务术语 {tm['term']} 对应 {tm.get('metric_key') or tm.get('field_path')}", "tables": set()}
+            )
+        try:
+            from app.plugin.module_ai.knowledge.embedding import embed_texts
+
+            vecs = await embed_texts([u["text"] for u in units])
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] schema 向量化失败，退化为关键字: {e}")
+            return []
+        if not vecs:
+            return []
+        _SEMANTIC_INDEX = [
+            {"text": u["text"], "tables": u["tables"], "vector": v}
+            for u, v in zip(units, vecs, strict=False)
+        ]
+        return _SEMANTIC_INDEX
+
+    @classmethod
+    async def _semantic_tables(cls, question: str) -> list[str]:
+        """embedding 语义检索：召回与问题最相关的表（schema linking）。"""
+        try:
+            index = await cls._semantic_index()
+            if not index:
+                return []
+            from app.plugin.module_ai.knowledge.embedding import embed_texts
+
+            qvec = (await embed_texts([question]))[0]
+            scored = [(_cosine(qvec, u["vector"]), u) for u in index]
+            scored.sort(key=lambda x: -x[0])
+            tables: set[str] = set()
+            for _, u in scored[:15]:
+                tables.update(u["tables"])
+            return list(tables)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 语义检索失败: {e}")
+            return []
+
     @staticmethod
     def _relevant_tables(question: str, schema: dict, metrics: list[dict], terms: list[dict]) -> list[str]:
         """依据问题关键词，只挑相关的表（列名/表名命中），控制注入 token 并聚焦。"""
@@ -1250,7 +1330,9 @@ class AiQueryService:
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
             schema = await cls._system_schema()
-            rel = cls._relevant_tables(question, schema, metrics, terms)
+            rel = await cls._semantic_tables(question)
+            if not rel:
+                rel = cls._relevant_tables(question, schema, metrics, terms)
             for t in rel:
                 cols = schema.get(t, [])
                 lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
