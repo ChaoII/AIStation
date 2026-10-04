@@ -114,6 +114,9 @@ export function getQueryAssets() {
 export function getQueryAssetColumns(tableName: string) {
   return request({ url: `${API_PATH}/assets/${tableName}/columns`, method: "get" });
 }
+export function generateQueryAssetDesc() {
+  return request({ url: `${API_PATH}/assets/generate-desc`, method: "post", timeout: 120000 });
+}
 export function saveQueryAsset(data: {
   table_name: string;
   description: string;

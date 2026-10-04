@@ -780,6 +780,98 @@ class AiQueryService:
         return {"table_name": data.table_name, "included": data.included}
 
     @classmethod
+    async def generate_asset_descriptions(cls, auth) -> dict:
+        """用 LLM 为缺少中文描述的表/字段生成初稿（人工校对后生效）。"""
+        async with async_db_session() as db:
+            from sqlalchemy import select as _sel
+
+            tables = (
+                await db.execute(
+                    _sel(AiQueryAssetModel).where(
+                        AiQueryAssetModel.is_deleted.is_(False),
+                        AiQueryAssetModel.included.is_(True),
+                    )
+                )
+            ).scalars().all()
+            columns = (
+                await db.execute(
+                    _sel(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                        AiQueryAssetColumnModel.included.is_(True),
+                    )
+                )
+            ).scalars().all()
+        # 仅处理缺描述的
+        need_tables = [(t.table_name, t) for t in tables if not (t.description or "").strip()]
+        colmap: dict[str, list[tuple[str, Any]]] = {}
+        for c in columns:
+            if not (c.description or "").strip():
+                colmap.setdefault(c.table_name, []).append((c.column_name, c))
+        if not need_tables and not colmap:
+            return {"tables": 0, "columns": 0}
+        runtime = await cls._get_runtime()
+        try:
+            from openai import AsyncOpenAI
+
+            from app.plugin.module_ai.provider.service import build_headers
+
+            client = AsyncOpenAI(
+                base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
+                default_headers=build_headers(runtime["base_url"], runtime.get("extra_headers"), "aistation-dict"),
+            )
+        except Exception as e:  # noqa: BLE001
+            raise CustomException(msg=f"问答模型不可用：{e}")
+        updated_tables = updated_cols = 0
+        # 按表批量生成
+        for tname, trow in need_tables:
+            cols = [c[0] for c in colmap.get(tname, [])] or ["(无字段)"]
+            prompt = (
+                "你是数据库元数据专家。请为下面这张数据库表及字段生成简洁的中文业务描述（每个不超过30字，只说业务含义）。"
+                "严格返回 JSON，格式：{\"table\":\"<表描述>\",\"columns\":{\"字段名\":\"<字段描述>\"}}。\n"
+                f"表名：{tname}\n字段：{', '.join(cols)}"
+            )
+            try:
+                resp = await client.chat.completions.create(
+                    model=runtime["model"], messages=[{"role": "user", "content": prompt}],
+                    temperature=0, max_tokens=800,
+                )
+                text = (resp.choices[0].message.content or "")
+                data = cls._parse_dict(text)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 生成表描述失败 {tname}: {e}")
+                continue
+            tdesc = (data.get("table") or "").strip()
+            async with async_db_session.begin() as dbt:
+                obj = await dbt.get(AiQueryAssetModel, trow.id)
+                if obj and tdesc:
+                    obj.description = tdesc
+                    obj.updated_id = auth.user.id
+                    updated_tables += 1
+                cdesc = data.get("columns") or {}
+                for colname, cobj in colmap.get(tname, []):
+                    d = (cdesc.get(colname) or "").strip()
+                    if d and isinstance(cobj, AiQueryAssetColumnModel):
+                        cobj.description = d
+                        cobj.updated_id = auth.user.id
+                        updated_cols += 1
+        return {"tables": updated_tables, "columns": updated_cols}
+
+    @staticmethod
+    def _parse_dict(text: str) -> dict:
+        import json
+        import re
+
+        text = re.sub(r"```(?:json)?", "", text).strip()
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            text = text[start : end + 1]
+        try:
+            return json.loads(text)
+        except Exception:  # noqa: BLE001
+            return {}
+
+    @classmethod
     async def upsert_asset_column(cls, data, auth) -> dict:
         global _SEMANTIC_INDEX, _SCHEMA_CACHE
         async with async_db_session.begin() as db:

@@ -253,6 +253,14 @@
             >
               从数据库同步
             </el-button>
+            <el-button
+              size="small"
+              :icon="MagicStick"
+              :loading="generatingDesc"
+              @click="generateDesc"
+            >
+              LLM 生成中文描述
+            </el-button>
             <el-tag size="small" type="info" effect="plain">
               已纳入 {{ assets.filter((a) => a.included).length }}/{{ assets.length }} 张表 ·
               维护中文描述利于检索
@@ -600,7 +608,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Delete, Setting, Loading, Refresh } from "@element-plus/icons-vue";
+import { Plus, Delete, Setting, Loading, Refresh, MagicStick } from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
 import {
   queryAsk,
@@ -624,6 +632,7 @@ import {
   getQueryAssetColumns,
   saveQueryAsset,
   saveQueryAssetColumn,
+  generateQueryAssetDesc,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -972,6 +981,20 @@ async function syncAssets() {
     ElMessage.error(e?.msg || "同步失败");
   } finally {
     syncingAssets.value = false;
+  }
+}
+const generatingDesc = ref(false);
+async function generateDesc() {
+  generatingDesc.value = true;
+  try {
+    const r = await generateQueryAssetDesc();
+    const d = r.data?.data || {};
+    ElMessage.success(`已生成：${d.tables ?? 0} 表 / ${d.columns ?? 0} 字段描述，请人工校对`);
+    loadAssets();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "生成失败");
+  } finally {
+    generatingDesc.value = false;
   }
 }
 async function saveAsset(row: any) {
