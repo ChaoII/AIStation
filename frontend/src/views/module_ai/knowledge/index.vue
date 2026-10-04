@@ -208,6 +208,22 @@
       </el-tabs>
     </el-card>
 
+    <!-- 数据源测试结果 -->
+    <el-dialog v-model="dsTestVisible" title="数据源测试结果" width="560px" append-to-body>
+      <el-result
+        :icon="dsTestResult.ok ? 'success' : 'error'"
+        :title="dsTestResult.ok ? '连接成功' : '连接失败'"
+        :sub-title="dsTestResult.message || '（无详情）'"
+      />
+      <div v-if="dsTestResult.data" class="ds-test-data">
+        <div class="ds-test-data__title">返回数据（前 20 行）</div>
+        <pre class="ds-test-data__body">{{ JSON.stringify(dsTestResult.data, null, 2) }}</pre>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="dsTestVisible = false">知道了</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 新建/编辑知识库 -->
     <el-dialog
       v-model="kbDialogVisible"
@@ -3293,18 +3309,16 @@ function deleteDatasources(row: any) {
 }
 
 // ---------- 测试 / 同步 ----------
+const dsTestVisible = ref(false);
+const dsTestResult = ref<any>({});
 async function testDs(row: any) {
   try {
     const r = await testAiDatasource(row.id);
-    const d = r.data?.data || {};
-    if (d.ok) {
-      ElMessage.success(d.message || "连接成功");
-    } else {
-      ElMessage.warning(d.message || "连接失败");
-    }
+    dsTestResult.value = r.data?.data || {};
   } catch (e: any) {
-    ElMessage.error(e?.message || "测试失败");
+    dsTestResult.value = { ok: false, message: e?.message || "测试失败" };
   }
+  dsTestVisible.value = true;
 }
 
 function syncDs(row: any) {
@@ -3795,5 +3809,24 @@ onMounted(() => {
   .el-select {
     margin-bottom: 8px;
   }
+}
+.ds-test-data {
+  margin-top: 8px;
+}
+.ds-test-data__title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+.ds-test-data__body {
+  max-height: 40vh;
+  overflow: auto;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  padding: 10px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--el-font-size-base);
 }
 </style>
