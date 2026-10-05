@@ -193,7 +193,7 @@ NL2SQL_GOLDEN = [
     {"tag": "算法任务", "q": "运行失败的算法任务编号",
      "gold": "SELECT id FROM video_algorithm_tasks WHERE status='ERROR' ORDER BY id"},
     {"tag": "算法任务", "q": "各算法类型各有多少个算法",
-     "gold": "SELECT algorithm_type, COUNT(*) AS c FROM video_algorithms GROUP BY algorithm_type ORDER BY c DESC"},
+     "gold": "SELECT algorithm_type, COUNT(*) AS c FROM video_algorithms WHERE is_deleted=false GROUP BY algorithm_type ORDER BY c DESC"},
     # ===== 复杂多维自定义报表 =====
     {"tag": "多维报表", "q": "统计每个摄像头各类告警的数量",
      "gold": "SELECT COALESCE(c.name,'未知') AS 摄像头, r.alarm_type AS 告警类型, COUNT(*) AS 数量 FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY c.name, r.alarm_type ORDER BY 摄像头, 数量 DESC"},
@@ -274,6 +274,19 @@ NL2SQL_GOLDEN = [
      "gold": "SELECT ROUND(COUNT(*) FILTER (WHERE matched=true)*100.0/COUNT(*),2) AS 占比 FROM video_edge_events"},
     {"tag": "本体黑话", "q": "标注完成率是多少",
      "gold": "SELECT ROUND(SUM(annotated_count)*100.0/NULLIF(SUM(image_count),0),2) AS 完成率 FROM annotation_dataset"},
+    # ===== 扩充：更多去重/训练/时间/联表 =====
+    {"tag": "去重", "q": "告警涉及了多少个不同规则",
+     "gold": "SELECT COUNT(DISTINCT rule_id) AS c FROM video_alarm_records WHERE rule_id IS NOT NULL"},
+    {"tag": "训练", "q": "各训练框架下的训练任务数",
+     "gold": "SELECT framework, COUNT(*) AS c FROM train_tasks WHERE is_deleted=false GROUP BY framework ORDER BY c DESC"},
+    {"tag": "时间窗口", "q": "2026年9月15日各类型的告警数",
+     "gold": "SELECT alarm_type, COUNT(*) AS c FROM video_alarm_records WHERE alarm_time>='2026-09-15' AND alarm_time<'2026-09-16' GROUP BY alarm_type ORDER BY c DESC"},
+    {"tag": "多维报表", "q": "在线摄像头占全部摄像头比例的百分比",
+     "gold": "SELECT ROUND(COUNT(*) FILTER (WHERE status='ONLINE')*100.0/COUNT(*),2) AS pct FROM video_cameras WHERE is_deleted=false"},
+    {"tag": "联表", "q": "每个告警规则分别触发多少告警",
+     "gold": "SELECT r.name, COUNT(a.id) AS c FROM video_alarm_rules r LEFT JOIN video_alarm_records a ON a.rule_id=r.id GROUP BY r.name ORDER BY c DESC"},
+    {"tag": "用户", "q": "系统超级管理员数量",
+     "gold": "SELECT COUNT(*) AS c FROM sys_user WHERE is_superuser=true AND is_deleted=false"},
 ]
 
 
