@@ -238,6 +238,32 @@ async def list_alarm_records(limit: int = 50) -> list[dict]:
     )
 
 
+@tool(
+    "ai_query",
+    "智能问数：把自然语言业务问题转成 SQL 并返回数据结果（表格/汇总）。"
+    "用于回答基于系统数据的统计、占比、趋势、排名等问题，例如「今天告警数」「各类型告警占比」。",
+    _obj({"question": {"type": "string", "description": "自然语言数据问题"}}, ["question"]),
+    kind="read",
+)
+async def ai_query(question: str, user_id: int | None = None) -> dict:
+    from types import SimpleNamespace
+
+    from app.plugin.module_ai.query.service import AiQueryService
+
+    auth = SimpleNamespace(user=SimpleNamespace(id=user_id))
+    try:
+        res = await AiQueryService.ask(question, auth, None, "system")
+    except Exception as e:  # noqa: BLE001
+        return {"question": question, "error": str(getattr(e, "msg", e))}
+    return {
+        "question": question,
+        "columns": res.get("columns") or [],
+        "rows": res.get("rows") or [],
+        "sql": res.get("sql") or "",
+        "summary": res.get("summary") or "",
+    }
+
+
 # ---------------------------------------------------------------- 报告 / 导航 / 操作
 
 
