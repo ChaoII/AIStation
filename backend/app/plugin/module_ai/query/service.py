@@ -1067,6 +1067,100 @@ class AiQueryService:
             return {"nodes": [], "edges": []}
 
     @classmethod
+    async def _ensure_concept_table(cls) -> None:
+        """本体/概念表（无 Alembic 迁移时运行时建表）。"""
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_query_concept ("
+                "id BIGSERIAL PRIMARY KEY, name VARCHAR(120) UNIQUE, description TEXT, "
+                "synonyms TEXT, parent_name VARCHAR(120), domain VARCHAR(60), "
+                "metric_key VARCHAR(80), tables JSONB, is_deleted BOOLEAN DEFAULT false, "
+                "created_time TIMESTAMP DEFAULT now())"))
+
+    @classmethod
+    async def list_concepts(cls) -> list[dict]:
+        await cls._ensure_concept_table()
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            res = await db.execute(_t(
+                "SELECT id,name,description,synonyms,parent_name,domain,metric_key,tables "
+                "FROM ai_query_concept WHERE is_deleted=false ORDER BY id"))
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "name": r[1], "description": r[2] or "", "synonyms": r[3] or "",
+            "parent_name": r[4] or "", "domain": r[5] or "", "metric_key": r[6] or "",
+            "tables": r[7] if isinstance(r[7], list) else (_json.loads(r[7]) if r[7] else []),
+        } for r in rows]
+
+    @classmethod
+    async def upsert_concept(cls, data, auth) -> dict:
+        await cls._ensure_concept_table()
+        import json as _json
+        tables = _json.dumps(data.get("tables") or [])
+        name = (data.get("name") or "").strip()
+        if not name:
+            raise CustomException(msg="概念名称不能为空")
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_query_concept SET name=:n, description=:d, synonyms=:s, "
+                    "parent_name=:p, domain=:do, metric_key=:m, tables=:tb "
+                    "WHERE id=:id AND is_deleted=false"),
+                    {"n": name, "d": data.get("description", ""), "s": data.get("synonyms", ""),
+                     "p": data.get("parent_name", ""), "do": data.get("domain", ""),
+                     "m": data.get("metric_key", ""), "tb": tables, "id": data["id"]})
+            else:
+                await db.execute(_t(
+                    "INSERT INTO ai_query_concept(name, description, synonyms, parent_name, "
+                    "domain, metric_key, tables) VALUES (:n,:d,:s,:p,:do,:m,:tb) "
+                    "ON CONFLICT (name) DO UPDATE SET description=EXCLUDED.description, "
+                    "synonyms=EXCLUDED.synonyms, parent_name=EXCLUDED.parent_name, "
+                    "domain=EXCLUDED.domain, metric_key=EXCLUDED.metric_key, tables=EXCLUDED.tables"),
+                    {"n": name, "d": data.get("description", ""), "s": data.get("synonyms", ""),
+                     "p": data.get("parent_name", ""), "do": data.get("domain", ""),
+                     "m": data.get("metric_key", ""), "tb": tables})
+        return {"name": name}
+
+    @classmethod
+    async def delete_concepts(cls, ids: list[int]) -> int:
+        await cls._ensure_concept_table()
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            await db.execute(_t(
+                "UPDATE ai_query_concept SET is_deleted=true WHERE id IN :ids"),
+                {"ids": list(ids)})
+        return len(ids)
+
+    @classmethod
+    async def _concept_context(cls) -> str:
+        """把本体/概念注入 prompt 上下文：概念+描述+同义词+映射。"""
+        cs = await cls.list_concepts()
+        if not cs:
+            return ""
+        lines = ["【业务概念(本体)】"]
+        for c in cs:
+            line = f"- {c['name']}"
+            if c.get("description"):
+                line += f": {c['description']}"
+            if c.get("synonyms"):
+                line += f"（同义:{c['synonyms']}）"
+            if c.get("domain"):
+                line += f"[{c['domain']}]"
+            if c.get("metric_key"):
+                line += f"→指标:{c['metric_key']}"
+            if c.get("tables"):
+                line += f"→表:{','.join(c['tables'])}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t
@@ -2645,6 +2739,9 @@ class AiQueryService:
         lines.append("【术语】")
         for t in terms:
             lines.append(f"- {t['term']} -> {t['metric_key'] or t['field_path']}")
+        conc = await cls._concept_context()
+        if conc:
+            lines.append(conc)
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
             schema = await cls._system_schema()

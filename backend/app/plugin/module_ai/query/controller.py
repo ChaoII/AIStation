@@ -308,6 +308,31 @@ async def kg_traverse(
     return SuccessResponse(data=out, msg="查询成功")
 
 
+# ---- 本体/概念 ----
+@AiQueryRouter.get("/concepts/list", summary="本体/概念列表")
+async def list_concepts(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_concepts(), msg="查询成功")
+
+
+@AiQueryRouter.post("/concepts/save", summary="本体/概念保存")
+async def save_concept(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.upsert_concept(data, auth), msg="保存成功")
+
+
+@AiQueryRouter.delete("/concepts/delete", summary="本体/概念删除")
+async def delete_concepts(
+    ids: list[int],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    await AiQueryService.delete_concepts(ids)
+    return SuccessResponse(data=None, msg="已删除")
+
+
 @AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")
 async def suggest_assets(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

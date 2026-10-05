@@ -204,6 +204,15 @@ export function saveQueryKgLayout(items: { name: string; x: number; y: number }[
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }
+export function getQueryConcepts() {
+  return request({ url: `${API_PATH}/concepts/list`, method: "get" });
+}
+export function saveQueryConcept(data: any) {
+  return request({ url: `${API_PATH}/concepts/save`, method: "post", data });
+}
+export function deleteQueryConcepts(ids: number[]) {
+  return request({ url: `${API_PATH}/concepts/delete`, method: "delete", data: ids });
+}
 export function inferQueryAssetRelations() {
   return request({ url: `${API_PATH}/assets/infer-relations`, method: "post", timeout: 120000 });
 }

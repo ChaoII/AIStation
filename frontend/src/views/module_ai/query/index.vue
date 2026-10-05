@@ -729,6 +729,57 @@
             description="暂无图谱数据，可切换来源或先构建知识库图谱"
           />
         </el-tab-pane>
+        <el-tab-pane label="本体" name="concept">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openConceptEdit()">
+              新增概念
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              已维护 {{ concepts.length }} 个业务概念
+            </el-tag>
+          </div>
+          <el-table :data="concepts" size="small" border max-height="400">
+            <el-table-column prop="name" label="概念" min-width="110" show-overflow-tooltip />
+            <el-table-column
+              prop="description"
+              label="定义"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="synonyms" label="同义词" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="parent_name"
+              label="上级概念"
+              width="100"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="domain" label="业务域" width="90" show-overflow-tooltip />
+            <el-table-column prop="metric_key" label="指标" width="110" show-overflow-tooltip />
+            <el-table-column prop="tables" label="关联表" min-width="150">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="t in row.tables || []"
+                  :key="t"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ t }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openConceptEdit(row)">
+                  编辑
+                </el-button>
+                <el-button link type="danger" size="small" @click="deleteConcept(row)">
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1075,6 +1126,60 @@
         <el-button type="primary" :loading="saving" @click="saveDs(dsForm)">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 本体/概念编辑 -->
+    <el-dialog v-model="conceptDialog" title="本体/概念" width="600px" append-to-body>
+      <el-form :model="conceptForm" label-width="90px">
+        <el-form-item label="概念名称" required>
+          <el-input v-model="conceptForm.name" placeholder="如：在线率 / 活跃设备 / 告警" />
+        </el-form-item>
+        <el-form-item label="业务定义">
+          <el-input
+            v-model="conceptForm.description"
+            type="textarea"
+            :rows="2"
+            placeholder="这个概念的业务口径/含义"
+          />
+        </el-form-item>
+        <el-form-item label="同义词">
+          <el-input v-model="conceptForm.synonyms" placeholder="逗号分隔，如：报警,预警" />
+        </el-form-item>
+        <el-form-item label="上级概念">
+          <el-input v-model="conceptForm.parent_name" placeholder="如：设备" />
+        </el-form-item>
+        <el-form-item label="业务域">
+          <el-input v-model="conceptForm.domain" placeholder="如：安防" />
+        </el-form-item>
+        <el-form-item label="关联指标">
+          <el-input
+            v-model="conceptForm.metric_key"
+            placeholder="指标 key，如 camera_online_count"
+          />
+        </el-form-item>
+        <el-form-item label="关联表">
+          <el-select
+            v-model="conceptForm.tables"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择或输入表名"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="a in assets"
+              :key="a.table_name"
+              :label="a.table_name"
+              :value="a.table_name"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="conceptDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingConcept" @click="saveConcept">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1114,6 +1219,9 @@ import {
   getQueryKgUnified,
   getQueryKgKbs,
   autoLinkQueryKg,
+  getQueryConcepts,
+  saveQueryConcept,
+  deleteQueryConcepts,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1641,6 +1749,79 @@ async function autoLinkKg() {
     ElMessage.error(e?.msg || "自动打边失败");
   } finally {
     linkingKg.value = false;
+  }
+}
+// ---- 本体/概念 ----
+const concepts = ref<any[]>([]);
+const conceptDialog = ref(false);
+const conceptForm = reactive<any>({
+  id: null,
+  name: "",
+  description: "",
+  synonyms: "",
+  parent_name: "",
+  domain: "",
+  metric_key: "",
+  tables: [],
+});
+const savingConcept = ref(false);
+async function loadConcepts() {
+  try {
+    const r = await getQueryConcepts();
+    concepts.value = r.data?.data || [];
+  } catch {
+    /* 静默 */
+  }
+}
+function openConceptEdit(row?: any) {
+  Object.assign(
+    conceptForm,
+    row || {
+      id: null,
+      name: "",
+      description: "",
+      synonyms: "",
+      parent_name: "",
+      domain: "",
+      metric_key: "",
+      tables: [],
+    }
+  );
+  conceptDialog.value = true;
+}
+async function saveConcept() {
+  if (!conceptForm.name?.trim()) {
+    ElMessage.warning("概念名称不能为空");
+    return;
+  }
+  savingConcept.value = true;
+  try {
+    await saveQueryConcept({ ...conceptForm, tables: conceptForm.tables || [] });
+    ElMessage.success("概念已保存");
+    conceptDialog.value = false;
+    loadConcepts();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingConcept.value = false;
+  }
+}
+async function deleteConcept(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确认删除概念「${row.name}」？删除后该概念将不再注入问数上下文。`,
+      "删除确认",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await deleteQueryConcepts([row.id]);
+    ElMessage.success("已删除");
+    loadConcepts();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "删除失败");
   }
 }
 const inferringRel = ref(false);
@@ -2264,6 +2445,7 @@ onMounted(() => {
   loadKgStats();
   loadKgKbs();
   loadUnifiedGraph();
+  loadConcepts();
 });
 </script>
 

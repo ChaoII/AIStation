@@ -86,6 +86,21 @@ async def _build() -> KgGraph:
         kg.add_node(f"term:{t['term']}", "term", t["term"])
         if tkey and f"metric:{tkey}" in kg.nodes:
             kg.add_edge(f"term:{t['term']}", f"metric:{tkey}", "maps_to")
+    # 本体/概念 -> 指标/表/父概念
+    try:
+        for c in await AiQueryService.list_concepts():
+            kg.add_node(f"concept:{c['name']}", "concept", c["name"],
+                        {"desc": c.get("description"), "syn": c.get("synonyms")})
+            if c.get("parent_name"):
+                kg.add_node(f"concept:{c['parent_name']}", "concept", c["parent_name"])
+                kg.add_edge(f"concept:{c['name']}", f"concept:{c['parent_name']}", "subconcept_of")
+            if c.get("metric_key") and f"metric:{c['metric_key']}" in kg.nodes:
+                kg.add_edge(f"concept:{c['name']}", f"metric:{c['metric_key']}", "defined_as")
+            for tb in (c.get("tables") or []):
+                if f"table:{tb}" in kg.nodes:
+                    kg.add_edge(f"concept:{c['name']}", f"table:{tb}", "about")
+    except Exception:  # noqa: BLE001
+        pass
     # 同域表之间加 weak 边，便于同域召回
     doms: dict[str, list[str]] = {}
     for nid, nd in kg.nodes.items():
@@ -139,6 +154,8 @@ def _node_name(nid: str, nd: dict) -> str:
         return f"术语:{label}"
     if t == "domain":
         return f"域:{label}"
+    if t == "concept":
+        return f"概念:{label}"
     return label
 
 
