@@ -731,19 +731,19 @@ async def _ensure_ai_menus() -> None:
             )
 
             pages = [
-                ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10),
-                ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11),
-                ("工作流编排", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12),
-                ("技能广场", "AiSkill", "/ai/skill", "module_ai/skill/index", "module_ai:skill:query", 13),
-                ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14),
-                ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 15),
-                ("工具中心", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 16),
-                ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17),
-                ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18),
-                ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19),
-                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 20),
+                ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
+                ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),
+                ("工作流", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12, "el-icon-Connection"),
+                ("技能广场", "AiSkill", "/ai/skill", "module_ai/skill/index", "module_ai:skill:query", 13, "el-icon-MagicStick"),
+                ("知识库", "AiKnowledge", "/ai/knowledge", "module_ai/knowledge/index", "module_ai:knowledge:query", 14, "el-icon-Collection"),
+                ("提示词", "AiPrompt", "/ai/prompt", "module_ai/prompt/index", "module_ai:prompt:query", 15, "el-icon-Document"),
+                ("工具管理", "AiTool", "/ai/tool", "module_ai/tool/index", "module_ai:tool:query", 16, "el-icon-Operation"),
+                ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17, "el-icon-Monitor"),
+                ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18, "el-icon-DataLine"),
+                ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),
+                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 20, "el-icon-DataAnalysis"),
             ]
-            for title, rname, rpath, comp, perm, order in pages:
+            for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(
                     select(MenuModel).where(MenuModel.route_name == rname)
                 )
@@ -752,7 +752,7 @@ async def _ensure_ai_menus() -> None:
                 m = MenuModel(
                     name=title,
                     type=2,
-                    icon=None,
+                    icon=icon,
                     order=order,
                     route_name=rname,
                     route_path=rpath,
