@@ -48,6 +48,8 @@ _SEMANTIC_INDEX: list | None = None
 _VECTOR_SEEDED = False
 # Agno 向量库是否已播种语义单元
 _AGNO_SEEDED = False
+# Agno 语义单元是否正在后台播种
+_AGNO_SEEDING = False
 # 进程级缓存：工程配置（UI 保存时失效）
 _SETTINGS_CACHE: dict | None = None
 # 进程级缓存：表级资产元数据（中文名/业务域/描述/业务场景）
@@ -1390,12 +1392,13 @@ class AiQueryService:
             "full_entity_no_limit": "true",          # 全量实体查询提示词规则（不 LIMIT 截断）
             "entity_name_rule": "true",              # 实体查询提示词规则（JOIN 取 name）
             "entity_map": "{}",                      # 实体名词→表映射（JSON，覆盖默认）
-            "agno_semantic_enabled": "false",        # 语义检索走 Agno(Knowledge+PgVector)，默认关(需后台播种)
+            "agno_semantic_enabled": "true",         # 语义检索走 Agno(Knowledge+PgVector)，后台播种
             "self_consistency_n": "1",               # 自一致性候选数(>1 多采样投票)
             "query_cost_enabled": "true",            # 查询代价护栏(EXPLAIN 预估)
             "query_cost_max_rows": "50000",          # 代价护栏预估行数上限
             "fewshot_auto_curate": "true",           # 反馈正例自动沉淀为 few-shot
             "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
+            "empty_self_correct": "true",            # 结果为空时自纠错重生成
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -1833,9 +1836,18 @@ class AiQueryService:
                 except CustomException as e:
                     last_err = e.msg
             if results:
-                best = max(groups.values(), key=len)
-                sql = best[0]
+                # 优先非空结果；多数一致组内取第一候选；全空则按多数
+                if any(c[1]["rows"] for c in results):
+                    nonempty_ids = {c for c, res in results if res["rows"]}
+                    base = max((g for g in groups.values() if set(g) & nonempty_ids), key=len)
+                    sql = base[0]
+                else:
+                    sql = max(groups.values(), key=len)[0]
                 res = next(r for (c, r) in results if c == sql)
+                # 执行反馈自纠错：结果为空且还有重试机会 → 携带空结果提示二次生成
+                if not res["rows"] and attempt == 0 and cls._cfg_bool(cfg, "empty_self_correct", True):
+                    last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
+                    continue
                 msg = await cls._save_message(
                     session_id, question, path="slow", datasource=datasource,
                     sql=sql, columns=res["columns"], rows=res["rows"],
@@ -1885,8 +1897,8 @@ class AiQueryService:
         user_msg = question
         if prev_error:
             user_msg = (
-                f"{question}\n\n注意：你上次生成的 SQL 执行失败，错误如下：\n{prev_error}\n"
-                "请修正 SQL（补全 FROM、改用正确表/列名）后重新只返回一条 SQL。"
+                f"{question}\n\n注意：你上次的 SQL 存在问题：\n{prev_error}\n"
+                "请修正 SQL（补全 FROM、改用正确表/列名、修正条件）后重新只返回一条 SQL。"
             )
         try:
             from agno.agent import Agent
@@ -2160,31 +2172,47 @@ class AiQueryService:
         return list(tables)
 
     @classmethod
+    async def _agno_seed_units(cls, schema: dict) -> None:
+        """后台把 schema 单元播种进 Agno 向量库（不阻塞请求）。"""
+        global _AGNO_SEEDED, _AGNO_SEEDING
+        try:
+            from .agno_store import AgnoSemanticStore
+
+            store = await AgnoSemanticStore.get()
+            await store.ensure()
+            if (await store.count()) == 0:
+                units: list[dict] = []
+                for t in schema:
+                    units.append({"text": f"数据表 {t}", "tables": {t}})
+                    for col in schema[t]:
+                        cname = col.split("(")[0]
+                        units.append({"text": f"表 {t} 的字段 {cname}", "tables": {t}})
+                n = await store.seed(units, reset=True)
+                log.info(f"[query] Agno 语义单元后台入库: {n} 条")
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] Agno 后台播种失败: {e}")
+        finally:
+            _AGNO_SEEDED = True
+            _AGNO_SEEDING = False
+
+    @classmethod
     async def _agno_search_tables(cls, question: str, schema: dict, top_k: int) -> list[str]:
         """用 Agno Knowledge(PgVector) 语义检索，返回命中的表集合。
 
-        把表/字段单元写入 Agno 向量库（进程级播种一次），检索命中单元文本，
-        再从文本中提取与 schema 交集内的表名。
+        首次调用触发**后台播种**（不阻塞当前请求，回退 pgvector），
+        播种完成后走 Agno 检索。
         """
-        global _AGNO_SEEDED
+        global _AGNO_SEEDED, _AGNO_SEEDING
         from .agno_store import AgnoSemanticStore
 
         store = await AgnoSemanticStore.get()
         await store.ensure()
-        if not _AGNO_SEEDED and (await store.count()) == 0:
-            units: list[dict] = []
-            for t in schema:
-                units.append({"text": f"数据表 {t}", "tables": {t}})
-                for col in schema[t]:
-                    cname = col.split("(")[0]
-                    units.append({"text": f"表 {t} 的字段 {cname}", "tables": {t}})
-            try:
-                n = await store.seed(units, reset=True)
-                _AGNO_SEEDED = True
-                log.info(f"[query] Agno 语义单元已入库: {n} 条")
-            except Exception as e:  # noqa: BLE001
-                log.warning(f"[query] Agno 播种失败: {e}")
-        _AGNO_SEEDED = True
+        if not _AGNO_SEEDED and (await store.count()) == 0 and not _AGNO_SEEDING:
+            _AGNO_SEEDING = True
+            import asyncio as _asyncio
+
+            _asyncio.ensure_future(cls._agno_seed_units(schema))
+            return []  # 本次回退到 pgvector，播种完成后走 Agno
         texts = await store.search(question, top_k=top_k)
         tables: set[str] = set()
         for txt in texts:

@@ -518,6 +518,9 @@
             <el-form-item label="反馈正例自动沉淀">
               <el-switch v-model="engForm.fewshot_auto_curate" />
             </el-form-item>
+            <el-form-item label="结果为空时自纠错">
+              <el-switch v-model="engForm.empty_self_correct" />
+            </el-form-item>
             <el-divider content-position="left">实体名词→表 映射（行式编辑，覆盖默认）</el-divider>
             <div class="emap-editor">
               <div v-for="(row, idx) in engRows" :key="idx" class="emap-row">
@@ -1694,6 +1697,7 @@ const engDef = {
   query_cost_enabled: true,
   query_cost_max_rows: 50000,
   fewshot_auto_curate: true,
+  empty_self_correct: true,
   entity_map: "{}",
 };
 // 内置默认实体名词→表 映射（仅作编辑起点，可在界面增删改并持久化覆盖）
@@ -1773,6 +1777,7 @@ function loadEngineForm(d: any) {
   engForm.query_cost_enabled = String(d.query_cost_enabled ?? "true") !== "0";
   engForm.query_cost_max_rows = Number(d.query_cost_max_rows ?? 50000);
   engForm.fewshot_auto_curate = String(d.fewshot_auto_curate ?? "true") !== "0";
+  engForm.empty_self_correct = String(d.empty_self_correct ?? "true") !== "0";
   engForm.entity_map = d.entity_map ?? "{}";
   parseEngRows(engForm.entity_map);
 }
@@ -1814,6 +1819,7 @@ async function saveEngineConfig() {
       decomposed_planning: engForm.decomposed_planning,
       query_cost_enabled: engForm.query_cost_enabled,
       fewshot_auto_curate: engForm.fewshot_auto_curate,
+      empty_self_correct: engForm.empty_self_correct,
     };
     for (const [k, v] of Object.entries(bools)) {
       await saveQuerySetting({ key: k, value: v ? "true" : "false", remark: k });
