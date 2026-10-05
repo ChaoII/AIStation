@@ -422,6 +422,66 @@
           </el-form>
         </el-tab-pane>
 
+        <el-tab-pane label="工程配置" name="engine">
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="Schema 链接 / 提示词策略等工程参数，技术维护。保存后即时生效（进程级缓存自动失效）。"
+          />
+          <el-form :model="engForm" label-width="160px" size="default">
+            <el-divider content-position="left">Schema 链接</el-divider>
+            <el-form-item label="schema_top_k（表数上限）">
+              <el-input-number v-model="engForm.schema_top_k" :min="4" :max="40" :step="1" />
+            </el-form-item>
+            <el-form-item label="语义检索权重">
+              <el-input-number
+                v-model="engForm.schema_semantic_weight"
+                :min="0"
+                :max="1"
+                :step="0.05"
+                :precision="2"
+              />
+            </el-form-item>
+            <el-form-item label="关键词检索权重">
+              <el-input-number
+                v-model="engForm.schema_keyword_weight"
+                :min="0"
+                :max="1"
+                :step="0.05"
+                :precision="2"
+              />
+            </el-form-item>
+            <el-divider content-position="left">策略开关</el-divider>
+            <el-form-item label="实体名词→表 基线">
+              <el-switch v-model="engForm.entity_enabled" />
+            </el-form-item>
+            <el-form-item label="枚举取值注入">
+              <el-switch v-model="engForm.enum_hint_enabled" />
+            </el-form-item>
+            <el-form-item label="全量实体不截断(LIMIT)">
+              <el-switch v-model="engForm.full_entity_no_limit" />
+            </el-form-item>
+            <el-form-item label="实体查询 JOIN 取 name">
+              <el-switch v-model="engForm.entity_name_rule" />
+            </el-form-item>
+            <el-divider content-position="left">实体名词→表 映射（覆盖默认）</el-divider>
+            <el-form-item label="映射（JSON）">
+              <el-input
+                v-model="engForm.entity_map"
+                type="textarea"
+                :rows="6"
+                placeholder='{"摄像头":["video_cameras","video_camera_groups"]}'
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="savingEngine" @click="saveEngineConfig">
+                保存工程配置
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
         <el-tab-pane label="基准测试" name="benchmark">
           <el-alert
             type="info"
@@ -1303,6 +1363,7 @@ async function loadSettings() {
     settingsForm.query_timeout_sec = Number(d.query_timeout_sec || 10);
     settingsForm.nl2sql_retry = Number(d.nl2sql_retry || 2);
     settingsForm.nl2sql_max_tokens = Number(d.nl2sql_max_tokens || 1200);
+    loadEngineForm(d);
   } catch {
     /* 忽略 */
   }
@@ -1338,7 +1399,71 @@ async function saveSettings() {
   }
 }
 
-// ---- 基准测试 ----
+// ---- 工程配置 ----
+const engForm = reactive<any>({});
+const savingEngine = ref(false);
+const engDef = {
+  schema_top_k: 16,
+  schema_semantic_weight: 0.6,
+  schema_keyword_weight: 0.4,
+  entity_enabled: true,
+  enum_hint_enabled: true,
+  full_entity_no_limit: true,
+  entity_name_rule: true,
+  entity_map: "{}",
+};
+function loadEngineForm(d: any) {
+  engForm.schema_top_k = Number(d.schema_top_k ?? engDef.schema_top_k);
+  engForm.schema_semantic_weight = Number(
+    d.schema_semantic_weight ?? engDef.schema_semantic_weight
+  );
+  engForm.schema_keyword_weight = Number(d.schema_keyword_weight ?? engDef.schema_keyword_weight);
+  engForm.entity_enabled = String(d.entity_enabled ?? "true") !== "0";
+  engForm.enum_hint_enabled = String(d.enum_hint_enabled ?? "true") !== "0";
+  engForm.full_entity_no_limit = String(d.full_entity_no_limit ?? "true") !== "0";
+  engForm.entity_name_rule = String(d.entity_name_rule ?? "true") !== "0";
+  engForm.entity_map = d.entity_map ?? "{}";
+}
+async function saveEngineConfig() {
+  savingEngine.value = true;
+  try {
+    // 布尔开关转 'true'/'false' 字符串
+    await saveQuerySetting({
+      key: "schema_top_k",
+      value: String(engForm.schema_top_k),
+      remark: "schema 表数上限",
+    });
+    await saveQuerySetting({
+      key: "schema_semantic_weight",
+      value: String(engForm.schema_semantic_weight),
+      remark: "语义检索权重",
+    });
+    await saveQuerySetting({
+      key: "schema_keyword_weight",
+      value: String(engForm.schema_keyword_weight),
+      remark: "关键词检索权重",
+    });
+    const bools: Record<string, boolean> = {
+      entity_enabled: engForm.entity_enabled,
+      enum_hint_enabled: engForm.enum_hint_enabled,
+      full_entity_no_limit: engForm.full_entity_no_limit,
+      entity_name_rule: engForm.entity_name_rule,
+    };
+    for (const [k, v] of Object.entries(bools)) {
+      await saveQuerySetting({ key: k, value: v ? "true" : "false", remark: k });
+    }
+    await saveQuerySetting({
+      key: "entity_map",
+      value: engForm.entity_map,
+      remark: "实体映射JSON",
+    });
+    ElMessage.success("已保存工程配置");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingEngine.value = false;
+  }
+}
 const bmRunning = ref(false);
 const bmFinished = ref(false);
 const bmError = ref("");

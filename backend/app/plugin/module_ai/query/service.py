@@ -46,6 +46,8 @@ _SCHEMA_CACHE: dict | None = None
 _SEMANTIC_INDEX: list | None = None
 # pgvector 是否已播种资产向量
 _VECTOR_SEEDED = False
+# 进程级缓存：工程配置（UI 保存时失效）
+_SETTINGS_CACHE: dict | None = None
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -1252,6 +1254,15 @@ class AiQueryService:
             "query_timeout_sec": "10",
             "nl2sql_retry": "2",
             "nl2sql_max_tokens": "1200",
+            # ---- 工程配置（schema 链接 / 提示词策略）----
+            "schema_top_k": "16",                    # 注入 schema 上下文的表数量上限
+            "schema_semantic_weight": "0.6",         # 语义检索权重
+            "schema_keyword_weight": "0.4",          # 关键词检索权重
+            "entity_enabled": "true",                # 是否启用「实体名词→表」基线
+            "enum_hint_enabled": "true",             # 是否注入枚举字段真实取值
+            "full_entity_no_limit": "true",          # 全量实体查询提示词规则（不 LIMIT 截断）
+            "entity_name_rule": "true",              # 实体查询提示词规则（JOIN 取 name）
+            "entity_map": "{}",                      # 实体名词→表映射（JSON，覆盖默认）
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -1261,9 +1272,59 @@ class AiQueryService:
                     select(AiQuerySettingModel).where(AiQuerySettingModel.is_deleted.is_(False))
                 )
             ).scalars().all()
+            # 进程级缓存：UI 保存时失效
+            global _SETTINGS_CACHE
+            _SETTINGS_CACHE = None
             for r in rows:
                 defaults[r.key] = r.value or defaults.get(r.key, "")
         return defaults
+
+    @classmethod
+    async def _cfg(cls) -> dict:
+        """带进程级缓存的工程配置读取；save_setting 会使其失效。"""
+        global _SETTINGS_CACHE
+        if _SETTINGS_CACHE is None:
+            _SETTINGS_CACHE = await cls.get_settings()
+        return _SETTINGS_CACHE
+
+    @classmethod
+    def _cfg_bool(cls, cfg: dict, key: str, default: bool = True) -> bool:
+        v = str(cfg.get(key, "true")).strip().lower()
+        if v in ("0", "false", "no", "off", ""):
+            return False
+        return default
+
+    @classmethod
+    def _cfg_int(cls, cfg: dict, key: str, default: int) -> int:
+        try:
+            return int(float(cfg.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _cfg_float(cls, cfg: dict, key: str, default: float) -> float:
+        try:
+            return float(cfg.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _cfg_entity_map(cls, cfg: dict) -> dict[str, set[str]]:
+        """合并默认实体映射与配置覆盖的实体映射。"""
+        base = dict(_ENTITY_TABLE)
+        raw = cfg.get("entity_map") or "{}"
+        try:
+            import json as _json
+
+            over = _json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:  # noqa: BLE001
+            over = {}
+        for noun, tables in (over or {}).items():
+            if isinstance(tables, list):
+                base[str(noun)] = {str(x) for x in tables}
+            elif isinstance(tables, str):
+                base[str(noun)] = {x.strip() for x in tables.split(",") if x.strip()}
+        return base
 
     @classmethod
     async def save_setting(cls, key: str, value: str, remark: str, auth) -> dict:
@@ -1286,6 +1347,8 @@ class AiQueryService:
                 db.add(AiQuerySettingModel(key=key, value=value, remark=remark,
                                            created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
+        global _SETTINGS_CACHE
+        _SETTINGS_CACHE = None
         return {"key": key, "value": value}
 
     # ---- 使用统计 / 反馈闭环 ----
@@ -1622,19 +1685,25 @@ class AiQueryService:
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
         schema_ctx = await cls._build_schema_context(question, datasource, metrics, terms)
+        cfg = await cls._cfg()
+        rules = []
+        if cls._cfg_bool(cfg, "entity_name_rule", True):
+            rules.append("（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
+                         "应 JOIN 对应表用其「name」列，而不是直接返回外键 id；")
+        if cls._cfg_bool(cfg, "enum_hint_enabled", True):
+            rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
+        rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
+        rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
+        extra = ""
+        if cls._cfg_bool(cfg, "full_entity_no_limit", True):
+            extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
+                     "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n")
         system_prompt = (
             "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
             "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
             "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
-            "不要使用 DELETE/UPDATE/INSERT/DDL。\n"
-            "注意：（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
-            "应 JOIN 对应表用其 \u300cname\u300d 列，而不是直接返回外键 id；"
-            "（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；"
-            "（3）占比用 \u201cCOUNT(*) * 100.0 / 总数 \u201d 或 \u201cFILTER (WHERE ...)\u201d 计算；"
-            "（4）多行 SQL 直接换行输出即可，不要加注释。\n"
-            "注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
-            "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n"
-            f"{schema_ctx}"
+            "不要使用 DELETE/UPDATE/INSERT/DDL。\n注意：" + "".join(rules) + "\n" + extra
+            + schema_ctx
         )
         user_msg = question
         if prev_error:
@@ -1744,6 +1813,10 @@ class AiQueryService:
             schema.setdefault(t, []).append(label)
         # 3) 低基数枚举列：注入真实取值，帮助 LLM 使用正确枚举值（如 status=ERROR/RUNNING/STOPPED）
         try:
+            cfg = await cls._cfg()
+            if not cls._cfg_bool(cfg, "enum_hint_enabled", True):
+                _SCHEMA_CACHE = schema
+                return schema
             _enum_re = re.compile(
                 r"(^|_)(status|framework|severity|task_type|kind|usage|scene_type|state|result|level|format|stream_type)$",
                 re.IGNORECASE,
@@ -1928,12 +2001,14 @@ class AiQueryService:
         最后按 token 量裁剪到前 16 张，避免 prompt 过大。
         """
         global _VECTOR_SEEDED
+        cfg = await cls._cfg()
         if schema is None:
             schema = await cls._system_schema()
         if metrics is None:
             metrics = await cls.list_metrics(SYSTEM_DS)
         if terms is None:
             terms = await cls.list_terms(SYSTEM_DS)
+        top_k = cls._cfg_int(cfg, "schema_top_k", 16)
         tables: set[str] = set()
         # 1) 语义召回
         try:
@@ -1944,7 +2019,7 @@ class AiQueryService:
                     log.info(f"[query] 资产向量已落 pgvector: {n} 条")
                 except Exception as e:  # noqa: BLE001
                     log.warning(f"[query] pgvector 播种失败: {e}")
-            rows = await cls._pgv_search(question, top_k=16)
+            rows = await cls._pgv_search(question, top_k=top_k)
             tables.update(rows)
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] pgvector 检索失败: {e}")
@@ -1959,8 +2034,12 @@ class AiQueryService:
                         {"text": u["text"], "vector": u.get("vector"), "meta": u["tables"]}
                         for u in index
                     ]
-                    top = await _ret.retrieve(question, units, top_k=16,
-                                              embed_model_id=await cls._embedding_mid())
+                    top = await _ret.retrieve(
+                        question, units, top_k=top_k,
+                        semantic_weight=cls._cfg_float(cfg, "schema_semantic_weight", 0.6),
+                        keyword_weight=cls._cfg_float(cfg, "schema_keyword_weight", 0.4),
+                        embed_model_id=await cls._embedding_mid(),
+                    )
                     for u in top:
                         tables.update(u.get("meta") or set())
             except Exception as e:  # noqa: BLE001
@@ -1971,10 +2050,12 @@ class AiQueryService:
         except Exception:  # noqa: BLE001
             pass
         # 4) 实体名词 → 表 基线（保证联表取名称的表在上下文）
-        for noun, ts in _ENTITY_TABLE.items():
-            if noun in question:
-                tables.update(t for t in ts if t in schema)
-        return sorted(tables)[:16]
+        if cls._cfg_bool(cfg, "entity_enabled", True):
+            entity_map = cls._cfg_entity_map(cfg)
+            for noun, ts in entity_map.items():
+                if noun in question:
+                    tables.update(t for t in ts if t in schema)
+        return sorted(tables)[:top_k]
 
     @staticmethod
     def _relevant_tables(question: str, schema: dict, metrics: list[dict], terms: list[dict]) -> list[str]:

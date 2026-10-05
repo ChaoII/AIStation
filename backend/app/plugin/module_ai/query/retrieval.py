@@ -66,6 +66,7 @@ async def retrieve(
     units: list[dict],
     top_k: int = 10,
     semantic_weight: float | None = None,
+    keyword_weight: float | None = None,
     embed_model_id: int | None = None,
 ) -> list[dict]:
     """分层检索：融合关键词 + 语义，返回 top-k。
@@ -73,7 +74,9 @@ async def retrieve(
     units: [{text, vector?, meta?}]；question 只向量化一次。
     """
     sw = SEMANTIC_WEIGHT if semantic_weight is None else semantic_weight
-    kw = KEYWORD_WEIGHT if semantic_weight is None else (1 - semantic_weight)
+    kw = KEYWORD_WEIGHT if keyword_weight is None else (
+        KEYWORD_WEIGHT if semantic_weight is None else (1 - semantic_weight)
+    )
     qvec: list[float] | None = None
     try:
         from app.plugin.module_ai.knowledge.embedding import embed_texts
