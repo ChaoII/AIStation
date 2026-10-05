@@ -95,5 +95,56 @@ async def table_metadata(table: str) -> str:
         return f"读取表元数据失败：{e}"
 
 
+async def kg_search(question: str) -> str:
+    """用知识图谱(表/字段/关联/业务域/指标/术语)遍历召回相关表、字段与联表路径。"""
+    from .agno_kg import _ensure, kg_explore
+
+    log.warning("[QUERY_TOOL] 模型调用了 kg_search，question={}", question)
+    try:
+        await _ensure()
+        return kg_explore(question)
+    except Exception as e:  # noqa: BLE001
+        return f"知识图谱检索失败：{e}"
+
+
+async def list_metrics() -> str:
+    """列出系统可用的统计指标（key/名称/描述），辅助确定问题是否为指标查询。"""
+    from .service import SYSTEM_DS, AiQueryService
+
+    log.warning("[QUERY_TOOL] 模型调用了 list_metrics")
+    try:
+        ms = await AiQueryService.list_metrics(SYSTEM_DS)
+        return "\n".join(f"- {m['key']}: {m['name']}({m['description']})" for m in ms if m["enabled"])
+    except Exception as e:  # noqa: BLE001
+        return f"获取指标失败：{e}"
+
+
+async def list_terms() -> str:
+    """列出系统已配置的业务术语（术语→指标/字段映射）。"""
+    from .service import SYSTEM_DS, AiQueryService
+
+    log.warning("[QUERY_TOOL] 模型调用了 list_terms")
+    try:
+        ts = await AiQueryService.list_terms(SYSTEM_DS)
+        return "\n".join(f"- {t['term']} -> {t.get('metric_key') or t.get('field_path')}" for t in ts) or "暂无术语"
+    except Exception as e:  # noqa: BLE001
+        return f"获取术语失败：{e}"
+
+
+async def search_history(question: str) -> str:
+    """检索历史沉淀的正确「问题→SQL」样例（含反馈自动策展），供参考写法。"""
+    from .service import SYSTEM_DS, AiQueryService
+
+    log.warning("[QUERY_TOOL] 模型调用了 search_history，question={}", question)
+    try:
+        egs = await AiQueryService._dynamic_fewshots(question, SYSTEM_DS)
+        return "\n".join(f"问：{e['q']}\nSQL：{e['sql']}" for e in egs) or "暂无历史样例"
+    except Exception as e:  # noqa: BLE001
+        return f"检索历史样例失败：{e}"
+
+
 #: 注册进 Agent 的工具集合（可同时传给 Agent(tools=...)）
-QUERY_TOOLS = [search_schema, get_fewshots, check_cost, semantic_search, table_metadata]
+QUERY_TOOLS = [
+    search_schema, get_fewshots, check_cost, semantic_search, table_metadata,
+    kg_search, list_metrics, list_terms, search_history,
+]

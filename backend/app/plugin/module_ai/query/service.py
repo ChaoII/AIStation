@@ -1410,6 +1410,7 @@ class AiQueryService:
             "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
             "agno_tool_agent": "true",               # 工具化 Agent(模型自主调用 schema/fewshots/cost)
+            "kg_enabled": "true",                    # 知识图谱图遍历召回(补关联表/联表路径)
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -2530,6 +2531,16 @@ class AiQueryService:
             for noun, ts in entity_map.items():
                 if noun in question:
                     tables.update(t for t in ts if t in schema)
+        # 5) 知识图谱图遍历：补上向量/关键词检索漏掉的关联表与联表路径
+        try:
+            if cls._cfg_bool(cfg, "kg_enabled", True):
+                from .agno_kg import _ensure, kg_tables
+
+                kg = await _ensure()
+                if kg:
+                    tables.update(t for t in kg_tables(question) if t in schema)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 知识图谱召回失败: {e}")
         return sorted(tables)[:top_k]
 
     @staticmethod

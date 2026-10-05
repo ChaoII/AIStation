@@ -555,6 +555,9 @@
             <el-form-item label="工具化 Agent(自主取schema)">
               <el-switch v-model="engForm.agno_tool_agent" />
             </el-form-item>
+            <el-form-item label="知识图谱召回">
+              <el-switch v-model="engForm.kg_enabled" />
+            </el-form-item>
             <el-divider content-position="left">实体名词→表 映射（行式编辑，覆盖默认）</el-divider>
             <div class="emap-editor">
               <div v-for="(row, idx) in engRows" :key="idx" class="emap-row">
@@ -1784,6 +1787,7 @@ const engDef = {
   fewshot_auto_curate: true,
   empty_self_correct: true,
   agno_tool_agent: true,
+  kg_enabled: true,
   entity_map: "{}",
 };
 // 内置默认实体名词→表 映射（仅作编辑起点，可在界面增删改并持久化覆盖）
@@ -1865,6 +1869,7 @@ function loadEngineForm(d: any) {
   engForm.fewshot_auto_curate = String(d.fewshot_auto_curate ?? "true") !== "0";
   engForm.empty_self_correct = String(d.empty_self_correct ?? "true") !== "0";
   engForm.agno_tool_agent = String(d.agno_tool_agent ?? "true") !== "0";
+  engForm.kg_enabled = String(d.kg_enabled ?? "true") !== "0";
   engForm.entity_map = d.entity_map ?? "{}";
   parseEngRows(engForm.entity_map);
 }
@@ -1908,6 +1913,7 @@ async function saveEngineConfig() {
       fewshot_auto_curate: engForm.fewshot_auto_curate,
       empty_self_correct: engForm.empty_self_correct,
       agno_tool_agent: engForm.agno_tool_agent,
+      kg_enabled: engForm.kg_enabled,
     };
     for (const [k, v] of Object.entries(bools)) {
       await saveQuerySetting({ key: k, value: v ? "true" : "false", remark: k });
