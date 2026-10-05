@@ -1839,7 +1839,15 @@ class AiQueryService:
             for csql in candidate_sqls:
                 try:
                     if cost_enabled and datasource in (SYSTEM_DS, None):
-                        er = await cls._explain_rows(csql)
+                        try:
+                            er = await cls._explain_rows(csql)
+                        except CustomException as e:
+                            last_err = e.msg
+                            continue
+                        except Exception as e:  # noqa: BLE001
+                            # EXPLAIN 失败说明候选 SQL 不合法（如引用了不存在的列/表），跳过该候选
+                            last_err = f"SQL 校验失败：{e}"
+                            continue
                         if er > max_rows:
                             last_err = f"查询代价过高(预计{er}行>上限{max_rows})，请改为聚合/加条件/限制范围"
                             continue
@@ -1849,6 +1857,8 @@ class AiQueryService:
                     groups.setdefault(sig, []).append(csql)
                 except CustomException as e:
                     last_err = e.msg
+                except Exception as e:  # noqa: BLE001
+                    last_err = f"执行失败：{e}"
             if results:
                 # 优先非空结果；多数一致组内取第一候选；全空则按多数
                 if any(c[1]["rows"] for c in results):

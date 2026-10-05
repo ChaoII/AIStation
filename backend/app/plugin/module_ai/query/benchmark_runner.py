@@ -93,12 +93,17 @@ async def _run_nl2sql(run_id: str, items: list, user_id: int | None) -> list:
         gold_cols, expected = await _run_gold(item["gold"])
         _update(run_id, current=item.get("q", ""))
         t0 = time.perf_counter()
-        d = await _ask(item["q"], True, user_id)
-        ms = (time.perf_counter() - t0) * 1000
-        correct = (
-            lenient_match(gold_cols, expected, d.get("columns") or [], d.get("rows") or [])
-            and not d.get("is_error")
-        )
+        try:
+            d = await _ask(item["q"], True, user_id)
+            ms = (time.perf_counter() - t0) * 1000
+            correct = (
+                lenient_match(gold_cols, expected, d.get("columns") or [], d.get("rows") or [])
+                and not d.get("is_error")
+            )
+        except Exception:  # noqa: BLE001
+            ms = (time.perf_counter() - t0) * 1000
+            correct = False
+            d = {"is_error": True, "columns": [], "rows": [], "sql": "", "path": "slow"}
         out.append({
             "q": item["q"], "tag": item.get("tag"), "correct": correct,
             "path": d.get("path"), "ok": not d.get("is_error"),
