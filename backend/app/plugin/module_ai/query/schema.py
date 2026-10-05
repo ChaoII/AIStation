@@ -83,7 +83,10 @@ class QueryFewshotUpsert(BaseModel):
 
 class QueryAssetUpsert(BaseModel):
     table_name: str
+    alias: str = ""
+    domain: str = ""
     description: str = ""
+    business_scenarios: str = ""
     included: bool = True
     remark: str = ""
 
@@ -92,6 +95,9 @@ class QueryAssetColumnUpsert(BaseModel):
     table_name: str
     column_name: str
     description: str = ""
+    business_scenarios: str = ""
+    related_table: str = ""
+    related_field: str = ""
     included: bool = True
     sensitive: bool = False
 

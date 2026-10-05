@@ -261,32 +261,58 @@
             >
               LLM 生成中文描述
             </el-button>
+            <el-input
+              v-model="assetSearch"
+              size="small"
+              placeholder="搜索表名/别名/业务域"
+              clearable
+              style="width: 220px"
+            />
             <el-tag size="small" type="info" effect="plain">
-              已纳入 {{ assets.filter((a) => a.included).length }}/{{ assets.length }} 张表 ·
-              维护中文描述利于检索
+              已纳入 {{ assets.filter((a) => a.included).length }}/{{ assets.length }} 张表
             </el-tag>
           </div>
-          <el-table :data="assets" size="small" border max-height="420">
-            <el-table-column prop="table_name" label="表名" min-width="180" show-overflow-tooltip />
-            <el-table-column label="中文描述" min-width="200">
+          <el-table :data="filteredAssets" size="small" border max-height="400">
+            <el-table-column prop="table_name" label="表名" min-width="170" show-overflow-tooltip />
+            <el-table-column
+              prop="alias"
+              label="中文名/别名"
+              min-width="120"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="domain" label="业务域" width="90" show-overflow-tooltip />
+            <el-table-column label="中文描述" min-width="180">
               <template #default="{ row }">
                 <el-input
                   v-model="row.description"
                   size="small"
-                  placeholder="填写中文业务描述"
+                  placeholder="表是干什么的"
                   @change="saveAsset(row)"
                 />
               </template>
             </el-table-column>
-            <el-table-column label="纳入" width="80" align="center">
+            <el-table-column
+              prop="business_scenarios"
+              label="业务场景"
+              min-width="160"
+              show-overflow-tooltip
+            />
+            <el-table-column label="纳入" width="68" align="center">
               <template #default="{ row }">
                 <el-switch v-model="row.included" @change="saveAsset(row)" />
               </template>
             </el-table-column>
-            <el-table-column label="字段" width="110" align="center">
+            <el-table-column label="字段" width="90" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openAssetColumns(row)">
                   {{ row.included_columns }}/{{ row.column_count }}
+                </el-button>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openAssetEdit(row)">
+                  编辑
                 </el-button>
               </template>
             </el-table-column>
@@ -645,37 +671,160 @@
       </template>
     </el-dialog>
 
-    <!-- 资产字段抽屉 -->
+    <!-- 字段资产抽屉 -->
     <el-drawer
       v-model="assetColumnsVisible"
       :title="`字段资产 · ${assetColumnsTable}`"
-      size="640px"
+      size="900px"
       append-to-body
     >
-      <el-table :data="assetColumns" size="small" border max-height="70vh">
-        <el-table-column prop="column_name" label="字段名" min-width="140" />
-        <el-table-column label="中文描述" min-width="180">
+      <div class="ops-bar">
+        <el-input
+          v-model="assetColumnSearch"
+          size="small"
+          placeholder="搜索字段/描述/关联表"
+          clearable
+          style="width: 240px"
+        />
+        <el-tag size="small" type="info" effect="plain">
+          已纳入 {{ assetColumns.filter((c) => c.included).length }}/{{ assetColumns.length }} 字段
+        </el-tag>
+      </div>
+      <el-table :data="filteredAssetColumns" size="small" border max-height="68vh">
+        <el-table-column prop="column_name" label="字段名" min-width="130" show-overflow-tooltip />
+        <el-table-column label="中文描述" min-width="170">
           <template #default="{ row }">
             <el-input
               v-model="row.description"
               size="small"
-              placeholder="填写中文业务描述"
+              placeholder="字段是干什么的"
               @change="saveAssetColumn(row)"
             />
           </template>
         </el-table-column>
-        <el-table-column label="纳入" width="70" align="center">
+        <el-table-column
+          prop="business_scenarios"
+          label="业务场景"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="related_table"
+          label="关联表"
+          min-width="130"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="related_field"
+          label="关联字段"
+          min-width="110"
+          show-overflow-tooltip
+        />
+        <el-table-column label="纳入" width="64" align="center">
           <template #default="{ row }">
             <el-switch v-model="row.included" @change="saveAssetColumn(row)" />
           </template>
         </el-table-column>
-        <el-table-column label="敏感" width="60" align="center">
+        <el-table-column label="敏感" width="58" align="center">
           <template #default="{ row }">
             <el-checkbox v-model="row.sensitive" @change="saveAssetColumn(row)" />
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="76" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openColEdit(row)">编辑</el-button>
+          </template>
+        </el-table-column>
       </el-table>
     </el-drawer>
+
+    <!-- 表元数据编辑 -->
+    <el-dialog v-model="assetEditVisible" title="表元数据标注" width="640px" append-to-body>
+      <el-form :model="assetForm" label-width="110px">
+        <el-form-item label="表名" required>
+          <el-input v-model="assetForm.table_name" disabled />
+        </el-form-item>
+        <el-form-item label="中文名/别名">
+          <el-input v-model="assetForm.alias" placeholder="如：视频告警记录" />
+        </el-form-item>
+        <el-form-item label="业务域">
+          <el-input v-model="assetForm.domain" placeholder="如：视频监控/模型训练/数据标注" />
+        </el-form-item>
+        <el-form-item label="中文描述">
+          <el-input
+            v-model="assetForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="这张表是干什么的、包含什么信息"
+          />
+        </el-form-item>
+        <el-form-item label="业务场景">
+          <el-input
+            v-model="assetForm.business_scenarios"
+            type="textarea"
+            :rows="3"
+            placeholder="哪些业务/报表会用到这张表"
+          />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="assetForm.remark" placeholder="备注" />
+        </el-form-item>
+        <el-form-item label="纳入可查目录">
+          <el-switch v-model="assetForm.included" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assetEditVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveAssetMeta">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 字段元数据编辑 -->
+    <el-dialog v-model="colEditVisible" title="字段元数据标注" width="640px" append-to-body>
+      <el-form :model="colForm" label-width="110px">
+        <el-form-item label="字段名" required>
+          <el-input v-model="colForm.column_name" disabled />
+        </el-form-item>
+        <el-form-item label="中文描述">
+          <el-input
+            v-model="colForm.description"
+            type="textarea"
+            :rows="2"
+            placeholder="这个字段是干什么的"
+          />
+        </el-form-item>
+        <el-form-item label="业务场景">
+          <el-input
+            v-model="colForm.business_scenarios"
+            type="textarea"
+            :rows="2"
+            placeholder="哪些业务/报表需要查这个字段"
+          />
+        </el-form-item>
+        <el-form-item label="关联表">
+          <el-input
+            v-model="colForm.related_table"
+            placeholder="联表查询的实体表，如 video_cameras"
+          />
+        </el-form-item>
+        <el-form-item label="关联字段">
+          <el-input
+            v-model="colForm.related_field"
+            placeholder="对应关联表的字段，如 camera_id / id"
+          />
+        </el-form-item>
+        <el-form-item label="纳入">
+          <el-switch v-model="colForm.included" />
+        </el-form-item>
+        <el-form-item label="敏感字段">
+          <el-switch v-model="colForm.sensitive" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="colEditVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveColMeta">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 示例编辑 -->
     <el-dialog
@@ -1167,6 +1316,17 @@ async function removeTerm(row: any) {
 // ---- 数据资产目录 ----
 const assets = ref<any[]>([]);
 const syncingAssets = ref(false);
+const assetSearch = ref("");
+const filteredAssets = computed(() => {
+  const q = (assetSearch.value || "").trim().toLowerCase();
+  if (!q) return assets.value;
+  return assets.value.filter(
+    (a) =>
+      (a.table_name || "").toLowerCase().includes(q) ||
+      (a.alias || "").toLowerCase().includes(q) ||
+      (a.domain || "").toLowerCase().includes(q)
+  );
+});
 async function loadAssets() {
   try {
     const r = await getQueryAssets();
@@ -1206,7 +1366,10 @@ async function saveAsset(row: any) {
   try {
     await saveQueryAsset({
       table_name: row.table_name,
+      alias: row.alias || "",
+      domain: row.domain || "",
       description: row.description || "",
+      business_scenarios: row.business_scenarios || "",
       included: row.included,
       remark: row.remark || "",
     });
@@ -1215,11 +1378,47 @@ async function saveAsset(row: any) {
     ElMessage.error(e?.msg || "保存失败");
   }
 }
+const assetEditVisible = ref(false);
+const assetForm = reactive<any>({});
+function openAssetEdit(row: any) {
+  Object.assign(assetForm, row);
+  assetEditVisible.value = true;
+}
+async function saveAssetMeta() {
+  try {
+    await saveQueryAsset({
+      table_name: assetForm.table_name,
+      alias: assetForm.alias || "",
+      domain: assetForm.domain || "",
+      description: assetForm.description || "",
+      business_scenarios: assetForm.business_scenarios || "",
+      included: assetForm.included,
+      remark: assetForm.remark || "",
+    });
+    ElMessage.success("已保存表元数据");
+    assetEditVisible.value = false;
+    loadAssets();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
 const assetColumnsVisible = ref(false);
 const assetColumns = ref<any[]>([]);
 const assetColumnsTable = ref("");
+const assetColumnSearch = ref("");
+const filteredAssetColumns = computed(() => {
+  const q = (assetColumnSearch.value || "").trim().toLowerCase();
+  if (!q) return assetColumns.value;
+  return assetColumns.value.filter(
+    (c) =>
+      (c.column_name || "").toLowerCase().includes(q) ||
+      (c.description || "").toLowerCase().includes(q) ||
+      (c.related_table || "").toLowerCase().includes(q)
+  );
+});
 async function openAssetColumns(row: any) {
   assetColumnsTable.value = row.table_name;
+  assetColumnSearch.value = "";
   try {
     const r = await getQueryAssetColumns(row.table_name);
     assetColumns.value = r.data?.data || [];
@@ -1234,10 +1433,38 @@ async function saveAssetColumn(col: any) {
       table_name: assetColumnsTable.value,
       column_name: col.column_name,
       description: col.description || "",
+      business_scenarios: col.business_scenarios || "",
+      related_table: col.related_table || "",
+      related_field: col.related_field || "",
       included: col.included,
       sensitive: col.sensitive,
     });
     ElMessage.success(`字段「${col.column_name}」已保存`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+const colEditVisible = ref(false);
+const colForm = reactive<any>({});
+function openColEdit(row: any) {
+  Object.assign(colForm, row, { table_name: assetColumnsTable.value });
+  colEditVisible.value = true;
+}
+async function saveColMeta() {
+  try {
+    await saveQueryAssetColumn({
+      table_name: assetColumnsTable.value,
+      column_name: colForm.column_name,
+      description: colForm.description || "",
+      business_scenarios: colForm.business_scenarios || "",
+      related_table: colForm.related_table || "",
+      related_field: colForm.related_field || "",
+      included: colForm.included,
+      sensitive: colForm.sensitive,
+    });
+    ElMessage.success("已保存字段元数据");
+    colEditVisible.value = false;
+    await openAssetColumns({ table_name: assetColumnsTable.value });
   } catch (e: any) {
     ElMessage.error(e?.msg || "保存失败");
   }

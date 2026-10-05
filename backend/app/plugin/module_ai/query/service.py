@@ -48,6 +48,8 @@ _SEMANTIC_INDEX: list | None = None
 _VECTOR_SEEDED = False
 # 进程级缓存：工程配置（UI 保存时失效）
 _SETTINGS_CACHE: dict | None = None
+# 进程级缓存：表级资产元数据（中文名/业务域/描述/业务场景）
+_ASSET_TMETA: dict | None = None
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -883,7 +885,9 @@ class AiQueryService:
                     )
                 )).scalars().all()
                 out.append({
-                    "table_name": a.table_name, "description": a.description or "",
+                    "table_name": a.table_name, "alias": a.alias or "",
+                    "domain": a.domain or "", "description": a.description or "",
+                    "business_scenarios": a.business_scenarios or "",
                     "included": a.included, "remark": a.remark or "",
                     "column_count": len(cnt),
                     "included_columns": sum(1 for c in cnt if c.included),
@@ -907,14 +911,17 @@ class AiQueryService:
             ).scalars().all()
             return [
                 {"table_name": c.table_name, "column_name": c.column_name,
-                 "description": c.description or "", "included": c.included,
-                 "sensitive": c.sensitive}
+                 "description": c.description or "",
+                 "business_scenarios": c.business_scenarios or "",
+                 "related_table": c.related_table or "",
+                 "related_field": c.related_field or "",
+                 "included": c.included, "sensitive": c.sensitive}
                 for c in rows
             ]
 
     @classmethod
     async def upsert_asset(cls, data, auth) -> dict:
-        global _SCHEMA_CACHE, _SEMANTIC_INDEX
+        global _SCHEMA_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
@@ -925,17 +932,23 @@ class AiQueryService:
                 )
             ).scalar_one_or_none()
             if existing:
+                existing.alias = data.alias
+                existing.domain = data.domain
                 existing.description = data.description
+                existing.business_scenarios = data.business_scenarios
                 existing.included = data.included
                 existing.remark = data.remark
                 existing.updated_id = auth.user.id
             else:
-                db.add(AiQueryAssetModel(table_name=data.table_name, description=data.description,
+                db.add(AiQueryAssetModel(table_name=data.table_name, alias=data.alias,
+                                         domain=data.domain, description=data.description,
+                                         business_scenarios=data.business_scenarios,
                                          included=data.included, remark=data.remark,
                                          created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
         _SCHEMA_CACHE = None
         _SEMANTIC_INDEX = None
+        _ASSET_TMETA = None
         return {"table_name": data.table_name, "included": data.included}
 
     @classmethod
@@ -1113,13 +1126,19 @@ class AiQueryService:
             ).scalar_one_or_none()
             if existing:
                 existing.description = data.description
+                existing.business_scenarios = data.business_scenarios
+                existing.related_table = data.related_table
+                existing.related_field = data.related_field
                 existing.included = data.included
                 existing.sensitive = data.sensitive
                 existing.updated_id = auth.user.id
             else:
                 db.add(AiQueryAssetColumnModel(table_name=data.table_name, column_name=data.column_name,
-                                               description=data.description, included=data.included,
-                                               sensitive=data.sensitive,
+                                               description=data.description,
+                                               business_scenarios=data.business_scenarios,
+                                               related_table=data.related_table,
+                                               related_field=data.related_field,
+                                               included=data.included, sensitive=data.sensitive,
                                                created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
         _SEMANTIC_INDEX = None
@@ -1247,6 +1266,30 @@ class AiQueryService:
         return [{"q": f.question, "sql": f.sql} for _, f in scored[:4]]
 
     # ---- 查询限额配置 ----
+    @staticmethod
+    async def _asset_tmeta() -> dict:
+        """表级资产元数据（中文名/业务域/描述/业务场景），进程级缓存。"""
+        global _ASSET_TMETA
+        if _ASSET_TMETA is not None:
+            return _ASSET_TMETA
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            rows = (
+                await db.execute(
+                    select(AiQueryAssetModel).where(AiQueryAssetModel.is_deleted.is_(False))
+                )
+            ).scalars().all()
+        _ASSET_TMETA = {
+            a.table_name: {
+                "alias": a.alias or "", "domain": a.domain or "",
+                "description": a.description or "",
+                "business_scenarios": a.business_scenarios or "",
+            }
+            for a in rows
+        }
+        return _ASSET_TMETA
+
     @classmethod
     async def get_settings(cls) -> dict:
         defaults = {
@@ -1815,6 +1858,8 @@ class AiQueryService:
             ac = colmap.get((t, c))
             if ac and ac.description:
                 label += f"【{ac.description}】"
+            if ac and ac.related_table and ac.related_field:
+                label += f"【关联:{ac.related_table}.{ac.related_field}】"
             if ac and ac.sensitive:
                 label += "[敏感]"
             schema.setdefault(t, []).append(label)
@@ -2108,10 +2153,28 @@ class AiQueryService:
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
             schema = await cls._system_schema()
+            tmeta = await cls._asset_tmeta()
             rel = await cls._semantic_tables(question, schema, metrics, terms)
             for t in rel:
                 cols = schema.get(t, [])
-                lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
+                meta = tmeta.get(t) or {}
+                desc = meta.get("description") or ""
+                scen = meta.get("business_scenarios") or ""
+                nm = meta.get("alias") or ""
+                dom = meta.get("domain") or ""
+                head = t
+                extras = []
+                if nm:
+                    extras.append(f"中文名:{nm}")
+                if dom:
+                    extras.append(f"业务域:{dom}")
+                if desc:
+                    extras.append(f"描述:{desc}")
+                if scen:
+                    extras.append(f"业务场景:{scen}")
+                if extras:
+                    head = f"{t}【" + "；".join(extras) + "】"
+                lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
         lines.append("【示例问题→SQL】")
         for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")

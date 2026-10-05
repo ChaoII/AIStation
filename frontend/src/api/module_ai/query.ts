@@ -122,9 +122,12 @@ export function suggestQueryAssets() {
 }
 export function saveQueryAsset(data: {
   table_name: string;
+  alias?: string;
+  domain?: string;
   description: string;
+  business_scenarios?: string;
   included: boolean;
-  remark: string;
+  remark?: string;
 }) {
   return request({ url: `${API_PATH}/assets/save`, method: "post", data });
 }
@@ -132,6 +135,9 @@ export function saveQueryAssetColumn(data: {
   table_name: string;
   column_name: string;
   description: string;
+  business_scenarios?: string;
+  related_table?: string;
+  related_field?: string;
   included: boolean;
   sensitive: boolean;
 }) {

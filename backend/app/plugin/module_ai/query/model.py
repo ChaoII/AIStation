@@ -128,8 +128,17 @@ class AiQueryAssetModel(ModelMixin, UserMixin):
     table_name: Mapped[str] = mapped_column(
         String(128), nullable=False, unique=True, comment="表名"
     )
+    alias: Mapped[str | None] = mapped_column(
+        String(256), nullable=True, default="", comment="中文别名/表含义"
+    )
+    domain: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="", comment="业务域（如：视频/训练/标注）"
+    )
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="", comment="中文业务描述（供检索/模型）"
+    )
+    business_scenarios: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="业务场景（哪些业务/报表用到此表）"
     )
     included: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否纳入可查目录")
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="备注")
@@ -145,6 +154,15 @@ class AiQueryAssetColumnModel(ModelMixin, UserMixin):
     column_name: Mapped[str] = mapped_column(String(128), nullable=False, comment="字段名")
     description: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="", comment="中文业务描述"
+    )
+    business_scenarios: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="", comment="业务场景（哪些业务/报表需查此字段）"
+    )
+    related_table: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="", comment="关联表（联表查询的实体表）"
+    )
+    related_field: Mapped[str | None] = mapped_column(
+        String(128), nullable=True, default="", comment="关联字段（对应关联表的字段）"
     )
     included: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否纳入")
     sensitive: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否敏感字段")
