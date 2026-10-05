@@ -191,11 +191,9 @@ export function getQueryKgStats() {
   return request({ url: `${API_PATH}/assets/kg/stats`, method: "get" });
 }
 export function getQueryKgUnified(kbId?: number | null, scope = "all") {
-  return request({
-    url: `${API_PATH}/assets/kg/unified`,
-    method: "get",
-    params: { kb_id: kbId ?? "", scope },
-  });
+  const params: Record<string, any> = { scope };
+  if (kbId != null) params.kb_id = kbId;
+  return request({ url: `${API_PATH}/assets/kg/unified`, method: "get", params });
 }
 export function getQueryKgKbs() {
   return request({ url: `${API_PATH}/assets/kg/kbs`, method: "get" });

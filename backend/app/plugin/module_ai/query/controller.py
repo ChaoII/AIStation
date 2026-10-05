@@ -220,12 +220,15 @@ async def kg_stats(
 @AiQueryRouter.get("/assets/kg/unified", summary="统一图谱(数据schema图+知识库图)")
 async def kg_unified(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
-    kb_id: int | None = None,
+    kb_id: str | None = None,
     scope: str = "all",
 ) -> JSONResponse:
     from .agno_kg import unified_graph
 
-    data = await unified_graph(kb_id, schema_only=scope == "schema",
+    kb = None
+    if kb_id and str(kb_id).isdigit():
+        kb = int(kb_id)
+    data = await unified_graph(kb, schema_only=scope == "schema",
                                knowledge_only=scope == "knowledge")
     return SuccessResponse(data=data, msg="查询成功")
 
