@@ -633,6 +633,16 @@ def _metric_time_hint(m: dict) -> str:
     return ""
 
 
+_LISTING_RE = re.compile(
+    r"(哪些|列出|列表|清单|明细|罗列|有哪些|分别是什么|各叫什么|的名称|的名字|叫啥|叫什么名字)"
+)
+
+
+def _is_listing_question(question: str) -> bool:
+    """列举类问题（哪些/列出/名称等）不走指标模板，强制慢路径 NL2SQL。"""
+    return bool(_LISTING_RE.search(question or ""))
+
+
 def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
     """按得分选指标：名词/key/术语命中 + 时间语境对齐。
 
@@ -1399,6 +1409,7 @@ class AiQueryService:
             "fewshot_auto_curate": "true",           # 反馈正例自动沉淀为 few-shot
             "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
+            "agno_tool_agent": "true",               # 工具化 Agent(模型自主调用 schema/fewshots/cost)
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -1712,8 +1723,11 @@ class AiQueryService:
         if force_slow:
             return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
 
-        # 快路径匹配
-        metric = _match_metric(question, metrics, terms)
+        # 列举类问题不走指标模板（快路径只认指标聚合），强制走 NL2SQL
+        if not _is_listing_question(question):
+            metric = _match_metric(question, metrics, terms)
+        else:
+            metric = None
         if metric:
             params = _build_params(metric, question)
             try:
@@ -1907,16 +1921,43 @@ class AiQueryService:
             model = OpenAILike(
                 id=runtime["model"], base_url=runtime["base_url"],
                 api_key=runtime["api_key"] or "sk-none",
-                temperature=temperature, max_tokens=1200,
+                temperature=temperature, max_tokens=2000,
             )
-            agent = Agent(model=model, instructions=system_prompt)
+            tool_agent = cls._cfg_bool(cfg, "agno_tool_agent", True)
+            if tool_agent:
+                # 工具化 Agent：让模型自主决定何时调用 schema/fewshots/cost 工具
+                from .agno_query_tools import QUERY_TOOLS
+
+                agent = Agent(
+                    model=model,
+                    tools=list(QUERY_TOOLS),
+                    tool_call_limit=6, instructions=(
+                        "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
+                        "先调用 search_schema(question) 获取相关表/字段，必要时再调用 "
+                        "get_fewshots(question) 参考样例、check_cost(候选SQL) 评估代价；"
+                        "获取足够上下文后，最终消息必须直接输出一条 SELECT SQL（不要调用工具、不要多余解释）。"
+                        "禁止 DELETE/UPDATE/INSERT/DDL。\n注意："
+                        + "".join(rules)
+                    ),
+                )
+            else:
+                agent = Agent(model=model, instructions=system_prompt)
             resp = await agent.arun(user_msg)
             sql = (resp.content or "").strip()
+            sql = cls._extract_sql(sql)
+            table = SYSTEM_ALLOWED_TABLES if datasource in (SYSTEM_DS, None) else None
+            try:
+                return validate_sql(sql, table or set())
+            except Exception:
+                # 工具化模式若模型未取到 schema 导致校验失败，回退到提示版完整上下文重新生成
+                if not tool_agent:
+                    raise
+                fallback = Agent(model=model, instructions=system_prompt)
+                resp2 = await fallback.arun(user_msg)
+                sql2 = cls._extract_sql((resp2.content or "").strip())
+                return validate_sql(sql2, table or set())
         except Exception as e:  # noqa: BLE001
             raise CustomException(msg=f"问答模型(Agno)调用失败：{e}")
-        sql = cls._extract_sql(sql)
-        table = SYSTEM_ALLOWED_TABLES if datasource in (SYSTEM_DS, None) else None
-        return validate_sql(sql, table or set())
 
     @classmethod
     def _extract_sql(cls, s: str) -> str:
@@ -2030,6 +2071,28 @@ class AiQueryService:
                             continue
         except Exception:  # noqa: BLE001
             pass
+
+        # 4) 字段关联增强：外键列标注「关联目标表的名称列」，帮助模型 JOIN 后直接 SELECT 名称
+        def _name_col_of(rt: str) -> str | None:
+            cols = [c for (t, c) in coltype if t == rt]
+            for cand in ("name", "title", "label", "camera_name", "algorithm_name", "dataset_name", "device_name"):
+                if cand in cols:
+                    return cand
+            for cand in cols:
+                if coltype.get((rt, cand)) in {"character varying", "varchar", "text"}:
+                    return cand
+            return None
+
+        for _t, _labels in schema.items():
+            for _i, _lab in enumerate(_labels):
+                _c = _lab.split("(")[0]
+                _ac = colmap.get((_t, _c))
+                if not (_ac and _ac.related_table and _ac.related_field):
+                    continue
+                _name_col = _name_col_of(_ac.related_table)
+                if _name_col and _name_col != _c:
+                    _labels[_i] = _lab + f"➜{_ac.related_table}.{_name_col}"
+
         _SCHEMA_CACHE = schema
         return schema
 
@@ -2366,6 +2429,31 @@ class AiQueryService:
         for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")
             lines.append(f"SQL：{eg['sql']}")
+        return "\n".join(lines)
+
+    @classmethod
+    async def _schema_focused(cls, question: str) -> str:
+        """仅返回与问题相关的表/字段描述（供工具用，避免掺入指标/术语/few-shot 噪音）。"""
+        schema = await cls._system_schema()
+        tmeta = await cls._asset_tmeta()
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        terms = await cls.list_terms(SYSTEM_DS)
+        rel = await cls._semantic_tables(question, schema, metrics, terms)
+        lines = ["【可查询表及字段】"]
+        for t in rel:
+            cols = schema.get(t, [])
+            meta = tmeta.get(t) or {}
+            extras = []
+            if meta.get("alias"):
+                extras.append(f"中文名:{meta['alias']}")
+            if meta.get("domain"):
+                extras.append(f"业务域:{meta['domain']}")
+            if meta.get("description"):
+                extras.append(f"描述:{meta['description']}")
+            if meta.get("business_scenarios"):
+                extras.append(f"业务场景:{meta['business_scenarios']}")
+            head = f"{t}【" + "；".join(extras) + "】" if extras else t
+            lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
         return "\n".join(lines)
 
     @classmethod
