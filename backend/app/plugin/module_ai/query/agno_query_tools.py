@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from app.core.logger import log
 
 
@@ -143,8 +145,108 @@ async def search_history(question: str) -> str:
         return f"检索历史样例失败：{e}"
 
 
+#: 常见中文业务词 → 数据库精确值（证据值映射）
+_VALUE_SYNONYMS = {
+    "在线": "ONLINE", "上线": "ONLINE", "运行中": "RUNNING", "运行": "RUNNING",
+    "离线": "OFFLINE", "下线": "OFFLINE", "失败": "ERROR", "错误": "ERROR", "异常": "ERROR",
+    "成功": "SUCCESS", "停止": "STOPPED", "暂停": "STOPPED", "进行中": "in_progress",
+    "已完成": "completed", "完成": "completed", "待处理": "PENDING", "处理中": "PROCESSING",
+    "预警": "WARNING", "严重": "SEVERE", "高": "HIGH", "中": "MEDIUM", "低": "LOW",
+    "启用": "true", "禁用": "false", "是": "true", "否": "false",
+}
+
+
+async def resolve_value(term: str) -> str:
+    """把自然语言的取值（如「在线/离线/运行中」）解析为数据库字段的精确枚举值。"""
+    from .service import AiQueryService
+
+    log.warning("[QUERY_TOOL] 模型调用了 resolve_value，term={}", term)
+    try:
+        schema = await AiQueryService._system_schema()
+        # 收集所有列的枚举取值
+        cands: dict[str, str] = {}  # 精确值 -> 出现位置
+        for t, labels in schema.items():
+            for lab in labels:
+                m = re.search(r"【取值:([^】]+)】", lab)
+                if not m:
+                    continue
+                for v in m.group(1).split(","):
+                    v = v.strip()
+                    if v and v not in cands:
+                        cands[v] = f"{t}.{lab.split('(')[0]}"
+        t = (term or "").strip()
+        hits: list[str] = []
+        tl = t.lower()
+        for v, where in cands.items():
+            if tl and (tl in v.lower() or v.lower() in tl):
+                hits.append(f"{v}(在 {where})")
+        syn = _VALUE_SYNONYMS.get(t)
+        if syn and not any(h.startswith(syn) for h in hits):
+            hits.append(f"{syn}(同义词映射)")
+        if not hits and t:
+            return (f"未找到「{t}」对应的精确枚举值。常见枚举："
+                    + ", ".join(list(cands)[:20]))
+        return "建议使用的精确值：" + "；".join(hits[:12])
+    except Exception as e:  # noqa: BLE001
+        return f"解析取值失败：{e}"
+
+
+async def find_join_path(source: str, target: str) -> str:
+    """查找两张表之间的关联字段（可 JOIN 路径），用知识图谱的字段关联边遍历。"""
+    from .service import AiQueryService
+
+    log.warning("[QUERY_TOOL] 模型调用了 find_join_path，source={} target={}", source, target)
+    try:
+        schema = await AiQueryService._system_schema()
+        # 提取所有 表.字段 -> 表.字段 关联
+        rel_re = re.compile(r"【关联:([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)】")
+        rels: list[tuple[str, str, str, str]] = []  # (s_t,s_c,d_t,d_c)
+        for t, labels in schema.items():
+            for lab in labels:
+                col = lab.split("(")[0]
+                m = rel_re.search(lab)
+                if m:
+                    rels.append((t, col, m.group(1), m.group(2)))
+        src, dst = (source or "").strip(), (target or "").strip()
+        direct = [r for r in rels if (r[0] == src and r[2] == dst) or (r[0] == dst and r[2] == src)]
+        out = []
+        for r in direct:
+            out.append(f"{r[0]}.{r[1]} = {r[2]}.{r[3]}")
+        if out:
+            return f"表 {src} 与 {dst} 可直接关联：" + "；".join(out[:6])
+        # 间接：A.字段 关联到 C.字段，C 与 dst 同表/再关联
+        via = set()
+        for r in rels:
+            if r[0] == src or r[2] == src:
+                via.add((r[0], r[1]))
+        out2 = []
+        for r in rels:
+            if (r[2] == dst or r[0] == dst) and (r[0], r[1]) in via:
+                out2.append(f"{src} 经 {r[0]}.{r[1]} / {r[2]}.{r[3]} 关联到 {dst}")
+        return (f"表 {src} 与 {dst} 无直接关联字段。"
+                + ("；".join(out2[:6]) if out2 else "，请确认表名或改用表间实体关系。"))
+    except Exception as e:  # noqa: BLE001
+        return f"查找关联失败：{e}"
+
+
+async def explain_column(table: str, column: str) -> str:
+    """返回指定表某字段的说明：类型/中文描述/关联/枚举取值/敏感。"""
+    from .service import AiQueryService
+
+    log.warning("[QUERY_TOOL] 模型调用了 explain_column，table={} column={}", table, column)
+    try:
+        schema = await AiQueryService._system_schema()
+        for lab in (schema.get((table or "").strip()) or []):
+            if lab.split("(")[0] == (column or "").strip():
+                return f"{table}.{column}：{lab}"
+        return f"未找到 {table}.{column}"
+    except Exception as e:  # noqa: BLE001
+        return f"查询字段说明失败：{e}"
+
+
 #: 注册进 Agent 的工具集合（可同时传给 Agent(tools=...)）
 QUERY_TOOLS = [
     search_schema, get_fewshots, check_cost, semantic_search, table_metadata,
     kg_search, list_metrics, list_terms, search_history,
+    resolve_value, find_join_path, explain_column,
 ]
