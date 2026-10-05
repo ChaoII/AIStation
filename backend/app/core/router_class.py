@@ -59,7 +59,11 @@ class OperationLogRoute(APIRoute):
             if route.name in settings.IGNORE_OPERATION_FUNCTION:
                 return response
 
-            user_agent = parse(request.headers.get("user-agent"))
+            ua = request.headers.get("user-agent")
+            try:
+                user_agent = parse(ua) if ua else None
+            except Exception:  # noqa: BLE001
+                user_agent = None
             payload = b"{}"
             req_content_type = request.headers.get("Content-Type", "")
 

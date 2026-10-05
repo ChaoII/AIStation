@@ -49,6 +49,8 @@ async def ask_stream(
 ) -> StreamingResponse:
     import json
 
+    from app.core.sse import sse_response
+
     async def _gen():
         try:
             async for ev in AiQueryService.ask_stream(
@@ -58,15 +60,7 @@ async def ask_stream(
         except Exception as e:  # noqa: BLE001
             yield f"event: error\ndata: {json.dumps({'message': str(getattr(e, 'msg', e))}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(
-        _gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+    return sse_response(_gen())
 
 
 # ---- 指标运营 ----
