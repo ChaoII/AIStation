@@ -218,6 +218,49 @@ NL2SQL_GOLDEN = [
      "gold": "SELECT alarm_type, COUNT(*) AS c, ROUND(100.0*SUM(COUNT(*)) OVER (ORDER BY COUNT(*) DESC)/SUM(COUNT(*)) OVER (),2) AS cum_pct FROM video_alarm_records GROUP BY alarm_type ORDER BY c DESC"},
     {"tag": "窗口函数", "q": "按告警数量给摄像头排名",
      "gold": "SELECT c.name, COUNT(r.id) AS c, RANK() OVER (ORDER BY COUNT(r.id) DESC) AS rk FROM video_cameras c LEFT JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY c.name ORDER BY rk"},
+    # ===== 扩充：更多单维/去重/多表/时间/占比/嵌套 =====
+    {"tag": "单维统计", "q": "告警数最多的5种状态",
+     "gold": "SELECT status, COUNT(*) AS c FROM video_alarm_records GROUP BY status ORDER BY c DESC LIMIT 5"},
+    {"tag": "单维统计", "q": "可达的摄像头有多少个",
+     "gold": "SELECT COUNT(*) AS c FROM video_cameras WHERE reachable=true"},
+    {"tag": "单维统计", "q": "不同流类型的摄像头数量",
+     "gold": "SELECT COALESCE(stream_type,'未知') AS 流类型, COUNT(*) AS 数量 FROM video_cameras GROUP BY 流类型 ORDER BY 数量 DESC"},
+    {"tag": "联表", "q": "每个摄像头组下各有多少摄像头",
+     "gold": "SELECT COALESCE(g.name,'未分组') AS 组, COUNT(c.id) AS 数量 FROM video_camera_groups g LEFT JOIN video_cameras c ON c.group_id=g.id GROUP BY 组 ORDER BY 数量 DESC"},
+    {"tag": "联表", "q": "按品牌统计摄像头数量",
+     "gold": "SELECT COALESCE(brand,'未知') AS 品牌, COUNT(*) AS 数量 FROM video_cameras GROUP BY 品牌 ORDER BY 数量 DESC"},
+    {"tag": "联表", "q": "每个AI应用各被调用了多少次",
+     "gold": "SELECT COALESCE(a.name,'未知') AS 应用, COUNT(l.id) AS 调用数 FROM ai_apps a LEFT JOIN ai_call_logs l ON l.app_id=a.id GROUP BY 应用 ORDER BY 调用数 DESC"},
+    {"tag": "联表", "q": "最近登录的10个用户",
+     "gold": "SELECT username, last_login FROM sys_user WHERE last_login IS NOT NULL ORDER BY last_login DESC LIMIT 10"},
+    {"tag": "时间窗口", "q": "2026年9月每日告警数",
+     "gold": "SELECT TO_CHAR(alarm_time,'YYYY-MM-DD') AS 日期, COUNT(*) AS 告警数 FROM video_alarm_records WHERE alarm_time >= '2026-09-01' AND alarm_time < '2026-10-01' GROUP BY 日期 ORDER BY 日期"},
+    {"tag": "时间窗口", "q": "最近14天每天的边缘事件数",
+     "gold": "SELECT date(ts) AS 日期, COUNT(*) AS 事件数 FROM video_edge_events WHERE ts >= CURRENT_DATE - 14 GROUP BY 日期 ORDER BY 日期"},
+    {"tag": "时间窗口", "q": "各小时的告警分布",
+     "gold": "SELECT EXTRACT(HOUR FROM alarm_time)::int AS 小时, COUNT(*) AS 告警数 FROM video_alarm_records GROUP BY 小时 ORDER BY 小时"},
+    {"tag": "多维报表", "q": "各算法类型的边缘事件占比",
+     "gold": "SELECT COALESCE(algorithm_type,'未知') AS 算法类型, COUNT(*) AS 事件数, ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM video_edge_events),2) AS 占比 FROM video_edge_events GROUP BY 算法类型 ORDER BY 事件数 DESC"},
+    {"tag": "多维报表", "q": "告警占比超过5%的告警类型",
+     "gold": "SELECT alarm_type, COUNT(*) AS c, ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM video_alarm_records),2) AS pct FROM video_alarm_records GROUP BY alarm_type HAVING COUNT(*)*100.0/(SELECT COUNT(*) FROM video_alarm_records) > 5 ORDER BY c DESC"},
+    {"tag": "多维报表", "q": "每个算法场景类型各有多少算法",
+     "gold": "SELECT COALESCE(scene_type,'未知') AS 场景, COUNT(*) AS 数量 FROM video_algorithms GROUP BY 场景 ORDER BY 数量 DESC"},
+    {"tag": "去重", "q": "产生过告警的不同摄像头有多少",
+     "gold": "SELECT COUNT(DISTINCT camera_id) AS c FROM video_alarm_records WHERE camera_id IS NOT NULL"},
+    {"tag": "去重", "q": "被调用过的不同模型有多少",
+     "gold": "SELECT COUNT(DISTINCT model_name) AS c FROM ai_call_logs"},
+    {"tag": "训练", "q": "各框架下的训练模型数量",
+     "gold": "SELECT framework, COUNT(*) AS c FROM train_models GROUP BY framework ORDER BY c DESC"},
+    {"tag": "训练", "q": "各状态的训练任务数量",
+     "gold": "SELECT status, COUNT(*) AS c FROM train_tasks GROUP BY status ORDER BY c DESC"},
+    {"tag": "用户", "q": "系统中有多少超级管理员",
+     "gold": "SELECT COUNT(*) AS c FROM sys_user WHERE is_superuser=true"},
+    {"tag": "用户", "q": "按是否超级管理员统计用户数",
+     "gold": "SELECT is_superuser AS 是否管理员, COUNT(*) AS 数量 FROM sys_user GROUP BY 是否管理员"},
+    {"tag": "嵌套子查询", "q": "告警数超过全站平均水平的告警类型",
+     "gold": "SELECT alarm_type, COUNT(*) AS c FROM video_alarm_records GROUP BY alarm_type HAVING COUNT(*) > (SELECT AVG(cnt) FROM (SELECT COUNT(*) AS cnt FROM video_alarm_records GROUP BY alarm_type) x) ORDER BY c DESC"},
+    {"tag": "嵌套子查询", "q": "产生过告警且告警数排前3的摄像头",
+     "gold": "SELECT c.name, COUNT(r.id) AS c FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY c.name ORDER BY c DESC LIMIT 3"},
 ]
 
 
@@ -276,25 +319,48 @@ def run(client: httpx.Client, tag: str | None = None) -> dict:
 async def _run_gold(sql: str) -> tuple[list, list]:
     """执行手写金标 SQL，返回 (列名, 排序后的行元组列表) 作为期望结果。
 
-    值统一用 _json_cell 归一化（与 _execute_sql 一致），保证 datetime/Decimal
-    等类型的字符串表示与 LLM 实际结果可比对（否则时间戳列永远不一致）。
+    值统一用 _norm_cell 归一化（与 lenient_match 一致），保证 datetime/Decimal/
+    空值占位/ROUND 精度等与 LLM 实际结果可比对。
     """
     from .service import _json_cell
 
     async with async_db_session() as db:
         result = await db.execute(text(sql))
         cols = list(result.keys())
-        rows = [tuple(str(_json_cell(v)) for v in r) for r in result.fetchall()]
+        rows = [tuple(_norm_cell(_json_cell(v)) for v in r) for r in result.fetchall()]
     return cols, sorted(rows)
 
 
+#: 空值/中文占位符/None 的统一归一化 token
+_NULL_TOKENS = {"", "none", "null", "nan", "未知", "未分组", "未分类", "无", "-", "--", "n/a", "未命名"}
+
+
+def _norm_cell(v) -> str:
+    """单元格归一化：统一空值/占位符，数字统一到固定精度，去除噪声。"""
+    if v is None:
+        return "∅"
+    raw = str(v).strip()
+    if raw.lower() in _NULL_TOKENS or raw in _NULL_TOKENS:
+        return "∅"
+    # 数字统一到 2 位小数（处理 ROUND(…,2) vs 未取整浮点）
+    try:
+        f = float(raw)
+        if f == int(f) and abs(f) < 1e15:
+            return str(int(f))
+        return f"{f:.2f}"
+    except ValueError:
+        return raw
+
+
 def _norm(rows: list) -> list:
-    return sorted(tuple(str(v) for v in r) for r in rows)
+    return sorted(tuple(_norm_cell(v) for v in r) for r in rows)
 
 
 def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: list) -> bool:
     """宽松比对：忽略列顺序与冗余列，只比较金标所需信息。
 
+    单元格经 _norm_cell 归一化（空值/占位符/数字精度），
+    避免「COALESCE 占位 vs NULL」「ROUND 精度」「null 归一化」等良性噪声误判。
     规则：
       - 结果行数（multiset 基数）必须一致；
       - 优先按「列名对齐」把 LLM 结果投影到金标列集合，再逐行比较；
@@ -322,12 +388,12 @@ def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: li
         used.add(idx)
         order.append(idx)
     if len(order) == k and all(len(r) >= k for r in llm_rows):
-        proj = sorted(tuple(str(r[i]) for i in order) for r in llm_rows)
+        proj = sorted(tuple(str(_norm_cell(v)) for v in (r[i] for i in order)) for r in llm_rows)
         if proj == gset:
             return True
     # (2) 位置前缀投影（忽略尾部冗余列）
     if all(len(r) >= k for r in llm_rows):
-        proj = sorted(tuple(str(v) for v in row[:k]) for row in llm_rows)
+        proj = sorted(tuple(str(_norm_cell(v)) for v in row[:k]) for row in llm_rows)
         if proj == gset:
             return True
     return False

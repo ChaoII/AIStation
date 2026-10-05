@@ -90,7 +90,16 @@ async def _run_nl2sql(run_id: str, items: list, user_id: int | None) -> list:
     out = []
     for item in items:
         from .benchmark import _run_gold
-        gold_cols, expected = await _run_gold(item["gold"])
+        try:
+            gold_cols, expected = await _run_gold(item["gold"])
+        except Exception as e:  # noqa: BLE001
+            gold_cols, expected = [], []
+            _update(run_id, current=item.get("q", ""))
+            out.append({"q": item["q"], "tag": item.get("tag"), "correct": False,
+                        "path": "slow", "ok": False, "ms": 0, "n_rows": 0,
+                        "sql": "", "gold_error": str(e)[:120]})
+            _update(run_id, done=len(GOLDEN) + len(out))
+            continue
         _update(run_id, current=item.get("q", ""))
         t0 = time.perf_counter()
         try:
