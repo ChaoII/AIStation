@@ -179,6 +179,13 @@ async def suggest_assets(
     return SuccessResponse(data=await AiQueryService.suggest_metrics_terms(auth), msg="推荐完成")
 
 
+@AiQueryRouter.post("/assets/infer-relations", summary="自动推断字段关联")
+async def infer_asset_relations(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.infer_asset_relations(auth), msg="已推断关联")
+
+
 @AiQueryRouter.get("/assets/{table_name}/columns", summary="数据资产(字段)列表")
 async def list_asset_columns(
     table_name: str,

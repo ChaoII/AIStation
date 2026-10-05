@@ -117,6 +117,9 @@ export function getQueryAssetColumns(tableName: string) {
 export function generateQueryAssetDesc() {
   return request({ url: `${API_PATH}/assets/generate-desc`, method: "post", timeout: 120000 });
 }
+export function inferQueryAssetRelations() {
+  return request({ url: `${API_PATH}/assets/infer-relations`, method: "post", timeout: 120000 });
+}
 export function suggestQueryAssets() {
   return request({ url: `${API_PATH}/assets/suggest`, method: "post", timeout: 120000 });
 }

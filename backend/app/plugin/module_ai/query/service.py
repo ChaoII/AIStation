@@ -1110,6 +1110,88 @@ class AiQueryService:
             return {}
 
     @classmethod
+    async def infer_asset_relations(cls, auth) -> dict:
+        """根据字段名特征自动推断「关联表/关联字段」，填充资产元数据。
+
+        规则：形如 ``xxx_id / xxx_ids / xxx_code / xxx_uuid`` 的字段，
+        取 ``xxx`` 前缀在已纳入表中匹配实体表（表名包含该前缀），
+        关联字段取目标表的主键/同名列。
+        """
+        global _SCHEMA_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            tables = (
+                await db.execute(
+                    select(AiQueryAssetModel).where(
+                        AiQueryAssetModel.is_deleted.is_(False),
+                        AiQueryAssetModel.included.is_(True),
+                    )
+                )
+            ).scalars().all()
+            cols = (
+                await db.execute(
+                    select(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                        AiQueryAssetColumnModel.included.is_(True),
+                    )
+                )
+            ).scalars().all()
+        table_names = {t.table_name for t in tables}
+        table_cols: dict[str, set[str]] = {}
+        for c in cols:
+            table_cols.setdefault(c.table_name, set()).add(c.column_name)
+
+        def _suggest(colname: str):
+            low = colname.lower()
+            for pat in (r"^(.+?)_(ids?)$", r"^(.+?)_(code)$", r"^(.+?)_(uuid)$"):
+                m = re.match(pat, low)
+                if not m:
+                    continue
+                prefix = m.group(1)
+                suffix = m.group(2)
+                target = None
+                for t in table_names:
+                    tl = t.lower()
+                    if prefix == tl or prefix in tl.split("_") or (len(prefix) >= 3 and prefix in tl):
+                        target = t
+                        break
+                if not target:
+                    continue
+                relfield = "id"
+                tc = table_cols.get(target, set())
+                if suffix == "code" and "code" in tc:
+                    relfield = "code"
+                elif suffix == "uuid" and "uuid" in tc:
+                    relfield = "uuid"
+                elif "id" in tc:
+                    relfield = "id"
+                elif tc:
+                    relfield = next(iter(tc))
+                return target, relfield
+            return None
+
+        updated = 0
+        async with async_db_session.begin() as db:
+            for c in cols:
+                if c.related_table and c.related_field:
+                    continue
+                sug = _suggest(c.column_name)
+                if not sug:
+                    continue
+                rt, rf = sug
+                existing = await db.get(AiQueryAssetColumnModel, c.id)
+                if existing:
+                    existing.related_table = rt
+                    existing.related_field = rf
+                    existing.updated_id = auth.user.id
+                    updated += 1
+        _SCHEMA_CACHE = None
+        _SEMANTIC_INDEX = None
+        _ASSET_TMETA = None
+        return {"relations": updated}
+
+    @classmethod
     async def upsert_asset_column(cls, data, auth) -> dict:
         global _SEMANTIC_INDEX, _SCHEMA_CACHE
         async with async_db_session.begin() as db:

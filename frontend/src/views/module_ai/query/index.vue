@@ -261,6 +261,9 @@
             >
               LLM 生成中文描述
             </el-button>
+            <el-button size="small" :loading="inferringRel" @click="inferRel">
+              自动推断字段关联
+            </el-button>
             <el-input
               v-model="assetSearch"
               size="small"
@@ -984,6 +987,7 @@ import {
   saveQueryAsset,
   saveQueryAssetColumn,
   generateQueryAssetDesc,
+  inferQueryAssetRelations,
   suggestQueryAssets,
   getQueryFewshots,
   saveQueryFewshot,
@@ -1360,6 +1364,20 @@ async function generateDesc() {
     ElMessage.error(e?.msg || "生成失败");
   } finally {
     generatingDesc.value = false;
+  }
+}
+const inferringRel = ref(false);
+async function inferRel() {
+  inferringRel.value = true;
+  try {
+    const r = await inferQueryAssetRelations();
+    const d = r.data?.data || {};
+    ElMessage.success(`已推断 ${d.relations ?? 0} 处字段关联，请人工校对`);
+    loadAssets();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "推断失败");
+  } finally {
+    inferringRel.value = false;
   }
 }
 async function saveAsset(row: any) {
