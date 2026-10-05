@@ -5,11 +5,17 @@
 """
 from __future__ import annotations
 
+import contextvars
 from datetime import datetime
 
 from sqlalchemy import desc, select
 
 from app.core.database import async_db_session
+
+#: 当前请求（Agent/应用运行）配置的问数数据源/场景，供 ai_query 工具读取
+QUERY_DS_CONTEXT: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "query_datasource", default="system"
+)
 
 # 允许导航的系统页面（path -> 名称）
 NAV_ALLOWLIST: dict[str, str] = {
@@ -251,12 +257,14 @@ async def ai_query(question: str, user_id: int | None = None) -> dict:
     from app.plugin.module_ai.query.service import AiQueryService
 
     auth = SimpleNamespace(user=SimpleNamespace(id=user_id))
+    datasource = QUERY_DS_CONTEXT.get() or "system"
     try:
-        res = await AiQueryService.ask(question, auth, None, "system")
+        res = await AiQueryService.ask(question, auth, None, datasource)
     except Exception as e:  # noqa: BLE001
         return {"question": question, "error": str(getattr(e, "msg", e))}
     return {
         "question": question,
+        "datasource": datasource,
         "columns": res.get("columns") or [],
         "rows": res.get("rows") or [],
         "sql": res.get("sql") or "",

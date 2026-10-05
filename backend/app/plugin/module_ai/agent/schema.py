@@ -16,6 +16,8 @@ class AiAgentCreateSchema(BaseModel):
     tool_ids: list[str] = Field(default_factory=list)
     skill_ids: list[int] = Field(default_factory=list)
     knowledge_ids: list[int] = Field(default_factory=list)
+    query_enabled: bool = False
+    query_datasource: str | None = Field(default="system", max_length=64)
     input_schema: dict | None = None
     avatar: str | None = Field(default=None, max_length=256)
     color: str | None = Field(default=None, max_length=32)
@@ -36,6 +38,8 @@ class AiAgentUpdateSchema(BaseModel):
     tool_ids: list[str] | None = None
     skill_ids: list[int] | None = None
     knowledge_ids: list[int] | None = None
+    query_enabled: bool | None = None
+    query_datasource: str | None = Field(default=None, max_length=64)
     input_schema: dict | None = None
     avatar: str | None = Field(default=None, max_length=256)
     color: str | None = Field(default=None, max_length=32)

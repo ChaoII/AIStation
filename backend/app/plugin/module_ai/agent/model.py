@@ -61,6 +61,12 @@ class AiAgentModel(ModelMixin, UserMixin):
     knowledge_ids: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=list, comment="知识库ID列表（RAG）"
     )
+    query_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="是否启用智能问数"
+    )
+    query_datasource: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, default="system", comment="问数数据源/场景"
+    )
     input_schema: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True, default=None, comment="入参 JSON schema"
     )

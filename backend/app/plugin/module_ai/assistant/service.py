@@ -133,7 +133,7 @@ async def run_agent_ui_stream(
 
         content = ""
         tool_calls: dict = {}
-        for chunk in stream:
+        async for chunk in stream:
             if not chunk.choices:
                 # 流式 usage 在末 chunk（无 choices）携带
                 if getattr(chunk, "usage", None):

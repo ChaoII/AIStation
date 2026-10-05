@@ -299,6 +299,21 @@
               <el-option v-for="k in knowledgeOptions" :key="k.id" :label="k.name" :value="k.id" />
             </el-select>
           </el-form-item>
+          <el-form-item label="智能问数">
+            <el-switch v-model="agentForm.query_enabled" />
+            <span class="query-hint">启用后可回答基于系统数据的业务问题</span>
+          </el-form-item>
+          <el-form-item v-if="agentForm.query_enabled" label="问数数据源">
+            <el-select v-model="agentForm.query_datasource" style="width: 100%">
+              <el-option label="系统数据" value="system" />
+              <el-option
+                v-for="d in queryDatasources"
+                :key="d.id"
+                :label="d.name"
+                :value="String(d.id)"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item label="温度">
             <el-slider
               v-model="agentForm.temperature"
@@ -443,6 +458,7 @@ import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getAiSkillList } from "@/api/module_ai/skill";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
+import { getQueryDatasources } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiAgent" });
 
@@ -456,6 +472,7 @@ const currentCategory = ref<number | null>(null);
 const modelOptions = ref<{ id: number; name: string }[]>([]);
 const promptOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
+const queryDatasources = ref<any[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const skillOptions = ref<{ id: number; name: string }[]>([]);
 const knowledgeOptions = ref<{ id: number; name: string }[]>([]);
@@ -532,7 +549,7 @@ watch([currentCategory, keyword], () => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const [ar, cr, mr, pr, tr, wr, sr, kr] = await Promise.all([
+    const [ar, cr, mr, pr, tr, wr, sr, kr, dr] = await Promise.all([
       getAiAgentList({}),
       getAgentCategoryList(),
       getAiModelList({}),
@@ -541,6 +558,7 @@ const loadData = async () => {
       getAiWorkflowList(),
       getAiSkillList({}),
       getAiKnowledgeList(),
+      getQueryDatasources(),
     ]);
     agents.value = ar.data?.data || [];
     categories.value = cr.data?.data || [];
@@ -555,6 +573,7 @@ const loadData = async () => {
     workflowOptions.value = (wr.data?.data || []).map((w: any) => ({ id: w.id, name: w.name }));
     skillOptions.value = (sr.data?.data || []).map((s: any) => ({ id: s.id, name: s.name }));
     knowledgeOptions.value = (kr.data?.data || []).map((k: any) => ({ id: k.id, name: k.name }));
+    queryDatasources.value = dr.data?.data || [];
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -592,6 +611,8 @@ function openAgentDialog(a?: any) {
       tool_ids: [],
       skill_ids: [],
       knowledge_ids: [],
+      query_enabled: false,
+      query_datasource: "system",
       temperature: 0.7,
       color: "#409eff",
       markdown: true,
@@ -630,6 +651,9 @@ async function saveAgent() {
       tool_ids: agentForm.runMode === "model" ? agentForm.tool_ids : [],
       skill_ids: agentForm.runMode === "model" ? agentForm.skill_ids : [],
       knowledge_ids: agentForm.runMode === "model" ? agentForm.knowledge_ids : [],
+      query_enabled: agentForm.runMode === "model" ? agentForm.query_enabled : false,
+      query_datasource:
+        agentForm.runMode === "model" ? agentForm.query_datasource || "system" : "system",
       temperature: agentForm.runMode === "model" ? agentForm.temperature : null,
       color: agentForm.color,
       markdown: agentForm.markdown,
@@ -826,6 +850,11 @@ onMounted(loadData);
 <style scoped lang="scss">
 .ai-agent-page {
   height: 100%;
+}
+.query-hint {
+  margin-left: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: var(--el-font-size-base);
 }
 
 .agent-category-card {

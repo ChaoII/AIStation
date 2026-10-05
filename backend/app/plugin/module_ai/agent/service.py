@@ -25,6 +25,8 @@ def _to_dict(a: AiAgentModel) -> dict:
         "tool_ids": a.tool_ids or [],
         "skill_ids": a.skill_ids or [],
         "knowledge_ids": a.knowledge_ids or [],
+        "query_enabled": getattr(a, "query_enabled", False),
+        "query_datasource": getattr(a, "query_datasource", None) or "system",
         "input_schema": a.input_schema,
         "avatar": a.avatar or "",
         "color": a.color or "",
@@ -136,6 +138,8 @@ class AiAgentService:
                 tool_ids=data.tool_ids or [],
                 skill_ids=data.skill_ids or [],
                 knowledge_ids=data.knowledge_ids or [],
+                query_enabled=data.query_enabled,
+                query_datasource=data.query_datasource or "system",
                 input_schema=data.input_schema,
                 avatar=data.avatar or "",
                 color=data.color or "",
@@ -158,8 +162,8 @@ class AiAgentService:
             for key in (
                 "agent_name", "category_id", "agent_role", "description", "model_id",
                 "prompt_id", "temperature", "workflow_id", "tool_ids", "skill_ids",
-                "knowledge_ids", "input_schema", "avatar", "color", "markdown", "enabled",
-                "order",
+                "knowledge_ids", "query_enabled", "query_datasource", "input_schema",
+                "avatar", "color", "markdown", "enabled", "order",
             ):
                 if getattr(data, key) is not None:
                     setattr(a, key, getattr(data, key))
@@ -332,7 +336,11 @@ class AiAgentService:
                 yield ms.done()
                 return
 
-            tool_schemas, http_tools = await _build_app_tools(agent.get("tool_ids"))
+            tool_names = list(agent.get("tool_ids") or [])
+            # query_enabled：自动纳入问数工具，并按 Agent 配置的数据源/场景取数
+            if agent.get("query_enabled") and "ai_query" not in tool_names:
+                tool_names.append("ai_query")
+            tool_schemas, http_tools = await _build_app_tools(tool_names)
             client = AsyncOpenAI(
                 base_url=runtime["base_url"],
                 api_key=runtime["api_key"] or "sk-none",
@@ -348,17 +356,24 @@ class AiAgentService:
 
                 return await _run_app_tool(name, args, user_id, http_tools)
 
-            async for frame in run_agent_ui_stream(
-                client=client,
-                runtime=runtime,
-                messages=messages,
-                tool_schemas=tool_schemas,
-                dispatch=_dispatch,
-                ms=ms,
-                user_id=uid,
-                state=state,
-            ):
-                yield frame
+            # 设置当前 Agent 的问数数据源/场景上下文，供 ai_query 工具读取
+            from app.plugin.module_ai.assistant.tools import QUERY_DS_CONTEXT
+
+            ds_token = QUERY_DS_CONTEXT.set(agent.get("query_datasource") or "system")
+            try:
+                async for frame in run_agent_ui_stream(
+                    client=client,
+                    runtime=runtime,
+                    messages=messages,
+                    tool_schemas=tool_schemas,
+                    dispatch=_dispatch,
+                    ms=ms,
+                    user_id=uid,
+                    state=state,
+                ):
+                    yield frame
+            finally:
+                QUERY_DS_CONTEXT.reset(ds_token)
         except Exception as e:  # noqa: BLE001
             state["error"] = str(e)
             yield ms.error(f"运行失败：{e}")
