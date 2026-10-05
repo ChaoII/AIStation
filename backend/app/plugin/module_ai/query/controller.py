@@ -243,6 +243,50 @@ async def kg_kbs(
     return SuccessResponse(data=[{"id": b["id"], "name": b["name"]} for b in items], msg="查询成功")
 
 
+@AiQueryRouter.post("/assets/kg/relation", summary="新增自定义图谱关系")
+async def kg_add_relation(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .agno_kg import add_relation
+
+    r = await add_relation(str(data.get("source", "")), str(data.get("target", "")),
+                           str(data.get("rtype") or "关联"), int(data.get("weight") or 1))
+    return SuccessResponse(data=r, msg="已新增关系")
+
+
+@AiQueryRouter.delete("/assets/kg/relation", summary="删除自定义图谱关系")
+async def kg_del_relation(
+    source: str, target: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .agno_kg import delete_relation
+
+    n = await delete_relation(source, target)
+    return SuccessResponse(data={"deleted": n}, msg="已删除")
+
+
+@AiQueryRouter.post("/assets/kg/layout", summary="保存图谱节点布局")
+async def kg_save_layout(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .agno_kg import save_layout
+
+    n = await save_layout(data.get("items") or [])
+    return SuccessResponse(data={"saved": n}, msg="布局已保存")
+
+
+@AiQueryRouter.post("/assets/kg/auto-link", summary="知识库实体↔schema表/字段自动打边")
+async def kg_auto_link(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .agno_kg import auto_link_kb_schema
+
+    n = await auto_link_kb_schema()
+    return SuccessResponse(data={"linked": n}, msg="已自动打边")
+
+
 @AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")
 async def suggest_assets(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

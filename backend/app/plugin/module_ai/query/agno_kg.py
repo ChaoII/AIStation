@@ -158,7 +158,7 @@ def _canvas_nodes_edges(kg: KgGraph) -> dict:
 
 async def unified_graph(kb_id: int | None = None, schema_only: bool = False,
                         knowledge_only: bool = False) -> dict:
-    """统一图谱：合并「数据 schema 图谱」与「知识库图谱(可选)」。"""
+    """统一图谱：合并「数据 schema 图谱」与「知识库图谱(可选)」+ 自定义关系/布局。"""
     kg = await _ensure()
     merged = {"nodes": [], "edges": []}
     if not knowledge_only:
@@ -174,7 +174,129 @@ async def unified_graph(kb_id: int | None = None, schema_only: bool = False,
             merged["edges"] += kb.get("edges", [])
         except Exception:  # noqa: BLE001
             pass
+    # 合并自定义关系 + 应用布局
+    rels = await _custom_relations()
+    if rels:
+        merged["edges"] += rels
+    layout = await _layout_map()
+    if layout:
+        for n in merged["nodes"]:
+            if n.get("name") in layout:
+                n["x"] = layout[n["name"]]["x"]
+                n["y"] = layout[n["name"]]["y"]
     return merged
+
+
+async def _ensure_runtime_tables() -> None:
+    from app.core.database import async_db_session
+
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        await db.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ai_query_kg_relation ("
+            "id BIGSERIAL PRIMARY KEY, source VARCHAR(200), target VARCHAR(200), "
+            "rtype VARCHAR(50), weight REAL DEFAULT 1, "
+            "created_time TIMESTAMP DEFAULT now())"
+        ))
+        await db.execute(_t(
+            "CREATE TABLE IF NOT EXISTS ai_query_kg_layout ("
+            "node_name VARCHAR(200) PRIMARY KEY, x DOUBLE PRECISION, y DOUBLE PRECISION)"
+        ))
+
+
+async def _custom_relations() -> list[dict]:
+    from app.core.database import async_db_session
+
+    await _ensure_runtime_tables()
+    async with async_db_session() as db:
+        from sqlalchemy import text as _t
+
+        res = await db.execute(_t(
+            "SELECT source, target, rtype, weight FROM ai_query_kg_relation ORDER BY id"))
+        rows = res.fetchall()
+    return [{"source": r[0], "target": r[1], "rtype": r[2] or "关联", "weight": float(r[3] or 1)}
+            for r in rows]
+
+
+async def _layout_map() -> dict:
+    from app.core.database import async_db_session
+
+    await _ensure_runtime_tables()
+    async with async_db_session() as db:
+        from sqlalchemy import text as _t
+
+        res = await db.execute(_t("SELECT node_name, x, y FROM ai_query_kg_layout"))
+        rows = res.fetchall()
+    return {r[0]: {"x": float(r[1]), "y": float(r[2])} for r in rows if r[1] is not None}
+
+
+async def add_relation(source: str, target: str, rtype: str = "关联", weight: int = 1) -> dict:
+    from app.core.database import async_db_session
+
+    await _ensure_runtime_tables()
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        await db.execute(_t(
+            "INSERT INTO ai_query_kg_relation(source, target, rtype, weight) "
+            "VALUES (:s, :t, :r, :w)"), {"s": source, "t": target, "r": rtype, "w": weight})
+    return {"source": source, "target": target, "rtype": rtype, "weight": weight}
+
+
+async def delete_relation(source: str, target: str) -> int:
+    from app.core.database import async_db_session
+
+    await _ensure_runtime_tables()
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        res = await db.execute(_t(
+            "DELETE FROM ai_query_kg_relation WHERE source=:s AND target=:t"),
+            {"s": source, "t": target})
+    return int(res.rowcount or 0)
+
+
+async def save_layout(items: list[dict]) -> int:
+    from app.core.database import async_db_session
+
+    await _ensure_runtime_tables()
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        for it in items:
+            await db.execute(_t(
+                "INSERT INTO ai_query_kg_layout(node_name, x, y) VALUES (:n, :x, :y) "
+                "ON CONFLICT (node_name) DO UPDATE SET x=EXCLUDED.x, y=EXCLUDED.y"),
+                {"n": it["name"], "x": it["x"], "y": it["y"]})
+    return len(items)
+
+
+async def auto_link_kb_schema() -> int:
+    """把知识库实体名 与 schema 表名/中文名/字段名 匹配打边，返回新增关系数。"""
+    kg = await _ensure()
+    names: dict[str, str] = {}
+    for nid, nd in kg.nodes.items():
+        if nd["type"] in ("table", "field", "term", "metric"):
+            names[nd["label"]] = _node_name(nid, nd)
+    from app.core.database import async_db_session
+
+    async with async_db_session() as db:
+        from sqlalchemy import text as _t
+
+        try:
+            res = await db.execute(_t(
+                "SELECT DISTINCT name FROM ai_knowledge_entity WHERE is_deleted=false"))
+            ents = res.scalars().all()
+        except Exception:  # noqa: BLE001
+            ents = []
+    out = 0
+    for e in ents:
+        e = (e or "").strip()
+        if e in names:
+            await add_relation(f"实体:{e}", names[e], "关联为", 1)
+            out += 1
+    return out
 
 
 def _score_nodes(q: str, kg: KgGraph) -> list[str]:

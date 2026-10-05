@@ -198,6 +198,12 @@ export function getQueryKgUnified(kbId?: number | null, scope = "all") {
 export function getQueryKgKbs() {
   return request({ url: `${API_PATH}/assets/kg/kbs`, method: "get" });
 }
+export function saveQueryKgLayout(items: { name: string; x: number; y: number }[]) {
+  return request({ url: `${API_PATH}/assets/kg/layout`, method: "post", data: { items } });
+}
+export function autoLinkQueryKg() {
+  return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
+}
 export function inferQueryAssetRelations() {
   return request({ url: `${API_PATH}/assets/infer-relations`, method: "post", timeout: 120000 });
 }

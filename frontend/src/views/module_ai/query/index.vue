@@ -709,6 +709,9 @@
             <el-button size="small" :icon="Refresh" :loading="loadingKg" @click="loadUnifiedGraph">
               刷新
             </el-button>
+            <el-button size="small" :loading="linkingKg" @click="autoLinkKg">
+              实体↔表自动打边
+            </el-button>
             <el-tag v-if="kgNodes.length" size="small" type="info" effect="plain">
               {{ kgNodes.length }} 节点 / {{ kgEdges.length }} 边
             </el-tag>
@@ -1110,6 +1113,7 @@ import {
   getQueryKgStats,
   getQueryKgUnified,
   getQueryKgKbs,
+  autoLinkQueryKg,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1624,6 +1628,19 @@ async function loadKgKbs() {
     kgKbs.value = r.data?.data || [];
   } catch {
     /* 静默 */
+  }
+}
+const linkingKg = ref(false);
+async function autoLinkKg() {
+  linkingKg.value = true;
+  try {
+    const r = await autoLinkQueryKg();
+    ElMessage.success(`已自动打边 ${r.data?.data?.linked ?? 0} 条`);
+    loadUnifiedGraph();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "自动打边失败");
+  } finally {
+    linkingKg.value = false;
   }
 }
 const inferringRel = ref(false);
