@@ -465,15 +465,24 @@
             <el-form-item label="实体查询 JOIN 取 name">
               <el-switch v-model="engForm.entity_name_rule" />
             </el-form-item>
-            <el-divider content-position="left">实体名词→表 映射（覆盖默认）</el-divider>
-            <el-form-item label="映射（JSON）">
-              <el-input
-                v-model="engForm.entity_map"
-                type="textarea"
-                :rows="6"
-                placeholder='{"摄像头":["video_cameras","video_camera_groups"]}'
-              />
-            </el-form-item>
+            <el-divider content-position="left">实体名词→表 映射（行式编辑，覆盖默认）</el-divider>
+            <div class="emap-editor">
+              <div v-for="(row, idx) in engRows" :key="idx" class="emap-row">
+                <el-input
+                  v-model="row.noun"
+                  placeholder="实体名词，如：摄像头"
+                  style="width: 190px"
+                />
+                <el-input
+                  v-model="row.tables"
+                  placeholder="关联表，逗号分隔，如：video_cameras,video_camera_groups"
+                  class="emap-tables"
+                />
+                <el-button :icon="Delete" circle text type="danger" @click="removeEngRow(idx)" />
+              </div>
+              <el-button type="primary" plain :icon="Plus" @click="addEngRow">新增一行</el-button>
+              <div class="emap-hint">保存时自动转为 JSON 存储；留空实体名词的行会被忽略。</div>
+            </div>
             <el-form-item>
               <el-button type="primary" :loading="savingEngine" @click="saveEngineConfig">
                 保存工程配置
@@ -1412,6 +1421,67 @@ const engDef = {
   entity_name_rule: true,
   entity_map: "{}",
 };
+// 内置默认实体名词→表 映射（仅作编辑起点，可在界面增删改并持久化覆盖）
+const DEFAULT_ENTITY_MAP: Record<string, string[]> = {
+  摄像头: ["video_cameras", "video_camera_groups"],
+  设备: ["video_edge_devices"],
+  算法: ["video_algorithms"],
+  任务: ["video_algorithm_tasks", "annotation_task", "train_tasks"],
+  数据集: ["annotation_dataset"],
+  规则: ["video_alarm_rules"],
+  标注: ["annotation_dataset", "annotation_task", "annotation_record"],
+  告警: ["video_alarm_records"],
+  报警: ["video_alarm_records"],
+  事件: ["video_edge_events"],
+  模型: ["ai_models", "ai_call_logs"],
+  用户: ["sys_user"],
+  合成: ["synthesis_job"],
+  报表: ["ai_reports"],
+  工作流: ["ai_workflows"],
+};
+const engRows = ref<Array<{ noun: string; tables: string }>>([]);
+function parseEngRows(raw: string) {
+  let over: Record<string, any> = {};
+  try {
+    over = JSON.parse(raw || "{}") || {};
+  } catch {
+    over = {};
+  }
+  const merged: Record<string, string[]> = {};
+  // 先放默认，再被后端覆盖
+  for (const [n, ts] of Object.entries(DEFAULT_ENTITY_MAP)) merged[n] = [...ts];
+  for (const [n, ts] of Object.entries(over)) {
+    merged[n] = Array.isArray(ts)
+      ? ts.map(String)
+      : String(ts)
+          .split(/[,，]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+  }
+  engRows.value = Object.entries(merged).map(([noun, tables]) => ({
+    noun,
+    tables: tables.join(", "),
+  }));
+}
+function addEngRow() {
+  engRows.value.push({ noun: "", tables: "" });
+}
+function removeEngRow(idx: number) {
+  engRows.value.splice(idx, 1);
+}
+function engRowsToJson(): string {
+  const obj: Record<string, string[]> = {};
+  for (const r of engRows.value) {
+    const noun = (r.noun || "").trim();
+    if (!noun) continue;
+    const tables = (r.tables || "")
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (tables.length) obj[noun] = tables;
+  }
+  return JSON.stringify(obj);
+}
 function loadEngineForm(d: any) {
   engForm.schema_top_k = Number(d.schema_top_k ?? engDef.schema_top_k);
   engForm.schema_semantic_weight = Number(
@@ -1423,6 +1493,7 @@ function loadEngineForm(d: any) {
   engForm.full_entity_no_limit = String(d.full_entity_no_limit ?? "true") !== "0";
   engForm.entity_name_rule = String(d.entity_name_rule ?? "true") !== "0";
   engForm.entity_map = d.entity_map ?? "{}";
+  parseEngRows(engForm.entity_map);
 }
 async function saveEngineConfig() {
   savingEngine.value = true;
@@ -1452,11 +1523,13 @@ async function saveEngineConfig() {
     for (const [k, v] of Object.entries(bools)) {
       await saveQuerySetting({ key: k, value: v ? "true" : "false", remark: k });
     }
+    const entityMap = engRowsToJson();
     await saveQuerySetting({
       key: "entity_map",
-      value: engForm.entity_map,
+      value: entityMap,
       remark: "实体映射JSON",
     });
+    engForm.entity_map = entityMap;
     ElMessage.success("已保存工程配置");
   } catch (e: any) {
     ElMessage.error(e?.msg || "保存失败");
@@ -1807,5 +1880,25 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+}
+.emap-editor {
+  padding: 8px 12px 12px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+.emap-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.emap-tables {
+  flex: 1;
+}
+.emap-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 4px;
 }
 </style>

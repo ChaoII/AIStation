@@ -1277,6 +1277,13 @@ class AiQueryService:
             _SETTINGS_CACHE = None
             for r in rows:
                 defaults[r.key] = r.value or defaults.get(r.key, "")
+        # 实体映射：返回「合并后」的有效映射（默认 + 覆盖），供前端行式编辑器展示
+        try:
+            import json as _json
+
+            defaults["entity_map"] = _json.dumps(cls._cfg_entity_map(defaults), ensure_ascii=False)
+        except Exception:  # noqa: BLE001
+            pass
         return defaults
 
     @classmethod
@@ -1309,9 +1316,9 @@ class AiQueryService:
             return default
 
     @classmethod
-    def _cfg_entity_map(cls, cfg: dict) -> dict[str, set[str]]:
-        """合并默认实体映射与配置覆盖的实体映射。"""
-        base = dict(_ENTITY_TABLE)
+    def _cfg_entity_map(cls, cfg: dict) -> dict[str, list[str]]:
+        """合并默认实体映射与配置覆盖的实体映射，返回 list 值（可 JSON 序列化）。"""
+        base: dict[str, list[str]] = {k: list(v) for k, v in _ENTITY_TABLE.items()}
         raw = cfg.get("entity_map") or "{}"
         try:
             import json as _json
@@ -1321,9 +1328,9 @@ class AiQueryService:
             over = {}
         for noun, tables in (over or {}).items():
             if isinstance(tables, list):
-                base[str(noun)] = {str(x) for x in tables}
+                base[str(noun)] = [str(x) for x in tables]
             elif isinstance(tables, str):
-                base[str(noun)] = {x.strip() for x in tables.split(",") if x.strip()}
+                base[str(noun)] = [x.strip() for x in tables.split(",") if x.strip()]
         return base
 
     @classmethod
