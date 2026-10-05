@@ -299,6 +299,69 @@ async def auto_link_kb_schema() -> int:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Apache AGE 同步：把 schema 图谱 + 手工关系镜像进 AGE 图库（全图统一在 AGE）
+# ---------------------------------------------------------------------------
+_SCHEMA_AGE_GRAPH = "aistation_schema"
+
+
+async def _age_available() -> bool:
+    try:
+        from app.plugin.module_ai.knowledge.graphrag import _age_available as _av
+        return await _av()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def _ensure_schema_age_graph() -> bool:
+    if not await _age_available():
+        return False
+    from app.core.database import async_db_session
+
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        await db.execute(_t("LOAD 'age'"))
+        await db.execute(_t("SET search_path = public, ag_catalog"))
+        row = (await db.execute(_t(
+            "SELECT count(*) FROM ag_catalog.ag_graph WHERE name=:g"),
+            {"g": _SCHEMA_AGE_GRAPH})).scalar()
+        if not row:
+            await db.execute(_t(f"SELECT create_graph('{_SCHEMA_AGE_GRAPH}')"))
+    return True
+
+
+async def age_sync_schema_graph() -> int:
+    """把 schema 图谱 + 自定义关系镜像写入 AGE 图库（幂等，MERGE 去重）。"""
+    if not await _ensure_schema_age_graph():
+        return 0
+    kg = await _ensure()
+    nodes = _canvas_nodes_edges(kg)["nodes"]
+    edges = _canvas_nodes_edges(kg)["edges"]
+    rels = await _custom_relations()
+    from app.core.database import async_db_session
+
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        await db.execute(_t("LOAD 'age'"))
+        await db.execute(_t("SET search_path = public, ag_catalog"))
+        for n in nodes:
+            name = (n["name"] or "").replace("'", "''")
+            await db.execute(_t(
+                f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $$ "
+                f"MERGE (n:SNode {{name:'{name}'}}) SET n.etype='{n['etype']}' RETURN 1 $$) AS (x agtype)"))
+        for e in edges + rels:
+            s = (e["source"] or "").replace("'", "''")
+            t = (e["target"] or "").replace("'", "''")
+            rt = (e.get("rtype") or "关联").replace("'", "''")
+            await db.execute(_t(
+                f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $$ "
+                f"MERGE (a:SNode {{name:'{s}'}}) MERGE (b:SNode {{name:'{t}'}}) "
+                f"MERGE (a)-[r:REL {{rtype:'{rt}'}}]->(b) RETURN 1 $$) AS (x agtype)"))
+    return len(nodes) + len(edges) + len(rels)
+
+
 def _score_nodes(q: str, kg: KgGraph) -> list[str]:
     """按关键词/实体命中给节点打分，取种子。"""
     ql = (q or "").lower()

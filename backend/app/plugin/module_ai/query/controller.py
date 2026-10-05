@@ -287,6 +287,16 @@ async def kg_auto_link(
     return SuccessResponse(data={"linked": n}, msg="已自动打边")
 
 
+@AiQueryRouter.post("/assets/kg/age-sync", summary="把schema图谱+自定义关系镜像进Apache AGE图库")
+async def kg_age_sync(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .agno_kg import age_sync_schema_graph
+
+    n = await age_sync_schema_graph()
+    return SuccessResponse(data={"synced": n}, msg="已同步到 AGE 图库")
+
+
 @AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")
 async def suggest_assets(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
