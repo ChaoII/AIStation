@@ -1152,9 +1152,12 @@ async function send() {
     path: "slow",
     _showSql: false,
     _running: true,
+    // 打字机：_reasoningBuf/_sqlBuf 累积原始流，_reasoning/_sqlLive 为已逐字reveal的显示态
+    _reasoningBuf: "",
     _reasoning: "",
-    _trace: [] as any[],
+    _sqlBuf: "",
     _sqlLive: "",
+    _trace: [] as any[],
     sql: "",
     columns: [] as string[],
     rows: [] as any[][],
@@ -1163,6 +1166,31 @@ async function send() {
   });
   messages.value.push(m);
   scrollBottom();
+  // 打字机 reveal：逐帧匀速把 buf 字符reveal到显示态；流结束后继续吐剩余积压，避免跳变
+  const REVEAL_PER_FRAME = 6;
+  let rafId = 0;
+  const tick = () => {
+    let changed = false;
+    if (m._reasoning.length < m._reasoningBuf.length) {
+      m._reasoning = m._reasoningBuf.slice(0, m._reasoning.length + REVEAL_PER_FRAME);
+      changed = true;
+    }
+    if (m._sqlLive.length < m._sqlBuf.length) {
+      m._sqlLive = m._sqlBuf.slice(0, m._sqlLive.length + REVEAL_PER_FRAME);
+      changed = true;
+    }
+    if (changed) scrollBottom();
+    const caught =
+      m._reasoning.length >= m._reasoningBuf.length && m._sqlLive.length >= m._sqlBuf.length;
+    if (!caught || m._running) {
+      rafId = requestAnimationFrame(tick);
+    } else {
+      rafId = 0;
+    }
+  };
+  const ensureTick = () => {
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  };
   try {
     for await (const ev of streamQuery({
       question: q,
@@ -1177,10 +1205,12 @@ async function send() {
           }
           break;
         case "reasoning_start":
+          m._reasoningBuf = "";
           m._reasoning = "";
           break;
         case "reasoning":
-          m._reasoning += d.delta || "";
+          m._reasoningBuf += d.delta || "";
+          ensureTick();
           break;
         case "tool_start":
           m._trace.push({ kind: "tool_start", name: d.name, args: d.args });
@@ -1192,11 +1222,13 @@ async function send() {
           m._trace.push({ kind: "tool_error", name: d.name, error: d.error });
           break;
         case "sql_delta":
-          m._sqlLive += d.delta || "";
+          m._sqlBuf += d.delta || "";
+          ensureTick();
           break;
         case "sql_final":
+          m._sqlBuf = d.sql || "";
           m.sql = d.sql || "";
-          m._sqlLive = m.sql;
+          ensureTick();
           break;
         case "result":
           m.columns = d.columns || [];
@@ -1207,6 +1239,7 @@ async function send() {
           break;
         case "done":
           m._running = false;
+          ensureTick();
           break;
         case "error":
           m.is_error = true;
@@ -1216,10 +1249,13 @@ async function send() {
       scrollBottom();
     }
     m._running = false;
+    ensureTick();
     loadSessions();
   } catch (e: any) {
     m.is_error = true;
     m.summary = e?.msg || e?.message || "查询失败";
+    m._running = false;
+    ensureTick();
   } finally {
     m._running = false;
     loading.value = false;
