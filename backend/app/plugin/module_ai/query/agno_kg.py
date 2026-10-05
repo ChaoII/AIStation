@@ -206,6 +206,15 @@ async def _ensure_runtime_tables() -> None:
 
 
 async def _custom_relations() -> list[dict]:
+    """自定义关系：优先从 AGE 图库读，AGE 不可用则回退自有表。"""
+    if await _age_available() and await _ensure_schema_age_graph():
+        try:
+            rows = await _run_cypher(
+                "MATCH (a:SNode)-[r:CUSTOM]->(b:SNode) RETURN a.name, b.name, r.rtype", ["a", "b", "rt"])
+            return [{"source": _ag(r[0]), "target": _ag(r[1]), "rtype": _ag(r[2]) or "关联", "weight": 1}
+                    for r in rows]
+        except Exception:  # noqa: BLE001
+            pass
     from app.core.database import async_db_session
 
     await _ensure_runtime_tables()
@@ -220,6 +229,14 @@ async def _custom_relations() -> list[dict]:
 
 
 async def _layout_map() -> dict:
+    """节点布局：优先从 AGE 图库读，AGE 不可用则回退自有表。"""
+    if await _age_available() and await _ensure_schema_age_graph():
+        try:
+            rows = await _run_cypher(
+                "MATCH (n:SNode) WHERE exists(n.lx) RETURN n.name, n.lx, n.ly", ["n", "x", "y"])
+            return {_ag(r[0]): {"x": float(_ag(r[1])), "y": float(_ag(r[2]))} for r in rows}
+        except Exception:  # noqa: BLE001
+            pass
     from app.core.database import async_db_session
 
     await _ensure_runtime_tables()
@@ -232,6 +249,18 @@ async def _layout_map() -> dict:
 
 
 async def add_relation(source: str, target: str, rtype: str = "关联", weight: int = 1) -> dict:
+    """新增自定义关系：优先写入 AGE 图库，AGE 不可用则回退自有表。"""
+    s = (source or "").replace("'", "''")
+    t = (target or "").replace("'", "''")
+    rt = (rtype or "关联").replace("'", "''")
+    if await _age_available() and await _ensure_schema_age_graph():
+        try:
+            await _run_cypher_write(
+                f"MERGE (a:SNode {{name:'{s}'}}) MERGE (b:SNode {{name:'{t}'}}) "
+                f"MERGE (a)-[r:CUSTOM {{rtype:'{rt}'}}]->(b)")
+            return {"source": source, "target": target, "rtype": rtype, "weight": weight}
+        except Exception:  # noqa: BLE001
+            pass
     from app.core.database import async_db_session
 
     await _ensure_runtime_tables()
@@ -245,6 +274,16 @@ async def add_relation(source: str, target: str, rtype: str = "关联", weight: 
 
 
 async def delete_relation(source: str, target: str) -> int:
+    """删除自定义关系：优先 AGE，AGE 不可用回退自有表。"""
+    s = (source or "").replace("'", "''")
+    t = (target or "").replace("'", "''")
+    if await _age_available() and await _ensure_schema_age_graph():
+        try:
+            await _run_cypher_write(
+                f"MATCH (a:SNode {{name:'{s}'}})-[r:CUSTOM]->(b:SNode {{name:'{t}'}}) DELETE r")
+            return 1
+        except Exception:  # noqa: BLE001
+            pass
     from app.core.database import async_db_session
 
     await _ensure_runtime_tables()
@@ -258,6 +297,21 @@ async def delete_relation(source: str, target: str) -> int:
 
 
 async def save_layout(items: list[dict]) -> int:
+    """保存节点布局：优先写入 AGE 图库，AGE 不可用回退自有表。"""
+    saved = 0
+    if await _age_available() and await _ensure_schema_age_graph():
+        for it in items:
+            name = (it.get("name") or "").replace("'", "''")
+            if not name:
+                continue
+            try:
+                await _run_cypher_write(
+                    f"MERGE (n:SNode {{name:'{name}'}}) SET n.lx={float(it['x'])}, n.ly={float(it['y'])}")
+                saved += 1
+            except Exception:  # noqa: BLE001
+                pass
+        if saved:
+            return saved
     from app.core.database import async_db_session
 
     await _ensure_runtime_tables()
@@ -270,6 +324,21 @@ async def save_layout(items: list[dict]) -> int:
                 "ON CONFLICT (node_name) DO UPDATE SET x=EXCLUDED.x, y=EXCLUDED.y"),
                 {"n": it["name"], "x": it["x"], "y": it["y"]})
     return len(items)
+
+
+async def traverse(start: str, hops: int = 2) -> dict:
+    """跨域多跳图查询：从某节点出发，经 AGE 图库返回可达节点/路径（schema+知识库统一）。"""
+    if not await _age_available() or not await _ensure_schema_age_graph():
+        return {"nodes": [], "edges": [], "error": "AGE 不可用"}
+    s = (start or "").replace("'", "''")
+    try:
+        rows = await _run_cypher(
+            f"MATCH (a:SNode {{name:'{s}'}})-[*..{int(hops)}]->(b:SNode) "
+            f"RETURN DISTINCT b.name, b.etype", ["n", "e"])
+        nodes = [{"name": _ag(r[0]), "etype": _ag(r[1])} for r in rows if _ag(r[0])]
+        return {"nodes": nodes, "edges": [], "from": start, "hops": hops}
+    except Exception as e:  # noqa: BLE001
+        return {"nodes": [], "edges": [], "error": str(e)[:120]}
 
 
 async def auto_link_kb_schema() -> int:
@@ -331,6 +400,43 @@ async def _ensure_schema_age_graph() -> bool:
     return True
 
 
+def _ag(v) -> str:
+    """把 agtype 返回值转成普通字符串（去引号）。"""
+    if v is None:
+        return ""
+    s = str(v).strip()
+    if len(s) >= 2 and s[0] in ("'", '"') and s[-1] == s[0]:
+        s = s[1:-1]
+    return s
+
+
+async def _run_cypher(cy: str, cols: list[str]) -> list[tuple]:
+    """在 schema AGE 图执行 Cypher，返回行元组（每列按 agtype 返回）。"""
+    from app.core.database import async_db_session
+
+    cols_sql = ", ".join(f"\"{c}\" agtype" for c in cols)
+    async with async_db_session() as db:
+        from sqlalchemy import text as _t
+
+        await db.execute(_t("LOAD 'age'"))
+        await db.execute(_t("SET search_path = public, ag_catalog"))
+        res = await db.execute(_t(
+            f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $${cy}$$) AS ({cols_sql})"))
+    return res.fetchall()
+
+
+async def _run_cypher_write(cy: str) -> None:
+    from app.core.database import async_db_session
+
+    async with async_db_session.begin() as db:
+        from sqlalchemy import text as _t
+
+        await db.execute(_t("LOAD 'age'"))
+        await db.execute(_t("SET search_path = public, ag_catalog"))
+        await db.execute(_t(
+            f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $${cy}$$) AS (x agtype)"))
+
+
 async def age_sync_schema_graph() -> int:
     """把 schema 图谱 + 自定义关系镜像写入 AGE 图库（幂等，MERGE 去重）。"""
     if not await _ensure_schema_age_graph():
@@ -351,7 +457,7 @@ async def age_sync_schema_graph() -> int:
             await db.execute(_t(
                 f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $$ "
                 f"MERGE (n:SNode {{name:'{name}'}}) SET n.etype='{n['etype']}' RETURN 1 $$) AS (x agtype)"))
-        for e in edges + rels:
+        for e in edges:
             s = (e["source"] or "").replace("'", "''")
             t = (e["target"] or "").replace("'", "''")
             rt = (e.get("rtype") or "关联").replace("'", "''")
@@ -359,6 +465,14 @@ async def age_sync_schema_graph() -> int:
                 f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $$ "
                 f"MERGE (a:SNode {{name:'{s}'}}) MERGE (b:SNode {{name:'{t}'}}) "
                 f"MERGE (a)-[r:REL {{rtype:'{rt}'}}]->(b) RETURN 1 $$) AS (x agtype)"))
+        for e in rels:
+            s = (e["source"] or "").replace("'", "''")
+            t = (e["target"] or "").replace("'", "''")
+            rt = (e.get("rtype") or "关联").replace("'", "''")
+            await db.execute(_t(
+                f"SELECT * FROM cypher('{_SCHEMA_AGE_GRAPH}', $$ "
+                f"MERGE (a:SNode {{name:'{s}'}}) MERGE (b:SNode {{name:'{t}'}}) "
+                f"MERGE (a)-[r:CUSTOM {{rtype:'{rt}'}}]->(b) RETURN 1 $$) AS (x agtype)"))
     return len(nodes) + len(edges) + len(rels)
 
 

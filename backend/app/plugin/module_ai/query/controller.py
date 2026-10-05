@@ -297,6 +297,17 @@ async def kg_age_sync(
     return SuccessResponse(data={"synced": n}, msg="已同步到 AGE 图库")
 
 
+@AiQueryRouter.post("/assets/kg/traverse", summary="跨域多跳图查询(从节点出发经AGE图库)")
+async def kg_traverse(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .agno_kg import traverse
+
+    out = await traverse(str(data.get("start", "")), int(data.get("hops") or 2))
+    return SuccessResponse(data=out, msg="查询成功")
+
+
 @AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")
 async def suggest_assets(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
