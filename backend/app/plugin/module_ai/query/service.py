@@ -2068,6 +2068,9 @@ class AiQueryService:
                     yield {"type": "tool_error",
                            "name": getattr(tool, "tool_name", ""), "error": getattr(ev, "error", "") or str(getattr(ev, "content", ""))}
                 elif etype == "RunContent":
+                    rc = getattr(ev, "reasoning_content", None)
+                    if rc:
+                        yield {"type": "reasoning", "delta": str(rc)}
                     c = getattr(ev, "content", None)
                     if c:
                         content_buf.append(str(c))
@@ -2078,6 +2081,9 @@ class AiQueryService:
                     c = getattr(ev, "content", None)
                     if c:
                         final_content = str(c)
+                    rc = getattr(ev, "reasoning_content", None)
+                    if rc:
+                        yield {"type": "reasoning_done"}
                 elif etype == "RunError":
                     yield {"type": "error", "message": str(getattr(ev, "content", ""))}
                     return
