@@ -46,6 +46,8 @@ _SCHEMA_CACHE: dict | None = None
 _SEMANTIC_INDEX: list | None = None
 # pgvector 是否已播种资产向量
 _VECTOR_SEEDED = False
+# Agno 向量库是否已播种语义单元
+_AGNO_SEEDED = False
 # 进程级缓存：工程配置（UI 保存时失效）
 _SETTINGS_CACHE: dict | None = None
 # 进程级缓存：表级资产元数据（中文名/业务域/描述/业务场景）
@@ -1388,6 +1390,7 @@ class AiQueryService:
             "full_entity_no_limit": "true",          # 全量实体查询提示词规则（不 LIMIT 截断）
             "entity_name_rule": "true",              # 实体查询提示词规则（JOIN 取 name）
             "entity_map": "{}",                      # 实体名词→表映射（JSON，覆盖默认）
+            "agno_semantic_enabled": "false",        # 语义检索走 Agno(Knowledge+PgVector)，默认关(需后台播种)
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -2125,6 +2128,40 @@ class AiQueryService:
         return list(tables)
 
     @classmethod
+    async def _agno_search_tables(cls, question: str, schema: dict, top_k: int) -> list[str]:
+        """用 Agno Knowledge(PgVector) 语义检索，返回命中的表集合。
+
+        把表/字段单元写入 Agno 向量库（进程级播种一次），检索命中单元文本，
+        再从文本中提取与 schema 交集内的表名。
+        """
+        global _AGNO_SEEDED
+        from .agno_store import AgnoSemanticStore
+
+        store = await AgnoSemanticStore.get()
+        await store.ensure()
+        if not _AGNO_SEEDED and (await store.count()) == 0:
+            units: list[dict] = []
+            for t in schema:
+                units.append({"text": f"数据表 {t}", "tables": {t}})
+                for col in schema[t]:
+                    cname = col.split("(")[0]
+                    units.append({"text": f"表 {t} 的字段 {cname}", "tables": {t}})
+            try:
+                n = await store.seed(units, reset=True)
+                _AGNO_SEEDED = True
+                log.info(f"[query] Agno 语义单元已入库: {n} 条")
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] Agno 播种失败: {e}")
+        _AGNO_SEEDED = True
+        texts = await store.search(question, top_k=top_k)
+        tables: set[str] = set()
+        for txt in texts:
+            for t in schema:
+                if t in txt:
+                    tables.add(t)
+        return list(tables)
+
+    @classmethod
     async def _semantic_tables(cls, question: str, schema: dict | None = None,
                                metrics: list[dict] | None = None,
                                terms: list[dict] | None = None) -> list[str]:
@@ -2144,20 +2181,28 @@ class AiQueryService:
             terms = await cls.list_terms(SYSTEM_DS)
         top_k = cls._cfg_int(cfg, "schema_top_k", 16)
         tables: set[str] = set()
-        # 1) 语义召回
-        try:
-            if not _VECTOR_SEEDED:
-                try:
-                    n = await cls._seed_vectors()
-                    _VECTOR_SEEDED = True
-                    log.info(f"[query] 资产向量已落 pgvector: {n} 条")
-                except Exception as e:  # noqa: BLE001
-                    log.warning(f"[query] pgvector 播种失败: {e}")
-            rows = await cls._pgv_search(question, top_k=top_k)
-            tables.update(rows)
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"[query] pgvector 检索失败: {e}")
-        # 2) 内存融合回退
+        # 1) 语义召回：优先走 Agno 框架(Knowledge+PgVector)
+        if cls._cfg_bool(cfg, "agno_semantic_enabled", True):
+            try:
+                at = await cls._agno_search_tables(question, schema, top_k)
+                tables.update(at)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] Agno 语义检索失败，回退 pgvector: {e}")
+        # 2) 回退：pgvector / 内存融合
+        if not tables:
+            try:
+                if not _VECTOR_SEEDED:
+                    try:
+                        n = await cls._seed_vectors()
+                        _VECTOR_SEEDED = True
+                        log.info(f"[query] 资产向量已落 pgvector: {n} 条")
+                    except Exception as e:  # noqa: BLE001
+                        log.warning(f"[query] pgvector 播种失败: {e}")
+                rows = await cls._pgv_search(question, top_k=top_k)
+                tables.update(rows)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] pgvector 检索失败: {e}")
+        # 3) 内存融合回退
         if not tables:
             try:
                 index = await cls._semantic_index()

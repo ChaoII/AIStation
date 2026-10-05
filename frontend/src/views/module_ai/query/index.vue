@@ -494,6 +494,9 @@
             <el-form-item label="实体查询 JOIN 取 name">
               <el-switch v-model="engForm.entity_name_rule" />
             </el-form-item>
+            <el-form-item label="语义检索走 Agno">
+              <el-switch v-model="engForm.agno_semantic_enabled" />
+            </el-form-item>
             <el-divider content-position="left">实体名词→表 映射（行式编辑，覆盖默认）</el-divider>
             <div class="emap-editor">
               <div v-for="(row, idx) in engRows" :key="idx" class="emap-row">
@@ -1664,6 +1667,7 @@ const engDef = {
   enum_hint_enabled: true,
   full_entity_no_limit: true,
   entity_name_rule: true,
+  agno_semantic_enabled: true,
   entity_map: "{}",
 };
 // 内置默认实体名词→表 映射（仅作编辑起点，可在界面增删改并持久化覆盖）
@@ -1737,6 +1741,7 @@ function loadEngineForm(d: any) {
   engForm.enum_hint_enabled = String(d.enum_hint_enabled ?? "true") !== "0";
   engForm.full_entity_no_limit = String(d.full_entity_no_limit ?? "true") !== "0";
   engForm.entity_name_rule = String(d.entity_name_rule ?? "true") !== "0";
+  engForm.agno_semantic_enabled = String(d.agno_semantic_enabled ?? "true") !== "0";
   engForm.entity_map = d.entity_map ?? "{}";
   parseEngRows(engForm.entity_map);
 }
@@ -1764,6 +1769,7 @@ async function saveEngineConfig() {
       enum_hint_enabled: engForm.enum_hint_enabled,
       full_entity_no_limit: engForm.full_entity_no_limit,
       entity_name_rule: engForm.entity_name_rule,
+      agno_semantic_enabled: engForm.agno_semantic_enabled,
     };
     for (const [k, v] of Object.entries(bools)) {
       await saveQuerySetting({ key: k, value: v ? "true" : "false", remark: k });

@@ -103,7 +103,9 @@ def upgrade() -> None:
             continue
         n = bind.execute(
             sa.text(
-                f"SELECT count(*) FROM {table} WHERE framework IN ({quoted_removed})"
+                # 用 ::text 比较：若枚举类型已被（未记录地）收敛到仅 TORKILN，直接按
+                # 枚举值比较会抛 invalid input value；转文本后自然返回 0，前置校验通过。
+                f"SELECT count(*) FROM {table} WHERE framework::text IN ({quoted_removed})"
             )
         ).scalar()
         if n:
