@@ -261,6 +261,13 @@ NL2SQL_GOLDEN = [
      "gold": "SELECT alarm_type, COUNT(*) AS c FROM video_alarm_records GROUP BY alarm_type HAVING COUNT(*) > (SELECT AVG(cnt) FROM (SELECT COUNT(*) AS cnt FROM video_alarm_records GROUP BY alarm_type) x) ORDER BY c DESC"},
     {"tag": "嵌套子查询", "q": "产生过告警且告警数排前3的摄像头",
      "gold": "SELECT c.name, COUNT(r.id) AS c FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id GROUP BY c.name ORDER BY c DESC LIMIT 3"},
+    # ===== 本体黑话（依赖【业务概念】定义才能答对） =====
+    {"tag": "本体黑话", "q": "设备健康度是多少",
+     "gold": "SELECT ROUND(COUNT(*) FILTER (WHERE status='ONLINE')*100.0/COUNT(*),2) AS 健康度 FROM video_cameras WHERE is_deleted=false"},
+    {"tag": "本体黑话", "q": "当前活跃算法数有多少",
+     "gold": "SELECT COUNT(*) AS c FROM video_algorithm_tasks WHERE status='RUNNING'"},
+    {"tag": "本体黑话", "q": "目前有多少待处理告警",
+     "gold": "SELECT COUNT(*) AS c FROM video_alarm_records WHERE status='PENDING'"},
 ]
 
 
