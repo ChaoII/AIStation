@@ -268,6 +268,12 @@ NL2SQL_GOLDEN = [
      "gold": "SELECT COUNT(*) AS c FROM video_algorithm_tasks WHERE status='RUNNING'"},
     {"tag": "本体黑话", "q": "目前有多少待处理告警",
      "gold": "SELECT COUNT(*) AS c FROM video_alarm_records WHERE status='PENDING'"},
+    {"tag": "本体黑话", "q": "查询成功率是多少",
+     "gold": "SELECT ROUND(COUNT(*) FILTER (WHERE result='success')*100.0/COUNT(*),2) AS 成功率 FROM ai_call_logs WHERE is_deleted=false"},
+    {"tag": "本体黑话", "q": "在线事件占比是多少",
+     "gold": "SELECT ROUND(COUNT(*) FILTER (WHERE matched=true)*100.0/COUNT(*),2) AS 占比 FROM video_edge_events"},
+    {"tag": "本体黑话", "q": "标注完成率是多少",
+     "gold": "SELECT ROUND(SUM(annotated_count)*100.0/NULLIF(SUM(image_count),0),2) AS 完成率 FROM annotation_dataset"},
 ]
 
 

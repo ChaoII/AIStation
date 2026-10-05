@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+from app.core.logger import log
+
 _kg_cache: KgGraph | None = None
 
 
@@ -356,6 +358,31 @@ async def traverse(start: str, hops: int = 2) -> dict:
         return {"nodes": nodes, "edges": [], "from": start, "hops": hops}
     except Exception as e:  # noqa: BLE001
         return {"nodes": [], "edges": [], "error": str(e)[:120]}
+
+
+async def age_expand_tables(seed_tables: list[str]) -> set[str]:
+    """用 AGE Cypher 从种子表多跳扩展，召回关联表（并入 schema linking）。"""
+    if not await _age_available() or not await _ensure_schema_age_graph():
+        return set()
+    if not seed_tables:
+        return set()
+    names = [f"表:{t}" for t in seed_tables if t]
+    if not names:
+        return set()
+    in_list = ", ".join(["'" + n.replace("'", "''") + "'" for n in names])
+    try:
+        rows = await _run_cypher(
+            f"MATCH (a:SNode)-[*1..2]->(b:SNode) WHERE a.name IN [{in_list}] "
+            f"AND b.etype='table' RETURN DISTINCT b.name", ["n"])
+        out: set[str] = set()
+        for r in rows:
+            nm = _ag(r[0])
+            if nm.startswith("表:"):
+                out.add(nm[2:])
+        return out
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[query] AGE 扩表失败: {e}")
+        return set()
 
 
 async def auto_link_kb_schema() -> int:

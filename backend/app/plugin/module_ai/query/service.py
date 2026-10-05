@@ -2696,6 +2696,14 @@ class AiQueryService:
                     tables.update(t for t in kg_tables(question) if t in schema)
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] 知识图谱召回失败: {e}")
+        # 6) AGE 图库多跳扩表：从已命中表经 Cypher 扩展关联表
+        try:
+            if cls._cfg_bool(cfg, "kg_enabled", True) and tables:
+                from .agno_kg import age_expand_tables
+
+                tables.update(t for t in await age_expand_tables(sorted(tables)) if t in schema)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] AGE 扩表失败: {e}")
         return sorted(tables)[:top_k]
 
     @staticmethod
