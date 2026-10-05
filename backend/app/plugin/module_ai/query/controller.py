@@ -217,6 +217,29 @@ async def kg_stats(
     return SuccessResponse(data=await _stats(), msg="查询成功")
 
 
+@AiQueryRouter.get("/assets/kg/unified", summary="统一图谱(数据schema图+知识库图)")
+async def kg_unified(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    kb_id: int | None = None,
+    scope: str = "all",
+) -> JSONResponse:
+    from .agno_kg import unified_graph
+
+    data = await unified_graph(kb_id, schema_only=scope == "schema",
+                               knowledge_only=scope == "knowledge")
+    return SuccessResponse(data=data, msg="查询成功")
+
+
+@AiQueryRouter.get("/assets/kg/kbs", summary="知识库列表(供统一图谱选择)")
+async def kg_kbs(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+    items = await AiKnowledgeService.list_bases()
+    return SuccessResponse(data=[{"id": b["id"], "name": b["name"]} for b in items], msg="查询成功")
+
+
 @AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")
 async def suggest_assets(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

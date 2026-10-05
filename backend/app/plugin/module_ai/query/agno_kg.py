@@ -125,6 +125,58 @@ async def _reset() -> dict:
             "tables": sum(1 for n in kg.nodes.values() if n["type"] == "table")}
 
 
+#: 节点 id 前缀 → 显示名模板
+def _node_name(nid: str, nd: dict) -> str:
+    t = nd["type"]
+    label = nd["label"]
+    if t == "table":
+        return f"表:{label}"
+    if t == "field":
+        return f"字段:{nd['extra'].get('table', '')}.{label}"
+    if t == "metric":
+        return f"指标:{label}"
+    if t == "term":
+        return f"术语:{label}"
+    if t == "domain":
+        return f"域:{label}"
+    return label
+
+
+def _canvas_nodes_edges(kg: KgGraph) -> dict:
+    """把 schema 图谱转成 GraphCanvas 可渲染的 nodes/edges。"""
+    nodes = []
+    for nid, nd in kg.nodes.items():
+        nodes.append({"name": _node_name(nid, nd), "etype": nd["type"], "weight": 1})
+    edges = []
+    for src, dst, rel in kg.edges:
+        if src in kg.nodes and dst in kg.nodes:
+            edges.append({"source": _node_name(src, kg.nodes[src]),
+                          "target": _node_name(dst, kg.nodes[dst]),
+                          "rtype": rel, "weight": 1})
+    return {"nodes": nodes, "edges": edges}
+
+
+async def unified_graph(kb_id: int | None = None, schema_only: bool = False,
+                        knowledge_only: bool = False) -> dict:
+    """统一图谱：合并「数据 schema 图谱」与「知识库图谱(可选)」。"""
+    kg = await _ensure()
+    merged = {"nodes": [], "edges": []}
+    if not knowledge_only:
+        part = _canvas_nodes_edges(kg)
+        merged["nodes"] += part["nodes"]
+        merged["edges"] += part["edges"]
+    if not schema_only and kb_id:
+        try:
+            from .service import AiQueryService
+
+            kb = await AiQueryService._knowledge_graph(kb_id)
+            merged["nodes"] += kb.get("nodes", [])
+            merged["edges"] += kb.get("edges", [])
+        except Exception:  # noqa: BLE001
+            pass
+    return merged
+
+
 def _score_nodes(q: str, kg: KgGraph) -> list[str]:
     """按关键词/实体命中给节点打分，取种子。"""
     ql = (q or "").lower()

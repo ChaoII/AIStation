@@ -190,6 +190,16 @@ export function rebuildQueryKg() {
 export function getQueryKgStats() {
   return request({ url: `${API_PATH}/assets/kg/stats`, method: "get" });
 }
+export function getQueryKgUnified(kbId?: number | null, scope = "all") {
+  return request({
+    url: `${API_PATH}/assets/kg/unified`,
+    method: "get",
+    params: { kb_id: kbId ?? "", scope },
+  });
+}
+export function getQueryKgKbs() {
+  return request({ url: `${API_PATH}/assets/kg/kbs`, method: "get" });
+}
 export function inferQueryAssetRelations() {
   return request({ url: `${API_PATH}/assets/infer-relations`, method: "post", timeout: 120000 });
 }

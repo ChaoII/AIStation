@@ -1056,6 +1056,17 @@ class AiQueryService:
         return {"tables": updated_tables, "columns": updated_cols}
 
     @classmethod
+    async def _knowledge_graph(cls, kb_id: int) -> dict:
+        """拉取知识库图谱（实体/关系），供统一图谱使用。"""
+        try:
+            from app.plugin.module_ai.knowledge.service import AiKnowledgeService
+
+            return await AiKnowledgeService.get_graph(kb_id)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 知识库图谱获取失败 kb={kb_id}: {e}")
+            return {"nodes": [], "edges": []}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t

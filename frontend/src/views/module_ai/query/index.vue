@@ -688,6 +688,44 @@
             style="margin-top: 8px"
           />
         </el-tab-pane>
+        <el-tab-pane label="图谱" name="kg">
+          <div class="ops-bar">
+            <el-radio-group v-model="kgScope" size="small" @change="loadUnifiedGraph">
+              <el-radio-button value="all">全部</el-radio-button>
+              <el-radio-button value="schema">数据schema</el-radio-button>
+              <el-radio-button value="knowledge">知识库</el-radio-button>
+            </el-radio-group>
+            <el-select
+              v-if="kgScope !== 'schema'"
+              v-model="kgKb"
+              size="small"
+              placeholder="选择知识库"
+              clearable
+              style="width: 190px"
+              @change="loadUnifiedGraph"
+            >
+              <el-option v-for="b in kgKbs" :key="b.id" :label="b.name" :value="b.id" />
+            </el-select>
+            <el-button size="small" :icon="Refresh" :loading="loadingKg" @click="loadUnifiedGraph">
+              刷新
+            </el-button>
+            <el-tag v-if="kgNodes.length" size="small" type="info" effect="plain">
+              {{ kgNodes.length }} 节点 / {{ kgEdges.length }} 边
+            </el-tag>
+          </div>
+          <GraphCanvas
+            v-if="kgNodes.length"
+            :nodes="kgNodes"
+            :edges="kgEdges"
+            height="520px"
+            layout-name="cose"
+            use-preset
+          />
+          <el-empty
+            v-else-if="!loadingKg"
+            description="暂无图谱数据，可切换来源或先构建知识库图谱"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1042,6 +1080,7 @@ import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Delete, Setting, Loading, Refresh, MagicStick } from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
+import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 import {
   streamQuery,
   getQuerySessions,
@@ -1069,6 +1108,8 @@ import {
   suggestQueryAssets,
   rebuildQueryKg,
   getQueryKgStats,
+  getQueryKgUnified,
+  getQueryKgKbs,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1553,6 +1594,34 @@ async function loadKgStats() {
   try {
     const r = await getQueryKgStats();
     kgStats.value = r.data?.data || null;
+  } catch {
+    /* 静默 */
+  }
+}
+// ---- 统一图谱（数据schema图 + 知识库图）----
+const kgScope = ref("all");
+const kgKb = ref<number | null>(null);
+const kgKbs = ref<any[]>([]);
+const kgNodes = ref<any[]>([]);
+const kgEdges = ref<any[]>([]);
+const loadingKg = ref(false);
+async function loadUnifiedGraph() {
+  loadingKg.value = true;
+  try {
+    const r = await getQueryKgUnified(kgKb.value, kgScope.value);
+    const d = r.data?.data || {};
+    kgNodes.value = d.nodes || [];
+    kgEdges.value = d.edges || [];
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "加载图谱失败");
+  } finally {
+    loadingKg.value = false;
+  }
+}
+async function loadKgKbs() {
+  try {
+    const r = await getQueryKgKbs();
+    kgKbs.value = r.data?.data || [];
   } catch {
     /* 静默 */
   }
@@ -2176,6 +2245,8 @@ onMounted(() => {
   loadDatasources();
   loadSessions();
   loadKgStats();
+  loadKgKbs();
+  loadUnifiedGraph();
 });
 </script>
 
