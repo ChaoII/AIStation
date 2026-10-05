@@ -176,8 +176,19 @@ export function getQueryAssets() {
 export function getQueryAssetColumns(tableName: string) {
   return request({ url: `${API_PATH}/assets/${tableName}/columns`, method: "get" });
 }
-export function generateQueryAssetDesc() {
-  return request({ url: `${API_PATH}/assets/generate-desc`, method: "post", timeout: 120000 });
+export function generateQueryAssetDesc(force = false) {
+  return request({
+    url: `${API_PATH}/assets/generate-desc`,
+    method: "post",
+    timeout: 300000,
+    params: { force: force ? 1 : 0 },
+  });
+}
+export function rebuildQueryKg() {
+  return request({ url: `${API_PATH}/assets/kg/rebuild`, method: "post", timeout: 60000 });
+}
+export function getQueryKgStats() {
+  return request({ url: `${API_PATH}/assets/kg/stats`, method: "get" });
 }
 export function inferQueryAssetRelations() {
   return request({ url: `${API_PATH}/assets/infer-relations`, method: "post", timeout: 120000 });

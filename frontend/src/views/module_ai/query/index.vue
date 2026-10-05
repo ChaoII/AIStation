@@ -288,12 +288,23 @@
               size="small"
               :icon="MagicStick"
               :loading="generatingDesc"
-              @click="generateDesc"
+              @click="generateDesc(false)"
             >
               LLM 生成中文描述
             </el-button>
+            <el-button
+              size="small"
+              :icon="Refresh"
+              :loading="generatingDesc"
+              @click="generateDesc(true)"
+            >
+              重生成(全部)
+            </el-button>
             <el-button size="small" :loading="inferringRel" @click="inferRel">
               自动推断字段关联
+            </el-button>
+            <el-button size="small" :loading="rebuildingKg" @click="rebuildKg">
+              重建知识图谱
             </el-button>
             <el-input
               v-model="assetSearch"
@@ -304,6 +315,9 @@
             />
             <el-tag size="small" type="info" effect="plain">
               已纳入 {{ assets.filter((a) => a.included).length }}/{{ assets.length }} 张表
+            </el-tag>
+            <el-tag v-if="kgStats" size="small" type="success" effect="plain">
+              图谱 {{ kgStats.nodes }} 节点 / {{ kgStats.edges }} 边
             </el-tag>
           </div>
           <el-table :data="filteredAssets" size="small" border max-height="400">
@@ -1053,6 +1067,8 @@ import {
   generateQueryAssetDesc,
   inferQueryAssetRelations,
   suggestQueryAssets,
+  rebuildQueryKg,
+  getQueryKgStats,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1504,10 +1520,10 @@ async function syncAssets() {
   }
 }
 const generatingDesc = ref(false);
-async function generateDesc() {
+async function generateDesc(force = false) {
   generatingDesc.value = true;
   try {
-    const r = await generateQueryAssetDesc();
+    const r = await generateQueryAssetDesc(force);
     const d = r.data?.data || {};
     ElMessage.success(`已生成：${d.tables ?? 0} 表 / ${d.columns ?? 0} 字段描述，请人工校对`);
     loadAssets();
@@ -1515,6 +1531,30 @@ async function generateDesc() {
     ElMessage.error(e?.msg || "生成失败");
   } finally {
     generatingDesc.value = false;
+  }
+}
+const rebuildingKg = ref(false);
+const kgStats = ref<any>(null);
+async function rebuildKg() {
+  rebuildingKg.value = true;
+  try {
+    const r = await rebuildQueryKg();
+    kgStats.value = r.data?.data || null;
+    ElMessage.success(
+      `知识图谱已重建：${kgStats.value?.nodes ?? 0} 节点 / ${kgStats.value?.edges ?? 0} 边`
+    );
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "重建知识图谱失败");
+  } finally {
+    rebuildingKg.value = false;
+  }
+}
+async function loadKgStats() {
+  try {
+    const r = await getQueryKgStats();
+    kgStats.value = r.data?.data || null;
+  } catch {
+    /* 静默 */
   }
 }
 const inferringRel = ref(false);
@@ -2135,6 +2175,7 @@ async function syncDs(row: any) {
 onMounted(() => {
   loadDatasources();
   loadSessions();
+  loadKgStats();
 });
 </script>
 

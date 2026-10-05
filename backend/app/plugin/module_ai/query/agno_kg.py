@@ -110,6 +110,21 @@ async def _ensure() -> KgGraph:
     return _kg_cache
 
 
+async def _stats() -> dict:
+    kg = await _ensure()
+    return {"nodes": len(kg.nodes), "edges": len(kg.edges),
+            "tables": sum(1 for n in kg.nodes.values() if n["type"] == "table"),
+            "fields": sum(1 for n in kg.nodes.values() if n["type"] == "field")}
+
+
+async def _reset() -> dict:
+    global _kg_cache
+    _kg_cache = None
+    kg = await _ensure()
+    return {"nodes": len(kg.nodes), "edges": len(kg.edges),
+            "tables": sum(1 for n in kg.nodes.values() if n["type"] == "table")}
+
+
 def _score_nodes(q: str, kg: KgGraph) -> list[str]:
     """按关键词/实体命中给节点打分，取种子。"""
     ql = (q or "").lower()

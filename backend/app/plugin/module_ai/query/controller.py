@@ -189,8 +189,32 @@ async def list_query_assets(
 @AiQueryRouter.post("/assets/generate-desc", summary="LLM 生成表/字段中文描述")
 async def generate_asset_desc(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    force: int = 0,
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.generate_asset_descriptions(auth), msg="生成完成")
+    return SuccessResponse(
+        data=await AiQueryService.generate_asset_descriptions(auth, force=bool(force)),
+        msg="生成完成",
+    )
+
+
+@AiQueryRouter.post("/assets/kg/rebuild", summary="重建知识图谱(清缓存+重构建)")
+async def kg_rebuild(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .agno_kg import _reset
+
+    data = await _reset()
+    return SuccessResponse(data=data, msg="知识图谱已重建")
+
+
+@AiQueryRouter.get("/assets/kg/stats", summary="知识图谱统计(节点/边)")
+async def kg_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    from .agno_kg import _stats
+
+    await _stats()
+    return SuccessResponse(data=await _stats(), msg="查询成功")
 
 
 @AiQueryRouter.post("/assets/suggest", summary="LLM 推荐业务指标/术语")

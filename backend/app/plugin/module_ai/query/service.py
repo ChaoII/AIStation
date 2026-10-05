@@ -966,8 +966,11 @@ class AiQueryService:
         return {"table_name": data.table_name, "included": data.included}
 
     @classmethod
-    async def generate_asset_descriptions(cls, auth) -> dict:
-        """用 LLM 为缺少中文描述的表/字段生成初稿（人工校对后生效）。"""
+    async def generate_asset_descriptions(cls, auth, force: bool = False) -> dict:
+        """用 LLM 为表/字段生成中文描述（带数据画像；人工校对后生效）。
+
+        force=True 时对全部已纳入资产重建，否则仅处理缺描述的。
+        """
         async with async_db_session() as db:
             from sqlalchemy import select as _sel
 
@@ -987,11 +990,11 @@ class AiQueryService:
                     )
                 )
             ).scalars().all()
-        # 仅处理缺描述的
-        need_tables = [(t.table_name, t) for t in tables if not (t.description or "").strip()]
+        # 仅处理缺描述的；force 时全部重建
+        need_tables = [(t.table_name, t) for t in tables if force or not (t.description or "").strip()]
         colmap: dict[str, list[tuple[str, Any]]] = {}
         for c in columns:
-            if not (c.description or "").strip():
+            if force or not (c.description or "").strip():
                 colmap.setdefault(c.table_name, []).append((c.column_name, c))
         if not need_tables and not colmap:
             return {"tables": 0, "columns": 0}
@@ -1008,13 +1011,23 @@ class AiQueryService:
         except Exception as e:  # noqa: BLE001
             raise CustomException(msg=f"问答模型不可用：{e}")
         updated_tables = updated_cols = 0
-        # 按表批量生成
+        # 按表批量生成（带数据画像）
         for tname, trow in need_tables:
             cols = [c[0] for c in colmap.get(tname, [])] or ["(无字段)"]
+            profile = await cls._profile_table(tname, cols)
+            prof_lines = [f"表 {tname}：共 {profile['rows']} 行"]
+            for cname, info in profile["cols"].items():
+                if not info:
+                    continue
+                seg = f"  {cname}: 可空率{info['null_pct']}%、去重后{info['distinct']}个值"
+                if info.get("values"):
+                    seg += f"，取值[{','.join(info['values'])}]"
+                prof_lines.append(seg)
             prompt = (
-                "你是数据库元数据专家。请为下面这张数据库表及字段生成简洁的中文业务描述（每个不超过30字，只说业务含义）。"
-                "严格返回 JSON，格式：{\"table\":\"<表描述>\",\"columns\":{\"字段名\":\"<字段描述>\"}}。\n"
-                f"表名：{tname}\n字段：{', '.join(cols)}"
+                "你是数据库元数据专家。请根据字段名与数据画像，为这张数据库表及字段生成简洁的中文业务描述"
+                "（每个不超过30字，只说业务含义）。严格返回 JSON，格式："
+                "{\"table\":\"<表描述>\",\"columns\":{\"字段名\":\"<字段描述>\"}}。\n"
+                f"表名：{tname}\n字段：{', '.join(cols)}\n数据画像：\n" + "\n".join(prof_lines)
             )
             try:
                 resp = await client.chat.completions.create(
@@ -1041,6 +1054,43 @@ class AiQueryService:
                         cobj.updated_id = auth.user.id
                         updated_cols += 1
         return {"tables": updated_tables, "columns": updated_cols}
+
+    @classmethod
+    async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
+        """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
+        from sqlalchemy import text as _t
+
+        profile: dict = {"table": tname, "rows": 0, "cols": {}}
+        if not tname or not colnames:
+            return profile
+        try:
+            async with async_db_session() as db:
+                rc = (await db.execute(_t(f'SELECT COUNT(*) FROM "{tname}"'))).scalar() or 0
+                profile["rows"] = int(rc)
+                for c in colnames:
+                    info: dict = {}
+                    try:
+                        row = (await db.execute(
+                            _t(f'SELECT COUNT(*) FILTER (WHERE "{c}" IS NULL) AS nn, '
+                                f'COUNT(DISTINCT "{c}") AS nd FROM "{tname}"')
+                        )).fetchone()
+                        nn = int(row[0] or 0)
+                        nd = int(row[1] or 0)
+                        info["null_pct"] = round(nn * 100.0 / rc, 1) if rc else 0
+                        info["distinct"] = nd
+                        if nd <= 12 and nd > 0:
+                            vals = [
+                                str(r[0]) for r in (await db.execute(
+                                    _t(f'SELECT DISTINCT "{c}" FROM "{tname}" WHERE "{c}" IS NOT NULL LIMIT 12')
+                                )).fetchall()
+                            ]
+                            info["values"] = vals[:12]
+                    except Exception:  # noqa: BLE001
+                        info = {}
+                    profile["cols"][c] = info
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 画像失败 {tname}: {e}")
+        return profile
 
     @classmethod
     async def suggest_metrics_terms(cls, auth) -> dict:
