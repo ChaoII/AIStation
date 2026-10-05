@@ -11,14 +11,16 @@ from app.core.logger import log
 
 
 async def search_schema(question: str) -> str:
-    """按问题返回相关的可查询表与字段（含中文描述/业务域/关联），供生成 SQL 使用。"""
-    from .service import AiQueryService
+    """按问题返回相关的可查询表与字段（含指标/术语/中文描述/关联/示例），供生成 SQL 使用。"""
+    from .service import SYSTEM_DS, AiQueryService
 
     log.warning("[QUERY_TOOL] 模型调用了 search_schema，question={}", question)
     try:
-        ctx = await AiQueryService._schema_focused(question)
-        # 截断到合理长度，避免上下文爆炸导致模型反复调用工具
-        return ctx[:6000]
+        metrics = await AiQueryService.list_metrics(SYSTEM_DS)
+        terms = await AiQueryService.list_terms(SYSTEM_DS)
+        ctx = await AiQueryService._build_schema_context(question, SYSTEM_DS, metrics, terms)
+        # 截断到合理长度，避免上下文爆炸；tool_call_limit 已兜底防循环
+        return ctx[:12000]
     except Exception as e:  # noqa: BLE001
         return f"获取表结构失败：{e}"
 

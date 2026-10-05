@@ -2432,31 +2432,6 @@ class AiQueryService:
         return "\n".join(lines)
 
     @classmethod
-    async def _schema_focused(cls, question: str) -> str:
-        """仅返回与问题相关的表/字段描述（供工具用，避免掺入指标/术语/few-shot 噪音）。"""
-        schema = await cls._system_schema()
-        tmeta = await cls._asset_tmeta()
-        metrics = await cls.list_metrics(SYSTEM_DS)
-        terms = await cls.list_terms(SYSTEM_DS)
-        rel = await cls._semantic_tables(question, schema, metrics, terms)
-        lines = ["【可查询表及字段】"]
-        for t in rel:
-            cols = schema.get(t, [])
-            meta = tmeta.get(t) or {}
-            extras = []
-            if meta.get("alias"):
-                extras.append(f"中文名:{meta['alias']}")
-            if meta.get("domain"):
-                extras.append(f"业务域:{meta['domain']}")
-            if meta.get("description"):
-                extras.append(f"描述:{meta['description']}")
-            if meta.get("business_scenarios"):
-                extras.append(f"业务场景:{meta['business_scenarios']}")
-            head = f"{t}【" + "；".join(extras) + "】" if extras else t
-            lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
-        return "\n".join(lines)
-
-    @classmethod
     async def _get_runtime(cls) -> dict:
         from app.plugin.module_ai.provider.service import AiModelService
 
