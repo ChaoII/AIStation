@@ -67,6 +67,37 @@
                 </span>
               </div>
 
+              <!-- 思考过程 / 工具调用链（流式） -->
+              <div v-if="m._running || m._reasoning || m._trace?.length" class="msg-a__trace">
+                <div v-if="m._reasoning" class="trace-reasoning">
+                  <div class="trace-title">
+                    <el-icon><MagicStick /></el-icon>
+                    思考过程
+                  </div>
+                  <pre class="trace-pre">{{ m._reasoning }}</pre>
+                </div>
+                <template v-for="(t, ti) in m._trace" :key="ti">
+                  <div v-if="t.kind === 'tool_start'" class="trace-call">
+                    <el-tag size="small" type="warning">调用工具</el-tag>
+                    <span class="trace-name">{{ t.name }}</span>
+                    <code class="trace-args">{{ JSON.stringify(t.args) }}</code>
+                  </div>
+                  <div v-else-if="t.kind === 'tool_result'" class="trace-out">
+                    <el-tag size="small" type="info">工具输出</el-tag>
+                    <pre class="trace-pre trace-pre--out">{{ t.result }}</pre>
+                  </div>
+                  <div v-else-if="t.kind === 'tool_error'" class="trace-err">
+                    <el-tag size="small" type="danger">工具报错</el-tag>
+                    <span>{{ t.error }}</span>
+                  </div>
+                </template>
+              </div>
+
+              <!-- 实时生成的 SQL（运行中） -->
+              <div v-if="m._running && m._sqlLive" class="msg-a__code msg-a__code--live">
+                <pre>{{ m._sqlLive }}</pre>
+              </div>
+
               <div v-if="m.summary" class="msg-a__summary">{{ m.summary }}</div>
 
               <template v-if="showChart(m)">
@@ -995,7 +1026,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Delete, Setting, Loading, Refresh, MagicStick } from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
 import {
-  queryAsk,
+  streamQuery,
   getQuerySessions,
   getQueryMessages,
   deleteQuerySession,
@@ -1112,31 +1143,82 @@ async function send() {
   const ds = datasource.value === "__manage__" ? "system" : datasource.value;
   input.value = "";
   loading.value = true;
-  // 立即展示提问气泡
-  const pending = { id: `tmp-${Date.now()}`, question: q, _showSql: false };
-  messages.value.push(pending);
+  const m: any = reactive({
+    id: `tmp-${Date.now()}`,
+    question: q,
+    path: "slow",
+    _showSql: false,
+    _running: true,
+    _reasoning: "",
+    _trace: [] as any[],
+    _sqlLive: "",
+    sql: "",
+    columns: [] as string[],
+    rows: [] as any[][],
+    summary: "",
+    is_error: false,
+  });
+  messages.value.push(m);
   scrollBottom();
   try {
-    const r = await queryAsk({ question: q, session_id: currentSession.value, datasource: ds });
-    const data = r.data?.data || {};
-    messages.value.pop();
-    const msg = { ...data, _showSql: false };
-    messages.value.push(msg);
-    if (data.session_id) {
-      currentSession.value = data.session_id;
-      loadSessions();
-    }
-  } catch (e: any) {
-    messages.value.pop();
-    messages.value.push({
-      id: `err-${Date.now()}`,
+    for await (const ev of streamQuery({
       question: q,
-      is_error: true,
-      summary: e?.msg || e?.message || "查询失败",
-      path: "slow",
-      _showSql: false,
-    });
+      session_id: currentSession.value,
+      datasource: ds,
+    })) {
+      const d = ev.data || {};
+      switch (ev.type) {
+        case "meta":
+          if (d.session_id) {
+            currentSession.value = d.session_id;
+          }
+          break;
+        case "reasoning_start":
+          m._reasoning = "";
+          break;
+        case "reasoning":
+          m._reasoning += d.delta || "";
+          break;
+        case "tool_start":
+          m._trace.push({ kind: "tool_start", name: d.name, args: d.args });
+          break;
+        case "tool_result":
+          m._trace.push({ kind: "tool_result", name: d.name, result: d.result });
+          break;
+        case "tool_error":
+          m._trace.push({ kind: "tool_error", name: d.name, error: d.error });
+          break;
+        case "sql_delta":
+          m._sqlLive += d.delta || "";
+          break;
+        case "sql_final":
+          m.sql = d.sql || "";
+          m._sqlLive = m.sql;
+          break;
+        case "result":
+          m.columns = d.columns || [];
+          m.rows = d.rows || [];
+          break;
+        case "answer":
+          m.summary = d.summary || "";
+          break;
+        case "done":
+          m._running = false;
+          break;
+        case "error":
+          m.is_error = true;
+          m.summary = d.message || "查询失败";
+          break;
+      }
+      scrollBottom();
+    }
+    m._running = false;
+    loadSessions();
+  } catch (e: any) {
+    m.is_error = true;
+    m.summary = e?.msg || e?.message || "查询失败";
   } finally {
+    m._running = false;
     loading.value = false;
     scrollBottom();
   }
@@ -2126,6 +2208,73 @@ onMounted(() => {
 .msg-a__summary {
   margin-bottom: 8px;
   color: var(--el-text-color-primary);
+}
+.msg-a__trace {
+  margin: 4px 0 8px;
+  padding: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+.trace-reasoning {
+  margin-bottom: 8px;
+}
+.trace-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin-bottom: 4px;
+}
+.trace-pre {
+  margin: 0;
+  padding: 6px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 4px;
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--el-text-color-regular);
+}
+.trace-call {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.trace-name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+}
+.trace-args {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-lighter);
+  padding: 2px 6px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+.trace-out {
+  margin: 2px 0 6px 12px;
+}
+.trace-pre--out {
+  border-left: 2px solid var(--el-color-info);
+}
+.trace-err {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  margin: 4px 0 6px 12px;
+}
+.msg-a__code--live {
+  border: 1px dashed var(--el-border-color);
 }
 .msg-a__export {
   margin-left: 8px;

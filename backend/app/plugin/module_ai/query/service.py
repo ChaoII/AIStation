@@ -1960,6 +1960,163 @@ class AiQueryService:
             raise CustomException(msg=f"问答模型(Agno)调用失败：{e}")
 
     @classmethod
+    async def ask_stream(cls, question: str, auth, session_id: int | None = None,
+                         datasource: str | None = None) -> None:
+        """流式问数：产出思考过程/工具调用/输出/最终结果的事件（作为 SSE 下发）。
+
+        事件类型：meta / reasoning_start / reasoning / reasoning_done /
+        tool_start / tool_result / tool_error / sql_delta / sql_final /
+        result / done / error / answer。
+        """
+        from .agno_query_tools import QUERY_TOOLS
+
+        await cls.ensure_system_seed()
+        question = (question or "").strip()
+        if not question:
+            yield {"type": "error", "message": "请输入要查询的问题"}
+            return
+        sess = await cls.get_or_create_session(session_id, question[:30], auth)
+        datasource = datasource or SYSTEM_DS
+        yield {"type": "meta", "session_id": sess["id"], "datasource": datasource,
+               "question": question}
+
+        # ---- 构建生成 Agent（与 _nl2sql 工具化模式一致） ----
+        try:
+            runtime = await cls._get_runtime()
+        except Exception as e:  # noqa: BLE001
+            yield {"type": "error", "message": f"未配置可用的问答模型：{e}"}
+            return
+        cfg = await cls._cfg()
+        rules = []
+        if cls._cfg_bool(cfg, "entity_name_rule", True):
+            rules.append("（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
+                         "应 JOIN 对应表用其「name」列，而不是直接返回外键 id；")
+        if cls._cfg_bool(cfg, "enum_hint_enabled", True):
+            rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
+        rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
+        rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
+        if cls._cfg_bool(cfg, "decomposed_planning", True):
+            rules.append("（5）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
+        extra = ""
+        if cls._cfg_bool(cfg, "full_entity_no_limit", True):
+            extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
+                     "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n")
+        schema_ctx = await cls._build_schema_context(question, datasource,
+                                                     await cls.list_metrics(datasource),
+                                                     await cls.list_terms(datasource))
+        system_prompt = (
+            "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
+            "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
+            "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
+            "不要使用 DELETE/UPDATE/INSERT/DDL。\n注意：" + "".join(rules) + "\n" + extra
+            + schema_ctx
+        )
+
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
+
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime["api_key"] or "sk-none",
+            temperature=0.0, max_tokens=2000,
+        )
+        if cls._cfg_bool(cfg, "agno_tool_agent", True):
+            agent = Agent(
+                model=model, tools=list(QUERY_TOOLS), tool_call_limit=6,
+                instructions=(
+                    "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
+                    "先调用 search_schema(question) 获取相关表/字段，可再用 "
+                    "semantic_search(question) 做向量语义检索、table_metadata(表) 查看元数据标注、"
+                    "get_fewshots(question) 参考样例、check_cost(候选SQL) 评估代价；"
+                    "获取足够上下文后，最终消息必须直接输出一条 SELECT SQL（不要调用工具、不要多余解释）。"
+                    "禁止 DELETE/UPDATE/INSERT/DDL。\n注意：" + "".join(rules)
+                ),
+            )
+        else:
+            agent = Agent(model=model, instructions=system_prompt)
+
+        # ---- 流式运行 Agent，转发思考/工具/输出事件 ----
+        content_buf: list[str] = []
+        final_content = ""
+        sql = ""
+        try:
+            async for ev in agent.arun(question, stream=True, stream_events=True):
+                etype = getattr(ev, "event", "")
+                if etype == "RunStarted":
+                    yield {"type": "run_start"}
+                elif etype == "ReasoningStarted":
+                    yield {"type": "reasoning_start"}
+                elif etype == "ReasoningContentDelta":
+                    yield {"type": "reasoning", "delta": getattr(ev, "reasoning_content", "") or ""}
+                elif etype == "ReasoningStep":
+                    yield {"type": "reasoning", "delta": getattr(ev, "reasoning_content", "") or getattr(ev, "content", "") or ""}
+                elif etype == "ReasoningCompleted":
+                    yield {"type": "reasoning_done"}
+                elif etype == "ToolCallStarted":
+                    tool = getattr(ev, "tool", None)
+                    yield {"type": "tool_start",
+                           "name": getattr(tool, "tool_name", ""), "call_id": getattr(tool, "tool_call_id", ""),
+                           "args": getattr(tool, "tool_args", None)}
+                elif etype == "ToolCallCompleted":
+                    tool = getattr(ev, "tool", None)
+                    yield {"type": "tool_result",
+                           "name": getattr(tool, "tool_name", ""),
+                           "call_id": getattr(tool, "tool_call_id", ""),
+                           "result": getattr(tool, "result", None) or getattr(ev, "content", None)}
+                elif etype == "ToolCallError":
+                    tool = getattr(ev, "tool", None)
+                    yield {"type": "tool_error",
+                           "name": getattr(tool, "tool_name", ""), "error": getattr(ev, "error", "") or str(getattr(ev, "content", ""))}
+                elif etype == "RunContent":
+                    c = getattr(ev, "content", None)
+                    if c:
+                        content_buf.append(str(c))
+                        yield {"type": "sql_delta", "delta": str(c)}
+                elif etype == "RunContentCompleted":
+                    yield {"type": "sql_done"}
+                elif etype == "RunCompleted":
+                    c = getattr(ev, "content", None)
+                    if c:
+                        final_content = str(c)
+                elif etype == "RunError":
+                    yield {"type": "error", "message": str(getattr(ev, "content", ""))}
+                    return
+        except Exception as e:  # noqa: BLE001
+            yield {"type": "error", "message": f"问答模型(Agno)调用失败：{e}"}
+            return
+
+        # ---- 提取并校验 SQL ----
+        sql_source = "".join(content_buf) if content_buf else (final_content or "")
+        sql = cls._extract_sql(sql_source)
+        table = SYSTEM_ALLOWED_TABLES if datasource in (SYSTEM_DS, None) else None
+        try:
+            sql = validate_sql(sql, table or set())
+        except Exception as e:  # noqa: BLE001
+            yield {"type": "error", "message": f"SQL 校验失败：{e}"}
+            return
+        yield {"type": "sql_final", "sql": sql}
+
+        # ---- 执行并返回结果 ----
+        try:
+            res = await cls._execute_one(sql, datasource, auth)
+            cols = res.get("columns") or []
+            rows = res.get("rows") or []
+            await cls._save_message(
+                sess["id"], question, path="slow", datasource=datasource,
+                sql=sql, columns=cols, rows=rows,
+                result_rows=len(rows), took_ms=res.get("took_ms", 0), cached=False,
+                summary="以下是根据你的问题生成的结果：",
+            )
+            yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows)}
+            yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
+            yield {"type": "done"}
+        except Exception as e:  # noqa: BLE001
+            await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
+                                    sql=sql, rows=[], is_error=True, summary=f"查询失败：{e}")
+            yield {"type": "error", "message": f"查询失败：{e}"}
+            return
+
+    @classmethod
     def _extract_sql(cls, s: str) -> str:
         # 去除 markdown 代码块围栏
         s = re.sub(r"```[a-zA-Z]*", "", s or "").strip()

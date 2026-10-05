@@ -2,7 +2,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from redis.asyncio.client import Redis
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -40,6 +40,33 @@ async def ask(
     except Exception as e:  # noqa: BLE001
         return ErrorResponse(msg=str(getattr(e, "msg", e)))
     return SuccessResponse(data=result, msg="查询成功")
+
+
+@AiQueryRouter.post("/ask/stream", summary="智能问数(流式: 思考/工具调用/结果)")
+async def ask_stream(
+    data: QueryAskRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> StreamingResponse:
+    import json
+
+    async def _gen():
+        try:
+            async for ev in AiQueryService.ask_stream(
+                data.question, auth, data.session_id, data.datasource
+            ):
+                yield f"event: {ev.get('type', 'message')}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"event: error\ndata: {json.dumps({'message': str(getattr(e, 'msg', e))}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ---- 指标运营 ----

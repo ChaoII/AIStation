@@ -1,4 +1,5 @@
 import request from "@/utils/request";
+import { Auth } from "@/utils/auth";
 
 const API_PATH = "/ai/query";
 
@@ -8,6 +9,67 @@ export function queryAsk(data: {
   datasource?: string | null;
 }) {
   return request({ url: `${API_PATH}/ask`, method: "post", data });
+}
+
+/** 流式问数：返回 SSE 事件异步迭代器（思考/工具调用/结果/完成等）。 */
+export async function* streamQuery(data: {
+  question: string;
+  session_id?: number | null;
+  datasource?: string | null;
+}): AsyncGenerator<{ type: string; data: any }, void, unknown> {
+  const base = import.meta.env.VITE_APP_BASE_API || "";
+  const token = Auth.getAccessToken();
+  const resp = await fetch(`${base}${API_PATH}/ask/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json;charset=utf-8",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(data),
+  });
+  if (!resp.ok || !resp.body) {
+    throw new Error(`流式请求失败：${resp.status}`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE 事件以空行分隔
+      let idx = buffer.indexOf("\n\n");
+      while (idx >= 0) {
+        const block = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 2);
+        if (block) {
+          const ev = parseSseBlock(block);
+          if (ev) yield ev;
+        }
+        idx = buffer.indexOf("\n\n");
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function parseSseBlock(block: string): { type: string; data: any } | null {
+  let event = "message";
+  let dataLine = "";
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLine += line.slice(5).trim();
+  }
+  if (dataLine === "" && event !== "done") return null;
+  let data: any = dataLine;
+  try {
+    data = JSON.parse(dataLine);
+  } catch {
+    /* 保留原始字符串 */
+  }
+  return { type: event, data };
 }
 
 // 指标运营
