@@ -1391,6 +1391,11 @@ class AiQueryService:
             "entity_name_rule": "true",              # 实体查询提示词规则（JOIN 取 name）
             "entity_map": "{}",                      # 实体名词→表映射（JSON，覆盖默认）
             "agno_semantic_enabled": "false",        # 语义检索走 Agno(Knowledge+PgVector)，默认关(需后台播种)
+            "self_consistency_n": "1",               # 自一致性候选数(>1 多采样投票)
+            "query_cost_enabled": "true",            # 查询代价护栏(EXPLAIN 预估)
+            "query_cost_max_rows": "50000",          # 代价护栏预估行数上限
+            "fewshot_auto_curate": "true",           # 反馈正例自动沉淀为 few-shot
+            "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -1773,26 +1778,64 @@ class AiQueryService:
             pass
 
     @classmethod
+    async def _execute_one(cls, sql: str, datasource: str, auth) -> dict:
+        if datasource and datasource != SYSTEM_DS:
+            ds_id = int(datasource.split(":")[-1])
+            return await _execute_custom_ds_sql(ds_id, sql, auth)
+        return await _execute_sql(sql)
+
+    @classmethod
+    async def _explain_rows(cls, sql: str) -> int:
+        """EXPLAIN 预估结果行数（用于查询代价护栏）。"""
+        from sqlalchemy import text as _t
+
+        async with async_db_session() as db:
+            row = (await db.execute(_t(f"EXPLAIN (FORMAT JSON) {sql.rstrip(';')}"))).scalar()
+            plan = row[0] if isinstance(row, list) else row
+            return int((plan.get("Plan") or {}).get("Plan Rows") or 0)
+
+    @classmethod
     async def _slow_path(cls, question: str, session_id: int, datasource: str, auth) -> dict:
-        """LLM 生成 SQL + 自纠错重试（最多 2 轮）。"""
+        """Agno 生成 SQL；自一致性多候选 + EXPLAIN 代价护栏 + 自纠错重试。"""
+        cfg = await cls._cfg()
+        n = cls._cfg_int(cfg, "self_consistency_n", 1)
+        cost_enabled = cls._cfg_bool(cfg, "query_cost_enabled", True)
+        max_rows = cls._cfg_int(cfg, "query_cost_max_rows", 50000)
         last_err: str | None = None
         sql = ""
         for attempt in range(2):
+            candidate_sqls: list[str] = []
             try:
-                sql = await cls._nl2sql(question, datasource, prev_error=last_err)
+                for i in range(max(n, 1)):
+                    # 自一致性：不同候选用不同温度增加多样性
+                    temp = round(0.2 * i, 2) if n > 1 else 0.0
+                    candidate_sqls.append(
+                        await cls._nl2sql(question, datasource, prev_error=last_err, temperature=temp)
+                    )
             except CustomException as e:
                 last_err = e.msg
                 log.warning(f"[query] NL2SQL 生成/校验失败第 {attempt + 1} 轮: {e.msg}")
                 continue
-            try:
-                if datasource and datasource != SYSTEM_DS:
-                    try:
-                        ds_id = int(datasource.split(":")[-1])
-                    except ValueError:
-                        raise CustomException(msg="数据源编码异常")
-                    res = await _execute_custom_ds_sql(ds_id, sql, auth)
-                else:
-                    res = await _execute_sql(sql)
+            # 逐一执行；代价护栏过滤超重查询；结果一致性分组取多数
+            groups: dict = {}
+            results: list[tuple[str, dict]] = []
+            for csql in candidate_sqls:
+                try:
+                    if cost_enabled and datasource in (SYSTEM_DS, None):
+                        er = await cls._explain_rows(csql)
+                        if er > max_rows:
+                            last_err = f"查询代价过高(预计{er}行>上限{max_rows})，请改为聚合/加条件/限制范围"
+                            continue
+                    res = await cls._execute_one(csql, datasource, auth)
+                    results.append((csql, res))
+                    sig = tuple(sorted(tuple(str(v) for v in r) for r in res["rows"]))
+                    groups.setdefault(sig, []).append(csql)
+                except CustomException as e:
+                    last_err = e.msg
+            if results:
+                best = max(groups.values(), key=len)
+                sql = best[0]
+                res = next(r for (c, r) in results if c == sql)
                 msg = await cls._save_message(
                     session_id, question, path="slow", datasource=datasource,
                     sql=sql, columns=res["columns"], rows=res["rows"],
@@ -1800,10 +1843,6 @@ class AiQueryService:
                     summary="以下是根据你的问题生成的结果：",
                 )
                 return cls._answer(msg, sql=sql)
-            except CustomException as e:
-                last_err = e.msg
-                log.warning(f"[query] NL2SQL 自纠错第 {attempt + 1} 轮失败: {e.msg}")
-                continue
         await cls._save_message(
             session_id, question, path="slow", datasource=datasource,
             sql=sql, rows=[], is_error=True, summary=f"查询失败：{last_err}",
@@ -1811,8 +1850,9 @@ class AiQueryService:
         return {"path": "slow", "is_error": True, "answer": f"查询失败：{last_err}", "sql": sql}
 
     @classmethod
-    async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None) -> str:
-        """LLM 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
+    async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None,
+                      temperature: float = 0.0) -> str:
+        """Agno Agent 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
         try:
             runtime = await cls._get_runtime()
         except Exception as e:  # noqa: BLE001
@@ -1829,6 +1869,8 @@ class AiQueryService:
             rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
         rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
         rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
+        if cls._cfg_bool(cfg, "decomposed_planning", True):
+            rules.append("（5）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
         extra = ""
         if cls._cfg_bool(cfg, "full_entity_no_limit", True):
             extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
@@ -1847,29 +1889,19 @@ class AiQueryService:
                 "请修正 SQL（补全 FROM、改用正确表/列名）后重新只返回一条 SQL。"
             )
         try:
-            from openai import AsyncOpenAI
+            from agno.agent import Agent
+            from agno.models.openai.like import OpenAILike
 
-            from app.plugin.module_ai.provider.service import build_headers
-
-            client = AsyncOpenAI(
-                base_url=runtime["base_url"],
+            model = OpenAILike(
+                id=runtime["model"], base_url=runtime["base_url"],
                 api_key=runtime["api_key"] or "sk-none",
-                default_headers=build_headers(
-                    runtime["base_url"], runtime.get("extra_headers"), "aistation-query"
-                ),
+                temperature=temperature, max_tokens=1200,
             )
-            resp = await client.chat.completions.create(
-                model=runtime["model"],
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0,
-                max_tokens=1200,
-            )
-            sql = (resp.choices[0].message.content or "").strip()
+            agent = Agent(model=model, instructions=system_prompt)
+            resp = await agent.arun(user_msg)
+            sql = (resp.content or "").strip()
         except Exception as e:  # noqa: BLE001
-            raise CustomException(msg=f"问答模型调用失败：{e}")
+            raise CustomException(msg=f"问答模型(Agno)调用失败：{e}")
         sql = cls._extract_sql(sql)
         table = SYSTEM_ALLOWED_TABLES if datasource in (SYSTEM_DS, None) else None
         return validate_sql(sql, table or set())
@@ -2374,7 +2406,13 @@ class AiQueryService:
                 raise CustomException(msg="记录不存在")
             m.feedback = feedback
             m.updated_id = auth.user.id
-            if correct_sql:
+            sunk = False
+            if correct_sql and cls._cfg_bool(await cls._cfg(), "fewshot_auto_curate", True):
+                # 校验正确 SQL 合法后才沉淀，避免把错误 SQL 推进 few-shot
+                try:
+                    validate_sql(correct_sql, SYSTEM_ALLOWED_TABLES)
+                except Exception:  # noqa: BLE001
+                    return {"id": m.id, "feedback": feedback, "sunk": False, "reason": "SQL 非法未入库"}
                 m.correct_sql = correct_sql
                 # 反馈闭环：把用户修正的正确 SQL 沉淀进示例库，后续可被动态 few-shot 复用
                 exists = (
@@ -2393,5 +2431,8 @@ class AiQueryService:
                             created_id=auth.user.id, updated_id=auth.user.id,
                         )
                     )
+                    sunk = True
+            elif correct_sql:
+                m.correct_sql = correct_sql
             await db.flush()
-            return {"id": m.id, "feedback": feedback, "sunk": bool(correct_sql)}
+            return {"id": m.id, "feedback": feedback, "sunk": sunk}

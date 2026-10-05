@@ -497,6 +497,27 @@
             <el-form-item label="语义检索走 Agno">
               <el-switch v-model="engForm.agno_semantic_enabled" />
             </el-form-item>
+            <el-divider content-position="left">高级策略</el-divider>
+            <el-form-item label="分解式规划">
+              <el-switch v-model="engForm.decomposed_planning" />
+            </el-form-item>
+            <el-form-item label="自一致性(候选数)">
+              <el-input-number v-model="engForm.self_consistency_n" :min="1" :max="5" :step="1" />
+            </el-form-item>
+            <el-form-item label="查询代价护栏">
+              <el-switch v-model="engForm.query_cost_enabled" />
+            </el-form-item>
+            <el-form-item label="代价护栏预估行数上限">
+              <el-input-number
+                v-model="engForm.query_cost_max_rows"
+                :min="1000"
+                :max="5000000"
+                :step="1000"
+              />
+            </el-form-item>
+            <el-form-item label="反馈正例自动沉淀">
+              <el-switch v-model="engForm.fewshot_auto_curate" />
+            </el-form-item>
             <el-divider content-position="left">实体名词→表 映射（行式编辑，覆盖默认）</el-divider>
             <div class="emap-editor">
               <div v-for="(row, idx) in engRows" :key="idx" class="emap-row">
@@ -1668,6 +1689,11 @@ const engDef = {
   full_entity_no_limit: true,
   entity_name_rule: true,
   agno_semantic_enabled: true,
+  decomposed_planning: true,
+  self_consistency_n: 1,
+  query_cost_enabled: true,
+  query_cost_max_rows: 50000,
+  fewshot_auto_curate: true,
   entity_map: "{}",
 };
 // 内置默认实体名词→表 映射（仅作编辑起点，可在界面增删改并持久化覆盖）
@@ -1742,6 +1768,11 @@ function loadEngineForm(d: any) {
   engForm.full_entity_no_limit = String(d.full_entity_no_limit ?? "true") !== "0";
   engForm.entity_name_rule = String(d.entity_name_rule ?? "true") !== "0";
   engForm.agno_semantic_enabled = String(d.agno_semantic_enabled ?? "true") !== "0";
+  engForm.decomposed_planning = String(d.decomposed_planning ?? "true") !== "0";
+  engForm.self_consistency_n = Number(d.self_consistency_n ?? 1);
+  engForm.query_cost_enabled = String(d.query_cost_enabled ?? "true") !== "0";
+  engForm.query_cost_max_rows = Number(d.query_cost_max_rows ?? 50000);
+  engForm.fewshot_auto_curate = String(d.fewshot_auto_curate ?? "true") !== "0";
   engForm.entity_map = d.entity_map ?? "{}";
   parseEngRows(engForm.entity_map);
 }
@@ -1764,12 +1795,25 @@ async function saveEngineConfig() {
       value: String(engForm.schema_keyword_weight),
       remark: "关键词检索权重",
     });
+    await saveQuerySetting({
+      key: "self_consistency_n",
+      value: String(engForm.self_consistency_n),
+      remark: "自一致性候选数",
+    });
+    await saveQuerySetting({
+      key: "query_cost_max_rows",
+      value: String(engForm.query_cost_max_rows),
+      remark: "代价护栏行数上限",
+    });
     const bools: Record<string, boolean> = {
       entity_enabled: engForm.entity_enabled,
       enum_hint_enabled: engForm.enum_hint_enabled,
       full_entity_no_limit: engForm.full_entity_no_limit,
       entity_name_rule: engForm.entity_name_rule,
       agno_semantic_enabled: engForm.agno_semantic_enabled,
+      decomposed_planning: engForm.decomposed_planning,
+      query_cost_enabled: engForm.query_cost_enabled,
+      fewshot_auto_curate: engForm.fewshot_auto_curate,
     };
     for (const [k, v] of Object.entries(bools)) {
       await saveQuerySetting({ key: k, value: v ? "true" : "false", remark: k });
