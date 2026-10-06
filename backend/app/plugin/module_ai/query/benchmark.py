@@ -287,6 +287,17 @@ NL2SQL_GOLDEN = [
      "gold": "SELECT r.name, COUNT(a.id) AS c FROM video_alarm_rules r LEFT JOIN video_alarm_records a ON a.rule_id=r.id GROUP BY r.name ORDER BY c DESC"},
     {"tag": "用户", "q": "系统超级管理员数量",
      "gold": "SELECT COUNT(*) AS c FROM sys_user WHERE is_superuser=true AND is_deleted=false"},
+    # ===== 本体对象（新增：只有靠本体物化对象 ont_* 才能答对，检验本体驱动） =====
+    {"tag": "本体对象", "q": "订单表里的金额总和是多少",
+     "gold": "SELECT SUM(amount) AS 金额总和 FROM ont_orders"},
+    {"tag": "本体对象", "q": "一共多少个客户",
+     "gold": "SELECT COUNT(*) AS c FROM ont_customers"},
+    {"tag": "本体对象", "q": "列出所有订单编号",
+     "gold": "SELECT order_no AS 订单编号 FROM ont_orders"},
+    {"tag": "本体对象", "q": "金额最大的订单编号",
+     "gold": "SELECT order_no AS 订单编号 FROM ont_orders ORDER BY amount DESC NULLS LAST LIMIT 1"},
+    {"tag": "本体对象", "q": "客户的电话号码分别是多少",
+     "gold": "SELECT name AS 客户, phone AS 电话 FROM ont_customers"},
 ]
 
 
