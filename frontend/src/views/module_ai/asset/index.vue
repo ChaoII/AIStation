@@ -268,6 +268,36 @@ onMounted(() => {
 <style scoped lang="scss">
 .ai-asset-page {
   padding: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+/* 卡片占满可视高度，表格撑满剩余空间，分页固定在卡片底部（与日志管理一致） */
+.ai-asset-page .el-tabs,
+.ai-asset-page .el-tabs__content,
+.ai-asset-page .el-tab-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ai-asset-page .el-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ai-asset-page .el-card__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ai-asset-page .el-card__body .el-table {
+  flex: 1;
+  min-height: 0;
+}
+.ai-asset-page .el-card__body .el-pagination {
+  margin-top: 12px;
+  flex-shrink: 0;
 }
 .as-bar {
   margin-bottom: 8px;
