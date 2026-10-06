@@ -2148,21 +2148,41 @@ class AiQueryService:
     async def dq_alert(cls) -> dict:
         """P3-⑧ DQ 预警 + 影响联动：风险对象(健康分<60) → 血缘下游影响(对象/指标/管道/概念)。"""
         ov = await cls.dq_overview()
+        objs = {o["table"]: o for o in await cls._objects_light()}
+        pipelines = await cls.list_pipelines()
+        metrics = await cls.list_metrics()
+        concepts = await cls.list_concepts()
         alerts = []
         for it in ov["items"]:
             if (it["score"] or 0) < 60:
-                lin = await cls.lineage(it["table"])
+                t = it["table"]
+                async with async_db_session() as db:
+                    from sqlalchemy import text as _t
+                    deps = (await db.execute(_t(
+                        "SELECT DISTINCT related_table FROM ai_query_asset_columns "
+                        "WHERE related_table=:t AND is_deleted=false"), {"t": t})).fetchall()
+                dep_objs = [objs.get(r[0], {}).get("alias") or r[0] for r in deps if r[0] and r[0] != t]
+                rel_mets = [m["name"] for m in metrics if t in (m.get("sql_template") or "")]
+                rel_pips = [p["name"] for p in pipelines if p["target_object"] == t]
+                rel_concepts = [c["name"] for c in concepts if t in (c.get("tables") or [])]
                 alerts.append({
                     "table": it["table"], "alias": it["alias"],
                     "score": it["score"], "issues": it["issues"] or [],
-                    "downstream": {
-                        "objects": [o.get("alias") or o["object"] for o in lin.get("dependent_objects", [])],
-                        "metrics": [m.get("name") for m in lin.get("metrics", [])],
-                        "pipelines": [p.get("name") for p in lin.get("pipelines", [])],
-                        "concepts": [c.get("name") for c in lin.get("concepts", [])],
-                    },
+                    "downstream": {"objects": dep_objs, "metrics": rel_mets,
+                                   "pipelines": rel_pips, "concepts": rel_concepts},
                 })
         return {"count": len(alerts), "alerts": alerts}
+
+    @classmethod
+    async def _objects_light(cls) -> list[dict]:
+        """轻量对象表：直查 ai_query_assets object_enabled（避免 list_assets 的 N+1）。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT table_name,alias,CAST(object_key_col AS VARCHAR),CAST(object_name_col AS VARCHAR) "
+                "FROM ai_query_assets WHERE object_enabled=true AND is_deleted=false"))).fetchall()
+        return [{"table": r[0], "alias": r[1] or r[0],
+                 "key_col": r[2] or "id", "name_col": r[3] or "name"} for r in rows]
 
     @classmethod
     async def list_domains(cls) -> list[dict]:
@@ -2218,6 +2238,47 @@ class AiQueryService:
         return {"domains": list(by_domain.values()),
                 "unassigned": unassigned,
                 "total_objects": len(objs)}
+
+    @classmethod
+    async def governance_overview(cls) -> dict:
+        """P3-⑩ 治理驾驶舱总览：一次聚合对象/源/管道/动作/权限/域/质量/预警/指标/概念/智能体/应用。"""
+        objs = await cls._objects_light()
+        ds = await cls.list_datasources()
+        pips = await cls.list_pipelines()
+        rules = await cls.list_access_rules()
+        domains = await cls.list_domains()
+        dq = await cls.dq_overview()
+        alert = await cls.dq_alert()
+        metrics = await cls.list_metrics()
+        terms = await cls.list_terms()
+        concepts = await cls.list_concepts()
+        works = await cls.list_workshop_apps()
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            act = (await db.execute(_t(
+                "SELECT count(*) FROM ai_action WHERE is_deleted=false"))).scalar() or 0
+            act_logs = (await db.execute(_t(
+                "SELECT count(*) FROM ai_action_log WHERE is_deleted=false"))).scalar() or 0
+            agent = (await db.execute(_t(
+                "SELECT count(*) FROM ai_agents WHERE is_deleted=false"))).scalar() or 0
+        return {
+            "objects": len(objs),
+            "datasources": len(ds),
+            "pipelines": len(pips),
+            "actions": int(act), "action_logs": int(act_logs),
+            "access_rules": len(rules),
+            "domains": len(domains),
+            "agents": int(agent),
+            "workshop_apps": len(works),
+            "metrics": len(metrics), "terms": len(terms), "concepts": len(concepts),
+            "dq": {"avg_score": dq["avg_score"], "healthy": dq["healthy"],
+                   "risk": dq["risk"], "total": dq["total_objects"]},
+            "dq_alerts": alert["count"],
+            "alert_list": alert["alerts"][:6],
+            "dq_items": dq["items"],
+            "pipeline_runs": [{"name": p["name"], "status": p["last_status"], "at": p["last_at"]}
+                              for p in pips if p["last_status"]],
+        }
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:

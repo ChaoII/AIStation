@@ -469,6 +469,14 @@ async def domain_objects(
     return SuccessResponse(data=await AiQueryService.domain_objects(), msg="查询成功")
 
 
+# ---- P3-⑩ 治理驾驶舱 ----
+@AiQueryRouter.get("/governance/overview", summary="治理驾驶舱总览")
+async def governance_overview(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.governance_overview(), msg="查询成功")
+
+
 @AiQueryRouter.post("/access/save", summary="ABAC权限策略保存")
 async def access_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

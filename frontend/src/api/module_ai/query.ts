@@ -305,6 +305,9 @@ export function saveDomain(data: any) {
 export function getDomainObjects() {
   return request({ url: `${API_PATH}/domain/objects`, method: "get" });
 }
+export function getGovernanceOverview() {
+  return request({ url: `${API_PATH}/governance/overview`, method: "get" });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

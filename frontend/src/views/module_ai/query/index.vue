@@ -7,6 +7,7 @@
         <div class="query-side__hd">
           <el-button type="primary" size="small" :icon="Plus" @click="newSession">新会话</el-button>
           <el-button size="small" :icon="Setting" @click="openOps">指标运营</el-button>
+          <el-button size="small" :icon="DataBoard" @click="openGovDashboard">治理驾驶舱</el-button>
         </div>
         <div class="query-ds">
           <span class="query-ds__label">数据源</span>
@@ -1433,6 +1434,180 @@
       </el-tabs>
     </el-drawer>
 
+    <!-- P3-⑩ 治理驾驶舱 -->
+    <el-drawer
+      v-model="govDashVisible"
+      title="治理驾驶舱 · Governance Overview"
+      size="90%"
+      append-to-body
+    >
+      <div v-loading="govDashLoading" class="govdash">
+        <el-row :gutter="12">
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="业务对象" :value="gov.overview?.objects ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="数据源" :value="gov.overview?.datasources ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="数据管道" :value="gov.overview?.pipelines ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="ABAC 策略" :value="gov.overview?.access_rules ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="数据域" :value="gov.overview?.domains ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="智能体" :value="gov.overview?.agents ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic title="动作审计" :value="gov.overview?.action_logs ?? 0" />
+            </el-card>
+          </el-col>
+          <el-col :span="3">
+            <el-card shadow="never" body-style="padding:14px">
+              <el-statistic
+                title="平均健康分"
+                :value="gov.overview?.dq?.avg_score ?? 0"
+                :precision="1"
+              />
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="12" style="margin-top: 12px">
+          <el-col :span="12">
+            <el-card shadow="never">
+              <template #header>
+                <div class="govdash-head">
+                  <span>数据质量健康度</span>
+                  <el-tag v-if="(gov.overview?.dq_alerts ?? 0) > 0" size="small" type="danger">
+                    预警 {{ gov.overview.dq_alerts }}
+                  </el-tag>
+                </div>
+              </template>
+              <div class="govdash-dq">
+                <el-progress
+                  type="dashboard"
+                  :percentage="Math.round(gov.overview?.dq?.avg_score ?? 0)"
+                  :color="
+                    (gov.overview?.dq?.avg_score ?? 0) >= 80
+                      ? '#67c23a'
+                      : (gov.overview?.dq?.avg_score ?? 0) >= 60
+                        ? '#e6a23c'
+                        : '#f56c6c'
+                  "
+                >
+                  <template #default>
+                    <span class="govdash-dq__label">{{ gov.overview?.dq?.avg_score ?? 0 }}</span>
+                  </template>
+                </el-progress>
+                <div class="govdash-dq__meta">
+                  <el-tag size="small" type="success" effect="plain">
+                    健康 {{ gov.overview?.dq?.healthy ?? 0 }}
+                  </el-tag>
+                  <el-tag size="small" type="warning" effect="plain">
+                    预警 {{ gov.overview?.dq?.risk ?? 0 }}
+                  </el-tag>
+                  <el-tag size="small" type="info" effect="plain">
+                    共 {{ gov.overview?.dq?.total ?? 0 }}
+                  </el-tag>
+                </div>
+              </div>
+              <div class="gov-section">
+                质量预警（{{ (gov.overview?.alert_list || []).length }}）
+              </div>
+              <div v-for="a in gov.overview?.alert_list || []" :key="a.table" class="govdash-alert">
+                <el-tag size="small" type="danger">{{ a.alias }}</el-tag>
+                <span class="govdash-alert__score">健康分 {{ a.score }}</span>
+                <div class="govdash-alert__down">
+                  <el-tag
+                    v-for="o in a.downstream.objects"
+                    :key="o"
+                    size="small"
+                    type="warning"
+                    effect="plain"
+                  >
+                    对象 {{ o }}
+                  </el-tag>
+                  <el-tag
+                    v-for="m in a.downstream.metrics"
+                    :key="m"
+                    size="small"
+                    type="primary"
+                    effect="plain"
+                  >
+                    指标 {{ m }}
+                  </el-tag>
+                  <span
+                    v-if="!a.downstream.objects.length && !a.downstream.metrics.length"
+                    class="dq-alert__none"
+                  >
+                    无下游
+                  </span>
+                </div>
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :span="12">
+            <el-card shadow="never">
+              <template #header>资产与语义资产</template>
+              <el-descriptions :column="2" size="small" border>
+                <el-descriptions-item label="指标">
+                  {{ gov.overview?.metrics ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="术语">
+                  {{ gov.overview?.terms ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="本体概念">
+                  {{ gov.overview?.concepts ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="对象应用">
+                  {{ gov.overview?.workshop_apps ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="动作定义">
+                  {{ gov.overview?.actions ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="动作审计">
+                  {{ gov.overview?.action_logs ?? 0 }}
+                </el-descriptions-item>
+              </el-descriptions>
+              <div class="gov-section">最近管道运行</div>
+              <el-table :data="gov.overview?.pipeline_runs || []" size="small" max-height="180">
+                <el-table-column prop="name" label="管道" min-width="120" />
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row.status === 'success' ? 'success' : 'info'">
+                      {{ row.status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="at" label="运行时间" min-width="140" show-overflow-tooltip />
+              </el-table>
+            </el-card>
+          </el-col>
+        </el-row>
+      </div>
+      <template #footer>
+        <el-button @click="govDashVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="govDashLoading" @click="loadGovDash">刷新</el-button>
+      </template>
+    </el-drawer>
+
     <!-- 指标编辑 -->
     <el-dialog
       v-model="metricEditVisible"
@@ -2240,7 +2415,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Delete, Setting, Loading, Refresh, MagicStick } from "@element-plus/icons-vue";
+import {
+  Plus,
+  Delete,
+  Setting,
+  Loading,
+  Refresh,
+  MagicStick,
+  DataBoard,
+} from "@element-plus/icons-vue";
 import ECharts from "@/components/ECharts/index.vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 import {
@@ -2307,6 +2490,7 @@ import {
   getDqAlert,
   saveDomain,
   getDomainObjects,
+  getGovernanceOverview,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -3463,6 +3647,25 @@ watch(opsTab, async (v) => {
     loadDomains();
   }
 });
+// ---- P3-⑩ 治理驾驶舱 ----
+const govDashVisible = ref(false);
+const govDashLoading = ref(false);
+const gov = ref<any>({ overview: {} });
+function openGovDashboard() {
+  govDashVisible.value = true;
+  loadGovDash();
+}
+async function loadGovDash() {
+  govDashLoading.value = true;
+  try {
+    const r = await getGovernanceOverview();
+    gov.value = { overview: r.data?.data || {} };
+  } catch {
+    gov.value = { overview: {} };
+  } finally {
+    govDashLoading.value = false;
+  }
+}
 async function inferRel() {
   inferringRel.value = true;
   try {
@@ -4168,6 +4371,43 @@ onMounted(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-bottom: 4px;
+}
+.govdash-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.govdash-dq {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+.govdash-dq__label {
+  font-size: 22px;
+  font-weight: 600;
+}
+.govdash-dq__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.govdash-alert {
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+.govdash-alert__score {
+  margin-left: 8px;
+  font-size: 13px;
+  color: var(--el-color-warning);
+}
+.govdash-alert__down {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .gov-rel {
   font-size: 12px;
