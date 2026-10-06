@@ -118,12 +118,8 @@
               </div>
               <div class="agent-card__role">{{ a.agent_role || "—" }}</div>
               <div class="agent-card__tags">
-                <el-tag v-if="a.workflow_id" size="small" effect="plain" type="primary">
-                  编排
-                </el-tag>
-                <el-tag v-if="a.prompt_id" size="small" effect="plain">提示词</el-tag>
-                <el-tag v-if="(a.tool_ids || []).length" size="small" effect="plain" type="warning">
-                  {{ a.tool_ids.length }} 工具
+                <el-tag v-if="a.query_enabled" size="small" effect="plain" type="primary">
+                  智能问数
                 </el-tag>
                 <el-tag
                   v-if="(a.knowledge_ids || []).length"
@@ -133,6 +129,9 @@
                 >
                   知识库
                 </el-tag>
+                <el-tag v-if="(a.tool_ids || []).length" size="small" effect="plain" type="warning">
+                  {{ a.tool_ids.length }} 工具
+                </el-tag>
                 <el-tag
                   v-if="(a.skill_ids || []).length"
                   size="small"
@@ -140,6 +139,11 @@
                   type="warning"
                 >
                   技能
+                </el-tag>
+                <el-tag v-if="a.model_id" size="small" effect="plain">模型</el-tag>
+                <el-tag v-if="a.prompt_id" size="small" effect="plain">提示词</el-tag>
+                <el-tag v-if="a.workflow_id" size="small" effect="plain" type="primary">
+                  工作流
                 </el-tag>
               </div>
               <div class="agent-card__actions">

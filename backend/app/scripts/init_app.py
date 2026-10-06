@@ -732,6 +732,7 @@ async def _ensure_ai_menus() -> None:
 
             pages = [
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
+                ("AI 工作台", "AiWorkspace", "/ai/workspace", "module_ai/workspace/index", "module_ai:query:ask", 8, "el-icon-HomeFilled"),
                 ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),
                 ("工作流", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12, "el-icon-Connection"),
                 ("技能广场", "AiSkill", "/ai/skill", "module_ai/skill/index", "module_ai:skill:query", 13, "el-icon-MagicStick"),
