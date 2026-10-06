@@ -1544,6 +1544,7 @@ import {
   getFdeList,
   saveFdeProposition,
   deleteFdePropositions,
+  getQueryObjects,
   getActionList,
   saveAction,
   executeAction,
