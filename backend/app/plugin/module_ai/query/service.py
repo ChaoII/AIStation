@@ -1161,6 +1161,94 @@ class AiQueryService:
         return "\n".join(lines)
 
     @classmethod
+    async def resolve_entity_object(cls, entity: str, key: str, datasource: str = SYSTEM_DS) -> dict | None:
+        """P0·对象 grounding：把业务实体名(如「摄像头/订单」)+ 关键值解析为真实对象及关联邻居。
+
+        返回 ``{entity, table, object:{列:值}, related:[{relation, entity, ...}]}``，供
+        Agent/问数作为 grounded context 注入模型（对标 Palantir AIP grounding）。
+        """
+        from sqlalchemy import text as _t
+
+        schema = await cls._system_schema()
+        tmeta = await cls._asset_tmeta()
+        entity = (entity or "").strip()
+        key = (key or "").strip()
+        if not entity or not key:
+            return None
+        # 1) 候选表：实体名词映射 + 中文名/别名/表名包含
+        cand: list[str] = []
+        for noun, tables in _ENTITY_TABLE.items():
+            if noun in entity or entity in noun:
+                cand.extend(tables)
+        for t in schema:
+            meta = tmeta.get(t) or {}
+            if (meta.get("alias") and meta["alias"] in entity) or (
+                meta.get("description") and entity in meta["description"]
+            ):
+                cand.append(t)
+            if t and t.replace("_", "") in entity.replace("_", ""):
+                cand.append(t)
+        cand = list(dict.fromkeys(c for c in cand if c in schema))
+        if not cand:
+            return None
+        # 2) 选主表：优先含 name/title 列且非分组/日志/事件类的实体表
+        labels_of = lambda t: schema.get(t) or []
+        has_name = [t for t in cand if any(lab.split("(")[0] in ("name", "title", "label") for lab in labels_of(t))]
+        prefer = [t for t in has_name if not any(x in t for x in ("group", "groups", "task", "logs", "records", "events", "call_logs"))]
+        table = (prefer or has_name or cand)[0]
+        labels = schema.get(table) or []
+        id_col = next((lab.split("(")[0] for lab in labels if lab.split("(")[0] == "id"), None) or (labels[0].split("(")[0] if labels else "")
+        name_col = next((lab.split("(")[0] for lab in labels if lab.split("(")[0] in ("name", "title", "label")), None)
+        # 3) 解析关联：字段名 -> 关联表.关联字段
+        rel_re = re.compile(r"【关联:([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)】")
+        rel_cols: list[tuple[str, str, str]] = []
+        for lab in labels:
+            col = lab.split("(")[0]
+            m = rel_re.search(lab)
+            if m:
+                rel_cols.append((col, m.group(1), m.group(2)))
+        # 4) 取对象行：优先按 name 匹配，否则按 id
+        try:
+            async with async_db_session() as db:
+                cond = f'"{name_col}" ILIKE :k' if name_col else f'"{id_col}" = :k'
+                row = (await db.execute(_t(
+                    f'SELECT * FROM "{table}" WHERE {cond} LIMIT 1'), {"k": f"%{key}%"})).mappings().first()
+                if row is None and name_col:
+                    row = (await db.execute(_t(
+                        f'SELECT * FROM "{table}" WHERE "{id_col}" = :k LIMIT 1'), {"k": key})).mappings().first()
+                if row is None and id_col:
+                    row = (await db.execute(_t(
+                        f'SELECT * FROM "{table}" WHERE "{id_col}" = :k LIMIT 1'), {"k": key})).mappings().first()
+        except Exception as e:  # noqa: BLE001
+            return {"entity": entity, "table": table, "error": str(e)[:120], "related": []}
+        if row is None:
+            return {"entity": entity, "table": table, "object": None, "related": []}
+        obj = {k: (str(v) if not isinstance(v, (int, float, bool)) else v) for k, v in row.items()}
+        # 5) 关联邻居：对每条关联字段取值，取关联表 name 列
+        related: list[dict] = []
+        try:
+            async with async_db_session() as db:
+                for col, rt, rf in rel_cols[:6]:
+                    val = obj.get(col)
+                    if val is None:
+                        continue
+                    rt_labels = schema.get(rt) or []
+                    rname_col = next((lab.split("(")[0] for lab in rt_labels
+                                      if lab.split("(")[0] in ("name", "title", "label")), rf)
+                    rr = (await db.execute(_t(
+                        f'SELECT * FROM "{rt}" WHERE "{rf}" = %(v)s LIMIT 1'), {"v": val})).mappings().first()
+                    if rr:
+                        related.append({
+                            "relation": col,
+                            "entity": rt,
+                            "name": str(rr.get(rname_col) or rr.get("id")),
+                            "summary": f"{rt}#{str(rr.get(rname_col) or rr.get('id'))}",
+                        })
+        except Exception:  # noqa: BLE001
+            pass
+        return {"entity": entity, "table": table, "object": obj, "related": related}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t

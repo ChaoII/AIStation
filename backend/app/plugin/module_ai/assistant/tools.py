@@ -272,6 +272,27 @@ async def ai_query(question: str, user_id: int | None = None) -> dict:
     }
 
 
+@tool(
+    "resolve_object",
+    "解析业务对象：根据业务实体名(如 摄像头/订单/设备/用户)和关键值，返回该对象的真实字段及关联邻居。"
+    "用于回答「某个具体对象」的问题，如「摄像头0012341247是什么状态」，先调用本工具取真实对象，不要凭记忆编造。",
+    _obj({"entity": {"type": "string", "description": "业务实体名，如 摄像头/订单/用户/算法"},
+          "key": {"type": "string", "description": "对象关键值，如 摄像头编号/订单号/名称"}},
+         ["entity", "key"]),
+    kind="read",
+)
+async def resolve_object(entity: str, key: str) -> dict:
+    from app.plugin.module_ai.query.service import AiQueryService
+
+    try:
+        res = await AiQueryService.resolve_entity_object(entity, key)
+    except Exception as e:  # noqa: BLE001
+        return {"entity": entity, "error": str(getattr(e, "msg", e))}
+    if not res:
+        return {"entity": entity, "error": "未找到对应业务对象，请确认实体名或改用 ai_query 问数"}
+    return res
+
+
 # ---------------------------------------------------------------- 报告 / 导航 / 操作
 
 

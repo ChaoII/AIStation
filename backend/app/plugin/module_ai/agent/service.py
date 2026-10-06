@@ -337,9 +337,12 @@ class AiAgentService:
                 return
 
             tool_names = list(agent.get("tool_ids") or [])
-            # query_enabled：自动纳入问数工具，并按 Agent 配置的数据源/场景取数
-            if agent.get("query_enabled") and "ai_query" not in tool_names:
-                tool_names.append("ai_query")
+            # query_enabled：自动纳入问数 + 对象 grounding 工具
+            if agent.get("query_enabled"):
+                if "ai_query" not in tool_names:
+                    tool_names.append("ai_query")
+                if "resolve_object" not in tool_names:
+                    tool_names.append("resolve_object")
             tool_schemas, http_tools = await _build_app_tools(tool_names)
             client = AsyncOpenAI(
                 base_url=runtime["base_url"],
