@@ -742,6 +742,15 @@
             <el-button type="primary" size="small" :icon="Plus" @click="openConceptEdit()">
               新增概念
             </el-button>
+            <el-select
+              v-model="industryTpl"
+              size="small"
+              placeholder="行业模板"
+              style="width: 200px"
+            >
+              <el-option v-for="t in industryTemplates" :key="t.id" :label="t.name" :value="t.id" />
+            </el-select>
+            <el-button size="small" :loading="applyingTpl" @click="applyTpl">应用模板</el-button>
             <el-tag size="small" type="info" effect="plain">
               已维护 {{ concepts.length }} 个业务概念
             </el-tag>
@@ -1594,6 +1603,8 @@ import {
   rollbackAssetVersion,
   getAssetImpact,
   extractQueryObjects,
+  getIndustryTemplates,
+  applyIndustryTemplate,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2125,6 +2136,31 @@ async function autoLinkKg() {
 }
 // ---- 本体/概念 ----
 const concepts = ref<any[]>([]);
+const industryTpl = ref("");
+const industryTemplates = ref<any[]>([]);
+const applyingTpl = ref(false);
+async function loadIndustryTemplates() {
+  try {
+    const r = await getIndustryTemplates();
+    industryTemplates.value = r.data?.data || [];
+  } catch {
+    industryTemplates.value = [];
+  }
+}
+async function applyTpl() {
+  if (!industryTpl.value) return ElMessage.warning("请选择行业模板");
+  applyingTpl.value = true;
+  try {
+    const r = await applyIndustryTemplate(industryTpl.value);
+    const d = r.data?.data || {};
+    ElMessage.success(`已应用「${d.template}」，预建 ${d.created ?? 0} 个标准概念`);
+    loadConcepts();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "应用失败");
+  } finally {
+    applyingTpl.value = false;
+  }
+}
 const conceptDialog = ref(false);
 const conceptForm = reactive<any>({
   id: null,
@@ -3084,6 +3120,7 @@ onMounted(() => {
   loadActions();
   loadActionLogs();
   loadGovObjects();
+  loadIndustryTemplates();
 });
 </script>
 

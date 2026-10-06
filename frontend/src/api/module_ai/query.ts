@@ -244,6 +244,12 @@ export function getAssetImpact(table: string) {
 export function extractQueryObjects() {
   return request({ url: `${API_PATH}/assets/extract-objects`, method: "post", timeout: 120000 });
 }
+export function getIndustryTemplates() {
+  return request({ url: `${API_PATH}/industry/templates`, method: "get" });
+}
+export function applyIndustryTemplate(template_id: string) {
+  return request({ url: `${API_PATH}/industry/apply`, method: "post", data: { template_id } });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

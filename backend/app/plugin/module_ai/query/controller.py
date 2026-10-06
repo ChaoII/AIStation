@@ -320,6 +320,22 @@ async def extract_objects(
     return SuccessResponse(data=await AiQueryService.semantic_extract_objects(), msg="已抽取业务对象")
 
 
+@AiQueryRouter.get("/industry/templates", summary="行业本体模板(ISA-95/GMP/通用)")
+async def industry_templates(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.industry_templates(), msg="查询成功")
+
+
+@AiQueryRouter.post("/industry/apply", summary="应用行业本体模板(预建标准概念)")
+async def industry_apply(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.apply_industry_template(str(data.get("template_id", "")), auth)
+    return SuccessResponse(data=r, msg=r.get("msg", "已应用模板"))
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

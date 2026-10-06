@@ -1666,6 +1666,46 @@ class AiQueryService:
         return {"extracted": created, "narrowed": narrowed, "aliases": aliases}
 
     @classmethod
+    async def industry_templates(cls) -> list[dict]:
+        return [
+            {"id": "isa95", "name": "制造业（ISA-95/IEC 62264）", "objects": [
+                {"name": "设备", "desc": "生产设备/工位", "domain": "生产"},
+                {"name": "工单", "desc": "制造工单/生产订单", "domain": "生产"},
+                {"name": "批次", "desc": "生产批次/批号", "domain": "生产"},
+                {"name": "物料", "desc": "原材料/半成品/成品", "domain": "物料"},
+                {"name": "质量特性", "desc": "质量指标/判定标准", "domain": "质量"},
+                {"name": "工艺路线", "desc": "工序/工艺路线", "domain": "工艺"},
+                {"name": "班组/班次", "desc": "班组/班次/日历", "domain": "组织"},
+            ]},
+            {"id": "gmp", "name": "制药（GMP/ICH）", "objects": [
+                {"name": "批记录", "desc": "生产批记录", "domain": "质量"},
+                {"name": "工艺规程", "desc": "工艺规程/处方", "domain": "工艺"},
+                {"name": "偏差", "desc": "偏差/变更/OOS", "domain": "质量"},
+                {"name": "物料批次", "desc": "物料批次/追溯", "domain": "物料"},
+                {"name": "清洁验证", "desc": "清洁/验证记录", "domain": "质量"},
+            ]},
+            {"id": "generic", "name": "通用业务", "objects": [
+                {"name": "客户", "desc": "客户/客户主数据", "domain": "客户"},
+                {"name": "订单", "desc": "销售/采购订单", "domain": "交易"},
+                {"name": "产品", "desc": "产品/商品", "domain": "产品"},
+                {"name": "供应商", "desc": "供应商主数据", "domain": "采购"},
+            ]},
+        ]
+
+    @classmethod
+    async def apply_industry_template(cls, template_id: str, auth) -> dict:
+        tpl = next((t for t in await cls.industry_templates() if t["id"] == template_id), None)
+        if not tpl:
+            return {"ok": False, "msg": "模板不存在"}
+        created = 0
+        for obj in tpl["objects"]:
+            d = {"name": obj["name"], "description": obj["desc"], "synonyms": "", "parent_name": "",
+                 "domain": obj["domain"], "metric_key": "", "tables": []}
+            await cls.upsert_concept(d, auth)
+            created += 1
+        return {"ok": True, "created": created, "template": tpl["name"]}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t
