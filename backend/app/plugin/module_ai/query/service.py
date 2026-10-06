@@ -1766,7 +1766,11 @@ class AiQueryService:
 
     @classmethod
     async def run_pipeline(cls, pipeline_id: int) -> dict:
-        """P3-① 运行管道：校验源表→目标对象列映射，同步源表列作为目标对象字段(资产)，并留运行/血缘。"""
+        """P3-⑤ 真实数据接入：从外部数据源/本系统拉取源表数据，按映射落库到目标对象表，并同步资产与运行血缘。
+
+        source_connection 为数字 → 视为外部数据源 id（走 executor 真实连接拉数）；
+        否则 / 空 → 视为本系统表。目标数据落到 ``ai_pipeline_data_{id}`` 运行物化表。
+        """
         import json as _json
         async with async_db_session() as db:
             from sqlalchemy import text as _t
@@ -1777,42 +1781,101 @@ class AiQueryService:
             return {"ok": False, "msg": "管道不存在"}
         name, sc, st, to, mp_raw = row[0], row[1], row[2], row[3], row[4]
         mappings = mp_raw if isinstance(mp_raw, list) else (_json.loads(mp_raw) if mp_raw else [])
-        schema = await cls._system_schema()
-        if st not in schema:
-            return {"ok": False, "msg": f"源表 {st} 不在可用 schema"}
-        src_labels = schema.get(st) or []
-        # 为源表同步资产(标记对象) + 把映射后的源列写入目标对象字段描述
-        meta = (await cls._asset_tmeta()).get(to) or {}
-        await cls.upsert_asset(QueryAssetUpsert(
-            table_name=to, alias=meta.get("alias") or to, domain=meta.get("domain") or "接入",
-            description=meta.get("description") or f"由管道 {name} 接入", business_scenarios="",
-            included=True, remark="", object_enabled=True, object_key_col="id",
-            object_name_col="name", object_icon="el-icon-Connection"),
-            SimpleNamespace(user=SimpleNamespace(id=1)))
-        synced = 0
-        for mp in mappings:
-            src_col = mp.get("source_col", "")
-            tgt_col = mp.get("target_col", src_col)
-            if any(l.split("(")[0] == src_col for l in src_labels):
-                async with async_db_session.begin() as db:
+        # 1) 拉取源数据
+        try:
+            if str(sc).strip().isdigit() and int(sc) > 0:
+                ds = await _load_ds(int(sc))
+                cfg = _ds_cfg_from_model(ds)
+                from . import executor as _ex
+                res = await _ex.execute_select(cfg, f'SELECT * FROM "{st}" LIMIT 200')
+                src_cols, src_rows = res.get("columns") or [], res.get("rows") or []
+                source_desc = f"{ds.name}({ds.type})"
+            else:
+                async with async_db_session() as db:
                     from sqlalchemy import text as _t
+                    src = (await db.execute(_t(
+                        f'SELECT * FROM "{st}" LIMIT 200'))).mappings().fetchall()
+                src_cols = list(src[0].keys()) if src else []
+                src_rows = [[str(v) if v is not None else None for v in r.values()] for r in src]
+                source_desc = f"本系统 {st}"
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"拉取源数据失败：{str(e)[:120]}"}
+        # 2) 按映射构建目标行
+        col_idx = {c: i for i, c in enumerate(src_cols)}
+        target_cols = [mp.get("target_col") or mp.get("source_col") for mp in mappings]
+        target_rows: list[list] = []
+        for r in src_rows:
+            out = []
+            for mp in mappings:
+                s = mp.get("source_col", "")
+                val = r[col_idx[s]] if s in col_idx else None
+                out.append(val)
+            target_rows.append(out)
+        # 3) 物化到 ai_pipeline_data_{id}（全量刷新）
+        materialized = 0
+        try:
+            async with async_db_session.begin() as db:
+                from sqlalchemy import text as _t
+                tname = f"ai_pipeline_data_{pipeline_id}"
+                cols_ddl = ", ".join(f'"{c}" TEXT' for c in target_cols) if target_cols else ""
+                await db.execute(_t(
+                    f'CREATE TABLE IF NOT EXISTS "{tname}" (id BIGSERIAL PRIMARY KEY, {cols_ddl})'))
+                await db.execute(_t(f'DELETE FROM "{tname}"'))
+                for r in target_rows:
+                    ph = ", ".join(f":c{i}" for i in range(len(r)))
+                    cols_sql = ", ".join(f'"{c}"' for c in target_cols) if target_cols else ""
+                    params = {f"c{i}": v for i, v in enumerate(r)}
+                    await db.execute(_t(
+                        f'INSERT INTO "{tname}" ({cols_sql}) VALUES ({ph})'), params)
+                    materialized += 1
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"落库失败：{str(e)[:120]}"}
+        # 4) 同步资产元数据（对象可见 + 映射目标列描述）
+        meta = (await cls._asset_tmeta()).get(to) or {}
+        try:
+            await cls.upsert_asset(QueryAssetUpsert(
+                table_name=to, alias=meta.get("alias") or to, domain=meta.get("domain") or "接入",
+                description=meta.get("description") or f"由管道 {name} 接入", business_scenarios="",
+                included=True, remark="", object_enabled=True, object_key_col="id",
+                object_name_col="name", object_icon="el-icon-Connection"),
+                SimpleNamespace(user=SimpleNamespace(id=1)))
+            async with async_db_session.begin() as db:
+                from sqlalchemy import text as _t
+                for mp in mappings:
+                    tgt = mp.get("target_col") or mp.get("source_col")
                     upd = await db.execute(_t(
                         "UPDATE ai_query_asset_columns SET description=:d WHERE table_name=:t AND column_name=:c AND is_deleted=false"),
-                        {"t": to, "c": tgt_col, "d": f"自 {sc}.{st}.{src_col} 映射"})
+                        {"t": to, "c": tgt, "d": f"自 {source_desc}.{st}#{mp.get('source_col')} 接入"})
                     if not (upd.rowcount or 0):
                         await db.execute(_t(
                             "INSERT INTO ai_query_asset_columns(table_name,column_name,description,included,is_deleted) "
-                            "VALUES (:t,:c,:d,true,false)"), {"t": to, "c": tgt_col, "d": f"自 {sc}.{st}.{src_col} 映射"})
-                synced += 1
-        msg = f"已同步 {synced} 个映射列到对象 {to}"
+                            "VALUES (:t,:c,:d,true,false)"), {"t": to, "c": tgt, "d": f"自 {source_desc}.{st}#{mp.get('source_col')} 接入"})
+        except Exception:  # noqa: BLE001
+            pass
+        # 5) 记录运行
+        msg = f"自 {source_desc}.{st} 拉取 {len(src_rows)} 行，落库 {materialized} 行到对象 {to}"
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
             await db.execute(_t(
-                "INSERT INTO ai_pipeline_run(pipeline_id,status,message) VALUES (:p,'success',:m)"),
-                {"p": pipeline_id, "m": msg})
+                "INSERT INTO ai_pipeline_run(pipeline_id,status,message,rows) VALUES (:p,'success',:m,:r)"),
+                {"p": pipeline_id, "m": msg, "r": materialized})
         _SCHEMA_CACHE = None
         _ASSET_TMETA = None
-        return {"ok": True, "msg": msg, "synced": synced}
+        return {"ok": True, "msg": msg, "synced": len(mappings), "rows": materialized}
+
+    @classmethod
+    async def pipeline_data(cls, pipeline_id: int, limit: int = 50) -> dict:
+        """P3-⑤ 查看管道落库结果（物化表 ai_pipeline_data_{id}）。"""
+        tname = f"ai_pipeline_data_{pipeline_id}"
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                res = await db.execute(_t(f'SELECT * FROM "{tname}" ORDER BY id DESC LIMIT :n'), {"n": limit})
+                cols = list(res.keys())
+                rows = [list(r) for r in res.fetchall()]
+            return {"ok": True, "columns": cols, "rows": rows}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"暂无落库结果：{str(e)[:80]}"}
 
     @classmethod
     async def list_workshop_apps(cls) -> list[dict]:
@@ -1901,7 +1964,7 @@ class AiQueryService:
         pips = [{"name": p["name"], "source": p["source_table"]} for p in pipelines if p["target_object"] == table_name]
         # 依赖此表的对象(出向是其它对象, 入向是引用它)
         objs = await cls.list_objects()
-        out_links = [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in objs if any(l["target"] == table_name for l in o.get("links", []))]
+        out_links = [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in objs if any(lk["target"] == table_name for lk in o.get("links", []))]
         return {
             "table": table_name, "fields": fields, "metrics": mets,
             "terms": rel_terms, "concepts": rel_concepts, "relations": rels,

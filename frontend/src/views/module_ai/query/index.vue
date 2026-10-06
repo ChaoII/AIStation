@@ -1105,9 +1105,10 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" align="center">
+            <el-table-column label="操作" width="180" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="runPipe(row)">运行</el-button>
+                <el-button link size="small" @click="viewPipeData(row)">数据</el-button>
                 <el-button link size="small" @click="openPipeEdit(row)">编辑</el-button>
               </template>
             </el-table-column>
@@ -1782,7 +1783,20 @@
           <el-input v-model="pipeForm.name" placeholder="如 MES工单接入" />
         </el-form-item>
         <el-form-item label="源连接">
-          <el-input v-model="pipeForm.source_connection" placeholder="如 mes_db / ERP_API" />
+          <el-select
+            v-model="pipeForm.source_connection"
+            filterable
+            placeholder="选择数据源(外部系统)或留空=本系统"
+            style="width: 100%"
+          >
+            <el-option label="本系统 (platform)" value="" />
+            <el-option
+              v-for="d in datasources"
+              :key="d.id"
+              :label="`${d.name} (${d.type})`"
+              :value="String(d.id)"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="源表" required>
           <el-input v-model="pipeForm.source_table" placeholder="如 train_tasks / orders" />
@@ -1803,6 +1817,38 @@
         <el-button @click="pipeDialog = false">取消</el-button>
         <el-button type="primary" @click="savePipe">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- P3-⑤ 管道落库数据 -->
+    <el-dialog v-model="pipeDataVisible" title="管道落库数据" width="720px" append-to-body>
+      <el-table
+        v-if="pipeData && pipeData.ok && pipeData.rows && pipeData.rows.length"
+        :data="
+          pipeData.rows.map((r: any[], i: number) => {
+            const o: any = { __i: i };
+            (pipeData.columns || []).forEach((c: string, ci: number) => (o[c] = r[ci]));
+            return o;
+          })
+        "
+        size="small"
+        border
+        max-height="400"
+      >
+        <el-table-column
+          v-for="c in pipeData.columns"
+          :key="c"
+          :prop="String(c)"
+          :label="String(c)"
+          min-width="110"
+        />
+      </el-table>
+      <el-alert
+        v-else-if="pipeData && !pipeData.ok"
+        type="error"
+        :title="pipeData.msg"
+        :closable="false"
+      />
+      <el-empty v-else description="暂无落库数据（先运行管道）" :image-size="40" />
     </el-dialog>
 
     <!-- Workshop 应用编辑 -->
@@ -1986,6 +2032,7 @@ import {
   getPipelineList,
   savePipeline,
   runPipeline,
+  getPipelineData,
   getWorkshopList,
   saveWorkshopApp,
   workshopPreview,
@@ -2939,6 +2986,18 @@ async function runPipe(row: any) {
     loadPipes();
   } catch (e: any) {
     ElMessage.error(e?.msg || "运行失败");
+  }
+}
+// P3-⑤ 查看管道落库数据
+const pipeData = ref<any>(null);
+const pipeDataVisible = ref(false);
+async function viewPipeData(row: any) {
+  try {
+    const r = await getPipelineData(row.id, 20);
+    pipeData.value = r.data?.data || {};
+    pipeDataVisible.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "获取数据失败");
   }
 }
 // ---- Workshop 对象应用 ----

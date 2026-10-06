@@ -21,7 +21,8 @@ from .schema import (
     QuerySettingUpsert,
     QueryTermUpsert,
 )
-from .service import AiQueryService
+from .service import AiQueryService, list_ds_schema
+from .service import sync_datasource_schema as _do_sync_schema
 
 AiQueryRouter = APIRouter(route_class=OperationLogRoute, prefix="/query", tags=["AI-智能问数"])
 
@@ -160,7 +161,7 @@ async def sync_datasource_schema(
     datasource_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.sync_datasource_schema(datasource_id), msg="同步完成")
+    return SuccessResponse(data=await _do_sync_schema(datasource_id), msg="同步完成")
 
 
 @AiQueryRouter.get("/datasources/{datasource_id}/schema", summary="数据源已同步表结构")
@@ -168,7 +169,7 @@ async def datasource_schema(
     datasource_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.list_ds_schema(datasource_id), msg="查询成功")
+    return SuccessResponse(data=await list_ds_schema(datasource_id), msg="查询成功")
 
 
 # ---- 数据资产目录 ----
@@ -353,13 +354,22 @@ async def pipeline_save(
     return SuccessResponse(data=r, msg="保存成功")
 
 
-@AiQueryRouter.post("/pipeline/run", summary="运行数据管道(同步映射到对象)")
+@AiQueryRouter.post("/pipeline/run", summary="运行数据管道(拉取外部数据落库到对象)")
 async def pipeline_run(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
     data: Annotated[dict, Body()],
 ) -> JSONResponse:
     r = await AiQueryService.run_pipeline(int(data.get("pipeline_id", 0)))
     return SuccessResponse(data=r, msg=r.get("msg", "已运行"))
+
+
+@AiQueryRouter.post("/pipeline/data", summary="查看管道落库数据")
+async def pipeline_data(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.pipeline_data(int(data.get("pipeline_id", 0)), int(data.get("limit") or 50))
+    return SuccessResponse(data=r, msg="查询成功")
 
 
 # ---- P3-② Workshop 对象工作台(无代码应用) ----

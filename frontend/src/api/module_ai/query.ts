@@ -259,6 +259,13 @@ export function savePipeline(data: any) {
 export function runPipeline(pipeline_id: number) {
   return request({ url: `${API_PATH}/pipeline/run`, method: "post", data: { pipeline_id } });
 }
+export function getPipelineData(pipeline_id: number, limit = 50) {
+  return request({
+    url: `${API_PATH}/pipeline/data`,
+    method: "post",
+    data: { pipeline_id, limit },
+  });
+}
 export function getWorkshopList() {
   return request({ url: `${API_PATH}/workshop/list`, method: "get" });
 }
