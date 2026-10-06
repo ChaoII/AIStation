@@ -94,6 +94,23 @@ async def changelog(auth: AuthDep, object_code: str = "", limit: int = 50) -> JS
     return SuccessResponse(data=await _svc.list_changelog(object_code or None, limit), msg="查询成功")
 
 
+@OntologyRouter.post("/version/publish", summary="发布本体对象定义版本(快照)")
+async def publish_version(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.publish_version(str(data.get("code", "")))
+    return SuccessResponse(data=r, msg=r.get("msg", "已发布"))
+
+
+@OntologyRouter.get("/version/list", summary="本体对象定义版本列表")
+async def version_list(auth: AuthDep, object_code: str = "") -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_versions(object_code or None), msg="查询成功")
+
+
+@OntologyRouter.post("/version/rollback", summary="本体对象定义回滚到版本")
+async def rollback_version(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.rollback_version(int(data.get("version_id", 0)))
+    return SuccessResponse(data=r, msg=r.get("msg", "已回滚"))
+
+
 @OntologyRouter.post("/materialize", summary="本体驱动表：对象+属性物化成真实表")
 async def materialize(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.materialize_object(str(data.get("code", "")))

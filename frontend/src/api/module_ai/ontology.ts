@@ -44,3 +44,12 @@ export function saveOntFunction(data: any) {
 export function getOntChangelog(object_code = "") {
   return request({ url: `${API_PATH}/changelog`, method: "get", params: { object_code } });
 }
+export function publishOntVersion(code: string) {
+  return request({ url: `${API_PATH}/version/publish`, method: "post", data: { code } });
+}
+export function getOntVersions(object_code = "") {
+  return request({ url: `${API_PATH}/version/list`, method: "get", params: { object_code } });
+}
+export function rollbackOntVersion(version_id: number) {
+  return request({ url: `${API_PATH}/version/rollback`, method: "post", data: { version_id } });
+}

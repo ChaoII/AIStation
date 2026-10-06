@@ -264,6 +264,46 @@
                 />
               </el-table>
             </el-tab-pane>
+
+            <el-tab-pane label="版本" name="version">
+              <div class="ont-bar">
+                <el-button type="primary" size="small" :icon="Plus" @click="publishVer(current)">
+                  发布版本
+                </el-button>
+                <el-tag size="small" type="info" effect="plain">共 {{ versions.length }}</el-tag>
+              </div>
+              <el-alert
+                type="info"
+                :closable="false"
+                style="margin-bottom: 8px"
+                title="将对象当前定义(对象/属性/Link/Action/函数)快照为版本，可随时回滚"
+              />
+              <el-table :data="versions" size="small" border>
+                <template #empty>
+                  <el-empty description="暂无版本，点击「发布版本」快照当前定义" :image-size="60" />
+                </template>
+                <el-table-column prop="version" label="版本" width="80" />
+                <el-table-column
+                  prop="object_code"
+                  label="对象"
+                  min-width="120"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="created_time"
+                  label="创建时间"
+                  min-width="170"
+                  show-overflow-tooltip
+                />
+                <el-table-column label="操作" width="100" align="center">
+                  <template #default="{ row }">
+                    <el-button link type="warning" size="small" @click="rollbackVer(row)">
+                      回滚
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
           </el-tabs>
           <div v-else class="ont-empty">
             <el-empty description="请先在左侧选择对象类型" :image-size="90">
@@ -462,6 +502,9 @@ import {
   getOntFunctions,
   saveOntFunction,
   getOntChangelog,
+  publishOntVersion,
+  getOntVersions,
+  rollbackOntVersion,
   removeOnt,
   materializeOntObject,
 } from "@/api/module_ai/ontology";
@@ -475,6 +518,7 @@ const links = ref<any[]>([]);
 const actions = ref<any[]>([]);
 const functions = ref<any[]>([]);
 const changelog = ref<any[]>([]);
+const versions = ref<any[]>([]);
 
 async function loadObjects() {
   const r = await getOntObjects();
@@ -494,6 +538,8 @@ async function selectObject(o: any) {
   functions.value = fr.data?.data || [];
   const cr = await getOntChangelog(o.code);
   changelog.value = cr.data?.data || [];
+  const vr = await getOntVersions(o.code);
+  versions.value = vr.data?.data || [];
 }
 
 // 对象
@@ -731,6 +777,24 @@ async function saveFunc() {
   } finally {
     savingObj.value = false;
   }
+}
+async function publishVer(o: any) {
+  const r = await publishOntVersion(o.code);
+  const d = r.data?.data || {};
+  ElMessage[d.ok ? "success" : "error"](d.ok ? `已发布版本 v${d.version}` : d.msg);
+  await selectObject(o);
+}
+function rollbackVer(row: any) {
+  ElMessageBox.confirm(`将本体的定义回滚到版本 v${row.version}？`, "确认", {
+    type: "warning",
+    confirmButtonText: "回滚",
+    cancelButtonText: "取消",
+  }).then(async () => {
+    const r = await rollbackOntVersion(row.id);
+    const d = r.data?.data || {};
+    ElMessage[d.ok ? "success" : "error"](d.msg || "已回滚");
+    await selectObject(current.value);
+  });
 }
 function removeFunc(f: any) {
   ElMessageBox.confirm(`删除函数「${f.name}」?`, "确认", {

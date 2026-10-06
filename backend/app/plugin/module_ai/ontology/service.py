@@ -210,6 +210,85 @@ async def delete_one(table: str, id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 本体对象定义版本：快照 + 列表 + 回滚（本体定义同资产一样可版本化）
+# ---------------------------------------------------------------------------
+async def publish_version(object_code: str) -> dict:
+    """把对象当前定义(对象/属性/Link/Action/函数)快照为一个新版本。"""
+    obj = await object_full(object_code)
+    if not obj.get("ok"):
+        return {"ok": False, "msg": "对象不存在"}
+    snapshot = {
+        "object": {k: obj[k] for k in ("code", "name", "icon", "key_prop", "name_prop", "description")},
+        "properties": obj["properties"], "links": obj["links"],
+        "actions": obj["actions"], "functions": await list_functions(object_code),
+    }
+    async with async_db_session() as db:
+        from sqlalchemy import text as _t
+        n = (await db.execute(_t(
+            "SELECT coalesce(max(version),0) FROM ai_ont_version WHERE object_code=:c AND is_deleted=false"),
+            {"c": object_code})).scalar() or 0
+        n += 1
+    import json as _json
+    r = await _exec_write("INSERT INTO ai_ont_version(object_code,version,snapshot) VALUES (:c,:v,:s) RETURNING id",
+                          {"c": object_code, "v": n, "s": _json.dumps(snapshot, ensure_ascii=False)})
+    return {"ok": True, "id": r.scalar(), "version": n}
+
+
+async def list_versions(object_code: str | None = None) -> list[dict]:
+    if object_code:
+        r = await _exec("SELECT id,object_code,version,created_time FROM ai_ont_version "
+                        "WHERE object_code=:c AND is_deleted=false ORDER BY version DESC", {"c": object_code})
+    else:
+        r = await _exec("SELECT id,object_code,version,created_time FROM ai_ont_version "
+                        "WHERE is_deleted=false ORDER BY id DESC")
+    rows = r.fetchall()
+    return [{"id": x[0], "object_code": x[1], "version": x[2], "created_time": str(x[3]) if x[3] else ""} for x in rows]
+
+
+async def rollback_version(version_id: int) -> dict:
+    """把本体定义回滚到指定版本快照。"""
+    import json as _json
+    rv = (await _exec("SELECT object_code,snapshot FROM ai_ont_version WHERE id=:id AND is_deleted=false",
+                      {"id": version_id})).fetchone()
+    if not rv:
+        return {"ok": False, "msg": "版本不存在"}
+    code, snap_raw = rv[0], rv[1]
+    snap = snap_raw if isinstance(snap_raw, dict) else _json.loads(snap_raw)
+    ob = snap.get("object") or {}
+    # 恢复对象主字段
+    await _exec_write("UPDATE ai_ont_object SET name=:n, icon=:i, key_prop=:k, name_prop=:np, description=:d "
+                      "WHERE code=:c", {"n": ob.get("name", code), "i": ob.get("icon", "el-icon-Box"),
+                                        "k": ob.get("key_prop", "id"), "np": ob.get("name_prop", "name"),
+                                        "d": ob.get("description", ""), "c": code})
+    # 清空并重建 属性/Link/Action/函数
+    await _exec_write("UPDATE ai_ont_property SET is_deleted=true WHERE object_code=:c", {"c": code})
+    await _exec_write("UPDATE ai_ont_link SET is_deleted=true WHERE source_object=:c OR target_object=:c", {"c": code})
+    await _exec_write("UPDATE ai_ont_action SET is_deleted=true WHERE object_code=:c", {"c": code})
+    await _exec_write("UPDATE ai_ont_function SET is_deleted=true WHERE object_code=:c", {"c": code})
+    for p in snap.get("properties", []):
+        await upsert_property({"object_code": code, "name": p.get("name"), "code": p.get("code"),
+                               "prop_type": p.get("prop_type", "string"), "required": p.get("required"),
+                               "unique_col": p.get("unique_col"), "sensitive": p.get("sensitive"),
+                               "source_col": p.get("source_col", ""), "options": p.get("options", []),
+                               "roles": p.get("roles", []), "description": p.get("description", "")})
+    for lk in snap.get("links", []):
+        await upsert_link({"source_object": lk.get("source_object"), "target_object": lk.get("target_object"),
+                           "name": lk.get("name"), "card": lk.get("card", "many_to_one"),
+                           "source_field": lk.get("source_field", ""), "target_field": lk.get("target_field", ""),
+                           "description": lk.get("description", "")})
+    for a in snap.get("actions", []):
+        await upsert_action({"object_code": code, "name": a.get("name"), "code": a.get("code"),
+                             "input_schema": a.get("input_schema", []), "white_fields": a.get("white_fields", []),
+                             "approval": a.get("approval"), "target_table": a.get("target_table", ""),
+                             "method": a.get("method", "update"), "description": a.get("description", "")})
+    for f in snap.get("functions", []):
+        await upsert_function({"object_code": code, "name": f.get("name"), "code": f.get("code"),
+                               "expr": f.get("expr", ""), "description": f.get("description", "")})
+    await _log_change(code, "version", "rollback", f"回滚到版本 {rv[2] if len(rv) > 2 else ''}")
+    return {"ok": True, "msg": f"已回滚到版本快照 {snap.get('object', {}).get('name', code)}"}
+
+
+# ---------------------------------------------------------------------------
 # 本体计算函数（Palantir Functions）：对象上的可复用计算，被问数/AIP 复用
 # ---------------------------------------------------------------------------
 async def list_functions(object_code: str | None = None) -> list[dict]:
@@ -279,6 +358,6 @@ async def object_full(code: str) -> dict:
                        "WHERE code=:c AND is_deleted=false", {"c": code})).fetchone()
     if not obj:
         return {"ok": False, "msg": "对象不存在"}
-    return {"code": obj[0], "name": obj[1], "icon": obj[2], "key_prop": obj[3], "name_prop": obj[4],
+    return {"ok": True, "code": obj[0], "name": obj[1], "icon": obj[2], "key_prop": obj[3], "name_prop": obj[4],
             "description": obj[5], "properties": await list_properties(code),
             "links": await list_links(code), "actions": await list_actions(code)}
