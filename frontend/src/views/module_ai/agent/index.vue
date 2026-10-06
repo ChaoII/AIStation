@@ -247,7 +247,7 @@
                 🔧 {{ t }}
               </el-tag>
             </div>
-            <div v-if="m.content" class="agent-chat-text">{{ m.content }}</div>
+            <div v-if="m.content" class="agent-chat-text" v-html="renderMd(m.content)"></div>
             <span v-if="m.loading" class="agent-chat-loading">
               <el-icon class="is-loading"><Loading /></el-icon>
               思考中…
@@ -285,7 +285,7 @@
               <div v-if="chatModelOpen" class="cia-dropdown" @click.stop>
                 <div class="cia-dropdown-title">模型</div>
                 <div
-                  v-for="m in modelOptions"
+                  v-for="m in chatModels"
                   :key="m.id"
                   class="cia-model-opt"
                   :class="{ 'cia-model-opt--active': m.id === chatModelId }"
@@ -593,6 +593,11 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import MarkdownIt from "markdown-it";
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+function renderMd(t: string) {
+  return md.render(t || "");
+}
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Plus,
@@ -633,6 +638,8 @@ const keyword = ref("");
 const currentCategory = ref<number | null>(null);
 
 const modelOptions = ref<{ id: number; name: string }[]>([]);
+// 对话模型选择：仅展示 chat 用途的模型
+const chatModels = ref<{ id: number; name: string }[]>([]);
 const promptOptions = ref<{ id: number; name: string }[]>([]);
 const toolOptions = ref<{ id: number; name: string }[]>([]);
 const queryDatasources = ref<any[]>([]);
@@ -731,6 +738,9 @@ const loadData = async () => {
       disabled: agents.value.filter((x: any) => !x.enabled).length,
     };
     modelOptions.value = (mr.data?.data || []).map((m: any) => ({ id: m.id, name: m.name }));
+    chatModels.value = (mr.data?.data || [])
+      .filter((m: any) => (m.usage || m.type) === "chat")
+      .map((m: any) => ({ id: m.id, name: m.name }));
     promptOptions.value = (pr.data?.data || []).map((p: any) => ({ id: p.id, name: p.name }));
     toolOptions.value = (tr.data?.data || []).map((t: any) => ({ id: t.id, name: t.name }));
     workflowOptions.value = (wr.data?.data || []).map((w: any) => ({ id: w.id, name: w.name }));
@@ -859,7 +869,7 @@ const chatFiles = ref<File[]>([]);
 const chatModelRoot = ref<HTMLDivElement>();
 
 const chatModelLabel = computed(() => {
-  const m = modelOptions.value.find((x: any) => x.id === chatModelId.value);
+  const m = chatModels.value.find((x: any) => x.id === chatModelId.value);
   return m ? m.name : "选择模型";
 });
 function openAgentChat(a: any) {
