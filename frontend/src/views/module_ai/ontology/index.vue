@@ -11,7 +11,7 @@
         <el-card shadow="never" class="ont-left">
           <template #header>
             <div class="ont-head">
-              <span>对象类型（{{ objects.length }}）</span>
+              <span class="ont-head__title">对象类型（{{ objects.length }}）</span>
               <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
                 新建对象
               </el-button>
@@ -217,7 +217,7 @@
       </el-form>
       <template #footer>
         <el-button @click="objDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveObj">保存</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveObj">保存</el-button>
       </template>
     </el-dialog>
 
@@ -248,7 +248,7 @@
       </el-form>
       <template #footer>
         <el-button @click="propDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveProp">保存</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveProp">保存</el-button>
       </template>
     </el-dialog>
 
@@ -278,7 +278,7 @@
       </el-form>
       <template #footer>
         <el-button @click="linkDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveLink">保存</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveLink">保存</el-button>
       </template>
     </el-dialog>
 
@@ -313,7 +313,7 @@
       </el-form>
       <template #footer>
         <el-button @click="actionDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveAction">保存</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveAction">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -384,12 +384,20 @@ function openObjectEdit(o?: any) {
   );
   objDialog.value = true;
 }
+const savingObj = ref(false);
 async function saveObj() {
   if (!objForm.code?.trim() || !objForm.name?.trim()) return ElMessage.warning("请填名称/编码");
-  await saveOntObject({ ...objForm });
-  ElMessage.success("已保存");
-  objDialog.value = false;
-  await loadObjects();
+  savingObj.value = true;
+  try {
+    await saveOntObject({ ...objForm });
+    ElMessage.success("已保存");
+    objDialog.value = false;
+    await loadObjects();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingObj.value = false;
+  }
 }
 async function removeObj(o: any) {
   await ElMessageBox.confirm(
@@ -573,6 +581,16 @@ onMounted(loadObjects);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.ont-head__title {
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.ont-head .el-button {
+  flex-shrink: 0;
 }
 .ont-obj {
   display: flex;
