@@ -1,6 +1,6 @@
 <!-- 本体 Ontology：对象类型 / 属性 / Link / Action 强类型元模型（Palantir Ontology） -->
 <template>
-  <div class="app-container ai-ontology-page">
+  <div class="app-container ai-mod ai-ontology-page">
     <PageHeader
       title="本体"
       subtitle="强类型本体元模型：对象 / 属性 / Link / Action，创建对象不必先有数据库表（本体驱动数据）"

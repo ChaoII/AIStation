@@ -1,6 +1,6 @@
 <!-- 无代码应用 Workshop（Palantir Foundry 支柱） -->
 <template>
-  <div class="app-container ai-workshop-page">
+  <div class="app-container ai-mod ai-workshop-page">
     <PageHeader
       title="无代码应用"
       subtitle="Workshop：在业务对象上无代码构建看板 / 表单应用（Palantir Workshop）"

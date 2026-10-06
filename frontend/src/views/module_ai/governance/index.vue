@@ -1,6 +1,6 @@
 <!-- 治理 Governance / Oversight（Palantir Foundry 支柱）：驾驶舱 + ABAC + DQ + 数据域 + 血缘 -->
 <template>
-  <div class="app-container ai-governance-page">
+  <div class="app-container ai-mod ai-governance-page">
     <PageHeader
       title="治理"
       subtitle="Oversight & Governance：治理驾驶舱 / ABAC 权限 / 数据质量 / 数据域隔离"

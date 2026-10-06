@@ -44,6 +44,13 @@
   flex: 0 0 auto;
 }
 
+/* 自定义模块页面：白色主面板承载内容，卡片用边框/阴影区分，灰色只作间隔（对齐框架原生风格） */
+.app-container.ai-mod {
+  background: var(--el-bg-color);
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
 // ==================== 搜索区域样式 ====================
 .search-container {
   border: 1px solid var(--el-border-color-light);

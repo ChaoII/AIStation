@@ -1,6 +1,6 @@
 <!-- 数据与集成 Data Connection & Integration（Palantir Foundry 支柱） -->
 <template>
-  <div class="app-container ai-integration-page">
+  <div class="app-container ai-mod ai-integration-page">
     <PageHeader
       title="数据与集成"
       subtitle="数据连接（Connection）与数据管道（Pipeline）：从外部系统抽取、加工并接入本体"
