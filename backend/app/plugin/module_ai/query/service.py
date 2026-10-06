@@ -1367,6 +1367,88 @@ class AiQueryService:
             await db.execute(_t("UPDATE ai_fde_proposition SET is_deleted=true WHERE id=:pid"), {"pid": pid})
 
     @classmethod
+    async def list_actions(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            res = await db.execute(_t(
+                "SELECT id,name,object_table,writable_cols,validation,approve,enabled "
+                "FROM ai_action WHERE is_deleted=false ORDER BY id DESC"))
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "name": r[1], "object_table": r[2],
+            "writable_cols": r[3] if isinstance(r[3], list) else (_json.loads(r[3]) if r[3] else []),
+            "validation": r[4] or "", "approve": bool(r[5]), "enabled": bool(r[6]),
+        } for r in rows]
+
+    @classmethod
+    async def upsert_action(cls, data: dict) -> dict:
+        import json as _json
+        cols = _json.dumps(data.get("writable_cols") or [], ensure_ascii=False)
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_action SET name=:n, object_table=:o, writable_cols=:w, validation=:v, "
+                    "approve=:a, enabled=:e, updated_time=now() WHERE id=:i"), {
+                    "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols,
+                    "v": data.get("validation", ""), "a": bool(data.get("approve", True)),
+                    "e": bool(data.get("enabled", True)), "i": data["id"]})
+                return {"id": data["id"]}
+            res = await db.execute(_t(
+                "INSERT INTO ai_action(name,object_table,writable_cols,validation,approve,enabled) "
+                "VALUES (:n,:o,:w,:v,:a,:e) ON CONFLICT (name) DO UPDATE SET object_table=:o, "
+                "writable_cols=:w, validation=:v, approve=:a, enabled=:e RETURNING id"), {
+                "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols,
+                "v": data.get("validation", ""), "a": bool(data.get("approve", True)),
+                "e": bool(data.get("enabled", True))})
+            return {"id": res.scalar()}
+
+    @classmethod
+    async def execute_action(cls, name: str, object_key: str, params: dict, operator: str, approve: bool = False) -> dict:
+        """P1·Action 写回：校验动作+可写字段，更新对象行，写审计日志。approve 未通过则只返回待审批。"""
+        from sqlalchemy import text as _t
+        actions = await cls.list_actions()
+        act = next((a for a in actions if a["name"] == name), None)
+        if not act or not act.get("enabled"):
+            return {"ok": False, "msg": "动作不存在或未启用"}
+        table = act["object_table"]
+        writable = set(act.get("writable_cols") or [])
+        if not writable:
+            return {"ok": False, "msg": "该动作未配置可写字段"}
+        # 审批门禁
+        if act.get("approve") and not approve:
+            return {"ok": False, "msg": "该操作需人工审批后执行", "needs_approval": True, "pending": {
+                "params": params, "key": object_key}}
+        # 校验 params 列均在可写集合
+        cols = list(params.keys())
+        bad = [c for c in cols if c not in writable]
+        if bad:
+            return {"ok": False, "msg": f"以下字段不可写：{','.join(bad)}"}
+        if not object_key:
+            return {"ok": False, "msg": "缺少对象关键值"}
+        sets = ", ".join(f'"{c}" = :{c}' for c in cols)
+        try:
+            async with async_db_session.begin() as db:
+                res = await db.execute(_t(
+                    f'UPDATE "{table}" SET {sets} WHERE "id"::text = :__k'), {**params, "__k": str(object_key)})
+                detail = f"action={name} {table}#{object_key} cols={cols}"
+            # 审计
+            import json as _json
+            async with async_db_session.begin() as db2:
+                await db2.execute(_t(
+                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail) "
+                    "VALUES (:n,:t,:k,:p,:o,:r,:d)"), {
+                    "n": name, "t": table, "k": object_key,
+                    "p": _json.dumps(params, ensure_ascii=False), "o": operator or "",
+                    "r": "success" if res.rowcount else "noop", "d": detail})
+            return {"ok": True, "rows": int(res.rowcount or 0), "msg": "已执行并留痕"}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"执行失败：{str(e)[:120]}"}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t

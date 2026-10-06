@@ -241,6 +241,35 @@ async def fde_delete(
     return SuccessResponse(data=None, msg="已删除")
 
 
+# ---- P1·Action(写回+审计) ----
+@AiQueryRouter.get("/action/list", summary="动作列表")
+async def action_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_actions(), msg="查询成功")
+
+
+@AiQueryRouter.post("/action/save", summary="动作定义保存")
+async def action_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.upsert_action(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@AiQueryRouter.post("/action/execute", summary="执行动作(写回+审计)")
+async def action_execute(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    r = await AiQueryService.execute_action(
+        str(data.get("name", "")), str(data.get("object_key", "")),
+        data.get("params") or {}, operator=str(uid or ""), approve=bool(data.get("approve", False)))
+    return SuccessResponse(data=r, msg="执行完成")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
