@@ -829,8 +829,11 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" align="center">
+            <el-table-column label="操作" width="210" align="center">
               <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="runFdeShadow(row)">
+                  影子运行
+                </el-button>
                 <el-button link type="primary" size="small" @click="openFdeEdit(row)">
                   编辑
                 </el-button>
@@ -1399,6 +1402,40 @@
         <el-form-item label="责任人">
           <el-input v-model="fdForm.owner" placeholder="FDE/业务负责人" />
         </el-form-item>
+        <el-form-item label="FDE 角色">
+          <div class="fde-roles">
+            <el-input v-model="fdForm.fde_translator" placeholder="业务翻译官" />
+            <el-input v-model="fdForm.fde_data" placeholder="数据/本体工程师" />
+            <el-input v-model="fdForm.fde_app" placeholder="应用交付工程师" />
+          </div>
+        </el-form-item>
+        <el-form-item label="影子运行">
+          <div class="shadow-fields">
+            <el-select
+              v-model="fdForm.shadow_metric"
+              filterable
+              allow-create
+              placeholder="校验指标"
+              style="width: 210px"
+            >
+              <el-option v-for="mt in metrics" :key="mt.key" :label="mt.name" :value="mt.key" />
+            </el-select>
+            <el-input v-model="fdForm.shadow_golden" placeholder="黄金值" style="width: 110px" />
+            <el-input
+              v-model="fdForm.shadow_tolerance"
+              placeholder="容差(如2%或5)"
+              style="width: 100px"
+            />
+            <el-tag
+              v-if="fdForm.shadow_result"
+              size="small"
+              :type="fdForm.shadow_result === 'pass' ? 'success' : 'danger'"
+            >
+              {{ fdForm.shadow_result === "pass" ? "PASS" : "FAIL" }}（实测
+              {{ fdForm.shadow_actual }}）
+            </el-tag>
+          </div>
+        </el-form-item>
         <el-form-item label="五步">
           <div class="fde-steps">
             <div v-for="(v, k) in fdForm.steps" :key="k" class="fde-step">
@@ -1547,6 +1584,7 @@ import {
   getFdeList,
   saveFdeProposition,
   deleteFdePropositions,
+  fdeShadowCheck,
   getQueryObjects,
   getActionList,
   saveAction,
@@ -2212,9 +2250,30 @@ function openFdeEdit(row?: any) {
           },
           gap: [],
           delivery_assets: [],
+          fde_translator: "",
+          fde_data: "",
+          fde_app: "",
+          shadow_metric: "",
+          shadow_golden: "",
+          shadow_tolerance: "",
+          shadow_result: "",
+          shadow_actual: "",
         }
   );
   fdDialog.value = true;
+}
+async function runFdeShadow(row: any) {
+  try {
+    const r = await fdeShadowCheck(row.id);
+    const d = r.data?.data || {};
+    if (!d.ok) return ElMessage.error(d.msg || "校验失败");
+    ElMessage[d.result === "pass" ? "success" : "error"](
+      "影子运行 " + d.result.toUpperCase() + "，实测 " + d.actual + " vs 黄金 " + d.golden
+    );
+    loadFde();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "校验失败");
+  }
 }
 async function saveFde() {
   if (!fdForm.title?.trim()) return ElMessage.warning("请输入命题标题");
@@ -3058,6 +3117,17 @@ onMounted(() => {
   font-size: 12px;
   color: var(--el-text-color-regular);
   margin-bottom: 3px;
+}
+.fde-roles {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.shadow-fields {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .query-layout {
   display: flex;

@@ -241,6 +241,15 @@ async def fde_delete(
     return SuccessResponse(data=None, msg="已删除")
 
 
+@AiQueryRouter.post("/fde/shadow", summary="影子运行/黄金标准校验")
+async def fde_shadow(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.shadow_check(int(data.get("proposition_id", 0)))
+    return SuccessResponse(data=r, msg="校验完成")
+
+
 # ---- P1·Action(写回+审计) ----
 @AiQueryRouter.get("/action/list", summary="动作列表")
 async def action_list(

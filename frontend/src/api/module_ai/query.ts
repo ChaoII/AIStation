@@ -213,6 +213,9 @@ export function saveFdeProposition(data: any) {
 export function deleteFdePropositions(ids: number[]) {
   return request({ url: `${API_PATH}/fde/delete`, method: "delete", data: ids });
 }
+export function fdeShadowCheck(proposition_id: number) {
+  return request({ url: `${API_PATH}/fde/shadow`, method: "post", data: { proposition_id } });
+}
 export function getActionList() {
   return request({ url: `${API_PATH}/action/list`, method: "get" });
 }
