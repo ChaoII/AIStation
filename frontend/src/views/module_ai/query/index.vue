@@ -988,6 +988,80 @@
               </el-card>
             </el-col>
           </el-row>
+          <el-card v-if="govTable" shadow="never" style="margin-top: 12px">
+            <template #header>完整血缘（{{ govTable }}）</template>
+            <div class="gov-section">字段（{{ govLineage?.fields?.length || 0 }}）</div>
+            <el-tag
+              v-for="f in (govLineage?.fields || []).slice(0, 12)"
+              :key="f"
+              size="small"
+              effect="plain"
+              style="margin: 0 3px 4px 0"
+            >
+              {{ f }}
+            </el-tag>
+            <el-tag
+              v-if="(govLineage?.fields?.length || 0) > 12"
+              size="small"
+              type="info"
+              effect="plain"
+            >
+              +{{ govLineage.fields.length - 12 }}
+            </el-tag>
+            <div class="gov-section">用到本表的指标 / 关联概念</div>
+            <el-tag
+              v-for="m in govLineage?.metrics || []"
+              :key="m.key"
+              size="small"
+              type="primary"
+              effect="plain"
+              style="margin: 0 3px 4px 0"
+            >
+              {{ m.name }}
+            </el-tag>
+            <el-tag
+              v-for="c in govLineage?.concepts || []"
+              :key="c.name"
+              size="small"
+              type="success"
+              effect="plain"
+              style="margin: 0 3px 4px 0"
+            >
+              {{ c.name }}
+            </el-tag>
+            <div
+              v-if="!(govLineage?.metrics?.length || govLineage?.concepts?.length)"
+              class="gov-empty"
+            >
+              无
+            </div>
+            <div class="gov-section">依赖对象 / 入向管道</div>
+            <el-tag
+              v-for="o in govLineage?.dependent_objects || []"
+              :key="o.object"
+              size="small"
+              type="warning"
+              effect="plain"
+              style="margin: 0 3px 4px 0"
+            >
+              {{ o.alias }}
+            </el-tag>
+            <el-tag
+              v-for="p in govLineage?.pipelines || []"
+              :key="p.name"
+              size="small"
+              effect="plain"
+              style="margin: 0 3px 4px 0"
+            >
+              管道 {{ p.name }} ← {{ p.source }}
+            </el-tag>
+            <div
+              v-if="!(govLineage?.dependent_objects?.length || govLineage?.pipelines?.length)"
+              class="gov-empty"
+            >
+              无
+            </div>
+          </el-card>
           <el-empty v-else description="请选择业务对象查看治理信息" :image-size="40" />
         </el-tab-pane>
         <el-tab-pane label="数据管道" name="pipeline">
@@ -1082,6 +1156,62 @@
                   预览
                 </el-button>
                 <el-button link size="small" @click="openWorkshopEdit(row)">编辑</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="权限" name="access">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openAccessEdit()">
+              新建策略
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              共 {{ accessRules.length }} 条 ABAC 策略
+            </el-tag>
+          </div>
+          <el-alert
+            type="info"
+            :closable="false"
+            style="margin-bottom: 10px"
+            title="ABAC 属性访问控制：超管默认可见全部；命中「敏感放行」策略可查看标记为敏感的对象字段，否则 resolve/问数将自动剔除敏感字段。"
+          />
+          <el-table :data="accessRules" size="small" border max-height="300">
+            <el-table-column prop="name" label="策略" min-width="130" show-overflow-tooltip />
+            <el-table-column prop="attribute" label="属性" width="80" />
+            <el-table-column prop="value" label="属性值" width="120" show-overflow-tooltip />
+            <el-table-column label="允许对象" min-width="160">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="t in row.allowed_tables"
+                  :key="t"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ t }}
+                </el-tag>
+                <el-tag v-if="!row.allowed_tables?.length" size="small" type="info" effect="plain">
+                  全部
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="敏感放行" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.sensitive_ok ? 'success' : 'info'" effect="plain">
+                  {{ row.sensitive_ok ? "是" : "否" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="70" align="center">
+              <template #default="{ row }">
+                <el-switch v-model="row.enabled" size="small" @change="saveAccess(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openAccessEdit(row)">
+                  编辑
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1753,6 +1883,49 @@
       />
       <el-empty v-else description="暂无数据" :image-size="40" />
     </el-dialog>
+
+    <!-- ABAC 权限策略编辑 -->
+    <el-dialog v-model="accessDialog" title="ABAC 权限策略" width="520px" append-to-body>
+      <el-form :model="accessForm" label-width="100px">
+        <el-form-item label="策略名称" required>
+          <el-input v-model="accessForm.name" placeholder="如 生产部可看敏感" />
+        </el-form-item>
+        <el-form-item label="属性">
+          <el-select v-model="accessForm.attribute" style="width: 100%">
+            <el-option label="角色 role" value="role" />
+            <el-option label="部门 dept" value="dept" />
+            <el-option label="数据域 domain" value="domain" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="属性值" required>
+          <el-input v-model="accessForm.value" placeholder="如 production / 生产部" />
+        </el-form-item>
+        <el-form-item label="允许对象">
+          <el-select
+            v-model="accessForm.allowed_tables"
+            multiple
+            clearable
+            filterable
+            placeholder="空 = 全部对象"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in govObjects"
+              :key="o.table"
+              :label="(o.alias || o.table) + ' (' + o.table + ')'"
+              :value="o.table"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="敏感放行">
+          <el-switch v-model="accessForm.sensitive_ok" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="accessDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveAccess(accessForm)">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1816,6 +1989,9 @@ import {
   getWorkshopList,
   saveWorkshopApp,
   workshopPreview,
+  getAssetLineage,
+  getAccessRules,
+  saveAccessRule,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2645,6 +2821,7 @@ const govTable = ref("");
 const govObjects = ref<any[]>([]);
 const govImpact = ref<any>({ metrics: [], incoming_relations: [], object_links: [] });
 const govVersions = ref<any[]>([]);
+const govLineage = ref<any>(null);
 async function loadGovObjects() {
   try {
     const r = await getQueryObjects();
@@ -2656,12 +2833,14 @@ async function loadGovObjects() {
 async function loadGov() {
   if (!govTable.value) return;
   try {
-    const [imp, ver] = await Promise.all([
+    const [imp, ver, lin] = await Promise.all([
       getAssetImpact(govTable.value),
       getAssetVersions(govTable.value),
+      getAssetLineage(govTable.value),
     ]);
     govImpact.value = imp.data?.data || { metrics: [], incoming_relations: [], object_links: [] };
     govVersions.value = ver.data?.data || [];
+    govLineage.value = lin.data?.data || null;
   } catch {
     govImpact.value = { metrics: [], incoming_relations: [], object_links: [] };
     govVersions.value = [];
@@ -2809,6 +2988,53 @@ async function previewWorkshop(row: any) {
     wsPreviewVisible.value = true;
   } catch (e: any) {
     ElMessage.error(e?.msg || "预览失败");
+  }
+}
+// ---- ABAC 权限策略 ----
+const accessRules = ref<any[]>([]);
+const accessDialog = ref(false);
+const accessForm = reactive<any>({
+  id: null,
+  name: "",
+  attribute: "role",
+  value: "",
+  allowed_tables: [],
+  sensitive_ok: false,
+  enabled: true,
+});
+async function loadAccessRules() {
+  try {
+    const r = await getAccessRules();
+    accessRules.value = r.data?.data || [];
+  } catch {
+    accessRules.value = [];
+  }
+}
+function openAccessEdit(row?: any) {
+  Object.assign(
+    accessForm,
+    row || {
+      id: null,
+      name: "",
+      attribute: "role",
+      value: "",
+      allowed_tables: [],
+      sensitive_ok: false,
+      enabled: true,
+    }
+  );
+  accessDialog.value = true;
+}
+async function saveAccess(row: any) {
+  if (!(row?.name || "").trim() || !(row?.value || "").trim())
+    return ElMessage.warning("请填写策略名/属性值");
+  try {
+    await saveAccessRule({ ...row });
+    ElMessage.success("已保存");
+    accessDialog.value = false;
+    loadAccessRules();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
   }
 }
 async function inferRel() {
@@ -3443,6 +3669,7 @@ onMounted(() => {
   loadIndustryTemplates();
   loadPipes();
   loadWorkshop();
+  loadAccessRules();
 });
 </script>
 

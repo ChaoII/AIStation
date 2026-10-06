@@ -388,6 +388,31 @@ async def workshop_preview(
     return SuccessResponse(data=r, msg="预览完成")
 
 
+@AiQueryRouter.get("/assets/{table_name}/lineage", summary="完整血缘图(表→字段/指标/对象/管道/概念)")
+async def asset_lineage(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.lineage(table_name), msg="查询成功")
+
+
+# ---- P3-④ ABAC 权限 ----
+@AiQueryRouter.get("/access/list", summary="ABAC权限策略列表")
+async def access_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_access_rules(), msg="查询成功")
+
+
+@AiQueryRouter.post("/access/save", summary="ABAC权限策略保存")
+async def access_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.upsert_access_rule(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

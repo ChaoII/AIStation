@@ -268,6 +268,15 @@ export function saveWorkshopApp(data: any) {
 export function workshopPreview(app_id: number, limit = 50) {
   return request({ url: `${API_PATH}/workshop/preview`, method: "post", data: { app_id, limit } });
 }
+export function getAssetLineage(table: string) {
+  return request({ url: `${API_PATH}/assets/${table}/lineage`, method: "get" });
+}
+export function getAccessRules() {
+  return request({ url: `${API_PATH}/access/list`, method: "get" });
+}
+export function saveAccessRule(data: any) {
+  return request({ url: `${API_PATH}/access/save`, method: "post", data });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

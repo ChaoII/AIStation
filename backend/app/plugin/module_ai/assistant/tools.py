@@ -281,11 +281,11 @@ async def ai_query(question: str, user_id: int | None = None) -> dict:
          ["entity", "key"]),
     kind="read",
 )
-async def resolve_object(entity: str, key: str) -> dict:
+async def resolve_object(entity: str, key: str, user_id: int | None = None) -> dict:
     from app.plugin.module_ai.query.service import AiQueryService
 
     try:
-        res = await AiQueryService.resolve_entity_object(entity, key)
+        res = await AiQueryService.resolve_entity_object(entity, key, user_id=user_id)
     except Exception as e:  # noqa: BLE001
         return {"entity": entity, "error": str(getattr(e, "msg", e))}
     if not res:

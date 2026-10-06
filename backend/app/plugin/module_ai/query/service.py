@@ -1182,11 +1182,14 @@ class AiQueryService:
         return "\n".join(lines)
 
     @classmethod
-    async def resolve_entity_object(cls, entity: str, key: str, datasource: str = SYSTEM_DS) -> dict | None:
+    async def resolve_entity_object(cls, entity: str, key: str, datasource: str = SYSTEM_DS,
+                                    user_id: int | None = None) -> dict | None:
         """P0·对象 grounding：把业务实体名(如「摄像头/订单」)+ 关键值解析为真实对象及关联邻居。
 
         返回 ``{entity, table, object:{列:值}, related:[{relation, entity, ...}]}``，供
         Agent/问数作为 grounded context 注入模型（对标 Palantir AIP grounding）。
+
+        ABAC：非超管按敏感字段策略过滤敏感列（object 中剔除标记为 sensitive 的字段）。
         """
         from sqlalchemy import text as _t
 
@@ -1247,6 +1250,18 @@ class AiQueryService:
         if row is None:
             return {"entity": entity, "table": table, "object": None, "related": []}
         obj = {k: (str(v) if not isinstance(v, (int, float, bool)) else v) for k, v in row.items()}
+        # ABAC：非超管过滤敏感字段
+        try:
+            if not await cls._can_see_sensitive(user_id):
+                async with async_db_session() as db:
+                    sens = (await db.execute(_t(
+                        "SELECT column_name FROM ai_query_asset_columns WHERE table_name=:t AND sensitive=true AND is_deleted=false"),
+                        {"t": table})).fetchall()
+                sens_set = {s[0] for s in sens}
+                if sens_set:
+                    obj = {k: v for k, v in obj.items() if k not in sens_set}
+        except Exception:  # noqa: BLE001
+            pass
         # 5) 关联邻居：对每条关联字段取值，取关联表 name 列
         related: list[dict] = []
         try:
@@ -1837,7 +1852,6 @@ class AiQueryService:
 
     @classmethod
     async def workshop_preview(cls, app_id: int, limit: int = 50) -> dict:
-        """P3-② 对象工作台预览：按对象表+选列读取真实数据。"""
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             row = (await db.execute(_t(
@@ -1860,6 +1874,95 @@ class AiQueryService:
             return {"ok": True, "view_type": row[2], "columns": cols, "rows": rows}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "msg": f"预览失败：{str(e)[:120]}"}
+
+    @classmethod
+    async def lineage(cls, table_name: str) -> dict:
+        """P3-④ 完整血缘：表 → 字段/指标/对象关联/概念/管道/术语，串成血缘图。"""
+        schema = await cls._system_schema()
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        terms = await cls.list_terms(SYSTEM_DS)
+        concepts = await cls.concepts_mapping()
+        pipelines = await cls.list_pipelines()
+        # 字段
+        fields = [lab.split("(")[0] for lab in schema.get(table_name, [])]
+        # 用到此表的指标
+        mets = [{"key": m["key"], "name": m["name"]} for m in metrics if table_name in (m.get("sql_template") or "")]
+        # 术语/概念映射到表
+        rel_terms = [{"term": t["term"], "metric": t.get("metric_key") or t.get("field_path")} for t in terms if table_name in (t.get("field_path") or "")]
+        rel_concepts = [{"name": c["name"]} for c in concepts if table_name in (c.get("tables") or [])]
+        # 对象关联(入向+出向)
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT column_name, related_table, related_field FROM ai_query_asset_columns "
+                "WHERE (table_name=:t OR related_table=:t) AND is_deleted=false"), {"t": table_name})).fetchall()
+        rels = [{"via": r[0], "from": r[0] if r[1] == table_name else r[1], "to": r[1] if r[1] == table_name else r[0]} for r in rows]
+        # 管道目标
+        pips = [{"name": p["name"], "source": p["source_table"]} for p in pipelines if p["target_object"] == table_name]
+        # 依赖此表的对象(出向是其它对象, 入向是引用它)
+        objs = await cls.list_objects()
+        out_links = [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in objs if any(l["target"] == table_name for l in o.get("links", []))]
+        return {
+            "table": table_name, "fields": fields, "metrics": mets,
+            "terms": rel_terms, "concepts": rel_concepts, "relations": rels,
+            "pipelines": pips, "dependent_objects": out_links,
+        }
+
+    @classmethod
+    async def concepts_mapping(cls) -> list[dict]:
+        return await cls.list_concepts()
+
+    @classmethod
+    async def list_access_rules(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            res = await db.execute(_t(
+                "SELECT id,name,attribute,value,allowed_tables,sensitive_ok,enabled "
+                "FROM ai_access_rule WHERE is_deleted=false ORDER BY id DESC"))
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "name": r[1] or "", "attribute": r[2] or "role", "value": r[3] or "",
+            "allowed_tables": r[4] if isinstance(r[4], list) else (_json.loads(r[4]) if r[4] else []),
+            "sensitive_ok": bool(r[5]), "enabled": bool(r[6]),
+        } for r in rows]
+
+    @classmethod
+    async def upsert_access_rule(cls, data: dict) -> dict:
+        import json as _json
+        tables = _json.dumps(data.get("allowed_tables") or [], ensure_ascii=False)
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_access_rule SET name=:n, attribute=:a, value=:v, allowed_tables=:t, "
+                    "sensitive_ok=:s, enabled=:e WHERE id=:i"), {
+                    "n": data.get("name", ""), "a": data.get("attribute", "role"), "v": data.get("value", ""),
+                    "t": tables, "s": bool(data.get("sensitive_ok", False)),
+                    "e": bool(data.get("enabled", True)), "i": data["id"]})
+                return {"id": data["id"]}
+            res = await db.execute(_t(
+                "INSERT INTO ai_access_rule(name,attribute,value,allowed_tables,sensitive_ok,enabled) "
+                "VALUES (:n,:a,:v,:t,:s,:e) RETURNING id"), {
+                "n": data.get("name", ""), "a": data.get("attribute", "role"), "v": data.get("value", ""),
+                "t": tables, "s": bool(data.get("sensitive_ok", False)),
+                "e": bool(data.get("enabled", True))})
+            return {"id": res.scalar()}
+
+    @classmethod
+    async def _can_see_sensitive(cls, user_id) -> bool:
+        """ABAC：超管可看敏感字段；否则看是否有敏感放行规则(按用户 role)。"""
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                r = (await db.execute(_t(
+                    "SELECT is_superuser FROM sys_user WHERE id=:id AND is_deleted=false"), {"id": user_id or 0})).fetchone()
+            if r and r[0]:
+                return True
+            rules = await cls.list_access_rules()
+            return any(x["sensitive_ok"] and x["enabled"] for x in rules)
+        except Exception:  # noqa: BLE001
+            return False
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
