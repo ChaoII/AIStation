@@ -362,6 +362,32 @@ async def pipeline_run(
     return SuccessResponse(data=r, msg=r.get("msg", "已运行"))
 
 
+# ---- P3-② Workshop 对象工作台(无代码应用) ----
+@AiQueryRouter.get("/workshop/list", summary="对象应用列表")
+async def workshop_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_workshop_apps(), msg="查询成功")
+
+
+@AiQueryRouter.post("/workshop/save", summary="对象应用保存")
+async def workshop_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.upsert_workshop_app(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@AiQueryRouter.post("/workshop/preview", summary="对象应用预览(读取真实数据)")
+async def workshop_preview(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.workshop_preview(int(data.get("app_id", 0)), int(data.get("limit") or 50))
+    return SuccessResponse(data=r, msg="预览完成")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

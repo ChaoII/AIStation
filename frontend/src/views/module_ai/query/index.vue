@@ -1039,6 +1039,53 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+        <el-tab-pane label="应用" name="workshop">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openWorkshopEdit()">
+              新建应用
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              共 {{ wsApps.length }} 个对象应用
+            </el-tag>
+          </div>
+          <el-table :data="wsApps" size="small" border max-height="320">
+            <el-table-column prop="name" label="应用" min-width="140" show-overflow-tooltip />
+            <el-table-column
+              prop="object_table"
+              label="对象"
+              min-width="150"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="view_type" label="视图" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">
+                  {{ row.view_type === "form" ? "表单" : "看板" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="列" min-width="180">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="c in row.columns"
+                  :key="c"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ c }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="previewWorkshop(row)">
+                  预览
+                </el-button>
+                <el-button link size="small" @click="openWorkshopEdit(row)">编辑</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1627,6 +1674,85 @@
         <el-button type="primary" @click="savePipe">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- Workshop 应用编辑 -->
+    <el-dialog v-model="wsDialog" title="对象应用" width="600px" append-to-body>
+      <el-form :model="wsForm" label-width="100px">
+        <el-form-item label="应用名称" required>
+          <el-input v-model="wsForm.name" placeholder="如 摄像头监控看板" />
+        </el-form-item>
+        <el-form-item label="业务对象" required>
+          <el-select
+            v-model="wsForm.object_table"
+            filterable
+            placeholder="选择业务对象"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in govObjects"
+              :key="o.table"
+              :label="(o.alias || o.table) + ' (' + o.table + ')'"
+              :value="o.table"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="视图类型">
+          <el-radio-group v-model="wsForm.view_type">
+            <el-radio value="table">看板</el-radio>
+            <el-radio value="form">表单</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="展示列">
+          <el-select
+            v-model="wsForm.columns"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择/输入列(空=全部)"
+            style="width: 100%"
+          >
+            <el-option v-for="o in govObjects" :key="o.table" :label="o.table" :value="o.table" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="wsDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveWorkshop">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Workshop 预览 -->
+    <el-dialog v-model="wsPreviewVisible" title="对象应用预览" width="720px" append-to-body>
+      <el-table
+        v-if="wsPreview && wsPreview.rows && wsPreview.rows.length"
+        :data="
+          wsPreview.rows.map((r: any[], i: number) => {
+            const o: any = { __i: i };
+            (wsPreview.columns || []).forEach((c: string, ci: number) => (o[c] = r[ci]));
+            return o;
+          })
+        "
+        size="small"
+        border
+        max-height="400"
+      >
+        <el-table-column
+          v-for="c in wsPreview.columns"
+          :key="c"
+          :prop="String(c)"
+          :label="String(c)"
+          min-width="110"
+        />
+      </el-table>
+      <el-alert
+        v-else-if="wsPreview && !wsPreview.ok"
+        type="error"
+        :title="wsPreview.msg"
+        :closable="false"
+      />
+      <el-empty v-else description="暂无数据" :image-size="40" />
+    </el-dialog>
   </div>
 </template>
 
@@ -1687,6 +1813,9 @@ import {
   getPipelineList,
   savePipeline,
   runPipeline,
+  getWorkshopList,
+  saveWorkshopApp,
+  workshopPreview,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2633,6 +2762,55 @@ async function runPipe(row: any) {
     ElMessage.error(e?.msg || "运行失败");
   }
 }
+// ---- Workshop 对象应用 ----
+const wsApps = ref<any[]>([]);
+const wsDialog = ref(false);
+const wsForm = reactive<any>({
+  id: null,
+  name: "",
+  object_table: "",
+  view_type: "table",
+  columns: [],
+  enabled: true,
+});
+const wsPreview = ref<any>(null);
+const wsPreviewVisible = ref(false);
+async function loadWorkshop() {
+  try {
+    const r = await getWorkshopList();
+    wsApps.value = r.data?.data || [];
+  } catch {
+    wsApps.value = [];
+  }
+}
+function openWorkshopEdit(row?: any) {
+  Object.assign(
+    wsForm,
+    row || { id: null, name: "", object_table: "", view_type: "table", columns: [], enabled: true }
+  );
+  wsDialog.value = true;
+}
+async function saveWorkshop() {
+  if (!wsForm.name?.trim() || !wsForm.object_table?.trim())
+    return ElMessage.warning("请填写应用名/对象");
+  try {
+    await saveWorkshopApp({ ...wsForm });
+    ElMessage.success("已保存");
+    wsDialog.value = false;
+    loadWorkshop();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+async function previewWorkshop(row: any) {
+  try {
+    const r = await workshopPreview(row.id, 20);
+    wsPreview.value = r.data?.data || {};
+    wsPreviewVisible.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "预览失败");
+  }
+}
 async function inferRel() {
   inferringRel.value = true;
   try {
@@ -3264,6 +3442,7 @@ onMounted(() => {
   loadGovObjects();
   loadIndustryTemplates();
   loadPipes();
+  loadWorkshop();
 });
 </script>
 

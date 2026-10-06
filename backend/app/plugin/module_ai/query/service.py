@@ -1800,6 +1800,68 @@ class AiQueryService:
         return {"ok": True, "msg": msg, "synced": synced}
 
     @classmethod
+    async def list_workshop_apps(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            res = await db.execute(_t(
+                "SELECT id,name,object_table,view_type,columns,enabled FROM ai_workshop_app "
+                "WHERE is_deleted=false ORDER BY id DESC"))
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "name": r[1] or "", "object_table": r[2] or "", "view_type": r[3] or "table",
+            "columns": r[4] if isinstance(r[4], list) else (_json.loads(r[4]) if r[4] else []),
+            "enabled": bool(r[5]),
+        } for r in rows]
+
+    @classmethod
+    async def upsert_workshop_app(cls, data: dict) -> dict:
+        import json as _json
+        cols = _json.dumps(data.get("columns") or [], ensure_ascii=False)
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_workshop_app SET name=:n, object_table=:o, view_type=:v, columns=:c, "
+                    "enabled=:e, updated_time=now() WHERE id=:i"), {
+                    "n": data.get("name", ""), "o": data.get("object_table", ""),
+                    "v": data.get("view_type", "table"), "c": cols, "e": bool(data.get("enabled", True)),
+                    "i": data["id"]})
+                return {"id": data["id"]}
+            res = await db.execute(_t(
+                "INSERT INTO ai_workshop_app(name,object_table,view_type,columns,enabled) "
+                "VALUES (:n,:o,:v,:c,:e) RETURNING id"), {
+                "n": data.get("name", ""), "o": data.get("object_table", ""),
+                "v": data.get("view_type", "table"), "c": cols, "e": bool(data.get("enabled", True))})
+            return {"id": res.scalar()}
+
+    @classmethod
+    async def workshop_preview(cls, app_id: int, limit: int = 50) -> dict:
+        """P3-② 对象工作台预览：按对象表+选列读取真实数据。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            row = (await db.execute(_t(
+                "SELECT object_table, columns, view_type FROM ai_workshop_app WHERE id=:i AND is_deleted=false"),
+                {"i": app_id})).fetchone()
+        if not row:
+            return {"ok": False, "msg": "应用不存在"}
+        table = row[0]
+        cols = row[1] if isinstance(row[1], list) else []
+        select = ", ".join(f'"{c}"' for c in cols) if cols else "*"
+        sql = f'SELECT {select} FROM "{table}"'
+        if table in ("video_cameras", "train_tasks", "annotation_dataset", "video_algorithms", "video_edge_devices", "sys_user", "ai_models", "ai_call_logs"):
+            sql += " WHERE is_deleted=false"
+        sql += " LIMIT :n"
+        try:
+            async with async_db_session() as db:
+                result = await db.execute(text(sql), {"n": limit})
+                cols = list(result.keys())
+                rows = [tuple("" if v is None else str(v) for v in r) for r in result.fetchall()]
+            return {"ok": True, "view_type": row[2], "columns": cols, "rows": rows}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "msg": f"预览失败：{str(e)[:120]}"}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t

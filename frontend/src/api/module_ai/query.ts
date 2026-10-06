@@ -259,6 +259,15 @@ export function savePipeline(data: any) {
 export function runPipeline(pipeline_id: number) {
   return request({ url: `${API_PATH}/pipeline/run`, method: "post", data: { pipeline_id } });
 }
+export function getWorkshopList() {
+  return request({ url: `${API_PATH}/workshop/list`, method: "get" });
+}
+export function saveWorkshopApp(data: any) {
+  return request({ url: `${API_PATH}/workshop/save`, method: "post", data });
+}
+export function workshopPreview(app_id: number, limit = 50) {
+  return request({ url: `${API_PATH}/workshop/preview`, method: "post", data: { app_id, limit } });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }
