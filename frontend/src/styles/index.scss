@@ -44,9 +44,9 @@
   flex: 0 0 auto;
 }
 
-/* 自定义模块页面：纯白背景铺满可视区（项目 --el-bg-color 被改为浅蓝灰，故用纯白），卡片在白上分层 */
+/* 自定义模块页面：与原生风格一致——浅蓝灰背景(继承 app-main) + 白色卡片 + 灰色间隔，仅此页使用 ai-mod 作占位 */
 .app-container.ai-mod {
-  background: #fff;
+  background: transparent;
   padding: 16px;
 }
 
