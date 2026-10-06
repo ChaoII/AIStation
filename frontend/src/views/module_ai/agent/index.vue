@@ -203,17 +203,31 @@
     <div v-if="activeChatAgent" class="agent-chat-panel">
       <!-- 左：会话历史 -->
       <div class="agent-chat-sidebar">
-        <!-- 当前智能体 -->
-        <div class="agent-chat-agent">
-          <div
-            class="agent-chat-agent-avatar"
-            :style="{ background: activeChatAgent.color || '#667eea' }"
-          >
-            {{ activeChatAgent.agent_name?.slice(0, 1) }}
-          </div>
-          <div class="agent-chat-agent-meta">
-            <div class="agent-chat-agent-name">{{ activeChatAgent.agent_name }}</div>
-            <div class="agent-chat-agent-desc">{{ activeChatAgent.agent_role || "数据助手" }}</div>
+        <!-- 我的智能体（分组，可切换） -->
+        <div class="agent-chat-agents-wrap">
+          <div class="agent-chat-sidebar-title">我的智能体</div>
+          <div class="agent-chat-agents">
+            <template v-for="g in groupedAgentsChat" :key="g.cat?.id ?? -1">
+              <div v-if="g.cat" class="agent-chat-agent-group-name">
+                {{ g.cat.emoji || "📦" }} {{ g.cat.name }}（{{ g.items.length }}）
+              </div>
+              <div
+                v-for="ag in g.items"
+                :key="ag.id"
+                class="agent-chat-agent-item"
+                :class="{ 'agent-chat-agent-item--active': ag.id === activeChatAgent.id }"
+                @click="switchChatAgent(ag)"
+              >
+                <div
+                  class="agent-chat-agent-item-avatar"
+                  :style="{ background: ag.color || '#667eea' }"
+                >
+                  {{ ag.agent_name?.slice(0, 1) }}
+                </div>
+                <div class="agent-chat-agent-item-name">{{ ag.agent_name }}</div>
+              </div>
+            </template>
+            <div v-if="!agents.length" class="agent-chat-sess-empty">暂无智能体</div>
           </div>
         </div>
         <div class="agent-chat-sidebar-head">
@@ -963,6 +977,23 @@ async function newChatSession() {
   chatConv.value = [];
   await loadChatSessions();
 }
+// 左侧「我的智能体」分组
+const groupedAgentsChat = computed(() => {
+  const map = new Map<number, any[]>();
+  const catMap = new Map(categories.value.map((c: any) => [c.id, c]));
+  for (const a of agents.value) {
+    const key = a.category_id ?? -1;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(a);
+  }
+  return [...map.entries()].map(([cid, list]) => ({
+    cat: cid === -1 ? null : catMap.get(cid) || null,
+    items: list,
+  }));
+});
+function switchChatAgent(ag: any) {
+  openAgentChat(ag);
+}
 function toggleModelDropdown() {
   chatModelOpen.value = !chatModelOpen.value;
 }
@@ -1265,6 +1296,61 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   font-weight: 600;
   color: var(--el-text-color-primary);
   border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.agent-chat-agents-wrap {
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.agent-chat-sidebar-title {
+  padding: 12px 14px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--el-text-color-secondary);
+}
+.agent-chat-agents {
+  max-height: 200px;
+  overflow: auto;
+  padding: 4px 8px 10px;
+}
+.agent-chat-agent-group-name {
+  padding: 8px 6px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+}
+.agent-chat-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.agent-chat-agent-item:hover {
+  background: var(--el-fill-color);
+}
+.agent-chat-agent-item--active {
+  background: var(--el-color-primary-light-9);
+}
+.agent-chat-agent-item-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.agent-chat-agent-item-name {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .agent-chat-agent {
   display: flex;
