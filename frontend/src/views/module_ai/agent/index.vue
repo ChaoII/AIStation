@@ -164,6 +164,14 @@
                   编辑
                 </el-button>
                 <el-button
+                  v-hasPerm="['module_ai:agent:update']"
+                  size="small"
+                  :icon="SetUp"
+                  @click="openStudio(a)"
+                >
+                  编排
+                </el-button>
+                <el-button
                   v-hasPerm="['module_ai:agent:create']"
                   size="small"
                   :icon="CopyDocument"
@@ -644,6 +652,177 @@
         <el-button type="primary" @click="saveCategory">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- P3-⑥ Agent Studio 无代码编排画布 -->
+    <el-drawer
+      v-model="studioVisible"
+      :title="`Agent Studio · ${studioAgent?.agent_name || ''}`"
+      size="760px"
+      append-to-body
+    >
+      <div class="studio-layout">
+        <div class="studio-palette">
+          <div class="studio-palette__title">积木（点击添加）</div>
+          <div class="studio-block" @click="studioAdd('model')">
+            <el-icon><Connection /></el-icon>
+            <span>模型</span>
+          </div>
+          <div class="studio-block" @click="studioAdd('prompt')">
+            <el-icon><MagicStick /></el-icon>
+            <span>提示词</span>
+          </div>
+          <div class="studio-block" @click="studioAdd('workflow')">
+            <el-icon><SetUp /></el-icon>
+            <span>工作流</span>
+          </div>
+          <div class="studio-block" @click="studioAdd('tool')">
+            <el-icon><Connection /></el-icon>
+            <span>工具</span>
+          </div>
+          <div class="studio-block" @click="studioAdd('knowledge')">
+            <el-icon><Connection /></el-icon>
+            <span>知识库(RAG)</span>
+          </div>
+          <div class="studio-block" @click="studioAdd('skill')">
+            <el-icon><MagicStick /></el-icon>
+            <span>技能</span>
+          </div>
+          <div class="studio-block" @click="studioAdd('query')">
+            <el-icon><Connection /></el-icon>
+            <span>智能问数</span>
+          </div>
+        </div>
+        <div class="studio-canvas">
+          <div class="studio-step studio-start">
+            输入
+            <i class="studio-arrow">↓</i>
+          </div>
+          <template v-if="studioAgent">
+            <div v-if="studioAgent.model_id" class="studio-step">
+              模型
+              <i class="studio-arrow">↓</i>
+              <el-select
+                v-model="studioAgent.model_id"
+                size="small"
+                style="width: 180px"
+                @change="studioDirty = true"
+              >
+                <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
+              </el-select>
+            </div>
+            <div v-if="studioAgent.prompt_id" class="studio-step">
+              提示词
+              <i class="studio-arrow">↓</i>
+              <el-select
+                v-model="studioAgent.prompt_id"
+                size="small"
+                style="width: 180px"
+                @change="studioDirty = true"
+              >
+                <el-option v-for="p in promptOptions" :key="p.id" :label="p.name" :value="p.id" />
+              </el-select>
+            </div>
+            <div v-if="studioAgent.workflow_id" class="studio-step">
+              工作流
+              <i class="studio-arrow">↓</i>
+              <el-select
+                v-model="studioAgent.workflow_id"
+                size="small"
+                style="width: 180px"
+                @change="studioDirty = true"
+              >
+                <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
+              </el-select>
+            </div>
+            <div v-if="(studioAgent.tool_ids || []).length" class="studio-step">
+              工具
+              <i class="studio-arrow">↓</i>
+              <el-tag
+                v-for="t in studioAgent.tool_ids"
+                :key="t"
+                closable
+                size="small"
+                effect="plain"
+                style="margin: 0 3px 2px 0"
+                @close="studioRemoveTool(t)"
+              >
+                {{ t }}
+              </el-tag>
+            </div>
+            <div v-if="(studioAgent.knowledge_ids || []).length" class="studio-step">
+              知识库(RAG)
+              <i class="studio-arrow">↓</i>
+              <el-tag
+                v-for="k in studioAgent.knowledge_ids"
+                :key="k"
+                closable
+                size="small"
+                type="success"
+                effect="plain"
+                style="margin: 0 3px 2px 0"
+                @close="studioRemoveKnowledge(k)"
+              >
+                {{ knowName(k) }}
+              </el-tag>
+            </div>
+            <div v-if="(studioAgent.skill_ids || []).length" class="studio-step">
+              技能
+              <i class="studio-arrow">↓</i>
+              <el-tag
+                v-for="s in studioAgent.skill_ids"
+                :key="s"
+                closable
+                size="small"
+                type="warning"
+                effect="plain"
+                style="margin: 0 3px 2px 0"
+                @close="studioRemoveSkill(s)"
+              >
+                {{ skillName(s) }}
+              </el-tag>
+            </div>
+            <div v-if="studioAgent.query_enabled" class="studio-step">
+              智能问数
+              <i class="studio-arrow">↓</i>
+              <el-select
+                v-model="studioAgent.query_datasource"
+                size="small"
+                style="width: 160px"
+                @change="studioDirty = true"
+              >
+                <el-option label="系统数据" value="system" />
+                <el-option
+                  v-for="d in queryDatasources"
+                  :key="d.id"
+                  :label="d.name"
+                  :value="String(d.id)"
+                />
+              </el-select>
+            </div>
+          </template>
+          <div class="studio-step studio-end">输出</div>
+          <div
+            v-if="
+              !studioAgent ||
+              (!studioAgent.model_id &&
+                !studioAgent.prompt_id &&
+                !studioAgent.workflow_id &&
+                !studioAgent.tool_ids?.length &&
+                !studioAgent.knowledge_ids?.length &&
+                !studioAgent.skill_ids?.length &&
+                !studioAgent.query_enabled)
+            "
+            class="studio-empty"
+          >
+            点击左侧积木开始编排你的智能体
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="studioVisible = false">关闭</el-button>
+        <el-button type="primary" :disabled="!studioDirty" @click="saveStudio">保存编排</el-button>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -664,6 +843,9 @@ import {
   Delete,
   CopyDocument,
   Loading,
+  MagicStick,
+  Connection,
+  SetUp,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import {
@@ -907,6 +1089,97 @@ async function saveAgent() {
 
 function runAgent(a: any) {
   openAgentChat(a);
+}
+
+// ---- P3-⑥ Agent Studio 无代码编排 ----
+const studioVisible = ref(false);
+const studioAgent = ref<any>(null);
+const studioDirty = ref(false);
+function openStudio(a: any) {
+  // 深拷贝，避免污染原列表
+  studioAgent.value = JSON.parse(JSON.stringify(a));
+  studioDirty.value = false;
+  studioVisible.value = true;
+}
+function knowName(id: number) {
+  const k = knowledgeOptions.value.find((x) => x.id === id);
+  return k ? k.name : `知识库#${id}`;
+}
+function skillName(id: number) {
+  const s = skillOptions.value.find((x) => x.id === id);
+  return s ? s.name : `技能#${id}`;
+}
+function studioAdd(kind: string) {
+  const a = studioAgent.value;
+  if (!a) return;
+  if (kind === "model") {
+    if (a.model_id) return;
+    a.model_id = modelOptions.value[0]?.id || null;
+  } else if (kind === "prompt") {
+    if (a.prompt_id) return;
+    a.prompt_id = promptOptions.value[0]?.id || null;
+  } else if (kind === "workflow") {
+    if (a.workflow_id) return;
+    a.workflow_id = workflowOptions.value[0]?.id || null;
+  } else if (kind === "tool") {
+    a.tool_ids = a.tool_ids || [];
+    if (!a.tool_ids.length && toolOptions.value[0]) a.tool_ids.push(toolOptions.value[0].name);
+  } else if (kind === "knowledge") {
+    a.knowledge_ids = a.knowledge_ids || [];
+    if (!a.knowledge_ids.length && knowledgeOptions.value[0])
+      a.knowledge_ids.push(knowledgeOptions.value[0].id);
+  } else if (kind === "skill") {
+    a.skill_ids = a.skill_ids || [];
+    if (!a.skill_ids.length && skillOptions.value[0]) a.skill_ids.push(skillOptions.value[0].id);
+  } else if (kind === "query") {
+    if (a.query_enabled) return;
+    a.query_enabled = true;
+    a.query_datasource = a.query_datasource || "system";
+  }
+  studioDirty.value = true;
+}
+function studioRemoveTool(t: string) {
+  const a = studioAgent.value;
+  a.tool_ids = (a.tool_ids || []).filter((x: string) => x !== t);
+  studioDirty.value = true;
+}
+function studioRemoveKnowledge(k: number) {
+  const a = studioAgent.value;
+  a.knowledge_ids = (a.knowledge_ids || []).filter((x: number) => x !== k);
+  studioDirty.value = true;
+}
+function studioRemoveSkill(s: number) {
+  const a = studioAgent.value;
+  a.skill_ids = (a.skill_ids || []).filter((x: number) => x !== s);
+  studioDirty.value = true;
+}
+async function saveStudio() {
+  const a = studioAgent.value;
+  if (!a) return;
+  savingAgent.value = true;
+  try {
+    await updateAiAgent(a.id, {
+      agent_name: a.agent_name,
+      agent_role: a.agent_role,
+      category_id: a.category_id,
+      workflow_id: a.workflow_id || null,
+      model_id: a.model_id || null,
+      prompt_id: a.prompt_id || null,
+      tool_ids: a.tool_ids || [],
+      skill_ids: a.skill_ids || [],
+      knowledge_ids: a.knowledge_ids || [],
+      query_enabled: !!a.query_enabled,
+      query_datasource: a.query_datasource || "system",
+      enabled: a.enabled,
+    });
+    ElMessage.success("编排已保存");
+    studioVisible.value = false;
+    loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "保存失败");
+  } finally {
+    savingAgent.value = false;
+  }
 }
 
 // ---- 智能体内嵌对话（点击卡片，页内展开） ----
@@ -1281,6 +1554,77 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 <style scoped lang="scss">
 .ai-agent-page {
   height: 100%;
+}
+/* P3-⑥ Agent Studio */
+.studio-layout {
+  display: flex;
+  gap: 12px;
+}
+.studio-palette {
+  width: 160px;
+  flex-shrink: 0;
+}
+.studio-palette__title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 8px;
+}
+.studio-block {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.studio-block:hover {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.studio-canvas {
+  flex: 1;
+  min-width: 0;
+}
+.studio-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--el-border-color);
+  border-left: 3px solid var(--el-color-primary);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--el-fill-color-lighter);
+}
+.studio-step.studio-start {
+  border-left-color: var(--el-color-success);
+}
+.studio-step.studio-end {
+  border-left-color: var(--el-color-warning);
+}
+.studio-arrow {
+  position: absolute;
+  left: 12px;
+  bottom: -20px;
+  color: var(--el-text-color-placeholder);
+  font-size: 14px;
+  font-style: normal;
+}
+.studio-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--el-text-color-placeholder);
+  font-size: 13px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
 }
 .query-hint {
   margin-left: 8px;
