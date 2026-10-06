@@ -1977,6 +1977,34 @@ class AiQueryService:
                     materialized += 1
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "msg": f"落库失败：{str(e)[:120]}"}
+        # 3.5) 目标为本体对象 → 把数据同步进本体对象表 ont_{to}（数据与集成支撑本体）
+        ont_synced = 0
+        try:
+            objs = await cls._ont_objs()
+            if to in objs:
+                ont_table = f"ont_{to}"
+                props = await cls._ont_props(to)
+                prop_codes = [p["code"] for p in props] or target_cols
+                cols_ddl = ", ".join(f'"{c}" TEXT' for c in prop_codes)
+                async with async_db_session.begin() as db:
+                    from sqlalchemy import text as _t
+                    await db.execute(_t(
+                        f'CREATE TABLE IF NOT EXISTS "{ont_table}" (id BIGSERIAL PRIMARY KEY, {cols_ddl})'))
+                    await db.execute(_t(f'DELETE FROM "{ont_table}"'))
+                    for r in target_rows:
+                        # 仅写入本体属性列
+                        mapped = {tc: v for tc, v in zip(target_cols, r)}
+                        ins_cols = [c for c in prop_codes if c in mapped]
+                        if not ins_cols:
+                            continue
+                        ph = ", ".join(f":c{i}" for i in range(len(ins_cols)))
+                        cols_sql = ", ".join(f'"{c}"' for c in ins_cols)
+                        params = {f"c{i}": mapped[c] for i, c in enumerate(ins_cols)}
+                        await db.execute(_t(
+                            f'INSERT INTO "{ont_table}" ({cols_sql}) VALUES ({ph})'), params)
+                        ont_synced += 1
+        except Exception:  # noqa: BLE001
+            ont_synced = 0
         # 4) 同步资产元数据（对象可见 + 映射目标列描述）
         meta = (await cls._asset_tmeta()).get(to) or {}
         try:
@@ -2008,7 +2036,7 @@ class AiQueryService:
                 {"p": pipeline_id, "m": msg, "r": materialized})
         _SCHEMA_CACHE = None
         _ASSET_TMETA = None
-        return {"ok": True, "msg": msg, "synced": len(mappings), "rows": materialized}
+        return {"ok": True, "msg": msg, "synced": len(mappings), "rows": materialized, "ont_synced": ont_synced}
 
     @classmethod
     async def pipeline_data(cls, pipeline_id: int, limit: int = 50) -> dict:
