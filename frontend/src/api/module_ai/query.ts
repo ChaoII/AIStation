@@ -284,6 +284,9 @@ export function getAccessRules() {
 export function saveAccessRule(data: any) {
   return request({ url: `${API_PATH}/access/save`, method: "post", data });
 }
+export function removeAccessRule(id: number) {
+  return request({ url: `${API_PATH}/access/remove`, method: "delete", params: { id } });
+}
 export function getDqOverview() {
   return request({ url: `${API_PATH}/dq/overview`, method: "get" });
 }
@@ -301,6 +304,9 @@ export function getDomains() {
 }
 export function saveDomain(data: any) {
   return request({ url: `${API_PATH}/domain/save`, method: "post", data });
+}
+export function removeDomain(id: number) {
+  return request({ url: `${API_PATH}/domain/remove`, method: "delete", params: { id } });
 }
 export function getDomainObjects() {
   return request({ url: `${API_PATH}/domain/objects`, method: "get" });

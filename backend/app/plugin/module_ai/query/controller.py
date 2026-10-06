@@ -462,6 +462,12 @@ async def domain_save(
     return SuccessResponse(data=r, msg="保存成功")
 
 
+@AiQueryRouter.delete("/domain/remove", summary="删除数据域")
+async def domain_remove(id: int, auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))]) -> JSONResponse:
+    await AiQueryService.delete_domain(id)
+    return SuccessResponse(data=None, msg="已删除")
+
+
 @AiQueryRouter.get("/domain/objects", summary="数据域隔离视图(对象按域分组)")
 async def domain_objects(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
@@ -484,6 +490,12 @@ async def access_save(
 ) -> JSONResponse:
     r = await AiQueryService.upsert_access_rule(data)
     return SuccessResponse(data=r, msg="保存成功")
+
+
+@AiQueryRouter.delete("/access/remove", summary="删除ABAC权限策略")
+async def access_remove(id: int, auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))]) -> JSONResponse:
+    await AiQueryService.delete_access_rule(id)
+    return SuccessResponse(data=None, msg="已删除")
 
 
 async def kg_stats(

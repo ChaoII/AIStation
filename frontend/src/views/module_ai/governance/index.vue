@@ -167,6 +167,12 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="操作" width="110" align="center">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="editAccess(row)">编辑</el-button>
+              <el-button link type="danger" size="small" @click="delAccess(row)">删</el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
 
@@ -254,7 +260,10 @@
                       {{ d.code }}
                     </el-tag>
                   </span>
-                  <el-button link type="primary" size="small" @click="openDomain()">编辑</el-button>
+                  <el-button link type="primary" size="small" @click="editDomain(d)">
+                    编辑
+                  </el-button>
+                  <el-button link type="danger" size="small" @click="delDomain(d)">删</el-button>
                 </div>
               </template>
               <div class="gov-section">对象（{{ d.objects.length }}）</div>
@@ -283,6 +292,96 @@
         </el-row>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 权限策略编辑 -->
+    <el-dialog v-model="accessDialog" title="ABAC 权限策略" width="520px" append-to-body>
+      <el-form :model="accessForm" label-width="100px">
+        <el-form-item label="策略名称" required>
+          <el-input v-model="accessForm.name" placeholder="如 生产部可看敏感" />
+        </el-form-item>
+        <el-form-item label="属性">
+          <el-select v-model="accessForm.attribute" style="width: 100%">
+            <el-option label="角色 role" value="role" />
+            <el-option label="部门 dept" value="dept" />
+            <el-option label="数据域 domain" value="domain" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="属性值" required>
+          <el-input v-model="accessForm.value" placeholder="production / 生产部" />
+        </el-form-item>
+        <el-form-item label="允许对象">
+          <el-select
+            v-model="accessForm.allowed_tables"
+            multiple
+            clearable
+            filterable
+            placeholder="空=全部"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in govObjects"
+              :key="o.table"
+              :label="(o.alias || o.table) + ' (' + o.table + ')'"
+              :value="o.table"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="敏感放行">
+          <el-switch v-model="accessForm.sensitive_ok" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="accessDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveAccessForm()">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 数据域编辑 -->
+    <el-dialog v-model="domainDialog" title="数据域" width="520px" append-to-body>
+      <el-form :model="domainForm" label-width="100px">
+        <el-form-item label="域名称" required>
+          <el-input v-model="domainForm.name" placeholder="如 生产域" />
+        </el-form-item>
+        <el-form-item label="域编码">
+          <el-input v-model="domainForm.code" placeholder="prod" />
+        </el-form-item>
+        <el-form-item label="描述"><el-input v-model="domainForm.description" /></el-form-item>
+        <el-form-item label="对象">
+          <el-select
+            v-model="domainForm.tables"
+            multiple
+            filterable
+            clearable
+            placeholder="本域对象"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in govObjects"
+              :key="o.table"
+              :label="(o.alias || o.table) + ' (' + o.table + ')'"
+              :value="o.table"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="成员用户">
+          <el-select
+            v-model="domainForm.members"
+            multiple
+            filterable
+            clearable
+            allow-create
+            placeholder="成员用户ID"
+            style="width: 100%"
+          >
+            <el-option v-for="i in 5" :key="i" :label="`用户 #${i}`" :value="i" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="domainDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveDomainForm()">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -297,7 +396,12 @@ import {
   getDqAlert,
   scanAllDq,
   getDomainObjects,
+  saveAccessRule,
+  saveDomain,
+  getQueryObjects,
 } from "@/api/module_ai/query";
+import { reactive } from "vue";
+import { ElMessageBox } from "element-plus";
 
 const tab = ref("overview");
 const g = ref<any>({ overview: {} });
@@ -350,13 +454,108 @@ async function scanAll() {
   }
 }
 function openAccess() {
-  ElMessage.info("权限策略编辑已移至「智能问数→指标运营→权限」标签，亦可复用同套接口");
+  Object.assign(accessForm, {
+    id: null,
+    name: "",
+    attribute: "role",
+    value: "",
+    allowed_tables: [],
+    sensitive_ok: false,
+    enabled: true,
+  });
+  accessDialog.value = true;
 }
 function openDomain() {
-  ElMessage.info("数据域编辑已移至「智能问数→指标运营→数据域」标签");
+  Object.assign(domainForm, {
+    id: null,
+    name: "",
+    code: "",
+    description: "",
+    tables: [],
+    members: [],
+    enabled: true,
+  });
+  domainDialog.value = true;
+}
+// 权限对话框
+const accessDialog = ref(false);
+const accessForm = reactive<any>({
+  id: null,
+  name: "",
+  attribute: "role",
+  value: "",
+  allowed_tables: [],
+  sensitive_ok: false,
+  enabled: true,
+});
+async function saveAccessForm() {
+  if (!accessForm.name?.trim() || !accessForm.value?.trim())
+    return ElMessage.warning("请填策略名/属性值");
+  await saveAccessRule({ ...accessForm });
+  ElMessage.success("已保存");
+  accessDialog.value = false;
+  loadAccess();
+  loadOverview();
+}
+// 数据域对话框
+const domainDialog = ref(false);
+const domainForm = reactive<any>({
+  id: null,
+  name: "",
+  code: "",
+  description: "",
+  tables: [],
+  members: [],
+  enabled: true,
+});
+const govObjects = ref<any[]>([]);
+async function loadObjects() {
+  const r = await getQueryObjects();
+  govObjects.value = r.data?.data || [];
+}
+async function saveDomainForm() {
+  if (!domainForm.name?.trim()) return ElMessage.warning("请填域名称");
+  await saveDomain({ ...domainForm });
+  ElMessage.success("已保存");
+  domainDialog.value = false;
+  loadDomain();
+  loadOverview();
+}
+function editAccess(row: any) {
+  Object.assign(accessForm, { ...row });
+  accessDialog.value = true;
+}
+function editDomain(row: any) {
+  Object.assign(domainForm, { ...row });
+  domainDialog.value = true;
+}
+function delAccess(row: any) {
+  ElMessageBox.confirm(`删除权限策略「${row.name}」?`, "确认", {
+    type: "warning",
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+  }).then(async () => {
+    await (await import("@/api/module_ai/query")).removeAccessRule(row.id);
+    ElMessage.success("已删除");
+    loadAccess();
+  });
+}
+function delDomain(row: any) {
+  ElMessageBox.confirm(`删除数据域「${row.name}」?`, "确认", {
+    type: "warning",
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+  }).then(async () => {
+    await (await import("@/api/module_ai/query")).removeDomain(row.id);
+    ElMessage.success("已删除");
+    loadDomain();
+  });
 }
 
-onMounted(loadOverview);
+onMounted(() => {
+  loadOverview();
+  loadObjects();
+});
 </script>
 
 <style scoped lang="scss">

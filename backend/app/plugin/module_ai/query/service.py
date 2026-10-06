@@ -2281,6 +2281,18 @@ class AiQueryService:
         }
 
     @classmethod
+    async def delete_access_rule(cls, id: int) -> None:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t("UPDATE ai_access_rule SET is_deleted=true WHERE id=:id"), {"id": id})
+
+    @classmethod
+    async def delete_domain(cls, id: int) -> None:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t("UPDATE ai_domain SET is_deleted=true WHERE id=:id"), {"id": id})
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t
