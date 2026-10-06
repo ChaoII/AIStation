@@ -1,7 +1,6 @@
 <!-- 本体 Ontology：对象类型 / 属性 / Link / Action 强类型元模型（Palantir Ontology） -->
 <template>
   <div class="app-container ai-mod ai-ontology-page">
-    <PageHeader title="本体" />
     <el-row :gutter="12">
       <!-- 左：对象类型列表 -->
       <el-col :span="6">

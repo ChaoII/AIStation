@@ -1,7 +1,6 @@
 <!-- AI 工作台：Palantir Foundry 式支柱入口（数据资产 / 本体 / 数据与集成 / 无代码应用 / 治理 / 智能体） -->
 <template>
   <div class="app-container ai-mod ai-workspace-page">
-    <PageHeader title="AI 工作台" />
     <el-row :gutter="16">
       <el-col v-if="loading" :span="24">
         <el-skeleton :rows="5" animated />

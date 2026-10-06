@@ -1,7 +1,6 @@
 <!-- 治理 Governance / Oversight（Palantir Foundry 支柱）：驾驶舱 + ABAC + DQ + 数据域 + 血缘 -->
 <template>
   <div class="app-container ai-mod ai-governance-page">
-    <PageHeader title="治理" />
     <el-tabs v-model="tab" @tab-change="onTab">
       <!-- 驾驶舱 -->
       <el-tab-pane label="驾驶舱" name="overview">

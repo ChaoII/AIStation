@@ -1,7 +1,6 @@
 <!-- 数据与集成 Data Connection & Integration（Palantir Foundry 支柱） -->
 <template>
   <div class="app-container ai-mod ai-integration-page">
-    <PageHeader title="数据与集成" />
     <el-row :gutter="12">
       <el-col :span="14">
         <el-card shadow="never">
