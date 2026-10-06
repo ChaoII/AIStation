@@ -290,6 +290,21 @@ export function getDqOverview() {
 export function runDq(table: string) {
   return request({ url: `${API_PATH}/dq/run`, method: "post", data: { table } });
 }
+export function scanAllDq() {
+  return request({ url: `${API_PATH}/dq/scan`, method: "post" });
+}
+export function getDqAlert() {
+  return request({ url: `${API_PATH}/dq/alert`, method: "get" });
+}
+export function getDomains() {
+  return request({ url: `${API_PATH}/domain/list`, method: "get" });
+}
+export function saveDomain(data: any) {
+  return request({ url: `${API_PATH}/domain/save`, method: "post", data });
+}
+export function getDomainObjects() {
+  return request({ url: `${API_PATH}/domain/objects`, method: "get" });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

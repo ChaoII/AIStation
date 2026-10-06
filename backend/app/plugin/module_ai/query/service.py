@@ -2106,35 +2106,118 @@ class AiQueryService:
 
     @classmethod
     async def dq_overview(cls) -> dict:
-        """P3-⑦ DQ 总览：对全部业务对象打分（已缓存取最新，未算则现跑）。"""
-        objs = await cls.list_objects()
+        """P3-⑦ DQ 总览：从 ai_dq_report 缓存读取（直接查对象表，避免慢路径与超时）。"""
         async with async_db_session() as db:
             from sqlalchemy import text as _t
-            rows = (await db.execute(_t(
+            obj_rows = (await db.execute(_t(
+                "SELECT table_name, CAST(object_key_col AS VARCHAR), CAST(object_name_col AS VARCHAR) "
+                "FROM ai_query_assets WHERE object_enabled=true AND is_deleted=false"))).fetchall()
+            rep_rows = (await db.execute(_t(
                 "SELECT table_name,alias,total,score,completeness,uniqueness,freshness,issues,checked_at "
                 "FROM ai_dq_report WHERE is_deleted=false"))).fetchall()
         cache = {r[0]: {"alias": r[1], "total": r[2], "score": float(r[3]),
                         "completeness": float(r[4]), "uniqueness": float(r[5]),
                         "freshness": float(r[6]), "issues": r[7],
-                        "checked_at": str(r[8]) if r[8] else ""} for r in rows}
+                        "checked_at": str(r[8]) if r[8] else ""} for r in rep_rows}
         results = []
-        for o in objs:
-            t = o["table"]
-            if t in cache:
-                results.append(cache[t] | {"table": t})
-            else:
-                r = await cls.dq_run(t)
-                results.append({
-                    "table": t, "alias": o["alias"], "total": r.get("total", 0),
-                    "score": r.get("score", 0), "completeness": r.get("completeness", 0),
-                    "uniqueness": r.get("uniqueness", 0), "freshness": r.get("freshness", 0),
-                    "issues": r.get("issues", []), "checked_at": "",
-                })
-        avg = round(sum((x["score"] or 0) for x in results) / len(results), 1) if results else 0
+        for r in obj_rows:
+            t = r[0]
+            results.append(cache.get(t, {"table": t, "alias": t, "total": 0, "score": 0,
+                                         "completeness": 0, "uniqueness": 0, "freshness": 0,
+                                         "issues": [], "checked_at": "", "scanned": False})
+                           | {"table": t, "scanned": t in cache})
+        scored = [x for x in results if x.get("scanned")]
+        avg = round(sum((x["score"] or 0) for x in scored) / len(scored), 1) if scored else 0
         return {"avg_score": avg, "total_objects": len(results),
-                "healthy": sum(1 for x in results if (x["score"] or 0) >= 80),
-                "risk": sum(1 for x in results if (x["score"] or 0) < 60),
+                "healthy": sum(1 for x in scored if (x["score"] or 0) >= 80),
+                "risk": sum(1 for x in scored if (x["score"] or 0) < 60),
                 "items": results}
+
+    @classmethod
+    async def dq_scan_all(cls) -> dict:
+        """P3-⑦ 显式全量扫描全部业务对象。"""
+        objs = await cls.list_objects()
+        scanned = 0
+        for o in objs:
+            r = await cls.dq_run(o["table"])
+            if r.get("ok"):
+                scanned += 1
+        return {"ok": True, "scanned": scanned, "msg": f"已扫描 {scanned} 个对象"}
+
+    @classmethod
+    async def dq_alert(cls) -> dict:
+        """P3-⑧ DQ 预警 + 影响联动：风险对象(健康分<60) → 血缘下游影响(对象/指标/管道/概念)。"""
+        ov = await cls.dq_overview()
+        alerts = []
+        for it in ov["items"]:
+            if (it["score"] or 0) < 60:
+                lin = await cls.lineage(it["table"])
+                alerts.append({
+                    "table": it["table"], "alias": it["alias"],
+                    "score": it["score"], "issues": it["issues"] or [],
+                    "downstream": {
+                        "objects": [o.get("alias") or o["object"] for o in lin.get("dependent_objects", [])],
+                        "metrics": [m.get("name") for m in lin.get("metrics", [])],
+                        "pipelines": [p.get("name") for p in lin.get("pipelines", [])],
+                        "concepts": [c.get("name") for c in lin.get("concepts", [])],
+                    },
+                })
+        return {"count": len(alerts), "alerts": alerts}
+
+    @classmethod
+    async def list_domains(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT id,name,code,description,tables,members,enabled FROM ai_domain "
+                "WHERE is_deleted=false ORDER BY id DESC"))).fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "name": r[1] or "", "code": r[2] or "", "description": r[3] or "",
+            "tables": r[4] if isinstance(r[4], list) else (_json.loads(r[4]) if r[4] else []),
+            "members": r[5] if isinstance(r[5], list) else (_json.loads(r[5]) if r[5] else []),
+            "enabled": bool(r[6]),
+        } for r in rows]
+
+    @classmethod
+    async def upsert_domain(cls, data: dict) -> dict:
+        import json as _json
+        tables = _json.dumps(data.get("tables") or [], ensure_ascii=False)
+        members = _json.dumps(data.get("members") or [], ensure_ascii=False)
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_domain SET name=:n, code=:c, description=:d, tables=:t, members=:m, enabled=:e "
+                    "WHERE id=:i"), {"n": data.get("name", ""), "c": data.get("code", ""),
+                    "d": data.get("description", ""), "t": tables, "m": members,
+                    "e": bool(data.get("enabled", True)), "i": data["id"]})
+                return {"id": data["id"]}
+            res = await db.execute(_t(
+                "INSERT INTO ai_domain(name,code,description,tables,members,enabled) "
+                "VALUES (:n,:c,:d,:t,:m,:e) RETURNING id"), {
+                "n": data.get("name", ""), "c": data.get("code", ""),
+                "d": data.get("description", ""), "t": tables, "m": members,
+                "e": bool(data.get("enabled", True))})
+            return {"id": res.scalar()}
+
+    @classmethod
+    async def domain_objects(cls) -> dict:
+        """P3-⑨ 数据域隔离视图：对象按数据域分组 + 域成员 + 当前用户可见域。"""
+        objs = await cls.list_objects()
+        domains = await cls.list_domains()
+        by_domain = {}
+        for d in domains:
+            by_domain[d["id"]] = {
+                "id": d["id"], "name": d["name"], "code": d["code"],
+                "description": d["description"], "members": d["members"],
+                "objects": [o for o in objs if o["table"] in d["tables"]] if d["tables"] else [],
+            }
+        unassigned = [o for o in objs if not any(o["table"] in (d["tables"] or []) for d in domains)]
+        # 超管可看全部域；普通用户仅可见其成员所在域
+        return {"domains": list(by_domain.values()),
+                "unassigned": unassigned,
+                "total_objects": len(objs)}
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:

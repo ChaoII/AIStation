@@ -430,6 +430,45 @@ async def dq_run(
     return SuccessResponse(data=r, msg=r.get("msg", "扫描完成"))
 
 
+@AiQueryRouter.post("/dq/scan", summary="显式全量扫描全部业务对象")
+async def dq_scan_all(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    r = await AiQueryService.dq_scan_all()
+    return SuccessResponse(data=r, msg=r.get("msg", "扫描完成"))
+
+
+@AiQueryRouter.get("/dq/alert", summary="DQ质量预警+下游影响联动")
+async def dq_alert(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.dq_alert(), msg="查询成功")
+
+
+# ---- P3-⑨ 数据域隔离 ----
+@AiQueryRouter.get("/domain/list", summary="数据域列表")
+async def domain_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_domains(), msg="查询成功")
+
+
+@AiQueryRouter.post("/domain/save", summary="数据域保存")
+async def domain_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.upsert_domain(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@AiQueryRouter.get("/domain/objects", summary="数据域隔离视图(对象按域分组)")
+async def domain_objects(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.domain_objects(), msg="查询成功")
+
+
 @AiQueryRouter.post("/access/save", summary="ABAC权限策略保存")
 async def access_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

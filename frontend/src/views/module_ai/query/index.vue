@@ -169,7 +169,7 @@
 
     <!-- 指标 / 术语 / 数据源 运营抽屉 -->
     <el-drawer v-model="opsVisible" title="智能问数 · 指标运营" size="920px" append-to-body>
-      <el-tabs v-model="opsTab">
+      <el-tabs v-model="opsTab" @tab-click="onOpsTabClick">
         <el-tab-pane label="指标" name="metric">
           <div class="ops-bar">
             <el-button type="primary" size="small" :icon="Plus" @click="openMetricEdit()">
@@ -1219,7 +1219,13 @@
         </el-tab-pane>
         <el-tab-pane label="数据质量" name="dq">
           <div class="ops-bar">
-            <el-button type="primary" size="small" :icon="Refresh" @click="loadDq">
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Refresh"
+              :loading="dqScanning"
+              @click="scanAllDqSync"
+            >
               扫描全部对象
             </el-button>
             <el-tag size="small" type="info" effect="plain">
@@ -1244,6 +1250,73 @@
               </el-card>
             </el-col>
           </el-row>
+          <div v-if="dqAlerts.length" class="dq-alert">
+            <el-alert
+              type="warning"
+              :closable="false"
+              :title="`质量预警：${dqAlerts.length} 个对象健康分低于 60，见下方下游影响`"
+              show-icon
+            />
+            <div v-for="a in dqAlerts" :key="a.table" class="dq-alert__item">
+              <el-tag size="small" type="danger">{{ a.alias }}</el-tag>
+              <span class="dq-alert__score">健康分 {{ a.score }}</span>
+              <div class="dq-alert__down">
+                <span class="dq-alert__label">下游影响</span>
+                <el-tag
+                  v-for="o in a.downstream.objects"
+                  :key="o"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="margin: 0 3px 3px 0"
+                >
+                  对象 {{ o }}
+                </el-tag>
+                <el-tag
+                  v-for="m in a.downstream.metrics"
+                  :key="m"
+                  size="small"
+                  type="primary"
+                  effect="plain"
+                  style="margin: 0 3px 3px 0"
+                >
+                  指标 {{ m }}
+                </el-tag>
+                <el-tag
+                  v-for="c in a.downstream.concepts"
+                  :key="c"
+                  size="small"
+                  type="success"
+                  effect="plain"
+                  style="margin: 0 3px 3px 0"
+                >
+                  概念 {{ c }}
+                </el-tag>
+                <span
+                  v-if="
+                    !a.downstream.objects.length &&
+                    !a.downstream.metrics.length &&
+                    !a.downstream.concepts.length
+                  "
+                  class="dq-alert__none"
+                >
+                  无下游
+                </span>
+              </div>
+              <div class="dq-alert__issues">
+                <el-tag
+                  v-for="(i, k) in a.issues"
+                  :key="k"
+                  size="small"
+                  type="info"
+                  effect="plain"
+                  style="margin: 0 3px 3px 0"
+                >
+                  {{ i }}
+                </el-tag>
+              </div>
+            </div>
+          </div>
           <el-table :data="dqData.items || []" size="small" border max-height="300">
             <el-table-column prop="alias" label="对象" min-width="120" show-overflow-tooltip />
             <el-table-column prop="table" label="表" min-width="150" show-overflow-tooltip />
@@ -1284,6 +1357,78 @@
               </template>
             </el-table-column>
           </el-table>
+        </el-tab-pane>
+        <el-tab-pane label="数据域" name="domain">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openDomainEdit()">
+              新建数据域
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              共 {{ domainView.domains?.length || 0 }} 个域 ·
+              {{ domainView.total_objects || 0 }} 个对象 · 未归属
+              {{ domainView.unassigned?.length || 0 }}
+            </el-tag>
+          </div>
+          <el-alert
+            type="info"
+            :closable="false"
+            style="margin-bottom: 10px"
+            title="数据域隔离：对象按数据域归属，成员用户只能访问其所在域的对象；ABAC 结合 domain 属性在解析/问数时过滤。"
+          />
+          <el-row :gutter="12">
+            <el-col v-for="d in domainView.domains || []" :key="d.id" :span="12">
+              <el-card shadow="never" style="margin-bottom: 12px">
+                <template #header>
+                  <div class="domain-head">
+                    <div>
+                      <el-tag size="small" type="primary" effect="dark">{{ d.name }}</el-tag>
+                      <el-tag size="small" type="info" effect="plain" style="margin-left: 6px">
+                        {{ d.code }}
+                      </el-tag>
+                    </div>
+                    <el-button link type="primary" size="small" @click="openDomainEdit(d)">
+                      编辑
+                    </el-button>
+                  </div>
+                </template>
+                <div class="domain-meta">{{ d.description || "—" }}</div>
+                <div class="gov-section">对象（{{ d.objects.length }}）</div>
+                <el-tag
+                  v-for="o in d.objects"
+                  :key="o.table"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ o.alias }}
+                </el-tag>
+                <div v-if="!d.objects.length" class="gov-empty">未分配对象</div>
+                <div class="gov-section">成员用户ID</div>
+                <el-tag
+                  v-for="m in d.members"
+                  :key="m"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  #{{ m }}
+                </el-tag>
+              </el-card>
+            </el-col>
+          </el-row>
+          <el-card v-if="(domainView.unassigned || []).length" shadow="never">
+            <template #header>未归属对象</template>
+            <el-tag
+              v-for="o in domainView.unassigned"
+              :key="o.table"
+              size="small"
+              effect="plain"
+              style="margin: 0 3px 4px 0"
+            >
+              {{ o.alias }}
+            </el-tag>
+          </el-card>
         </el-tab-pane>
       </el-tabs>
     </el-drawer>
@@ -2040,6 +2185,55 @@
         <el-button type="primary" @click="saveAccess(accessForm)">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 数据域编辑 -->
+    <el-dialog v-model="domainDialog" title="数据域" width="520px" append-to-body>
+      <el-form :model="domainForm" label-width="100px">
+        <el-form-item label="域名称" required>
+          <el-input v-model="domainForm.name" placeholder="如 生产域" />
+        </el-form-item>
+        <el-form-item label="域编码">
+          <el-input v-model="domainForm.code" placeholder="如 prod" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="domainForm.description" placeholder="数据域用途" />
+        </el-form-item>
+        <el-form-item label="对象">
+          <el-select
+            v-model="domainForm.tables"
+            multiple
+            filterable
+            clearable
+            placeholder="选择本域归属的对象"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in govObjects"
+              :key="o.table"
+              :label="(o.alias || o.table) + ' (' + o.table + ')'"
+              :value="o.table"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="成员用户">
+          <el-select
+            v-model="domainForm.members"
+            multiple
+            filterable
+            clearable
+            allow-create
+            placeholder="成员用户ID（可输入）"
+            style="width: 100%"
+          >
+            <el-option v-for="i in 5" :key="i" :label="`用户 #${i}`" :value="i" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="domainDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveDomainForm">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -2109,6 +2303,10 @@ import {
   saveAccessRule,
   getDqOverview,
   runDq,
+  scanAllDq,
+  getDqAlert,
+  saveDomain,
+  getDomainObjects,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -3168,12 +3366,26 @@ async function saveAccess(row: any) {
 }
 // ---- P3-⑦ 数据质量 DQ ----
 const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
+const dqScanning = ref(false);
 async function loadDq() {
   try {
     const r = await getDqOverview();
     dqData.value = r.data?.data || { avg_score: 0, healthy: 0, risk: 0, items: [] };
   } catch {
     dqData.value = { avg_score: 0, healthy: 0, risk: 0, items: [] };
+  }
+}
+async function scanAllDqSync() {
+  dqScanning.value = true;
+  try {
+    await scanAllDq();
+    ElMessage.success("已全量扫描");
+    await loadDq();
+    await loadDqAlert();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "扫描失败");
+  } finally {
+    dqScanning.value = false;
   }
 }
 async function scanDq(row: any) {
@@ -3186,6 +3398,71 @@ async function scanDq(row: any) {
     ElMessage.error(e?.msg || "扫描失败");
   }
 }
+// ---- P3-⑧ DQ 预警 ----
+const dqAlerts = ref<any[]>([]);
+async function loadDqAlert() {
+  try {
+    const r = await getDqAlert();
+    dqAlerts.value = r.data?.data?.alerts || [];
+  } catch {
+    dqAlerts.value = [];
+  }
+}
+// ---- P3-⑨ 数据域 ----
+const domainDialog = ref(false);
+const domainForm = reactive<any>({
+  id: null,
+  name: "",
+  code: "",
+  description: "",
+  tables: [],
+  members: [],
+  enabled: true,
+});
+const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
+async function loadDomains() {
+  try {
+    const r = await getDomainObjects();
+    domainView.value = r.data?.data || { domains: [], unassigned: [], total_objects: 0 };
+  } catch {
+    domainView.value = { domains: [], unassigned: [], total_objects: 0 };
+  }
+}
+function openDomainEdit(d?: any) {
+  Object.assign(
+    domainForm,
+    d || { id: null, name: "", code: "", description: "", tables: [], members: [], enabled: true }
+  );
+  domainDialog.value = true;
+}
+async function saveDomainForm() {
+  if (!domainForm.name?.trim()) return ElMessage.warning("请填写域名称");
+  try {
+    await saveDomain({ ...domainForm });
+    ElMessage.success("已保存");
+    domainDialog.value = false;
+    loadDomains();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+function onOpsTabClick(tab: any) {
+  const name = tab?.name || tab?.paneName || tab?.props?.name || "";
+  if (name === "dq") {
+    loadDq();
+    loadDqAlert();
+  } else if (name === "domain") {
+    loadDomains();
+  }
+}
+watch(opsTab, async (v) => {
+  if (v === "dq") {
+    await loadDq();
+    await loadDqAlert();
+  } else if (v === "domain") {
+    loadDomains();
+  }
+});
 async function inferRel() {
   inferringRel.value = true;
   try {
@@ -3819,7 +4096,6 @@ onMounted(() => {
   loadPipes();
   loadWorkshop();
   loadAccessRules();
-  loadDq();
 });
 </script>
 
@@ -3848,6 +4124,50 @@ onMounted(() => {
 .gov-empty {
   color: var(--el-text-color-placeholder);
   font-size: 12px;
+}
+.dq-alert {
+  margin-bottom: 10px;
+}
+.dq-alert__item {
+  border: 1px solid var(--el-color-warning-light-5);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+.dq-alert__score {
+  margin-left: 8px;
+  font-size: 13px;
+  color: var(--el-color-warning);
+}
+.dq-alert__down {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dq-alert__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-right: 6px;
+}
+.dq-alert__none {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+.dq-alert__issues {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+}
+.domain-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.domain-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
 }
 .gov-rel {
   font-size: 12px;
