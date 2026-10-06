@@ -97,7 +97,7 @@
           </el-tag>
         </div>
 
-        <el-row v-loading="loading" :gutter="12">
+        <el-row v-if="!activeChatAgent" v-loading="loading" :gutter="12">
           <el-col v-for="a in pagedAgents" :key="a.id" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
             <el-card shadow="hover" class="agent-card" :body-style="{ padding: '16px' }">
               <div class="agent-card__head">
@@ -186,7 +186,7 @@
           </el-col>
         </el-row>
 
-        <div v-if="filteredAgents.length > 0" class="agent-pagination">
+        <div v-if="!activeChatAgent && filteredAgents.length > 0" class="agent-pagination">
           <el-pagination
             v-model:current-page="page"
             v-model:page-size="pageSize"
@@ -198,6 +198,113 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- 智能体内嵌对话面板（页内展开） -->
+    <div v-if="activeChatAgent" class="agent-chat-panel">
+      <div class="agent-chat-head">
+        <button class="agent-chat-back" @click="closeAgentChat">返回列表</button>
+        <div class="agent-chat-title">
+          <div
+            class="agent-chat-avatar"
+            :style="{ background: activeChatAgent.color || '#409eff' }"
+          >
+            {{ activeChatAgent.agent_name?.slice(0, 1) }}
+          </div>
+          <div>
+            <div class="agent-chat-name">{{ activeChatAgent.agent_name }}</div>
+            <div class="agent-chat-sub">与智能体对话 · 自动检索知识库 / 问数 / 工具</div>
+          </div>
+        </div>
+        <div class="agent-chat-head-right">
+          <el-tag
+            v-if="activeChatAgent.knowledge_ids?.length"
+            size="small"
+            type="success"
+            effect="plain"
+          >
+            知识库
+          </el-tag>
+          <el-tag v-if="activeChatAgent.query_enabled" size="small" type="warning" effect="plain">
+            问数
+          </el-tag>
+          <el-tag v-if="(activeChatAgent.tool_ids || []).length" size="small" effect="plain">
+            {{ activeChatAgent.tool_ids.length }} 工具
+          </el-tag>
+        </div>
+      </div>
+
+      <div ref="chatBodyRef" class="agent-chat-body">
+        <el-empty v-if="!chatMsgs.length" description="开始和智能体对话吧" :image-size="50" />
+        <div v-for="(m, i) in chatMsgs" :key="i" class="agent-chat-msg" :class="m.role">
+          <div v-if="m.role === 'user'" class="agent-chat-bubble user">{{ m.content }}</div>
+          <div v-else class="agent-chat-bubble">
+            <div v-if="m.think" class="agent-chat-think">
+              <span class="agent-chat-think-title">思考过程</span>
+              <div>{{ m.think }}</div>
+            </div>
+            <div v-if="m.tools.length" class="agent-chat-tools">
+              <el-tag v-for="t in m.tools" :key="t" size="small" type="warning" effect="plain">
+                🔧 {{ t }}
+              </el-tag>
+            </div>
+            <div v-if="m.content" class="agent-chat-text">{{ m.content }}</div>
+            <span v-if="m.loading" class="agent-chat-loading">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              思考中…
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 对话设置工具栏 -->
+      <div class="agent-chat-settings">
+        <el-select
+          v-model="chatModelId"
+          size="small"
+          placeholder="选择模型"
+          clearable
+          style="width: 170px"
+        >
+          <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
+        </el-select>
+        <el-select v-model="chatVoice" size="small" placeholder="语音合成" style="width: 170px">
+          <el-option label="不合成语音" value="none" />
+          <el-option label="自动语音合成" value="auto" />
+        </el-select>
+        <el-select v-model="chatThink" size="small" placeholder="思考强度" style="width: 150px">
+          <el-option label="自动" value="auto" />
+          <el-option label="低" value="low" />
+          <el-option label="中" value="medium" />
+          <el-option label="高" value="high" />
+        </el-select>
+        <el-upload :show-file-list="false" multiple :auto-upload="false" :on-change="onChatFile">
+          <el-button size="small" :icon="Paperclip">上传文件</el-button>
+        </el-upload>
+        <el-tag v-if="chatFiles.length" size="small" type="info" effect="plain">
+          {{ chatFiles.length }} 个文件
+        </el-tag>
+      </div>
+
+      <div class="agent-chat-input">
+        <el-input
+          v-model="chatInput"
+          type="textarea"
+          :rows="1"
+          resize="none"
+          placeholder="输入问题，Enter 发送"
+          :disabled="chatSending"
+          @keyup.enter.exact.prevent="sendAgentChat"
+        />
+        <el-button
+          type="primary"
+          :loading="chatSending"
+          class="agent-chat-send"
+          @click="sendAgentChat"
+        >
+          发送
+        </el-button>
+      </div>
+    </div>
 
     <!-- 智能体编辑弹窗 -->
     <el-dialog
@@ -424,48 +531,6 @@
         <el-button type="primary" @click="saveCategory">保存</el-button>
       </template>
     </el-dialog>
-
-    <!-- 智能体内嵌对话 -->
-    <el-dialog
-      v-model="chatVisible"
-      :title="`与「${chatAgent?.agent_name || '智能体'}」对话`"
-      width="760px"
-      append-to-body
-      :close-on-click-modal="false"
-      @closed="closeAgentChat"
-    >
-      <div ref="chatBodyRef" class="agent-chat-body">
-        <el-empty v-if="!chatMsgs.length" description="开始和智能体对话吧" :image-size="40" />
-        <div v-for="(m, i) in chatMsgs" :key="i" class="agent-chat-msg" :class="m.role">
-          <div v-if="m.role === 'user'" class="agent-chat-bubble user">{{ m.content }}</div>
-          <div v-else class="agent-chat-bubble">
-            <div v-if="m.think" class="agent-chat-think">
-              <span class="agent-chat-think-title">思考</span>
-              <div>{{ m.think }}</div>
-            </div>
-            <div v-if="m.tools.length" class="agent-chat-tools">
-              <el-tag v-for="t in m.tools" :key="t" size="small" type="warning" effect="plain">
-                🔧 {{ t }}
-              </el-tag>
-            </div>
-            <div v-if="m.content">{{ m.content }}</div>
-            <span v-if="m.loading" class="agent-chat-loading">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              思考中…
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="agent-chat-input">
-        <el-input
-          v-model="chatInput"
-          placeholder="输入问题，Enter 发送"
-          :disabled="chatSending"
-          @keyup.enter="sendAgentChat"
-        />
-        <el-button type="primary" :loading="chatSending" @click="sendAgentChat">发送</el-button>
-      </div>
-    </el-dialog>
   </div>
 </template>
 
@@ -481,6 +546,7 @@ import {
   Delete,
   CopyDocument,
   Loading,
+  Paperclip,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import {
@@ -720,30 +786,39 @@ function runAgent(a: any) {
   openAgentChat(a);
 }
 
-// ---- 智能体内嵌对话（点击卡片对话） ----
-const chatVisible = ref(false);
-const chatAgent = ref<any>(null);
+// ---- 智能体内嵌对话（点击卡片，页内展开） ----
+const activeChatAgent = ref<any>(null);
 const chatMsgs = ref<any[]>([]);
 const chatInput = ref("");
 const chatSending = ref(false);
 const chatConv = ref<any[]>([]);
 const chatBodyRef = ref<HTMLDivElement>();
+// 对话工具栏选项
+const chatModelId = ref<number | null>(null);
+const chatVoice = ref("none");
+const chatThink = ref("auto");
+const chatFiles = ref<File[]>([]);
 
 function openAgentChat(a: any) {
-  chatAgent.value = a;
+  activeChatAgent.value = a;
   chatMsgs.value = [];
   chatConv.value = [];
   chatInput.value = "";
-  chatVisible.value = true;
+  chatFiles.value = [];
+  chatModelId.value = a.model_id || null;
 }
 function closeAgentChat() {
-  chatVisible.value = false;
+  activeChatAgent.value = null;
+  chatMsgs.value = [];
   chatSending.value = false;
 }
 function chatScroll() {
   requestAnimationFrame(() => {
     chatBodyRef.value?.scrollTo({ top: chatBodyRef.value.scrollHeight });
   });
+}
+function onChatFile(files: any) {
+  chatFiles.value = (files || []).slice(0, 3);
 }
 async function sendAgentChat() {
   const text = (chatInput.value || "").trim();
@@ -755,11 +830,10 @@ async function sendAgentChat() {
   chatMsgs.value.push(asst);
   chatSending.value = true;
   chatScroll();
-  // 读 token 并发起 SSE
   const token = JSON.parse(localStorage.getItem("access_token") || '"")');
   const base = import.meta.env.VITE_APP_BASE_API || "";
   try {
-    const resp = await fetch(`${base}/ai/agents/${chatAgent.value.id}/run/stream`, {
+    const resp = await fetch(`${base}/ai/agents/${activeChatAgent.value.id}/run/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json;charset=utf-8",
@@ -783,10 +857,9 @@ async function sendAgentChat() {
           const payload = block.slice(6).trim();
           if (payload === "[DONE]") break;
           try {
-            const evt = JSON.parse(payload);
-            handleChatEvent(evt, asst);
+            handleChatEvent(JSON.parse(payload), asst);
           } catch {
-            /* 忽略非 JSON */
+            /* 忽略 */
           }
         }
         idx = buf.indexOf("\n\n");
@@ -990,54 +1063,161 @@ onMounted(loadData);
   color: var(--el-text-color-secondary);
   font-size: var(--el-font-size-base);
 }
-.agent-chat-body {
-  height: 46vh;
-  overflow: auto;
-  padding: 8px 4px;
+.agent-chat-panel {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(31, 45, 61, 0.06);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  height: calc(100vh - 210px);
+  min-height: 460px;
+}
+.agent-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(120deg, var(--el-color-primary) 0%, #6a7ff7 100%);
+  color: #fff;
+}
+.agent-chat-back {
+  border: none;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.agent-chat-back:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+.agent-chat-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+.agent-chat-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+.agent-chat-name {
+  font-size: 16px;
+  font-weight: 700;
+}
+.agent-chat-sub {
+  font-size: 12px;
+  opacity: 0.9;
+  margin-top: 2px;
+}
+.agent-chat-head-right {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.agent-chat-body {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--el-bg-color-page);
+}
+.agent-chat-msg {
+  display: flex;
+  flex-direction: column;
 }
 .agent-chat-msg.user {
-  align-self: flex-end;
+  align-items: flex-end;
 }
 .agent-chat-bubble {
-  max-width: 84%;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: 0 2px 8px rgba(31, 45, 61, 0.04);
   white-space: pre-wrap;
   word-break: break-word;
+  color: var(--el-text-color-regular);
 }
 .agent-chat-bubble.user {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-text-color-primary);
+  background: var(--el-color-primary);
+  color: #fff;
+  border: none;
+  border-bottom-right-radius: 4px;
+}
+.agent-chat-bubble:not(.user) {
+  border-bottom-left-radius: 4px;
 }
 .agent-chat-think {
-  margin-bottom: 6px;
-  padding: 6px 8px;
-  background: var(--el-fill-color);
-  border-radius: 6px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: var(--el-fill-color-light);
+  border-radius: 10px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: 13px;
   white-space: pre-wrap;
+  border-left: 3px solid var(--el-color-primary);
 }
 .agent-chat-think-title {
   color: var(--el-color-primary);
   font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
 }
 .agent-chat-tools {
-  margin: 4px 0;
+  margin: 6px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agent-chat-text {
+  line-height: 1.7;
 }
 .agent-chat-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: 13px;
+}
+.agent-chat-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--el-bg-color);
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 .agent-chat-input {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--el-bg-color);
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.agent-chat-input .el-textarea__inner {
+  border-radius: 12px;
+}
+.agent-chat-send {
+  border-radius: 12px;
+  padding: 10px 22px;
 }
 
 .agent-category-card {
