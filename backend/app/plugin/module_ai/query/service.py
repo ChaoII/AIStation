@@ -4235,6 +4235,28 @@ class AiQueryService:
         return sorted(scores, key=lambda t: -scores[t])[:12]
 
     @classmethod
+    def _query_conventions(cls) -> str:
+        """查询口径规范：统一业务口径，减少 LLM 生成 SQL 时的歧义（时间/用户/联表/占比）。"""
+        return (
+            "【查询口径规范】\n"
+            "1. 时间口径：\n"
+            "   - '最近N天/近N天' → WHERE 时间列 >= CURRENT_DATE - N\n"
+            "   - '过去N月/近N月' → WHERE 时间列 >= CURRENT_DATE - INTERVAL 'N month'\n"
+            "   - '某月a日到b日' → WHERE 时间列 >= 'YYYY-MM-a' AND 时间列 < 'YYYY-MM-(b+1)'（含开头不含结尾）\n"
+            "   - '某日当天' → WHERE 时间列 >= '当日' AND 时间列 < '次日'\n"
+            "   - '按天/每日/每天' → GROUP BY TO_CHAR(时间列,'YYYY-MM-DD') 或 date(时间列)\n"
+            "   - '各小时/按小时' → SELECT EXTRACT(HOUR FROM 时间列)::int AS 小时 ... GROUP BY 小时\n"
+            "   - 'YYYY年M月' → WHERE 时间列 >= 'YYYY-MM-01' AND 时间列 < 'YYYY-(M+1)-01'\n"
+            "2. 用户/账号统计：一律排除已删除 → WHERE is_deleted=false；超级管理员 = is_superuser=true。\n"
+            "3. 联表口径：\n"
+            "   - '每个/各主实体...' → 主实体 LEFT JOIN 明细表，用 COALESCE(主实体.name,'未分组/未知') 聚合空维度；"
+            "计数用 COUNT(明细表.id)（LEFT JOIN 下 NULL 不计入）。\n"
+            "   - 仅'发生过/有关系的' → 用 INNER JOIN。\n"
+            "   - video_alarm_records 等表无 is_deleted 字段，统计告警不要加 is_deleted 条件。\n"
+            "4. 占比/平均：用 ROUND(分子*100.0/分母,2) 或 ROUND(AVG(x)::numeric,2) 保证精度。"
+        )
+
+    @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         lines = ["【可用指标】"]
         for m in metrics:
@@ -4275,6 +4297,7 @@ class AiQueryService:
                 if extras:
                     head = f"{t}【" + "；".join(extras) + "】"
                 lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
+            lines.append(cls._query_conventions())
         lines.append("【示例问题→SQL】")
         for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")
