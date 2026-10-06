@@ -2222,6 +2222,30 @@ class AiQueryService:
             return False
 
     @classmethod
+    async def _ont_sql_violations(cls, sql: str, user_id: int | None) -> list[str]:
+        """问数 SQL 的本体字段级 ACL：检测是否查询了用户无权限的本体受限/敏感属性。"""
+        if not sql:
+            return []
+        if await cls._can_see_sensitive(user_id):
+            return []
+        tables = _scan_ont_tables(sql)
+        if not tables:
+            return []
+        violations: list[str] = []
+        for table in tables:
+            code = table.replace("ont_", "")
+            props = await cls._ont_props(code)
+            restricted = [p["code"] for p in props
+                          if p["sensitive"] or (p.get("roles") and not ({"all", "public"} & set(p["roles"])))]
+            if not restricted:
+                continue
+            ids = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql))
+            bad = [c for c in restricted if c in ids]
+            if bad:
+                violations.extend(f"{table}.{c}" for c in bad)
+        return list(dict.fromkeys(violations))
+
+    @classmethod
     async def dq_run(cls, table_name: str) -> dict:
         """P3-⑦ 数据质量(DQ)：对业务对象扫描 完整性/唯一性/新鲜度 并打分落库。"""
         import json as _json
@@ -3719,6 +3743,17 @@ class AiQueryService:
         yield {"type": "sql_final", "sql": sql}
 
         # ---- 执行并返回结果 ----
+        # 本体字段级 ACL：若 SQL 查询了用户无权限的本体受限/敏感属性 → 拒绝
+        try:
+            violations = await cls._ont_sql_violations(sql, getattr(auth, "user", None) and auth.user.id)
+            if violations:
+                await cls._save_message(sess["id"], question, path="slow", datasource=datasource,
+                                        sql=sql, rows=[], is_error=True,
+                                        summary=f"字段级权限：无权限访问 {', '.join(violations)}")
+                yield {"type": "error", "message": f"字段级权限：无权限访问 {', '.join(violations)}（本体属性级 ACL）"}
+                return
+        except Exception:  # noqa: BLE001
+            pass
         try:
             res = await cls._execute_one(sql, datasource, auth)
             cols = res.get("columns") or []
