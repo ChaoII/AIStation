@@ -186,6 +186,38 @@ async def delete_one(table: str, id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 本体计算函数（Palantir Functions）：对象上的可复用计算，被问数/AIP 复用
+# ---------------------------------------------------------------------------
+async def list_functions(object_code: str | None = None) -> list[dict]:
+    if object_code:
+        r = await _exec("SELECT id,object_code,name,code,expr,description FROM ai_ont_function "
+                        "WHERE object_code=:c AND is_deleted=false ORDER BY id", {"c": object_code})
+    else:
+        r = await _exec("SELECT id,object_code,name,code,expr,description FROM ai_ont_function "
+                        "WHERE is_deleted=false ORDER BY id")
+    rows = r.fetchall()
+    return [{"id": x[0], "object_code": x[1], "name": x[2], "code": x[3],
+             "expr": x[4] or "", "description": x[5] or ""} for x in rows]
+
+
+async def upsert_function(data: dict) -> dict:
+    code = (data.get("code") or "").strip()
+    obj = (data.get("object_code") or "").strip()
+    if not code or not obj:
+        raise CustomException(msg="函数编码/对象编码必填")
+    if data.get("id"):
+        await _exec_write("UPDATE ai_ont_function SET name=:n, expr=:e, description=:d WHERE id=:id",
+                          {"n": data.get("name", code), "e": data.get("expr", ""),
+                           "d": data.get("description", ""), "id": data["id"]})
+        return {"id": data["id"]}
+    r = await _exec_write("INSERT INTO ai_ont_function(object_code,name,code,expr,description) "
+                          "VALUES (:oc,:n,:c,:e,:d) RETURNING id",
+                          {"oc": obj, "n": data.get("name", code), "c": code,
+                           "e": data.get("expr", ""), "d": data.get("description", "")})
+    return {"id": r.scalar()}
+
+
+# ---------------------------------------------------------------------------
 # 本体驱动表：把对象 + 属性物化成真实表（Palantir「本体驱动数据」）
 # ---------------------------------------------------------------------------
 async def materialize_object(code: str) -> dict:

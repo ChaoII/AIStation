@@ -35,3 +35,9 @@ export function removeOnt(kind: string, id: number) {
 export function materializeOntObject(code: string) {
   return request({ url: `${API_PATH}/materialize`, method: "post", data: { code } });
 }
+export function getOntFunctions(object_code = "") {
+  return request({ url: `${API_PATH}/functions`, method: "get", params: { object_code } });
+}
+export function saveOntFunction(data: any) {
+  return request({ url: `${API_PATH}/function/save`, method: "post", data });
+}

@@ -1199,11 +1199,16 @@ class AiQueryService:
                 rows = (await db.execute(_t(
                     "SELECT object_code,name,code,prop_type,required,sensitive,description FROM ai_ont_property "
                     "WHERE is_deleted=false ORDER BY object_code,id"))).fetchall()
+                fnrows = (await db.execute(_t(
+                    "SELECT object_code,name,code,expr FROM ai_ont_function WHERE is_deleted=false")).fetchall())
         except Exception:  # noqa: BLE001
-            rows = []
+            rows, fnrows = [], []
         propmap: dict[str, list[tuple]] = {}
         for r in rows:
             propmap.setdefault(r[0], []).append((r[1], r[2], r[3], bool(r[5]), r[6] or ""))
+        fnmap: dict[str, list[tuple]] = {}
+        for r in fnrows:
+            fnmap.setdefault(r[0], []).append((r[1], r[2], r[3] or ""))
         for code, o in objs.items():
             table = f"ont_{code}" if code else ""
             head = f"- 对象「{o['name']}」→表 {table}"
@@ -1214,6 +1219,9 @@ class AiQueryService:
             if o.get("description"):
                 head += f"（{o['description']}）"
             lines.append(head)
+            fns = fnmap.get(code, [])
+            for fn in fns:
+                lines.append(f"   · 函数「{fn[0]}」({fn[1]}): {fn[2]}")
         return "\n".join(lines)
 
     @classmethod

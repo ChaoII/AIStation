@@ -180,6 +180,47 @@
                 </el-table-column>
               </el-table>
             </el-tab-pane>
+
+            <el-tab-pane label="函数 Function" name="function">
+              <div class="ont-bar">
+                <el-button type="primary" size="small" :icon="Plus" @click="openFuncEdit(current)">
+                  新增函数
+                </el-button>
+                <el-tag size="small" type="info" effect="plain">共 {{ functions.length }}</el-tag>
+              </div>
+              <el-alert
+                type="info"
+                :closable="false"
+                style="margin-bottom: 8px"
+                title="对象上的可复用计算（如 订单毛利率），被问数 / Agent 复用（Palantir Functions）"
+              />
+              <el-table :data="functions" size="small" border>
+                <el-table-column prop="name" label="函数" min-width="120" show-overflow-tooltip />
+                <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
+                <el-table-column
+                  prop="expr"
+                  label="表达式/逻辑"
+                  min-width="200"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="description"
+                  label="说明"
+                  min-width="160"
+                  show-overflow-tooltip
+                />
+                <el-table-column label="操作" width="110" align="center">
+                  <template #default="{ row }">
+                    <el-button link type="primary" size="small" @click="openFuncEdit(row)">
+                      编辑
+                    </el-button>
+                    <el-button link type="danger" size="small" @click="removeFunc(row)">
+                      删
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
           </el-tabs>
           <div v-else class="ont-empty">
             <el-empty description="请先在左侧选择对象类型" :image-size="90">
@@ -319,6 +360,31 @@
         <el-button type="primary" :loading="savingObj" @click="saveAction">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 函数编辑 -->
+    <el-dialog v-model="funcDialog" title="本体计算函数" width="520px" append-to-body>
+      <el-form :model="funcForm" label-width="100px">
+        <el-form-item label="函数名" required>
+          <el-input v-model="funcForm.name" placeholder="如 订单毛利率" />
+        </el-form-item>
+        <el-form-item label="编码" required>
+          <el-input v-model="funcForm.code" placeholder="gross_margin" />
+        </el-form-item>
+        <el-form-item label="表达式/逻辑">
+          <el-input
+            v-model="funcForm.expr"
+            type="textarea"
+            :rows="3"
+            placeholder="如 (amount - cost) / amount"
+          />
+        </el-form-item>
+        <el-form-item label="说明"><el-input v-model="funcForm.description" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="funcDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveFunc">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -333,6 +399,8 @@ import {
   saveOntProperty,
   saveOntLink,
   saveOntAction,
+  getOntFunctions,
+  saveOntFunction,
   removeOnt,
   materializeOntObject,
 } from "@/api/module_ai/ontology";
@@ -344,6 +412,7 @@ const ontTab = ref("property");
 const props = ref<any[]>([]);
 const links = ref<any[]>([]);
 const actions = ref<any[]>([]);
+const functions = ref<any[]>([]);
 
 async function loadObjects() {
   const r = await getOntObjects();
@@ -359,6 +428,8 @@ async function selectObject(o: any) {
   props.value = d.properties || [];
   links.value = d.links || [];
   actions.value = d.actions || [];
+  const fr = await getOntFunctions(o.code);
+  functions.value = fr.data?.data || [];
 }
 
 // 对象
@@ -559,6 +630,49 @@ function removeAction(a: any) {
     cancelButtonText: "取消",
   }).then(async () => {
     await removeOnt("action", a.id);
+    ElMessage.success("已删除");
+    await selectObject(current.value);
+  });
+}
+
+// 函数
+const funcDialog = ref(false);
+const funcForm = reactive<any>({
+  id: null,
+  object_code: "",
+  name: "",
+  code: "",
+  expr: "",
+  description: "",
+});
+function openFuncEdit(f?: any) {
+  Object.assign(
+    funcForm,
+    f || { id: null, object_code: currentCode.value, name: "", code: "", expr: "", description: "" }
+  );
+  funcDialog.value = true;
+}
+async function saveFunc() {
+  if (!funcForm.code?.trim() || !funcForm.name?.trim()) return ElMessage.warning("请填函数名/编码");
+  savingObj.value = true;
+  try {
+    await saveOntFunction({ ...funcForm });
+    ElMessage.success("已保存");
+    funcDialog.value = false;
+    await selectObject(current.value);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingObj.value = false;
+  }
+}
+function removeFunc(f: any) {
+  ElMessageBox.confirm(`删除函数「${f.name}」?`, "确认", {
+    type: "warning",
+    confirmButtonText: "删除",
+    cancelButtonText: "取消",
+  }).then(async () => {
+    await removeOnt("function", f.id);
     ElMessage.success("已删除");
     await selectObject(current.value);
   });

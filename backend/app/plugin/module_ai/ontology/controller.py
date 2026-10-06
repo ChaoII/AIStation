@@ -68,7 +68,8 @@ async def upsert_action(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONRes
 @OntologyRouter.delete("/remove", summary="删除(对象/属性/Link/Action)")
 async def remove(kind: str, id: int, auth: AuthDep) -> JSONResponse:
     table = {"object": "ai_ont_object", "property": "ai_ont_property",
-             "link": "ai_ont_link", "action": "ai_ont_action"}.get(kind)
+             "link": "ai_ont_link", "action": "ai_ont_action",
+             "function": "ai_ont_function"}.get(kind)
     if not table:
         return SuccessResponse(data=None, msg="非法类型")
     await _svc.delete_one(table, id)
@@ -79,3 +80,14 @@ async def remove(kind: str, id: int, auth: AuthDep) -> JSONResponse:
 async def materialize(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.materialize_object(str(data.get("code", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已物化"))
+
+
+@OntologyRouter.get("/functions", summary="本体计算函数列表")
+async def list_functions(auth: AuthDep, object_code: str = "") -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_functions(object_code or None), msg="查询成功")
+
+
+@OntologyRouter.post("/function/save", summary="本体计算函数保存")
+async def upsert_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.upsert_function(data)
+    return SuccessResponse(data=r, msg="保存成功")
