@@ -230,6 +230,10 @@ export function saveQueryAsset(data: {
   business_scenarios?: string;
   included: boolean;
   remark?: string;
+  object_enabled?: boolean;
+  object_key_col?: string;
+  object_name_col?: string;
+  object_icon?: string;
 }) {
   return request({ url: `${API_PATH}/assets/save`, method: "post", data });
 }
