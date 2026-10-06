@@ -479,7 +479,7 @@ class Settings(BaseSettings):
     REQUEST_LIMITER_REDIS_PREFIX: str = "aistation:request_limiter:"
 
     # 接口限流默认值（每 seconds 秒内最多 times 次请求）
-    REQUEST_RATE_LIMIT_TIMES: int = 5
+    REQUEST_RATE_LIMIT_TIMES: int = 60
     REQUEST_RATE_LIMIT_SECONDS: int = 10
 
     # 按模块覆盖限流参数：{"module": {"times": N, "seconds": M}}
@@ -489,8 +489,11 @@ class Settings(BaseSettings):
     # 正常操作（前端表现为「请求过于频繁」），故按模块放宽（仍保留每路由 60 次/10s 上限）。
     RATE_LIMIT_OVERRIDES: dict[str, dict] = {
         "annotation": {"times": 60, "seconds": 10},
-        "train": {"times": 30, "seconds": 10},
+        "train": {"times": 60, "seconds": 10},
         "video": {"times": 60, "seconds": 10},
+        # AI 模块页面一次加载会并发拉取模型/提示词/工具/工作流/技能/知识库/数据源等 9~15 个接口，
+        # 且流式/会话/通知请求频繁，默认 5 次/10s 会误伤「请求过于频繁」，故放宽。
+        "ai": {"times": 300, "seconds": 10},
     }
 
     # 设备侧接入/回调路径的**独立**限额（键为 "METHOD /不含 ROOT_PATH 的路径"）：
