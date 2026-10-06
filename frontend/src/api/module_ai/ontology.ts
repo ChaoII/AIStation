@@ -53,3 +53,9 @@ export function getOntVersions(object_code = "") {
 export function rollbackOntVersion(version_id: number) {
   return request({ url: `${API_PATH}/version/rollback`, method: "post", data: { version_id } });
 }
+export function getOntCapabilities() {
+  return request({ url: `${API_PATH}/capabilities`, method: "get" });
+}
+export function saveOntCapability(data: any) {
+  return request({ url: `${API_PATH}/capability/save`, method: "post", data });
+}

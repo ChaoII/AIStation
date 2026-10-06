@@ -127,3 +127,14 @@ async def upsert_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONR
     r = await _svc.upsert_function(data)
     await _svc._log_change(str(data.get("object_code", "")), "function", "save", f"函数 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
+
+
+@OntologyRouter.get("/capabilities", summary="本体能力列表")
+async def list_capabilities(auth: AuthDep) -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_capabilities(), msg="查询成功")
+
+
+@OntologyRouter.post("/capability/save", summary="本体能力保存")
+async def upsert_capability(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.upsert_capability(data)
+    return SuccessResponse(data=r, msg="保存成功")

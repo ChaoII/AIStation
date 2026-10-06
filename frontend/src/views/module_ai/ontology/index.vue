@@ -1,6 +1,30 @@
 <!-- 本体 Ontology：对象类型 / 属性 / Link / Action 强类型元模型（Palantir Ontology） -->
 <template>
   <div class="app-container ai-mod ai-ontology-page">
+    <el-card shadow="never" class="ont-caps">
+      <template #header>
+        <div class="ont-head">
+          <span class="ont-head__title">能力（Agent 可来自本体的能力）</span>
+          <el-button type="primary" size="small" :icon="Plus" @click="openCapEdit()">
+            新增能力
+          </el-button>
+        </div>
+      </template>
+      <el-tag
+        v-for="c in caps"
+        :key="c.code"
+        size="small"
+        effect="plain"
+        style="margin: 0 4px 4px 0"
+      >
+        {{ c.name }} [{{ c.type }}]
+      </el-tag>
+      <el-empty
+        v-if="!caps.length"
+        description="暂无能力，点击新增（Agent 装配时可选择这些本体能力）"
+        :image-size="40"
+      />
+    </el-card>
     <el-row :gutter="12">
       <!-- 左：对象类型列表 -->
       <el-col :span="6">
@@ -485,6 +509,31 @@
         <el-button type="primary" :loading="savingObj" @click="saveFunc">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 能力编辑 -->
+    <el-dialog v-model="capDialog" title="本体能力" width="480px" append-to-body>
+      <el-form :model="capForm" label-width="90px">
+        <el-form-item label="编码" required>
+          <el-input v-model="capForm.code" placeholder="如 retail_query" />
+        </el-form-item>
+        <el-form-item label="名称" required>
+          <el-input v-model="capForm.name" placeholder="如 零售问数" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="capForm.type" style="width: 100%">
+            <el-option label="问数 query" value="query" />
+            <el-option label="接地 grounding" value="grounding" />
+            <el-option label="应用 app" value="app" />
+            <el-option label="通用 generic" value="generic" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="说明"><el-input v-model="capForm.description" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="capDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingObj" @click="saveCap">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -505,6 +554,8 @@ import {
   publishOntVersion,
   getOntVersions,
   rollbackOntVersion,
+  getOntCapabilities,
+  saveOntCapability,
   removeOnt,
   materializeOntObject,
 } from "@/api/module_ai/ontology";
@@ -519,12 +570,40 @@ const actions = ref<any[]>([]);
 const functions = ref<any[]>([]);
 const changelog = ref<any[]>([]);
 const versions = ref<any[]>([]);
+const caps = ref<any[]>([]);
 
 async function loadObjects() {
   const r = await getOntObjects();
   objects.value = r.data?.data || [];
   // 默认选中第一个对象，右侧即时显示详情（界面饱满）
   if (objects.value.length && !currentCode.value) await selectObject(objects.value[0]);
+  const cr = await getOntCapabilities();
+  caps.value = cr.data?.data || [];
+}
+// 能力编辑
+const capDialog = ref(false);
+const capForm = reactive<any>({
+  id: null,
+  code: "",
+  name: "",
+  type: "generic",
+  description: "",
+  enabled: true,
+});
+function openCapEdit(c?: any) {
+  Object.assign(
+    capForm,
+    c || { id: null, code: "", name: "", type: "generic", description: "", enabled: true }
+  );
+  capDialog.value = true;
+}
+async function saveCap() {
+  if (!capForm.code?.trim() || !capForm.name?.trim()) return ElMessage.warning("请填能力编码/名称");
+  await saveOntCapability({ ...capForm });
+  ElMessage.success("已保存");
+  capDialog.value = false;
+  const cr = await getOntCapabilities();
+  caps.value = cr.data?.data || [];
 }
 async function selectObject(o: any) {
   currentCode.value = o.code;

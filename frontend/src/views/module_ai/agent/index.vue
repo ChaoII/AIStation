@@ -832,6 +832,27 @@
           </div>
         </div>
 
+        <!-- 来自本体的能力 -->
+        <div class="studio-section">
+          <div class="studio-section__head">
+            <div>
+              <div class="studio-section__title">来自本体的能力</div>
+              <div class="studio-section__sub">
+                在本体登记的能力，勾选即授予本智能体（Agent 能力来自本体）
+              </div>
+            </div>
+          </div>
+          <el-checkbox-group v-model="studioAgent.capabilities" @change="studioDirty = true">
+            <el-checkbox v-for="cap in ontCaps" :key="cap.code" :value="cap.code" class="prof-cap">
+              {{ cap.name }}
+              <span class="prof-cap__type">[{{ cap.type }}]</span>
+            </el-checkbox>
+          </el-checkbox-group>
+          <div v-if="!ontCaps.length" class="studio-flow-empty">
+            暂无本体能力，请先在「本体」页登记能力
+          </div>
+        </div>
+
         <!-- 装配流预览 -->
         <div class="studio-section">
           <div class="studio-section__head">
@@ -950,6 +971,7 @@ import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getAiSkillList } from "@/api/module_ai/skill";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
+import { getOntCapabilities } from "@/api/module_ai/ontology";
 import { getQueryDatasources } from "@/api/module_ai/query";
 import { getAiSessionList, getAiSessionDetail } from "@/api/module_ai/session";
 
@@ -970,6 +992,7 @@ const queryDatasources = ref<any[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const skillOptions = ref<{ id: number; name: string }[]>([]);
 const knowledgeOptions = ref<{ id: number; name: string }[]>([]);
+const ontCaps = ref<any[]>([]);
 
 const filteredAgents = computed(() => {
   let list = agents.value;
@@ -1071,6 +1094,8 @@ const loadData = async () => {
     skillOptions.value = (sr.data?.data || []).map((s: any) => ({ id: s.id, name: s.name }));
     knowledgeOptions.value = (kr.data?.data || []).map((k: any) => ({ id: k.id, name: k.name }));
     queryDatasources.value = dr.data?.data || [];
+    const capr = await getOntCapabilities();
+    ontCaps.value = capr.data?.data || [];
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -1183,6 +1208,7 @@ const studioDirty = ref(false);
 function openStudio(a: any) {
   // 深拷贝，避免污染原列表
   studioAgent.value = JSON.parse(JSON.stringify(a));
+  studioAgent.value.capabilities = studioAgent.value.capabilities || [];
   studioDirty.value = false;
   studioVisible.value = true;
 }
@@ -1277,6 +1303,7 @@ async function saveStudio() {
       knowledge_ids: a.knowledge_ids || [],
       query_enabled: !!a.query_enabled,
       query_datasource: a.query_datasource || "system",
+      capabilities: a.capabilities || [],
       enabled: a.enabled,
     });
     ElMessage.success("编排已保存");
@@ -1815,6 +1842,13 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
+}
+.prof-cap {
+  margin: 0 20px 8px 0;
+}
+.prof-cap__type {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .cap-card {
   border: 1px solid var(--el-border-color);

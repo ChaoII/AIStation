@@ -321,6 +321,38 @@ async def upsert_function(data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# 本体能力（Palantir：能力可挂在本体上，Agent 从本体装配能力）
+# ---------------------------------------------------------------------------
+async def list_capabilities() -> list[dict]:
+    r = await _exec("SELECT id,code,name,type,description,enabled FROM ai_ont_capability "
+                    "WHERE is_deleted=false ORDER BY id DESC")
+    rows = r.fetchall()
+    return [{"id": x[0], "code": x[1], "name": x[2], "type": x[3],
+             "description": x[4] or "", "enabled": bool(x[5])} for x in rows]
+
+
+async def upsert_capability(data: dict) -> dict:
+    code = (data.get("code") or "").strip()
+    if not code:
+        raise CustomException(msg="能力编码必填")
+    if data.get("id"):
+        await _exec_write("UPDATE ai_ont_capability SET name=:n, type=:t, description=:d, enabled=:e WHERE id=:id",
+                          {"n": data.get("name", code), "t": data.get("type", "generic"),
+                           "d": data.get("description", ""), "e": bool(data.get("enabled", True)), "id": data["id"]})
+        return {"id": data["id"]}
+    try:
+        r = await _exec_write("INSERT INTO ai_ont_capability(code,name,type,description,enabled) "
+                              "VALUES (:c,:n,:t,:d,:e) RETURNING id",
+                              {"c": code, "n": data.get("name", code), "t": data.get("type", "generic"),
+                               "d": data.get("description", ""), "e": bool(data.get("enabled", True))})
+        return {"id": r.scalar()}
+    except Exception as e:  # noqa: BLE001
+        if "duplicate" in str(e).lower():
+            raise CustomException(msg=f"能力编码 {code} 已存在")
+        raise CustomException(msg=f"保存失败：{str(e)[:80]}")
+
+
+# ---------------------------------------------------------------------------
 # 本体驱动表：把对象 + 属性物化成真实表（Palantir「本体驱动数据」）
 # ---------------------------------------------------------------------------
 async def materialize_object(code: str) -> dict:

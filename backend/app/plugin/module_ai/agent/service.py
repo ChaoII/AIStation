@@ -11,6 +11,22 @@ from app.core.database import async_db_session
 from .model import AiAgentCategoryModel, AiAgentModel
 
 
+async def _cap_names(caps: list[str]) -> list[str]:
+    """本体能力 code → name（供 Agent 运行时注入能力上下文）。"""
+    if not caps:
+        return []
+    try:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT code,name FROM ai_ont_capability WHERE code = ANY(:codes) AND is_deleted=false"),
+                {"codes": caps})).fetchall()
+        m = {r[0]: r[1] for r in rows}
+        return [m.get(c, c) for c in caps]
+    except Exception:  # noqa: BLE001
+        return caps
+
+
 def _to_dict(a: AiAgentModel) -> dict:
     return {
         "id": a.id,
@@ -27,6 +43,7 @@ def _to_dict(a: AiAgentModel) -> dict:
         "knowledge_ids": a.knowledge_ids or [],
         "query_enabled": getattr(a, "query_enabled", False),
         "query_datasource": getattr(a, "query_datasource", None) or "system",
+        "capabilities": getattr(a, "capabilities", None) or [],
         "input_schema": a.input_schema,
         "avatar": a.avatar or "",
         "color": a.color or "",
@@ -163,7 +180,7 @@ class AiAgentService:
                 "agent_name", "category_id", "agent_role", "description", "model_id",
                 "prompt_id", "temperature", "workflow_id", "tool_ids", "skill_ids",
                 "knowledge_ids", "query_enabled", "query_datasource", "input_schema",
-                "avatar", "color", "markdown", "enabled", "order",
+                "capabilities", "avatar", "color", "markdown", "enabled", "order",
             ):
                 if getattr(data, key) is not None:
                     setattr(a, key, getattr(data, key))
@@ -307,6 +324,17 @@ class AiAgentService:
                         "以下是已绑定技能的使用说明，在合适场景按说明执行：\n"
                         + "\n\n".join(skill_blocks)
                     )
+
+            # 注入本体能力（Agent 能力来自本体）
+            caps = agent.get("capabilities") or []
+            if caps:
+                cap_names = await _cap_names(caps)
+                system_prompt = (
+                    f"{system_prompt}\n\n"
+                    "## 来自本体的能力\n"
+                    "你已被授予以下本体能力：\n"
+                    + "\n".join(f"- {c}" for c in cap_names[:30])
+                )
 
             # 注入知识库检索上下文（RAG，阶段3）
             if agent.get("knowledge_ids"):
