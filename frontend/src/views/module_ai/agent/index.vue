@@ -424,6 +424,48 @@
         <el-button type="primary" @click="saveCategory">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 智能体内嵌对话 -->
+    <el-dialog
+      v-model="chatVisible"
+      :title="`与「${chatAgent?.agent_name || '智能体'}」对话`"
+      width="760px"
+      append-to-body
+      :close-on-click-modal="false"
+      @closed="closeAgentChat"
+    >
+      <div ref="chatBodyRef" class="agent-chat-body">
+        <el-empty v-if="!chatMsgs.length" description="开始和智能体对话吧" :image-size="40" />
+        <div v-for="(m, i) in chatMsgs" :key="i" class="agent-chat-msg" :class="m.role">
+          <div v-if="m.role === 'user'" class="agent-chat-bubble user">{{ m.content }}</div>
+          <div v-else class="agent-chat-bubble">
+            <div v-if="m.think" class="agent-chat-think">
+              <span class="agent-chat-think-title">思考</span>
+              <div>{{ m.think }}</div>
+            </div>
+            <div v-if="m.tools.length" class="agent-chat-tools">
+              <el-tag v-for="t in m.tools" :key="t" size="small" type="warning" effect="plain">
+                🔧 {{ t }}
+              </el-tag>
+            </div>
+            <div v-if="m.content">{{ m.content }}</div>
+            <span v-if="m.loading" class="agent-chat-loading">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              思考中…
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="agent-chat-input">
+        <el-input
+          v-model="chatInput"
+          placeholder="输入问题，Enter 发送"
+          :disabled="chatSending"
+          @keyup.enter="sendAgentChat"
+        />
+        <el-button type="primary" :loading="chatSending" @click="sendAgentChat">发送</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -438,8 +480,8 @@ import {
   Edit,
   Delete,
   CopyDocument,
+  Loading,
 } from "@element-plus/icons-vue";
-import { useRouter } from "vue-router";
 import { Auth } from "@/utils/auth";
 import {
   getAiAgentList,
@@ -462,7 +504,6 @@ import { getQueryDatasources } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiAgent" });
 
-const router = useRouter();
 const loading = ref(false);
 const agents = ref<any[]>([]);
 const categories = ref<any[]>([]);
@@ -676,7 +717,100 @@ async function saveAgent() {
 }
 
 function runAgent(a: any) {
-  router.push({ path: "/ai/chat", query: { agent_id: a.id } });
+  openAgentChat(a);
+}
+
+// ---- 智能体内嵌对话（点击卡片对话） ----
+const chatVisible = ref(false);
+const chatAgent = ref<any>(null);
+const chatMsgs = ref<any[]>([]);
+const chatInput = ref("");
+const chatSending = ref(false);
+const chatConv = ref<any[]>([]);
+const chatBodyRef = ref<HTMLDivElement>();
+
+function openAgentChat(a: any) {
+  chatAgent.value = a;
+  chatMsgs.value = [];
+  chatConv.value = [];
+  chatInput.value = "";
+  chatVisible.value = true;
+}
+function closeAgentChat() {
+  chatVisible.value = false;
+  chatSending.value = false;
+}
+function chatScroll() {
+  requestAnimationFrame(() => {
+    chatBodyRef.value?.scrollTo({ top: chatBodyRef.value.scrollHeight });
+  });
+}
+async function sendAgentChat() {
+  const text = (chatInput.value || "").trim();
+  if (!text || chatSending.value) return;
+  chatInput.value = "";
+  chatMsgs.value.push({ role: "user", content: text });
+  chatConv.value.push({ role: "user", content: text });
+  const asst = { role: "assistant", content: "", think: "", tools: [] as string[], loading: true };
+  chatMsgs.value.push(asst);
+  chatSending.value = true;
+  chatScroll();
+  // 读 token 并发起 SSE
+  const token = JSON.parse(localStorage.getItem("access_token") || '"")');
+  const base = import.meta.env.VITE_APP_BASE_API || "";
+  try {
+    const resp = await fetch(`${base}/ai/agents/${chatAgent.value.id}/run/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json;charset=utf-8",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ messages: [...chatConv.value], variables: null }),
+    });
+    if (!resp.ok || !resp.body) throw new Error(`请求失败：${resp.status}`);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder("utf-8");
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx = buf.indexOf("\n\n");
+      while (idx >= 0) {
+        const block = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 2);
+        if (block.startsWith("data: ")) {
+          const payload = block.slice(6).trim();
+          if (payload === "[DONE]") break;
+          try {
+            const evt = JSON.parse(payload);
+            handleChatEvent(evt, asst);
+          } catch {
+            /* 忽略非 JSON */
+          }
+        }
+        idx = buf.indexOf("\n\n");
+      }
+    }
+  } catch (e: any) {
+    asst.content = asst.content || `（出错了：${e?.message || "未知错误"}）`;
+  } finally {
+    asst.loading = false;
+    chatSending.value = false;
+    chatScroll();
+  }
+}
+function handleChatEvent(evt: any, asst: any) {
+  const t = evt.type || "";
+  if (t === "reasoning-delta") asst.think += evt.delta || "";
+  else if (t === "text-delta") asst.content += evt.delta || "";
+  else if (t === "tool-input-available") {
+    asst.tools.push(evt.toolName || "工具");
+    chatScroll();
+  } else if (t === "data-finish") {
+    if (evt.data?.reply) asst.content = asst.content || evt.data.reply;
+  }
+  if (t === "text-delta" || t === "reasoning-delta") chatScroll();
 }
 
 // ---- 详情 / 复制 ----
@@ -855,6 +989,55 @@ onMounted(loadData);
   margin-left: 8px;
   color: var(--el-text-color-secondary);
   font-size: var(--el-font-size-base);
+}
+.agent-chat-body {
+  height: 46vh;
+  overflow: auto;
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent-chat-msg.user {
+  align-self: flex-end;
+}
+.agent-chat-bubble {
+  max-width: 84%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.agent-chat-bubble.user {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-text-color-primary);
+}
+.agent-chat-think {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  background: var(--el-fill-color);
+  border-radius: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+.agent-chat-think-title {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.agent-chat-tools {
+  margin: 4px 0;
+}
+.agent-chat-loading {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.agent-chat-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .agent-category-card {
