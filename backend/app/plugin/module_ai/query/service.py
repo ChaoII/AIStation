@@ -1400,16 +1400,20 @@ class AiQueryService:
                 return {"ok": False, "msg": f"指标 {metric_key} 不存在"}
             from types import SimpleNamespace as SN
             auth = SN(user=SN(id=1))
-            res = await cls._execute_metric(m, {}, auth)
+            res = await _execute_metric(m, {}, auth)
             actual = res.get("rows", [[None]])[0][0] if res.get("rows") else None
             sv = float(actual) if actual is not None else None
             gv = float(golden) if golden else None
             ok = False
             if sv is not None and gv is not None:
-                if tol.endswith("%"):
-                    ok = abs(sv - gv) / abs(gv) * 100 <= float(tol[:-1]) if gv else False
+                if tol.endswith("%") and gv != 0:
+                    ok = abs(sv - gv) / abs(gv) * 100 <= float(tol[:-1])
+                elif tol.endswith("%") and gv == 0:
+                    ok = sv == 0
+                elif tol:
+                    ok = abs(sv - gv) <= float(tol)
                 else:
-                    ok = abs(sv - gv) <= float(tol) if tol else sv == gv
+                    ok = sv == gv
             result = "pass" if ok else "fail"
             async with async_db_session.begin() as db:
                 from sqlalchemy import text as _t
