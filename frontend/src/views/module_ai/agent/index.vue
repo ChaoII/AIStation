@@ -660,172 +660,198 @@
       size="760px"
       append-to-body
     >
-      <div class="studio-layout">
-        <div class="studio-palette">
-          <div class="studio-palette__title">积木（点击添加）</div>
-          <div class="studio-block" @click="studioAdd('model')">
-            <el-icon><Connection /></el-icon>
-            <span>模型</span>
+      <div class="studio">
+        <!-- 顶部：Agent 元信息 -->
+        <div class="studio-top">
+          <div class="studio-top__agent">
+            <div
+              class="studio-top__avatar"
+              :style="{ background: studioAgent?.color || 'var(--el-color-primary)' }"
+            >
+              <el-icon><User /></el-icon>
+            </div>
+            <div class="studio-top__meta">
+              <div class="studio-top__name">{{ studioAgent?.agent_name }}</div>
+              <div class="studio-top__role">{{ studioAgent?.agent_role || "未设置角色描述" }}</div>
+            </div>
+            <el-tag size="small" :type="studioAgent?.enabled ? 'success' : 'info'" effect="plain">
+              {{ studioAgent?.enabled ? "运行中" : "已停用" }}
+            </el-tag>
           </div>
-          <div class="studio-block" @click="studioAdd('prompt')">
-            <el-icon><MagicStick /></el-icon>
-            <span>提示词</span>
-          </div>
-          <div class="studio-block" @click="studioAdd('workflow')">
-            <el-icon><SetUp /></el-icon>
-            <span>工作流</span>
-          </div>
-          <div class="studio-block" @click="studioAdd('tool')">
-            <el-icon><Connection /></el-icon>
-            <span>工具</span>
-          </div>
-          <div class="studio-block" @click="studioAdd('knowledge')">
-            <el-icon><Connection /></el-icon>
-            <span>知识库(RAG)</span>
-          </div>
-          <div class="studio-block" @click="studioAdd('skill')">
-            <el-icon><MagicStick /></el-icon>
-            <span>技能</span>
-          </div>
-          <div class="studio-block" @click="studioAdd('query')">
-            <el-icon><Connection /></el-icon>
-            <span>智能问数</span>
+          <div class="studio-top__actions">
+            <span class="studio-top__label">驱动模型</span>
+            <el-select
+              v-model="studioAgent.model_id"
+              style="width: 200px"
+              @change="studioDirty = true"
+            >
+              <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
+            </el-select>
+            <el-switch
+              v-model="studioAgent.enabled"
+              inline-prompt
+              active-text="启"
+              inactive-text="停"
+              @change="studioDirty = true"
+            />
           </div>
         </div>
-        <div class="studio-canvas">
-          <div class="studio-step studio-start">
-            输入
-            <i class="studio-arrow">↓</i>
+
+        <!-- 能力装配卡片 -->
+        <div class="studio-section">
+          <div class="studio-section__head">
+            <div>
+              <div class="studio-section__title">能力装配</div>
+              <div class="studio-section__sub">为 Agent 勾选要具备的能力（可叠加）</div>
+            </div>
+            <el-tag size="small" type="info" effect="plain">
+              已启用 {{ capList.filter((c) => c.on).length }} 项
+            </el-tag>
           </div>
-          <template v-if="studioAgent">
-            <div v-if="studioAgent.model_id" class="studio-step">
-              模型
-              <i class="studio-arrow">↓</i>
-              <el-select
-                v-model="studioAgent.model_id"
-                size="small"
-                style="width: 180px"
-                @change="studioDirty = true"
-              >
-                <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
-              </el-select>
+          <div class="studio-cap-grid">
+            <div
+              v-for="cap in capList"
+              :key="cap.key"
+              class="cap-card"
+              :class="{ 'cap-card--on': cap.on }"
+            >
+              <div class="cap-card__head">
+                <el-icon class="cap-card__icon"><component :is="cap.icon" /></el-icon>
+                <span class="cap-card__name">{{ cap.name }}</span>
+                <el-switch :model-value="cap.on" size="small" @change="toggleCap(cap.key)" />
+              </div>
+              <div class="cap-card__desc">{{ cap.desc }}</div>
+              <div v-if="cap.on" class="cap-card__config">
+                <el-select
+                  v-if="cap.key === 'query'"
+                  v-model="studioAgent.query_datasource"
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option label="系统数据" value="system" />
+                  <el-option
+                    v-for="d in queryDatasources"
+                    :key="d.id"
+                    :label="d.name"
+                    :value="String(d.id)"
+                  />
+                </el-select>
+                <el-select
+                  v-else-if="cap.key === 'knowledge'"
+                  v-model="studioAgent.knowledge_ids"
+                  multiple
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option
+                    v-for="k in knowledgeOptions"
+                    :key="k.id"
+                    :label="k.name"
+                    :value="k.id"
+                  />
+                </el-select>
+                <el-select
+                  v-else-if="cap.key === 'tool'"
+                  v-model="studioAgent.tool_ids"
+                  multiple
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option
+                    v-for="t in toolOptions"
+                    :key="t.name"
+                    :label="t.name"
+                    :value="t.name"
+                  />
+                </el-select>
+                <el-select
+                  v-else-if="cap.key === 'skill'"
+                  v-model="studioAgent.skill_ids"
+                  multiple
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option v-for="s in skillOptions" :key="s.id" :label="s.name" :value="s.id" />
+                </el-select>
+                <el-select
+                  v-else-if="cap.key === 'model'"
+                  v-model="studioAgent.model_id"
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
+                </el-select>
+                <el-select
+                  v-else-if="cap.key === 'prompt'"
+                  v-model="studioAgent.prompt_id"
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option v-for="p in promptOptions" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+                <el-select
+                  v-else-if="cap.key === 'workflow'"
+                  v-model="studioAgent.workflow_id"
+                  size="small"
+                  style="width: 100%"
+                  @change="studioDirty = true"
+                >
+                  <el-option
+                    v-for="w in workflowOptions"
+                    :key="w.id"
+                    :label="w.name"
+                    :value="w.id"
+                  />
+                </el-select>
+              </div>
             </div>
-            <div v-if="studioAgent.prompt_id" class="studio-step">
-              提示词
-              <i class="studio-arrow">↓</i>
-              <el-select
-                v-model="studioAgent.prompt_id"
-                size="small"
-                style="width: 180px"
-                @change="studioDirty = true"
-              >
-                <el-option v-for="p in promptOptions" :key="p.id" :label="p.name" :value="p.id" />
-              </el-select>
-            </div>
-            <div v-if="studioAgent.workflow_id" class="studio-step">
-              工作流
-              <i class="studio-arrow">↓</i>
-              <el-select
-                v-model="studioAgent.workflow_id"
-                size="small"
-                style="width: 180px"
-                @change="studioDirty = true"
-              >
-                <el-option v-for="w in workflowOptions" :key="w.id" :label="w.name" :value="w.id" />
-              </el-select>
-            </div>
-            <div v-if="(studioAgent.tool_ids || []).length" class="studio-step">
-              工具
-              <i class="studio-arrow">↓</i>
-              <el-tag
-                v-for="t in studioAgent.tool_ids"
-                :key="t"
-                closable
-                size="small"
-                effect="plain"
-                style="margin: 0 3px 2px 0"
-                @close="studioRemoveTool(t)"
-              >
-                {{ t }}
-              </el-tag>
-            </div>
-            <div v-if="(studioAgent.knowledge_ids || []).length" class="studio-step">
-              知识库(RAG)
-              <i class="studio-arrow">↓</i>
-              <el-tag
-                v-for="k in studioAgent.knowledge_ids"
-                :key="k"
-                closable
-                size="small"
-                type="success"
-                effect="plain"
-                style="margin: 0 3px 2px 0"
-                @close="studioRemoveKnowledge(k)"
-              >
-                {{ knowName(k) }}
-              </el-tag>
-            </div>
-            <div v-if="(studioAgent.skill_ids || []).length" class="studio-step">
-              技能
-              <i class="studio-arrow">↓</i>
-              <el-tag
-                v-for="s in studioAgent.skill_ids"
-                :key="s"
-                closable
-                size="small"
-                type="warning"
-                effect="plain"
-                style="margin: 0 3px 2px 0"
-                @close="studioRemoveSkill(s)"
-              >
-                {{ skillName(s) }}
-              </el-tag>
-            </div>
-            <div v-if="studioAgent.query_enabled" class="studio-step">
-              智能问数
-              <i class="studio-arrow">↓</i>
-              <el-select
-                v-model="studioAgent.query_datasource"
-                size="small"
-                style="width: 160px"
-                @change="studioDirty = true"
-              >
-                <el-option label="系统数据" value="system" />
-                <el-option
-                  v-for="d in queryDatasources"
-                  :key="d.id"
-                  :label="d.name"
-                  :value="String(d.id)"
-                />
-              </el-select>
-            </div>
-          </template>
-          <div class="studio-step studio-end">输出</div>
-          <div
-            v-if="
-              !studioAgent ||
-              (!studioAgent.model_id &&
-                !studioAgent.prompt_id &&
-                !studioAgent.workflow_id &&
-                !studioAgent.tool_ids?.length &&
-                !studioAgent.knowledge_ids?.length &&
-                !studioAgent.skill_ids?.length &&
-                !studioAgent.query_enabled)
-            "
-            class="studio-empty"
-          >
-            点击左侧积木开始编排你的智能体
           </div>
         </div>
+
+        <!-- 装配流预览 -->
+        <div class="studio-section">
+          <div class="studio-section__head">
+            <div>
+              <div class="studio-section__title">装配流（Agent 运行时链路）</div>
+              <div class="studio-section__sub">启用的能力将按顺序进入 Agent 的推理链路</div>
+            </div>
+          </div>
+          <div class="studio-flow">
+            <div class="pipe-node pipe-node--start">输入</div>
+            <template v-for="cap in capOnList" :key="cap.key">
+              <i class="pipe-arrow">→</i>
+              <div class="pipe-node pipe-node--cap">
+                <el-icon class="pipe-node__icon"><component :is="cap.icon" /></el-icon>
+                {{ cap.name }}
+              </div>
+            </template>
+            <i class="pipe-arrow">→</i>
+            <div class="pipe-node pipe-node--end">输出</div>
+          </div>
+          <div v-if="!capOnList.length" class="studio-flow-empty">
+            勾选左侧能力后，这里会生成 Agent 的装配流
+          </div>
+        </div>
+
+        <!-- 试跑 -->
         <div class="studio-run">
           <div class="studio-run__bar">
             <el-input
               v-model="studioRunInput"
               placeholder="输入问题试跑，回放工具链…"
               :disabled="studioRunning"
+              clearable
               @keyup.enter="runStudio"
             />
-            <el-button type="primary" :loading="studioRunning" @click="runStudio">试跑</el-button>
+            <el-button type="primary" :icon="VideoPlay" :loading="studioRunning" @click="runStudio">
+              试跑
+            </el-button>
           </div>
           <div v-if="studioRunSteps.length" class="studio-run__trace">
             <div class="studio-run__trace-title">工具链回放</div>
@@ -853,8 +879,8 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="studioVisible = false">关闭</el-button>
-        <el-button type="primary" :disabled="!studioDirty" @click="saveStudio">保存编排</el-button>
+        <el-button @click="studioVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!studioDirty" @click="saveStudio">保存装配</el-button>
       </template>
     </el-drawer>
   </div>
@@ -878,8 +904,14 @@ import {
   CopyDocument,
   Loading,
   MagicStick,
-  Connection,
   SetUp,
+  VideoPlay,
+  Cpu,
+  Collection,
+  Operation,
+  DataAnalysis,
+  Document,
+  User,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import {
@@ -1135,56 +1167,78 @@ function openStudio(a: any) {
   studioDirty.value = false;
   studioVisible.value = true;
 }
-function knowName(id: number) {
-  const k = knowledgeOptions.value.find((x) => x.id === id);
-  return k ? k.name : `知识库#${id}`;
-}
-function skillName(id: number) {
-  const s = skillOptions.value.find((x) => x.id === id);
-  return s ? s.name : `技能#${id}`;
-}
-function studioAdd(kind: string) {
+// 能力装配：Palantir AIP 风格能力卡片
+const capList = computed(() => {
+  const a = studioAgent.value;
+  if (!a) return [];
+  return [
+    {
+      key: "query",
+      name: "智能问数",
+      desc: "让 Agent 查询你的业务数据",
+      icon: DataAnalysis,
+      on: !!a.query_enabled,
+    },
+    {
+      key: "knowledge",
+      name: "知识库 RAG",
+      desc: "检索知识库增强回答",
+      icon: Collection,
+      on: !!(a.knowledge_ids || []).length,
+    },
+    {
+      key: "tool",
+      name: "工具调用",
+      desc: "调用平台工具 / 函数",
+      icon: Operation,
+      on: !!(a.tool_ids || []).length,
+    },
+    {
+      key: "skill",
+      name: "技能",
+      desc: "装配技能广场技能",
+      icon: MagicStick,
+      on: !!(a.skill_ids || []).length,
+    },
+    { key: "model", name: "智能模型", desc: "选择 LLM 驱动", icon: Cpu, on: !!a.model_id },
+    { key: "prompt", name: "提示词", desc: "绑定提示词模板", icon: Document, on: !!a.prompt_id },
+    { key: "workflow", name: "工作流", desc: "绑定可视化工作流", icon: SetUp, on: !!a.workflow_id },
+  ];
+});
+const capOnList = computed(() => capList.value.filter((c) => c.on));
+function toggleCap(key: string) {
   const a = studioAgent.value;
   if (!a) return;
-  if (kind === "model") {
-    if (a.model_id) return;
-    a.model_id = modelOptions.value[0]?.id || null;
-  } else if (kind === "prompt") {
-    if (a.prompt_id) return;
-    a.prompt_id = promptOptions.value[0]?.id || null;
-  } else if (kind === "workflow") {
-    if (a.workflow_id) return;
-    a.workflow_id = workflowOptions.value[0]?.id || null;
-  } else if (kind === "tool") {
-    a.tool_ids = a.tool_ids || [];
-    if (!a.tool_ids.length && toolOptions.value[0]) a.tool_ids.push(toolOptions.value[0].name);
-  } else if (kind === "knowledge") {
-    a.knowledge_ids = a.knowledge_ids || [];
-    if (!a.knowledge_ids.length && knowledgeOptions.value[0])
-      a.knowledge_ids.push(knowledgeOptions.value[0].id);
-  } else if (kind === "skill") {
-    a.skill_ids = a.skill_ids || [];
-    if (!a.skill_ids.length && skillOptions.value[0]) a.skill_ids.push(skillOptions.value[0].id);
-  } else if (kind === "query") {
-    if (a.query_enabled) return;
-    a.query_enabled = true;
-    a.query_datasource = a.query_datasource || "system";
+  const cur = capList.value.find((c) => c.key === key)?.on;
+  if (cur) {
+    // 关闭
+    if (key === "query") a.query_enabled = false;
+    else if (key === "knowledge") a.knowledge_ids = [];
+    else if (key === "tool") a.tool_ids = [];
+    else if (key === "skill") a.skill_ids = [];
+    else if (key === "model") a.model_id = null;
+    else if (key === "prompt") a.prompt_id = null;
+    else if (key === "workflow") a.workflow_id = null;
+  } else {
+    // 打开（默认装配第一个）
+    if (key === "query") {
+      a.query_enabled = true;
+      a.query_datasource = a.query_datasource || "system";
+    } else if (key === "knowledge") {
+      a.knowledge_ids = a.knowledge_ids || [];
+      if (!a.knowledge_ids.length && knowledgeOptions.value[0])
+        a.knowledge_ids.push(knowledgeOptions.value[0].id);
+    } else if (key === "tool") {
+      a.tool_ids = a.tool_ids || [];
+      if (!a.tool_ids.length && toolOptions.value[0]) a.tool_ids.push(toolOptions.value[0].name);
+    } else if (key === "skill") {
+      a.skill_ids = a.skill_ids || [];
+      if (!a.skill_ids.length && skillOptions.value[0]) a.skill_ids.push(skillOptions.value[0].id);
+    } else if (key === "model") a.model_id = a.model_id || modelOptions.value[0]?.id || null;
+    else if (key === "prompt") a.prompt_id = a.prompt_id || promptOptions.value[0]?.id || null;
+    else if (key === "workflow")
+      a.workflow_id = a.workflow_id || workflowOptions.value[0]?.id || null;
   }
-  studioDirty.value = true;
-}
-function studioRemoveTool(t: string) {
-  const a = studioAgent.value;
-  a.tool_ids = (a.tool_ids || []).filter((x: string) => x !== t);
-  studioDirty.value = true;
-}
-function studioRemoveKnowledge(k: number) {
-  const a = studioAgent.value;
-  a.knowledge_ids = (a.knowledge_ids || []).filter((x: number) => x !== k);
-  studioDirty.value = true;
-}
-function studioRemoveSkill(s: number) {
-  const a = studioAgent.value;
-  a.skill_ids = (a.skill_ids || []).filter((x: number) => x !== s);
   studioDirty.value = true;
 }
 async function saveStudio() {
@@ -1217,7 +1271,9 @@ async function saveStudio() {
 }
 // 试跑 / 工具链回放
 const studioRunInput = ref("");
-const studioRunSteps = ref<{ name: string; type: "primary" | "success" | "warning" | "info" | "danger" }[]>([]);
+const studioRunSteps = ref<
+  { name: string; type: "primary" | "success" | "warning" | "info" | "danger" }[]
+>([]);
 const studioRunReasoning = ref("");
 const studioRunText = ref("");
 const studioRunning = ref(false);
@@ -1661,80 +1717,170 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 .ai-agent-page {
   height: 100%;
 }
-/* P3-⑥ Agent Studio */
-.studio-layout {
+/* P3-⑥ Agent Studio（能力装配，Palantir AIP 风格） */
+.studio {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 16px;
 }
-.studio-palette {
-  width: 160px;
-  flex-shrink: 0;
-}
-.studio-palette__title {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
-}
-.studio-block {
+.studio-top {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.studio-top__agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.studio-top__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 20px;
+}
+.studio-top__name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.studio-top__role {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.studio-top__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.studio-top__label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.studio-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.studio-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.studio-section__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.studio-section__sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 2px;
+}
+.studio-cap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.cap-card {
   border: 1px solid var(--el-border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--el-fill-color-blank);
   transition: all 0.2s;
 }
-.studio-block:hover {
+.cap-card:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 4px 12px rgba(31, 45, 61, 0.06);
+}
+.cap-card--on {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.cap-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cap-card__icon {
+  font-size: 18px;
+  color: var(--el-text-color-secondary);
+}
+.cap-card--on .cap-card__icon {
+  color: var(--el-color-primary);
+}
+.cap-card__name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.cap-card__desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-top: 6px;
+  min-height: 30px;
+}
+.cap-card__config {
+  margin-top: 8px;
+}
+.studio-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pipe-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-primary);
+}
+.pipe-node--start {
+  border-color: var(--el-color-success);
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+}
+.pipe-node--end {
+  border-color: var(--el-color-warning);
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+}
+.pipe-node--cap {
   border-color: var(--el-color-primary);
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }
-.studio-canvas {
-  flex: 1;
-  min-width: 0;
+.pipe-node__icon {
+  font-size: 14px;
 }
-.studio-step {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  border: 1px solid var(--el-border-color);
-  border-left: 3px solid var(--el-color-primary);
-  border-radius: 6px;
-  font-size: 13px;
-  background: var(--el-fill-color-lighter);
-}
-.studio-step.studio-start {
-  border-left-color: var(--el-color-success);
-}
-.studio-step.studio-end {
-  border-left-color: var(--el-color-warning);
-}
-.studio-arrow {
-  position: absolute;
-  left: 12px;
-  bottom: -20px;
+.pipe-arrow {
   color: var(--el-text-color-placeholder);
   font-size: 14px;
-  font-style: normal;
 }
-.studio-empty {
-  padding: 24px;
+.studio-flow-empty {
+  padding: 20px;
   text-align: center;
   color: var(--el-text-color-placeholder);
   font-size: 13px;
   border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
+  border-radius: 8px;
 }
 .studio-run {
-  margin-top: 16px;
-  border-top: 1px solid var(--el-border-color);
+  border-top: 1px solid var(--el-border-color-lighter);
   padding-top: 12px;
 }
 .studio-run__bar {
