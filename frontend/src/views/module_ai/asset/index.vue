@@ -5,118 +5,133 @@
     <el-tabs v-model="tab">
       <!-- 数据资产(表) -->
       <el-tab-pane label="数据资产" name="asset">
-        <div class="as-bar">
-          <el-button
-            type="primary"
-            size="small"
-            :icon="Refresh"
-            :loading="syncing"
-            @click="syncAssets"
-          >
-            同步目录
-          </el-button>
-          <el-button size="small" :icon="MagicStick" :loading="genDesc" @click="genAssetDesc">
-            LLM 生成描述
-          </el-button>
-          <el-button size="small" :icon="DataAnalysis" :loading="extracting" @click="extract">
-            语义抽取(识别对象)
-          </el-button>
-          <el-tag size="small" type="info" effect="plain">共 {{ assets.length }} 张资产表</el-tag>
-        </div>
-        <el-table :data="assets" size="small" border max-height="420">
-          <template #empty>
-            <el-empty description="暂无数据，点击「同步目录」拉取资产" :image-size="60" />
-          </template>
-          <el-table-column prop="table_name" label="表" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="alias" label="别名" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="domain" label="数据域" width="90" />
-          <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-          <el-table-column label="对象化" width="80" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.object_enabled ? 'success' : 'info'" effect="plain">
-                {{ row.object_enabled ? "是" : "否" }}
-              </el-tag>
+        <el-card shadow="never">
+          <div class="as-bar">
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Refresh"
+              :loading="syncing"
+              @click="syncAssets"
+            >
+              同步目录
+            </el-button>
+            <el-button size="small" :icon="MagicStick" :loading="genDesc" @click="genAssetDesc">
+              LLM 生成描述
+            </el-button>
+            <el-button size="small" :icon="DataAnalysis" :loading="extracting" @click="extract">
+              语义抽取(识别对象)
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">共 {{ assets.length }} 张资产表</el-tag>
+          </div>
+          <el-table :data="assets" size="small" border max-height="420">
+            <template #empty>
+              <el-empty description="暂无数据，点击「同步目录」拉取资产" :image-size="60" />
             </template>
-          </el-table-column>
-          <el-table-column label="字段" width="70" align="center">
-            <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
-          </el-table-column>
-        </el-table>
+            <el-table-column prop="table_name" label="表" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="alias" label="别名" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="domain" label="数据域" width="90" />
+            <el-table-column
+              prop="description"
+              label="描述"
+              min-width="200"
+              show-overflow-tooltip
+            />
+            <el-table-column label="对象化" width="80" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.object_enabled ? 'success' : 'info'" effect="plain">
+                  {{ row.object_enabled ? "是" : "否" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="字段" width="70" align="center">
+              <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
+            </el-table-column>
+          </el-table>
+        </el-card>
       </el-tab-pane>
 
       <!-- 指标 -->
       <el-tab-pane label="指标" name="metric">
-        <div class="as-bar">
-          <el-tag size="small" type="info" effect="plain">语义指标（问数与 Agent 消费）</el-tag>
-        </div>
-        <el-table :data="metrics" size="small" border max-height="420">
-          <el-table-column prop="name" label="指标" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="key" label="编码" min-width="120" show-overflow-tooltip />
-          <el-table-column
-            prop="sql_template"
-            label="SQL 模板"
-            min-width="200"
-            show-overflow-tooltip
-          />
-        </el-table>
+        <el-card shadow="never">
+          <div class="as-bar">
+            <el-tag size="small" type="info" effect="plain">语义指标（问数与 Agent 消费）</el-tag>
+          </div>
+          <el-table :data="metrics" size="small" border max-height="420">
+            <el-table-column prop="name" label="指标" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="key" label="编码" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="sql_template"
+              label="SQL 模板"
+              min-width="200"
+              show-overflow-tooltip
+            />
+          </el-table>
+        </el-card>
       </el-tab-pane>
 
       <!-- 术语 -->
       <el-tab-pane label="术语" name="term">
-        <div class="as-bar">
-          <el-tag size="small" type="info" effect="plain">业务黑话 ↔ 字段映射</el-tag>
-        </div>
-        <el-table :data="terms" size="small" border max-height="420">
-          <el-table-column prop="term" label="术语" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="metric_key" label="指标" min-width="120" show-overflow-tooltip />
-          <el-table-column
-            prop="field_path"
-            label="字段路径"
-            min-width="200"
-            show-overflow-tooltip
-          />
-        </el-table>
+        <el-card shadow="never">
+          <div class="as-bar">
+            <el-tag size="small" type="info" effect="plain">业务黑话 ↔ 字段映射</el-tag>
+          </div>
+          <el-table :data="terms" size="small" border max-height="420">
+            <el-table-column prop="term" label="术语" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="metric_key" label="指标" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="field_path"
+              label="字段路径"
+              min-width="200"
+              show-overflow-tooltip
+            />
+          </el-table>
+        </el-card>
       </el-tab-pane>
 
       <!-- 概念 -->
       <el-tab-pane label="概念" name="concept">
-        <div class="as-bar">
-          <el-tag size="small" type="info" effect="plain">本体/概念（语义层）</el-tag>
-        </div>
-        <el-table :data="concepts" size="small" border max-height="420">
-          <el-table-column prop="name" label="概念" min-width="140" show-overflow-tooltip />
-          <el-table-column label="涉及表" min-width="200">
-            <template #default="{ row }">
-              <el-tag
-                v-for="t in row.tables || []"
-                :key="t"
-                size="small"
-                effect="plain"
-                style="margin: 0 2px"
-              >
-                {{ t }}
-              </el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
+        <el-card shadow="never">
+          <div class="as-bar">
+            <el-tag size="small" type="info" effect="plain">本体/概念（语义层）</el-tag>
+          </div>
+          <el-table :data="concepts" size="small" border max-height="420">
+            <el-table-column prop="name" label="概念" min-width="140" show-overflow-tooltip />
+            <el-table-column label="涉及表" min-width="200">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="t in row.tables || []"
+                  :key="t"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ t }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-card>
       </el-tab-pane>
 
       <!-- 图谱 -->
       <el-tab-pane label="图谱" name="kg">
-        <div class="as-bar">
-          <el-button size="small" :icon="Refresh" @click="syncKg">重建图谱</el-button>
-          <el-tag size="small" type="info" effect="plain">schema 图谱 + 知识库 + 概念</el-tag>
-        </div>
-        <el-descriptions :column="3" size="small" border>
-          <el-descriptions-item label="表节点">{{ kg.nodes ?? "-" }}</el-descriptions-item>
-          <el-descriptions-item label="关系边">{{ kg.edges ?? "-" }}</el-descriptions-item>
-          <el-descriptions-item label="实体">{{ kg.entities ?? "-" }}</el-descriptions-item>
-        </el-descriptions>
-        <div class="gov-section">可识别对象（对象化）</div>
-        <el-table :data="objects" size="small" border max-height="300">
-          <el-table-column prop="table" label="对象表" min-width="160" />
-          <el-table-column prop="alias" label="别名" min-width="120" />
-        </el-table>
+        <el-card shadow="never">
+          <div class="as-bar">
+            <el-button size="small" :icon="Refresh" @click="syncKg">重建图谱</el-button>
+            <el-tag size="small" type="info" effect="plain">schema 图谱 + 知识库 + 概念</el-tag>
+          </div>
+          <el-descriptions :column="3" size="small" border>
+            <el-descriptions-item label="表节点">{{ kg.nodes ?? "-" }}</el-descriptions-item>
+            <el-descriptions-item label="关系边">{{ kg.edges ?? "-" }}</el-descriptions-item>
+            <el-descriptions-item label="实体">{{ kg.entities ?? "-" }}</el-descriptions-item>
+          </el-descriptions>
+          <div class="gov-section">可识别对象（对象化）</div>
+          <el-table :data="objects" size="small" border max-height="300">
+            <el-table-column prop="table" label="对象表" min-width="160" />
+            <el-table-column prop="alias" label="别名" min-width="120" />
+          </el-table>
+        </el-card>
       </el-tab-pane>
     </el-tabs>
   </div>
