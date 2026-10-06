@@ -244,9 +244,33 @@ async def explain_column(table: str, column: str) -> str:
         return f"查询字段说明失败：{e}"
 
 
+async def run_sql(sql: str) -> str:
+    """执行一条只读 SELECT，返回结果（前 N 行）或错误信息，供模型执行-自修复（execution-guided）。
+
+    模型生成候选 SQL 后调用本工具验证：成功返回结果行；报错（列/语法/JOIN）返回错误，
+    Agno 会把该错误插回上下文，模型据此修正 SQL 再调用，直至成功或放弃。
+    """
+    from .service import _execute_sql, _system_allowed, validate_sql
+
+    log.warning("[QUERY_TOOL] 模型调用了 run_sql，sql={}", (sql or "")[:200])
+    sql = (sql or "").strip()
+    try:
+        safe = validate_sql(sql, await _system_allowed())
+    except Exception as e:  # noqa: BLE001
+        return f"SQL 不合法：{e}"
+    try:
+        res = await _execute_sql(safe)
+    except Exception as e:  # noqa: BLE001
+        return f"执行失败：{e}"
+    cols = res.get("columns") or []
+    rows = res.get("rows") or []
+    txt = "\n".join(" | ".join(str(v) for v in r) for r in rows[:20]) or "（空结果）"
+    return f"执行成功，共 {len(rows)} 行。列：{', '.join(cols)}。\n{txt}"
+
+
 #: 注册进 Agent 的工具集合（可同时传给 Agent(tools=...)）
 QUERY_TOOLS = [
     search_schema, get_fewshots, check_cost, semantic_search, table_metadata,
     kg_search, list_metrics, list_terms, search_history,
-    resolve_value, find_join_path, explain_column,
+    resolve_value, find_join_path, explain_column, run_sql,
 ]

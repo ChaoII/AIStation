@@ -3575,7 +3575,9 @@ class AiQueryService:
                         "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
                         "先调用 search_schema(question) 获取相关表/字段，必要时再调用 "
                         "get_fewshots(question) 参考样例、check_cost(候选SQL) 评估代价；"
-                        "获取足够上下文后，最终消息必须直接输出一条 SELECT SQL（不要调用工具、不要多余解释）。"
+                        "获取足够上下文后，生成一条 SELECT SQL；若对字段/关联/枚举不确定，可用 "
+                        "resolve_value / find_join_path / run_sql 验证并修正；"
+                        "最终消息必须直接输出这条 SELECT SQL（不要调用工具、不要多余解释）。"
                         "禁止 DELETE/UPDATE/INSERT/DDL。\n注意："
                         + "".join(rules)
                     ),
