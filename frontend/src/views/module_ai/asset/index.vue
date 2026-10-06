@@ -1,10 +1,7 @@
 <!-- 数据资产 Data Assets & Semantics（Palantir 底层：数据准备 + 语义单一事实源） -->
 <template>
   <div class="app-container ai-mod ai-asset-page">
-    <PageHeader
-      title="数据资产"
-      subtitle="平台底层数据准备：资产目录 / 指标 / 术语 / 概念 / 图谱 / 语义抽取（问数与 Agent 的接地底座）"
-    />
+    <PageHeader title="数据资产" />
     <el-tabs v-model="tab">
       <!-- 数据资产(表) -->
       <el-tab-pane label="数据资产" name="asset">
