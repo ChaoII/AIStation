@@ -56,6 +56,7 @@ _AGNO_SEEDING = False
 _SETTINGS_CACHE: dict | None = None
 # 进程级缓存：表级资产元数据（中文名/业务域/描述/业务场景）
 _ASSET_TMETA: dict | None = None
+_ONT_ALLOW_CACHE: set | None = None
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -576,6 +577,23 @@ def _json_cell(v):
     return str(v)
 
 
+async def _system_allowed() -> set[str]:
+    """可查询表白名单 = 系统表 + 本体物化表（ont_{code}）。"""
+    global _ONT_ALLOW_CACHE
+    if _ONT_ALLOW_CACHE is not None:
+        return _ONT_ALLOW_CACHE
+    codes: list[str] = []
+    try:
+        async with async_db_session() as db:
+            rows = (await db.execute(text(
+                "SELECT code FROM ai_ont_object WHERE is_deleted=false"))).fetchall()
+        codes = [r[0] for r in rows]
+    except Exception:  # noqa: BLE001
+        codes = []
+    _ONT_ALLOW_CACHE = set(SYSTEM_ALLOWED_TABLES) | {f"ont_{c}" for c in codes}
+    return _ONT_ALLOW_CACHE
+
+
 async def _execute_sql(sql: str) -> dict:
     start = time.time()
     try:
@@ -594,7 +612,7 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
     sql = _render_template(metric["sql_template"], params)
     ds_code = metric.get("datasource") or SYSTEM_DS
     if ds_code == SYSTEM_DS:
-        sql = validate_sql(sql, SYSTEM_ALLOWED_TABLES)
+        sql = validate_sql(sql, await _system_allowed())
         res = await _execute_sql(sql)
     else:
         # 自定义数据源：ds:{id}，走独立连接 + schema 白名单 + 角色授权
@@ -1158,6 +1176,36 @@ class AiQueryService:
                 "UPDATE ai_query_concept SET is_deleted=true WHERE id IN :ids"),
                 {"ids": list(ids)})
         return len(ids)
+
+    @classmethod
+    async def _ont_ctx_block(cls) -> str:
+        """本体对象语义块：对象类型 → 表 + 属性(中文名/类型)，供 LLM 以业务对象写查询（Palantir grounding）。"""
+        objs = await cls._ont_objs()
+        if not objs:
+            return ""
+        lines = ["【本体对象（业务对象语义，优先理解）】"]
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                rows = (await db.execute(_t(
+                    "SELECT object_code,name,code,prop_type,required,sensitive,description FROM ai_ont_property "
+                    "WHERE is_deleted=false ORDER BY object_code,id"))).fetchall()
+        except Exception:  # noqa: BLE001
+            rows = []
+        propmap: dict[str, list[tuple]] = {}
+        for r in rows:
+            propmap.setdefault(r[0], []).append((r[1], r[2], r[3], bool(r[5]), r[6] or ""))
+        for code, o in objs.items():
+            table = f"ont_{code}" if code else ""
+            head = f"- 对象「{o['name']}」→表 {table}"
+            ps = propmap.get(code, [])
+            cols = ", ".join(f"{p[1]}({p[0]})" + (" 敏感" if p[3] else "") for p in ps) if ps else ""
+            if cols:
+                head += f"：{cols}"
+            if o.get("description"):
+                head += f"（{o['description']}）"
+            lines.append(head)
+        return "\n".join(lines)
 
     @classmethod
     async def _concept_context(cls) -> str:
@@ -3333,7 +3381,7 @@ class AiQueryService:
             resp = await agent.arun(user_msg)
             sql = (resp.content or "").strip()
             sql = cls._extract_sql(sql)
-            table = SYSTEM_ALLOWED_TABLES if datasource in (SYSTEM_DS, None) else None
+            table = await _system_allowed() if datasource in (SYSTEM_DS, None) else None
             try:
                 return validate_sql(sql, table or set())
             except Exception:
@@ -3482,7 +3530,7 @@ class AiQueryService:
         # ---- 提取并校验 SQL ----
         sql_source = "".join(content_buf) if content_buf else (final_content or "")
         sql = cls._extract_sql(sql_source)
-        table = SYSTEM_ALLOWED_TABLES if datasource in (SYSTEM_DS, None) else None
+        table = await _system_allowed() if datasource in (SYSTEM_DS, None) else None
         try:
             sql = validate_sql(sql, table or set())
         except Exception as e:  # noqa: BLE001
@@ -3974,6 +4022,10 @@ class AiQueryService:
             lines.append(conc)
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
+            # 本体对象块（Palantir 式：以业务对象语义为 grounding）
+            ont = await cls._ont_ctx_block()
+            if ont:
+                lines.append(ont)
             schema = await cls._system_schema()
             tmeta = await cls._asset_tmeta()
             rel = await cls._semantic_tables(question, schema, metrics, terms)
@@ -4073,7 +4125,7 @@ class AiQueryService:
             if correct_sql and cls._cfg_bool(await cls._cfg(), "fewshot_auto_curate", True):
                 # 校验正确 SQL 合法后才沉淀，避免把错误 SQL 推进 few-shot
                 try:
-                    validate_sql(correct_sql, SYSTEM_ALLOWED_TABLES)
+                    validate_sql(correct_sql, await _system_allowed())
                 except Exception:  # noqa: BLE001
                     return {"id": m.id, "feedback": feedback, "sunk": False, "reason": "SQL 非法未入库"}
                 m.correct_sql = correct_sql
