@@ -20,7 +20,18 @@
 
 **核心设计**：问数不再是独立模块，而是在创建/编排 Agent 时作为**能力开关**装配（Agent 卡片以徽标显示已装配能力）。平台底层只负责数据资产 / 本体 / 接入 / 治理等数据准备。
 
-**UI/UX 交付**：统一 PageHeader（标题+副标题）、能力装配卡片（实时装配流）、AI 工作台入口卡片、Agent 能力徽标、空态 `el-empty` 引导、加载骨架 `el-skeleton`。
+**UI/UX 交付**：统一 PageHeader（标题+副标题）、能力装配卡片（实时装配流）、AI 工作台入口卡片、Agent 能力徽标、空态 `el-empty` 引导、加载骨架 `el-skeleton`、对话执行链可视化。
+
+| UI/UX 项 | 位置 | 截图 |
+|---------|------|------|
+| AI 工作台（Foundry 支柱入口） | `/ai/workspace` | ✅ |
+| 数据资产（PageHeader+目录+空态） | `/ai/asset` | ✅ |
+| 本体（强类型建模+对象卡） | `/ai/ontology` | ✅ |
+| 数据与集成（连接+管道） | `/ai/integration` | ✅ |
+| 无代码应用（Workshop 应用） | `/ai/workshop` | ✅ |
+| 治理（驾驶舱/权限/质量/域） | `/ai/governance` | ✅ |
+| Agent Studio 能力装配（7 能力卡+装配流） | `/ai/agent` | ✅ |
+| 对话运行态（执行链可视化+能力徽标） | `/ai/agent` | ✅ |
 
 ## 一、验收总览
 
