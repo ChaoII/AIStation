@@ -17,6 +17,9 @@
             </div>
           </template>
           <el-table :data="datasources" size="small" border>
+            <template #empty>
+              <el-empty description="暂无连接，点击「新建连接」注册外部数据源" :image-size="60" />
+            </template>
             <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
             <el-table-column prop="type" label="类型" width="80" />
             <el-table-column label="地址" min-width="150" show-overflow-tooltip>
@@ -43,6 +46,9 @@
             </div>
           </template>
           <el-table :data="pipelines" size="small" border max-height="420">
+            <template #empty>
+              <el-empty description="暂无管道，点击「新建管道」编排数据加工" :image-size="60" />
+            </template>
             <el-table-column prop="name" label="管道" min-width="130" show-overflow-tooltip />
             <el-table-column label="源→目标" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">

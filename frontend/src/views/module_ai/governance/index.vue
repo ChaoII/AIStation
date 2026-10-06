@@ -145,6 +145,9 @@
           title="ABAC：超管默认可见全部；命中「敏感放行」可查看敏感对象字段，否则 resolve/问数自动剔除敏感字段。"
         />
         <el-table :data="accessRules" size="small" border>
+          <template #empty>
+            <el-empty description="暂无 ABAC 策略，点击「新建策略」配置访问管控" :image-size="60" />
+          </template>
           <el-table-column prop="name" label="策略" min-width="130" show-overflow-tooltip />
           <el-table-column prop="attribute" label="属性" width="80" />
           <el-table-column prop="value" label="属性值" width="120" show-overflow-tooltip />
@@ -206,6 +209,9 @@
           />
         </div>
         <el-table :data="dqData.items || []" size="small" border>
+          <template #empty>
+            <el-empty description="暂无数据质量结果，点击「扫描全部对象」" :image-size="60" />
+          </template>
           <el-table-column prop="alias" label="对象" min-width="110" show-overflow-tooltip />
           <el-table-column prop="table" label="表" min-width="140" show-overflow-tooltip />
           <el-table-column label="健康分" width="170">

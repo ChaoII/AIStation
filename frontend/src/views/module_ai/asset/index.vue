@@ -27,6 +27,9 @@
           <el-tag size="small" type="info" effect="plain">共 {{ assets.length }} 张资产表</el-tag>
         </div>
         <el-table :data="assets" size="small" border max-height="420">
+          <template #empty>
+            <el-empty description="暂无数据，点击「同步目录」拉取资产" :image-size="60" />
+          </template>
           <el-table-column prop="table_name" label="表" min-width="160" show-overflow-tooltip />
           <el-table-column prop="alias" label="别名" min-width="110" show-overflow-tooltip />
           <el-table-column prop="domain" label="数据域" width="90" />

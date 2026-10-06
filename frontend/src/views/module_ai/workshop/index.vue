@@ -15,6 +15,9 @@
         </div>
       </template>
       <el-table :data="apps" size="small" border>
+        <template #empty>
+          <el-empty description="暂无对象应用，点击「新建应用」在业务对象上构建" :image-size="60" />
+        </template>
         <el-table-column prop="name" label="应用" min-width="140" show-overflow-tooltip />
         <el-table-column prop="object_table" label="对象" min-width="150" show-overflow-tooltip />
         <el-table-column prop="view_type" label="视图" width="80">
