@@ -23,7 +23,7 @@
             </el-button>
             <el-tag size="small" type="info" effect="plain">共 {{ assets.length }} 张资产表</el-tag>
           </div>
-          <el-table :data="assets" size="small" border max-height="420">
+          <el-table :data="pagedAssets" size="small" border>
             <template #empty>
               <el-empty description="暂无数据，点击「同步目录」拉取资产" :image-size="60" />
             </template>
@@ -47,6 +47,15 @@
               <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
             </el-table-column>
           </el-table>
+          <el-pagination
+            v-model:current-page="assetPage"
+            v-model:page-size="assetPageSize"
+            :page-sizes="[10, 20, 50]"
+            :total="assetTotal"
+            layout="total, sizes, prev, pager, next"
+            background
+            style="margin-top: 12px; justify-content: flex-end"
+          />
         </el-card>
       </el-tab-pane>
 
@@ -137,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { ElMessage } from "element-plus";
 import { Refresh, MagicStick, DataAnalysis } from "@element-plus/icons-vue";
 import {
@@ -167,7 +176,18 @@ const extracting = ref(false);
 async function loadAssets() {
   const r = await getQueryAssets();
   assets.value = r.data?.data || [];
+  assetPage.value = 1;
 }
+// 分页（电脑端常规分页，非无限滚动）
+const assetPage = ref(1);
+const assetPageSize = ref(10);
+const assetTotal = computed(() => assets.value.length);
+const pagedAssets = computed(() =>
+  assets.value.slice(
+    (assetPage.value - 1) * assetPageSize.value,
+    assetPage.value * assetPageSize.value
+  )
+);
 async function loadMetrics() {
   const r = await getQueryMetrics();
   metrics.value = r.data?.data || [];
