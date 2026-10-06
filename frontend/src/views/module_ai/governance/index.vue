@@ -297,6 +297,96 @@
           </el-col>
         </el-row>
       </el-tab-pane>
+
+      <el-tab-pane label="本体对象" name="ontgov">
+        <div class="mg-bar">
+          <el-tag size="small" type="info" effect="plain">
+            本体对象 · 来源管道 / 下游 / 数据质量分 | 平均 {{ ontGov.avg_score ?? "-" }}
+          </el-tag>
+        </div>
+        <el-table :data="ontGov.items || []" size="small" border>
+          <template #empty>
+            <el-empty description="暂无本体对象，请先在「本体」页定义对象并物化" :image-size="60" />
+          </template>
+          <el-table-column prop="name" label="本体对象" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="table" label="表" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="rows" label="行数" width="80" />
+          <el-table-column label="质量分" width="170">
+            <template #default="{ row }">
+              <el-progress
+                :percentage="Math.round(row.score || 0)"
+                :color="
+                  (row.score || 0) >= 80
+                    ? '#67c23a'
+                    : (row.score || 0) >= 60
+                      ? '#e6a23c'
+                      : '#f56c6c'
+                "
+                :stroke-width="10"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="来源管道" min-width="120">
+            <template #default="{ row }">
+              <el-tag
+                v-for="p in row.source_pipelines"
+                :key="p"
+                size="small"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                {{ p }}
+              </el-tag>
+              <span v-if="!row.source_pipelines.length" class="gov-empty">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="下游指标/概念" min-width="160">
+            <template #default="{ row }">
+              <el-tag
+                v-for="m in row.downstream_metrics"
+                :key="m"
+                size="small"
+                type="primary"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                指标 {{ m }}
+              </el-tag>
+              <el-tag
+                v-for="c in row.downstream_concepts"
+                :key="c"
+                size="small"
+                type="success"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                概念 {{ c }}
+              </el-tag>
+              <span
+                v-if="!row.downstream_metrics.length && !row.downstream_concepts.length"
+                class="gov-empty"
+              >
+                —
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="问题" min-width="160">
+            <template #default="{ row }">
+              <el-tag
+                v-for="(i, k) in row.issues"
+                :key="k"
+                size="small"
+                type="warning"
+                effect="plain"
+                style="margin: 0 2px"
+              >
+                {{ i }}
+              </el-tag>
+              <span v-if="!row.issues.length" class="gov-empty">无</span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 权限策略编辑 -->
@@ -397,6 +487,7 @@ import { ElMessage } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import {
   getGovernanceOverview,
+  getOntologyGovernance,
   getAccessRules,
   getDqOverview,
   getDqAlert,
@@ -416,10 +507,15 @@ const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
 const dqAlerts = ref<any[]>([]);
 const dqScanning = ref(false);
 const domainView = ref<any>({ domains: [], unassigned: [], total_objects: 0 });
+const ontGov = ref<any>({ avg_score: 0, items: [] });
 
 async function loadOverview() {
   const r = await getGovernanceOverview();
   g.value = { overview: r.data?.data || {} };
+}
+async function loadOntGov() {
+  const r = await getOntologyGovernance();
+  ontGov.value = r.data?.data || { avg_score: 0, items: [] };
 }
 async function loadAccess() {
   const r = await getAccessRules();
@@ -445,6 +541,7 @@ function onTab(name: any) {
     loadDq();
     loadDqAlert();
   } else if (name === "domain") loadDomain();
+  else if (name === "ontgov") loadOntGov();
 }
 async function scanAll() {
   dqScanning.value = true;

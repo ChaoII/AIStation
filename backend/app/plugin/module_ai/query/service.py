@@ -2423,6 +2423,74 @@ class AiQueryService:
                 "total_objects": len(objs)}
 
     @classmethod
+    async def ontology_governance(cls) -> dict:
+        """本体对象治理：每个本体对象的 来源(管道)/下游(指标/概念/对象)/数据质量分（按本体对象/属性）。"""
+        objs = await cls._ont_objs()
+        if not objs:
+            return {"items": []}
+        pipelines = await cls.list_pipelines()
+        metrics = await cls.list_metrics()
+        concepts = await cls.list_concepts()
+        from datetime import datetime, timezone
+        items = []
+        for code, o in objs.items():
+            table = f"ont_{code}"
+            props = await cls._ont_props(code)
+            name_prop = o.get("name_prop") or "name"
+            rows = score = 0
+            comp = uniq = fresh = 0.0
+            issues = []
+            try:
+                async with async_db_session() as db:
+                    from sqlalchemy import text as _t
+                    total = (await db.execute(_t(f'SELECT count(*) FROM "{table}"'))).scalar() or 0
+                    rows = total
+                    if total and name_prop in [p["code"] for p in props] or True:
+                        try:
+                            name_null = (await db.execute(_t(
+                                f'SELECT count(*) FROM "{table}" WHERE "{name_prop}" IS NULL'))).scalar() or 0
+                            name_dist = (await db.execute(_t(
+                                f'SELECT count(DISTINCT "{name_prop}") FROM "{table}"'))).scalar() or 0
+                            comp = round(100 - (name_null / total * 100), 1) if total else 0
+                            uniq = round(name_dist / total * 100, 1) if total else 0
+                            if name_null / total > 0.05 if total else False:
+                                issues.append(f"{name_prop} 空值率 {round(name_null / total * 100, 1)}%")
+                            if name_dist < total:
+                                issues.append(f"{name_prop} 有 {total - name_dist} 条重复")
+                        except Exception:  # noqa: BLE001
+                            comp = uniq = 0
+                        ts = None
+                        for c in ("updated_time", "created_time"):
+                            try:
+                                ts = (await db.execute(_t(f'SELECT max({c}) FROM "{table}"'))).scalar()
+                                if ts:
+                                    break
+                            except Exception:  # noqa: BLE001
+                                ts = None
+                        if not ts:
+                            fresh = 0.0
+                            issues.append("无时间列/新鲜度未知")
+                        else:
+                            if ts.tzinfo is None:
+                                ts = ts.replace(tzinfo=timezone.utc)
+                            days = max(0, (datetime.now(timezone.utc) - ts).days)
+                            fresh = round(max(0.0, 100 - days * 5), 1)
+                        score = round(comp * 0.4 + uniq * 0.3 + fresh * 0.3, 1)
+            except Exception:  # noqa: BLE001
+                issues.append("对象表未物化")
+            src_pipes = [p["name"] for p in pipelines if p["target_object"] == table or p["target_object"] == code]
+            down_metrics = [m["name"] for m in metrics if table in (m.get("sql_template") or "")]
+            down_concepts = [c["name"] for c in concepts if table in (c.get("tables") or [])]
+            items.append({
+                "ontology": code, "name": o["name"], "table": table,
+                "rows": rows, "score": score, "completeness": comp, "uniqueness": uniq, "freshness": fresh,
+                "issues": issues, "source_pipelines": src_pipes,
+                "downstream_metrics": down_metrics, "downstream_concepts": down_concepts,
+            })
+        avg = round(sum((x["score"] or 0) for x in items) / len(items), 1) if items else 0
+        return {"avg_score": avg, "items": items}
+
+    @classmethod
     async def governance_overview(cls) -> dict:
         """P3-⑩ 治理驾驶舱总览：一次聚合对象/源/管道/动作/权限/域/质量/预警/指标/概念/智能体/应用。"""
         objs = await cls._objects_light()

@@ -493,6 +493,13 @@ async def governance_overview(
     return SuccessResponse(data=await AiQueryService.governance_overview(), msg="查询成功")
 
 
+@AiQueryRouter.get("/ontology/governance", summary="本体对象治理(血缘+数据质量)")
+async def ontology_governance(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.ontology_governance(), msg="查询成功")
+
+
 @AiQueryRouter.post("/access/save", summary="ABAC权限策略保存")
 async def access_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
