@@ -86,21 +86,6 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { hidden: true, title: "工作流分享运行" },
     component: () => import("@/views/module_ai/workflow/ShareRun.vue"),
   },
-  // 本体 Ontology（Palantir 式强类型元模型）—— 同时经后端菜单挂载，静态兜底保证可达
-  {
-    path: "/ai/ontology",
-    name: "AiOntology",
-    meta: { title: "本体", icon: "files" },
-    component: Layout,
-    children: [
-      {
-        path: "",
-        name: "AiOntologyPage",
-        meta: { title: "本体" },
-        component: () => import("@/views/module_ai/ontology/index.vue"),
-      },
-    ],
-  },
 ];
 
 /**
