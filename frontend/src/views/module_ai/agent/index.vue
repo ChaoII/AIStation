@@ -256,53 +256,110 @@
         </div>
       </div>
 
-      <!-- 对话设置工具栏 -->
-      <div class="agent-chat-settings">
-        <el-select
-          v-model="chatModelId"
-          size="small"
-          placeholder="选择模型"
-          clearable
-          style="width: 170px"
-        >
-          <el-option v-for="m in modelOptions" :key="m.id" :label="m.name" :value="m.id" />
-        </el-select>
-        <el-select v-model="chatVoice" size="small" placeholder="语音合成" style="width: 170px">
-          <el-option label="不合成语音" value="none" />
-          <el-option label="自动语音合成" value="auto" />
-        </el-select>
-        <el-select v-model="chatThink" size="small" placeholder="思考强度" style="width: 150px">
-          <el-option label="自动" value="auto" />
-          <el-option label="低" value="low" />
-          <el-option label="中" value="medium" />
-          <el-option label="高" value="high" />
-        </el-select>
-        <el-upload :show-file-list="false" multiple :auto-upload="false" :on-change="onChatFile">
-          <el-button size="small" :icon="Paperclip">上传文件</el-button>
-        </el-upload>
-        <el-tag v-if="chatFiles.length" size="small" type="info" effect="plain">
-          {{ chatFiles.length }} 个文件
-        </el-tag>
-      </div>
-
-      <div class="agent-chat-input">
-        <el-input
-          v-model="chatInput"
-          type="textarea"
-          :rows="1"
-          resize="none"
-          placeholder="输入问题，Enter 发送"
-          :disabled="chatSending"
-          @keyup.enter.exact.prevent="sendAgentChat"
-        />
-        <el-button
-          type="primary"
-          :loading="chatSending"
-          class="agent-chat-send"
-          @click="sendAgentChat"
-        >
-          发送
-        </el-button>
+      <!-- 对话输入区（CherryStudio 风格） -->
+      <div class="agent-chat-composer">
+        <div class="agent-composer-input">
+          <el-input
+            v-model="chatInput"
+            type="textarea"
+            :rows="2"
+            resize="none"
+            placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+            :disabled="chatSending"
+            @keyup.enter.exact.prevent="sendAgentChat"
+          />
+        </div>
+        <div class="agent-composer-bar">
+          <div class="agent-composer-left">
+            <!-- 模型触发器 -->
+            <div ref="chatModelRoot" class="cia-trigger" @click.stop="toggleModelDropdown">
+              <span class="cia-trigger-initial">{{ chatModelLabel.charAt(0).toUpperCase() }}</span>
+              <span class="cia-trigger-name">{{ chatModelLabel }}</span>
+              <span
+                class="cia-mode-badge"
+                :class="{ 'cia-mode-badge--deep': chatThinkMode === 'deep' }"
+              >
+                {{ chatThinkMode === "deep" ? "🧠" : "⚡" }}
+              </span>
+              <span class="cia-chevron" :class="{ 'cia-chevron--open': chatModelOpen }">▾</span>
+              <div v-if="chatModelOpen" class="cia-dropdown" @click.stop>
+                <div class="cia-dropdown-title">模型</div>
+                <div
+                  v-for="m in modelOptions"
+                  :key="m.id"
+                  class="cia-model-opt"
+                  :class="{ 'cia-model-opt--active': m.id === chatModelId }"
+                  @click.stop="pickChatModel(m.id)"
+                >
+                  <span class="cia-model-opt-icon">{{ m.name.charAt(0).toUpperCase() }}</span>
+                  <span class="cia-model-opt-label">{{ m.name }}</span>
+                  <span v-if="m.id === chatModelId" class="cia-check">✓</span>
+                </div>
+                <div class="cia-dropdown-title">思考</div>
+                <div class="cia-mode">
+                  <button
+                    type="button"
+                    class="cia-mode-btn"
+                    :class="{ 'cia-mode-btn--active': chatThinkMode === 'quick' }"
+                    @click.stop="chatThinkMode = 'quick'"
+                  >
+                    ⚡ 快速
+                  </button>
+                  <button
+                    type="button"
+                    class="cia-mode-btn"
+                    :class="{ 'cia-mode-btn--active': chatThinkMode === 'deep' }"
+                    @click.stop="chatThinkMode = 'deep'"
+                  >
+                    🧠 深度
+                  </button>
+                </div>
+                <div v-if="chatThinkMode === 'deep'" class="cia-effort">
+                  <button
+                    v-for="o in ['low', 'medium', 'high']"
+                    :key="o"
+                    type="button"
+                    class="cia-effort-btn"
+                    :class="{ 'cia-effort-btn--active': chatEffort === o }"
+                    @click.stop="chatEffort = o"
+                  >
+                    {{ { low: "低", medium: "中", high: "高" }[o] }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <!-- 语音合成 -->
+            <button
+              type="button"
+              class="cia-icon-btn"
+              :class="{ 'cia-icon-btn--on': chatVoice === 'auto' }"
+              title="语音合成"
+              @click="chatVoice = chatVoice === 'auto' ? 'none' : 'auto'"
+            >
+              🔊
+            </button>
+            <!-- 上传文件 -->
+            <el-upload
+              :show-file-list="false"
+              multiple
+              :auto-upload="false"
+              :on-change="onChatFile"
+            >
+              <button type="button" class="cia-icon-btn" title="上传文件">📎</button>
+            </el-upload>
+            <el-tag v-if="chatFiles.length" size="small" type="info" effect="plain">
+              {{ chatFiles.length }} 个文件
+            </el-tag>
+          </div>
+          <el-button
+            type="primary"
+            class="agent-chat-send"
+            :loading="chatSending"
+            @click="sendAgentChat"
+          >
+            发送
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -535,7 +592,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Plus,
@@ -546,7 +603,6 @@ import {
   Delete,
   CopyDocument,
   Loading,
-  Paperclip,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import {
@@ -793,12 +849,19 @@ const chatInput = ref("");
 const chatSending = ref(false);
 const chatConv = ref<any[]>([]);
 const chatBodyRef = ref<HTMLDivElement>();
-// 对话工具栏选项
+// 对话工具栏选项（CherryStudio 风格：模型触发器 + 思考 pills + 上传/语音图标）
 const chatModelId = ref<number | null>(null);
-const chatVoice = ref("none");
-const chatThink = ref("auto");
+const chatModelOpen = ref(false);
+const chatThinkMode = ref<"quick" | "deep">("quick");
+const chatEffort = ref<string>("medium");
+const chatVoice = ref<"none" | "auto">("none");
 const chatFiles = ref<File[]>([]);
+const chatModelRoot = ref<HTMLDivElement>();
 
+const chatModelLabel = computed(() => {
+  const m = modelOptions.value.find((x: any) => x.id === chatModelId.value);
+  return m ? m.name : "选择模型";
+});
 function openAgentChat(a: any) {
   activeChatAgent.value = a;
   chatMsgs.value = [];
@@ -806,6 +869,18 @@ function openAgentChat(a: any) {
   chatInput.value = "";
   chatFiles.value = [];
   chatModelId.value = a.model_id || null;
+  chatThinkMode.value = "quick";
+  chatEffort.value = "medium";
+}
+function toggleModelDropdown() {
+  chatModelOpen.value = !chatModelOpen.value;
+}
+function pickChatModel(id: number) {
+  chatModelId.value = id;
+  chatModelOpen.value = false;
+}
+function onDocClickChat(e: Event) {
+  if (!chatModelRoot.value?.contains(e.target as Node)) chatModelOpen.value = false;
 }
 function closeAgentChat() {
   activeChatAgent.value = null;
@@ -1051,7 +1126,11 @@ function onCategoryCmd(c: any, cmd: string) {
   }
 }
 
-onMounted(loadData);
+onMounted(() => {
+  loadData();
+  document.addEventListener("click", onDocClickChat);
+});
+onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 </script>
 
 <style scoped lang="scss">
@@ -1195,29 +1274,216 @@ onMounted(loadData);
   color: var(--el-text-color-secondary);
   font-size: 13px;
 }
-.agent-chat-settings {
+.agent-chat-composer {
+  border-top: 1px solid var(--el-border-color-lighter);
+  padding: 10px 14px 12px;
+  background: var(--el-bg-color);
+}
+.agent-composer-input .el-textarea__inner {
+  border-radius: 14px;
+  box-shadow: none;
+  font-size: var(--el-font-size-base);
+  line-height: 1.6;
+}
+.agent-composer-bar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px 18px;
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-.agent-chat-input {
-  display: flex;
-  align-items: flex-end;
+  justify-content: space-between;
   gap: 10px;
-  padding: 12px 18px;
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-border-color-lighter);
+  margin-top: 8px;
 }
-.agent-chat-input .el-textarea__inner {
-  border-radius: 12px;
+.agent-composer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .agent-chat-send {
   border-radius: 12px;
-  padding: 10px 22px;
+  padding: 9px 24px;
+}
+/* ---------- CherryStudio 风格：模型触发器 + 下拉 ---------- */
+.cia-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 999px;
+  background: var(--el-fill-color-blank);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  transition: all 0.15s;
+}
+.cia-trigger:hover {
+  border-color: var(--el-color-primary);
+}
+.cia-trigger-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--el-fill-color-dark, #e8e6e1);
+  color: var(--el-text-color-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.cia-trigger-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cia-mode-badge {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--el-fill-color-dark, #e8e6e1);
+}
+.cia-mode-badge--deep {
+  background: var(--el-color-primary-light-8);
+}
+.cia-chevron {
+  font-size: 10px;
+  color: var(--el-text-color-secondary);
+  transition: transform 0.15s;
+}
+.cia-chevron--open {
+  transform: rotate(180deg);
+}
+.cia-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  width: 240px;
+  max-height: 420px;
+  overflow: auto;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(31, 45, 61, 0.1);
+  padding: 6px;
+}
+.cia-dropdown-title {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--el-text-color-secondary);
+}
+.cia-model-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+}
+.cia-model-opt:hover {
+  background: var(--el-fill-color-light);
+}
+.cia-model-opt--active {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.cia-model-opt-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--el-fill-color-dark, #e8e6e1);
+  color: var(--el-text-color-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.cia-model-opt-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cia-check {
+  font-weight: 700;
+}
+.cia-mode {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px 8px;
+}
+.cia-mode-btn {
+  flex: 1;
+  padding: 6px 0;
+  font-size: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cia-mode-btn:hover {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+.cia-mode-btn--active {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.cia-effort {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px 10px;
+}
+.cia-effort-btn {
+  padding: 4px 12px;
+  font-size: 11.5px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.cia-effort-btn:hover {
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+}
+.cia-effort-btn--active {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.cia-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 50%;
+  background: var(--el-fill-color-blank);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s;
+}
+.cia-icon-btn:hover {
+  border-color: var(--el-color-primary);
+}
+.cia-icon-btn--on {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 
 .agent-category-card {
