@@ -569,6 +569,16 @@ onMounted(loadObjects);
 .ai-ontology-page {
   padding: 12px;
 }
+/* 左右白色卡片铺满可视区域（填满，不留下方大片留白） */
+.ai-ontology-page .el-col {
+  height: 100%;
+}
+.ai-ontology-page .el-card {
+  height: 100%;
+}
+.ai-ontology-page .ont-left .el-card__body {
+  overflow: auto;
+}
 .ont-left {
   max-height: calc(100vh - 100px);
   overflow: auto;
