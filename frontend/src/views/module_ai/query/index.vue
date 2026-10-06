@@ -300,6 +300,9 @@
             >
               重生成(全部)
             </el-button>
+            <el-button size="small" :loading="extractingObj" @click="extractObjects">
+              抽取业务对象
+            </el-button>
             <el-button size="small" :loading="inferringRel" @click="inferRel">
               自动推断字段关联
             </el-button>
@@ -1552,6 +1555,7 @@ import {
   getAssetVersions,
   rollbackAssetVersion,
   getAssetImpact,
+  extractQueryObjects,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2377,6 +2381,21 @@ async function rollGov(row: any) {
   }
 }
 const inferringRel = ref(false);
+const extractingObj = ref(false);
+async function extractObjects() {
+  extractingObj.value = true;
+  try {
+    const r = await extractQueryObjects();
+    const d = r.data?.data || {};
+    ElMessage.success(`已抽取 ${d.extracted ?? 0} 个业务对象（含别名/名称列消歧）`);
+    loadAssets();
+    loadGovObjects();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "抽取失败");
+  } finally {
+    extractingObj.value = false;
+  }
+}
 async function inferRel() {
   inferringRel.value = true;
   try {

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import text
@@ -30,6 +31,7 @@ from .model import (
     AiQuerySessionModel,
     AiQuerySettingModel,
 )
+from .schema import QueryAssetUpsert
 
 # ---------------------------------------------------------------------------
 # 本系统数据源保留编码
@@ -1563,6 +1565,38 @@ class AiQueryService:
             "incoming_relations": relations,
             "object_links": [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in obj_links],
         }
+
+    @classmethod
+    async def semantic_extract_objects(cls) -> dict:
+        """P1-③ 语义抽取/消歧：扫描 schema，把含 id+name 的实体表自动标记为业务对象，
+        并做同义/别名消歧（实体名词→表 映射、同名异表合并提示）。"""
+        schema = await cls._system_schema()
+        created = 0
+        aliases: list[dict] = []
+        for t, labels in schema.items():
+            cols = [lab.split("(")[0] for lab in labels]
+            if "id" not in cols:
+                continue
+            name_col = next((c for c in ("name", "title", "label") if c in cols), None)
+            # 实体名词→表 消歧：找该表对应的实体名词作为别名
+            alias = None
+            for noun, tables in _ENTITY_TABLE.items():
+                if t in tables:
+                    alias = noun
+                    break
+            # 资产 upsert（对象候选，含自动别名/名称列）
+            meta = (await cls._asset_tmeta()).get(t) or {}
+            await cls.upsert_asset(QueryAssetUpsert(
+                table_name=t, alias=meta.get("alias") or alias or t,
+                domain=meta.get("domain") or "", description=meta.get("description") or "",
+                business_scenarios=meta.get("business_scenarios") or "",
+                included=True, remark="", object_enabled=True,
+                object_key_col="id", object_name_col=name_col or "name",
+                object_icon="el-icon-Box"), SimpleNamespace(user=SimpleNamespace(id=1)))
+            created += 1
+            aliases.append({"table": t, "alias": alias or t, "name_col": name_col or "id",
+                            "synonyms": [n for n, ts in _ENTITY_TABLE.items() if t in ts]})
+        return {"extracted": created, "aliases": aliases}
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:

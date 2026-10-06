@@ -238,6 +238,9 @@ export function rollbackAssetVersion(version_id: number) {
 export function getAssetImpact(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/impact`, method: "get" });
 }
+export function extractQueryObjects() {
+  return request({ url: `${API_PATH}/assets/extract-objects`, method: "post", timeout: 120000 });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

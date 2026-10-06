@@ -304,6 +304,13 @@ async def asset_impact(
     return SuccessResponse(data=await AiQueryService.impact_analysis(table_name), msg="查询成功")
 
 
+@AiQueryRouter.post("/assets/extract-objects", summary="语义抽取/消歧：自动识别业务对象")
+async def extract_objects(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.semantic_extract_objects(), msg="已抽取业务对象")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
