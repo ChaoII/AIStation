@@ -20,7 +20,24 @@
 
 **核心设计**：问数不再是独立模块，而是在创建/编排 Agent 时作为**能力开关**装配（Agent 卡片以徽标显示已装配能力）。平台底层只负责数据资产 / 本体 / 接入 / 治理等数据准备。
 
-**UI/UX 交付**：统一 PageHeader（标题+副标题）、能力装配卡片（实时装配流）、AI 工作台入口卡片、Agent 能力徽标、空态 `el-empty` 引导、加载骨架 `el-skeleton`、对话执行链可视化。
+**本体（Ontology）即中枢，由一圈外围支撑/消费（Palantir 对齐）**
+| 外围能力 | 状态 |
+|---------|------|
+| 对象/属性/Link/Action + Functions（本体计算函数） | ✅ |
+| 连接 → 管道 → **真正写入本体对象表** | ✅ |
+| 指标/术语/概念 + **问数注入本体语义**（`_ont_ctx_block`） | ✅ |
+| **resolve 优先本体**（按对象/属性/Link 解析实例 + 关联邻居，`/objects/resolve`） | ✅ |
+| **本体对象血缘 + 数据质量**（源头管道/下游/质量分，`/ontology/governance`） | ✅ |
+| **ABAC 字段级 ACL**（本体属性 roles/敏感，接地按角色过滤） | ✅ |
+| **本体变更留痕**（`/ontology/changelog`） | ✅ |
+| **本体对象定义版本**（发布快照/列表/回滚，`/ontology/version/*`） | ✅ |
+| Workshop / AIP / Agent | ✅ |
+
+**问数/问答可见 grounding 溯源**：结果展示「使用本体 · 订单（ont_orders）」（检测 SQL 中本体表）。
+
+**UI/UX 交付**：统一 PageHeader、能力装配卡片（实时装配流）、AI 工作台入口卡片、Agent 能力徽标、空态 `el-empty` 引导、加载骨架 `el-skeleton`、对话执行链可视化、白色卡片+灰间隔背景（对齐模型配置）、电脑端分页（`el-pagination` 固定底部）。
+
+**UI/UX 回归**：后端全量 **18/18 PASS**（本体对象/属性/Link/Action/函数/留痕/版本/本体治理/resolve/governance/DQ/权限/域/指标/概念/管道/应用/智能体）。
 
 | UI/UX 项 | 位置 | 截图 |
 |---------|------|------|
