@@ -213,6 +213,18 @@ export function saveFdeProposition(data: any) {
 export function deleteFdePropositions(ids: number[]) {
   return request({ url: `${API_PATH}/fde/delete`, method: "delete", data: ids });
 }
+export function getActionList() {
+  return request({ url: `${API_PATH}/action/list`, method: "get" });
+}
+export function saveAction(data: any) {
+  return request({ url: `${API_PATH}/action/save`, method: "post", data });
+}
+export function executeAction(data: any) {
+  return request({ url: `${API_PATH}/action/execute`, method: "post", data });
+}
+export function getActionLogs(limit = 100) {
+  return request({ url: `${API_PATH}/action/logs`, method: "get", params: { limit } });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

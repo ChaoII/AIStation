@@ -270,6 +270,14 @@ async def action_execute(
     return SuccessResponse(data=r, msg="执行完成")
 
 
+@AiQueryRouter.get("/action/logs", summary="动作审计日志")
+async def action_logs(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    limit: int = 100,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_action_logs(limit), msg="查询成功")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

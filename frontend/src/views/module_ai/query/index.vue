@@ -836,6 +836,71 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+        <el-tab-pane label="动作" name="action">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openActionEdit()">
+              新增动作
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">共 {{ actions.length }} 个动作</el-tag>
+          </div>
+          <el-table :data="actions" size="small" border max-height="260">
+            <el-table-column prop="name" label="名称" min-width="110" show-overflow-tooltip />
+            <el-table-column
+              prop="object_table"
+              label="目标对象"
+              min-width="130"
+              show-overflow-tooltip
+            />
+            <el-table-column label="可写字段" min-width="150">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="c in row.writable_cols"
+                  :key="c"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ c }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="审批" width="70" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.approve ? 'warning' : 'success'">
+                  {{ row.approve ? "需审批" : "直接执行" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openActionRun(row)">
+                  执行
+                </el-button>
+                <el-button link size="small" @click="openActionEdit(row)">编辑</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="ops-bar" style="margin-top: 10px">
+            <span class="trace-title">审计日志</span>
+            <el-button size="small" @click="loadActionLogs">刷新</el-button>
+          </div>
+          <el-table :data="actionLogs" size="small" border max-height="180">
+            <el-table-column prop="action" label="动作" width="100" show-overflow-tooltip />
+            <el-table-column prop="table" label="对象" width="110" show-overflow-tooltip />
+            <el-table-column prop="key" label="键" width="90" show-overflow-tooltip />
+            <el-table-column label="参数" min-width="120">
+              <template #default="{ row }">{{ JSON.stringify(row.params) }}</template>
+            </el-table-column>
+            <el-table-column label="结果" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.result === 'success' ? 'success' : 'info'">
+                  {{ row.result }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1291,6 +1356,75 @@
         <el-button type="primary" @click="saveFde">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 动作定义编辑 -->
+    <el-dialog v-model="actionDialog" title="动作定义" width="560px" append-to-body>
+      <el-form :model="actionForm" label-width="90px">
+        <el-form-item label="动作名称" required>
+          <el-input v-model="actionForm.name" placeholder="如 cam_note" />
+        </el-form-item>
+        <el-form-item label="目标对象" required>
+          <el-input
+            v-model="actionForm.object_table"
+            placeholder="业务对象表名，如 video_cameras"
+          />
+        </el-form-item>
+        <el-form-item label="可写字段">
+          <el-select
+            v-model="actionForm.writable_cols"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="输入受控可写字段"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="a in assets"
+              :key="a.table_name"
+              :label="a.table_name"
+              :value="a.table_name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="校验规则">
+          <el-input v-model="actionForm.validation" placeholder="如：备注不超过100字" />
+        </el-form-item>
+        <el-form-item label="需审批">
+          <el-switch v-model="actionForm.approve" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="actionDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveActionFn">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 动作执行 -->
+    <el-dialog v-model="runDialog" title="执行动作" width="560px" append-to-body>
+      <el-form :model="runForm" label-width="90px">
+        <el-form-item label="动作">
+          <el-tag type="warning" effect="plain">{{ runForm.name }}</el-tag>
+          <span style="margin-left: 8px; color: var(--el-text-color-secondary)">
+            目标 {{ runForm.object_table }}
+          </span>
+        </el-form-item>
+        <el-form-item label="对象关键值" required>
+          <el-input v-model="runForm.object_key" placeholder="对象主键值，如 21" />
+        </el-form-item>
+        <el-form-item v-for="(v, k) in runForm.params" :key="String(k)" :label="String(k)">
+          <el-input v-model="runForm.params[k]" placeholder="新值" />
+        </el-form-item>
+        <el-form-item label="批准执行">
+          <el-switch v-model="runForm.approve" />
+          <span class="query-hint">该动作需审批，勾选“批准执行”后才会写回</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="runDialog = false">取消</el-button>
+        <el-button type="primary" @click="runActionFn">执行</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1336,6 +1470,10 @@ import {
   getFdeList,
   saveFdeProposition,
   deleteFdePropositions,
+  getActionList,
+  saveAction,
+  executeAction,
+  getActionLogs,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2025,6 +2163,95 @@ async function deleteFde(row: any) {
     ElMessage.error(e?.msg || "删除失败");
   }
 }
+// ---- Action(写回+审计) ----
+const actions = ref<any[]>([]);
+const actionLogs = ref<any[]>([]);
+const actionDialog = ref(false);
+const actionForm = reactive<any>({
+  id: null,
+  name: "",
+  object_table: "",
+  writable_cols: [],
+  validation: "",
+  approve: true,
+  enabled: true,
+});
+const runDialog = ref(false);
+const runForm = reactive<any>({ name: "", object_key: "", params: {}, approve: false });
+async function loadActions() {
+  try {
+    const r = await getActionList();
+    actions.value = r.data?.data || [];
+  } catch {
+    actions.value = [];
+  }
+}
+async function loadActionLogs() {
+  try {
+    const r = await getActionLogs();
+    actionLogs.value = r.data?.data || [];
+  } catch {
+    actionLogs.value = [];
+  }
+}
+function openActionEdit(row?: any) {
+  Object.assign(
+    actionForm,
+    row || {
+      id: null,
+      name: "",
+      object_table: "",
+      writable_cols: [],
+      validation: "",
+      approve: true,
+      enabled: true,
+    }
+  );
+  actionDialog.value = true;
+}
+async function saveActionFn() {
+  if (!actionForm.name?.trim() || !actionForm.object_table?.trim())
+    return ElMessage.warning("请填写名称和目标对象");
+  try {
+    await saveAction({ ...actionForm });
+    ElMessage.success("已保存");
+    actionDialog.value = false;
+    loadActions();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+function openActionRun(row: any) {
+  Object.assign(runForm, {
+    name: row.name,
+    object_table: row.object_table,
+    object_key: "",
+    params: {},
+    approve: false,
+  });
+  // 为可写字段初始化空值输入
+  runForm.params = Object.fromEntries((row.writable_cols || []).map((c: string) => [c, ""]));
+  runDialog.value = true;
+}
+async function runActionFn() {
+  if (!runForm.object_key?.trim()) return ElMessage.warning("请输入对象关键值");
+  try {
+    const r = await executeAction({
+      name: runForm.name,
+      object_key: runForm.object_key,
+      params: runForm.params,
+      approve: runForm.approve,
+    });
+    const d = r.data?.data || {};
+    if (d.needs_approval) {
+      ElMessage.warning("该操作需审批，请勾选“批准执行”后重试");
+    } else ElMessage[d.ok ? "success" : "error"](d.msg || "执行完成");
+    runDialog.value = false;
+    loadActionLogs();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "执行失败");
+  }
+}
 const inferringRel = ref(false);
 async function inferRel() {
   inferringRel.value = true;
@@ -2652,6 +2879,8 @@ onMounted(() => {
   loadUnifiedGraph();
   loadConcepts();
   loadFde();
+  loadActions();
+  loadActionLogs();
 });
 </script>
 

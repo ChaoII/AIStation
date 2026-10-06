@@ -1449,6 +1449,22 @@ class AiQueryService:
             return {"ok": False, "msg": f"执行失败：{str(e)[:120]}"}
 
     @classmethod
+    async def list_action_logs(cls, limit: int = 100) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            res = await db.execute(_t(
+                "SELECT id,action_name,object_table,object_key,params,operator,result,detail,created_time "
+                "FROM ai_action_log WHERE is_deleted=false ORDER BY id DESC LIMIT :n"), {"n": max(1, min(limit, 200))})
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "action": r[1], "table": r[2], "key": r[3],
+            "params": r[4] if isinstance(r[4], dict) else (_json.loads(r[4]) if r[4] else {}),
+            "operator": r[5], "result": r[6], "detail": r[7] or "", "time": str(r[8]) if r[8] else "",
+        } for r in rows]
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t
