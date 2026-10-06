@@ -903,6 +903,10 @@ class AiQueryService:
                     "domain": a.domain or "", "description": a.description or "",
                     "business_scenarios": a.business_scenarios or "",
                     "included": a.included, "remark": a.remark or "",
+                    "object_enabled": getattr(a, "object_enabled", False),
+                    "object_key_col": getattr(a, "object_key_col", None) or "id",
+                    "object_name_col": getattr(a, "object_name_col", None) or "name",
+                    "object_icon": getattr(a, "object_icon", None) or "el-icon-Box",
                     "column_count": len(cnt),
                     "included_columns": sum(1 for c in cnt if c.included),
                 })
@@ -952,12 +956,20 @@ class AiQueryService:
                 existing.business_scenarios = data.business_scenarios
                 existing.included = data.included
                 existing.remark = data.remark
+                existing.object_enabled = data.object_enabled
+                existing.object_key_col = data.object_key_col or "id"
+                existing.object_name_col = data.object_name_col or "name"
+                existing.object_icon = data.object_icon or "el-icon-Box"
                 existing.updated_id = auth.user.id
             else:
                 db.add(AiQueryAssetModel(table_name=data.table_name, alias=data.alias,
                                          domain=data.domain, description=data.description,
                                          business_scenarios=data.business_scenarios,
                                          included=data.included, remark=data.remark,
+                                         object_enabled=data.object_enabled,
+                                         object_key_col=data.object_key_col or "id",
+                                         object_name_col=data.object_name_col or "name",
+                                         object_icon=data.object_icon or "el-icon-Box",
                                          created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
         _SCHEMA_CACHE = None
@@ -1192,7 +1204,9 @@ class AiQueryService:
         if not cand:
             return None
         # 2) 选主表：优先含 name/title 列且非分组/日志/事件类的实体表
-        labels_of = lambda t: schema.get(t) or []
+
+        def labels_of(t: str) -> list[str]:
+            return schema.get(t) or []
         has_name = [t for t in cand if any(lab.split("(")[0] in ("name", "title", "label") for lab in labels_of(t))]
         prefer = [t for t in has_name if not any(x in t for x in ("group", "groups", "task", "logs", "records", "events", "call_logs"))]
         table = (prefer or has_name or cand)[0]
@@ -1247,6 +1261,43 @@ class AiQueryService:
         except Exception:  # noqa: BLE001
             pass
         return {"entity": entity, "table": table, "object": obj, "related": related}
+
+    @classmethod
+    async def list_objects(cls) -> list[dict]:
+        """P0·业务对象(Object Type)：object_enabled 的表 + key/name 列 + 由字段关联推导的 Link Type。"""
+        assets = await cls.list_assets()
+        objs = [a for a in assets if a.get("object_enabled")]
+        # 收集对象间 Link：由字段 related_table 推导
+        async with async_db_session() as db:
+            from sqlalchemy import select
+
+            col_rows = (
+                await db.execute(
+                    select(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                        AiQueryAssetColumnModel.related_table.is_not(None),
+                    )
+                )
+            ).scalars().all()
+        obj_tables = {o["table_name"] for o in objs}
+        out = []
+        for o in objs:
+            links = []
+            for c in col_rows:
+                if c.table_name == o["table_name"] and c.related_table in obj_tables:
+                    links.append({
+                        "target": c.related_table,
+                        "via": c.column_name,
+                        "target_field": c.related_field,
+                    })
+            out.append({
+                "table": o["table_name"], "alias": o.get("alias") or o["table_name"],
+                "key_col": o.get("object_key_col") or "id",
+                "name_col": o.get("object_name_col") or "name",
+                "icon": o.get("object_icon") or "el-icon-Box",
+                "links": links,
+            })
+        return out
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:

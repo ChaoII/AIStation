@@ -89,6 +89,11 @@ class QueryAssetUpsert(BaseModel):
     business_scenarios: str = ""
     included: bool = True
     remark: str = ""
+    # P0·对象化
+    object_enabled: bool = False
+    object_key_col: str = "id"
+    object_name_col: str = "name"
+    object_icon: str = "el-icon-Box"
 
 
 class QueryAssetColumnUpsert(BaseModel):

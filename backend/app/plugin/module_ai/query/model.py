@@ -142,6 +142,11 @@ class AiQueryAssetModel(ModelMixin, UserMixin):
     )
     included: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否纳入可查目录")
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="备注")
+    # P0·对象化：是否作为业务对象(Object Type)，主键列/显示名列/图标
+    object_enabled: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否业务对象")
+    object_key_col: Mapped[str | None] = mapped_column(String(64), default="id", comment="对象主键列")
+    object_name_col: Mapped[str | None] = mapped_column(String(64), default="name", comment="对象显示名列")
+    object_icon: Mapped[str | None] = mapped_column(String(32), default="el-icon-Box", comment="对象图标")
 
 
 class AiQueryAssetColumnModel(ModelMixin, UserMixin):

@@ -201,6 +201,9 @@ export function getQueryKgKbs() {
 export function saveQueryKgLayout(items: { name: string; x: number; y: number }[]) {
   return request({ url: `${API_PATH}/assets/kg/layout`, method: "post", data: { items } });
 }
+export function getQueryObjects() {
+  return request({ url: `${API_PATH}/assets/objects`, method: "get" });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

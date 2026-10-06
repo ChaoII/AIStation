@@ -207,7 +207,13 @@ async def kg_rebuild(
     return SuccessResponse(data=data, msg="知识图谱已重建")
 
 
-@AiQueryRouter.get("/assets/kg/stats", summary="知识图谱统计(节点/边)")
+@AiQueryRouter.get("/assets/objects", summary="业务对象(Object Type)+Link Type列表")
+async def list_objects(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_objects(), msg="查询成功")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

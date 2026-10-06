@@ -350,6 +350,11 @@
                 <el-switch v-model="row.included" @change="saveAsset(row)" />
               </template>
             </el-table-column>
+            <el-table-column label="业务对象" width="96" align="center">
+              <template #default="{ row }">
+                <el-switch v-model="row.object_enabled" @change="saveAsset(row)" />
+              </template>
+            </el-table-column>
             <el-table-column label="字段" width="90" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openAssetColumns(row)">
@@ -1848,6 +1853,10 @@ async function saveAsset(row: any) {
       business_scenarios: row.business_scenarios || "",
       included: row.included,
       remark: row.remark || "",
+      object_enabled: !!row.object_enabled,
+      object_key_col: row.object_key_col || "id",
+      object_name_col: row.object_name_col || "name",
+      object_icon: row.object_icon || "el-icon-Box",
     });
     ElMessage.success(`已保存「${row.table_name}」`);
   } catch (e: any) {
