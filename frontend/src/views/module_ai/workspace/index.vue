@@ -6,6 +6,9 @@
       subtitle="本体驱动 + AI Grounding + 治理的数据 / 决策平台 · 按 Foundry 支柱组织"
     />
     <el-row :gutter="16">
+      <el-col v-if="loading" :span="24">
+        <el-skeleton :rows="5" animated />
+      </el-col>
       <el-col v-for="p in pillars" :key="p.route" :xs="24" :sm="12" :md="8">
         <el-card
           shadow="hover"
@@ -60,11 +63,19 @@ import { getGovernanceOverview } from "@/api/module_ai/query";
 
 const router = useRouter();
 const g = ref<any>({ overview: {} });
+const loading = ref(true);
 const pillars = ref<any[]>([]);
 
 async function load() {
-  const r = await getGovernanceOverview();
-  g.value = { overview: r.data?.data || {} };
+  loading.value = true;
+  try {
+    const r = await getGovernanceOverview();
+    g.value = { overview: r.data?.data || {} };
+  } catch {
+    g.value = { overview: {} };
+  } finally {
+    loading.value = false;
+  }
   const o = g.value.overview || {};
   pillars.value = [
     {

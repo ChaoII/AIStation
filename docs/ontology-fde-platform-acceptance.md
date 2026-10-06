@@ -3,9 +3,29 @@
 > 定位：把 AIStation 升级为 Palantir Foundry 式「本体驱动 + AI grounding + FDE 交付 + 治理」的数据/决策平台。
 > 本清单汇总 P0→P3-⑩ 全部已交付能力、验收方式与状态。每项均经**后端接口 + 前端浏览器 + 截图**验证。
 
+## 〇、最终产品架构（Palantir Foundry 对照）
+
+按 Foundry 分为「底座（数据准备 + 本体）」与「消费层（AIP / Agent 能力装配）」，问数作为 **Agent 能力**而非独立产品。
+
+**AI 管理菜单（一级模块）**
+| 菜单 | Foundry 对应 | 说明 |
+|------|-------------|------|
+| **AI 工作台** | 统一入口 | Foundry 支柱入口卡片（实时指标 + 进入） |
+| **数据资产** | Semantic Layer / Data Assets | 资产目录 / 指标 / 术语 / 概念 / 图谱 / 语义抽取（底座） |
+| **本体** | Ontology | 对象 / 属性 / Link / Action 强类型元模型（本体驱动） |
+| **数据与集成** | Data Connection / Pipeline | 数据连接 + 数据管道（抽取/加工接入本体） |
+| **无代码应用** | Workshop | 在对象上无代码构建看板/表单 |
+| **治理** | Governance / Oversight | 驾驶舱 + ABAC + 数据质量 + 数据域 |
+| **智能体** | AIP / Agent Studio | **能力装配（问数/接地/RAG/工具/技能/模型等开关）** |
+
+**核心设计**：问数不再是独立模块，而是在创建/编排 Agent 时作为**能力开关**装配（Agent 卡片以徽标显示已装配能力）。平台底层只负责数据资产 / 本体 / 接入 / 治理等数据准备。
+
+**UI/UX 交付**：统一 PageHeader（标题+副标题）、能力装配卡片（实时装配流）、AI 工作台入口卡片、Agent 能力徽标、空态 `el-empty` 引导、加载骨架 `el-skeleton`。
+
 ## 一、验收总览
 
 | 阶段 | 主题 | 后端 | 前端 | 截图 | 状态 |
+[Output truncated. Continue reading with offset: 9]
 |------|------|------|------|------|------|
 | P0 | 对象化建模 + resolve_object grounding + FDE 交付工作台 | ✅ | ✅ | ✅ | 通过 |
 | P1 | Action 写回+审计 / 版本·血缘·影响·回滚 / 语义抽取→对象 | ✅ | ✅ | ✅ | 通过 |
