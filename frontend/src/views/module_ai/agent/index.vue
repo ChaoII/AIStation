@@ -842,7 +842,7 @@
               </div>
             </div>
           </div>
-          <el-checkbox-group v-model="studioAgent.capabilities" @change="studioDirty = true">
+          <el-checkbox-group v-model="studioAgent.capabilities" @change="onCapChange">
             <el-checkbox v-for="cap in ontCaps" :key="cap.code" :value="cap.code" class="prof-cap">
               {{ cap.name }}
               <span class="prof-cap__type">[{{ cap.type }}]</span>
@@ -1283,6 +1283,28 @@ function toggleCap(key: string) {
     else if (key === "prompt") a.prompt_id = a.prompt_id || promptOptions.value[0]?.id || null;
     else if (key === "workflow")
       a.workflow_id = a.workflow_id || workflowOptions.value[0]?.id || null;
+  }
+  studioDirty.value = true;
+}
+// 本体工具勾选时，映射到 Agent 真实能力字段（保证运行时实际可用）
+function onCapChange() {
+  const a = studioAgent.value;
+  if (!a) return;
+  const enabled = new Set<string>(a.capabilities || []);
+  // query/grounding → 启用智能问数（含 resolve_object）
+  if (enabled.has("ontology_query") || enabled.has("ontology_grounding")) {
+    a.query_enabled = true;
+  }
+  // knowledge → 装配知识库
+  if (enabled.has("knowledge_rag")) {
+    a.knowledge_ids = a.knowledge_ids || [];
+    if (!a.knowledge_ids.length && knowledgeOptions.value[0])
+      a.knowledge_ids.push(knowledgeOptions.value[0].id);
+  }
+  // skill → 装配技能
+  if (enabled.has("agent_skill")) {
+    a.skill_ids = a.skill_ids || [];
+    if (!a.skill_ids.length && skillOptions.value[0]) a.skill_ids.push(skillOptions.value[0].id);
   }
   studioDirty.value = true;
 }
