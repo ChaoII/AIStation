@@ -122,6 +122,13 @@ export function syncQueryDatasourceSchema(id: number) {
 export function getQueryDatasourceSchema(id: number) {
   return request({ url: `${API_PATH}/datasources/${id}/schema`, method: "get" });
 }
+export function importDsAsOntology(datasource_id: number, table: string) {
+  return request({
+    url: `${API_PATH}/ontology/import-from-ds`,
+    method: "post",
+    data: { datasource_id, table },
+  });
+}
 export function getQueryRoles() {
   return request({ url: `${API_PATH}/datasources/roles`, method: "get" });
 }

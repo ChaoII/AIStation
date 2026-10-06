@@ -29,6 +29,35 @@
               </template>
             </el-table-column>
           </el-table>
+          <div class="mi-import">
+            <el-select
+              v-model="impDs"
+              size="small"
+              placeholder="选择数据源"
+              style="width: 140px"
+              @change="loadDsTables"
+            >
+              <el-option v-for="d in datasources" :key="d.id" :label="d.name" :value="d.id" />
+            </el-select>
+            <el-select
+              v-model="impTable"
+              size="small"
+              filterable
+              placeholder="选择表"
+              style="width: 200px"
+            >
+              <el-option v-for="t in dsTables" :key="t" :label="t" :value="t" />
+            </el-select>
+            <el-button
+              size="small"
+              type="primary"
+              :icon="DataBoard"
+              :loading="importing"
+              @click="doImport"
+            >
+              导入为本体对象
+            </el-button>
+          </div>
         </el-card>
       </el-col>
       <el-col :span="10">
@@ -66,16 +95,48 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { ElMessage } from "element-plus";
-import { Plus } from "@element-plus/icons-vue";
+import { Plus, DataBoard } from "@element-plus/icons-vue";
 import {
   getQueryDatasources,
   testQueryDatasource,
   getPipelineList,
   runPipeline,
+  getQueryDatasourceSchema,
+  importDsAsOntology,
 } from "@/api/module_ai/query";
 
 const datasources = ref<any[]>([]);
 const pipelines = ref<any[]>([]);
+const impDs = ref<any>(null);
+const impTable = ref("");
+const dsTables = ref<string[]>([]);
+const importing = ref(false);
+async function loadDsTables() {
+  dsTables.value = [];
+  impTable.value = "";
+  if (!impDs.value) return;
+  try {
+    const r = await getQueryDatasourceSchema(impDs.value);
+    dsTables.value = (r.data?.data || []).map((x: any) => x.table);
+  } catch {
+    dsTables.value = [];
+  }
+}
+async function doImport() {
+  if (!impDs.value || !impTable.value) return ElMessage.warning("请选择数据源与表");
+  importing.value = true;
+  try {
+    const r = await importDsAsOntology(impDs.value, impTable.value);
+    const d = r.data?.data || {};
+    ElMessage[d.ok ? "success" : "error"](
+      d.ok ? `已导入为本体对象「${d.object}」，${d.props} 个属性` : d.msg
+    );
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "导入失败");
+  } finally {
+    importing.value = false;
+  }
+}
 async function load() {
   try {
     const [d, p] = await Promise.all([getQueryDatasources(), getPipelineList()]);
@@ -113,6 +174,12 @@ onMounted(load);
 .mi-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+}
+.mi-import {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
   align-items: center;
 }
 </style>

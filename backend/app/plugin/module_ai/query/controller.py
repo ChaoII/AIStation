@@ -486,6 +486,15 @@ async def domain_objects(
 
 
 # ---- P3-⑩ 治理驾驶舱 ----
+@AiQueryRouter.post("/ontology/import-from-ds", summary="数据源连接器→本体对象(把外部表结构生成本体对象)")
+async def import_ds_as_ontology(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.import_ds_table_as_ontology(int(data.get("datasource_id", 0)), str(data.get("table", "")))
+    return SuccessResponse(data=r, msg=r.get("msg", "已导入"))
+
+
 @AiQueryRouter.get("/governance/overview", summary="治理驾驶舱总览")
 async def governance_overview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

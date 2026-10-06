@@ -2502,6 +2502,62 @@ class AiQueryService:
         return {"avg_score": avg, "items": items}
 
     @classmethod
+    async def import_ds_table_as_ontology(cls, datasource_id: int, table: str) -> dict:
+        """数据源连接器 → 本体对象：把外部数据源某张表结构自动生成本体对象（对象+属性+物化），连接器真正生根本体。"""
+        records = await list_ds_schema(datasource_id)
+        rec = next((r for r in records if r["table"] == table), None)
+        if not rec:
+            return {"ok": False, "msg": f"数据源 {datasource_id} 未同步表 {table}"}
+        cols = rec.get("columns") or []
+        name_prop = "id"
+        for c in cols:
+            if isinstance(c, dict) and str(c.get("name", "")).lower() in ("name", "title", "no"):
+                name_prop = c["name"]
+                break
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            exists = (await db.execute(_t(
+                "SELECT id FROM ai_ont_object WHERE code=:c AND is_deleted=false"), {"c": table})).fetchone()
+            if not exists:
+                await db.execute(_t(
+                    "INSERT INTO ai_ont_object(code,name,key_prop,name_prop,description) "
+                    "VALUES (:c,:n,:k,:np,:d) ON CONFLICT (code) DO UPDATE SET name=:n, key_prop=:k, name_prop=:np, description=:d"),
+                    {"c": table, "n": table, "k": "id", "np": name_prop,
+                     "d": f"由数据源 {datasource_id} 的表 {table} 导入"})
+        prop_count = 0
+        for c in cols:
+            cname = c["name"] if isinstance(c, dict) else c
+            ctype = (c.get("type") if isinstance(c, dict) else None) or "string"
+            pg = "string"
+            if ctype and any(k in str(ctype).lower() for k in ("int", "float", "decimal", "numeric", "double")):
+                pg = "number"
+            elif ctype and any(k in str(ctype).lower() for k in ("date", "time")):
+                pg = "date"
+            elif ctype and "bool" in str(ctype).lower():
+                pg = "boolean"
+            async with async_db_session.begin() as db:
+                from sqlalchemy import text as _t
+                await db.execute(_t(
+                    "INSERT INTO ai_ont_property(object_code,name,code,prop_type,description) "
+                    "VALUES (:oc,:n,:c,:pt,:d)"), {"oc": table, "n": cname, "c": cname, "pt": pg,
+                                                   "d": f"来自 {table}.{cname}"})
+            prop_count += 1
+        # 物化建表 ont_{table}
+        m = {"ok": False, "msg": "无属性", "table": f"ont_{table}"}
+        if prop_count:
+            cols = [c["name"] if isinstance(c, dict) else c for c in cols]
+            cols_ddl = ", ".join(f'"{c}" TEXT' for c in cols)
+            try:
+                async with async_db_session() as db:
+                    from sqlalchemy import text as _t
+                    await db.execute(_t(
+                        f'CREATE TABLE IF NOT EXISTS "ont_{table}" (id BIGSERIAL PRIMARY KEY, {cols_ddl})'))
+                m = {"ok": True, "table": f"ont_{table}", "columns": cols}
+            except Exception as e:  # noqa: BLE001
+                m = {"ok": False, "msg": str(e)[:60]}
+        return {"ok": True, "object": table, "props": prop_count, "materialize": m}
+
+    @classmethod
     async def governance_overview(cls) -> dict:
         """P3-⑩ 治理驾驶舱总览：一次聚合对象/源/管道/动作/权限/域/质量/预警/指标/概念/智能体/应用。"""
         objs = await cls._objects_light()
