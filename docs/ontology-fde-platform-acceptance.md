@@ -1,7 +1,7 @@
-# 本体驱动 + AI Grounding + FDE 交付平台 — 整体验收清单（P0 → P3-⑥）
+# 本体驱动 + AI Grounding + FDE 交付平台 — 整体验收清单（P0 → P3-⑨）
 
 > 定位：把 AIStation 升级为 Palantir Foundry 式「本体驱动 + AI grounding + FDE 交付 + 治理」的数据/决策平台。
-> 本清单汇总 P0→P3-⑥ 全部已交付能力、验收方式与状态。每项均经**后端接口 + 前端浏览器 + 截图**验证。
+> 本清单汇总 P0→P3-⑨ 全部已交付能力、验收方式与状态。每项均经**后端接口 + 前端浏览器 + 截图**验证。
 
 ## 一、验收总览
 
@@ -15,8 +15,11 @@
 | P3-④ | 完整血缘 + ABAC 权限（敏感字段管控） | ✅ | ✅ | ✅ | 通过 |
 | P3-⑤ | 真正拉外部 ERP/CRM/MES 数据落库 | ✅ | ✅ | ✅ | 通过 |
 | P3-⑥ | Agent Studio 无代码编排 + 试跑/工具链回放 | ✅ | ✅ | ✅ | 通过 |
+| **P3-⑦** | **数据质量（DQ）健康度** | ✅ | ✅ | ✅ | 通过 |
+| **P3-⑧** | **DQ 质量预警 + 血缘影响联动** | ✅ | ✅ | ✅ | 通过 |
+| **P3-⑨** | **数据域隔离（多租户）** | ✅ | ✅ | ✅ | 通过 |
 
-## 二、后端接口回归（22/22 PASS）
+## 二、后端接口回归（26/26 PASS）
 
 登录 `admin/123456` 后以 `Bearer token` 调用，全部返回 `code=0`：
 
@@ -33,6 +36,9 @@
 | `/ai/query/pipeline/list`（管道，2） | PASS |
 | `/ai/query/workshop/list`（对象应用） | PASS |
 | `/ai/query/access/list`（ABAC 策略） | PASS |
+| `/ai/query/dq/overview`（质量总览） | PASS |
+| `/ai/query/dq/alert`（质量预警+影响联动） | PASS |
+| `/ai/query/domain/list` / `/domain/objects`（数据域） | PASS |
 | `/ai/query/industry/templates`（行业模板，3） | PASS |
 | `/ai/query/datasources/list`（数据源） | PASS |
 | `/ai/query/metrics/list`（指标，7）/ `terms/list`（术语，10）/ `concepts/list`（概念，14） | PASS |
@@ -84,21 +90,48 @@
 - **试跑/工具链回放**：输入问题流式试跑，回放调用步骤（`1. ai_query`）+ 思考 + 回答。
 - 实测：问数助手编排绑定模型(4)+知识库(4)+问数；试跑「一共有多少个摄像头？」回放 `ai_query` 并答「当前共有 1 个摄像头」。
 
+### P3-⑦ — 数据质量（DQ）健康度
+- **dq_run**：对业务对象扫描 完整性（名称列空值率）/ 唯一性（name、主键去重占比）/ 新鲜度（最新更新时间距今，无时间列记 0），综合分 `0.4*完整性 + 0.3*唯一性 + 0.3*新鲜度`。
+- **dj_overview**：从 `ai_dq_report` 缓存读取（直查对象表，66ms，稳定不超时），未扫描对象标记。
+- 实测：19 对象平均健康分 77.9、健康 6 / 风险 1；问题如「无更新时间列，新鲜度未知」「名称列 name 有 98 条重名」。
+
+### P3-⑧ — DQ 质量预警 + 影响联动
+- **dq_alert**：风险对象(健康分<60) → 血缘下游影响（依赖对象 / 指标 / 概念），组装预警清单。
+- 实测：「质量预警：2 个对象健康分低于 60」；`合成`(59.8) 与 `mes_equipment`(0)，带下游影响 + 问题明细。
+
+### P3-⑨ — 数据域隔离（多租户）
+- `ai_domain`（域名+编码+描述+对象+成员用户）；`domain/objects` 按域分组、未归属对象单独列出。
+- 前端「数据域」tab：域卡（对象/成员）+ 未归属对象 + 隔离说明（成员仅访问其所在域对象，ABAC 结合 domain 在解析/问数时过滤）。
+- 实测：「生产域(prod)」对象 3（训练任务/告警/摄像头）、成员 `#1`；未归属 16。
+
+## 三、治理闭环（Oversight & Governance）
+
+| 治理支柱 | 载体 | 阶段 |
+|---------|------|------|
+| 血缘 / 版本 / 影响 / 回滚 | 治理 tab | P1 / P3-④ |
+| ABAC 权限（敏感字段管控） | 权限 tab | P3-④ |
+| 数据质量（DQ）+ 预警联动 | 数据质量 tab | P3-⑦⑧ |
+| 多租户 / 数据域隔离 | 数据域 tab | P3-⑨ |
+| 真实数据接入 + 血缘 | 管道/数据源 | P3-①⑤ |
+
 ## 四、前端主要页面（浏览器截图核实）
 
 | 页面 | 说明 |
 |------|------|
 | 智能问数 `/ai/query` | 新会话/指标运营/数据源/历史问题/试试问/流式思考/工具链 |
-| 指标运营抽屉 | 指标/术语/数据源/资产/推荐/示例/反馈/限额/工程配置/基准/图谱/本体/交付/动作/治理/管道/应用/权限（19 tab） |
+| 指标运营抽屉 | 指标/术语/数据源/资产/推荐/示例/反馈/限额/工程配置/基准/图谱/本体/交付/动作/治理/管道/应用/权限/数据质量/数据域（22 tab） |
 | 治理 tab | 影响分析 + 版本历史 + 完整血缘卡片 |
 | 权限 tab | ABAC 策略表格 + 敏感放行开关 |
 | 管道 tab | 管道列表 + 运行 + 数据（落库弹窗） |
 | 应用 tab | 对象应用列表 + 新建 + 预览（真实数据） |
+| 数据质量 tab | 健康分仪表盘 + 对象进度条 + 问题明细 + 质量预警（下游影响）+ 逐对象/全量扫描 |
+| 数据域 tab | 域卡（对象/成员）+ 未归属对象 |
 | 智能体 `/ai/agent` | Agent 网格 + 两栏对话（composer）+ Studio 编排抽屉 + 试跑回放 |
 
 ## 五、运行与验收要点
 
 - 后端：`cd backend && uv run main.py run --env=dev`（端口 8001）；插件控制器改动后需**冷重启**（`Get-Process python,uv | Stop-Process -Force` 后重启）。
-- 前端：`cd frontend && pnpm run dev`（端口 5180）；hash 路由 `http://localhost:5180/web#/ai/query`。
+- 前端：`cd frontend && pnpm run dev`（端口 5180）；hash 路由 `http://localhost:5180/web#/ai/query`；`VITE_TIMEOUT=10000`。
 - 登录：`admin / 123456`。
-- 数据库：Postgres `aistation`；运行时建表 `ai_action / ai_action_log / ai_asset_version / ai_fde_proposition / ai_pipeline / ai_pipeline_run / ai_workshop_app / ai_access_rule / ai_pipeline_data_*`。
+- 数据库：Postgres `aistation`；运行时建表 `ai_action / ai_action_log / ai_asset_version / ai_fde_proposition / ai_pipeline / ai_pipeline_run / ai_workshop_app / ai_access_rule / ai_dq_report / ai_domain / ai_pipeline_data_*`。
+- 性能要点：`dq/overview` 走缓存直查（避免慢 `list_objects`）；DQ/预警/域改为切 tab 按需加载，避免挂载并发挤占连接池（此前 `QueuePool` 会因并发+OperationLogRoute 写日志耗尽）。
