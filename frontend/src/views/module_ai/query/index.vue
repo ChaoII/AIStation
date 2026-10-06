@@ -901,6 +901,80 @@
             <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
           </el-table>
         </el-tab-pane>
+        <el-tab-pane label="治理" name="governance">
+          <div class="ops-bar">
+            <el-select
+              v-model="govTable"
+              size="small"
+              filterable
+              placeholder="选择业务对象"
+              style="width: 200px"
+            >
+              <el-option
+                v-for="o in govObjects"
+                :key="o.table"
+                :label="o.alias || o.table"
+                :value="o.table"
+              />
+            </el-select>
+            <el-button size="small" :icon="Refresh" @click="loadGov">加载</el-button>
+          </div>
+          <el-row v-if="govTable" :gutter="12">
+            <el-col :span="12">
+              <el-card shadow="never">
+                <template #header>影响分析（{{ govTable }}）</template>
+                <div class="gov-section">用到的指标</div>
+                <el-tag
+                  v-for="m in govImpact.metrics"
+                  :key="m.key"
+                  size="small"
+                  type="primary"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ m.name }}
+                </el-tag>
+                <div v-if="!govImpact.metrics?.length" class="gov-empty">无</div>
+                <div class="gov-section">入向关联（引用本表字段）</div>
+                <div v-for="(r, i) in govImpact.incoming_relations" :key="i" class="gov-rel">
+                  <el-tag size="small" effect="plain">{{ "表" + r.from + "." + r.field }}</el-tag>
+                  ← {{ r.column }}
+                </div>
+                <div v-if="!govImpact.incoming_relations?.length" class="gov-empty">无</div>
+                <div class="gov-section">对象链接</div>
+                <el-tag
+                  v-for="o in govImpact.object_links"
+                  :key="o.object"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ o.alias }}
+                </el-tag>
+                <div v-if="!govImpact.object_links?.length" class="gov-empty">无</div>
+              </el-card>
+            </el-col>
+            <el-col :span="12">
+              <el-card shadow="never">
+                <template #header>版本历史</template>
+                <el-table :data="govVersions" size="small">
+                  <el-table-column prop="version" label="版本" width="60" />
+                  <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
+                  <el-table-column label="操作" width="90" align="center">
+                    <template #default="{ row }">
+                      <el-button link type="warning" size="small" @click="rollGov(row)">
+                        回滚
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div v-if="!govVersions.length" class="gov-empty">暂无版本（保存过资产即有）</div>
+              </el-card>
+            </el-col>
+          </el-row>
+          <el-empty v-else description="请选择业务对象查看治理信息" :image-size="40" />
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1474,6 +1548,9 @@ import {
   saveAction,
   executeAction,
   getActionLogs,
+  getAssetVersions,
+  rollbackAssetVersion,
+  getAssetImpact,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2252,6 +2329,52 @@ async function runActionFn() {
     ElMessage.error(e?.msg || "执行失败");
   }
 }
+// ---- 治理(版本/回滚/影响分析) ----
+const govTable = ref("");
+const govObjects = ref<any[]>([]);
+const govImpact = ref<any>({ metrics: [], incoming_relations: [], object_links: [] });
+const govVersions = ref<any[]>([]);
+async function loadGovObjects() {
+  try {
+    const r = await getQueryObjects();
+    govObjects.value = r.data?.data || [];
+  } catch {
+    govObjects.value = [];
+  }
+}
+async function loadGov() {
+  if (!govTable.value) return;
+  try {
+    const [imp, ver] = await Promise.all([
+      getAssetImpact(govTable.value),
+      getAssetVersions(govTable.value),
+    ]);
+    govImpact.value = imp.data?.data || { metrics: [], incoming_relations: [], object_links: [] };
+    govVersions.value = ver.data?.data || [];
+  } catch {
+    govImpact.value = { metrics: [], incoming_relations: [], object_links: [] };
+    govVersions.value = [];
+  }
+}
+async function rollGov(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确认回滚「${govTable.value}」到版本 ${row.version}？当前改动将被覆盖。`,
+      "回滚确认",
+      { type: "warning", confirmButtonText: "回滚", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const r = await rollbackAssetVersion(row.id);
+    ElMessage.success(r.data?.data?.msg || "已回滚");
+    loadGov();
+    loadAssets();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "回滚失败");
+  }
+}
 const inferringRel = ref(false);
 async function inferRel() {
   inferringRel.value = true;
@@ -2881,6 +3004,7 @@ onMounted(() => {
   loadFde();
   loadActions();
   loadActionLogs();
+  loadGovObjects();
 });
 </script>
 
@@ -2899,6 +3023,21 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   font-size: 13px;
+}
+.gov-section {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  margin: 8px 0 4px;
+}
+.gov-empty {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+.gov-rel {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  margin-bottom: 3px;
 }
 .query-layout {
   display: flex;

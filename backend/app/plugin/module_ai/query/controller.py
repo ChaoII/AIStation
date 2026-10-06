@@ -278,6 +278,32 @@ async def action_logs(
     return SuccessResponse(data=await AiQueryService.list_action_logs(limit), msg="查询成功")
 
 
+# ---- P1-② 版本/血缘/影响分析/回滚 ----
+@AiQueryRouter.get("/assets/{table_name}/versions", summary="资产版本历史")
+async def asset_versions(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_versions(table_name), msg="查询成功")
+
+
+@AiQueryRouter.post("/assets/version/rollback", summary="回滚到指定版本")
+async def asset_rollback(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.rollback_version(int(data.get("version_id", 0)), auth)
+    return SuccessResponse(data=r, msg=r.get("msg", "回滚完成"))
+
+
+@AiQueryRouter.get("/assets/{table_name}/impact", summary="影响分析(指标/关联/对象)")
+async def asset_impact(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.impact_analysis(table_name), msg="查询成功")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

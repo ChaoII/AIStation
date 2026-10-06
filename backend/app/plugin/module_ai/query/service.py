@@ -972,6 +972,13 @@ class AiQueryService:
                                          object_icon=data.object_icon or "el-icon-Box",
                                          created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
+        await cls._record_version(data.table_name, {
+            "table_name": data.table_name, "alias": data.alias, "domain": data.domain,
+            "description": data.description, "business_scenarios": data.business_scenarios,
+            "included": data.included, "object_enabled": data.object_enabled,
+            "object_key_col": data.object_key_col, "object_name_col": data.object_name_col,
+            "object_icon": data.object_icon,
+        }, operator=str(getattr(getattr(auth, "user", None), "id", "")))
         _SCHEMA_CACHE = None
         _SEMANTIC_INDEX = None
         _ASSET_TMETA = None
@@ -1463,6 +1470,99 @@ class AiQueryService:
             "params": r[4] if isinstance(r[4], dict) else (_json.loads(r[4]) if r[4] else {}),
             "operator": r[5], "result": r[6], "detail": r[7] or "", "time": str(r[8]) if r[8] else "",
         } for r in rows]
+
+    @classmethod
+    async def _record_version(cls, table_name: str, snapshot: dict, field_name: str = "", operator: str = "") -> None:
+        import json as _json
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            n = (await db.execute(_t(
+                "SELECT COALESCE(MAX(version_no),0) FROM ai_asset_version WHERE table_name=:t AND field_name=:f AND is_deleted=false"),
+                {"t": table_name, "f": field_name})).scalar() or 0
+            await db.execute(_t(
+                "INSERT INTO ai_asset_version(table_name,field_name,snapshot,version_no,operator) "
+                "VALUES (:t,:f,:s,:n,:o)"), {
+                "t": table_name, "f": field_name, "s": _json.dumps(snapshot, ensure_ascii=False),
+                "n": int(n) + 1, "o": operator or ""})
+
+    @classmethod
+    async def list_versions(cls, table_name: str) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            res = await db.execute(_t(
+                "SELECT id,table_name,field_name,snapshot,version_no,operator,created_time "
+                "FROM ai_asset_version WHERE table_name=:t AND is_deleted=false ORDER BY id DESC LIMIT 50"),
+                {"t": table_name})
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "table": r[1], "field": r[2],
+            "snapshot": r[3] if isinstance(r[3], dict) else (_json.loads(r[3]) if r[3] else {}),
+            "version": r[4], "operator": r[5] or "", "time": str(r[6]) if r[6] else "",
+        } for r in rows]
+
+    @classmethod
+    async def rollback_version(cls, version_id: int, auth) -> dict:
+        import json as _json
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            v = (await db.execute(_t(
+                "SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"),
+                {"i": version_id})).fetchone()
+        if not v:
+            return {"ok": False, "msg": "版本不存在"}
+        table, field, snap_raw, vno = v[0], v[1], v[2], v[3]
+        snap = snap_raw if isinstance(snap_raw, dict) else (_json.loads(snap_raw) if snap_raw else {})
+        if field:
+            # 字段级回滚
+            async with async_db_session.begin() as db:
+                from sqlalchemy import text as _t
+                await db.execute(_t(
+                    "UPDATE ai_query_asset_columns SET description=:d, business_scenarios=:s, "
+                    "related_table=:rt, related_field=:rf, sensitive=:se "
+                    "WHERE table_name=:t AND column_name=:c AND is_deleted=false"), {
+                    "d": snap.get("description", ""), "s": snap.get("business_scenarios", ""),
+                    "rt": snap.get("related_table") or "", "rf": snap.get("related_field") or "",
+                    "se": bool(snap.get("sensitive", False)), "t": table, "c": field})
+        else:
+            async with async_db_session.begin() as db:
+                from sqlalchemy import text as _t
+                await db.execute(_t(
+                    "UPDATE ai_query_assets SET alias=:a, domain=:d, description=:de, business_scenarios=:b, "
+                    "included=:i, object_enabled=:oe, object_key_col=:ok, object_name_col=:on, object_icon=:oi "
+                    "WHERE table_name=:t AND is_deleted=false"), {
+                    "a": snap.get("alias", ""), "d": snap.get("domain", ""), "de": snap.get("description", ""),
+                    "b": snap.get("business_scenarios", ""), "i": bool(snap.get("included", True)),
+                    "oe": bool(snap.get("object_enabled", False)), "ok": snap.get("object_key_col") or "id",
+                    "on": snap.get("object_name_col") or "name", "oi": snap.get("object_icon") or "el-icon-Box",
+                    "t": table})
+        await cls._record_version(table, snap, field, operator=str(getattr(getattr(auth, "user", None), "id", "")))
+        _SCHEMA_CACHE = None
+        _ASSET_TMETA = None
+        return {"ok": True, "msg": f"已回滚到版本 {vno}"}
+
+    @classmethod
+    async def impact_analysis(cls, table_name: str) -> dict:
+        """P1-② 影响分析：哪些指标用到此表 + 哪些字段/对象关联它。"""
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        affected_metrics = [m for m in metrics if table_name in (m.get("sql_template") or "")]
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            cols = (await db.execute(_t(
+                "SELECT column_name, related_table, related_field FROM ai_query_asset_columns "
+                "WHERE related_table=:t AND is_deleted=false"), {"t": table_name})).fetchall()
+        relations = [{"column": c[0], "from": c[1], "field": c[2]} for c in cols]
+        objs = await cls.list_objects()
+        obj_links = [o for o in objs if any(ln["target"] == table_name for ln in o.get("links", []))]
+        return {
+            "table": table_name,
+            "metrics": [{"key": m["key"], "name": m["name"], "desc": m["description"]} for m in affected_metrics],
+            "incoming_relations": relations,
+            "object_links": [{"object": o["table"], "alias": o.get("alias") or o["table"]} for o in obj_links],
+        }
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:

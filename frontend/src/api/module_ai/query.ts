@@ -225,6 +225,19 @@ export function executeAction(data: any) {
 export function getActionLogs(limit = 100) {
   return request({ url: `${API_PATH}/action/logs`, method: "get", params: { limit } });
 }
+export function getAssetVersions(table: string) {
+  return request({ url: `${API_PATH}/assets/${table}/versions`, method: "get" });
+}
+export function rollbackAssetVersion(version_id: number) {
+  return request({
+    url: `${API_PATH}/assets/version/rollback`,
+    method: "post",
+    data: { version_id },
+  });
+}
+export function getAssetImpact(table: string) {
+  return request({ url: `${API_PATH}/assets/${table}/impact`, method: "get" });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }
