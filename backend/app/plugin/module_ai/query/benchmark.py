@@ -513,9 +513,15 @@ def print_nl2sql_report(rep: dict) -> None:
 
 if __name__ == "__main__":
     tag = None
+    check = False
+    threshold = 0.90
     for a in sys.argv[1:]:
         if a.startswith("--tag="):
             tag = a.split("=", 1)[1]
+        elif a == "--check":
+            check = True
+        elif a.startswith("--threshold="):
+            threshold = float(a.split("=", 1)[1])
     if sys.argv and "nl2sql" not in sys.argv and "fast" not in sys.argv:
         mode = "all"
     else:
@@ -528,6 +534,8 @@ if __name__ == "__main__":
     token = login()
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
     with httpx.Client(base_url=BASE, headers=headers, timeout=120) as client:
+        fast_rep = None
+        nl2sql_rep = None
         if mode in ("all", "fast"):
             # 预热：触发系统种子与缓存，让后续测的是稳态延迟
             client.post(
@@ -541,3 +549,17 @@ if __name__ == "__main__":
                 print(f"慢路径预测 | 共 {len(NL2SQL_GOLDEN)} 题，每题约 6s，请稍候...")
             nl2sql_rep = asyncio.run(run_nl2sql(client, tag))
             print_nl2sql_report(nl2sql_rep)
+
+        # ---- 精度门槛（CI / 本地回归可判定） ----
+        if check:
+            failed = False
+            if fast_rep is not None and fast_rep.get("total", 0) > 0 and fast_rep["semantic_accuracy"] < threshold:
+                print(f"[CHECK] 快路径语义精度 {fast_rep['semantic_accuracy']:.1%} < 阈值 {threshold:.1%} ❌")
+                failed = True
+            if nl2sql_rep is not None and nl2sql_rep.get("total", 0) > 0 and nl2sql_rep["accuracy"] < threshold:
+                print(f"[CHECK] NL2SQL 结果精度 {nl2sql_rep['accuracy']:.1%} < 阈值 {threshold:.1%} ❌")
+                failed = True
+            if failed:
+                print("[CHECK] 基准未达精度门槛，回归失败")
+                sys.exit(1)
+            print(f"[CHECK] 基准精度达标（阈值 {threshold:.1%}） ✅")
