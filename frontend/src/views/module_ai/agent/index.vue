@@ -307,9 +307,23 @@
                 <div>{{ m.think }}</div>
               </div>
               <div v-if="m.tools.length" class="agent-chat-tools">
-                <el-tag v-for="t in m.tools" :key="t" size="small" type="warning" effect="plain">
-                  🔧 {{ t }}
-                </el-tag>
+                <div class="agent-chat-tools-title">执行链</div>
+                <div class="agent-chat-tools-flow">
+                  <template v-for="(t, ti) in m.tools" :key="t">
+                    <span
+                      class="agent-chat-tool"
+                      :class="{
+                        'agent-chat-tool--running': m.loading && ti === m.tools.length - 1,
+                      }"
+                    >
+                      <el-icon class="agent-chat-tool__icon">
+                        <component :is="toolIcon(t)" />
+                      </el-icon>
+                      {{ t }}
+                    </span>
+                    <i v-if="ti < m.tools.length - 1" class="agent-chat-tool-arrow">→</i>
+                  </template>
+                </div>
               </div>
               <div v-if="m.content" class="agent-chat-text" v-html="renderMd(m.content)"></div>
               <span v-if="m.loading" class="agent-chat-loading">
@@ -916,6 +930,7 @@ import {
   DataAnalysis,
   Document,
   User,
+  Connection,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
 import {
@@ -1543,6 +1558,14 @@ function handleChatEvent(evt: any, asst: any) {
     if (evt.data?.reply) asst.content = asst.content || evt.data.reply;
   }
   if (t === "text-delta" || t === "reasoning-delta") chatScroll();
+}
+// 工具名 → 图标（能力节点可视化）
+function toolIcon(name: string) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("query")) return DataAnalysis;
+  if (n.includes("resolve")) return Connection;
+  if (n.includes("search") || n.includes("rag") || n.includes("knowledge")) return Collection;
+  return Operation;
 }
 
 // ---- 详情 / 复制 ----
@@ -2196,10 +2219,53 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   margin-bottom: 4px;
 }
 .agent-chat-tools {
-  margin: 6px 0;
+  margin: 6px 0 10px;
+}
+.agent-chat-tools-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.agent-chat-tools-flow {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
+.agent-chat-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 12px;
+}
+.agent-chat-tool__icon {
+  font-size: 13px;
+}
+.agent-chat-tool--running {
+  animation: agent-tool-pulse 1.2s ease-in-out infinite;
+  border-color: var(--el-color-warning);
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+}
+.agent-chat-tool-arrow {
+  color: var(--el-text-color-placeholder);
+  font-style: normal;
+  font-size: 13px;
+}
+@keyframes agent-tool-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 .agent-chat-text {
   line-height: 1.7;
