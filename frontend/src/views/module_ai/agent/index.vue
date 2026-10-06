@@ -817,6 +817,40 @@
             点击左侧积木开始编排你的智能体
           </div>
         </div>
+        <div class="studio-run">
+          <div class="studio-run__bar">
+            <el-input
+              v-model="studioRunInput"
+              placeholder="输入问题试跑，回放工具链…"
+              :disabled="studioRunning"
+              @keyup.enter="runStudio"
+            />
+            <el-button type="primary" :loading="studioRunning" @click="runStudio">试跑</el-button>
+          </div>
+          <div v-if="studioRunSteps.length" class="studio-run__trace">
+            <div class="studio-run__trace-title">工具链回放</div>
+            <div class="studio-run__trace-steps">
+              <el-tag
+                v-for="(s, i) in studioRunSteps"
+                :key="i"
+                size="small"
+                :type="s.type || 'primary'"
+                effect="plain"
+                style="margin: 0 3px 4px 0"
+              >
+                {{ i + 1 }}. {{ s.name }}
+              </el-tag>
+            </div>
+          </div>
+          <div v-if="studioRunReasoning" class="studio-run__reasoning">
+            <div class="studio-run__trace-title">思考</div>
+            <div class="studio-run__text">{{ studioRunReasoning }}</div>
+          </div>
+          <div v-if="studioRunText" class="studio-run__answer">
+            <div class="studio-run__trace-title">回答</div>
+            <div class="studio-run__text">{{ studioRunText }}</div>
+          </div>
+        </div>
       </div>
       <template #footer>
         <el-button @click="studioVisible = false">关闭</el-button>
@@ -1179,6 +1213,78 @@ async function saveStudio() {
     ElMessage.error(e?.message || "保存失败");
   } finally {
     savingAgent.value = false;
+  }
+}
+// 试跑 / 工具链回放
+const studioRunInput = ref("");
+const studioRunSteps = ref<{ name: string; type: "primary" | "success" | "warning" | "info" | "danger" }[]>([]);
+const studioRunReasoning = ref("");
+const studioRunText = ref("");
+const studioRunning = ref(false);
+async function runStudio() {
+  const a = studioAgent.value;
+  const q = (studioRunInput.value || "").trim();
+  if (!a || !q || studioRunning.value) return;
+  studioRunSteps.value = [];
+  studioRunReasoning.value = "";
+  studioRunText.value = "";
+  studioRunning.value = true;
+  const token = JSON.parse(localStorage.getItem("access_token") || '"")');
+  const base = import.meta.env.VITE_APP_BASE_API || "";
+  try {
+    const resp = await fetch(`${base}/ai/agents/${a.id}/run/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json;charset=utf-8",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: q }],
+        variables: null,
+        session_id: null,
+      }),
+    });
+    if (!resp.ok || !resp.body) throw new Error(`请求失败：${resp.status}`);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder("utf-8");
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx = buf.indexOf("\n\n");
+      while (idx >= 0) {
+        const block = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 2);
+        if (block.startsWith("data: ")) {
+          const payload = block.slice(6).trim();
+          if (payload === "[DONE]") break;
+          try {
+            handleStudioEvent(JSON.parse(payload));
+          } catch {
+            /* 忽略 */
+          }
+        }
+        idx = buf.indexOf("\n\n");
+      }
+    }
+  } catch (e: any) {
+    studioRunText.value = studioRunText.value || `（试跑出错：${e?.message || "未知错误"}）`;
+  } finally {
+    studioRunning.value = false;
+  }
+}
+function handleStudioEvent(evt: any) {
+  const t = evt.type || "";
+  if (t === "reasoning-delta") studioRunReasoning.value += evt.delta || "";
+  else if (t === "text-delta") studioRunText.value += evt.delta || "";
+  else if (t === "tool-input-available") {
+    const n = evt.toolName || "工具";
+    if (!studioRunSteps.value.some((x) => x.name === n)) {
+      studioRunSteps.value.push({ name: n, type: "warning" });
+    }
+  } else if (t === "data-finish") {
+    if (evt.data?.reply) studioRunText.value = studioRunText.value || evt.data.reply;
   }
 }
 
@@ -1625,6 +1731,37 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   font-size: 13px;
   border: 1px dashed var(--el-border-color);
   border-radius: 6px;
+}
+.studio-run {
+  margin-top: 16px;
+  border-top: 1px solid var(--el-border-color);
+  padding-top: 12px;
+}
+.studio-run__bar {
+  display: flex;
+  gap: 8px;
+}
+.studio-run__trace {
+  margin-top: 12px;
+}
+.studio-run__trace-title {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 6px;
+}
+.studio-run__trace-steps {
+  display: flex;
+  flex-wrap: wrap;
+}
+.studio-run__reasoning,
+.studio-run__answer {
+  margin-top: 10px;
+}
+.studio-run__text {
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  white-space: pre-wrap;
+  line-height: 1.6;
 }
 .query-hint {
   margin-left: 8px;
