@@ -41,3 +41,6 @@ export function getOntFunctions(object_code = "") {
 export function saveOntFunction(data: any) {
   return request({ url: `${API_PATH}/function/save`, method: "post", data });
 }
+export function getOntChangelog(object_code = "") {
+  return request({ url: `${API_PATH}/changelog`, method: "get", params: { object_code } });
+}

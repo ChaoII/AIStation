@@ -182,6 +182,29 @@ async def upsert_action(data: dict) -> dict:
     return {"id": r.scalar()}
 
 
+async def _log_change(object_code: str, kind: str, action: str, detail: str = "", created_id: int = 0) -> None:
+    """本体变更留痕（对象/属性/Link/Action/函数 增删改）。"""
+    try:
+        await _exec_write(
+            "INSERT INTO ai_ont_change_log(object_code,kind,action,detail,created_id) VALUES (:o,:k,:a,:d,:uid)",
+            {"o": object_code or "-", "k": kind, "a": action, "d": detail[:250] or "", "uid": created_id or 0})
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def list_changelog(object_code: str | None = None, limit: int = 50) -> list[dict]:
+    if object_code:
+        r = await _exec("SELECT id,object_code,kind,action,detail,created_id,created_time FROM ai_ont_change_log "
+                        "WHERE object_code=:c AND is_deleted=false ORDER BY id DESC LIMIT :n",
+                        {"c": object_code, "n": limit})
+    else:
+        r = await _exec("SELECT id,object_code,kind,action,detail,created_id,created_time FROM ai_ont_change_log "
+                        "WHERE is_deleted=false ORDER BY id DESC LIMIT :n", {"n": limit})
+    rows = r.fetchall()
+    return [{"id": x[0], "object_code": x[1], "kind": x[2], "action": x[3],
+             "detail": x[4] or "", "created_id": x[5], "created_time": str(x[6]) if x[6] else ""} for x in rows]
+
+
 async def delete_one(table: str, id: int) -> None:
     await _exec_write(f"UPDATE {table} SET is_deleted=true WHERE id=:id", {"id": id})
 

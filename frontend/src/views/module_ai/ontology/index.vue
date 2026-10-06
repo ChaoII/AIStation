@@ -236,6 +236,34 @@
                 </el-table-column>
               </el-table>
             </el-tab-pane>
+
+            <el-tab-pane label="变更记录" name="changelog">
+              <div class="ont-bar">
+                <el-tag size="small" type="info" effect="plain">共 {{ changelog.length }}</el-tag>
+              </div>
+              <el-table :data="changelog" size="small" border>
+                <template #empty><el-empty description="暂无变更记录" :image-size="60" /></template>
+                <el-table-column prop="kind" label="类型" width="90" />
+                <el-table-column label="操作" width="80">
+                  <template #default="{ row }">
+                    <el-tag
+                      size="small"
+                      :type="row.action === 'delete' ? 'danger' : 'primary'"
+                      effect="plain"
+                    >
+                      {{ row.action }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="detail" label="内容" min-width="200" show-overflow-tooltip />
+                <el-table-column
+                  prop="created_time"
+                  label="时间"
+                  min-width="160"
+                  show-overflow-tooltip
+                />
+              </el-table>
+            </el-tab-pane>
           </el-tabs>
           <div v-else class="ont-empty">
             <el-empty description="请先在左侧选择对象类型" :image-size="90">
@@ -433,6 +461,7 @@ import {
   saveOntAction,
   getOntFunctions,
   saveOntFunction,
+  getOntChangelog,
   removeOnt,
   materializeOntObject,
 } from "@/api/module_ai/ontology";
@@ -445,6 +474,7 @@ const props = ref<any[]>([]);
 const links = ref<any[]>([]);
 const actions = ref<any[]>([]);
 const functions = ref<any[]>([]);
+const changelog = ref<any[]>([]);
 
 async function loadObjects() {
   const r = await getOntObjects();
@@ -462,6 +492,8 @@ async function selectObject(o: any) {
   actions.value = d.actions || [];
   const fr = await getOntFunctions(o.code);
   functions.value = fr.data?.data || [];
+  const cr = await getOntChangelog(o.code);
+  changelog.value = cr.data?.data || [];
 }
 
 // 对象

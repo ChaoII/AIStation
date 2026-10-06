@@ -24,6 +24,7 @@ async def list_objects(auth: AuthDep) -> JSONResponse:
 @OntologyRouter.post("/object/save", summary="对象类型保存")
 async def upsert_object(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_object(data)
+    await _svc._log_change(str(data.get("code", "")), "object", "save", f"对象 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
 
 
@@ -40,6 +41,7 @@ async def list_properties(auth: AuthDep, object_code: str = "") -> JSONResponse:
 @OntologyRouter.post("/property/save", summary="属性类型保存")
 async def upsert_property(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_property(data)
+    await _svc._log_change(str(data.get("object_code", "")), "property", "save", f"属性 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
 
 
@@ -51,6 +53,7 @@ async def list_links(auth: AuthDep, object_code: str = "") -> JSONResponse:
 @OntologyRouter.post("/link/save", summary="关联类型保存")
 async def upsert_link(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_link(data)
+    await _svc._log_change(str(data.get("source_object", "")), "link", "save", f"关联 {data.get('name', '')} → {data.get('target_object', '')}")
     return SuccessResponse(data=r, msg="保存成功")
 
 
@@ -62,6 +65,7 @@ async def list_actions(auth: AuthDep, object_code: str = "") -> JSONResponse:
 @OntologyRouter.post("/action/save", summary="动作类型保存")
 async def upsert_action(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_action(data)
+    await _svc._log_change(str(data.get("object_code", "")), "action", "save", f"动作 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
 
 
@@ -72,8 +76,22 @@ async def remove(kind: str, id: int, auth: AuthDep) -> JSONResponse:
              "function": "ai_ont_function"}.get(kind)
     if not table:
         return SuccessResponse(data=None, msg="非法类型")
+    # 删除前取对象 code（用于留痕）
+    code = ""
+    try:
+        row = (await _svc._exec(f"SELECT object_code FROM {table} WHERE id=:id", {"id": id})).fetchone()
+        if row:
+            code = row[0]
+    except Exception:  # noqa: BLE001
+        code = ""
     await _svc.delete_one(table, id)
+    await _svc._log_change(code or "", kind, "delete", f"删除 {kind} #{id}")
     return SuccessResponse(data=None, msg="已删除")
+
+
+@OntologyRouter.get("/changelog", summary="本体变更留痕")
+async def changelog(auth: AuthDep, object_code: str = "", limit: int = 50) -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_changelog(object_code or None, limit), msg="查询成功")
 
 
 @OntologyRouter.post("/materialize", summary="本体驱动表：对象+属性物化成真实表")
@@ -90,4 +108,5 @@ async def list_functions(auth: AuthDep, object_code: str = "") -> JSONResponse:
 @OntologyRouter.post("/function/save", summary="本体计算函数保存")
 async def upsert_function(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_function(data)
+    await _svc._log_change(str(data.get("object_code", "")), "function", "save", f"函数 {data.get('name', data.get('code'))}")
     return SuccessResponse(data=r, msg="保存成功")
