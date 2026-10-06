@@ -284,6 +284,12 @@ export function getAccessRules() {
 export function saveAccessRule(data: any) {
   return request({ url: `${API_PATH}/access/save`, method: "post", data });
 }
+export function getDqOverview() {
+  return request({ url: `${API_PATH}/dq/overview`, method: "get" });
+}
+export function runDq(table: string) {
+  return request({ url: `${API_PATH}/dq/run`, method: "post", data: { table } });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

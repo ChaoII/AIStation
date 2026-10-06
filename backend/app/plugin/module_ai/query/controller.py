@@ -414,6 +414,22 @@ async def access_list(
     return SuccessResponse(data=await AiQueryService.list_access_rules(), msg="查询成功")
 
 
+@AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")
+async def dq_overview(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.dq_overview(), msg="查询成功")
+
+
+@AiQueryRouter.post("/dq/run", summary="数据质量(DQ)扫描单个对象")
+async def dq_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.dq_run(str(data.get("table", "")))
+    return SuccessResponse(data=r, msg=r.get("msg", "扫描完成"))
+
+
 @AiQueryRouter.post("/access/save", summary="ABAC权限策略保存")
 async def access_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

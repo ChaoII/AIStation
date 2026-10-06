@@ -2028,6 +2028,115 @@ class AiQueryService:
             return False
 
     @classmethod
+    async def dq_run(cls, table_name: str) -> dict:
+        """P3-⑦ 数据质量(DQ)：对业务对象扫描 完整性/唯一性/新鲜度 并打分落库。"""
+        import json as _json
+        objs = await cls.list_objects()
+        obj = next((o for o in objs if o["table"] == table_name), None)
+        if not obj:
+            return {"ok": False, "msg": f"{table_name} 不是业务对象，暂不支持 DQ"}
+        schema = await cls._system_schema()
+        if table_name not in schema:
+            return {"ok": False, "msg": f"{table_name} 不在可用 schema"}
+        name_col, key_col = obj["name_col"], obj["key_col"]
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            total = (await db.execute(_t(f'SELECT count(*) FROM "{table_name}"'))).scalar() or 0
+            name_null = name_distinct = key_distinct = None
+            try:
+                name_null = (await db.execute(_t(
+                    f'SELECT count(*) FROM "{table_name}" WHERE "{name_col}" IS NULL'))).scalar() or 0
+                name_distinct = (await db.execute(_t(
+                    f'SELECT count(DISTINCT "{name_col}") FROM "{table_name}"'))).scalar() or 0
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                key_distinct = (await db.execute(_t(
+                    f'SELECT count(DISTINCT "{key_col}") FROM "{table_name}"'))).scalar() or 0
+            except Exception:  # noqa: BLE001
+                pass
+            fresh_ts = None
+            for c in ("updated_time", "created_time"):
+                try:
+                    mv = (await db.execute(_t(f'SELECT max({c}) FROM "{table_name}"'))).scalar()
+                    if mv:
+                        fresh_ts = mv
+                        break
+                except Exception:  # noqa: BLE001
+                    pass
+        # 打分
+        comp = round(100 - (name_null / total * 100) if total else 100, 1) if name_null is not None else 100
+        if total and name_distinct is not None:
+            uniq = round(name_distinct / total * 100, 1)
+        elif total and key_distinct is not None:
+            uniq = round(key_distinct / total * 100, 1)
+        else:
+            uniq = 100.0
+        from datetime import datetime, timezone
+        if fresh_ts:
+            if fresh_ts.tzinfo is None:
+                fresh_ts = fresh_ts.replace(tzinfo=timezone.utc)
+            days = max(0, (datetime.now(timezone.utc) - fresh_ts).days)
+            fresh = round(max(0.0, 100 - days * 5), 1)
+        else:
+            fresh = 0.0
+        score = round(comp * 0.4 + uniq * 0.3 + fresh * 0.3, 1)
+        issues = []
+        if name_null is not None and total and name_null / total > 0.05:
+            issues.append(f"名称列 {name_col} 空值率 {round(name_null / total * 100, 1)}%")
+        if total and name_distinct is not None and name_distinct < total:
+            issues.append(f"名称列 {name_col} 有 {total - name_distinct} 条重名")
+        if total and key_distinct is not None and key_distinct < total:
+            issues.append(f"主键列 {key_col} 不唯一（{total - key_distinct} 重复）")
+        if fresh_ts is None:
+            issues.append("无更新时间列，新鲜度未知")
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "UPDATE ai_dq_report SET is_deleted=true WHERE table_name=:t"), {"t": table_name})
+            await db.execute(_t(
+                "INSERT INTO ai_dq_report(table_name,alias,total,score,completeness,uniqueness,freshness,issues,checked_at) "
+                "VALUES (:t,:a,:n,:s,:c,:u,:f,:i,now())"), {
+                "t": table_name, "a": obj["alias"], "n": total, "s": score,
+                "c": comp, "u": uniq, "f": fresh,
+                "i": _json.dumps(issues, ensure_ascii=False)})
+        return {"ok": True, "table": table_name, "alias": obj["alias"], "total": total,
+                "score": score, "completeness": comp, "uniqueness": uniq, "freshness": fresh,
+                "issues": issues}
+
+    @classmethod
+    async def dq_overview(cls) -> dict:
+        """P3-⑦ DQ 总览：对全部业务对象打分（已缓存取最新，未算则现跑）。"""
+        objs = await cls.list_objects()
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT table_name,alias,total,score,completeness,uniqueness,freshness,issues,checked_at "
+                "FROM ai_dq_report WHERE is_deleted=false"))).fetchall()
+        cache = {r[0]: {"alias": r[1], "total": r[2], "score": float(r[3]),
+                        "completeness": float(r[4]), "uniqueness": float(r[5]),
+                        "freshness": float(r[6]), "issues": r[7],
+                        "checked_at": str(r[8]) if r[8] else ""} for r in rows}
+        results = []
+        for o in objs:
+            t = o["table"]
+            if t in cache:
+                results.append(cache[t] | {"table": t})
+            else:
+                r = await cls.dq_run(t)
+                results.append({
+                    "table": t, "alias": o["alias"], "total": r.get("total", 0),
+                    "score": r.get("score", 0), "completeness": r.get("completeness", 0),
+                    "uniqueness": r.get("uniqueness", 0), "freshness": r.get("freshness", 0),
+                    "issues": r.get("issues", []), "checked_at": "",
+                })
+        avg = round(sum((x["score"] or 0) for x in results) / len(results), 1) if results else 0
+        return {"avg_score": avg, "total_objects": len(results),
+                "healthy": sum(1 for x in results if (x["score"] or 0) >= 80),
+                "risk": sum(1 for x in results if (x["score"] or 0) < 60),
+                "items": results}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t

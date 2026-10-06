@@ -1217,6 +1217,74 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+        <el-tab-pane label="数据质量" name="dq">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Refresh" @click="loadDq">
+              扫描全部对象
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              平均分 {{ dqData.avg_score ?? "-" }} · 健康 {{ dqData.healthy ?? 0 }} · 风险
+              {{ dqData.risk ?? 0 }}
+            </el-tag>
+          </div>
+          <el-row :gutter="12" style="margin-bottom: 10px">
+            <el-col :span="8">
+              <el-card shadow="never" body-style="padding:12px">
+                <el-statistic title="平均健康分" :value="dqData.avg_score ?? 0" :precision="1" />
+              </el-card>
+            </el-col>
+            <el-col :span="8">
+              <el-card shadow="never" body-style="padding:12px">
+                <el-statistic title="健康对象" :value="dqData.healthy ?? 0" />
+              </el-card>
+            </el-col>
+            <el-col :span="8">
+              <el-card shadow="never" body-style="padding:12px">
+                <el-statistic title="风险对象" :value="dqData.risk ?? 0" />
+              </el-card>
+            </el-col>
+          </el-row>
+          <el-table :data="dqData.items || []" size="small" border max-height="300">
+            <el-table-column prop="alias" label="对象" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="table" label="表" min-width="150" show-overflow-tooltip />
+            <el-table-column label="健康分" width="170">
+              <template #default="{ row }">
+                <el-progress
+                  :percentage="Math.round(row.score || 0)"
+                  :color="
+                    (row.score || 0) >= 80
+                      ? '#67c23a'
+                      : (row.score || 0) >= 60
+                        ? '#e6a23c'
+                        : '#f56c6c'
+                  "
+                  :stroke-width="10"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column prop="total" label="行数" width="80" />
+            <el-table-column label="问题" min-width="200">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="(i, k) in row.issues || []"
+                  :key="k"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ i }}
+                </el-tag>
+                <span v-if="!(row.issues || []).length" class="gov-empty">无</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="80" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="scanDq(row)">扫描</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -2039,6 +2107,8 @@ import {
   getAssetLineage,
   getAccessRules,
   saveAccessRule,
+  getDqOverview,
+  runDq,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -3096,6 +3166,26 @@ async function saveAccess(row: any) {
     ElMessage.error(e?.msg || "保存失败");
   }
 }
+// ---- P3-⑦ 数据质量 DQ ----
+const dqData = ref<any>({ avg_score: 0, healthy: 0, risk: 0, items: [] });
+async function loadDq() {
+  try {
+    const r = await getDqOverview();
+    dqData.value = r.data?.data || { avg_score: 0, healthy: 0, risk: 0, items: [] };
+  } catch {
+    dqData.value = { avg_score: 0, healthy: 0, risk: 0, items: [] };
+  }
+}
+async function scanDq(row: any) {
+  try {
+    const r = await runDq(row.table);
+    const d = r.data?.data || {};
+    ElMessage[d.ok ? "success" : "error"](d.ok ? `${row.alias} 扫描完成，得分 ${d.score}` : d.msg);
+    loadDq();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "扫描失败");
+  }
+}
 async function inferRel() {
   inferringRel.value = true;
   try {
@@ -3729,6 +3819,7 @@ onMounted(() => {
   loadPipes();
   loadWorkshop();
   loadAccessRules();
+  loadDq();
 });
 </script>
 
