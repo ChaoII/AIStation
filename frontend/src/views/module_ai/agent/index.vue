@@ -1356,11 +1356,11 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 }
 .cia-dropdown {
   position: absolute;
-  top: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   left: 0;
   z-index: 100;
   width: 240px;
-  max-height: 420px;
+  max-height: 360px;
   overflow: auto;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
