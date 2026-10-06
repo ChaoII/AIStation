@@ -268,9 +268,62 @@ async def run_sql(sql: str) -> str:
     return f"执行成功，共 {len(rows)} 行。列：{', '.join(cols)}。\n{txt}"
 
 
+# ---------------------------------------------------------------------------
+# 结合 Agno 原生 SQLTools（官方 SQL 工具）：list_tables / describe_table 用 Agno 官方实现；
+# run_sql_query 重写为「本体白名单只读执行」，复用项目同步 engine + _system_allowed() 白名单，
+# 让问数用 Agno 官方 SQL 工具，同时安全性（只读 + 白名单）不可绕过。
+# ---------------------------------------------------------------------------
+def _build_agno_sql_tools():
+    from agno.tools.sql import SQLTools
+
+    from app.core.database import engine as _engine
+
+    class _SafeSqlTools(SQLTools):
+        """Agno 官方 SQL 工具，但 run_sql_query 强制走本体白名单只读执行（安全）。"""
+
+        async def run_sql_query(self, query: str, limit: int = 1000) -> str:  # type: ignore[override]
+            """执行一条经本体白名单校验的只读 SELECT，返回结果（前 20 行）或错误信息。
+
+            Args:
+                query (str): 待执行的 SELECT SQL。
+                limit (int, optional): 返回行数上限，默认 1000。
+            Returns:
+                str: 执行结果或错误信息。报错时模型应据此修正 SQL 再调用。
+            """
+            from .service import _execute_sql, _system_allowed, validate_sql
+
+            log.warning("[QUERY_TOOL] 模型调用了 agno_sql_run_sql_query，sql={}", (query or "")[:200])
+            q = (query or "").strip()
+            if not q:
+                return "SQL 为空"
+            try:
+                safe = validate_sql(q, await _system_allowed())
+            except Exception as e:  # noqa: BLE001
+                return f"SQL 不合法：{e}"
+            try:
+                res = await _execute_sql(safe)
+            except Exception as e:  # noqa: BLE001
+                return f"执行失败：{e}"
+            cols = res.get("columns") or []
+            rows = res.get("rows") or []
+            txt = "\n".join(" | ".join(str(v) for v in r) for r in rows[:20]) or "（空结果）"
+            return f"执行成功，共 {len(rows)} 行。列：{', '.join(cols)}。\n{txt}"
+
+    return _SafeSqlTools(
+        db_engine=_engine,
+        enable_list_tables=False,
+        enable_describe_table=False,
+        enable_run_sql_query=True,
+    )
+
+
+#: Agno 官方 SQL 工具（list_tables/describe_table 官方实现 + run_sql_query 白名单只读）
+AGNO_SQL_TOOLS = _build_agno_sql_tools()
+
+
 #: 注册进 Agent 的工具集合（可同时传给 Agent(tools=...)）
 QUERY_TOOLS = [
     search_schema, get_fewshots, check_cost, semantic_search, table_metadata,
     kg_search, list_metrics, list_terms, search_history,
-    resolve_value, find_join_path, explain_column, run_sql,
+    resolve_value, find_join_path, explain_column,
 ]
