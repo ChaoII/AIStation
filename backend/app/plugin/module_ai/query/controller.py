@@ -336,6 +336,32 @@ async def industry_apply(
     return SuccessResponse(data=r, msg=r.get("msg", "已应用模板"))
 
 
+# ---- P3-① 数据管道(连接中心→可视化摄取/映射) ----
+@AiQueryRouter.get("/pipeline/list", summary="数据管道列表")
+async def pipeline_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_pipelines(), msg="查询成功")
+
+
+@AiQueryRouter.post("/pipeline/save", summary="数据管道保存")
+async def pipeline_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.upsert_pipeline(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@AiQueryRouter.post("/pipeline/run", summary="运行数据管道(同步映射到对象)")
+async def pipeline_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.run_pipeline(int(data.get("pipeline_id", 0)))
+    return SuccessResponse(data=r, msg=r.get("msg", "已运行"))
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

@@ -990,6 +990,55 @@
           </el-row>
           <el-empty v-else description="请选择业务对象查看治理信息" :image-size="40" />
         </el-tab-pane>
+        <el-tab-pane label="数据管道" name="pipeline">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openPipeEdit()">
+              新建管道
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">共 {{ pipes.length }} 条管道</el-tag>
+          </div>
+          <el-table :data="pipes" size="small" border max-height="320">
+            <el-table-column prop="name" label="管道" min-width="120" show-overflow-tooltip />
+            <el-table-column
+              prop="source_connection"
+              label="源连接"
+              width="110"
+              show-overflow-tooltip
+            />
+            <el-table-column prop="source_table" label="源表" width="130" show-overflow-tooltip />
+            <el-table-column label="→ 目标对象" width="140">
+              <template #default="{ row }">
+                <el-tag size="small" type="success" effect="plain">{{ row.target_object }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="映射" min-width="150">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="m in row.mappings"
+                  :key="m.source_col"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ m.source_col }}→{{ m.target_col }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="上次" width="130">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.last_status === 'success' ? 'success' : 'info'">
+                  {{ row.last_status || "-" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="runPipe(row)">运行</el-button>
+                <el-button link size="small" @click="openPipeEdit(row)">编辑</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1548,6 +1597,36 @@
         <el-button type="primary" @click="runActionFn">执行</el-button>
       </template>
     </el-dialog>
+
+    <!-- 数据管道编辑 -->
+    <el-dialog v-model="pipeDialog" title="数据管道" width="620px" append-to-body>
+      <el-form :model="pipeForm" label-width="100px">
+        <el-form-item label="管道名称" required>
+          <el-input v-model="pipeForm.name" placeholder="如 MES工单接入" />
+        </el-form-item>
+        <el-form-item label="源连接">
+          <el-input v-model="pipeForm.source_connection" placeholder="如 mes_db / ERP_API" />
+        </el-form-item>
+        <el-form-item label="源表" required>
+          <el-input v-model="pipeForm.source_table" placeholder="如 train_tasks / orders" />
+        </el-form-item>
+        <el-form-item label="目标对象" required>
+          <el-input v-model="pipeForm.target_object" placeholder="业务对象表，如 train_tasks" />
+        </el-form-item>
+        <el-form-item label="列映射">
+          <el-button size="small" @click="addPipeMapping">+ 添加映射</el-button>
+          <div v-for="(m, i) in pipeForm.mappings" :key="i" class="pipe-mapping">
+            <el-input v-model="m.source_col" placeholder="源列" style="width: 160px" />
+            <span>→</span>
+            <el-input v-model="m.target_col" placeholder="目标列" style="width: 160px" />
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="pipeDialog = false">取消</el-button>
+        <el-button type="primary" @click="savePipe">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1605,6 +1684,9 @@ import {
   extractQueryObjects,
   getIndustryTemplates,
   applyIndustryTemplate,
+  getPipelineList,
+  savePipeline,
+  runPipeline,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -2491,6 +2573,66 @@ async function extractObjects() {
     extractingObj.value = false;
   }
 }
+// ---- 数据管道 ----
+const pipes = ref<any[]>([]);
+const pipeDialog = ref(false);
+const pipeForm = reactive<any>({
+  id: null,
+  name: "",
+  source_connection: "",
+  source_table: "",
+  target_object: "",
+  mappings: [],
+  enabled: true,
+});
+async function loadPipes() {
+  try {
+    const r = await getPipelineList();
+    pipes.value = r.data?.data || [];
+  } catch {
+    pipes.value = [];
+  }
+}
+function openPipeEdit(row?: any) {
+  Object.assign(
+    pipeForm,
+    row || {
+      id: null,
+      name: "",
+      source_connection: "",
+      source_table: "",
+      target_object: "",
+      mappings: [],
+      enabled: true,
+    }
+  );
+  pipeDialog.value = true;
+}
+function addPipeMapping() {
+  pipeForm.mappings.push({ source_col: "", target_col: "" });
+}
+async function savePipe() {
+  if (!pipeForm.name?.trim() || !pipeForm.source_table?.trim() || !pipeForm.target_object?.trim())
+    return ElMessage.warning("请填管道名/源表/目标对象");
+  try {
+    await savePipeline({ ...pipeForm });
+    ElMessage.success("已保存");
+    pipeDialog.value = false;
+    loadPipes();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+async function runPipe(row: any) {
+  try {
+    const r = await runPipeline(row.id);
+    const d = r.data?.data || {};
+    ElMessage[d.ok ? "success" : "error"](d.msg || "已运行");
+    loadPipes();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "运行失败");
+  }
+}
 async function inferRel() {
   inferringRel.value = true;
   try {
@@ -3121,6 +3263,7 @@ onMounted(() => {
   loadActionLogs();
   loadGovObjects();
   loadIndustryTemplates();
+  loadPipes();
 });
 </script>
 
@@ -3165,6 +3308,12 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+.pipe-mapping {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
 }
 .query-layout {
   display: flex;

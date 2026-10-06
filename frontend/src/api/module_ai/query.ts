@@ -250,6 +250,15 @@ export function getIndustryTemplates() {
 export function applyIndustryTemplate(template_id: string) {
   return request({ url: `${API_PATH}/industry/apply`, method: "post", data: { template_id } });
 }
+export function getPipelineList() {
+  return request({ url: `${API_PATH}/pipeline/list`, method: "get" });
+}
+export function savePipeline(data: any) {
+  return request({ url: `${API_PATH}/pipeline/save`, method: "post", data });
+}
+export function runPipeline(pipeline_id: number) {
+  return request({ url: `${API_PATH}/pipeline/run`, method: "post", data: { pipeline_id } });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

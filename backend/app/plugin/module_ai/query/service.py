@@ -1710,6 +1710,96 @@ class AiQueryService:
         return {"ok": True, "created": created, "template": tpl["name"]}
 
     @classmethod
+    async def list_pipelines(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            res = await db.execute(_t(
+                "SELECT p.id,p.name,p.source_connection,p.source_table,p.target_object,p.mappings,p.enabled,"
+                "(SELECT status FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_status,"
+                "(SELECT ran_at FROM ai_pipeline_run r WHERE r.pipeline_id=p.id AND r.is_deleted=false ORDER BY r.id DESC LIMIT 1) AS last_at "
+                "FROM ai_pipeline p WHERE p.is_deleted=false ORDER BY p.id DESC"))
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "name": r[1] or "", "source_connection": r[2] or "", "source_table": r[3] or "",
+            "target_object": r[4] or "",
+            "mappings": r[5] if isinstance(r[5], list) else (_json.loads(r[5]) if r[5] else []),
+            "enabled": bool(r[6]), "last_status": r[7] or "", "last_at": str(r[8]) if r[8] else "",
+        } for r in rows]
+
+    @classmethod
+    async def upsert_pipeline(cls, data: dict) -> dict:
+        import json as _json
+        mp = _json.dumps(data.get("mappings") or [], ensure_ascii=False)
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_pipeline SET name=:n, source_connection=:sc, source_table=:st, "
+                    "target_object=:to, mappings=:m, enabled=:e, updated_time=now() WHERE id=:i"), {
+                    "n": data.get("name", ""), "sc": data.get("source_connection", ""),
+                    "st": data.get("source_table", ""), "to": data.get("target_object", ""),
+                    "m": mp, "e": bool(data.get("enabled", True)), "i": data["id"]})
+                return {"id": data["id"]}
+            res = await db.execute(_t(
+                "INSERT INTO ai_pipeline(name,source_connection,source_table,target_object,mappings,enabled) "
+                "VALUES (:n,:sc,:st,:to,:m,:e) RETURNING id"), {
+                "n": data.get("name", ""), "sc": data.get("source_connection", ""),
+                "st": data.get("source_table", ""), "to": data.get("target_object", ""),
+                "m": mp, "e": bool(data.get("enabled", True))})
+            return {"id": res.scalar()}
+
+    @classmethod
+    async def run_pipeline(cls, pipeline_id: int) -> dict:
+        """P3-① 运行管道：校验源表→目标对象列映射，同步源表列作为目标对象字段(资产)，并留运行/血缘。"""
+        import json as _json
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            row = (await db.execute(_t(
+                "SELECT name,source_connection,source_table,target_object,mappings FROM ai_pipeline "
+                "WHERE id=:i AND is_deleted=false"), {"i": pipeline_id})).fetchone()
+        if not row:
+            return {"ok": False, "msg": "管道不存在"}
+        name, sc, st, to, mp_raw = row[0], row[1], row[2], row[3], row[4]
+        mappings = mp_raw if isinstance(mp_raw, list) else (_json.loads(mp_raw) if mp_raw else [])
+        schema = await cls._system_schema()
+        if st not in schema:
+            return {"ok": False, "msg": f"源表 {st} 不在可用 schema"}
+        src_labels = schema.get(st) or []
+        # 为源表同步资产(标记对象) + 把映射后的源列写入目标对象字段描述
+        meta = (await cls._asset_tmeta()).get(to) or {}
+        await cls.upsert_asset(QueryAssetUpsert(
+            table_name=to, alias=meta.get("alias") or to, domain=meta.get("domain") or "接入",
+            description=meta.get("description") or f"由管道 {name} 接入", business_scenarios="",
+            included=True, remark="", object_enabled=True, object_key_col="id",
+            object_name_col="name", object_icon="el-icon-Connection"),
+            SimpleNamespace(user=SimpleNamespace(id=1)))
+        synced = 0
+        for mp in mappings:
+            src_col = mp.get("source_col", "")
+            tgt_col = mp.get("target_col", src_col)
+            if any(l.split("(")[0] == src_col for l in src_labels):
+                async with async_db_session.begin() as db:
+                    from sqlalchemy import text as _t
+                    upd = await db.execute(_t(
+                        "UPDATE ai_query_asset_columns SET description=:d WHERE table_name=:t AND column_name=:c AND is_deleted=false"),
+                        {"t": to, "c": tgt_col, "d": f"自 {sc}.{st}.{src_col} 映射"})
+                    if not (upd.rowcount or 0):
+                        await db.execute(_t(
+                            "INSERT INTO ai_query_asset_columns(table_name,column_name,description,included,is_deleted) "
+                            "VALUES (:t,:c,:d,true,false)"), {"t": to, "c": tgt_col, "d": f"自 {sc}.{st}.{src_col} 映射"})
+                synced += 1
+        msg = f"已同步 {synced} 个映射列到对象 {to}"
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "INSERT INTO ai_pipeline_run(pipeline_id,status,message) VALUES (:p,'success',:m)"),
+                {"p": pipeline_id, "m": msg})
+        _SCHEMA_CACHE = None
+        _ASSET_TMETA = None
+        return {"ok": True, "msg": msg, "synced": synced}
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t
