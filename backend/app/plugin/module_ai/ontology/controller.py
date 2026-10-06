@@ -1,0 +1,81 @@
+"""本体（Ontology）独立模块控制器：对象/属性/Link/Action 强类型元模型 + 物化。"""
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends
+from fastapi.responses import JSONResponse
+
+from app.api.v1.module_system.auth.schema import AuthSchema
+from app.common.response import SuccessResponse
+from app.core.dependencies import AuthPermission
+from app.core.router_class import OperationLogRoute
+
+from . import service as _svc
+
+OntologyRouter = APIRouter(route_class=OperationLogRoute, prefix="/ontology", tags=["AI-本体"])
+
+AuthDep = Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))]
+
+
+@OntologyRouter.get("/objects", summary="本体对象类型列表")
+async def list_objects(auth: AuthDep) -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_objects(), msg="查询成功")
+
+
+@OntologyRouter.post("/object/save", summary="对象类型保存")
+async def upsert_object(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.upsert_object(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@OntologyRouter.get("/object/{code}/full", summary="对象完整视图(属性/Link/Action)")
+async def object_full(code: str, auth: AuthDep) -> JSONResponse:
+    return SuccessResponse(data=await _svc.object_full(code), msg="查询成功")
+
+
+@OntologyRouter.get("/properties", summary="属性类型列表")
+async def list_properties(auth: AuthDep, object_code: str = "") -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_properties(object_code), msg="查询成功")
+
+
+@OntologyRouter.post("/property/save", summary="属性类型保存")
+async def upsert_property(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.upsert_property(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@OntologyRouter.get("/links", summary="关联类型列表")
+async def list_links(auth: AuthDep, object_code: str = "") -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_links(object_code or None), msg="查询成功")
+
+
+@OntologyRouter.post("/link/save", summary="关联类型保存")
+async def upsert_link(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.upsert_link(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@OntologyRouter.get("/actions", summary="动作类型列表")
+async def list_actions(auth: AuthDep, object_code: str = "") -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_actions(object_code or None), msg="查询成功")
+
+
+@OntologyRouter.post("/action/save", summary="动作类型保存")
+async def upsert_action(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.upsert_action(data)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@OntologyRouter.delete("/remove", summary="删除(对象/属性/Link/Action)")
+async def remove(kind: str, id: int, auth: AuthDep) -> JSONResponse:
+    table = {"object": "ai_ont_object", "property": "ai_ont_property",
+             "link": "ai_ont_link", "action": "ai_ont_action"}.get(kind)
+    if not table:
+        return SuccessResponse(data=None, msg="非法类型")
+    await _svc.delete_one(table, id)
+    return SuccessResponse(data=None, msg="已删除")
+
+
+@OntologyRouter.post("/materialize", summary="本体驱动表：对象+属性物化成真实表")
+async def materialize(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
+    r = await _svc.materialize_object(str(data.get("code", "")))
+    return SuccessResponse(data=r, msg=r.get("msg", "已物化"))
