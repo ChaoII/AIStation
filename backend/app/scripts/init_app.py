@@ -745,8 +745,10 @@ async def _ensure_ai_menus() -> None:
                 ("数据与集成", "AiIntegration", "/ai/integration", "module_ai/integration/index", "module_ai:query:ask", 21, "el-icon-Connection"),
                 ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
                 ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", "module_ai:query:ask", 23, "el-icon-Odometer"),
-                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 20, "el-icon-DataAnalysis"),
+                ("数据资产", "AiAsset", "/ai/asset", "module_ai/asset/index", "module_ai:query:ask", 24, "el-icon-DataBoard"),
             ]
+            # 问数不再是独立模块，降为 Agent 能力：隐藏旧的「智能问数」入口
+            await db.execute(update(MenuModel).where(MenuModel.route_name == "AiQuery").values(hidden=True))
             for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(
                     select(MenuModel).where(MenuModel.route_name == rname)
