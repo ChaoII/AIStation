@@ -243,7 +243,10 @@
             @click="openChatSession(s)"
           >
             <span class="agent-chat-sess-title">{{ s.title || "未命名会话" }}</span>
-            <span class="agent-chat-sess-count">{{ s.message_count ?? 0 }}</span>
+            <span class="agent-chat-sess-meta">
+              <span class="agent-chat-sess-count">{{ s.message_count ?? 0 }}</span>
+              <span class="agent-chat-sess-time">{{ fmtTime(s.updated_time) }}</span>
+            </span>
           </div>
           <div v-if="!chatSessions.length" class="agent-chat-sess-empty">暂无会话</div>
         </div>
@@ -994,6 +997,21 @@ const groupedAgentsChat = computed(() => {
 function switchChatAgent(ag: any) {
   openAgentChat(ag);
 }
+// 会话更新时间格式化（相对时间）
+function fmtTime(t: string | null | undefined) {
+  if (!t) return "";
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return "";
+  const diff = Date.now() - d.getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "刚刚";
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  const day = Math.floor(h / 24);
+  if (day < 30) return `${day} 天前`;
+  return `${d.getMonth() + 1}-${d.getDate()}`;
+}
 function toggleModelDropdown() {
   chatModelOpen.value = !chatModelOpen.value;
 }
@@ -1412,12 +1430,22 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.agent-chat-sess-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 .agent-chat-sess-count {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color);
   padding: 0 6px;
   border-radius: 8px;
+}
+.agent-chat-sess-time {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
 }
 .agent-chat-sess-empty {
   text-align: center;
