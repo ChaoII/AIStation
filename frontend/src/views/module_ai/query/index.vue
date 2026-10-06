@@ -168,7 +168,7 @@
     </div>
 
     <!-- 指标 / 术语 / 数据源 运营抽屉 -->
-    <el-drawer v-model="opsVisible" title="智能问数 · 指标运营" size="720px" append-to-body>
+    <el-drawer v-model="opsVisible" title="智能问数 · 指标运营" size="920px" append-to-body>
       <el-tabs v-model="opsTab">
         <el-tab-pane label="指标" name="metric">
           <div class="ops-bar">
@@ -321,15 +321,15 @@
             </el-tag>
           </div>
           <el-table :data="filteredAssets" size="small" border max-height="400">
-            <el-table-column prop="table_name" label="表名" min-width="170" show-overflow-tooltip />
+            <el-table-column prop="table_name" label="表名" min-width="140" show-overflow-tooltip />
             <el-table-column
               prop="alias"
               label="中文名/别名"
-              min-width="120"
+              min-width="90"
               show-overflow-tooltip
             />
-            <el-table-column prop="domain" label="业务域" width="90" show-overflow-tooltip />
-            <el-table-column label="中文描述" min-width="180">
+            <el-table-column prop="domain" label="业务域" width="80" show-overflow-tooltip />
+            <el-table-column label="中文描述" min-width="150">
               <template #default="{ row }">
                 <el-input
                   v-model="row.description"
