@@ -201,166 +201,192 @@
 
     <!-- 智能体内嵌对话面板（页内展开） -->
     <div v-if="activeChatAgent" class="agent-chat-panel">
-      <div class="agent-chat-head">
-        <button class="agent-chat-back" @click="closeAgentChat">返回列表</button>
-        <div class="agent-chat-title">
+      <!-- 左：会话历史 -->
+      <div class="agent-chat-sidebar">
+        <div class="agent-chat-sidebar-head">
+          <span>会话</span>
+          <el-button size="small" :icon="Plus" @click="newChatSession">新会话</el-button>
+        </div>
+        <div v-loading="chatLoadingSession" class="agent-chat-sessions">
           <div
-            class="agent-chat-avatar"
-            :style="{ background: activeChatAgent.color || '#409eff' }"
+            v-for="s in chatSessions"
+            :key="s.id"
+            class="agent-chat-sess"
+            :class="{ 'agent-chat-sess--active': s.id === chatSessionId }"
+            @click="openChatSession(s)"
           >
-            {{ activeChatAgent.agent_name?.slice(0, 1) }}
+            <span class="agent-chat-sess-title">{{ s.title || "未命名会话" }}</span>
+            <span class="agent-chat-sess-count">{{ s.message_count ?? 0 }}</span>
           </div>
-          <div>
-            <div class="agent-chat-name">{{ activeChatAgent.agent_name }}</div>
-            <div class="agent-chat-sub">与智能体对话 · 自动检索知识库 / 问数 / 工具</div>
-          </div>
-        </div>
-        <div class="agent-chat-head-right">
-          <el-tag
-            v-if="activeChatAgent.knowledge_ids?.length"
-            size="small"
-            type="success"
-            effect="plain"
-          >
-            知识库
-          </el-tag>
-          <el-tag v-if="activeChatAgent.query_enabled" size="small" type="warning" effect="plain">
-            问数
-          </el-tag>
-          <el-tag v-if="(activeChatAgent.tool_ids || []).length" size="small" effect="plain">
-            {{ activeChatAgent.tool_ids.length }} 工具
-          </el-tag>
+          <div v-if="!chatSessions.length" class="agent-chat-sess-empty">暂无会话</div>
         </div>
       </div>
-
-      <div ref="chatBodyRef" class="agent-chat-body">
-        <el-empty v-if="!chatMsgs.length" description="开始和智能体对话吧" :image-size="50" />
-        <div v-for="(m, i) in chatMsgs" :key="i" class="agent-chat-msg" :class="m.role">
-          <div v-if="m.role === 'user'" class="agent-chat-bubble user">{{ m.content }}</div>
-          <div v-else class="agent-chat-bubble">
-            <div v-if="m.think" class="agent-chat-think">
-              <span class="agent-chat-think-title">思考过程</span>
-              <div>{{ m.think }}</div>
+      <!-- 右：对话主区 -->
+      <div class="agent-chat-main">
+        <div class="agent-chat-head">
+          <button class="agent-chat-back" @click="closeAgentChat">返回列表</button>
+          <div class="agent-chat-title">
+            <div
+              class="agent-chat-avatar"
+              :style="{ background: activeChatAgent.color || '#409eff' }"
+            >
+              {{ activeChatAgent.agent_name?.slice(0, 1) }}
             </div>
-            <div v-if="m.tools.length" class="agent-chat-tools">
-              <el-tag v-for="t in m.tools" :key="t" size="small" type="warning" effect="plain">
-                🔧 {{ t }}
-              </el-tag>
+            <div>
+              <div class="agent-chat-name">{{ activeChatAgent.agent_name }}</div>
+              <div class="agent-chat-sub">与智能体对话 · 自动检索知识库 / 问数 / 工具</div>
             </div>
-            <div v-if="m.content" class="agent-chat-text" v-html="renderMd(m.content)"></div>
-            <span v-if="m.loading" class="agent-chat-loading">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              思考中…
-            </span>
           </div>
-        </div>
-      </div>
-
-      <!-- 对话输入区（CherryStudio 风格） -->
-      <div class="agent-chat-composer">
-        <div class="agent-composer-input">
-          <el-input
-            v-model="chatInput"
-            type="textarea"
-            :rows="2"
-            resize="none"
-            placeholder="输入问题，Enter 发送，Shift+Enter 换行"
-            :disabled="chatSending"
-            @keyup.enter.exact.prevent="sendAgentChat"
-          />
-        </div>
-        <div class="agent-composer-bar">
-          <div class="agent-composer-left">
-            <!-- 模型触发器 -->
-            <div ref="chatModelRoot" class="cia-trigger" @click.stop="toggleModelDropdown">
-              <span class="cia-trigger-initial">{{ chatModelLabel.charAt(0).toUpperCase() }}</span>
-              <span class="cia-trigger-name">{{ chatModelLabel }}</span>
-              <span
-                class="cia-mode-badge"
-                :class="{ 'cia-mode-badge--deep': chatThinkMode === 'deep' }"
-              >
-                {{ chatThinkMode === "deep" ? "🧠" : "⚡" }}
-              </span>
-              <span class="cia-chevron" :class="{ 'cia-chevron--open': chatModelOpen }">▾</span>
-              <div v-if="chatModelOpen" class="cia-dropdown" @click.stop>
-                <div class="cia-dropdown-title">模型</div>
-                <div
-                  v-for="m in chatModels"
-                  :key="m.id"
-                  class="cia-model-opt"
-                  :class="{ 'cia-model-opt--active': m.id === chatModelId }"
-                  @click.stop="pickChatModel(m.id)"
-                >
-                  <span class="cia-model-opt-icon">{{ m.name.charAt(0).toUpperCase() }}</span>
-                  <span class="cia-model-opt-label">{{ m.name }}</span>
-                  <span v-if="m.id === chatModelId" class="cia-check">✓</span>
-                </div>
-                <div class="cia-dropdown-title">思考</div>
-                <div class="cia-mode">
-                  <button
-                    type="button"
-                    class="cia-mode-btn"
-                    :class="{ 'cia-mode-btn--active': chatThinkMode === 'quick' }"
-                    @click.stop="chatThinkMode = 'quick'"
-                  >
-                    ⚡ 快速
-                  </button>
-                  <button
-                    type="button"
-                    class="cia-mode-btn"
-                    :class="{ 'cia-mode-btn--active': chatThinkMode === 'deep' }"
-                    @click.stop="chatThinkMode = 'deep'"
-                  >
-                    🧠 深度
-                  </button>
-                </div>
-                <div v-if="chatThinkMode === 'deep'" class="cia-effort">
-                  <button
-                    v-for="o in ['low', 'medium', 'high']"
-                    :key="o"
-                    type="button"
-                    class="cia-effort-btn"
-                    :class="{ 'cia-effort-btn--active': chatEffort === o }"
-                    @click.stop="chatEffort = o"
-                  >
-                    {{ { low: "低", medium: "中", high: "高" }[o] }}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <!-- 语音合成 -->
-            <button
-              type="button"
-              class="cia-icon-btn"
-              :class="{ 'cia-icon-btn--on': chatVoice === 'auto' }"
-              title="语音合成"
-              @click="chatVoice = chatVoice === 'auto' ? 'none' : 'auto'"
+          <div class="agent-chat-head-right">
+            <el-tag
+              v-if="activeChatAgent.knowledge_ids?.length"
+              size="small"
+              type="success"
+              effect="plain"
             >
-              🔊
-            </button>
-            <!-- 上传文件 -->
-            <el-upload
-              :show-file-list="false"
-              multiple
-              :auto-upload="false"
-              :on-change="onChatFile"
-            >
-              <button type="button" class="cia-icon-btn" title="上传文件">📎</button>
-            </el-upload>
-            <el-tag v-if="chatFiles.length" size="small" type="info" effect="plain">
-              {{ chatFiles.length }} 个文件
+              知识库
+            </el-tag>
+            <el-tag v-if="activeChatAgent.query_enabled" size="small" type="warning" effect="plain">
+              问数
+            </el-tag>
+            <el-tag v-if="(activeChatAgent.tool_ids || []).length" size="small" effect="plain">
+              {{ activeChatAgent.tool_ids.length }} 工具
             </el-tag>
           </div>
-          <el-button
-            type="primary"
-            class="agent-chat-send"
-            :loading="chatSending"
-            @click="sendAgentChat"
-          >
-            发送
-          </el-button>
+        </div>
+
+        <div ref="chatBodyRef" class="agent-chat-body">
+          <el-empty v-if="!chatMsgs.length" description="开始和智能体对话吧" :image-size="50" />
+          <div v-for="(m, i) in chatMsgs" :key="i" class="agent-chat-msg" :class="m.role">
+            <div v-if="m.role === 'user'" class="agent-chat-bubble user">{{ m.content }}</div>
+            <div v-else class="agent-chat-bubble">
+              <div v-if="m.think" class="agent-chat-think">
+                <span class="agent-chat-think-title">思考过程</span>
+                <div>{{ m.think }}</div>
+              </div>
+              <div v-if="m.tools.length" class="agent-chat-tools">
+                <el-tag v-for="t in m.tools" :key="t" size="small" type="warning" effect="plain">
+                  🔧 {{ t }}
+                </el-tag>
+              </div>
+              <div v-if="m.content" class="agent-chat-text" v-html="renderMd(m.content)"></div>
+              <span v-if="m.loading" class="agent-chat-loading">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                思考中…
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 对话输入区（CherryStudio 风格） -->
+        <div class="agent-chat-composer">
+          <div class="agent-composer-input">
+            <el-input
+              v-model="chatInput"
+              type="textarea"
+              :rows="2"
+              resize="none"
+              placeholder="输入问题，Enter 发送，Shift+Enter 换行"
+              :disabled="chatSending"
+              @keyup.enter.exact.prevent="sendAgentChat"
+            />
+          </div>
+          <div class="agent-composer-bar">
+            <div class="agent-composer-left">
+              <!-- 模型触发器 -->
+              <div ref="chatModelRoot" class="cia-trigger" @click.stop="toggleModelDropdown">
+                <span class="cia-trigger-initial">
+                  {{ chatModelLabel.charAt(0).toUpperCase() }}
+                </span>
+                <span class="cia-trigger-name">{{ chatModelLabel }}</span>
+                <span
+                  class="cia-mode-badge"
+                  :class="{ 'cia-mode-badge--deep': chatThinkMode === 'deep' }"
+                >
+                  {{ chatThinkMode === "deep" ? "🧠" : "⚡" }}
+                </span>
+                <span class="cia-chevron" :class="{ 'cia-chevron--open': chatModelOpen }">▾</span>
+                <div v-if="chatModelOpen" class="cia-dropdown" @click.stop>
+                  <div class="cia-dropdown-title">模型</div>
+                  <div
+                    v-for="m in chatModels"
+                    :key="m.id"
+                    class="cia-model-opt"
+                    :class="{ 'cia-model-opt--active': m.id === chatModelId }"
+                    @click.stop="pickChatModel(m.id)"
+                  >
+                    <span class="cia-model-opt-icon">{{ m.name.charAt(0).toUpperCase() }}</span>
+                    <span class="cia-model-opt-label">{{ m.name }}</span>
+                    <span v-if="m.id === chatModelId" class="cia-check">✓</span>
+                  </div>
+                  <div class="cia-dropdown-title">思考</div>
+                  <div class="cia-mode">
+                    <button
+                      type="button"
+                      class="cia-mode-btn"
+                      :class="{ 'cia-mode-btn--active': chatThinkMode === 'quick' }"
+                      @click.stop="chatThinkMode = 'quick'"
+                    >
+                      ⚡ 快速
+                    </button>
+                    <button
+                      type="button"
+                      class="cia-mode-btn"
+                      :class="{ 'cia-mode-btn--active': chatThinkMode === 'deep' }"
+                      @click.stop="chatThinkMode = 'deep'"
+                    >
+                      🧠 深度
+                    </button>
+                  </div>
+                  <div v-if="chatThinkMode === 'deep'" class="cia-effort">
+                    <button
+                      v-for="o in ['low', 'medium', 'high']"
+                      :key="o"
+                      type="button"
+                      class="cia-effort-btn"
+                      :class="{ 'cia-effort-btn--active': chatEffort === o }"
+                      @click.stop="chatEffort = o"
+                    >
+                      {{ { low: "低", medium: "中", high: "高" }[o] }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- 语音合成 -->
+              <button
+                type="button"
+                class="cia-icon-btn"
+                :class="{ 'cia-icon-btn--on': chatVoice === 'auto' }"
+                title="语音合成"
+                @click="chatVoice = chatVoice === 'auto' ? 'none' : 'auto'"
+              >
+                🔊
+              </button>
+              <!-- 上传文件 -->
+              <el-upload
+                :show-file-list="false"
+                multiple
+                :auto-upload="false"
+                :on-change="onChatFile"
+              >
+                <button type="button" class="cia-icon-btn" title="上传文件">📎</button>
+              </el-upload>
+              <el-tag v-if="chatFiles.length" size="small" type="info" effect="plain">
+                {{ chatFiles.length }} 个文件
+              </el-tag>
+            </div>
+            <el-button
+              type="primary"
+              class="agent-chat-send"
+              :loading="chatSending"
+              @click="sendAgentChat"
+            >
+              发送
+            </el-button>
+          </div>
         </div>
       </div>
+      <!-- /agent-chat-main -->
     </div>
 
     <!-- 智能体编辑弹窗 -->
@@ -628,6 +654,7 @@ import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getAiSkillList } from "@/api/module_ai/skill";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
 import { getQueryDatasources } from "@/api/module_ai/query";
+import { getAiSessionList, getAiSessionDetail } from "@/api/module_ai/session";
 
 defineOptions({ name: "AiAgent" });
 
@@ -859,6 +886,10 @@ const chatInput = ref("");
 const chatSending = ref(false);
 const chatConv = ref<any[]>([]);
 const chatBodyRef = ref<HTMLDivElement>();
+// 会话历史（左侧栏）
+const chatSessions = ref<any[]>([]);
+const chatSessionId = ref<number | null>(null);
+const chatLoadingSession = ref(false);
 // 对话工具栏选项（CherryStudio 风格：模型触发器 + 思考 pills + 上传/语音图标）
 const chatModelId = ref<number | null>(null);
 const chatModelOpen = ref(false);
@@ -881,6 +912,43 @@ function openAgentChat(a: any) {
   chatModelId.value = a.model_id || null;
   chatThinkMode.value = "quick";
   chatEffort.value = "medium";
+  loadChatSessions();
+}
+async function loadChatSessions() {
+  chatLoadingSession.value = true;
+  try {
+    const r = await getAiSessionList({ app_id: activeChatAgent.value?.id || undefined });
+    chatSessions.value = r.data?.data || [];
+  } catch {
+    chatSessions.value = [];
+  } finally {
+    chatLoadingSession.value = false;
+  }
+}
+async function openChatSession(s: any) {
+  if (!s?.id) return;
+  chatSessionId.value = s.id;
+  chatLoadingSession.value = true;
+  try {
+    const r = await getAiSessionDetail(s.id);
+    const msgs = r.data?.data?.messages || [];
+    chatMsgs.value = msgs.map((m: any) => {
+      const text = (m.parts || []).map((p: any) => p.text || "").join("");
+      return { role: m.role, content: text, think: "", tools: [] };
+    });
+    chatConv.value = [];
+  } catch {
+    chatMsgs.value = [];
+  } finally {
+    chatLoadingSession.value = false;
+    chatScroll();
+  }
+}
+async function newChatSession() {
+  chatSessionId.value = null;
+  chatMsgs.value = [];
+  chatConv.value = [];
+  await loadChatSessions();
 }
 function toggleModelDropdown() {
   chatModelOpen.value = !chatModelOpen.value;
@@ -924,7 +992,11 @@ async function sendAgentChat() {
         "Content-Type": "application/json;charset=utf-8",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ messages: [...chatConv.value], variables: null }),
+      body: JSON.stringify({
+        messages: [...chatConv.value],
+        variables: null,
+        session_id: chatSessionId.value,
+      }),
     });
     if (!resp.ok || !resp.body) throw new Error(`请求失败：${resp.status}`);
     const reader = resp.body.getReader();
@@ -956,6 +1028,7 @@ async function sendAgentChat() {
     asst.loading = false;
     chatSending.value = false;
     chatScroll();
+    loadChatSessions();
   }
 }
 function handleChatEvent(evt: any, asst: any) {
@@ -1159,9 +1232,74 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   box-shadow: 0 12px 40px rgba(31, 45, 61, 0.06);
   overflow: hidden;
   display: flex;
-  flex-direction: column;
   height: calc(100vh - 210px);
   min-height: 460px;
+}
+.agent-chat-sidebar {
+  width: 220px;
+  min-width: 200px;
+  background: var(--el-fill-color-lighter);
+  border-right: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  flex-direction: column;
+}
+.agent-chat-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.agent-chat-sessions {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+}
+.agent-chat-sess {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 0.15s;
+}
+.agent-chat-sess:hover {
+  background: var(--el-fill-color);
+}
+.agent-chat-sess--active {
+  background: var(--el-color-primary-light-9);
+}
+.agent-chat-sess-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-chat-sess-count {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+  padding: 0 6px;
+  border-radius: 8px;
+}
+.agent-chat-sess-empty {
+  text-align: center;
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+  padding: 20px 0;
+}
+.agent-chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .agent-chat-head {
   display: flex;
