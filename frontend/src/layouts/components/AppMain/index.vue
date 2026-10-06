@@ -2,7 +2,8 @@
   <section class="app-main" :style="{ height: appMainHeight }">
     <router-view>
       <template #default="{ Component, route }">
-        <transition :name="transitionName" mode="out-in">
+        <!-- 去掉 mode="out-in"，避免多根/缓存组件导致过渡挂起、内容残留（见 AGENTS.md） -->
+        <transition :name="transitionName">
           <keep-alive :include="cachedViews">
             <component :is="Component" :key="route.path" />
           </keep-alive>
