@@ -203,6 +203,19 @@
     <div v-if="activeChatAgent" class="agent-chat-panel">
       <!-- 左：会话历史 -->
       <div class="agent-chat-sidebar">
+        <!-- 当前智能体 -->
+        <div class="agent-chat-agent">
+          <div
+            class="agent-chat-agent-avatar"
+            :style="{ background: activeChatAgent.color || '#667eea' }"
+          >
+            {{ activeChatAgent.agent_name?.slice(0, 1) }}
+          </div>
+          <div class="agent-chat-agent-meta">
+            <div class="agent-chat-agent-name">{{ activeChatAgent.agent_name }}</div>
+            <div class="agent-chat-agent-desc">{{ activeChatAgent.agent_role || "数据助手" }}</div>
+          </div>
+        </div>
         <div class="agent-chat-sidebar-head">
           <span>会话</span>
           <el-button size="small" :icon="Plus" @click="newChatSession">新会话</el-button>
@@ -1247,11 +1260,42 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-primary);
   border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.agent-chat-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.agent-chat-agent-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+.agent-chat-agent-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.agent-chat-agent-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .agent-chat-sessions {
   flex: 1;
@@ -1439,6 +1483,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   justify-content: space-between;
   gap: 10px;
   margin-top: 8px;
+  padding-right: 88px; /* 让出发送按钮，避开右下角悬浮 AI 气泡 */
 }
 .agent-composer-left {
   display: flex;
