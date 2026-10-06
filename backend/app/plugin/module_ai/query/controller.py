@@ -214,6 +214,33 @@ async def list_objects(
     return SuccessResponse(data=await AiQueryService.list_objects(), msg="查询成功")
 
 
+# ---- FDE 交付工作台 ----
+@AiQueryRouter.get("/fde/list", summary="交付命题列表")
+async def fde_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_propositions(), msg="查询成功")
+
+
+@AiQueryRouter.post("/fde/save", summary="交付命题保存(五步单/缺口/留痕)")
+async def fde_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.upsert_proposition(data, auth)
+    return SuccessResponse(data=r, msg="保存成功")
+
+
+@AiQueryRouter.delete("/fde/delete", summary="删除交付命题")
+async def fde_delete(
+    ids: list[int],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    for pid in ids:
+        await AiQueryService.delete_proposition(pid)
+    return SuccessResponse(data=None, msg="已删除")
+
+
 async def kg_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:

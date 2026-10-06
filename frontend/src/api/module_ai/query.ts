@@ -204,6 +204,15 @@ export function saveQueryKgLayout(items: { name: string; x: number; y: number }[
 export function getQueryObjects() {
   return request({ url: `${API_PATH}/assets/objects`, method: "get" });
 }
+export function getFdeList() {
+  return request({ url: `${API_PATH}/fde/list`, method: "get" });
+}
+export function saveFdeProposition(data: any) {
+  return request({ url: `${API_PATH}/fde/save`, method: "post", data });
+}
+export function deleteFdePropositions(ids: number[]) {
+  return request({ url: `${API_PATH}/fde/delete`, method: "delete", data: ids });
+}
 export function autoLinkQueryKg() {
   return request({ url: `${API_PATH}/assets/kg/auto-link`, method: "post" });
 }

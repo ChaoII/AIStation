@@ -1300,6 +1300,73 @@ class AiQueryService:
         return out
 
     @classmethod
+    async def list_propositions(cls) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            res = await db.execute(_t(
+                "SELECT id,title,description,criteria,owner,step_diagnosis,step_modeling,"
+                "step_assembly,step_shadow,step_handover,gap,delivery_assets,status,created_time "
+                "FROM ai_fde_proposition WHERE is_deleted=false ORDER BY id DESC"))
+            rows = res.fetchall()
+        import json as _json
+        return [{
+            "id": r[0], "title": r[1] or "", "description": r[2] or "", "criteria": r[3] or "",
+            "owner": r[4] or "", "steps": {
+                "diagnosis": r[5], "modeling": r[6], "assembly": r[7], "shadow": r[8], "handover": r[9],
+            },
+            "gap": r[10] if isinstance(r[10], list) else (_json.loads(r[10]) if r[10] else []),
+            "delivery_assets": r[11] if isinstance(r[11], list) else (_json.loads(r[11]) if r[11] else []),
+            "status": r[12] or "open", "created_time": str(r[13]) if r[13] else "",
+        } for r in rows]
+
+    @classmethod
+    async def upsert_proposition(cls, data: dict, auth) -> dict:
+        import json as _json
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            pid = data.get("id")
+            gap = _json.dumps(data.get("gap") or [], ensure_ascii=False)
+            assets = _json.dumps(data.get("delivery_assets") or [], ensure_ascii=False)
+            if pid:
+                await db.execute(_t(
+                    "UPDATE ai_fde_proposition SET title=:t, description=:d, criteria=:c, owner=:o, "
+                    "step_diagnosis=:s1, step_modeling=:s2, step_assembly=:s3, step_shadow=:s4, "
+                    "step_handover=:s5, gap=:g, delivery_assets=:a, status=:st, updated_time=now() "
+                    "WHERE id=:pid"), {
+                    "t": data.get("title", ""), "d": data.get("description", ""),
+                    "c": data.get("criteria", ""), "o": data.get("owner", ""),
+                    "s1": data.get("steps", {}).get("diagnosis", "todo"),
+                    "s2": data.get("steps", {}).get("modeling", "todo"),
+                    "s3": data.get("steps", {}).get("assembly", "todo"),
+                    "s4": data.get("steps", {}).get("shadow", "todo"),
+                    "s5": data.get("steps", {}).get("handover", "todo"),
+                    "g": gap, "a": assets, "st": data.get("status", "open"), "pid": pid})
+            else:
+                res = await db.execute(_t(
+                    "INSERT INTO ai_fde_proposition(title,description,criteria,owner,step_diagnosis,"
+                    "step_modeling,step_assembly,step_shadow,step_handover,gap,delivery_assets,status) "
+                    "VALUES (:t,:d,:c,:o,:s1,:s2,:s3,:s4,:s5,:g,:a,:st) RETURNING id"), {
+                    "t": data.get("title", ""), "d": data.get("description", ""),
+                    "c": data.get("criteria", ""), "o": data.get("owner", ""),
+                    "s1": data.get("steps", {}).get("diagnosis", "todo"),
+                    "s2": data.get("steps", {}).get("modeling", "todo"),
+                    "s3": data.get("steps", {}).get("assembly", "todo"),
+                    "s4": data.get("steps", {}).get("shadow", "todo"),
+                    "s5": data.get("steps", {}).get("handover", "todo"),
+                    "g": gap, "a": assets, "st": data.get("status", "open")})
+                pid = res.scalar()
+        return {"id": pid}
+
+    @classmethod
+    async def delete_proposition(cls, pid: int) -> None:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            await db.execute(_t("UPDATE ai_fde_proposition SET is_deleted=true WHERE id=:pid"), {"pid": pid})
+
+    @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
         """对表做轻量数据画像：行数 + 每列可空率/基数/低基数枚举分布。"""
         from sqlalchemy import text as _t

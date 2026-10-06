@@ -785,6 +785,57 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+        <el-tab-pane label="交付" name="fde">
+          <div class="ops-bar">
+            <el-button type="primary" size="small" :icon="Plus" @click="openFdeEdit()">
+              新增命题
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              共 {{ fdList.length }} 个交付命题
+            </el-tag>
+          </div>
+          <el-table :data="fdList" size="small" border max-height="400">
+            <el-table-column prop="title" label="命题" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="owner" label="责任人" width="90" show-overflow-tooltip />
+            <el-table-column label="五步" min-width="200">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="(v, k) in row.steps"
+                  :key="k"
+                  size="small"
+                  :type="v === 'done' ? 'success' : v === 'doing' ? 'warning' : 'info'"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{
+                    {
+                      diagnosis: "诊断",
+                      modeling: "建模",
+                      assembly: "组装",
+                      shadow: "影子",
+                      handover: "移交",
+                    }[k]
+                  }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.status === 'done' ? 'success' : 'warning'">
+                  {{ row.status === "done" ? "已交付" : "进行中" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openFdeEdit(row)">
+                  编辑
+                </el-button>
+                <el-button link type="danger" size="small" @click="deleteFde(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-drawer>
 
@@ -1185,6 +1236,61 @@
         <el-button type="primary" :loading="savingConcept" @click="saveConcept">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- FDE 交付命题编辑 -->
+    <el-dialog v-model="fdDialog" title="交付命题" width="640px" append-to-body>
+      <el-form :model="fdForm" label-width="90px">
+        <el-form-item label="命题标题" required>
+          <el-input v-model="fdForm.title" placeholder="如：某车间设备OEE看板" />
+        </el-form-item>
+        <el-form-item label="业务描述">
+          <el-input v-model="fdForm.description" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="验收标准">
+          <el-input
+            v-model="fdForm.criteria"
+            type="textarea"
+            :rows="2"
+            placeholder="可测指标/口径"
+          />
+        </el-form-item>
+        <el-form-item label="责任人">
+          <el-input v-model="fdForm.owner" placeholder="FDE/业务负责人" />
+        </el-form-item>
+        <el-form-item label="五步">
+          <div class="fde-steps">
+            <div v-for="(v, k) in fdForm.steps" :key="k" class="fde-step">
+              <span>
+                {{
+                  {
+                    diagnosis: "诊断",
+                    modeling: "建模",
+                    assembly: "组装",
+                    shadow: "影子",
+                    handover: "移交",
+                  }[k]
+                }}
+              </span>
+              <el-select v-model="fdForm.steps[k]" size="small" style="width: 110px">
+                <el-option label="待办" value="todo" />
+                <el-option label="进行中" value="doing" />
+                <el-option label="已完成" value="done" />
+              </el-select>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-radio-group v-model="fdForm.status">
+            <el-radio value="open">进行中</el-radio>
+            <el-radio value="done">已交付</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="fdDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveFde">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1227,6 +1333,9 @@ import {
   getQueryConcepts,
   saveQueryConcept,
   deleteQueryConcepts,
+  getFdeList,
+  saveFdeProposition,
+  deleteFdePropositions,
   getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
@@ -1825,6 +1934,93 @@ async function deleteConcept(row: any) {
     await deleteQueryConcepts([row.id]);
     ElMessage.success("已删除");
     loadConcepts();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "删除失败");
+  }
+}
+// ---- FDE 交付工作台 ----
+const fdList = ref<any[]>([]);
+const fdDialog = ref(false);
+const fdForm = reactive<any>({
+  id: null,
+  title: "",
+  description: "",
+  criteria: "",
+  owner: "",
+  status: "open",
+  steps: {
+    diagnosis: "todo",
+    modeling: "todo",
+    assembly: "todo",
+    shadow: "todo",
+    handover: "todo",
+  },
+  gap: [],
+  delivery_assets: [],
+});
+async function loadFde() {
+  try {
+    const r = await getFdeList();
+    fdList.value = r.data?.data || [];
+  } catch {
+    fdList.value = [];
+  }
+}
+function openFdeEdit(row?: any) {
+  Object.assign(
+    fdForm,
+    row
+      ? {
+          ...row,
+          steps: row.steps || fdForm.steps,
+          gap: row.gap || [],
+          delivery_assets: row.delivery_assets || [],
+        }
+      : {
+          id: null,
+          title: "",
+          description: "",
+          criteria: "",
+          owner: "",
+          status: "open",
+          steps: {
+            diagnosis: "todo",
+            modeling: "todo",
+            assembly: "todo",
+            shadow: "todo",
+            handover: "todo",
+          },
+          gap: [],
+          delivery_assets: [],
+        }
+  );
+  fdDialog.value = true;
+}
+async function saveFde() {
+  if (!fdForm.title?.trim()) return ElMessage.warning("请输入命题标题");
+  try {
+    await saveFdeProposition({ ...fdForm });
+    ElMessage.success("已保存");
+    fdDialog.value = false;
+    loadFde();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  }
+}
+async function deleteFde(row: any) {
+  try {
+    await ElMessageBox.confirm(`确认删除命题「${row.title}」？`, "删除确认", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
+  try {
+    await deleteFdePropositions([row.id]);
+    ElMessage.success("已删除");
+    loadFde();
   } catch (e: any) {
     ElMessage.error(e?.msg || "删除失败");
   }
@@ -2455,12 +2651,25 @@ onMounted(() => {
   loadKgKbs();
   loadUnifiedGraph();
   loadConcepts();
+  loadFde();
 });
 </script>
 
 <style scoped>
 .ai-query-page {
   height: 100%;
+}
+.fde-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fde-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
 }
 .query-layout {
   display: flex;
