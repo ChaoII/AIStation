@@ -1182,6 +1182,88 @@ class AiQueryService:
         return "\n".join(lines)
 
     @classmethod
+    async def _ont_objs(cls) -> dict:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT code,name,key_prop,name_prop,description FROM ai_ont_object WHERE is_deleted=false"))).fetchall()
+        return {r[0]: {"code": r[0], "name": r[1] or r[0], "key_prop": r[2] or "id",
+                       "name_prop": r[3] or "name", "description": r[4] or ""} for r in rows}
+
+    @classmethod
+    async def _ont_props(cls, code: str) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT code,prop_type,sensitive FROM ai_ont_property WHERE object_code=:c AND is_deleted=false"),
+                {"c": code})).fetchall()
+        return [{"code": r[0], "prop_type": r[1], "sensitive": bool(r[2])} for r in rows]
+
+    @classmethod
+    async def _ont_links(cls, code: str) -> list[tuple]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT target_object,source_field,target_field,name FROM ai_ont_link "
+                "WHERE source_object=:c AND is_deleted=false"), {"c": code})).fetchall()
+        return [tuple(r) for r in rows]
+
+    @classmethod
+    async def _resolve_ont_entity(cls, entity: str, key: str, user_id: int | None = None) -> dict | None:
+        """本体对象 grounding：先按本体对象类型匹配，再按本体属性/Link 解析实例（Palantir 式）。"""
+        from sqlalchemy import text as _t
+        objs = await cls._ont_objs()
+        match = None
+        for o in objs.values():
+            if o["name"] and (o["name"] in entity or entity in o["name"]):
+                match = o
+                break
+            if o["code"] and o["code"].replace("_", "") in entity.replace("_", ""):
+                match = o
+                break
+        if not match:
+            return None
+        code = match["code"]
+        table = f"ont_{code}"
+        props = await cls._ont_props(code)
+        name_prop, key_prop = match["name_prop"], match["key_prop"]
+        try:
+            async with async_db_session() as db:
+                row = (await db.execute(_t(
+                    f'SELECT * FROM "{table}" WHERE "{name_prop}" ILIKE :k LIMIT 1'), {"k": f"%{key}%"})).mappings().first()
+                if row is None:
+                    row = (await db.execute(_t(
+                        f'SELECT * FROM "{table}" WHERE "{key_prop}" = :k LIMIT 1'), {"k": key})).mappings().first()
+        except Exception as e:  # noqa: BLE001
+            return {"entity": entity, "ontology": code, "table": table,
+                    "error": "本体对象尚未物化为表或查询失败", "hint": "请在【本体】页对该对象执行「物化为表」", "detail": str(e)[:80]}
+        if not row:
+            return {"entity": entity, "ontology": code, "table": table,
+                    "error": f"在本体对象 {table} 未找到「{key}」"}
+        can_see = await cls._can_see_sensitive(user_id)
+        obj = {}
+        for p in props:
+            if p["sensitive"] and not can_see:
+                continue
+            v = row.get(p["code"])
+            obj[p["code"]] = str(v) if not isinstance(v, (int, float, bool)) else v
+        related: list[dict] = []
+        for tgt, sfield, tfield, lname in await cls._ont_links(code):
+            tgt_table = f"ont_{tgt}"
+            fval = row.get(sfield)
+            try:
+                async with async_db_session() as db:
+                    trow = (await db.execute(_t(
+                        f'SELECT * FROM "{tgt_table}" WHERE "{tfield}" = :k LIMIT 1'), {"k": fval})).mappings().first()
+            except Exception:  # noqa: BLE001
+                trow = None
+            tname = (trow.get("name") if trow else None)
+            related.append({"relation": lname or f"{code}→{tgt}", "entity": tgt, "key": fval,
+                            "name": tname,
+                            "target": {k: (str(v) if not isinstance(v, (int, float, bool)) else v) for k, v in trow.items()} if trow else None})
+        return {"entity": entity, "ontology": code, "table": table, "object": obj, "related": related}
+
+    @classmethod
     async def resolve_entity_object(cls, entity: str, key: str, datasource: str = SYSTEM_DS,
                                     user_id: int | None = None) -> dict | None:
         """P0·对象 grounding：把业务实体名(如「摄像头/订单」)+ 关键值解析为真实对象及关联邻居。
@@ -1192,6 +1274,14 @@ class AiQueryService:
         ABAC：非超管按敏感字段策略过滤敏感列（object 中剔除标记为 sensitive 的字段）。
         """
         from sqlalchemy import text as _t
+
+        # 优先：本体对象 grounding（Palantir 式）
+        try:
+            ont_res = await cls._resolve_ont_entity(entity, key, user_id)
+            if ont_res:
+                return ont_res
+        except Exception:  # noqa: BLE001
+            pass
 
         schema = await cls._system_schema()
         tmeta = await cls._asset_tmeta()

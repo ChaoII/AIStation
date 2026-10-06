@@ -215,6 +215,16 @@ async def list_objects(
     return SuccessResponse(data=await AiQueryService.list_objects(), msg="查询成功")
 
 
+@AiQueryRouter.post("/objects/resolve", summary="本体对象 grounding(解析实体为对象实例+关联)")
+async def object_resolve(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.resolve_entity_object(str(data.get("entity", "")), str(data.get("key", "")),
+                                                   user_id=auth.user.id)
+    return SuccessResponse(data=r, msg="解析成功")
+
+
 # ---- FDE 交付工作台 ----
 @AiQueryRouter.get("/fde/list", summary="交付命题列表")
 async def fde_list(
