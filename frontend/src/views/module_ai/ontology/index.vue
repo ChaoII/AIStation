@@ -37,7 +37,7 @@
 
       <!-- 右：对象详情（属性/Link/Action） -->
       <el-col :span="18">
-        <el-card shadow="never">
+        <el-card shadow="never" class="ont-right">
           <template #header>
             <div v-if="current" class="ont-head">
               <span>
@@ -53,7 +53,7 @@
                 </el-button>
               </div>
             </div>
-            <span v-else>请选择左侧对象类型</span>
+            <span v-else>对象详情</span>
           </template>
           <el-tabs v-if="current" v-model="ontTab">
             <el-tab-pane label="属性" name="property">
@@ -181,6 +181,13 @@
               </el-table>
             </el-tab-pane>
           </el-tabs>
+          <div v-else class="ont-empty">
+            <el-empty description="请先在左侧选择对象类型" :image-size="90">
+              <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
+                新建对象
+              </el-button>
+            </el-empty>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -341,6 +348,8 @@ const actions = ref<any[]>([]);
 async function loadObjects() {
   const r = await getOntObjects();
   objects.value = r.data?.data || [];
+  // 默认选中第一个对象，右侧即时显示详情（界面饱满）
+  if (objects.value.length && !currentCode.value) await selectObject(objects.value[0]);
 }
 async function selectObject(o: any) {
   currentCode.value = o.code;
@@ -578,6 +587,18 @@ onMounted(loadObjects);
 }
 .ai-ontology-page .ont-left .el-card__body {
   overflow: auto;
+}
+/* 右侧卡片 body 撑满，空态垂直居中（不缩成很小一条） */
+.ai-ontology-page .ont-right .el-card__body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.ont-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .ont-left {
   max-height: calc(100vh - 100px);
