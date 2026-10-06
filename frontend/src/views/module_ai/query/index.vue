@@ -83,6 +83,20 @@
                 </el-tag>
               </div>
 
+              <!-- 召回 schema（混合检索锁定的表/字段，grounding 可观测） -->
+              <div v-if="m.retrieved && m.retrieved.tables?.length" class="msg-a__ont">
+                <el-icon class="msg-a__ont-icon"><Search /></el-icon>
+                <span class="msg-a__ont-label">召回表</span>
+                <el-tooltip
+                  v-for="t in m.retrieved.tables"
+                  :key="t"
+                  :content="(m.retrieved.fields?.[t] || []).join('、')"
+                  placement="top"
+                >
+                  <el-tag size="small" effect="plain" style="margin: 0 3px 4px 0">{{ t }}</el-tag>
+                </el-tooltip>
+              </div>
+
               <!-- 思考过程 / 工具调用链（流式） -->
               <div v-if="m._running || m._reasoning || m._trace?.length" class="msg-a__trace">
                 <div v-if="m._reasoning" class="trace-reasoning">
@@ -2439,6 +2453,7 @@ import {
   MagicStick,
   DataBoard,
   Files,
+  Search,
 } from "@element-plus/icons-vue";
 import { getOntObjects } from "@/api/module_ai/ontology";
 import ECharts from "@/components/ECharts/index.vue";
@@ -2689,6 +2704,7 @@ async function send() {
           m.columns = d.columns || [];
           m.rows = d.rows || [];
           m.ontology_used = d.ontology_used || m.ontology_used || [];
+          m.retrieved = d.retrieved || m.retrieved || null;
           ensureTick();
           break;
         case "answer":

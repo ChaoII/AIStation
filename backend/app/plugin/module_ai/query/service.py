@@ -3764,7 +3764,16 @@ class AiQueryService:
                 result_rows=len(rows), took_ms=res.get("took_ms", 0), cached=False,
                 summary="以下是根据你的问题生成的结果：",
             )
-            yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows)}
+            # Grounding 可观测：返回本次混合检索锁定的表 + 关键字段
+            retrieved = None
+            try:
+                rel_tables = await cls._semantic_tables(question)
+                _sch = await cls._system_schema()
+                fields = {t: [lab.split("(")[0] for lab in _sch.get(t, [])][:8] for t in rel_tables}
+                retrieved = {"tables": rel_tables, "fields": fields}
+            except Exception:  # noqa: BLE001
+                retrieved = None
+            yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows), "retrieved": retrieved}
             yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
             yield {"type": "done"}
         except Exception as e:  # noqa: BLE001
