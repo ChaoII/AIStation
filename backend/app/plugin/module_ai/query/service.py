@@ -594,6 +594,15 @@ async def _system_allowed() -> set[str]:
     return _ONT_ALLOW_CACHE
 
 
+def _scan_ont_tables(sql: str) -> list[str]:
+    """从生成 SQL 中检测用到的本体物化表（ont_xxx），作为「问答使用本体」的可视溯源。"""
+    if not sql:
+        return []
+    return list(dict.fromkeys(
+        m.group(1) for m in re.finditer(r"\b(ont_[A-Za-z0-9_]+)\b", sql)
+    ))
+
+
 async def _execute_sql(sql: str) -> dict:
     start = time.time()
     try:
@@ -4099,6 +4108,7 @@ class AiQueryService:
             "summary": msg.summary or "", "result_rows": msg.result_rows or 0,
             "took_ms": msg.took_ms or 0, "cached": msg.cached, "is_error": msg.is_error,
             "metric": metric,
+            "ontology_used": _scan_ont_tables(msg.sql or sql or ""),
         }
 
     @classmethod

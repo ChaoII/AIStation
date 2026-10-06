@@ -68,6 +68,21 @@
                 </span>
               </div>
 
+              <!-- 使用本体（问答 grounding 溯源） -->
+              <div v-if="ontName(m).length" class="msg-a__ont">
+                <el-icon class="msg-a__ont-icon"><Files /></el-icon>
+                <span class="msg-a__ont-label">使用本体</span>
+                <el-tag
+                  v-for="o in ontName(m)"
+                  :key="o.table"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ o.name }}（{{ o.table }}）
+                </el-tag>
+              </div>
+
               <!-- 思考过程 / 工具调用链（流式） -->
               <div v-if="m._running || m._reasoning || m._trace?.length" class="msg-a__trace">
                 <div v-if="m._reasoning" class="trace-reasoning">
@@ -2423,7 +2438,9 @@ import {
   Refresh,
   MagicStick,
   DataBoard,
+  Files,
 } from "@element-plus/icons-vue";
+import { getOntObjects } from "@/api/module_ai/ontology";
 import ECharts from "@/components/ECharts/index.vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 import {
@@ -2671,6 +2688,8 @@ async function send() {
         case "result":
           m.columns = d.columns || [];
           m.rows = d.rows || [];
+          m.ontology_used = d.ontology_used || m.ontology_used || [];
+          ensureTick();
           break;
         case "answer":
           m.summary = d.summary || "";
@@ -3314,6 +3333,30 @@ async function runActionFn() {
   } catch (e: any) {
     ElMessage.error(e?.msg || "执行失败");
   }
+}
+// 本体对象映射（用于「使用本体」溯源展示）
+const ontMap = ref<any>({});
+async function loadOntMap() {
+  try {
+    const r = await getOntObjects();
+    const map: any = {};
+    (r.data?.data || []).forEach((o: any) => (map[o.code] = o));
+    ontMap.value = map;
+  } catch {
+    ontMap.value = {};
+  }
+}
+function ontName(m: any) {
+  const used = new Set<string>(m.ontology_used || []);
+  // 直接从 SQL 扫描 ont_* 表（流式场景兜底）
+  if (m.sql) {
+    (m.sql.match(/ont_[A-Za-z0-9_]+/g) || []).forEach((t: string) => used.add(t));
+  }
+  return [...used].filter(Boolean).map((t: string) => {
+    const code = t.replace(/^ont_/, "");
+    const obj = ontMap.value[code];
+    return { table: t, name: obj ? obj.name : code };
+  });
 }
 // ---- 治理(版本/回滚/影响分析) ----
 const govTable = ref("");
@@ -4295,6 +4338,7 @@ onMounted(() => {
   loadActions();
   loadActionLogs();
   loadGovObjects();
+  loadOntMap();
   loadIndustryTemplates();
   loadPipes();
   loadWorkshop();
@@ -4517,6 +4561,26 @@ onMounted(() => {
   border-radius: 8px;
   padding: 10px 12px;
   background: var(--el-bg-color);
+}
+.msg-a__ont {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-5);
+}
+.msg-a__ont-icon {
+  color: var(--el-color-primary);
+}
+.msg-a__ont-label {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  font-weight: 600;
+  margin-right: 4px;
 }
 .msg-a__head {
   display: flex;
