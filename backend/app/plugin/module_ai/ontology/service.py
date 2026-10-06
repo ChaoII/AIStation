@@ -82,13 +82,13 @@ async def upsert_object(data: dict) -> dict:
 
 
 async def list_properties(object_code: str) -> list[dict]:
-    r = await _exec("SELECT id,object_code,name,code,prop_type,required,unique_col,sensitive,source_col,options,description "
+    r = await _exec("SELECT id,object_code,name,code,prop_type,required,unique_col,sensitive,source_col,options,description,roles "
                     "FROM ai_ont_property WHERE object_code=:c AND is_deleted=false ORDER BY id", {"c": object_code})
     rows = r.fetchall()
     return [{"id": x[0], "object_code": x[1], "name": x[2], "code": x[3], "prop_type": x[4],
              "required": bool(x[5]), "unique_col": bool(x[6]), "sensitive": bool(x[7]),
              "source_col": x[8] or "", "options": x[9] if isinstance(x[9], list) else (json.loads(x[9]) if x[9] else []),
-             "description": x[10] or ""} for x in rows]
+             "description": x[10] or "", "roles": x[11] if isinstance(x[11], list) else (json.loads(x[11]) if x[11] else [])} for x in rows]
 
 
 async def upsert_property(data: dict) -> dict:
@@ -97,20 +97,21 @@ async def upsert_property(data: dict) -> dict:
     if not code or not obj:
         raise CustomException(msg="属性编码/对象编码必填")
     opts = json.dumps(data.get("options") or [], ensure_ascii=False)
+    roles = json.dumps(data.get("roles") or [], ensure_ascii=False)
     if data.get("id"):
         await _exec_write("UPDATE ai_ont_property SET name=:n, prop_type=:p, required=:r, unique_col=:u, sensitive=:s, "
-                          "source_col=:sc, options=:o, description=:d WHERE id=:id",
+                          "source_col=:sc, options=:o, description=:d, roles=:roles WHERE id=:id",
                           {"n": data.get("name", code), "p": data.get("prop_type", "string"),
                            "r": bool(data.get("required")), "u": bool(data.get("unique_col")),
                            "s": bool(data.get("sensitive")), "sc": data.get("source_col", ""),
-                           "o": opts, "d": data.get("description", ""), "id": data["id"]})
+                           "o": opts, "d": data.get("description", ""), "roles": roles, "id": data["id"]})
         return {"id": data["id"]}
-    r = await _exec_write("INSERT INTO ai_ont_property(object_code,name,code,prop_type,required,unique_col,sensitive,source_col,options,description) "
-                          "VALUES (:oc,:n,:c,:p,:r,:u,:s,:sc,:o,:d) RETURNING id",
+    r = await _exec_write("INSERT INTO ai_ont_property(object_code,name,code,prop_type,required,unique_col,sensitive,source_col,options,description,roles) "
+                          "VALUES (:oc,:n,:c,:p,:r,:u,:s,:sc,:o,:d,:roles) RETURNING id",
                           {"oc": obj, "n": data.get("name", code), "c": code, "p": data.get("prop_type", "string"),
                            "r": bool(data.get("required")), "u": bool(data.get("unique_col")),
                            "s": bool(data.get("sensitive")), "sc": data.get("source_col", ""),
-                           "o": opts, "d": data.get("description", "")})
+                           "o": opts, "d": data.get("description", ""), "roles": roles})
     return {"id": r.scalar()}
 
 

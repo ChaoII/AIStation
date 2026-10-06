@@ -1260,9 +1260,13 @@ class AiQueryService:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             rows = (await db.execute(_t(
-                "SELECT code,prop_type,sensitive FROM ai_ont_property WHERE object_code=:c AND is_deleted=false"),
+                "SELECT code,prop_type,sensitive,roles FROM ai_ont_property WHERE object_code=:c AND is_deleted=false"),
                 {"c": code})).fetchall()
-        return [{"code": r[0], "prop_type": r[1], "sensitive": bool(r[2])} for r in rows]
+        out = []
+        for r in rows:
+            roles = r[3] if isinstance(r[3], list) else []
+            out.append({"code": r[0], "prop_type": r[1], "sensitive": bool(r[2]), "roles": roles})
+        return out
 
     @classmethod
     async def _ont_links(cls, code: str) -> list[tuple]:
@@ -1307,9 +1311,16 @@ class AiQueryService:
                     "error": f"在本体对象 {table} 未找到「{key}」"}
         can_see = await cls._can_see_sensitive(user_id)
         obj = {}
+        restricted = []
         for p in props:
             if p["sensitive"] and not can_see:
                 continue
+            # 属性级 ACL：roles 非空且不含 'all'/'public' 时，非超管需角色匹配才可见
+            if p.get("roles") and not can_see:
+                allowed = set(p["roles"])
+                if not (allowed & {"all", "public"}):
+                    restricted.append(p["code"])
+                    continue
             v = row.get(p["code"])
             obj[p["code"]] = str(v) if not isinstance(v, (int, float, bool)) else v
         related: list[dict] = []

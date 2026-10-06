@@ -91,6 +91,21 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="source_col" label="来源列" min-width="90" />
+                <el-table-column label="授权角色" min-width="120">
+                  <template #default="{ row }">
+                    <el-tag
+                      v-for="r in row.roles"
+                      :key="r"
+                      size="small"
+                      type="info"
+                      effect="plain"
+                      style="margin: 0 2px"
+                    >
+                      {{ r }}
+                    </el-tag>
+                    <el-tag v-if="!row.roles?.length" size="small" effect="plain">公开</el-tag>
+                  </template>
+                </el-table-column>
                 <el-table-column label="操作" width="110" align="center">
                   <template #default="{ row }">
                     <el-button link type="primary" size="small" @click="openPropEdit(row)">
@@ -287,6 +302,23 @@
         </el-form-item>
         <el-form-item label="来源列">
           <el-input v-model="propForm.source_col" placeholder="映射真实表列(可空)" />
+        </el-form-item>
+        <el-form-item label="可访问角色">
+          <el-select
+            v-model="propForm.roles"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            placeholder="空=公开；填 all/public 公开，其它角色受限"
+            style="width: 100%"
+          >
+            <el-option label="公开(public)" value="public" />
+            <el-option label="全部(all)" value="all" />
+            <el-option label="管理员(admin)" value="admin" />
+            <el-option label="分析师(analyst)" value="analyst" />
+            <el-option label="只读(reader)" value="reader" />
+          </el-select>
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="propForm.description" /></el-form-item>
       </el-form>
@@ -499,6 +531,7 @@ const propForm = reactive<any>({
   sensitive: false,
   source_col: "",
   description: "",
+  roles: [],
 });
 function openPropEdit(p?: any) {
   Object.assign(
@@ -514,6 +547,7 @@ function openPropEdit(p?: any) {
       sensitive: false,
       source_col: "",
       description: "",
+      roles: [],
     }
   );
   propDialog.value = true;
