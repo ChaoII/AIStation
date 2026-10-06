@@ -741,8 +741,11 @@ async def _ensure_ai_menus() -> None:
                 ("AI应用", "AiApp", "/ai/app", "module_ai/app/index", "module_ai:app:query", 17, "el-icon-Monitor"),
                 ("调用日志", "AiLogs", "/ai/logs", "module_ai/logs/index", "module_ai:assistant:query", 18, "el-icon-DataLine"),
                 ("模型供应商", "AiProviderManage", "/ai/provider", "module_ai/provider/index", "module_ai:provider:query", 19, "el-icon-Service"),
-                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 20, "el-icon-DataAnalysis"),
                 ("本体", "AiOntology", "/ai/ontology", "module_ai/ontology/index", "module_ai:query:ask", 9, "el-icon-Files"),
+                ("数据与集成", "AiIntegration", "/ai/integration", "module_ai/integration/index", "module_ai:query:ask", 21, "el-icon-Connection"),
+                ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
+                ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", "module_ai:query:ask", 23, "el-icon-Odometer"),
+                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 20, "el-icon-DataAnalysis"),
             ]
             for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(
