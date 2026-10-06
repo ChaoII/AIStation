@@ -1568,35 +1568,49 @@ class AiQueryService:
 
     @classmethod
     async def semantic_extract_objects(cls) -> dict:
-        """P1-③ 语义抽取/消歧：扫描 schema，把含 id+name 的实体表自动标记为业务对象，
-        并做同义/别名消歧（实体名词→表 映射、同名异表合并提示）。"""
+        """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
+        并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""
+        business: set[str] = set().union(*_ENTITY_TABLE.values()) if _ENTITY_TABLE else set()
         schema = await cls._system_schema()
+        # 1) 取消非业务表的对象标记（收窄）
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            res = await db.execute(_t(
+                "SELECT table_name FROM ai_query_assets WHERE object_enabled=true AND is_deleted=false"))
+            marked = res.fetchall()
+        narrowed = 0
+        for row in marked:
+            if row[0] not in business:
+                async with async_db_session.begin() as db:
+                    from sqlalchemy import text as _t
+                    await db.execute(_t(
+                        "UPDATE ai_query_assets SET object_enabled=false WHERE table_name=:t AND is_deleted=false"),
+                        {"t": row[0]})
+                narrowed += 1
+        # 2) 为业务实体表标记对象
         created = 0
         aliases: list[dict] = []
-        for t, labels in schema.items():
+        for t in business:
+            if t not in schema:
+                continue
+            labels = schema.get(t) or []
             cols = [lab.split("(")[0] for lab in labels]
             if "id" not in cols:
                 continue
             name_col = next((c for c in ("name", "title", "label") if c in cols), None)
-            # 实体名词→表 消歧：找该表对应的实体名词作为别名
-            alias = None
-            for noun, tables in _ENTITY_TABLE.items():
-                if t in tables:
-                    alias = noun
-                    break
-            # 资产 upsert（对象候选，含自动别名/名称列）
+            alias = next((n for n, ts in _ENTITY_TABLE.items() if t in ts), t)
             meta = (await cls._asset_tmeta()).get(t) or {}
             await cls.upsert_asset(QueryAssetUpsert(
-                table_name=t, alias=meta.get("alias") or alias or t,
+                table_name=t, alias=meta.get("alias") or alias,
                 domain=meta.get("domain") or "", description=meta.get("description") or "",
                 business_scenarios=meta.get("business_scenarios") or "",
                 included=True, remark="", object_enabled=True,
                 object_key_col="id", object_name_col=name_col or "name",
                 object_icon="el-icon-Box"), SimpleNamespace(user=SimpleNamespace(id=1)))
             created += 1
-            aliases.append({"table": t, "alias": alias or t, "name_col": name_col or "id",
+            aliases.append({"table": t, "alias": alias, "name_col": name_col or "id",
                             "synonyms": [n for n, ts in _ENTITY_TABLE.items() if t in ts]})
-        return {"extracted": created, "aliases": aliases}
+        return {"extracted": created, "narrowed": narrowed, "aliases": aliases}
 
     @classmethod
     async def _profile_table(cls, tname: str, colnames: list[str]) -> dict:
