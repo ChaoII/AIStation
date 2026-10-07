@@ -350,6 +350,43 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>数据安全与访问审计</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            敏感资产 · 数据源只读 · ABAC 规则 · 访问审计日志
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" :loading="securityLoading" @click="loadSecurity">刷新</el-button>
+        <el-tag size="small" type="info" effect="plain">基础数据 {{ security?.assets ?? 0 }} 表 · 敏感字段 {{ security?.sensitive_fields ?? 0 }}</el-tag>
+        <el-tag v-if="security" size="small" :type="security.score >= 80 ? 'success' : security.score >= 60 ? 'warning' : 'danger'" effect="plain">安全评分 {{ security.score }}</el-tag>
+      </div>
+      <el-row :gutter="12" v-if="security">
+        <el-col v-for="d in security.dims" :key="d.key" :span="8">
+          <div class="ov-usage-row" style="flex-direction: column; align-items: flex-start; gap: 4px">
+            <span style="font-size:12px;color:var(--el-text-color-secondary)">{{ d.name }}</span>
+            <el-progress :percentage="d.score" :show-text="false" :color="d.score >= 80 ? '#67C23A' : d.score >= 60 ? '#E6A23C' : '#F56C6C'" style="width:100%" />
+            <b>{{ d.score }}</b>
+          </div>
+        </el-col>
+      </el-row>
+      <div v-if="security?.log_count" class="gov-section" style="margin-top: 8px">访问审计日志（近 {{ security.log_count }} 条）</div>
+      <el-table v-if="security?.log_count" :data="security.action_logs" size="small" max-height="260">
+        <el-table-column prop="time" label="时间" width="120" />
+        <el-table-column prop="action" label="动作" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="table" label="对象表" min-width="130" show-overflow-tooltip />
+        <el-table-column label="结果" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.result === 'approved' ? 'success' : row.result === 'rejected' || row.result === 'error' ? 'danger' : 'warning'" effect="plain">{{ row.result }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="operator" label="操作人" width="90" />
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -464,6 +501,7 @@ import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, c
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
+import { getSecurityAudit } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -533,6 +571,14 @@ async function computeDerived(key: string) {
     const r = await computeDerivedMetric(key);
     derivedValues.value = { ...derivedValues.value, [key]: r.data?.data || null };
   } catch (e: any) { ElMessage.error(e?.msg || "计算失败"); }
+}
+const security = ref<any>(null);
+const securityLoading = ref(false);
+async function loadSecurity() {
+  securityLoading.value = true;
+  try { security.value = (await getSecurityAudit(30)).data?.data || null; }
+  catch { security.value = null; }
+  finally { securityLoading.value = false; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -684,6 +730,7 @@ onMounted(() => {
   loadPosture();
   loadAutopilot();
   loadDerived();
+  loadSecurity();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

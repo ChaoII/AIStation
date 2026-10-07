@@ -283,6 +283,9 @@ export function getDerivedMetrics() {
 export function computeDerivedMetric(key: string) {
   return request({ url: `${API_PATH}/derived-metrics/compute`, method: "get", params: { key } });
 }
+export function getSecurityAudit(limit = 30) {
+  return request({ url: `${API_PATH}/security/audit`, method: "get", params: { limit } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

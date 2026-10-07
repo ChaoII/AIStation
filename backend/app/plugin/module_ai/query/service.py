@@ -1303,6 +1303,40 @@ class AiQueryService:
                 "base": {"num": num, "den": (r.get("den") and await cls._metric_value(r["den"])) or None}}
 
     @classmethod
+    async def security_audit(cls, limit: int = 30) -> dict:
+        """数据安全与访问审计中心：敏感资产/字段 + 数据源安全 + ABAC 规则 + 访问审计日志 + 安全评分。"""
+        assets = await cls.list_assets()
+        sens_assets = [a for a in assets if (a.get("sensitive_count") or 0) > 0]
+        sens_fields = sum(a.get("sensitive_count", 0) for a in assets)
+        rules = await cls.list_access_rules()
+        ds = await cls.list_datasources()
+        ds_security = [{"name": d["name"], "type": d["type"],
+                        "read_only": bool(d.get("read_only")), "enabled": bool(d.get("enabled"))}
+                       for d in ds]
+        logs = await cls.list_action_logs(limit)
+        # 安全评分（覆盖敏感识别/权限规则/数据源只读）
+        dims = []
+        if assets:
+            cover = len(sens_assets) / len(assets)
+            dims.append({"key": "sens", "name": "敏感识别", "score": round(cover * 100),
+                         "detail": f"{len(sens_assets)}/{len(assets)} 资产识别到敏感字段"})
+        else:
+            dims.append({"key": "sens", "name": "敏感识别", "score": 100, "detail": "无数据资产"})
+        dims.append({"key": "access", "name": "ABAC 规则", "score": 100 if rules else 0,
+                     "detail": f"{len(rules)} 条权限规则"})
+        read_only_cnt = sum(1 for d in ds_security if d["read_only"])
+        ds_score = 100 if not ds_security or read_only_cnt == len(ds_security) else round(read_only_cnt / len(ds_security) * 100)
+        dims.append({"key": "ds", "name": "连接只读", "score": ds_score,
+                     "detail": f"{read_only_cnt}/{len(ds_security)} 数据源只读"})
+        overall = round(sum(d["score"] for d in dims) / len(dims)) if dims else 0
+        issues = [{"level": d["score"] < 60 and "danger" or d["score"] < 80 and "warning" or "success",
+                   "msg": f"{d['name']}：{d['detail']}"} for d in dims]
+        return {"score": overall, "dims": dims, "issues": issues,
+                "assets": len(assets), "sensitive_assets": len(sens_assets),
+                "sensitive_fields": sens_fields, "access_rules": len(rules),
+                "datasources": ds_security, "action_logs": logs, "log_count": len(logs)}
+
+    @classmethod
     async def list_asset_columns(cls, table_name: str) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select

@@ -181,6 +181,14 @@ async def derived_metric_compute(
     return SuccessResponse(data=await AiQueryService.compute_derived_metric(key), msg="查询成功")
 
 
+@AiQueryRouter.get("/security/audit", summary="数据安全与访问审计中心")
+async def security_audit(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    limit: int = 30,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.security_audit(limit), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

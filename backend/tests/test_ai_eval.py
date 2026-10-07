@@ -164,6 +164,14 @@ class TestAiEval:
         c = asyncio.run(AiQueryService.compute_derived_metric("nope"))
         assert c["ok"] is False
 
+    def test_security_audit(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.security_audit(30))
+        assert "score" in r and "dims" in r and "action_logs" in r and "datasources" in r
+        assert 0 <= r["score"] <= 100
+        assert "sensitive_fields" in r and "access_rules" in r
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session
