@@ -4258,6 +4258,9 @@ function onOpsTabClick(tab: any) {
   } else if (name === "access") {
     loadAccessRules();
     loadAccessMatrix();
+  } else if (name === "pipeline") {
+    loadPipes();
+    loadPipelineGraph();
   }
 }
 watch(opsTab, async (v) => {
@@ -4271,6 +4274,9 @@ watch(opsTab, async (v) => {
   } else if (v === "access") {
     loadAccessRules();
     loadAccessMatrix();
+  } else if (v === "pipeline") {
+    loadPipes();
+    loadPipelineGraph();
   }
 });
 // ---- P3-⑩ 治理驾驶舱 ----
