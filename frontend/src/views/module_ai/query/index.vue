@@ -314,6 +314,7 @@
               <div class="asset-card__meta">{{ d.database || "—" }}<template v-if="d.host"> · {{ d.host }}:{{ d.port }}</template></div>
               <div class="asset-card__desc">{{ d.remark || "连接器" }}</div>
               <div class="asset-card__actions">
+                <el-button link type="primary" size="small" @click="openDsDetail(d)">详情</el-button>
                 <el-button link type="primary" size="small" :loading="testingDsId === d.id" @click="testDs(d)">测试</el-button>
                 <el-button link type="primary" size="small" :loading="syncingDsId === d.id" @click="syncDs(d)">同步结构</el-button>
                 <el-button link type="primary" size="small" @click="openDsEdit(d)">编辑</el-button>
@@ -333,6 +334,7 @@
             </el-table-column>
             <el-table-column label="操作" width="220">
               <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openDsDetail(row)">详情</el-button>
                 <el-button
                   link
                   type="primary"
@@ -2330,6 +2332,43 @@
       </template>
     </el-dialog>
 
+    <!-- 数据源连接详情 -->
+    <el-drawer v-model="dsDetailVisible" :title="`数据连接 · ${dsDetail?.source?.name || ''}`" size="640px" append-to-body>
+      <template v-if="dsDetail">
+        <el-descriptions :column="2" border size="small" style="margin-bottom: 12px">
+          <el-descriptions-item label="连接器">{{ dsDetail.source?.type }}</el-descriptions-item>
+          <el-descriptions-item label="只读">{{ dsDetail.source?.read_only ? "是" : "否" }}</el-descriptions-item>
+          <el-descriptions-item label="主机">{{ dsDetail.source?.host || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="端口">{{ dsDetail.source?.port || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="库/文件">{{ dsDetail.source?.database || "—" }}</el-descriptions-item>
+          <el-descriptions-item label="关联资产">{{ dsDetail.asset_count ?? 0 }} 表</el-descriptions-item>
+        </el-descriptions>
+        <el-alert
+          v-if="dsDetail.connector"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px"
+          :title="`${dsDetail.connector.name} · ${dsDetail.connector.kind}`"
+          :description="dsDetail.connector.desc"
+        />
+        <div class="gov-section">已同步表结构（{{ dsDetail.tables?.length || 0 }}）</div>
+        <el-table :data="dsDetail.tables || []" size="small" border max-height="52vh">
+          <el-table-column type="expand">
+            <template #default="{ row }">
+              <div style="padding: 4px 12px">
+                <el-tag v-for="c in row.columns || []" :key="c" size="small" effect="plain" style="margin: 0 3px 3px 0">{{ c }}</el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="table" label="表" min-width="180" show-overflow-tooltip />
+          <el-table-column label="字段数" width="90" align="center">
+            <template #default="{ row }">{{ (row.columns || []).length }}</template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-drawer>
+
     <!-- 本体/概念编辑 -->
     <el-dialog v-model="conceptDialog" title="本体/概念" width="600px" append-to-body>
       <el-form :model="conceptForm" label-width="90px">
@@ -2906,6 +2945,7 @@ import {
   saveQueryTerm,
   deleteQueryTerms,
   getQueryDatasources,
+  getDatasourceDetail,
   saveQueryDatasource,
   deleteQueryDatasources,
   testQueryDatasource,
@@ -5023,6 +5063,18 @@ function openDsEdit(row?: any) {
     });
   loadQueryRoles();
   dsEditVisible.value = true;
+}
+const dsDetailVisible = ref(false);
+const dsDetail = ref<any>(null);
+async function openDsDetail(row: any) {
+  dsDetail.value = null;
+  dsDetailVisible.value = true;
+  try {
+    const r = await getDatasourceDetail(row.id);
+    dsDetail.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "加载连接详情失败");
+  }
 }
 async function saveDs(row: any) {
   if (!row.name) {

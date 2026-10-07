@@ -143,6 +143,21 @@ async def list_datasources(
     return SuccessResponse(data=await AiQueryService.list_datasources(), msg="查询成功")
 
 
+@AiQueryRouter.get("/connector-types", summary="数据连接器目录")
+async def connector_types(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.connector_types(), msg="查询成功")
+
+
+@AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
+async def datasource_detail(
+    datasource_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.datasource_detail(datasource_id), msg="查询成功")
+
+
 @AiQueryRouter.post("/datasources/save", summary="数据源保存")
 async def save_datasource(
     data: QueryDatasourceUpsert,

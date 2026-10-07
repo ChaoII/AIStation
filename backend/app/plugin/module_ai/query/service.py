@@ -3884,6 +3884,48 @@ class AiQueryService:
 
     # ---- 数据源 ----
     @classmethod
+    async def connector_types(cls) -> list[dict]:
+        """连接器目录（Palantir data connection）：支持的数据源类型与接入说明。"""
+        return [
+            {"type": "postgres", "name": "PostgreSQL", "kind": "关系型",
+             "desc": "连接 PostgreSQL 数据库，支持表/字段结构同步与数据读取"},
+            {"type": "mysql", "name": "MySQL", "kind": "关系型",
+             "desc": "连接 MySQL 数据库，支持表/字段结构同步与数据读取"},
+            {"type": "sqlite", "name": "SQLite", "kind": "文件型",
+             "desc": "连接本地 SQLite 文件，适合小规模演示与快速接入"},
+            {"type": "rest_api", "name": "REST API", "kind": "API",
+             "desc": "通过 REST 接口拉取外部数据，经数据管道（ELT）落库到对象"},
+            {"type": "csv", "name": "CSV 文件", "kind": "文件型",
+             "desc": "读取 CSV 文件，可经数据管道导入业务对象"},
+        ]
+
+    @classmethod
+    async def datasource_detail(cls, datasource_id: int) -> dict:
+        """数据源连接详情：源信息 + 已同步表结构 + 连接器说明 + 关联数据资产数。"""
+        async with async_db_session() as db:
+            from sqlalchemy import select
+            d = (await db.execute(
+                select(AiQueryDatasourceModel).where(AiQueryDatasourceModel.id == datasource_id,
+                                                     AiQueryDatasourceModel.is_deleted.is_(False))
+            )).scalar_one_or_none()
+        if d is None:
+            return {}
+        source = {"id": d.id, "name": d.name, "type": d.type, "host": d.host, "port": d.port,
+                  "database": d.database, "username": d.username, "read_only": d.read_only,
+                  "enabled": d.enabled, "remark": d.remark or ""}
+        tables = await list_ds_schema(datasource_id)
+        connector = next((c for c in await cls.connector_types() if c["type"] == d.type), None)
+        asset_count = 0
+        try:
+            for a in await cls.list_assets():
+                if (a.get("datasource_code") == _ds_code(datasource_id)
+                        or a.get("datasource") == _ds_code(datasource_id)):
+                    asset_count += 1
+        except Exception:  # noqa: BLE001
+            asset_count = 0
+        return {"source": source, "tables": tables, "connector": connector, "asset_count": asset_count}
+
+    @classmethod
     async def list_datasources(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select

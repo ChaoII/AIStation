@@ -122,3 +122,10 @@ class TestAiEval:
         assert "assets" in r and "objects" in r and "metrics" in r and "terms" in r
         r2 = asyncio.run(AiQueryService.compass_search(""))
         assert r2["assets"] == [] and r2["metrics"] == []
+
+    def test_connector_types(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.connector_types())
+        assert any(c["type"] == "postgres" for c in r)
+        assert any(c["type"] == "rest_api" for c in r)

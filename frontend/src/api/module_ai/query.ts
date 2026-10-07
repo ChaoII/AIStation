@@ -101,6 +101,12 @@ export function deleteQueryTerms(ids: number[]) {
 export function getQueryDatasources() {
   return request({ url: `${API_PATH}/datasources/list`, method: "get" });
 }
+export function getConnectorTypes() {
+  return request({ url: `${API_PATH}/connector-types`, method: "get" });
+}
+export function getDatasourceDetail(id: number) {
+  return request({ url: `${API_PATH}/datasources/${id}/detail`, method: "get" });
+}
 export function saveQueryDatasource(data: any) {
   return request({ url: `${API_PATH}/datasources/save`, method: "post", data });
 }
