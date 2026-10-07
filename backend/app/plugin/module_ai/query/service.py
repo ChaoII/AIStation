@@ -1087,6 +1087,58 @@ class AiQueryService:
             return out
 
     @classmethod
+    async def scan_sensitive(cls, table_name: str) -> dict:
+        """敏感数据扫描器（Palantir Sensitive Data Scanner）：
+        按字段名规则自动识别敏感列（PII/密码/凭证等），并标记 ai_query_asset_columns.sensitive=true。
+        """
+        NAME_RULES = {
+            "password": "密码/口令", "pwd": "密码/口令", "passwd": "密码/口令",
+            "secret": "密钥", "token": "令牌", "api_key": "API密钥", "access_key": "访问密钥",
+            "id_card": "身份证", "idcard": "身份证", "identity": "身份证",
+            "phone": "手机号", "mobile": "手机号", "telephone": "电话",
+            "email": "邮箱", "mail": "邮箱",
+            "bank_card": "银行卡", "card_no": "银行卡号", "account_no": "银行账户",
+        }
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                try:
+                    cols = (await db.execute(_t(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name=:t AND table_schema='public' ORDER BY ordinal_position"),
+                        {"t": table_name})).fetchall()
+                    col_names = [c[0] for c in cols]
+                except Exception:  # noqa: BLE001  # SQLite 兼容
+                    cols = (await db.execute(_t(f"PRAGMA table_info(\"{table_name}\")"))).fetchall()
+                    col_names = [c[1] for c in cols]
+        except Exception:  # noqa: BLE001
+            return {"ok": False, "msg": f"表 {table_name} 不存在或不可读"}
+        identified: list[dict] = []
+        for col in col_names:
+            lower = col.lower()
+            for key, label in NAME_RULES.items():
+                if key in lower:
+                    identified.append({"column": col, "reason": f"字段名含「{label}」"})
+                    break
+        # 标记敏感（幂等，用 ORM 自动处理 uuid 等默认值）
+        if identified:
+            from sqlalchemy import select as _sel
+            async with async_db_session.begin() as db:
+                for it in identified:
+                    ex = (await db.execute(_sel(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.table_name == table_name,
+                        AiQueryAssetColumnModel.column_name == it["column"],
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    ))).scalar_one_or_none()
+                    if ex:
+                        ex.sensitive = True
+                    else:
+                        db.add(AiQueryAssetColumnModel(
+                            table_name=table_name, column_name=it["column"],
+                            description="", sensitive=True, included=True))
+        return {"ok": True, "table": table_name, "identified": identified, "count": len(identified)}
+
+    @classmethod
     async def list_asset_columns(cls, table_name: str) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select

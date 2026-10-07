@@ -753,6 +753,14 @@ async def list_asset_columns(
     return SuccessResponse(data=await AiQueryService.list_asset_columns(table_name), msg="查询成功")
 
 
+@AiQueryRouter.post("/assets/{table_name}/scan-sensitive", summary="敏感数据扫描器(识别PII/凭证并标记)")
+async def scan_sensitive(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.scan_sensitive(table_name), msg="扫描完成")
+
+
 @AiQueryRouter.post("/assets/save", summary="数据资产(表)保存")
 async def save_query_asset(
     data: QueryAssetUpsert,

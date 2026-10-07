@@ -64,3 +64,12 @@ class TestAiEval:
         r = asyncio.run(_go())
         assert "actions" in r and "versions" in r and "total" in r
         assert r["total"] == len(r["actions"]) + len(r["versions"])
+
+    def test_scan_sensitive_identifies(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.scan_sensitive("sys_user"))
+        # sys_user 含 password/mobile/email 等敏感列 → 应识别至少一个
+        assert r.get("ok") is True
+        assert r["count"] >= 1
+        assert any("password" in (i["column"] or "").lower() for i in r["identified"])
