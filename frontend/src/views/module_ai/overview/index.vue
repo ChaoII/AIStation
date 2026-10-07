@@ -91,6 +91,51 @@
         <el-table-column prop="error" label="错误" min-width="200" />
       </el-table>
     </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AI 能力评估（影子回归）</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
+          </span>
+        </div>
+      </template>
+      <el-input
+        v-model="evalSamplesText"
+        type="textarea"
+        :rows="5"
+        placeholder='示例：[{"input":"订单金额总和","expected_keywords":["90500"],"actual":"订单金额总和是 90500"}]'
+      />
+      <div class="ops-bar" style="margin-top: 8px">
+        <el-button type="primary" size="small" :loading="evalLoading" @click="runEval">
+          运行评估
+        </el-button>
+        <el-button size="small" @click="loadEvalTemplate">载入示例</el-button>
+        <el-tag v-if="evalResult" size="small" type="info" effect="plain">
+          精度 {{ (evalResult.precision * 100).toFixed(1) }}% · {{ evalResult.passed }}/{{
+            evalResult.total
+          }}
+        </el-tag>
+      </div>
+      <el-table
+        v-if="evalResult?.rows?.length"
+        :data="evalResult.rows"
+        size="small"
+        border
+        max-height="220"
+        style="margin-top: 8px"
+      >
+        <el-table-column prop="input" label="输入" min-width="180" show-overflow-tooltip />
+        <el-table-column label="通过" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.ok ? 'success' : 'danger'" effect="plain">
+              {{ row.ok ? "通过" : "未过" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
   </div>
 </template>
 
@@ -107,11 +152,38 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval } from "@/api/module_ai/overview";
 
 defineOptions({ name: "AiOverview" });
 
 const stats = reactive<any>({});
+const evalSamplesText = ref("");
+const evalResult = ref<any>(null);
+const evalLoading = ref(false);
+function loadEvalTemplate() {
+  evalSamplesText.value = JSON.stringify([
+    { input: "订单金额总和", expected_keywords: ["90500"], actual: "订单金额总和是 90500" },
+    { input: "设备健康度", expected_keywords: ["%"], actual: "设备健康度为 95.5%" },
+  ]);
+}
+async function runEval() {
+  evalLoading.value = true;
+  try {
+    let samples: any[] = [];
+    try {
+      samples = JSON.parse(evalSamplesText.value || "[]");
+    } catch {
+      ElMessage.warning("样本 JSON 格式有误");
+      return;
+    }
+    const r = await runAiEval(samples);
+    evalResult.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.message || "评估失败");
+  } finally {
+    evalLoading.value = false;
+  }
+}
 const trendRef = ref<HTMLElement>();
 const modelRef = ref<HTMLElement>();
 let trendChart: echarts.ECharts | null = null;
