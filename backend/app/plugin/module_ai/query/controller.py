@@ -310,6 +310,32 @@ async def action_logs(
     return SuccessResponse(data=await AiQueryService.list_action_logs(limit), msg="查询成功")
 
 
+@AiQueryRouter.get("/action/pending", summary="待审批动作")
+async def action_pending(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    limit: int = 50,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_pending_actions(limit), msg="查询成功")
+
+
+@AiQueryRouter.post("/action/approve", summary="批准动作(写回+审计)")
+async def action_approve(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    return SuccessResponse(data=await AiQueryService.approve_action(int(data.get("approval_id", 0)), str(uid or "")), msg="审批完成")
+
+
+@AiQueryRouter.post("/action/reject", summary="驳回动作")
+async def action_reject(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    return SuccessResponse(data=await AiQueryService.reject_action(int(data.get("approval_id", 0)), str(uid or "")), msg="审批完成")
+
+
 # ---- P1-② 版本/血缘/影响分析/回滚 ----
 @AiQueryRouter.get("/assets/{table_name}/versions", summary="资产版本历史")
 async def asset_versions(

@@ -39,6 +39,7 @@ DDL = {
     "ai_ont_version": "CREATE TABLE IF NOT EXISTS ai_ont_version (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, version INTEGER, snapshot TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
     "ai_ont_change_log": "CREATE TABLE IF NOT EXISTS ai_ont_change_log (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, kind TEXT, action TEXT, detail TEXT, created_id INTEGER, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
     "ai_access_rule": "CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
+    "ai_action_log": "CREATE TABLE IF NOT EXISTS ai_action_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
 }
 
 
@@ -258,4 +259,28 @@ class TestPromoteReuse:
                 term = (await db.execute(_sel(AiQueryDictionaryModel).where(
                     AiQueryDictionaryModel.term == "按品牌统计摄像头数量"))).scalar_one_or_none()
                 assert term is not None and term.metric_key == "camera_by_brand"
+        asyncio.run(_go())
+
+
+# ---------------------------------------------------------------------------
+# Action 写回审批流（Palantir：待审批 → 批准/驳回 + 审计留痕）
+# ---------------------------------------------------------------------------
+class TestActionApproval:
+    def test_pending_list_and_reject(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_action_log WHERE action_name='t2'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
+                    "VALUES ('t2','video_cameras','1','{}','u','pending','x',0)"))
+            p = await AiQueryService.list_pending_actions()
+            rid = next((x["id"] for x in p if x["action"] == "t2"), None)
+            assert rid is not None
+            await AiQueryService.reject_action(rid, "admin")
+            p2 = await AiQueryService.list_pending_actions()
+            assert not any(x["action"] == "t2" for x in p2)
         asyncio.run(_go())

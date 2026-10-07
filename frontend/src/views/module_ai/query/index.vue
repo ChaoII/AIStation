@@ -952,6 +952,38 @@
             </el-table-column>
             <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
           </el-table>
+          <div class="ops-bar" style="margin-top: 10px">
+            <span class="trace-title">审批待办</span>
+            <el-button size="small" @click="loadPendingActions">刷新</el-button>
+            <el-tag v-if="pendingActions.length" size="small" type="warning" effect="plain">
+              {{ pendingActions.length }} 条待审批
+            </el-tag>
+          </div>
+          <el-table v-if="pendingActions.length" :data="pendingActions" size="small" border max-height="200">
+            <el-table-column prop="action" label="动作" width="100" show-overflow-tooltip />
+            <el-table-column prop="table" label="对象" width="110" show-overflow-tooltip />
+            <el-table-column prop="key" label="键" width="90" show-overflow-tooltip />
+            <el-table-column label="参数" min-width="120">
+              <template #default="{ row }">{{ JSON.stringify(row.params) }}</template>
+            </el-table-column>
+            <el-table-column prop="operator" label="申请人" width="80" show-overflow-tooltip />
+            <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
+            <el-table-column label="操作" width="160" align="center">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="approvingId === row.id"
+                  @click="doApprove(row)"
+                >
+                  批准并执行
+                </el-button>
+                <el-button link type="danger" size="small" @click="doReject(row)">驳回</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else :image-size="40" description="暂无待审批动作" />
         </el-tab-pane>
         <el-tab-pane label="治理" name="governance">
           <div class="ops-bar">
@@ -2559,6 +2591,9 @@ import {
   saveAction,
   executeAction,
   getActionLogs,
+  getPendingActions,
+  approveAction,
+  rejectAction,
   getAssetVersions,
   rollbackAssetVersion,
   getAssetImpact,
@@ -3395,6 +3430,60 @@ async function loadActionLogs() {
     actionLogs.value = [];
   }
 }
+const pendingActions = ref<any[]>([]);
+const approvingId = ref<number | null>(null);
+async function loadPendingActions() {
+  try {
+    const r = await getPendingActions();
+    pendingActions.value = r.data?.data || [];
+  } catch {
+    pendingActions.value = [];
+  }
+}
+async function doApprove(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `批准执行动作「${row.action}」→ ${row.table}#${row.key}？将真实写回数据并留痕。`,
+      "审批确认",
+      { type: "warning", confirmButtonText: "批准并执行", cancelButtonText: "取消" },
+    );
+  } catch {
+    return;
+  }
+  approvingId.value = row.id;
+  try {
+    const r = await approveAction({ approval_id: row.id });
+    if (r.data?.ok) {
+      ElMessage.success(r.data.msg || "已批准");
+    } else {
+      ElMessage.error(r.data?.msg || "审批失败");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "审批失败");
+  } finally {
+    approvingId.value = null;
+    await loadPendingActions();
+    await loadActionLogs();
+  }
+}
+async function doReject(row: any) {
+  try {
+    await ElMessageBox.confirm(`驳回动作「${row.action}」#${row.key}？`, "驳回确认", {
+      type: "warning",
+      confirmButtonText: "驳回",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
+  try {
+    const r = await rejectAction({ approval_id: row.id });
+    ElMessage.success(r.data?.msg || "已驳回");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "驳回失败");
+  }
+  await loadPendingActions();
+}
 function openActionEdit(row?: any) {
   Object.assign(
     actionForm,
@@ -3799,6 +3888,8 @@ function onOpsTabClick(tab: any) {
     loadDqAlert();
   } else if (name === "domain") {
     loadDomains();
+  } else if (name === "action") {
+    loadPendingActions();
   }
 }
 watch(opsTab, async (v) => {
@@ -3807,6 +3898,8 @@ watch(opsTab, async (v) => {
     await loadDqAlert();
   } else if (v === "domain") {
     loadDomains();
+  } else if (v === "action") {
+    await loadPendingActions();
   }
 });
 // ---- P3-⑩ 治理驾驶舱 ----

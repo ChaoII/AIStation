@@ -238,6 +238,15 @@ export function executeAction(data: any) {
 export function getActionLogs(limit = 100) {
   return request({ url: `${API_PATH}/action/logs`, method: "get", params: { limit } });
 }
+export function getPendingActions(limit = 50) {
+  return request({ url: `${API_PATH}/action/pending`, method: "get", params: { limit } });
+}
+export function approveAction(data: { approval_id: number }) {
+  return request({ url: `${API_PATH}/action/approve`, method: "post", data });
+}
+export function rejectAction(data: { approval_id: number }) {
+  return request({ url: `${API_PATH}/action/reject`, method: "post", data });
+}
 export function getAssetVersions(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/versions`, method: "get" });
 }

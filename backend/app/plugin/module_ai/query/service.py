@@ -1808,10 +1808,18 @@ class AiQueryService:
         writable = set(act.get("writable_cols") or [])
         if not writable:
             return {"ok": False, "msg": "该动作未配置可写字段"}
-        # 审批门禁
+        # 审批门禁：需审批且未批准 → 落审批单（pending），返回待审批 id
         if act.get("approve") and not approve:
-            return {"ok": False, "msg": "该操作需人工审批后执行", "needs_approval": True, "pending": {
-                "params": params, "key": object_key}}
+            import json as _json
+            async with async_db_session.begin() as db:
+                pres = await db.execute(_t(
+                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail) "
+                    "VALUES (:n,:t,:k,:p,:o,'pending','待审批') RETURNING id"), {
+                    "n": name, "t": table, "k": object_key,
+                    "p": _json.dumps(params, ensure_ascii=False), "o": operator or ""})
+                pid = pres.scalar()
+            return {"ok": False, "msg": "该操作需人工审批后执行", "needs_approval": True,
+                    "approval_id": pid, "pending": {"params": params, "key": object_key}}
         # 校验 params 列均在可写集合
         cols = list(params.keys())
         bad = [c for c in cols if c not in writable]
@@ -1837,6 +1845,75 @@ class AiQueryService:
             return {"ok": True, "rows": int(res.rowcount or 0), "msg": "已执行并留痕"}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "msg": f"执行失败：{str(e)[:120]}"}
+
+    @classmethod
+    async def list_pending_actions(cls, limit: int = 50) -> list[dict]:
+        """待审批的 Action 写回请求（result='pending'）。"""
+        import json as _json
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            res = await db.execute(_t(
+                "SELECT id,action_name,object_table,object_key,params,operator,created_time "
+                "FROM ai_action_log WHERE result='pending' AND is_deleted=false "
+                "ORDER BY id DESC LIMIT :n"), {"n": max(1, min(limit, 200))})
+            rows = res.fetchall()
+        return [{
+            "id": r[0], "action": r[1], "table": r[2], "key": r[3],
+            "params": r[4] if isinstance(r[4], dict) else (_json.loads(r[4]) if r[4] else {}),
+            "operator": r[5], "time": str(r[6]) if r[6] else "",
+        } for r in rows]
+
+    @classmethod
+    async def approve_action(cls, approval_id: int, operator: str) -> dict:
+        """批准待审批的 Action：执行真实写回（可写字段校验）+ 落审计，审批单置为 approved。"""
+        import json as _json
+
+        from sqlalchemy import text as _t
+        async with async_db_session() as db:
+            row = (await db.execute(_t(
+                "SELECT action_name,object_table,object_key,params FROM ai_action_log "
+                "WHERE id=:i AND result='pending' AND is_deleted=false"), {"i": approval_id})).fetchone()
+        if not row:
+            return {"ok": False, "msg": "审批单不存在或已处理"}
+        name, table, key, params = row[0], row[1], row[2], row[3]
+        params = params if isinstance(params, dict) else (_json.loads(params) if params else {})
+        actions = await cls.list_actions()
+        act = next((a for a in actions if a["name"] == name), None)
+        if not act or not act.get("enabled"):
+            return {"ok": False, "msg": "动作不存在或未启用"}
+        writable = set(act.get("writable_cols") or [])
+        cols = list(params.keys())
+        bad = [c for c in cols if c not in writable]
+        if bad:
+            return {"ok": False, "msg": f"以下字段不可写：{','.join(bad)}"}
+        if not key:
+            return {"ok": False, "msg": "缺少对象关键值"}
+        sets = ", ".join(f'"{c}" = :{c}' for c in cols)
+        try:
+            async with async_db_session.begin() as db:
+                res = await db.execute(_t(
+                    f'UPDATE "{table}" SET {sets} WHERE "id"::text = :__k'),
+                    {**params, "__k": str(key)})
+                await db.execute(_t(
+                    "UPDATE ai_action_log SET result='approved', detail=:d, operator=:o WHERE id=:i"),
+                    {"d": f"已批准，影响 {res.rowcount} 行", "o": operator or "", "i": approval_id})
+            return {"ok": True, "rows": int(res.rowcount or 0), "msg": "已批准并执行留痕"}
+        except Exception as e:  # noqa: BLE001
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    "UPDATE ai_action_log SET result='rejected', detail=:d WHERE id=:i"),
+                    {"d": f"批准执行失败：{str(e)[:100]}", "i": approval_id})
+            return {"ok": False, "msg": f"执行失败：{str(e)[:120]}"}
+
+    @classmethod
+    async def reject_action(cls, approval_id: int, operator: str) -> dict:
+        """驳回待审批的 Action。"""
+        from sqlalchemy import text as _t
+        async with async_db_session.begin() as db:
+            await db.execute(_t(
+                "UPDATE ai_action_log SET result='rejected', detail=:d WHERE id=:i AND result='pending'"),
+                {"d": f"已驳回 by {operator or ''}", "i": approval_id})
+        return {"ok": True, "msg": "已驳回"}
 
     @classmethod
     async def list_action_logs(cls, limit: int = 100) -> list[dict]:
