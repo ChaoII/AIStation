@@ -283,6 +283,67 @@ _SYSTEM_METRICS = [
         "sql_template": "SELECT COUNT(*) AS 数值 FROM sys_user WHERE is_deleted = false",
         "params": [], "dimensions": [], "cache_ttl": 120,
     },
+    # ===== 本体业务语义（Palantir：以本体为单一事实源，把业务黑话确定为可执行指标）=====
+    {
+        "key": "device_health_rate", "name": "设备健康度", "agg": "ratio", "unit": "%",
+        "description": "设备健康度 = 在线摄像头占比（ONLINE / 全部未删除，百分比）",
+        "sql_template": (
+            "SELECT ROUND(COUNT(*) FILTER (WHERE status='ONLINE')*100.0/COUNT(*),2) AS 数值 "
+            "FROM video_cameras WHERE is_deleted = false"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 30,
+    },
+    {
+        "key": "active_algorithm_count", "name": "活跃算法数", "agg": "count", "unit": "个",
+        "description": "当前正在运行的视频算法任务数量（status=RUNNING）",
+        "sql_template": (
+            "SELECT COUNT(*) AS 数值 FROM video_algorithm_tasks WHERE status = 'RUNNING'"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 30,
+    },
+    {
+        "key": "pending_alert_count", "name": "待处理告警数", "agg": "count", "unit": "条",
+        "description": "当前待处理（PENDING）的视频告警数量",
+        "sql_template": (
+            "SELECT COUNT(*) AS 数值 FROM video_alarm_records WHERE status = 'PENDING'"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 30,
+    },
+    {
+        "key": "query_success_rate", "name": "查询成功率", "agg": "ratio", "unit": "%",
+        "description": "AI 调用查询成功率 = result='success' 占比（百分比）",
+        "sql_template": (
+            "SELECT ROUND(COUNT(*) FILTER (WHERE result='success')*100.0/COUNT(*),2) AS 数值 "
+            "FROM ai_call_logs WHERE is_deleted = false"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 60,
+    },
+    {
+        "key": "online_event_ratio", "name": "在线事件占比", "agg": "ratio", "unit": "%",
+        "description": "边缘事件在线（matched=true）占比（百分比）",
+        "sql_template": (
+            "SELECT ROUND(COUNT(*) FILTER (WHERE matched=true)*100.0/COUNT(*),2) AS 数值 "
+            "FROM video_edge_events"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 60,
+    },
+    {
+        "key": "annotation_complete_rate", "name": "标注完成率", "agg": "ratio", "unit": "%",
+        "description": "标注完成率 = 已标注图片数占比（百分比）",
+        "sql_template": (
+            "SELECT ROUND(SUM(annotated_count)*100.0/NULLIF(SUM(image_count),0),2) AS 数值 "
+            "FROM annotation_dataset"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 60,
+    },
+    {
+        "key": "superadmin_count", "name": "超级管理员数", "agg": "count", "unit": "人",
+        "description": "超级管理员数量（is_superuser=true 且未删除）",
+        "sql_template": (
+            "SELECT COUNT(*) AS 数值 FROM sys_user WHERE is_superuser = true AND is_deleted = false"
+        ),
+        "params": [], "dimensions": [], "cache_ttl": 120,
+    },
 ]
 
 _SYSTEM_TERMS = [
@@ -297,6 +358,20 @@ _SYSTEM_TERMS = [
     {"term": "用户数", "metric_key": "user_count", "type": "metric"},
     {"term": "人数", "metric_key": "user_count", "type": "metric"},
     {"term": "用户", "metric_key": "user_count", "type": "metric"},
+    # 本体业务语义术语（黑话 → 指标）
+    {"term": "设备健康度", "metric_key": "device_health_rate", "type": "metric"},
+    {"term": "健康度", "metric_key": "device_health_rate", "type": "metric"},
+    {"term": "活跃算法", "metric_key": "active_algorithm_count", "type": "metric"},
+    {"term": "待处理告警", "metric_key": "pending_alert_count", "type": "metric"},
+    {"term": "待办告警", "metric_key": "pending_alert_count", "type": "metric"},
+    {"term": "查询成功率", "metric_key": "query_success_rate", "type": "metric"},
+    {"term": "成功率", "metric_key": "query_success_rate", "type": "metric"},
+    {"term": "在线事件占比", "metric_key": "online_event_ratio", "type": "metric"},
+    {"term": "事件占比", "metric_key": "online_event_ratio", "type": "metric"},
+    {"term": "标注完成率", "metric_key": "annotation_complete_rate", "type": "metric"},
+    {"term": "标注率", "metric_key": "annotation_complete_rate", "type": "metric"},
+    {"term": "完成率", "metric_key": "annotation_complete_rate", "type": "metric"},
+    {"term": "超级管理员", "metric_key": "superadmin_count", "type": "metric"},
 ]
 
 # NL2SQL few-shot 示例：覆盖 JOIN / 时间序列 / 分组聚合 等常用报表模式
