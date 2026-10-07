@@ -272,6 +272,9 @@ export function applyIndustryTemplate(template_id: string) {
 export function getPipelineList() {
   return request({ url: `${API_PATH}/pipeline/list`, method: "get" });
 }
+export function getPipelineGraph() {
+  return request({ url: `${API_PATH}/pipeline/graph`, method: "get" });
+}
 export function savePipeline(data: any) {
   return request({ url: `${API_PATH}/pipeline/save`, method: "post", data });
 }

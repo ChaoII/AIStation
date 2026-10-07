@@ -1236,6 +1236,24 @@
               </template>
             </el-table-column>
           </el-table>
+          <el-card shadow="never" style="margin-top: 12px">
+            <template #header>
+              <div class="ont-head">
+                <span>数据管道编排图（源表 → 管道 → 本体对象）</span>
+                <el-button size="small" @click="loadPipelineGraph">刷新</el-button>
+              </div>
+            </template>
+            <GraphCanvas
+              v-if="pipelineGraph.nodes.length"
+              :nodes="pipelineGraph.nodes as any"
+              :edges="pipelineGraph.edges as any"
+              height="360px"
+              layout-name="cose"
+              :node-style="{ sizeMode: 'weight', labelSize: 12 }"
+              :edge-style="{ label: 'show', colorMode: 'type' }"
+            />
+            <el-empty v-else :image-size="60" description="暂无管道，新建数据管道后即可查看编排图" />
+          </el-card>
         </el-tab-pane>
         <el-tab-pane label="应用" name="workshop">
           <div class="ops-bar">
@@ -2812,6 +2830,7 @@ import {
   getIndustryTemplates,
   applyIndustryTemplate,
   getPipelineList,
+  getPipelineGraph,
   savePipeline,
   runPipeline,
   getPipelineData,
@@ -3926,6 +3945,15 @@ async function loadPipes() {
     pipes.value = r.data?.data || [];
   } catch {
     pipes.value = [];
+  }
+}
+const pipelineGraph = ref<any>({ nodes: [], edges: [] });
+async function loadPipelineGraph() {
+  try {
+    const r = await getPipelineGraph();
+    pipelineGraph.value = r.data?.data || { nodes: [], edges: [] };
+  } catch {
+    pipelineGraph.value = { nodes: [], edges: [] };
   }
 }
 function openPipeEdit(row?: any) {
