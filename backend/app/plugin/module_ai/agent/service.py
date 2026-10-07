@@ -219,8 +219,9 @@ class AiAgentService:
                 "knowledge_ids", "query_enabled", "query_datasource", "input_schema",
                 "capabilities", "avatar", "color", "markdown", "enabled", "order",
             ):
-                if getattr(data, key) is not None:
-                    setattr(a, key, getattr(data, key))
+                val = getattr(data, key, None)
+                if val is not None:
+                    setattr(a, key, val)
             a.updated_id = auth.user.id
             await db.flush()
             return _to_dict(a)

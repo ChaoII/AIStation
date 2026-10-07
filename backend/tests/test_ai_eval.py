@@ -303,6 +303,8 @@ class TestAiEval:
         assert "total" in h and "hot" in h and isinstance(h["hot"], list)
         lc = asyncio.run(AiQueryService.object_lifecycle())
         assert "objects" in lc and "published" in lc and "draft" in lc and "objects_list" in lc
+        ks = asyncio.run(AiQueryService.kg_stats())
+        assert "data_nodes" in ks and "entities" in ks and "relations" in ks
 
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService

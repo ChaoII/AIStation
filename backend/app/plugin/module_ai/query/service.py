@@ -2727,6 +2727,35 @@ class AiQueryService:
         return {"total": len(assets), "categories": cats, "category_count": len(cats)}
 
     @classmethod
+    async def kg_stats(cls) -> dict:
+        """统一图谱统计：数据 schema 图节点/边 + 知识库图实体/关系。"""
+        assets = await cls.list_assets()
+        objs = [a for a in assets if a.get("object_enabled")]
+        edges = 0
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                edges = (await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_query_asset_columns "
+                    "WHERE related_table IS NOT NULL AND related_table<>'' AND is_deleted=0"))).scalar() or 0
+        except Exception:  # noqa: BLE001
+            edges = 0
+        entities = 0
+        relations = 0
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                entities = (await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_kg_entity WHERE is_deleted=0")).scalar() or 0)
+                relations = (await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_kg_relation WHERE is_deleted=0")).scalar() or 0)
+        except Exception:  # noqa: BLE001
+            entities = relations = 0
+        return {"data_nodes": len(assets), "data_edges": int(edges),
+                "entities": int(entities), "relations": int(relations),
+                "objects": len(objs)}
+
+    @classmethod
     async def object_relations(cls) -> dict:
         """对象关系图：基于字段关联，构建业务对象之间的边（关系图可视化）。"""
         assets = await cls.list_assets()

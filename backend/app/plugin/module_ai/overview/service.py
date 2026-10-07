@@ -335,15 +335,18 @@ class AiOverviewService:
             from sqlalchemy import text as _t
 
             async with async_db_session.begin() as db:
-                # 幂等补列（新库由 create_all 建，旧库这里补齐）
+                # 幂等补列（新库由 create_all 建，旧库这里补齐；sqlite 不支持 ADD COLUMN IF NOT EXISTS，逐个容错）
                 for col, ddl in (
                     ("prompt_tokens", "INTEGER DEFAULT 0"),
                     ("completion_tokens", "INTEGER DEFAULT 0"),
                     ("cost", "NUMERIC DEFAULT 0"),
                 ):
-                    await db.execute(
-                        _t(f"ALTER TABLE ai_call_logs ADD COLUMN IF NOT EXISTS {col} {ddl}")
-                    )
+                    try:
+                        await db.execute(
+                            _t(f"ALTER TABLE ai_call_logs ADD COLUMN IF NOT EXISTS {col} {ddl}")
+                        )
+                    except Exception:  # noqa: BLE001  # sqlite 等方言不支持，忽略
+                        pass
                 db.add(
                     AiCallLogModel(
                         model_name=model_name or "",

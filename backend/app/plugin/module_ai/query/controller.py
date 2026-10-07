@@ -904,6 +904,13 @@ async def kg_stats(
     return SuccessResponse(data=await _stats(), msg="查询成功")
 
 
+@AiQueryRouter.get("/assets/kg/stats", summary="统一图谱统计(节点/边/实体/关系)")
+async def kg_stats(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.kg_stats(), msg="查询成功")
+
+
 @AiQueryRouter.get("/assets/kg/unified", summary="统一图谱(数据schema图+知识库图)")
 async def kg_unified(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
