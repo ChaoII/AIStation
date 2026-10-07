@@ -240,6 +240,24 @@ class TestAiEval:
         bad = asyncio.run(AiQueryService.dq_rules_run("t_none", "x", "unknown"))
         assert bad["ok"] is False
 
+    def test_export_asset(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DROP TABLE IF EXISTS t_export"))
+                await db.execute(_t("CREATE TABLE t_export (id INTEGER, name TEXT)"))
+                await db.execute(_t("INSERT INTO t_export VALUES (1,'a'),(2,'b')"))
+            r = await AiQueryService.export_asset("t_export", 10)
+            assert r["ok"] is True and r["row_count"] == 2
+            assert "name" in r["columns"]
+            bad = await AiQueryService.export_asset("t_nope")
+            assert bad["ok"] is False
+            return True
+        assert asyncio.run(_go())
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

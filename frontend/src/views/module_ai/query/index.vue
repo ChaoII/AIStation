@@ -492,8 +492,9 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="80" align="center" fixed="right">
+            <el-table-column label="操作" width="140" align="center" fixed="right">
               <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="exportAssetCsv(row.table_name)">导出</el-button>
                 <el-button link type="primary" size="small" @click="openAssetEdit(row)">
                   编辑
                 </el-button>
@@ -3007,6 +3008,7 @@ import {
   getVersionDiff,
   publishAsset,
   getAssetReleases,
+  exportAsset,
   rollbackAssetVersion,
   getAssetImpact,
   extractQueryObjects,
@@ -4041,8 +4043,7 @@ async function loadGovRelease() {
   try { govRelease.value = (await getAssetReleases(govTable.value)).data?.data || null; }
   catch { govRelease.value = null; }
 }
-async function publishGov(row: any) {
-  try {
+async function publishGov(row: any) {  try {
     await ElMessageBox.confirm(`发布「${govTable.value}」版本 ${row.version}？发布后该版本为当前生效版本。`, "发布确认", { type: "warning", confirmButtonText: "发布", cancelButtonText: "取消" });
   } catch { return; }
   try {
@@ -4586,6 +4587,27 @@ const assetForm = reactive<any>({});
 function openAssetEdit(row: any) {
   Object.assign(assetForm, row);
   assetEditVisible.value = true;
+}
+async function exportAssetCsv(table: string) {
+  try {
+    const r = await exportAsset(table, 500);
+    const d = r.data?.data;
+    if (!d?.ok) { ElMessage.error(d?.msg || "导出失败"); return; }
+    const cols = d.columns || [];
+    const esc = (v: any) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [cols.join(","), ...d.rows.map((row: any) => cols.map((c: string) => esc(row[c])).join(","))];
+    const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${table}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success(`已导出 ${d.row_count} 行`);
+  } catch (e: any) { ElMessage.error(e?.msg || "导出失败"); }
 }
 async function saveAssetMeta() {
   try {

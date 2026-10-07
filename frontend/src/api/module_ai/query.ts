@@ -313,6 +313,9 @@ export function getDqRules() {
 export function runDqRule(table: string, column: string, ruleType: string) {
   return request({ url: `${API_PATH}/dq-rules/run`, method: "get", params: { table, column, rule_type: ruleType } });
 }
+export function exportAsset(table: string, limit = 100) {
+  return request({ url: `${API_PATH}/assets/${table}/export`, method: "get", params: { limit } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

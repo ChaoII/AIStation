@@ -261,6 +261,15 @@ async def dq_rules_run(
     return SuccessResponse(data=await AiQueryService.dq_rules_run(table, column, rule_type), msg="查询成功")
 
 
+@AiQueryRouter.get("/assets/{table_name}/export", summary="数据集导出(真实表数据)")
+async def export_asset(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    limit: int = 100,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.export_asset(table_name, limit), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

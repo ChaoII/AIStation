@@ -2624,6 +2624,21 @@ class AiQueryService:
         return {"ok": False, "msg": "不支持的规则类型"}
 
     @classmethod
+    async def export_asset(cls, table_name: str, limit: int = 100) -> dict:
+        """数据集导出：读取真实表数据用于导出（CSV/JSON 由前端生成下载）。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            try:
+                rows = (await db.execute(_t(
+                    f'SELECT * FROM "{table_name}" LIMIT {max(1, min(int(limit), 500))}'))).fetchall()
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
+        cols = list(rows[0]._mapping.keys()) if rows else []
+        data = [dict(r._mapping) for r in rows]
+        return {"ok": True, "table": table_name, "columns": cols, "rows": data,
+                "row_count": len(data)}
+
+    @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
         并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""
