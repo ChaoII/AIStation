@@ -1847,6 +1847,23 @@ class AiQueryService:
             return {"ok": False, "msg": f"执行失败：{str(e)[:120]}"}
 
     @classmethod
+    async def _is_superuser(cls, user_id) -> bool:
+        """按 user_id 判断是否超管（用于审批人约束）。"""
+        try:
+            uid = int(user_id)
+        except (TypeError, ValueError):
+            uid = 0
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                r = (await db.execute(_t(
+                    "SELECT is_superuser FROM sys_user WHERE id=:id AND is_deleted=false"),
+                    {"id": uid})).fetchone()
+            return bool(r and r[0])
+        except Exception:  # noqa: BLE001
+            return False
+
+    @classmethod
     async def list_pending_actions(cls, limit: int = 50) -> list[dict]:
         """待审批的 Action 写回请求（result='pending'）。"""
         import json as _json
@@ -1865,7 +1882,12 @@ class AiQueryService:
 
     @classmethod
     async def approve_action(cls, approval_id: int, operator: str) -> dict:
-        """批准待审批的 Action：执行真实写回（可写字段校验）+ 落审计，审批单置为 approved。"""
+        """批准待审批的 Action：执行真实写回（可写字段校验）+ 落审计，审批单置为 approved。
+
+        审批人约束：仅超管可批准写回。
+        """
+        if not await cls._is_superuser(operator):
+            return {"ok": False, "msg": "仅超管可审批写回操作"}
         import json as _json
 
         from sqlalchemy import text as _t
@@ -1907,7 +1929,9 @@ class AiQueryService:
 
     @classmethod
     async def reject_action(cls, approval_id: int, operator: str) -> dict:
-        """驳回待审批的 Action。"""
+        """驳回待审批的 Action。审批人约束：仅超管可驳回。"""
+        if not await cls._is_superuser(operator):
+            return {"ok": False, "msg": "仅超管可驳回写回操作"}
         from sqlalchemy import text as _t
         async with async_db_session.begin() as db:
             await db.execute(_t(

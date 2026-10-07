@@ -277,10 +277,32 @@ class TestActionApproval:
                 await db.execute(_t(
                     "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
                     "VALUES ('t2','video_cameras','1','{}','u','pending','x',0)"))
+                su = (await db.execute(_t(
+                    "SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
+                suid = str(su[0]) if su else "0"
             p = await AiQueryService.list_pending_actions()
             rid = next((x["id"] for x in p if x["action"] == "t2"), None)
             assert rid is not None
-            await AiQueryService.reject_action(rid, "admin")
+            await AiQueryService.reject_action(rid, suid)
             p2 = await AiQueryService.list_pending_actions()
             assert not any(x["action"] == "t2" for x in p2)
+        asyncio.run(_go())
+
+    def test_non_superuser_cannot_approve(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_action_log WHERE action_name='t3'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_action_log(action_name,object_table,object_key,params,operator,result,detail,is_deleted) "
+                    "VALUES ('t3','video_cameras','1','{}','u','pending','x',0)"))
+            p = await AiQueryService.list_pending_actions()
+            rid = next((x["id"] for x in p if x["action"] == "t3"), None)
+            r = await AiQueryService.reject_action(rid, "9999999")  # 非超管
+            p2 = await AiQueryService.list_pending_actions()
+            assert not r.get("ok")
+            assert any(x["action"] == "t3" for x in p2)  # 仍 pending
         asyncio.run(_go())
