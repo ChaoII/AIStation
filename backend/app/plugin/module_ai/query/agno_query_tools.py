@@ -70,10 +70,11 @@ async def semantic_search(question: str) -> str:
 
 async def table_metadata(table: str) -> str:
     """返回指定数据表的元数据标注：表描述/业务域/业务场景 + 字段业务场景/敏感/关联/枚举取值。"""
-    from .service import SYSTEM_ALLOWED_TABLES, AiQueryService
+    from .service import _system_allowed, AiQueryService
 
     table = (table or "").strip()
-    if table not in SYSTEM_ALLOWED_TABLES:
+    allowed = await _system_allowed()
+    if table not in allowed:
         return f"表 {table} 不在允许范围内"
     log.warning("[QUERY_TOOL] 模型调用了 table_metadata，table={}", table)
     try:
