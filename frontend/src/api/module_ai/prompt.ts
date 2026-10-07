@@ -6,6 +6,14 @@ export function getAiPromptList(params?: any) {
   return request({ url: `${API_PATH}/list`, method: "get", params });
 }
 
+export function getAiPromptTemplates() {
+  return request({ url: `${API_PATH}/templates`, method: "get" });
+}
+
+export function createAiPromptFromTemplate(key: string, name: string) {
+  return request({ url: `${API_PATH}/create-from-template`, method: "post", data: { key, name } });
+}
+
 export function getAiPromptDetail(id: number) {
   return request({ url: `${API_PATH}/detail/${id}`, method: "get" });
 }

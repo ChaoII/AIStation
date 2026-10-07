@@ -21,6 +21,24 @@ async def list_prompts(
     return SuccessResponse(data=await AiPromptService.list_prompts(), msg="查询成功")
 
 
+@AiPromptRouter.get("/templates", summary="AIP 提示词模板库")
+async def prompt_templates(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:prompt:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiPromptService.prompt_templates(), msg="查询成功")
+
+
+@AiPromptRouter.post("/create-from-template", summary="从模板创建提示词")
+async def create_from_template(
+    data: Annotated[dict, Body()],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:prompt:create"]))],
+) -> JSONResponse:
+    r = await AiPromptService.create_from_template(data.get("key", ""), data.get("name", ""), auth)
+    if not r:
+        return ErrorResponse(msg="模板不存在")
+    return SuccessResponse(data=r, msg="创建成功")
+
+
 @AiPromptRouter.get("/detail/{prompt_id}", summary="提示词详情")
 async def get_prompt(
     prompt_id: int,

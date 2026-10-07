@@ -38,6 +38,37 @@ def _to_dict(p: AiPromptModel) -> dict:
 
 class AiPromptService:
 
+    # 提示词模板库（AIP 常用角色/场景）
+    _TEMPLATES = [
+        {"key": "data_query", "name": "数据问数助手", "category": "数据",
+         "blocks": [{"type": "instruction", "content": "你是数据问数助手，基于系统数据回答用户问题。使用本体驱动的方式确定数据域、对象与字段，确保回答准确。变量：{{question}}"}],
+         "variables": ["question"]},
+        {"key": "knowledge", "name": "知识库问答", "category": "知识",
+         "blocks": [{"type": "instruction", "content": "你是知识库问答助手，优先引用知识库内容回答，并在合适处以 [来源] 标注。变量：{{question}}"}],
+         "variables": ["question"]},
+        {"key": "summarize", "name": "摘要总结", "category": "产出",
+         "blocks": [{"type": "instruction", "content": "对以下内容做要点摘要，输出结构化要点。内容：{{content}}"}],
+         "variables": ["content"]},
+        {"key": "customer_service", "name": "客服助手", "category": "服务",
+         "blocks": [{"type": "instruction", "content": "你是客服助手，友好、准确、简洁地解答用户问题。变量：{{question}}"}],
+         "variables": ["question"]},
+    ]
+
+    @classmethod
+    async def prompt_templates(cls) -> list[dict]:
+        return cls._TEMPLATES
+
+    @classmethod
+    async def create_from_template(cls, key: str, name: str, auth) -> dict | None:
+        tpl = next((t for t in cls._TEMPLATES if t["key"] == key), None)
+        if not tpl:
+            return None
+        from types import SimpleNamespace as SN
+        data = SN(name=name or tpl["name"], category=tpl["category"],
+                  blocks=tpl["blocks"], variables=tpl["variables"],
+                  enabled=True)
+        return await cls.create(data, auth)
+
     @classmethod
     async def list_prompts(cls) -> list[dict]:
         async with async_db_session() as db:

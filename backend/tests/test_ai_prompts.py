@@ -74,6 +74,24 @@ def test_prompt_crud(test_client, auth_headers):
     assert all(x["id"] != pid for x in lst2)
 
 
+def test_prompt_templates(test_client, auth_headers):
+    """模板库包含常用模板；从模板创建成功。"""
+    tpl = test_client.get("/api/v1/ai/prompts/templates", headers=auth_headers).json()["data"]
+    assert len(tpl) >= 4
+    assert any(t["key"] == "data_query" for t in tpl)
+    r = test_client.post(
+        "/api/v1/ai/prompts/create-from-template",
+        json={"key": "summarize", "name": "pytest-摘要"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    pid = r.json()["data"]["id"]
+    lst = test_client.get("/api/v1/ai/prompts/list", headers=auth_headers).json()["data"]
+    created = next(x for x in lst if x["id"] == pid)
+    assert created["category"] == "产出"
+    test_client.request("DELETE", "/api/v1/ai/prompts/delete", json=[pid], headers=auth_headers)
+
+
 def test_prompt_reject_invalid_block(test_client, auth_headers):
     """非法块类型应被拒绝。"""
     r = test_client.post(

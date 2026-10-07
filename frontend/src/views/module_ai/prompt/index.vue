@@ -17,6 +17,14 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
+        <el-dropdown v-if="templates.length" @command="createFromTemplate" style="margin-left: 8px">
+          <el-button size="small">从模板创建<el-icon style="margin-left:4px"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="t in templates" :key="t.key" :command="t">{{ t.name }}（{{ t.category }}）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <span class="batch-ac">
           <el-button size="small" :disabled="!promptSelIds.length" @click="batchPrompt(true)">
             批量启用
@@ -291,6 +299,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { ArrowDown } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import draggable from "vuedraggable";
 import PageSearch from "@/components/CURD/PageSearch.vue";
@@ -308,6 +317,8 @@ import {
   getAiPromptList,
   updateAiPrompt,
   batchPromptStatus,
+  getAiPromptTemplates,
+  createAiPromptFromTemplate,
 } from "@/api/module_ai/prompt";
 
 defineOptions({ name: "AiPrompt" });
@@ -479,6 +490,18 @@ function onPromptSel(sel: any[]) {
   promptSelIds.value = sel.map((s: any) => s.id);
 }
 const promptSummary = ref({ total: 0, enabled: 0, disabled: 0 });
+const templates = ref<any[]>([]);
+async function loadTemplates() {
+  try { templates.value = (await getAiPromptTemplates()).data?.data || []; }
+  catch { templates.value = []; }
+}
+async function createFromTemplate(tpl: any) {
+  try {
+    const r = await createAiPromptFromTemplate(tpl.key, tpl.name);
+    ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
+    loadPromptSummary();
+  } catch (e: any) { ElMessage.error(e?.msg || "创建失败"); }
+}
 async function loadPromptSummary() {
   try {
     const res = await getAiPromptList();
@@ -537,6 +560,7 @@ async function doCopy(row: any) {
 
 onMounted(() => {
   loadPromptSummary();
+  loadTemplates();
 });
 
 async function handleOpenDialog(type: "create" | "update", id?: number) {
