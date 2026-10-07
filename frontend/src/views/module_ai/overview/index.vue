@@ -419,6 +419,38 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>Compass 收藏与 AIP 插件</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            个人收藏引用 · AIP 插件/工具市场
+          </span>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">我的收藏（{{ favorites.length }}）</div>
+          <div v-if="favorites.length">
+            <div v-for="f in favorites" :key="f.id" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 4px">
+              <div style="display:flex;align-items:center;gap:6px;min-width:0">
+                <el-tag size="small" type="info" effect="plain">{{ f.kind }}</el-tag>
+                <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.ref }}</span>
+              </div>
+              <el-button link type="danger" size="small" @click="removeFav(f.id)">移除</el-button>
+            </div>
+          </div>
+          <div v-else class="gov-empty">暂无收藏，可在资产/对象/指标处收藏</div>
+        </el-col>
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">AIP 插件（{{ plugins.length }}）</div>
+          <el-tag v-for="p in plugins" :key="p.key" size="small" effect="plain" style="margin:0 3px 4px 0">
+            {{ p.name }} · {{ p.kind }}
+          </el-tag>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -535,6 +567,7 @@ import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
 import { getSecurityAudit } from "@/api/module_ai/query";
 import { getDerivedObjects, autopilotAutoFix } from "@/api/module_ai/query";
+import { getFavorites, removeFavorite, getPlugins } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -635,6 +668,20 @@ async function runAutoFix() {
     loadAutopilot();
   } catch (e: any) { ElMessage.error(e?.msg || "自动修复失败"); }
   finally { autoFixing.value = false; }
+}
+const favorites = ref<any[]>([]);
+async function loadFavorites() {
+  try { favorites.value = (await getFavorites()).data?.data || []; }
+  catch { favorites.value = []; }
+}
+const plugins = ref<any[]>([]);
+async function loadPlugins() {
+  try { plugins.value = (await getPlugins()).data?.data || []; }
+  catch { plugins.value = []; }
+}
+async function removeFav(id: number) {
+  try { await removeFavorite(id); loadFavorites(); }
+  catch (e: any) { ElMessage.error(e?.msg || "移除失败"); }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -788,6 +835,8 @@ onMounted(() => {
   loadDerived();
   loadSecurity();
   loadDerivedObj();
+  loadFavorites();
+  loadPlugins();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

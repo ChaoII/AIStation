@@ -292,6 +292,18 @@ export function getDerivedObjects() {
 export function autopilotAutoFix() {
   return request({ url: `${API_PATH}/autopilot/auto-fix`, method: "post" });
 }
+export function getFavorites() {
+  return request({ url: `${API_PATH}/favorites/list`, method: "get" });
+}
+export function addFavorite(kind: string, ref: string) {
+  return request({ url: `${API_PATH}/favorites/add`, method: "post", data: { kind, ref } });
+}
+export function removeFavorite(id: number) {
+  return request({ url: `${API_PATH}/favorites/remove`, method: "post", data: { id } });
+}
+export function getPlugins() {
+  return request({ url: `${API_PATH}/plugins/list`, method: "get" });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

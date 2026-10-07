@@ -1358,6 +1358,70 @@ class AiQueryService:
                 "sensitive_fields": sens_fields, "access_rules": len(rules),
                 "datasources": ds_security, "action_logs": logs, "log_count": len(logs)}
 
+    # ---------------------------------------------------------------- #
+    # Compass 收藏/引用中心
+    # ---------------------------------------------------------------- #
+    @classmethod
+    async def favorites_list(cls, user_id: int = 0) -> list[dict]:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            try:
+                await db.execute(_t(
+                    "CREATE TABLE IF NOT EXISTS ai_favorite "
+                    "(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref TEXT, user_id INTEGER, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+            except Exception:  # noqa: BLE001
+                pass
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT id,kind,ref,created_time FROM ai_favorite WHERE is_deleted=false AND user_id=:u ORDER BY id DESC"),
+                {"u": user_id})).fetchall()
+        return [{"id": r[0], "kind": r[1], "ref": r[2], "time": str(r[3]) if r[3] else ""} for r in rows]
+
+    @classmethod
+    async def favorites_add(cls, kind: str, ref: str, user_id: int = 0) -> dict:
+        from datetime import datetime
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            ex = (await db.execute(_t(
+                "SELECT id FROM ai_favorite WHERE kind=:k AND ref=:r AND user_id=:u AND is_deleted=false"),
+                {"k": kind, "r": ref, "u": user_id})).fetchone()
+            if ex:
+                return {"ok": True, "msg": "已收藏"}
+            await db.execute(_t(
+                "INSERT INTO ai_favorite(kind,ref,user_id,created_time) VALUES (:k,:r,:u,:now)"),
+                {"k": kind, "r": ref, "u": user_id,
+                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+        return {"ok": True, "msg": "收藏成功"}
+
+    @classmethod
+    async def favorites_remove(cls, fav_id: int, user_id: int = 0) -> dict:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "UPDATE ai_favorite SET is_deleted=true WHERE id=:i AND user_id=:u"),
+                {"i": fav_id, "u": user_id})
+        return {"ok": True, "msg": "已取消收藏"}
+
+    # ---------------------------------------------------------------- #
+    # AIP 插件/工具市场
+    # ---------------------------------------------------------------- #
+    @classmethod
+    async def list_plugins(cls) -> list[dict]:
+        """AIP 插件目录：为 Agent/应用提供扩展工具能力。"""
+        return [
+            {"key": "web_fetch", "name": "网页抓取", "kind": "数据接入", "enabled": True,
+             "desc": "抓取外部网页内容，供 Agent 阅读理解"},
+            {"key": "table_export", "name": "表格导出", "kind": "输出", "enabled": True,
+             "desc": "将问数结果导出为 Excel/CSV"},
+            {"key": "email_send", "name": "邮件发送", "kind": "消息", "enabled": True,
+             "desc": "把分析报告/告警通过邮件推送"},
+            {"key": "report_generate", "name": "报告生成", "kind": "产出", "enabled": True,
+             "desc": "AI 自动生成结构化报告"},
+            {"key": "data_pipeline", "name": "数据管道", "kind": "数据接入", "enabled": True,
+             "desc": "通过管道（ELT）拉取外部数据落库"},
+        ]
+
     @classmethod
     async def derived_objects(cls) -> dict:
         """Ontology 派生对象：从启用了对象的资产派生对象（按数据域聚类 + 派生属性）。"""

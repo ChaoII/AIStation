@@ -203,6 +203,38 @@ async def autopilot_auto_fix(
     return SuccessResponse(data=await AiQueryService.autopilot_auto_fix(), msg="执行完成")
 
 
+@AiQueryRouter.get("/favorites/list", summary="Compass 收藏/引用列表")
+async def favorites_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.favorites_list(auth.user.id), msg="查询成功")
+
+
+@AiQueryRouter.post("/favorites/add", summary="收藏/引用")
+async def favorites_add(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.favorites_add(data.get("kind", ""), data.get("ref", ""), auth.user.id)
+    return SuccessResponse(data=r, msg=r.get("msg", "操作完成"))
+
+
+@AiQueryRouter.post("/favorites/remove", summary="取消收藏")
+async def favorites_remove(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.favorites_remove(int(data.get("id", 0)), auth.user.id)
+    return SuccessResponse(data=r, msg=r.get("msg", "操作完成"))
+
+
+@AiQueryRouter.get("/plugins/list", summary="AIP 插件/工具市场目录")
+async def plugins_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_plugins(), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

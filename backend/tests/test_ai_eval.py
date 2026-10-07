@@ -190,6 +190,31 @@ class TestAiEval:
         assert "attempted" in r and "fixed" in r and "results" in r
         assert isinstance(r["results"], list)
 
+    def test_favorites_and_plugins(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    "CREATE TABLE IF NOT EXISTS ai_favorite "
+                    "(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref TEXT, user_id INTEGER, "
+                    "is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+            f = await AiQueryService.favorites_add("table", "video_alarm_records", user_id=1)
+            assert f["ok"] is True
+            lst = await AiQueryService.favorites_list(user_id=1)
+            assert any(x["ref"] == "video_alarm_records" for x in lst)
+            if lst:
+                await AiQueryService.favorites_remove(lst[0]["id"], user_id=1)
+            lst2 = await AiQueryService.favorites_list(user_id=1)
+            assert not any(x["ref"] == "video_alarm_records" and x["id"] == lst[0]["id"] for x in lst2)
+            return True
+        assert asyncio.run(_go())
+        plugins = asyncio.run(AiQueryService.list_plugins())
+        assert len(plugins) >= 4
+        assert any(p["kind"] == "数据接入" for p in plugins)
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session
