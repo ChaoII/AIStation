@@ -121,6 +121,38 @@ class AiOverviewService:
                            "avg_latency_ms": health["avg_latency_ms"], "calls": health["calls"]}}
 
     @classmethod
+    async def aip_control(cls, limit: int = 20) -> dict:
+        """AIP 控制台（Palantir AIP Control）：Agent/AI 运行追踪 + 用途分布 + 人工审核队列。"""
+        from sqlalchemy import select as _sel
+        async with async_db_session() as db:
+            rows = (await db.execute(
+                _sel(AiCallLogModel)
+                .where(AiCallLogModel.is_deleted.is_(False))
+                .order_by(AiCallLogModel.created_time.desc())
+                .limit(min(limit, 50))
+            )).scalars().all()
+        runs = []
+        for r in rows:
+            runs.append({
+                "id": r.id, "model": r.model_name, "usage": r.usage,
+                "latency_ms": r.latency_ms, "result": r.result, "user_id": r.user_id,
+                "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens,
+                "cost": round(float(r.cost or 0), 4), "error": r.error,
+                "time": r.created_time.strftime("%m-%d %H:%M") if r.created_time else "",
+            })
+        usage_dist: dict[str, int] = {}
+        for r in runs:
+            usage_dist[r["usage"]] = usage_dist.get(r["usage"], 0) + 1
+        pending_review = 0
+        try:
+            from app.plugin.module_ai.query.service import AiQueryService
+            pending_review = int((await AiQueryService.approval_center()).get("total", 0))
+        except Exception:  # noqa: BLE001
+            pending_review = 0
+        return {"runs": runs, "usage_dist": usage_dist,
+                "pending_review": pending_review, "total": len(runs)}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

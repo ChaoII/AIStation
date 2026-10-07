@@ -108,6 +108,13 @@ class TestAiEval:
         assert "apps" in r and "workflows" in r and "models" in r and "agents" in r
         assert "health" in r and "pipeline_status" in r
 
+    def test_aip_control_shape(self):
+        from app.plugin.module_ai.overview.service import AiOverviewService
+
+        r = asyncio.run(AiOverviewService.aip_control(20))
+        assert "runs" in r and "usage_dist" in r and "pending_review" in r and "total" in r
+        assert isinstance(r["runs"], list)
+
     def test_compass_search(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
 

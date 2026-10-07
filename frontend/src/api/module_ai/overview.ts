@@ -18,3 +18,6 @@ export function getAiRuntime() {
 export function compassSearch(keyword: string) {
   return request({ url: "/ai/query/compass/search", method: "get", params: { keyword } });
 }
+export function getAiAipControl(limit = 20) {
+  return request({ url: "/ai/overview/aip-control", method: "get", params: { limit } });
+}

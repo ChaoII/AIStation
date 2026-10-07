@@ -152,6 +152,44 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AIP 控制台 · 运行追踪</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            Agent/AI 调用运行追踪 · 用途分布 · 人工审核队列
+          </span>
+        </div>
+      </template>
+      <el-row :gutter="12" style="margin-bottom: 8px" v-if="aip">
+        <el-col :span="8"><el-statistic title="运行记录" :value="aip.total ?? 0" /></el-col>
+        <el-col :span="8"><el-statistic title="人工审核待办" :value="aip.pending_review ?? 0" /></el-col>
+        <el-col :span="8">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:12px;color:var(--el-text-color-secondary)">用途分布</span>
+            <el-tag v-for="(n, u) in aip.usage_dist || {}" :key="u" size="small" type="info" effect="plain">{{ u }}: {{ n }}</el-tag>
+          </div>
+        </el-col>
+      </el-row>
+      <el-table :data="aip?.runs || []" size="small" max-height="360">
+        <el-table-column prop="time" label="时间" width="100" />
+        <el-table-column prop="model" label="模型" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="usage" label="用途" width="110" />
+        <el-table-column prop="latency_ms" label="耗时(ms)" width="90" />
+        <el-table-column label="结果" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.result === 'success' ? 'success' : 'danger'" effect="plain">{{ row.result }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="Tokens" width="110" align="center">
+          <template #default="{ row }">{{ row.prompt_tokens ?? 0 }} / {{ row.completion_tokens ?? 0 }}</template>
+        </el-table-column>
+        <el-table-column label="费用(元)" width="90" align="center">
+          <template #default="{ row }">{{ row.cost ?? 0 }}</template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -262,7 +300,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl } from "@/api/module_ai/overview";
 
 defineOptions({ name: "AiOverview" });
 
@@ -276,6 +314,10 @@ const runtime = ref<any>(null);
 const compassKw = ref("");
 const compassResult = ref<any>(null);
 const compassLoading = ref(false);
+const aip = ref<any>(null);
+async function loadAip() {
+  try { aip.value = (await getAiAipControl(20)).data?.data || null; } catch { aip.value = null; }
+}
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
   compassLoading.value = true;
@@ -421,6 +463,7 @@ onMounted(() => {
   loadHealth();
   loadAudit();
   loadRuntime();
+  loadAip();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

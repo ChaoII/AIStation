@@ -50,3 +50,11 @@ async def overview_runtime(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.runtime_status(), msg="查询成功")
+
+
+@AiOverviewRouter.get("/aip-control", summary="AIP控制台(运行追踪+用途分布+人工审核队列)")
+async def overview_aip(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    limit: int = 20,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.aip_control(limit), msg="查询成功")
