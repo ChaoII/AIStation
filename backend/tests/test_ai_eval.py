@@ -258,6 +258,21 @@ class TestAiEval:
             return True
         assert asyncio.run(_go())
 
+    def test_dataset_share(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        async def _go():
+            s = await AiQueryService.share_create("video_alarm_records", user_id=1)
+            assert s["ok"] is True and s["token"]
+            lst = await AiQueryService.share_list(user_id=1)
+            assert any(x["table"] == "video_alarm_records" for x in lst)
+            if lst:
+                await AiQueryService.share_remove(lst[0]["id"], user_id=1)
+            lst2 = await AiQueryService.share_list(user_id=1)
+            assert not any(x["id"] == lst[0]["id"] for x in lst2)
+            return True
+        assert asyncio.run(_go())
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

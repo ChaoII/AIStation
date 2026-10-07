@@ -2639,6 +2639,58 @@ class AiQueryService:
                 "row_count": len(data)}
 
     @classmethod
+    async def _ensure_share_table(cls, db) -> None:
+        from sqlalchemy import text as _t
+        dialect = (db.bind.dialect.name if db.bind else "")
+        if dialect == "postgresql":
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_dataset_share ("
+                "id BIGSERIAL PRIMARY KEY, table_name VARCHAR(255), token VARCHAR(64), "
+                "user_id INTEGER, is_deleted INTEGER DEFAULT 0, created_time TIMESTAMP)"))
+        else:
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_dataset_share ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, token TEXT, "
+                "user_id INTEGER, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+
+    @classmethod
+    async def share_create(cls, table_name: str, user_id: int = 0) -> dict:
+        import uuid
+        from datetime import datetime
+        token = uuid.uuid4().hex[:16]
+        async with async_db_session.begin() as db:
+            await cls._ensure_share_table(db)
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "INSERT INTO ai_dataset_share(table_name,token,user_id,created_time) "
+                "VALUES (:t,:tok,:u,:now)"),
+                {"t": table_name, "tok": token, "u": user_id,
+                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+        return {"ok": True, "table": table_name, "token": token,
+                "link": f"/web#/ai/query?share={token}"}
+
+    @classmethod
+    async def share_list(cls, user_id: int = 0) -> list[dict]:
+        async with async_db_session.begin() as db:
+            await cls._ensure_share_table(db)
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT id,table_name,token,created_time FROM ai_dataset_share "
+                "WHERE is_deleted=0 AND user_id=:u ORDER BY id DESC"), {"u": user_id})).fetchall()
+        return [{"id": r[0], "table": r[1], "token": r[2], "time": str(r[3]) if r[3] else "",
+                 "link": f"/web#/ai/query?share={r[2]}"} for r in rows]
+
+    @classmethod
+    async def share_remove(cls, share_id: int, user_id: int = 0) -> dict:
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "UPDATE ai_dataset_share SET is_deleted=1 WHERE id=:i AND user_id=:u"),
+                {"i": share_id, "u": user_id})
+        return {"ok": True, "msg": "已撤销分享"}
+
+    @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
         并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""

@@ -270,6 +270,31 @@ async def export_asset(
     return SuccessResponse(data=await AiQueryService.export_asset(table_name, limit), msg="查询成功")
 
 
+@AiQueryRouter.post("/share/create", summary="数据集分享(生成分享链接)")
+async def share_create(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.share_create(data.get("table", ""), auth.user.id)
+    return SuccessResponse(data=r, msg="分享成功")
+
+
+@AiQueryRouter.get("/share/list", summary="我的数据分享列表")
+async def share_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.share_list(auth.user.id), msg="查询成功")
+
+
+@AiQueryRouter.post("/share/remove", summary="撤销分享")
+async def share_remove(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.share_remove(int(data.get("id", 0)), auth.user.id)
+    return SuccessResponse(data=r, msg=r.get("msg", "操作完成"))
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

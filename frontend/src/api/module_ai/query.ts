@@ -316,6 +316,15 @@ export function runDqRule(table: string, column: string, ruleType: string) {
 export function exportAsset(table: string, limit = 100) {
   return request({ url: `${API_PATH}/assets/${table}/export`, method: "get", params: { limit } });
 }
+export function createShare(table: string) {
+  return request({ url: `${API_PATH}/share/create`, method: "post", data: { table } });
+}
+export function getShareList() {
+  return request({ url: `${API_PATH}/share/list`, method: "get" });
+}
+export function removeShare(id: number) {
+  return request({ url: `${API_PATH}/share/remove`, method: "post", data: { id } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

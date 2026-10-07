@@ -492,9 +492,10 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140" align="center" fixed="right">
+            <el-table-column label="操作" width="200" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="exportAssetCsv(row.table_name)">导出</el-button>
+                <el-button link type="primary" size="small" @click="shareAsset(row.table_name)">分享</el-button>
                 <el-button link type="primary" size="small" @click="openAssetEdit(row)">
                   编辑
                 </el-button>
@@ -3009,6 +3010,7 @@ import {
   publishAsset,
   getAssetReleases,
   exportAsset,
+  createShare,
   rollbackAssetVersion,
   getAssetImpact,
   extractQueryObjects,
@@ -4608,6 +4610,19 @@ async function exportAssetCsv(table: string) {
     URL.revokeObjectURL(url);
     ElMessage.success(`已导出 ${d.row_count} 行`);
   } catch (e: any) { ElMessage.error(e?.msg || "导出失败"); }
+}
+async function shareAsset(table: string) {
+  try {
+    const r = await createShare(table);
+    const d = r.data?.data;
+    const link = `${location.origin}${d?.link || ""}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      ElMessage.success(`已生成分享链接并复制：${link}`);
+    } catch {
+      ElMessageBox.alert(`分享链接：${link}`, "数据集分享", { confirmButtonText: "复制" });
+    }
+  } catch (e: any) { ElMessage.error(e?.msg || "分享失败"); }
 }
 async function saveAssetMeta() {
   try {

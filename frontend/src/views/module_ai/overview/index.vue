@@ -535,6 +535,33 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>我的数据分享</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            共享链接 · 一键复制 / 撤销
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" @click="loadShares">刷新</el-button>
+        <el-tag size="small" type="info" effect="plain">{{ shares.length }} 条分享</el-tag>
+      </div>
+      <el-table v-if="shares.length" :data="shares" size="small" border>
+        <el-table-column prop="table" label="数据集" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="time" label="分享时间" width="150" />
+        <el-table-column prop="token" label="Token" width="120" show-overflow-tooltip />
+        <el-table-column label="操作" width="120" align="center">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="copyShare(row)">复制</el-button>
+            <el-button link type="danger" size="small" @click="revokeShare(row.id)">撤销</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-else class="gov-empty">暂无分享，可在数据资产表格「分享」生成链接</div>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -653,6 +680,7 @@ import { getSecurityAudit } from "@/api/module_ai/query";
 import { getDerivedObjects, autopilotAutoFix } from "@/api/module_ai/query";
 import { getFavorites, removeFavorite, getPlugins } from "@/api/module_ai/query";
 import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
+import { getShareList, removeShare } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -799,6 +827,24 @@ async function runRule(r: any) {
   try { dqRunResult.value = (await runDqRule(table, "id", r.key)).data?.data || null; }
   catch (e: any) { ElMessage.error(e?.msg || "规则校验失败"); }
   finally { dqRunKey.value = ""; }
+}
+const shares = ref<any[]>([]);
+async function loadShares() {
+  try { shares.value = (await getShareList()).data?.data || []; }
+  catch { shares.value = []; }
+}
+async function revokeShare(id: number) {
+  try { await removeShare(id); loadShares(); }
+  catch (e: any) { ElMessage.error(e?.msg || "撤销失败"); }
+}
+async function copyShare(row: any) {
+  const link = `${location.origin}${row.link || ""}`;
+  try {
+    await navigator.clipboard.writeText(link);
+    ElMessage.success("已复制分享链接");
+  } catch {
+    ElMessageBox.alert(`分享链接：${link}`, "数据集分享", { confirmButtonText: "复制" });
+  }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -957,6 +1003,7 @@ onMounted(() => {
   loadAnomaly();
   loadDecision();
   loadDqRules();
+  loadShares();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
