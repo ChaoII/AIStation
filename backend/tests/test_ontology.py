@@ -38,6 +38,7 @@ DDL = {
     "ai_ont_capability": "CREATE TABLE IF NOT EXISTS ai_ont_capability (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT, type TEXT, description TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
     "ai_ont_version": "CREATE TABLE IF NOT EXISTS ai_ont_version (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, version INTEGER, snapshot TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
     "ai_ont_change_log": "CREATE TABLE IF NOT EXISTS ai_ont_change_log (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, kind TEXT, action TEXT, detail TEXT, created_id INTEGER, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
+    "ai_access_rule": "CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
 }
 
 
@@ -188,6 +189,45 @@ class TestSqlQueryScope:
             "SELECT c.name FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id"))
         assert "video_cameras" in tables and "video_alarm_records" in tables
         assert "name" in cols and "camera_id" in cols
+
+
+# ---------------------------------------------------------------------------
+# 数据域/表级权限拦截（Palantir：非超管只能查其 ABAC 授权表）
+# ---------------------------------------------------------------------------
+class TestTableLevelAcl:
+    @pytest.fixture(scope="class")
+    def viewer_rule(self, test_client):
+        async def _go():
+            from app.core.database import async_db_session
+            from sqlalchemy import text as _t
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_access_rule WHERE value='viewer'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_access_rule(name,attribute,value,allowed_tables,sensitive_ok,enabled,is_deleted) "
+                    "VALUES ('数据域-viewer','role','viewer','[\"video_cameras\"]',0,1,0)"))
+        asyncio.run(_go())
+
+    @staticmethod
+    def _auth(is_super, roles):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            user=SimpleNamespace(is_superuser=is_super, roles=[SimpleNamespace(code=r) for r in roles]))
+
+    def test_superuser_full(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        s = asyncio.run(AiQueryService._allowed_for_user(self._auth(True, [])))
+        assert "video_alarm_records" in s and "video_cameras" in s
+
+    def test_viewer_restricted(self, viewer_rule):
+        from app.plugin.module_ai.query.service import AiQueryService
+        s = asyncio.run(AiQueryService._allowed_for_user(self._auth(False, ["viewer"])))
+        assert "video_cameras" in s
+        assert "video_alarm_records" not in s
+
+    def test_no_rule_default_full(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        s = asyncio.run(AiQueryService._allowed_for_user(self._auth(False, ["charter"])))
+        assert "video_alarm_records" in s
 
 
 # ---------------------------------------------------------------------------

@@ -696,7 +696,8 @@ async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> di
     sql = _render_template(metric["sql_template"], params)
     ds_code = metric.get("datasource") or SYSTEM_DS
     if ds_code == SYSTEM_DS:
-        sql = validate_sql(sql, await _system_allowed())
+        table = await AiQueryService._allowed_for_user(auth)
+        sql = validate_sql(sql, table)
         res = await _execute_sql(sql)
     else:
         # 自定义数据源：ds:{id}，走独立连接 + schema 白名单 + 角色授权
@@ -2364,6 +2365,30 @@ class AiQueryService:
             return False
 
     @classmethod
+    async def _allowed_for_user(cls, auth) -> set[str]:
+        """用户级可查表白名单（Palantir 数据域/表级权限拦截）。
+
+        超管 → 全白名单（SYSTEM + ont_*）。非超管 → 按 ABAC 规则（attribute=role、
+        value∈用户角色、enabled）合并 allowed_tables，并与全局白名单求交收紧；
+        未配置相关规则时默认全白名单（向后兼容，避免误锁）。
+        """
+        base = await _system_allowed()
+        try:
+            if getattr(getattr(auth, "user", None), "is_superuser", False):
+                return base
+        except Exception:  # noqa: BLE001
+            pass
+        roles = _user_role_codes(auth)
+        rules = await cls.list_access_rules()
+        allowed: set[str] = set()
+        for x in rules:
+            if x["enabled"] and x["attribute"] == "role" and x["value"] in roles:
+                allowed |= set(x["allowed_tables"] or [])
+        if allowed:
+            return base & allowed
+        return base
+
+    @classmethod
     async def _sql_query_scope(cls, sql: str) -> tuple[set[str], set[str]]:
         """用 sqlglot 精确解析查询涉及的表集与列名集；失败回退正则（不放过）。"""
         try:
@@ -3638,7 +3663,7 @@ class AiQueryService:
                     # 自一致性：不同候选用不同温度增加多样性
                     temp = round(0.2 * i, 2) if n > 1 else 0.0
                     candidate_sqls.append(
-                        await cls._nl2sql(question, datasource, prev_error=last_err, temperature=temp)
+                        await cls._nl2sql(question, datasource, prev_error=last_err, temperature=temp, auth=auth)
                     )
             except CustomException as e:
                 last_err = e.msg
@@ -3700,7 +3725,7 @@ class AiQueryService:
 
     @classmethod
     async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None,
-                      temperature: float = 0.0) -> str:
+                      temperature: float = 0.0, auth=None) -> str:
         """Agno Agent 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
         try:
             runtime = await cls._get_runtime()
@@ -3770,7 +3795,7 @@ class AiQueryService:
                 agent = Agent(model=model, instructions=system_prompt)
             resp = await agent.arun(user_msg)
             sql = cls._extract_sql((resp.content or "").strip())
-            table = await _system_allowed() if datasource in (SYSTEM_DS, None) else None
+            table = await cls._allowed_for_user(auth) if datasource in (SYSTEM_DS, None) else None
             try:
                 return validate_sql(sql, table or set())
             except Exception:
@@ -3919,7 +3944,7 @@ class AiQueryService:
         # ---- 提取并校验 SQL ----
         sql_source = "".join(content_buf) if content_buf else (final_content or "")
         sql = cls._extract_sql(sql_source)
-        table = await _system_allowed() if datasource in (SYSTEM_DS, None) else None
+        table = await cls._allowed_for_user(auth) if datasource in (SYSTEM_DS, None) else None
         try:
             sql = validate_sql(sql, table or set())
         except Exception as e:  # noqa: BLE001
