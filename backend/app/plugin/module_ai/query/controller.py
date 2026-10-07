@@ -546,6 +546,13 @@ async def domain_objects(
     return SuccessResponse(data=await AiQueryService.domain_objects(), msg="查询成功")
 
 
+@AiQueryRouter.get("/domain/reconcile", summary="数据域对象对账(未登记标出)")
+async def domain_reconcile(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.domain_reconcile(), msg="查询成功")
+
+
 # ---- P3-⑩ 治理驾驶舱 ----
 @AiQueryRouter.post("/ontology/import-from-ds", summary="数据源连接器→本体对象(把外部表结构生成本体对象)")
 async def import_ds_as_ontology(

@@ -2827,6 +2827,24 @@ class AiQueryService:
                  "key_col": r[2] or "id", "name_col": r[3] or "name"} for r in rows]
 
     @classmethod
+    async def domain_reconcile(cls) -> dict:
+        """数据域对账：校验各域 tables 引用的对象是否都已登记（未登记标出），保证域定义完整。"""
+        domains = await cls.list_domains()
+        try:
+            schema = await cls._system_schema()
+            known = set(schema.keys())
+        except Exception:  # noqa: BLE001
+            known = set(SYSTEM_ALLOWED_TABLES)
+        issues = []
+        for d in domains:
+            for t in (d["tables"] or []):
+                if t not in known:
+                    issues.append({"domain": d["code"] or d["name"], "domain_id": d["id"],
+                                   "table": t, "missing": True})
+        return {"ok": True, "total_domains": len(domains),
+                "issue_count": len(issues), "issues": issues}
+
+    @classmethod
     async def list_domains(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
