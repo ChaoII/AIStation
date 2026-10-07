@@ -97,6 +97,13 @@
                 </el-button>
               </div>
             </div>
+            <div v-if="current" class="ont-stats">
+              <el-statistic title="属性" :value="props.length" />
+              <el-statistic title="关联" :value="links.length" />
+              <el-statistic title="动作" :value="actions.length" />
+              <el-statistic title="函数" :value="functions.length" />
+              <el-statistic title="敏感属性" :value="props.filter((p: any) => p.sensitive).length" />
+            </div>
             <span v-else>对象详情</span>
           </template>
           <el-tabs v-if="current" v-model="ontTab">
@@ -1224,6 +1231,22 @@ onMounted(async () => {
   margin-left: 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.ont-stats {
+  display: flex;
+  gap: 24px;
+  margin-top: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.ont-stats .el-statistic__head {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.ont-stats .el-statistic__content {
+  font-size: 18px;
+  color: var(--el-color-primary);
 }
 .ont-bar {
   margin-bottom: 8px;
