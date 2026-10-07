@@ -54,6 +54,7 @@
                   effect="plain"
                   class="ont-obj__dq"
                   :type="o.dq_score >= 80 ? 'success' : o.dq_score >= 60 ? 'warning' : 'danger'"
+                  @click.stop="openDqDetail(o)"
                 >
                   DQ {{ o.dq_score }}
                 </el-tag>
@@ -462,6 +463,35 @@
       </template>
     </el-dialog>
 
+    <!-- DQ 详情 -->
+    <el-dialog v-model="dqDialog" title="对象数据质量详情" width="560px" append-to-body>
+      <template v-if="dqDetail">
+        <el-row :gutter="12">
+          <el-col :span="6"><el-statistic title="健康分" :value="dqDetail.score ?? 0" :precision="1" /></el-col>
+          <el-col :span="6"><el-statistic title="完整性" :value="dqDetail.completeness ?? 0" :precision="1" /></el-col>
+          <el-col :span="6"><el-statistic title="唯一性" :value="dqDetail.uniqueness ?? 0" :precision="1" /></el-col>
+          <el-col :span="6"><el-statistic title="新鲜度" :value="dqDetail.freshness ?? 0" :precision="1" /></el-col>
+        </el-row>
+        <div class="gov-section" style="margin-top: 12px">质量问题</div>
+        <div v-if="(dqDetail.issues || []).length">
+          <el-tag
+            v-for="(it, i) in dqDetail.issues"
+            :key="i"
+            size="small"
+            type="danger"
+            effect="plain"
+            style="margin: 0 3px 4px 0"
+          >
+            {{ it }}
+          </el-tag>
+        </div>
+        <el-empty v-else :image-size="40" description="无质量问题" />
+      </template>
+      <template #footer>
+        <el-button @click="dqDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 对象编辑 -->
     <el-dialog v-model="objDialog" title="对象类型" width="560px" append-to-body>
       <el-form :model="objForm" label-width="100px">
@@ -685,6 +715,7 @@ import {
 } from "@/api/module_ai/ontology";
 import { computed } from "vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
+import { getDqOverview } from "@/api/module_ai/query";
 
 const objects = ref<any[]>([]);
 const globalLinks = ref<any[]>([]);
@@ -726,6 +757,19 @@ async function loadObjects() {
   globalLinks.value = lr.data?.data || [];
   const cr = await getOntCapabilities();
   caps.value = cr.data?.data || [];
+}
+const dqDialog = ref(false);
+const dqDetail = ref<any>(null);
+async function openDqDetail(o: any) {
+  try {
+    const r = await getDqOverview();
+    const items = r.data?.data?.items || [];
+    dqDetail.value = items.find((x: any) => x.table === o.code) || null;
+    dqDialog.value = true;
+  } catch {
+    dqDetail.value = null;
+    dqDialog.value = true;
+  }
 }
 // 能力编辑
 const capDialog = ref(false);
