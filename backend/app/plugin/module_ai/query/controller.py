@@ -499,6 +499,15 @@ async def access_preview_role(
     return SuccessResponse(data=await AiQueryService.access_preview_role(role), msg="查询成功")
 
 
+@AiQueryRouter.get("/access/permission-check", summary="权限检查(用户×资源)")
+async def permission_check(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    user_id: int = 0,
+    table: str = "",
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.permission_check(user_id, table), msg="查询成功")
+
+
 @AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")
 async def dq_overview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

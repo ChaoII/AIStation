@@ -2635,6 +2635,27 @@ class AiQueryService:
                 "total": len(actions) + len(versions)}
 
     @classmethod
+    async def permission_check(cls, user_id: int, table: str) -> dict:
+        """权限检查（Palantir checking permissions）：给定用户+资源，返回能否访问/原因/敏感字段可见性。"""
+        from types import SimpleNamespace as SN
+        try:
+            uid = int(user_id or 0)
+        except (TypeError, ValueError):
+            uid = 0
+        if await cls._is_superuser(uid):
+            return {"user_id": uid, "table": table, "allowed": True,
+                    "sensitive_visible": True, "reason": "超管（全量可见）"}
+        roles = await cls._user_role_codes_by_id(uid)
+        auth = SN(user=SN(id=uid, is_superuser=False, roles=[SN(code=r) for r in roles]))
+        allowed_tables = await cls._allowed_for_user(auth)
+        allowed = table in allowed_tables
+        reason = "在可查白名单内" if allowed else "不在该用户可查范围（ABAC/数据域限定）"
+        return {"user_id": uid, "table": table, "allowed": allowed,
+                "roles": sorted(roles),
+                "sensitive_visible": bool(await cls._can_see_sensitive(uid)),
+                "reason": reason}
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

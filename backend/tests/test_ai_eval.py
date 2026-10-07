@@ -73,3 +73,20 @@ class TestAiEval:
         assert r.get("ok") is True
         assert r["count"] >= 1
         assert any("password" in (i["column"] or "").lower() for i in r["identified"])
+
+    def test_permission_check(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_domain (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, code TEXT, description TEXT, tables TEXT, members TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+            # 超管（user 1）对任意表全可见
+            r = await AiQueryService.permission_check(1, "video_cameras")
+            assert r["allowed"] is True and r["sensitive_visible"] is True
+            # 非超管无规则 → 全开可查
+            r2 = await AiQueryService.permission_check(999999, "video_cameras")
+            assert "allowed" in r2 and "reason" in r2
+        asyncio.run(_go())
