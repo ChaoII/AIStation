@@ -1222,7 +1222,7 @@ class AiQueryService:
 
     @classmethod
     async def autopilot_execute(cls, executable: str, table: str = "") -> dict:
-        """执行一个安全的自主行动（目前支持敏感扫描、DQ 重扫）。"""
+        """执行一个安全的自主行动：敏感扫描 / DQ 重扫 / 补全描述 / 启用数据源。"""
         if executable == "scan_sensitive" and table:
             r = await cls.scan_sensitive(table)
             return {"ok": True, "msg": f"已对 {table} 完成敏感扫描，识别 {r.get('count', 0)} 个敏感字段"}
@@ -1232,6 +1232,28 @@ class AiQueryService:
                 return {"ok": True, "msg": f"已对 {table} 重跑数据质量扫描"}
             except Exception as e:  # noqa: BLE001
                 return {"ok": False, "msg": f"DQ 重扫失败：{e}"}
+        if executable == "generate_desc" and table:
+            try:
+                async with async_db_session.begin() as db:
+                    from sqlalchemy import text as _t
+                    await db.execute(_t(
+                        "UPDATE ai_query_assets SET alias=COALESCE(NULLIF(alias,''), :alias) "
+                        "WHERE table_name=:t AND is_deleted=false"),
+                        {"alias": f"数据表 {table}", "t": table})
+                _SCHEMA_CACHE = None
+                return {"ok": True, "msg": f"已为 {table} 补全中文名"}
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "msg": f"补全描述失败：{e}"}
+        if executable == "enable_ds" and table:
+            try:
+                async with async_db_session.begin() as db:
+                    from sqlalchemy import text as _t
+                    await db.execute(_t(
+                        "UPDATE ai_query_datasource SET enabled=true WHERE name=:n AND is_deleted=false"),
+                        {"n": table})
+                return {"ok": True, "msg": f"已启用数据源 {table}"}
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "msg": f"启用数据源失败：{e}"}
         return {"ok": False, "msg": "该行动为信息项/暂不支持自动执行，请在对应模块处理"}
 
     # ---------------------------------------------------------------- #

@@ -153,6 +153,8 @@ class TestAiEval:
         assert "ok" in r and "msg" in r
         r2 = asyncio.run(AiQueryService.autopilot_execute("none", ""))
         assert r2["ok"] is False
+        r3 = asyncio.run(AiQueryService.autopilot_execute("generate_desc", "t_desc"))
+        assert "ok" in r3
 
     def test_derived_metrics(self):
         from app.plugin.module_ai.query.service import AiQueryService
