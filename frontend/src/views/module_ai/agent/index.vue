@@ -140,6 +140,13 @@
                 >
                   技能
                 </el-tag>
+                <el-tooltip
+                  v-if="a.query_enabled || (a.knowledge_ids || []).length || (a.skill_ids || []).length"
+                  content="这些能力来自本体登记（问数/接地/知识库/技能），按本体工具装配、受数据域/ABAC 治理"
+                  placement="bottom"
+                >
+                  <el-tag size="small" effect="plain" type="info">本体</el-tag>
+                </el-tooltip>
                 <el-tag v-if="a.model_id" size="small" effect="plain">模型</el-tag>
                 <el-tag v-if="a.prompt_id" size="small" effect="plain">提示词</el-tag>
                 <el-tag v-if="a.workflow_id" size="small" effect="plain" type="primary">
@@ -290,6 +297,14 @@
             </el-tag>
             <el-tag v-if="activeChatAgent.query_enabled" size="small" type="warning" effect="plain">
               问数
+            </el-tag>
+            <el-tag
+              v-if="activeChatAgent.query_enabled || activeChatAgent.knowledge_ids?.length"
+              size="small"
+              type="info"
+              effect="plain"
+            >
+              本体
             </el-tag>
             <el-tag v-if="(activeChatAgent.tool_ids || []).length" size="small" effect="plain">
               {{ activeChatAgent.tool_ids.length }} 工具
