@@ -241,6 +241,12 @@ export function getActionLogs(limit = 100) {
 export function getPendingActions(limit = 50) {
   return request({ url: `${API_PATH}/action/pending`, method: "get", params: { limit } });
 }
+export function getApprovalCenter() {
+  return request({ url: `${API_PATH}/approval/center`, method: "get" });
+}
+export function approveVersionPublish(pending_id: number) {
+  return request({ url: `/ai/ontology/version/approve`, method: "post", data: { pending_id } });
+}
 export function approveAction(data: { approval_id: number }) {
   return request({ url: `${API_PATH}/action/approve`, method: "post", data });
 }

@@ -1038,6 +1038,43 @@
           </el-table>
           <el-empty v-else :image-size="40" description="暂无待审批动作" />
         </el-tab-pane>
+        <el-tab-pane label="审批" name="approval">
+          <div class="ops-bar">
+            <span class="trace-title">审批中心（待审批）</span>
+            <el-button size="small" @click="loadApprovalCenter">刷新</el-button>
+            <el-tag v-if="approvalCenter.total > 0" size="small" type="warning" effect="plain">
+              {{ approvalCenter.total }} 条待审批
+            </el-tag>
+          </div>
+          <el-alert type="info" :closable="false" show-icon title="统一审批：动作写回 + 本体版本发布的高危操作，需超管批准后执行/发布。" />
+          <div class="gov-section" style="margin-top: 10px">动作写回（{{ (approvalCenter.actions || []).length }}）</div>
+          <el-table v-if="(approvalCenter.actions || []).length" :data="approvalCenter.actions" size="small" border max-height="220">
+            <el-table-column prop="action" label="动作" width="110" show-overflow-tooltip />
+            <el-table-column prop="table" label="对象" width="110" show-overflow-tooltip />
+            <el-table-column prop="key" label="键" width="90" show-overflow-tooltip />
+            <el-table-column label="参数" min-width="120">
+              <template #default="{ row }">{{ JSON.stringify(row.params) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="160" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" :loading="approvingId === row.id" @click="doApprove(row)">批准执行</el-button>
+                <el-button link type="danger" size="small" @click="doReject(row)">驳回</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else :image-size="30" description="无待审批动作" />
+          <div class="gov-section" style="margin-top: 10px">本体发布（{{ (approvalCenter.versions || []).length }}）</div>
+          <el-table v-if="(approvalCenter.versions || []).length" :data="approvalCenter.versions" size="small" border max-height="220">
+            <el-table-column prop="object_code" label="对象" width="140" show-overflow-tooltip />
+            <el-table-column prop="created_time" label="时间" width="170" show-overflow-tooltip />
+            <el-table-column label="操作" width="160" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="approveVersion(row)">批准发布</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else :image-size="30" description="无待审批发布" />
+        </el-tab-pane>
         <el-tab-pane label="治理" name="governance">
           <div class="ops-bar">
             <el-select
@@ -2830,6 +2867,8 @@ import {
   executeAction,
   getActionLogs,
   getPendingActions,
+  getApprovalCenter,
+  approveVersionPublish,
   approveAction,
   rejectAction,
   getAssetVersions,
@@ -3686,6 +3725,25 @@ async function loadPendingActions() {
     pendingActions.value = [];
   }
 }
+const approvalCenter = ref<any>({ actions: [], versions: [], total: 0 });
+async function loadApprovalCenter() {
+  try {
+    const r = await getApprovalCenter();
+    approvalCenter.value = r.data?.data || { actions: [], versions: [], total: 0 };
+  } catch {
+    approvalCenter.value = { actions: [], versions: [], total: 0 };
+  }
+}
+async function approveVersion(row: any) {
+  try {
+    await ElMessageBox.confirm(`批准发布本体对象「${row.object_code}」？`, "审批确认", { type: "warning", confirmButtonText: "批准发布", cancelButtonText: "取消" });
+  } catch { return; }
+  try {
+    const r = await approveVersionPublish(row.id);
+    if (r.data?.ok) ElMessage.success("已批准发布"); else ElMessage.error(r.data?.msg || "批准失败");
+  } catch (e: any) { ElMessage.error(e?.message || "批准失败"); }
+  await loadApprovalCenter();
+}
 async function doApprove(row: any) {
   try {
     await ElMessageBox.confirm(
@@ -4276,6 +4334,8 @@ function onOpsTabClick(tab: any) {
   } else if (name === "pipeline") {
     loadPipes();
     loadPipelineGraph();
+  } else if (name === "approval") {
+    loadApprovalCenter();
   }
 }
 watch(opsTab, async (v) => {
@@ -4292,6 +4352,8 @@ watch(opsTab, async (v) => {
   } else if (v === "pipeline") {
     loadPipes();
     loadPipelineGraph();
+  } else if (v === "approval") {
+    loadApprovalCenter();
   }
 });
 // ---- P3-⑩ 治理驾驶舱 ----
