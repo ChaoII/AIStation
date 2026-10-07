@@ -371,8 +371,9 @@
             :nodes="objectGraph.nodes"
             :edges="objectGraph.edges"
             height="420px"
-            layout-name="cose"
-            use-preset
+            layout-name="preset"
+            :node-style="{ sizeMode: 'weight', labelSize: 12 }"
+            :edge-style="{ label: 'show', colorMode: 'type' }"
             @node-tap="onGraphNodeTap"
           />
           <el-empty v-else :image-size="60" description="暂无对象，点击新建对象后即可展示对象关系图" />
@@ -722,27 +723,29 @@ const objects = ref<any[]>([]);
 const globalLinks = ref<any[]>([]);
 const objectGraph = computed(() => {
   const objs = objects.value || [];
-  const codeIdx: Record<string, number> = {};
-  // 节点 id 与边 source/target 统一用「对象 code 字符串」，避免 cytoscape id 类型不一致导致边创建失败
+  const nodeId: Record<string, number> = {};
+  // 统计每个对象的关联数作为节点权重（有关联的节点大、孤立体小，与知识库图谱一致）
+  const linkCount: Record<number, number> = {};
   const nodes = objs.map((o, i) => {
-    codeIdx[o.code] = i + 1;
-    return { id: String(o.code), name: o.name || o.code, etype: "object" };
+    nodeId[o.code] = i + 1;
+    linkCount[i + 1] = 0;
+    return { id: i + 1, name: o.name || o.code, etype: "object", weight: 1, x: (i % 3) * 170, y: Math.floor(i / 3) * 130 };
   });
-  const nodeIds = new Set(nodes.map((n) => n.id));
   const edges = (globalLinks.value || [])
-    .filter(
-      (l) =>
-        l.source_object &&
-        l.target_object &&
-        nodeIds.has(String(l.source_object)) &&
-        nodeIds.has(String(l.target_object))
-    )
-    .map((l) => ({
-      source: String(l.source_object),
-      target: String(l.target_object),
-      rtype: l.name || "link",
-      weight: 1,
-    }));
+    .filter((l) => l.source_object && l.target_object && nodeId[l.source_object] && nodeId[l.target_object])
+    .map((l) => {
+      linkCount[nodeId[l.source_object]] = (linkCount[nodeId[l.source_object]] || 0) + 1;
+      linkCount[nodeId[l.target_object]] = (linkCount[nodeId[l.target_object]] || 0) + 1;
+      return {
+        source: nodeId[l.source_object],
+        target: nodeId[l.target_object],
+        rtype: l.name || "link",
+        weight: 1,
+      };
+    });
+  nodes.forEach((n, i) => {
+    n.weight = 1 + Math.min(linkCount[n.id] || 0, 10);
+  });
   return { nodes: nodes as any, edges: edges as any };
 });
 const current = ref<any>(null);
