@@ -2240,6 +2240,41 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="按角色可写">
+          <div class="role-writable-editor" style="width: 100%">
+            <div v-for="(rw, rk) in actionForm.writable_by_role" :key="rk" class="rw-row">
+              <el-input
+                v-model="rw.role"
+                placeholder="角色 code，如 ANNOTATOR"
+                style="width: 150px"
+                @change="normalizeRoleWritable"
+              />
+              <el-select
+                v-model="rw.cols"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                placeholder="该角色可写字段"
+                style="flex: 1"
+              >
+                <el-option
+                  v-for="c in actionForm.writable_cols"
+                  :key="c"
+                  :label="c"
+                  :value="c"
+                />
+              </el-select>
+              <el-button :icon="Delete" circle text type="danger" @click="removeRoleWritable(rk)" />
+            </div>
+            <el-button type="primary" plain size="small" :icon="Plus" @click="addRoleWritable">
+              新增角色字段
+            </el-button>
+            <div class="rw-hint">
+              配置后，非超管仅能写其角色允许的字段；未填则默认使用上方全局可写字段。
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="校验规则">
           <el-input v-model="actionForm.validation" placeholder="如：备注不超过100字" />
         </el-form-item>
@@ -3456,6 +3491,7 @@ const actionForm = reactive<any>({
   name: "",
   object_table: "",
   writable_cols: [],
+  writable_by_role: [],
   validation: "",
   approve: true,
   enabled: true,
@@ -3533,25 +3569,39 @@ async function doReject(row: any) {
   await loadPendingActions();
 }
 function openActionEdit(row?: any) {
-  Object.assign(
-    actionForm,
-    row || {
-      id: null,
-      name: "",
-      object_table: "",
-      writable_cols: [],
-      validation: "",
-      approve: true,
-      enabled: true,
-    }
-  );
+  const src = row || {
+    id: null,
+    name: "",
+    object_table: "",
+    writable_cols: [],
+    validation: "",
+    approve: true,
+    enabled: true,
+  };
+  const wrMap = src.writable_by_role || {};
+  const wrArr = Object.entries(wrMap).map(([role, cols]) => ({ role, cols: cols || [] }));
+  Object.assign(actionForm, src, { writable_by_role: wrArr, id: src.id, name: src.name });
   actionDialog.value = true;
+}
+function addRoleWritable() {
+  actionForm.writable_by_role.push({ role: "", cols: [] });
+}
+function removeRoleWritable(idx: number) {
+  actionForm.writable_by_role.splice(idx, 1);
+}
+function normalizeRoleWritable() {
+  // 忽略空角色：提交时由 saveActionFn 转 {role: []}
 }
 async function saveActionFn() {
   if (!actionForm.name?.trim() || !actionForm.object_table?.trim())
     return ElMessage.warning("请填写名称和目标对象");
+  // [{role,cols}] → {role: [cols]}
+  const writableByRole: Record<string, string[]> = {};
+  for (const rw of actionForm.writable_by_role || []) {
+    if (rw.role?.trim()) writableByRole[rw.role.trim()] = (rw.cols || []).map((c: string) => c);
+  }
   try {
-    await saveAction({ ...actionForm });
+    await saveAction({ ...actionForm, writable_by_role: writableByRole });
     ElMessage.success("已保存");
     actionDialog.value = false;
     loadActions();
@@ -4929,6 +4979,17 @@ onMounted(() => {
 }
 .promote-hint {
   margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.rw-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.rw-hint {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }

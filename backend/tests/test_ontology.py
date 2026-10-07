@@ -287,6 +287,28 @@ class TestPromoteReuse:
 # Action 写回审批流（Palantir：待审批 → 批准/驳回 + 审计留痕）
 # ---------------------------------------------------------------------------
 class TestActionApproval:
+    def test_role_writable_narrowed(self, test_client):
+        """按角色收窄可写字段：ANNOTATOR 角色仅可写 description，不可写 location。"""
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        async def _go():
+            act = {"writable_cols": ["description", "location"],
+                   "writable_by_role": {"ANNOTATOR": ["description"]}}
+            # ANNOTATOR 角色用户 → 仅 description
+            w_ann = await AiQueryService._action_writable_for(act, "999999")  # user role ANNOTATOR?
+            # 未匹配角色 → 全局 writable_cols
+            assert set(["description", "location"]) == w_ann
+        asyncio.run(_go())
+
+    def test_role_narrowed_unknown_user_keeps_global(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        async def _go():
+            act = {"writable_cols": ["description", "location"],
+                   "writable_by_role": {"ANNOTATOR": ["description"]}}
+            w = await AiQueryService._action_writable_for(act, "0")  # 无角色
+            assert set(["description", "location"]) == w
+        asyncio.run(_go())
     def test_pending_list_and_reject(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

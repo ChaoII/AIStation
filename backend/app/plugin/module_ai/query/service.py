@@ -1762,39 +1762,80 @@ class AiQueryService:
             from sqlalchemy import text as _t
 
             res = await db.execute(_t(
-                "SELECT id,name,object_table,writable_cols,validation,approve,enabled "
+                "SELECT id,name,object_table,writable_cols,writable_by_role,validation,approve,enabled "
                 "FROM ai_action WHERE is_deleted=false ORDER BY id DESC"))
             rows = res.fetchall()
         import json as _json
         return [{
             "id": r[0], "name": r[1], "object_table": r[2],
             "writable_cols": r[3] if isinstance(r[3], list) else (_json.loads(r[3]) if r[3] else []),
-            "validation": r[4] or "", "approve": bool(r[5]), "enabled": bool(r[6]),
+            "writable_by_role": r[4] if isinstance(r[4], dict) else (_json.loads(r[4]) if r[4] else {}),
+            "validation": r[5] or "", "approve": bool(r[6]), "enabled": bool(r[7]),
         } for r in rows]
 
     @classmethod
     async def upsert_action(cls, data: dict) -> dict:
         import json as _json
         cols = _json.dumps(data.get("writable_cols") or [], ensure_ascii=False)
+        wr = _json.dumps(data.get("writable_by_role") or {}, ensure_ascii=False)
         async with async_db_session.begin() as db:
             from sqlalchemy import text as _t
 
             if data.get("id"):
                 await db.execute(_t(
-                    "UPDATE ai_action SET name=:n, object_table=:o, writable_cols=:w, validation=:v, "
-                    "approve=:a, enabled=:e, updated_time=now() WHERE id=:i"), {
-                    "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols,
+                    "UPDATE ai_action SET name=:n, object_table=:o, writable_cols=:w, writable_by_role=:wr, "
+                    "validation=:v, approve=:a, enabled=:e, updated_time=now() WHERE id=:i"), {
+                    "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols, "wr": wr,
                     "v": data.get("validation", ""), "a": bool(data.get("approve", True)),
                     "e": bool(data.get("enabled", True)), "i": data["id"]})
                 return {"id": data["id"]}
             res = await db.execute(_t(
-                "INSERT INTO ai_action(name,object_table,writable_cols,validation,approve,enabled) "
-                "VALUES (:n,:o,:w,:v,:a,:e) ON CONFLICT (name) DO UPDATE SET object_table=:o, "
-                "writable_cols=:w, validation=:v, approve=:a, enabled=:e RETURNING id"), {
-                "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols,
+                "INSERT INTO ai_action(name,object_table,writable_cols,writable_by_role,validation,approve,enabled) "
+                "VALUES (:n,:o,:w,:wr,:v,:a,:e) ON CONFLICT (name) DO UPDATE SET object_table=:o, "
+                "writable_cols=:w, writable_by_role=:wr, validation=:v, approve=:a, enabled=:e RETURNING id"), {
+                "n": data.get("name", ""), "o": data.get("object_table", ""), "w": cols, "wr": wr,
                 "v": data.get("validation", ""), "a": bool(data.get("approve", True)),
                 "e": bool(data.get("enabled", True))})
             return {"id": res.scalar()}
+
+    @classmethod
+    async def _user_role_codes_by_id(cls, user_id) -> set[str]:
+        """按 user_id 查询其角色 code 集合（sys_user_roles → sys_role）。"""
+        try:
+            uid = int(user_id)
+        except (TypeError, ValueError):
+            uid = 0
+        if not uid:
+            return set()
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                rows = (await db.execute(_t(
+                    "SELECT r.code FROM sys_role r JOIN sys_user_roles ur ON ur.role_id=r.id "
+                    "WHERE ur.user_id=:u AND r.is_deleted=false"), {"u": uid})).fetchall()
+            return {r[0] for r in rows}
+        except Exception:  # noqa: BLE001
+            return set()
+
+    @classmethod
+    async def _action_writable_for(cls, act: dict, operator: str) -> set[str]:
+        """动作可写字段：超管/未配角色字段 → 全局 writable_cols；否则收窄为该角色允许字段的交集。"""
+        writable = set(act.get("writable_cols") or [])
+        wr = act.get("writable_by_role") or {}
+        if not wr:
+            return writable
+        try:
+            if await cls._is_superuser(operator):
+                return writable
+        except Exception:  # noqa: BLE001
+            pass
+        roles = await cls._user_role_codes_by_id(operator)
+        role_allowed: set[str] = set()
+        for r in roles:
+            role_allowed |= set(wr.get(r) or [])
+        if role_allowed:
+            return writable & role_allowed
+        return writable
 
     @classmethod
     async def execute_action(cls, name: str, object_key: str, params: dict, operator: str, approve: bool = False) -> dict:
@@ -1805,7 +1846,7 @@ class AiQueryService:
         if not act or not act.get("enabled"):
             return {"ok": False, "msg": "动作不存在或未启用"}
         table = act["object_table"]
-        writable = set(act.get("writable_cols") or [])
+        writable = await cls._action_writable_for(act, operator)
         if not writable:
             return {"ok": False, "msg": "该动作未配置可写字段"}
         # 审批门禁：需审批且未批准 → 落审批单（pending），返回待审批 id
@@ -1903,7 +1944,7 @@ class AiQueryService:
         act = next((a for a in actions if a["name"] == name), None)
         if not act or not act.get("enabled"):
             return {"ok": False, "msg": "动作不存在或未启用"}
-        writable = set(act.get("writable_cols") or [])
+        writable = await cls._action_writable_for(act, operator)
         cols = list(params.keys())
         bad = [c for c in cols if c not in writable]
         if bad:
