@@ -66,6 +66,35 @@ class AiOverviewService:
                 "alerts": alerts}
 
     @classmethod
+    async def audit_check(cls, days: int = 7) -> dict:
+        """AI 调用合规审计：未鉴权(user_id 为空)调用/失败调用/高成本调用，输出合规报告。"""
+        from datetime import datetime, timedelta
+        from sqlalchemy import func as _f, select as _sel
+        since = datetime.utcnow() - timedelta(days=max(1, days))
+        async with async_db_session() as db:
+            total = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
+                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since))).scalar() or 0
+            anon = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
+                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
+                AiCallLogModel.user_id.is_(None)))).scalar() or 0
+            errs = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
+                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
+                AiCallLogModel.result == "error"))).scalar() or 0
+            high_cost = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
+                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
+                AiCallLogModel.cost > 1.0))).scalar() or 0
+        issues = []
+        if anon:
+            issues.append({"level": "warning", "msg": f"近{days}天有 {anon} 条未鉴权调用（缺用户ID）"})
+        if errs:
+            issues.append({"level": "warning", "msg": f"近{days}天有 {errs} 条失败调用"})
+        if high_cost:
+            issues.append({"level": "warning", "msg": f"近{days}天有 {high_cost} 条高成本调用(>1元)"})
+        return {"days": days, "total": total, "anonymous_calls": anon,
+                "error_calls": errs, "high_cost_calls": high_cost,
+                "compliant": not issues, "issues": issues}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

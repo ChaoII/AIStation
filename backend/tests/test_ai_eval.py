@@ -29,3 +29,7 @@ class TestAiEval:
         r = asyncio.run(AiOverviewService.health_check(days=7))
         assert "calls" in r and "error_rate" in r and "status" in r and "alerts" in r
         assert r["status"] in ("healthy", "warning", "critical")
+
+    def test_audit_check_shape(self):
+        r = asyncio.run(AiOverviewService.audit_check(days=7))
+        assert "total" in r and "anonymous_calls" in r and "compliant" in r and "issues" in r

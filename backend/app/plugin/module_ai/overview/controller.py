@@ -35,3 +35,11 @@ async def overview_health(
     days: int = 7,
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.health_check(days), msg="查询成功")
+
+
+@AiOverviewRouter.get("/audit", summary="AI 调用合规审计")
+async def overview_audit(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: int = 7,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.audit_check(days), msg="查询成功")
