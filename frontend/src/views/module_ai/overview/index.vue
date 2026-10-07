@@ -93,6 +93,39 @@
     </el-card>
 
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>系统运行监控</template>
+      <el-row :gutter="12" v-if="runtime">
+        <el-col :span="4"><el-statistic title="应用" :value="runtime.apps ?? 0" /></el-col>
+        <el-col :span="4"><el-statistic title="工作流" :value="runtime.workflows ?? 0" /></el-col>
+        <el-col :span="4"><el-statistic title="模型" :value="runtime.models ?? 0" /></el-col>
+        <el-col :span="4"><el-statistic title="智能体" :value="runtime.agents ?? 0" /></el-col>
+        <el-col :span="4">
+          <div class="ov-usage-row">
+            <span>AI健康</span>
+            <el-tag size="small" :type="runtime.health?.status === 'healthy' ? 'success' : runtime.health?.status === 'warning' ? 'warning' : 'danger'" effect="plain">
+              {{ runtime.health?.status === "healthy" ? "健康" : runtime.health?.status === "warning" ? "预警" : "严重" }}
+            </el-tag>
+          </div>
+        </el-col>
+        <el-col :span="4"><el-statistic title="近7天调用" :value="runtime.health?.calls ?? 0" /></el-col>
+      </el-row>
+      <div v-if="runtime" class="gov-section" style="margin-top: 8px">管道运行状态</div>
+      <div v-if="runtime">
+        <el-tag
+          v-for="(cnt, st) in runtime.pipeline_status || {}"
+          :key="st"
+          size="small"
+          :type="String(st) === 'success' ? 'success' : String(st) === 'failed' ? 'danger' : 'warning'"
+          effect="plain"
+          style="margin: 0 3px"
+        >
+          {{ st }}: {{ cnt }}
+        </el-tag>
+        <el-tag v-if="!Object.keys(runtime.pipeline_status || {}).length" size="small" type="info" effect="plain">暂无管道运行</el-tag>
+      </div>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
@@ -205,7 +238,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime } from "@/api/module_ai/overview";
 
 defineOptions({ name: "AiOverview" });
 
@@ -215,6 +248,10 @@ const evalResult = ref<any>(null);
 const evalLoading = ref(false);
 const health = ref<any>(null);
 const audit = ref<any>(null);
+const runtime = ref<any>(null);
+async function loadRuntime() {
+  try { runtime.value = (await getAiRuntime()).data?.data || null; } catch { runtime.value = null; }
+}
 async function loadHealth() {
   try { health.value = (await getAiHealth()).data?.data || null; } catch { health.value = null; }
 }
@@ -349,6 +386,7 @@ onMounted(() => {
   load();
   loadHealth();
   loadAudit();
+  loadRuntime();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

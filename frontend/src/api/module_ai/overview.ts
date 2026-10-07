@@ -12,3 +12,6 @@ export function getAiHealth(days = 7) {
 export function getAiAudit(days = 7) {
   return request({ url: "/ai/overview/audit", method: "get", params: { days } });
 }
+export function getAiRuntime() {
+  return request({ url: "/ai/overview/runtime", method: "get" });
+}
