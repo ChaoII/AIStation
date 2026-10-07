@@ -137,6 +137,16 @@
 
               <div v-if="m.summary" class="msg-a__summary">{{ m.summary }}</div>
 
+              <!-- DQ 警告：问数涉及数据质量风险表（温和提示） -->
+              <el-alert
+                v-if="m.dq_warning?.length"
+                type="warning"
+                :closable="false"
+                show-icon
+                class="msg-a__dq"
+                :title="`数据质量提示：以下对象健康分较低，结果可能受数据质量影响（${m.dq_warning.map((x: any) => x.table + ' ' + x.score).join('、')}）`"
+              />
+
               <template v-if="showChart(m)">
                 <div class="msg-a__chart-title">可视化</div>
                 <ECharts :options="chartOption(m)" height="240px" />
@@ -2945,6 +2955,7 @@ async function send() {
           m.rows = d.rows || [];
           m.ontology_used = d.ontology_used || m.ontology_used || [];
           m.retrieved = d.retrieved || m.retrieved || null;
+          m.dq_warning = d.dq_warning || m.dq_warning || null;
           ensureTick();
           break;
         case "answer":
@@ -5079,6 +5090,9 @@ onMounted(() => {
 .msg-a__summary {
   margin-bottom: 8px;
   color: var(--el-text-color-primary);
+}
+.msg-a__dq {
+  margin-bottom: 8px;
 }
 .msg-a__trace {
   margin: 4px 0 8px;
