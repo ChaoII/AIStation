@@ -4803,6 +4803,19 @@ class AiQueryService:
     @classmethod
     def _answer(cls, msg: AiQueryMessageModel, metric: dict | None = None, sql: str | None = None,
                 retrieved: dict | None = None) -> dict:
+        # 置信度：快路径(指标确定性)=1.0；慢路径(LLM生成)=0.85；错误=0
+        confidence = 0.0
+        evidence = None
+        if not msg.is_error:
+            if msg.path == "fast":
+                confidence = 1.0
+            elif msg.path == "slow":
+                confidence = 0.85
+            evidence = {
+                "source": "本体指标" if msg.path == "fast" else "LLM 生成",
+                "ontology_used": _scan_ont_tables(msg.sql or sql or ""),
+                "retrieved_tables": (retrieved or {}).get("tables") or [],
+            }
         return {
             "id": msg.id, "session_id": msg.session_id, "path": msg.path,
             "datasource": msg.datasource, "sql": msg.sql or sql or "",
@@ -4812,6 +4825,7 @@ class AiQueryService:
             "metric": metric,
             "ontology_used": _scan_ont_tables(msg.sql or sql or ""),
             "retrieved": retrieved,
+            "confidence": confidence, "evidence": evidence,
         }
 
     @classmethod

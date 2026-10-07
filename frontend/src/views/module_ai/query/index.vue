@@ -48,6 +48,11 @@
                   {{ m.is_error ? "失败" : m.path === "fast" ? "精准命中" : "智能生成" }}
                 </el-tag>
                 <span v-if="m.took_ms" class="msg-a__time">{{ m.took_ms }} ms</span>
+                <el-tooltip v-if="m.confidence != null" :content="`置信度 ${(m.confidence*100).toFixed(0)}% · 依据：${m.evidence?.source || ''}`">
+                  <el-tag size="small" :type="m.confidence >= 0.9 ? 'success' : m.confidence >= 0.7 ? 'warning' : 'info'" effect="plain">
+                    置信度 {{ (m.confidence * 100).toFixed(0) }}%
+                  </el-tag>
+                </el-tooltip>
                 <span v-if="m.sql" class="msg-a__sql" @click="toggleSql(m)">
                   {{ m._showSql ? "收起 SQL" : "查看 SQL" }}
                 </span>
@@ -3009,6 +3014,8 @@ async function send() {
           m.ontology_used = d.ontology_used || m.ontology_used || [];
           m.retrieved = d.retrieved || m.retrieved || null;
           m.dq_warning = d.dq_warning || m.dq_warning || null;
+          m.confidence = d.confidence ?? m.confidence ?? null;
+          m.evidence = d.evidence || m.evidence || null;
           ensureTick();
           break;
         case "answer":
