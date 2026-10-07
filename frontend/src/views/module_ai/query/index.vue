@@ -386,6 +386,35 @@
             <el-tag v-if="kgStats" size="small" type="success" effect="plain">
               图谱 {{ kgStats.nodes }} 节点 / {{ kgStats.edges }} 边
             </el-tag>
+            <el-radio-group v-model="assetView" size="small">
+              <el-radio-button value="card">卡片</el-radio-button>
+              <el-radio-button value="table">表格</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div v-if="assetView === 'card'" class="asset-catalog">
+            <el-card
+              v-for="a in filteredAssets"
+              :key="a.table_name"
+              shadow="never"
+              class="asset-card"
+              @click="openAssetColumns(a)"
+            >
+              <div class="asset-card__head">
+                <b class="asset-card__name">{{ a.alias || a.table_name }}</b>
+                <el-tag size="small" type="info" effect="plain">{{ a.table_name }}</el-tag>
+                <div style="flex:1"></div>
+                <el-tag v-if="a.object_enabled" size="small" type="success" effect="plain">对象</el-tag>
+                <el-tag v-if="(a.sensitive_count || 0) > 0" size="small" type="danger" effect="plain">
+                  {{ a.sensitive_count }}敏感
+                </el-tag>
+                <el-tag v-if="a.dq_score != null" size="small" :type="a.dq_score >= 80 ? 'success' : a.dq_score >= 60 ? 'warning' : 'danger'" effect="plain">
+                  DQ {{ a.dq_score }}
+                </el-tag>
+              </div>
+              <div class="asset-card__meta">{{ a.domain || "—" }} · {{ a.column_count }} 列 · 血缘 {{ a.lineage_count ?? 0 }}</div>
+              <div class="asset-card__desc">{{ a.description || "暂无描述" }}</div>
+            </el-card>
+            <el-empty v-if="!filteredAssets.length" :image-size="50" description="无匹配资产" />
           </div>
           <el-table :data="filteredAssets" size="small" border max-height="400">
             <el-table-column prop="table_name" label="表名" min-width="140" show-overflow-tooltip />
@@ -3367,6 +3396,7 @@ async function removeTerm(row: any) {
 const assets = ref<any[]>([]);
 const syncingAssets = ref(false);
 const assetSearch = ref("");
+const assetView = ref("card");
 const filteredAssets = computed(() => {
   const q = (assetSearch.value || "").trim().toLowerCase();
   if (!q) return assets.value;
@@ -5296,6 +5326,44 @@ onMounted(() => {
   margin-left: 4px;
   font-size: 12px;
   color: var(--el-text-color-regular);
+}
+.asset-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.asset-card {
+  border: 1px solid var(--el-border-color-light);
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+.asset-card:hover {
+  box-shadow: var(--el-box-shadow-light);
+  border-color: var(--el-color-primary-light-7);
+}
+.asset-card__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.asset-card__name {
+  font-size: 14px;
+}
+.asset-card__meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+.asset-card__desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .msg-a__summary {
   margin-bottom: 8px;

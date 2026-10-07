@@ -1083,8 +1083,38 @@ class AiQueryService:
                     "sensitive_count": sum(1 for c in cnt if getattr(c, "sensitive", False)),
                     "sensitive_fields": [c.column_name for c in cnt if getattr(c, "sensitive", False)][:20],
                     "included_columns": sum(1 for c in cnt if c.included),
+                    "dq_score": await cls._asset_dq_score(a.table_name),
+                    "lineage_count": await cls._asset_lineage_count(a.table_name),
                 })
             return out
+
+    @classmethod
+    async def _asset_dq_score(cls, table_name: str) -> float | None:
+        """资产 DQ 质量分（来自 ai_dq_report）。"""
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                r = (await db.execute(_t(
+                    "SELECT score FROM ai_dq_report WHERE table_name=:t AND is_deleted=false"),
+                    {"t": table_name})).scalar()
+            return float(r) if r is not None else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    @classmethod
+    async def _asset_lineage_count(cls, table_name: str) -> int:
+        """资产血缘引用计数（字段资产里引用该表/被引用的条数）。"""
+        from sqlalchemy import select as _sel, func as _f
+        from app.plugin.module_ai.query.model import AiQueryAssetColumnModel
+        try:
+            async with async_db_session() as db:
+                n = (await db.execute(_sel(_f.count()).select_from(AiQueryAssetColumnModel).where(
+                    (AiQueryAssetColumnModel.table_name == table_name) |
+                    (AiQueryAssetColumnModel.related_table == table_name),
+                    AiQueryAssetColumnModel.is_deleted.is_(False)))).scalar() or 0
+            return int(n)
+        except Exception:  # noqa: BLE001
+            return 0
 
     @classmethod
     async def scan_sensitive(cls, table_name: str) -> dict:
