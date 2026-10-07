@@ -340,6 +340,30 @@
       </el-col>
     </el-row>
 
+    <el-row :gutter="12" style="margin-top: 12px">
+      <el-col :span="24">
+        <el-card shadow="never">
+          <template #header>
+            <div class="ont-head">
+              <span class="ont-head__title">对象关系图（对象 → Link → 对象）</span>
+              <el-tag size="small" type="info" effect="plain">
+                {{ objectGraph.nodes.length }} 对象 / {{ objectGraph.edges.length }} 关联
+              </el-tag>
+            </div>
+          </template>
+          <GraphCanvas
+            v-if="objectGraph.nodes.length"
+            :nodes="objectGraph.nodes"
+            :edges="objectGraph.edges"
+            height="420px"
+            layout-name="cose"
+            use-preset
+          />
+          <el-empty v-else :image-size="60" description="暂无对象，点击新建对象后即可展示对象关系图" />
+        </el-card>
+      </el-col>
+    </el-row>
+
     <!-- 对象编辑 -->
     <el-dialog v-model="objDialog" title="对象类型" width="560px" append-to-body>
       <el-form :model="objForm" label-width="100px">
@@ -543,6 +567,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Edit, MagicStick } from "@element-plus/icons-vue";
 import {
   getOntObjects,
+  getOntLinks,
   saveOntObject,
   getOntObjectFull,
   saveOntProperty,
@@ -559,8 +584,28 @@ import {
   removeOnt,
   materializeOntObject,
 } from "@/api/module_ai/ontology";
+import { computed } from "vue";
+import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 
 const objects = ref<any[]>([]);
+const globalLinks = ref<any[]>([]);
+const objectGraph = computed(() => {
+  const objs = objects.value || [];
+  const codeIdx: Record<string, number> = {};
+  const nodes = objs.map((o, i) => {
+    codeIdx[o.code] = i + 1;
+    return { id: i + 1, name: o.name || o.code, etype: "object" };
+  });
+  const edges = (globalLinks.value || [])
+    .filter((l) => l.source_object && l.target_object && codeIdx[l.source_object] && codeIdx[l.target_object])
+    .map((l) => ({
+      source: String(codeIdx[l.source_object]),
+      target: String(codeIdx[l.target_object]),
+      rtype: l.name || "link",
+      weight: 1,
+    }));
+  return { nodes, edges };
+});
 const current = ref<any>(null);
 const currentCode = ref("");
 const ontTab = ref("property");
@@ -577,6 +622,8 @@ async function loadObjects() {
   objects.value = r.data?.data || [];
   // 默认选中第一个对象，右侧即时显示详情（界面饱满）
   if (objects.value.length && !currentCode.value) await selectObject(objects.value[0]);
+  const lr = await getOntLinks();
+  globalLinks.value = lr.data?.data || [];
   const cr = await getOntCapabilities();
   caps.value = cr.data?.data || [];
 }
