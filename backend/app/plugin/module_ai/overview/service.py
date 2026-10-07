@@ -95,6 +95,32 @@ class AiOverviewService:
                 "compliant": not issues, "issues": issues}
 
     @classmethod
+    async def runtime_status(cls) -> dict:
+        """系统运行监控（Palantir Observability）：聚合 应用/工作流/模型/Agent/管道 运行状态 + AI 健康。"""
+        from app.plugin.module_ai.apps.model import AiAppModel
+        from app.plugin.module_ai.workflow.model import AiWorkflowModel
+        from app.plugin.module_ai.provider.model import AiModelModel
+        from app.plugin.module_ai.agent.model import AiAgentModel
+        from sqlalchemy import select as _sel, func as _f
+        async with async_db_session() as db:
+            apps = (await db.execute(_sel(_f.count()).select_from(AiAppModel).where(AiAppModel.is_deleted.is_(False)))).scalar() or 0
+            workflows = (await db.execute(_sel(_f.count()).select_from(AiWorkflowModel).where(AiWorkflowModel.is_deleted.is_(False)))).scalar() or 0
+            models = (await db.execute(_sel(_f.count()).select_from(AiModelModel).where(AiModelModel.is_deleted.is_(False)))).scalar() or 0
+            agents = (await db.execute(_sel(_f.count()).select_from(AiAgentModel).where(AiAgentModel.is_deleted.is_(False)))).scalar() or 0
+            try:
+                from sqlalchemy import text as _t
+                preset_status = (await db.execute(_t(
+                    "SELECT status, count(*) FROM ai_pipeline_run WHERE is_deleted=false GROUP BY status"))).fetchall()
+                pipeline_status = {r[0]: int(r[1]) for r in preset_status}
+            except Exception:  # noqa: BLE001
+                pipeline_status = {}
+        health = await cls.health_check(7)
+        return {"apps": apps, "workflows": workflows, "models": models, "agents": agents,
+                "pipeline_status": pipeline_status,
+                "health": {"status": health["status"], "error_rate": health["error_rate"],
+                           "avg_latency_ms": health["avg_latency_ms"], "calls": health["calls"]}}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

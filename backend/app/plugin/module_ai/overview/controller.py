@@ -43,3 +43,10 @@ async def overview_audit(
     days: int = 7,
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.audit_check(days), msg="查询成功")
+
+
+@AiOverviewRouter.get("/runtime", summary="系统运行监控(应用/工作流/模型/Agent/管道+AI健康)")
+async def overview_runtime(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.runtime_status(), msg="查询成功")

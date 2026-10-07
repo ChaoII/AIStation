@@ -100,3 +100,10 @@ class TestAiEval:
             lst = await AiQueryService.dl_list()
             assert any(x["table"] == "video_alarm_records" for x in lst)
         asyncio.run(_go())
+
+    def test_runtime_status_shape(self):
+        from app.plugin.module_ai.overview.service import AiOverviewService
+
+        r = asyncio.run(AiOverviewService.runtime_status())
+        assert "apps" in r and "workflows" in r and "models" in r and "agents" in r
+        assert "health" in r and "pipeline_status" in r
