@@ -137,3 +137,25 @@ class TestAiEval:
         r = asyncio.run(AiQueryService.connector_types())
         assert any(c["type"] == "postgres" for c in r)
         assert any(c["type"] == "rest_api" for c in r)
+
+    def test_version_diff(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    "CREATE TABLE IF NOT EXISTS ai_asset_version "
+                    "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, field_name TEXT, "
+                    "snapshot TEXT, version_no INTEGER, operator TEXT, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+            # 表级
+            await AiQueryService._record_version("t_diff", {"alias": "A", "domain": "d1"})
+            await AiQueryService._record_version("t_diff", {"alias": "B", "domain": "d1"})
+            vs = await AiQueryService.list_versions("t_diff")
+            assert len(vs) >= 2
+            d = await AiQueryService.version_diff(vs[0]["id"], vs[1]["id"])
+            assert d["ok"] is True
+            assert any(c["key"] == "alias" for c in d["changed"])
+            return True
+        assert asyncio.run(_go())

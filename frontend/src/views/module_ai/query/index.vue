@@ -1189,15 +1189,24 @@
                 <el-table :data="govVersions" size="small">
                   <el-table-column prop="version" label="版本" width="60" />
                   <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
-                  <el-table-column label="操作" width="90" align="center">
-                    <template #default="{ row }">
-                      <el-button link type="warning" size="small" @click="rollGov(row)">
-                        回滚
-                      </el-button>
+                  <el-table-column label="操作" width="150" align="center">
+                    <template #default="{ row, $index }">
+                      <el-button link type="primary" size="small" @click="diffGov(row, $index)">对比上一版</el-button>
+                      <el-button link type="warning" size="small" @click="rollGov(row)">回滚</el-button>
                     </template>
                   </el-table-column>
                 </el-table>
                 <div v-if="!govVersions.length" class="gov-empty">暂无版本（保存过资产即有）</div>
+                <div v-if="govDiff" style="margin-top: 8px" class="gov-diff">
+                  <div class="gov-section">版本 {{ govDiff.version_a }} ↔ 版本 {{ govDiff.version_b }} 差异（{{ govDiff.changed_count }}）</div>
+                  <div v-for="c in govDiff.changed" :key="c.key" class="gov-diff__row">
+                    <el-tag size="small" type="info" effect="plain">{{ c.key }}</el-tag>
+                    <span class="gov-diff__old">{{ c.from ?? "—" }}</span>
+                    <span class="gov-diff__arrow">→</span>
+                    <span class="gov-diff__new">{{ c.to ?? "—" }}</span>
+                  </div>
+                  <el-alert v-if="!govDiff.changed_count" type="info" :closable="false" title="两版本内容一致" />
+                </div>
               </el-card>
             </el-col>
           </el-row>
@@ -2982,6 +2991,7 @@ import {
   approveAction,
   rejectAction,
   getAssetVersions,
+  getVersionDiff,
   rollbackAssetVersion,
   getAssetImpact,
   extractQueryObjects,
@@ -4005,6 +4015,7 @@ const govTable = ref("");
 const govObjects = ref<any[]>([]);
 const govImpact = ref<any>({ metrics: [], incoming_relations: [], object_links: [] });
 const govVersions = ref<any[]>([]);
+const govDiff = ref<any>(null);
 const govLineage = ref<any>(null);
 const govLineageGraph = computed(() => {
   const L = govLineage.value || {};
@@ -4089,6 +4100,19 @@ async function rollGov(row: any) {
     loadAssets();
   } catch (e: any) {
     ElMessage.error(e?.msg || "回滚失败");
+  }
+}
+async function diffGov(row: any, index: number) {
+  const older = govVersions.value[index + 1];
+  if (!older) {
+    ElMessage.info("没有更早版本可对比");
+    return;
+  }
+  try {
+    const r = await getVersionDiff(row.id, older.id);
+    govDiff.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "版本对比失败");
   }
 }
 const inferringRel = ref(false);
@@ -5627,6 +5651,23 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+}
+.gov-diff__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.gov-diff__old {
+  color: var(--el-color-danger);
+  font-size: 12px;
+}
+.gov-diff__new {
+  color: var(--el-color-success);
+  font-size: 12px;
+}
+.gov-diff__arrow {
+  color: var(--el-text-color-secondary);
 }
 .emap-editor {
   padding: 8px 12px 12px 12px;

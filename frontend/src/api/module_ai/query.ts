@@ -262,6 +262,9 @@ export function rejectAction(data: { approval_id: number }) {
 export function getAssetVersions(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/versions`, method: "get" });
 }
+export function getVersionDiff(idA: number, idB: number) {
+  return request({ url: `${API_PATH}/assets/version/diff`, method: "get", params: { id_a: idA, id_b: idB } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

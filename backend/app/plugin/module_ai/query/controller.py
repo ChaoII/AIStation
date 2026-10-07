@@ -376,6 +376,15 @@ async def asset_rollback(
     return SuccessResponse(data=r, msg=r.get("msg", "回滚完成"))
 
 
+@AiQueryRouter.get("/assets/version/diff", summary="版本 diff(对比两个版本快照)")
+async def asset_version_diff(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    id_a: int,
+    id_b: int,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.version_diff(id_a, id_b), msg="查询成功")
+
+
 @AiQueryRouter.get("/assets/{table_name}/impact", summary="影响分析(指标/关联/对象)")
 async def asset_impact(
     table_name: str,

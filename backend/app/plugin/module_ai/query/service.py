@@ -2113,6 +2113,29 @@ class AiQueryService:
         } for r in rows]
 
     @classmethod
+    async def version_diff(cls, id_a: int, id_b: int) -> dict:
+        """版本 diff：对比两个版本快照，输出新增/删除/变更的字段（表级或字段级）。"""
+        import json as _json
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            ra = (await db.execute(_t("SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"), {"i": id_a})).fetchone()
+            rb = (await db.execute(_t("SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"), {"i": id_b})).fetchone()
+        if not ra or not rb:
+            return {"ok": False, "msg": "版本不存在"}
+        def _load(raw):
+            return raw if isinstance(raw, dict) else (_json.loads(raw) if raw else {})
+        sa, sb = _load(ra[2]), _load(rb[2])
+        keys = set(sa.keys()) | set(sb.keys())
+        changed = []
+        for k in sorted(keys):
+            va, vb = sa.get(k), sb.get(k)
+            if va != vb:
+                changed.append({"key": k, "from": va, "to": vb})
+        return {"ok": True, "table": ra[0], "field": ra[1] or "", "field_b": rb[1] or "",
+                "version_a": ra[3], "version_b": rb[3],
+                "changed": changed, "changed_count": len(changed)}
+
+    @classmethod
     async def rollback_version(cls, version_id: int, auth) -> dict:
         import json as _json
         async with async_db_session() as db:
