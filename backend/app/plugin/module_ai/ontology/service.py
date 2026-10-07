@@ -32,13 +32,28 @@ async def list_objects() -> list[dict]:
         rows = (await db.execute(_t(
             "SELECT id,code,name,icon,key_prop,name_prop,description,enabled "
             "FROM ai_ont_object WHERE is_deleted=false ORDER BY id DESC"))).fetchall()
+        # DQ 健康分（该对象物化表对应 ai_dq_report）
+        dq = {}
+        try:
+            dr = (await db.execute(_t(
+                "SELECT table_name, score FROM ai_dq_report WHERE is_deleted=false"))).fetchall()
+            dq = {x[0]: (float(x[1]) if x[1] is not None else None) for x in dr}
+        except Exception:  # noqa: BLE001
+            dq = {}
     return [{"id": r[0], "code": r[1], "name": r[2], "icon": r[3] or "el-icon-Box",
              "key_prop": r[4] or "id", "name_prop": r[5] or "name",
              "description": r[6] or "", "enabled": bool(r[7]),
              "property_count": await _prop_count(r[1]),
              "link_count": await _link_count(r[1]),
              "action_count": await _action_count(r[1]),
-             "sensitive_count": await _sensitive_count(r[1])} for r in rows]
+             "sensitive_count": await _sensitive_count(r[1]),
+             "dq_score": dq.get(r[1])} for r in rows]
+
+
+async def _dq_score(code: str):
+    r = await _exec("SELECT score FROM ai_dq_report WHERE table_name=:c AND is_deleted=false", {"c": code})
+    v = r.scalar()
+    return float(v) if v is not None else None
 
 
 async def _sensitive_count(code: str) -> int:

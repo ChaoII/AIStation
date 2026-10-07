@@ -46,7 +46,18 @@
           >
             <el-icon class="ont-obj__icon"><component :is="o.icon || 'Box'" /></el-icon>
             <div class="ont-obj__meta">
-              <div class="ont-obj__name">{{ o.name }}</div>
+              <div class="ont-obj__name">
+                {{ o.name }}
+                <el-tag
+                  v-if="o.dq_score != null"
+                  size="small"
+                  effect="plain"
+                  class="ont-obj__dq"
+                  :type="o.dq_score >= 80 ? 'success' : o.dq_score >= 60 ? 'warning' : 'danger'"
+                >
+                  DQ {{ o.dq_score }}
+                </el-tag>
+              </div>
               <div class="ont-obj__code">
                 {{ o.code }} · 属性{{ o.property_count }} 关联{{ o.link_count }} 动作{{
                   o.action_count
