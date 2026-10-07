@@ -339,6 +339,9 @@ export function removeDomain(id: number) {
 export function getDomainObjects() {
   return request({ url: `${API_PATH}/domain/objects`, method: "get" });
 }
+export function domainReconcile() {
+  return request({ url: `${API_PATH}/domain/reconcile`, method: "get" });
+}
 export function getGovernanceOverview() {
   return request({ url: `${API_PATH}/governance/overview`, method: "get" });
 }

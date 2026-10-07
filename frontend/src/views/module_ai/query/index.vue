@@ -1565,7 +1565,29 @@
               {{ domainView.total_objects || 0 }} 个对象 · 未归属
               {{ domainView.unassigned?.length || 0 }}
             </el-tag>
+            <el-button size="small" :loading="reconciling" @click="loadReconcile">
+              对象对账
+            </el-button>
           </div>
+          <el-alert
+            v-if="reconcileResult?.issue_count > 0"
+            type="warning"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 8px"
+            :title="`数据域对账：${reconcileResult.issue_count} 个域引用对象未登记`"
+          />
+          <el-table
+            v-if="reconcileResult?.issues?.length"
+            :data="reconcileResult.issues"
+            size="small"
+            border
+            max-height="160"
+            style="margin-bottom: 10px"
+          >
+            <el-table-column prop="domain" label="域" width="120" show-overflow-tooltip />
+            <el-table-column prop="table" label="未登记对象" min-width="160" show-overflow-tooltip />
+          </el-table>
           <el-alert
             type="info"
             :closable="false"
@@ -2803,8 +2825,8 @@ import {
   getDqAlert,
   saveDomain,
   getDomainObjects,
-  getGovernanceOverview,
-  getQueryFewshots,
+  domainReconcile,
+  getGovernanceOverview,  getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
   getQueryStats,
@@ -4156,6 +4178,19 @@ async function loadDomains() {
     domainView.value = r.data?.data || { domains: [], unassigned: [], total_objects: 0 };
   } catch {
     domainView.value = { domains: [], unassigned: [], total_objects: 0 };
+  }
+}
+const reconcileResult = ref<any>(null);
+const reconciling = ref(false);
+async function loadReconcile() {
+  reconciling.value = true;
+  try {
+    const r = await domainReconcile();
+    reconcileResult.value = r.data?.data || null;
+  } catch {
+    reconcileResult.value = null;
+  } finally {
+    reconciling.value = false;
   }
 }
 function openDomainEdit(d?: any) {
