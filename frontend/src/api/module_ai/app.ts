@@ -6,6 +6,14 @@ export function getAiAppList(params?: any) {
   return request({ url: `${API_PATH}/list`, method: "get", params });
 }
 
+export function getAiAppTemplates() {
+  return request({ url: `${API_PATH}/templates`, method: "get" });
+}
+
+export function createAiAppFromTemplate(key: string, name: string) {
+  return request({ url: `${API_PATH}/create-from-template`, method: "post", data: { key, name } });
+}
+
 export function getAiAppDetail(id: number) {
   return request({ url: `${API_PATH}/detail/${id}`, method: "get" });
 }

@@ -17,6 +17,14 @@
           @add="handleOpenDialog()"
           @delete="onToolbar('delete')"
         />
+        <el-dropdown v-if="appTemplates.length" @command="createFromTemplate" style="margin-left: 8px">
+          <el-button size="small">从模板创建<el-icon style="margin-left:4px"><ArrowDown /></el-icon></el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="t in appTemplates" :key="t.key" :command="t">{{ t.name }}（{{ t.app_type }}）</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
         </div>
@@ -416,7 +424,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { Auth } from "@/utils/auth";
-import { Delete, Plus } from "@element-plus/icons-vue";
+import { Delete, Plus, ArrowDown } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import PageSearch from "@/components/CURD/PageSearch.vue";
 import PageContent from "@/components/CURD/PageContent.vue";
@@ -429,6 +437,8 @@ import {
   createAiApp,
   deleteAiApp,
   getAiAppList,
+  getAiAppTemplates,
+  createAiAppFromTemplate,
   updateAiApp,
   batchAppStatus,
 } from "@/api/module_ai/app";
@@ -505,6 +515,17 @@ const promptOptions = ref<any[]>([]);
 const toolOptions = ref<any[]>([]);
 const kbOptions = ref<any[]>([]);
 const wfOptions = ref<any[]>([]);
+const appTemplates = ref<any[]>([]);
+async function loadAppTemplates() {
+  try { appTemplates.value = (await getAiAppTemplates()).data?.data || []; }
+  catch { appTemplates.value = []; }
+}
+async function createFromTemplate(tpl: any) {
+  try {
+    const r = await createAiAppFromTemplate(tpl.key, tpl.name);
+    ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
+  } catch (e: any) { ElMessage.error(e?.msg || "创建失败"); }
+}
 
 const dialogVisible = ref(false);
 const dialogTitle = ref("新增应用");
@@ -856,6 +877,7 @@ async function runDebug() {
 onMounted(() => {
   loadOptions();
   loadAppSummary();
+  loadAppTemplates();
 });
 </script>
 

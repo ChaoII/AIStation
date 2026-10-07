@@ -414,3 +414,20 @@ def test_app_input_schema_default_variables(monkeypatch, test_client, auth_heade
         test_client.request(
             "DELETE", "/api/v1/ai/prompts/delete", json=[prompt_id], headers=auth_headers
         )
+
+
+def test_app_templates_and_create_from_template(test_client, auth_headers):
+    """AIP 应用市场模板齐全；从模板创建成功并带工具/类型。"""
+    tpl = test_client.get("/api/v1/ai/apps/templates", headers=auth_headers).json()["data"]
+    assert len(tpl) >= 4
+    assert any(t["key"] == "data_query" and "ai_query" in t["tools"] for t in tpl)
+    r = test_client.post(
+        "/api/v1/ai/apps/create-from-template",
+        json={"key": "report", "name": "pytest-报告"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()["data"]
+    assert body["name"] == "pytest-报告"
+    assert body["app_type"] == "report"
+    _delete_apps(test_client, auth_headers, [body["id"]])

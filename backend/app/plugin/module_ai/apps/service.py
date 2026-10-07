@@ -89,6 +89,39 @@ class AiAppService:
                 return None
             return _to_dict(a)
 
+    # AIP 应用/工作流市场模板
+    _TEMPLATES = [
+        {"key": "data_query", "name": "问数助手", "app_type": "chat",
+         "description": "自然语言问数（本体驱动）",
+         "system_prompt": "你是数据问数助手，基于系统数据回答问题。", "tools": ["ai_query"]},
+        {"key": "knowledge", "name": "知识问答", "app_type": "chat",
+         "description": "基于知识库回答（RAG）",
+         "system_prompt": "你是知识库问答助手，优先引用知识库内容。", "tools": []},
+        {"key": "report", "name": "报告生成", "app_type": "report",
+         "description": "AI 自动生成结构化报告",
+         "system_prompt": "你是报告生成助手，输出结构化分析报告。", "tools": ["ai_query", "report_generate"]},
+        {"key": "workflow", "name": "流程助手", "app_type": "workflow",
+         "description": "工作流编排驱动（多步骤）", "system_prompt": "", "tools": []},
+    ]
+
+    @classmethod
+    async def app_templates(cls) -> list[dict]:
+        return [dict(t) for t in cls._TEMPLATES]
+
+    @classmethod
+    async def create_from_template(cls, key: str, name: str, auth) -> dict | None:
+        tpl = next((t for t in cls._TEMPLATES if t["key"] == key), None)
+        if not tpl:
+            return None
+        from types import SimpleNamespace as SN
+        data = SN(name=name or tpl["name"], icon="", description=tpl.get("description") or "",
+                  model_id=None, prompt_id=None, tools=tpl.get("tools") or [],
+                  output_format="text", input_schema={}, enabled=True, order=0,
+                  app_type=tpl.get("app_type") or "chat", kb_id=None, workflow_id=None,
+                  temperature=0.3, max_tokens=None, context_window=None,
+                  system_prompt=tpl.get("system_prompt") or "", tags=[], memory=True, timeout=60)
+        return await cls.create(data, auth)
+
     @classmethod
     async def create(cls, data, auth) -> dict:
         await _ensure_app_columns()

@@ -22,6 +22,24 @@ async def list_apps(
     return SuccessResponse(data=await AiAppService.list_apps(), msg="查询成功")
 
 
+@AiAppRouter.get("/templates", summary="AIP 应用/工作流市场模板")
+async def app_templates(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:app:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiAppService.app_templates(), msg="查询成功")
+
+
+@AiAppRouter.post("/create-from-template", summary="从模板创建应用")
+async def create_from_template(
+    data: Annotated[dict, Body()],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:app:create"]))],
+) -> JSONResponse:
+    r = await AiAppService.create_from_template(data.get("key", ""), data.get("name", ""), auth)
+    if not r:
+        return ErrorResponse(msg="模板不存在")
+    return SuccessResponse(data=r, msg="创建成功")
+
+
 @AiAppRouter.get("/detail/{app_id}", summary="应用详情")
 async def get_app(
     app_id: int,
