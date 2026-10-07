@@ -373,6 +373,7 @@
             height="420px"
             layout-name="cose"
             use-preset
+            @node-tap="onGraphNodeTap"
           />
           <el-empty v-else :image-size="60" description="暂无对象，点击新建对象后即可展示对象关系图" />
           <div class="gov-section" style="margin-top: 14px">对象元数据速览</div>
@@ -760,6 +761,13 @@ async function loadObjects() {
 }
 const dqDialog = ref(false);
 const dqDetail = ref<any>(null);
+async function onGraphNodeTap(name: string) {
+  // 关系图节点名可能是对象 code 或名称，匹配后选中对象详情
+  const target =
+    objects.value.find((o: any) => String(o.code) === String(name)) ||
+    objects.value.find((o: any) => o.name === name);
+  if (target) await selectObject(target);
+}
 async function openDqDetail(o: any) {
   try {
     const r = await getDqOverview();
