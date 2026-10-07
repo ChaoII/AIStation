@@ -85,6 +85,8 @@
                   size="small"
                   effect="plain"
                   style="margin: 0 3px 4px 0"
+                  class="msg-a__ont-tag"
+                  @click="gotoOntology(o)"
                 >
                   {{ o.name }}（{{ o.table }}）
                 </el-tag>
@@ -3735,8 +3737,11 @@ function ontName(m: any) {
   return [...used].filter(Boolean).map((t: string) => {
     const code = t.replace(/^ont_/, "");
     const obj = ontMap.value[code];
-    return { table: t, name: obj ? obj.name : code };
+    return { table: t, code, name: obj ? obj.name : code };
   });
+}
+function gotoOntology(o: any) {
+  window.location.hash = `#/ai/ontology?code=${encodeURIComponent(o.code || "")}`;
 }
 // ---- 治理(版本/回滚/影响分析) ----
 const govTable = ref("");
@@ -5093,6 +5098,12 @@ onMounted(() => {
 }
 .msg-a__dq {
   margin-bottom: 8px;
+}
+.msg-a__ont-tag {
+  cursor: pointer;
+}
+.msg-a__ont-tag:hover {
+  opacity: 0.8;
 }
 .msg-a__trace {
   margin: 4px 0 8px;

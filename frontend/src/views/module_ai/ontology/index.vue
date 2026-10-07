@@ -1051,7 +1051,20 @@ async function materialize(o: any) {
   ElMessage[d.ok ? "success" : "error"](d.msg || "已物化");
 }
 
-onMounted(loadObjects);
+onMounted(async () => {
+  await loadObjects();
+  // 支持 ?code=xxx 从问数「使用本体」跳转并选中该对象
+  try {
+    const q = new URLSearchParams(window.location.hash.split("?")[1] || "");
+    const code = q.get("code");
+    if (code) {
+      const target = objects.value.find((o: any) => o.code === code);
+      if (target) await selectObject(target);
+    }
+  } catch {
+    /* 忽略 */
+  }
+});
 </script>
 
 <style scoped lang="scss">
