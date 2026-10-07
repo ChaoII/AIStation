@@ -681,6 +681,31 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AIP 数据治理报告</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            一键聚合治理总览 / 合规 / 安全 / 护栏，生成并导出 Markdown
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button type="primary" :loading="reportLoading" @click="loadReport">生成报告</el-button>
+        <el-button :disabled="!report" @click="downloadReport">导出 MD</el-button>
+        <el-tag v-if="report" size="small" type="info" effect="plain">{{ report.generated_at }}</el-tag>
+      </div>
+      <template v-if="report">
+        <el-row :gutter="12" style="margin-bottom: 8px">
+          <el-col :span="8"><el-statistic title="合规" :value="report.scores.compliance" /></el-col>
+          <el-col :span="8"><el-statistic title="安全" :value="report.scores.security" /></el-col>
+          <el-col :span="8"><el-statistic title="护栏" :value="report.scores.guardrails" /></el-col>
+        </el-row>
+        <div class="gov-section">摘要</div>
+        <div v-for="(s, i) in report.summary" :key="i" class="report-line">• {{ s }}</div>
+      </template>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -804,6 +829,7 @@ import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
 import { getShareList, removeShare } from "@/api/module_ai/query";
 import { getCatalogCategories, getObjectRelations, getAccessWalkthrough } from "@/api/module_ai/query";
 import { getGuardrailsStatus } from "@/api/module_ai/query";
+import { getGovernanceReport } from "@/api/module_ai/query";
 import { objectBrowse } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
@@ -1015,6 +1041,22 @@ async function loadBrowse() {
   catch { browse.value = null; }
   finally { browseLoading.value = false; }
 }
+const report = ref<any>(null);
+const reportLoading = ref(false);
+async function loadReport() {
+  reportLoading.value = true;
+  try { report.value = (await getGovernanceReport()).data?.data || null; }
+  catch { report.value = null; }
+  finally { reportLoading.value = false; }
+}
+function downloadReport() {
+  if (!report.value?.markdown) return;
+  const blob = new Blob([report.value.markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `治理报告_${report.value.generated_at?.replace(/[ :]/g, "-") || "now"}.md`;
+  a.click(); URL.revokeObjectURL(url);
+}
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
   compassLoading.value = true;
@@ -1179,6 +1221,7 @@ onMounted(() => {
   loadWalkthrough();
   loadGuardrails();
   loadBrowse();
+  loadReport();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
@@ -1308,6 +1351,11 @@ onBeforeUnmount(() => {
   border-color: var(--el-color-success-light-7);
   background: var(--el-color-success-light-9);
   color: var(--el-color-success);
+}
+.report-line {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  margin-bottom: 2px;
 }
 </style>
 

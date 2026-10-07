@@ -334,6 +334,13 @@ async def guardrails_status(
     return SuccessResponse(data=await AiQueryService.guardrails_status(), msg="查询成功")
 
 
+@AiQueryRouter.get("/governance/report", summary="AIP 数据治理报告(生成/导出)")
+async def governance_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.governance_report(), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

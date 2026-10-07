@@ -296,6 +296,9 @@ class TestAiEval:
         g = asyncio.run(AiQueryService.guardrails_status())
         assert "total" in g and "enabled" in g and "checks" in g and "score" in g
         assert 0 <= g["score"] <= 100
+        rep = asyncio.run(AiQueryService.governance_report())
+        assert "summary" in rep and "markdown" in rep and "scores" in rep and "overview" in rep
+        assert rep["markdown"] and rep["markdown"].startswith("#")
 
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService

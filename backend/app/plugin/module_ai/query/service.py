@@ -2804,6 +2804,52 @@ class AiQueryService:
                 "score": round(on / len(checks) * 100) if checks else 0, "checks": checks}
 
     @classmethod
+    async def governance_report(cls) -> dict:
+        """AIP 数据治理报告：聚合 治理总览 + 合规姿态 + 安全评分 + 护栏，生成可导出报告。"""
+        from datetime import datetime
+        from app.plugin.module_ai.overview.service import AiOverviewService
+        try:
+            gov = await cls.governance_overview()
+        except Exception:  # noqa: BLE001
+            gov = {}
+        posture = await AiOverviewService.compliance_posture()
+        guard = await cls.guardrails_status()
+        dq = gov.get("dq", {})
+        summary = [
+            f"数据对象 {gov.get('objects', 0)} 个，数据源 {gov.get('datasources', 0)} 个，管道 {gov.get('pipelines', 0)} 条",
+            f"ABAC 权限规则 {gov.get('access_rules', 0)} 条，数据域 {gov.get('domains', 0)} 个",
+            f"数据质量平均 {dq.get('avg_score', 0)} 分，DQ 预警 {gov.get('dq_alerts', 0)} 条",
+            f"合规姿态 {posture.get('score', 0)} 分（{posture.get('level', '')}）",
+            f"安全护栏 {guard.get('enabled', 0)}/{guard.get('total', 0)} 项已启用（{guard.get('score', 0)}%）",
+            f"待审批 {posture.get('pending_approvals', 0)} 项",
+        ]
+        overview = {
+            "objects": gov.get("objects", 0), "datasources": gov.get("datasources", 0),
+            "pipelines": gov.get("pipelines", 0), "actions": gov.get("actions", 0),
+            "access_rules": gov.get("access_rules", 0), "domains": gov.get("domains", 0),
+            "agents": gov.get("agents", 0), "metrics": gov.get("metrics", 0),
+            "terms": gov.get("terms", 0), "concepts": gov.get("concepts", 0),
+        }
+        scores = {"compliance": posture.get("score", 0), "security": 0,
+                  "guardrails": guard.get("score", 0)}
+        try:
+            scores["security"] = (await cls.security_audit()).get("score", 0)
+        except Exception:  # noqa: BLE001
+            pass
+        markdown = "\n".join([
+            f"# AIStation 数据治理报告",
+            f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "## 总览",
+            *[f"- {s}" for s in summary],
+            "",
+            f"## 评分：合规 {scores['compliance']} / 安全 {scores['security']} / 护栏 {scores['guardrails']}",
+        ])
+        return {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "summary": summary, "overview": overview, "scores": scores,
+                "markdown": markdown}
+
+    @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
         并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""

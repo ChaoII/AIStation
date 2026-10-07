@@ -340,6 +340,9 @@ export function getAccessWalkthrough(userId = 0) {
 export function getGuardrailsStatus() {
   return request({ url: `${API_PATH}/guardrails`, method: "get" });
 }
+export function getGovernanceReport() {
+  return request({ url: `${API_PATH}/governance/report`, method: "get" });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,
