@@ -115,6 +115,14 @@ class TestAiEval:
         assert "runs" in r and "usage_dist" in r and "pending_review" in r and "total" in r
         assert isinstance(r["runs"], list)
 
+    def test_compliance_posture_shape(self):
+        from app.plugin.module_ai.overview.service import AiOverviewService
+
+        r = asyncio.run(AiOverviewService.compliance_posture())
+        assert "score" in r and "dims" in r and "findings" in r and "level" in r
+        assert 0 <= r["score"] <= 100
+        assert len(r["dims"]) >= 5
+
     def test_compass_search(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
 

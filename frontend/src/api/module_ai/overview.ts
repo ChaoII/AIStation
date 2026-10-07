@@ -21,3 +21,6 @@ export function compassSearch(keyword: string) {
 export function getAiAipControl(limit = 20) {
   return request({ url: "/ai/overview/aip-control", method: "get", params: { limit } });
 }
+export function getAiCompliancePosture() {
+  return request({ url: "/ai/overview/compliance-posture", method: "get" });
+}

@@ -58,3 +58,10 @@ async def overview_aip(
     limit: int = 20,
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.aip_control(limit), msg="查询成功")
+
+
+@AiOverviewRouter.get("/compliance-posture", summary="安全与合规姿态评分(0-100)")
+async def overview_compliance(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.compliance_posture(), msg="查询成功")

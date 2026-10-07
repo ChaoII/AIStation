@@ -153,6 +153,65 @@ class AiOverviewService:
                 "pending_review": pending_review, "total": len(runs)}
 
     @classmethod
+    async def compliance_posture(cls) -> dict:
+        """安全与合规姿态评分（0-100）：敏感识别/权限覆盖/数据域/DQ/审批/调用合规 分维度。"""
+        from app.plugin.module_ai.query.service import AiQueryService
+        dims: list[dict] = []
+        try:
+            assets = await AiQueryService.list_assets()
+        except Exception:  # noqa: BLE001
+            assets = []
+        # 1) 敏感识别覆盖
+        if assets:
+            covered = sum(1 for a in assets if (a.get("sensitive_count") or 0) > 0)
+            ratio = covered / len(assets)
+            dims.append({"key": "sensitive", "name": "敏感识别", "score": round(ratio * 100),
+                         "detail": f"{covered}/{len(assets)} 资产已识别敏感字段"})
+        else:
+            dims.append({"key": "sensitive", "name": "敏感识别", "score": 100, "detail": "暂无数据资产"})
+        # 2) 权限规则覆盖
+        try:
+            rules = await AiQueryService.list_access_rules()
+            rule_score = 100 if len(rules) >= 1 else 0
+            dims.append({"key": "access", "name": "权限规则", "score": rule_score,
+                         "detail": f"{len(rules)} 条 ABAC 权限策略"})
+        except Exception:  # noqa: BLE001
+            dims.append({"key": "access", "name": "权限规则", "score": 0, "detail": "无法统计"})
+        # 3) 数据域覆盖
+        try:
+            domains = await AiQueryService.list_domains()
+            dims.append({"key": "domain", "name": "数据域", "score": 100 if len(domains) >= 1 else 0,
+                         "detail": f"{len(domains)} 个数据域"})
+        except Exception:  # noqa: BLE001
+            dims.append({"key": "domain", "name": "数据域", "score": 0, "detail": "无法统计"})
+        # 4) 数据质量
+        try:
+            dq = await AiQueryService.dq_overview()
+            dims.append({"key": "dq", "name": "数据质量", "score": int(dq.get("avg_score", 0)),
+                         "detail": f"平均 {dq.get('avg_score', 0)} 分"})
+        except Exception:  # noqa: BLE001
+            dims.append({"key": "dq", "name": "数据质量", "score": 0, "detail": "无法统计"})
+        # 5) 审批积压
+        pending = 0
+        try:
+            pending = int((await AiQueryService.approval_center()).get("total", 0))
+        except Exception:  # noqa: BLE001
+            pending = 0
+        dims.append({"key": "approval", "name": "审批积压", "score": max(0, 100 - pending * 10) if pending else 100,
+                     "detail": f"{pending} 项待审批" if pending else "无积压"})
+        # 6) 调用合规
+        audit = await cls.audit_check(7)
+        dims.append({"key": "audit", "name": "调用合规", "score": 100 if audit.get("compliant") else 60,
+                     "detail": f"{len(audit.get('issues', []))} 项合规问题"})
+        findings = [{"level": d["score"] < 60 and "danger" or d["score"] < 80 and "warning" or "success",
+                     "msg": f"{d['name']}：{d['detail']}"} for d in dims]
+        overall = round(sum(d["score"] for d in dims) / len(dims)) if dims else 0
+        return {"score": overall, "dims": dims,
+                "findings": findings,
+                "pending_approvals": pending,
+                "level": "excellent" if overall >= 90 else "good" if overall >= 70 else "needs_attention"}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

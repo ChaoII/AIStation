@@ -229,6 +229,37 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>安全与合规姿态</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            敏感识别 / 权限覆盖 / 数据域 / 数据质量 / 审批积压 / 调用合规
+          </span>
+        </div>
+      </template>
+      <div v-if="posture" class="ov-usage-row" style="margin-bottom: 8px; gap: 12px">
+        <span>综合评分</span>
+        <el-progress type="circle" :width="90" :percentage="posture.score" :color="posture.score >= 90 ? '#67C23A' : posture.score >= 70 ? '#E6A23C' : '#F56C6C'" />
+        <el-tag size="small" :type="posture.level === 'excellent' ? 'success' : posture.level === 'good' ? 'warning' : 'danger'" effect="plain">
+          {{ posture.level === "excellent" ? "优秀" : posture.level === "good" ? "良好" : "需关注" }}
+        </el-tag>
+      </div>
+      <el-row :gutter="12" v-if="posture">
+        <el-col v-for="d in posture.dims" :key="d.key" :span="4">
+          <div class="ov-usage-row" style="flex-direction: column; align-items: flex-start; gap: 4px">
+            <span style="font-size:12px;color:var(--el-text-color-secondary)">{{ d.name }}</span>
+            <el-progress :percentage="d.score" :show-text="false" :color="d.score >= 80 ? '#67C23A' : d.score >= 60 ? '#E6A23C' : '#F56C6C'" style="width:100%" />
+            <b>{{ d.score }}</b>
+          </div>
+        </el-col>
+      </el-row>
+      <div v-if="posture" class="gov-section" style="margin-top: 8px">整改项</div>
+      <div v-if="posture">
+        <el-tag v-for="(f, i) in posture.findings" :key="i" size="small" :type="f.level" effect="plain" style="margin: 0 3px 4px 0">{{ f.msg }}</el-tag>
+      </div>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -339,7 +370,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -361,6 +392,10 @@ async function loadAip() {
 const agentDash = ref<any>(null);
 async function loadAgentDash() {
   try { agentDash.value = (await getAiAgentDashboard()).data?.data || null; } catch { agentDash.value = null; }
+}
+const posture = ref<any>(null);
+async function loadPosture() {
+  try { posture.value = (await getAiCompliancePosture()).data?.data || null; } catch { posture.value = null; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -509,6 +544,7 @@ onMounted(() => {
   loadRuntime();
   loadAip();
   loadAgentDash();
+  loadPosture();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
