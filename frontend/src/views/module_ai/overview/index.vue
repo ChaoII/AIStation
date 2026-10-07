@@ -632,6 +632,30 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AIP 安全护栏</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            ABAC / 数据域 / 敏感剔除 / 审批 / 审计 / 版本 护栏状态
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" @click="loadGuardrails">刷新</el-button>
+        <el-progress :percentage="guardrails?.score ?? 0" :show-text="true" :stroke-width="12" style="flex:1" :color="(guardrails?.score ?? 0) >= 80 ? '#67C23A' : '#E6A23C'" />
+      </div>
+      <el-row :gutter="12" v-if="guardrails">
+        <el-col v-for="c in guardrails.checks" :key="c.key" :span="4">
+          <div class="guardrail-item" :class="{ on: c.enabled }">
+            <el-icon style="margin-right:4px"><CircleCheck v-if="c.enabled" /><CircleClose v-else /></el-icon>
+            <b style="font-size:12px">{{ c.name }}</b>
+            <span style="font-size:12px;color:var(--el-text-color-secondary)">{{ c.detail }}</span>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -741,6 +765,8 @@ import {
   Message,
   Files,
   Link,
+  CircleCheck,
+  CircleClose,
 } from "@element-plus/icons-vue";
 import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter, getAiActivityTimeline } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
@@ -752,6 +778,7 @@ import { getFavorites, removeFavorite, getPlugins } from "@/api/module_ai/query"
 import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
 import { getShareList, removeShare } from "@/api/module_ai/query";
 import { getCatalogCategories, getObjectRelations, getAccessWalkthrough } from "@/api/module_ai/query";
+import { getGuardrailsStatus } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -946,6 +973,11 @@ async function loadWalkthrough() {
   catch { walkthrough.value = null; }
   finally { walkLoading.value = false; }
 }
+const guardrails = ref<any>(null);
+async function loadGuardrails() {
+  try { guardrails.value = (await getGuardrailsStatus()).data?.data || null; }
+  catch { guardrails.value = null; }
+}
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
   compassLoading.value = true;
@@ -1108,6 +1140,7 @@ onMounted(() => {
   loadCatalog();
   loadObjRel();
   loadWalkthrough();
+  loadGuardrails();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
@@ -1222,6 +1255,21 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--el-color-primary);
   margin-top: 2px;
+}
+.guardrail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.guardrail-item.on {
+  border-color: var(--el-color-success-light-7);
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
 }
 </style>
 

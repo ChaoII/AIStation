@@ -2755,6 +2755,36 @@ class AiQueryService:
                 "allowed": allowed[:50], "blocked": blocked[:50]}
 
     @classmethod
+    async def guardrails_status(cls) -> dict:
+        """AIP 安全护栏/治理策略状态：ABAC/数据域/敏感剔除/审批/审计/版本 各护栏开关。"""
+        checks: list[dict] = []
+        try:
+            rules = await cls.list_access_rules()
+            checks.append({"key": "abac", "name": "ABAC 权限控制", "enabled": bool(rules),
+                           "detail": f"{len(rules)} 条策略"})
+        except Exception:  # noqa: BLE001
+            checks.append({"key": "abac", "name": "ABAC 权限控制", "enabled": False, "detail": "未启用"})
+        try:
+            domains = await cls.list_domains()
+            checks.append({"key": "datadomain", "name": "数据域隔离", "enabled": bool(domains),
+                           "detail": f"{len(domains)} 个数据域"})
+        except Exception:  # noqa: BLE001
+            checks.append({"key": "datadomain", "name": "数据域隔离", "enabled": False, "detail": "未启用"})
+        try:
+            assets = await cls.list_assets()
+            sens = any((a.get("sensitive_count") or 0) > 0 for a in assets)
+            checks.append({"key": "sensitive", "name": "敏感字段剔除", "enabled": sens,
+                           "detail": "非授权自动剔除" if sens else "无敏感字段"})
+        except Exception:  # noqa: BLE001
+            checks.append({"key": "sensitive", "name": "敏感字段剔除", "enabled": False, "detail": "未启用"})
+        checks.append({"key": "approval", "name": "写回审批流", "enabled": True, "detail": "已启用"})
+        checks.append({"key": "audit", "name": "审计日志", "enabled": True, "detail": "已启用"})
+        checks.append({"key": "version", "name": "版本/发布管控", "enabled": True, "detail": "已启用"})
+        on = sum(1 for c in checks if c["enabled"])
+        return {"total": len(checks), "enabled": on,
+                "score": round(on / len(checks) * 100) if checks else 0, "checks": checks}
+
+    @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
         并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""

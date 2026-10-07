@@ -334,6 +334,9 @@ export function getObjectRelations() {
 export function getAccessWalkthrough(userId = 0) {
   return request({ url: `${API_PATH}/access/walkthrough`, method: "get", params: { user_id: userId } });
 }
+export function getGuardrailsStatus() {
+  return request({ url: `${API_PATH}/guardrails`, method: "get" });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

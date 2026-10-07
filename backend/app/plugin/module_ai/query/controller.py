@@ -317,6 +317,13 @@ async def access_walkthrough(
     return SuccessResponse(data=await AiQueryService.access_walkthrough(user_id), msg="查询成功")
 
 
+@AiQueryRouter.get("/guardrails", summary="AIP 安全护栏/治理策略状态")
+async def guardrails_status(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.guardrails_status(), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

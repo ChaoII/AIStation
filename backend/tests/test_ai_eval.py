@@ -291,6 +291,9 @@ class TestAiEval:
         assert "nodes" in o and "edges" in o and "node_count" in o
         a = asyncio.run(AiQueryService.access_walkthrough(1))
         assert "allowed_count" in a and "blocked_count" in a and "can_see_sensitive" in a
+        g = asyncio.run(AiQueryService.guardrails_status())
+        assert "total" in g and "enabled" in g and "checks" in g and "score" in g
+        assert 0 <= g["score"] <= 100
 
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
