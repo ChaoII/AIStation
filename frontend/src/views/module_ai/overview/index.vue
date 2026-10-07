@@ -288,6 +288,34 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AIP Autopilot 自主行动</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            规则扫描治理/质量/安全/审批，生成候选自主行动
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" :loading="autoLoading" @click="loadAutopilot">重新扫描</el-button>
+        <el-tag size="small" type="info" effect="plain">候选 {{ autopilot?.total ?? 0 }} 项</el-tag>
+        <el-tag v-if="!autopilot?.actions?.length && !autoLoading" size="small" type="success" effect="plain">暂无风险建议</el-tag>
+      </div>
+      <template v-if="autopilot?.actions?.length">
+        <div v-for="a in autopilot.actions" :key="a.id" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 6px">
+          <div style="flex:1; display:flex; align-items:center; gap:8px; min-width:0">
+            <el-tag size="small" :type="a.severity === 'high' ? 'danger' : a.severity === 'medium' ? 'warning' : 'info'" effect="plain">{{ a.target }}</el-tag>
+            <span class="ov-aip-sug">{{ a.suggestion }}</span>
+          </div>
+          <el-button v-if="a.executable !== 'none' && a.tables?.length" size="small" type="primary" :loading="autoExecuting === a.executable + a.tables[0]" @click="runAutopilot(a.executable, a.tables[0])">
+            自动处理
+          </el-button>
+          <el-button v-else size="small" @click="runAutopilot('none', '')">查看</el-button>
+        </div>
+      </template>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -400,6 +428,7 @@ import {
 } from "@element-plus/icons-vue";
 import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
+import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -435,6 +464,25 @@ async function runOrchestrate() {
   try { orchResult.value = (await orchestrateAgents(orchInput.value)).data?.data || null; }
   catch { orchResult.value = null; }
   finally { orchLoading.value = false; }
+}
+const autopilot = ref<any>(null);
+const autoLoading = ref(false);
+const autoExecuting = ref("");
+async function loadAutopilot() {
+  autoLoading.value = true;
+  try { autopilot.value = (await getAutopilot()).data?.data || null; }
+  catch { autopilot.value = null; }
+  finally { autoLoading.value = false; }
+}
+async function runAutopilot(executable: string, table: string) {
+  if (executable === "none") { ElMessage.info("该行动为人工处理项，请在对应模块处理"); return; }
+  autoExecuting.value = executable + table;
+  try {
+    const r = await autopilotExecute(executable, table);
+    ElMessage.success(r.data?.data?.msg || "已执行");
+    loadAutopilot();
+  } catch (e: any) { ElMessage.error(e?.msg || "执行失败"); }
+  finally { autoExecuting.value = ""; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -584,6 +632,7 @@ onMounted(() => {
   loadAip();
   loadAgentDash();
   loadPosture();
+  loadAutopilot();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
@@ -675,6 +724,13 @@ onBeforeUnmount(() => {
 .compass-bar {
   display: flex;
   gap: 8px;
+}
+.ov-aip-sug {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
 

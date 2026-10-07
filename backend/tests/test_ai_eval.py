@@ -138,6 +138,22 @@ class TestAiEval:
         assert any(c["type"] == "postgres" for c in r)
         assert any(c["type"] == "rest_api" for c in r)
 
+    def test_autopilot(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.autopilot())
+        assert "total" in r and "actions" in r and isinstance(r["actions"], list)
+        for a in r["actions"]:
+            assert "type" in a and "suggestion" in a and "executable" in a
+
+    def test_autopilot_execute_sensitive(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.autopilot_execute("scan_sensitive", "t_auto_pwd"))
+        assert "ok" in r and "msg" in r
+        r2 = asyncio.run(AiQueryService.autopilot_execute("none", ""))
+        assert r2["ok"] is False
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

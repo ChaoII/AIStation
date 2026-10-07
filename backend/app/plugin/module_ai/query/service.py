@@ -1169,6 +1169,72 @@ class AiQueryService:
         return {"ok": True, "table": table_name, "identified": identified, "count": len(identified)}
 
     @classmethod
+    async def autopilot(cls) -> dict:
+        """AIP Autopilot 自主行动中心：规则扫描治理/质量/安全/审批，生成候选自主行动。"""
+        actions: list[dict] = []
+        try:
+            assets = await cls.list_assets()
+        except Exception:  # noqa: BLE001
+            assets = []
+        # 1) 缺中文描述 → 建议生成
+        no_desc = [a for a in assets if not a.get("alias") and not a.get("description")][:5]
+        if no_desc:
+            actions.append({"id": "desc", "type": "enrich", "severity": "low", "target": "资产描述",
+                            "suggestion": f"{len(no_desc)} 张表缺少中文描述，建议补齐后可问数更准确",
+                            "tables": [a["table_name"] for a in no_desc], "executable": "generate_desc"})
+        # 2) DQ 低分 → 建议重扫
+        try:
+            dq = await cls.dq_overview()
+            risk = [x["table"] for x in dq.get("items", []) if (x.get("score") or 0) < 60][:5]
+            if risk:
+                actions.append({"id": "dq", "type": "repair", "severity": "medium", "target": "数据质量",
+                                "suggestion": f"{len(risk)} 个对象 DQ<60，建议重新扫描校验",
+                                "tables": risk, "executable": "dq_scan"})
+        except Exception:  # noqa: BLE001
+            pass
+        # 3) 未识别敏感 → 建议敏感扫描
+        no_sens = [a["table_name"] for a in assets if (a.get("sensitive_count") or 0) == 0][:5]
+        if no_sens:
+            actions.append({"id": "sensitive", "type": "audit", "severity": "medium", "target": "敏感识别",
+                            "suggestion": f"{len(no_sens)} 张表未识别出敏感字段，建议自动敏感扫描",
+                            "tables": no_sens, "executable": "scan_sensitive"})
+        # 4) 审批积压 → 建议处理
+        try:
+            pend = int((await cls.approval_center()).get("total", 0))
+            if pend:
+                actions.append({"id": "approval", "type": "review", "severity": "high", "target": "审批",
+                                "suggestion": f"{pend} 项待人工审批，请及时处理", "tables": [], "executable": "none"})
+        except Exception:  # noqa: BLE001
+            pass
+        # 5) 数据源停用 → 建议确认
+        try:
+            dss = await cls.list_datasources()
+            off = [d["name"] for d in dss if not d.get("enabled")][:5]
+            if off:
+                actions.append({"id": "ds", "type": "config", "severity": "low", "target": "数据连接",
+                                "suggestion": f"{len(off)} 个数据源停用：{'、'.join(off)}，请确认是否启用",
+                                "tables": [], "executable": "none"})
+        except Exception:  # noqa: BLE001
+            pass
+        order = {"audit": 0, "repair": 1, "review": 2, "enrich": 3, "config": 4}
+        actions.sort(key=lambda a: order.get(a["type"], 9))
+        return {"total": len(actions), "actions": actions}
+
+    @classmethod
+    async def autopilot_execute(cls, executable: str, table: str = "") -> dict:
+        """执行一个安全的自主行动（目前支持敏感扫描、DQ 重扫）。"""
+        if executable == "scan_sensitive" and table:
+            r = await cls.scan_sensitive(table)
+            return {"ok": True, "msg": f"已对 {table} 完成敏感扫描，识别 {r.get('count', 0)} 个敏感字段"}
+        if executable == "dq_scan" and table:
+            try:
+                await cls.dq_run(table)
+                return {"ok": True, "msg": f"已对 {table} 重跑数据质量扫描"}
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "msg": f"DQ 重扫失败：{e}"}
+        return {"ok": False, "msg": "该行动为信息项/暂不支持自动执行，请在对应模块处理"}
+
+    @classmethod
     async def list_asset_columns(cls, table_name: str) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select

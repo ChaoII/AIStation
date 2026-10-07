@@ -150,6 +150,22 @@ async def connector_types(
     return SuccessResponse(data=await AiQueryService.connector_types(), msg="查询成功")
 
 
+@AiQueryRouter.get("/autopilot", summary="AIP Autopilot 自主行动中心(候选行动)")
+async def autopilot(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.autopilot(), msg="查询成功")
+
+
+@AiQueryRouter.post("/autopilot/execute", summary="执行自主行动(敏感扫描/DQ重扫)")
+async def autopilot_execute(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.autopilot_execute(data.get("executable", ""), data.get("table", ""))
+    return SuccessResponse(data=r, msg=r.get("msg", "执行完成"))
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,
