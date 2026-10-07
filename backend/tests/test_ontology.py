@@ -329,6 +329,20 @@ class TestPromoteReuse:
 
 
 # ---------------------------------------------------------------------------
+# 本体版本发布留痕（Palantir：发布即记录 changelog，含发布人）
+# ---------------------------------------------------------------------------
+class TestOntVersionPublish:
+    def test_publish_writes_changelog(self, test_client):
+        from app.plugin.module_ai.ontology import service as osvc
+
+        async def _go():
+            await osvc.publish_version("orders", operator=7)
+            cl = await osvc.list_changelog("orders", limit=50)
+            assert any(c["action"] == "publish" and "发布版本" in (c["detail"] or "") for c in cl)
+        asyncio.run(_go())
+
+
+# ---------------------------------------------------------------------------
 # Action 写回审批流（Palantir：待审批 → 批准/驳回 + 审计留痕）
 # ---------------------------------------------------------------------------
 class TestActionApproval:

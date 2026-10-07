@@ -96,7 +96,8 @@ async def changelog(auth: AuthDep, object_code: str = "", limit: int = 50) -> JS
 
 @OntologyRouter.post("/version/publish", summary="发布本体对象定义版本(快照)")
 async def publish_version(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
-    r = await _svc.publish_version(str(data.get("code", "")))
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    r = await _svc.publish_version(str(data.get("code", "")), operator=int(uid or 0))
     return SuccessResponse(data=r, msg=r.get("msg", "已发布"))
 
 

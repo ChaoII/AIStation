@@ -233,8 +233,8 @@ async def delete_one(table: str, id: int) -> None:
 # ---------------------------------------------------------------------------
 # 本体对象定义版本：快照 + 列表 + 回滚（本体定义同资产一样可版本化）
 # ---------------------------------------------------------------------------
-async def publish_version(object_code: str) -> dict:
-    """把对象当前定义(对象/属性/Link/Action/函数)快照为一个新版本。"""
+async def publish_version(object_code: str, operator: int = 0) -> dict:
+    """把对象当前定义(对象/属性/Link/Action/函数)快照为一个新版本，并写本体发布留痕。"""
     obj = await object_full(object_code)
     if not obj.get("ok"):
         return {"ok": False, "msg": "对象不存在"}
@@ -252,6 +252,8 @@ async def publish_version(object_code: str) -> dict:
     import json as _json
     r = await _exec_write("INSERT INTO ai_ont_version(object_code,version,snapshot) VALUES (:c,:v,:s) RETURNING id",
                           {"c": object_code, "v": n, "s": _json.dumps(snapshot, ensure_ascii=False)})
+    # 发布留痕（记录发布人）
+    await _log_change(object_code, "version", "publish", f"发布版本 v{n}", created_id=int(operator or 0))
     return {"ok": True, "id": r.scalar(), "version": n}
 
 
