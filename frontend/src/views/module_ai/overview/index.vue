@@ -12,6 +12,30 @@
       </el-col>
     </el-row>
 
+    <el-card shadow="never" class="ov-recent-card" style="margin-bottom: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
+          <span>Compass 全局数据目录</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">搜索 表 / 对象 / 指标 / 术语</span>
+        </div>
+      </template>
+      <div class="compass-bar">
+        <el-input v-model="compassKw" placeholder="输入关键词，如 摄像头 / 告警 / 订单" clearable style="flex:1" @keyup.enter="runCompass" />
+        <el-button type="primary" :loading="compassLoading" @click="runCompass">搜索</el-button>
+      </div>
+      <template v-if="compassResult">
+        <div v-if="compassResult.assets?.length" class="gov-section" style="margin-top:8px">表（{{ compassResult.assets.length }}）</div>
+        <div><el-tag v-for="a in compassResult.assets" :key="a.table" size="small" effect="plain" style="margin:0 3px 4px 0">{{ a.alias || a.table }}</el-tag></div>
+        <div v-if="compassResult.objects?.length" class="gov-section" style="margin-top:8px">对象（{{ compassResult.objects.length }}）</div>
+        <div><el-tag v-for="o in compassResult.objects" :key="o.code" size="small" type="warning" effect="plain" style="margin:0 3px 4px 0">{{ o.name }}</el-tag></div>
+        <div v-if="compassResult.metrics?.length" class="gov-section" style="margin-top:8px">指标（{{ compassResult.metrics.length }}）</div>
+        <div><el-tag v-for="m in compassResult.metrics" :key="m.key" size="small" type="primary" effect="plain" style="margin:0 3px 4px 0">{{ m.name }}</el-tag></div>
+        <div v-if="compassResult.terms?.length" class="gov-section" style="margin-top:8px">术语（{{ compassResult.terms.length }}）</div>
+        <div><el-tag v-for="t in compassResult.terms" :key="t.term" size="small" type="info" effect="plain" style="margin:0 3px 4px 0">{{ t.term }}</el-tag></div>
+        <el-empty v-if="!compassResult.assets?.length && !compassResult.objects?.length && !compassResult.metrics?.length && !compassResult.terms?.length" :image-size="30" description="无匹配结果" />
+      </template>
+    </el-card>
+
     <el-row :gutter="12" class="ov-body">
       <el-col :md="15">
         <el-card shadow="never" class="ov-chart-card">
@@ -238,7 +262,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch } from "@/api/module_ai/overview";
 
 defineOptions({ name: "AiOverview" });
 
@@ -249,6 +273,16 @@ const evalLoading = ref(false);
 const health = ref<any>(null);
 const audit = ref<any>(null);
 const runtime = ref<any>(null);
+const compassKw = ref("");
+const compassResult = ref<any>(null);
+const compassLoading = ref(false);
+async function runCompass() {
+  if (!compassKw.value.trim()) { compassResult.value = null; return; }
+  compassLoading.value = true;
+  try { compassResult.value = (await compassSearch(compassKw.value)).data?.data || null; }
+  catch { compassResult.value = null; }
+  finally { compassLoading.value = false; }
+}
 async function loadRuntime() {
   try { runtime.value = (await getAiRuntime()).data?.data || null; } catch { runtime.value = null; }
 }
@@ -474,6 +508,10 @@ onBeforeUnmount(() => {
 }
 .ov-recent-card {
   margin-bottom: 12px;
+}
+.compass-bar {
+  display: flex;
+  gap: 8px;
 }
 </style>
 

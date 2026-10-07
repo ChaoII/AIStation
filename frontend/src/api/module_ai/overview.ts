@@ -15,3 +15,6 @@ export function getAiAudit(days = 7) {
 export function getAiRuntime() {
   return request({ url: "/ai/overview/runtime", method: "get" });
 }
+export function compassSearch(keyword: string) {
+  return request({ url: "/ai/query/compass/search", method: "get", params: { keyword } });
+}
