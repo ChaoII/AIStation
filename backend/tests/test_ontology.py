@@ -40,6 +40,7 @@ DDL = {
     "ai_ont_change_log": "CREATE TABLE IF NOT EXISTS ai_ont_change_log (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, kind TEXT, action TEXT, detail TEXT, created_id INTEGER, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
     "ai_access_rule": "CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
     "ai_action_log": "CREATE TABLE IF NOT EXISTS ai_action_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
+    "ai_domain": "CREATE TABLE IF NOT EXISTS ai_domain (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, code TEXT, description TEXT, tables TEXT, members TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
 }
 
 
@@ -209,10 +210,10 @@ class TestTableLevelAcl:
         asyncio.run(_go())
 
     @staticmethod
-    def _auth(is_super, roles):
+    def _auth(is_super, roles, uid=0):
         from types import SimpleNamespace
         return SimpleNamespace(
-            user=SimpleNamespace(is_superuser=is_super, roles=[SimpleNamespace(code=r) for r in roles]))
+            user=SimpleNamespace(id=uid, is_superuser=is_super, roles=[SimpleNamespace(code=r) for r in roles]))
 
     def test_superuser_full(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
@@ -229,6 +230,26 @@ class TestTableLevelAcl:
         from app.plugin.module_ai.query.service import AiQueryService
         s = asyncio.run(AiQueryService._allowed_for_user(self._auth(False, ["charter"])))
         assert "video_alarm_records" in s
+
+    def test_domain_member_restricted(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_domain WHERE code='prod'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_domain(name,code,description,tables,members,enabled,is_deleted) "
+                    "VALUES ('生产域','prod','x','[\"video_cameras\"]','[99]',1,0)"))
+            # 用户 id=99 属于 prod 域 → 仅 video_cameras
+            s = await AiQueryService._allowed_for_user(self._auth(False, [], uid=99))
+            assert "video_cameras" in s
+            assert "video_alarm_records" not in s
+            # 非域成员 → 默认全开
+            s2 = await AiQueryService._allowed_for_user(self._auth(False, [], uid=999999))
+            assert "video_alarm_records" in s2
+        asyncio.run(_go())
 
 
 # ---------------------------------------------------------------------------

@@ -2490,9 +2490,11 @@ class AiQueryService:
     async def _allowed_for_user(cls, auth) -> set[str]:
         """用户级可查表白名单（Palantir 数据域/表级权限拦截）。
 
-        超管 → 全白名单（SYSTEM + ont_*）。非超管 → 按 ABAC 规则（attribute=role、
-        value∈用户角色、enabled）合并 allowed_tables，并与全局白名单求交收紧；
-        未配置相关规则时默认全白名单（向后兼容，避免误锁）。
+        超管 → 全白名单（SYSTEM + ont_*）。非超管 →
+          1) 若属于某启用「数据域」的成员 → 只能查该域 tables 的并集（数据域隔离）；
+          2) 否则按 ABAC 规则（attribute=role、value∈用户角色）合并 allowed_tables；
+          3) 未配置 → 默认全白名单（向后兼容，避免误锁）。
+        均与全局白名单求交收紧。
         """
         base = await _system_allowed()
         try:
@@ -2500,6 +2502,10 @@ class AiQueryService:
                 return base
         except Exception:  # noqa: BLE001
             pass
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        domain_tables = await cls._domain_tables_for_user(uid)
+        if domain_tables:
+            return base & domain_tables
         roles = _user_role_codes(auth)
         rules = await cls.list_access_rules()
         allowed: set[str] = set()
@@ -2509,6 +2515,22 @@ class AiQueryService:
         if allowed:
             return base & allowed
         return base
+
+    @classmethod
+    async def _domain_tables_for_user(cls, user_id) -> set[str]:
+        """用户所属启用「数据域」的 tables 并集（成员 id ∈ domain.members）。"""
+        try:
+            uid = int(user_id)
+        except (TypeError, ValueError):
+            uid = 0
+        if not uid:
+            return set()
+        domains = await cls.list_domains()
+        result: set[str] = set()
+        for d in domains:
+            if d["enabled"] and uid in (d["members"] or []):
+                result |= set(d["tables"] or [])
+        return result
 
     @classmethod
     async def _sql_query_scope(cls, sql: str) -> tuple[set[str], set[str]]:
