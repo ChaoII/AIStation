@@ -233,8 +233,30 @@ async def delete_one(table: str, id: int) -> None:
 # ---------------------------------------------------------------------------
 # 本体对象定义版本：快照 + 列表 + 回滚（本体定义同资产一样可版本化）
 # ---------------------------------------------------------------------------
+async def _is_superuser(user_id) -> bool:
+    """判断用户是否超管（用于本体发布/回滚等高危操作校验）。"""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        uid = 0
+    if not uid:
+        return False
+    try:
+        r = await _exec("SELECT is_superuser FROM sys_user WHERE id=:id AND is_deleted=false", {"id": uid})
+        row = r.fetchone()
+        return bool(row and row[0])
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def publish_version(object_code: str, operator: int = 0) -> dict:
-    """把对象当前定义(对象/属性/Link/Action/函数)快照为一个新版本，并写本体发布留痕。"""
+    """把对象当前定义(对象/属性/Link/Action/函数)快照为一个新版本，并写本体发布留痕。
+
+    高危操作：非超管发布被拒（仅超管可发布本体版本）。
+    """
+    operator = int(operator or 0)
+    if operator and not await _is_superuser(operator):
+        return {"ok": False, "msg": "仅超管可发布本体版本（高危操作）"}
     obj = await object_full(object_code)
     if not obj.get("ok"):
         return {"ok": False, "msg": "对象不存在"}

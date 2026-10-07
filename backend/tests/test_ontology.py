@@ -334,11 +334,25 @@ class TestPromoteReuse:
 class TestOntVersionPublish:
     def test_publish_writes_changelog(self, test_client):
         from app.plugin.module_ai.ontology import service as osvc
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
 
         async def _go():
-            await osvc.publish_version("orders", operator=7)
+            async with async_db_session() as db:
+                su = (await db.execute(_t("SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
+                suid = int(su[0]) if su else 1
+            await osvc.publish_version("orders", operator=suid)
             cl = await osvc.list_changelog("orders", limit=50)
             assert any(c["action"] == "publish" and "发布版本" in (c["detail"] or "") for c in cl)
+        asyncio.run(_go())
+
+    def test_non_superuser_cannot_publish(self, test_client):
+        from app.plugin.module_ai.ontology import service as osvc
+
+        async def _go():
+            r = await osvc.publish_version("orders", operator=999999)
+            assert r.get("ok") is False
+            assert "超管" in r.get("msg", "")
         asyncio.run(_go())
 
 
