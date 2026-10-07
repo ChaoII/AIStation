@@ -212,6 +212,77 @@ class AiOverviewService:
                 "level": "excellent" if overall >= 90 else "good" if overall >= 70 else "needs_attention"}
 
     @classmethod
+    async def anomaly_detect(cls, days: int = 7) -> dict:
+        """AI 异常检测：按日聚合调用，对比基线识别错误率/延迟异常。"""
+        from datetime import datetime, timedelta
+        from sqlalchemy import func as _f, select as _sel
+        since = datetime.utcnow() - timedelta(days=max(1, days))
+        async with async_db_session() as db:
+            rows = (await db.execute(
+                _sel(_f.date(AiCallLogModel.created_time).label("d"),
+                     _f.count().label("n"),
+                     _f.count().filter(AiCallLogModel.result == "error").label("e"),
+                     _f.avg(AiCallLogModel.latency_ms).label("lat"))
+                .where(AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since)
+                .group_by(_f.date(AiCallLogModel.created_time))
+                .order_by(_f.date(AiCallLogModel.created_time))
+            )).fetchall()
+        lats = [int(r[3] or 0) for r in rows]
+        base_lat = sum(lats) / len(lats) if lats else 0
+        anomalies = []
+        for r in rows:
+            d = str(r[0]); n = int(r[1] or 0); e = int(r[2] or 0); lat = int(r[3] or 0)
+            er = e / n if n else 0
+            if er > 0.10:
+                anomalies.append({"date": d, "type": "error_rate", "severity": "high",
+                                  "value": round(er * 100, 1),
+                                  "msg": f"{d} 错误率 {er*100:.1f}% 异常升高（>10%）"})
+            if base_lat > 0 and lat > base_lat * 3:
+                anomalies.append({"date": d, "type": "latency", "severity": "medium",
+                                  "value": lat,
+                                  "msg": f"{d} 平均延迟 {lat}ms，为基线 {int(base_lat)}ms 的 3 倍以上"})
+        return {"days": days, "baseline_latency_ms": int(base_lat),
+                "anomalies": anomalies[:20], "total": len(anomalies)}
+
+    @classmethod
+    async def decision_center(cls) -> dict:
+        """AIP 决策建议中心：从 异常/合规/自主修复/审批 汇聚行动决策建议。"""
+        from app.plugin.module_ai.query.service import AiQueryService
+        decisions: list[dict] = []
+        try:
+            an = await cls.anomaly_detect(7)
+            for a in an["anomalies"][:3]:
+                decisions.append({"title": "处理 AI 调用异常", "reason": a["msg"],
+                                  "impact": "影响 AI 稳定性", "action": "查看 AIP 运行追踪定位",
+                                  "pri": "high"})
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            audit = await cls.audit_check(7)
+            if not audit.get("compliant"):
+                decisions.append({"title": "消除合规风险", "reason": f"{len(audit.get('issues', []))} 项合规问题",
+                                  "impact": "数据安全合规", "action": "处理审计问题", "pri": "high"})
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            plan = await AiQueryService.autopilot()
+            if plan["total"]:
+                decisions.append({"title": "执行自主修复", "reason": f"{plan['total']} 项待修复建议",
+                                  "impact": "提升数据质量/安全", "action": "运行 AIP 自动修复", "pri": "medium"})
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            pend = int((await AiQueryService.approval_center()).get("total", 0))
+            if pend:
+                decisions.append({"title": "处理待审批", "reason": f"{pend} 项待审批",
+                                  "impact": "打通发布/写回闭环", "action": "前往审批中心", "pri": "medium"})
+        except Exception:  # noqa: BLE001
+            pass
+        order = {"high": 0, "medium": 1, "low": 2}
+        decisions.sort(key=lambda d: order.get(d["pri"], 3))
+        return {"total": len(decisions), "decisions": decisions}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

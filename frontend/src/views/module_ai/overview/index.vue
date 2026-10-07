@@ -451,6 +451,47 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AI 异常检测与决策中心</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            按日聚合对比基线识别异常 · 汇聚行动决策建议
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" @click="loadAnomaly">重扫异常</el-button>
+        <el-button size="small" type="primary" @click="loadDecision">刷新决策</el-button>
+      </div>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">异常（{{ anomaly?.total ?? 0 }}）</div>
+          <div v-if="anomaly?.anomalies?.length">
+            <div v-for="(a, i) in anomaly.anomalies" :key="i" class="ov-usage-row" style="margin-bottom: 4px">
+              <el-tag size="small" :type="a.severity === 'high' ? 'danger' : 'warning'" effect="plain">{{ a.type }}</el-tag>
+              <span style="font-size:12px">{{ a.msg }}</span>
+            </div>
+          </div>
+          <el-empty v-else-if="anomaly" :image-size="30" description="未见异常" />
+        </el-col>
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">决策建议（{{ decision?.total ?? 0 }}）</div>
+          <div v-if="decision?.decisions?.length">
+            <div v-for="(d, i) in decision.decisions" :key="i" class="decision-item">
+              <div class="ov-usage-row" style="justify-content: space-between">
+                <b>{{ d.title }}</b>
+                <el-tag size="small" :type="d.pri === 'high' ? 'danger' : 'warning'" effect="plain">{{ d.pri }}</el-tag>
+              </div>
+              <div class="decision-reason">{{ d.reason }}</div>
+              <div class="decision-action">→ {{ d.action }}</div>
+            </div>
+          </div>
+          <el-empty v-else-if="decision" :image-size="30" description="暂无待决策项" />
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -561,7 +602,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
@@ -593,6 +634,14 @@ async function loadAgentDash() {
 const posture = ref<any>(null);
 async function loadPosture() {
   try { posture.value = (await getAiCompliancePosture()).data?.data || null; } catch { posture.value = null; }
+}
+const anomaly = ref<any>(null);
+async function loadAnomaly() {
+  try { anomaly.value = (await getAiAnomaly(7)).data?.data || null; } catch { anomaly.value = null; }
+}
+const decision = ref<any>(null);
+async function loadDecision() {
+  try { decision.value = (await getAiDecisionCenter()).data?.data || null; } catch { decision.value = null; }
 }
 const orchInput = ref("");
 const orchResult = ref<any>(null);
@@ -837,6 +886,8 @@ onMounted(() => {
   loadDerivedObj();
   loadFavorites();
   loadPlugins();
+  loadAnomaly();
+  loadDecision();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
@@ -935,6 +986,22 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.decision-item {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.decision-reason {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  margin-top: 2px;
+}
+.decision-action {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin-top: 2px;
 }
 </style>
 

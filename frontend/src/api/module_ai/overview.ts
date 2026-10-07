@@ -24,3 +24,9 @@ export function getAiAipControl(limit = 20) {
 export function getAiCompliancePosture() {
   return request({ url: "/ai/overview/compliance-posture", method: "get" });
 }
+export function getAiAnomaly(days = 7) {
+  return request({ url: "/ai/overview/anomaly", method: "get", params: { days } });
+}
+export function getAiDecisionCenter() {
+  return request({ url: "/ai/overview/decision-center", method: "get" });
+}

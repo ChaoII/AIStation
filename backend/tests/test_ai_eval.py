@@ -123,6 +123,16 @@ class TestAiEval:
         assert 0 <= r["score"] <= 100
         assert len(r["dims"]) >= 5
 
+    def test_anomaly_and_decision(self):
+        from app.plugin.module_ai.overview.service import AiOverviewService
+
+        a = asyncio.run(AiOverviewService.anomaly_detect(7))
+        assert "anomalies" in a and "total" in a and "baseline_latency_ms" in a
+        d = asyncio.run(AiOverviewService.decision_center())
+        assert "total" in d and "decisions" in d and isinstance(d["decisions"], list)
+        for dec in d["decisions"]:
+            assert "title" in dec and "reason" in dec and "pri" in dec
+
     def test_compass_search(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
 

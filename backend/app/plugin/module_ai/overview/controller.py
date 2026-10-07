@@ -65,3 +65,18 @@ async def overview_compliance(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.compliance_posture(), msg="查询成功")
+
+
+@AiOverviewRouter.get("/anomaly", summary="AI 异常检测(错误率/延迟基线对比)")
+async def overview_anomaly(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: int = 7,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.anomaly_detect(days), msg="查询成功")
+
+
+@AiOverviewRouter.get("/decision-center", summary="AIP 决策建议中心")
+async def overview_decision(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.decision_center(), msg="查询成功")
