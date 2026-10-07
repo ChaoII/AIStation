@@ -3989,6 +3989,9 @@ function onOpsTabClick(tab: any) {
     loadDomains();
   } else if (name === "action") {
     loadPendingActions();
+  } else if (name === "access") {
+    loadAccessRules();
+    loadAccessMatrix();
   }
 }
 watch(opsTab, async (v) => {
@@ -3999,6 +4002,9 @@ watch(opsTab, async (v) => {
     loadDomains();
   } else if (v === "action") {
     await loadPendingActions();
+  } else if (v === "access") {
+    loadAccessRules();
+    loadAccessMatrix();
   }
 });
 // ---- P3-⑩ 治理驾驶舱 ----
