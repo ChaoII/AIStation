@@ -1519,6 +1519,27 @@
                   {{ o.alias }}
                 </el-tag>
                 <div v-if="!d.objects.length" class="gov-empty">未分配对象</div>
+                <div v-if="d.metrics?.length" class="gov-section">该域表用到的指标</div>
+                <el-tag
+                  v-for="m in d.metrics || []"
+                  :key="m.key"
+                  size="small"
+                  type="primary"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  {{ m.name }}
+                </el-tag>
+                <div v-if="d.pipelines?.length" class="gov-section">写入该域的管道</div>
+                <el-tag
+                  v-for="p in d.pipelines || []"
+                  :key="p.name"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 3px 4px 0"
+                >
+                  管道 {{ p.name }} ← {{ p.source }}
+                </el-tag>
                 <div class="gov-section">成员用户ID</div>
                 <el-tag
                   v-for="m in d.members"

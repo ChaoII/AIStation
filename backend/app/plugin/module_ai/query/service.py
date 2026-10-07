@@ -2831,15 +2831,33 @@ class AiQueryService:
 
     @classmethod
     async def domain_objects(cls) -> dict:
-        """P3-⑨ 数据域隔离视图：对象按数据域分组 + 域成员 + 当前用户可见域。"""
+        """P3-⑨ 数据域隔离视图：对象按数据域分组 + 域成员 + 当前用户可见域。
+
+        每域附带：对象 / 用到该域表的指标 / 写入该域的管道（数据域血缘网格）。
+        """
         objs = await cls.list_objects()
         domains = await cls.list_domains()
+        try:
+            metrics = await cls.list_metrics(SYSTEM_DS)
+        except Exception:  # noqa: BLE001
+            metrics = []
+        try:
+            pipes = await cls.list_pipelines()
+        except Exception:  # noqa: BLE001
+            pipes = []
         by_domain = {}
         for d in domains:
+            tables = set(d["tables"] or [])
+            dom_m = [{"key": m["key"], "name": m["name"]} for m in metrics
+                     if tables and any(t in (m.get("sql_template") or "") for t in tables)]
+            dom_p = [{"name": p.get("name"), "source": p.get("source_table"),
+                      "target": p.get("target_object")} for p in pipes
+                     if p.get("target_object") in tables]
             by_domain[d["id"]] = {
                 "id": d["id"], "name": d["name"], "code": d["code"],
                 "description": d["description"], "members": d["members"],
-                "objects": [o for o in objs if o["table"] in d["tables"]] if d["tables"] else [],
+                "objects": [o for o in objs if o["table"] in tables] if tables else [],
+                "metrics": dom_m, "pipelines": dom_p,
             }
         unassigned = [o for o in objs if not any(o["table"] in (d["tables"] or []) for d in domains)]
         # 超管可看全部域；普通用户仅可见其成员所在域
