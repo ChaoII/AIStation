@@ -1248,7 +1248,7 @@
               :nodes="pipelineGraph.nodes as any"
               :edges="pipelineGraph.edges as any"
               height="360px"
-              layout-name="cose"
+              layout-name="preset"
               :node-style="{ sizeMode: 'weight', labelSize: 12 }"
               :edge-style="{ label: 'show', colorMode: 'type' }"
             />
@@ -3951,7 +3951,13 @@ const pipelineGraph = ref<any>({ nodes: [], edges: [] });
 async function loadPipelineGraph() {
   try {
     const r = await getPipelineGraph();
-    pipelineGraph.value = r.data?.data || { nodes: [], edges: [] };
+    const g = r.data?.data || { nodes: [], edges: [] };
+    // 给节点加预设网格坐标，避免 GraphCanvas 布局把节点放视口外/重叠
+    (g.nodes || []).forEach((n: any, i: number) => {
+      n.x = (i % 4) * 160;
+      n.y = Math.floor(i / 4) * 120;
+    });
+    pipelineGraph.value = g;
   } catch {
     pipelineGraph.value = { nodes: [], edges: [] };
   }
