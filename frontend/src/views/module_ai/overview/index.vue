@@ -136,6 +136,59 @@
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-row :gutter="12" style="margin-top: 12px">
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header>
+            <div class="ov-usage-row" style="justify-content: space-between">
+              <span>AI 健康（近 {{ health?.days ?? 7 }} 天）</span>
+              <el-button size="small" @click="loadHealth">刷新</el-button>
+            </div>
+          </template>
+          <div v-if="health">
+            <el-tag size="small" :type="health.status === 'healthy' ? 'success' : health.status === 'warning' ? 'warning' : 'danger'" effect="plain">
+              {{ health.status === "healthy" ? "健康" : health.status === "warning" ? "预警" : "严重" }}
+            </el-tag>
+            <div class="ov-usage-row" style="margin-top: 8px">
+              <span>调用</span><b>{{ health.calls }}</b>
+              <span>错误率</span><b>{{ (health.error_rate * 100).toFixed(1) }}%</b>
+              <span>平均延迟</span><b>{{ health.avg_latency_ms }}ms</b>
+              <span>成本</span><b>{{ health.total_cost }}元</b>
+            </div>
+            <div v-for="(a, i) in health.alerts" :key="i" class="dq-alert__item" style="margin-top:4px">
+              <el-tag size="small" :type="a.level === 'critical' ? 'danger' : 'warning'">{{ a.msg }}</el-tag>
+            </div>
+            <el-empty v-if="!health.alerts.length" :image-size="30" description="无告警" />
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="12">
+        <el-card shadow="never">
+          <template #header>
+            <div class="ov-usage-row" style="justify-content: space-between">
+              <span>合规审计（近 {{ audit?.days ?? 7 }} 天）</span>
+              <el-button size="small" @click="loadAudit">刷新</el-button>
+            </div>
+          </template>
+          <div v-if="audit">
+            <el-tag size="small" :type="audit.compliant ? 'success' : 'warning'" effect="plain">
+              {{ audit.compliant ? "合规" : "存在风险" }}
+            </el-tag>
+            <div class="ov-usage-row" style="margin-top: 8px">
+              <span>调用</span><b>{{ audit.total }}</b>
+              <span>未鉴权</span><b style="color:var(--el-color-danger)">{{ audit.anonymous_calls }}</b>
+              <span>失败</span><b style="color:var(--el-color-warning)">{{ audit.error_calls }}</b>
+              <span>高成本</span><b>{{ audit.high_cost_calls }}</b>
+            </div>
+            <div v-for="(a, i) in audit.issues" :key="i" class="dq-alert__item" style="margin-top:4px">
+              <el-tag size="small" type="warning">{{ a.msg }}</el-tag>
+            </div>
+            <el-empty v-if="!audit.issues.length" :image-size="30" description="无合规问题" />
+          </div>
+        </el-card>
+      </el-col>
+    </el-row>
   </div>
 </template>
 
@@ -152,7 +205,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit } from "@/api/module_ai/overview";
 
 defineOptions({ name: "AiOverview" });
 
@@ -160,6 +213,14 @@ const stats = reactive<any>({});
 const evalSamplesText = ref("");
 const evalResult = ref<any>(null);
 const evalLoading = ref(false);
+const health = ref<any>(null);
+const audit = ref<any>(null);
+async function loadHealth() {
+  try { health.value = (await getAiHealth()).data?.data || null; } catch { health.value = null; }
+}
+async function loadAudit() {
+  try { audit.value = (await getAiAudit()).data?.data || null; } catch { audit.value = null; }
+}
 function loadEvalTemplate() {
   evalSamplesText.value = JSON.stringify([
     { input: "订单金额总和", expected_keywords: ["90500"], actual: "订单金额总和是 90500" },
@@ -286,6 +347,8 @@ function resize() {
 
 onMounted(() => {
   load();
+  loadHealth();
+  loadAudit();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

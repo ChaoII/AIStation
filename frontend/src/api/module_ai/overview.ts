@@ -6,3 +6,9 @@ export function getAiOverviewStats() {
 export function runAiEval(samples: any[]) {
   return request({ url: "/ai/overview/eval", method: "post", data: { samples } });
 }
+export function getAiHealth(days = 7) {
+  return request({ url: "/ai/overview/health", method: "get", params: { days } });
+}
+export function getAiAudit(days = 7) {
+  return request({ url: "/ai/overview/audit", method: "get", params: { days } });
+}
