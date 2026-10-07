@@ -65,6 +65,9 @@
             >
               新建智能体
             </el-button>
+            <el-button size="small" :icon="MagicStick" @click="openMarket">
+              模板市场
+            </el-button>
           </div>
           <div class="agent-toolbar__right">
             <el-input
@@ -459,6 +462,27 @@
       </div>
       <!-- /agent-chat-main -->
     </div>
+
+    <!-- Agent 市场（模板市场） -->
+    <el-dialog v-model="marketVisible" title="Agent 模板市场" width="680px" append-to-body>
+      <div class="agent-mkt-grid">
+        <el-card v-for="t in templates" :key="t.key" shadow="never" class="agent-mkt-card">
+          <div class="agent-mkt-head">
+            <b>{{ t.name }}</b>
+            <el-tag size="small" type="info" effect="plain">{{ t.role }}</el-tag>
+          </div>
+          <div class="agent-mkt-desc">{{ t.description }}</div>
+          <div class="agent-mkt-caps">
+            <el-tag v-for="c in t.capabilities || []" :key="c" size="small" effect="plain" type="warning">
+              {{ c }}
+            </el-tag>
+          </div>
+          <el-button type="primary" size="small" style="margin-top:8px" @click="applyTemplate(t)">
+            一键创建
+          </el-button>
+        </el-card>
+      </div>
+    </el-dialog>
 
     <!-- 智能体编辑弹窗 -->
     <el-dialog
@@ -972,6 +996,8 @@ import { Auth } from "@/utils/auth";
 import {
   getAiAgentList,
   createAiAgent,
+createAgentFromTemplate,
+getAgentTemplates,
   updateAiAgent,
   deleteAiAgent,
   getAgentCategoryList,
@@ -1128,8 +1154,28 @@ const savingAgent = ref(false);
 const editingAgent = ref<any>();
 const agentForm = reactive<any>({});
 
-function openAgentDialog(a?: any) {
-  editingAgent.value = a || undefined;
+const templates = ref<any[]>([]);
+const marketVisible = ref(false);
+async function openMarket() {
+  marketVisible.value = true;
+  try {
+    const r = await getAgentTemplates();
+    templates.value = r.data?.data || [];
+  } catch {
+    templates.value = [];
+  }
+}
+async function applyTemplate(t: any) {
+  try {
+    await createAgentFromTemplate(t.key, t.name);
+    ElMessage.success(`已从模板创建「${t.name}」`);
+    marketVisible.value = false;
+    await loadData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "创建失败");
+  }
+}
+function openAgentDialog(a?: any) {  editingAgent.value = a || undefined;
   if (a) {
     Object.assign(agentForm, {
       ...a,
@@ -2731,5 +2777,30 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   color: var(--el-text-color-primary);
   word-break: break-word;
   white-space: pre-wrap;
+}
+.agent-mkt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.agent-mkt-card {
+  border: 1px solid var(--el-border-color-light);
+}
+.agent-mkt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.agent-mkt-desc {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  min-height: 32px;
+}
+.agent-mkt-caps {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 </style>

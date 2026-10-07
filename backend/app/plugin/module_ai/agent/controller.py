@@ -23,6 +23,23 @@ from .service import AiAgentService
 AiAgentRouter = APIRouter(route_class=OperationLogRoute, prefix="/agents", tags=["AI-智能体"])
 
 
+# Agent 市场（模板一键创建）
+@AiAgentRouter.get("/templates", summary="Agent 市场模板列表")
+async def agent_templates(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiAgentService.agent_templates(), msg="查询成功")
+
+
+@AiAgentRouter.post("/create-from-template", summary="从模板一键创建 Agent")
+async def create_from_template(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    a = await AiAgentService.create_from_template(str(data.get("key", "")), str(data.get("name", "")), auth)
+    return SuccessResponse(data=a, msg="创建成功")
+
+
 # ---------------------------------------------------------------- #
 # 分类
 # ---------------------------------------------------------------- #

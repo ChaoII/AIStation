@@ -67,6 +67,43 @@ def _cat_dict(c: AiAgentCategoryModel) -> dict:
 
 class AiAgentService:
 
+    @classmethod
+    async def agent_templates(cls) -> list[dict]:
+        """Agent 市场模板：预置常用 Agent，一键创建。"""
+        return [
+            {"key": "query_assistant", "name": "问数助手", "role": "数据问数助手",
+             "description": "可对系统数据进行自然语言问数（本体驱动）",
+             "query_enabled": True, "query_datasource": "system",
+             "capabilities": ["query", "grounding"], "prompt": "你是数据问数助手，回答数据问题。"},
+            {"key": "knowledge_assistant", "name": "知识库助手", "role": "知识库问答助手",
+             "description": "基于知识库回答（RAG）",
+             "query_enabled": False, "capabilities": ["knowledge"],
+             "prompt": "你是知识库问答助手，基于知识库内容回答。"},
+            {"key": "general_assistant", "name": "通用助手", "role": "通用 AI 助手",
+             "description": "通用对话助手",
+             "query_enabled": False, "capabilities": [],
+             "prompt": "你是通用 AI 助手。"},
+        ]
+
+    @classmethod
+    async def create_from_template(cls, key: str, name: str, auth) -> dict:
+        """从模板一键创建 Agent。"""
+        from types import SimpleNamespace as SN
+        tpl = next((t for t in await cls.agent_templates() if t["key"] == key), None)
+        if not tpl:
+            raise ValueError("模板不存在")
+        data = SN(
+            agent_name=name or tpl["name"], category_id=None,
+            agent_role=tpl.get("role") or "", description=tpl.get("description") or "",
+            model_id=None, prompt_id=None, temperature=0.3, workflow_id=None,
+            tool_ids=[], skill_ids=[], knowledge_ids=[],
+            query_enabled=tpl.get("query_enabled", False),
+            query_datasource=tpl.get("query_datasource", "system"),
+            input_schema={}, avatar="", color="", markdown=False, enabled=True, order=0,
+        )
+        return await cls.create(data, auth)
+
+
     # ---------------------------------------------------------------- #
     # 分类
     # ---------------------------------------------------------------- #

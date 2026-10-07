@@ -44,3 +44,9 @@ export function updateAgentCategory(id: number, data: any) {
 export function deleteAgentCategory(cat_id: number) {
   return request({ url: `${CAT_PATH}/delete`, method: "delete", data: cat_id });
 }
+export function getAgentTemplates() {
+  return request({ url: `${API_PATH}/templates`, method: "get" });
+}
+export function createAgentFromTemplate(key: string, name: string) {
+  return request({ url: `${API_PATH}/create-from-template`, method: "post", data: { key, name } });
+}
