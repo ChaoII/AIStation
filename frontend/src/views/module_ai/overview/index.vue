@@ -478,7 +478,10 @@
             <div v-for="(d, i) in decision.decisions" :key="i" class="decision-item">
               <div class="ov-usage-row" style="justify-content: space-between">
                 <b>{{ d.title }}</b>
-                <el-tag size="small" :type="d.pri === 'high' ? 'danger' : 'warning'" effect="plain">{{ d.pri }}</el-tag>
+                <div class="ov-usage-row">
+                  <el-tag size="small" :type="d.pri === 'high' ? 'danger' : 'warning'" effect="plain">{{ d.pri }}</el-tag>
+                  <el-button size="small" type="primary" link @click="runDecision(d)">执行</el-button>
+                </div>
               </div>
               <div class="decision-reason">{{ d.reason }}</div>
               <div class="decision-action">→ {{ d.action }}</div>
@@ -605,11 +608,18 @@
         <el-col :sm="24" :md="8">
           <div class="gov-section">对象关系图（{{ objRel?.edge_count ?? 0 }} 边 / {{ objRel?.node_count ?? 0 }} 对象）</div>
           <el-button size="small" style="margin-bottom:4px" :loading="objRelLoading" @click="loadObjRel">刷新</el-button>
-          <div v-for="e in (objRel?.edges || []).slice(0, 10)" :key="e.source + e.target" class="ov-usage-row" style="margin-bottom: 3px">
-            <el-tag size="small" effect="plain" style="margin-right:4px">{{ e.source }}</el-tag>
-            <span style="color:var(--el-text-color-secondary)">→</span>
-            <el-tag size="small" type="warning" effect="plain" style="margin-left:4px">{{ e.target }}</el-tag>
+          <div v-if="objRel?.edges?.length" class="obj-rel-graph">
+            <svg :width="objRelLayout.W" :height="objRelLayout.H" viewBox="0 0 500 300">
+              <g>
+                <line v-for="(e, i) in objRelLayout.eRows" :key="'e'+i" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" stroke="#909399" stroke-width="1.5" />
+              </g>
+              <g v-for="n in objRelLayout.items" :key="n.id">
+                <circle :cx="n.x" :cy="n.y" r="7" :fill="n.dq != null && n.dq < 60 ? '#F56C6C' : n.dq != null && n.dq < 80 ? '#E6A23C' : '#67C23A'" />
+                <text :x="n.x + 12" :y="n.y + 4" font-size="11" fill="#303133">{{ n.label }}</text>
+              </g>
+            </svg>
           </div>
+          <div v-else>暂无对象关系</div>
         </el-col>
         <el-col :sm="24" :md="8">
           <div class="gov-section">数据访问演练（用户 {{ walkthroughId }}）</div>
@@ -851,7 +861,7 @@ import {
   CircleCheck,
   CircleClose,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter, getAiActivityTimeline } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter, getAiActivityTimeline, executeDecision } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
@@ -898,6 +908,17 @@ async function loadAnomaly() {
 const decision = ref<any>(null);
 async function loadDecision() {
   try { decision.value = (await getAiDecisionCenter()).data?.data || null; } catch { decision.value = null; }
+}
+async function runDecision(d: any) {
+  try {
+    const r = await executeDecision(d.key);
+    if (r.data?.data?.navigate) {
+      ElMessage.info(r.data?.data?.msg || d.action);
+    } else {
+      ElMessage.success(r.data?.data?.msg || "已执行");
+      loadDecision();
+    }
+  } catch (e: any) { ElMessage.error(e?.msg || "执行失败"); }
 }
 const timeline = ref<any>(null);
 async function loadTimeline() {
@@ -1050,6 +1071,22 @@ async function loadObjRel() {
   catch { objRel.value = null; }
   finally { objRelLoading.value = false; }
 }
+const objRelLayout = computed(() => {
+  const nodes = objRel.value?.nodes || [];
+  const edges = objRel.value?.edges || [];
+  const cols = 4, cellW = 120, cellH = 46, W = 500, H = 300;
+  const pos: Record<string, { x: number; y: number }> = {};
+  const items = nodes.map((n: any, i: number) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = 30 + col * cellW, y = 26 + row * cellH;
+    pos[n.id] = { x, y };
+    return { id: n.id, label: n.label || n.id, x, y, dq: n.dq };
+  });
+  const eRows = edges
+    .filter((e: any) => pos[e.source] && pos[e.target])
+    .map((e: any) => ({ x1: pos[e.source].x, y1: pos[e.source].y, x2: pos[e.target].x, y2: pos[e.target].y, source: e.source, target: e.target }));
+  return { W, H, items, eRows };
+});
 const walkthrough = ref<any>(null);
 const walkthroughId = ref(1);
 const walkLoading = ref(false);
@@ -1402,6 +1439,16 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--el-text-color-regular);
   margin-bottom: 2px;
+}
+.obj-rel-graph {
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+  overflow: hidden;
+  max-width: 100%;
+}
+.obj-rel-graph svg {
+  max-width: 100%;
+  height: auto;
 }
 </style>
 

@@ -252,35 +252,47 @@ class AiOverviewService:
         try:
             an = await cls.anomaly_detect(7)
             for a in an["anomalies"][:3]:
-                decisions.append({"title": "处理 AI 调用异常", "reason": a["msg"],
+                decisions.append({"key": "anomaly", "title": "处理 AI 调用异常", "reason": a["msg"],
                                   "impact": "影响 AI 稳定性", "action": "查看 AIP 运行追踪定位",
-                                  "pri": "high"})
+                                  "pri": "high", "executable": "navigate", "target": "/ai/overview"})
         except Exception:  # noqa: BLE001
             pass
         try:
             audit = await cls.audit_check(7)
             if not audit.get("compliant"):
-                decisions.append({"title": "消除合规风险", "reason": f"{len(audit.get('issues', []))} 项合规问题",
-                                  "impact": "数据安全合规", "action": "处理审计问题", "pri": "high"})
+                decisions.append({"key": "compliance", "title": "消除合规风险", "reason": f"{len(audit.get('issues', []))} 项合规问题",
+                                  "impact": "数据安全合规", "action": "处理审计问题", "pri": "high",
+                                  "executable": "navigate", "target": "/ai/overview"})
         except Exception:  # noqa: BLE001
             pass
         try:
             plan = await AiQueryService.autopilot()
             if plan["total"]:
-                decisions.append({"title": "执行自主修复", "reason": f"{plan['total']} 项待修复建议",
-                                  "impact": "提升数据质量/安全", "action": "运行 AIP 自动修复", "pri": "medium"})
+                decisions.append({"key": "autopilot", "title": "执行自主修复", "reason": f"{plan['total']} 项待修复建议",
+                                  "impact": "提升数据质量/安全", "action": "运行 AIP 自动修复", "pri": "medium",
+                                  "executable": "autopilot"})
         except Exception:  # noqa: BLE001
             pass
         try:
             pend = int((await AiQueryService.approval_center()).get("total", 0))
             if pend:
-                decisions.append({"title": "处理待审批", "reason": f"{pend} 项待审批",
-                                  "impact": "打通发布/写回闭环", "action": "前往审批中心", "pri": "medium"})
+                decisions.append({"key": "approval", "title": "处理待审批", "reason": f"{pend} 项待审批",
+                                  "impact": "打通发布/写回闭环", "action": "前往审批中心", "pri": "medium",
+                                  "executable": "navigate", "target": "/ai/query"})
         except Exception:  # noqa: BLE001
             pass
         order = {"high": 0, "medium": 1, "low": 2}
         decisions.sort(key=lambda d: order.get(d["pri"], 3))
         return {"total": len(decisions), "decisions": decisions}
+
+    @classmethod
+    async def decision_execute(cls, key: str) -> dict:
+        """执行决策建议：autopilot 走自动修复，其余为跳转指引。"""
+        from app.plugin.module_ai.query.service import AiQueryService
+        if key == "autopilot":
+            r = await AiQueryService.autopilot_auto_fix()
+            return {"ok": True, "msg": f"自动修复完成 {r.get('fixed', 0)}/{r.get('attempted', 0)}", "data": r}
+        return {"ok": False, "msg": "该项为跳转指引，请在对应页面操作", "navigate": True}
 
     @classmethod
     async def activity_timeline(cls, days: int = 7, limit: int = 60) -> dict:

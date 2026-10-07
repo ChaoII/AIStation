@@ -30,6 +30,9 @@ export function getAiAnomaly(days = 7) {
 export function getAiDecisionCenter() {
   return request({ url: "/ai/overview/decision-center", method: "get" });
 }
+export function executeDecision(key: string) {
+  return request({ url: "/ai/overview/decision/execute", method: "post", data: { key } });
+}
 export function getAiActivityTimeline(days = 7, limit = 60) {
   return request({ url: "/ai/overview/activity-timeline", method: "get", params: { days, limit } });
 }

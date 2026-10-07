@@ -82,6 +82,15 @@ async def overview_decision(
     return SuccessResponse(data=await AiOverviewService.decision_center(), msg="查询成功")
 
 
+@AiOverviewRouter.post("/decision/execute", summary="执行决策建议")
+async def decision_execute(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiOverviewService.decision_execute(data.get("key", ""))
+    return SuccessResponse(data=r, msg=r.get("msg", "已执行"))
+
+
 @AiOverviewRouter.get("/activity-timeline", summary="统一活动时间线(任务执行历史)")
 async def overview_activity(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],

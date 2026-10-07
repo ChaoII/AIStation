@@ -132,6 +132,8 @@ class TestAiEval:
         assert "total" in d and "decisions" in d and isinstance(d["decisions"], list)
         for dec in d["decisions"]:
             assert "title" in dec and "reason" in dec and "pri" in dec
+        ex = asyncio.run(AiOverviewService.decision_execute("autopilot"))
+        assert "ok" in ex and "msg" in ex
 
     def test_activity_timeline(self):
         from app.plugin.module_ai.overview.service import AiOverviewService
