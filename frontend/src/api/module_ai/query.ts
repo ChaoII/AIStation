@@ -333,6 +333,9 @@ export function runDq(table: string) {
 export function scanAllDq() {
   return request({ url: `${API_PATH}/dq/scan`, method: "post" });
 }
+export function scanAssetSensitive(table: string) {
+  return request({ url: `${API_PATH}/assets/${table}/scan-sensitive`, method: "post" });
+}
 export function getDqAlert() {
   return request({ url: `${API_PATH}/dq/alert`, method: "get" });
 }

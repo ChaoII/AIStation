@@ -2047,8 +2047,26 @@
         <el-tag size="small" type="info" effect="plain">
           已纳入 {{ assetColumns.filter((c) => c.included).length }}/{{ assetColumns.length }} 字段
         </el-tag>
+        <el-button
+          size="small"
+          type="warning"
+          :loading="scanSensitiveLoading"
+          @click="doScanSensitive"
+        >
+          🔍 敏感扫描
+        </el-button>
+        <el-tag v-if="scanSensitiveInfo" size="small" type="success" effect="plain">
+          识别 {{ scanSensitiveInfo.count }} 个敏感字段
+        </el-tag>
       </div>
-      <el-table :data="filteredAssetColumns" size="small" border max-height="68vh">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 8px"
+        title="标记为敏感的字段，非授权用户在问数/resolve 时将被剔除拦截（字段级 ACL）"
+      />
+      <el-table :data="filteredAssetColumns" size="small" border max-height="68vh" :row-class-name="sensitiveRowClass">
         <el-table-column prop="column_name" label="字段名" min-width="130" show-overflow-tooltip />
         <el-table-column label="中文描述" min-width="170">
           <template #default="{ row }">
@@ -2946,6 +2964,7 @@ import {
   getDqOverview,
   runDq,
   scanAllDq,
+  scanAssetSensitive,
   getDqAlert,
   saveDomain,
   getDomainObjects,
@@ -4528,6 +4547,27 @@ async function saveAssetColumn(col: any) {
     ElMessage.error(e?.msg || "保存失败");
   }
 }
+const scanSensitiveLoading = ref(false);
+const scanSensitiveInfo = ref<any>(null);
+function sensitiveRowClass({ row }: any) {
+  return row.sensitive ? "acl-sensitive-row" : "";
+}
+async function doScanSensitive() {
+  scanSensitiveLoading.value = true;
+  scanSensitiveInfo.value = null;
+  try {
+    const r = await scanAssetSensitive(assetColumnsTable.value);
+    scanSensitiveInfo.value = { count: r.data?.data?.count ?? 0 };
+    // 刷新字段列表（敏感标记已更新）
+    const c = await getQueryAssetColumns(assetColumnsTable.value);
+    assetColumns.value = c.data?.data || [];
+    ElMessage.success(`敏感扫描完成，识别 ${scanSensitiveInfo.value.count} 个敏感字段`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "敏感扫描失败");
+  } finally {
+    scanSensitiveLoading.value = false;
+  }
+}
 const colEditVisible = ref(false);
 const colForm = reactive<any>({});
 function openColEdit(row: any) {
@@ -5555,5 +5595,14 @@ onMounted(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-top: 4px;
+}
+</style>
+
+<style lang="scss">
+.ai-query-page .el-table .acl-sensitive-row > td.el-table__cell {
+  background: var(--el-color-danger-light-9);
+}
+.ai-query-page .el-table .acl-sensitive-row:hover > td.el-table__cell {
+  background: var(--el-color-danger-light-8);
 }
 </style>

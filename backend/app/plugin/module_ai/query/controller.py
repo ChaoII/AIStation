@@ -516,7 +516,8 @@ async def compass_search(
     return SuccessResponse(data=await AiQueryService.compass_search(keyword), msg="查询成功")
 
 
-@AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")async def dq_overview(
+@AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")
+async def dq_overview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.dq_overview(), msg="查询成功")
