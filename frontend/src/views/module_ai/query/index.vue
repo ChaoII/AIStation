@@ -1131,6 +1131,16 @@
               无
             </div>
           </el-card>
+          <el-card v-if="govTable && govLineageGraph.nodes.length" shadow="never" style="margin-top: 12px">
+            <template #header>血缘图（{{ govTable }}）</template>
+            <GraphCanvas
+              :nodes="govLineageGraph.nodes"
+              :edges="govLineageGraph.edges"
+              height="360px"
+              layout-name="cose"
+              use-preset
+            />
+          </el-card>
           <el-empty v-else description="请选择业务对象查看治理信息" :image-size="40" />
         </el-tab-pane>
         <el-tab-pane label="数据管道" name="pipeline">
@@ -3572,6 +3582,48 @@ const govObjects = ref<any[]>([]);
 const govImpact = ref<any>({ metrics: [], incoming_relations: [], object_links: [] });
 const govVersions = ref<any[]>([]);
 const govLineage = ref<any>(null);
+const govLineageGraph = computed(() => {
+  const L = govLineage.value || {};
+  const nodes: any[] = [];
+  const edges: any[] = [];
+  const center = govTable.value;
+  if (!center) return { nodes, edges };
+  nodes.push({ id: center, label: center });
+  const seen = new Set<string>([center]);
+  const addNode = (id: string, label: string) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    nodes.push({ id, label });
+  };
+  const addEdge = (s: string, t: string) => edges.push({ id: `${s}->${t}`, source: s, target: t });
+  // 入向关联表 / 依赖对象
+  (L.incoming_relations || []).forEach((_r: any, i: number) => {
+    const f = _r.from?.table || _r.from || `t${i}`;
+    addNode(f, f);
+    addEdge(f, center);
+  });
+  (L.dependent_objects || []).forEach((o: any) => {
+    const id = o.object || o.alias;
+    addNode(id, o.alias || id);
+    addEdge(center, id);
+  });
+  (L.pipelines || []).forEach((p: any) => {
+    const id = `pipe:${p.name}`;
+    addNode(id, `管道:${p.name}`);
+    addEdge(id, center);
+  });
+  (L.metrics || []).forEach((m: any) => {
+    const id = `metric:${m.key}`;
+    addNode(id, m.name || m.key);
+    addEdge(center, id);
+  });
+  (L.concepts || []).forEach((c: any) => {
+    const id = `concept:${c.name}`;
+    addNode(id, c.name);
+    addEdge(center, id);
+  });
+  return { nodes, edges };
+});
 async function loadGovObjects() {
   try {
     const r = await getQueryObjects();
