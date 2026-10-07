@@ -16,15 +16,11 @@
       <div class="i-svg:backtop w-6 h-6" />
     </el-backtop>
   </section>
-
-  <!-- AIP Assist 全局 AI 助手（跨页面浮层） -->
-  <AipAssist />
 </template>
 
 <script setup lang="ts">
 import { useSettingsStore, useTagsViewStore } from "@/store";
 import variables from "@/styles/variables.module.scss";
-import AipAssist from "@/components/AipAssist/index.vue";
 
 const settingsStore = useSettingsStore();
 // 页面切换动画名称
