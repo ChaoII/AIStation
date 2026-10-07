@@ -1362,19 +1362,28 @@ class AiQueryService:
     # Compass 收藏/引用中心
     # ---------------------------------------------------------------- #
     @classmethod
+    async def _ensure_favorite_table(cls, db) -> None:
+        from sqlalchemy import text as _t
+        dialect = (db.bind.dialect.name if db.bind else "")
+        if dialect == "postgresql":
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_favorite ("
+                "id BIGSERIAL PRIMARY KEY, kind VARCHAR(64), ref VARCHAR(255), "
+                "user_id INTEGER, is_deleted INTEGER DEFAULT 0, created_time TIMESTAMP)"))
+        else:
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_favorite ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref TEXT, "
+                "user_id INTEGER, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+
+    @classmethod
     async def favorites_list(cls, user_id: int = 0) -> list[dict]:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            try:
-                await db.execute(_t(
-                    "CREATE TABLE IF NOT EXISTS ai_favorite "
-                    "(id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, ref TEXT, user_id INTEGER, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
-            except Exception:  # noqa: BLE001
-                pass
+        async with async_db_session.begin() as db:
+            await cls._ensure_favorite_table(db)
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             rows = (await db.execute(_t(
-                "SELECT id,kind,ref,created_time FROM ai_favorite WHERE is_deleted=false AND user_id=:u ORDER BY id DESC"),
+                "SELECT id,kind,ref,created_time FROM ai_favorite WHERE is_deleted=0 AND user_id=:u ORDER BY id DESC"),
                 {"u": user_id})).fetchall()
         return [{"id": r[0], "kind": r[1], "ref": r[2], "time": str(r[3]) if r[3] else ""} for r in rows]
 
@@ -1382,9 +1391,10 @@ class AiQueryService:
     async def favorites_add(cls, kind: str, ref: str, user_id: int = 0) -> dict:
         from datetime import datetime
         async with async_db_session.begin() as db:
+            await cls._ensure_favorite_table(db)
             from sqlalchemy import text as _t
             ex = (await db.execute(_t(
-                "SELECT id FROM ai_favorite WHERE kind=:k AND ref=:r AND user_id=:u AND is_deleted=false"),
+                "SELECT id FROM ai_favorite WHERE kind=:k AND ref=:r AND user_id=:u AND is_deleted=0"),
                 {"k": kind, "r": ref, "u": user_id})).fetchone()
             if ex:
                 return {"ok": True, "msg": "已收藏"}
