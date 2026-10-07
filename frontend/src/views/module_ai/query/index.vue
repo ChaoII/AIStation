@@ -298,6 +298,29 @@
             <el-tag size="small" type="info" effect="plain">
               系统 + {{ datasources.length }} 个自定义
             </el-tag>
+            <el-radio-group v-model="dsView" size="small">
+              <el-radio-button value="card">卡片</el-radio-button>
+              <el-radio-button value="table">表格</el-radio-button>
+            </el-radio-group>
+          </div>
+          <div v-if="dsView === 'card'" class="asset-catalog">
+            <el-card v-for="d in datasources" :key="d.id" shadow="never" class="asset-card">
+              <div class="asset-card__head">
+                <b class="asset-card__name">{{ d.name }}</b>
+                <el-tag size="small" type="info" effect="plain">{{ d.type }}</el-tag>
+                <div style="flex:1"></div>
+                <el-switch v-model="d.enabled" size="small" />
+              </div>
+              <div class="asset-card__meta">{{ d.database || "—" }}<template v-if="d.host"> · {{ d.host }}:{{ d.port }}</template></div>
+              <div class="asset-card__desc">{{ d.remark || "连接器" }}</div>
+              <div class="asset-card__actions">
+                <el-button link type="primary" size="small" :loading="testingDsId === d.id" @click="testDs(d)">测试</el-button>
+                <el-button link type="primary" size="small" :loading="syncingDsId === d.id" @click="syncDs(d)">同步结构</el-button>
+                <el-button link type="primary" size="small" @click="openDsEdit(d)">编辑</el-button>
+                <el-button link type="danger" size="small" @click="removeDs(d)">删除</el-button>
+              </div>
+            </el-card>
+            <el-empty v-if="!datasources.length" :image-size="50" description="暂无数据源" />
           </div>
           <el-table :data="datasources" size="small" border>
             <el-table-column prop="name" label="名称" min-width="120" />
@@ -3397,6 +3420,7 @@ const assets = ref<any[]>([]);
 const syncingAssets = ref(false);
 const assetSearch = ref("");
 const assetView = ref("card");
+const dsView = ref("card");
 const filteredAssets = computed(() => {
   const q = (assetSearch.value || "").trim().toLowerCase();
   if (!q) return assets.value;
@@ -5364,6 +5388,12 @@ onMounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.asset-card__actions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .msg-a__summary {
   margin-bottom: 8px;
