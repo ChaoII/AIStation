@@ -117,6 +117,23 @@ async def version_diff(auth: AuthDep, version_id: int = 0) -> JSONResponse:
     return SuccessResponse(data=await _svc.version_diff(int(version_id)), msg="查询成功")
 
 
+@OntologyRouter.get("/version/pending", summary="待审批的本体发布单")
+async def version_pending(
+    auth: AuthDep,
+) -> JSONResponse:
+    return SuccessResponse(data=await _svc.list_version_pending(), msg="查询成功")
+
+
+@OntologyRouter.post("/version/approve", summary="超管批准本体发布")
+async def version_approve(
+    auth: AuthDep,
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    r = await _svc.approve_version_publish(int(data.get("pending_id", 0)), operator=int(uid or 0))
+    return SuccessResponse(data=r, msg=r.get("msg", "已批准"))
+
+
 @OntologyRouter.post("/materialize", summary="本体驱动表：对象+属性物化成真实表")
 async def materialize(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.materialize_object(str(data.get("code", "")))

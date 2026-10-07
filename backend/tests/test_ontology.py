@@ -357,6 +357,8 @@ class TestOntVersionPublish:
 
         async def _go():
             async with async_db_session() as db:
+                await db.execute(_t("DELETE FROM ai_ont_object WHERE code='orders'"))
+                await db.execute(_t("INSERT INTO ai_ont_object(code,name,is_deleted) VALUES ('orders','订单',0)"))
                 su = (await db.execute(_t("SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
                 suid = int(su[0]) if su else 1
             await osvc.publish_version("orders", operator=suid)
@@ -364,13 +366,33 @@ class TestOntVersionPublish:
             assert any(c["action"] == "publish" and "发布版本" in (c["detail"] or "") for c in cl)
         asyncio.run(_go())
 
-    def test_non_superuser_cannot_publish(self, test_client):
+    def test_non_superuser_publish_goes_pending(self, test_client):
         from app.plugin.module_ai.ontology import service as osvc
 
         async def _go():
             r = await osvc.publish_version("orders", operator=999999)
-            assert r.get("ok") is False
-            assert "超管" in r.get("msg", "")
+            assert r.get("needs_approval") is True and r.get("pending_id")
+            pend = await osvc.list_version_pending()
+            assert any(p["id"] == r["pending_id"] and p["object_code"] == "orders" for p in pend)
+        asyncio.run(_go())
+
+    def test_superuser_approve_publish(self, test_client):
+        from app.plugin.module_ai.ontology import service as osvc
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session() as db:
+                await db.execute(_t("DELETE FROM ai_ont_object WHERE code='orders'"))
+                await db.execute(_t("INSERT INTO ai_ont_object(code,name,is_deleted) VALUES ('orders','订单',0)"))
+                su = (await db.execute(_t("SELECT id FROM sys_user WHERE is_superuser=1 AND is_deleted=0 LIMIT 1"))).fetchone()
+                suid = int(su[0]) if su else 1
+            r = await osvc.publish_version("orders", operator=999999)  # 非超管 → pending
+            pid = r["pending_id"]
+            ap = await osvc.approve_version_publish(pid, operator=suid)
+            assert ap.get("ok") is True
+            pend = await osvc.list_version_pending()
+            assert not any(p["id"] == pid for p in pend)  # 审批后不在待审批
         asyncio.run(_go())
 
 

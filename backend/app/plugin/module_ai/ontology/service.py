@@ -249,14 +249,8 @@ async def _is_superuser(user_id) -> bool:
         return False
 
 
-async def publish_version(object_code: str, operator: int = 0) -> dict:
-    """把对象当前定义(对象/属性/Link/Action/函数)快照为一个新版本，并写本体发布留痕。
-
-    高危操作：非超管发布被拒（仅超管可发布本体版本）。
-    """
-    operator = int(operator or 0)
-    if operator and not await _is_superuser(operator):
-        return {"ok": False, "msg": "仅超管可发布本体版本（高危操作）"}
+async def _do_publish(object_code: str) -> dict:
+    """真正快照发布对象定义到新版本 + 写发布留痕。"""
     obj = await object_full(object_code)
     if not obj.get("ok"):
         return {"ok": False, "msg": "对象不存在"}
@@ -274,9 +268,59 @@ async def publish_version(object_code: str, operator: int = 0) -> dict:
     import json as _json
     r = await _exec_write("INSERT INTO ai_ont_version(object_code,version,snapshot) VALUES (:c,:v,:s) RETURNING id",
                           {"c": object_code, "v": n, "s": _json.dumps(snapshot, ensure_ascii=False)})
-    # 发布留痕（记录发布人）
-    await _log_change(object_code, "version", "publish", f"发布版本 v{n}", created_id=int(operator or 0))
+    await _log_change(object_code, "version", "publish", f"发布版本 v{n}")
     return {"ok": True, "id": r.scalar(), "version": n}
+
+
+async def publish_version(object_code: str, operator: int = 0) -> dict:
+    """发布本体对象版本：超管直接发布；非超管 → 落待审批，超管批准后真正发布。"""
+    operator = int(operator or 0)
+    if operator and not await _is_superuser(operator):
+        # 非超管：写待审批留痕，返回审批单
+        import json as _json
+        detail = _json.dumps({"action": "publish", "object_code": object_code, "operator": operator})
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            res = await db.execute(_t(
+                "INSERT INTO ai_ont_change_log(object_code,kind,action,detail,created_id) "
+                "VALUES (:o,'version','version_pending',:d,0) RETURNING id"),
+                {"o": object_code, "d": detail})
+            cid = res.scalar()
+        return {"ok": False, "needs_approval": True, "pending_id": int(cid or 0),
+                "msg": "发布需超管审批，已生成审批单"}
+    return await _do_publish(object_code)
+
+
+async def list_version_pending(limit: int = 50) -> list[dict]:
+    """待审批的本体发布单（changelog action='version_pending'）。"""
+    import json as _json
+    r = await _exec("SELECT id,object_code,detail,created_time FROM ai_ont_change_log "
+                    "WHERE action='version_pending' AND is_deleted=false ORDER BY id DESC LIMIT :n", {"n": limit})
+    rows = r.fetchall()
+    out = []
+    for x in rows:
+        detail = x[2]
+        try:
+            d = _json.loads(detail) if isinstance(detail, str) else (detail or {})
+        except Exception:  # noqa: BLE001
+            d = {}
+        out.append({"id": x[0], "object_code": x[1], "detail": d, "created_time": str(x[3]) if x[3] else ""})
+    return out
+
+
+async def approve_version_publish(pending_id: int, operator: int = 0) -> dict:
+    """超管批准本体发布：真正发布 + 更新审批单为 approved。"""
+    operator = int(operator or 0)
+    if operator and not await _is_superuser(operator):
+        return {"ok": False, "msg": "仅超管可批准本体发布"}
+    rv = (await _exec("SELECT object_code FROM ai_ont_change_log WHERE id=:i AND action='version_pending' AND is_deleted=false",
+                      {"i": pending_id})).fetchone()
+    if not rv:
+        return {"ok": False, "msg": "审批单不存在或已处理"}
+    code = rv[0]
+    res = await _do_publish(code)
+    await _exec_write("UPDATE ai_ont_change_log SET action='version_approved' WHERE id=:i", {"i": pending_id})
+    return {"ok": res.get("ok", False), "version": res.get("version"), "msg": res.get("msg", "已批准发布")}
 
 
 async def version_diff(version_id: int) -> dict:
