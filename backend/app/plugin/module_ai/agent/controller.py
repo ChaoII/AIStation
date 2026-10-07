@@ -101,6 +101,16 @@ async def agent_dashboard(
     )
 
 
+@AiAgentRouter.post("/orchestrate", summary="多智能体协作编排(分解问题+匹配智能体)")
+async def agent_orchestrate(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiAgentService.orchestrate(data.get("question", "")), msg="查询成功"
+    )
+
+
 @AiAgentRouter.get("/detail/{agent_id}", summary="智能体详情")
 async def get_agent(
     agent_id: int,

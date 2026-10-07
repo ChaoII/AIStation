@@ -30,3 +30,10 @@ class TestAgentMarket:
         if d["agents"]:
             a = d["agents"][0]
             assert "runs" in a and "error_rate" in a and "tools" in a and "skills" in a
+
+    def test_orchestrate_intent(self):
+        d = asyncio.run(AiAgentService.orchestrate("今天有多少条告警？"))
+        assert d["intent"] == "query"
+        assert d["steps"] and isinstance(d["agents_involved"], list)
+        d2 = asyncio.run(AiAgentService.orchestrate("什么是本系统？"))
+        assert d2["intent"] in ("knowledge", "general")

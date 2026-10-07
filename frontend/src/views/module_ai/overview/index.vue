@@ -260,6 +260,34 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>多智能体协作编排</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            输入问题，按本体能力分解子任务并匹配合适智能体
+          </span>
+        </div>
+      </template>
+      <div class="compass-bar">
+        <el-input v-model="orchInput" placeholder="如：今天有多少条告警？" clearable style="flex:1" @keyup.enter="runOrchestrate" />
+        <el-button type="primary" :loading="orchLoading" @click="runOrchestrate">编排</el-button>
+      </div>
+      <template v-if="orchResult">
+        <div class="gov-section" style="margin-top: 8px">识别意图：{{ orchResult.intent }}</div>
+        <el-steps :active="orchResult.steps.length" direction="vertical" style="margin-top: 4px">
+          <el-step v-for="(s, i) in orchResult.steps" :key="i" :title="s.task" :description="`能力要求：${s.capability}`" />
+        </el-steps>
+        <div class="gov-section" style="margin-top: 8px">可参与智能体（{{ orchResult.agents_involved.length }}）</div>
+        <div>
+          <el-tag v-if="!orchResult.agents_involved.length" size="small" type="info" effect="plain">未匹配到启用且具备能力属性的智能体</el-tag>
+          <el-tag v-for="a in orchResult.agents_involved" :key="a.id" size="small" effect="plain" style="margin: 0 3px 4px 0">
+            {{ a.name }}（{{ a.role }}）
+          </el-tag>
+        </div>
+      </template>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -372,6 +400,7 @@ import {
 } from "@element-plus/icons-vue";
 import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
+import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
 
@@ -396,6 +425,16 @@ async function loadAgentDash() {
 const posture = ref<any>(null);
 async function loadPosture() {
   try { posture.value = (await getAiCompliancePosture()).data?.data || null; } catch { posture.value = null; }
+}
+const orchInput = ref("");
+const orchResult = ref<any>(null);
+const orchLoading = ref(false);
+async function runOrchestrate() {
+  if (!orchInput.value.trim()) return;
+  orchLoading.value = true;
+  try { orchResult.value = (await orchestrateAgents(orchInput.value)).data?.data || null; }
+  catch { orchResult.value = null; }
+  finally { orchLoading.value = false; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }

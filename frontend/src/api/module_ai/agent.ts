@@ -12,6 +12,10 @@ export function getAiAgentDashboard() {
   return request({ url: `${API_PATH}/dashboard`, method: "get" });
 }
 
+export function orchestrateAgents(question: string) {
+  return request({ url: `${API_PATH}/orchestrate`, method: "post", data: { question } });
+}
+
 export function getAiAgentDetail(id: number) {
   return request({ url: `${API_PATH}/detail/${id}`, method: "get" });
 }

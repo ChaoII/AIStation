@@ -504,3 +504,48 @@ class AiAgentService:
         return {"agents": out, "total_agents": len(out),
                 "enabled_agents": sum(1 for x in out if x["enabled"]),
                 "total_runs": sum(x["runs"] for x in out)}
+
+    # ---------------------------------------------------------------- #
+    # 多智能体协作编排
+    # ---------------------------------------------------------------- #
+    @classmethod
+    async def orchestrate(cls, question: str) -> dict:
+        """多智能体协作编排（AIP Multi-Agent）：分解问题为子任务，按本体能力匹配可参与智能体。"""
+        agents = await cls.list_agents()
+        q = (question or "")
+        def _cap(agent, key):
+            caps = [str(c).lower() for c in (agent.get("capabilities") or [])]
+            return key in caps
+        intent = (
+            "query" if any(k in q for k in ("多少", "统计", "数据", "个数", "数量", "分析", "表", "查询", "列出", "哪些", "几", "告警", "摄像头", "订单"))
+            else "knowledge" if any(k in q for k in ("知识", "文档", "说明", "什么是", "介绍", "制度", "规范"))
+            else "general"
+        )
+        if intent == "query":
+            steps = [
+                {"task": "解析问题并确定数据源/业务域范围", "capability": "query"},
+                {"task": "映射本体对象与字段，生成并执行数据检索", "capability": "query"},
+                {"task": "校验结果，汇总生成自然语言回答", "capability": "query"},
+            ]
+        elif intent == "knowledge":
+            steps = [
+                {"task": "检索相关知识库片段（RAG）", "capability": "knowledge"},
+                {"task": "基于知识库回答并标注来源", "capability": "knowledge"},
+            ]
+        else:
+            steps = [
+                {"task": "理解意图并确定回答策略", "capability": "general"},
+                {"task": "生成回答（可调用工具增强）", "capability": "general"},
+            ]
+        matched = []
+        for a in agents:
+            if not a.get("enabled"):
+                continue
+            caps_now = [str(c).lower() for c in (a.get("capabilities") or [])]
+            if intent == "query" and ("query" in caps_now or "grounding" in caps_now):
+                matched.append({"id": a["id"], "name": a["agent_name"],
+                                "role": a["agent_role"] or "", "match": "query"})
+            elif intent == "knowledge" and "knowledge" in caps_now:
+                matched.append({"id": a["id"], "name": a["agent_name"],
+                                "role": a["agent_role"] or "", "match": "knowledge"})
+        return {"intent": intent, "question": q, "steps": steps, "agents_involved": matched}
