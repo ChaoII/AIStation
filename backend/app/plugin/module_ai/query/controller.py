@@ -235,6 +235,32 @@ async def plugins_list(
     return SuccessResponse(data=await AiQueryService.list_plugins(), msg="查询成功")
 
 
+@AiQueryRouter.get("/assets/{table_name}/propagate", summary="端到端影响传播(下游表/指标)")
+async def lineage_propagate(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    max_depth: int = 4,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.lineage_propagate(table_name, max_depth), msg="查询成功")
+
+
+@AiQueryRouter.get("/dq-rules", summary="数据质量规则引擎(规则列表)")
+async def dq_rules_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.dq_rules_list(), msg="查询成功")
+
+
+@AiQueryRouter.get("/dq-rules/run", summary="执行数据质量规则(非空/唯一)")
+async def dq_rules_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    table: str = "",
+    column: str = "",
+    rule_type: str = "",
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.dq_rules_run(table, column, rule_type), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

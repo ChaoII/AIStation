@@ -492,6 +492,49 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>影响传播与数据质量规则</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            端到端影响传播（下游表/指标） · 数据质量规则引擎
+          </span>
+        </div>
+      </template>
+      <div class="compass-bar" style="margin-bottom: 8px">
+        <el-input v-model="propTable" placeholder="输入主表名，如 video_alarm_records" style="flex:1" @keyup.enter="runPropagate" />
+        <el-button type="primary" :loading="propLoading" @click="runPropagate">影响传播</el-button>
+        <el-button @click="loadDqRules">刷新规则</el-button>
+      </div>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">受影响下游（{{ propResult?.affected_count ?? 0 }}）</div>
+          <div v-if="propResult?.affected_tables?.length">
+            <el-tag v-for="t in propResult.affected_tables" :key="t" size="small" type="danger" effect="plain" style="margin:0 3px 4px 0">{{ t }}</el-tag>
+          </div>
+          <div v-if="propResult?.affected_metrics?.length" class="gov-section">受影响指标</div>
+          <div v-if="propResult?.affected_metrics?.length">
+            <el-tag v-for="m in propResult.affected_metrics" :key="m.key" size="small" type="warning" effect="plain" style="margin:0 3px 4px 0">{{ m.name }}</el-tag>
+          </div>
+        </el-col>
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">数据质量规则</div>
+          <div v-for="r in dqRules" :key="r.key" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 4px">
+            <div>
+              <b style="font-size:12px">{{ r.name }}</b>
+              <span style="font-size:12px;color:var(--el-text-color-secondary);margin-left:6px">{{ r.desc }}</span>
+            </div>
+            <el-button size="small" :loading="dqRunKey === r.key" @click="runRule(r)">校验</el-button>
+          </div>
+          <div v-if="dqRunResult" style="margin-top:4px">
+            <el-tag size="small" :type="dqRunResult.passed ? 'success' : 'danger'" effect="plain">
+              {{ dqRunResult.rule }} · 通过率 {{ dqRunResult.pass_rate }}% · {{ dqRunResult.valid }}/{{ dqRunResult.total }}
+            </el-tag>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -609,6 +652,7 @@ import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
 import { getSecurityAudit } from "@/api/module_ai/query";
 import { getDerivedObjects, autopilotAutoFix } from "@/api/module_ai/query";
 import { getFavorites, removeFavorite, getPlugins } from "@/api/module_ai/query";
+import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -731,6 +775,30 @@ async function loadPlugins() {
 async function removeFav(id: number) {
   try { await removeFavorite(id); loadFavorites(); }
   catch (e: any) { ElMessage.error(e?.msg || "移除失败"); }
+}
+const propTable = ref("video_alarm_records");
+const propResult = ref<any>(null);
+const propLoading = ref(false);
+async function runPropagate() {
+  if (!propTable.value.trim()) return;
+  propLoading.value = true;
+  try { propResult.value = (await lineagePropagate(propTable.value)).data?.data || null; }
+  catch { propResult.value = null; }
+  finally { propLoading.value = false; }
+}
+const dqRules = ref<any[]>([]);
+const dqRunResult = ref<any>(null);
+const dqRunKey = ref("");
+async function loadDqRules() {
+  try { dqRules.value = (await getDqRules()).data?.data || []; }
+  catch { dqRules.value = []; }
+}
+async function runRule(r: any) {
+  const table = propTable.value.trim() || "video_alarm_records";
+  dqRunKey.value = r.key;
+  try { dqRunResult.value = (await runDqRule(table, "id", r.key)).data?.data || null; }
+  catch (e: any) { ElMessage.error(e?.msg || "规则校验失败"); }
+  finally { dqRunKey.value = ""; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -888,6 +956,7 @@ onMounted(() => {
   loadPlugins();
   loadAnomaly();
   loadDecision();
+  loadDqRules();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

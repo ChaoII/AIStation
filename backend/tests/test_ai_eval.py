@@ -225,6 +225,21 @@ class TestAiEval:
         assert len(plugins) >= 4
         assert any(p["kind"] == "数据接入" for p in plugins)
 
+    def test_lineage_propagate(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.lineage_propagate("video_alarm_records"))
+        assert "root" in r and "affected_tables" in r and "affected_metrics" in r
+        assert isinstance(r["affected_tables"], list)
+
+    def test_dq_rules(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        rules = asyncio.run(AiQueryService.dq_rules_list())
+        assert len(rules) >= 3 and any(r["key"] == "not_null" for r in rules)
+        bad = asyncio.run(AiQueryService.dq_rules_run("t_none", "x", "unknown"))
+        assert bad["ok"] is False
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

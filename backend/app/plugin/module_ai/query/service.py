@@ -2550,6 +2550,80 @@ class AiQueryService:
         }
 
     @classmethod
+    async def lineage_propagate(cls, table_name: str, max_depth: int = 4) -> dict:
+        """端到端影响传播：从表沿字段关联反向 BFS，找出所有受影响的下游表与指标。"""
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT table_name, related_table FROM ai_query_asset_columns "
+                "WHERE related_table IS NOT NULL AND related_table<>'' AND is_deleted=false"))).fetchall()
+        reverse: dict[str, set[str]] = {}
+        for r in rows:
+            reverse.setdefault(r[1], set()).add(r[0])  # related -> 依赖它的表
+        affected: set[str] = set()
+        frontier = [table_name]
+        visited = {table_name}
+        depth = 0
+        while frontier and depth < max_depth:
+            nxt = []
+            for cur in frontier:
+                for up in reverse.get(cur, set()):
+                    if up not in visited:
+                        visited.add(up)
+                        affected.add(up)
+                        nxt.append(up)
+            frontier = nxt
+            depth += 1
+        all_tables = {table_name} | affected
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        affected_metrics = [m for m in metrics
+                            if any(t in (m.get("sql_template") or "") for t in all_tables)]
+        return {"root": table_name, "affected_tables": sorted(affected),
+                "affected_count": len(affected),
+                "affected_metrics": [{"key": m["key"], "name": m["name"]} for m in affected_metrics]}
+
+    # ---------------------------------------------------------------- #
+    # 数据质量规则引擎
+    # ---------------------------------------------------------------- #
+    _DQ_RULE_TEMPLATES = [
+        {"key": "not_null", "name": "非空校验", "desc": "校验字段非空率"},
+        {"key": "unique", "name": "唯一性校验", "desc": "校验字段是否唯一"},
+        {"key": "range", "name": "范围校验", "desc": "校验字段数值在指定范围"},
+    ]
+
+    @classmethod
+    async def dq_rules_list(cls) -> list[dict]:
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        return [dict(t) | {"on": bool(metrics)} for t in cls._DQ_RULE_TEMPLATES]
+
+    @classmethod
+    async def dq_rules_run(cls, table: str, column: str, rule_type: str) -> dict:
+        """执行数据质量规则：非空率/唯一性。"""
+        if rule_type == "not_null":
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                try:
+                    total = (await db.execute(_t(f'SELECT COUNT(*) FROM "{table}"'))).scalar() or 0
+                    nonnull = (await db.execute(_t(f'SELECT COUNT(*) FROM "{table}" WHERE "{column}" IS NOT NULL'))).scalar() or 0
+                except Exception:  # noqa: BLE001
+                    return {"ok": False, "msg": f"无法校验表 {table} 字段 {column}"}
+            rate = round(nonnull / total * 100, 1) if total else 100.0
+            return {"ok": True, "rule": "not_null", "table": table, "column": column,
+                    "total": total, "valid": nonnull, "pass_rate": rate, "passed": rate >= 99}
+        if rule_type == "unique":
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                try:
+                    total = (await db.execute(_t(f'SELECT COUNT(*) FROM "{table}"'))).scalar() or 0
+                    uniq = (await db.execute(_t(f'SELECT COUNT(DISTINCT "{column}") FROM "{table}"'))).scalar() or 0
+                except Exception:  # noqa: BLE001
+                    return {"ok": False, "msg": f"无法校验表 {table} 字段 {column}"}
+            rate = round(uniq / total * 100, 1) if total else 100.0
+            return {"ok": True, "rule": "unique", "table": table, "column": column,
+                    "total": total, "valid": uniq, "pass_rate": rate, "passed": rate >= 99}
+        return {"ok": False, "msg": "不支持的规则类型"}
+
+    @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
         并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""

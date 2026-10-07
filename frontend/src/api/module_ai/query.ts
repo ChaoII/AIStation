@@ -304,6 +304,15 @@ export function removeFavorite(id: number) {
 export function getPlugins() {
   return request({ url: `${API_PATH}/plugins/list`, method: "get" });
 }
+export function lineagePropagate(table: string, maxDepth = 4) {
+  return request({ url: `${API_PATH}/assets/${table}/propagate`, method: "get", params: { max_depth: maxDepth } });
+}
+export function getDqRules() {
+  return request({ url: `${API_PATH}/dq-rules`, method: "get" });
+}
+export function runDqRule(table: string, column: string, ruleType: string) {
+  return request({ url: `${API_PATH}/dq-rules/run`, method: "get", params: { table, column, rule_type: ruleType } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,
