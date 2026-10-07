@@ -508,8 +508,15 @@ async def permission_check(
     return SuccessResponse(data=await AiQueryService.permission_check(user_id, table), msg="查询成功")
 
 
-@AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")
-async def dq_overview(
+@AiQueryRouter.get("/compass/search", summary="Compass全局数据目录搜索(表/对象/指标/术语)")
+async def compass_search(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    keyword: str = "",
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.compass_search(keyword), msg="查询成功")
+
+
+@AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")async def dq_overview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.dq_overview(), msg="查询成功")

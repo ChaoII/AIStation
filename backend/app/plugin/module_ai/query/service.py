@@ -2697,6 +2697,44 @@ class AiQueryService:
                 await db.execute(_t("UPDATE ai_data_lifetime SET is_deleted=true WHERE id=:i"), {"i": i})
 
     @classmethod
+    async def compass_search(cls, keyword: str) -> dict:
+        """Compass 全局数据目录搜索：跨 数据资产表/本体对象/指标/术语 检索。"""
+        kw = (keyword or "").strip()
+        if not kw:
+            return {"assets": [], "objects": [], "metrics": [], "terms": []}
+        q = kw.lower()
+        assets = []
+        try:
+            for a in await cls.list_assets():
+                if q in (a["table_name"] or "").lower() or q in (a["alias"] or "").lower() or q in (a["description"] or "").lower():
+                    assets.append({"table": a["table_name"], "alias": a["alias"], "domain": a["domain"]})
+        except Exception:  # noqa: BLE001
+            assets = []
+        objects = []
+        try:
+            from app.plugin.module_ai.ontology.service import list_objects as _objs
+            for o in await _objs():
+                if q in (o["code"] or "").lower() or q in (o["name"] or "").lower():
+                    objects.append({"code": o["code"], "name": o["name"]})
+        except Exception:  # noqa: BLE001
+            objects = []
+        metrics = []
+        try:
+            for m in await cls.list_metrics(SYSTEM_DS):
+                if q in (m["key"] or "").lower() or q in (m["name"] or "").lower():
+                    metrics.append({"key": m["key"], "name": m["name"]})
+        except Exception:  # noqa: BLE001
+            metrics = []
+        terms = []
+        try:
+            for t in await cls.list_terms(SYSTEM_DS):
+                if q in (t["term"] or "").lower():
+                    terms.append({"term": t["term"], "metric_key": t.get("metric_key")})
+        except Exception:  # noqa: BLE001
+            terms = []
+        return {"assets": assets, "objects": objects, "metrics": metrics, "terms": terms}
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

@@ -107,3 +107,11 @@ class TestAiEval:
         r = asyncio.run(AiOverviewService.runtime_status())
         assert "apps" in r and "workflows" in r and "models" in r and "agents" in r
         assert "health" in r and "pipeline_status" in r
+
+    def test_compass_search(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.compass_search("摄像头"))
+        assert "assets" in r and "objects" in r and "metrics" in r and "terms" in r
+        r2 = asyncio.run(AiQueryService.compass_search(""))
+        assert r2["assets"] == [] and r2["metrics"] == []
