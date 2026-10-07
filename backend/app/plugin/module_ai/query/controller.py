@@ -318,6 +318,13 @@ async def action_pending(
     return SuccessResponse(data=await AiQueryService.list_pending_actions(limit), msg="查询成功")
 
 
+@AiQueryRouter.get("/approval/center", summary="审批中心统一视图(动作+本体发布)")
+async def approval_center(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.approval_center(), msg="查询成功")
+
+
 @AiQueryRouter.post("/action/approve", summary="批准动作(写回+审计)")
 async def action_approve(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

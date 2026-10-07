@@ -50,3 +50,17 @@ class TestAiEval:
             return g
         g = asyncio.run(_go())
         assert "nodes" in g and "edges" in g
+
+    def test_approval_center_shape(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_action_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)"))
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_ont_change_log (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, kind TEXT, action TEXT, detail TEXT, created_id INTEGER, created_time TEXT, is_deleted INTEGER DEFAULT 0)"))
+            return await AiQueryService.approval_center()
+        r = asyncio.run(_go())
+        assert "actions" in r and "versions" in r and "total" in r
+        assert r["total"] == len(r["actions"]) + len(r["versions"])

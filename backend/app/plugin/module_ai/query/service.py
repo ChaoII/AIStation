@@ -2544,6 +2544,15 @@ class AiQueryService:
                 "count": len(base), "allowed_tables": sorted(base)}
 
     @classmethod
+    async def approval_center(cls) -> dict:
+        """审批中心统一视图：聚合「动作写回待审批」+「本体发布待审批」。"""
+        actions = await cls.list_pending_actions(limit=100)
+        from app.plugin.module_ai.ontology.service import list_version_pending as _ont_pending
+        versions = await _ont_pending(100)
+        return {"actions": actions, "versions": versions,
+                "total": len(actions) + len(versions)}
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
