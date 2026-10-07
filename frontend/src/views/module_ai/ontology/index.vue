@@ -31,14 +31,22 @@
         <el-card shadow="never" class="ont-left">
           <template #header>
             <div class="ont-head">
-              <span class="ont-head__title">对象类型（{{ objects.length }}）</span>
+              <span class="ont-head__title">对象类型（{{ filteredObjects.length }}）</span>
               <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
                 新建对象
               </el-button>
             </div>
+            <el-input
+              v-model="objSearch"
+              size="small"
+              placeholder="搜索对象（名称/编码）"
+              clearable
+              :prefix-icon="Search"
+              style="margin-bottom: 8px"
+            />
           </template>
           <div
-            v-for="o in objects"
+            v-for="o in filteredObjects"
             :key="o.code"
             class="ont-obj"
             :class="{ active: currentCode === o.code }"
@@ -694,7 +702,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Edit, MagicStick } from "@element-plus/icons-vue";
+import { Plus, Edit, MagicStick, Search } from "@element-plus/icons-vue";
 import {
   getOntObjects,
   getOntLinks,
@@ -720,6 +728,14 @@ import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 import { getDqOverview } from "@/api/module_ai/query";
 
 const objects = ref<any[]>([]);
+const objSearch = ref("");
+const filteredObjects = computed(() => {
+  const q = (objSearch.value || "").trim().toLowerCase();
+  if (!q) return objects.value;
+  return objects.value.filter(
+    (o) => (o.name || "").toLowerCase().includes(q) || (o.code || "").toLowerCase().includes(q)
+  );
+});
 const globalLinks = ref<any[]>([]);
 const objectGraph = computed(() => {
   const objs = objects.value || [];
