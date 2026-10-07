@@ -66,6 +66,13 @@
                 >
                   导出CSV
                 </span>
+                <span
+                  v-if="m.path === 'slow' && !m.is_error && m.sql"
+                  class="msg-a__export msg-a__promote"
+                  @click="openPromote(m)"
+                >
+                  沉淀为指标
+                </span>
               </div>
 
               <!-- 使用本体（问答 grounding 溯源） -->
@@ -2438,6 +2445,57 @@
         <el-button type="primary" @click="saveDomainForm">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 沉淀为指标（FDE 复用闭环）：把已验证问答固化为确定性快路径指标 -->
+    <el-dialog v-model="promoteVisible" title="沉淀为可复用指标" width="620px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="沉淀后，下次问同类问题会直接命中该指标（确定性快路径，秒级且 100% 可复现），不再走 LLM 生成。"
+        style="margin-bottom: 12px"
+      />
+      <el-descriptions :column="1" border size="small" style="margin-bottom: 12px">
+        <el-descriptions-item label="问题">
+          {{ promoteForm.question }}
+        </el-descriptions-item>
+        <el-descriptions-item label="执行 SQL">
+          <pre class="promote-sql">{{ promoteForm.sql }}</pre>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="promoteForm.grounding?.tables?.length" label="召回表">
+          <el-tag
+            v-for="t in promoteForm.grounding.tables"
+            :key="t"
+            size="small"
+            effect="plain"
+            style="margin: 0 3px 4px 0"
+          >
+            {{ t }}
+          </el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="promoteForm" label-width="110px" size="default">
+        <el-form-item label="指标名称" required>
+          <el-input v-model="promoteForm.name" placeholder="如：按品牌摄像头数量" />
+        </el-form-item>
+        <el-form-item label="指标 key" required>
+          <el-input
+            v-model="promoteForm.key"
+            placeholder="仅字母/数字/下划线，如 camera_by_brand"
+          />
+        </el-form-item>
+        <el-form-item label="同步登记术语">
+          <el-switch v-model="promoteForm.bindTerm" />
+          <span class="promote-hint">把该问题登记为术语（业务黑话 → 该指标），下次直接命中</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="promoteVisible = false">取消</el-button>
+        <el-button type="primary" :loading="promoteLoading" @click="confirmPromote">
+          沉淀为指标
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -2466,6 +2524,7 @@ import {
   getQueryMetrics,
   saveQueryMetric,
   deleteQueryMetrics,
+  promoteQueryMetric,
   getQueryTerms,
   saveQueryTerm,
   deleteQueryTerms,
@@ -2744,6 +2803,50 @@ function rowsToItems(m: any) {
 }
 function toggleSql(m: any) {
   m._showSql = !m._showSql;
+}
+
+// ---- 沉淀为指标（FDE 复用闭环） ----
+const promoteVisible = ref(false);
+const promoteLoading = ref(false);
+const promoteForm = reactive<any>({ message_id: 0, question: "", sql: "", grounding: null, name: "", key: "", bindTerm: true });
+function openPromote(m: any) {
+  promoteForm.message_id = m.id;
+  promoteForm.question = m.question || "";
+  promoteForm.sql = m.sql || "";
+  promoteForm.grounding = m.grounding || null;
+  promoteForm.name = m.question || "";
+  // 由问题生成建议 key：取中文/字母数字，转下划线
+  promoteForm.key = (m.question || "")
+    .replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40) || "query_metric";
+  promoteForm.bindTerm = true;
+  promoteVisible.value = true;
+}
+async function confirmPromote() {
+  if (!promoteForm.name || !promoteForm.key) {
+    ElMessage.warning("请填写指标名称与 key");
+    return;
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(promoteForm.key)) {
+    ElMessage.warning("指标 key 仅允许字母/数字/下划线");
+    return;
+  }
+  promoteLoading.value = true;
+  try {
+    const res = await promoteQueryMetric({
+      message_id: promoteForm.message_id,
+      name: promoteForm.name,
+      key: promoteForm.key,
+    });
+    promoteVisible.value = false;
+    ElMessage.success(`已沉淀为可复用指标「${res?.data?.name || promoteForm.name}」`);
+    await loadMetrics(); // 刷新指标列表
+  } catch (e: any) {
+    ElMessage.error(e?.message || "沉淀失败");
+  } finally {
+    promoteLoading.value = false;
+  }
 }
 
 // ---- 可视化 ----
@@ -4615,6 +4718,21 @@ onMounted(() => {
   color: var(--el-color-primary);
   cursor: pointer;
   margin-left: 4px;
+}
+.msg-a__export:hover {
+  color: var(--el-color-primary-light-3);
+}
+.promote-sql {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.promote-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .msg-a__summary {
   margin-bottom: 8px;

@@ -82,6 +82,9 @@ export function saveQueryMetric(data: any) {
 export function deleteQueryMetrics(ids: number[]) {
   return request({ url: `${API_PATH}/metrics/delete`, method: "delete", data: ids });
 }
+export function promoteQueryMetric(data: { message_id: number; name: string; key: string }) {
+  return request({ url: `${API_PATH}/metrics/promote`, method: "post", data });
+}
 
 // 术语运营
 export function getQueryTerms(params?: any) {
