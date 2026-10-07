@@ -1295,6 +1295,43 @@
               </template>
             </el-table-column>
           </el-table>
+          <el-divider content-position="left">数据域权限矩阵（角色 → 可查表 / 敏感）</el-divider>
+          <el-button size="small" @click="loadAccessMatrix">刷新矩阵</el-button>
+          <el-table :data="accessMatrix" size="small" border max-height="260" style="margin-top: 8px">
+            <el-table-column prop="name" label="角色" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="code" label="编码" width="110" show-overflow-tooltip />
+            <el-table-column label="是否受限" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.restricted ? 'warning' : 'success'" effect="plain">
+                  {{ row.restricted ? "受限" : "全开" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="允许对象" min-width="160">
+              <template #default="{ row }">
+                <el-tag
+                  v-for="t in row.tables"
+                  :key="t"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 2px"
+                >
+                  {{ t }}
+                </el-tag>
+                <el-tag v-if="!row.restricted" size="small" type="info" effect="plain">
+                  全部对象
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="敏感放行" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.sensitive_ok ? 'success' : 'info'" effect="plain">
+                  {{ row.sensitive_ok ? "是" : "否" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="!accessMatrix.length" :image-size="40" description="暂无角色矩阵" />
         </el-tab-pane>
         <el-tab-pane label="数据质量" name="dq">
           <div class="ops-bar">
@@ -2619,6 +2656,7 @@ import {
   workshopPreview,
   getAssetLineage,
   getAccessRules,
+  getAccessMatrix,
   saveAccessRule,
   getDqOverview,
   runDq,
@@ -3822,6 +3860,15 @@ async function loadAccessRules() {
     accessRules.value = r.data?.data || [];
   } catch {
     accessRules.value = [];
+  }
+}
+const accessMatrix = ref<any[]>([]);
+async function loadAccessMatrix() {
+  try {
+    const r = await getAccessMatrix();
+    accessMatrix.value = r.data?.data?.roles || [];
+  } catch {
+    accessMatrix.value = [];
   }
 }
 function openAccessEdit(row?: any) {

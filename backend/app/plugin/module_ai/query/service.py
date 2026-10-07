@@ -2414,6 +2414,27 @@ class AiQueryService:
         return await cls.list_concepts()
 
     @classmethod
+    async def access_matrix(cls) -> dict:
+        """数据域/表级权限矩阵：每个系统角色 → 合并后可查表 + 是否受限 + 敏感放行。"""
+        from sqlalchemy import text as _t
+        async with async_db_session() as db:
+            rows = (await db.execute(_t(
+                "SELECT code, name FROM sys_role WHERE is_deleted=false ORDER BY id"))).fetchall()
+        roles = [{"code": r[0] or "", "name": r[1] or r[0] or ""} for r in rows]
+        rules = await cls.list_access_rules()
+        out = []
+        for role in roles:
+            code = role["code"]
+            matched = [x for x in rules if x["enabled"] and x["attribute"] == "role" and x["value"] == code]
+            if matched:
+                tables = sorted({t for x in matched for t in (x["allowed_tables"] or [])})
+                out.append({**role, "restricted": True, "tables": tables,
+                            "sensitive_ok": any(x["sensitive_ok"] for x in matched)})
+            else:
+                out.append({**role, "restricted": False, "tables": [], "sensitive_ok": False})
+        return {"roles": out}
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

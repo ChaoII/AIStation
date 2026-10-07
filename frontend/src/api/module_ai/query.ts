@@ -300,6 +300,9 @@ export function getAssetLineage(table: string) {
 export function getAccessRules() {
   return request({ url: `${API_PATH}/access/list`, method: "get" });
 }
+export function getAccessMatrix() {
+  return request({ url: `${API_PATH}/access/matrix`, method: "get" });
+}
 export function saveAccessRule(data: any) {
   return request({ url: `${API_PATH}/access/save`, method: "post", data });
 }

@@ -462,6 +462,13 @@ async def access_list(
     return SuccessResponse(data=await AiQueryService.list_access_rules(), msg="查询成功")
 
 
+@AiQueryRouter.get("/access/matrix", summary="数据域权限矩阵")
+async def access_matrix(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.access_matrix(), msg="查询成功")
+
+
 @AiQueryRouter.get("/dq/overview", summary="数据质量(DQ)总览")
 async def dq_overview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
