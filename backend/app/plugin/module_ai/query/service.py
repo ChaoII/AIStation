@@ -3583,7 +3583,8 @@ class AiQueryService:
                     result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
                     summary="以下是根据你的问题生成的结果：",
                 )
-                return cls._answer(msg, sql=sql)
+                retrieved = await cls._recall_grounding(question)
+                return cls._answer(msg, sql=sql, retrieved=retrieved)
         await cls._save_message(
             session_id, question, path="slow", datasource=datasource,
             sql=sql, rows=[], is_error=True, summary=f"查询失败：{last_err}",
@@ -3842,14 +3843,7 @@ class AiQueryService:
                 summary="以下是根据你的问题生成的结果：",
             )
             # Grounding 可观测：返回本次混合检索锁定的表 + 关键字段
-            retrieved = None
-            try:
-                rel_tables = await cls._semantic_tables(question)
-                _sch = await cls._system_schema()
-                fields = {t: [lab.split("(")[0] for lab in _sch.get(t, [])][:8] for t in rel_tables}
-                retrieved = {"tables": rel_tables, "fields": fields}
-            except Exception:  # noqa: BLE001
-                retrieved = None
+            retrieved = await cls._recall_grounding(question)
             yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows), "retrieved": retrieved}
             yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
             yield {"type": "done"}
@@ -4415,7 +4409,8 @@ class AiQueryService:
             return m
 
     @classmethod
-    def _answer(cls, msg: AiQueryMessageModel, metric: dict | None = None, sql: str | None = None) -> dict:
+    def _answer(cls, msg: AiQueryMessageModel, metric: dict | None = None, sql: str | None = None,
+                retrieved: dict | None = None) -> dict:
         return {
             "id": msg.id, "session_id": msg.session_id, "path": msg.path,
             "datasource": msg.datasource, "sql": msg.sql or sql or "",
@@ -4424,7 +4419,19 @@ class AiQueryService:
             "took_ms": msg.took_ms or 0, "cached": msg.cached, "is_error": msg.is_error,
             "metric": metric,
             "ontology_used": _scan_ont_tables(msg.sql or sql or ""),
+            "retrieved": retrieved,
         }
+
+    @classmethod
+    async def _recall_grounding(cls, question: str) -> dict | None:
+        """Grounding 可观测：返回本次混合检索锁定的表 + 关键字段，供前端展示「召回表/字段」。"""
+        try:
+            rel_tables = await cls._semantic_tables(question)
+            _sch = await cls._system_schema()
+            fields = {t: [lab.split("(")[0] for lab in _sch.get(t, [])][:8] for t in rel_tables}
+            return {"tables": rel_tables, "fields": fields}
+        except Exception:  # noqa: BLE001
+            return None
 
     @classmethod
     async def run_metric(cls, metric_key: str, datasource: str | None, params: dict, auth) -> dict:
