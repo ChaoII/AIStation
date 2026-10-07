@@ -9,6 +9,29 @@ from .model import AiCallLogModel
 class AiOverviewService:
 
     @classmethod
+    def eval_match(cls, text: str, keywords: list[str] | None) -> bool:
+        """评估器（影子回归核心）：实际输出是否包含全部关键断言（大小写不敏感）。"""
+        t = (text or "").lower()
+        return all((k or "").strip().lower() in t for k in (keywords or []) if str(k).strip())
+
+    @classmethod
+    async def run_eval(cls, samples: list[dict]) -> dict:
+        """AI 能力评估（影子对比）：对每个 sample {input, expected_keywords, actual} 判通过，输出精度。
+
+        expected_keywords 为"关键断言子串"，命中即通过；适合评估问数/知识库/摘要等产出。
+        """
+        total = len(samples)
+        passed = 0
+        rows = []
+        for s in samples:
+            ok = cls.eval_match(s.get("actual"), s.get("expected_keywords"))
+            if ok:
+                passed += 1
+            rows.append({"input": s.get("input"), "ok": ok})
+        return {"total": total, "passed": passed,
+                "precision": round(passed / total, 4) if total else 0, "rows": rows}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

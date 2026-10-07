@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import JSONResponse
 
 from app.api.v1.module_system.auth.schema import AuthSchema
@@ -18,3 +18,12 @@ async def overview_stats(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.stats(), msg="查询成功")
+
+
+@AiOverviewRouter.post("/eval", summary="AI 能力评估/影子回归(含关键断言判精度)")
+async def overview_eval(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    samples = (data or {}).get("samples") or []
+    return SuccessResponse(data=await AiOverviewService.run_eval(samples), msg="评估完成")
