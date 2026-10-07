@@ -2476,6 +2476,25 @@ class AiQueryService:
         return {"roles": out}
 
     @classmethod
+    async def access_preview(cls, user_id) -> dict:
+        """权限沙箱：按 user_id 模拟该用户的问数可查表（超管/角色/数据域判定）+ 敏感放行。"""
+        from types import SimpleNamespace as SN
+        try:
+            uid = int(user_id)
+        except (TypeError, ValueError):
+            uid = 0
+        su = await cls._is_superuser(uid)
+        roles = await cls._user_role_codes_by_id(uid)
+        auth = SN(user=SN(id=uid, is_superuser=su, roles=[SN(code=r) for r in roles]))
+        tables = await cls._allowed_for_user(auth)
+        domain_tables = await cls._domain_tables_for_user(uid)
+        return {
+            "user_id": uid, "superuser": su, "roles": sorted(roles),
+            "domain_restricted": bool(domain_tables), "count": len(tables),
+            "allowed_tables": sorted(tables),
+        }
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

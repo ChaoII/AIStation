@@ -251,6 +251,24 @@ class TestTableLevelAcl:
             assert "video_alarm_records" in s2
         asyncio.run(_go())
 
+    def test_access_preview(self, test_client):
+        from types import SimpleNamespace
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_domain WHERE code='prod'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_domain(name,code,description,tables,members,enabled,is_deleted) "
+                    "VALUES ('生产域','prod','x','[\"video_cameras\"]','[99]',1,0)"))
+            r = await AiQueryService.access_preview(99)
+            assert r["domain_restricted"] is True
+            assert "video_cameras" in r["allowed_tables"]
+            assert "video_alarm_records" not in r["allowed_tables"]
+        asyncio.run(_go())
+
 
 # ---------------------------------------------------------------------------
 # 方向④：FDE 复用闭环（把已验证问答沉淀为可复用指标 + 术语）

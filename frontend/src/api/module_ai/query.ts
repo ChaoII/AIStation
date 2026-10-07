@@ -303,6 +303,9 @@ export function getAccessRules() {
 export function getAccessMatrix() {
   return request({ url: `${API_PATH}/access/matrix`, method: "get" });
 }
+export function accessPreview(userId: number) {
+  return request({ url: `${API_PATH}/access/preview`, method: "get", params: { user_id: userId } });
+}
 export function saveAccessRule(data: any) {
   return request({ url: `${API_PATH}/access/save`, method: "post", data });
 }

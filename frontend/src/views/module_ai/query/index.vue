@@ -1349,6 +1349,30 @@
             </el-table-column>
           </el-table>
           <el-empty v-if="!accessMatrix.length" :image-size="40" description="暂无角色矩阵" />
+          <el-divider content-position="left">权限沙箱（按用户ID预览其可查表）</el-divider>
+          <div class="ops-bar">
+            <el-input-number
+              v-model="previewUserId"
+              :min="0"
+              placeholder="用户ID"
+              style="width: 150px"
+              controls-position="right"
+            />
+            <el-button size="small" :loading="previewLoading" @click="loadPreview">
+              模拟预览可查表
+            </el-button>
+            <el-tag v-if="preview" size="small" type="info" effect="plain">
+              超管 {{ preview.superuser ? "是" : "否" }} · 角色 {{ (preview.roles || []).join(",") || "无" }}
+              · 域受限 {{ preview.domain_restricted ? "是" : "否" }} · 可查 {{ preview.count }} 张表
+            </el-tag>
+          </div>
+          <el-table v-if="preview" :data="preview.allowed_tables" size="small" border max-height="240" style="margin-top: 8px">
+            <el-table-column label="该用户可查表" min-width="200">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ row }}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
         <el-tab-pane label="数据质量" name="dq">
           <div class="ops-bar">
@@ -2730,6 +2754,7 @@ import {
   getAssetLineage,
   getAccessRules,
   getAccessMatrix,
+  accessPreview,
   saveAccessRule,
   getDqOverview,
   runDq,
@@ -3957,6 +3982,21 @@ async function loadAccessMatrix() {
     accessMatrix.value = r.data?.data?.roles || [];
   } catch {
     accessMatrix.value = [];
+  }
+}
+const previewUserId = ref(1);
+const preview = ref<any>(null);
+const previewLoading = ref(false);
+async function loadPreview() {
+  previewLoading.value = true;
+  try {
+    const r = await accessPreview(previewUserId.value || 0);
+    preview.value = r.data?.data || null;
+  } catch (e: any) {
+    preview.value = null;
+    ElMessage.error(e?.message || "预览失败");
+  } finally {
+    previewLoading.value = false;
   }
 }
 function openAccessEdit(row?: any) {
