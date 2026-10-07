@@ -728,8 +728,15 @@ const objectGraph = computed(() => {
     codeIdx[o.code] = i + 1;
     return { id: String(o.code), name: o.name || o.code, etype: "object" };
   });
+  const nodeIds = new Set(nodes.map((n) => n.id));
   const edges = (globalLinks.value || [])
-    .filter((l) => l.source_object && l.target_object)
+    .filter(
+      (l) =>
+        l.source_object &&
+        l.target_object &&
+        nodeIds.has(String(l.source_object)) &&
+        nodeIds.has(String(l.target_object))
+    )
     .map((l) => ({
       source: String(l.source_object),
       target: String(l.target_object),
