@@ -44,6 +44,14 @@ class QueryTermUpsert(BaseModel):
     type: str = "term"
 
 
+class QueryPromoteRequest(BaseModel):
+    """FDE 复用闭环：把一条已验证问答沉淀为可复用指标。"""
+
+    message_id: int
+    name: str = ""
+    key: str = ""
+
+
 class QueryDatasourceUpsert(BaseModel):
     name: str
     code: str

@@ -931,6 +931,73 @@ class AiQueryService:
             await db.flush()
             return _to_metric_dict(obj)
 
+    @classmethod
+    async def promote_message_to_metric(cls, message_id: int, name: str, key: str, auth) -> dict:
+        """FDE 复用闭环：把一条已验证问答沉淀为「可复用指标」（确定性快路径）。
+
+        校验 SQL 合法后落为系统指标，并把该问题登记为术语（黑话→指标），
+        下次同类问题直接走快路径（100%、秒级），不再依赖 LLM 生成。
+        """
+        name = (name or "").strip()
+        key = (key or "").strip()
+        if not name or not key:
+            raise CustomException(msg="请提供指标名称(key)与显示名(name)")
+        if not re.fullmatch(r"[A-Za-z0-9_]+", key):
+            raise CustomException(msg="指标 key 仅允许字母/数字/下划线")
+        async with async_db_session.begin() as db:
+            from sqlalchemy import select as _sel
+
+            m = await db.get(AiQueryMessageModel, message_id)
+            if not m or not (m.sql or ""):
+                raise CustomException(msg="问答记录无效或缺少 SQL")
+            try:
+                validate_sql(m.sql, await _system_allowed())
+            except CustomException as e:  # noqa: BLE001
+                raise CustomException(msg=f"该 SQL 无法作为指标：{e}") from e
+            existing = (
+                await db.execute(
+                    _sel(AiQueryMetricModel).where(
+                        AiQueryMetricModel.datasource == SYSTEM_DS,
+                        AiQueryMetricModel.key == key,
+                        AiQueryMetricModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.name = name
+                existing.sql_template = m.sql
+                existing.enabled = True
+                existing.updated_id = auth.user.id
+            else:
+                db.add(AiQueryMetricModel(
+                    datasource=SYSTEM_DS, key=key, name=name,
+                    description=f"由问答「{m.question[:40]}」沉淀", sql_template=m.sql,
+                    params=[], dimensions=[], agg="count", unit="",
+                    enabled=True, cache_ttl=60,
+                    created_id=auth.user.id, updated_id=auth.user.id,
+                ))
+            # 把问题登记为术语（黑话 → 指标）
+            term = (m.question or "").strip()[:128]
+            if term:
+                tex = (
+                    await db.execute(
+                        _sel(AiQueryDictionaryModel).where(
+                            AiQueryDictionaryModel.datasource == SYSTEM_DS,
+                            AiQueryDictionaryModel.term == term,
+                            AiQueryDictionaryModel.is_deleted.is_(False),
+                        )
+                    )
+                ).scalar_one_or_none()
+                if tex:
+                    tex.metric_key = key
+                else:
+                    db.add(AiQueryDictionaryModel(
+                        datasource=SYSTEM_DS, term=term, metric_key=key,
+                        field_path="", type="metric",
+                    ))
+            await db.flush()
+            return {"key": key, "name": name, "term": term}
+
     # ---- 术语 ----
     @classmethod
     async def list_terms(cls, datasource: str | None = None) -> list[dict]:

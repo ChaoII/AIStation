@@ -18,6 +18,7 @@ from .schema import (
     QueryFeedbackRequest,
     QueryFewshotUpsert,
     QueryMetricUpsert,
+    QueryPromoteRequest,
     QuerySettingUpsert,
     QueryTermUpsert,
 )
@@ -79,6 +80,17 @@ async def save_metric(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.upsert_metric(data, auth), msg="保存成功")
+
+
+@AiQueryRouter.post("/metrics/promote", summary="沉淀为可复用指标(FDE复用)")
+async def promote_metric(
+    data: QueryPromoteRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    payload = await AiQueryService.promote_message_to_metric(
+        data.message_id, data.name, data.key, auth
+    )
+    return SuccessResponse(data=payload, msg="已沉淀为可复用指标")
 
 
 @AiQueryRouter.delete("/metrics/delete", summary="指标删除")
