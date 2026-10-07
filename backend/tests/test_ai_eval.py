@@ -33,3 +33,20 @@ class TestAiEval:
     def test_audit_check_shape(self):
         r = asyncio.run(AiOverviewService.audit_check(days=7))
         assert "total" in r and "anonymous_calls" in r and "compliant" in r and "issues" in r
+
+    def test_pipeline_graph_shape(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_pipeline (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, source_connection TEXT, source_table TEXT, target_object TEXT, mappings TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+                await db.execute(_t("CREATE TABLE IF NOT EXISTS ai_pipeline_run (id INTEGER PRIMARY KEY AUTOINCREMENT, pipeline_id INTEGER, status TEXT, ran_at TEXT, is_deleted INTEGER DEFAULT 0)"))
+            g = await AiQueryService.pipeline_graph()
+            ids = {n["id"] for n in g["nodes"]}
+            for e in g["edges"]:
+                assert e["source"] in ids and e["target"] in ids
+            return g
+        g = asyncio.run(_go())
+        assert "nodes" in g and "edges" in g

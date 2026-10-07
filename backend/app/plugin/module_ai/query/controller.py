@@ -393,6 +393,13 @@ async def pipeline_list(
     return SuccessResponse(data=await AiQueryService.list_pipelines(), msg="查询成功")
 
 
+@AiQueryRouter.get("/pipeline/graph", summary="数据管道(ELT)编排图")
+async def pipeline_graph(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.pipeline_graph(), msg="查询成功")
+
+
 @AiQueryRouter.post("/pipeline/save", summary="数据管道保存")
 async def pipeline_save(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

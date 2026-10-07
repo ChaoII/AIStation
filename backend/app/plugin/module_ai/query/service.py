@@ -2176,6 +2176,38 @@ class AiQueryService:
         return {"ok": True, "created": created, "template": tpl["name"]}
 
     @classmethod
+    async def pipeline_graph(cls) -> dict:
+        """数据管道(ELT)编排图：源表 → 管道 → 本体对象，返回 nodes/edges（number id 供 GraphCanvas）。"""
+        pipes = await cls.list_pipelines()
+        nodes: list[dict] = []
+        edges: list[dict] = []
+        idmap: dict[str, int] = {}
+
+        def nid(key: str) -> int:
+            if key not in idmap:
+                idmap[key] = len(idmap) + 1
+            return idmap[key]
+
+        def add_node(key: str, name: str, etype: str) -> None:
+            if key in idmap:
+                return
+            i = nid(key)
+            nodes.append({"id": i, "name": name or "-", "etype": etype, "weight": 1})
+
+        for p in pipes:
+            src = f"src:{p.get('source_table')}"
+            pipe = f"pipe:{p.get('name')}"
+            tgt = f"obj:{p.get('target_object')}"
+            add_node(pipe, p.get("name") or "管道", "pipeline")
+            if p.get("source_table"):
+                add_node(src, p["source_table"], "source")
+                edges.append({"source": nid(src), "target": nid(pipe), "rtype": "to", "weight": 1})
+            if p.get("target_object"):
+                add_node(tgt, p["target_object"], "object")
+                edges.append({"source": nid(pipe), "target": nid(tgt), "rtype": "writes", "weight": 1})
+        return {"nodes": nodes, "edges": edges}
+
+    @classmethod
     async def list_pipelines(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t
