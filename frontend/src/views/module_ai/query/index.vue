@@ -233,6 +233,16 @@
             <el-table-column prop="key" label="key" min-width="120" show-overflow-tooltip />
             <el-table-column prop="agg" label="聚合" width="80" />
             <el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column label="权限影响" min-width="150">
+              <template #default="{ row }">
+                <el-tag size="small" :type="metricAccess(row).restricted ? 'warning' : 'success'" effect="plain">
+                  {{ metricAccess(row).restricted ? "受限" : "全角色可查" }}
+                </el-tag>
+                <span v-if="metricAccess(row).restricted" class="msg-a__time" style="margin-left: 4px">
+                  {{ metricAccess(row).tables.join("、") }}
+                </span>
+              </template>
+            </el-table-column>
             <el-table-column label="启用" width="70">
               <template #default="{ row }">
                 <el-switch v-model="row.enabled" @change="saveMetric(row)" />
@@ -4014,6 +4024,19 @@ async function loadPreview() {
   } finally {
     previewLoading.value = false;
   }
+}
+function metricAccess(m: any) {
+  // 指标权限影响：sql_template 涉及的表，若存在「受限」角色（accessMatrix restricted）的表 → 受限
+  const sql = m.sql_template || "";
+  const tables = (sql.match(/\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)/gi) || []).map((x: string) =>
+    x.replace(/\b(?:from|join)\s+/i, "")
+  );
+  const restricted = new Set<string>();
+  for (const role of accessMatrix.value || []) {
+    if (role.restricted) (role.tables || []).forEach((t: string) => restricted.add(t));
+  }
+  const hit = tables.filter((t: string) => restricted.has(t));
+  return { restricted: hit.length > 0, tables: hit };
 }
 function openAccessEdit(row?: any) {
   Object.assign(
