@@ -286,6 +286,12 @@ export function computeDerivedMetric(key: string) {
 export function getSecurityAudit(limit = 30) {
   return request({ url: `${API_PATH}/security/audit`, method: "get", params: { limit } });
 }
+export function getDerivedObjects() {
+  return request({ url: `${API_PATH}/derived-objects`, method: "get" });
+}
+export function autopilotAutoFix() {
+  return request({ url: `${API_PATH}/autopilot/auto-fix`, method: "post" });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

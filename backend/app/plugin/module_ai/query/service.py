@@ -1359,6 +1359,44 @@ class AiQueryService:
                 "datasources": ds_security, "action_logs": logs, "log_count": len(logs)}
 
     @classmethod
+    async def derived_objects(cls) -> dict:
+        """Ontology 派生对象：从启用了对象的资产派生对象（按数据域聚类 + 派生属性）。"""
+        assets = await cls.list_assets()
+        objs = [a for a in assets if a.get("object_enabled")]
+        domains: dict[str, list[str]] = {}
+        for a in objs:
+            d = a.get("domain") or "未分域"
+            domains.setdefault(d, []).append(a["table_name"])
+        derived = [{"name": f"{d}域对象", "base_objects": tables, "count": len(tables),
+                    "group": d} for d, tables in domains.items()]
+        # 派生属性：为每个派生对象汇总列数/敏感/血缘
+        for do in derived:
+            do["attributes"] = {
+                "total_columns": sum((next((a.get("column_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"])),
+                "sensitive_fields": sum((next((a.get("sensitive_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"])),
+                "lineage_count": sum((next((a.get("lineage_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"])),
+            }
+        return {"base_objects": len(objs), "derived_objects": derived,
+                "total_derived": len(derived), "domains": list(domains.keys())}
+
+    @classmethod
+    async def autopilot_auto_fix(cls) -> dict:
+        """AIP 自主修复全自动调度：自动批量执行所有可执行的自主行动（敏感扫描/补全描述/DQ重扫）。"""
+        plan = await cls.autopilot()
+        results: list[dict] = []
+        for a in plan["actions"]:
+            if a["executable"] in ("scan_sensitive", "generate_desc", "dq_scan") and a.get("tables"):
+                for t in a["tables"]:
+                    try:
+                        r = await cls.autopilot_execute(a["executable"], t)
+                        results.append({"action": a["type"], "table": t,
+                                        "ok": bool(r.get("ok")), "msg": r.get("msg", "")})
+                    except Exception as e:  # noqa: BLE001
+                        results.append({"action": a["type"], "table": t, "ok": False, "msg": str(e)})
+        fixed = sum(1 for r in results if r["ok"])
+        return {"attempted": len(results), "fixed": fixed, "results": results}
+
+    @classmethod
     async def list_asset_columns(cls, table_name: str) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select

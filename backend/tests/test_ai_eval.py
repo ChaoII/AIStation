@@ -174,6 +174,22 @@ class TestAiEval:
         assert 0 <= r["score"] <= 100
         assert "sensitive_fields" in r and "access_rules" in r
 
+    def test_derived_objects(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.derived_objects())
+        assert "base_objects" in r and "derived_objects" in r and "total_derived" in r
+        assert isinstance(r["derived_objects"], list)
+        for d in r["derived_objects"]:
+            assert "name" in d and "base_objects" in d and "attributes" in d
+
+    def test_autopilot_auto_fix(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.autopilot_auto_fix())
+        assert "attempted" in r and "fixed" in r and "results" in r
+        assert isinstance(r["results"], list)
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

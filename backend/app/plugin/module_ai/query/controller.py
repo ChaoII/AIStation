@@ -189,6 +189,20 @@ async def security_audit(
     return SuccessResponse(data=await AiQueryService.security_audit(limit), msg="查询成功")
 
 
+@AiQueryRouter.get("/derived-objects", summary="Ontology 派生对象(按域聚类+派生属性)")
+async def derived_objects(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.derived_objects(), msg="查询成功")
+
+
+@AiQueryRouter.post("/autopilot/auto-fix", summary="AIP 自主修复全自动调度(批量执行)")
+async def autopilot_auto_fix(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.autopilot_auto_fix(), msg="执行完成")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

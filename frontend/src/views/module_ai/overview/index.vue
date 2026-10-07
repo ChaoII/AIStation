@@ -296,6 +296,7 @@
       </template>
       <div class="ov-usage-row" style="margin-bottom: 8px">
         <el-button size="small" :loading="autoLoading" @click="loadAutopilot">重新扫描</el-button>
+        <el-button size="small" type="danger" :loading="autoFixing" @click="runAutoFix">一键自动修复</el-button>
         <el-tag size="small" type="info" effect="plain">候选 {{ autopilot?.total ?? 0 }} 项</el-tag>
         <el-tag v-if="!autopilot?.actions?.length && !autoLoading" size="small" type="success" effect="plain">暂无风险建议</el-tag>
       </div>
@@ -381,6 +382,37 @@
           </template>
         </el-table-column>
         <el-table-column prop="operator" label="操作人" width="90" />
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
+          <span>Ontology 派生对象</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            从启用对象的数据资产，按数据域聚类派生对象并汇总派生属性
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" :loading="derivedObjLoading" @click="loadDerivedObj">刷新</el-button>
+        <el-tag size="small" type="info" effect="plain">基础对象 {{ derivedObj?.base_objects ?? 0 }} · 派生 {{ derivedObj?.total_derived ?? 0 }}</el-tag>
+      </div>
+      <el-table :data="derivedObj?.derived_objects || []" size="small" border>
+        <el-table-column prop="name" label="派生对象" min-width="120" />
+        <el-table-column label="基础对象" min-width="180">
+          <template #default="{ row }">
+            <el-tag v-for="t in row.base_objects" :key="t" size="small" effect="plain" style="margin:0 2px 2px 0">{{ t }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="count" label="对象数" width="80" align="center" />
+        <el-table-column label="派生属性" min-width="180">
+          <template #default="{ row }">
+            <el-tag size="small" type="info" effect="plain" style="margin:0 2px 2px 0">列 {{ row.attributes?.total_columns ?? 0 }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain" style="margin:0 2px 2px 0">敏感 {{ row.attributes?.sensitive_fields ?? 0 }}</el-tag>
+            <el-tag size="small" type="success" effect="plain" style="margin:0 2px 2px 0">血缘 {{ row.attributes?.lineage_count ?? 0 }}</el-tag>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -502,6 +534,7 @@ import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
 import { getSecurityAudit } from "@/api/module_ai/query";
+import { getDerivedObjects, autopilotAutoFix } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -579,6 +612,29 @@ async function loadSecurity() {
   try { security.value = (await getSecurityAudit(30)).data?.data || null; }
   catch { security.value = null; }
   finally { securityLoading.value = false; }
+}
+const derivedObj = ref<any>(null);
+const derivedObjLoading = ref(false);
+async function loadDerivedObj() {
+  derivedObjLoading.value = true;
+  try { derivedObj.value = (await getDerivedObjects()).data?.data || null; }
+  catch { derivedObj.value = null; }
+  finally { derivedObjLoading.value = false; }
+}
+const autoFixed = ref<any>(null);
+const autoFixing = ref(false);
+async function runAutoFix() {
+  try {
+    await ElMessageBox.confirm("将自动执行所有可修复项（敏感扫描/补全描述/DQ重扫），是否继续？", "AIP 自主修复", { type: "warning", confirmButtonText: "执行修复", cancelButtonText: "取消" });
+  } catch { return; }
+  autoFixing.value = true;
+  try {
+    const r = await autopilotAutoFix();
+    autoFixed.value = r.data?.data || null;
+    ElMessage.success(`修复完成：${autoFixed.value?.fixed ?? 0}/${autoFixed.value?.attempted ?? 0}`);
+    loadAutopilot();
+  } catch (e: any) { ElMessage.error(e?.msg || "自动修复失败"); }
+  finally { autoFixing.value = false; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -731,6 +787,7 @@ onMounted(() => {
   loadAutopilot();
   loadDerived();
   loadSecurity();
+  loadDerivedObj();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {
