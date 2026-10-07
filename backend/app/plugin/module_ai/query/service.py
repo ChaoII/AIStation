@@ -2656,6 +2656,47 @@ class AiQueryService:
                 "reason": reason}
 
     @classmethod
+    async def dl_list(cls) -> list[dict]:
+        """数据生命周期/删除策略列表（Palantir Data Lifetime）。"""
+        from sqlalchemy import text as _t
+        async with async_db_session() as db:
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_data_lifetime "
+                "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, retention_days INTEGER, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+            rows = (await db.execute(_t(
+                "SELECT id, table_name, retention_days, enabled FROM ai_data_lifetime "
+                "WHERE is_deleted=false ORDER BY id DESC"))).fetchall()
+        return [{"id": r[0], "table": r[1], "retention_days": r[2], "enabled": bool(r[3])} for r in rows]
+
+    @classmethod
+    async def dl_save(cls, data: dict) -> dict:
+        from sqlalchemy import text as _t
+        table = (data.get("table") or "").strip()
+        days = int(data.get("retention_days") or 0)
+        if not table:
+            raise CustomException(msg="请提供数据表")
+        async with async_db_session.begin() as db:
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_data_lifetime "
+                "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, retention_days INTEGER, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)"))
+            if data.get("id"):
+                await db.execute(_t(
+                    "UPDATE ai_data_lifetime SET table_name=:t, retention_days=:d, enabled=:e WHERE id=:i"),
+                    {"t": table, "d": days, "e": bool(data.get("enabled", True)), "i": data["id"]})
+                return {"id": data["id"]}
+            res = await db.execute(_t(
+                "INSERT INTO ai_data_lifetime(table_name,retention_days,enabled) VALUES (:t,:d,:e) RETURNING id"),
+                {"t": table, "d": days, "e": bool(data.get("enabled", True))})
+            return {"id": res.scalar()}
+
+    @classmethod
+    async def dl_remove(cls, ids: list[int]) -> None:
+        from sqlalchemy import text as _t
+        async with async_db_session.begin() as db:
+            for i in ids:
+                await db.execute(_t("UPDATE ai_data_lifetime SET is_deleted=true WHERE id=:i"), {"i": i})
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

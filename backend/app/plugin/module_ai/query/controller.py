@@ -539,6 +539,31 @@ async def dq_alert(
     return SuccessResponse(data=await AiQueryService.dq_alert(), msg="查询成功")
 
 
+# ---- 数据生命周期/删除策略（Palantir Data Lifetime） ----
+@AiQueryRouter.get("/dl/list", summary="数据生命周期策略列表")
+async def dl_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.dl_list(), msg="查询成功")
+
+
+@AiQueryRouter.post("/dl/save", summary="保存数据生命周期策略")
+async def dl_save(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.dl_save(data), msg="保存成功")
+
+
+@AiQueryRouter.delete("/dl/remove", summary="删除数据生命周期策略")
+async def dl_remove(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    ids: Annotated[list[int], Body(description="ID列表")],
+) -> JSONResponse:
+    await AiQueryService.dl_remove(ids)
+    return SuccessResponse(msg="删除成功")
+
+
 # ---- P3-⑨ 数据域隔离 ----
 @AiQueryRouter.get("/domain/list", summary="数据域列表")
 async def domain_list(

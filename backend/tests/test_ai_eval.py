@@ -90,3 +90,13 @@ class TestAiEval:
             r2 = await AiQueryService.permission_check(999999, "video_cameras")
             assert "allowed" in r2 and "reason" in r2
         asyncio.run(_go())
+
+    def test_data_lifetime_crud(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        async def _go():
+            s = await AiQueryService.dl_save({"table": "video_alarm_records", "retention_days": 180})
+            assert s.get("id")
+            lst = await AiQueryService.dl_list()
+            assert any(x["table"] == "video_alarm_records" for x in lst)
+        asyncio.run(_go())
