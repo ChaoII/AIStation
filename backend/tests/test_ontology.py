@@ -41,6 +41,7 @@ DDL = {
     "ai_access_rule": "CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
     "ai_action_log": "CREATE TABLE IF NOT EXISTS ai_action_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
     "ai_domain": "CREATE TABLE IF NOT EXISTS ai_domain (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, code TEXT, description TEXT, tables TEXT, members TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
+    "ai_dq_report": "CREATE TABLE IF NOT EXISTS ai_dq_report (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, alias TEXT, total INTEGER, score REAL, completeness REAL, uniqueness REAL, freshness REAL, issues TEXT, checked_at TEXT, is_deleted INTEGER DEFAULT 0)",
 }
 
 
@@ -267,6 +268,32 @@ class TestTableLevelAcl:
             assert r["domain_restricted"] is True
             assert "video_cameras" in r["allowed_tables"]
             assert "video_alarm_records" not in r["allowed_tables"]
+        asyncio.run(_go())
+
+    def test_dq_warning(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            from sqlalchemy import select as _sel
+            from app.plugin.module_ai.query.model import AiQueryAssetModel
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_dq_report WHERE table_name='video_cameras'"))
+                existing = (await db.execute(_sel(AiQueryAssetModel).where(
+                    AiQueryAssetModel.table_name == "video_cameras",
+                    AiQueryAssetModel.is_deleted.is_(False)))).scalar_one_or_none()
+                if not existing:
+                    db.add(AiQueryAssetModel(
+                        table_name="video_cameras", alias="摄像头",
+                        object_enabled=True, included=True))
+                await db.execute(_t(
+                    "INSERT INTO ai_dq_report(table_name,alias,total,score,completeness,uniqueness,freshness,issues,is_deleted) "
+                    "VALUES ('video_cameras','摄像头',10,40,50,60,30,'[]',0)"))
+            w = await AiQueryService._dq_warning_for_sql("SELECT COUNT(*) FROM video_cameras")
+            assert any(x["table"] == "video_cameras" and x["score"] < 60 for x in w)
+            w2 = await AiQueryService._dq_warning_for_sql("SELECT COUNT(*) FROM video_alarm_records")
+            assert not any(x["table"] == "video_cameras" for x in w2)
         asyncio.run(_go())
 
 

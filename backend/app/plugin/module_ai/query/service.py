@@ -3938,7 +3938,9 @@ class AiQueryService:
                     result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
                     summary="以下是根据你的问题生成的结果：", grounding=grounding,
                 )
-                return cls._answer(msg, sql=sql, retrieved=retrieved)
+                ans = cls._answer(msg, sql=sql, retrieved=retrieved)
+                ans["dq_warning"] = await cls._dq_warning_for_sql(sql)
+                return ans
         await cls._save_message(
             session_id, question, path="slow", datasource=datasource,
             sql=sql, rows=[], is_error=True, summary=f"查询失败：{last_err}",
@@ -4198,7 +4200,8 @@ class AiQueryService:
             )
             # Grounding 可观测：返回本次混合检索锁定的表 + 关键字段
             retrieved = await cls._recall_grounding(question)
-            yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows), "retrieved": retrieved}
+            yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
+                   "retrieved": retrieved, "dq_warning": await cls._dq_warning_for_sql(sql)}
             yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
             yield {"type": "done"}
         except Exception as e:  # noqa: BLE001
@@ -4787,6 +4790,22 @@ class AiQueryService:
             return {"tables": rel_tables, "fields": fields}
         except Exception:  # noqa: BLE001
             return None
+
+    @classmethod
+    async def _dq_warning_for_sql(cls, sql: str) -> list[dict]:
+        """DQ 联动：若问数 SQL 涉及 DQ 风险对象表（健康分 <60），返回警告（温和提示，不硬拦）。"""
+        if not sql:
+            return []
+        try:
+            overview = await cls.dq_overview()
+        except Exception:  # noqa: BLE001
+            return []
+        risk = {x.get("table"): x.get("score") for x in overview.get("items", [])
+                if (x.get("score") or 0) < 60}
+        if not risk:
+            return []
+        used = [t for t in risk if t in sql]
+        return [{"table": t, "score": risk[t]} for t in used]
 
     @classmethod
     async def run_metric(cls, metric_key: str, datasource: str | None, params: dict, auth) -> dict:
