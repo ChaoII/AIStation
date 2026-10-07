@@ -27,3 +27,11 @@ async def overview_eval(
 ) -> JSONResponse:
     samples = (data or {}).get("samples") or []
     return SuccessResponse(data=await AiOverviewService.run_eval(samples), msg="评估完成")
+
+
+@AiOverviewRouter.get("/health", summary="AI 健康/异常监控")
+async def overview_health(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: int = 7,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.health_check(days), msg="查询成功")

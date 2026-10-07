@@ -32,6 +32,40 @@ class AiOverviewService:
                 "precision": round(passed / total, 4) if total else 0, "rows": rows}
 
     @classmethod
+    async def health_check(cls, days: int = 7) -> dict:
+        """AI 健康/异常监控：聚合近 N 天调用量/错误率/平均延迟/成本 + 健康状态与告警。"""
+        from datetime import datetime, timedelta
+        from sqlalchemy import func as _f, select as _sel
+        since = datetime.utcnow() - timedelta(days=max(1, days))
+        async with async_db_session() as db:
+            base = _sel(
+                _f.count().label("n"),
+                _f.count().filter(AiCallLogModel.result == "error").label("e"),
+                _f.avg(AiCallLogModel.latency_ms).label("lat"),
+                _f.sum(AiCallLogModel.cost).label("cost"),
+            ).where(AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since)
+            row = (await db.execute(base)).one()
+        calls = int(row.n or 0)
+        errors = int(row.e or 0)
+        avg_latency = int(row.lat or 0)
+        total_cost = round(float(row.cost or 0), 2)
+        error_rate = round(errors / calls, 4) if calls else 0.0
+        alerts = []
+        if error_rate > 0.05:
+            alerts.append({"level": "critical", "msg": f"近{days}天错误率 {error_rate*100:.1f}% 超过 5%"})
+        elif error_rate > 0.02:
+            alerts.append({"level": "warning", "msg": f"近{days}天错误率 {error_rate*100:.1f}% 超过 2%"})
+        if avg_latency > 5000:
+            alerts.append({"level": "warning", "msg": f"近{days}天平均延迟 {avg_latency}ms 超过 5s"})
+        if alerts:
+            status = "critical" if any(a["level"] == "critical" for a in alerts) else "warning"
+        else:
+            status = "healthy"
+        return {"days": days, "calls": calls, "errors": errors, "error_rate": error_rate,
+                "avg_latency_ms": avg_latency, "total_cost": total_cost, "status": status,
+                "alerts": alerts}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

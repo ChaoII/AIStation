@@ -24,3 +24,8 @@ class TestAiEval:
         ]
         r = asyncio.run(AiOverviewService.run_eval(samples))
         assert r["total"] == 2 and r["passed"] == 1 and r["precision"] == 0.5
+
+    def test_health_check_shape(self):
+        r = asyncio.run(AiOverviewService.health_check(days=7))
+        assert "calls" in r and "error_rate" in r and "status" in r and "alerts" in r
+        assert r["status"] in ("healthy", "warning", "critical")
