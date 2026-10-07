@@ -306,6 +306,9 @@ export function getAccessMatrix() {
 export function accessPreview(userId: number) {
   return request({ url: `${API_PATH}/access/preview`, method: "get", params: { user_id: userId } });
 }
+export function accessPreviewRole(role: string) {
+  return request({ url: `${API_PATH}/access/preview-role`, method: "get", params: { role } });
+}
 export function saveAccessRule(data: any) {
   return request({ url: `${API_PATH}/access/save`, method: "post", data });
 }

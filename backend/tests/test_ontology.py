@@ -270,6 +270,24 @@ class TestTableLevelAcl:
             assert "video_alarm_records" not in r["allowed_tables"]
         asyncio.run(_go())
 
+    def test_access_preview_role(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t("DELETE FROM ai_access_rule WHERE value='prod_viewer'"))
+                await db.execute(_t(
+                    "INSERT INTO ai_access_rule(name,attribute,value,allowed_tables,sensitive_ok,enabled,is_deleted) "
+                    "VALUES ('r','role','prod_viewer','[\"video_cameras\"]',1,1,0)"))
+            r = await AiQueryService.access_preview_role("prod_viewer")
+            assert r["restricted"] is True and r["sensitive_ok"] is True
+            assert "video_cameras" in r["allowed_tables"]
+            r2 = await AiQueryService.access_preview_role("no_such_role")
+            assert r2["restricted"] is False
+        asyncio.run(_go())
+
     def test_dq_warning(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

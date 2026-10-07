@@ -2495,6 +2495,21 @@ class AiQueryService:
         }
 
     @classmethod
+    async def access_preview_role(cls, role: str) -> dict:
+        """权限沙箱：按角色合并其 ABAC 规则的 allowed_tables + 敏感放行；无规则默认全开。"""
+        role = (role or "").strip()
+        rules = await cls.list_access_rules()
+        matched = [x for x in rules if x["enabled"] and x["attribute"] == "role" and x["value"] == role]
+        if matched:
+            tables = sorted({t for x in matched for t in (x["allowed_tables"] or [])})
+            return {"role": role, "restricted": True,
+                    "sensitive_ok": any(x["sensitive_ok"] for x in matched),
+                    "count": len(tables), "allowed_tables": tables}
+        base = await _system_allowed()
+        return {"role": role, "restricted": False, "sensitive_ok": False,
+                "count": len(base), "allowed_tables": sorted(base)}
+
+    @classmethod
     async def list_access_rules(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import text as _t

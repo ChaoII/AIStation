@@ -1369,8 +1369,26 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="预览" width="80" align="center">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="previewRole(row)">预览</el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <el-empty v-if="!accessMatrix.length" :image-size="40" description="暂无角色矩阵" />
+          <div v-if="rolePreview" class="ops-bar" style="margin-top: 8px">
+            <el-tag size="small" type="info" effect="plain">
+              角色 {{ rolePreview.role }} · {{ rolePreview.restricted ? "受限" : "全开" }} · 敏感放行
+              {{ rolePreview.sensitive_ok ? "是" : "否" }} · 可查 {{ rolePreview.count }} 张表
+            </el-tag>
+          </div>
+          <el-table v-if="rolePreview" :data="rolePreview.allowed_tables" size="small" border max-height="200" style="margin-top: 6px">
+            <el-table-column label="该角色可查表" min-width="200">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ row }}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
           <el-divider content-position="left">权限沙箱（按用户ID预览其可查表）</el-divider>
           <div class="ops-bar">
             <el-input-number
@@ -2777,6 +2795,7 @@ import {
   getAccessRules,
   getAccessMatrix,
   accessPreview,
+  accessPreviewRole,
   saveAccessRule,
   getDqOverview,
   runDq,
@@ -4023,6 +4042,16 @@ async function loadPreview() {
     ElMessage.error(e?.message || "预览失败");
   } finally {
     previewLoading.value = false;
+  }
+}
+const rolePreview = ref<any>(null);
+async function previewRole(row: any) {
+  try {
+    const r = await accessPreviewRole(row.code);
+    rolePreview.value = r.data?.data || null;
+  } catch (e: any) {
+    rolePreview.value = null;
+    ElMessage.error(e?.message || "预览失败");
   }
 }
 function metricAccess(m: any) {
