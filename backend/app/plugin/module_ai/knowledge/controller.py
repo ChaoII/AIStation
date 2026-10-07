@@ -163,6 +163,14 @@ async def get_search_stats(
     )
 
 
+@KnowledgeRouter.get("/bases/{kb_id}/quality", summary="知识库质量治理")
+async def get_kb_quality(
+    kb_id: int,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:knowledge:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiKnowledgeService.kb_quality(kb_id), msg="查询成功")
+
+
 @KnowledgeRouter.get("/bases/{kb_id}/graph", summary="知识图谱（GraphRAG）")
 async def get_graph(
     kb_id: int,

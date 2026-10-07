@@ -405,6 +405,47 @@ class AiKnowledgeService:
         return {"chunks": saved}
 
     @classmethod
+    async def kb_quality(cls, kb_id: int) -> dict:
+        """知识库质量治理：文档数/分块数/分块嵌入率/文档状态 + 健康分。"""
+        from sqlalchemy import select as _sel
+        from sqlalchemy import func as _f
+        from .model import AiKnowledgeDocumentModel
+        from app.plugin.module_ai.knowledge.model import AiKnowledgeChunkModel
+
+        async with async_db_session() as db:
+            docs = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeDocumentModel).where(
+                AiKnowledgeDocumentModel.kb_id == kb_id,
+                AiKnowledgeDocumentModel.is_deleted.is_(False)))).scalar() or 0
+            chunks = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeChunkModel).where(
+                AiKnowledgeChunkModel.kb_id == kb_id,
+                AiKnowledgeChunkModel.is_deleted.is_(False)))).scalar() or 0
+            # 已嵌入分块（vector 非空）
+            try:
+                embedded = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeChunkModel).where(
+                    AiKnowledgeChunkModel.kb_id == kb_id,
+                    AiKnowledgeChunkModel.is_deleted.is_(False),
+                    AiKnowledgeChunkModel.vector.isnot(None)))).scalar() or 0
+            except Exception:  # noqa: BLE001
+                embedded = 0
+            status_rows = (await db.execute(_sel(AiKnowledgeDocumentModel.doc_status, _f.count())
+                            .where(AiKnowledgeDocumentModel.kb_id == kb_id,
+                                   AiKnowledgeDocumentModel.is_deleted.is_(False))
+                            .group_by(AiKnowledgeDocumentModel.doc_status))).all()
+        statuses = {r[0]: int(r[1]) for r in status_rows}
+        embedded_rate = round(embedded / chunks, 4) if chunks else 0.0
+        failed = int(statuses.get("failed", 0) or 0)
+        score = 100.0
+        if chunks == 0:
+            score = 0.0
+        elif embedded_rate < 0.5:
+            score = 50.0
+        elif failed and failed / max(docs, 1) > 0.2:
+            score = 60.0
+        return {"kb_id": kb_id, "docs": docs, "chunks": chunks,
+                "embedded_rate": embedded_rate, "statuses": statuses,
+                "score": score, "healthy": score >= 80}
+
+    @classmethod
     async def search(
         cls,
         kb_ids: list[int],
