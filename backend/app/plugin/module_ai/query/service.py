@@ -2664,8 +2664,7 @@ class AiQueryService:
             await db.execute(_t(
                 "INSERT INTO ai_dataset_share(table_name,token,user_id,created_time) "
                 "VALUES (:t,:tok,:u,:now)"),
-                {"t": table_name, "tok": token, "u": user_id,
-                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+                {"t": table_name, "tok": token, "u": user_id, "now": datetime.now()})
         return {"ok": True, "table": table_name, "token": token,
                 "link": f"/web#/ai/query?share={token}"}
 
