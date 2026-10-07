@@ -16,7 +16,10 @@
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
           <span>Compass 全局数据目录</span>
-          <span style="font-size:12px;color:var(--el-text-color-secondary)">搜索 表 / 对象 / 指标 / 术语</span>
+          <div class="ov-usage-row">
+            <span style="font-size:12px;color:var(--el-text-color-secondary)">搜索 表 / 对象 / 指标 / 术语</span>
+            <el-button size="small" type="primary" plain @click="router.push('/ai/chat')">进入 AI 对话</el-button>
+          </div>
         </div>
       </template>
       <div class="compass-bar">
@@ -848,6 +851,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
+const router = useRouter();
 import * as echarts from "echarts";
 import {
   Collection,
