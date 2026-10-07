@@ -2297,27 +2297,65 @@ class AiQueryService:
             return False
 
     @classmethod
+    async def _sql_query_scope(cls, sql: str) -> tuple[set[str], set[str]]:
+        """用 sqlglot 精确解析查询涉及的表集与列名集；失败回退正则（不放过）。"""
+        try:
+            import sqlglot
+            from sqlglot import exp as _exp
+
+            parsed = sqlglot.parse_one(sql, read="postgres")
+            tables = {t.name for t in parsed.find_all(_exp.Table)}
+            cols = {c.name for c in parsed.find_all(_exp.Column)}
+            return tables, cols
+        except Exception:  # noqa: BLE001
+            tables = set(re.findall(r"\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)", sql or "", re.IGNORECASE))
+            cols = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql or ""))
+            return tables, cols
+
+    @classmethod
+    async def _sensitive_asset_cols(cls, table: str) -> list[str]:
+        """从字段资产目录取业务表被标记为敏感（sensitive）的字段清单。"""
+        async with async_db_session() as db:
+            from sqlalchemy import select as _sel
+
+            rows = (
+                await db.execute(
+                    _sel(AiQueryAssetColumnModel.column_name).where(
+                        AiQueryAssetColumnModel.table_name == table,
+                        AiQueryAssetColumnModel.sensitive.is_(True),
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    )
+                )
+            ).all()
+        return [r[0] for r in rows]
+
+    @classmethod
     async def _ont_sql_violations(cls, sql: str, user_id: int | None) -> list[str]:
-        """问数 SQL 的本体字段级 ACL：检测是否查询了用户无权限的本体受限/敏感属性。"""
+        """问数 SQL 的字段级 ACL：检测是否查询了用户无权限的敏感/受限字段。
+
+        覆盖：本体物化表（ont_*，敏感/受限属性）+ 业务表（字段资产标记 sensitive 的列）。
+        用 sqlglot 精确提取查询列，避免正则误报（别名/字符串）。非超管（无 sensitive 权限）时生效。
+        """
         if not sql:
             return []
         if await cls._can_see_sensitive(user_id):
             return []
-        tables = _scan_ont_tables(sql)
+        tables, cols = await cls._sql_query_scope(sql)
         if not tables:
             return []
-        violations: list[str] = []
+        restricted: list[tuple[str, str]] = []
         for table in tables:
-            code = table.replace("ont_", "")
-            props = await cls._ont_props(code)
-            restricted = [p["code"] for p in props
-                          if p["sensitive"] or (p.get("roles") and not ({"all", "public"} & set(p["roles"])))]
-            if not restricted:
-                continue
-            ids = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", sql))
-            bad = [c for c in restricted if c in ids]
-            if bad:
-                violations.extend(f"{table}.{c}" for c in bad)
+            base = table.split(".")[-1]
+            if base.startswith("ont_"):
+                code = base[len("ont_"):]
+                props = await cls._ont_props(code)
+                for p in props:
+                    if p["sensitive"] or (p.get("roles") and not ({"all", "public"} & set(p["roles"]))):
+                        restricted.append((base, p["code"]))
+            else:
+                for c in await cls._sensitive_asset_cols(base):
+                    restricted.append((base, c))
+        violations = [f"{t}.{c}" for t, c in restricted if c in cols]
         return list(dict.fromkeys(violations))
 
     @classmethod
