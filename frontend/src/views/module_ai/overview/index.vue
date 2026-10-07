@@ -656,6 +656,31 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>对象数据浏览器</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            真实表数据分页浏览（对象实例预览）
+          </span>
+        </div>
+      </template>
+      <div class="compass-bar" style="margin-bottom: 8px">
+        <el-input v-model="browseTable" placeholder="输入表名，如 video_alarm_records" style="flex:1" @keyup.enter="browsePage = 1; loadBrowse()" />
+        <el-button type="primary" :loading="browseLoading" @click="browsePage = 1; loadBrowse()">浏览</el-button>
+      </div>
+      <template v-if="browse?.ok">
+        <div class="ov-usage-row" style="margin-bottom: 4px">
+          <el-tag size="small" type="info" effect="plain">共 {{ browse.total }} 行 · 第 {{ browse.page }} 页</el-tag>
+          <el-pagination v-model:current-page="browsePage" :page-size="20" :total="browse.total" layout="prev, pager, next" small @current-change="loadBrowse" />
+        </div>
+        <el-table :data="browse.rows" size="small" border max-height="320" style="width:100%">
+          <el-table-column v-for="c in (browse.columns || []).slice(0, 10)" :key="c" :prop="c" :label="c" min-width="90" show-overflow-tooltip />
+        </el-table>
+      </template>
+      <el-alert v-else-if="browse?.msg" type="error" :closable="false" :title="browse.msg" />
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -779,6 +804,7 @@ import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
 import { getShareList, removeShare } from "@/api/module_ai/query";
 import { getCatalogCategories, getObjectRelations, getAccessWalkthrough } from "@/api/module_ai/query";
 import { getGuardrailsStatus } from "@/api/module_ai/query";
+import { objectBrowse } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -978,6 +1004,17 @@ async function loadGuardrails() {
   try { guardrails.value = (await getGuardrailsStatus()).data?.data || null; }
   catch { guardrails.value = null; }
 }
+const browseTable = ref("video_alarm_records");
+const browsePage = ref(1);
+const browse = ref<any>(null);
+const browseLoading = ref(false);
+async function loadBrowse() {
+  if (!browseTable.value.trim()) return;
+  browseLoading.value = true;
+  try { browse.value = (await objectBrowse(browseTable.value, browsePage.value, 20)).data?.data || null; }
+  catch { browse.value = null; }
+  finally { browseLoading.value = false; }
+}
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
   compassLoading.value = true;
@@ -1141,6 +1178,7 @@ onMounted(() => {
   loadObjRel();
   loadWalkthrough();
   loadGuardrails();
+  loadBrowse();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

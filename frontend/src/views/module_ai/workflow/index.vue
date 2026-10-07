@@ -20,6 +20,14 @@
             新建工作流
           </el-button>
           <el-button :icon="DataAnalysis" @click="openCompare">对比</el-button>
+          <el-dropdown v-if="wfTemplates.length" @command="createFromTemplate">
+            <el-button>从模板创建<el-icon style="margin-left:4px"><ArrowDown /></el-icon></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="t in wfTemplates" :key="t.key" :command="t">{{ t.name }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
         <div class="data-table__toolbar--right">
           <CrudToolbarRight :buttons="toolbarRight" :cols="cols" :on-toolbar="onToolbar" />
@@ -125,14 +133,27 @@
 <script setup lang="ts">
 import { ref, reactive } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, DataAnalysis } from "@element-plus/icons-vue";
+import { Plus, DataAnalysis, ArrowDown } from "@element-plus/icons-vue";
 import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
+const wfTemplates = ref<any[]>([]);
+async function loadWfTemplates() {
+  try { wfTemplates.value = (await getAiWorkflowTemplates()).data?.data || []; }
+  catch { wfTemplates.value = []; }
+}
+async function createFromTemplate(tpl: any) {
+  try {
+    const r = await createAiWorkflowFromTemplate(tpl.key, tpl.name);
+    ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
+  } catch (e: any) { ElMessage.error(e?.msg || "创建失败"); }
+}
 import {
   getAiWorkflowList,
   deleteAiWorkflow,
   createAiWorkflow,
   updateAiWorkflow,
+  getAiWorkflowTemplates,
+  createAiWorkflowFromTemplate,
 } from "@/api/module_ai/workflow";
 import { nodeDefOf } from "./nodes";
 import WorkflowEditor from "./components/WorkflowEditor.vue";
@@ -199,6 +220,7 @@ const contentConfig = reactive<IContentConfig>({
 });
 
 const { searchRef, contentRef, handleQueryClick, handleResetClick, refreshList } = useCrudList();
+loadWfTemplates();
 
 const editorVisible = ref(false);
 const currentWorkflow = ref<any>();

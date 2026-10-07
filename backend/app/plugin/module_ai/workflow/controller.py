@@ -35,6 +35,24 @@ async def list_workflows(
     return SuccessResponse(data=await AiWorkflowService.list_workflows(), msg="查询成功")
 
 
+@AiWorkflowRouter.get("/templates", summary="AIP 工作流模板市场")
+async def workflow_templates(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiWorkflowService.workflow_templates(), msg="查询成功")
+
+
+@AiWorkflowRouter.post("/create-from-template", summary="从模板创建工作流")
+async def create_from_template(
+    data: Annotated[dict, Body()],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:workflow:create"]))],
+) -> JSONResponse:
+    r = await AiWorkflowService.create_from_template(data.get("key", ""), data.get("name", ""), auth)
+    if not r:
+        return ErrorResponse(msg="模板不存在")
+    return SuccessResponse(data=r, msg="创建成功")
+
+
 @AiWorkflowRouter.get("/detail/{workflow_id}", summary="工作流详情")
 async def get_workflow(
     workflow_id: int,

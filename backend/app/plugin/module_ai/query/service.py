@@ -2639,6 +2639,25 @@ class AiQueryService:
                 "row_count": len(data)}
 
     @classmethod
+    async def object_browse(cls, table_name: str, page: int = 1, page_size: int = 20) -> dict:
+        """对象数据浏览器：分页读取真实表数据（前端表格浏览）。"""
+        page = max(1, int(page)); page_size = max(1, min(int(page_size), 100))
+        offset = (page - 1) * page_size
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            try:
+                total = (await db.execute(_t(f'SELECT COUNT(*) FROM "{table_name}"'))).scalar() or 0
+                rows = (await db.execute(_t(
+                    f'SELECT * FROM "{table_name}" LIMIT {page_size} OFFSET {offset}'))).fetchall()
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "msg": f"表不存在或无法读取：{e}"}
+        cols = list(rows[0]._mapping.keys()) if rows else []
+        data = [dict(r._mapping) for r in rows]
+        return {"ok": True, "table": table_name, "columns": cols, "rows": data,
+                "page": page, "page_size": page_size, "total": int(total),
+                "has_next": offset + page_size < int(total)}
+
+    @classmethod
     async def _ensure_share_table(cls, db) -> None:
         from sqlalchemy import text as _t
         dialect = (db.bind.dialect.name if db.bind else "")

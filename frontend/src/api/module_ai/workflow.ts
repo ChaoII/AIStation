@@ -6,6 +6,14 @@ export function getAiWorkflowList() {
   return request({ url: `${API_PATH}/list`, method: "get" });
 }
 
+export function getAiWorkflowTemplates() {
+  return request({ url: `${API_PATH}/templates`, method: "get" });
+}
+
+export function createAiWorkflowFromTemplate(key: string, name: string) {
+  return request({ url: `${API_PATH}/create-from-template`, method: "post", data: { key, name } });
+}
+
 export function getAiWorkflowDetail(id: number) {
   return request({ url: `${API_PATH}/detail/${id}`, method: "get" });
 }

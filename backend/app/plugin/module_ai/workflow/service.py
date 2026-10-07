@@ -67,6 +67,38 @@ class AiWorkflowService:
                 return None
             return _to_dict(w)
 
+    # AIP 工作流模板市场
+    _TEMPLATES = [
+        {"key": "data_analysis", "name": "数据分析流", "description": "收集数据 → 分析 → 生成报告",
+         "graph": {"nodes": [{"id": "n1", "type": "tool", "label": "数据查询", "task": "查询数据"},
+                             {"id": "n2", "type": "llm", "label": "分析总结", "task": "分析数据"},
+                             {"id": "n3", "type": "output", "label": "生成报告", "task": "生成报告"}],
+                   "edges": [{"source": "n1", "target": "n2"}, {"source": "n2", "target": "n3"}]}},
+        {"key": "review", "name": "审核流", "description": "提交 → 人工审批 → 归档",
+         "graph": {"nodes": [{"id": "n1", "type": "input", "label": "提交", "task": "接收输入"},
+                             {"id": "n2", "type": "approval", "label": "人工审批", "task": "审批"},
+                             {"id": "n3", "type": "output", "label": "归档", "task": "归档结果"}],
+                   "edges": [{"source": "n1", "target": "n2"}, {"source": "n2", "target": "n3"}]}},
+        {"key": "rag", "name": "知识问答流", "description": "检索知识库 → LLM 回答",
+         "graph": {"nodes": [{"id": "n1", "type": "tool", "label": "知识检索", "task": "检索知识库"},
+                             {"id": "n2", "type": "llm", "label": "LLM 回答", "task": "生成回答"}],
+                   "edges": [{"source": "n1", "target": "n2"}]}},
+    ]
+
+    @classmethod
+    async def workflow_templates(cls) -> list[dict]:
+        return [dict(t) for t in cls._TEMPLATES]
+
+    @classmethod
+    async def create_from_template(cls, key: str, name: str, auth) -> dict | None:
+        tpl = next((t for t in cls._TEMPLATES if t["key"] == key), None)
+        if not tpl:
+            return None
+        from types import SimpleNamespace as SN
+        data = SN(name=name or tpl["name"], description=tpl.get("description") or "",
+                  graph=tpl.get("graph"), enabled=True)
+        return await cls.create(data, auth)
+
     @classmethod
     async def create(cls, data, auth) -> dict:
         async with async_db_session.begin() as db:

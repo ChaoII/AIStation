@@ -270,6 +270,16 @@ async def export_asset(
     return SuccessResponse(data=await AiQueryService.export_asset(table_name, limit), msg="查询成功")
 
 
+@AiQueryRouter.get("/objects/{table_name}/browse", summary="对象数据浏览器(分页)")
+async def object_browse(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    page: int = 1,
+    page_size: int = 20,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.object_browse(table_name, page, page_size), msg="查询成功")
+
+
 @AiQueryRouter.post("/share/create", summary="数据集分享(生成分享链接)")
 async def share_create(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],

@@ -316,6 +316,9 @@ export function runDqRule(table: string, column: string, ruleType: string) {
 export function exportAsset(table: string, limit = 100) {
   return request({ url: `${API_PATH}/assets/${table}/export`, method: "get", params: { limit } });
 }
+export function objectBrowse(table: string, page = 1, pageSize = 20) {
+  return request({ url: `${API_PATH}/objects/${table}/browse`, method: "get", params: { page, page_size: pageSize } });
+}
 export function createShare(table: string) {
   return request({ url: `${API_PATH}/share/create`, method: "post", data: { table } });
 }

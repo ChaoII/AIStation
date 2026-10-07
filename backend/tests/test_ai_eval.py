@@ -263,6 +263,8 @@ class TestAiEval:
             assert "name" in r["columns"]
             bad = await AiQueryService.export_asset("t_nope")
             assert bad["ok"] is False
+            b = await AiQueryService.object_browse("t_export", 1, 2)
+            assert b["ok"] is True and b["total"] == 2 and "has_next" in b
             return True
         assert asyncio.run(_go())
 

@@ -1621,3 +1621,19 @@ def test_workflow_schedule(test_client, auth_headers):
         assert logs and logs[0]["status"] == "success"
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
+def test_workflow_templates(test_client, auth_headers):
+    """AIP 工作流模板市场齐全；从模板创建成功并带 DAG。"""
+    tpl = test_client.get("/api/v1/ai/workflows/templates", headers=auth_headers).json()["data"]
+    assert len(tpl) >= 3
+    assert any(t["key"] == "data_analysis" and t["graph"]["nodes"] for t in tpl)
+    r = test_client.post(
+        "/api/v1/ai/workflows/create-from-template",
+        json={"key": "rag", "name": "pytest-知识流"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()["data"]
+    assert body["name"] == "pytest-知识流"
+    assert body["graph"]["nodes"]
+    _delete_wf(test_client, auth_headers, [body["id"]])
