@@ -416,6 +416,24 @@ async def asset_version_diff(
     return SuccessResponse(data=await AiQueryService.version_diff(id_a, id_b), msg="查询成功")
 
 
+@AiQueryRouter.post("/assets/{table_name}/publish", summary="数据集/对象版本发布")
+async def asset_publish(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.asset_publish(table_name, int(data.get("version_id", 0)), auth)
+    return SuccessResponse(data=r, msg=r.get("msg", "发布完成"))
+
+
+@AiQueryRouter.get("/assets/{table_name}/releases", summary="数据发布(当前发布版本+列表)")
+async def asset_releases(
+    table_name: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.asset_releases(table_name), msg="查询成功")
+
+
 @AiQueryRouter.get("/assets/{table_name}/impact", summary="影响分析(指标/关联/对象)")
 async def asset_impact(
     table_name: str,

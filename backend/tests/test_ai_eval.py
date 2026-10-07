@@ -185,3 +185,26 @@ class TestAiEval:
             assert any(c["key"] == "alias" for c in d["changed"])
             return True
         assert asyncio.run(_go())
+
+    def test_asset_publish(self, test_client):
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.core.database import async_db_session
+        from types import SimpleNamespace as SN
+        from sqlalchemy import text as _t
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                await db.execute(_t(
+                    "CREATE TABLE IF NOT EXISTS ai_asset_version "
+                    "(id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, field_name TEXT, "
+                    "snapshot TEXT, version_no INTEGER, operator TEXT, is_deleted INTEGER DEFAULT 0, created_time TEXT)"))
+            await AiQueryService._record_version("t_rel", {"alias": "X"})
+            vs = await AiQueryService.list_versions("t_rel")
+            assert vs
+            r = await AiQueryService.asset_publish("t_rel", vs[0]["id"], SN(user=SN(id=7)))
+            assert r["ok"] is True
+            rel = await AiQueryService.asset_releases("t_rel")
+            assert rel["published_version_id"] == vs[0]["id"]
+            assert any(v["published"] for v in rel["versions"])
+            return True
+        assert asyncio.run(_go())

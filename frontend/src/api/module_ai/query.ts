@@ -265,6 +265,12 @@ export function getAssetVersions(table: string) {
 export function getVersionDiff(idA: number, idB: number) {
   return request({ url: `${API_PATH}/assets/version/diff`, method: "get", params: { id_a: idA, id_b: idB } });
 }
+export function publishAsset(table: string, versionId: number) {
+  return request({ url: `${API_PATH}/assets/${table}/publish`, method: "post", data: { version_id: versionId } });
+}
+export function getAssetReleases(table: string) {
+  return request({ url: `${API_PATH}/assets/${table}/releases`, method: "get" });
+}
 export function getAutopilot() {
   return request({ url: `${API_PATH}/autopilot`, method: "get" });
 }

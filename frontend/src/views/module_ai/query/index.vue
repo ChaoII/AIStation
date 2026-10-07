@@ -1186,12 +1186,25 @@
             <el-col :span="12">
               <el-card shadow="never">
                 <template #header>版本历史</template>
+                <div class="ov-usage-row" style="margin-bottom: 4px">
+                  <el-tag v-if="govRelease?.published_time" size="small" type="success" effect="plain">
+                    当前发布：V{{ govReleasePublishedVersion }} · {{ govRelease.published_time }}
+                  </el-tag>
+                  <el-tag v-else size="small" type="info" effect="plain">未发布</el-tag>
+                </div>
                 <el-table :data="govVersions" size="small">
                   <el-table-column prop="version" label="版本" width="60" />
                   <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
-                  <el-table-column label="操作" width="150" align="center">
+                  <el-table-column label="发布" width="70" align="center">
+                    <template #default="{ row }">
+                      <el-tag v-if="row.published" size="small" type="success" effect="plain">已发布</el-tag>
+                      <span v-else>—</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="210" align="center">
                     <template #default="{ row, $index }">
                       <el-button link type="primary" size="small" @click="diffGov(row, $index)">对比上一版</el-button>
+                      <el-button link type="success" size="small" @click="publishGov(row)">发布</el-button>
                       <el-button link type="warning" size="small" @click="rollGov(row)">回滚</el-button>
                     </template>
                   </el-table-column>
@@ -2992,6 +3005,8 @@ import {
   rejectAction,
   getAssetVersions,
   getVersionDiff,
+  publishAsset,
+  getAssetReleases,
   rollbackAssetVersion,
   getAssetImpact,
   extractQueryObjects,
@@ -4016,6 +4031,26 @@ const govObjects = ref<any[]>([]);
 const govImpact = ref<any>({ metrics: [], incoming_relations: [], object_links: [] });
 const govVersions = ref<any[]>([]);
 const govDiff = ref<any>(null);
+const govRelease = ref<any>(null);
+const govReleasePublishedVersion = computed(() => {
+  const v = govVersions.value.find((x) => x.id === govRelease.value?.published_version_id);
+  return v ? v.version : "—";
+});
+async function loadGovRelease() {
+  if (!govTable.value) return;
+  try { govRelease.value = (await getAssetReleases(govTable.value)).data?.data || null; }
+  catch { govRelease.value = null; }
+}
+async function publishGov(row: any) {
+  try {
+    await ElMessageBox.confirm(`发布「${govTable.value}」版本 ${row.version}？发布后该版本为当前生效版本。`, "发布确认", { type: "warning", confirmButtonText: "发布", cancelButtonText: "取消" });
+  } catch { return; }
+  try {
+    const r = await publishAsset(govTable.value, row.id);
+    ElMessage.success(r.data?.data?.msg || "已发布");
+    loadGovRelease();
+  } catch (e: any) { ElMessage.error(e?.msg || "发布失败"); }
+}
 const govLineage = ref<any>(null);
 const govLineageGraph = computed(() => {
   const L = govLineage.value || {};
@@ -4078,6 +4113,7 @@ async function loadGov() {
     govImpact.value = imp.data?.data || { metrics: [], incoming_relations: [], object_links: [] };
     govVersions.value = ver.data?.data || [];
     govLineage.value = lin.data?.data || null;
+    loadGovRelease();
   } catch {
     govImpact.value = { metrics: [], incoming_relations: [], object_links: [] };
     govVersions.value = [];

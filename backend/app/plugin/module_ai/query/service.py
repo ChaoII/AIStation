@@ -2270,6 +2270,57 @@ class AiQueryService:
                 "changed": changed, "changed_count": len(changed)}
 
     @classmethod
+    async def asset_publish(cls, table_name: str, version_id: int, auth) -> dict:
+        """数据集/对象版本发布：把指定版本标记为当前发布版本（可回滚发布）。"""
+        import json as _json
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            v = (await db.execute(_t(
+                "SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"),
+                {"i": version_id})).fetchone()
+        if not v:
+            return {"ok": False, "msg": "版本不存在"}
+        if v[0] != table_name:
+            return {"ok": False, "msg": "版本不属于该对象"}
+        from datetime import datetime
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_asset_publish "
+                "(table_name TEXT PRIMARY KEY, version_id INTEGER, published_time TEXT, operator TEXT)"))
+            await db.execute(_t(
+                "INSERT OR REPLACE INTO ai_asset_publish(table_name,version_id,published_time,operator) "
+                "VALUES (:t,:v,:now,:op)"),
+                {"t": table_name, "v": int(version_id),
+                 "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                 "op": str(getattr(getattr(auth, "user", None), "id", ""))})
+        return {"ok": True, "table": table_name, "version": v[3], "msg": f"已发布版本 {v[3]}"}
+
+    @classmethod
+    async def asset_releases(cls, table_name: str) -> dict:
+        """当前发布版本 + 该对象的版本列表（含是否已发布）。"""
+        import json as _json
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            version_rows = (await db.execute(_t(
+                "SELECT id,field_name,snapshot,version_no,created_time FROM ai_asset_version "
+                "WHERE table_name=:t AND is_deleted=false ORDER BY version_no DESC LIMIT 50"),
+                {"t": table_name})).fetchall()
+            pub = (await db.execute(_t(
+                "SELECT version_id,published_time FROM ai_asset_publish WHERE table_name=:t"),
+                {"t": table_name})).fetchone()
+        published_version_id = int(pub[0]) if pub else None
+        versions = []
+        for r in version_rows:
+            snap = r[2] if isinstance(r[2], dict) else (_json.loads(r[2]) if r[2] else {})
+            versions.append({"id": r[0], "field": r[1] or "", "snapshot": snap,
+                             "version": r[3], "time": str(r[4]) if r[4] else "",
+                             "published": (r[0] == published_version_id)})
+        return {"table": table_name, "published_version_id": published_version_id,
+                "published_time": str(pub[1]) if pub and pub[1] else "",
+                "versions": versions}
+
+    @classmethod
     async def rollback_version(cls, version_id: int, auth) -> dict:
         import json as _json
         async with async_db_session() as db:
