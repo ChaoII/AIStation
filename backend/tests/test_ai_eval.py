@@ -281,6 +281,17 @@ class TestAiEval:
             return True
         assert asyncio.run(_go())
 
+    def test_catalog_and_obj_relations_and_access(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        c = asyncio.run(AiQueryService.catalog_categories())
+        assert "total" in c and "categories" in c and "category_count" in c
+        assert isinstance(c["categories"], list)
+        o = asyncio.run(AiQueryService.object_relations())
+        assert "nodes" in o and "edges" in o and "node_count" in o
+        a = asyncio.run(AiQueryService.access_walkthrough(1))
+        assert "allowed_count" in a and "blocked_count" in a and "can_see_sensitive" in a
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

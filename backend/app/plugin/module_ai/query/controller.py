@@ -295,6 +295,28 @@ async def share_remove(
     return SuccessResponse(data=r, msg=r.get("msg", "操作完成"))
 
 
+@AiQueryRouter.get("/catalog/categories", summary="Compass 数据目录分类")
+async def catalog_categories(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.catalog_categories(), msg="查询成功")
+
+
+@AiQueryRouter.get("/objects/relations", summary="对象关系图(边)")
+async def object_relations(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.object_relations(), msg="查询成功")
+
+
+@AiQueryRouter.get("/access/walkthrough", summary="数据访问沙箱/演练")
+async def access_walkthrough(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    user_id: int = 0,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.access_walkthrough(user_id), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

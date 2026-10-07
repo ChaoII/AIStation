@@ -587,6 +587,51 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>Compass 目录 · 对象关系 · 访问演练</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            数据目录分类 / 对象关系图 / 数据访问沙箱
+          </span>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="8">
+          <div class="gov-section">Compass 目录分类（{{ catalog?.category_count ?? 0 }}）</div>
+          <el-button size="small" style="margin-bottom:4px" :loading="catalogLoading" @click="loadCatalog">刷新</el-button>
+          <div v-for="c in catalog?.categories || []" :key="c.domain" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 4px">
+            <span style="font-size:12px">{{ c.domain }}</span>
+            <el-tag size="small" type="info" effect="plain">{{ c.count }}</el-tag>
+          </div>
+        </el-col>
+        <el-col :sm="24" :md="8">
+          <div class="gov-section">对象关系图（{{ objRel?.edge_count ?? 0 }} 边 / {{ objRel?.node_count ?? 0 }} 对象）</div>
+          <el-button size="small" style="margin-bottom:4px" :loading="objRelLoading" @click="loadObjRel">刷新</el-button>
+          <div v-for="e in (objRel?.edges || []).slice(0, 10)" :key="e.source + e.target" class="ov-usage-row" style="margin-bottom: 3px">
+            <el-tag size="small" effect="plain" style="margin-right:4px">{{ e.source }}</el-tag>
+            <span style="color:var(--el-text-color-secondary)">→</span>
+            <el-tag size="small" type="warning" effect="plain" style="margin-left:4px">{{ e.target }}</el-tag>
+          </div>
+        </el-col>
+        <el-col :sm="24" :md="8">
+          <div class="gov-section">数据访问演练（用户 {{ walkthroughId }}）</div>
+          <div class="compass-bar" style="margin-bottom:4px">
+            <el-input-number v-model="walkthroughId" :min="0" size="small" style="width:110px" />
+            <el-button size="small" :loading="walkLoading" @click="loadWalkthrough">演练</el-button>
+          </div>
+          <div v-if="walkthrough" class="ov-usage-row" style="margin-bottom:4px">
+            <el-tag size="small" type="success" effect="plain">可访问 {{ walkthrough.allowed_count }}</el-tag>
+            <el-tag size="small" type="danger" effect="plain">受限 {{ walkthrough.blocked_count }}</el-tag>
+            <el-tag size="small" type="info" effect="plain">敏感可见 {{ walkthrough.can_see_sensitive ? "是" : "否" }}</el-tag>
+          </div>
+          <div v-if="walkthrough?.allowed?.length" style="font-size:12px;color:var(--el-text-color-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            可访问：{{ walkthrough.allowed.map((x: any) => x.alias || x.table).join("、") }}
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -706,6 +751,7 @@ import { getDerivedObjects, autopilotAutoFix } from "@/api/module_ai/query";
 import { getFavorites, removeFavorite, getPlugins } from "@/api/module_ai/query";
 import { lineagePropagate, getDqRules, runDqRule } from "@/api/module_ai/query";
 import { getShareList, removeShare } from "@/api/module_ai/query";
+import { getCatalogCategories, getObjectRelations, getAccessWalkthrough } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -875,6 +921,31 @@ async function copyShare(row: any) {
     ElMessageBox.alert(`分享链接：${link}`, "数据集分享", { confirmButtonText: "复制" });
   }
 }
+const catalog = ref<any>(null);
+const catalogLoading = ref(false);
+async function loadCatalog() {
+  catalogLoading.value = true;
+  try { catalog.value = (await getCatalogCategories()).data?.data || null; }
+  catch { catalog.value = null; }
+  finally { catalogLoading.value = false; }
+}
+const objRel = ref<any>(null);
+const objRelLoading = ref(false);
+async function loadObjRel() {
+  objRelLoading.value = true;
+  try { objRel.value = (await getObjectRelations()).data?.data || null; }
+  catch { objRel.value = null; }
+  finally { objRelLoading.value = false; }
+}
+const walkthrough = ref<any>(null);
+const walkthroughId = ref(1);
+const walkLoading = ref(false);
+async function loadWalkthrough() {
+  walkLoading.value = true;
+  try { walkthrough.value = (await getAccessWalkthrough(walkthroughId.value)).data?.data || null; }
+  catch { walkthrough.value = null; }
+  finally { walkLoading.value = false; }
+}
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
   compassLoading.value = true;
@@ -1034,6 +1105,9 @@ onMounted(() => {
   loadDqRules();
   loadShares();
   loadTimeline();
+  loadCatalog();
+  loadObjRel();
+  loadWalkthrough();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

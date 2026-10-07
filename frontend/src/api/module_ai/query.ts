@@ -325,6 +325,15 @@ export function getShareList() {
 export function removeShare(id: number) {
   return request({ url: `${API_PATH}/share/remove`, method: "post", data: { id } });
 }
+export function getCatalogCategories() {
+  return request({ url: `${API_PATH}/catalog/categories`, method: "get" });
+}
+export function getObjectRelations() {
+  return request({ url: `${API_PATH}/objects/relations`, method: "get" });
+}
+export function getAccessWalkthrough(userId = 0) {
+  return request({ url: `${API_PATH}/access/walkthrough`, method: "get", params: { user_id: userId } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,

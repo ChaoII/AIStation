@@ -2689,6 +2689,71 @@ class AiQueryService:
                 {"i": share_id, "u": user_id})
         return {"ok": True, "msg": "已撤销分享"}
 
+    # ---------------------------------------------------------------- #
+    # Compass 数据目录分类
+    # ---------------------------------------------------------------- #
+    @classmethod
+    async def catalog_categories(cls) -> dict:
+        """Compass 数据目录分类：按业务域聚类全部数据资产，形成目录分类树。"""
+        assets = await cls.list_assets()
+        domains: dict[str, list[dict]] = {}
+        for a in assets:
+            d = a.get("domain") or "未分类"
+            domains.setdefault(d, []).append({
+                "table": a["table_name"], "alias": a["alias"], "dq": a.get("dq_score"),
+                "sensitive": a.get("sensitive_count") or 0, "object": bool(a.get("object_enabled")),
+            })
+        cats = [{"domain": d, "count": len(items),
+                 "items": items} for d, items in sorted(domains.items(), key=lambda x: -len(x[1]))]
+        return {"total": len(assets), "categories": cats, "category_count": len(cats)}
+
+    @classmethod
+    async def object_relations(cls) -> dict:
+        """对象关系图：基于字段关联，构建业务对象之间的边（关系图可视化）。"""
+        assets = await cls.list_assets()
+        objs = {a["table_name"]: a for a in assets if a.get("object_enabled")}
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT table_name, related_table FROM ai_query_asset_columns "
+                "WHERE related_table IS NOT NULL AND related_table<>'' AND is_deleted=false"))).fetchall()
+        edges: list[dict] = []
+        seen = set()
+        for r in rows:
+            src, dst = r[0], r[1]
+            if src in objs and dst in objs and (src, dst) not in seen:
+                seen.add((src, dst))
+                edges.append({"source": src, "target": dst, "label": f"{src}→{dst}"})
+        nodes = [{"id": t, "label": objs[t].get("alias") or t,
+                  "dq": objs[t].get("dq_score"), "sensitive": objs[t].get("sensitive_count") or 0}
+                 for t in objs]
+        return {"nodes": nodes, "edges": edges, "node_count": len(nodes), "edge_count": len(edges)}
+
+    @classmethod
+    async def access_walkthrough(cls, user_id: int = 0) -> dict:
+        """数据访问沙箱/演练：为指定用户演示可访问/受限资源（ABAC/数据域）。"""
+        assets = await cls.list_assets()
+        allowed_tables = set()
+        try:
+            from types import SimpleNamespace as SN
+            roles = await cls._user_role_codes_by_id(user_id)
+            auth = SN(user=SN(id=user_id, is_superuser=False, roles=[SN(code=r) for r in roles]))
+            allowed_tables = set(await cls._allowed_for_user(auth))
+        except Exception:  # noqa: BLE001
+            allowed_tables = set()
+        can_see_sens = bool(await cls._can_see_sensitive(user_id)) if user_id else False
+        allowed = []
+        blocked = []
+        for a in assets:
+            t = a["table_name"]
+            if t in allowed_tables:
+                allowed.append({"table": t, "alias": a["alias"], "sensitive": a.get("sensitive_count") or 0})
+            else:
+                blocked.append({"table": t, "alias": a["alias"]})
+        return {"user_id": user_id, "allowed_count": len(allowed),
+                "blocked_count": len(blocked), "can_see_sensitive": can_see_sens,
+                "allowed": allowed[:50], "blocked": blocked[:50]}
+
     @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
