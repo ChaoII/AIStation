@@ -8,6 +8,10 @@ export function getAiAgentList(params?: { category_id?: number }) {
   return request({ url: `${API_PATH}/list`, method: "get", params });
 }
 
+export function getAiAgentDashboard() {
+  return request({ url: `${API_PATH}/dashboard`, method: "get" });
+}
+
 export function getAiAgentDetail(id: number) {
   return request({ url: `${API_PATH}/detail/${id}`, method: "get" });
 }

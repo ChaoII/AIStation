@@ -462,3 +462,45 @@ class AiAgentService:
                 session_id, user_text, state["assistant_text"],
                 app_id=agent_id, user_id=uid,
             )
+
+    # ---------------------------------------------------------------- #
+    # Agent 编排运行看板
+    # ---------------------------------------------------------------- #
+    @classmethod
+    async def agent_dashboard(cls) -> dict:
+        """Agent 编排运行看板：每个 Agent 的运行量/错误率/延迟 + 绑定工具技能能力矩阵。"""
+        from sqlalchemy import func as _f, select as _sel
+        stats: dict[int, dict] = {}
+        try:
+            from app.plugin.module_ai.overview.model import AiCallLogModel
+            async with async_db_session() as db:
+                rows = (await db.execute(
+                    _sel(AiCallLogModel.app_id, _f.count().label("n"),
+                         _f.count().filter(AiCallLogModel.result == "error").label("e"),
+                         _f.avg(AiCallLogModel.latency_ms).label("lat"))
+                    .where(AiCallLogModel.usage == "agent",
+                           AiCallLogModel.app_id.isnot(None),
+                           AiCallLogModel.is_deleted.is_(False))
+                    .group_by(AiCallLogModel.app_id)
+                )).fetchall()
+            for r in rows:
+                stats[int(r[0])] = {"runs": int(r[1] or 0), "errors": int(r[2] or 0),
+                                    "avg_latency": int(r[3] or 0)}
+        except Exception:  # noqa: BLE001
+            stats = {}
+        agents = await cls.list_agents()
+        out = []
+        for a in agents:
+            s = stats.get(a["id"], {"runs": 0, "errors": 0, "avg_latency": 0})
+            out.append({
+                "id": a["id"], "name": a["agent_name"], "role": a["agent_role"] or "",
+                "enabled": a["enabled"], "workflow_id": a["workflow_id"],
+                "tools": len(a["tool_ids"] or []), "skills": len(a["skill_ids"] or []),
+                "knowledge": len(a["knowledge_ids"] or []),
+                "capabilities": a.get("capabilities") or [],
+                "runs": s["runs"], "errors": s["errors"], "avg_latency": s["avg_latency"],
+                "error_rate": round(s["errors"] / s["runs"], 4) if s["runs"] else 0,
+            })
+        return {"agents": out, "total_agents": len(out),
+                "enabled_agents": sum(1 for x in out if x["enabled"]),
+                "total_runs": sum(x["runs"] for x in out)}

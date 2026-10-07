@@ -22,3 +22,11 @@ class TestAgentMarket:
         import pytest
         with pytest.raises(ValueError):
             asyncio.run(AiAgentService.create_from_template("nope", "", auth))
+
+    def test_agent_dashboard_shape(self):
+        d = asyncio.run(AiAgentService.agent_dashboard())
+        assert "agents" in d and "total_agents" in d and "total_runs" in d
+        assert isinstance(d["agents"], list)
+        if d["agents"]:
+            a = d["agents"][0]
+            assert "runs" in a and "error_rate" in a and "tools" in a and "skills" in a

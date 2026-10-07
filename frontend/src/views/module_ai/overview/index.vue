@@ -190,6 +190,45 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>Agent 编排运行看板</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            运行量/错误率/延迟 + 绑定工具·技能·能力矩阵
+          </span>
+        </div>
+      </template>
+      <el-row :gutter="12" style="margin-bottom: 8px" v-if="agentDash">
+        <el-col :span="8"><el-statistic title="智能体总数" :value="agentDash.total_agents ?? 0" /></el-col>
+        <el-col :span="8"><el-statistic title="已启用" :value="agentDash.enabled_agents ?? 0" /></el-col>
+        <el-col :span="8"><el-statistic title="累计运行" :value="agentDash.total_runs ?? 0" /></el-col>
+      </el-row>
+      <el-table :data="agentDash?.agents || []" size="small" max-height="300">
+        <el-table-column prop="name" label="智能体" min-width="120" show-overflow-tooltip />
+        <el-table-column label="状态" width="70" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? "启用" : "停用" }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="runs" label="运行" width="70" align="center" />
+        <el-table-column label="错误率" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.error_rate > 0.05 ? 'danger' : row.error_rate > 0 ? 'warning' : 'success'" effect="plain">{{ (row.error_rate * 100).toFixed(1) }}%</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="avg_latency" label="延迟(ms)" width="90" align="center" />
+        <el-table-column label="编排矩阵" min-width="200">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" style="margin:0 2px 2px 0">工具 {{ row.tools }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain" style="margin:0 2px 2px 0">技能 {{ row.skills }}</el-tag>
+            <el-tag size="small" type="info" effect="plain" style="margin:0 2px 2px 0">知识 {{ row.knowledge }}</el-tag>
+            <el-tag v-for="cap in (row.capabilities || []).slice(0, 3)" :key="cap" size="small" type="primary" effect="plain" style="margin:0 2px 2px 0">{{ cap }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -301,6 +340,7 @@ import {
   Link,
 } from "@element-plus/icons-vue";
 import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl } from "@/api/module_ai/overview";
+import { getAiAgentDashboard } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
 
@@ -317,6 +357,10 @@ const compassLoading = ref(false);
 const aip = ref<any>(null);
 async function loadAip() {
   try { aip.value = (await getAiAipControl(20)).data?.data || null; } catch { aip.value = null; }
+}
+const agentDash = ref<any>(null);
+async function loadAgentDash() {
+  try { agentDash.value = (await getAiAgentDashboard()).data?.data || null; } catch { agentDash.value = null; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -464,6 +508,7 @@ onMounted(() => {
   loadAudit();
   loadRuntime();
   loadAip();
+  loadAgentDash();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

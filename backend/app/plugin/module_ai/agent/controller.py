@@ -92,6 +92,15 @@ async def list_agents(
     )
 
 
+@AiAgentRouter.get("/dashboard", summary="Agent 编排运行看板(运行量/错误率/延迟+绑定矩阵)")
+async def agent_dashboard(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
+) -> JSONResponse:
+    return SuccessResponse(
+        data=await AiAgentService.agent_dashboard(), msg="查询成功"
+    )
+
+
 @AiAgentRouter.get("/detail/{agent_id}", summary="智能体详情")
 async def get_agent(
     agent_id: int,
