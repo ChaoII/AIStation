@@ -464,12 +464,14 @@
     </div>
 
     <!-- Agent 市场（模板市场） -->
-    <el-dialog v-model="marketVisible" title="Agent 模板市场" width="680px" append-to-body>
-      <div class="agent-mkt-grid">
-        <el-card v-for="t in templates" :key="t.key" shadow="never" class="agent-mkt-card">
+    <el-dialog v-model="marketVisible" title="Agent 模板市场" width="640px" append-to-body>
+      <div class="agent-mkt-list">
+        <div v-for="t in templates" :key="t.key" class="agent-mkt-item">
           <div class="agent-mkt-head">
             <b>{{ t.name }}</b>
             <el-tag size="small" type="info" effect="plain">{{ t.role }}</el-tag>
+            <div style="flex:1"></div>
+            <el-button type="primary" size="small" @click="applyTemplate(t)">一键创建</el-button>
           </div>
           <div class="agent-mkt-desc">{{ t.description }}</div>
           <div class="agent-mkt-caps">
@@ -477,10 +479,7 @@
               {{ c }}
             </el-tag>
           </div>
-          <el-button type="primary" size="small" style="margin-top:8px" @click="applyTemplate(t)">
-            一键创建
-          </el-button>
-        </el-card>
+        </div>
       </div>
     </el-dialog>
 
@@ -2778,24 +2777,25 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   word-break: break-word;
   white-space: pre-wrap;
 }
-.agent-mkt-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+.agent-mkt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.agent-mkt-card {
+.agent-mkt-item {
   border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  padding: 10px 12px;
 }
 .agent-mkt-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
 }
 .agent-mkt-desc {
   font-size: 12px;
   color: var(--el-text-color-secondary);
-  min-height: 32px;
 }
 .agent-mkt-caps {
   margin-top: 6px;
