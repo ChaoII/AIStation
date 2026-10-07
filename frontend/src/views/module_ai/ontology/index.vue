@@ -330,8 +330,11 @@
                   min-width="170"
                   show-overflow-tooltip
                 />
-                <el-table-column label="操作" width="100" align="center">
+                <el-table-column label="操作" width="140" align="center">
                   <template #default="{ row }">
+                    <el-button link type="primary" size="small" @click="openVersionDiff(row)">
+                      对比
+                    </el-button>
                     <el-button link type="warning" size="small" @click="rollbackVer(row)">
                       回滚
                     </el-button>
@@ -400,6 +403,64 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 版本对比 -->
+    <el-dialog v-model="diffDialog" title="版本对比（该版本 vs 当前）" width="560px" append-to-body>
+      <template v-if="diffData?.ok">
+        <div class="gov-section">
+          新增属性（{{ (diffData.added || []).length }}）
+        </div>
+        <div>
+          <el-tag
+            v-for="c in diffData.added || []"
+            :key="c"
+            size="small"
+            type="success"
+            effect="plain"
+            style="margin: 0 3px 4px 0"
+          >
+            + {{ c }}
+          </el-tag>
+          <span v-if="!(diffData.added || []).length" class="dq-alert__none">无</span>
+        </div>
+        <div class="gov-section" style="margin-top: 8px">
+          删除属性（{{ (diffData.removed || []).length }}）
+        </div>
+        <div>
+          <el-tag
+            v-for="c in diffData.removed || []"
+            :key="c"
+            size="small"
+            type="danger"
+            effect="plain"
+            style="margin: 0 3px 4px 0"
+          >
+            - {{ c }}
+          </el-tag>
+          <span v-if="!(diffData.removed || []).length" class="dq-alert__none">无</span>
+        </div>
+        <div class="gov-section" style="margin-top: 8px">
+          类型/敏感变更（{{ (diffData.changed || []).length }}）
+        </div>
+        <div>
+          <el-tag
+            v-for="c in diffData.changed || []"
+            :key="c"
+            size="small"
+            type="warning"
+            effect="plain"
+            style="margin: 0 3px 4px 0"
+          >
+            ~ {{ c }}
+          </el-tag>
+          <span v-if="!(diffData.changed || []).length" class="dq-alert__none">无</span>
+        </div>
+      </template>
+      <el-empty v-else :image-size="50" description="无版本或对比失败" />
+      <template #footer>
+        <el-button @click="diffDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 对象编辑 -->
     <el-dialog v-model="objDialog" title="对象类型" width="560px" append-to-body>
@@ -615,6 +676,7 @@ import {
   getOntChangelog,
   publishOntVersion,
   getOntVersions,
+  getOntVersionDiff,
   rollbackOntVersion,
   getOntCapabilities,
   saveOntCapability,
@@ -956,8 +1018,18 @@ function rollbackVer(row: any) {
     const r = await rollbackOntVersion(row.id);
     const d = r.data?.data || {};
     ElMessage[d.ok ? "success" : "error"](d.msg || "已回滚");
-    await selectObject(current.value);
-  });
+    await selectObject(current.value);  });
+}
+const diffDialog = ref(false);
+const diffData = ref<any>(null);
+async function openVersionDiff(row: any) {
+  try {
+    const r = await getOntVersionDiff(row.id);
+    diffData.value = r.data?.data || null;
+    diffDialog.value = true;
+  } catch (e: any) {
+    ElMessage.error(e?.message || "对比失败");
+  }
 }
 function removeFunc(f: any) {
   ElMessageBox.confirm(`删除函数「${f.name}」?`, "确认", {

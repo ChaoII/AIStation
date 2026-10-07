@@ -255,6 +255,29 @@ async def publish_version(object_code: str) -> dict:
     return {"ok": True, "id": r.scalar(), "version": n}
 
 
+async def version_diff(version_id: int) -> dict:
+    """版本对比：某版本快照的属性 vs 当前定义，返回 新增/删除/变更 属性。"""
+    import json as _json
+    rv = (await _exec("SELECT object_code,snapshot FROM ai_ont_version WHERE id=:id AND is_deleted=false",
+                      {"id": version_id})).fetchone()
+    if not rv:
+        return {"ok": False, "msg": "版本不存在"}
+    code, snap_raw = rv[0], rv[1]
+    snap = snap_raw if isinstance(snap_raw, dict) else _json.loads(snap_raw)
+    cur = await object_full(code)
+    cur_props = {p["code"]: p for p in cur.get("properties", [])}
+    old_props = {p["code"]: p for p in snap.get("properties", [])}
+    added = [c for c in cur_props if c not in old_props]
+    removed = [c for c in old_props if c not in cur_props]
+    changed = []
+    for c in old_props:
+        if c in cur_props:
+            o, n = old_props[c], cur_props[c]
+            if (o.get("prop_type") != n.get("prop_type")) or (bool(o.get("sensitive")) != bool(n.get("sensitive"))):
+                changed.append(c)
+    return {"ok": True, "object_code": code, "added": added, "removed": removed, "changed": changed}
+
+
 async def list_versions(object_code: str | None = None) -> list[dict]:
     if object_code:
         r = await _exec("SELECT id,object_code,version,created_time FROM ai_ont_version "

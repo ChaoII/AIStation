@@ -111,6 +111,11 @@ async def rollback_version(auth: AuthDep, data: Annotated[dict, Body()]) -> JSON
     return SuccessResponse(data=r, msg=r.get("msg", "已回滚"))
 
 
+@OntologyRouter.get("/version/diff", summary="版本对比(新增/删除/变更属性)")
+async def version_diff(auth: AuthDep, version_id: int = 0) -> JSONResponse:
+    return SuccessResponse(data=await _svc.version_diff(int(version_id)), msg="查询成功")
+
+
 @OntologyRouter.post("/materialize", summary="本体驱动表：对象+属性物化成真实表")
 async def materialize(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.materialize_object(str(data.get("code", "")))
