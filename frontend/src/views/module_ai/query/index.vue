@@ -875,6 +875,23 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="影子结果" min-width="200">
+              <template #default="{ row }">
+                <template v-if="row.shadow_result">
+                  <el-tag size="small" :type="row.shadow_result === 'pass' ? 'success' : 'danger'" effect="plain">
+                    {{ row.shadow_result === "pass" ? "通过" : "未通过" }}
+                  </el-tag>
+                  <span class="fde-shadow-detail">
+                    实际 {{ row.shadow_actual ?? "-" }} vs 金标 {{ row.shadow_golden || "-" }}
+                    <template v-if="row.shadow_tolerance">（±{{ row.shadow_tolerance }}）</template>
+                  </span>
+                  <el-tag size="small" type="info" effect="plain" style="margin-left: 4px">
+                    {{ row.shadow_at?.slice(0, 10) }}
+                  </el-tag>
+                </template>
+                <el-tag v-else size="small" type="info" effect="plain">未运行</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="210" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="runFdeShadow(row)">
@@ -5013,6 +5030,11 @@ onMounted(() => {
   margin-top: 4px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+.fde-shadow-detail {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
 }
 .msg-a__summary {
   margin-bottom: 8px;
