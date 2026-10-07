@@ -562,6 +562,31 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>统一活动时间线</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            AI 调用 / 动作 / 审批 统一时间线（近 7 天）
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" @click="loadTimeline">刷新</el-button>
+        <el-tag size="small" type="info" effect="plain">{{ timeline?.total ?? 0 }} 条事件</el-tag>
+      </div>
+      <el-timeline v-if="timeline?.events?.length">
+        <el-timeline-item v-for="(e, i) in timeline.events" :key="i" :timestamp="e.time" placement="top">
+          <div class="ov-usage-row" style="justify-content: space-between">
+            <b style="font-size:12px">{{ e.title }}</b>
+            <el-tag size="small" :type="e.result === 'success' || e.result === 'approved' ? 'success' : e.result === 'error' || e.result === 'rejected' ? 'danger' : 'info'" effect="plain">{{ e.result || e.kind }}</el-tag>
+          </div>
+          <div style="font-size:12px;color:var(--el-text-color-secondary)">{{ e.detail }} · {{ e.actor }}</div>
+        </el-timeline-item>
+      </el-timeline>
+      <div v-else class="gov-empty">近 7 天暂无活动</div>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -672,7 +697,7 @@ import {
   Files,
   Link,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter, getAiActivityTimeline } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
@@ -714,6 +739,10 @@ async function loadAnomaly() {
 const decision = ref<any>(null);
 async function loadDecision() {
   try { decision.value = (await getAiDecisionCenter()).data?.data || null; } catch { decision.value = null; }
+}
+const timeline = ref<any>(null);
+async function loadTimeline() {
+  try { timeline.value = (await getAiActivityTimeline(7, 60)).data?.data || null; } catch { timeline.value = null; }
 }
 const orchInput = ref("");
 const orchResult = ref<any>(null);
@@ -1004,6 +1033,7 @@ onMounted(() => {
   loadDecision();
   loadDqRules();
   loadShares();
+  loadTimeline();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

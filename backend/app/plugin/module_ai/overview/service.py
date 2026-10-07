@@ -283,6 +283,41 @@ class AiOverviewService:
         return {"total": len(decisions), "decisions": decisions}
 
     @classmethod
+    async def activity_timeline(cls, days: int = 7, limit: int = 60) -> dict:
+        """统一活动时间线：聚合 AI 调用 / 动作 / 审批为时间线视图。"""
+        from datetime import datetime, timedelta
+        from sqlalchemy import select as _sel
+        since = datetime.utcnow() - timedelta(days=max(1, days))
+        events: list[dict] = []
+        async with async_db_session() as db:
+            rows = (await db.execute(
+                _sel(AiCallLogModel)
+                .where(AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since)
+                .order_by(AiCallLogModel.created_time.desc())
+                .limit(limit)
+            )).scalars().all()
+            for r in rows:
+                events.append({"time": str(r.created_time), "kind": "ai_call",
+                               "title": f"{r.model_name} · {r.usage}",
+                               "result": r.result, "detail": f"延迟 {r.latency_ms}ms",
+                               "actor": f"user#{r.user_id}" if r.user_id else "匿名"})
+            try:
+                from sqlalchemy import text as _t
+                al = (await db.execute(_t(
+                    "SELECT action_name, object_table, result, operator, created_time "
+                    "FROM ai_action_log WHERE is_deleted=0 ORDER BY id DESC LIMIT :n"),
+                    {"n": limit})).fetchall()
+                for r in al:
+                    events.append({"time": str(r[4]), "kind": "action",
+                                   "title": f"动作 {r[0]}", "result": r[2] or "",
+                                   "detail": f"对象 {r[1] or ''}",
+                                   "actor": str(r[3] or "系统")})
+            except Exception:  # noqa: BLE001
+                pass
+        events.sort(key=lambda e: str(e["time"]), reverse=True)
+        return {"total": len(events), "events": events[:limit]}
+
+    @classmethod
     async def add_log(
         cls,
         model_name: str,

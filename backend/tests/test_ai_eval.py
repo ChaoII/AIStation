@@ -133,6 +133,14 @@ class TestAiEval:
         for dec in d["decisions"]:
             assert "title" in dec and "reason" in dec and "pri" in dec
 
+    def test_activity_timeline(self):
+        from app.plugin.module_ai.overview.service import AiOverviewService
+
+        r = asyncio.run(AiOverviewService.activity_timeline(7, 50))
+        assert "total" in r and "events" in r and isinstance(r["events"], list)
+        for e in r["events"]:
+            assert "time" in e and "title" in e and "kind" in e
+
     def test_compass_search(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
 

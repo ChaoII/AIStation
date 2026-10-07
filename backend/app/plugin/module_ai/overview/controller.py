@@ -80,3 +80,12 @@ async def overview_decision(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiOverviewService.decision_center(), msg="查询成功")
+
+
+@AiOverviewRouter.get("/activity-timeline", summary="统一活动时间线(任务执行历史)")
+async def overview_activity(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: int = 7,
+    limit: int = 60,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.activity_timeline(days, limit), msg="查询成功")
