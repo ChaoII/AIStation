@@ -4767,7 +4767,8 @@ class AiQueryService:
     async def _get_runtime(cls) -> dict:
         from app.plugin.module_ai.provider.service import AiModelService
 
-        runtime = await AiModelService.get_runtime_model("chat")
+        runtime = await AiModelService.get_runtime_model("query")
+        runtime = runtime or await AiModelService.get_runtime_model("chat")
         runtime = runtime or await AiModelService.get_runtime_model()
         if not runtime:
             raise CustomException(msg="未配置可用的 chat 模型")
