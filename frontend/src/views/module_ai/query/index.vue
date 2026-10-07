@@ -429,6 +429,15 @@
                 </el-button>
               </template>
             </el-table-column>
+            <el-table-column label="敏感度" width="120" align="center">
+              <template #default="{ row }">
+                <el-tooltip :content="(row.sensitive_fields || []).join('、') || '无敏感字段'" placement="top">
+                  <el-tag size="small" :type="(row.sensitive_count || 0) > 0 ? 'danger' : 'info'" effect="plain">
+                    {{ (row.sensitive_count || 0) > 0 ? `${row.sensitive_count} 个敏感` : '无' }}
+                  </el-tag>
+                </el-tooltip>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="80" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openAssetEdit(row)">

@@ -1080,6 +1080,8 @@ class AiQueryService:
                     "object_name_col": getattr(a, "object_name_col", None) or "name",
                     "object_icon": getattr(a, "object_icon", None) or "el-icon-Box",
                     "column_count": len(cnt),
+                    "sensitive_count": sum(1 for c in cnt if getattr(c, "sensitive", False)),
+                    "sensitive_fields": [c.column_name for c in cnt if getattr(c, "sensitive", False)][:20],
                     "included_columns": sum(1 for c in cnt if c.included),
                 })
             return out
