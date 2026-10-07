@@ -316,6 +316,40 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>Ontology 派生指标</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            基于基础指标自动推导派生指标（分子/分母/除数规则引擎）
+          </span>
+        </div>
+      </template>
+      <div class="ov-usage-row" style="margin-bottom: 8px">
+        <el-button size="small" :loading="derivedLoading" @click="loadDerived">刷新</el-button>
+      </div>
+      <el-table :data="derived" size="small" border>
+        <el-table-column prop="name" label="派生指标" min-width="120" />
+        <el-table-column prop="formula" label="规则" min-width="180" show-overflow-tooltip />
+        <el-table-column label="基础指标" min-width="160">
+          <template #default="{ row }">
+            <el-tag v-for="b in row.base" :key="b.ref" size="small" type="info" effect="plain" style="margin:0 2px 2px 0">{{ b.name }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="计算值" width="110" align="center">
+          <template #default="{ row }">
+            <span v-if="derivedValues[row.key]?.ok">{{ derivedValues[row.key].value }} {{ row.unit }}</span>
+            <span v-else style="color:var(--el-text-color-secondary)">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center">
+          <template #default="{ row }">
+            <el-button size="small" type="primary" link @click="computeDerived(row.key)">计算</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -429,6 +463,7 @@ import {
 import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
+import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
 defineOptions({ name: "AiOverview" });
@@ -483,6 +518,21 @@ async function runAutopilot(executable: string, table: string) {
     loadAutopilot();
   } catch (e: any) { ElMessage.error(e?.msg || "执行失败"); }
   finally { autoExecuting.value = ""; }
+}
+const derived = ref<any[]>([]);
+const derivedLoading = ref(false);
+const derivedValues = ref<Record<string, any>>({});
+async function loadDerived() {
+  derivedLoading.value = true;
+  try { derived.value = (await getDerivedMetrics()).data?.data || []; }
+  catch { derived.value = []; }
+  finally { derivedLoading.value = false; }
+}
+async function computeDerived(key: string) {
+  try {
+    const r = await computeDerivedMetric(key);
+    derivedValues.value = { ...derivedValues.value, [key]: r.data?.data || null };
+  } catch (e: any) { ElMessage.error(e?.msg || "计算失败"); }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -633,6 +683,7 @@ onMounted(() => {
   loadAgentDash();
   loadPosture();
   loadAutopilot();
+  loadDerived();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

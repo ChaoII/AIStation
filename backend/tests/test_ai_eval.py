@@ -154,6 +154,16 @@ class TestAiEval:
         r2 = asyncio.run(AiQueryService.autopilot_execute("none", ""))
         assert r2["ok"] is False
 
+    def test_derived_metrics(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+
+        r = asyncio.run(AiQueryService.list_derived_metrics())
+        assert isinstance(r, list) and len(r) >= 1
+        for d in r:
+            assert "key" in d and "name" in d and "formula" in d and "base" in d
+        c = asyncio.run(AiQueryService.compute_derived_metric("nope"))
+        assert c["ok"] is False
+
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService
         from app.core.database import async_db_session

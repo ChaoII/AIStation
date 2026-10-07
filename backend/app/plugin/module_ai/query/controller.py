@@ -166,6 +166,21 @@ async def autopilot_execute(
     return SuccessResponse(data=r, msg=r.get("msg", "执行完成"))
 
 
+@AiQueryRouter.get("/derived-metrics", summary="派生指标规则引擎(基础指标推导)")
+async def derived_metrics(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.list_derived_metrics(), msg="查询成功")
+
+
+@AiQueryRouter.get("/derived-metrics/compute", summary="计算派生指标值")
+async def derived_metric_compute(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    key: str = "",
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.compute_derived_metric(key), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

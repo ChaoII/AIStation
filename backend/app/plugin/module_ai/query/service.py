@@ -1234,6 +1234,74 @@ class AiQueryService:
                 return {"ok": False, "msg": f"DQ 重扫失败：{e}"}
         return {"ok": False, "msg": "该行动为信息项/暂不支持自动执行，请在对应模块处理"}
 
+    # ---------------------------------------------------------------- #
+    # 派生指标规则引擎（Ontology）
+    # ---------------------------------------------------------------- #
+    _DERIVED_RULES = [
+        {"key": "alert_per_online", "name": "今日告警强度", "num": "alert_count_today",
+         "den": "camera_online_count", "unit": "条/台",
+         "desc": "今日告警数 / 在线摄像头数，衡量告警强度"},
+        {"key": "monthly_alert_avg", "name": "本月日均告警", "num": "alert_count_month",
+         "den": None, "divisor": 30, "unit": "条/天",
+         "desc": "本月告警数 / 30，估算日均告警量"},
+    ]
+
+    @classmethod
+    async def list_derived_metrics(cls) -> list[dict]:
+        """派生指标规则引擎：基于基础指标自动推导（分子/分母/除数）。"""
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        name_map = {m["key"]: m["name"] for m in metrics}
+        out = []
+        for r in cls._DERIVED_RULES:
+            base = []
+            if r.get("num"):
+                base.append({"ref": r["num"], "name": name_map.get(r["num"], r["num"])})
+            if r.get("den"):
+                base.append({"ref": r["den"], "name": name_map.get(r["den"], r["den"])})
+            out.append({
+                "key": r["key"], "name": r["name"], "unit": r["unit"],
+                "desc": r["desc"], "base": base,
+                "formula": (f"{r['num']}" + (f" / {r['den']}" if r.get("den") else "") +
+                            (f" / {r['divisor']}" if r.get("divisor") else "")),
+            })
+        return out
+
+    @classmethod
+    async def _metric_value(cls, key: str):
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        m = next((x for x in metrics if x["key"] == key), None)
+        if not m or not m.get("sql_template"):
+            return None
+        try:
+            async with async_db_session() as db:
+                from sqlalchemy import text as _t
+                row = (await db.execute(_t(m["sql_template"]))).first()
+                v = row[0] if row else None
+                return float(v) if v is not None else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    @classmethod
+    async def compute_derived_metric(cls, key: str) -> dict:
+        """计算派生指标值（基于基础指标真实执行 SQL）。"""
+        r = next((x for x in cls._DERIVED_RULES if x["key"] == key), None)
+        if not r:
+            return {"ok": False, "msg": "派生指标不存在"}
+        num = await cls._metric_value(r["num"])
+        if num is None:
+            return {"ok": False, "msg": f"基础指标 {r['num']} 不可计算"}
+        if r.get("den"):
+            den = await cls._metric_value(r["den"])
+            if den is None:
+                return {"ok": False, "msg": f"基础指标 {r['den']} 不可计算"}
+            value = num / den if den else 0
+        else:
+            divisor = r.get("divisor") or 1
+            value = num / divisor if divisor else 0
+        value = round(value, 2)
+        return {"ok": True, "key": key, "name": r["name"], "value": value, "unit": r["unit"],
+                "base": {"num": num, "den": (r.get("den") and await cls._metric_value(r["den"])) or None}}
+
     @classmethod
     async def list_asset_columns(cls, table_name: str) -> list[dict]:
         async with async_db_session() as db:

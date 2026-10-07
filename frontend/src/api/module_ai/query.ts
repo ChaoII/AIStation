@@ -271,6 +271,12 @@ export function getAutopilot() {
 export function autopilotExecute(executable: string, table = "") {
   return request({ url: `${API_PATH}/autopilot/execute`, method: "post", data: { executable, table } });
 }
+export function getDerivedMetrics() {
+  return request({ url: `${API_PATH}/derived-metrics`, method: "get" });
+}
+export function computeDerivedMetric(key: string) {
+  return request({ url: `${API_PATH}/derived-metrics/compute`, method: "get", params: { key } });
+}
 export function rollbackAssetVersion(version_id: number) {
   return request({
     url: `${API_PATH}/assets/version/rollback`,
