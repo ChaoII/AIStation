@@ -691,19 +691,20 @@ const globalLinks = ref<any[]>([]);
 const objectGraph = computed(() => {
   const objs = objects.value || [];
   const codeIdx: Record<string, number> = {};
+  // 节点 id 与边 source/target 统一用「对象 code 字符串」，避免 cytoscape id 类型不一致导致边创建失败
   const nodes = objs.map((o, i) => {
     codeIdx[o.code] = i + 1;
-    return { id: i + 1, name: o.name || o.code, etype: "object" };
+    return { id: String(o.code), name: o.name || o.code, etype: "object" };
   });
   const edges = (globalLinks.value || [])
-    .filter((l) => l.source_object && l.target_object && codeIdx[l.source_object] && codeIdx[l.target_object])
+    .filter((l) => l.source_object && l.target_object)
     .map((l) => ({
-      source: String(codeIdx[l.source_object]),
-      target: String(codeIdx[l.target_object]),
+      source: String(l.source_object),
+      target: String(l.target_object),
       rtype: l.name || "link",
       weight: 1,
     }));
-  return { nodes, edges };
+  return { nodes: nodes as any, edges: edges as any };
 });
 const current = ref<any>(null);
 const currentCode = ref("");
@@ -1142,5 +1143,20 @@ onMounted(loadObjects);
 .ont-none {
   color: var(--el-text-color-placeholder);
   font-size: 12px;
+}
+</style>
+
+<style lang="scss">
+/* 覆盖全局 .app-container(flex column;height:100%)：本体页改为块级自然流，避免能力卡撑满把下方对象/关系图区挤出不可见 */
+.app-container.ai-ontology-page {
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+.app-container.ai-ontology-page .el-card {
+  height: auto !important;
+}
+.app-container.ai-ontology-page .ont-caps {
+  margin-bottom: 12px;
 }
 </style>
