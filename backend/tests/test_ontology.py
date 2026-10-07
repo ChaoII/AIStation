@@ -140,3 +140,82 @@ class TestOntSqlAcl:
         v = asyncio.run(AiQueryService._ont_sql_violations(
             "SELECT order_no FROM ont_orders", user_id=-1))
         assert "ont_orders.customer" not in v
+
+
+# ---------------------------------------------------------------------------
+# 方向③：字段级 ACL 扩展（业务表敏感字段 + sqlglot 精确列提取）
+# ---------------------------------------------------------------------------
+class TestBusinessSensitiveColAcl:
+    @pytest.fixture(scope="class")
+    def sens_col(self, test_client):
+        """在字段资产目录标记一张业务表的敏感字段（sys_user.password）。"""
+        async def _go():
+            from sqlalchemy import select as _sel
+            from app.plugin.module_ai.query.model import AiQueryAssetColumnModel
+            from app.core.database import async_db_session
+            async with async_db_session.begin() as db:
+                existing = (await db.execute(
+                    _sel(AiQueryAssetColumnModel).where(
+                        AiQueryAssetColumnModel.table_name == "sys_user",
+                        AiQueryAssetColumnModel.column_name == "password",
+                        AiQueryAssetColumnModel.is_deleted.is_(False),
+                    )
+                )).scalar_one_or_none()
+                if not existing:
+                    db.add(AiQueryAssetColumnModel(
+                        table_name="sys_user", column_name="password",
+                        description="用户密码", sensitive=True, included=True,
+                    ))
+        asyncio.run(_go())
+
+    def test_business_sensitive_col_blocked(self, sens_col):
+        from app.plugin.module_ai.query.service import AiQueryService
+        v = asyncio.run(AiQueryService._ont_sql_violations(
+            "SELECT password FROM sys_user", user_id=-1))
+        assert "sys_user.password" in v
+
+    def test_non_sensitive_col_allowed(self, sens_col):
+        from app.plugin.module_ai.query.service import AiQueryService
+        v = asyncio.run(AiQueryService._ont_sql_violations(
+            "SELECT username FROM sys_user", user_id=-1))
+        assert "sys_user.password" not in v
+
+
+class TestSqlQueryScope:
+    def test_extracts_tables_and_cols(self):
+        from app.plugin.module_ai.query.service import AiQueryService
+        tables, cols = asyncio.run(AiQueryService._sql_query_scope(
+            "SELECT c.name FROM video_cameras c JOIN video_alarm_records r ON r.camera_id=c.id"))
+        assert "video_cameras" in tables and "video_alarm_records" in tables
+        assert "name" in cols and "camera_id" in cols
+
+
+# ---------------------------------------------------------------------------
+# 方向④：FDE 复用闭环（把已验证问答沉淀为可复用指标 + 术语）
+# ---------------------------------------------------------------------------
+class TestPromoteReuse:
+    def test_promote_creates_metric_and_term(self, test_client):
+        from types import SimpleNamespace
+        from sqlalchemy import select as _sel
+        from app.plugin.module_ai.query.service import AiQueryService
+        from app.plugin.module_ai.query.model import AiQueryMetricModel, AiQueryDictionaryModel
+        from app.core.database import async_db_session
+
+        async def _go():
+            msg = await AiQueryService._save_message(
+                1, "按品牌统计摄像头数量", path="slow", datasource="system",
+                sql="SELECT COUNT(*) AS 数值 FROM video_cameras", columns=["数值"],
+                rows=[[5]], result_rows=1, took_ms=1, cached=False,
+            )
+            auth = SimpleNamespace(user=SimpleNamespace(id=1))
+            r = await AiQueryService.promote_message_to_metric(
+                msg.id, "按品牌摄像头数量", "camera_by_brand", auth)
+            assert r["key"] == "camera_by_brand" and r["term"] == "按品牌统计摄像头数量"
+            async with async_db_session() as db:
+                met = (await db.execute(_sel(AiQueryMetricModel).where(
+                    AiQueryMetricModel.key == "camera_by_brand"))).scalar_one()
+                assert met.enabled
+                term = (await db.execute(_sel(AiQueryDictionaryModel).where(
+                    AiQueryDictionaryModel.term == "按品牌统计摄像头数量"))).scalar_one_or_none()
+                assert term is not None and term.metric_key == "camera_by_brand"
+        asyncio.run(_go())

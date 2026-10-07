@@ -1,11 +1,17 @@
 """智能问数核心逻辑单元测试：SQL 安全 / 时间解析 / 指标匹配 / 模板渲染。"""
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
 from app.plugin.module_ai.query.service import (
     _match_metric,
     _render_template,
+    _SYSTEM_METRICS,
+    _SYSTEM_TERMS,
     parse_time_range,
     validate_sql,
+    AiQueryService,
     SYSTEM_ALLOWED_TABLES,
 )
 
@@ -291,6 +297,67 @@ class TestRetrieval:
 
         assert abs(_cosine([1, 0], [1, 0]) - 1.0) < 1e-6
         assert abs(_cosine([1, 0], [0, 1])) < 1e-6
+
+
+# ---------------------------------------------------------------------------
+# 方向①：语义确定化（业务黑话 → 本体系指标快路径）
+# ---------------------------------------------------------------------------
+def _seed_metrics():
+    return [dict(m, enabled=True) for m in _SYSTEM_METRICS if m.get("key")]
+
+
+class TestSemanticMetricBlacktalk:
+    """业务黑话应命中文义确定化指标（快路径）；无关问题不命中。"""
+
+    def test_device_health_hits(self):
+        m = _match_metric("设备健康度是多少", _seed_metrics(), list(_SYSTEM_TERMS))
+        assert m and m["key"] == "device_health_rate"
+
+    def test_query_success_hits(self):
+        m = _match_metric("查询成功率是多少", _seed_metrics(), list(_SYSTEM_TERMS))
+        assert m and m["key"] == "query_success_rate"
+
+    def test_superadmin_hits(self):
+        m = _match_metric("系统超级管理员数量", _seed_metrics(), list(_SYSTEM_TERMS))
+        assert m and m["key"] == "superadmin_count"
+
+    def test_annotation_rate_hits(self):
+        m = _match_metric("标注完成率是多少", _seed_metrics(), list(_SYSTEM_TERMS))
+        assert m and m["key"] == "annotation_complete_rate"
+
+    def test_unrelated_no_hit(self):
+        # 无时间词、无指标/术语命中 → 不应触发快路径
+        assert _match_metric("请帮我写一首关于春天的诗", _seed_metrics(), list(_SYSTEM_TERMS)) is None
+
+
+# ---------------------------------------------------------------------------
+# 方向②：可解释与审计（_answer 含 grounding/ontology_used/retrieved；消息落 grounding）
+# ---------------------------------------------------------------------------
+class TestExplainability:
+    def test_answer_includes_grounding(self):
+        msg = SimpleNamespace(
+            id=1, session_id=1, path="slow", datasource="system", sql="SELECT a FROM ont_orders",
+            columns=["a"], rows=[[1]], summary="s", result_rows=1, took_ms=5,
+            cached=False, is_error=False,
+        )
+        ans = AiQueryService._answer(
+            msg, sql="SELECT a FROM ont_orders",
+            retrieved={"tables": ["ont_orders"], "fields": {"ont_orders": ["a"]}},
+        )
+        assert ans["ontology_used"] == ["ont_orders"]
+        assert ans["retrieved"]["tables"] == ["ont_orders"]
+        assert ans["retrieved"]["fields"]["ont_orders"] == ["a"]
+
+    def test_save_message_persists_grounding(self):
+        async def _go():
+            m = await AiQueryService._save_message(
+                1, "按摄像头组统计告警数", path="fast", datasource="system", sql="SELECT 1",
+                grounding={"retrieved": {"tables": ["video_cameras"]}},
+            )
+            return AiQueryService._msg_dict(m)
+
+        d = asyncio.run(_go())
+        assert d["grounding"]["retrieved"]["tables"] == ["video_cameras"]
 
 
 if __name__ == "__main__":
