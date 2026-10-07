@@ -438,3 +438,12 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
 }
 </style>
+
+<style lang="scss">
+/* 覆盖全局 .app-container(flex column;height:100%)：控制台改为块级自然流，避免卡片被 flex 压缩/重叠 */
+.app-container.ai-overview-page {
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+</style>
