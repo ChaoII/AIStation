@@ -360,6 +360,32 @@
             use-preset
           />
           <el-empty v-else :image-size="60" description="暂无对象，点击新建对象后即可展示对象关系图" />
+          <div class="gov-section" style="margin-top: 14px">对象元数据速览</div>
+          <el-table :data="objects" size="small" border max-height="300">
+            <el-table-column prop="code" label="编码" width="140" show-overflow-tooltip />
+            <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+            <el-table-column label="属性" width="70" align="center">
+              <template #default="{ row }">{{ row.property_count ?? 0 }}</template>
+            </el-table-column>
+            <el-table-column label="关联" width="70" align="center">
+              <template #default="{ row }">{{ row.link_count ?? 0 }}</template>
+            </el-table-column>
+            <el-table-column label="动作" width="70" align="center">
+              <template #default="{ row }">{{ row.action_count ?? 0 }}</template>
+            </el-table-column>
+            <el-table-column label="敏感属性" width="90" align="center">
+              <template #default="{ row }">
+                <el-tag
+                  size="small"
+                  :type="(row.sensitive_count ?? 0) > 0 ? 'danger' : 'info'"
+                  effect="plain"
+                >
+                  {{ row.sensitive_count ?? 0 }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-card>
       </el-col>
     </el-row>

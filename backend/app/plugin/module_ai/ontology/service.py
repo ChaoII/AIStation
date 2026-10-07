@@ -37,7 +37,13 @@ async def list_objects() -> list[dict]:
              "description": r[6] or "", "enabled": bool(r[7]),
              "property_count": await _prop_count(r[1]),
              "link_count": await _link_count(r[1]),
-             "action_count": await _action_count(r[1])} for r in rows]
+             "action_count": await _action_count(r[1]),
+             "sensitive_count": await _sensitive_count(r[1])} for r in rows]
+
+
+async def _sensitive_count(code: str) -> int:
+    r = await _exec("SELECT count(*) FROM ai_ont_property WHERE object_code=:c AND sensitive=true AND is_deleted=false", {"c": code})
+    return r.scalar() or 0
 
 
 async def _prop_count(code: str) -> int:
