@@ -706,6 +706,39 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>资产热点与对象生命周期</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            被指标引用排行 · 对象发布状态概览
+          </span>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">数据资产热点（按指标引用）</div>
+          <el-button size="small" style="margin-bottom:4px" @click="loadHotspots">刷新</el-button>
+          <div v-for="h in (hotspots?.hot || []).slice(0, 8)" :key="h.table" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 3px">
+            <span style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ h.alias || h.table }}</span>
+            <el-tag size="small" type="info" effect="plain">引用 {{ h.refs }}</el-tag>
+          </div>
+        </el-col>
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">对象生命周期</div>
+          <el-button size="small" style="margin-bottom:4px" @click="loadLifecycle">刷新</el-button>
+          <div v-if="lifecycle" class="ov-usage-row" style="margin-bottom:6px">
+            <el-tag size="small" type="success" effect="plain">对象 {{ lifecycle.objects }}</el-tag>
+            <el-tag size="small" type="primary" effect="plain">已发布 {{ lifecycle.published }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain">草稿 {{ lifecycle.draft }}</el-tag>
+            <el-tag size="small" type="danger" effect="plain">敏感 {{ lifecycle.sensitive_objects }}</el-tag>
+          </div>
+          <div class="gov-section" v-if="lifecycle">对象列表</div>
+          <el-tag v-for="o in (lifecycle?.objects_list || []).slice(0, 8)" :key="o.table" size="small" effect="plain" style="margin:0 3px 4px 0">{{ o.alias || o.table }}</el-tag>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -830,6 +863,7 @@ import { getShareList, removeShare } from "@/api/module_ai/query";
 import { getCatalogCategories, getObjectRelations, getAccessWalkthrough } from "@/api/module_ai/query";
 import { getGuardrailsStatus } from "@/api/module_ai/query";
 import { getGovernanceReport } from "@/api/module_ai/query";
+import { getAssetHotspots, getObjectLifecycle } from "@/api/module_ai/query";
 import { objectBrowse } from "@/api/module_ai/query";
 import { orchestrateAgents } from "@/api/module_ai/agent";
 
@@ -1057,6 +1091,16 @@ function downloadReport() {
   a.href = url; a.download = `治理报告_${report.value.generated_at?.replace(/[ :]/g, "-") || "now"}.md`;
   a.click(); URL.revokeObjectURL(url);
 }
+const hotspots = ref<any>(null);
+async function loadHotspots() {
+  try { hotspots.value = (await getAssetHotspots()).data?.data || null; }
+  catch { hotspots.value = null; }
+}
+const lifecycle = ref<any>(null);
+async function loadLifecycle() {
+  try { lifecycle.value = (await getObjectLifecycle()).data?.data || null; }
+  catch { lifecycle.value = null; }
+}
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
   compassLoading.value = true;
@@ -1222,6 +1266,8 @@ onMounted(() => {
   loadGuardrails();
   loadBrowse();
   loadReport();
+  loadHotspots();
+  loadLifecycle();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

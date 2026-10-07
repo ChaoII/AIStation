@@ -341,6 +341,20 @@ async def governance_report(
     return SuccessResponse(data=await AiQueryService.governance_report(), msg="查询成功")
 
 
+@AiQueryRouter.get("/assets/hotspots", summary="数据资产热点(使用排行)")
+async def asset_hotspots(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.asset_hotspots(), msg="查询成功")
+
+
+@AiQueryRouter.get("/objects/lifecycle", summary="对象生命周期看板")
+async def object_lifecycle(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.object_lifecycle(), msg="查询成功")
+
+
 @AiQueryRouter.get("/datasources/{datasource_id}/detail", summary="数据源连接详情")
 async def datasource_detail(
     datasource_id: int,

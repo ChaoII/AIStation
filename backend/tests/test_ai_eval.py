@@ -299,6 +299,10 @@ class TestAiEval:
         rep = asyncio.run(AiQueryService.governance_report())
         assert "summary" in rep and "markdown" in rep and "scores" in rep and "overview" in rep
         assert rep["markdown"] and rep["markdown"].startswith("#")
+        h = asyncio.run(AiQueryService.asset_hotspots())
+        assert "total" in h and "hot" in h and isinstance(h["hot"], list)
+        lc = asyncio.run(AiQueryService.object_lifecycle())
+        assert "objects" in lc and "published" in lc and "draft" in lc and "objects_list" in lc
 
     def test_version_diff(self, test_client):
         from app.plugin.module_ai.query.service import AiQueryService

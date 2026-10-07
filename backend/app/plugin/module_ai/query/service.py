@@ -2850,6 +2850,42 @@ class AiQueryService:
                 "markdown": markdown}
 
     @classmethod
+    async def asset_hotspots(cls) -> dict:
+        """数据资产热点：按被指标引用次数(热度)排行数据资产。"""
+        metrics = await cls.list_metrics(SYSTEM_DS)
+        assets = await cls.list_assets()
+        hot = []
+        for a in assets:
+            refs = sum(1 for m in metrics if a["table_name"] in (m.get("sql_template") or ""))
+            hot.append({"table": a["table_name"], "alias": a["alias"],
+                        "refs": refs, "dq": a.get("dq_score"),
+                        "sensitive": a.get("sensitive_count") or 0,
+                        "object": bool(a.get("object_enabled"))})
+        hot.sort(key=lambda x: (-x["refs"], x["table"]))
+        return {"total": len(hot), "hot": hot[:12]}
+
+    @classmethod
+    async def object_lifecycle(cls) -> dict:
+        """对象生命周期看板：对象总数/已发布/草稿/敏感/血缘 概览。"""
+        assets = await cls.list_assets()
+        objs = [a for a in assets if a.get("object_enabled")]
+        published = 0
+        try:
+            for a in objs:
+                rel = await cls.asset_releases(a["table_name"])
+                if rel.get("published_version_id"):
+                    published += 1
+        except Exception:  # noqa: BLE001
+            pass
+        return {"objects": len(objs), "published": published,
+                "draft": max(0, len(objs) - published),
+                "sensitive_objects": sum(1 for a in objs if (a.get("sensitive_count") or 0) > 0),
+                "total_lineage": sum(a.get("lineage_count") or 0 for a in objs),
+                "objects_list": [{"table": a["table_name"], "alias": a["alias"],
+                                  "dq": a.get("dq_score"), "sens": a.get("sensitive_count") or 0}
+                                 for a in objs]}
+
+    @classmethod
     async def semantic_extract_objects(cls) -> dict:
         """P1-③ 语义抽取/消歧：只把**真实业务实体**表（_ENTITY_TABLE 映射集）标记为业务对象，
         并把非业务表（内部/平台表）取消对象标记（收窄去噪）。"""
