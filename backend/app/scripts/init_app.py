@@ -675,7 +675,7 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
-REMOVED_ROUTE_NAMES: list[str] = ["AiOverview", "AiPlayground", "AiProvider", "AiReport", "Memory"]
+REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 
 
 async def _ensure_ai_menus() -> None:
@@ -695,11 +695,11 @@ async def _ensure_ai_menus() -> None:
                 log.warning("⚠️  未找到 AI 父菜单，跳过 AI 菜单注册")
                 return
 
-            # 父菜单固定落地智能助手；chat 保持可见，已下线页面统一隐藏
+            # 父菜单固定落地 AI 控制台；chat 保持可见，已下线页面统一隐藏
             await db.execute(
                 update(MenuModel)
                 .where(MenuModel.route_name == "AI", MenuModel.type == 1)
-                .values(redirect="/ai/chat")
+                .values(redirect="/ai/overview")
             )
             await db.execute(
                 update(MenuModel)
@@ -731,6 +731,7 @@ async def _ensure_ai_menus() -> None:
             )
 
             pages = [
+                ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
                 ("AI 工作台", "AiWorkspace", "/ai/workspace", "module_ai/workspace/index", "module_ai:query:ask", 8, "el-icon-HomeFilled"),
                 ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),

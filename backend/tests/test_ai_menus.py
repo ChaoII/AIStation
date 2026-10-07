@@ -1,12 +1,13 @@
-"""AI 菜单收敛测试：保留 6 项（含种子 chat），下线 5 项。"""
+"""AI 菜单测试：AI 父菜单落地 /ai/overview（控制台），功能页保留，仅平台下线页隐藏。"""
 import asyncio
 
 from app.scripts import init_app
 
-# 已下线页面（存量库应被置为 hidden=True）
-REMOVED = ["AiOverview", "AiPlayground", "AiProvider", "AiReport", "Memory"]
-# 必须保留且可见的页面
+# 已下线平台页面（存量库应被置为 hidden=True）
+REMOVED = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
+# 页面保留：控制台/模型/提示词/工具/应用/日志，其余功能页也保留
 KEPT = ["AiModel", "AiPrompt", "AiTool", "AiApp", "AiLogs"]
+RICH_KEPT = ["AiOverview", "AiAgent", "AiWorkflow", "AiSkill", "AiKnowledge", "AiProviderManage"]
 
 
 def _ensure_removed_rows_visible() -> None:
@@ -66,7 +67,7 @@ def _fetch_menus():
 
 
 def test_ai_menus_collapsed(test_client):
-    """_ensure_ai_menus 后：下线页 hidden=True，保留页可见，父菜单 redirect=/ai/chat。"""
+    """_ensure_ai_menus 后：控制台页可见并落地，富功能页保留，下线页 hidden。"""
     _ensure_removed_rows_visible()
     asyncio.run(init_app._ensure_ai_menus())
     menus = _fetch_menus()
@@ -74,25 +75,26 @@ def test_ai_menus_collapsed(test_client):
     for rname in REMOVED:
         assert rname in menus, f"缺少待隐藏菜单 {rname}"
         assert menus[rname].hidden is True, f"{rname} 未被隐藏"
-    for rname in KEPT:
+    for rname in KEPT + RICH_KEPT:
         assert rname in menus, f"缺少保留菜单 {rname}"
         assert menus[rname].hidden is False, f"{rname} 被误隐藏"
     assert menus["Chat"].hidden is False, "chat 不应被隐藏"
-    assert menus["AI"].redirect == "/ai/chat"
+    assert menus["AI"].redirect == "/ai/overview"
     # 智能助手菜单权限与流式/会话接口对齐
     assert menus["Chat"].permission == "module_ai:assistant:query"
 
 
-def test_ai_button_perms_drop_provider_report():
-    """按钮权限不再包含 provider/report，保留 model/prompt/tool/app/assistant。"""
+def test_ai_button_perms_keep_provider_report():
+    """按钮权限保留 provider/report，且包含核心 model/prompt/tool/app/assistant。"""
     perms = {code for code, _ in init_app.AI_BUTTON_PERMS}
-    assert not any(code.startswith("module_ai:provider:") for code in perms)
-    assert not any(code.startswith("module_ai:report:") for code in perms)
+    assert any(code.startswith("module_ai:provider:") for code in perms)
     for code in (
         "module_ai:model:query",
         "module_ai:prompt:create",
         "module_ai:tool:query",
         "module_ai:app:query",
         "module_ai:assistant:query",
+        "module_ai:agent:query",
+        "module_ai:workflow:query",
     ):
         assert code in perms
