@@ -233,3 +233,7 @@ class AiQueryMessageModel(ModelMixin, UserMixin):
     correct_sql: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="", comment="用户修正的 SQL"
     )
+    # Palantir 审计留痕：本次问数的 grounding（召回表/字段/使用本体/字段级权限命中）
+    grounding: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=None, comment="Grounding审计(召回表/字段/使用本体/权限命中)"
+    )

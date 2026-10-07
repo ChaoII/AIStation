@@ -3406,6 +3406,7 @@ class AiQueryService:
             "result_rows": m.result_rows or 0, "took_ms": m.took_ms or 0,
             "cached": m.cached, "usage": m.usage, "is_error": m.is_error,
             "feedback": m.feedback or "", "correct_sql": m.correct_sql or "",
+            "grounding": m.grounding,
             "created_time": m.created_time,
         }
 
@@ -3577,13 +3578,14 @@ class AiQueryService:
                 if not res["rows"] and attempt == 0 and cls._cfg_bool(cfg, "empty_self_correct", True):
                     last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
                     continue
+                retrieved = await cls._recall_grounding(question)
+                grounding = {"retrieved": retrieved, "ontology_used": _scan_ont_tables(sql)}
                 msg = await cls._save_message(
                     session_id, question, path="slow", datasource=datasource,
                     sql=sql, columns=res["columns"], rows=res["rows"],
                     result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
-                    summary="以下是根据你的问题生成的结果：",
+                    summary="以下是根据你的问题生成的结果：", grounding=grounding,
                 )
-                retrieved = await cls._recall_grounding(question)
                 return cls._answer(msg, sql=sql, retrieved=retrieved)
         await cls._save_message(
             session_id, question, path="slow", datasource=datasource,
@@ -4403,6 +4405,7 @@ class AiQueryService:
                 result_rows=kw.get("result_rows", 0), took_ms=kw.get("took_ms", 0),
                 cached=kw.get("cached", False), usage=kw.get("usage"),
                 is_error=kw.get("is_error", False),
+                grounding=kw.get("grounding"),
             )
             db.add(m)
             await db.flush()
