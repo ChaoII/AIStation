@@ -876,24 +876,26 @@
           </div>
         </div>
 
-        <!-- 来自本体的能力 -->
+        <!-- 能力（来自本体 / 平台） -->
         <div class="studio-section">
           <div class="studio-section__head">
             <div>
-              <div class="studio-section__title">来自本体的能力</div>
+              <div class="studio-section__title">能力（来自本体 / 平台）</div>
               <div class="studio-section__sub">
-                在本体登记的能力，勾选即授予本智能体（Agent 能力来自本体）
+                勾选即授予本智能体；工具型能力运行时由 Agent 按需调用
               </div>
             </div>
           </div>
           <el-checkbox-group v-model="studioAgent.capabilities" @change="onCapChange">
             <el-checkbox v-for="cap in ontCaps" :key="cap.code" :value="cap.code" class="prof-cap">
               {{ cap.name }}
-              <span class="prof-cap__type">[{{ cap.type }}]</span>
+              <span class="prof-cap__type">
+                [{{ cap.source === "ontology" ? "本体" : "平台" }}·{{ cap.type }}]
+              </span>
             </el-checkbox>
           </el-checkbox-group>
           <div v-if="!ontCaps.length" class="studio-flow-empty">
-            暂无本体能力，请先在「本体」页登记能力
+            暂无可授予能力，请先在「本体」页登记能力
           </div>
         </div>
 

@@ -435,12 +435,31 @@ async def upsert_function(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 # 本体能力（Palantir：能力可挂在本体上，Agent 从本体装配能力）
 # ---------------------------------------------------------------------------
+_CAP_ONTOLOGY_TYPES = {"function", "action", "grounding"}
+_CAP_TOOL_TYPES = {"query", "governance"}
+
+
+def _cap_meta(t: str) -> tuple[str, str]:
+    """能力 type → (source, kind)。source: ontology/platform；kind: tool/component。"""
+    t = (t or "generic").lower()
+    if t in _CAP_ONTOLOGY_TYPES:
+        return "ontology", "tool"
+    if t in _CAP_TOOL_TYPES:
+        return "platform", "tool"
+    return "platform", "component"
+
+
 async def list_capabilities() -> list[dict]:
     r = await _exec("SELECT id,code,name,type,description,enabled FROM ai_ont_capability "
                     "WHERE is_deleted=false ORDER BY id DESC")
     rows = r.fetchall()
-    return [{"id": x[0], "code": x[1], "name": x[2], "type": x[3],
-             "description": x[4] or "", "enabled": bool(x[5])} for x in rows]
+    out = []
+    for x in rows:
+        source, kind = _cap_meta(x[3])
+        out.append({"id": x[0], "code": x[1], "name": x[2], "type": x[3],
+                    "description": x[4] or "", "enabled": bool(x[5]),
+                    "source": source, "kind": kind})
+    return out
 
 
 async def upsert_capability(data: dict) -> dict:

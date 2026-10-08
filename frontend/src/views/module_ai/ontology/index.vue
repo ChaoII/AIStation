@@ -13,8 +13,16 @@
             </div>
           </template>
           <div class="caps-tags">
-            <el-tag v-for="c in caps" :key="c.code" size="small" effect="plain">
-              {{ c.name }} [{{ c.type }}]
+            <el-tag
+              v-for="c in caps"
+              :key="c.code"
+              size="small"
+              :type="c.source === 'ontology' ? 'primary' : 'info'"
+              effect="plain"
+            >
+              {{ c.name }} · {{ c.source === "ontology" ? "本体" : "平台" }}/{{
+                c.kind === "tool" ? "工具" : "组件"
+              }}
             </el-tag>
           </div>
           <el-empty
