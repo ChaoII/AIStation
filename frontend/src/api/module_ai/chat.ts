@@ -17,30 +17,6 @@ export const AiChatAPI = {
     });
   },
 
-  createSession(body: { title: string }) {
-    return request<ApiResponse<ChatSession>>({
-      url: `${API_PATH}/create`,
-      method: "post",
-      data: body,
-    });
-  },
-
-  updateSession(id: number, body: { title: string }) {
-    return request<ApiResponse<ChatSession>>({
-      url: `${API_PATH}/update/${id}`,
-      method: "put",
-      data: body,
-    });
-  },
-
-  deleteSession(body: number[]) {
-    return request<ApiResponse>({
-      url: `${API_PATH}/delete`,
-      method: "delete",
-      data: body,
-    });
-  },
-
   chat(body: { message: string; session_id?: number | null }) {
     return request<ApiResponse<AiChatResponse>>({
       url: `${API_PATH}/ai-chat`,
@@ -67,34 +43,14 @@ export interface ChatSessionMessage {
 }
 
 export interface ChatSession {
-  session_id: number;
-  agent_id: string | null;
-  team_id: string | null;
-  team_name: string | null;
-  workflow_id: string | null;
-  user_id: string | null;
-  session_data: Record<string, any> | null;
-  agent_data: Record<string, any> | null;
-  team_data: Record<string, any> | null;
-  workflow_data: Record<string, any> | null;
-  metadata: Record<string, any> | null;
-  runs: Array<Record<string, any>> | null;
-  summary: Record<string, any> | null;
-  created_at: number | null;
-  updated_at: number | null;
-
   id: number;
+  session_id: number;
+  team_name: string | null;
   title: string | null;
   created_time: string | null;
   updated_time: string | null;
   message_count: number;
   messages: ChatSessionMessage[];
-}
-
-export interface SessionGroup {
-  id: string;
-  title: string;
-  sessions: ChatSession[];
 }
 
 export interface UserInfo {
@@ -115,23 +71,9 @@ export interface AiChatResponse {
 }
 
 export interface ChatSessionDetail {
-  session_id: number;
-  agent_id: string | null;
-  team_id: string | null;
-  team_name: string | null;
-  workflow_id: string | null;
-  user_id: string | null;
-  session_data: Record<string, any> | null;
-  agent_data: Record<string, any> | null;
-  team_data: Record<string, any> | null;
-  workflow_data: Record<string, any> | null;
-  metadata: Record<string, any> | null;
-  runs: Array<Record<string, any>> | null;
-  summary: Record<string, any> | null;
-  created_at: number | null;
-  updated_at: number | null;
-
   id: number;
+  session_id: number;
+  team_name: string | null;
   title: string | null;
   created_time: string | null;
   updated_time: string | null;
