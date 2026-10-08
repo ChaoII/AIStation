@@ -675,11 +675,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
-REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
+# AiWorkspace：AI 工作台入口页与侧边栏菜单冗余，已下线
+REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory", "AiWorkspace"]
 
 
 async def _ensure_ai_menus() -> None:
-    """确保 AI 管理保留的 5 个页面与按钮权限存在，并隐藏已下线页面（chat 来自种子数据）。"""
+    """确保 AI 管理保留页面与按钮权限存在，并隐藏已下线页面（chat 来自种子数据）。"""
     from sqlalchemy import select, update
 
     from app.api.v1.module_system.menu.model import MenuModel
@@ -733,7 +734,6 @@ async def _ensure_ai_menus() -> None:
             pages = [
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
                 ("模型配置", "AiModel", "/ai/model", "module_ai/model/index", "module_ai:model:query", 10, "el-icon-Cpu"),
-                ("AI 工作台", "AiWorkspace", "/ai/workspace", "module_ai/workspace/index", "module_ai:query:ask", 8, "el-icon-HomeFilled"),
                 ("智能体", "AiAgent", "/ai/agent", "module_ai/agent/index", "module_ai:agent:query", 11, "el-icon-User"),
                 ("工作流", "AiWorkflow", "/ai/workflow", "module_ai/workflow/index", "module_ai:workflow:query", 12, "el-icon-Connection"),
                 ("技能广场", "AiSkill", "/ai/skill", "module_ai/skill/index", "module_ai:skill:query", 13, "el-icon-MagicStick"),
