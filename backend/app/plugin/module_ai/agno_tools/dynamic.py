@@ -41,11 +41,15 @@ def _make_params(schema: dict) -> dict:
     return params
 
 
-def build_dynamic_tools(schemas: list[dict], dispatch) -> list:
+def build_dynamic_tools(
+    schemas: list[dict], dispatch, requires_confirmation: bool = False
+) -> list:
     """把 OpenAI function schema 列表包装为 Agno Function 列表。
 
     - ``dispatch(name, args, user_id)``：异步函数，按工具名派发执行。
     - 每个生成的 Agno Function 执行体内会注入当前 ContextVar 里的 user_id。
+    - ``requires_confirmation=True``：为工具打上 ``requires_confirmation``，
+      由 Agno 在调用前暂停运行（HITL），经 requirements 确认后继续。
     """
     out: list = []
     for schema in schemas or []:
@@ -60,12 +64,16 @@ def build_dynamic_tools(schemas: list[dict], dispatch) -> list:
             required = params.get("required", [])
 
             # 用 Agno @tool 包装一层：返回 Function，执行体调用 dispatch
-            agno_fn = tool(name=name, description=description)(
-                _make_dispatch_wrapper(name, dispatch)
-            )
+            agno_fn = tool(
+                name=name,
+                description=description,
+                requires_confirmation=requires_confirmation or None,
+            )(_make_dispatch_wrapper(name, dispatch))
             # Agno 从函数签名推导参数；这里动态函数用 *args/**kwargs，需覆盖 parameters
             # 以匹配原 OpenAI schema（properties/required）。
             agno_fn.parameters = {"type": "object", "properties": properties, "required": required}
+            if requires_confirmation:
+                agno_fn.requires_confirmation = True
             out.append(agno_fn)
         except Exception:  # noqa: BLE001 单个工具失败不影响整体
             continue

@@ -14,6 +14,7 @@ import asyncio
 import json
 import re
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -139,6 +140,7 @@ class WorkflowEngine:
         initial_stack: list | None = None,
         restricted: bool = False,
         timeout_seconds: int | None = None,
+        run_id: str | None = None,
     ) -> None:
         self.graph = graph or {}
         self.nodes: dict[str, dict] = {
@@ -151,6 +153,7 @@ class WorkflowEngine:
         self.state = state
         self.user_id = user_id
         self.restricted = restricted
+        self.run_id = run_id or uuid.uuid4().hex
         self.timeout_seconds = timeout_seconds
         self._deadline = (
             time.monotonic() + timeout_seconds if timeout_seconds else None
@@ -299,44 +302,6 @@ class WorkflowEngine:
         if missing:
             raise RuntimeError(f"缺少必填输入变量：{', '.join(missing)}")
 
-    async def _resolve_llm_client(self, data: dict):
-        """解析 LLM 节点运行时：返回 (client, runtime, tool_schemas, dispatch)。"""
-        from app.plugin.module_ai.models.service import (
-            AiModelService,
-            build_headers,
-        )
-
-        runtime = None
-        if data.get("model_id"):
-            runtime = await AiModelService.get_runtime_model(model_id=data["model_id"])
-        if not runtime:
-            runtime = await AiModelService.get_runtime_model()
-        if not runtime:
-            raise RuntimeError("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
-
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(
-            base_url=runtime["base_url"],
-            api_key=runtime["api_key"] or "sk-none",
-            default_headers=build_headers(
-                runtime["base_url"], runtime.get("extra_headers"), "aistation-workflow"
-            ),
-        )
-        tool_schemas, dispatch = await self._llm_tools(data)
-        return client, runtime, tool_schemas, dispatch
-
-    def _llm_base_messages(self, data: dict, kb_context: str = "") -> list[dict]:
-        """组装 LLM 节点输入消息：系统提示词 + 知识库上下文 + 历史消息。"""
-        system_prompt = self._render(data.get("prompt") or "")
-        messages: list[dict] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        if kb_context:
-            messages.append({"role": "system", "content": f"参考知识：\n{kb_context}"})
-        messages += self.messages
-        return messages
-
     async def _last_user_text(self) -> str:
         """取最近一条 user 消息文本（作为 Agno Agent 的输入）。"""
         for m in reversed(self.messages):
@@ -346,36 +311,15 @@ class WorkflowEngine:
                     return c
         return ""
 
-    async def _exec_llm(self, node: dict) -> None:
-        """LLM 节点分派：普通节点走 Agno Agent（工具调用/多轮自省归 Agno）；需人工审批
-        （``require_approval``）的节点保留引擎级手写审批路径（Agno HITL 续跑需跨请求运行态，
-        与单一会话仓库原则冲突）。"""
-        data = node.get("data") or {}
-        if data.get("require_approval"):
-            async for frame in self._exec_llm_manual(node):
-                yield frame
-            return
-        async for frame in self._exec_llm_agno(node):
-            yield frame
-
-    async def _exec_llm_agno(self, node: dict) -> None:
-        """LLM 节点（Agno 路径）：由共享 Agno ``Agent`` 统一驱动模型与工具调用循环。"""
-        e_run_content = "RunContent"
-        e_reasoning = "ReasoningContentDelta"
-        e_tool_started = "ToolCallStarted"
-        e_tool_completed = "ToolCallCompleted"
-        e_run_error = "RunError"
-
-        from app.plugin.module_ai.agno_tools import business as biz
+    async def _build_llm_agent(self, node: dict, kb_context: str = ""):
+        """构建 LLM 节点共享的 Agno ``Agent``：工具统一经 dynamic 包装；HITL 节点
+        启用 ``requires_confirmation`` 并挂载 Agno 运行态库（跨请求续跑用）。"""
         from app.plugin.module_ai.agno_tools.agent_factory import build_agent
-        from app.plugin.module_ai.agno_tools.dynamic import (
-            build_dynamic_tools,
-            reset_user_context,
-            set_user_context,
-        )
+        from app.plugin.module_ai.agno_tools.dynamic import build_dynamic_tools
         from app.plugin.module_ai.models.service import AiModelService
 
         data = node.get("data") or {}
+        require_approval = bool(data.get("require_approval"))
         runtime = None
         if data.get("model_id"):
             runtime = await AiModelService.get_runtime_model(model_id=data["model_id"])
@@ -383,6 +327,81 @@ class WorkflowEngine:
             runtime = await AiModelService.get_runtime_model()
         if not runtime:
             raise RuntimeError("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
+
+        schemas, dispatch = await self._llm_tools(data)
+        tools = (
+            build_dynamic_tools(schemas, dispatch, requires_confirmation=require_approval)
+            if schemas
+            else []
+        )
+        system_prompt = self._render(data.get("prompt") or "")
+        instructions = [system_prompt] if system_prompt else []
+        if kb_context:
+            instructions.append(f"参考知识：\n{kb_context}")
+
+        db = None
+        session_id = None
+        if require_approval:
+            from app.plugin.module_ai.agno_tools.db import get_agno_db
+
+            db = get_agno_db()
+            session_id = self.run_id
+        return build_agent(
+            model_config=runtime,
+            user_id=self.user_id,
+            instructions=instructions or None,
+            tools=tools,
+            db=db,
+            session_id=session_id,
+        )
+
+    async def _agno_complete(self, data: dict, prompt: str) -> str:
+        """用共享 Agno ``Agent`` 做单发文本生成（无工具、无系统角色），返回正文。"""
+        from app.plugin.module_ai.agno_tools.agent_factory import build_agent
+        from app.plugin.module_ai.models.service import AiModelService
+
+        runtime = None
+        if data.get("model_id"):
+            runtime = await AiModelService.get_runtime_model(model_id=data["model_id"])
+        if not runtime:
+            runtime = await AiModelService.get_runtime_model()
+        if not runtime:
+            raise RuntimeError("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
+        agent = build_agent(
+            model_config=runtime, user_id=self.user_id, instructions=[], tools=[]
+        )
+        resp = await agent.arun(prompt, stream=False)
+        text = (
+            resp.get_content_as_string()
+            if hasattr(resp, "get_content_as_string")
+            else str(resp.content or "")
+        )
+        return text or ""
+
+    @staticmethod
+    def _ev_name(ev) -> str:
+        """归一化 Agno 事件名（枚举取 value，字符串原样）。"""
+        etype = getattr(ev, "event", None)
+        return str(getattr(etype, "value", etype) or "")
+
+    async def _exec_llm(self, node: dict) -> None:
+        async for frame in self._exec_llm_agno(node):
+            yield frame
+
+    async def _exec_llm_agno(self, node: dict) -> None:
+        """LLM 节点（Agno 路径）：由共享 Agno ``Agent`` 统一驱动模型与工具调用循环。
+
+        ``require_approval`` 节点：工具带 ``requires_confirmation``，Agno 在调用前触发
+        ``RunPaused``；本方法透出 ``tool-approval`` 帧并挂起（运行态经 Agno 库持久化），
+        待用户审批后由 ``resume_after_approval`` 经 ``acontinue_run`` 续跑。
+        """
+        from app.plugin.module_ai.agno_tools import business as biz
+        from app.plugin.module_ai.agno_tools.dynamic import (
+            reset_user_context,
+            set_user_context,
+        )
+
+        data = node.get("data") or {}
 
         kb_context = ""
         if data.get("knowledge_ids"):
@@ -392,21 +411,10 @@ class WorkflowEngine:
                 if frame:
                     yield frame
 
-        schemas, dispatch = await self._llm_tools(data)
-        tools = build_dynamic_tools(schemas, dispatch) if schemas else []
-        system_prompt = self._render(data.get("prompt") or "")
-        instructions = [system_prompt] if system_prompt else []
-        if kb_context:
-            instructions.append(f"参考知识：\n{kb_context}")
-
-        agent = build_agent(
-            model_config=runtime,
-            user_id=self.user_id,
-            instructions=instructions or None,
-            tools=tools,
+        agent = await self._build_llm_agent(node, kb_context)
+        input_text = (
+            await self._last_user_text() or self._render(data.get("prompt") or "") or "开始"
         )
-
-        input_text = await self._last_user_text() or system_prompt or "开始"
         content = ""
         pending_tools: dict = {}
         biz_token = biz.set_user_context(self.user_id)
@@ -418,9 +426,8 @@ class WorkflowEngine:
                 stream_events=True,
                 user_id=str(self.user_id) if self.user_id is not None else None,
             ):
-                etype = getattr(ev, "event", None)
-                name_ev = getattr(etype, "value", etype)
-                if name_ev == e_run_content:
+                name_ev = self._ev_name(ev)
+                if name_ev == "RunContent":
                     c = getattr(ev, "content", None)
                     if isinstance(c, str) and c:
                         content += c
@@ -430,20 +437,20 @@ class WorkflowEngine:
                         frame = self.ms.text(c)
                         if frame:
                             yield frame
-                elif name_ev == e_reasoning:
+                elif name_ev == "ReasoningContentDelta":
                     rc = getattr(ev, "reasoning_content", None)
                     if rc:
                         frame = self.ms.reasoning(rc)
                         if frame:
                             yield frame
-                elif name_ev == e_tool_started:
+                elif name_ev == "ToolCallStarted":
                     tool = getattr(ev, "tool", None)
                     tid = getattr(tool, "tool_call_id", "") or ""
                     pending_tools[tid] = {
                         "name": getattr(tool, "tool_name", None),
                         "args": getattr(tool, "tool_args", None) or {},
                     }
-                elif name_ev == e_tool_completed:
+                elif name_ev == "ToolCallCompleted":
                     tool = getattr(ev, "tool", None)
                     tid = getattr(tool, "tool_call_id", "") or ""
                     info = pending_tools.pop(tid, {})
@@ -456,7 +463,11 @@ class WorkflowEngine:
                     frame = self.ms.tool(tid, tname, args=targs, output=result)
                     if frame:
                         yield frame
-                elif name_ev == e_run_error:
+                elif name_ev == "RunPaused":
+                    async for frame in self._emit_paused(node, ev, content):
+                        yield frame
+                    return
+                elif name_ev == "RunError":
                     err = getattr(ev, "content", None) or "运行失败"
                     raise RuntimeError(str(err))
         finally:
@@ -475,250 +486,125 @@ class WorkflowEngine:
         if out_var:
             self.variables[out_var] = content
 
-    async def _exec_llm_manual(self, node: dict) -> None:
-        """LLM 节点（HITL 手写路径）：渲染提示词 → 流式调用 → 累积文本；写入输出变量。
-
-        当节点配置 ``require_approval`` 且模型发起工具调用时，透出
-        ``tool-approval`` 帧并挂起运行，等待用户审批后经 ``resume_after_approval`` 续跑。
-        """
-        data = node.get("data") or {}
-        client, runtime, tool_schemas, dispatch = await self._resolve_llm_client(data)
-
-        kb_context = ""
-        if data.get("knowledge_ids"):
-            kb_context, sources = await self._retrieve_context(data)
-            if sources:
-                yield_src = self.ms.sources(sources)
-                if yield_src:
-                    yield yield_src
-        messages = self._llm_base_messages(data, kb_context)
-
-        kwargs: dict = {
-            "model": runtime["model"],
-            "messages": messages,
-            "temperature": data.get("temperature", runtime["temperature"]),
-            "max_tokens": data.get("max_tokens", runtime["max_tokens"]),
-            "stream": True,
-        }
-        if tool_schemas:
-            kwargs["tools"] = tool_schemas
-            kwargs["tool_choice"] = "auto"
-
-        content = ""
-        tool_calls: dict = {}
-        stream = await client.chat.completions.create(**kwargs)
-        async for chunk in stream:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            rc = getattr(delta, "reasoning_content", None)
-            if rc:
-                yield_ms = self.ms.reasoning(rc)
-                if yield_ms:
-                    yield yield_ms
-            if getattr(delta, "content", None):
-                content += delta.content
-                self.state["assistant_text"] += delta.content
-                yield_text = self.ms.text(delta.content)
-                if yield_text:
-                    yield yield_text
-            for tc in getattr(delta, "tool_calls", None) or []:
-                slot = tool_calls.setdefault(
-                    tc.index, {"id": "", "name": "", "arguments": ""}
-                )
-                if tc.id:
-                    slot["id"] = tc.id
-                if tc.function and tc.function.name:
-                    slot["name"] = tc.function.name
-                if tc.function and tc.function.arguments:
-                    slot["arguments"] += tc.function.arguments
-
-        yield_reason_end = self.ms.reasoning_end()
-        if yield_reason_end:
-            yield yield_reason_end
-        yield_text_end = self.ms.text_end()
-        if yield_text_end:
-            yield yield_text_end
-
-        # HITL：需人工审批的工具调用 → 透出审批帧并挂起（不执行工具）
-        if tool_calls and tool_schemas and data.get("require_approval"):
-            pending = [
+    async def _emit_paused(self, node: dict, ev, content: str):
+        """把 Agno ``RunPaused`` 转为审批帧并挂起运行状态（供续跑）。"""
+        reqs = getattr(ev, "requirements", None) or []
+        pending: list[dict] = []
+        req_dicts: list[dict] = []
+        for r in reqs:
+            te = getattr(r, "tool_execution", None)
+            pending.append(
                 {
-                    "toolCallId": s["id"],
-                    "toolName": s["name"],
-                    "arguments": json.loads(s["arguments"] or "{}") if s["arguments"] else {},
+                    "toolCallId": getattr(te, "tool_call_id", "") if te else "",
+                    "toolName": getattr(te, "tool_name", None) if te else None,
+                    "arguments": getattr(te, "tool_args", None) if te else None,
                 }
-                for s in tool_calls.values()
-            ]
-            yield_ap = self.ms.tool_approval(pending)
-            if yield_ap:
-                yield yield_ap
-            self.state["pending_approval"] = {
-                "node_id": node["id"],
-                "llm_messages": messages,
-                "tool_calls": tool_calls,
-                "content": content,
-                "pending": pending,
-            }
-            self.state["halted"] = True
-            self.outputs[node["id"]] = content
-            return
-
-        # 工具循环（V1：单轮工具调用后把结果并入本轮文本，供模型继续）
-        if tool_calls and tool_schemas:
-            for s in tool_calls.values():
-                name = s["name"]
-                try:
-                    args = json.loads(s["arguments"] or "{}") if s["arguments"] else {}
-                except Exception:  # noqa: BLE001
-                    args = {}
-                result = await dispatch(name, args, self.user_id)
-                self.state["tool_calls"].append({"name": name, "args": args, "result": result})
-                yield_tool = self.ms.tool(s["id"], name, args=args, output=result)
-                if yield_tool:
-                    yield yield_tool
-                self.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": content or None,
-                        "tool_calls": [
-                            {
-                                "id": s["id"],
-                                "type": "function",
-                                "function": {"name": s["name"], "arguments": s["arguments"]},
-                            }
-                        ],
-                    }
-                )
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": s["id"],
-                        "content": json.dumps(result, ensure_ascii=False, default=str)[:4000],
-                    }
-                )
-            # 二次调用聚合工具结果
-            content += await self._continue_llm(client, runtime, data, tool_schemas, dispatch)
-            yield_text2 = self.ms.text(content)
-            if yield_text2:
-                yield yield_text2
-            yield_text_end2 = self.ms.text_end()
-            if yield_text_end2:
-                yield yield_text_end2
-
-        self.outputs[node["id"]] = content
-        out_var = (data or {}).get("output_variable")
-        if out_var:
-            self.variables[out_var] = content
-
-    async def _continue_llm(self, client, runtime, data, tool_schemas, dispatch) -> str:
-        """工具执行后让模型继续生成最终回复（单轮）。"""
-        kwargs: dict = {
-            "model": runtime["model"],
-            "messages": self.messages,
-            "temperature": data.get("temperature", runtime["temperature"]),
-            "max_tokens": data.get("max_tokens", runtime["max_tokens"]),
-            "stream": False,
+            )
+            try:
+                req_dicts.append(r.to_dict())
+            except Exception:  # noqa: BLE001
+                req_dicts.append({})
+        frame = self.ms.tool_approval(pending)
+        if frame:
+            yield frame
+        self.state["pending_approval"] = {
+            "node_id": node["id"],
+            "run_id": getattr(ev, "run_id", None) or self.run_id,
+            "session_id": self.run_id,
+            "requirements": req_dicts,
+            "pending": pending,
+            "content": content,
         }
-        if tool_schemas:
-            kwargs["tools"] = tool_schemas
-            kwargs["tool_choice"] = "auto"
-        try:
-            resp = await client.chat.completions.create(**kwargs)
-            content = resp.choices[0].message.content or ""
-            self.state["assistant_text"] += content
-            self.messages.append({"role": "assistant", "content": content})
-            return content
-        except Exception as e:  # noqa: BLE001
-            return f"（工具结果收尾失败：{e}）"
+        self.state["halted"] = True
+        self.outputs[node["id"]] = content
 
     async def resume_after_approval(
         self, node_id: str, tool_calls: list[dict], decision: str
     ):
-        """用户审批后从 LLM 节点续跑：执行/拒绝挂起的工具调用并生成最终回复。
+        """用户审批后经 Agno ``acontinue_run`` 从挂起点续跑，产出文本/工具帧。
 
-        ``tool_calls`` 为 ``[{"toolCallId","toolName","arguments"}]``，
-        ``decision`` 为 ``approve`` / ``reject``。产出 text 帧（异步生成器）。
+        ``decision`` 为 ``approve`` / ``reject``；工具的实际执行/拒绝由 Agno 依据
+        重建后的 ``RunRequirement`` 处理，无需引擎手动派发。
         """
+        from agno.run.agent import RunRequirement
+
+        from app.plugin.module_ai.agno_tools import business as biz
+        from app.plugin.module_ai.agno_tools.dynamic import (
+            reset_user_context,
+            set_user_context,
+        )
+
         node = self._node(node_id)
         data = node.get("data") or {}
-        client, runtime, tool_schemas, dispatch = await self._resolve_llm_client(data)
-
-        norm: list[dict] = []
-        for t in tool_calls:
-            slot = {
-                "id": t.get("toolCallId"),
-                "name": t.get("toolName"),
-                "arguments": json.dumps(t.get("arguments") or {}, ensure_ascii=False),
-            }
-            norm.append(slot)
-
-        content = ""
         pending = self.state.get("pending_approval") or {}
-        base_messages = pending.get("llm_messages") or self._llm_base_messages(data)
-        self.messages = list(base_messages)
+        run_id = pending.get("run_id") or self.run_id
+        kb_context = ""
+        if data.get("knowledge_ids"):
+            kb_context, _sources = await self._retrieve_context(data)
+        agent = await self._build_llm_agent(node, kb_context)
 
-        for s in norm:
-            name = s["name"]
+        reqs = []
+        for rd in pending.get("requirements") or []:
             try:
-                args = json.loads(s["arguments"] or "{}") if s["arguments"] else {}
+                reqs.append(RunRequirement.from_dict(rd))
             except Exception:  # noqa: BLE001
-                args = {}
-            self.messages.append(
-                {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": s["id"],
-                            "type": "function",
-                            "function": {"name": s["name"], "arguments": s["arguments"]},
-                        }
-                    ],
-                }
-            )
-            if decision == "approve":
-                result = await dispatch(name, args, self.user_id)
-                self.state["tool_calls"].append(
-                    {"name": name, "args": args, "result": result}
-                )
-                yield_tool = self.ms.tool(s["id"], name, args=args, output=result)
-                if yield_tool:
-                    yield yield_tool
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": s["id"],
-                        "content": json.dumps(
-                            result, ensure_ascii=False, default=str
-                        )[:4000],
-                    }
-                )
-            else:
-                self.state["tool_calls"].append(
-                    {"name": name, "args": args, "result": {"approved": False}}
-                )
-                yield_deny = self.ms.tool(s["id"], name, args=args, error="用户拒绝了该工具调用")
-                if yield_deny:
-                    yield yield_deny
-                self.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": s["id"],
-                        "content": "用户拒绝了该工具调用。",
-                    }
-                )
+                continue
+        for r in reqs:
+            try:
+                if decision == "approve":
+                    r.confirm()
+                else:
+                    r.reject()
+            except Exception:  # noqa: BLE001
+                continue
 
-        final = await self._continue_llm(client, runtime, data, tool_schemas, dispatch)
-        content = (pending.get("content") or "") + (final or "")
+        content = pending.get("content") or ""
+        self.state["pending_approval"] = None
+        self.state["halted"] = False
+        biz_token = biz.set_user_context(self.user_id)
+        dyn_token = set_user_context(self.user_id)
+        try:
+            async for ev in agent.acontinue_run(
+                run_id=run_id,
+                requirements=reqs,
+                stream=True,
+                stream_events=True,
+                user_id=str(self.user_id) if self.user_id is not None else None,
+            ):
+                name_ev = self._ev_name(ev)
+                if name_ev == "RunContent":
+                    c = getattr(ev, "content", None)
+                    if isinstance(c, str) and c:
+                        content += c
+                        self.state["assistant_text"] = (
+                            self.state.get("assistant_text", "") + c
+                        )
+                        frame = self.ms.text(c)
+                        if frame:
+                            yield frame
+                elif name_ev == "ToolCallCompleted":
+                    tool = getattr(ev, "tool", None)
+                    tid = getattr(tool, "tool_call_id", "") or ""
+                    tname = getattr(tool, "tool_name", None)
+                    targs = getattr(tool, "tool_args", None) or {}
+                    result = getattr(tool, "result", None)
+                    self.state.setdefault("tool_calls", []).append(
+                        {"name": tname, "args": targs, "result": result}
+                    )
+                    frame = self.ms.tool(tid, tname, args=targs, output=result)
+                    if frame:
+                        yield frame
+                elif name_ev == "RunError":
+                    raise RuntimeError(str(getattr(ev, "content", None) or "运行失败"))
+        finally:
+            biz.reset_user_context(biz_token)
+            reset_user_context(dyn_token)
+
+        frame = self.ms.text_end()
+        if frame:
+            yield frame
         self.outputs[node_id] = content
         self.state["reply"] = content
-        yield_final = self.ms.text(content)
-        if yield_final:
-            yield yield_final
-        yield_end = self.ms.text_end()
-        if yield_end:
-            yield yield_end
 
     async def _llm_tools(self, data: dict):
         """解析 LLM 节点绑定的工具名 → schema 与派发器。"""
@@ -1088,7 +974,6 @@ class WorkflowEngine:
         命中类别后写 ``output_variable``，执行器按 ``sourceHandle == 类别`` 选边。
         """
         data = node.get("data") or {}
-        client, runtime, _tools, _dispatch = await self._resolve_llm_client(data)
         categories = data.get("categories") or []
         if not categories:
             raise RuntimeError("分类器缺少 categories")
@@ -1099,21 +984,7 @@ class WorkflowEngine:
             "你是问题分类器。把用户问题归入下列类别之一，只输出类别名，不要其它文字。\n"
             f"类别：{'、'.join(categories)}\n问题：{query}"
         )
-        resp = await client.chat.completions.create(
-            model=runtime["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=32,
-            stream=False,
-        )
-        text = ""
-        if isinstance(resp, dict):
-            text = ((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        else:
-            try:
-                text = resp.choices[0].message.content or ""
-            except Exception:  # noqa: BLE001
-                text = ""
+        text = await self._agno_complete(data, prompt)
         category = next((c for c in categories if c and c in text), (categories[0] or ""))
         self.outputs[node["id"]] = category
         out_var = data.get("output_variable")
@@ -1123,7 +994,6 @@ class WorkflowEngine:
     async def _exec_extractor(self, node: dict) -> None:
         """参数提取（JSON 输出）节点：LLM 按 schema 从输入抽取 JSON 对象写变量。"""
         data = node.get("data") or {}
-        client, runtime, _tools, _dispatch = await self._resolve_llm_client(data)
         schema = data.get("schema") or []
         query = self._render(data.get("query") or "") or ""
         if not query:
@@ -1132,21 +1002,7 @@ class WorkflowEngine:
             "你是信息抽取器。根据给定字段从输入中提取 JSON 对象，只输出 JSON，不要其它文字。\n"
             f"字段：{json.dumps(schema, ensure_ascii=False)}\n输入：{query}"
         )
-        resp = await client.chat.completions.create(
-            model=runtime["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=256,
-            stream=False,
-        )
-        text = ""
-        if isinstance(resp, dict):
-            text = ((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
-        else:
-            try:
-                text = resp.choices[0].message.content or ""
-            except Exception:  # noqa: BLE001
-                text = ""
+        text = await self._agno_complete(data, prompt)
         parsed = _extract_json(text)
         self.outputs[node["id"]] = parsed
         out_var = data.get("output_variable")

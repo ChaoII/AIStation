@@ -1,6 +1,5 @@
 
 """AI 低代码工作流：CRUD、流式运行（start→llm→end）与条件分支。"""
-import json
 import re
 import uuid
 from types import SimpleNamespace
@@ -142,29 +141,10 @@ def test_extractor_node(monkeypatch):
 
     from app.plugin.module_ai.workflow import engine as E
 
-    class _Message:
-        content = '{"city": "北京", "date": "2026-10-02"}'
+    async def _fake_complete(self, data, prompt):
+        return '{"city": "北京", "date": "2026-10-02"}'
 
-    class _Choice:
-        message = _Message()
-
-    class _Resp:
-        choices = [_Choice()]
-
-    class _Completions:
-        async def create(self, **kw):
-            return _Resp()
-
-    class _Chat:
-        completions = _Completions()
-
-    class _Client:
-        chat = _Chat()
-
-    async def _resolve(self, data):
-        return _Client(), {"model": "m", "temperature": 0, "max_tokens": 256}, [], None
-
-    monkeypatch.setattr(E.WorkflowEngine, "_resolve_llm_client", _resolve)
+    monkeypatch.setattr(E.WorkflowEngine, "_agno_complete", _fake_complete)
 
     eng = E.WorkflowEngine(
         graph={
@@ -193,29 +173,10 @@ def test_classifier_node(monkeypatch):
 
     from app.plugin.module_ai.workflow import engine as E
 
-    class _Message:
-        content = "查询"
+    async def _fake_complete(self, data, prompt):
+        return "查询"
 
-    class _Choice:
-        message = _Message()
-
-    class _Resp:
-        choices = [_Choice()]
-
-    class _Completions:
-        async def create(self, **kw):
-            return _Resp()
-
-    class _Chat:
-        completions = _Completions()
-
-    class _Client:
-        chat = _Chat()
-
-    async def _resolve(self, data):
-        return _Client(), {"model": "m", "temperature": 0, "max_tokens": 32}, [], None
-
-    monkeypatch.setattr(E.WorkflowEngine, "_resolve_llm_client", _resolve)
+    monkeypatch.setattr(E.WorkflowEngine, "_agno_complete", _fake_complete)
 
     eng = E.WorkflowEngine(
         graph={
@@ -724,56 +685,28 @@ def test_workflow_run_llm_tool_loop(monkeypatch, test_client, auth_headers):
         _delete_wf(test_client, auth_headers, [wf_id])
 
 
-def _make_hitl_tool_client():
-    """HITL 工具审批假客户端：stream 首调下发 tool_call，续跑 create 返回最终文本。"""
+def _fake_hitl_req(tcid, tname, targs):
+    """假 Agno RunRequirement：暴露 tool_execution 与 to_dict。"""
+    te = SimpleNamespace(tool_call_id=tcid, tool_name=tname, tool_args=targs)
 
-    class _Delta:
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
+    class _Req:
+        tool_execution = te
 
-    class _Chunk:
-        def __init__(self, delta):
-            self.choices = [SimpleNamespace(delta=delta)]
+        def to_dict(self):
+            return {
+                "tool_execution": {
+                    "tool_call_id": tcid,
+                    "tool_name": tname,
+                    "tool_args": targs,
+                }
+            }
 
-    class _Completions:
-        def __init__(self):
-            self.calls = 0
-
-        async def create(self, **kwargs):
-            self.calls += 1
-            if kwargs.get("stream"):
-                async def _gen():
-                    yield _Chunk(
-                        _Delta(
-                            tool_calls=[
-                                SimpleNamespace(
-                                    index=0,
-                                    id="call_1",
-                                    function=SimpleNamespace(
-                                        name="mock_tool", arguments=json.dumps({"x": 1})
-                                    ),
-                                )
-                            ]
-                        )
-                    )
-
-                return _gen()
-            msg = SimpleNamespace(content="工具已执行，这是审批后的最终回复")
-            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
-
-    class _Chat:
-        def __init__(self):
-            self.completions = _Completions()
-
-    class _Client:
-        def __init__(self, *a, **k):
-            self.chat = _Chat()
-
-    return _Client
+    return _Req()
 
 
-def _patch_hitl_tools(monkeypatch, dispatched):
-    """monkeypatch 应用的工具构建/派发，记录被派发的工具。"""
+def _patch_hitl_agent(monkeypatch, events_run, events_continue):
+    """mock build_agent：arun 触发 RunPaused（挂起），acontinue_run 产出最终文本。"""
+    import app.plugin.module_ai.agno_tools.agent_factory as af
     from app.plugin.module_ai.apps import service as apps_service
 
     async def _fake_build(names):
@@ -790,12 +723,18 @@ def _patch_hitl_tools(monkeypatch, dispatched):
             {},
         )
 
-    async def _fake_run(name, args, user_id, http_tools):
-        dispatched.append((name, args))
-        return {"result": "工具已执行"}
-
     monkeypatch.setattr(apps_service, "_build_app_tools", _fake_build)
-    monkeypatch.setattr(apps_service, "_run_app_tool", _fake_run)
+
+    class _Agent:
+        async def arun(self, *a, **k):
+            for e in events_run:
+                yield e
+
+        async def acontinue_run(self, *a, **k):
+            for e in events_continue:
+                yield e
+
+    monkeypatch.setattr(af, "build_agent", lambda **k: _Agent())
 
 
 def _hitl_graph(require_approval=True):
@@ -817,13 +756,19 @@ def _hitl_graph(require_approval=True):
 
 
 def test_workflow_run_hitl_approval(monkeypatch, test_client, auth_headers):
-    """HITL 审批-通过：模型下发 tool_call 时挂起并透出审批帧，approve 后派发工具并续跑。"""
-    import openai
-
-    dispatched: list[tuple] = []
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_hitl_tool_client())
-    _patch_hitl_tools(monkeypatch, dispatched)
+    """HITL 审批-通过：Agno 触发 RunPaused 挂起并透出审批帧；approve 后经 acontinue_run 续跑。"""
     _patch_runtime(monkeypatch)
+    _patch_hitl_agent(
+        monkeypatch,
+        [
+            _WfEv(
+                "RunPaused",
+                run_id="run_approve_1",
+                requirements=[_fake_hitl_req("call_1", "mock_tool", {"x": 1})],
+            )
+        ],
+        [_WfEv("RunContent", content="审批后的最终回复")],
+    )
 
     wf_id = _create_workflow(test_client, auth_headers, _hitl_graph())
     try:
@@ -837,16 +782,13 @@ def test_workflow_run_hitl_approval(monkeypatch, test_client, auth_headers):
         )
         assert r.status_code == 200, r.text
         body = r.text
-        # 运行阶段透出 tool-approval 审批帧（含工具名与参数），且未派发工具
         assert '"type": "tool-approval"' in body
         assert '"toolName": "mock_tool"' in body
         assert '"arguments": {"x": 1}' in body
         assert '"awaiting_approval": true' in body
-        assert dispatched == []
 
         run_id = re.search(r'"run_id": "([0-9a-f]{32})"', body).group(1)
 
-        # 用户通过审批 → 派发工具并续跑生成最终回复
         r2 = test_client.post(
             f"/api/v1/ai/workflows/{wf_id}/approve",
             json={"run_id": run_id, "decision": "approve"},
@@ -854,8 +796,6 @@ def test_workflow_run_hitl_approval(monkeypatch, test_client, auth_headers):
         )
         assert r2.status_code == 200, r2.text
         body2 = r2.text
-        assert dispatched and dispatched[0][0] == "mock_tool"
-        assert dispatched[0][1] == {"x": 1}
         assert "审批后的最终回复" in body2
         assert '"type": "data-finish"' in body2
     finally:
@@ -863,13 +803,19 @@ def test_workflow_run_hitl_approval(monkeypatch, test_client, auth_headers):
 
 
 def test_workflow_run_hitl_reject(monkeypatch, test_client, auth_headers):
-    """HITL 审批-拒绝：不派发工具，把「用户拒绝」写入上下文并续跑生成最终回复。"""
-    import openai
-
-    dispatched: list[tuple] = []
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_hitl_tool_client())
-    _patch_hitl_tools(monkeypatch, dispatched)
+    """HITL 审批-拒绝：仍经 Agno acontinue_run 续跑并产出最终回复。"""
     _patch_runtime(monkeypatch)
+    _patch_hitl_agent(
+        monkeypatch,
+        [
+            _WfEv(
+                "RunPaused",
+                run_id="run_reject_1",
+                requirements=[_fake_hitl_req("call_1", "mock_tool", {"x": 1})],
+            )
+        ],
+        [_WfEv("RunContent", content="审批后的最终回复")],
+    )
 
     wf_id = _create_workflow(test_client, auth_headers, _hitl_graph())
     try:
@@ -889,15 +835,13 @@ def test_workflow_run_hitl_reject(monkeypatch, test_client, auth_headers):
             headers=auth_headers,
         )
         assert r2.status_code == 200, r2.text
-        body2 = r2.text
-        # 拒绝后工具不派发，模型仍产出最终回复
-        assert dispatched == []
-        assert "审批后的最终回复" in body2
+        assert "审批后的最终回复" in r2.text
     finally:
         _delete_wf(test_client, auth_headers, [wf_id])
-    """LLM 节点接入知识库 RAG：后端透出 ``sources`` 引用来源帧。"""
-    import openai
 
+
+def test_workflow_run_llm_knowledge(monkeypatch, test_client, auth_headers):
+    """LLM 节点接入知识库 RAG：后端透出 ``sources`` 引用来源帧。"""
     from app.plugin.module_ai.knowledge import service as kb_service
 
     async def _fake_search(kb_ids, query, top_k=5):
@@ -913,11 +857,6 @@ def test_workflow_run_hitl_reject(monkeypatch, test_client, auth_headers):
 
     monkeypatch.setattr(
         kb_service.AiKnowledgeService, "search", staticmethod(_fake_search)
-    )
-    monkeypatch.setattr(
-        openai,
-        "AsyncOpenAI",
-        _make_stream_client([[_FakeChunk(_FakeDelta(content="好的"))]], []),
     )
     _patch_wf_agent(monkeypatch, [_WfEv("RunContent", content="好的")])
     _patch_runtime(monkeypatch)

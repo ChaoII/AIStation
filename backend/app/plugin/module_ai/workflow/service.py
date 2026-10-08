@@ -274,6 +274,7 @@ class AiWorkflowService:
 
             graph = workflow.get("graph") or {}
             openai_messages = extract_openai_messages(ui_messages)
+            run_id = uuid.uuid4().hex
             engine = WorkflowEngine(
                 graph=graph,
                 variables=variables or {},
@@ -282,6 +283,7 @@ class AiWorkflowService:
                 state=state,
                 user_id=uid,
                 timeout_seconds=timeout_seconds,
+                run_id=run_id,
             )
             async for frame in engine.run():
                 yield frame
@@ -293,7 +295,6 @@ class AiWorkflowService:
 
             if state.get("halted") and state.get("pending_approval"):
                 # HITL：持久化运行状态，产出审批装载帧供前端确认后调 approve 续跑
-                run_id = uuid.uuid4().hex
                 await cls._persist_pending(redis, run_id, workflow_id, state, uid)
                 yield ms.data(
                     "finish",
@@ -963,14 +964,14 @@ class AiWorkflowService:
 
             paused = payload.get("pending_approval") or {}
             graph = workflow.get("graph") or {}
-            openai_messages = (paused.get("llm_messages") or [])[:]
             engine = WorkflowEngine(
                 graph=graph,
                 variables={},
-                messages=openai_messages,
+                messages=[],
                 ms=ms,
                 state=state,
                 user_id=payload.get("user_id"),
+                run_id=paused.get("session_id") or paused.get("run_id"),
             )
             # 恢复挂起状态供 resume_after_approval 读取 llm_messages/content
             engine.state["pending_approval"] = paused
