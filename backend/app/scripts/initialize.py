@@ -58,9 +58,9 @@ class InitializeData:
             from app.plugin.module_synthesis.model import SynthesisJobModel
             _ = SynthesisJobModel
             from app.plugin.module_ai.apps.model import AiAppModel
+            from app.plugin.module_ai.models.model import AiModelModel
             from app.plugin.module_ai.overview.model import AiCallLogModel
             from app.plugin.module_ai.prompts.model import AiPromptModel
-            from app.plugin.module_ai.provider.model import AiModelModel
             from app.plugin.module_ai.providers.model import AiProviderModel
             from app.plugin.module_ai.report.model import AiReportModel
             from app.plugin.module_ai.sessions.model import AiMessageModel, AiSessionModel

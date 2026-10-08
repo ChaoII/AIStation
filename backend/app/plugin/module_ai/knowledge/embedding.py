@@ -42,7 +42,7 @@ async def embed_texts(texts: list[str], model_id: int | None = None) -> list[lis
 
 
 async def _embed_openai(texts: list[str], model_id: int | None) -> list[list[float]]:
-    from app.plugin.module_ai.provider.service import (
+    from app.plugin.module_ai.models.service import (
         AiModelService,
         build_headers,
     )

@@ -316,7 +316,7 @@ class AiAgentService:
         )
         from app.plugin.module_ai.overview.service import AiOverviewService
         from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
-        from app.plugin.module_ai.provider.service import AiModelService
+        from app.plugin.module_ai.models.service import AiModelService
         from app.plugin.module_ai.sessions.service import persist_session_exchange
         from app.plugin.module_ai.streaming import UiMessageStream
 

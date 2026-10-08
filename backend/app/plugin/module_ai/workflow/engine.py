@@ -301,7 +301,7 @@ class WorkflowEngine:
 
     async def _resolve_llm_client(self, data: dict):
         """解析 LLM 节点运行时：返回 (client, runtime, tool_schemas, dispatch)。"""
-        from app.plugin.module_ai.provider.service import (
+        from app.plugin.module_ai.models.service import (
             AiModelService,
             build_headers,
         )

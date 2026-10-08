@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from app.core.database import async_db_session
 from app.core.exceptions import CustomException
-from app.plugin.module_ai.provider.service import _mask, build_headers
+from app.plugin.module_ai.models.service import _mask, build_headers
 
 from .model import AiProviderModel
 
@@ -132,7 +132,7 @@ class AiProviderService:
         """把供应商的远端模型一键导入为模型配置（自动去重）。"""
         from sqlalchemy import select as _select
 
-        from app.plugin.module_ai.provider.model import AiModelModel
+        from app.plugin.module_ai.models.model import AiModelModel
 
         p = await cls._load(provider_id)
         remote = await cls.remote_models(provider_id)

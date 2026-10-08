@@ -83,7 +83,7 @@ class _FakeClient:
 def test_run_assistant_tool_loop(monkeypatch):
     """run_assistant 由 Agno Agent 驱动：替换 build_agent 产出带工具执行结果的假 agent。"""
     import app.plugin.module_ai.agno_tools.agent_factory as af
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     async def _runtime(usage=None):
         return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
@@ -130,7 +130,7 @@ def test_assistant_stream_rag(monkeypatch, test_client, auth_headers):
     from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunStartedEvent
 
     from app.plugin.module_ai.knowledge import service as kb_service
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     async def _fake_search(kb_ids, query, top_k=5):
         return [

@@ -1544,7 +1544,7 @@ class AiKnowledgeService:
         """
         # 先尝试 LLM（OpenAI 兼容 /chat/completions）
         try:
-            from app.plugin.module_ai.provider.service import (
+            from app.plugin.module_ai.models.service import (
                 AiModelService,
                 build_headers,
             )

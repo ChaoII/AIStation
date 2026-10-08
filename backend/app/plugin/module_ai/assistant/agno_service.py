@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from app.core.exceptions import CustomException
-from app.plugin.module_ai.provider.service import AiModelService
+from app.plugin.module_ai.models.service import AiModelService
 
 
 def _sse(event) -> str:

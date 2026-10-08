@@ -11,7 +11,7 @@ from app.core.router_class import OperationLogRoute
 from .schema import AiModelCreateSchema, AiModelTestSchema, AiModelUpdateSchema
 from .service import AiModelService
 
-AiModelRouter = APIRouter(route_class=OperationLogRoute, prefix="/model", tags=["AI-模型配置"])
+AiModelRouter = APIRouter(route_class=OperationLogRoute, prefix="/models", tags=["AI-模型配置"])
 
 
 @AiModelRouter.get("/list", summary="大模型配置列表")

@@ -1,6 +1,6 @@
 import request from "@/utils/request";
 
-const API_PATH = "/ai/model";
+const API_PATH = "/ai/models";
 
 export function getAiModelList(params?: any) {
   return request({ url: `${API_PATH}/list`, method: "get", params });

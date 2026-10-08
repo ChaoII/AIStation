@@ -10,7 +10,7 @@ import inspect
 import json
 
 from app.core.exceptions import CustomException
-from app.plugin.module_ai.provider.service import AiModelService
+from app.plugin.module_ai.models.service import AiModelService
 
 from .tools import TOOL_REGISTRY
 

@@ -62,7 +62,7 @@ def _make_stream_client(rounds, sink):
 
 
 def _patch_runtime(monkeypatch):
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     async def _runtime(usage=None, model_id=None):
         return {
@@ -290,7 +290,7 @@ def test_agent_run_delegates_to_workflow(monkeypatch, test_client, auth_headers)
     def _nop_runtime(usage=None, model_id=None):
         raise AssertionError("委托工作流时不应再解析模型")
 
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_nop_runtime))
 

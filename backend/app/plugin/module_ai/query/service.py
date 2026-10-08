@@ -1579,7 +1579,7 @@ class AiQueryService:
         try:
             from openai import AsyncOpenAI
 
-            from app.plugin.module_ai.provider.service import build_headers
+            from app.plugin.module_ai.models.service import build_headers
 
             client = AsyncOpenAI(
                 base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
@@ -4132,7 +4132,7 @@ class AiQueryService:
         try:
             from openai import AsyncOpenAI
 
-            from app.plugin.module_ai.provider.service import build_headers
+            from app.plugin.module_ai.models.service import build_headers
 
             client = AsyncOpenAI(
                 base_url=runtime["base_url"], api_key=runtime["api_key"] or "sk-none",
@@ -5773,7 +5773,7 @@ class AiQueryService:
 
     @classmethod
     async def _get_runtime(cls) -> dict:
-        from app.plugin.module_ai.provider.service import AiModelService
+        from app.plugin.module_ai.models.service import AiModelService
 
         runtime = await AiModelService.get_runtime_model("query")
         runtime = runtime or await AiModelService.get_runtime_model("chat")

@@ -99,7 +99,7 @@ class AiOverviewService:
         """系统运行监控（Palantir Observability）：聚合 应用/工作流/模型/Agent/管道 运行状态 + AI 健康。"""
         from app.plugin.module_ai.apps.model import AiAppModel
         from app.plugin.module_ai.workflow.model import AiWorkflowModel
-        from app.plugin.module_ai.provider.model import AiModelModel
+        from app.plugin.module_ai.models.model import AiModelModel
         from app.plugin.module_ai.agent.model import AiAgentModel
         from sqlalchemy import select as _sel, func as _f
         async with async_db_session() as db:
@@ -458,7 +458,7 @@ class AiOverviewService:
     async def stats(cls) -> dict:
         from app.plugin.module_ai.apps.model import AiAppModel
         from app.plugin.module_ai.knowledge.model import AiKnowledgeBaseModel
-        from app.plugin.module_ai.provider.model import AiModelModel
+        from app.plugin.module_ai.models.model import AiModelModel
         from app.plugin.module_ai.providers.model import AiProviderModel
         from app.plugin.module_ai.report.model import AiReportModel
         from app.plugin.module_ai.workflow.model import AiWorkflowModel

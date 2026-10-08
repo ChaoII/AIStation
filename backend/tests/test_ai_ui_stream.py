@@ -39,7 +39,7 @@ def test_extract_openai_messages():
 
 
 def _patch_runtime(monkeypatch):
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     async def _runtime(usage=None, model_id=None):
         return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
@@ -151,7 +151,7 @@ def test_ui_stream_agno_native_tool_then_text(monkeypatch, test_client, auth_hea
 
 def test_ui_stream_no_runtime_model_emits_error(monkeypatch, test_client, auth_headers):
     """未配置运行时模型时应输出 RunError 事件帧。"""
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     async def _none(usage=None, model_id=None):
         return None

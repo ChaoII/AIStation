@@ -24,7 +24,7 @@ class ChatService:
             reset_user_context,
             set_user_context,
         )
-        from app.plugin.module_ai.provider.service import AiModelService
+        from app.plugin.module_ai.models.service import AiModelService
         from app.plugin.module_ai.sessions.service import AiSessionService
 
         uid = getattr(getattr(auth, "user", None), "id", None)

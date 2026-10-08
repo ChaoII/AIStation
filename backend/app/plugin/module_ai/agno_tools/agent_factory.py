@@ -12,7 +12,7 @@ from agno.agent import Agent
 from agno.models.openai.like import OpenAILike
 
 from app.config.setting import settings
-from app.plugin.module_ai.provider.service import build_headers
+from app.plugin.module_ai.models.service import build_headers
 
 #: 助手指令：约束工具使用与回答风格（中文、禁止编造、变更类提议确认）
 AGENT_DESCRIPTION = "你是 AIStation 平台的智能助手，可调用工具查询系统数据、生成报告、导航页面。"

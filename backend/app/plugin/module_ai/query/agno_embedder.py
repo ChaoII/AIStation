@@ -24,7 +24,7 @@ class SmbsEmbedder(Embedder):
 
     @staticmethod
     async def _fetch_runtime(model_id: int | None) -> dict | None:
-        from app.plugin.module_ai.provider.service import AiModelService
+        from app.plugin.module_ai.models.service import AiModelService
 
         runtime = await AiModelService.get_runtime_model(usage="embedding")
         if runtime is None and model_id is not None:
@@ -37,7 +37,7 @@ class SmbsEmbedder(Embedder):
         return cls(runtime=runtime, dimensions=dimensions, model_id=model_id)
 
     def _headers(self) -> dict:
-        from app.plugin.module_ai.provider.service import build_headers
+        from app.plugin.module_ai.models.service import build_headers
 
         base = (self._runtime or {}).get("base_url") or ""
         return {

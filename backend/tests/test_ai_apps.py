@@ -65,7 +65,7 @@ def _make_stream_client(rounds, sink):
 
 
 def _patch_runtime(monkeypatch):
-    from app.plugin.module_ai.provider.service import AiModelService
+    from app.plugin.module_ai.models.service import AiModelService
 
     async def _runtime(usage=None, model_id=None):
         return {
