@@ -145,6 +145,107 @@ class AiLogService:
         }
 
     @classmethod
+    async def console_overview(cls, recent_limit: int = 20) -> dict:
+        """控制台调用概览（全量计数/今日/成功率/7 日趋势/按模型含 tokens·成本/最近明细）。
+
+        调用日志聚合的唯一实现，供 `/overview/stats` 复用，避免与 overview 重复 SQL；
+        职责边界：`logs_center` 独占 `ai_call_logs` 的读取、统计与明细。
+        """
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        since = datetime.now() - timedelta(days=7)
+        async with async_db_session() as db:
+            calls = await db.scalar(
+                select(func.count())
+                .select_from(AiCallLogModel)
+                .where(AiCallLogModel.is_deleted.is_(False))
+            )
+            errors = await db.scalar(
+                select(func.count())
+                .select_from(AiCallLogModel)
+                .where(
+                    AiCallLogModel.is_deleted.is_(False),
+                    AiCallLogModel.result == "error",
+                )
+            )
+            avg_latency = await db.scalar(
+                select(func.avg(AiCallLogModel.latency_ms)).where(
+                    AiCallLogModel.is_deleted.is_(False),
+                    AiCallLogModel.result == "success",
+                )
+            )
+            today = await db.scalar(
+                select(func.count())
+                .select_from(AiCallLogModel)
+                .where(
+                    AiCallLogModel.is_deleted.is_(False),
+                    AiCallLogModel.created_time >= today_start,
+                )
+            )
+            trend_rows = (
+                await db.execute(
+                    select(
+                        func.date(AiCallLogModel.created_time).label("d"),
+                        func.count().label("n"),
+                        func.count().filter(AiCallLogModel.result == "error").label("e"),
+                    )
+                    .where(
+                        AiCallLogModel.is_deleted.is_(False),
+                        AiCallLogModel.created_time >= since,
+                    )
+                    .group_by(func.date(AiCallLogModel.created_time))
+                    .order_by(func.date(AiCallLogModel.created_time))
+                )
+            ).all()
+            by_model_rows = (
+                await db.execute(
+                    select(
+                        AiCallLogModel.model_name,
+                        func.count().label("n"),
+                        func.count().filter(AiCallLogModel.result == "error").label("e"),
+                        func.sum(AiCallLogModel.prompt_tokens).label("pt"),
+                        func.sum(AiCallLogModel.completion_tokens).label("ct"),
+                        func.sum(AiCallLogModel.cost).label("cost"),
+                    )
+                    .where(AiCallLogModel.is_deleted.is_(False))
+                    .group_by(AiCallLogModel.model_name)
+                    .order_by(func.count().desc())
+                )
+            ).all()
+            rows = (
+                await db.execute(
+                    select(AiCallLogModel)
+                    .where(AiCallLogModel.is_deleted.is_(False))
+                    .order_by(desc(AiCallLogModel.id))
+                    .limit(recent_limit)
+                )
+            ).scalars().all()
+        calls = int(calls or 0)
+        errors = int(errors or 0)
+        return {
+            "calls": calls,
+            "errors": errors,
+            "avg_latency_ms": int(avg_latency or 0),
+            "today_calls": int(today or 0),
+            "success_rate": round((calls - errors) / calls, 4) if calls else 0,
+            "trend": [
+                {"date": str(r[0]), "count": int(r[1]), "error": int(r[2])}
+                for r in trend_rows
+            ],
+            "by_model": [
+                {
+                    "name": r[0] or "—",
+                    "count": int(r[1]),
+                    "error": int(r[2]),
+                    "prompt_tokens": int(r[3] or 0),
+                    "completion_tokens": int(r[4] or 0),
+                    "cost": float(r[5] or 0.0),
+                }
+                for r in by_model_rows
+            ],
+            "recent_calls": [_log_dict(r) for r in rows],
+        }
+
+    @classmethod
     async def export(cls, days: int = 30, usage: str | None = None, result: str | None = None) -> list[dict]:
         """导出日志（供前端生成 CSV）。"""
         since = datetime.now() - timedelta(days=max(int(days or 30), 1))

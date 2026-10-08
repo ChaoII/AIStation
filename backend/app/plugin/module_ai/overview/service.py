@@ -456,8 +456,12 @@ class AiOverviewService:
 
     @classmethod
     async def stats(cls) -> dict:
+        # 平台概览统计：AI 实体计数 + 调用概览。
+        # 职责边界：overview 负责平台实体计数与监控/治理；ai_call_logs 的读取、
+        # 统计与明细统一由 logs_center 提供（复用 AiLogService.console_overview），避免重复 SQL。
         from app.plugin.module_ai.apps.model import AiAppModel
         from app.plugin.module_ai.knowledge.model import AiKnowledgeBaseModel
+        from app.plugin.module_ai.logs_center.service import AiLogService
         from app.plugin.module_ai.models.model import AiModelModel
         from app.plugin.module_ai.providers.model import AiProviderModel
         from app.plugin.module_ai.report.model import AiReportModel
@@ -479,21 +483,6 @@ class AiOverviewService:
                     AiReportModel.is_deleted.is_(False)
                 )
             )
-            calls = await db.scalar(
-                select(func.count()).select_from(AiCallLogModel).where(
-                    AiCallLogModel.is_deleted.is_(False)
-                )
-            )
-            errors = await db.scalar(
-                select(func.count()).select_from(AiCallLogModel).where(
-                    AiCallLogModel.is_deleted.is_(False), AiCallLogModel.result == "error"
-                )
-            )
-            avg_latency = await db.scalar(
-                select(func.avg(AiCallLogModel.latency_ms)).where(
-                    AiCallLogModel.is_deleted.is_(False), AiCallLogModel.result == "success"
-                )
-            )
             kbs = await db.scalar(
                 select(func.count()).select_from(AiKnowledgeBaseModel).where(
                     AiKnowledgeBaseModel.is_deleted.is_(False)
@@ -509,91 +498,14 @@ class AiOverviewService:
                     AiWorkflowModel.is_deleted.is_(False)
                 )
             )
-            from datetime import datetime, timedelta
 
-            since = datetime.now() - timedelta(days=7)
-            today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            today = await db.scalar(
-                select(func.count()).select_from(AiCallLogModel).where(
-                    AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= today_start
-                )
-            )
-            trend_rows = (
-                await db.execute(
-                    select(
-                        func.date(AiCallLogModel.created_time).label("d"),
-                        func.count().label("n"),
-                        func.count().filter(AiCallLogModel.result == "error").label("e"),
-                    )
-                    .where(
-                        AiCallLogModel.is_deleted.is_(False),
-                        AiCallLogModel.created_time >= since,
-                    )
-                    .group_by(func.date(AiCallLogModel.created_time))
-                    .order_by(func.date(AiCallLogModel.created_time))
-                )
-            ).all()
-            by_model_rows = (
-                await db.execute(
-                    select(
-                        AiCallLogModel.model_name,
-                        func.count().label("n"),
-                        func.count().filter(AiCallLogModel.result == "error").label("e"),
-                        func.sum(AiCallLogModel.prompt_tokens).label("pt"),
-                        func.sum(AiCallLogModel.completion_tokens).label("ct"),
-                        func.sum(AiCallLogModel.cost).label("cost"),
-                    )
-                    .where(AiCallLogModel.is_deleted.is_(False))
-                    .group_by(AiCallLogModel.model_name)
-                    .order_by(func.count().desc())
-                )
-            ).all()
-            rows = (
-                await db.execute(
-                    select(AiCallLogModel)
-                    .where(AiCallLogModel.is_deleted.is_(False))
-                    .order_by(desc(AiCallLogModel.id))
-                    .limit(20)
-                )
-            ).scalars().all()
-            recent = [
-                {
-                    "id": r.id,
-                    "model_name": r.model_name,
-                    "usage": r.usage,
-                    "latency_ms": r.latency_ms,
-                    "result": r.result,
-                    "error": r.error,
-                    "created_time": r.created_time,
-                }
-                for r in rows
-            ]
-            return {
-                "providers": providers or 0,
-                "models": models or 0,
-                "reports": reports or 0,
-                "calls": calls or 0,
-                "errors": errors or 0,
-                "avg_latency_ms": int(avg_latency or 0),
-                "knowledge_bases": kbs or 0,
-                "apps": apps or 0,
-                "workflows": workflows or 0,
-                "today_calls": int(today or 0),
-                "success_rate": round((calls - errors) / calls, 4) if calls else 0,
-                "trend": [
-                    {"date": str(r[0]), "count": int(r[1]), "error": int(r[2])}
-                    for r in trend_rows
-                ],
-                "by_model": [
-                    {
-                        "name": r[0] or "—",
-                        "count": int(r[1]),
-                        "error": int(r[2]),
-                        "prompt_tokens": int(r[3] or 0),
-                        "completion_tokens": int(r[4] or 0),
-                        "cost": float(r[5] or 0.0),
-                    }
-                    for r in by_model_rows
-                ],
-                "recent_calls": recent,
-            }
+        call = await AiLogService.console_overview()
+        return {
+            "providers": providers or 0,
+            "models": models or 0,
+            "reports": reports or 0,
+            "knowledge_bases": kbs or 0,
+            "apps": apps or 0,
+            "workflows": workflows or 0,
+            **call,
+        }
