@@ -512,6 +512,17 @@
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
           <div class="gov-section">受影响下游（{{ propResult?.affected_count ?? 0 }}）</div>
+          <div v-if="propResult?.affected_tables?.length" class="obj-rel-graph">
+            <svg :width="propLayout.W" :height="propLayout.H" viewBox="0 0 290 200">
+              <g>
+                <line v-for="(e, i) in propLayout.edges" :key="'pe'+i" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" stroke="#909399" stroke-width="1.5" stroke-dasharray="4,2" />
+              </g>
+              <g v-for="n in propLayout.nodes" :key="n.id">
+                <circle :cx="n.x" :cy="n.y" r="7" :fill="n.root ? '#F56C6C' : '#E6A23C'" />
+                <text :x="n.x + 12" :y="n.y + 4" font-size="11" fill="#303133">{{ n.label }}</text>
+              </g>
+            </svg>
+          </div>
           <div v-if="propResult?.affected_tables?.length">
             <el-tag v-for="t in propResult.affected_tables" :key="t" size="small" type="danger" effect="plain" style="margin:0 3px 4px 0">{{ t }}</el-tag>
           </div>
@@ -752,6 +763,48 @@
     <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
       <template #header>
         <div class="ov-usage-row" style="justify-content: space-between">
+          <span>AIP 评测基准与统一审计</span>
+          <span style="font-size:12px;color:var(--el-text-color-secondary)">
+            制品化回归对比 · 跨模块全链路审计
+          </span>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">评测基准（制品化回归）</div>
+          <div class="ov-usage-row" style="margin-bottom:4px">
+            <el-button size="small" type="primary" @click="runBench">运行并固化</el-button>
+            <el-button size="small" :loading="benchLoading" @click="loadBench">刷新</el-button>
+          </div>
+          <div v-if="bench.length">
+            <div v-for="b in bench.slice(0, 8)" :key="b.id" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 3px">
+              <span style="font-size:12px">{{ b.name }} <span style="color:var(--el-text-color-secondary)">· {{ b.total }} 例 · {{ b.time }}</span></span>
+              <el-tag size="small" :type="b.precision >= 0.8 ? 'success' : b.precision >= 0.6 ? 'warning' : 'danger'" effect="plain">{{ (b.precision * 100).toFixed(1) }}%</el-tag>
+            </div>
+          </div>
+          <div v-else class="gov-empty">暂无评测记录</div>
+        </el-col>
+        <el-col :sm="24" :md="12">
+          <div class="gov-section">统一审计（近 {{ unified?.days ?? 7 }} 天）</div>
+          <div v-if="unified" class="ov-usage-row" style="margin-bottom:6px">
+            <el-tag size="small" type="info" effect="plain">AI调用 {{ unified.ai_calls }}</el-tag>
+            <el-tag size="small" type="danger" effect="plain">失败 {{ unified.ai_errors }}</el-tag>
+            <el-tag size="small" type="success" effect="plain">动作 {{ unified.actions }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain">待审批 {{ unified.approvals }}</el-tag>
+          </div>
+          <div v-if="unified?.audit_log?.length">
+            <div v-for="(e, i) in unified.audit_log.slice(0, 8)" :key="i" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 2px">
+              <span style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">{{ e.title }}</span>
+              <el-tag size="small" :type="e.result === 'success' ? 'success' : 'danger'" effect="plain">{{ e.result }}</el-tag>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </el-card>
+
+    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+      <template #header>
+        <div class="ov-usage-row" style="justify-content: space-between">
           <span>AI 能力评估（影子回归）</span>
           <span style="font-size:12px;color:var(--el-text-color-secondary)">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
@@ -866,7 +919,7 @@ import {
   CircleCheck,
   CircleClose,
 } from "@element-plus/icons-vue";
-import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter, getAiActivityTimeline, executeDecision } from "@/api/module_ai/overview";
+import { getAiOverviewStats, runAiEval, getAiHealth, getAiAudit, getAiRuntime, compassSearch, getAiAipControl, getAiCompliancePosture, getAiAnomaly, getAiDecisionCenter, getAiActivityTimeline, executeDecision, runEvalBench, getEvalBenchList, getUnifiedAudit } from "@/api/module_ai/overview";
 import { getAiAgentDashboard } from "@/api/module_ai/agent";
 import { getAutopilot, autopilotExecute } from "@/api/module_ai/query";
 import { getDerivedMetrics, computeDerivedMetric } from "@/api/module_ai/query";
@@ -1028,6 +1081,23 @@ async function runPropagate() {
   catch { propResult.value = null; }
   finally { propLoading.value = false; }
 }
+const propLayout = computed(() => {
+  const root = propResult.value?.root;
+  const affs = (propResult.value?.affected_tables || []).slice(0, 12);
+  const W = 290, H = 200;
+  const nodes: any[] = [];
+  const edges: any[] = [];
+  const rx = 28, ry = H / 2;
+  if (root) nodes.push({ id: root, label: root, x: rx, y: ry, root: true });
+  const cols = 3, colW = 72, rowH = 40;
+  affs.forEach((t: string, i: number) => {
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = 120 + col * colW, y = 24 + row * rowH;
+    nodes.push({ id: t, label: t, x, y });
+    edges.push({ x1: rx, y1: ry, x2: x, y2: y });
+  });
+  return { W, H, nodes, edges };
+});
 const dqRules = ref<any[]>([]);
 const dqRunResult = ref<any>(null);
 const dqRunKey = ref("");
@@ -1142,6 +1212,27 @@ const lifecycle = ref<any>(null);
 async function loadLifecycle() {
   try { lifecycle.value = (await getObjectLifecycle()).data?.data || null; }
   catch { lifecycle.value = null; }
+}
+const bench = ref<any[]>([]);
+const benchLoading = ref(false);
+async function loadBench() {
+  benchLoading.value = true;
+  try { bench.value = (await getEvalBenchList(30)).data?.data || []; }
+  catch { bench.value = []; }
+  finally { benchLoading.value = false; }
+}
+async function runBench() {
+  try {
+    const samples = [{ input: "今天多少告警", expected_keywords: ["告警"], actual: "今日告警 100 条" }];
+    await runEvalBench(samples, "控制台基准");
+    ElMessage.success("评测已固化");
+    loadBench();
+  } catch (e: any) { ElMessage.error(e?.msg || "评测失败"); }
+}
+const unified = ref<any>(null);
+async function loadUnified() {
+  try { unified.value = (await getUnifiedAudit(7)).data?.data || null; }
+  catch { unified.value = null; }
 }
 async function runCompass() {
   if (!compassKw.value.trim()) { compassResult.value = null; return; }
@@ -1310,6 +1401,8 @@ onMounted(() => {
   loadReport();
   loadHotspots();
   loadLifecycle();
+  loadBench();
+  loadUnified();
   window.addEventListener("resize", resize);
 });
 onBeforeUnmount(() => {

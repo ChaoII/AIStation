@@ -91,6 +91,31 @@ async def decision_execute(
     return SuccessResponse(data=r, msg=r.get("msg", "已执行"))
 
 
+@AiOverviewRouter.post("/eval-bench/run", summary="AIP 评测基准(制品化回归)")
+async def eval_bench_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiOverviewService.eval_bench_run(data.get("samples", []), data.get("name", ""), auth)
+    return SuccessResponse(data=r, msg="评测完成")
+
+
+@AiOverviewRouter.get("/eval-bench/list", summary="评测基准历史")
+async def eval_bench_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    limit: int = 30,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.eval_bench_list(limit), msg="查询成功")
+
+
+@AiOverviewRouter.get("/unified-audit", summary="跨模块统一审计")
+async def unified_audit(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
+    days: int = 7,
+) -> JSONResponse:
+    return SuccessResponse(data=await AiOverviewService.unified_audit(days), msg="查询成功")
+
+
 @AiOverviewRouter.get("/activity-timeline", summary="统一活动时间线(任务执行历史)")
 async def overview_activity(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],

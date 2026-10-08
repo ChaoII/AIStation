@@ -329,6 +329,82 @@ class AiOverviewService:
         events.sort(key=lambda e: str(e["time"]), reverse=True)
         return {"total": len(events), "events": events[:limit]}
 
+    # ---------------------------------------------------------------- #
+    # AIP 评测基准（制品化回归）
+    # ---------------------------------------------------------------- #
+    @classmethod
+    async def _ensure_eval_bench_table(cls, db) -> None:
+        from sqlalchemy import text as _t
+        dialect = (db.bind.dialect.name if db.bind else "")
+        if dialect == "postgresql":
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_eval_bench ("
+                "id BIGSERIAL PRIMARY KEY, name VARCHAR(128), precision NUMERIC, "
+                "total INTEGER, operator TEXT, created_time TIMESTAMP)"))
+        else:
+            await db.execute(_t(
+                "CREATE TABLE IF NOT EXISTS ai_eval_bench ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, precision REAL, "
+                "total INTEGER, operator TEXT, created_time TEXT)"))
+
+    @classmethod
+    async def eval_bench_run(cls, samples: list[dict], name: str, auth=None) -> dict:
+        """运行评测并固化结果（制品化），支持多次对比。"""
+        from datetime import datetime
+        result = await cls.run_eval(samples)
+        operator = str(getattr(getattr(auth, "user", None), "id", ""))
+        async with async_db_session.begin() as db:
+            await cls._ensure_eval_bench_table(db)
+            from sqlalchemy import text as _t
+            await db.execute(_t(
+                "INSERT INTO ai_eval_bench(name,precision,total,operator,created_time) "
+                "VALUES (:n,:p,:t,:o,:now)"),
+                {"n": name or "默认基准", "p": result["precision"], "t": result["total"],
+                 "o": operator, "now": datetime.now()})
+        return {"ok": True, "name": name or "默认基准",
+                "precision": result["precision"], "total": result["total"]}
+
+    @classmethod
+    async def eval_bench_list(cls, limit: int = 30) -> list[dict]:
+        async with async_db_session.begin() as db:
+            await cls._ensure_eval_bench_table(db)
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+            rows = (await db.execute(_t(
+                "SELECT id,name,precision,total,operator,created_time FROM ai_eval_bench "
+                "ORDER BY id DESC LIMIT :n"), {"n": max(1, min(limit, 100))})).fetchall()
+        return [{"id": r[0], "name": r[1], "precision": float(r[2] or 0),
+                 "total": r[3], "operator": r[4] or "", "time": str(r[5]) if r[5] else ""}
+                for r in rows]
+
+    @classmethod
+    async def unified_audit(cls, days: int = 7) -> dict:
+        """跨模块统一审计：AI 调用 / 动作写回 / 本体发布 / 审批 / 敏感扫描 全链路一处看。"""
+        from datetime import datetime, timedelta
+        from sqlalchemy import func as _f, select as _sel
+        since = datetime.utcnow() - timedelta(days=max(1, days))
+        async with async_db_session() as db:
+            ai_calls = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
+                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since))).scalar() or 0
+            ai_errs = (await db.execute(_sel(_f.count()).select_from(AiCallLogModel).where(
+                AiCallLogModel.is_deleted.is_(False), AiCallLogModel.created_time >= since,
+                AiCallLogModel.result == "error"))).scalar() or 0
+            actions = 0; approvals = 0; publishes = 0; sens_scans = 0
+            try:
+                from sqlalchemy import text as _t
+                actions = (await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_action WHERE is_deleted=0")).scalar() or 0)
+                approvals = (await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_action_log WHERE is_deleted=0 AND result='pending'")).scalar() or 0)
+                publishes = (await db.execute(_t(
+                    "SELECT COUNT(*) FROM ai_ont_version WHERE is_deleted=0 AND status='pending'")).scalar() or 0)
+            except Exception:  # noqa: BLE001
+                pass
+        return {"days": days, "ai_calls": int(ai_calls), "ai_errors": int(ai_errs),
+                "actions": int(actions), "approvals": int(approvals),
+                "publishes": int(publishes),
+                "audit_log": (await cls.activity_timeline(days, 30))["events"]}
+
     @classmethod
     async def add_log(
         cls,

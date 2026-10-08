@@ -134,6 +134,13 @@ class TestAiEval:
             assert "title" in dec and "reason" in dec and "pri" in dec
         ex = asyncio.run(AiOverviewService.decision_execute("autopilot"))
         assert "ok" in ex and "msg" in ex
+        br = asyncio.run(AiOverviewService.eval_bench_run(
+            [{"input": "x", "expected_keywords": ["a"], "actual": "a b"}], "pytest基准"))
+        assert "ok" in br and "precision" in br
+        bl = asyncio.run(AiOverviewService.eval_bench_list(10))
+        assert isinstance(bl, list)
+        ua = asyncio.run(AiOverviewService.unified_audit(7))
+        assert "ai_calls" in ua and "audit_log" in ua and "approvals" in ua
 
     def test_activity_timeline(self):
         from app.plugin.module_ai.overview.service import AiOverviewService

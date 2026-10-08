@@ -33,6 +33,15 @@ export function getAiDecisionCenter() {
 export function executeDecision(key: string) {
   return request({ url: "/ai/overview/decision/execute", method: "post", data: { key } });
 }
+export function runEvalBench(samples: any[], name: string) {
+  return request({ url: "/ai/overview/eval-bench/run", method: "post", data: { samples, name } });
+}
+export function getEvalBenchList(limit = 30) {
+  return request({ url: "/ai/overview/eval-bench/list", method: "get", params: { limit } });
+}
+export function getUnifiedAudit(days = 7) {
+  return request({ url: "/ai/overview/unified-audit", method: "get", params: { days } });
+}
 export function getAiActivityTimeline(days = 7, limit = 60) {
   return request({ url: "/ai/overview/activity-timeline", method: "get", params: { days, limit } });
 }
