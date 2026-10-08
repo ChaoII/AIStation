@@ -549,7 +549,7 @@ async def analyze_ontology() -> dict:
     pk_obj = {p[0] for p in props if p[1] or p[2]}          # required/unique 视为主键候选
     no_pk = [c for c in obj_codes if c not in pk_obj]
     isolated = [c for c in obj_codes if degree[c]["in"] == 0 and degree[c]["out"] == 0]
-    card_dist = Counter((l[2] or "many_to_one") for l in links)
+    card_dist = Counter((lk[2] or "many_to_one") for lk in links)
 
     adj = defaultdict(set)
     for s, t, _c in links:

@@ -883,8 +883,13 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="capForm.type" style="width: 100%">
-            <el-option label="问数 query" value="query" />
+            <el-option label="本体函数 function" value="function" />
+            <el-option label="对象动作 action" value="action" />
             <el-option label="接地 grounding" value="grounding" />
+            <el-option label="问数 query" value="query" />
+            <el-option label="数据治理 governance" value="governance" />
+            <el-option label="知识 knowledge" value="knowledge" />
+            <el-option label="技能 skill" value="skill" />
             <el-option label="应用 app" value="app" />
             <el-option label="通用 generic" value="generic" />
           </el-select>
