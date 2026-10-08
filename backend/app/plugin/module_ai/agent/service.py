@@ -27,6 +27,27 @@ async def _cap_names(caps: list[str]) -> list[str]:
         return caps
 
 
+async def _cap_types(caps: list[str]) -> set[str]:
+    """本体能力 code → type（驱动工具分组：governance 等）。"""
+    if not caps:
+        return set()
+    try:
+        async with async_db_session() as db:
+            from sqlalchemy import text as _t
+
+            rows = (
+                await db.execute(
+                    _t(
+                        "SELECT type FROM ai_ont_capability WHERE code = ANY(:codes) AND is_deleted=false"
+                    ),
+                    {"codes": caps},
+                )
+            ).fetchall()
+        return {str(r[0]) for r in rows if r[0]}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def _to_dict(a: AiAgentModel) -> dict:
     return {
         "id": a.id,
@@ -362,6 +383,10 @@ class AiAgentService:
             # 注入本体能力（Agent 能力来自本体）：真实能力清单 + 可按需调用的工具
             caps = agent.get("capabilities") or []
             ont_enabled = bool(caps)
+            gov_enabled = False
+            if caps:
+                cap_types = await _cap_types(caps)
+                gov_enabled = "governance" in cap_types
             if ont_enabled:
                 from app.plugin.module_ai.ontology.agent_tools import ontology_catalog_text
 
@@ -410,15 +435,26 @@ class AiAgentService:
                 from app.plugin.module_ai.ontology.agent_tools import ONTOLOGY_TOOL_SCHEMAS
 
                 tool_schemas = list(tool_schemas) + ONTOLOGY_TOOL_SCHEMAS
+            # 数据治理能力：把 DQ/数据域/血缘/权限 作为工具并入
+            if gov_enabled:
+                from app.plugin.module_ai.query.agent_tools import GOVERNANCE_TOOL_SCHEMAS
+
+                tool_schemas = list(tool_schemas) + GOVERNANCE_TOOL_SCHEMAS
 
             async def _dispatch(name: str, args: dict, user_id: int | None):
                 from app.plugin.module_ai.ontology.agent_tools import (
                     ONTOLOGY_TOOL_NAMES,
                     run_ontology_tool,
                 )
+                from app.plugin.module_ai.query.agent_tools import (
+                    GOVERNANCE_TOOL_NAMES,
+                    run_governance_tool,
+                )
 
                 if name in ONTOLOGY_TOOL_NAMES:
                     return await run_ontology_tool(name, args, user_id)
+                if name in GOVERNANCE_TOOL_NAMES:
+                    return await run_governance_tool(name, args, user_id)
                 from app.plugin.module_ai.apps.service import _run_app_tool
 
                 return await _run_app_tool(name, args, user_id, http_tools)
