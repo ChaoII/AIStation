@@ -4,9 +4,6 @@
 
     <!-- 设置面板 - 独立于布局组件 -->
     <Settings v-if="isShowSettings" />
-
-    <!-- 全局 AI 悬浮助手 -->
-    <FloatingAssistant />
   </div>
 </template>
 
@@ -17,7 +14,6 @@ import LeftLayout from "./views/LeftLayout.vue";
 import TopLayout from "./views/TopLayout.vue";
 import MixLayout from "./views/MixLayout.vue";
 import Settings from "./components/Settings/index.vue";
-import FloatingAssistant from "@/components/FloatingAssistant/index.vue";
 import { LayoutMode } from "@/enums/settings/layout.enum";
 
 const { currentLayout, isShowSettings } = useLayout();
