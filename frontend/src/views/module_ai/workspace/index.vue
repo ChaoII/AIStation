@@ -1,11 +1,11 @@
 <!-- AI 工作台：Palantir Foundry 式支柱入口（数据资产 / 本体 / 数据与集成 / 无代码应用 / 治理 / 智能体） -->
 <template>
   <div class="app-container ai-mod ai-workspace-page">
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="pillar-grid">
       <el-col v-if="loading" :span="24">
         <el-skeleton :rows="5" animated />
       </el-col>
-      <el-col v-for="p in pillars" :key="p.route" :xs="24" :sm="12" :md="8">
+      <el-col v-for="p in pillars" :key="p.route" :xs="24" :sm="12" :md="8" :lg="8" :xl="8">
         <el-card
           shadow="hover"
           class="pillar-card"
@@ -142,7 +142,12 @@ onMounted(load);
 
 <style scoped lang="scss">
 .ai-workspace-page {
-  padding: 12px;
+  max-width: 1200px;
+  padding: 16px;
+  margin: 0 auto;
+}
+.pillar-grid {
+  align-content: flex-start;
 }
 .pillar-card {
   margin-bottom: 16px;
@@ -193,5 +198,15 @@ onMounted(load);
 .pillar-card__enter {
   margin-top: 12px;
   width: 100%;
+}
+</style>
+
+<style lang="scss">
+/* 覆盖全局 .app-container 的 flex 布局：避免 el-row 被拉伸到整屏高、
+   其 flex 行 align-content:stretch 把两行卡片撑开（AGENTS.md flex 陷阱）。 */
+.app-container.ai-workspace-page {
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
 }
 </style>
