@@ -234,99 +234,63 @@ async def run_agent_ui_stream(
 
 
 async def run_assistant(message: str, auth, knowledge_ids: list[int] | None = None) -> dict:
-    runtime = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
-    if not runtime:
+    """用 Agno Agent 驱动一轮对话（非流式），工具调用由 Agno 统一执行。
+
+    返回结构与既有前端/API 兼容：``reply`` / ``tool_calls`` / ``action`` /
+    ``report_id`` / ``sources``。
+    其中 ``reply`` 为 Agno 最终正文；``action`` / ``report_id`` 从工具结果里的
+    ``__action__`` / ``__report_id__`` 提取（与旧实现一致）。
+    """
+    from app.plugin.module_ai.agno_tools.agent_factory import build_agent
+    from app.plugin.module_ai.agno_tools.business import reset_user_context, set_user_context
+    from app.plugin.module_ai.assistant.service import retrieve_kb_rag
+
+    model_config = await AiModelService.get_runtime_model("chat") or await AiModelService.get_runtime_model()
+    if not model_config:
         raise CustomException(msg="未配置大模型，请在 AI 管理→模型配置 中添加并启用")
 
-    from openai import AsyncOpenAI
-
-    from app.plugin.module_ai.provider.service import build_headers
-    from app.plugin.module_ai.tools_catalog.service import dispatch_tool
-
-    client = AsyncOpenAI(
-        base_url=runtime["base_url"],
-        api_key=runtime["api_key"] or "sk-none",
-        default_headers=build_headers(
-            runtime["base_url"], runtime.get("extra_headers"), "aistation-assistant"
-        ),
-    )
-    tool_schemas = await _load_tool_schemas()
+    user_id = getattr(getattr(auth, "user", None), "id", None)
     kb_ctx, sources = "", []
     if knowledge_ids:
         kb_ctx, sources = await retrieve_kb_rag(knowledge_ids, message)
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if kb_ctx:
-        messages.append({"role": "system", "content": f"参考知识：\n{kb_ctx}"})
-    messages.append({"role": "user", "content": message})
-    tool_log: list[dict] = []
+
+    token = set_user_context(user_id)
+    try:
+        agent = build_agent(model_config=model_config, user_id=user_id)
+        input_text = f"【参考知识】\n{kb_ctx}\n\n问题：{message}" if kb_ctx else message
+        resp = await agent.arun(
+            input_text,
+            stream=False,
+            user_id=str(user_id) if user_id is not None else None,
+            add_history_to_context=True,
+        )
+    finally:
+        reset_user_context(token)
+
+    reply = resp.get_content_as_string() if hasattr(resp, "get_content_as_string") else str(resp.content or "")
+
+    # 从工具执行结果提取 action / report_id（兼容旧协议字段）
     action = None
     report_id = None
-    user_id = getattr(getattr(auth, "user", None), "id", None)
-
-    for _ in range(MAX_ROUNDS):
-        # 无工具 schema 时不传 tools/tool_choice（与 run_agent_ui_stream 对齐），
-        # 避免部分 provider 对空 tools 直接返回 400
-        kwargs: dict = {
-            "model": runtime["model"],
-            "messages": messages,
-            "temperature": runtime["temperature"],
-            "max_tokens": runtime["max_tokens"],
-        }
-        if tool_schemas:
-            kwargs["tools"] = tool_schemas
-            kwargs["tool_choice"] = "auto"
+    tool_log: list[dict] = []
+    for tool in (resp.tools or []):
+        name = getattr(tool, "tool_name", None)
+        args = getattr(tool, "tool_args", None) or {}
+        result = getattr(tool, "result", None)
         try:
-            resp = await client.chat.completions.create(**kwargs)
-        except Exception as e:
-            raise CustomException(msg=f"大模型调用失败：{e}")
-
-        msg = resp.choices[0].message
-        if not getattr(msg, "tool_calls", None):
-            return {
-                "reply": msg.content or "",
-                "tool_calls": tool_log,
-                "action": action,
-                "report_id": report_id,
-                "sources": sources,
-            }
-
-        messages.append(
-            {
-                "role": "assistant",
-                "content": msg.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in msg.tool_calls
-                ],
-            }
-        )
-        for tc in msg.tool_calls:
-            name = tc.function.name
-            try:
-                args = json.loads(tc.function.arguments or "{}")
-            except Exception:
-                args = {}
-            result = await dispatch_tool(name, args, user_id)
-            if isinstance(result, dict):
-                if result.get("__action__"):
-                    action = result["__action__"]
-                if result.get("__report_id__"):
-                    report_id = result["__report_id__"]
-            tool_log.append({"name": name, "args": args, "result": result})
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(result, ensure_ascii=False, default=str)[:4000],
-                }
-            )
+            if isinstance(result, str):
+                result = json.loads(result)
+        except (ValueError, TypeError):
+            pass
+        if isinstance(result, dict):
+            if result.get("__action__"):
+                action = result["__action__"]
+            if result.get("__report_id__"):
+                report_id = result["__report_id__"]
+        tool_log.append({"name": name, "args": args, "result": result})
 
     return {
-        "reply": "工具调用次数已达上限，请缩小问题范围后重试。",
+        "reply": reply,
         "tool_calls": tool_log,
         "action": action,
         "report_id": report_id,

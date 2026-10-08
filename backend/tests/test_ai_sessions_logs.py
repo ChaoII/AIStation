@@ -77,6 +77,30 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
 
 
+def _patch_build_agent(monkeypatch, content: str = "助手回复", boom: bool = False):
+    """替换 build_agent，产出带指定正文的 Agno 原生事件流（可选中途抛错）。"""
+    from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunStartedEvent
+
+    async def _agen():
+        yield RunStartedEvent(event=RunEvent.run_started.value, model="m")
+        yield RunContentEvent(event=RunEvent.run_content.value, content=content)
+        if boom:
+            raise RuntimeError("stream boom")
+        yield RunCompletedEvent(event=RunEvent.run_completed.value, content=content)
+
+    class _FakeAgent:
+        @property
+        def tools(self):
+            return []
+
+        def arun(self, *a, **k):
+            return _agen()
+
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    monkeypatch.setattr(af, "build_agent", lambda **k: _FakeAgent())
+
+
 def _make_raising_stream_client(chunks):
     """构造假 AsyncOpenAI：产出给定分片后抛异常，模拟流中途失败。"""
 
@@ -142,12 +166,9 @@ def test_stream_with_session_id_persists_two_messages(
     monkeypatch, test_client, auth_headers
 ):
     """传 session_id 跑一次流式：落 user + assistant 两条消息并累加数量。"""
-    import openai
-
     session_id = _create_session(test_client, auth_headers, "pytest 流式会话")
-    rounds = [[_FakeChunk(_FakeDelta(content="助手回复"))]]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
     _patch_runtime(monkeypatch)
+    _patch_build_agent(monkeypatch, content="助手回复")
 
     try:
         r = test_client.post(
@@ -161,8 +182,9 @@ def test_stream_with_session_id_persists_two_messages(
             headers=auth_headers,
         )
         assert r.status_code == 200, r.text
-        assert '"type": "text-delta"' in r.text
-        assert "data: [DONE]" in r.text
+        assert "event: RunContent" in r.text
+        # format_sse_event 用 to_json(separators=(",",":"))，JSON 无空格
+        assert '"content":"助手回复"' in r.text
 
         detail = test_client.get(
             f"/api/v1/ai/sessions/detail/{session_id}", headers=auth_headers
@@ -235,11 +257,8 @@ def test_app_stream_with_session_id_persists(monkeypatch, test_client, auth_head
 
 def test_stream_without_session_id_does_not_persist(monkeypatch, test_client, auth_headers):
     """不传 session_id 时行为不变：不产生任何会话记录（回归保护）。"""
-    import openai
-
-    rounds = [[_FakeChunk(_FakeDelta(content="无会话回复"))]]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
     _patch_runtime(monkeypatch)
+    _patch_build_agent(monkeypatch, content="无会话回复")
 
     before = test_client.get("/api/v1/ai/sessions/list", headers=auth_headers).json()["data"]
     r = test_client.post(
@@ -254,25 +273,20 @@ def test_stream_without_session_id_does_not_persist(monkeypatch, test_client, au
 
 def test_stream_error_still_persists_exchange(monkeypatch, test_client, auth_headers):
     """流中途异常（如工具/解析/连接失败）：已流出的 user/assistant 文本仍落库，不丢会话。"""
-    import openai
-
-    from app.plugin.module_ai.assistant.service import run_assistant_ui_stream
+    from app.plugin.module_ai.assistant.agno_service import run_agno_stream
     from app.plugin.module_ai.sessions.service import AiSessionService
 
     session_id = _create_session(test_client, auth_headers, "pytest 异常兜底")
-    monkeypatch.setattr(
-        openai,
-        "AsyncOpenAI",
-        _make_raising_stream_client([_FakeChunk(_FakeDelta(content="部分回复"))]),
-    )
     _patch_runtime(monkeypatch)
+    _patch_build_agent(monkeypatch, content="部分回复", boom=True)
 
     try:
 
         async def _flow():
-            agen = run_assistant_ui_stream(
-                [{"role": "user", "parts": [{"type": "text", "text": "你好"}]}],
-                SimpleNamespace(user=SimpleNamespace(id=1)),
+            agen = run_agno_stream(
+                messages=[{"role": "user", "parts": [{"type": "text", "text": "你好"}]}],
+                auth=SimpleNamespace(user=SimpleNamespace(id=1)),
+                user_id=1,
                 session_id=session_id,
             )
             try:

@@ -9,8 +9,9 @@ from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
 from app.plugin.module_ai.overview.service import AiOverviewService
 
+from .agno_service import run_agno_stream
 from .schema import AssistantChatSchema, AssistantUIStreamSchema
-from .service import run_assistant, run_assistant_ui_stream
+from .service import run_assistant
 
 AssistantRouter = APIRouter(
     route_class=OperationLogRoute, prefix="/assistant", tags=["AI-智能助手"]
@@ -39,22 +40,30 @@ async def assistant_chat(
     return SuccessResponse(data=result, msg="成功")
 
 
-@AssistantRouter.post("/stream", summary="AI 助手对话（AI SDK UI Message Stream）")
+@AssistantRouter.post("/stream", summary="AI 助手对话（Agno 原生事件流）")
 async def assistant_stream(
     data: AssistantUIStreamSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:assistant:query"]))],
 ) -> StreamingResponse:
 
-    from app.plugin.module_ai.streaming import ui_stream_response
+    from app.plugin.module_ai.assistant.agno_service import agno_stream_response
 
     async def _gen():
         try:
-            async for item in run_assistant_ui_stream(
-                data.messages, auth, data.session_id, data.knowledge_ids, data.model_id
+            uid = getattr(getattr(auth, "user", None), "id", None)
+            async for item in run_agno_stream(
+                messages=data.messages,
+                auth=auth,
+                user_id=uid,
+                session_id=data.session_id,
+                knowledge_ids=data.knowledge_ids,
+                model_id=data.model_id,
             ):
                 yield item
         except Exception:  # noqa: BLE001
-            # 日志已在 run_assistant_ui_stream 的 finally 落库，这里仅透传异常
-            raise
+            # 异常以 Agno 原生 error 帧透出，避免 SSE 悬空
+            from app.plugin.module_ai.assistant.agno_service import agno_error_frame
 
-    return ui_stream_response(_gen())
+            yield agno_error_frame("运行失败")
+
+    return agno_stream_response(_gen())

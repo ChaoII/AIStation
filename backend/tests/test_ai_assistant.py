@@ -81,17 +81,42 @@ class _FakeClient:
 
 
 def test_run_assistant_tool_loop(monkeypatch):
-    import openai
-
-    monkeypatch.setattr(openai, "AsyncOpenAI", _FakeClient)
-    # 让运行时模型可用
-    import app.plugin.module_ai.assistant.service as S
+    """run_assistant 由 Agno Agent 驱动：替换 build_agent 产出带工具执行结果的假 agent。"""
+    import app.plugin.module_ai.agno_tools.agent_factory as af
     from app.plugin.module_ai.provider.service import AiModelService
 
     async def _runtime(usage=None):
         return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
 
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
+
+    class _RunOutput:
+        content = "已为你打开报告页"
+
+        tools = [
+            type(
+                "ToolExec",
+                (),
+                {
+                    "tool_name": "navigate",
+                    "tool_args": {"path": "/ai/report", "reason": "t"},
+                    "result": json.dumps(
+                        {"__action__": {"type": "navigate", "path": "/ai/report", "label": "AI 报告", "reason": "t"}}
+                    ),
+                },
+            )()
+        ]
+
+        def get_content_as_string(self):
+            return self.content
+
+    class _FakeAgent:
+        async def arun(self, *a, **k):
+            return _RunOutput()
+
+    monkeypatch.setattr(af, "build_agent", lambda **k: _FakeAgent())
+
+    import app.plugin.module_ai.assistant.service as S
 
     auth = SimpleNamespace(user=SimpleNamespace(id=1))
     out = asyncio.run(S.run_assistant("打开报告页", auth))
@@ -101,8 +126,8 @@ def test_run_assistant_tool_loop(monkeypatch):
 
 
 def test_assistant_stream_rag(monkeypatch, test_client, auth_headers):
-    """AI 助手流式接入知识库 RAG：透出 sources 引用帧并把知识上下文注入 system。"""
-    import openai
+    """AI 助手流式接入知识库 RAG（Agno 原生流）：知识上下文注入 + 正文正常输出。"""
+    from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunStartedEvent
 
     from app.plugin.module_ai.knowledge import service as kb_service
     from app.plugin.module_ai.provider.service import AiModelService
@@ -122,41 +147,30 @@ def test_assistant_stream_rag(monkeypatch, test_client, auth_headers):
 
     sent: list[dict] = []
 
-    class _Delta:
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
-
-    class _Chunk:
-        def __init__(self, delta):
-            self.choices = [SimpleNamespace(delta=delta)]
-
-    class _Completions:
-        def __init__(self):
-            self.calls = 0
-
-        async def create(self, **kwargs):
-            sent.append(kwargs)
-            self.calls += 1
-
-            async def _gen():
-                yield _Chunk(_Delta(content="好的，AIStation 是开源平台。"))
-
-            return _gen()
-
-    class _Chat:
-        def __init__(self):
-            self.completions = _Completions()
-
-    class _Client:
-        def __init__(self, *a, **k):
-            self.chat = _Chat()
-
-    monkeypatch.setattr(openai, "AsyncOpenAI", _Client)
-
     async def _runtime(usage=None):
         return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
 
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
+
+    captured: dict = {}
+
+    async def _agen():
+        yield RunStartedEvent(event=RunEvent.run_started.value, model="m")
+        yield RunContentEvent(event=RunEvent.run_content.value, content="好的，AIStation 是开源平台。")
+        yield RunCompletedEvent(event=RunEvent.run_completed.value, content="好的，AIStation 是开源平台。")
+
+    class _FakeAgent:
+        @property
+        def tools(self):
+            return []
+
+        def arun(self, *a, **k):
+            captured["input"] = a[0] if a else None
+            return _agen()
+
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    monkeypatch.setattr(af, "build_agent", lambda **k: _FakeAgent())
 
     r = test_client.post(
         "/api/v1/ai/assistant/stream",
@@ -168,11 +182,9 @@ def test_assistant_stream_rag(monkeypatch, test_client, auth_headers):
     )
     assert r.status_code == 200, r.text
     body = r.text
-    assert '"type": "sources"' in body
-    assert "doc.txt" in body
-    assert "AIStation 是开源平台" in body
-    assert "好的，AIStation" in body
-    # 知识库上下文已作为 system 消息注入（含来源前缀）
-    sys_ctx = sent[0]["messages"][1]["content"]
-    assert "参考知识" in sys_ctx
-    assert "AIStation 是开源平台" in sys_ctx
+    assert "event: RunStarted" in body
+    assert "event: RunContent" in body
+    assert "event: RunCompleted" in body
+    # 知识库上下文已注入输入文本（含来源）
+    assert "参考知识" in captured["input"]
+    assert "AIStation 是开源平台" in captured["input"]
