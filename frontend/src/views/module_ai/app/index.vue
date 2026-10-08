@@ -17,11 +17,20 @@
           @add="handleOpenDialog()"
           @delete="onToolbar('delete')"
         />
-        <el-dropdown v-if="appTemplates.length" @command="createFromTemplate" style="margin-left: 8px">
-          <el-button size="small">从模板创建<el-icon style="margin-left:4px"><ArrowDown /></el-icon></el-button>
+        <el-dropdown
+          v-if="appTemplates.length"
+          style="margin-left: 8px"
+          @command="createFromTemplate"
+        >
+          <el-button size="small">
+            从模板创建
+            <el-icon style="margin-left: 4px"><ArrowDown /></el-icon>
+          </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="t in appTemplates" :key="t.key" :command="t">{{ t.name }}（{{ t.app_type }}）</el-dropdown-item>
+              <el-dropdown-item v-for="t in appTemplates" :key="t.key" :command="t">
+                {{ t.name }}（{{ t.app_type }}）
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -424,6 +433,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { Auth } from "@/utils/auth";
+import { readAgnoFrames } from "@/composables/ai/agnoSse";
 import { Delete, Plus, ArrowDown } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
 import PageSearch from "@/components/CURD/PageSearch.vue";
@@ -517,14 +527,19 @@ const kbOptions = ref<any[]>([]);
 const wfOptions = ref<any[]>([]);
 const appTemplates = ref<any[]>([]);
 async function loadAppTemplates() {
-  try { appTemplates.value = (await getAiAppTemplates()).data?.data || []; }
-  catch { appTemplates.value = []; }
+  try {
+    appTemplates.value = (await getAiAppTemplates()).data?.data || [];
+  } catch {
+    appTemplates.value = [];
+  }
 }
 async function createFromTemplate(tpl: any) {
   try {
     const r = await createAiAppFromTemplate(tpl.key, tpl.name);
     ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
-  } catch (e: any) { ElMessage.error(e?.msg || "创建失败"); }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "创建失败");
+  }
 }
 
 const dialogVisible = ref(false);
@@ -841,30 +856,13 @@ async function runDebug() {
       }),
     });
     if (!resp.ok || !resp.body) throw new Error("请求失败");
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() || "";
-      for (const line of lines) {
-        const s = line.trim();
-        if (!s.startsWith("data: ")) continue;
-        try {
-          const evt = JSON.parse(s.slice(6));
-          if (evt.type === "text-delta") runAnswer.value += evt.delta || "";
-          else if (evt.type === "error")
-            runAnswer.value += `\n[错误] ${evt.error || evt.message || ""}`;
-          else if (evt.type === "text") runAnswer.value += evt.text || "";
-          else if (evt.type === "finish") {
-            if (evt.payload?.reply) runAnswer.value += evt.payload.reply;
-          }
-        } catch {
-          // 忽略非 JSON 行
-        }
+    // Agno 原生事件流：正文来自 RunContent，错误来自 RunError
+    for await (const { event, data } of readAgnoFrames(resp)) {
+      if (event === "RunContent") {
+        const text = typeof data.content === "string" ? data.content : "";
+        if (text) runAnswer.value += text;
+      } else if (event === "RunError") {
+        runAnswer.value += `\n[错误] ${data.error || data.message || ""}`;
       }
     }
   } catch (e: any) {

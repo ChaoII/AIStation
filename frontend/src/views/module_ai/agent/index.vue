@@ -65,9 +65,7 @@
             >
               新建智能体
             </el-button>
-            <el-button size="small" :icon="MagicStick" @click="openMarket">
-              模板市场
-            </el-button>
+            <el-button size="small" :icon="MagicStick" @click="openMarket">模板市场</el-button>
           </div>
           <div class="agent-toolbar__right">
             <el-input
@@ -144,7 +142,9 @@
                   技能
                 </el-tag>
                 <el-tooltip
-                  v-if="a.query_enabled || (a.knowledge_ids || []).length || (a.skill_ids || []).length"
+                  v-if="
+                    a.query_enabled || (a.knowledge_ids || []).length || (a.skill_ids || []).length
+                  "
                   content="这些能力来自本体登记（问数/接地/知识库/技能），按本体工具装配、受数据域/ABAC 治理"
                   placement="bottom"
                 >
@@ -470,12 +470,18 @@
           <div class="agent-mkt-head">
             <b>{{ t.name }}</b>
             <el-tag size="small" type="info" effect="plain">{{ t.role }}</el-tag>
-            <div style="flex:1"></div>
+            <div style="flex: 1"></div>
             <el-button type="primary" size="small" @click="applyTemplate(t)">一键创建</el-button>
           </div>
           <div class="agent-mkt-desc">{{ t.description }}</div>
           <div class="agent-mkt-caps">
-            <el-tag v-for="c in t.capabilities || []" :key="c" size="small" effect="plain" type="warning">
+            <el-tag
+              v-for="c in t.capabilities || []"
+              :key="c"
+              size="small"
+              effect="plain"
+              type="warning"
+            >
               {{ c }}
             </el-tag>
           </div>
@@ -992,11 +998,12 @@ import {
   Connection,
 } from "@element-plus/icons-vue";
 import { Auth } from "@/utils/auth";
+import { agnoToolInfo, readAgnoFrames } from "@/composables/ai/agnoSse";
 import {
   getAiAgentList,
   createAiAgent,
-createAgentFromTemplate,
-getAgentTemplates,
+  createAgentFromTemplate,
+  getAgentTemplates,
   updateAiAgent,
   deleteAiAgent,
   getAgentCategoryList,
@@ -1174,7 +1181,8 @@ async function applyTemplate(t: any) {
     ElMessage.error(e?.message || "创建失败");
   }
 }
-function openAgentDialog(a?: any) {  editingAgent.value = a || undefined;
+function openAgentDialog(a?: any) {
+  editingAgent.value = a || undefined;
   if (a) {
     Object.assign(agentForm, {
       ...a,
@@ -1429,28 +1437,9 @@ async function runStudio() {
       }),
     });
     if (!resp.ok || !resp.body) throw new Error(`请求失败：${resp.status}`);
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder("utf-8");
-    let buf = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let idx = buf.indexOf("\n\n");
-      while (idx >= 0) {
-        const block = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 2);
-        if (block.startsWith("data: ")) {
-          const payload = block.slice(6).trim();
-          if (payload === "[DONE]") break;
-          try {
-            handleStudioEvent(JSON.parse(payload));
-          } catch {
-            /* 忽略 */
-          }
-        }
-        idx = buf.indexOf("\n\n");
-      }
+    // Agno 原生事件流：正文 RunContent / 推理 ReasoningContentDelta / 工具 ToolCallStarted
+    for await (const { event, data } of readAgnoFrames(resp)) {
+      handleStudioEvent(event, data);
     }
   } catch (e: any) {
     studioRunText.value = studioRunText.value || `（试跑出错：${e?.message || "未知错误"}）`;
@@ -1458,17 +1447,20 @@ async function runStudio() {
     studioRunning.value = false;
   }
 }
-function handleStudioEvent(evt: any) {
-  const t = evt.type || "";
-  if (t === "reasoning-delta") studioRunReasoning.value += evt.delta || "";
-  else if (t === "text-delta") studioRunText.value += evt.delta || "";
-  else if (t === "tool-input-available") {
-    const n = evt.toolName || "工具";
-    if (!studioRunSteps.value.some((x) => x.name === n)) {
-      studioRunSteps.value.push({ name: n, type: "warning" });
+function handleStudioEvent(event: string, data: Record<string, unknown>) {
+  if (event === "ReasoningContentDelta") {
+    studioRunReasoning.value += (data.reasoning_content as string) || "";
+  } else if (event === "RunContent") {
+    const t = typeof data.content === "string" ? data.content : "";
+    if (t) studioRunText.value += t;
+  } else if (event === "ToolCallStarted") {
+    const info = agnoToolInfo(data);
+    if (!studioRunSteps.value.some((x) => x.name === info.name)) {
+      studioRunSteps.value.push({ name: info.name, type: "warning" });
     }
-  } else if (t === "data-finish") {
-    if (evt.data?.reply) studioRunText.value = studioRunText.value || evt.data.reply;
+  } else if (event === "RunError") {
+    studioRunText.value =
+      studioRunText.value || `（试跑出错：${data.error || data.message || "未知错误"}）`;
   }
 }
 
@@ -1624,28 +1616,9 @@ async function sendAgentChat() {
       }),
     });
     if (!resp.ok || !resp.body) throw new Error(`请求失败：${resp.status}`);
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder("utf-8");
-    let buf = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let idx = buf.indexOf("\n\n");
-      while (idx >= 0) {
-        const block = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 2);
-        if (block.startsWith("data: ")) {
-          const payload = block.slice(6).trim();
-          if (payload === "[DONE]") break;
-          try {
-            handleChatEvent(JSON.parse(payload), asst);
-          } catch {
-            /* 忽略 */
-          }
-        }
-        idx = buf.indexOf("\n\n");
-      }
+    // Agno 原生事件流
+    for await (const { event, data } of readAgnoFrames(resp)) {
+      handleChatEvent(event, data, asst);
     }
   } catch (e: any) {
     asst.content = asst.content || `（出错了：${e?.message || "未知错误"}）`;
@@ -1656,17 +1629,20 @@ async function sendAgentChat() {
     loadChatSessions();
   }
 }
-function handleChatEvent(evt: any, asst: any) {
-  const t = evt.type || "";
-  if (t === "reasoning-delta") asst.think += evt.delta || "";
-  else if (t === "text-delta") asst.content += evt.delta || "";
-  else if (t === "tool-input-available") {
-    asst.tools.push(evt.toolName || "工具");
+function handleChatEvent(event: string, data: Record<string, unknown>, asst: any) {
+  if (event === "ReasoningContentDelta") {
+    asst.think += (data.reasoning_content as string) || "";
+  } else if (event === "RunContent") {
+    const t = typeof data.content === "string" ? data.content : "";
+    if (t) asst.content += t;
+  } else if (event === "ToolCallStarted") {
+    const info = agnoToolInfo(data);
+    asst.tools.push(info.name);
     chatScroll();
-  } else if (t === "data-finish") {
-    if (evt.data?.reply) asst.content = asst.content || evt.data.reply;
+  } else if (event === "RunError") {
+    asst.content = asst.content || `（出错了：${data.error || data.message || "未知错误"}）`;
   }
-  if (t === "text-delta" || t === "reasoning-delta") chatScroll();
+  if (event === "RunContent" || event === "ReasoningContentDelta") chatScroll();
 }
 // 工具名 → 图标（能力节点可视化）
 function toolIcon(name: string) {
@@ -1702,39 +1678,23 @@ async function runDebug() {
       body: JSON.stringify({ messages: [{ role: "user", content: runQuery.value }] }),
     });
     if (!resp.ok || !resp.body) throw new Error("请求失败");
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() || "";
-      for (const line of lines) {
-        const s = line.trim();
-        if (!s.startsWith("data: ")) continue;
-        try {
-          const evt = JSON.parse(s.slice(6));
-          if (evt.type === "text-delta") {
-            const last = runAnswer.value[runAnswer.value.length - 1];
-            if (last && last.kind === "text") last.text += evt.delta || "";
-            else runAnswer.value.push({ kind: "text", text: evt.delta || "" });
-          } else if (evt.type === "text") {
-            runAnswer.value.push({ kind: "text", text: evt.text || "" });
-          } else if (evt.type === "tool") {
-            runAnswer.value.push({
-              kind: "tool",
-              text: `${evt.name || "工具"}：${JSON.stringify(evt.args || {})}`,
-            });
-          } else if (evt.type === "error") {
-            runAnswer.value.push({ kind: "error", text: evt.error || evt.message || "" });
-          } else if (evt.type === "finish" && evt.payload?.reply) {
-            runAnswer.value.push({ kind: "text", text: evt.payload.reply });
-          }
-        } catch {
-          /* 忽略非 JSON */
+    // Agno 原生事件流
+    for await (const { event, data } of readAgnoFrames(resp)) {
+      if (event === "RunContent") {
+        const t = typeof data.content === "string" ? data.content : "";
+        if (t) {
+          const last = runAnswer.value[runAnswer.value.length - 1];
+          if (last && last.kind === "text") last.text += t;
+          else runAnswer.value.push({ kind: "text", text: t });
         }
+      } else if (event === "ToolCallCompleted") {
+        const info = agnoToolInfo(data);
+        runAnswer.value.push({
+          kind: "tool",
+          text: `${info.name}：${JSON.stringify(info.args ?? {})}`,
+        });
+      } else if (event === "RunError") {
+        runAnswer.value.push({ kind: "error", text: `${data.error || data.message || ""}` });
       }
     }
   } catch (e: any) {
