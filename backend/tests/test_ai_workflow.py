@@ -68,6 +68,31 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
 
 
+class _WfEv:
+    """假 Agno 事件：``event`` 为字符串值（RunContent / ToolCallStarted ...）。"""
+
+    def __init__(self, event, **kw):
+        self.event = event
+        self.__dict__.update(kw)
+
+
+def _patch_wf_agent(monkeypatch, events, captured=None):
+    """把 ``build_agent`` 替换为产出给定 Agno 事件的假 agent（普通 LLM 节点走 Agno 路径）。"""
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    class _Agent:
+        async def arun(self, *a, **k):
+            for e in events:
+                yield e
+
+    def _factory(**kwargs):
+        if captured is not None:
+            captured.append(kwargs)
+        return _Agent()
+
+    monkeypatch.setattr(af, "build_agent", _factory)
+
+
 def _create_workflow(test_client, auth_headers, graph=None) -> int:
     payload = {
         "name": _new_name(),
@@ -421,9 +446,7 @@ def test_workflow_crud(test_client, auth_headers):
 
 
 def test_workflow_run_stream_llm(monkeypatch, test_client, auth_headers):
-    """start→llm→end：LLM 节点流式产出 text-delta，结束帧完整。"""
-    import openai
-
+    """start→llm→end：LLM 节点由 Agno Agent 驱动，流式产出 text-delta，结束帧完整。"""
     graph = {
         "nodes": [
             {"id": "start", "type": "start", "data": {"variables": []}},
@@ -440,12 +463,8 @@ def test_workflow_run_stream_llm(monkeypatch, test_client, auth_headers):
         ],
     }
     wf_id = _create_workflow(test_client, auth_headers, graph)
-    sent: list[dict] = []
-    monkeypatch.setattr(
-        openai,
-        "AsyncOpenAI",
-        _make_stream_client([[_FakeChunk(_FakeDelta(content="你好呀"))]], sent),
-    )
+    captured: list[dict] = []
+    _patch_wf_agent(monkeypatch, [_WfEv("RunContent", content="你好呀")], captured)
     _patch_runtime(monkeypatch)
 
     try:
@@ -465,18 +484,16 @@ def test_workflow_run_stream_llm(monkeypatch, test_client, auth_headers):
         assert '"reply": "你好呀"' in body
         assert "data: [DONE]" in body
 
-        # LLM 节点系统提示词被渲染
-        system_content = sent[0]["messages"][0]["content"]
-        assert "世界" in system_content
-        assert "{{q}}" not in system_content
+        # LLM 节点系统提示词被渲染并作为 Agno 指令传入
+        instructions = captured[0]["instructions"]
+        assert "世界" in instructions[0]
+        assert "{{q}}" not in instructions[0]
     finally:
         _delete_wf(test_client, auth_headers, [wf_id])
 
 
 def test_workflow_run_stream_condition(monkeypatch, test_client, auth_headers):
-    """condition 分支：命中 true 走 llm_true，未命中走 llm_false。"""
-    import openai
-
+    """condition 分支：命中 true 走 llm_true，未命中走 llm_false（LLM 节点走 Agno Agent）。"""
     graph = {
         "nodes": [
             {"id": "start", "type": "start", "data": {"variables": []}},
@@ -506,10 +523,8 @@ def test_workflow_run_stream_condition(monkeypatch, test_client, auth_headers):
         ],
     }
     wf_id = _create_workflow(test_client, auth_headers, graph)
-    sent: list[dict] = []
-    monkeypatch.setattr(
-        openai, "AsyncOpenAI", _make_stream_client([[_FakeChunk(_FakeDelta(content="真"))]], sent)
-    )
+    captured: list[dict] = []
+    _patch_wf_agent(monkeypatch, [_WfEv("RunContent", content="真")], captured)
     _patch_runtime(monkeypatch)
 
     try:
@@ -524,15 +539,11 @@ def test_workflow_run_stream_condition(monkeypatch, test_client, auth_headers):
         )
         body = r.text
         assert '"reply": "真"' in body
-        assert "命中真分支" in sent[0]["messages"][0]["content"]
+        assert "命中真分支" in captured[0]["instructions"][0]
 
         # v=2 → 命中 false 分支
-        sent.clear()
-        monkeypatch.setattr(
-            openai,
-            "AsyncOpenAI",
-            _make_stream_client([[_FakeChunk(_FakeDelta(content="假"))]], sent),
-        )
+        captured.clear()
+        _patch_wf_agent(monkeypatch, [_WfEv("RunContent", content="假")], captured)
         r2 = test_client.post(
             f"/api/v1/ai/workflows/{wf_id}/run/stream",
             json={
@@ -543,7 +554,7 @@ def test_workflow_run_stream_condition(monkeypatch, test_client, auth_headers):
         )
         body2 = r2.text
         assert '"reply": "假"' in body2
-        assert "命中假分支" in sent[0]["messages"][0]["content"]
+        assert "命中假分支" in captured[0]["instructions"][0]
     finally:
         _delete_wf(test_client, auth_headers, [wf_id])
 
@@ -641,13 +652,10 @@ def test_workflow_run_code(monkeypatch, test_client, auth_headers):
 
 
 def test_workflow_run_llm_tool_loop(monkeypatch, test_client, auth_headers):
-    """LLM 节点工具循环：模型下发 tool_call → 派发工具 → 二次调用聚合最终回复。"""
+    """LLM 节点工具循环：由 Agno Agent 驱动，工具调用事件映射为 tool 帧并透出最终回复。"""
     from types import SimpleNamespace
 
-    import openai
-
-    dispatched: list[tuple] = []
-
+    # 节点配置的工具经 dynamic 包装后交给 Agno Agent（这里断言确实装配了工具）
     async def _fake_build(names):
         return [
             {
@@ -659,58 +667,24 @@ def test_workflow_run_llm_tool_loop(monkeypatch, test_client, auth_headers):
             }
         ], {}
 
-    async def _fake_run(name, args, user_id, http_tools):
-        dispatched.append((name, args))
-        return {"result": "工具已执行"}
-
     from app.plugin.module_ai.apps import service as apps_service
 
     monkeypatch.setattr(apps_service, "_build_app_tools", _fake_build)
-    monkeypatch.setattr(apps_service, "_run_app_tool", _fake_run)
 
-    class _Delta:
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
-
-    class _Chunk:
-        def __init__(self, delta):
-            self.choices = [SimpleNamespace(delta=delta)]
-
-    class _Completions:
-        def __init__(self):
-            self.calls = 0
-
-        async def create(self, **kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                async def _gen():
-                    yield _Chunk(
-                        _Delta(
-                            tool_calls=[
-                                SimpleNamespace(
-                                    index=0,
-                                    id="call_1",
-                                    function=SimpleNamespace(
-                                        name="mock_tool", arguments='{"x":1}'
-                                    ),
-                                )
-                            ]
-                        )
-                    )
-
-                return _gen()
-            msg = SimpleNamespace(content="工具已执行，这是最终回复")
-            return SimpleNamespace(choices=[SimpleNamespace(message=msg)])
-
-    class _Chat:
-        def __init__(self):
-            self.completions = _Completions()
-
-    class _Client:
-        def __init__(self, *a, **k):
-            self.chat = _Chat()
-
-    monkeypatch.setattr(openai, "AsyncOpenAI", _Client)
+    # 假 agent：先下发工具调用（started + completed），再给最终文本
+    tool_exec = SimpleNamespace(
+        tool_call_id="call_1",
+        tool_name="mock_tool",
+        tool_args={"x": 1},
+        result={"result": "工具已执行"},
+    )
+    events = [
+        _WfEv("ToolCallStarted", tool=tool_exec),
+        _WfEv("ToolCallCompleted", tool=tool_exec),
+        _WfEv("RunContent", content="工具已执行，这是最终回复"),
+    ]
+    captured: list[dict] = []
+    _patch_wf_agent(monkeypatch, events, captured)
     _patch_runtime(monkeypatch)
 
     graph = {
@@ -739,11 +713,13 @@ def test_workflow_run_llm_tool_loop(monkeypatch, test_client, auth_headers):
             headers=auth_headers,
         )
         assert r.status_code == 200, r.text
-        # 工具被派发且最终回复包含二次聚合文本
-        assert dispatched and dispatched[0][0] == "mock_tool"
-        assert dispatched[0][1] == {"x": 1}
-        assert "工具已执行" in r.text
-        assert "最终回复" in r.text
+        body = r.text
+        # 装配了动态工具，且工具调用事件被映射为 tool 帧
+        assert captured[0].get("tools")
+        assert '"type": "tool-input-available"' in body
+        assert '"toolName": "mock_tool"' in body
+        assert "工具已执行" in body
+        assert "最终回复" in body
     finally:
         _delete_wf(test_client, auth_headers, [wf_id])
 
@@ -943,6 +919,7 @@ def test_workflow_run_hitl_reject(monkeypatch, test_client, auth_headers):
         "AsyncOpenAI",
         _make_stream_client([[_FakeChunk(_FakeDelta(content="好的"))]], []),
     )
+    _patch_wf_agent(monkeypatch, [_WfEv("RunContent", content="好的")])
     _patch_runtime(monkeypatch)
 
     graph = {
@@ -1621,6 +1598,7 @@ def test_workflow_schedule(test_client, auth_headers):
         assert logs and logs[0]["status"] == "success"
     finally:
         _delete_wf(test_client, auth_headers, [wf])
+
 
 def test_workflow_templates(test_client, auth_headers):
     """AIP 工作流模板市场齐全；从模板创建成功并带 DAG。"""

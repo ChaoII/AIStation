@@ -337,8 +337,146 @@ class WorkflowEngine:
         messages += self.messages
         return messages
 
+    async def _last_user_text(self) -> str:
+        """取最近一条 user 消息文本（作为 Agno Agent 的输入）。"""
+        for m in reversed(self.messages):
+            if isinstance(m, dict) and m.get("role") == "user":
+                c = m.get("content")
+                if isinstance(c, str) and c.strip():
+                    return c
+        return ""
+
     async def _exec_llm(self, node: dict) -> None:
-        """LLM 节点：渲染提示词 → 流式调用 → 累积文本；写入输出变量。
+        """LLM 节点分派：普通节点走 Agno Agent（工具调用/多轮自省归 Agno）；需人工审批
+        （``require_approval``）的节点保留引擎级手写审批路径（Agno HITL 续跑需跨请求运行态，
+        与单一会话仓库原则冲突）。"""
+        data = node.get("data") or {}
+        if data.get("require_approval"):
+            async for frame in self._exec_llm_manual(node):
+                yield frame
+            return
+        async for frame in self._exec_llm_agno(node):
+            yield frame
+
+    async def _exec_llm_agno(self, node: dict) -> None:
+        """LLM 节点（Agno 路径）：由共享 Agno ``Agent`` 统一驱动模型与工具调用循环。"""
+        e_run_content = "RunContent"
+        e_reasoning = "ReasoningContentDelta"
+        e_tool_started = "ToolCallStarted"
+        e_tool_completed = "ToolCallCompleted"
+        e_run_error = "RunError"
+
+        from app.plugin.module_ai.agno_tools import business as biz
+        from app.plugin.module_ai.agno_tools.agent_factory import build_agent
+        from app.plugin.module_ai.agno_tools.dynamic import (
+            build_dynamic_tools,
+            reset_user_context,
+            set_user_context,
+        )
+        from app.plugin.module_ai.models.service import AiModelService
+
+        data = node.get("data") or {}
+        runtime = None
+        if data.get("model_id"):
+            runtime = await AiModelService.get_runtime_model(model_id=data["model_id"])
+        if not runtime:
+            runtime = await AiModelService.get_runtime_model()
+        if not runtime:
+            raise RuntimeError("未配置大模型，请在 AI 管理→模型配置 中添加并启用")
+
+        kb_context = ""
+        if data.get("knowledge_ids"):
+            kb_context, sources = await self._retrieve_context(data)
+            if sources:
+                frame = self.ms.sources(sources)
+                if frame:
+                    yield frame
+
+        schemas, dispatch = await self._llm_tools(data)
+        tools = build_dynamic_tools(schemas, dispatch) if schemas else []
+        system_prompt = self._render(data.get("prompt") or "")
+        instructions = [system_prompt] if system_prompt else []
+        if kb_context:
+            instructions.append(f"参考知识：\n{kb_context}")
+
+        agent = build_agent(
+            model_config=runtime,
+            user_id=self.user_id,
+            instructions=instructions or None,
+            tools=tools,
+        )
+
+        input_text = await self._last_user_text() or system_prompt or "开始"
+        content = ""
+        pending_tools: dict = {}
+        biz_token = biz.set_user_context(self.user_id)
+        dyn_token = set_user_context(self.user_id)
+        try:
+            async for ev in agent.arun(
+                input_text,
+                stream=True,
+                stream_events=True,
+                user_id=str(self.user_id) if self.user_id is not None else None,
+            ):
+                etype = getattr(ev, "event", None)
+                name_ev = getattr(etype, "value", etype)
+                if name_ev == e_run_content:
+                    c = getattr(ev, "content", None)
+                    if isinstance(c, str) and c:
+                        content += c
+                        self.state["assistant_text"] = (
+                            self.state.get("assistant_text", "") + c
+                        )
+                        frame = self.ms.text(c)
+                        if frame:
+                            yield frame
+                elif name_ev == e_reasoning:
+                    rc = getattr(ev, "reasoning_content", None)
+                    if rc:
+                        frame = self.ms.reasoning(rc)
+                        if frame:
+                            yield frame
+                elif name_ev == e_tool_started:
+                    tool = getattr(ev, "tool", None)
+                    tid = getattr(tool, "tool_call_id", "") or ""
+                    pending_tools[tid] = {
+                        "name": getattr(tool, "tool_name", None),
+                        "args": getattr(tool, "tool_args", None) or {},
+                    }
+                elif name_ev == e_tool_completed:
+                    tool = getattr(ev, "tool", None)
+                    tid = getattr(tool, "tool_call_id", "") or ""
+                    info = pending_tools.pop(tid, {})
+                    tname = getattr(tool, "tool_name", None) or info.get("name")
+                    targs = getattr(tool, "tool_args", None) or info.get("args") or {}
+                    result = getattr(tool, "result", None)
+                    self.state.setdefault("tool_calls", []).append(
+                        {"name": tname, "args": targs, "result": result}
+                    )
+                    frame = self.ms.tool(tid, tname, args=targs, output=result)
+                    if frame:
+                        yield frame
+                elif name_ev == e_run_error:
+                    err = getattr(ev, "content", None) or "运行失败"
+                    raise RuntimeError(str(err))
+        finally:
+            biz.reset_user_context(biz_token)
+            reset_user_context(dyn_token)
+
+        frame = self.ms.reasoning_end()
+        if frame:
+            yield frame
+        frame = self.ms.text_end()
+        if frame:
+            yield frame
+
+        self.outputs[node["id"]] = content
+        out_var = data.get("output_variable")
+        if out_var:
+            self.variables[out_var] = content
+
+    async def _exec_llm_manual(self, node: dict) -> None:
+        """LLM 节点（HITL 手写路径）：渲染提示词 → 流式调用 → 累积文本；写入输出变量。
 
         当节点配置 ``require_approval`` 且模型发起工具调用时，透出
         ``tool-approval`` 帧并挂起运行，等待用户审批后经 ``resume_after_approval`` 续跑。
