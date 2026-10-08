@@ -314,9 +314,9 @@ class AiAgentService:
             SYSTEM_PROMPT,
             last_user_text,
         )
+        from app.plugin.module_ai.models.service import AiModelService
         from app.plugin.module_ai.overview.service import AiOverviewService
         from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
-        from app.plugin.module_ai.models.service import AiModelService
         from app.plugin.module_ai.sessions.service import persist_session_exchange
         from app.plugin.module_ai.streaming import UiMessageStream
 
@@ -359,16 +359,15 @@ class AiAgentService:
                         + "\n\n".join(skill_blocks)
                     )
 
-            # 注入本体能力（Agent 能力来自本体）
+            # 注入本体能力（Agent 能力来自本体）：真实能力清单 + 可按需调用的工具
             caps = agent.get("capabilities") or []
-            if caps:
-                cap_names = await _cap_names(caps)
-                system_prompt = (
-                    f"{system_prompt}\n\n"
-                    "## 来自本体的能力\n"
-                    "你已被授予以下本体能力：\n"
-                    + "\n".join(f"- {c}" for c in cap_names[:30])
-                )
+            ont_enabled = bool(caps)
+            if ont_enabled:
+                from app.plugin.module_ai.ontology.agent_tools import ontology_catalog_text
+
+                catalog = await ontology_catalog_text()
+                if catalog:
+                    system_prompt = f"{system_prompt}\n\n{catalog}"
 
             # 注入知识库检索上下文（RAG，阶段3）
             if agent.get("knowledge_ids"):
@@ -406,8 +405,20 @@ class AiAgentService:
                 if "resolve_object" not in tool_names:
                     tool_names.append("resolve_object")
             tool_schemas, http_tools = await _build_app_tools(tool_names)
+            # 本体能力：把本体函数/动作作为 Agent 可按需调用的工具并入
+            if ont_enabled:
+                from app.plugin.module_ai.ontology.agent_tools import ONTOLOGY_TOOL_SCHEMAS
+
+                tool_schemas = list(tool_schemas) + ONTOLOGY_TOOL_SCHEMAS
 
             async def _dispatch(name: str, args: dict, user_id: int | None):
+                from app.plugin.module_ai.ontology.agent_tools import (
+                    ONTOLOGY_TOOL_NAMES,
+                    run_ontology_tool,
+                )
+
+                if name in ONTOLOGY_TOOL_NAMES:
+                    return await run_ontology_tool(name, args, user_id)
                 from app.plugin.module_ai.apps.service import _run_app_tool
 
                 return await _run_app_tool(name, args, user_id, http_tools)
