@@ -1,7 +1,6 @@
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { onMounted, onBeforeUnmount, nextTick } from "vue";
-import AiChatAPI from "@/api/module_ai/chat";
 
 /**
  * AI 操作处理器（简化版）
@@ -19,8 +18,6 @@ export type AiActionHandler<T = any> =
       confirmMessage?: string | ((args: T) => string);
       /** 成功消息（支持函数或字符串） */
       successMessage?: string | ((args: T) => string);
-      /** 是否调用后端 API（默认 false，如果为 true 则自动调用 executeCommand） */
-      callBackendApi?: boolean;
     };
 
 /**
@@ -103,15 +100,7 @@ export function useAiAction(options: UseAiActionOptions = {}) {
         }
 
         // 2. 执行阶段
-        if (config.callBackendApi) {
-          // 自动调用后端 API
-          await AiChatAPI.chat({
-            message: fnCall.arguments,
-          });
-        } else {
-          // 执行自定义函数
-          await config.execute(fnCall.arguments);
-        }
+        await config.execute(fnCall.arguments);
 
         // 3. 成功反馈
         const successMsg =
@@ -134,49 +123,6 @@ export function useAiAction(options: UseAiActionOptions = {}) {
 
       console.error("AI 操作执行失败:", error);
       ElMessage.error(error.message || "操作执行失败");
-    }
-  }
-
-  /**
-   * 执行后端命令（通用方法）
-   */
-  async function executeCommand(
-    functionName: string,
-    args: any,
-    options: {
-      originalCommand?: string;
-      confirmMode?: "auto" | "manual";
-      needConfirm?: boolean;
-      confirmMessage?: string;
-    } = {}
-  ) {
-    const { originalCommand = "", needConfirm = false, confirmMessage } = options;
-
-    // 如果需要确认，先显示确认对话框
-    if (needConfirm && confirmMessage) {
-      try {
-        await ElMessageBox.confirm(confirmMessage, "AI 助手操作确认", {
-          confirmButtonText: "确认执行",
-          cancelButtonText: "取消",
-          type: "warning",
-          dangerouslyUseHTMLString: true,
-        });
-      } catch {
-        ElMessage.info("已取消操作");
-        return;
-      }
-    }
-
-    try {
-      await AiChatAPI.chat({
-        message: originalCommand,
-      });
-
-      ElMessage.success("操作执行成功");
-    } catch (error: any) {
-      if (error !== "cancel") {
-        throw error;
-      }
     }
   }
 
@@ -244,7 +190,6 @@ export function useAiAction(options: UseAiActionOptions = {}) {
 
   return {
     executeAiAction,
-    executeCommand,
     handleAutoSearch,
   };
 }
