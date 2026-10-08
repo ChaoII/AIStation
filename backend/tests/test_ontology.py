@@ -462,3 +462,35 @@ class TestActionApproval:
             assert not r.get("ok")
             assert any(x["action"] == "t3" for x in p2)  # 仍 pending
         asyncio.run(_go())
+
+    def test_analyze_ontology(self, test_client):
+        from app.plugin.module_ai.ontology import service as ont_svc
+        from app.core.database import async_db_session
+        from sqlalchemy import text as _t
+        import asyncio
+
+        async def _go():
+            async with async_db_session.begin() as db:
+                for c in ("an_a", "an_b"):
+                    await db.execute(_t(
+                        "DELETE FROM ai_ont_object WHERE code=:c"), {"c": c})
+                    await db.execute(_t(
+                        "INSERT INTO ai_ont_object(code,name,icon,key_prop,name_prop,enabled,is_deleted) "
+                        "VALUES (:c,:c,'el-icon-Box','id','name',true,false)"), {"c": c})
+                await db.execute(_t(
+                    "DELETE FROM ai_ont_property WHERE object_code IN ('an_a','an_b')"))
+                await db.execute(_t(
+                    "INSERT INTO ai_ont_property(object_code,name,code,prop_type,required,unique_col,is_deleted) "
+                    "VALUES ('an_a','id','id','string',true,true,false)"))
+                await db.execute(_t(
+                    "DELETE FROM ai_ont_link WHERE source_object IN ('an_a','an_b')"))
+                await db.execute(_t(
+                    "INSERT INTO ai_ont_link(source_object,target_object,name,card,is_deleted) "
+                    "VALUES ('an_a','an_b','rel','one_to_many',false)"))
+            r = await ont_svc.analyze_ontology()
+            assert r["objects"] >= 2
+            assert "density" in r and "recommendations" in r and "card_dist" in r
+            assert "top_central" in r and "nodes" in r and "edges" in r
+            assert any(n["code"] == "an_a" for n in r["nodes"])
+            assert any(e["source"] == "an_a" and e["target"] == "an_b" for e in r["edges"])
+        asyncio.run(_go())

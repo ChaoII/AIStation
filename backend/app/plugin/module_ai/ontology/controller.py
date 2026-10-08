@@ -161,3 +161,8 @@ async def list_capabilities(auth: AuthDep) -> JSONResponse:
 async def upsert_capability(auth: AuthDep, data: Annotated[dict, Body()]) -> JSONResponse:
     r = await _svc.upsert_capability(data)
     return SuccessResponse(data=r, msg="保存成功")
+
+
+@OntologyRouter.get("/analyze", summary="本体深度建模分析")
+async def analyze_ontology(auth: AuthDep) -> JSONResponse:
+    return SuccessResponse(data=await _svc.analyze_ontology(), msg="查询成功")

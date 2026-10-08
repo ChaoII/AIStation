@@ -505,3 +505,80 @@ async def object_full(code: str) -> dict:
     return {"ok": True, "code": obj[0], "name": obj[1], "icon": obj[2], "key_prop": obj[3], "name_prop": obj[4],
             "description": obj[5], "properties": await list_properties(code),
             "links": await list_links(code), "actions": await list_actions(code)}
+
+
+# ---------------------------------------------------------------------------
+# 本体深度建模分析（连通性 / 中心度 / 主键缺失 / 关系完备性）
+# ---------------------------------------------------------------------------
+async def analyze_ontology() -> dict:
+    """对本体元模型做关系图分析并给出建模建议（纯读现有模型，零迁移）。"""
+    from collections import Counter, defaultdict
+
+    objs = (await _exec("SELECT code,name FROM ai_ont_object WHERE is_deleted=false")).fetchall()
+    props = (await _exec("SELECT object_code,required,unique_col FROM ai_ont_property WHERE is_deleted=false")).fetchall()
+    links = (await _exec("SELECT source_object,target_object,card FROM ai_ont_link WHERE is_deleted=false")).fetchall()
+    acts = (await _exec("SELECT object_code FROM ai_ont_action WHERE is_deleted=false")).fetchall()
+
+    obj_codes = [r[0] for r in objs]
+    obj_name = {r[0]: r[1] for r in objs}
+    degree = defaultdict(lambda: {"in": 0, "out": 0})
+    for s, t, _c in links:
+        if s:
+            degree[s]["out"] += 1
+        if t:
+            degree[t]["in"] += 1
+    pk_obj = {p[0] for p in props if p[1] or p[2]}          # required/unique 视为主键候选
+    no_pk = [c for c in obj_codes if c not in pk_obj]
+    isolated = [c for c in obj_codes if degree[c]["in"] == 0 and degree[c]["out"] == 0]
+    card_dist = Counter((l[2] or "many_to_one") for l in links)
+
+    adj = defaultdict(set)
+    for s, t, _c in links:
+        adj[s].add(t)
+        adj[t].add(s)
+    seen, comps = set(), []
+    for c in obj_codes:
+        if c in seen:
+            continue
+        stack, comp = [c], []
+        seen.add(c)
+        while stack:
+            n = stack.pop()
+            comp.append(n)
+            for m in adj[n]:
+                if m in obj_codes and m not in seen:
+                    seen.add(m)
+                    stack.append(m)
+        comps.append(comp)
+
+    centrality = sorted(obj_codes, key=lambda c: degree[c]["in"] + degree[c]["out"], reverse=True)
+    top = [{"code": c, "name": obj_name.get(c, c),
+            "degree": degree[c]["in"] + degree[c]["out"],
+            "in": degree[c]["in"], "out": degree[c]["out"]} for c in centrality[:8]]
+
+    recs = []
+    if no_pk:
+        recs.append(f"{len(no_pk)} 个对象缺少主键/必填属性，建议补充唯一或必填属性")
+    if isolated:
+        recs.append(f"{len(isolated)} 个对象无任何关系，建议接入关系或标记为非业务对象")
+    if len(comps) > 1:
+        recs.append(f"关系图存在 {len(comps)} 个连通分量，建议打通孤立对象")
+    if recs:
+        recs.append("可对中心度高的对象优先定义动作与治理规则")
+    else:
+        recs.append("本体关系结构良好，无显著缺口")
+
+    n_links = len(links)
+    n_objs = len(obj_codes)
+    return {
+        "objects": n_objs, "properties": len(props), "links": n_links, "actions": len(acts),
+        "isolated": len(isolated), "no_pk": len(no_pk), "components": len(comps),
+        "density": round((2 * n_links / (n_objs * (n_objs - 1))), 4) if n_objs > 1 else 0,
+        "card_dist": dict(card_dist),
+        "top_central": top,
+        "recommendations": recs,
+        "nodes": [{"code": c, "name": obj_name.get(c, c),
+                   "degree": degree[c]["in"] + degree[c]["out"],
+                   "isolated": c in isolated} for c in obj_codes],
+        "edges": [{"source": s, "target": t, "card": (c or "many_to_one")} for s, t, c in links],
+    }

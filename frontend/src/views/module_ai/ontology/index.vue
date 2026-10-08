@@ -422,6 +422,56 @@
       </el-col>
     </el-row>
 
+    <el-card shadow="never" class="ont-analyze" style="margin-top: 12px">
+      <template #header>
+        <div class="ont-head">
+          <span class="ont-head__title">本体深度建模分析</span>
+          <div class="ont-head__actions">
+            <el-tag size="small" type="info" effect="plain">{{ ontAnalyze?.objects ?? 0 }} 对象</el-tag>
+            <el-tag size="small" type="info" effect="plain">{{ ontAnalyze?.links ?? 0 }} 关联</el-tag>
+            <el-button size="small" :loading="ontAnalyzeLoading" @click="loadAnalyze">刷新分析</el-button>
+          </div>
+        </div>
+      </template>
+      <el-row :gutter="12">
+        <el-col :sm="24" :md="8">
+          <div class="gov-section">关系完备性</div>
+          <el-descriptions :column="1" size="small" border>
+            <el-descriptions-item label="对象 / 属性 / 关联 / 动作">
+              {{ ontAnalyze?.objects ?? 0 }} / {{ ontAnalyze?.properties ?? 0 }} /
+              {{ ontAnalyze?.links ?? 0 }} / {{ ontAnalyze?.actions ?? 0 }}
+            </el-descriptions-item>
+            <el-descriptions-item label="关系密度">{{ ontAnalyze?.density ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="连通分量">{{ ontAnalyze?.components ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="孤立对象">{{ ontAnalyze?.isolated ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="缺主键对象">{{ ontAnalyze?.no_pk ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="基数分布">
+              <el-tag v-for="(v, k) in ontAnalyze?.card_dist || {}" :key="k" size="small" effect="plain" style="margin:0 3px 3px 0">
+                {{ k }}: {{ v }}
+              </el-tag>
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-col>
+        <el-col :sm="24" :md="8">
+          <div class="gov-section">中心度 Top 对象</div>
+          <div v-if="ontAnalyze?.top_central?.length">
+            <div v-for="n in ontAnalyze.top_central" :key="n.code" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 4px">
+              <span style="font-size:12px">{{ n.name }} <span style="color:var(--el-text-color-secondary)">({{ n.code }})</span></span>
+              <el-tag size="small" type="warning" effect="plain">度 {{ n.degree }}（入 {{ n.in }} / 出 {{ n.out }}）</el-tag>
+            </div>
+          </div>
+          <el-empty v-else :image-size="40" description="暂无对象" />
+        </el-col>
+        <el-col :sm="24" :md="8">
+          <div class="gov-section">建模建议</div>
+          <div v-for="(r, i) in ontAnalyze?.recommendations || []" :key="i" class="report-line" style="margin-bottom:4px">
+            <el-tag size="small" type="primary" effect="plain" style="margin-right:4px">{{ i + 1 }}</el-tag>{{ r }}
+          </div>
+          <el-empty v-else :image-size="40" description="暂无建议" />
+        </el-col>
+      </el-row>
+    </el-card>
+
     <!-- 版本对比 -->
     <el-dialog v-model="diffDialog" title="版本对比（该版本 vs 当前）" width="560px" append-to-body>
       <template v-if="diffData?.ok">
@@ -727,6 +777,7 @@ import {
   rollbackOntVersion,
   getOntCapabilities,
   saveOntCapability,
+  getOntAnalyze,
   removeOnt,
   materializeOntObject,
 } from "@/api/module_ai/ontology";
@@ -1149,7 +1200,17 @@ onMounted(async () => {
   } catch {
     /* 忽略 */
   }
+  loadAnalyze();
 });
+
+const ontAnalyze = ref<any>(null);
+const ontAnalyzeLoading = ref(false);
+async function loadAnalyze() {
+  ontAnalyzeLoading.value = true;
+  try { ontAnalyze.value = (await getOntAnalyze()).data?.data || null; }
+  catch { ontAnalyze.value = null; }
+  finally { ontAnalyzeLoading.value = false; }
+}
 </script>
 
 <style scoped lang="scss">

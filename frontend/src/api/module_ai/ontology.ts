@@ -62,3 +62,6 @@ export function getOntCapabilities() {
 export function saveOntCapability(data: any) {
   return request({ url: `${API_PATH}/capability/save`, method: "post", data });
 }
+export function getOntAnalyze() {
+  return request({ url: `${API_PATH}/analyze`, method: "get" });
+}
