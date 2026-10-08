@@ -123,7 +123,7 @@ import { nextTick, onBeforeUnmount, onMounted, watch, ref, computed } from "vue"
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useSettingsStore } from "@/store";
-import { AiChatAPI, ChatSession, ChatSessionDetail } from "@/api/module_ai/chat";
+import { AiChatAPI } from "@/api/module_ai/chat";
 import { useAiChat } from "@/composables/ai/useAiChat";
 import { dataPartsOf, textOf, toolPartsOf } from "@/composables/ai/uiMessage";
 import { AnnotationAPI } from "@/api/module_annotation";
@@ -171,11 +171,8 @@ const response = ref<AiResponse | null>(null);
 // AI SDK 流式助手（工具调用 / 导航 / 报告）
 const chat = useAiChat();
 
-// 会话管理
-const sessions = ref<ChatSession[]>([]);
+// 会话（多轮续聊上下文，经 /ai-chat 返回的 session_id 传递；会话管理统一走 /sessions）
 const currentSessionId = ref<number | null>(null);
-const currentSession = ref<ChatSessionDetail | null>(null);
-const sessionLoading = ref(false);
 
 const fabCollapsed = useStorage<boolean>("vea:ui:ai_assistant_fab_collapsed", false);
 
@@ -312,46 +309,11 @@ const examples = [
   "获取姓名为张三的用户信息",
 ];
 
-// 加载会话列表
-const loadSessions = async () => {
-  try {
-    sessionLoading.value = true;
-    const response = await AiChatAPI.getSessionList({ page_no: 1, page_size: 100 });
-    if (response.data?.success) {
-      sessions.value = response.data.data?.items || [];
-    }
-  } catch (error) {
-    console.error("加载会话列表失败:", error);
-  } finally {
-    sessionLoading.value = false;
-  }
-};
-
-// 加载会话详情
-const loadSessionDetail = async (sessionId: number) => {
-  try {
-    sessionLoading.value = true;
-    const response = await AiChatAPI.getSessionDetail(sessionId);
-    if (response.data?.success) {
-      currentSessionId.value = sessionId;
-      currentSession.value = response.data.data;
-    } else {
-      ElMessage.error("获取会话详情失败");
-    }
-  } catch (error) {
-    console.error("获取会话详情失败:", error);
-    ElMessage.error("获取会话详情失败");
-  } finally {
-    sessionLoading.value = false;
-  }
-};
-
 // 打开对话框
 const handleOpen = () => {
   dialogVisible.value = true;
   command.value = "";
   response.value = null;
-  loadSessions();
 };
 
 // 关闭对话框
@@ -425,9 +387,6 @@ const handleExecute = async () => {
     // 更新会话ID
     if (result.data.data?.session_id) {
       currentSessionId.value = result.data.data.session_id;
-      // 重新加载会话列表和详情
-      await loadSessions();
-      await loadSessionDetail(result.data.data.session_id);
     }
 
     // 解析 AI 返回的操作类型

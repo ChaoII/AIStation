@@ -1,42 +1,6 @@
-from dataclasses import dataclass
 from typing import Any
 
-from fastapi import Query
 from pydantic import BaseModel, Field
-
-from app.core.validator import DateTimeStr
-
-
-class ChatSessionCreateSchema(BaseModel):
-    """创建会话模型"""
-    title: str = Field(..., description="会话标题")
-
-
-class ChatSessionUpdateSchema(BaseModel):
-    """更新会话模型"""
-    title: str = Field(..., description="会话标题")
-
-
-@dataclass
-class ChatSessionQueryParam:
-    """会话查询参数"""
-    def __init__(
-        self,
-        title: str | None = Query(None, description="会话标题"),
-        created_at: list[DateTimeStr] | None = Query(
-            None,
-            description="创建时间范围",
-            examples=["2025-01-01 00:00:00", "2025-12-31 23:59:59"],
-        ),
-        updated_at: list[DateTimeStr] | None = Query(
-            None,
-            description="更新时间范围",
-            examples=["2025-01-01 00:00:00", "2025-12-31 23:59:59"],
-        ),
-    ) -> None:
-        self.title = title
-        self.created_at = created_at
-        self.updated_at = updated_at
 
 
 class AiChatRequestSchema(BaseModel):

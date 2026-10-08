@@ -1,48 +1,13 @@
-"""AI 对话（/chat，旧网关）：会话已统一并入规范 `ai_sessions` 仓库，执行复用共享 Agno Agent。"""
+"""AI 对话（/chat，旧网关）：执行复用共享 Agno Agent；会话管理统一由 `/sessions` 提供（单一口子）。"""
 import json
 from typing import Any
 
 from app.api.v1.module_system.auth.schema import AuthSchema
-from app.common.request import PaginationService
 from app.core.logger import log
-
-from .schema import (
-    ChatSessionCreateSchema,
-    ChatSessionQueryParam,
-    ChatSessionUpdateSchema,
-)
-
-
-def _fmt_ai_session(
-    sess: dict, auth: AuthSchema | None = None, include_messages: bool = False
-) -> dict[str, Any]:
-    """把 `ai_sessions` / `ai_messages` 的行格式化成 /chat 前端兼容的会话字典。"""
-    out: dict[str, Any] = {
-        "id": sess.get("id"),
-        "session_id": str(sess.get("id")),
-        "title": sess.get("title") or "",
-        "message_count": sess.get("message_count") or 0,
-        "created_time": sess.get("created_time"),
-        "updated_time": sess.get("updated_time"),
-        "team_name": None,
-    }
-    if include_messages:
-        out["messages"] = [
-            {
-                "id": str(m.get("id")),
-                "role": m.get("role"),
-                "content": "".join(
-                    p.get("text", "") for p in (m.get("parts") or []) if isinstance(p, dict)
-                ),
-                "created_at": None,
-            }
-            for m in (sess.get("messages") or [])
-        ]
-    return out
 
 
 class ChatService:
-    """聊天会话管理模块服务层（已统一到 `ai_sessions` + 共享 `build_agent`）。"""
+    """聊天执行服务（非流式 /ai-chat）。会话的列举/详情/新建/重命名/删除统一走 `/sessions`。"""
 
     @classmethod
     async def chat_non_stream(
@@ -139,80 +104,3 @@ class ChatService:
                 "function_calls": None,
                 "action": None,
             }
-
-    @classmethod
-    async def create_service(
-        cls, auth: AuthSchema, data: ChatSessionCreateSchema
-    ) -> dict[str, Any] | None:
-        """创建会话（并入规范 `ai_sessions` 仓库）。"""
-        from app.plugin.module_ai.sessions.service import AiSessionService
-
-        uid = getattr(getattr(auth, "user", None), "id", None)
-        session = await AiSessionService.create(data.title or "新对话", None, uid)
-        return _fmt_ai_session(session, auth)
-
-    @classmethod
-    async def get_session_service(
-        cls, auth: AuthSchema, session_id: str
-    ) -> dict[str, Any] | None:
-        """获取单个会话详情（含消息，来自 `ai_sessions` / `ai_messages`）。"""
-        from app.plugin.module_ai.sessions.service import AiSessionService
-
-        uid = getattr(getattr(auth, "user", None), "id", None)
-        try:
-            session = await AiSessionService.get_session(int(session_id))
-        except (TypeError, ValueError):
-            return None
-        if not session:
-            return None
-        if session.get("user_id") not in (None, uid):
-            return None
-        session["messages"] = await AiSessionService.get_messages(int(session_id))
-        return _fmt_ai_session(session, auth, include_messages=True)
-
-    @classmethod
-    async def page_service(
-        cls,
-        auth: AuthSchema,
-        page_no: int,
-        page_size: int,
-        search: ChatSessionQueryParam,
-        order_by: list[dict[str, str]] | None = None,
-    ) -> dict[str, Any]:
-        """分页获取会话列表（来自 `ai_sessions`）。"""
-        from app.plugin.module_ai.sessions.service import AiSessionService
-
-        uid = getattr(getattr(auth, "user", None), "id", None)
-        sessions = await AiSessionService.list_sessions(uid)
-        items = [_fmt_ai_session(s, auth) for s in sessions]
-        result = await PaginationService.paginate(
-            data_list=items, page_no=page_no, page_size=page_size
-        )
-        return result
-
-    @classmethod
-    async def update_service(
-        cls, auth: AuthSchema, session_id: str, data: ChatSessionUpdateSchema
-    ) -> bool:
-        """重命名会话（`ai_sessions`）。"""
-        from app.plugin.module_ai.sessions.service import AiSessionService
-
-        try:
-            result = await AiSessionService.rename(int(session_id), data.title, auth)
-        except (TypeError, ValueError):
-            return False
-        return result is not None
-
-    @classmethod
-    async def delete_service(cls, auth: AuthSchema, session_ids: list[str]) -> None:
-        """批量删除会话及消息（`ai_sessions`）。"""
-        from app.plugin.module_ai.sessions.service import AiSessionService
-
-        ids: list[int] = []
-        for s in session_ids:
-            try:
-                ids.append(int(s))
-            except (TypeError, ValueError):
-                continue
-        if ids:
-            await AiSessionService.delete(ids)

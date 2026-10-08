@@ -470,7 +470,7 @@ import ServerAPI, { type ServerInfo } from "@/api/module_monitor/server";
 import OnlineAPI from "@/api/module_monitor/online";
 import { UserAPI } from "@/api/module_system/user";
 import JobAPI from "@/api/module_task/cronjob/job";
-import { AiChatAPI } from "@/api/module_ai/chat";
+import { getAiSessionList } from "@/api/module_ai/session";
 import { ApplicationAPI } from "@/api/module_application/portal";
 import {
   WORKPLACE_MODULE_GROUPS,
@@ -823,7 +823,7 @@ async function fetchWorkplaceStats() {
       OnlineAPI.listOnline({ page_no: 1, page_size: 1 }),
       ServerAPI.getServer(),
       JobAPI.getSchedulerStatus(),
-      AiChatAPI.getSessionList({ page_no: 1, page_size: 1 }),
+      getAiSessionList(),
       ApplicationAPI.listApp({ page_no: 1, page_size: 1 }),
     ]);
 
@@ -861,7 +861,7 @@ async function fetchWorkplaceStats() {
 
     snap.chatSessions =
       chatR.status === "fulfilled" && chatR.value.data.code === 0
-        ? (chatR.value.data.data?.total ?? null)
+        ? (chatR.value.data.data?.length ?? null)
         : null;
 
     snap.appCount =
