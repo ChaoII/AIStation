@@ -407,10 +407,12 @@ class AiKnowledgeService:
     @classmethod
     async def kb_quality(cls, kb_id: int) -> dict:
         """知识库质量治理：文档数/分块数/分块嵌入率/文档状态 + 健康分。"""
-        from sqlalchemy import select as _sel
         from sqlalchemy import func as _f
-        from .model import AiKnowledgeDocumentModel
+        from sqlalchemy import select as _sel
+
         from app.plugin.module_ai.knowledge.model import AiKnowledgeChunkModel
+
+        from .model import AiKnowledgeDocumentModel
 
         async with async_db_session() as db:
             docs = (await db.execute(_sel(_f.count()).select_from(AiKnowledgeDocumentModel).where(
@@ -1542,44 +1544,30 @@ class AiKnowledgeService:
 
         回退答案同样在文本中保留 ``[n]`` 编号，前端统一渲染成可点击角标。
         """
-        # 先尝试 LLM（OpenAI 兼容 /chat/completions）
+        # 先尝试 LLM（Agno Agent 单发生成；不注入工具，仅按系统提示生成带引用编号的回答）
         try:
-            from app.plugin.module_ai.models.service import (
-                AiModelService,
-                build_headers,
-            )
+            from app.plugin.module_ai.agno_tools.agent_factory import build_agent
+            from app.plugin.module_ai.models.service import AiModelService
 
             runtime = await AiModelService.get_runtime_model(usage="chat")
             if runtime:
-                import httpx
-
-                base = runtime["base_url"].rstrip("/")
-                url = f"{base}/chat/completions"
                 system = (
                     "你是知识库问答助手。请仅依据提供的参考资料回答问题；"
                     "引用资料时在对应句子后用[n]标注来源编号，n 与资料编号一致；"
                     "若资料不足则明确说明，不要编造。用中文回答。"
                 )
                 user = f"问题：{query}\n\n参考资料：\n" + "\n\n".join(context_parts)
-                async with httpx.AsyncClient(timeout=60) as client:
-                    resp = await client.post(
-                        url,
-                        headers={
-                            "Authorization": f"Bearer {runtime.get('api_key') or 'sk-none'}",
-                            **build_headers(base, runtime.get("extra_headers"), "aistation-rag"),
-                        },
-                        json={
-                            "model": runtime["model"],
-                            "messages": [
-                                {"role": "system", "content": system},
-                                {"role": "user", "content": user},
-                            ],
-                        },
-                    )
-                    resp.raise_for_status()
-                    ans = (resp.json()["choices"][0]["message"]["content"] or "").strip()
-                    if ans:
-                        return ans
+                agent = build_agent(
+                    model_config=runtime, instructions=[system], tools=[]
+                )
+                resp = await agent.arun(user, stream=False)
+                ans = (
+                    resp.get_content_as_string()
+                    if hasattr(resp, "get_content_as_string")
+                    else str(resp.content or "")
+                ).strip()
+                if ans:
+                    return ans
         except Exception:  # noqa: BLE001
             pass
         # 回退：引用式摘要（保留 [n] 编号供前端渲染角标）
