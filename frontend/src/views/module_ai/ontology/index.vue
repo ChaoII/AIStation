@@ -2,37 +2,6 @@
 <template>
   <div class="app-container ai-mod ai-ontology-page">
     <el-tabs v-model="pageTab" class="ont-page-tabs">
-      <el-tab-pane label="能力" name="caps">
-        <el-card shadow="never" class="ont-caps">
-          <template #header>
-            <div class="ont-head">
-              <span class="ont-head__title">能力（Agent 可来自本体的能力）</span>
-              <el-button type="primary" size="small" :icon="Plus" @click="openCapEdit()">
-                新增能力
-              </el-button>
-            </div>
-          </template>
-          <div class="caps-tags">
-            <el-tag
-              v-for="c in caps"
-              :key="c.code"
-              size="small"
-              :type="c.source === 'ontology' ? 'primary' : 'info'"
-              effect="plain"
-            >
-              {{ c.name }} · {{ c.source === "ontology" ? "本体" : "平台" }}/{{
-                c.kind === "tool" ? "工具" : "组件"
-              }}
-            </el-tag>
-          </div>
-          <el-empty
-            v-if="!caps.length"
-            description="暂无能力，点击新增（Agent 装配时可选择这些本体能力）"
-            :image-size="40"
-          />
-        </el-card>
-      </el-tab-pane>
-
       <el-tab-pane label="对象类型" name="objects">
         <el-row :gutter="12">
           <!-- 左：对象类型列表 -->
@@ -126,7 +95,7 @@
                     </el-button>
                     <el-tag size="small" type="info" effect="plain">共 {{ props.length }}</el-tag>
                   </div>
-                  <el-table :data="props" size="small" border>
+                  <el-table :data="pagedProps" size="small" border>
                     <el-table-column
                       prop="name"
                       label="属性"
@@ -190,6 +159,14 @@
                       </template>
                     </el-table-column>
                   </el-table>
+                  <el-pagination
+                    v-model:current-page="propPage"
+                    :page-size="propPageSize"
+                    :total="props.length"
+                    layout="total, prev, pager, next"
+                    size="small"
+                    class="ont-pager"
+                  />
                 </el-tab-pane>
 
                 <el-tab-pane label="关联 Link" name="link">
@@ -871,36 +848,6 @@
         <el-button type="primary" :loading="savingObj" @click="saveFunc">保存</el-button>
       </template>
     </el-dialog>
-
-    <!-- 能力编辑 -->
-    <el-dialog v-model="capDialog" title="本体能力" width="480px" append-to-body>
-      <el-form :model="capForm" label-width="90px">
-        <el-form-item label="编码" required>
-          <el-input v-model="capForm.code" placeholder="如 retail_query" />
-        </el-form-item>
-        <el-form-item label="名称" required>
-          <el-input v-model="capForm.name" placeholder="如 零售问数" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-select v-model="capForm.type" style="width: 100%">
-            <el-option label="本体函数 function" value="function" />
-            <el-option label="对象动作 action" value="action" />
-            <el-option label="接地 grounding" value="grounding" />
-            <el-option label="问数 query" value="query" />
-            <el-option label="数据治理 governance" value="governance" />
-            <el-option label="知识 knowledge" value="knowledge" />
-            <el-option label="技能 skill" value="skill" />
-            <el-option label="应用 app" value="app" />
-            <el-option label="通用 generic" value="generic" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="说明"><el-input v-model="capForm.description" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="capDialog = false">取消</el-button>
-        <el-button type="primary" :loading="savingObj" @click="saveCap">保存</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -923,8 +870,6 @@ import {
   getOntVersions,
   getOntVersionDiff,
   rollbackOntVersion,
-  getOntCapabilities,
-  saveOntCapability,
   getOntAnalyze,
   removeOnt,
   materializeOntObject,
@@ -985,12 +930,16 @@ const currentCode = ref("");
 const ontTab = ref("property");
 const pageTab = ref("objects");
 const props = ref<any[]>([]);
+const propPage = ref(1);
+const propPageSize = ref(20);
+const pagedProps = computed(() =>
+  props.value.slice((propPage.value - 1) * propPageSize.value, propPage.value * propPageSize.value)
+);
 const links = ref<any[]>([]);
 const actions = ref<any[]>([]);
 const functions = ref<any[]>([]);
 const changelog = ref<any[]>([]);
 const versions = ref<any[]>([]);
-const caps = ref<any[]>([]);
 
 async function loadObjects() {
   const r = await getOntObjects();
@@ -999,8 +948,6 @@ async function loadObjects() {
   if (objects.value.length && !currentCode.value) await selectObject(objects.value[0]);
   const lr = await getOntLinks();
   globalLinks.value = lr.data?.data || [];
-  const cr = await getOntCapabilities();
-  caps.value = cr.data?.data || [];
 }
 const dqDialog = ref(false);
 const dqDetail = ref<any>(null);
@@ -1022,34 +969,11 @@ async function openDqDetail(o: any) {
     dqDialog.value = true;
   }
 }
-// 能力编辑
-const capDialog = ref(false);
-const capForm = reactive<any>({
-  id: null,
-  code: "",
-  name: "",
-  type: "generic",
-  description: "",
-  enabled: true,
-});
-function openCapEdit(c?: any) {
-  Object.assign(
-    capForm,
-    c || { id: null, code: "", name: "", type: "generic", description: "", enabled: true }
-  );
-  capDialog.value = true;
-}
-async function saveCap() {
-  if (!capForm.code?.trim() || !capForm.name?.trim()) return ElMessage.warning("请填能力编码/名称");
-  await saveOntCapability({ ...capForm });
-  ElMessage.success("已保存");
-  capDialog.value = false;
-  const cr = await getOntCapabilities();
-  caps.value = cr.data?.data || [];
-}
+// 能力编辑已移除（能力 = 具体资源的选择，不再单列）
 async function selectObject(o: any) {
   currentCode.value = o.code;
   current.value = o;
+  propPage.value = 1;
   const r = await getOntObjectFull(o.code);
   const d = r.data?.data || {};
   props.value = d.properties || [];
@@ -1379,17 +1303,30 @@ async function loadAnalyze() {
 
 <style scoped lang="scss">
 .ai-ontology-page {
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   padding: 12px;
 }
-/* 能力标签横向流动（全局 .el-card__body 为纵向 flex，会把 el-tag 拉伸成整行） */
-.caps-tags {
+/* 顶部 tab 铺满剩余高度，内容区内部滚动 */
+.ont-page-tabs {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: flex-start;
+  flex-direction: column;
 }
-.ont-page-tabs .el-tabs__content {
-  overflow: visible;
+.ont-page-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.ont-page-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+}
+.ont-page-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  overflow: auto;
 }
 /* 左右白色卡片铺满可视区域（填满，不留下方大片留白） */
 .ai-ontology-page .el-col {
@@ -1414,7 +1351,7 @@ async function loadAnalyze() {
   justify-content: center;
 }
 .ont-left {
-  max-height: calc(100vh - 100px);
+  height: 100%;
   overflow: auto;
 }
 .ont-head {
@@ -1493,19 +1430,17 @@ async function loadAnalyze() {
   color: var(--el-text-color-placeholder);
   font-size: 12px;
 }
+.ont-pager {
+  margin-top: 8px;
+  justify-content: flex-end;
+}
 </style>
 
 <style lang="scss">
-/* 覆盖全局 .app-container(flex column;height:100%)：本体页改为块级自然流，避免能力卡撑满把下方对象/关系图区挤出不可见 */
+/* 本体页铺满 app-main 全高：页面自身不滚动，内部 tab 内容区滚动 */
 .app-container.ai-ontology-page {
-  display: block !important;
-  height: auto !important;
-  overflow: visible !important;
-}
-.app-container.ai-ontology-page .el-card {
-  height: auto !important;
-}
-.app-container.ai-ontology-page .ont-caps {
-  margin-bottom: 12px;
+  height: 100% !important;
+  padding: 0 !important;
+  overflow: hidden !important;
 }
 </style>

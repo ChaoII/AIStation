@@ -876,26 +876,44 @@
           </div>
         </div>
 
-        <!-- 能力（来自本体 / 平台） -->
+        <!-- 本体工具（直接选具体函数/动作即授予） -->
         <div class="studio-section">
           <div class="studio-section__head">
             <div>
-              <div class="studio-section__title">能力（来自本体 / 平台）</div>
+              <div class="studio-section__title">本体工具（函数 / 对象动作）</div>
               <div class="studio-section__sub">
-                勾选即授予本智能体；工具型能力运行时由 Agent 按需调用
+                从本体选择具体函数/动作，勾选即授予；运行时由 Agent 按需调用
               </div>
             </div>
           </div>
-          <el-checkbox-group v-model="studioAgent.capabilities" @change="onCapChange">
-            <el-checkbox v-for="cap in ontCaps" :key="cap.code" :value="cap.code" class="prof-cap">
-              {{ cap.name }}
-              <span class="prof-cap__type">
-                [{{ cap.source === "ontology" ? "本体" : "平台" }}·{{ cap.type }}]
-              </span>
-            </el-checkbox>
-          </el-checkbox-group>
-          <div v-if="!ontCaps.length" class="studio-flow-empty">
-            暂无可授予能力，请先在「本体」页登记能力
+          <el-select
+            v-model="studioAgent.capabilities"
+            multiple
+            filterable
+            size="small"
+            placeholder="选择本体函数 / 对象动作"
+            style="width: 100%"
+            @change="studioDirty = true"
+          >
+            <el-option-group label="本体函数">
+              <el-option
+                v-for="f in ontFns"
+                :key="f.code"
+                :label="`${f.name} (${f.code})`"
+                :value="f.code"
+              />
+            </el-option-group>
+            <el-option-group label="对象动作">
+              <el-option
+                v-for="a in ontActs"
+                :key="a.code"
+                :label="`${a.name} (${a.code})`"
+                :value="a.code"
+              />
+            </el-option-group>
+          </el-select>
+          <div v-if="!ontFns.length && !ontActs.length" class="studio-flow-empty">
+            本体暂无函数/动作，请先在「本体」页添加
           </div>
         </div>
 
@@ -1020,7 +1038,7 @@ import { getAiToolList } from "@/api/module_ai/tool";
 import { getAiWorkflowList } from "@/api/module_ai/workflow";
 import { getAiSkillList } from "@/api/module_ai/skill";
 import { getAiKnowledgeList } from "@/api/module_ai/knowledge";
-import { getOntCapabilities } from "@/api/module_ai/ontology";
+import { getOntActions, getOntFunctions } from "@/api/module_ai/ontology";
 import { getQueryDatasources } from "@/api/module_ai/query";
 import { getAiSessionList, getAiSessionDetail } from "@/api/module_ai/session";
 
@@ -1041,7 +1059,8 @@ const queryDatasources = ref<any[]>([]);
 const workflowOptions = ref<{ id: number; name: string }[]>([]);
 const skillOptions = ref<{ id: number; name: string }[]>([]);
 const knowledgeOptions = ref<{ id: number; name: string }[]>([]);
-const ontCaps = ref<any[]>([]);
+const ontFns = ref<any[]>([]);
+const ontActs = ref<any[]>([]);
 
 const filteredAgents = computed(() => {
   let list = agents.value;
@@ -1143,8 +1162,10 @@ const loadData = async () => {
     skillOptions.value = (sr.data?.data || []).map((s: any) => ({ id: s.id, name: s.name }));
     knowledgeOptions.value = (kr.data?.data || []).map((k: any) => ({ id: k.id, name: k.name }));
     queryDatasources.value = dr.data?.data || [];
-    const capr = await getOntCapabilities();
-    ontCaps.value = capr.data?.data || [];
+    const fnr = await getOntFunctions();
+    ontFns.value = fnr.data?.data || [];
+    const acr = await getOntActions();
+    ontActs.value = acr.data?.data || [];
   } catch (e: any) {
     ElMessage.error(e?.message || "加载失败");
   } finally {
@@ -1353,28 +1374,6 @@ function toggleCap(key: string) {
     else if (key === "prompt") a.prompt_id = a.prompt_id || promptOptions.value[0]?.id || null;
     else if (key === "workflow")
       a.workflow_id = a.workflow_id || workflowOptions.value[0]?.id || null;
-  }
-  studioDirty.value = true;
-}
-// 本体工具勾选时，映射到 Agent 真实能力字段（保证运行时实际可用）
-function onCapChange() {
-  const a = studioAgent.value;
-  if (!a) return;
-  const enabled = new Set<string>(a.capabilities || []);
-  // query/grounding → 启用智能问数（含 resolve_object）
-  if (enabled.has("ontology_query") || enabled.has("ontology_grounding")) {
-    a.query_enabled = true;
-  }
-  // knowledge → 装配知识库
-  if (enabled.has("knowledge_rag")) {
-    a.knowledge_ids = a.knowledge_ids || [];
-    if (!a.knowledge_ids.length && knowledgeOptions.value[0])
-      a.knowledge_ids.push(knowledgeOptions.value[0].id);
-  }
-  // skill → 装配技能
-  if (enabled.has("agent_skill")) {
-    a.skill_ids = a.skill_ids || [];
-    if (!a.skill_ids.length && skillOptions.value[0]) a.skill_ids.push(skillOptions.value[0].id);
   }
   studioDirty.value = true;
 }

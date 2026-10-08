@@ -35,6 +35,32 @@ def test_propose_ontology_action(monkeypatch):
     assert act["payload"]["code"] == "close_order"
 
 
+def test_build_selected_ontology_tools(monkeypatch):
+    async def _funcs(_obj=None):
+        return [{"code": "gm", "name": "毛利率", "expr": "(rev - cost) / rev", "description": ""}]
+
+    async def _acts(_obj=None):
+        return [
+            {
+                "code": "close",
+                "name": "关单",
+                "input_schema": [{"name": "id", "type": "integer"}],
+                "target_table": "ont_orders",
+                "method": "update",
+                "approval": True,
+            }
+        ]
+
+    monkeypatch.setattr(ont, "list_functions", _funcs)
+    monkeypatch.setattr(ont, "list_actions", _acts)
+    schemas, names = asyncio.run(T.build_selected_ontology_tools(["gm", "close", "missing"]))
+    assert "ont_fn__gm" in names and "ont_action__close" in names
+    assert "ont_fn__missing" not in names
+    assert len(schemas) == 2
+    r = asyncio.run(T.run_selected_ontology_tool("ont_fn__gm", {"rev": 100, "cost": 60}))
+    assert r["result"] == 0.4
+
+
 def test_cap_meta():
     assert ont._cap_meta("function") == ("ontology", "tool")
     assert ont._cap_meta("action") == ("ontology", "tool")

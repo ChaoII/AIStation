@@ -380,19 +380,8 @@ class AiAgentService:
                         + "\n\n".join(skill_blocks)
                     )
 
-            # 注入本体能力（Agent 能力来自本体）：真实能力清单 + 可按需调用的工具
-            caps = agent.get("capabilities") or []
-            ont_enabled = bool(caps)
-            gov_enabled = False
-            if caps:
-                cap_types = await _cap_types(caps)
-                gov_enabled = "governance" in cap_types
-            if ont_enabled:
-                from app.plugin.module_ai.ontology.agent_tools import ontology_catalog_text
-
-                catalog = await ontology_catalog_text()
-                if catalog:
-                    system_prompt = f"{system_prompt}\n\n{catalog}"
+            # 选中的本体函数/动作编码（直接选择即授予，无「能力」抽象）
+            ont_codes = agent.get("capabilities") or []
 
             # 注入知识库检索上下文（RAG，阶段3）
             if agent.get("knowledge_ids"):
@@ -430,31 +419,29 @@ class AiAgentService:
                 if "resolve_object" not in tool_names:
                     tool_names.append("resolve_object")
             tool_schemas, http_tools = await _build_app_tools(tool_names)
-            # 本体能力：把本体函数/动作作为 Agent 可按需调用的工具并入
-            if ont_enabled:
-                from app.plugin.module_ai.ontology.agent_tools import ONTOLOGY_TOOL_SCHEMAS
+            # 本体工具：① 接地（list_ontology，让 Agent 了解对象模型）；② 选中的本体函数/动作
+            from app.plugin.module_ai.ontology.agent_tools import (
+                ONTOLOGY_TOOL_SCHEMAS,
+                build_selected_ontology_tools,
+            )
 
-                tool_schemas = list(tool_schemas) + ONTOLOGY_TOOL_SCHEMAS
-            # 数据治理能力：把 DQ/数据域/血缘/权限 作为工具并入
-            if gov_enabled:
-                from app.plugin.module_ai.query.agent_tools import GOVERNANCE_TOOL_SCHEMAS
-
-                tool_schemas = list(tool_schemas) + GOVERNANCE_TOOL_SCHEMAS
+            grounding = [
+                s for s in ONTOLOGY_TOOL_SCHEMAS if s["function"]["name"] == "list_ontology"
+            ]
+            sel_schemas, sel_names = await build_selected_ontology_tools(ont_codes)
+            tool_schemas = list(tool_schemas) + grounding + sel_schemas
 
             async def _dispatch(name: str, args: dict, user_id: int | None):
                 from app.plugin.module_ai.ontology.agent_tools import (
                     ONTOLOGY_TOOL_NAMES,
                     run_ontology_tool,
-                )
-                from app.plugin.module_ai.query.agent_tools import (
-                    GOVERNANCE_TOOL_NAMES,
-                    run_governance_tool,
+                    run_selected_ontology_tool,
                 )
 
                 if name in ONTOLOGY_TOOL_NAMES:
                     return await run_ontology_tool(name, args, user_id)
-                if name in GOVERNANCE_TOOL_NAMES:
-                    return await run_governance_tool(name, args, user_id)
+                if name in sel_names:
+                    return await run_selected_ontology_tool(name, args, user_id)
                 from app.plugin.module_ai.apps.service import _run_app_tool
 
                 return await _run_app_tool(name, args, user_id, http_tools)

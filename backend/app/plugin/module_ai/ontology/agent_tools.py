@@ -191,6 +191,97 @@ async def run_ontology_tool(name: str, args: dict, user_id: int | None = None) -
     return {"error": f"未知本体工具：{name}"}
 
 
+def _expr_vars(expr: str) -> list[str]:
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except Exception:  # noqa: BLE001
+        return []
+    return sorted({n.id for n in ast.walk(tree) if isinstance(n, ast.Name)})
+
+
+def _fn_tool_name(code: str) -> str:
+    return "ont_fn__" + code
+
+
+def _act_tool_name(code: str) -> str:
+    return "ont_action__" + code
+
+
+async def build_selected_ontology_tools(codes: list[str]) -> tuple[list[dict], set[str]]:
+    """为 Agent 选中的本体函数/动作构建具体工具，返回 ``(schemas, 工具名集合)``。
+
+    选择即授予：选中某个本体函数/动作 → 生成对应工具，运行时由 Agent 按需调用。
+    """
+    from app.plugin.module_ai.ontology import service as ont
+
+    if not codes:
+        return [], set()
+    funcs = {f["code"]: f for f in await ont.list_functions(None)}
+    acts = {a["code"]: a for a in await ont.list_actions(None)}
+    schemas: list[dict] = []
+    names: set[str] = set()
+    for c in codes:
+        if c in funcs:
+            f = funcs[c]
+            vars_ = _expr_vars(f.get("expr") or "")
+            props = {v: {"type": "number", "description": v} for v in vars_}
+            name = _fn_tool_name(c)
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": f"本体函数：{f.get('name') or c}（{f.get('expr')}）",
+                        "parameters": _obj(props, vars_),
+                    },
+                }
+            )
+            names.add(name)
+        elif c in acts:
+            a = acts[c]
+            props: dict = {}
+            for fld in a.get("input_schema") or []:
+                if isinstance(fld, dict) and fld.get("name"):
+                    props[fld["name"]] = {"type": fld.get("type") or "string"}
+            name = _act_tool_name(c)
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": (
+                            f"对象动作：{a.get('name') or c}"
+                            f"（{a.get('target_table') or '—'}.{a.get('method') or 'update'}）"
+                        ),
+                        "parameters": _obj(props),
+                    },
+                }
+            )
+            names.add(name)
+    return schemas, names
+
+
+async def run_selected_ontology_tool(name: str, args: dict, user_id: int | None = None) -> Any:
+    """选中本体工具的派发（函数求值 / 动作提议）。"""
+    from app.plugin.module_ai.ontology import service as ont
+
+    args = args or {}
+    if name.startswith("ont_fn__"):
+        code = name[len("ont_fn__") :]
+        funcs = await ont.list_functions(None)
+        f = next((x for x in funcs if x.get("code") == code), None)
+        if not f:
+            return {"error": f"本体函数 {code} 不存在"}
+        try:
+            return {"code": code, "result": _safe_eval(f.get("expr") or "", args)}
+        except Exception as e:  # noqa: BLE001
+            return {"error": f"函数求值失败：{e}"}
+    if name.startswith("ont_action__"):
+        code = name[len("ont_action__") :]
+        return await run_ontology_tool("propose_ontology_action", {"code": code, "args": args})
+    return {"error": f"未知本体工具：{name}"}
+
+
 async def ontology_catalog_text(max_objects: int = 20) -> str:
     """本体能力清单文本（对象 → 函数/动作），供注入 Agent 上下文。"""
     try:
