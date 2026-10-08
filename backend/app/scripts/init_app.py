@@ -11,7 +11,7 @@ from fastapi.openapi.docs import (
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.depends import RateLimiter, WebSocketRateLimiter
+from fastapi_limiter.depends import RateLimiter
 
 # 注册 JSONB→JSON、SQLite 注释降级等跨方言编译规则（SQLite/MySQL 下 create_all 需要）
 from app.alembic import dialect_compat  # noqa: F401
@@ -1651,13 +1651,6 @@ def register_routers(app: FastAPI) -> None:
     # 协作 WebSocket 单独注册：避免 HTTP 形态的限流依赖在 WS 握手时报错，
     # 并保留 /annotation 前缀以匹配前端连接的 /annotation/collab/ws/{id}
     app.include_router(get_collaboration_router(), prefix="/annotation")
-
-    from app.plugin.module_ai.chat.ws import WS_AI
-
-    # 手动注册WebSocket路由，不使用速率限制器
-    app.include_router(
-        router=WS_AI, dependencies=[Depends(WebSocketRateLimiter(times=1, seconds=5))]
-    )
 
     from app.api.v1.module_video.alarm.ws import AlarmWSRouter
 

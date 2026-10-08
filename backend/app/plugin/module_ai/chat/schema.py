@@ -2,16 +2,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from app.core.validator import DateTimeStr
-
-
-class ChatQuerySchema(BaseModel):
-    """WebSocket聊天查询模型"""
-    message: str = Field(..., description="消息内容")
-    session_id: str | None = Field(None, description="会话ID")
-    files: list[dict[str, Any]] | None = Field(None, description="文件信息")
 
 
 class ChatSessionCreateSchema(BaseModel):
@@ -22,16 +15,6 @@ class ChatSessionCreateSchema(BaseModel):
 class ChatSessionUpdateSchema(BaseModel):
     """更新会话模型"""
     title: str = Field(..., description="会话标题")
-
-
-class ChatSessionMessageSchema(BaseModel):
-    """会话消息模型"""
-    id: str = Field(..., description="消息ID")
-    role: str = Field(..., description="消息角色")
-    content: str = Field(..., description="消息内容")
-    created_at: int | None = Field(None, description="创建时间(Unix时间戳)")
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 @dataclass
