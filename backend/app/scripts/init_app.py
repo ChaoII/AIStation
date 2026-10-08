@@ -675,13 +675,12 @@ AI_BUTTON_PERMS: list[tuple[str, str]] = [
 ]
 
 # 已下线的 AI 页面路由名：存量库置 hidden=True（新库不再创建对应菜单）
-# AiWorkspace：AI 工作台入口页与侧边栏菜单冗余，已下线
-REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory", "AiWorkspace"]
+REMOVED_ROUTE_NAMES: list[str] = ["AiProvider", "AiPlayground", "AiReport", "Memory"]
 
 
 async def _ensure_ai_menus() -> None:
     """确保 AI 管理保留页面与按钮权限存在，并隐藏已下线页面（chat 来自种子数据）。"""
-    from sqlalchemy import select, update
+    from sqlalchemy import delete, select, update
 
     from app.api.v1.module_system.menu.model import MenuModel
     from app.api.v1.module_system.role.model import RoleMenusModel
@@ -730,6 +729,18 @@ async def _ensure_ai_menus() -> None:
                 .where(MenuModel.route_name.in_(REMOVED_ROUTE_NAMES))
                 .values(hidden=True)
             )
+
+            # AI 工作台：彻底删除菜单及其角色关联（不再保留，存量库一并清除）
+            _ws_menus = (
+                await db.execute(
+                    select(MenuModel).where(MenuModel.route_name == "AiWorkspace")
+                )
+            ).scalars().all()
+            for _m in _ws_menus:
+                await db.execute(
+                    delete(RoleMenusModel).where(RoleMenusModel.menu_id == _m.id)
+                )
+                await db.delete(_m)
 
             pages = [
                 ("AI 控制台", "AiOverview", "/ai/overview", "module_ai/overview/index", "module_ai:assistant:query", 7, "el-icon-Odometer"),
