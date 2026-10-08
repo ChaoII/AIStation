@@ -5,7 +5,39 @@ import docker
 
 from app.core.logger import log
 
-client = docker.from_env()
+# Docker 客户端惰性初始化：创建客户端会立即探测引擎 API 版本，
+# 若引擎卡死/不可用默认要阻塞约 60s，会拖死应用启动（训练模块在路由发现时被导入）。
+# 改为按需创建并加短超时：引擎不可用时快速失败并告警，不影响启动与其余（AI/本体等）功能。
+_DOCKER_TIMEOUT = 5
+
+
+class _LazyDockerClient:
+    """按需创建的 Docker 客户端代理：Docker 引擎不可用时快速失败，而非阻塞启动。"""
+
+    def __init__(self) -> None:
+        self._real: docker.DockerClient | None = None
+
+    @property
+    def real(self) -> "docker.DockerClient":
+        if self._real is None:
+            try:
+                self._real = docker.from_env(timeout=_DOCKER_TIMEOUT)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"⚠️  Docker 引擎不可用，训练/部署相关功能将不可用: {e}")
+                self._real = None
+        return self._real
+
+    def __getattr__(self, name: str):  # noqa: ANN204
+        c = self.real
+        if c is None:
+            raise docker.errors.DockerException("Docker 引擎不可用")
+        return getattr(c, name)
+
+    def __bool__(self) -> bool:
+        return self.real is not None
+
+
+client = _LazyDockerClient()
 
 
 async def pull_image(image: str) -> None:
