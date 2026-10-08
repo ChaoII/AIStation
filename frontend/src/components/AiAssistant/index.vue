@@ -173,7 +173,7 @@ const chat = useAiChat();
 
 // 会话管理
 const sessions = ref<ChatSession[]>([]);
-const currentSessionId = ref<string | null>(null);
+const currentSessionId = ref<number | null>(null);
 const currentSession = ref<ChatSessionDetail | null>(null);
 const sessionLoading = ref(false);
 
@@ -328,7 +328,7 @@ const loadSessions = async () => {
 };
 
 // 加载会话详情
-const loadSessionDetail = async (sessionId: string) => {
+const loadSessionDetail = async (sessionId: number) => {
   try {
     sessionLoading.value = true;
     const response = await AiChatAPI.getSessionDetail(sessionId);

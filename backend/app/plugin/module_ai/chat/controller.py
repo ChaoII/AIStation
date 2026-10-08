@@ -29,7 +29,7 @@ ChatRouter = APIRouter(route_class=OperationLogRoute, prefix="/chat", tags=["AI�
     response_model=ResponseSchema[dict[str, Any]],
 )
 async def get_session_detail_controller(
-    session_id: Annotated[str, Path(description="会话ID")],
+    session_id: Annotated[int, Path(description="会话ID")],
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:chat:detail"]))],
 ) -> JSONResponse:
     """
@@ -113,7 +113,7 @@ async def create_session_controller(
     response_model=ResponseSchema[None],
 )
 async def update_session_controller(
-    session_id: Annotated[str, Path(description="会话ID")],
+    session_id: Annotated[int, Path(description="会话ID")],
     data: ChatSessionUpdateSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:chat:update"]))],
 ) -> JSONResponse:
@@ -140,7 +140,7 @@ async def update_session_controller(
     response_model=ResponseSchema[None],
 )
 async def delete_session_controller(
-    session_ids: list[str],
+    session_ids: list[int],
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:chat:delete"]))],
 ) -> JSONResponse:
     """

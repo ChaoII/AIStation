@@ -1,10 +1,9 @@
+import json
 from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import Any
 
-from agno.run.team import TeamRunOutput
 from agno.session.team import TeamSession
-from agno.team.team import Team
 
 from app.api.v1.module_system.auth.schema import AuthSchema
 from app.api.v1.module_system.dept.service import DeptService
@@ -123,6 +122,32 @@ def _extract_messages(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return messages
 
 
+def _fmt_ai_session(sess: dict, auth: AuthSchema | None = None, include_messages: bool = False) -> dict[str, Any]:
+    """把 `ai_sessions` / `ai_messages` 的行格式化成 /chat 前端兼容的会话字典。"""
+    out: dict[str, Any] = {
+        "id": sess.get("id"),
+        "session_id": str(sess.get("id")),
+        "title": sess.get("title") or "",
+        "message_count": sess.get("message_count") or 0,
+        "created_time": sess.get("created_time"),
+        "updated_time": sess.get("updated_time"),
+        "team_name": None,
+    }
+    if include_messages:
+        out["messages"] = [
+            {
+                "id": str(m.get("id")),
+                "role": m.get("role"),
+                "content": "".join(
+                    p.get("text", "") for p in (m.get("parts") or []) if isinstance(p, dict)
+                ),
+                "created_at": None,
+            }
+            for m in (sess.get("messages") or [])
+        ]
+    return out
+
+
 class ChatService:
     """聊天会话管理模块服务层"""
 
@@ -205,87 +230,97 @@ class ChatService:
 
     @classmethod
     async def chat_non_stream(
-        cls, message: str, session_id: str | None, auth: AuthSchema
+        cls, message: str, session_id: int | None, auth: AuthSchema
     ) -> dict[str, Any]:
-        """
-        处理聊天查询并返回非流式 JSON 结构（含 session_id、操作建议等）。
+        """非流式 AI 对话（/ai-chat）：用共享 Agno Agent 驱动，会话并入规范 `ai_sessions` 仓库。
 
-        参数:
-        - message (str): 用户输入文本。
-        - session_id (str | None): 已有会话 ID；为空则新建会话。
-        - auth (AuthSchema): 当前用户认证信息。
-
-        返回:
-        - dict[str, Any]: 包含 response、session_id、action 等字段的字典。
+        - 会话：优先复用调用方已归属的 `ai_sessions` 会话（整数 id），否则新建。
+        - 执行：复用 ``agno_tools.agent_factory.build_agent``（业务工具统一注册），
+          不再使用独立的 Agno Team / TeamSession。
+        - 落库：每轮经 ``AiSessionService.record_exchange`` 写入 `ai_sessions` / `ai_messages`。
         """
+        from app.plugin.module_ai.agno_tools.agent_factory import build_agent
+        from app.plugin.module_ai.agno_tools.business import (
+            reset_user_context,
+            set_user_context,
+        )
+        from app.plugin.module_ai.provider.service import AiModelService
+        from app.plugin.module_ai.sessions.service import AiSessionService
+
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        # 归属校验并复用会话；无归属/不符则新建（deny-by-default）
+        sess = None
+        if session_id:
+            try:
+                found = await AiSessionService.get_session(int(session_id))
+                if found and (found.get("user_id") == uid or not found.get("user_id")):
+                    sess = found
+            except (TypeError, ValueError):
+                sess = None
+        if not sess:
+            sess = await AiSessionService.create(title=(message or "")[:30], user_id=uid)
+        session_id = int(sess["id"])
+
         try:
-            # 创建 CRUD 实例获取数据库连接
-            crud = ChatSessionCRUD(auth)
-
-            # 获取或创建会话
-            if not session_id:
-                # 创建新会话
-                import uuid
-                session_id = str(uuid.uuid4())
-                session: TeamSession | None = await crud.create_crud(
-                    data=ChatSessionCreateSchema(title="新对话")
+            model_config = (
+                await AiModelService.get_runtime_model("chat")
+                or await AiModelService.get_runtime_model()
+            )
+            if not model_config:
+                return {
+                    "response": "未配置大模型，请在 AI 管理→模型配置 中添加并启用",
+                    "session_id": session_id,
+                    "function_calls": None,
+                    "action": None,
+                }
+            token = set_user_context(uid)
+            try:
+                agent = build_agent(model_config=model_config, user_id=uid)
+                resp = await agent.arun(
+                    message,
+                    stream=False,
+                    user_id=str(uid) if uid is not None else None,
+                    add_history_to_context=True,
                 )
-                if not session:
-                    raise CustomException(msg="创建会话失败")
-                session_id = session.session_id
+            finally:
+                reset_user_context(token)
 
-            # 创建 AgnoFactory 实例并创建 Team，传入数据库连接
-            agno_factory = AgnoFactory()
-            dept_id = str(auth.user.dept_id) if auth and auth.user and hasattr(auth.user, 'dept_id') and auth.user.dept_id else "default"
-            agent: Team = agno_factory.create_agent(
-                user_id=auth.user.username if auth and auth.user else "user",
-                dept_id=dept_id,
-                session_id=session_id,
-                db=crud.db
+            reply = (
+                resp.get_content_as_string()
+                if hasattr(resp, "get_content_as_string")
+                else str(resp.content or "")
             )
 
-            # 执行聊天查询
-            response: TeamRunOutput = await agent.arun(input=message)
-
-            # 解析响应内容和操作建议
-            response_text = ""
+            # 从工具执行结果提取 __action__ / function_calls
             action = None
-
-            if response and response.content:
-                response_text = response.content
-                # 尝试从 response 中解析操作建议
-                # 如果 AI 返回了 JSON 格式的操作建议
-                import json
+            tool_log: list[dict[str, Any]] = []
+            for tool in (resp.tools or []):
+                name = getattr(tool, "tool_name", None)
+                args = getattr(tool, "tool_args", None) or {}
+                result = getattr(tool, "result", None)
                 try:
-                    # 检查响应是否包含 JSON 格式的操作建议
-                    if response_text.strip().startswith('{') and response_text.strip().endswith('}'):
-                        action = json.loads(response_text)
-                    elif '```json' in response_text:
-                        # 提取 JSON 代码块
-                        json_start = response_text.find('```json') + 7
-                        json_end = response_text.find('```', json_start)
-                        if json_end > json_start:
-                            json_str = response_text[json_start:json_end].strip()
-                            action = json.loads(json_str)
-                except (json.JSONDecodeError, Exception):
+                    if isinstance(result, str):
+                        result = json.loads(result)
+                except (ValueError, TypeError):
                     pass
+                if isinstance(result, dict) and result.get("__action__"):
+                    action = result["__action__"]
+                tool_log.append({"name": name, "args": args, "result": result})
 
-                # 如果没有解析到 JSON，尝试从文本中提取操作信息
-                if not action:
-                    action = cls._parse_action_from_response(response_text)
-
+            await AiSessionService.record_exchange(
+                session_id, message, reply, user_id=uid
+            )
             return {
-                "response": response_text,
+                "response": reply,
                 "session_id": session_id,
-                "function_calls": None,
+                "function_calls": tool_log or None,
                 "action": action,
             }
-
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             log.error(f"聊天查询失败: {e}")
             return {
                 "response": f"抱歉，处理您的请求时出现错误：{str(e)}",
-                "session_id": session_id if 'session_id' in locals() else None,
+                "session_id": session_id,
                 "function_calls": None,
                 "action": None,
             }
@@ -344,41 +379,31 @@ class ChatService:
     async def create_service(
         cls, auth: AuthSchema, data: ChatSessionCreateSchema
     ) -> dict[str, Any] | None:
-        """
-        创建会话。
+        """创建会话（并入规范 `ai_sessions` 仓库）。"""
+        from app.plugin.module_ai.sessions.service import AiSessionService
 
-        参数:
-        - auth (AuthSchema): 认证信息。
-        - data (ChatSessionCreateSchema): 创建参数。
-
-        返回:
-        - dict[str, Any] | None: 格式化后的会话字典；失败为 None。
-        """
-        crud = ChatSessionCRUD(auth)
-        session = await crud.create_crud(data=data)
-        if session:
-            return await _format_session_data(session, auth)
-        return None
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        session = await AiSessionService.create(data.title or "新对话", None, uid)
+        return _fmt_ai_session(session, auth)
 
     @classmethod
     async def get_session_service(
         cls, auth: AuthSchema, session_id: str
     ) -> dict[str, Any] | None:
-        """
-        获取单个会话详情。
+        """获取单个会话详情（含消息，来自 `ai_sessions` / `ai_messages`）。"""
+        from app.plugin.module_ai.sessions.service import AiSessionService
 
-        参数:
-        - auth (AuthSchema): 认证信息。
-        - session_id (str): 会话 ID。
-
-        返回:
-        - dict[str, Any] | None: 格式化后的会话字典；不存在为 None。
-        """
-        crud = ChatSessionCRUD(auth)
-        session: TeamSession | None = await crud.get_by_id_crud(session_id=session_id)
-        if session:
-            return await _format_session_data(session, auth)
-        return None
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        try:
+            session = await AiSessionService.get_session(int(session_id))
+        except (TypeError, ValueError):
+            return None
+        if not session:
+            return None
+        if session.get("user_id") not in (None, uid):
+            return None
+        session["messages"] = await AiSessionService.get_messages(int(session_id))
+        return _fmt_ai_session(session, auth, include_messages=True)
 
     @classmethod
     async def page_service(
@@ -389,64 +414,40 @@ class ChatService:
         search: ChatSessionQueryParam,
         order_by: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
-        """
-        分页获取会话列表。会话由 Agno 存储，无统一 SQL 分页，仅对内存列表切片。
+        """分页获取会话列表（来自 `ai_sessions`）。"""
+        from app.plugin.module_ai.sessions.service import AiSessionService
 
-        参数:
-        - auth (AuthSchema): 认证信息。
-        - page_no (int): 页码。
-        - page_size (int): 每页条数。
-        - search (ChatSessionQueryParam): 查询条件。
-        - order_by (list[dict[str, str]] | None): 排序，可选。
-
-        返回:
-        - dict[str, Any]: 分页结果（含 items、total 等）。
-        """
-        crud = ChatSessionCRUD(auth)
-        # 获取所有会话
-        sessions = await crud.list_crud()
-
-        # 转换为响应模型 - 使用 TeamSession 内置的 to_dict 方法并格式化
-        items = [await _format_session_data(s, auth) for s in sessions]
-
-        # 非关系型会话存储，沿用内存分页
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        sessions = await AiSessionService.list_sessions(uid)
+        items = [_fmt_ai_session(s, auth) for s in sessions]
         result = await PaginationService.paginate(
-            data_list=items,
-            page_no=page_no,
-            page_size=page_size,
+            data_list=items, page_no=page_no, page_size=page_size
         )
-
         return result
 
     @classmethod
     async def update_service(
         cls, auth: AuthSchema, session_id: str, data: ChatSessionUpdateSchema
     ) -> bool:
-        """
-        更新会话。
+        """重命名会话（`ai_sessions`）。"""
+        from app.plugin.module_ai.sessions.service import AiSessionService
 
-        参数:
-        - auth (AuthSchema): 认证信息。
-        - session_id (str): 会话 ID。
-        - data (ChatSessionUpdateSchema): 更新数据。
-
-        返回:
-        - bool: 是否成功。
-        """
-        crud = ChatSessionCRUD(auth)
-        success = await crud.update_crud(session_id=session_id, data=data)
-        return success
+        try:
+            result = await AiSessionService.rename(int(session_id), data.title, auth)
+        except (TypeError, ValueError):
+            return False
+        return result is not None
 
     @classmethod
     async def delete_service(cls, auth: AuthSchema, session_ids: list[str]) -> None:
-        """
-        删除会话。
+        """批量删除会话及消息（`ai_sessions`）。"""
+        from app.plugin.module_ai.sessions.service import AiSessionService
 
-        参数:
-        - auth (AuthSchema): 认证信息。
-        - session_ids (list[str]): 待删除会话 ID 列表。
-
-        返回:
-        - None
-        """
-        await ChatSessionCRUD(auth).delete_crud(session_ids=session_ids)
+        ids: list[int] = []
+        for s in session_ids:
+            try:
+                ids.append(int(s))
+            except (TypeError, ValueError):
+                continue
+        if ids:
+            await AiSessionService.delete(ids)

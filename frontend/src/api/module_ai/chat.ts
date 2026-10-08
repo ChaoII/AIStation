@@ -25,7 +25,7 @@ export const AiChatAPI = {
     });
   },
 
-  updateSession(id: string, body: { title: string }) {
+  updateSession(id: number, body: { title: string }) {
     return request<ApiResponse<ChatSession>>({
       url: `${API_PATH}/update/${id}`,
       method: "put",
@@ -33,7 +33,7 @@ export const AiChatAPI = {
     });
   },
 
-  deleteSession(body: string[]) {
+  deleteSession(body: number[]) {
     return request<ApiResponse>({
       url: `${API_PATH}/delete`,
       method: "delete",
@@ -41,7 +41,7 @@ export const AiChatAPI = {
     });
   },
 
-  chat(body: { message: string; session_id?: string | null }) {
+  chat(body: { message: string; session_id?: number | null }) {
     return request<ApiResponse<AiChatResponse>>({
       url: `${API_PATH}/ai-chat`,
       method: "post",
@@ -49,7 +49,7 @@ export const AiChatAPI = {
     });
   },
 
-  getSessionDetail(sessionId: string) {
+  getSessionDetail(sessionId: number) {
     return request<ApiResponse<ChatSessionDetail>>({
       url: `${API_PATH}/detail/${sessionId}`,
       method: "get",
@@ -67,7 +67,7 @@ export interface ChatSessionMessage {
 }
 
 export interface ChatSession {
-  session_id: string;
+  session_id: number;
   agent_id: string | null;
   team_id: string | null;
   team_name: string | null;
@@ -83,7 +83,7 @@ export interface ChatSession {
   created_at: number | null;
   updated_at: number | null;
 
-  id: string;
+  id: number;
   title: string | null;
   created_time: string | null;
   updated_time: string | null;
@@ -107,7 +107,7 @@ export interface UserInfo {
 
 export interface AiChatResponse {
   response: string;
-  session_id: string;
+  session_id: number;
   function_calls: Array<{
     name: string;
     arguments: Record<string, any>;
@@ -115,7 +115,7 @@ export interface AiChatResponse {
 }
 
 export interface ChatSessionDetail {
-  session_id: string;
+  session_id: number;
   agent_id: string | null;
   team_id: string | null;
   team_name: string | null;
@@ -131,7 +131,7 @@ export interface ChatSessionDetail {
   created_at: number | null;
   updated_at: number | null;
 
-  id: string;
+  id: number;
   title: string | null;
   created_time: string | null;
   updated_time: string | null;
