@@ -5,7 +5,7 @@
       <el-col v-if="loading" :span="24">
         <el-skeleton :rows="5" animated />
       </el-col>
-      <el-col v-for="p in pillars" :key="p.route" :xs="24" :sm="12" :md="8" :lg="8" :xl="8">
+      <el-col v-for="p in pillars" :key="p.route" :xs="24" :sm="12" :md="8" :lg="6" :xl="6">
         <el-card
           shadow="hover"
           class="pillar-card"
@@ -142,9 +142,7 @@ onMounted(load);
 
 <style scoped lang="scss">
 .ai-workspace-page {
-  max-width: 1200px;
   padding: 16px;
-  margin: 0 auto;
 }
 .pillar-grid {
   align-content: flex-start;
