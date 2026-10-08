@@ -145,8 +145,6 @@ def test_assistant_stream_rag(monkeypatch, test_client, auth_headers):
 
     monkeypatch.setattr(kb_service.AiKnowledgeService, "search", staticmethod(_fake_search))
 
-    sent: list[dict] = []
-
     async def _runtime(usage=None):
         return {"base_url": "http://x", "api_key": "k", "model": "m", "temperature": 0.1, "max_tokens": 64}
 

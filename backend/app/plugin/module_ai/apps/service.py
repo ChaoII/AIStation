@@ -306,17 +306,14 @@ async def run_app_ui_stream(
     session_id: int | None = None,
 ) -> AsyncIterator[str]:
     """运行 AI 应用：解析应用/模型/提示词/工具，流式产出 UI Message Stream 帧。"""
-    from openai import AsyncOpenAI
 
     from app.plugin.module_ai.assistant.service import (
         SYSTEM_PROMPT,
-        extract_openai_messages,
         last_user_text,
-        run_agent_ui_stream,
     )
     from app.plugin.module_ai.overview.service import AiOverviewService
     from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
-    from app.plugin.module_ai.provider.service import AiModelService, build_headers
+    from app.plugin.module_ai.provider.service import AiModelService
     from app.plugin.module_ai.sessions.service import persist_session_exchange
     from app.plugin.module_ai.streaming import UiMessageStream
 
@@ -410,27 +407,22 @@ async def run_app_ui_stream(
         model_name = runtime.get("model") or "app"
 
         tool_schemas, http_tools = await _build_app_tools(app.get("tools"))
-        client = AsyncOpenAI(
-            base_url=runtime["base_url"],
-            api_key=runtime["api_key"] or "sk-none",
-            default_headers=build_headers(
-                runtime["base_url"], runtime.get("extra_headers"), "aistation-app"
-            ),
-        )
-        messages: list[dict] = [{"role": "system", "content": system_prompt}]
-        messages += extract_openai_messages(ui_messages)
 
         async def _dispatch(name: str, args: dict, user_id: int | None):
             return await _run_app_tool(name, args, user_id, http_tools)
 
-        async for frame in run_agent_ui_stream(
-            client=client,
-            runtime=runtime,
-            messages=messages,
+        from app.plugin.module_ai.assistant.agno_service import run_agno_tool_stream
+
+        async for frame in run_agno_tool_stream(
+            model_config=runtime,
+            system_prompt=system_prompt,
             tool_schemas=tool_schemas,
             dispatch=_dispatch,
-            ms=ms,
+            user_text=user_text,
             user_id=uid,
+            session_id=session_id,
+            name="aistation_app",
+            description=f"AIStation 应用：{app.get('name') or '应用'}",
             state=state,
         ):
             yield frame

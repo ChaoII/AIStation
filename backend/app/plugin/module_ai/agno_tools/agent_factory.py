@@ -54,24 +54,31 @@ def build_agent(
     user_id: int | None = None,
     session_id: int | None = None,
     model: OpenAILike | None = None,
+    instructions: list[str] | None = None,
+    description: str | None = None,
+    tools: list | None = None,
+    name: str | None = None,
 ) -> Agent:
     """构建装配好统一业务工具的 Agno ``Agent``。
 
     - ``model_config`` / ``model`` 至少提供一个用于覆盖默认模型。
-    - 工具取自 ``agno_tools.business.build_business_tools()``，由 Agno 统一调度执行。
+    - 工具默认取自 ``agno_tools.business.build_business_tools()``；传入 ``tools``
+      则覆盖（app/agent 运行台可注入自定义/HTTP 工具，见 ``agno_tools.dynamic``）。
+    - ``instructions`` / ``description`` / ``name`` 可覆盖默认（app/agent 可注入
+      渲染后的系统提示词与自定义角色）。
     """
     from .business import build_business_tools
 
-    tools = build_business_tools()
+    tool_list = tools if tools is not None else build_business_tools()
     model_obj = model or build_model(model_config)
 
     kwargs: dict[str, Any] = {
-        "name": "aistation_assistant",
+        "name": name or "aistation_assistant",
         "role": "AIStation 智能助手",
-        "description": AGENT_DESCRIPTION,
-        "instructions": AGENT_INSTRUCTIONS,
+        "description": description or AGENT_DESCRIPTION,
+        "instructions": instructions if instructions is not None else AGENT_INSTRUCTIONS,
         "model": model_obj,
-        "tools": tools,
+        "tools": tool_list,
         "markdown": True,
         "add_datetime_to_context": True,
     }

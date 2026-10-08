@@ -28,6 +28,60 @@ def _sse(event) -> str:
         return ": event-serialize-error\n\n"
 
 
+async def run_agno_core(
+    *,
+    model_config: dict,
+    user_text: str,
+    user_id: int | None,
+    session_id: int | None,
+    input_text: str | None = None,
+    instructions: list[str] | None = None,
+    description: str | None = None,
+    tools: list | None = None,
+    name: str | None = None,
+) -> AsyncIterator[str]:
+    """Agno Agent 驱动的通用事件流执行核心：app / agent / assistant 共用。
+
+    - 工具：默认业务工具；传入 ``tools``（如 ``dynamic.build_dynamic_tools`` 生成的
+      app/agent 自定义工具）则覆盖。
+    - ``input_text`` 缺省用 ``user_text``。
+    - 产出 Agno 原生 SSE 帧并累积正文供会话落库由调用方决定。
+    - 使用 ``agno_tools.business`` / ``agno_tools.dynamic`` 两个 ContextVar 同时注入
+      user_id（业务工具与动态派发工具分别读取）。
+    """
+    from app.plugin.module_ai.agno_tools import business as biz
+    from app.plugin.module_ai.agno_tools import dynamic as dyn
+    from app.plugin.module_ai.agno_tools.agent_factory import build_agent
+
+    biz_token = biz.set_user_context(user_id)
+    dyn_token = dyn.set_user_context(user_id)
+    try:
+        agent = build_agent(
+            model_config=model_config,
+            user_id=user_id,
+            session_id=session_id,
+            instructions=instructions,
+            description=description,
+            tools=tools,
+            name=name,
+        )
+        async for item in agent.arun(
+            input_text if input_text is not None else user_text,
+            stream=True,
+            stream_events=True,
+            user_id=str(user_id) if user_id is not None else None,
+            session_id=f"session_{session_id}" if session_id is not None else None,
+            add_history_to_context=True,
+        ):
+            if isinstance(item, str):
+                yield item
+                continue
+            yield _sse(item)
+    finally:
+        biz.reset_user_context(biz_token)
+        dyn.reset_user_context(dyn_token)
+
+
 async def run_agno_stream(
     *,
     messages: list[dict],
@@ -43,8 +97,6 @@ async def run_agno_stream(
     - 知识库 RAG 上下文会注入 system 提示。
     - 用户上下文（user_id）通过 ContextVar 注入业务工具。
     """
-    from app.plugin.module_ai.agno_tools.agent_factory import build_agent
-    from app.plugin.module_ai.agno_tools.business import reset_user_context, set_user_context
     from app.plugin.module_ai.assistant.service import last_user_text
 
     # 决定运行时模型：显式 model_id > chat 类 > 默认
@@ -57,44 +109,44 @@ async def run_agno_stream(
         raise CustomException(msg="未配置大模型，请在 AI 管理→模型配置 中添加并启用")
 
     user_text = last_user_text(messages)
-    token = set_user_context(user_id)
+
+    # 知识库 RAG：检索上下文拼接到 system 提示
+    system_ctx = ""
+    if knowledge_ids:
+        try:
+            from app.plugin.module_ai.assistant.service import retrieve_kb_rag
+
+            kb_ctx, _ = await retrieve_kb_rag(knowledge_ids, user_text)
+            if kb_ctx:
+                system_ctx = kb_ctx
+        except Exception:  # noqa: BLE001 RAG 失败不阻断
+            pass
+
+    input_text = user_text
+    if system_ctx:
+        input_text = f"【参考知识】\n{system_ctx}\n\n问题：{user_text}"
+    assistant_text = ""
     try:
-        agent = build_agent(model_config=model_config, user_id=user_id, session_id=session_id)
-
-        # 知识库 RAG：检索上下文拼接到 system 提示
-        system_ctx = ""
-        if knowledge_ids:
-            try:
-                from app.plugin.module_ai.assistant.service import retrieve_kb_rag
-
-                kb_ctx, _ = await retrieve_kb_rag(knowledge_ids, user_text)
-                if kb_ctx:
-                    system_ctx = kb_ctx
-            except Exception:  # noqa: BLE001 RAG 失败不阻断
-                pass
-
-        input_text = user_text
-        if system_ctx:
-            input_text = f"【参考知识】\n{system_ctx}\n\n问题：{user_text}"
-        assistant_text = ""
-        async for item in agent.arun(
-            input_text,
-            stream=True,
-            stream_events=True,
-            user_id=str(user_id) if user_id is not None else None,
-            session_id=f"session_{session_id}" if session_id is not None else None,
-            add_history_to_context=True,
+        async for sse in run_agno_core(
+            model_config=model_config,
+            user_text=user_text,
+            user_id=user_id,
+            session_id=session_id,
+            input_text=input_text,
         ):
-            if isinstance(item, str):
-                yield item
-                continue
             # 累积正文（RunContent 事件），用于会话落库
-            _d = item.to_dict() if hasattr(item, "to_dict") else {}
-            if _d.get("event") == "RunContent" and isinstance(_d.get("content"), str):
-                assistant_text += _d.get("content", "")
-            yield _sse(item)
+            if "event: RunContent" in sse:
+                try:
+                    import json as _json
+
+                    _data = sse.split("\ndata:", 1)[1].strip()
+                    _payload = _json.loads(_data)
+                    if isinstance(_payload.get("content"), str):
+                        assistant_text += _payload["content"]
+                except Exception:  # noqa: BLE001 解析失败不影响透传
+                    pass
+            yield sse
     finally:
-        reset_user_context(token)
         # 会话落库（无论正常/异常/中断）：无 session_id 时内部直接返回
         try:
             from app.plugin.module_ai.sessions.service import persist_session_exchange
@@ -104,6 +156,61 @@ async def run_agno_stream(
             )
         except Exception:  # noqa: BLE001 落库失败不阻断（persist_session_exchange 内部已吞异常）
             pass
+
+
+async def run_agno_tool_stream(
+    *,
+    model_config: dict,
+    system_prompt: str,
+    tool_schemas: list[dict] | None,
+    dispatch,
+    user_text: str,
+    user_id: int | None,
+    session_id: int | None,
+    name: str | None = None,
+    description: str | None = None,
+    instructions_extra: list[str] | None = None,
+    state: dict | None = None,
+) -> AsyncIterator[str]:
+    """app/agent 运行台共用：用 Agno Agent 驱动“模型 + 提示词 + 动态工具”。
+
+    - ``tool_schemas``：OpenAI function schema 列表（来自 ``_build_app_tools``）。
+    - ``dispatch(name, args, user_id)``：异步派发器（内置/Agno/HTTP 工具）。
+    - 内部用 ``dynamic.build_dynamic_tools`` 把 schema 包装成 Agno 工具，
+      执行统一走 ``dispatch``；``user_id`` 通过 ContextVar 注入。
+    - 传入 ``state``（含 ``assistant_text``）时会把正文增量累加进去，供调用方
+      会话落库（对齐旧实现 ``state["assistant_text"]`` 的语义）。
+    """
+    import json as _json
+
+    from app.plugin.module_ai.agno_tools.dynamic import build_dynamic_tools
+
+    tools = build_dynamic_tools(tool_schemas or [], dispatch) if tool_schemas else None
+    instructions: list[str] = []
+    if system_prompt:
+        instructions.append(system_prompt)
+    if instructions_extra:
+        instructions.extend(instructions_extra)
+
+    async for sse in run_agno_core(
+        model_config=model_config,
+        user_text=user_text,
+        user_id=user_id,
+        session_id=session_id,
+        instructions=instructions or None,
+        description=description,
+        tools=tools,
+        name=name,
+    ):
+        if state is not None and "event: RunContent" in sse:
+            try:
+                _data = sse.split("\ndata:", 1)[1].strip()
+                _payload = _json.loads(_data)
+                if isinstance(_payload.get("content"), str):
+                    state["assistant_text"] = state.get("assistant_text", "") + _payload["content"]
+            except Exception:  # noqa: BLE001 解析失败不影响透传
+                pass
+        yield sse
 
 
 def agno_stream_response(body: AsyncIterator[str]):

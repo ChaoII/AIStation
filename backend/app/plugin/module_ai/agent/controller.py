@@ -8,7 +8,7 @@ from app.api.v1.module_system.auth.schema import AuthSchema
 from app.common.response import ErrorResponse, SuccessResponse
 from app.core.dependencies import AuthPermission
 from app.core.router_class import OperationLogRoute
-from app.plugin.module_ai.streaming import ui_stream_response
+from app.plugin.module_ai.assistant.agno_service import agno_stream_response
 
 from .schema import (
     AiAgentCategoryCreateSchema,
@@ -194,13 +194,13 @@ async def uninstall_skill(
     return SuccessResponse(msg="卸载成功")
 
 
-@AiAgentRouter.post("/{agent_id}/run/stream", summary="运行智能体（AI SDK UI Message Stream）")
+@AiAgentRouter.post("/{agent_id}/run/stream", summary="运行智能体（Agno 原生事件流）")
 async def run_agent_stream(
     agent_id: int,
     data: AiAgentRunSchema,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:agent:query"]))],
 ) -> StreamingResponse:
-    return ui_stream_response(
+    return agno_stream_response(
         AiAgentService.run_ui_stream(
             agent_id, data.messages, auth, data.variables, data.session_id
         )

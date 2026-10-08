@@ -202,8 +202,6 @@ def test_stream_with_session_id_persists_two_messages(
 
 def test_app_stream_with_session_id_persists(monkeypatch, test_client, auth_headers):
     """应用运行流式同样落会话：/ai/apps/{id}/run/stream 传 session_id 后多两条消息。"""
-    import openai
-
     app_name = f"pytest-app-{uuid.uuid4().hex[:8]}"
     app_id = test_client.post(
         "/api/v1/ai/apps/create",
@@ -222,9 +220,8 @@ def test_app_stream_with_session_id_persists(monkeypatch, test_client, auth_head
         headers=auth_headers,
     ).json()["data"]["id"]
     session_id = _create_session(test_client, auth_headers, "pytest 应用会话", app_id=app_id)
-    rounds = [[_FakeChunk(_FakeDelta(content="应用回复"))]]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
     _patch_runtime(monkeypatch)
+    _patch_build_agent(monkeypatch, content="应用回复")
 
     try:
         r = test_client.post(
@@ -237,7 +234,8 @@ def test_app_stream_with_session_id_persists(monkeypatch, test_client, auth_head
             headers=auth_headers,
         )
         assert r.status_code == 200, r.text
-        assert "data: [DONE]" in r.text
+        assert "event: RunContent" in r.text
+        assert '"content":"应用回复"' in r.text
 
         detail = test_client.get(
             f"/api/v1/ai/sessions/detail/{session_id}", headers=auth_headers
@@ -404,7 +402,7 @@ def test_app_stream_accumulates_all_round_assistant_text(
     monkeypatch, test_client, auth_headers
 ):
     """多轮应用流式：各轮 assistant 文本累加落库（与助手语义一致）。"""
-    import openai
+    from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunStartedEvent
 
     from app.plugin.module_ai.assistant.tools import TOOL_REGISTRY
 
@@ -426,21 +424,25 @@ def test_app_stream_accumulates_all_round_assistant_text(
         headers=auth_headers,
     ).json()["data"]["id"]
     session_id = _create_session(test_client, auth_headers, "pytest 多轮累加", app_id=app_id)
-    rounds = [
-        [
-            _FakeChunk(_FakeDelta(content="第一段")),
-            _FakeChunk(
-                _FakeDelta(
-                    tool_calls=[
-                        _FakeToolCallDelta("navigate", {"path": "/ai/report", "reason": "t"})
-                    ]
-                )
-            ),
-        ],
-        [_FakeChunk(_FakeDelta(content="第二段"))],
-    ]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds))
     _patch_runtime(monkeypatch)
+
+    async def _agen():
+        yield RunStartedEvent(event=RunEvent.run_started.value, model="m")
+        yield RunContentEvent(event=RunEvent.run_content.value, content="第一段")
+        yield RunContentEvent(event=RunEvent.run_content.value, content="第二段")
+        yield RunCompletedEvent(event=RunEvent.run_completed.value, content="第一段第二段")
+
+    class _FakeAgent:
+        @property
+        def tools(self):
+            return []
+
+        def arun(self, *a, **k):
+            return _agen()
+
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    monkeypatch.setattr(af, "build_agent", lambda **k: _FakeAgent())
 
     try:
         r = test_client.post(

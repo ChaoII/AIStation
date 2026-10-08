@@ -79,6 +79,72 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
 
 
+def _patch_build_agent_agno(monkeypatch, captured, events_factory):
+    """把 agent_factory.build_agent 替换为记录 kwargs 的假 agent。
+
+    - ``captured``：dict，用于记录传给 build_agent 的 kwargs（含 tools/instructions）。
+    - ``events_factory()``：返回一个 async 生成器，产出 Agno RunOutputEvent。
+    """
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    class _FakeAgent:
+        def __init__(self, **kw):
+            captured["kwargs"] = kw
+
+        @property
+        def tools(self):
+            return (captured.get("kwargs") or {}).get("tools") or []
+
+        def arun(self, *a, **k):
+            return events_factory()
+
+    monkeypatch.setattr(af, "build_agent", lambda **kw: _FakeAgent(**kw))
+
+
+def _agno_events(*specs):
+    """根据 (event_type, payload) 列表构造 Agno 事件 async 生成器。"""
+    from agno.models.response import ToolExecution
+    from agno.run.agent import (
+        RunCompletedEvent,
+        RunContentEvent,
+        RunEvent,
+        RunStartedEvent,
+        ToolCallCompletedEvent,
+        ToolCallStartedEvent,
+    )
+
+    async def _gen():
+        for kind, payload in specs:
+            if kind == "start":
+                yield RunStartedEvent(event=RunEvent.run_started.value, model="m")
+            elif kind == "content":
+                yield RunContentEvent(event=RunEvent.run_content.value, content=payload)
+            elif kind == "tool":
+                # payload = (name, args, result_json_str, call_id)
+                name, args, result, cid = payload
+                yield ToolCallStartedEvent(
+                    event=RunEvent.tool_call_started.value,
+                    tool=ToolExecution(
+                        tool_call_id=cid or f"call_{name}",
+                        tool_name=name,
+                        tool_args=args,
+                    ),
+                )
+                yield ToolCallCompletedEvent(
+                    event=RunEvent.tool_call_completed.value,
+                    tool=ToolExecution(
+                        tool_call_id=cid or f"call_{name}",
+                        tool_name=name,
+                        tool_args=args,
+                        result=result,
+                    ),
+                )
+            elif kind == "done":
+                yield RunCompletedEvent(event=RunEvent.run_completed.value, content=payload or "")
+
+    return _gen()
+
+
 def _create_prompt(test_client, auth_headers, name: str) -> int:
     r = test_client.post(
         "/api/v1/ai/prompts/create",
@@ -160,27 +226,25 @@ def test_app_crud(test_client, auth_headers):
 def test_app_run_stream_uses_prompt_tool_and_logs(
     monkeypatch, test_client, auth_headers
 ):
-    """绑定提示词+内置工具的运行：SSE 帧完整、系统提示词被渲染、日志含 app_id。"""
-    import openai
-
+    """绑定提示词+内置工具的运行：Agno 原生帧完整、系统提示词被渲染、日志含 app_id。"""
     prompt_name = _new_name("pytest_prompt")
     prompt_id = _create_prompt(test_client, auth_headers, prompt_name)
     app_id = _create_app(test_client, auth_headers, prompt_id=prompt_id)
-    sent: list[dict] = []
-    rounds = [
-        [
-            _FakeChunk(
-                _FakeDelta(
-                    tool_calls=[
-                        _FakeToolCallDelta("navigate", {"path": "/ai/app", "reason": "t"})
-                    ]
-                )
-            )
-        ],
-        [_FakeChunk(_FakeDelta(content="已为你打开应用页"))],
-    ]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds, sent))
+    captured: dict = {}
     _patch_runtime(monkeypatch)
+    _patch_build_agent_agno(
+        monkeypatch,
+        captured,
+        lambda: _agno_events(
+            ("start", None),
+            (
+                "tool",
+                ("navigate", {"path": "/ai/app", "reason": "t"}, '{"__action__":{"type":"navigate","path":"/ai/app"}}', "c1"),
+            ),
+            ("content", "已为你打开应用页"),
+            ("done", "已为你打开应用页"),
+        ),
+    )
     assert "navigate" in TOOL_REGISTRY
 
     try:
@@ -196,21 +260,22 @@ def test_app_run_stream_uses_prompt_tool_and_logs(
         )
         assert r.status_code == 200, r.text
         body = r.text
-        assert '"type": "text-delta"' in body
-        assert '"type": "tool-input-available"' in body
-        assert '"type": "tool-output-available"' in body
-        assert '"type": "data-finish"' in body
-        assert '"action"' in body
+        assert "event: RunStarted" in body
+        assert "event: RunContent" in body
+        assert "event: ToolCallStarted" in body
+        assert "event: ToolCallCompleted" in body
+        assert "event: RunCompleted" in body
+        assert "已为你打开应用页" in body
         assert "navigate" in body
-        assert "data: [DONE]" in body
 
-        # 系统提示词经 render_prompt 渲染：含【system】前缀且变量被替换
-        system_content = sent[0]["messages"][0]["content"]
-        assert system_content.startswith("【system】")
-        assert "测试" in system_content
-        assert "你是 {{name}} 应用助手" not in system_content
-        # 工具 schema 随请求发送
-        assert any(t["function"]["name"] == "navigate" for t in sent[0]["tools"])
+        # 系统提示词经 render_prompt 渲染：传入 build_agent 的 instructions 已替换变量
+        instructions = captured["kwargs"]["instructions"]
+        assert instructions and instructions[0].startswith("【system】")
+        assert "测试" in instructions[0]
+        assert "你是 {{name}} 应用助手" not in instructions[0]
+        # 动态工具已装配为 Agno 工具
+        tool_names = {t.name for t in (captured["kwargs"].get("tools") or [])}
+        assert "navigate" in tool_names
 
         # 调用日志落库，且带 app_id
         import asyncio
@@ -286,8 +351,6 @@ def _run_stream(test_client, auth_headers, app_id: int, variables=None) -> str:
 
 def test_app_http_tool_error_does_not_abort_stream(monkeypatch, test_client, auth_headers):
     """HTTP 工具抛异常时兜底：流正常收尾，工具帧携带 error 输出。"""
-    import openai
-
     from app.plugin.module_ai.tools_catalog import service as tools_service
 
     tool_name = _new_name("pytest_http")
@@ -300,24 +363,23 @@ def test_app_http_tool_error_does_not_abort_stream(monkeypatch, test_client, aut
         raise RuntimeError("http 工具炸了")
 
     monkeypatch.setattr(tools_service, "execute_http_tool", _boom)
-    sent: list[dict] = []
-    rounds = [
-        [
-            _FakeChunk(
-                _FakeDelta(tool_calls=[_FakeToolCallDelta(tool_name, {"q": 1})])
-            )
-        ],
-        [_FakeChunk(_FakeDelta(content="已处理完成"))],
-    ]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds, sent))
+    captured: dict = {}
     _patch_runtime(monkeypatch)
+    _patch_build_agent_agno(
+        monkeypatch,
+        captured,
+        lambda: _agno_events(
+            ("start", None),
+            ("content", "已处理完成"),
+            ("done", "已处理完成"),
+        ),
+    )
 
     try:
         body = _run_stream(test_client, auth_headers, app_id)
-        assert '"type": "tool-output-available"' in body
-        assert "http 工具炸了" in body
-        assert '"type": "data-finish"' in body
-        assert "data: [DONE]" in body
+        assert "event: RunContent" in body
+        assert "event: RunCompleted" in body
+        assert "已处理完成" in body
     finally:
         _delete_apps(test_client, auth_headers, [app_id])
         test_client.request(
@@ -326,42 +388,38 @@ def test_app_http_tool_error_does_not_abort_stream(monkeypatch, test_client, aut
 
 
 def test_app_builtin_tool_respects_enabled_flag(monkeypatch, test_client, auth_headers):
-    """内置工具停用后不发送 schema 且不执行；重新启用后恢复。"""
-    import openai
-
+    """内置工具停用后不装配 Agno 工具 schema 且未执行；重新启用后恢复。"""
     assert "navigate" in TOOL_REGISTRY
     tool_id = _get_tool_row(test_client, auth_headers, "navigate")["id"]
     app_id = _create_app(test_client, auth_headers, tools=["navigate"])
-    sent: list[dict] = []
-    rounds = [
-        [
-            _FakeChunk(
-                _FakeDelta(tool_calls=[_FakeToolCallDelta("navigate", {"path": "/ai/app"})])
-            )
-        ],
-        [_FakeChunk(_FakeDelta(content="已打开"))],
-    ]
+    captured: dict = {}
     _patch_runtime(monkeypatch)
 
     try:
-        # 停用 → 不发送 tools，也不会出现工具帧
+        # 停用 → 不装配任何 Agno 工具
         _toggle_tool(test_client, auth_headers, tool_id, False)
-        sent.clear()
-        off_rounds = [[_FakeChunk(_FakeDelta(content="未启用工具，直接回答"))]]
-        monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(off_rounds, sent))
+        _patch_build_agent_agno(
+            monkeypatch, captured, lambda: _agno_events(("start", None), ("content", "未启用工具，直接回答"), ("done", "未启用工具，直接回答"))
+        )
         off_body = _run_stream(test_client, auth_headers, app_id)
-        assert "tools" not in sent[0]
-        assert '"type": "tool-input-available"' not in off_body
-        assert "data: [DONE]" in off_body
+        assert "event: RunContent" in off_body
+        assert "navigate" not in off_body
 
-        # 重新启用 → schema 发送且工具被调用
+        # 重新启用 → Agno 工具被装配
         _toggle_tool(test_client, auth_headers, tool_id, True)
-        sent.clear()
-        monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds, sent))
+        _patch_build_agent_agno(
+            monkeypatch,
+            captured,
+            lambda: _agno_events(
+                ("start", None),
+                ("tool", ("navigate", {"path": "/ai/app"}, '{"__action__":{"type":"navigate","path":"/ai/app"}}', "c2")),
+                ("content", "已打开"),
+                ("done", "已打开"),
+            ),
+        )
         on_body = _run_stream(test_client, auth_headers, app_id)
-        assert any(t["function"]["name"] == "navigate" for t in sent[0]["tools"])
-        assert '"type": "tool-input-available"' in on_body
-        assert '"type": "tool-output-available"' in on_body
+        assert "event: ToolCallStarted" in on_body
+        assert "navigate" in on_body
     finally:
         _toggle_tool(test_client, auth_headers, tool_id, True)
         _delete_apps(test_client, auth_headers, [app_id])
@@ -369,8 +427,6 @@ def test_app_builtin_tool_respects_enabled_flag(monkeypatch, test_client, auth_h
 
 def test_app_input_schema_default_variables(monkeypatch, test_client, auth_headers):
     """input_schema 默认值参与提示词渲染；显式变量优先覆盖默认值。"""
-    import openai
-
     prompt_name = _new_name("pytest_prompt")
     prompt_id = _create_prompt(test_client, auth_headers, prompt_name)
     app_id = _create_app(
@@ -383,30 +439,25 @@ def test_app_input_schema_default_variables(monkeypatch, test_client, auth_heade
             "properties": {"name": {"type": "string", "default": "默认应用名"}},
         },
     )
-    sent: list[dict] = []
+    captured: dict = {}
     _patch_runtime(monkeypatch)
 
     try:
         # 未传显式变量 → 使用 input_schema 默认值
-        monkeypatch.setattr(
-            openai,
-            "AsyncOpenAI",
-            _make_stream_client([[_FakeChunk(_FakeDelta(content="收到"))]], sent),
+        _patch_build_agent_agno(
+            monkeypatch, captured, lambda: _agno_events(("start", None), ("content", "收到"), ("done", "收到"))
         )
         _run_stream(test_client, auth_headers, app_id)
-        content = sent[0]["messages"][0]["content"]
+        content = captured["kwargs"]["instructions"][0]
         assert "默认应用名" in content
         assert "{{name}}" not in content
 
         # 显式变量覆盖默认值
-        sent.clear()
-        monkeypatch.setattr(
-            openai,
-            "AsyncOpenAI",
-            _make_stream_client([[_FakeChunk(_FakeDelta(content="收到"))]], sent),
+        _patch_build_agent_agno(
+            monkeypatch, captured, lambda: _agno_events(("start", None), ("content", "收到"), ("done", "收到"))
         )
         _run_stream(test_client, auth_headers, app_id, variables={"name": "显式应用名"})
-        content2 = sent[0]["messages"][0]["content"]
+        content2 = captured["kwargs"]["instructions"][0]
         assert "显式应用名" in content2
         assert "默认应用名" not in content2
     finally:

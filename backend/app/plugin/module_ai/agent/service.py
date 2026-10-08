@@ -103,7 +103,6 @@ class AiAgentService:
         )
         return await cls.create(data, auth)
 
-
     # ---------------------------------------------------------------- #
     # 分类
     # ---------------------------------------------------------------- #
@@ -309,18 +308,15 @@ class AiAgentService:
             return
 
         # 回退：复用应用运行逻辑（模型+提示词+工具）
-        from openai import AsyncOpenAI
 
         from app.plugin.module_ai.apps.service import _build_app_tools, _merge_variables
         from app.plugin.module_ai.assistant.service import (
             SYSTEM_PROMPT,
-            extract_openai_messages,
             last_user_text,
-            run_agent_ui_stream,
         )
         from app.plugin.module_ai.overview.service import AiOverviewService
         from app.plugin.module_ai.prompts.service import AiPromptService, render_prompt
-        from app.plugin.module_ai.provider.service import AiModelService, build_headers
+        from app.plugin.module_ai.provider.service import AiModelService
         from app.plugin.module_ai.sessions.service import persist_session_exchange
         from app.plugin.module_ai.streaming import UiMessageStream
 
@@ -410,15 +406,6 @@ class AiAgentService:
                 if "resolve_object" not in tool_names:
                     tool_names.append("resolve_object")
             tool_schemas, http_tools = await _build_app_tools(tool_names)
-            client = AsyncOpenAI(
-                base_url=runtime["base_url"],
-                api_key=runtime["api_key"] or "sk-none",
-                default_headers=build_headers(
-                    runtime["base_url"], runtime.get("extra_headers"), "aistation-agent"
-                ),
-            )
-            messages: list[dict] = [{"role": "system", "content": system_prompt}]
-            messages += extract_openai_messages(ui_messages)
 
             async def _dispatch(name: str, args: dict, user_id: int | None):
                 from app.plugin.module_ai.apps.service import _run_app_tool
@@ -430,14 +417,18 @@ class AiAgentService:
 
             ds_token = QUERY_DS_CONTEXT.set(agent.get("query_datasource") or "system")
             try:
-                async for frame in run_agent_ui_stream(
-                    client=client,
-                    runtime=runtime,
-                    messages=messages,
+                from app.plugin.module_ai.assistant.agno_service import run_agno_tool_stream
+
+                async for frame in run_agno_tool_stream(
+                    model_config=runtime,
+                    system_prompt=system_prompt,
                     tool_schemas=tool_schemas,
                     dispatch=_dispatch,
-                    ms=ms,
+                    user_text=user_text,
                     user_id=uid,
+                    session_id=session_id,
+                    name="aistation_agent",
+                    description=f"AIStation 智能体：{agent.get('agent_name') or '智能体'}",
                     state=state,
                 ):
                     yield frame
@@ -470,7 +461,8 @@ class AiAgentService:
     @classmethod
     async def agent_dashboard(cls) -> dict:
         """Agent 编排运行看板：每个 Agent 的运行量/错误率/延迟 + 绑定工具技能能力矩阵。"""
-        from sqlalchemy import func as _f, select as _sel
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
         stats: dict[int, dict] = {}
         try:
             from app.plugin.module_ai.overview.model import AiCallLogModel
@@ -514,6 +506,7 @@ class AiAgentService:
         """多智能体协作编排（AIP Multi-Agent）：分解问题为子任务，按本体能力匹配可参与智能体。"""
         agents = await cls.list_agents()
         q = (question or "")
+
         def _cap(agent, key):
             caps = [str(c).lower() for c in (agent.get("capabilities") or [])]
             return key in caps

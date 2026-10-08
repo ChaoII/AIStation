@@ -76,6 +76,65 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
 
 
+def _patch_build_agent_agno(monkeypatch, captured, events_factory):
+    """把 agent_factory.build_agent 替换为记录 kwargs 的假 agent（Agno 原生事件流）。"""
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    class _FakeAgent:
+        def __init__(self, **kw):
+            captured["kwargs"] = kw
+
+        @property
+        def tools(self):
+            return (captured.get("kwargs") or {}).get("tools") or []
+
+        def arun(self, *a, **k):
+            return events_factory()
+
+    monkeypatch.setattr(af, "build_agent", lambda **kw: _FakeAgent(**kw))
+
+
+def _agno_events(*specs):
+    """根据 (event_type, payload) 列表构造 Agno 事件 async 生成器。"""
+    from agno.models.response import ToolExecution
+    from agno.run.agent import (
+        RunCompletedEvent,
+        RunContentEvent,
+        RunEvent,
+        RunStartedEvent,
+        ToolCallCompletedEvent,
+        ToolCallStartedEvent,
+    )
+
+    async def _gen():
+        for kind, payload in specs:
+            if kind == "start":
+                yield RunStartedEvent(event=RunEvent.run_started.value, model="m")
+            elif kind == "content":
+                yield RunContentEvent(event=RunEvent.run_content.value, content=payload)
+            elif kind == "tool":
+                name, args, result, cid = payload
+                yield ToolCallStartedEvent(
+                    event=RunEvent.tool_call_started.value,
+                    tool=ToolExecution(
+                        tool_call_id=cid or f"call_{name}", tool_name=name, tool_args=args
+                    ),
+                )
+                yield ToolCallCompletedEvent(
+                    event=RunEvent.tool_call_completed.value,
+                    tool=ToolExecution(
+                        tool_call_id=cid or f"call_{name}",
+                        tool_name=name,
+                        tool_args=args,
+                        result=result,
+                    ),
+                )
+            elif kind == "done":
+                yield RunCompletedEvent(event=RunEvent.run_completed.value, content=payload or "")
+
+    return _gen()
+
+
 def _create_agent(test_client, auth_headers, **overrides) -> int:
     payload = {
         "agent_name": _new_name(),
@@ -168,19 +227,22 @@ def test_agent_crud(test_client, auth_headers):
 
 
 def test_agent_run_fallback_stream(monkeypatch, test_client, auth_headers):
-    """无 workflow 时回退模型+提示词+工具：工具帧与文本帧完整。"""
-    import openai
-
+    """无 workflow 时回退模型+提示词+工具：Agno 原生工具帧与文本帧完整。"""
     assert "navigate" in TOOL_REGISTRY
 
     agent_id = _create_agent(test_client, auth_headers, tool_ids=["navigate"])
-    sent: list[dict] = []
-    rounds = [
-        [_FakeChunk(_FakeDelta(tool_calls=[_FakeToolCallDelta("navigate", {"path": "/ai"})]))],
-        [_FakeChunk(_FakeDelta(content="已跳转"))],
-    ]
-    monkeypatch.setattr(openai, "AsyncOpenAI", _make_stream_client(rounds, sent))
+    captured: dict = {}
     _patch_runtime(monkeypatch)
+    _patch_build_agent_agno(
+        monkeypatch,
+        captured,
+        lambda: _agno_events(
+            ("start", None),
+            ("tool", ("navigate", {"path": "/ai"}, '{"__action__":{"type":"navigate","path":"/ai"}}', "c1")),
+            ("content", "已跳转"),
+            ("done", "已跳转"),
+        ),
+    )
 
     try:
         r = test_client.post(
@@ -192,11 +254,14 @@ def test_agent_run_fallback_stream(monkeypatch, test_client, auth_headers):
         )
         assert r.status_code == 200, r.text
         body = r.text
-        assert '"type": "text-delta"' in body
-        assert '"type": "tool-input-available"' in body
-        assert '"type": "data-finish"' in body
-        assert "data: [DONE]" in body
-        assert any(t["function"]["name"] == "navigate" for t in sent[0]["tools"])
+        assert "event: RunStarted" in body
+        assert "event: ToolCallStarted" in body
+        assert "event: ToolCallCompleted" in body
+        assert "event: RunContent" in body
+        assert "event: RunCompleted" in body
+        assert "已跳转" in body
+        tool_names = {t.name for t in (captured["kwargs"].get("tools") or [])}
+        assert "navigate" in tool_names
     finally:
         _delete_agents(test_client, auth_headers, [agent_id])
 

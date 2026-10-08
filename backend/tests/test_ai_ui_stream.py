@@ -49,7 +49,6 @@ def _patch_runtime(monkeypatch):
 
 def _patch_build_agent(monkeypatch, events):
     """替换 build_agent，产出指定 Agno 事件序列的假 agent。"""
-    from agno.run.agent import RunEvent
 
     async def _agen():
         for e in events:
@@ -76,7 +75,7 @@ def _event(cls, **kw):
 
 def test_ui_stream_agno_native_reasoning_and_text(monkeypatch, test_client, auth_headers):
     """Agno 原生流：透出 RunContent 正文与 reasoning 事件。"""
-    from agno.run.agent import RunContentEvent, RunStartedEvent, RunEvent, RunCompletedEvent
+    from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunStartedEvent
 
     _patch_runtime(monkeypatch)
     _patch_build_agent(
@@ -110,8 +109,8 @@ def test_ui_stream_agno_native_tool_then_text(monkeypatch, test_client, auth_hea
         RunContentEvent,
         RunEvent,
         RunStartedEvent,
-        ToolCallStartedEvent,
         ToolCallCompletedEvent,
+        ToolCallStartedEvent,
     )
 
     _patch_runtime(monkeypatch)

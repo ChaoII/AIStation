@@ -2,8 +2,6 @@
 import uuid
 from types import SimpleNamespace
 
-from app.plugin.module_ai.skill.service import AiSkillService
-
 
 def _new_name(prefix: str = "pytest_skill") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}"
@@ -155,6 +153,31 @@ def _patch_runtime(monkeypatch):
     monkeypatch.setattr(AiModelService, "get_runtime_model", staticmethod(_runtime))
 
 
+def _patch_build_agent_agno(monkeypatch, captured):
+    """替换 build_agent，记录 instructions（系统提示词）并产出 Agno 原生事件流。"""
+    from agno.run.agent import RunCompletedEvent, RunContentEvent, RunEvent, RunStartedEvent
+
+    async def _agen():
+        yield RunStartedEvent(event=RunEvent.run_started.value, model="m")
+        yield RunContentEvent(event=RunEvent.run_content.value, content="好的")
+        yield RunCompletedEvent(event=RunEvent.run_completed.value, content="好的")
+
+    class _FakeAgent:
+        def __init__(self, **kw):
+            captured["kwargs"] = kw
+
+        @property
+        def tools(self):
+            return (captured.get("kwargs") or {}).get("tools") or []
+
+        def arun(self, *a, **k):
+            return _agen()
+
+    import app.plugin.module_ai.agno_tools.agent_factory as af
+
+    monkeypatch.setattr(af, "build_agent", lambda **kw: _FakeAgent(**kw))
+
+
 def _delete_agent(test_client, auth_headers, ids) -> None:
     if ids:
         test_client.request(
@@ -164,16 +187,10 @@ def _delete_agent(test_client, auth_headers, ids) -> None:
 
 def test_skill_injected_into_agent_run(monkeypatch, test_client, auth_headers):
     """绑定技能的智能体，运行回退路径把技能内容并入系统提示词。"""
-    import openai
-
     skill_id = _create_skill(test_client, auth_headers, content="我是技能内容XYZ")
-    sent: list[dict] = []
-    monkeypatch.setattr(
-        openai,
-        "AsyncOpenAI",
-        _make_stream_client([[_FakeChunk(_FakeDelta(content="好的"))]], sent),
-    )
+    captured: dict = {}
     _patch_runtime(monkeypatch)
+    _patch_build_agent_agno(monkeypatch, captured)
 
     r = test_client.post(
         "/api/v1/ai/agents/create",
@@ -198,11 +215,13 @@ def test_skill_injected_into_agent_run(monkeypatch, test_client, auth_headers):
         )
         assert run.status_code == 200, run.text
         assert "好的" in run.text
-        # 系统提示词应包含技能内容
-        assert sent, "应至少有一次 LLM 调用"
-        system_content = sent[0]["messages"][0]["content"]
-        assert "我是技能内容XYZ" in system_content
-        assert "可调用技能" in system_content
+        assert "event: RunContent" in run.text
+        # 系统提示词（传入 build_agent 的 instructions）应包含技能内容
+        instructions = captured["kwargs"]["instructions"]
+        assert instructions
+        sys_prompt = instructions[0]
+        assert "我是技能内容XYZ" in sys_prompt
+        assert "可调用技能" in sys_prompt
     finally:
         _delete_agent(test_client, auth_headers, [agent_id])
         _delete_skill(test_client, auth_headers, [skill_id])
