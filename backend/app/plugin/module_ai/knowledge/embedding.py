@@ -1,4 +1,5 @@
-"""知识分块嵌入：优先走 OpenAI 兼容 ``/embeddings``，失败回退确定性哈希向量。
+"""知识分块嵌入：优先走 Agno ``OpenAILikeEmbedder``（OpenAI 兼容 ``/embeddings``），
+失败回退确定性哈希向量。
 
 回退向量用于离线 / 无嵌入模型 / 测试环境，保证 RAG 流水线始终可运行；
 生产建议配置真正的 embedding 模型以提升语义召回质量。
@@ -33,7 +34,7 @@ async def embed_texts(texts: list[str], model_id: int | None = None) -> list[lis
     if not texts:
         return []
     try:
-        vectors = await _embed_openai(texts, model_id)
+        vectors = await _embed_agno(texts, model_id)
         if vectors and any(v for v in vectors):
             return [_fit_dim(v) for v in vectors]
     except Exception:  # noqa: BLE001
@@ -41,32 +42,30 @@ async def embed_texts(texts: list[str], model_id: int | None = None) -> list[lis
     return [_fit_dim(_hash_embed(t)) for t in texts]
 
 
-async def _embed_openai(texts: list[str], model_id: int | None) -> list[list[float]]:
-    from app.plugin.module_ai.models.service import (
-        AiModelService,
-        build_headers,
-    )
+async def _embed_agno(texts: list[str], model_id: int | None) -> list[list[float]]:
+    """用 Agno ``OpenAILikeEmbedder`` 批量向量化（OpenAI 兼容 ``/embeddings``）。
+
+    通过 ``async_client`` 注入 base_url 与自定义请求头；embedder 的 ``base_url`` 留空，
+    避免 Agno 对第三方模型额外下发 ``dimensions`` 参数。
+    """
+    from agno.knowledge.embedder.openai_like import OpenAILikeEmbedder
+    from openai import AsyncOpenAI
+
+    from app.plugin.module_ai.models.service import AiModelService, build_headers
 
     runtime = await AiModelService.get_runtime_model(model_id=model_id)
     if not runtime:
         raise RuntimeError("未配置嵌入模型")
-    # 去掉 base_url 尾部斜杠，统一拼接 /embeddings
     base = runtime["base_url"].rstrip("/")
-    url = f"{base}/embeddings"
-    import httpx
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {runtime.get('api_key') or 'sk-none'}",
-                **build_headers(base, runtime.get("extra_headers"), "aistation-rag"),
-            },
-            json={"model": runtime["model"], "input": texts},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return [item["embedding"] for item in data["data"]]
+    client = AsyncOpenAI(
+        base_url=base,
+        api_key=runtime.get("api_key") or "sk-none",
+        default_headers=build_headers(base, runtime.get("extra_headers"), "aistation-rag")
+        or None,
+    )
+    embedder = OpenAILikeEmbedder(id=runtime["model"], async_client=client)
+    embeddings, _usage = await embedder.async_get_embeddings_batch_and_usage(texts)
+    return embeddings
 
 
 def _hash_embed(text: str) -> list[float]:
