@@ -1,528 +1,605 @@
 <!-- 本体 Ontology：对象类型 / 属性 / Link / Action 强类型元模型（Palantir Ontology） -->
 <template>
   <div class="app-container ai-mod ai-ontology-page">
-    <el-card shadow="never" class="ont-caps">
-      <template #header>
-        <div class="ont-head">
-          <span class="ont-head__title">能力（Agent 可来自本体的能力）</span>
-          <el-button type="primary" size="small" :icon="Plus" @click="openCapEdit()">
-            新增能力
-          </el-button>
-        </div>
-      </template>
-      <el-tag
-        v-for="c in caps"
-        :key="c.code"
-        size="small"
-        effect="plain"
-        style="margin: 0 4px 4px 0"
-      >
-        {{ c.name }} [{{ c.type }}]
-      </el-tag>
-      <el-empty
-        v-if="!caps.length"
-        description="暂无能力，点击新增（Agent 装配时可选择这些本体能力）"
-        :image-size="40"
-      />
-    </el-card>
-    <el-row :gutter="12">
-      <!-- 左：对象类型列表 -->
-      <el-col :span="6">
-        <el-card shadow="never" class="ont-left">
+    <el-tabs v-model="pageTab" class="ont-page-tabs">
+      <el-tab-pane label="能力" name="caps">
+        <el-card shadow="never" class="ont-caps">
           <template #header>
             <div class="ont-head">
-              <span class="ont-head__title">对象类型（{{ filteredObjects.length }}）</span>
-              <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
-                新建对象
+              <span class="ont-head__title">能力（Agent 可来自本体的能力）</span>
+              <el-button type="primary" size="small" :icon="Plus" @click="openCapEdit()">
+                新增能力
               </el-button>
             </div>
-            <el-input
-              v-model="objSearch"
-              size="small"
-              placeholder="搜索对象（名称/编码）"
-              clearable
-              :prefix-icon="Search"
-              style="margin-bottom: 8px"
-            />
           </template>
-          <div
-            v-for="o in filteredObjects"
-            :key="o.code"
-            class="ont-obj"
-            :class="{ active: currentCode === o.code }"
-            @click="selectObject(o)"
-          >
-            <el-icon class="ont-obj__icon"><component :is="o.icon || 'Box'" /></el-icon>
-            <div class="ont-obj__meta">
-              <div class="ont-obj__name">
-                {{ o.name }}
-                <el-tag
-                  v-if="o.dq_score != null"
-                  size="small"
-                  effect="plain"
-                  class="ont-obj__dq"
-                  :type="o.dq_score >= 80 ? 'success' : o.dq_score >= 60 ? 'warning' : 'danger'"
-                  @click.stop="openDqDetail(o)"
-                >
-                  DQ {{ o.dq_score }}
-                </el-tag>
-              </div>
-              <div class="ont-obj__code">
-                {{ o.code }} · 属性{{ o.property_count }} 关联{{ o.link_count }} 动作{{
-                  o.action_count
-                }}
-              </div>
-            </div>
-            <el-button link type="danger" size="small" @click.stop="removeObj(o)">删</el-button>
+          <div class="caps-tags">
+            <el-tag v-for="c in caps" :key="c.code" size="small" effect="plain">
+              {{ c.name }} [{{ c.type }}]
+            </el-tag>
           </div>
-          <el-empty v-if="!objects.length" description="暂无对象，点击新建" :image-size="40" />
+          <el-empty
+            v-if="!caps.length"
+            description="暂无能力，点击新增（Agent 装配时可选择这些本体能力）"
+            :image-size="40"
+          />
         </el-card>
-      </el-col>
+      </el-tab-pane>
 
-      <!-- 右：对象详情（属性/Link/Action） -->
-      <el-col :span="18">
-        <el-card shadow="never" class="ont-right">
-          <template #header>
-            <div v-if="current" class="ont-head">
-              <span>
-                <el-tag size="small" type="primary" effect="dark">{{ current.name }}</el-tag>
-                <span class="ont-desc">{{ current.description }}</span>
-              </span>
-              <div>
-                <el-button size="small" :icon="MagicStick" @click="materialize(current)">
-                  物化为表
-                </el-button>
-                <el-button size="small" :icon="Edit" @click="openObjectEdit(current)">
-                  编辑
-                </el-button>
-              </div>
-            </div>
-            <div v-if="current" class="ont-stats">
-              <el-statistic title="属性" :value="props.length" />
-              <el-statistic title="关联" :value="links.length" />
-              <el-statistic title="动作" :value="actions.length" />
-              <el-statistic title="函数" :value="functions.length" />
-              <el-statistic
-                title="敏感属性"
-                :value="props.filter((p: any) => p.sensitive).length"
-              />
-            </div>
-            <span v-else>对象详情</span>
-          </template>
-          <el-tabs v-if="current" v-model="ontTab">
-            <el-tab-pane label="属性" name="property">
-              <div class="ont-bar">
-                <el-button type="primary" size="small" :icon="Plus" @click="openPropEdit()">
-                  新增属性
-                </el-button>
-                <el-tag size="small" type="info" effect="plain">共 {{ props.length }}</el-tag>
-              </div>
-              <el-table :data="props" size="small" border>
-                <el-table-column prop="name" label="属性" min-width="110" show-overflow-tooltip />
-                <el-table-column prop="code" label="编码" min-width="100" show-overflow-tooltip />
-                <el-table-column prop="prop_type" label="类型" width="90">
-                  <template #default="{ row }">
-                    <el-tag size="small" effect="plain">{{ row.prop_type }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="约束" min-width="140">
-                  <template #default="{ row }">
-                    <el-tag v-if="row.required" size="small" type="danger" effect="plain">
-                      必填
-                    </el-tag>
-                    <el-tag v-if="row.unique_col" size="small" type="warning" effect="plain">
-                      唯一
-                    </el-tag>
-                    <el-tag v-if="row.sensitive" size="small" type="info" effect="plain">
-                      敏感
-                    </el-tag>
-                    <span
-                      v-if="!row.required && !row.unique_col && !row.sensitive"
-                      class="ont-none"
-                    >
-                      —
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="source_col" label="来源列" min-width="90" />
-                <el-table-column label="授权角色" min-width="120">
-                  <template #default="{ row }">
-                    <el-tag
-                      v-for="r in row.roles"
-                      :key="r"
-                      size="small"
-                      type="info"
-                      effect="plain"
-                      style="margin: 0 2px"
-                    >
-                      {{ r }}
-                    </el-tag>
-                    <el-tag v-if="!row.roles?.length" size="small" effect="plain">公开</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openPropEdit(row)">
-                      编辑
-                    </el-button>
-                    <el-button link type="danger" size="small" @click="removeProp(row)">
-                      删
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
-
-            <el-tab-pane label="关联 Link" name="link">
-              <div class="ont-bar">
-                <el-button type="primary" size="small" :icon="Plus" @click="openLinkEdit(current)">
-                  新增关联
-                </el-button>
-                <el-tag size="small" type="info" effect="plain">共 {{ links.length }}</el-tag>
-              </div>
-              <el-table :data="links" size="small" border>
-                <el-table-column
-                  prop="source_object"
-                  label="源对象"
-                  min-width="110"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="target_object"
-                  label="目标对象"
-                  min-width="110"
-                  show-overflow-tooltip
-                />
-                <el-table-column prop="name" label="关联名" min-width="110" show-overflow-tooltip />
-                <el-table-column prop="card" label="基数" width="90" />
-                <el-table-column label="操作" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openLinkEdit(row)">
-                      编辑
-                    </el-button>
-                    <el-button link type="danger" size="small" @click="removeLink(row)">
-                      删
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
-
-            <el-tab-pane label="动作 Action" name="action">
-              <div class="ont-bar">
-                <el-button
-                  type="primary"
+      <el-tab-pane label="对象类型" name="objects">
+        <el-row :gutter="12">
+          <!-- 左：对象类型列表 -->
+          <el-col :span="6">
+            <el-card shadow="never" class="ont-left">
+              <template #header>
+                <div class="ont-head">
+                  <span class="ont-head__title">对象类型（{{ filteredObjects.length }}）</span>
+                  <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
+                    新建对象
+                  </el-button>
+                </div>
+                <el-input
+                  v-model="objSearch"
                   size="small"
-                  :icon="Plus"
-                  @click="openActionEdit(current)"
-                >
-                  新增动作
-                </el-button>
-                <el-tag size="small" type="info" effect="plain">共 {{ actions.length }}</el-tag>
-              </div>
-              <el-table :data="actions" size="small" border>
-                <el-table-column prop="name" label="动作" min-width="110" show-overflow-tooltip />
-                <el-table-column prop="code" label="编码" min-width="100" show-overflow-tooltip />
-                <el-table-column
-                  prop="target_table"
-                  label="写回目标"
-                  min-width="120"
-                  show-overflow-tooltip
+                  placeholder="搜索对象（名称/编码）"
+                  clearable
+                  :prefix-icon="Search"
+                  style="margin-bottom: 8px"
                 />
-                <el-table-column prop="method" label="方式" width="80" />
-                <el-table-column label="审批" width="80" align="center">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="row.approval ? 'warning' : 'info'" effect="plain">
-                      {{ row.approval ? "是" : "否" }}
+              </template>
+              <div
+                v-for="o in filteredObjects"
+                :key="o.code"
+                class="ont-obj"
+                :class="{ active: currentCode === o.code }"
+                @click="selectObject(o)"
+              >
+                <el-icon class="ont-obj__icon"><component :is="o.icon || 'Box'" /></el-icon>
+                <div class="ont-obj__meta">
+                  <div class="ont-obj__name">
+                    {{ o.name }}
+                    <el-tag
+                      v-if="o.dq_score != null"
+                      size="small"
+                      effect="plain"
+                      class="ont-obj__dq"
+                      :type="o.dq_score >= 80 ? 'success' : o.dq_score >= 60 ? 'warning' : 'danger'"
+                      @click.stop="openDqDetail(o)"
+                    >
+                      DQ {{ o.dq_score }}
                     </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openActionEdit(row)">
+                  </div>
+                  <div class="ont-obj__code">
+                    {{ o.code }} · 属性{{ o.property_count }} 关联{{ o.link_count }} 动作{{
+                      o.action_count
+                    }}
+                  </div>
+                </div>
+                <el-button link type="danger" size="small" @click.stop="removeObj(o)">删</el-button>
+              </div>
+              <el-empty v-if="!objects.length" description="暂无对象，点击新建" :image-size="40" />
+            </el-card>
+          </el-col>
+
+          <!-- 右：对象详情（属性/Link/Action） -->
+          <el-col :span="18">
+            <el-card shadow="never" class="ont-right">
+              <template #header>
+                <div v-if="current" class="ont-head">
+                  <span>
+                    <el-tag size="small" type="primary" effect="dark">{{ current.name }}</el-tag>
+                    <span class="ont-desc">{{ current.description }}</span>
+                  </span>
+                  <div>
+                    <el-button size="small" :icon="MagicStick" @click="materialize(current)">
+                      物化为表
+                    </el-button>
+                    <el-button size="small" :icon="Edit" @click="openObjectEdit(current)">
                       编辑
                     </el-button>
-                    <el-button link type="danger" size="small" @click="removeAction(row)">
-                      删
+                  </div>
+                </div>
+                <div v-if="current" class="ont-stats">
+                  <el-statistic title="属性" :value="props.length" />
+                  <el-statistic title="关联" :value="links.length" />
+                  <el-statistic title="动作" :value="actions.length" />
+                  <el-statistic title="函数" :value="functions.length" />
+                  <el-statistic
+                    title="敏感属性"
+                    :value="props.filter((p: any) => p.sensitive).length"
+                  />
+                </div>
+                <span v-else>对象详情</span>
+              </template>
+              <el-tabs v-if="current" v-model="ontTab">
+                <el-tab-pane label="属性" name="property">
+                  <div class="ont-bar">
+                    <el-button type="primary" size="small" :icon="Plus" @click="openPropEdit()">
+                      新增属性
                     </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
+                    <el-tag size="small" type="info" effect="plain">共 {{ props.length }}</el-tag>
+                  </div>
+                  <el-table :data="props" size="small" border>
+                    <el-table-column
+                      prop="name"
+                      label="属性"
+                      min-width="110"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="code"
+                      label="编码"
+                      min-width="100"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column prop="prop_type" label="类型" width="90">
+                      <template #default="{ row }">
+                        <el-tag size="small" effect="plain">{{ row.prop_type }}</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="约束" min-width="140">
+                      <template #default="{ row }">
+                        <el-tag v-if="row.required" size="small" type="danger" effect="plain">
+                          必填
+                        </el-tag>
+                        <el-tag v-if="row.unique_col" size="small" type="warning" effect="plain">
+                          唯一
+                        </el-tag>
+                        <el-tag v-if="row.sensitive" size="small" type="info" effect="plain">
+                          敏感
+                        </el-tag>
+                        <span
+                          v-if="!row.required && !row.unique_col && !row.sensitive"
+                          class="ont-none"
+                        >
+                          —
+                        </span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="source_col" label="来源列" min-width="90" />
+                    <el-table-column label="授权角色" min-width="120">
+                      <template #default="{ row }">
+                        <el-tag
+                          v-for="r in row.roles"
+                          :key="r"
+                          size="small"
+                          type="info"
+                          effect="plain"
+                          style="margin: 0 2px"
+                        >
+                          {{ r }}
+                        </el-tag>
+                        <el-tag v-if="!row.roles?.length" size="small" effect="plain">公开</el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="110" align="center">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="openPropEdit(row)">
+                          编辑
+                        </el-button>
+                        <el-button link type="danger" size="small" @click="removeProp(row)">
+                          删
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
 
-            <el-tab-pane label="函数 Function" name="function">
-              <div class="ont-bar">
-                <el-button type="primary" size="small" :icon="Plus" @click="openFuncEdit(current)">
-                  新增函数
-                </el-button>
-                <el-tag size="small" type="info" effect="plain">共 {{ functions.length }}</el-tag>
+                <el-tab-pane label="关联 Link" name="link">
+                  <div class="ont-bar">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :icon="Plus"
+                      @click="openLinkEdit(current)"
+                    >
+                      新增关联
+                    </el-button>
+                    <el-tag size="small" type="info" effect="plain">共 {{ links.length }}</el-tag>
+                  </div>
+                  <el-table :data="links" size="small" border>
+                    <el-table-column
+                      prop="source_object"
+                      label="源对象"
+                      min-width="110"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="target_object"
+                      label="目标对象"
+                      min-width="110"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="name"
+                      label="关联名"
+                      min-width="110"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column prop="card" label="基数" width="90" />
+                    <el-table-column label="操作" width="110" align="center">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="openLinkEdit(row)">
+                          编辑
+                        </el-button>
+                        <el-button link type="danger" size="small" @click="removeLink(row)">
+                          删
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
+
+                <el-tab-pane label="动作 Action" name="action">
+                  <div class="ont-bar">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :icon="Plus"
+                      @click="openActionEdit(current)"
+                    >
+                      新增动作
+                    </el-button>
+                    <el-tag size="small" type="info" effect="plain">共 {{ actions.length }}</el-tag>
+                  </div>
+                  <el-table :data="actions" size="small" border>
+                    <el-table-column
+                      prop="name"
+                      label="动作"
+                      min-width="110"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="code"
+                      label="编码"
+                      min-width="100"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="target_table"
+                      label="写回目标"
+                      min-width="120"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column prop="method" label="方式" width="80" />
+                    <el-table-column label="审批" width="80" align="center">
+                      <template #default="{ row }">
+                        <el-tag
+                          size="small"
+                          :type="row.approval ? 'warning' : 'info'"
+                          effect="plain"
+                        >
+                          {{ row.approval ? "是" : "否" }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="110" align="center">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="openActionEdit(row)">
+                          编辑
+                        </el-button>
+                        <el-button link type="danger" size="small" @click="removeAction(row)">
+                          删
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
+
+                <el-tab-pane label="函数 Function" name="function">
+                  <div class="ont-bar">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :icon="Plus"
+                      @click="openFuncEdit(current)"
+                    >
+                      新增函数
+                    </el-button>
+                    <el-tag size="small" type="info" effect="plain">
+                      共 {{ functions.length }}
+                    </el-tag>
+                  </div>
+                  <el-alert
+                    type="info"
+                    :closable="false"
+                    style="margin-bottom: 8px"
+                    title="对象上的可复用计算（如 订单毛利率），被问数 / Agent 复用（Palantir Functions）"
+                  />
+                  <el-table :data="functions" size="small" border>
+                    <el-table-column
+                      prop="name"
+                      label="函数"
+                      min-width="120"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="code"
+                      label="编码"
+                      min-width="120"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="expr"
+                      label="表达式/逻辑"
+                      min-width="200"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="description"
+                      label="说明"
+                      min-width="160"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column label="操作" width="110" align="center">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="openFuncEdit(row)">
+                          编辑
+                        </el-button>
+                        <el-button link type="danger" size="small" @click="removeFunc(row)">
+                          删
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
+
+                <el-tab-pane label="变更记录" name="changelog">
+                  <div class="ont-bar">
+                    <el-tag size="small" type="info" effect="plain">
+                      共 {{ changelog.length }}
+                    </el-tag>
+                  </div>
+                  <el-table :data="changelog" size="small" border>
+                    <template #empty>
+                      <el-empty description="暂无变更记录" :image-size="60" />
+                    </template>
+                    <el-table-column prop="kind" label="类型" width="90" />
+                    <el-table-column label="操作" width="80">
+                      <template #default="{ row }">
+                        <el-tag
+                          size="small"
+                          :type="row.action === 'delete' ? 'danger' : 'primary'"
+                          effect="plain"
+                        >
+                          {{ row.action }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column
+                      prop="detail"
+                      label="内容"
+                      min-width="200"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="created_time"
+                      label="时间"
+                      min-width="160"
+                      show-overflow-tooltip
+                    />
+                  </el-table>
+                </el-tab-pane>
+
+                <el-tab-pane label="版本" name="version">
+                  <div class="ont-bar">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :icon="Plus"
+                      @click="publishVer(current)"
+                    >
+                      发布版本
+                    </el-button>
+                    <el-tag size="small" type="info" effect="plain">
+                      共 {{ versions.length }}
+                    </el-tag>
+                  </div>
+                  <el-alert
+                    type="info"
+                    :closable="false"
+                    style="margin-bottom: 8px"
+                    title="将对象当前定义(对象/属性/Link/Action/函数)快照为版本，可随时回滚"
+                  />
+                  <el-table :data="versions" size="small" border>
+                    <template #empty>
+                      <el-empty
+                        description="暂无版本，点击「发布版本」快照当前定义"
+                        :image-size="60"
+                      />
+                    </template>
+                    <el-table-column prop="version" label="版本" width="80" />
+                    <el-table-column
+                      prop="object_code"
+                      label="对象"
+                      min-width="120"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column
+                      prop="created_time"
+                      label="创建时间"
+                      min-width="170"
+                      show-overflow-tooltip
+                    />
+                    <el-table-column label="操作" width="140" align="center">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="openVersionDiff(row)">
+                          对比
+                        </el-button>
+                        <el-button link type="warning" size="small" @click="rollbackVer(row)">
+                          回滚
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
+              </el-tabs>
+              <div v-else class="ont-empty">
+                <el-empty description="请先在左侧选择对象类型" :image-size="90">
+                  <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
+                    新建对象
+                  </el-button>
+                </el-empty>
               </div>
-              <el-alert
-                type="info"
-                :closable="false"
-                style="margin-bottom: 8px"
-                title="对象上的可复用计算（如 订单毛利率），被问数 / Agent 复用（Palantir Functions）"
+            </el-card>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
+
+      <el-tab-pane label="对象关系图" name="graph">
+        <el-row :gutter="12">
+          <el-col :span="24">
+            <el-card shadow="never">
+              <template #header>
+                <div class="ont-head">
+                  <span class="ont-head__title">对象关系图（对象 → Link → 对象）</span>
+                  <el-tag size="small" type="info" effect="plain">
+                    {{ objectGraph.nodes.length }} 对象 / {{ objectGraph.edges.length }} 关联
+                  </el-tag>
+                </div>
+              </template>
+              <GraphCanvas
+                v-if="objectGraph.nodes.length"
+                :nodes="objectGraph.nodes"
+                :edges="objectGraph.edges"
+                height="420px"
+                layout-name="preset"
+                :node-style="{ sizeMode: 'weight', labelSize: 12 }"
+                :edge-style="{ label: 'show', colorMode: 'type' }"
+                @node-tap="onGraphNodeTap"
               />
-              <el-table :data="functions" size="small" border>
-                <el-table-column prop="name" label="函数" min-width="120" show-overflow-tooltip />
-                <el-table-column prop="code" label="编码" min-width="120" show-overflow-tooltip />
-                <el-table-column
-                  prop="expr"
-                  label="表达式/逻辑"
-                  min-width="200"
-                  show-overflow-tooltip
-                />
+              <el-empty
+                v-else
+                :image-size="60"
+                description="暂无对象，点击新建对象后即可展示对象关系图"
+              />
+              <div class="gov-section" style="margin-top: 14px">对象元数据速览</div>
+              <el-table :data="objects" size="small" border max-height="300">
+                <el-table-column prop="code" label="编码" width="140" show-overflow-tooltip />
+                <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
                 <el-table-column
                   prop="description"
-                  label="说明"
-                  min-width="160"
+                  label="描述"
+                  min-width="180"
                   show-overflow-tooltip
                 />
-                <el-table-column label="操作" width="110" align="center">
-                  <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openFuncEdit(row)">
-                      编辑
-                    </el-button>
-                    <el-button link type="danger" size="small" @click="removeFunc(row)">
-                      删
-                    </el-button>
-                  </template>
+                <el-table-column label="属性" width="70" align="center">
+                  <template #default="{ row }">{{ row.property_count ?? 0 }}</template>
                 </el-table-column>
-              </el-table>
-            </el-tab-pane>
-
-            <el-tab-pane label="变更记录" name="changelog">
-              <div class="ont-bar">
-                <el-tag size="small" type="info" effect="plain">共 {{ changelog.length }}</el-tag>
-              </div>
-              <el-table :data="changelog" size="small" border>
-                <template #empty><el-empty description="暂无变更记录" :image-size="60" /></template>
-                <el-table-column prop="kind" label="类型" width="90" />
-                <el-table-column label="操作" width="80">
+                <el-table-column label="关联" width="70" align="center">
+                  <template #default="{ row }">{{ row.link_count ?? 0 }}</template>
+                </el-table-column>
+                <el-table-column label="动作" width="70" align="center">
+                  <template #default="{ row }">{{ row.action_count ?? 0 }}</template>
+                </el-table-column>
+                <el-table-column label="敏感属性" width="90" align="center">
                   <template #default="{ row }">
                     <el-tag
                       size="small"
-                      :type="row.action === 'delete' ? 'danger' : 'primary'"
+                      :type="(row.sensitive_count ?? 0) > 0 ? 'danger' : 'info'"
                       effect="plain"
                     >
-                      {{ row.action }}
+                      {{ row.sensitive_count ?? 0 }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="detail" label="内容" min-width="200" show-overflow-tooltip />
-                <el-table-column
-                  prop="created_time"
-                  label="时间"
-                  min-width="160"
-                  show-overflow-tooltip
-                />
               </el-table>
-            </el-tab-pane>
+            </el-card>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
 
-            <el-tab-pane label="版本" name="version">
-              <div class="ont-bar">
-                <el-button type="primary" size="small" :icon="Plus" @click="publishVer(current)">
-                  发布版本
-                </el-button>
-                <el-tag size="small" type="info" effect="plain">共 {{ versions.length }}</el-tag>
-              </div>
-              <el-alert
-                type="info"
-                :closable="false"
-                style="margin-bottom: 8px"
-                title="将对象当前定义(对象/属性/Link/Action/函数)快照为版本，可随时回滚"
-              />
-              <el-table :data="versions" size="small" border>
-                <template #empty>
-                  <el-empty description="暂无版本，点击「发布版本」快照当前定义" :image-size="60" />
-                </template>
-                <el-table-column prop="version" label="版本" width="80" />
-                <el-table-column
-                  prop="object_code"
-                  label="对象"
-                  min-width="120"
-                  show-overflow-tooltip
-                />
-                <el-table-column
-                  prop="created_time"
-                  label="创建时间"
-                  min-width="170"
-                  show-overflow-tooltip
-                />
-                <el-table-column label="操作" width="140" align="center">
-                  <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="openVersionDiff(row)">
-                      对比
-                    </el-button>
-                    <el-button link type="warning" size="small" @click="rollbackVer(row)">
-                      回滚
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </el-tab-pane>
-          </el-tabs>
-          <div v-else class="ont-empty">
-            <el-empty description="请先在左侧选择对象类型" :image-size="90">
-              <el-button type="primary" size="small" :icon="Plus" @click="openObjectEdit()">
-                新建对象
-              </el-button>
-            </el-empty>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :span="24">
-        <el-card shadow="never">
+      <el-tab-pane label="深度建模分析" name="analyze">
+        <el-card shadow="never" class="ont-analyze">
           <template #header>
             <div class="ont-head">
-              <span class="ont-head__title">对象关系图（对象 → Link → 对象）</span>
-              <el-tag size="small" type="info" effect="plain">
-                {{ objectGraph.nodes.length }} 对象 / {{ objectGraph.edges.length }} 关联
-              </el-tag>
-            </div>
-          </template>
-          <GraphCanvas
-            v-if="objectGraph.nodes.length"
-            :nodes="objectGraph.nodes"
-            :edges="objectGraph.edges"
-            height="420px"
-            layout-name="preset"
-            :node-style="{ sizeMode: 'weight', labelSize: 12 }"
-            :edge-style="{ label: 'show', colorMode: 'type' }"
-            @node-tap="onGraphNodeTap"
-          />
-          <el-empty
-            v-else
-            :image-size="60"
-            description="暂无对象，点击新建对象后即可展示对象关系图"
-          />
-          <div class="gov-section" style="margin-top: 14px">对象元数据速览</div>
-          <el-table :data="objects" size="small" border max-height="300">
-            <el-table-column prop="code" label="编码" width="140" show-overflow-tooltip />
-            <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-            <el-table-column
-              prop="description"
-              label="描述"
-              min-width="180"
-              show-overflow-tooltip
-            />
-            <el-table-column label="属性" width="70" align="center">
-              <template #default="{ row }">{{ row.property_count ?? 0 }}</template>
-            </el-table-column>
-            <el-table-column label="关联" width="70" align="center">
-              <template #default="{ row }">{{ row.link_count ?? 0 }}</template>
-            </el-table-column>
-            <el-table-column label="动作" width="70" align="center">
-              <template #default="{ row }">{{ row.action_count ?? 0 }}</template>
-            </el-table-column>
-            <el-table-column label="敏感属性" width="90" align="center">
-              <template #default="{ row }">
-                <el-tag
-                  size="small"
-                  :type="(row.sensitive_count ?? 0) > 0 ? 'danger' : 'info'"
-                  effect="plain"
-                >
-                  {{ row.sensitive_count ?? 0 }}
+              <span class="ont-head__title">本体深度建模分析</span>
+              <div class="ont-head__actions">
+                <el-tag size="small" type="info" effect="plain">
+                  {{ ontAnalyze?.objects ?? 0 }} 对象
                 </el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-card shadow="never" class="ont-analyze" style="margin-top: 12px">
-      <template #header>
-        <div class="ont-head">
-          <span class="ont-head__title">本体深度建模分析</span>
-          <div class="ont-head__actions">
-            <el-tag size="small" type="info" effect="plain">
-              {{ ontAnalyze?.objects ?? 0 }} 对象
-            </el-tag>
-            <el-tag size="small" type="info" effect="plain">
-              {{ ontAnalyze?.links ?? 0 }} 关联
-            </el-tag>
-            <el-button size="small" :loading="ontAnalyzeLoading" @click="loadAnalyze">
-              刷新分析
-            </el-button>
-          </div>
-        </div>
-      </template>
-      <el-row :gutter="12">
-        <el-col :sm="24" :md="8">
-          <div class="gov-section">关系完备性</div>
-          <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="对象 / 属性 / 关联 / 动作">
-              {{ ontAnalyze?.objects ?? 0 }} / {{ ontAnalyze?.properties ?? 0 }} /
-              {{ ontAnalyze?.links ?? 0 }} / {{ ontAnalyze?.actions ?? 0 }}
-            </el-descriptions-item>
-            <el-descriptions-item label="关系密度">
-              {{ ontAnalyze?.density ?? 0 }}
-            </el-descriptions-item>
-            <el-descriptions-item label="连通分量">
-              {{ ontAnalyze?.components ?? 0 }}
-            </el-descriptions-item>
-            <el-descriptions-item label="孤立对象">
-              {{ ontAnalyze?.isolated ?? 0 }}
-            </el-descriptions-item>
-            <el-descriptions-item label="缺主键对象">
-              {{ ontAnalyze?.no_pk ?? 0 }}
-            </el-descriptions-item>
-            <el-descriptions-item label="基数分布">
-              <el-tag
-                v-for="(v, k) in ontAnalyze?.card_dist || {}"
-                :key="k"
-                size="small"
-                effect="plain"
-                style="margin: 0 3px 3px 0"
-              >
-                {{ k }}: {{ v }}
-              </el-tag>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-col>
-        <el-col :sm="24" :md="8">
-          <div class="gov-section">中心度 Top 对象</div>
-          <div v-if="ontAnalyze?.top_central?.length">
-            <div
-              v-for="n in ontAnalyze.top_central"
-              :key="n.code"
-              class="ov-usage-row"
-              style="justify-content: space-between; margin-bottom: 4px"
-            >
-              <span style="font-size: 12px">
-                {{ n.name }}
-                <span style="color: var(--el-text-color-secondary)">({{ n.code }})</span>
-              </span>
-              <el-tag size="small" type="warning" effect="plain">
-                度 {{ n.degree }}（入 {{ n.in }} / 出 {{ n.out }}）
-              </el-tag>
-            </div>
-          </div>
-          <el-empty v-else :image-size="40" description="暂无对象" />
-        </el-col>
-        <el-col :sm="24" :md="8">
-          <div class="gov-section">建模建议</div>
-          <template v-if="(ontAnalyze?.recommendations || []).length">
-            <div
-              v-for="(r, i) in ontAnalyze?.recommendations || []"
-              :key="i"
-              class="report-line"
-              style="margin-bottom: 4px"
-            >
-              <el-tag size="small" type="primary" effect="plain" style="margin-right: 4px">
-                {{ i + 1 }}
-              </el-tag>
-              {{ r }}
+                <el-tag size="small" type="info" effect="plain">
+                  {{ ontAnalyze?.links ?? 0 }} 关联
+                </el-tag>
+                <el-button size="small" :loading="ontAnalyzeLoading" @click="loadAnalyze">
+                  刷新分析
+                </el-button>
+              </div>
             </div>
           </template>
-          <el-empty v-else :image-size="40" description="暂无建议" />
-        </el-col>
-      </el-row>
-    </el-card>
+          <el-row :gutter="12">
+            <el-col :sm="24" :md="8">
+              <div class="gov-section">关系完备性</div>
+              <el-descriptions :column="1" size="small" border>
+                <el-descriptions-item label="对象 / 属性 / 关联 / 动作">
+                  {{ ontAnalyze?.objects ?? 0 }} / {{ ontAnalyze?.properties ?? 0 }} /
+                  {{ ontAnalyze?.links ?? 0 }} / {{ ontAnalyze?.actions ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="关系密度">
+                  {{ ontAnalyze?.density ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="连通分量">
+                  {{ ontAnalyze?.components ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="孤立对象">
+                  {{ ontAnalyze?.isolated ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="缺主键对象">
+                  {{ ontAnalyze?.no_pk ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="基数分布">
+                  <el-tag
+                    v-for="(v, k) in ontAnalyze?.card_dist || {}"
+                    :key="k"
+                    size="small"
+                    effect="plain"
+                    style="margin: 0 3px 3px 0"
+                  >
+                    {{ k }}: {{ v }}
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+            </el-col>
+            <el-col :sm="24" :md="8">
+              <div class="gov-section">中心度 Top 对象</div>
+              <div v-if="ontAnalyze?.top_central?.length">
+                <div
+                  v-for="n in ontAnalyze.top_central"
+                  :key="n.code"
+                  class="ov-usage-row"
+                  style="justify-content: space-between; margin-bottom: 4px"
+                >
+                  <span style="font-size: 12px">
+                    {{ n.name }}
+                    <span style="color: var(--el-text-color-secondary)">({{ n.code }})</span>
+                  </span>
+                  <el-tag size="small" type="warning" effect="plain">
+                    度 {{ n.degree }}（入 {{ n.in }} / 出 {{ n.out }}）
+                  </el-tag>
+                </div>
+              </div>
+              <el-empty v-else :image-size="40" description="暂无对象" />
+            </el-col>
+            <el-col :sm="24" :md="8">
+              <div class="gov-section">建模建议</div>
+              <template v-if="(ontAnalyze?.recommendations || []).length">
+                <div
+                  v-for="(r, i) in ontAnalyze?.recommendations || []"
+                  :key="i"
+                  class="report-line"
+                  style="margin-bottom: 4px"
+                >
+                  <el-tag size="small" type="primary" effect="plain" style="margin-right: 4px">
+                    {{ i + 1 }}
+                  </el-tag>
+                  {{ r }}
+                </div>
+              </template>
+              <el-empty v-else :image-size="40" description="暂无建议" />
+            </el-col>
+          </el-row>
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 版本对比 -->
     <el-dialog v-model="diffDialog" title="版本对比（该版本 vs 当前）" width="560px" append-to-body>
@@ -893,6 +970,7 @@ const objectGraph = computed(() => {
 const current = ref<any>(null);
 const currentCode = ref("");
 const ontTab = ref("property");
+const pageTab = ref("objects");
 const props = ref<any[]>([]);
 const links = ref<any[]>([]);
 const actions = ref<any[]>([]);
@@ -1289,6 +1367,16 @@ async function loadAnalyze() {
 <style scoped lang="scss">
 .ai-ontology-page {
   padding: 12px;
+}
+/* 能力标签横向流动（全局 .el-card__body 为纵向 flex，会把 el-tag 拉伸成整行） */
+.caps-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+.ont-page-tabs .el-tabs__content {
+  overflow: visible;
 }
 /* 左右白色卡片铺满可视区域（填满，不留下方大片留白） */
 .ai-ontology-page .el-col {
