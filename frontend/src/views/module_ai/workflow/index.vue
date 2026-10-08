@@ -21,10 +21,15 @@
           </el-button>
           <el-button :icon="DataAnalysis" @click="openCompare">对比</el-button>
           <el-dropdown v-if="wfTemplates.length" @command="createFromTemplate">
-            <el-button>从模板创建<el-icon style="margin-left:4px"><ArrowDown /></el-icon></el-button>
+            <el-button>
+              从模板创建
+              <el-icon style="margin-left: 4px"><ArrowDown /></el-icon>
+            </el-button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item v-for="t in wfTemplates" :key="t.key" :command="t">{{ t.name }}</el-dropdown-item>
+                <el-dropdown-item v-for="t in wfTemplates" :key="t.key" :command="t">
+                  {{ t.name }}
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -138,14 +143,19 @@ import { useCrudList } from "@/components/CURD/useCrudList";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 const wfTemplates = ref<any[]>([]);
 async function loadWfTemplates() {
-  try { wfTemplates.value = (await getAiWorkflowTemplates()).data?.data || []; }
-  catch { wfTemplates.value = []; }
+  try {
+    wfTemplates.value = (await getAiWorkflowTemplates()).data?.data || [];
+  } catch {
+    wfTemplates.value = [];
+  }
 }
 async function createFromTemplate(tpl: any) {
   try {
     const r = await createAiWorkflowFromTemplate(tpl.key, tpl.name);
     ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
-  } catch (e: any) { ElMessage.error(e?.msg || "创建失败"); }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "创建失败");
+  }
 }
 import {
   getAiWorkflowList,

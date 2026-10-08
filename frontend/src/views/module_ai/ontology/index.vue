@@ -102,7 +102,10 @@
               <el-statistic title="关联" :value="links.length" />
               <el-statistic title="动作" :value="actions.length" />
               <el-statistic title="函数" :value="functions.length" />
-              <el-statistic title="敏感属性" :value="props.filter((p: any) => p.sensitive).length" />
+              <el-statistic
+                title="敏感属性"
+                :value="props.filter((p: any) => p.sensitive).length"
+              />
             </div>
             <span v-else>对象详情</span>
           </template>
@@ -391,12 +394,21 @@
             :edge-style="{ label: 'show', colorMode: 'type' }"
             @node-tap="onGraphNodeTap"
           />
-          <el-empty v-else :image-size="60" description="暂无对象，点击新建对象后即可展示对象关系图" />
+          <el-empty
+            v-else
+            :image-size="60"
+            description="暂无对象，点击新建对象后即可展示对象关系图"
+          />
           <div class="gov-section" style="margin-top: 14px">对象元数据速览</div>
           <el-table :data="objects" size="small" border max-height="300">
             <el-table-column prop="code" label="编码" width="140" show-overflow-tooltip />
             <el-table-column prop="name" label="名称" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+            <el-table-column
+              prop="description"
+              label="描述"
+              min-width="180"
+              show-overflow-tooltip
+            />
             <el-table-column label="属性" width="70" align="center">
               <template #default="{ row }">{{ row.property_count ?? 0 }}</template>
             </el-table-column>
@@ -427,9 +439,15 @@
         <div class="ont-head">
           <span class="ont-head__title">本体深度建模分析</span>
           <div class="ont-head__actions">
-            <el-tag size="small" type="info" effect="plain">{{ ontAnalyze?.objects ?? 0 }} 对象</el-tag>
-            <el-tag size="small" type="info" effect="plain">{{ ontAnalyze?.links ?? 0 }} 关联</el-tag>
-            <el-button size="small" :loading="ontAnalyzeLoading" @click="loadAnalyze">刷新分析</el-button>
+            <el-tag size="small" type="info" effect="plain">
+              {{ ontAnalyze?.objects ?? 0 }} 对象
+            </el-tag>
+            <el-tag size="small" type="info" effect="plain">
+              {{ ontAnalyze?.links ?? 0 }} 关联
+            </el-tag>
+            <el-button size="small" :loading="ontAnalyzeLoading" @click="loadAnalyze">
+              刷新分析
+            </el-button>
           </div>
         </div>
       </template>
@@ -441,12 +459,26 @@
               {{ ontAnalyze?.objects ?? 0 }} / {{ ontAnalyze?.properties ?? 0 }} /
               {{ ontAnalyze?.links ?? 0 }} / {{ ontAnalyze?.actions ?? 0 }}
             </el-descriptions-item>
-            <el-descriptions-item label="关系密度">{{ ontAnalyze?.density ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="连通分量">{{ ontAnalyze?.components ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="孤立对象">{{ ontAnalyze?.isolated ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="缺主键对象">{{ ontAnalyze?.no_pk ?? 0 }}</el-descriptions-item>
+            <el-descriptions-item label="关系密度">
+              {{ ontAnalyze?.density ?? 0 }}
+            </el-descriptions-item>
+            <el-descriptions-item label="连通分量">
+              {{ ontAnalyze?.components ?? 0 }}
+            </el-descriptions-item>
+            <el-descriptions-item label="孤立对象">
+              {{ ontAnalyze?.isolated ?? 0 }}
+            </el-descriptions-item>
+            <el-descriptions-item label="缺主键对象">
+              {{ ontAnalyze?.no_pk ?? 0 }}
+            </el-descriptions-item>
             <el-descriptions-item label="基数分布">
-              <el-tag v-for="(v, k) in ontAnalyze?.card_dist || {}" :key="k" size="small" effect="plain" style="margin:0 3px 3px 0">
+              <el-tag
+                v-for="(v, k) in ontAnalyze?.card_dist || {}"
+                :key="k"
+                size="small"
+                effect="plain"
+                style="margin: 0 3px 3px 0"
+              >
                 {{ k }}: {{ v }}
               </el-tag>
             </el-descriptions-item>
@@ -455,18 +487,38 @@
         <el-col :sm="24" :md="8">
           <div class="gov-section">中心度 Top 对象</div>
           <div v-if="ontAnalyze?.top_central?.length">
-            <div v-for="n in ontAnalyze.top_central" :key="n.code" class="ov-usage-row" style="justify-content: space-between; margin-bottom: 4px">
-              <span style="font-size:12px">{{ n.name }} <span style="color:var(--el-text-color-secondary)">({{ n.code }})</span></span>
-              <el-tag size="small" type="warning" effect="plain">度 {{ n.degree }}（入 {{ n.in }} / 出 {{ n.out }}）</el-tag>
+            <div
+              v-for="n in ontAnalyze.top_central"
+              :key="n.code"
+              class="ov-usage-row"
+              style="justify-content: space-between; margin-bottom: 4px"
+            >
+              <span style="font-size: 12px">
+                {{ n.name }}
+                <span style="color: var(--el-text-color-secondary)">({{ n.code }})</span>
+              </span>
+              <el-tag size="small" type="warning" effect="plain">
+                度 {{ n.degree }}（入 {{ n.in }} / 出 {{ n.out }}）
+              </el-tag>
             </div>
           </div>
           <el-empty v-else :image-size="40" description="暂无对象" />
         </el-col>
         <el-col :sm="24" :md="8">
           <div class="gov-section">建模建议</div>
-          <div v-for="(r, i) in ontAnalyze?.recommendations || []" :key="i" class="report-line" style="margin-bottom:4px">
-            <el-tag size="small" type="primary" effect="plain" style="margin-right:4px">{{ i + 1 }}</el-tag>{{ r }}
-          </div>
+          <template v-if="(ontAnalyze?.recommendations || []).length">
+            <div
+              v-for="(r, i) in ontAnalyze?.recommendations || []"
+              :key="i"
+              class="report-line"
+              style="margin-bottom: 4px"
+            >
+              <el-tag size="small" type="primary" effect="plain" style="margin-right: 4px">
+                {{ i + 1 }}
+              </el-tag>
+              {{ r }}
+            </div>
+          </template>
           <el-empty v-else :image-size="40" description="暂无建议" />
         </el-col>
       </el-row>
@@ -475,9 +527,7 @@
     <!-- 版本对比 -->
     <el-dialog v-model="diffDialog" title="版本对比（该版本 vs 当前）" width="560px" append-to-body>
       <template v-if="diffData?.ok">
-        <div class="gov-section">
-          新增属性（{{ (diffData.added || []).length }}）
-        </div>
+        <div class="gov-section">新增属性（{{ (diffData.added || []).length }}）</div>
         <div>
           <el-tag
             v-for="c in diffData.added || []"
@@ -534,10 +584,18 @@
     <el-dialog v-model="dqDialog" title="对象数据质量详情" width="560px" append-to-body>
       <template v-if="dqDetail">
         <el-row :gutter="12">
-          <el-col :span="6"><el-statistic title="健康分" :value="dqDetail.score ?? 0" :precision="1" /></el-col>
-          <el-col :span="6"><el-statistic title="完整性" :value="dqDetail.completeness ?? 0" :precision="1" /></el-col>
-          <el-col :span="6"><el-statistic title="唯一性" :value="dqDetail.uniqueness ?? 0" :precision="1" /></el-col>
-          <el-col :span="6"><el-statistic title="新鲜度" :value="dqDetail.freshness ?? 0" :precision="1" /></el-col>
+          <el-col :span="6">
+            <el-statistic title="健康分" :value="dqDetail.score ?? 0" :precision="1" />
+          </el-col>
+          <el-col :span="6">
+            <el-statistic title="完整性" :value="dqDetail.completeness ?? 0" :precision="1" />
+          </el-col>
+          <el-col :span="6">
+            <el-statistic title="唯一性" :value="dqDetail.uniqueness ?? 0" :precision="1" />
+          </el-col>
+          <el-col :span="6">
+            <el-statistic title="新鲜度" :value="dqDetail.freshness ?? 0" :precision="1" />
+          </el-col>
         </el-row>
         <div class="gov-section" style="margin-top: 12px">质量问题</div>
         <div v-if="(dqDetail.issues || []).length">
@@ -803,10 +861,20 @@ const objectGraph = computed(() => {
   const nodes = objs.map((o, i) => {
     nodeId[o.code] = i + 1;
     linkCount[i + 1] = 0;
-    return { id: i + 1, name: o.name || o.code, etype: "object", weight: 1, x: (i % 3) * 170, y: Math.floor(i / 3) * 130 };
+    return {
+      id: i + 1,
+      name: o.name || o.code,
+      etype: "object",
+      weight: 1,
+      x: (i % 3) * 170,
+      y: Math.floor(i / 3) * 130,
+    };
   });
   const edges = (globalLinks.value || [])
-    .filter((l) => l.source_object && l.target_object && nodeId[l.source_object] && nodeId[l.target_object])
+    .filter(
+      (l) =>
+        l.source_object && l.target_object && nodeId[l.source_object] && nodeId[l.target_object]
+    )
     .map((l) => {
       linkCount[nodeId[l.source_object]] = (linkCount[nodeId[l.source_object]] || 0) + 1;
       linkCount[nodeId[l.target_object]] = (linkCount[nodeId[l.target_object]] || 0) + 1;
@@ -817,7 +885,7 @@ const objectGraph = computed(() => {
         weight: 1,
       };
     });
-  nodes.forEach((n, i) => {
+  nodes.forEach((n) => {
     n.weight = 1 + Math.min(linkCount[n.id] || 0, 10);
   });
   return { nodes: nodes as any, edges: edges as any };
@@ -1155,7 +1223,8 @@ function rollbackVer(row: any) {
     const r = await rollbackOntVersion(row.id);
     const d = r.data?.data || {};
     ElMessage[d.ok ? "success" : "error"](d.msg || "已回滚");
-    await selectObject(current.value);  });
+    await selectObject(current.value);
+  });
 }
 const diffDialog = ref(false);
 const diffData = ref<any>(null);
@@ -1207,9 +1276,13 @@ const ontAnalyze = ref<any>(null);
 const ontAnalyzeLoading = ref(false);
 async function loadAnalyze() {
   ontAnalyzeLoading.value = true;
-  try { ontAnalyze.value = (await getOntAnalyze()).data?.data || null; }
-  catch { ontAnalyze.value = null; }
-  finally { ontAnalyzeLoading.value = false; }
+  try {
+    ontAnalyze.value = (await getOntAnalyze()).data?.data || null;
+  } catch {
+    ontAnalyze.value = null;
+  } finally {
+    ontAnalyzeLoading.value = false;
+  }
 }
 </script>
 

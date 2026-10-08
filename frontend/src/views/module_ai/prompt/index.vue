@@ -17,11 +17,16 @@
           @add="handleOpenDialog('create')"
           @delete="onToolbar('delete')"
         />
-        <el-dropdown v-if="templates.length" @command="createFromTemplate" style="margin-left: 8px">
-          <el-button size="small">从模板创建<el-icon style="margin-left:4px"><ArrowDown /></el-icon></el-button>
+        <el-dropdown v-if="templates.length" style="margin-left: 8px" @command="createFromTemplate">
+          <el-button size="small">
+            从模板创建
+            <el-icon style="margin-left: 4px"><ArrowDown /></el-icon>
+          </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="t in templates" :key="t.key" :command="t">{{ t.name }}（{{ t.category }}）</el-dropdown-item>
+              <el-dropdown-item v-for="t in templates" :key="t.key" :command="t">
+                {{ t.name }}（{{ t.category }}）
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -492,15 +497,20 @@ function onPromptSel(sel: any[]) {
 const promptSummary = ref({ total: 0, enabled: 0, disabled: 0 });
 const templates = ref<any[]>([]);
 async function loadTemplates() {
-  try { templates.value = (await getAiPromptTemplates()).data?.data || []; }
-  catch { templates.value = []; }
+  try {
+    templates.value = (await getAiPromptTemplates()).data?.data || [];
+  } catch {
+    templates.value = [];
+  }
 }
 async function createFromTemplate(tpl: any) {
   try {
     const r = await createAiPromptFromTemplate(tpl.key, tpl.name);
     ElMessage.success(`已从模板创建「${r.data?.data?.name || tpl.name}」`);
     loadPromptSummary();
-  } catch (e: any) { ElMessage.error(e?.msg || "创建失败"); }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "创建失败");
+  }
 }
 async function loadPromptSummary() {
   try {

@@ -48,8 +48,17 @@
                   {{ m.is_error ? "失败" : m.path === "fast" ? "精准命中" : "智能生成" }}
                 </el-tag>
                 <span v-if="m.took_ms" class="msg-a__time">{{ m.took_ms }} ms</span>
-                <el-tooltip v-if="m.confidence != null" :content="`置信度 ${(m.confidence*100).toFixed(0)}% · 依据：${m.evidence?.source || ''}`">
-                  <el-tag size="small" :type="m.confidence >= 0.9 ? 'success' : m.confidence >= 0.7 ? 'warning' : 'info'" effect="plain">
+                <el-tooltip
+                  v-if="m.confidence != null"
+                  :content="`置信度 ${(m.confidence * 100).toFixed(0)}% · 依据：${m.evidence?.source || ''}`"
+                >
+                  <el-tag
+                    size="small"
+                    :type="
+                      m.confidence >= 0.9 ? 'success' : m.confidence >= 0.7 ? 'warning' : 'info'
+                    "
+                    effect="plain"
+                  >
                     置信度 {{ (m.confidence * 100).toFixed(0) }}%
                   </el-tag>
                 </el-tooltip>
@@ -240,10 +249,18 @@
             <el-table-column prop="unit" label="单位" width="70" />
             <el-table-column label="权限影响" min-width="150">
               <template #default="{ row }">
-                <el-tag size="small" :type="metricAccess(row).restricted ? 'warning' : 'success'" effect="plain">
+                <el-tag
+                  size="small"
+                  :type="metricAccess(row).restricted ? 'warning' : 'success'"
+                  effect="plain"
+                >
                   {{ metricAccess(row).restricted ? "受限" : "全角色可查" }}
                 </el-tag>
-                <span v-if="metricAccess(row).restricted" class="msg-a__time" style="margin-left: 4px">
+                <span
+                  v-if="metricAccess(row).restricted"
+                  class="msg-a__time"
+                  style="margin-left: 4px"
+                >
                   {{ metricAccess(row).tables.join("、") }}
                 </span>
               </template>
@@ -308,15 +325,36 @@
               <div class="asset-card__head">
                 <b class="asset-card__name">{{ d.name }}</b>
                 <el-tag size="small" type="info" effect="plain">{{ d.type }}</el-tag>
-                <div style="flex:1"></div>
+                <div style="flex: 1"></div>
                 <el-switch v-model="d.enabled" size="small" />
               </div>
-              <div class="asset-card__meta">{{ d.database || "—" }}<template v-if="d.host"> · {{ d.host }}:{{ d.port }}</template></div>
+              <div class="asset-card__meta">
+                {{ d.database || "—" }}
+                <template v-if="d.host">· {{ d.host }}:{{ d.port }}</template>
+              </div>
               <div class="asset-card__desc">{{ d.remark || "连接器" }}</div>
               <div class="asset-card__actions">
-                <el-button link type="primary" size="small" @click="openDsDetail(d)">详情</el-button>
-                <el-button link type="primary" size="small" :loading="testingDsId === d.id" @click="testDs(d)">测试</el-button>
-                <el-button link type="primary" size="small" :loading="syncingDsId === d.id" @click="syncDs(d)">同步结构</el-button>
+                <el-button link type="primary" size="small" @click="openDsDetail(d)">
+                  详情
+                </el-button>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="testingDsId === d.id"
+                  @click="testDs(d)"
+                >
+                  测试
+                </el-button>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="syncingDsId === d.id"
+                  @click="syncDs(d)"
+                >
+                  同步结构
+                </el-button>
                 <el-button link type="primary" size="small" @click="openDsEdit(d)">编辑</el-button>
                 <el-button link type="danger" size="small" @click="removeDs(d)">删除</el-button>
               </div>
@@ -334,7 +372,9 @@
             </el-table-column>
             <el-table-column label="操作" width="220">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="openDsDetail(row)">详情</el-button>
+                <el-button link type="primary" size="small" @click="openDsDetail(row)">
+                  详情
+                </el-button>
                 <el-button
                   link
                   type="primary"
@@ -427,16 +467,30 @@
               <div class="asset-card__head">
                 <b class="asset-card__name">{{ a.alias || a.table_name }}</b>
                 <el-tag size="small" type="info" effect="plain">{{ a.table_name }}</el-tag>
-                <div style="flex:1"></div>
-                <el-tag v-if="a.object_enabled" size="small" type="success" effect="plain">对象</el-tag>
-                <el-tag v-if="(a.sensitive_count || 0) > 0" size="small" type="danger" effect="plain">
+                <div style="flex: 1"></div>
+                <el-tag v-if="a.object_enabled" size="small" type="success" effect="plain">
+                  对象
+                </el-tag>
+                <el-tag
+                  v-if="(a.sensitive_count || 0) > 0"
+                  size="small"
+                  type="danger"
+                  effect="plain"
+                >
                   {{ a.sensitive_count }}敏感
                 </el-tag>
-                <el-tag v-if="a.dq_score != null" size="small" :type="a.dq_score >= 80 ? 'success' : a.dq_score >= 60 ? 'warning' : 'danger'" effect="plain">
+                <el-tag
+                  v-if="a.dq_score != null"
+                  size="small"
+                  :type="a.dq_score >= 80 ? 'success' : a.dq_score >= 60 ? 'warning' : 'danger'"
+                  effect="plain"
+                >
                   DQ {{ a.dq_score }}
                 </el-tag>
               </div>
-              <div class="asset-card__meta">{{ a.domain || "—" }} · {{ a.column_count }} 列 · 血缘 {{ a.lineage_count ?? 0 }}</div>
+              <div class="asset-card__meta">
+                {{ a.domain || "—" }} · {{ a.column_count }} 列 · 血缘 {{ a.lineage_count ?? 0 }}
+              </div>
               <div class="asset-card__desc">{{ a.description || "暂无描述" }}</div>
             </el-card>
             <el-empty v-if="!filteredAssets.length" :image-size="50" description="无匹配资产" />
@@ -485,17 +539,28 @@
             </el-table-column>
             <el-table-column label="敏感度" width="120" align="center">
               <template #default="{ row }">
-                <el-tooltip :content="(row.sensitive_fields || []).join('、') || '无敏感字段'" placement="top">
-                  <el-tag size="small" :type="(row.sensitive_count || 0) > 0 ? 'danger' : 'info'" effect="plain">
-                    {{ (row.sensitive_count || 0) > 0 ? `${row.sensitive_count} 个敏感` : '无' }}
+                <el-tooltip
+                  :content="(row.sensitive_fields || []).join('、') || '无敏感字段'"
+                  placement="top"
+                >
+                  <el-tag
+                    size="small"
+                    :type="(row.sensitive_count || 0) > 0 ? 'danger' : 'info'"
+                    effect="plain"
+                  >
+                    {{ (row.sensitive_count || 0) > 0 ? `${row.sensitive_count} 个敏感` : "无" }}
                   </el-tag>
                 </el-tooltip>
               </template>
             </el-table-column>
             <el-table-column label="操作" width="200" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="exportAssetCsv(row.table_name)">导出</el-button>
-                <el-button link type="primary" size="small" @click="shareAsset(row.table_name)">分享</el-button>
+                <el-button link type="primary" size="small" @click="exportAssetCsv(row.table_name)">
+                  导出
+                </el-button>
+                <el-button link type="primary" size="small" @click="shareAsset(row.table_name)">
+                  分享
+                </el-button>
                 <el-button link type="primary" size="small" @click="openAssetEdit(row)">
                   编辑
                 </el-button>
@@ -970,7 +1035,11 @@
             <el-table-column label="影子结果" min-width="200">
               <template #default="{ row }">
                 <template v-if="row.shadow_result">
-                  <el-tag size="small" :type="row.shadow_result === 'pass' ? 'success' : 'danger'" effect="plain">
+                  <el-tag
+                    size="small"
+                    :type="row.shadow_result === 'pass' ? 'success' : 'danger'"
+                    effect="plain"
+                  >
                     {{ row.shadow_result === "pass" ? "通过" : "未通过" }}
                   </el-tag>
                   <span class="fde-shadow-detail">
@@ -1068,7 +1137,13 @@
               {{ pendingActions.length }} 条待审批
             </el-tag>
           </div>
-          <el-table v-if="pendingActions.length" :data="pendingActions" size="small" border max-height="200">
+          <el-table
+            v-if="pendingActions.length"
+            :data="pendingActions"
+            size="small"
+            border
+            max-height="200"
+          >
             <el-table-column prop="action" label="动作" width="100" show-overflow-tooltip />
             <el-table-column prop="table" label="对象" width="110" show-overflow-tooltip />
             <el-table-column prop="key" label="键" width="90" show-overflow-tooltip />
@@ -1102,9 +1177,22 @@
               {{ approvalCenter.total }} 条待审批
             </el-tag>
           </div>
-          <el-alert type="info" :closable="false" show-icon title="统一审批：动作写回 + 本体版本发布的高危操作，需超管批准后执行/发布。" />
-          <div class="gov-section" style="margin-top: 10px">动作写回（{{ (approvalCenter.actions || []).length }}）</div>
-          <el-table v-if="(approvalCenter.actions || []).length" :data="approvalCenter.actions" size="small" border max-height="220">
+          <el-alert
+            type="info"
+            :closable="false"
+            show-icon
+            title="统一审批：动作写回 + 本体版本发布的高危操作，需超管批准后执行/发布。"
+          />
+          <div class="gov-section" style="margin-top: 10px">
+            动作写回（{{ (approvalCenter.actions || []).length }}）
+          </div>
+          <el-table
+            v-if="(approvalCenter.actions || []).length"
+            :data="approvalCenter.actions"
+            size="small"
+            border
+            max-height="220"
+          >
             <el-table-column prop="action" label="动作" width="110" show-overflow-tooltip />
             <el-table-column prop="table" label="对象" width="110" show-overflow-tooltip />
             <el-table-column prop="key" label="键" width="90" show-overflow-tooltip />
@@ -1113,19 +1201,37 @@
             </el-table-column>
             <el-table-column label="操作" width="160" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" :loading="approvingId === row.id" @click="doApprove(row)">批准执行</el-button>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :loading="approvingId === row.id"
+                  @click="doApprove(row)"
+                >
+                  批准执行
+                </el-button>
                 <el-button link type="danger" size="small" @click="doReject(row)">驳回</el-button>
               </template>
             </el-table-column>
           </el-table>
           <el-empty v-else :image-size="30" description="无待审批动作" />
-          <div class="gov-section" style="margin-top: 10px">本体发布（{{ (approvalCenter.versions || []).length }}）</div>
-          <el-table v-if="(approvalCenter.versions || []).length" :data="approvalCenter.versions" size="small" border max-height="220">
+          <div class="gov-section" style="margin-top: 10px">
+            本体发布（{{ (approvalCenter.versions || []).length }}）
+          </div>
+          <el-table
+            v-if="(approvalCenter.versions || []).length"
+            :data="approvalCenter.versions"
+            size="small"
+            border
+            max-height="220"
+          >
             <el-table-column prop="object_code" label="对象" width="140" show-overflow-tooltip />
             <el-table-column prop="created_time" label="时间" width="170" show-overflow-tooltip />
             <el-table-column label="操作" width="160" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="approveVersion(row)">批准发布</el-button>
+                <el-button link type="primary" size="small" @click="approveVersion(row)">
+                  批准发布
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1189,7 +1295,12 @@
               <el-card shadow="never">
                 <template #header>版本历史</template>
                 <div class="ov-usage-row" style="margin-bottom: 4px">
-                  <el-tag v-if="govRelease?.published_time" size="small" type="success" effect="plain">
+                  <el-tag
+                    v-if="govRelease?.published_time"
+                    size="small"
+                    type="success"
+                    effect="plain"
+                  >
                     当前发布：V{{ govReleasePublishedVersion }} · {{ govRelease.published_time }}
                   </el-tag>
                   <el-tag v-else size="small" type="info" effect="plain">未发布</el-tag>
@@ -1199,28 +1310,45 @@
                   <el-table-column prop="time" label="时间" width="150" show-overflow-tooltip />
                   <el-table-column label="发布" width="70" align="center">
                     <template #default="{ row }">
-                      <el-tag v-if="row.published" size="small" type="success" effect="plain">已发布</el-tag>
+                      <el-tag v-if="row.published" size="small" type="success" effect="plain">
+                        已发布
+                      </el-tag>
                       <span v-else>—</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="操作" width="210" align="center">
                     <template #default="{ row, $index }">
-                      <el-button link type="primary" size="small" @click="diffGov(row, $index)">对比上一版</el-button>
-                      <el-button link type="success" size="small" @click="publishGov(row)">发布</el-button>
-                      <el-button link type="warning" size="small" @click="rollGov(row)">回滚</el-button>
+                      <el-button link type="primary" size="small" @click="diffGov(row, $index)">
+                        对比上一版
+                      </el-button>
+                      <el-button link type="success" size="small" @click="publishGov(row)">
+                        发布
+                      </el-button>
+                      <el-button link type="warning" size="small" @click="rollGov(row)">
+                        回滚
+                      </el-button>
                     </template>
                   </el-table-column>
                 </el-table>
                 <div v-if="!govVersions.length" class="gov-empty">暂无版本（保存过资产即有）</div>
                 <div v-if="govDiff" style="margin-top: 8px" class="gov-diff">
-                  <div class="gov-section">版本 {{ govDiff.version_a }} ↔ 版本 {{ govDiff.version_b }} 差异（{{ govDiff.changed_count }}）</div>
+                  <div class="gov-section">
+                    版本 {{ govDiff.version_a }} ↔ 版本 {{ govDiff.version_b }} 差异（{{
+                      govDiff.changed_count
+                    }}）
+                  </div>
                   <div v-for="c in govDiff.changed" :key="c.key" class="gov-diff__row">
                     <el-tag size="small" type="info" effect="plain">{{ c.key }}</el-tag>
                     <span class="gov-diff__old">{{ c.from ?? "—" }}</span>
                     <span class="gov-diff__arrow">→</span>
                     <span class="gov-diff__new">{{ c.to ?? "—" }}</span>
                   </div>
-                  <el-alert v-if="!govDiff.changed_count" type="info" :closable="false" title="两版本内容一致" />
+                  <el-alert
+                    v-if="!govDiff.changed_count"
+                    type="info"
+                    :closable="false"
+                    title="两版本内容一致"
+                  />
                 </div>
               </el-card>
             </el-col>
@@ -1299,7 +1427,11 @@
               无
             </div>
           </el-card>
-          <el-card v-if="govTable && govLineageGraph.nodes.length" shadow="never" style="margin-top: 12px">
+          <el-card
+            v-if="govTable && govLineageGraph.nodes.length"
+            shadow="never"
+            style="margin-top: 12px"
+          >
             <template #header>血缘图（{{ govTable }}）</template>
             <GraphCanvas
               :nodes="govLineageGraph.nodes"
@@ -1376,7 +1508,11 @@
               :node-style="{ sizeMode: 'weight', labelSize: 12 }"
               :edge-style="{ label: 'show', colorMode: 'type' }"
             />
-            <el-empty v-else :image-size="60" description="暂无管道，新建数据管道后即可查看编排图" />
+            <el-empty
+              v-else
+              :image-size="60"
+              description="暂无管道，新建数据管道后即可查看编排图"
+            />
           </el-card>
         </el-tab-pane>
         <el-tab-pane label="应用" name="workshop">
@@ -1483,7 +1619,13 @@
           </el-table>
           <el-divider content-position="left">数据域权限矩阵（角色 → 可查表 / 敏感）</el-divider>
           <el-button size="small" @click="loadAccessMatrix">刷新矩阵</el-button>
-          <el-table :data="accessMatrix" size="small" border max-height="260" style="margin-top: 8px">
+          <el-table
+            :data="accessMatrix"
+            size="small"
+            border
+            max-height="260"
+            style="margin-top: 8px"
+          >
             <el-table-column prop="name" label="角色" min-width="110" show-overflow-tooltip />
             <el-table-column prop="code" label="编码" width="110" show-overflow-tooltip />
             <el-table-column label="是否受限" width="90" align="center">
@@ -1518,18 +1660,28 @@
             </el-table-column>
             <el-table-column label="预览" width="80" align="center">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="previewRole(row)">预览</el-button>
+                <el-button link type="primary" size="small" @click="previewRole(row)">
+                  预览
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
           <el-empty v-if="!accessMatrix.length" :image-size="40" description="暂无角色矩阵" />
           <div v-if="rolePreview" class="ops-bar" style="margin-top: 8px">
             <el-tag size="small" type="info" effect="plain">
-              角色 {{ rolePreview.role }} · {{ rolePreview.restricted ? "受限" : "全开" }} · 敏感放行
-              {{ rolePreview.sensitive_ok ? "是" : "否" }} · 可查 {{ rolePreview.count }} 张表
+              角色 {{ rolePreview.role }} · {{ rolePreview.restricted ? "受限" : "全开" }} ·
+              敏感放行 {{ rolePreview.sensitive_ok ? "是" : "否" }} · 可查
+              {{ rolePreview.count }} 张表
             </el-tag>
           </div>
-          <el-table v-if="rolePreview" :data="rolePreview.allowed_tables" size="small" border max-height="200" style="margin-top: 6px">
+          <el-table
+            v-if="rolePreview"
+            :data="rolePreview.allowed_tables"
+            size="small"
+            border
+            max-height="200"
+            style="margin-top: 6px"
+          >
             <el-table-column label="该角色可查表" min-width="200">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain">{{ row }}</el-tag>
@@ -1549,11 +1701,19 @@
               模拟预览可查表
             </el-button>
             <el-tag v-if="preview" size="small" type="info" effect="plain">
-              超管 {{ preview.superuser ? "是" : "否" }} · 角色 {{ (preview.roles || []).join(",") || "无" }}
-              · 域受限 {{ preview.domain_restricted ? "是" : "否" }} · 可查 {{ preview.count }} 张表
+              超管 {{ preview.superuser ? "是" : "否" }} · 角色
+              {{ (preview.roles || []).join(",") || "无" }} · 域受限
+              {{ preview.domain_restricted ? "是" : "否" }} · 可查 {{ preview.count }} 张表
             </el-tag>
           </div>
-          <el-table v-if="preview" :data="preview.allowed_tables" size="small" border max-height="240" style="margin-top: 8px">
+          <el-table
+            v-if="preview"
+            :data="preview.allowed_tables"
+            size="small"
+            border
+            max-height="240"
+            style="margin-top: 8px"
+          >
             <el-table-column label="该用户可查表" min-width="200">
               <template #default="{ row }">
                 <el-tag size="small" effect="plain">{{ row }}</el-tag>
@@ -1733,7 +1893,12 @@
             style="margin-bottom: 10px"
           >
             <el-table-column prop="domain" label="域" width="120" show-overflow-tooltip />
-            <el-table-column prop="table" label="未登记对象" min-width="160" show-overflow-tooltip />
+            <el-table-column
+              prop="table"
+              label="未登记对象"
+              min-width="160"
+              show-overflow-tooltip
+            />
           </el-table>
           <el-alert
             type="info"
@@ -2092,7 +2257,13 @@
         style="margin-bottom: 8px"
         title="标记为敏感的字段，非授权用户在问数/resolve 时将被剔除拦截（字段级 ACL）"
       />
-      <el-table :data="filteredAssetColumns" size="small" border max-height="68vh" :row-class-name="sensitiveRowClass">
+      <el-table
+        :data="filteredAssetColumns"
+        size="small"
+        border
+        max-height="68vh"
+        :row-class-name="sensitiveRowClass"
+      >
         <el-table-column prop="column_name" label="字段名" min-width="130" show-overflow-tooltip />
         <el-table-column label="中文描述" min-width="170">
           <template #default="{ row }">
@@ -2357,15 +2528,30 @@
     </el-dialog>
 
     <!-- 数据源连接详情 -->
-    <el-drawer v-model="dsDetailVisible" :title="`数据连接 · ${dsDetail?.source?.name || ''}`" size="640px" append-to-body>
+    <el-drawer
+      v-model="dsDetailVisible"
+      :title="`数据连接 · ${dsDetail?.source?.name || ''}`"
+      size="640px"
+      append-to-body
+    >
       <template v-if="dsDetail">
         <el-descriptions :column="2" border size="small" style="margin-bottom: 12px">
           <el-descriptions-item label="连接器">{{ dsDetail.source?.type }}</el-descriptions-item>
-          <el-descriptions-item label="只读">{{ dsDetail.source?.read_only ? "是" : "否" }}</el-descriptions-item>
-          <el-descriptions-item label="主机">{{ dsDetail.source?.host || "—" }}</el-descriptions-item>
-          <el-descriptions-item label="端口">{{ dsDetail.source?.port || "—" }}</el-descriptions-item>
-          <el-descriptions-item label="库/文件">{{ dsDetail.source?.database || "—" }}</el-descriptions-item>
-          <el-descriptions-item label="关联资产">{{ dsDetail.asset_count ?? 0 }} 表</el-descriptions-item>
+          <el-descriptions-item label="只读">
+            {{ dsDetail.source?.read_only ? "是" : "否" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="主机">
+            {{ dsDetail.source?.host || "—" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="端口">
+            {{ dsDetail.source?.port || "—" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="库/文件">
+            {{ dsDetail.source?.database || "—" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="关联资产">
+            {{ dsDetail.asset_count ?? 0 }} 表
+          </el-descriptions-item>
         </el-descriptions>
         <el-alert
           v-if="dsDetail.connector"
@@ -2381,7 +2567,15 @@
           <el-table-column type="expand">
             <template #default="{ row }">
               <div style="padding: 4px 12px">
-                <el-tag v-for="c in row.columns || []" :key="c" size="small" effect="plain" style="margin: 0 3px 3px 0">{{ c }}</el-tag>
+                <el-tag
+                  v-for="c in row.columns || []"
+                  :key="c"
+                  size="small"
+                  effect="plain"
+                  style="margin: 0 3px 3px 0"
+                >
+                  {{ c }}
+                </el-tag>
               </div>
             </template>
           </el-table-column>
@@ -2584,12 +2778,7 @@
                 placeholder="该角色可写字段"
                 style="flex: 1"
               >
-                <el-option
-                  v-for="c in actionForm.writable_cols"
-                  :key="c"
-                  :label="c"
-                  :value="c"
-                />
+                <el-option v-for="c in actionForm.writable_cols" :key="c" :label="c" :value="c" />
               </el-select>
               <el-button :icon="Delete" circle text type="danger" @click="removeRoleWritable(rk)" />
             </div>
@@ -3038,7 +3227,8 @@ import {
   saveDomain,
   getDomainObjects,
   domainReconcile,
-  getGovernanceOverview,  getQueryFewshots,
+  getGovernanceOverview,
+  getQueryFewshots,
   saveQueryFewshot,
   deleteQueryFewshots,
   getQueryStats,
@@ -3267,7 +3457,15 @@ function toggleSql(m: any) {
 // ---- 沉淀为指标（FDE 复用闭环） ----
 const promoteVisible = ref(false);
 const promoteLoading = ref(false);
-const promoteForm = reactive<any>({ message_id: 0, question: "", sql: "", grounding: null, name: "", key: "", bindTerm: true });
+const promoteForm = reactive<any>({
+  message_id: 0,
+  question: "",
+  sql: "",
+  grounding: null,
+  name: "",
+  key: "",
+  bindTerm: true,
+});
 function openPromote(m: any) {
   promoteForm.message_id = m.id;
   promoteForm.question = m.question || "";
@@ -3275,10 +3473,11 @@ function openPromote(m: any) {
   promoteForm.grounding = m.grounding || null;
   promoteForm.name = m.question || "";
   // 由问题生成建议 key：取中文/字母数字，转下划线
-  promoteForm.key = (m.question || "")
-    .replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 40) || "query_metric";
+  promoteForm.key =
+    (m.question || "")
+      .replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 40) || "query_metric";
   promoteForm.bindTerm = true;
   promoteVisible.value = true;
 }
@@ -3878,12 +4077,21 @@ async function loadApprovalCenter() {
 }
 async function approveVersion(row: any) {
   try {
-    await ElMessageBox.confirm(`批准发布本体对象「${row.object_code}」？`, "审批确认", { type: "warning", confirmButtonText: "批准发布", cancelButtonText: "取消" });
-  } catch { return; }
+    await ElMessageBox.confirm(`批准发布本体对象「${row.object_code}」？`, "审批确认", {
+      type: "warning",
+      confirmButtonText: "批准发布",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
   try {
     const r = await approveVersionPublish(row.id);
-    if (r.data?.ok) ElMessage.success("已批准发布"); else ElMessage.error(r.data?.msg || "批准失败");
-  } catch (e: any) { ElMessage.error(e?.message || "批准失败"); }
+    if (r.data?.ok) ElMessage.success("已批准发布");
+    else ElMessage.error(r.data?.msg || "批准失败");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "批准失败");
+  }
   await loadApprovalCenter();
 }
 async function doApprove(row: any) {
@@ -3891,7 +4099,7 @@ async function doApprove(row: any) {
     await ElMessageBox.confirm(
       `批准执行动作「${row.action}」→ ${row.table}#${row.key}？将真实写回数据并留痕。`,
       "审批确认",
-      { type: "warning", confirmButtonText: "批准并执行", cancelButtonText: "取消" },
+      { type: "warning", confirmButtonText: "批准并执行", cancelButtonText: "取消" }
     );
   } catch {
     return;
@@ -4042,17 +4250,29 @@ const govReleasePublishedVersion = computed(() => {
 });
 async function loadGovRelease() {
   if (!govTable.value) return;
-  try { govRelease.value = (await getAssetReleases(govTable.value)).data?.data || null; }
-  catch { govRelease.value = null; }
+  try {
+    govRelease.value = (await getAssetReleases(govTable.value)).data?.data || null;
+  } catch {
+    govRelease.value = null;
+  }
 }
-async function publishGov(row: any) {  try {
-    await ElMessageBox.confirm(`发布「${govTable.value}」版本 ${row.version}？发布后该版本为当前生效版本。`, "发布确认", { type: "warning", confirmButtonText: "发布", cancelButtonText: "取消" });
-  } catch { return; }
+async function publishGov(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `发布「${govTable.value}」版本 ${row.version}？发布后该版本为当前生效版本。`,
+      "发布确认",
+      { type: "warning", confirmButtonText: "发布", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
   try {
     const r = await publishAsset(govTable.value, row.id);
     ElMessage.success(r.data?.data?.msg || "已发布");
     loadGovRelease();
-  } catch (e: any) { ElMessage.error(e?.msg || "发布失败"); }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "发布失败");
+  }
 }
 const govLineage = ref<any>(null);
 const govLineageGraph = computed(() => {
@@ -4363,8 +4583,8 @@ async function previewRole(row: any) {
 function metricAccess(m: any) {
   // 指标权限影响：sql_template 涉及的表，若存在「受限」角色（accessMatrix restricted）的表 → 受限
   const sql = m.sql_template || "";
-  const tables = (sql.match(/\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)/gi) || []).map((x: string) =>
-    x.replace(/\b(?:from|join)\s+/i, "")
+  const tables = (sql.match(/\b(?:from|join)\s+([A-Za-z_][A-Za-z0-9_]*)/gi) || []).map(
+    (x: string) => x.replace(/\b(?:from|join)\s+/i, "")
   );
   const restricted = new Set<string>();
   for (const role of accessMatrix.value || []) {
@@ -4594,13 +4814,19 @@ async function exportAssetCsv(table: string) {
   try {
     const r = await exportAsset(table, 500);
     const d = r.data?.data;
-    if (!d?.ok) { ElMessage.error(d?.msg || "导出失败"); return; }
+    if (!d?.ok) {
+      ElMessage.error(d?.msg || "导出失败");
+      return;
+    }
     const cols = d.columns || [];
     const esc = (v: any) => {
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = [cols.join(","), ...d.rows.map((row: any) => cols.map((c: string) => esc(row[c])).join(","))];
+    const lines = [
+      cols.join(","),
+      ...d.rows.map((row: any) => cols.map((c: string) => esc(row[c])).join(",")),
+    ];
     const blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -4609,7 +4835,9 @@ async function exportAssetCsv(table: string) {
     a.click();
     URL.revokeObjectURL(url);
     ElMessage.success(`已导出 ${d.row_count} 行`);
-  } catch (e: any) { ElMessage.error(e?.msg || "导出失败"); }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "导出失败");
+  }
 }
 async function shareAsset(table: string) {
   try {
@@ -4622,7 +4850,9 @@ async function shareAsset(table: string) {
     } catch {
       ElMessageBox.alert(`分享链接：${link}`, "数据集分享", { confirmButtonText: "复制" });
     }
-  } catch (e: any) { ElMessage.error(e?.msg || "分享失败"); }
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "分享失败");
+  }
 }
 async function saveAssetMeta() {
   try {

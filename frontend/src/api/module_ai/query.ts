@@ -263,10 +263,18 @@ export function getAssetVersions(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/versions`, method: "get" });
 }
 export function getVersionDiff(idA: number, idB: number) {
-  return request({ url: `${API_PATH}/assets/version/diff`, method: "get", params: { id_a: idA, id_b: idB } });
+  return request({
+    url: `${API_PATH}/assets/version/diff`,
+    method: "get",
+    params: { id_a: idA, id_b: idB },
+  });
 }
 export function publishAsset(table: string, versionId: number) {
-  return request({ url: `${API_PATH}/assets/${table}/publish`, method: "post", data: { version_id: versionId } });
+  return request({
+    url: `${API_PATH}/assets/${table}/publish`,
+    method: "post",
+    data: { version_id: versionId },
+  });
 }
 export function getAssetReleases(table: string) {
   return request({ url: `${API_PATH}/assets/${table}/releases`, method: "get" });
@@ -275,7 +283,11 @@ export function getAutopilot() {
   return request({ url: `${API_PATH}/autopilot`, method: "get" });
 }
 export function autopilotExecute(executable: string, table = "") {
-  return request({ url: `${API_PATH}/autopilot/execute`, method: "post", data: { executable, table } });
+  return request({
+    url: `${API_PATH}/autopilot/execute`,
+    method: "post",
+    data: { executable, table },
+  });
 }
 export function getDerivedMetrics() {
   return request({ url: `${API_PATH}/derived-metrics`, method: "get" });
@@ -305,19 +317,31 @@ export function getPlugins() {
   return request({ url: `${API_PATH}/plugins/list`, method: "get" });
 }
 export function lineagePropagate(table: string, maxDepth = 4) {
-  return request({ url: `${API_PATH}/assets/${table}/propagate`, method: "get", params: { max_depth: maxDepth } });
+  return request({
+    url: `${API_PATH}/assets/${table}/propagate`,
+    method: "get",
+    params: { max_depth: maxDepth },
+  });
 }
 export function getDqRules() {
   return request({ url: `${API_PATH}/dq-rules`, method: "get" });
 }
 export function runDqRule(table: string, column: string, ruleType: string) {
-  return request({ url: `${API_PATH}/dq-rules/run`, method: "get", params: { table, column, rule_type: ruleType } });
+  return request({
+    url: `${API_PATH}/dq-rules/run`,
+    method: "get",
+    params: { table, column, rule_type: ruleType },
+  });
 }
 export function exportAsset(table: string, limit = 100) {
   return request({ url: `${API_PATH}/assets/${table}/export`, method: "get", params: { limit } });
 }
 export function objectBrowse(table: string, page = 1, pageSize = 20) {
-  return request({ url: `${API_PATH}/objects/${table}/browse`, method: "get", params: { page, page_size: pageSize } });
+  return request({
+    url: `${API_PATH}/objects/${table}/browse`,
+    method: "get",
+    params: { page, page_size: pageSize },
+  });
 }
 export function createShare(table: string) {
   return request({ url: `${API_PATH}/share/create`, method: "post", data: { table } });
@@ -335,7 +359,11 @@ export function getObjectRelations() {
   return request({ url: `${API_PATH}/objects/relations`, method: "get" });
 }
 export function getAccessWalkthrough(userId = 0) {
-  return request({ url: `${API_PATH}/access/walkthrough`, method: "get", params: { user_id: userId } });
+  return request({
+    url: `${API_PATH}/access/walkthrough`,
+    method: "get",
+    params: { user_id: userId },
+  });
 }
 export function getGuardrailsStatus() {
   return request({ url: `${API_PATH}/guardrails`, method: "get" });
