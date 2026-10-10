@@ -219,8 +219,10 @@ async def _save_result(run_id: str, row: dict) -> None:
                 "metric": row["metric_key"], "sql": row["sql"], "n": row["n_rows"],
                 "ms": row["took_ms"], "gm": row["gold_match"], "rh": row["recall_hit"],
                 "ou": row["ontology_used"], "tcalls": "[]", "rt": 0,
-                "tr": json.dumps({k: row[k] for k in ("difficulty", "scenario", "form", "datasource")},
-                                 ensure_ascii=False),
+                "tr": json.dumps(
+                    {k: row[k] for k in ("difficulty", "scenario", "form", "datasource",
+                                         "expected_metric")},
+                    ensure_ascii=False),
             },
         )
 

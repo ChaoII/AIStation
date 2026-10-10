@@ -54,6 +54,11 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
         print("\n=== 全量运行 summary ===")
         print(json.dumps(st.get("summary") or {}, ensure_ascii=False))
         rows = await load_results(rid)
+        # 报表走的是 load_results + summarize（不是内存里的 summary）→ 这里对齐校验
+        from app.plugin.module_ai.query.eval_metrics import summarize as _sum
+
+        print("报表口径（load_results+summarize）: "
+              + json.dumps(_sum(rows), ensure_ascii=False))
         for f in ("difficulty", "form", "datasource", "scenario"):
             print(f"[{f}] " + json.dumps(group_by(rows, f), ensure_ascii=False))
         print("\n=== 逐题 trace（前 5 条）===")

@@ -244,3 +244,55 @@ export interface EvalGroupRow { total: number; correct: number; accuracy: number
 - `delete` 请求带 body 需确认本项目 `request` 封装支持（既有 `deleteQueryMetrics` 已用，
   照抄即可）。
 - 运行/消融耗时长：必须提供明确加载态与进度，**禁止**用整表轮询替代。
+
+---
+
+## 11. 实现记录（已完成，含实测修正）
+
+### 交付文件（提交 `475b9f5f`）
+
+| 文件 | 说明 |
+|------|------|
+| `frontend/src/api/module_ai/query.ts` | 追加 11 个 `eval:*` API（用 `stage_hunks.py` 只暂存本段，未混入同文件既有 WIP） |
+| `frontend/src/views/module_ai/eval/index.vue` | 单根 + `el-tabs` 四分区 |
+| `frontend/src/views/module_ai/eval/types.ts` | 类型 + 8 个消融开关中文名 + `difficultyTag`/`pct` |
+| `.../eval/components/EvalCases.vue` | 测试集：筛选/表格/生成对话框/金标 SQL/批量删除（二次确认） |
+| `.../eval/components/EvalRunPanel.vue` | 运行：表单 + 1.5s 轮询进度 + 历史运行 |
+| `.../eval/components/EvalReport.vue` | 报表：6 个 `el-statistic` + 4 张分维度表 + 逐题 trace（展开看 SQL/召回/本体表） |
+| `.../eval/components/EvalAblation.vue` | 消融：8 开关多选 + 2s 轮询 + 对照表与 Δ |
+| `backend/scripts/register_eval_menu.py` | 幂等注册 `/ai/eval` 菜单（id=367）并授权 ADMIN 角色 |
+
+### 与计划的偏差（有意）
+
+1. **组件内 `types` 导入路径是 `../types`**（组件位于 `components/` 子目录），计划里写的是 `./types`。
+2. **未使用 `v-hasPerm`**：同模块既有页面（`query/index.vue` 等）均未使用，且该指令在权限串
+   未注册时会**直接移除 DOM**（按钮消失）。权限由后端 `AuthPermission(["module_ai:query:ask"])`
+   强制；前端保持一致以免误伤。
+
+### 验证结果
+
+| 项 | 结果 |
+|----|------|
+| `pnpm run type-check` | **本页 0 错误**（其余为仓库既有报错） |
+| `pnpm run lint` | **本页 0 问题**（仓库既有 41 errors 均在其它文件） |
+| 菜单 | 侧边栏出现「问数评测」，面包屑 `首页/AI管理/问数评测` ✓ |
+| 测试集 Tab | 渲染 **共 100 题**，列/难度 tag/金标状态/操作齐全 ✓ |
+| 报表 Tab | 6 个统计（92% / 0% / 77% / 15% / 42ms / 7%）、4 张分维度表、逐题 trace（路径/结果/行数/耗时/Recall/场景/数据源）✓ |
+| 消融 Tab | 开关组 + 轮询 + 对照表渲染 ✓ |
+
+### 实测又抓到一个后端 bug（已修）
+
+**症状**：报表页「语义准确率」显示 **0%**，而内存里的 summary 是 **12.5%**。
+**根因**：`ai_query_testresult` 表**没有 `expected_metric` 列**，`_save_result` 未落库，
+`load_results` 也就读不回来 → 报表走 `summarize(load_results(...))` 时分母为空 → 恒 0。
+（`by_difficulty` 等之所以正常，是因为它们藏在 `trace` JSON 里。）
+**修复**：把 `expected_metric` 一并写进既有的 `trace` JSON，并在 `load_results` 里取出
+（**零 schema 变更**）。历史运行仍显示 0，新运行正确。
+
+### 环境提示（避免误判）
+
+本机 dev 后端启动**约 2 分钟**（`async_pool_warmup` 有 80s 超时失败，日志
+`数据库连接池预热失败（不影响启动）`）。启动期间 **Vite 代理对 `/api/**` 返回空 body 的 500**
+（上游未就绪），看起来像"接口全挂"。判断方法：直接探测后端
+`http://127.0.0.1:8001/api/v1/ai/query/eval/cases` —— 返回 **401** 说明路由已注册且服务健康，
+返回 404 说明进程是旧代码（需重启），连接被拒说明还在启动中。

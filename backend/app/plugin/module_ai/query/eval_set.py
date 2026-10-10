@@ -213,6 +213,8 @@ async def load_results(run_id: str) -> list[dict]:
             "ontology_used": r[11], "tool_calls": r[12], "retries": r[13] or 0,
             "difficulty": (tr or {}).get("difficulty"), "scenario": (tr or {}).get("scenario"),
             "form": (tr or {}).get("form"), "datasource": (tr or {}).get("datasource"),
+            # 语义准确率的分母需要它；早期漏存 → 报表里 semantic_accuracy 恒为 0（实测踩坑）
+            "expected_metric": (tr or {}).get("expected_metric") or "",
         })
     return out
 
