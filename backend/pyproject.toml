@@ -60,6 +60,10 @@ dependencies = [
 dev = [
     "fakeredis>=2.21.0,<3",   # 测试：内存 Redis，配合 TESTING
     "pytest==9.0.2",
+    # 测试并行：全量 1962 用例 367s → 225s（-n 4）；execnet 是其唯一传递依赖，
+    # 这里显式列出以便 `pip -r`/离线安装（见 AGENTS.md「测试效率」）。
+    "pytest-xdist==3.8.0",
+    "execnet==2.1.2",
     "ruff==0.14.13",          # 代码检查/格式化
 ]
 

@@ -55,6 +55,9 @@ pnpm run lint                  # eslint + prettier + stylelint
   （`PYTEST_NO_APP=1` 跳过应用构造；需要应用的用例会被自动 skip。）
 - **日常只跑单文件**，别动不动全量；全量留给提交前。
 - 用 `backend/.venv/Scripts/python.exe -m pytest ...` 代替 `uv run pytest` 可再省 ~2 秒。
+- **全量用并行**：`uv run pytest -q -n 4` —— 实测 **367s → 225s**（1962 用例）。
+  ⚠️ **别用 `-n 8`**（实测反而 256s：每个 worker 都要构造应用，CPU 争抢）。
+  `pytest-xdist` 已加入 dev 依赖（`uv.lock` 仅新增 `pytest-xdist` + `execnet`，未升级其它包）。
 
 ## 国内镜像源（**强制**，apt / pip / 任何拉取）
 
