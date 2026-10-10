@@ -1,4 +1,7 @@
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar, Token
 
 from fastapi import FastAPI
 from redis import exceptions
@@ -109,7 +112,79 @@ def create_async_engine_and_session(
 
 
 engine, db_session = create_engine_and_session(settings.DB_URI)
-async_engine, async_db_session = create_async_engine_and_session(settings.ASYNC_DB_URI)
+async_engine, _async_session_factory = create_async_engine_and_session(settings.ASYNC_DB_URI)
+
+
+# ===================================================================== #
+# ******************* 请求作用域会话（一请求一连接） ******************* #
+# ===================================================================== #
+#: 当前请求的会话及其**持有任务**。
+#: 只允许「同一任务」复用：``asyncio.create_task`` 会把 ContextVar 复制进子任务，
+#: 若不校验任务归属，子任务会拿到请求会话、并在请求结束被关闭后继续使用而崩溃。
+_request_session: ContextVar[tuple[AsyncSession, asyncio.Task] | None] = ContextVar(
+    "request_session", default=None
+)
+
+
+def activate_request_session(session: AsyncSession) -> Token:
+    """把 ``session`` 登记为**当前任务**的请求会话，返回可用于还原的 token。"""
+    return _request_session.set((session, asyncio.current_task()))
+
+
+def deactivate_request_session(token: Token) -> None:
+    """还原 :func:`activate_request_session` 的登记。"""
+    _request_session.reset(token)
+
+
+def current_request_session() -> AsyncSession | None:
+    """返回当前任务的请求会话；非请求任务（含 ``create_task`` 子任务）返回 ``None``。
+
+    任务归属判定是安全关键：子任务一律走「新建会话」，避免复用后被提前关闭。
+    """
+    current = _request_session.get()
+    if current is None:
+        return None
+    session, owner = current
+    try:
+        if asyncio.current_task() is not owner:
+            return None
+    except RuntimeError:  # 没有运行中的事件循环/任务
+        return None
+    return session
+
+
+class _SessionFactory:
+    """``async_sessionmaker`` 的上下文感知包装器。
+
+    命中请求会话时**直接复用**（不关闭、不另起事务；提交/回滚由
+    ``DBSessionMiddleware`` 收尾）；否则行为与 ``async_sessionmaker`` 完全一致。
+    这样全仓 761 处 ``async_db_session()`` / ``.begin()`` 调用点**零改动**，
+    后台任务、调度器与测试的行为也不变。
+    """
+
+    def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
+        self._factory = factory
+
+    @asynccontextmanager
+    async def __call__(self) -> AsyncIterator[AsyncSession]:
+        ambient = current_request_session()
+        if ambient is not None:
+            yield ambient
+            return
+        async with self._factory() as session:
+            yield session
+
+    @asynccontextmanager
+    async def begin(self) -> AsyncIterator[AsyncSession]:
+        ambient = current_request_session()
+        if ambient is not None:
+            yield ambient
+            return
+        async with self._factory.begin() as session:
+            yield session
+
+
+async_db_session = _SessionFactory(_async_session_factory)
 
 
 async def async_pool_warmup(app: FastAPI, status: bool) -> None:
@@ -149,6 +224,91 @@ async def async_pool_warmup(app: FastAPI, status: bool) -> None:
                 await conn.close()
             except Exception:  # noqa: BLE001 - 归还失败不影响启动
                 pass
+
+
+#: 泄漏连接的判定阈值（秒）：事务开着且**这么久没动静**，必然是泄漏。
+#: 正常请求不可能让一个事务空转两分钟。
+_LEAK_IDLE_SECONDS = 120
+#: 看门狗巡检间隔（秒）
+_LEAK_SWEEP_INTERVAL = 60
+
+
+async def db_leak_watchdog(app: FastAPI, status: bool) -> None:
+    """连接泄漏看门狗：把**卡死的空闲事务连接**回收掉，让系统自愈。
+
+    为什么需要它（实测根因，2026-10）：
+
+    - 一个请求最多同时占 **3 条**连接（服务层普遍自己开会话，不复用请求会话）。
+    - **正常完成的请求不漏连接**（实测 60 个请求后 ``idle in transaction`` 仍为 0）。
+    - 但**被中断的请求会漏**：浏览器翻页/超时取消请求时，ASGI 任务被取消，
+      依赖生成器的收尾不一定跑得到，连接被永久留在 ``idle in transaction``。
+      实测一次 12 页面的浏览器巡检后残留 10~18 条，并伴随
+      ``SAWarning: garbage collector is trying to clean up non-checked-in connection``。
+    - 池被这些**永远不会被归还**的连接占满后，所有接口一起超时，
+      而且**不会自愈**——只能重启后端。这就是「页面到处报错」的来源。
+
+    ``db_getter`` 已经加了 ``try/finally`` + ``asyncio.shield`` 做第一道防线
+    （实测超时数从 19 条降到 4 条），但取消路径上仍有残留，所以这里兜底。
+
+    只回收 ``idle in transaction`` **超过 2 分钟**的连接——这是泄漏的确凿特征，
+    不会误伤正常请求。配合 ``POOL_PRE_PING=true``，被回收的连接在下次签出时
+    会被自动替换。
+
+    参数:
+    - app (FastAPI): 应用实例（统一签名，此处不用）。
+    - status (bool): True 为启动期执行。
+
+    返回:
+    - None
+    """
+    if not status or not settings.SQL_DB_ENABLE or settings.TESTING:
+        return
+    if settings.DATABASE_TYPE != "postgres":
+        return
+
+    # ⚠️ 事件加载器是 **await** 每个函数的：这里绝不能自己跑循环，
+    # 否则启动会被永久阻塞（真踩过：加了 while True 后端口一直不监听）。
+    # 派生后台任务后立即返回，跟其它调度器一个套路。
+    asyncio.create_task(_db_leak_sweep_loop())
+
+
+async def _db_leak_sweep_loop() -> None:
+    """看门狗的实际巡检循环（由 :func:`db_leak_watchdog` 派生）。"""
+    from sqlalchemy import text as _t
+
+    while True:
+        await asyncio.sleep(_LEAK_SWEEP_INTERVAL)
+        try:
+            async with async_engine.connect() as conn:
+                rows = (
+                    await conn.execute(
+                        _t(
+                            "SELECT pid"
+                            " FROM pg_stat_activity"
+                            " WHERE datname = current_database()"
+                            "   AND state = 'idle in transaction'"
+                            "   AND pid <> pg_backend_pid()"
+                            "   AND now() - state_change > make_interval(secs => :sec)"
+                        ),
+                        {"sec": _LEAK_IDLE_SECONDS},
+                    )
+                ).fetchall()
+                if not rows:
+                    continue
+                pids = [r[0] for r in rows]
+                for pid in pids:
+                    await conn.execute(
+                        _t("SELECT pg_terminate_backend(:p)"), {"p": pid}
+                    )
+                await conn.commit()
+                log.warning(
+                    f"🧹 连接泄漏看门狗：回收了 {len(pids)} 条卡死连接"
+                    f"（idle in transaction > {_LEAK_IDLE_SECONDS}s）：{pids}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - 看门狗自身绝不能拖垮服务
+            log.warning(f"连接泄漏看门狗巡检失败（忽略）: {e}")
 
 
 async def create_tables() -> None:
