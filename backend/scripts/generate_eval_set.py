@@ -75,6 +75,10 @@ async def generate_for(datasource: str, target: int, per_round: int, auth) -> di
         if not cases:
             print(f"  轮 {round_i}（{difficulty}/{form}）LLM 未产出可解析用例，跳过")
             continue
+        # ⚠️ 维度以**调用方请求**为准：实测模型会忽略提示里指定的难度/形式（一律回「简单」）
+        for c in cases:
+            c["difficulty"] = difficulty
+            c["form"] = form
         out = await verify_and_save(cases, ds_code, auth)
         saved_total += out["saved"]
         rejected_total += out["rejected"]
