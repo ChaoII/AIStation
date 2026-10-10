@@ -165,6 +165,23 @@ async def db_getter() -> AsyncGenerator[AsyncSession, None]:
 - `pg_stat_activity` 单请求采样：峰值连接 = **1**（此前 3）。
 - `ruff check` 无新增。
 
+### 实测结果（2026-10-10，dev 真实环境）
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| 全量 pytest | 3 failed / 1939 passed / 35 skipped | **3 failed（同，均既有 Alembic）/ 1952 passed / 35 skipped** |
+| 并发 30 个 POST（登录） | **1/30 成功**，60s 死锁 | **30/30 成功** |
+| 单请求「非 idle 连接」峰值（`pid <> pg_backend_pid()`） | 3 | **1** |
+| 10 并发「非 idle 连接」峰值 | — | **11**（≈10 请求 + 1 条操作日志独立会话） |
+| 浏览器巡检 12 页（`e2e/ai-pages-audit.spec.ts`） | `/ai/model` 12、`/ai/app` 11、`/ai/logs` 9 条报错 | **全 0 控制台错误 / 0 未捕获异常 / 0 失败请求** |
+| 巡检后 `idle in transaction` | 10~34（**必须重启后端**） | **0**（不重启仍可用） |
+| `ruff check`（改动文件） | — | 无新增 |
+
+> ⚠️ 验证时踩过的坑：Windows 允许**同一端口被多个进程同时绑定**，17:25 启动的
+> **旧后端进程**残留并继续接走 8001 的请求，导致「新代码登录报
+> InvalidRequestError」的假象。杀掉旧进程残留子进程后即恢复正常——
+> 换端口或先确认端口归属，别被假象带偏。
+
 ## 七、本轮不做（明确边界）
 
 - **不逐个改服务层调用点**：靠 3.2 的包装器透明覆盖。

@@ -528,6 +528,11 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
   **`POOL_SIZE=48`**（`MAX_OVERFLOW` 保持 `0`：溢出连接归还即关闭，会反复建连，改用持久连接 + 启动预热），
   保留 `POOL_RECYCLE=1800`、`POOL_PRE_PING=true`、`DB_POOL_WARMUP=true`。
   另有连接泄漏看门狗 `db_leak_watchdog`（每 60s 回收空闲事务 >120s 的连接）作兜底。
+- **请求作用域会话（2026-10）**：纯 ASGI `DBSessionMiddleware` 为每个 HTTP 请求建一条会话，
+  `async_db_session` 是上下文感知包装器——请求内**同任务**透明复用该会话
+  （全仓 761 处调用点零改动），**一请求 1 条连接**；`create_task`/`gather` 子任务与后台任务
+  仍各自新建（ContextVar 带 owner-task 判定）。会话由中间件提交/回滚并在 `finally` 归还，
+  取消路径也可靠。设计见 `docs/superpowers/specs/2026-10-10-request-scoped-session-design.md`。
 - 详细排查记录见 `docs/connection-pool-leak-diagnosis.md`。
 - 排查建议：关注流式接口/长事务是否长期占用会话；`OperationLogRoute` 会在响应后另开会话写日志。
 
