@@ -614,3 +614,19 @@ git commit -m "test(ai-eval): 100 题生成校验、全量实跑与消融验收�
 因为该子集 `fast_rate=0.75`，**快路径根本不用召回**，消融在此子集上无区分度。
 → 消融必须跑**慢路径子集**（`filter.force_slow=true`），脚本已支持该开关。
 配置恢复检查：`recall_enabled true -> true OK`（覆盖退出自动还原，串行无残留）。
+
+### 消融口径的 3 个坑（`--force-slow` 复跑后暴露，待后续完善）
+
+用 `--force-slow` 跑 10 题/组，三组仍 `data_accuracy=1.0、recall_at_k=1.0、Δ=0`。原因：
+
+1. **`recall_at_k` 不反映 `recall_enabled` 开关**：它测的是 `_recall_grounding()`（收尾阶段的
+   grounding 可视化调用），该调用**无条件执行**，与 `_semantic_tables` 是否走新召回服务无关。
+   → 消融要看到召回差异，得看**生成的 SQL/表集合**，不能只看 `recall_at_k` 字段。
+2. **`agno_semantic_enabled` 与 `recall_enabled` 耦合**：`agno_semantic_enabled` 只在
+   **legacy 回退路径**（`_semantic_tables_legacy`，line 6613）里被读取；`recall_enabled=true`
+   时压根不走 legacy → 单独关它**是空操作**。消融这两项时要成对设计。
+3. **子集选择**：默认取前 N 题偏向「简单/快路径」，`force_slow` 后仍偏易；
+   真正有区分度的是 **ds:4 / 困难**子集 → 后续消融应支持按 `datasource` 过滤。
+
+→ 结论：**消融机制（串行 + 覆盖 + 恢复）已验证正确**；但"能测出差异的消融"还需
+（a）按数据源/难度选子集，（b）把「是否用召回」的判据落到 SQL 表集合而非 `recall_at_k`。
