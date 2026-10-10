@@ -58,10 +58,13 @@ def test_rrf_single_channel_preserves_order():
 
 
 def test_rrf_multi_channel_accumulates_not_duplicates():
-    out = fuse_rrf({"keyword": ["a", "b"], "ontology": ["b", "a"]})
+    out = fuse_rrf(
+        {"keyword": ["a", "b"], "ontology": ["b", "a"]},
+        weights={"keyword": 1.0, "ontology": 1.0},
+    )
     names = [t for t, _ in out]
     assert names == ["a", "b"]          # 无重复
-    assert out[0][1] > 0
+    assert out[0][1] == pytest.approx(1 / 61 + 1 / 62)   # 两路累加
 
 
 def test_rrf_ontology_weight_beats_keyword_at_equal_rank():
