@@ -45,14 +45,32 @@ async def db_getter() -> AsyncGenerator[AsyncSession, None]:
       再次抛 CancelledError，连接照样漏）。
 
     自 2026-10 起还有**请求作用域会话**（``DBSessionMiddleware``）：请求内
-    ``current_request_session()`` 已有会话时**直接复用、不在本依赖收尾**——
-    会话由中间件拥有，提交与归还在中间件完成（取消路径同样可靠）。
-    这也避免了「ambient 会话已开启事务时 ``session.begin()`` 抛
-    ``InvalidRequestError``」。
+    ``current_request_session()`` 已有会话时**直接复用**（避免二次 ``begin()`` 抛
+    ``InvalidRequestError``）。复用时**提交/回滚仍在本依赖收尾完成**——因为 FastAPI
+    在返回响应前就关闭依赖 exit stack，此处的提交早于「路由处理器写操作日志」，
+    否则写日志会撞上请求会话未释放的写锁；连接的**关闭**则交给中间件。
     """
     ambient = current_request_session()
     if ambient is not None:
-        yield ambient
+        # 复用请求会话；**提交/回滚仍在依赖收尾完成**（与既有语义一致）。
+        #
+        # 为什么不能把提交推迟到中间件：FastAPI 0.115 在 ``return response`` 之前
+        # 就关闭依赖 exit stack（``fastapi/routing.py`` 的 ``async with AsyncExitStack()``
+        # 包住 ``return response``），因此这里的收尾发生在「路由处理器继续写操作日志」
+        # **之前**。若推迟到中间件（在路由处理器**之后**），操作日志会用另一条连接写入，
+        # 而请求会话仍持有写锁——SQLite 下实测直接 ``database is locked``（全量回归
+        # 243 个 error）。
+        #
+        # 连接**关闭**由 ``DBSessionMiddleware`` 负责（取消路径也能保证归还）。
+        try:
+            yield ambient
+        except BaseException:
+            with suppress(Exception):
+                await asyncio.shield(ambient.rollback())
+            raise
+        else:
+            with suppress(Exception):
+                await asyncio.shield(ambient.commit())
         return
 
     async with async_db_session() as session:

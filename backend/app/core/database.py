@@ -10,6 +10,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
+    AsyncSessionTransaction,
     async_sessionmaker,
     create_async_engine,
 )
@@ -19,6 +20,26 @@ from app.config.setting import settings
 from app.core.base_model import MappedBase
 from app.core.exceptions import CustomException
 from app.core.logger import log
+
+
+class RequestScopedSession(AsyncSession):
+    """请求作用域会话：把「二次 ``begin()``」降级为 ``begin_nested()``（SAVEPOINT）。
+
+    实测（2026-10-10，全量回归 243 个 error）：请求作用域会话落地后，
+    ``async with async_db_session() as s: async with s.begin():`` 这类**先取会话再开事务**
+    的写法（全仓 25 处，请求路径上约 10 处；登录成功后写操作日志即命中）会在
+    「事务已开启」的请求会话上二次 ``begin()``，抛
+    ``InvalidRequestError: A transaction is already begun on this Session``。
+
+    这里覆盖 ``begin()``：**已有事务时返回 ``begin_nested()``**（SAVEPOINT，退出释放、
+    异常回滚到保存点），无事务时保持原语义。这样既维持「一请求一连接」的透明复用，
+    又不用改各调用点「进入即开始、退出即提交」的既有写法。
+    """
+
+    def begin(self) -> AsyncSessionTransaction:
+        if self.in_transaction():
+            return self.begin_nested()
+        return super().begin()
 
 
 def create_engine_and_session(
@@ -106,7 +127,7 @@ def create_async_engine_and_session(
             autocommit=settings.AUTOCOMMIT,
             autoflush=settings.AUTOFETCH,
             expire_on_commit=settings.EXPIRE_ON_COMMIT,
-            class_=AsyncSession,
+            class_=RequestScopedSession,
         )
         return async_engine, AsyncSessionLocal
 
@@ -178,13 +199,32 @@ class _SessionFactory:
     async def begin(self) -> AsyncIterator[AsyncSession]:
         ambient = current_request_session()
         if ambient is not None:
-            yield ambient
+            # 复用请求会话，但**保持 ``async_sessionmaker.begin()`` 的既有语义：退出即提交**。
+            #
+            # 若把提交推迟到请求结束，块内写入会一直持有写锁——实测 SQLite 下
+            # 直接 ``database is locked``（视频检测回调落库后写操作日志即命中），
+            # 且与既有调用约定不符。已有事务时 ``ambient.begin()`` 会退化为
+            # SAVEPOINT（见 ``RequestScopedSession``），异常只回滚到保存点。
+            async with ambient.begin():
+                yield ambient
+            await ambient.commit()
             return
         async with self._factory.begin() as session:
             yield session
 
 
 async_db_session = _SessionFactory(_async_session_factory)
+
+
+@asynccontextmanager
+async def async_db_session_fresh() -> AsyncIterator[AsyncSession]:
+    """**显式新建**会话（不复用请求会话）。
+
+    用于必须**独立提交**的写入：典型是 ``OperationLogRoute`` 的操作日志——
+    请求即使失败（含未处理异常被回滚）也必须留痕，不能并入请求事务。
+    """
+    async with _async_session_factory() as session:
+        yield session
 
 
 async def async_pool_warmup(app: FastAPI, status: bool) -> None:

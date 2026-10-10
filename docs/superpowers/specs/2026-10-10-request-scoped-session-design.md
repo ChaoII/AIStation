@@ -170,3 +170,51 @@ async def db_getter() -> AsyncGenerator[AsyncSession, None]:
 - **不逐个改服务层调用点**：靠 3.2 的包装器透明覆盖。
 - **不删除看门狗**：保留为第二道防线。
 - **不改 `MAX_OVERFLOW` / `POOL_SIZE`**：用户已确认维持 `POOL_SIZE=48`。
+
+## 八、实现补充（全量回归实测发现，2026-10-10）
+
+落地后全量回归出现 **243 个 error**，根因实测如下（`InvalidRequestError: A transaction
+is already begun on this Session`）：
+
+- **触发点**：`OperationLogRoute`（`app/core/router_class.py`）写操作日志时用的是
+  `async with async_db_session() as session: async with session.begin():`。
+  请求内 `async_db_session()` 现在返回**已有事务**的请求会话，二次 `begin()` 即抛错
+  （登录成功后写日志必触发）。
+- **同类写法**：全仓共 **25 处**「先取会话再 `session.begin()`」，其中请求路径上约 10 处
+  （三个标注上传 controller、health、dict/params service、synthesis、train、
+  ai/apps service 等）。
+
+因此新增两条设计（均已带测试）：
+
+1. **`RequestScopedSession(AsyncSession)`**（`class_=` 传入 `async_sessionmaker`）：
+   覆盖 `begin()`——**已有事务时返回 `begin_nested()`（SAVEPOINT）**，退出释放、
+   异常回滚到保存点；无事务时保持原语义。这样 25 处调用点写法**零改动**即可工作，
+   写入并入请求事务（同生共死）。
+2. **`async_db_session_fresh()`**：显式新建会话的逃生口，供**必须独立提交**的写入使用；
+   `OperationLogRoute` 已改用（操作日志在请求失败/回滚时也要留痕）。
+
+> 这条实测印证了第五节风险表里「个别代码需要独立提交」的判断——只是它比预想更普遍
+> （不止审计日志），所以用「SAVEPOINT 兜底 + 审计日志走 fresh」两条一起解决。
+
+### 8.1 提交时机必须与既有语义一致（第二轮实测，2026-10-10）
+
+上面第一轮修复后仍有 **2 个新失败**（`test_rule_leaves_e2e`、`test_ai_knowledge`），
+症状是 `sqlite3.OperationalError: database is locked`（用回退到 ①② 之前做对照，
+基线两个用例**通过** → 确认由本次改动引入）。根因与修正：
+
+1. **`db_getter` 复用时仍须在「依赖收尾」提交，不能推迟到中间件。**
+   FastAPI 0.115 在 `return response` **之前**就关闭依赖 exit stack
+   （`fastapi/routing.py` 的 `async with AsyncExitStack()` 包住 `return response`），
+   所以基线里依赖收尾的提交发生在「路由处理器继续写操作日志」**之前**；
+   若推迟到中间件（在路由处理器**之后**），操作日志会用另一条连接写入，而请求会话
+   仍持有写锁 → SQLite 直接 `database is locked`。**连接关闭**仍由中间件负责。
+2. **`async with async_db_session.begin():` 在请求内也必须「退出即提交」。**
+   这是 `async_sessionmaker.begin()` 的既有语义。若只 `yield` 不提交，块内写入会一直
+   持有写锁直到请求结束，另一条连接（操作日志 / 后台任务）必然撞锁。实现上：
+   已有事务时用 `ambient.begin()`（→ `begin_nested()` SAVEPOINT）包裹，
+   退出后再 `ambient.commit()`（及时释放写锁），异常只回滚到保存点。
+
+> 教训：**「复用会话」不只是换一个对象——它把原本分散的短事务合并成一个长事务，
+> 提交时机、写锁持有时长都变了。** 所以复用必须逐点保持既有提交语义
+> （依赖收尾提交、`begin()` 块退出提交），否则会以 `database is locked` 这类
+> 看似无关的方式暴露出来。

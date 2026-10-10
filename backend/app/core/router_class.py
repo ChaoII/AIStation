@@ -8,7 +8,7 @@ from fastapi.routing import APIRoute
 from user_agents import parse
 
 from app.config.setting import settings
-from app.core.database import async_db_session
+from app.core.database import async_db_session_fresh
 from app.utils.ip_local_util import IpLocalUtil
 
 """
@@ -135,7 +135,9 @@ class OperationLogRoute(APIRoute):
                 # 如果请求来自api文档，则不记录日志
                 pass
             else:
-                async with async_db_session() as session:
+                # 操作日志必须**独立提交**：请求失败（含未处理异常回滚）也要留痕，
+                # 故用 async_db_session_fresh() 显式新建会话，而非复用请求会话。
+                async with async_db_session_fresh() as session:
                     async with session.begin():
                         from app.api.v1.module_system.auth.schema import AuthSchema
                         from app.api.v1.module_system.log.schema import OperationLogCreateSchema

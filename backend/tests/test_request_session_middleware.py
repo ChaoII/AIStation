@@ -74,7 +74,9 @@ def test_rolls_back_on_error():
             await db.execute(text("DELETE FROM _mw_probe2"))
 
         async def inner(scope, receive, send):
-            async with async_db_session.begin() as db:
+            # 直接用请求会话写入（不经 begin() 块 → 不自行提交），
+            # 由中间件在异常时回滚，才能检验中间件的回滚语义。
+            async with async_db_session() as db:
                 await db.execute(text("INSERT INTO _mw_probe2 VALUES (9)"))
             raise RuntimeError("boom")
 
