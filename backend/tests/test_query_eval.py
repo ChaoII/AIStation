@@ -87,3 +87,52 @@ def test_summarize_and_group_by_dimension():
     g = group_by(results, "difficulty")
     assert g["简单"]["accuracy"] == 1.0 and g["困难"]["accuracy"] == 0.0
     assert summarize([])["total"] == 0
+
+
+# ===========================================================================
+# 批次3：LLM 出题解析 + 金标校验入库
+# ===========================================================================
+def test_parse_cases_tolerates_markdown_and_noise():
+    from app.plugin.module_ai.query.eval_generate import parse_cases
+
+    text = (
+        "这是说明\n```json\n"
+        '{"cases":[{"question":"Q","gold_sql":"SELECT 1","difficulty":"简单","form":"单维统计"}]}'
+        "\n```\n完毕"
+    )
+    out = parse_cases(text)
+    assert out and out[0]["question"] == "Q" and out[0]["gold_sql"] == "SELECT 1"
+    assert parse_cases("没有任何 JSON") == []
+    assert parse_cases('[{"question":"A","sql":"SELECT 2"}]')[0]["gold_sql"] == "SELECT 2"
+
+
+def test_verify_and_save_rejects_unexecutable_or_empty_gold(monkeypatch):
+    async def _run():
+        from types import SimpleNamespace
+
+        from app.plugin.module_ai.query import eval_generate as G
+        from app.plugin.module_ai.query.eval_set import list_cases
+
+        async def fake_run(sql, ds, auth):
+            if sql == "SELECT bad":
+                return {"ok": False, "rows": [], "error": "UndefinedTable"}
+            if sql == "SELECT empty":
+                return {"ok": True, "rows": [], "error": ""}
+            return {"ok": True, "rows": [1], "error": ""}
+
+        monkeypatch.setattr(G, "_run_gold", fake_run)
+        auth = SimpleNamespace(user=SimpleNamespace(id=1))
+        out = await G.verify_and_save(
+            [
+                {"question": "EV_GOOD", "gold_sql": "SELECT good", "difficulty": "简单", "form": "单维统计"},
+                {"question": "EV_BAD", "gold_sql": "SELECT bad", "difficulty": "简单", "form": "单维统计"},
+                {"question": "EV_EMPTY", "gold_sql": "SELECT empty", "difficulty": "简单", "form": "单维统计"},
+            ],
+            "system", auth,
+        )
+        assert out["saved"] == 1 and out["rejected"] == 2
+        questions = {c["question"] for c in await list_cases(datasource="system")}
+        assert "EV_GOOD" in questions
+        assert "EV_BAD" not in questions and "EV_EMPTY" not in questions
+
+    asyncio.run(_run())
