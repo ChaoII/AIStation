@@ -179,7 +179,7 @@ Expected: FAIL — `ImportError: cannot import name 'build_table_unit'`
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_query_recall.py -q`
-Expected: PASS（8 passed）
+Expected: PASS（9 passed）
 
 - [ ] **Step 5: 提交**
 
@@ -241,7 +241,7 @@ Expected: FAIL — `AttributeError: type object 'AiQueryService' has no attribut
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_query_recall.py -q`
-Expected: PASS（9 passed）
+Expected: PASS（10 passed）
 
 - [ ] **Step 5: 提交**
 
@@ -292,7 +292,7 @@ Expected: FAIL — `AttributeError: ... has no attribute '_recall_vector'`
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_query_recall.py -q`
-Expected: PASS（10 passed）
+Expected: PASS（11 passed）
 
 - [ ] **Step 5: 提交**
 
@@ -355,7 +355,7 @@ Expected: FAIL — `ImportError: cannot import name 'recall_ontology'`
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_query_recall.py -q`
-Expected: PASS（12 passed）
+Expected: PASS（13 passed）
 
 - [ ] **Step 5: 提交**
 
@@ -468,7 +468,7 @@ Expected: `test_recall_takes_topk_by_score_not_alphabetical` FAIL（旧实现 `s
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_query_recall.py -q`
-Expected: PASS（16 passed）
+Expected: PASS（17 passed）
 
 - [ ] **Step 5: 全量回归**
 
@@ -535,7 +535,7 @@ Expected: FAIL — `KeyError: 'recall_enabled'` / 404
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/test_query_recall.py -q`
-Expected: PASS（18 passed）
+Expected: PASS（19 passed）
 
 - [ ] **Step 5: 提交**
 

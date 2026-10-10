@@ -53,3 +53,103 @@ def fuse_rrf(
                 continue
             scores[table] = scores.get(table, 0.0) + weight / (k + rank)
     return sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+# ---------------------------------------------------------------------------
+# 语义单元构建：把「本体 + 资产元数据 + 指标/术语」变成**高语义密度**的可检索文本。
+#
+# 关键动机（实测）：旧实现喂给向量库的单元是裸标识符（`数据表 {t}` /
+# `表 {t} 的字段 {c}`），中文业务词（"煤款金额""设备健康度"）根本检索不到。
+# ---------------------------------------------------------------------------
+def _unit(kind: str, ref: str, text: str, tables: list[str], **extra) -> dict:
+    """组装一个召回单元；``meta["tables"]`` 直接给出**表归属**（不再靠子串反推）。"""
+    meta: dict = {"tables": [t for t in tables if t]}
+    meta.update(extra)
+    return {"kind": kind, "ref": ref, "text": text, "meta": meta}
+
+
+def build_table_unit(
+    table: str, meta: dict, columns: list[dict], kind: str = "table"
+) -> dict:
+    """表单元（``kind="ds_table"`` 用于外部数据源表，模板相同）。"""
+    parts = [f"表 {table}"]
+    if meta.get("alias"):
+        parts.append(f"中文名:{meta['alias']}")
+    if meta.get("domain"):
+        parts.append(f"业务域:{meta['domain']}")
+    if meta.get("description"):
+        parts.append(f"描述:{meta['description']}")
+    if meta.get("business_scenarios"):
+        parts.append(f"场景:{meta['business_scenarios']}")
+    cols: list[str] = []
+    for c in columns or []:
+        name = c.get("column_name") or c.get("name") or ""
+        cn = c.get("description") or c.get("comment") or ""
+        if name:
+            cols.append(f"{name}({cn})" if cn else name)
+    if cols:
+        parts.append("列: " + ", ".join(cols))
+    return _unit(kind, table, "｜".join(parts), [table])
+
+
+def build_object_unit(obj: dict, props: list[dict], rels: list[dict]) -> dict:
+    """本体对象单元：对象名 + 别名 + 同义词 + 属性 + 关系。
+
+    ``meta["tables"]`` 只放**对象自身支撑表**；关系目标表进 ``text``，
+    供阶段 2 的「关系扩表」使用，不计入本单元的表归属。
+    """
+    code = str(obj.get("code") or obj.get("name") or "")
+    table = obj.get("table") or ""
+    parts = [f"对象 {obj.get('name') or code}"]
+    if obj.get("aliases"):
+        parts.append("别名:" + ",".join(str(a) for a in obj["aliases"]))
+    if obj.get("synonyms"):
+        parts.append(f"同义词:{obj['synonyms']}")
+    if props:
+        parts.append(
+            "属性: " + ", ".join(
+                f"{p.get('name')}({p.get('code')})" if p.get("name") else str(p.get("code"))
+                for p in props
+            )
+        )
+    for r in rels or []:
+        src, tgt = r.get("source"), r.get("target")
+        if src or tgt:
+            card = r.get("card") or ""
+            parts.append(f"关系: {src}→{tgt}({card})")
+    return _unit("object", code, "｜".join(parts), [table])
+
+
+def build_metric_unit(m: dict) -> dict:
+    parts = [f"指标 {m.get('name')}({m.get('key')})"]
+    if m.get("sql_template"):
+        parts.append(f"口径:{m['sql_template']}")
+    if m.get("unit"):
+        parts.append(f"单位:{m['unit']}")
+    return _unit("metric", str(m.get("key") or m.get("name") or ""), "｜".join(parts), [])
+
+
+def build_term_unit(t: dict) -> dict:
+    parts = [f"术语 {t.get('term')}"]
+    if t.get("metric_key"):
+        parts.append(f"→指标 {t['metric_key']}")
+    if t.get("field_path"):
+        parts.append(f"→字段 {t['field_path']}")
+    return _unit("term", str(t.get("term") or ""), "｜".join(parts), [])
+
+
+def build_concept_unit(c: dict) -> dict:
+    name = str(c.get("name") or "")
+    parts = [f"概念 {name}"]
+    if c.get("description"):
+        parts.append(f"描述:{c['description']}")
+    if c.get("synonyms"):
+        parts.append(f"同义词:{c['synonyms']}")
+    if c.get("domain"):
+        parts.append(f"业务域:{c['domain']}")
+    if c.get("metric_key"):
+        parts.append(f"→指标:{c['metric_key']}")
+    tables = [t for t in (c.get("tables") or []) if t]
+    if tables:
+        parts.append("→表:" + ",".join(tables))
+    return _unit("concept", name, "｜".join(parts), tables)
