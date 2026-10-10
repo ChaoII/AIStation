@@ -31,7 +31,8 @@ async def _wait_run(run_id: str):
         await asyncio.sleep(2)
 
 
-async def main(run_limit: int, abl_limit: int, skip_run: bool = False) -> None:
+async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
+               force_slow: bool = False) -> None:
     from main import create_app
 
     create_app()
@@ -45,7 +46,10 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False) -> None:
     auth = R._auth()
 
     if not skip_run:
-        rid = R.start_run(auth, filter={"limit": run_limit} if run_limit else None)
+        flt = {"limit": run_limit} if run_limit else {}
+        if force_slow:
+            flt["force_slow"] = True
+        rid = R.start_run(auth, filter=flt or None)
         st = await _wait_run(rid)
         print("\n=== 全量运行 summary ===")
         print(json.dumps(st.get("summary") or {}, ensure_ascii=False))
@@ -61,9 +65,12 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False) -> None:
 
     if abl_limit:
         before = (await AiQueryService._cfg()).get("recall_enabled")
+        aflt = {"limit": abl_limit}
+        if force_slow:
+            aflt["force_slow"] = True
         ab = R.start_ablation(
             auth, keys=["recall_enabled", "agno_semantic_enabled"],
-            filter={"limit": abl_limit},
+            filter=aflt,
         )
         while True:
             rep = R.get_ablation_report(ab)
@@ -86,8 +93,9 @@ def cli() -> None:
     ap.add_argument("--run-limit", type=int, default=40)
     ap.add_argument("--ablation-limit", type=int, default=20)
     ap.add_argument("--skip-run", action="store_true")
+    ap.add_argument("--force-slow", action="store_true")
     a = ap.parse_args()
-    asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run))
+    asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run, a.force_slow))
 
 
 if __name__ == "__main__":
