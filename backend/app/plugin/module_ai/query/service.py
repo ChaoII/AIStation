@@ -6869,7 +6869,9 @@ class AiQueryService:
             # 331 张表不能全塞，所以复用同一套关键词打分只取 top_k。
             ds_schema = await cls._ds_schema_map(datasource)
             if ds_schema:
-                rel = cls._relevant_tables(question, ds_schema, metrics, terms)
+                # 复用**统一的召回服务**（并行四路 + RRF + 阈值），
+                # 而不是旧的单路关键词 —— 否则新召回只对 system 数据源生效。
+                rel = await cls._semantic_tables_uncached(question, ds_schema, metrics, terms)
                 lines.append(
                     f"（数据源 {datasource}，共 {len(ds_schema)} 张表，"
                     f"下面是与问题最相关的 {len(rel)} 张）")
@@ -6877,6 +6879,11 @@ class AiQueryService:
                     cols = ds_schema.get(t, [])
                     lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
                 lines.append(cls._query_conventions())
+                # 该库表名/字段名为英文大写且大小写敏感：不加双引号会被 PG 小写化 → 找不到表。
+                lines.append(
+                    "【标识符大小写】本数据源的表名/字段名为**英文大写且大小写敏感**，"
+                    'SQL 中必须用双引号引用：如 FROM "FUEL_CB_COALBALANCE"、SUM("COALMONEY")。'
+                )
         lines.append("【示例问题→SQL】")
         for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")
