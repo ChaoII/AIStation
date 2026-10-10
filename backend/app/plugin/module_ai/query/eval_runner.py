@@ -142,11 +142,16 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
             t0 = time.perf_counter()
             try:
                 d = await _ask(c["question"], auth, ds, force_slow=bool(flt.get("force_slow")))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 - 单题异常不得中断整轮
                 d = {"is_error": True, "answer": str(e)[:200], "sql": "", "path": "slow"}
             ms = int((time.perf_counter() - t0) * 1000)
+            # `retrieved` 在不同路径可能是 list（系统源）或 dict{table:score}（自定义源）→ 统一成 list
+            raw_rec = d.get("retrieved")
+            if isinstance(raw_rec, dict):
+                rec = list(raw_rec.keys())
+            else:
+                rec = list(raw_rec or [])
             gt = gold_tables(c.get("gold_sql") or "", schemas.get(ds) or {})
-            rec = d.get("retrieved") or []
             row = {
                 "testcase_id": c["id"], "question": c["question"],
                 "ok": not d.get("is_error"), "is_error": bool(d.get("is_error")),
@@ -282,6 +287,12 @@ async def _run_ablation_group(name: str, auth, flt: dict, overrides: dict, run_i
     """跑一组（可覆盖配置），返回该组 summary。"""
     sub = f"{run_id}_{name}"
     _RUNS[run_id]["current"] = f"消融组：{name}"
+    # 子 run 必须先注册，否则 _run_once 内 _RUNS[sub] 会 KeyError（消融实测踩坑）
+    _RUNS[sub] = {
+        "run_id": sub, "status": "running", "mode": "ablation-group",
+        "group": name, "filter": dict(flt or {}), "total": 0, "done": 0,
+        "current": "", "summary": None, "error": "",
+    }
     if overrides:
         async with override_settings(overrides):
             await _run_once(sub, auth, flt)
