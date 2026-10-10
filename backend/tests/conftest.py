@@ -36,7 +36,12 @@ if not hasattr(SQLiteTypeCompiler, "visit_JSONB"):
 import pytest
 from fastapi.testclient import TestClient
 
-from main import create_app
+#: ``PYTEST_NO_APP=1`` 时不构造应用——跳过 440+ 路由发现与插件扫描，
+#: 每次调用省约 22 秒，供**纯逻辑测试**快速迭代；需要应用的用例会被 skip。
+_SKIP_APP = os.environ.get("PYTEST_NO_APP") == "1"
+
+if not _SKIP_APP:
+    from main import create_app
 
 # SQLite 兼容：本体 service 层用了 ``updated_time=now()``（Postgres 有，SQLite 没有）。
 # 这是**测试环境差异**、不是产品缺陷，因此在连接上注册一个等价函数。
@@ -57,36 +62,43 @@ def _register_sqlite_now(dbapi_conn, _rec):  # pragma: no cover - 运行时钩�
     except Exception:  # noqa: BLE001
         pass
 
-# 创建测试客户端（依赖上述环境变量）
-app = create_app()
+# 应用实例与会话级客户端（默认构造；PYTEST_NO_APP=1 时跳过）
+app = create_app() if not _SKIP_APP else None
+_client = None
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _session_database(test_client):
+def _session_database():
+    """会话级自动夹具：启动应用生命周期（建表 + 种子数据），并在会话结束后清理临时库。
+
+    由本夹具**自己**启动 ``TestClient``（而不是依赖 ``test_client``），因此
+    ``test_client`` 复用它返回同一实例——避免重复驱动同一 ``app`` 的 lifespan
+    （那会导致第二次 ``__enter__`` 出现 ``CancelledError``）。
+    ``PYTEST_NO_APP=1`` 时不启动应用。
     """
-    会话级自动夹具：确保任何用例执行前应用生命周期已启动（建表 + 种子数据），
-    使结果的正确性不依赖「之前的测试恰好先用了 test_client」这一顺序假设；
-    会话结束后清理本次运行的临时库目录。
-    """
+    global _client
     try:
-        yield test_client
+        if _SKIP_APP:
+            yield None
+        else:
+            with TestClient(app) as client:
+                _client = client
+                yield client
     finally:
+        _client = None
         shutil.rmtree(_TEST_DB_DIR, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
-def test_client():
-    """
-    会话级 HTTP 测试客户端（与 ``conftest`` 中单例 ``app`` 对齐，只启动一次生命周期）。
-
-    若使用 ``module`` 作用域，多个测试文件各开一个 ``TestClient`` 会重复驱动同一
-    ``app`` 的 lifespan，易导致第二次 ``__enter__`` 时出现 ``CancelledError``。
+def test_client(_session_database):
+    """会话级 HTTP 测试客户端（返回 :func:`_session_database` 已启动的那一个）。
 
     返回:
-    - TestClient: 供用例发起的同步测试客户端（yield 注入）。
+    - TestClient: 供用例发起的同步测试客户端。
     """
-    with TestClient(app) as client:
-        yield client
+    if _SKIP_APP or _client is None:
+        pytest.skip("PYTEST_NO_APP=1：跳过需要应用的用例")
+    return _client
 
 
 @pytest.fixture(scope="session")

@@ -23,6 +23,10 @@ uv run main.py run --env=dev
 # Lint
 uv run ruff check && uv run ruff check --fix
 
+# 测试（注意效率，见下方「测试效率」）
+uv run pytest -q                      # 全量；提交前跑
+uv run pytest tests/test_xxx.py -q    # 单文件：日常只跑这个
+
 # Alembic (only needed after model changes)
 uv run main.py revision --env=dev
 uv run main.py upgrade --env=dev
@@ -33,6 +37,24 @@ pnpm run dev                   # Vite at http://localhost:5180
 pnpm run type-check            # vue-tsc --noEmit --skipLibCheck
 pnpm run lint                  # eslint + prettier + stylelint
 ```
+
+## 测试效率（重要，直接决定开发速度）
+
+实测（2026-10）：一次测试进程的**固定成本 ≈ 25 秒**，其中 `create_app()`（440+ 路由发现 +
+插件扫描）就占 **≈ 22 秒**；`import main` 仅 1.6 秒。叠加 `.env.dev` 的
+`LOGGER_LEVEL=DEBUG`（**每次运行 3 万行 SQL 日志**）后，跑一次单文件要 45 秒以上。
+
+已做的修复与正确用法：
+
+- **conftest 已强制测试期 `LOGGER_LEVEL=WARNING` + 关闭 `DATABASE_ECHO`/`ECHO_POOL`**
+  （日志 3 万行 → 几行）。这是全量测试变快的主因。
+- **纯逻辑测试（不碰 DB/HTTP）用快速模式**，约 **2 秒**：
+  ```bash
+  PYTEST_NO_APP=1 uv run pytest tests/test_xxx.py -k "..." -q
+  ```
+  （`PYTEST_NO_APP=1` 跳过应用构造；需要应用的用例会被自动 skip。）
+- **日常只跑单文件**，别动不动全量；全量留给提交前。
+- 用 `backend/.venv/Scripts/python.exe -m pytest ...` 代替 `uv run pytest` 可再省 ~2 秒。
 
 ## 国内镜像源（**强制**，apt / pip / 任何拉取）
 
