@@ -128,6 +128,104 @@ def test_vector_channel_degrades_without_pgvector():
 
 
 # ===========================================================================
+# Task 6: 编排 —— 并行四路 + RRF + 阈值 + 按分数 top_k
+# ===========================================================================
+def _patch_orchestration(monkeypatch, channels: dict, top_k: int = 12):
+    """把编排依赖（四路通道 + 配置 + KG）打桩，使 ``_semantic_tables_uncached`` 不碰 DB。
+
+    测试库是 SQLite：``_system_schema()`` 查 ``information_schema``（PG 专有）会失败，
+    关键词/实体通道天然不可用。要测的是**编排契约**（并行融合、阈值、截断、兜底），
+    所以把数据来源打桩，测试既稳定又能跑在 ``PYTEST_NO_APP=1`` 的快速模式。
+    """
+    from app.plugin.module_ai.query import service as S
+
+    A = S.AiQueryService
+
+    def _mk(name):
+        async def _fn(cls, *a, **k):
+            return list(channels.get(name) or [])
+        return classmethod(_fn)
+
+    for name in ("_recall_vector", "_recall_keyword", "_recall_ontology", "_recall_entity"):
+        monkeypatch.setattr(A, name, _mk(name[8:]))
+
+    async def _cfg(cls):
+        return {}
+
+    monkeypatch.setattr(A, "_cfg", classmethod(_cfg))
+    monkeypatch.setattr(
+        A, "_cfg_bool",
+        classmethod(lambda cls, cfg, key, default=True:
+                    False if key == "kg_enabled" else default),
+    )
+    monkeypatch.setattr(
+        A, "_cfg_int",
+        classmethod(lambda cls, cfg, key, default: top_k if key == "recall_top_k" else default),
+    )
+    monkeypatch.setattr(
+        A, "_cfg_float", classmethod(lambda cls, cfg, key, default: default)
+    )
+
+
+def test_recall_takes_topk_by_score_not_alphabetical(monkeypatch):
+    """决定性：按分数取 top_k，而不是 sorted() 的字典序。旧实现会给 aaa_early。"""
+    _patch_orchestration(
+        monkeypatch, {"keyword": ["zzz_late", "aaa_early"], "ontology": ["zzz_late"]}, top_k=1
+    )
+
+    async def _run():
+        from app.plugin.module_ai.query.service import AiQueryService as A
+
+        out = await A._semantic_tables_uncached("x", {}, [], [])
+        assert out[0] == "zzz_late"
+
+    asyncio.run(_run())
+
+
+def test_recall_falls_back_to_core_tables_when_nothing_matches(monkeypatch):
+    """完全无匹配 → 回退核心业务表，不能返回空（空集合会让 prompt 无表可用）。"""
+    _patch_orchestration(monkeypatch, {})
+
+    async def _run():
+        from app.plugin.module_ai.query.recall import CORE_TABLES
+        from app.plugin.module_ai.query.service import AiQueryService as A
+
+        out = await A._semantic_tables_uncached("今天天气怎么样", {}, [], [])
+        assert out == list(CORE_TABLES)
+
+    asyncio.run(_run())
+
+
+def test_recall_is_deterministic_across_calls(monkeypatch):
+    _patch_orchestration(
+        monkeypatch,
+        {"keyword": ["video_cameras", "video_alarm_records"], "ontology": ["video_cameras"]},
+    )
+
+    async def _run():
+        from app.plugin.module_ai.query.service import AiQueryService as A
+
+        a = await A._semantic_tables_uncached("每个摄像头各产生多少条告警", {}, [], [])
+        b = await A._semantic_tables_uncached("每个摄像头各产生多少条告警", {}, [], [])
+        assert a == b and a
+
+    asyncio.run(_run())
+
+
+def test_recall_survives_empty_unit_table(monkeypatch):
+    """单元表为空（向量通道无结果）时，仍须靠其余通道召回。"""
+    _patch_orchestration(monkeypatch, {"vector": [], "keyword": ["video_cameras"]})
+
+    async def _run():
+        from app.plugin.module_ai.query.service import AiQueryService as A
+
+        out = await A._semantic_tables_uncached("在线摄像头有多少", {}, [], [])
+        assert "video_cameras" in out
+
+    asyncio.run(_run())
+
+
+# ===========================================================================
 # Task 5: 关键词 / 本体强信号 / 实体 三路
 # ===========================================================================
 def test_ontology_channel_orders_alias_above_object_name():

@@ -6406,6 +6406,59 @@ class AiQueryService:
             return []
 
     @classmethod
+    async def _recall_keyword(cls, question: str) -> list[str]:
+        """关键词通道（薄包装：取数据后调纯函数 ``recall_keyword``）。"""
+        from .recall import recall_keyword
+
+        try:
+            schema = await cls._system_schema()
+            return recall_keyword(
+                question, schema,
+                await cls.list_metrics(SYSTEM_DS), await cls.list_terms(SYSTEM_DS),
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 关键词通道失败: {e}")
+            return []
+
+    @classmethod
+    async def _recall_ontology(cls, question: str) -> list[str]:
+        """本体强信号通道：别名 > 同义词 > 属性名 > 对象名。"""
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        from .recall import recall_ontology
+
+        try:
+            ctx = await _sem.semantic_context(include_properties=True)
+            tmap = await _sem.object_table_map()
+            props = ctx.get("properties") or {}
+            objs: list[dict] = []
+            for o in ctx.get("objects") or []:
+                oo = dict(o)
+                oo["properties"] = [
+                    (p.get("name") or p.get("code"))
+                    for p in (props.get(o.get("code")) or [])
+                ]
+                objs.append(oo)
+            return recall_ontology(question, objs, tmap)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 本体通道失败: {e}")
+            return []
+
+    @classmethod
+    async def _recall_entity(cls, question: str) -> list[str]:
+        """实体名词通道（薄包装）。"""
+        from .recall import recall_entity
+
+        try:
+            cfg = await cls._cfg()
+            return recall_entity(
+                question, cls._cfg_entity_map(cfg), await cls._system_schema()
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 实体通道失败: {e}")
+            return []
+
+    @classmethod
     async def _agno_search_tables(cls, question: str, schema: dict, top_k: int) -> list[str]:
         """用 Agno Knowledge(PgVector) 语义检索，返回命中的表集合。
 
@@ -6456,7 +6509,69 @@ class AiQueryService:
     async def _semantic_tables_uncached(cls, question: str, schema: dict | None = None,
                                         metrics: list[dict] | None = None,
                                         terms: list[dict] | None = None) -> list[str]:
-        """分层检索 + 关键词 + 实体表基线，合并出联表所需的表集合。
+        """多路并行召回 + RRF 融合 + 阈值 + **按分数取 top_k**（阶段1）。
+
+        取代旧实现的「分级短路 + 字典序截断」：四个通道**并行**执行、互不短路，
+        用 RRF（只用排名，免跨通道归一化）融合后按分数截断。
+        ``recall_enabled=false`` 时退回 ``_semantic_tables_legacy``，便于灰度回滚。
+        """
+        import asyncio
+
+        cfg = await cls._cfg()
+        if not cls._cfg_bool(cfg, "recall_enabled", True):
+            return await cls._semantic_tables_legacy(question, schema, metrics, terms)
+
+        from .recall import CORE_TABLES, DEFAULT_WEIGHTS, fuse_rrf
+
+        top_n = max(8, cls._cfg_int(cfg, "recall_top_k", 12) * 2)
+        results = await asyncio.gather(
+            cls._recall_vector(question, top_n),
+            cls._recall_keyword(question),
+            cls._recall_ontology(question),
+            cls._recall_entity(question),
+            return_exceptions=True,
+        )
+        channels: dict[str, list[str]] = {}
+        for name, res in zip(("vector", "keyword", "ontology", "entity"), results, strict=False):
+            channels[name] = [] if isinstance(res, BaseException) else list(res or [])
+
+        weights = {
+            "vector": cls._cfg_float(cfg, "recall_w_vector", DEFAULT_WEIGHTS["vector"]),
+            "keyword": cls._cfg_float(cfg, "recall_w_keyword", DEFAULT_WEIGHTS["keyword"]),
+            "ontology": cls._cfg_float(cfg, "recall_w_ontology", DEFAULT_WEIGHTS["ontology"]),
+            "entity": cls._cfg_float(cfg, "recall_w_entity", DEFAULT_WEIGHTS["entity"]),
+        }
+        fused = fuse_rrf(channels, weights)
+        min_score = cls._cfg_float(cfg, "recall_min_score", 0.0)
+        top_k = cls._cfg_int(cfg, "recall_top_k", 12)
+        picked = [t for t, s in fused if s >= min_score][:top_k]
+        if not picked:  # 完全无匹配 → 回退核心业务表（不能返回空）
+            picked = list(CORE_TABLES)
+
+        # 关系/KG/AGE 扩表：仅作**补充**、不参与计分（阶段2 改用本体 Link Type）
+        schema_map = schema if schema is not None else await cls._system_schema()
+        try:
+            if cls._cfg_bool(cfg, "kg_enabled", True):
+                from .agno_kg import _ensure, age_expand_tables, kg_tables
+
+                kg = await _ensure()
+                extra: list[str] = []
+                if kg:
+                    extra.extend(kg_tables(question) or [])
+                if picked:
+                    extra.extend(await age_expand_tables(sorted(picked)) or [])
+                for t in extra:
+                    if t in schema_map and t not in picked:
+                        picked.append(t)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 扩表失败（忽略）: {e}")
+        return picked
+
+    @classmethod
+    async def _semantic_tables_legacy(cls, question: str, schema: dict | None = None,
+                                      metrics: list[dict] | None = None,
+                                      terms: list[dict] | None = None) -> list[str]:
+        """【旧实现，仅作 recall_enabled=false 的回退】分层检索 + 关键词 + 实体表基线，合并出联表所需的表集合。
 
         优先 pgvector，回退内存融合(jieba+embedding)；再并上关键词相关表，
         并按「实体名词→表」映射把联表取名称所需的 name 承载表兜底加入；
