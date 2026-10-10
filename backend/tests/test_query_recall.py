@@ -115,6 +115,60 @@ def test_concept_unit_carries_synonyms_and_tables():
 
 
 # ===========================================================================
+# Task 4: 向量通道（无 pgvector 时降级）
+# ===========================================================================
+def test_vector_channel_degrades_without_pgvector():
+    async def _run():
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        # 测试库是 SQLite，没有 pgvector → 必须优雅降级为空列表，且不抛异常
+        assert await S._recall_vector("各框架下的训练模型数量", 8) == []
+
+    asyncio.run(_run())
+
+
+# ===========================================================================
+# Task 5: 关键词 / 本体强信号 / 实体 三路
+# ===========================================================================
+def test_ontology_channel_orders_alias_above_object_name():
+    from app.plugin.module_ai.query.recall import recall_ontology
+
+    objects = [
+        {"code": "sales_order", "name": "销售订单", "aliases": ["订单"],
+         "synonyms": "", "table": "demo_sales"},
+        {"code": "camera", "name": "摄像头", "aliases": [], "synonyms": "",
+         "table": "video_cameras"},
+    ]
+    table_map = {"demo_sales": "sales_order", "video_cameras": "camera"}
+    # 「订单」是别名命中，「摄像头」是对象名命中 → 别名必须排在前面
+    assert recall_ontology("订单和摄像头各多少", objects, table_map) == [
+        "demo_sales", "video_cameras",
+    ]
+    # 只出现对象名时也能召回（权重低，但不丢）
+    assert recall_ontology("摄像头有多少", objects, table_map) == ["video_cameras"]
+
+
+def test_keyword_channel_ranks_chinese_comment_hit_first():
+    from app.plugin.module_ai.query.recall import recall_keyword
+
+    schema = {
+        "FUEL_CB_COALBALANCE": ["COALMONEY(varchar)【煤款金额】"],
+        "zzz_other": ["x(varchar)"],
+    }
+    out = recall_keyword("煤款金额是多少", schema, [], [])
+    assert out and out[0] == "FUEL_CB_COALBALANCE"
+
+
+def test_entity_channel_matches_noun():
+    from app.plugin.module_ai.query.recall import recall_entity
+
+    schema = {"video_cameras": [], "sys_user": []}
+    assert recall_entity("摄像头有多少", {"摄像头": ["video_cameras"]}, schema) == [
+        "video_cameras"
+    ]
+
+
+# ===========================================================================
 # Task 3: 单元表 + 重建（幂等）
 # ===========================================================================
 def test_rebuild_is_idempotent_and_upserts():

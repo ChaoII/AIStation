@@ -6363,6 +6363,49 @@ class AiQueryService:
         return {"units": len(units), "embedded": embedded, "version": version}
 
     @classmethod
+    async def _recall_vector(cls, question: str, top_n: int) -> list[str]:
+        """向量召回通道：**直查 pgvector**（绕过 Agno 的同步引擎与默认 10 条限制）。
+
+        非 PostgreSQL / 未装 pgvector / 单元未重建时**优雅降级为空列表**，由其余通道兜底
+        （测试库是 SQLite，走的正是这条路径）。
+        """
+        import json as _json
+
+        from app.config.setting import settings
+
+        if settings.DATABASE_TYPE != "postgres":
+            return []
+        try:
+            from sqlalchemy import text as _t
+
+            from app.plugin.module_ai.knowledge.embedding import embed_texts
+
+            vecs = await embed_texts([question])
+            if not vecs or not vecs[0]:
+                return []
+            async with async_db_session() as db:
+                rows = (
+                    await db.execute(
+                        _t(
+                            "SELECT meta FROM ai_query_recall_units "
+                            "WHERE is_deleted = false AND embedding IS NOT NULL "
+                            "ORDER BY embedding <=> CAST(:q AS vector) LIMIT :n"
+                        ),
+                        {"q": _json.dumps(vecs[0]), "n": int(top_n)},
+                    )
+                ).fetchall()
+            out: list[str] = []
+            for (meta,) in rows:
+                m = meta if isinstance(meta, dict) else _json.loads(meta or "{}")
+                for t in m.get("tables") or []:
+                    if t and t not in out:
+                        out.append(t)
+            return out
+        except Exception as e:  # noqa: BLE001 - 向量通道失败不得阻断召回
+            log.warning(f"[query][recall] 向量通道失败，已降级: {e}")
+            return []
+
+    @classmethod
     async def _agno_search_tables(cls, question: str, schema: dict, top_k: int) -> list[str]:
         """用 Agno Knowledge(PgVector) 语义检索，返回命中的表集合。
 
