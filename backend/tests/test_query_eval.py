@@ -50,3 +50,40 @@ def test_import_cases_skips_invalid():
         assert out == {"saved": 1, "skipped": 2}
 
     asyncio.run(_run())
+
+
+# ===========================================================================
+# 批次2：指标纯函数（可 PYTEST_NO_APP=1 快速跑）
+# ===========================================================================
+def test_gold_tables_and_recall_at_k():
+    from app.plugin.module_ai.query.eval_metrics import gold_tables, recall_at_k
+
+    schema = {"FUEL_CB_COALBALANCE": [], "FUEL_CMCS_ASSAY": [], "OTHER": []}
+    sql = 'SELECT * FROM "FUEL_CB_COALBALANCE" a JOIN FUEL_CMCS_ASSAY b ON a.id=b.id'
+    assert gold_tables(sql, schema) == {"FUEL_CB_COALBALANCE", "FUEL_CMCS_ASSAY"}
+    assert recall_at_k({"A", "B"}, ["A", "B", "C"], k=8) == 1.0
+    assert recall_at_k({"A", "B"}, ["X", "Y"], k=8) == 0.0
+    assert recall_at_k({"A", "B"}, ["B", "X", "Y", "A"], k=2) == 0.5  # 只看前 2
+    assert recall_at_k(set(), ["X"], k=8) == 1.0
+
+
+def test_summarize_and_group_by_dimension():
+    from app.plugin.module_ai.query.eval_metrics import group_by, summarize
+
+    results = [
+        {"gold_match": True, "metric_key": "m1", "expected_metric": "m1", "path": "fast",
+         "is_error": False, "took_ms": 100, "recall": 1.0, "difficulty": "简单"},
+        {"gold_match": False, "metric_key": "m2", "expected_metric": "m1", "path": "slow",
+         "is_error": True, "took_ms": 300, "recall": 0.0, "difficulty": "困难"},
+    ]
+    s = summarize(results)
+    assert s["total"] == 2
+    assert s["data_accuracy"] == 0.5
+    assert s["semantic_accuracy"] == 0.5  # 2 题都带期望，命中 1 题
+    assert s["fast_rate"] == 0.5
+    assert s["error_rate"] == 0.5
+    assert s["avg_ms"] == 200.0
+    assert s["recall_at_k"] == 0.5
+    g = group_by(results, "difficulty")
+    assert g["简单"]["accuracy"] == 1.0 and g["困难"]["accuracy"] == 0.0
+    assert summarize([])["total"] == 0
