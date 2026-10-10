@@ -1,5 +1,7 @@
+import asyncio
 import json
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 
 from fastapi import Depends, Query, Request
 from redis.asyncio.client import Redis
@@ -11,7 +13,7 @@ from app.api.v1.module_system.user.crud import UserCRUD
 from app.api.v1.module_system.user.model import UserModel
 from app.common.enums import RedisInitKeyConfig
 from app.config.setting import settings
-from app.core.database import async_db_session
+from app.core.database import async_db_session, current_request_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.core.redis_crud import RedisCURD
@@ -23,10 +25,43 @@ async def db_getter() -> AsyncGenerator[AsyncSession, None]:
 
     返回:
     - AsyncSession: 数据库会话连接
+
+    ⚠️ **这里的清理必须做到"无论如何都归还连接"。**
+
+    实测根因（2026-10，pg_stat_activity 采样）：请求被**取消**时（浏览器翻页/关闭、
+    前端 abort），依赖生成器的收尾不一定跑得到，连接就被永久留在
+    ``idle in transaction``，池占满后**所有接口一起超时，而且不会自愈，必须重启后端**。
+    这就是「页面到处报错、接口全超时」的真正来源。
+
+    证据：一次 12 页面的浏览器巡检后，PG 侧残留 10 条 ``idle in transaction``，
+    最后执行的 SQL 都是认证的 ``SELECT sys_role_1.id ...``（即本依赖借出的那条连接）；
+    后端日志同时出现 22 次
+    ``SAWarning: The garbage collector is trying to clean up non-checked-in connection``
+    —— 会话对象被 GC 掉而从未归还。
+
+    所以这里用 ``try/finally`` + ``asyncio.shield``：
+    - ``finally`` 保证正常返回、抛异常、以及生成器被 ``aclose()`` 三种情况都执行；
+    - ``shield`` 保证即使当前任务已被取消，关闭动作也能跑完（否则 await 会立刻
+      再次抛 CancelledError，连接照样漏）。
+
+    自 2026-10 起还有**请求作用域会话**（``DBSessionMiddleware``）：请求内
+    ``current_request_session()`` 已有会话时**直接复用、不在本依赖收尾**——
+    会话由中间件拥有，提交与归还在中间件完成（取消路径同样可靠）。
+    这也避免了「ambient 会话已开启事务时 ``session.begin()`` 抛
+    ``InvalidRequestError``」。
     """
+    ambient = current_request_session()
+    if ambient is not None:
+        yield ambient
+        return
+
     async with async_db_session() as session:
-        async with session.begin():
-            yield session
+        try:
+            async with session.begin():
+                yield session
+        finally:
+            with suppress(Exception):
+                await asyncio.shield(session.close())
 
 
 async def redis_getter(request: Request) -> Redis:

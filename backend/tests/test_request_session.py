@@ -57,3 +57,49 @@ def test_child_task_does_not_reuse_ambient_session():
             assert seen["child_session"] is not outer
 
     asyncio.run(_run())
+
+
+def test_db_getter_yields_ambient_session_when_present():
+    async def _run():
+        from sqlalchemy import text
+
+        from app.core.dependencies import db_getter
+
+        async with async_db_session() as outer:
+            token = activate_request_session(outer)
+            try:
+                await outer.execute(text("SELECT 1"))  # 先开启事务
+                assert outer.in_transaction()
+
+                agen = db_getter()
+                got = await agen.__anext__()
+                assert got is outer
+                try:
+                    await agen.__anext__()
+                except StopAsyncIteration:
+                    pass
+
+                # 请求会话由中间件拥有：db_getter 不得替它提交/关闭，
+                # 事务必须仍然开着（旧实现会用 session.begin() 收尾提交）。
+                assert outer.in_transaction() is True
+                assert (await outer.execute(text("SELECT 1"))) is not None
+            finally:
+                deactivate_request_session(token)
+
+    asyncio.run(_run())
+
+
+def test_db_getter_falls_back_without_ambient():
+    async def _run():
+        from app.core.dependencies import db_getter
+
+        assert current_request_session() is None
+        agen = db_getter()
+        got = await agen.__anext__()
+        assert got is not None
+        try:
+            await agen.__anext__()
+        except StopAsyncIteration:
+            pass
+
+    asyncio.run(_run())
