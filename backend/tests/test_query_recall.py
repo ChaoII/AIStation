@@ -128,6 +128,32 @@ def test_vector_channel_degrades_without_pgvector():
 
 
 # ===========================================================================
+# Task 7: 配置项 seed + rebuild/probe 端点
+# ===========================================================================
+def test_recall_config_defaults_seeded():
+    async def _run():
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        cfg = await S._cfg()
+        assert cfg["recall_enabled"] == "true"
+        assert int(cfg["recall_top_k"]) == 12
+        assert float(cfg["recall_w_ontology"]) > float(cfg["recall_w_keyword"])
+
+    asyncio.run(_run())
+
+
+def test_probe_endpoint_returns_final_tables(test_client, auth_headers):
+    r = test_client.get(
+        "/api/v1/ai/query/recall/probe",
+        params={"question": "在线摄像头有多少"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert "final" in data and data["final"]
+
+
+# ===========================================================================
 # Task 6: 编排 —— 并行四路 + RRF + 阈值 + 按分数 top_k
 # ===========================================================================
 def _patch_orchestration(monkeypatch, channels: dict, top_k: int = 12):

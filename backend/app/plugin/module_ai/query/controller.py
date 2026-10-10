@@ -25,6 +25,11 @@ from .schema import (
 from .service import AiQueryService, list_ds_schema
 from .service import sync_datasource_schema as _do_sync_schema
 
+# 注意：`test_datasource_conn` 是**模块级函数**，不是 AiQueryService 的类方法。
+# 之前控制器写成 `AiQueryService.test_datasource_conn(...)`，点「测试连接」必报
+# AttributeError（真实缺陷，页面上那个按钮一直是坏的）。按 sync 的写法导入。
+from .service import test_datasource_conn as _do_test_conn
+
 AiQueryRouter = APIRouter(route_class=OperationLogRoute, prefix="/query", tags=["AI-智能问数"])
 
 
@@ -385,7 +390,7 @@ async def test_datasource(
     datasource_id: int,
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
-    return SuccessResponse(data=await AiQueryService.test_datasource_conn(datasource_id), msg="测试完成")
+    return SuccessResponse(data=await _do_test_conn(datasource_id), msg="测试完成")
 
 
 @AiQueryRouter.post("/datasources/{datasource_id}/sync-schema", summary="同步数据源表结构")
@@ -681,6 +686,23 @@ async def pipeline_data(
     return SuccessResponse(data=r, msg="查询成功")
 
 
+# ---- 召回服务（阶段1：语义单元 + 多路融合）----
+@AiQueryRouter.post("/recall/rebuild", summary="重建语义召回单元")
+async def rebuild_recall_units(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.rebuild_recall_units(), msg="重建完成")
+
+
+@AiQueryRouter.get("/recall/probe", summary="召回探针：某问题选中了哪些表")
+async def recall_probe(
+    question: str,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    final = await AiQueryService._semantic_tables_uncached(question, None, None, None)
+    return SuccessResponse(data={"question": question, "final": final}, msg="查询成功")
+
+
 # ---- P3-② Workshop 对象工作台(无代码应用) ----
 @AiQueryRouter.get("/workshop/list", summary="对象应用列表")
 async def workshop_list(
@@ -864,6 +886,20 @@ async def import_ds_as_ontology(
 ) -> JSONResponse:
     r = await AiQueryService.import_ds_table_as_ontology(int(data.get("datasource_id", 0)), str(data.get("table", "")))
     return SuccessResponse(data=r, msg=r.get("msg", "已导入"))
+
+
+@AiQueryRouter.post("/ontology/import-from-ds/batch", summary="数据源连接器→本体对象(批量,默认排除纯技术表)")
+async def import_ds_as_ontology_batch(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    r = await AiQueryService.import_ds_tables_as_ontology(
+        int(data.get("datasource_id", 0)),
+        tables=data.get("tables"),
+        include_technical=bool(data.get("include_technical", False)),
+    )
+    msg = f"已导入 {r.get('imported', 0)} 个本体对象" if r.get("ok") else r.get("msg", "导入失败")
+    return SuccessResponse(data=r, msg=msg)
 
 
 @AiQueryRouter.get("/governance/overview", summary="治理驾驶舱总览")
@@ -1063,6 +1099,16 @@ async def save_query_asset(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.upsert_asset(data, auth), msg="保存成功")
+
+
+@AiQueryRouter.post("/assets/batch-meta", summary="数据资产(表)批量维护中文名/业务域/描述")
+async def batch_save_query_asset_meta(
+    data: Annotated[dict, Body()],
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    r = await AiQueryService.batch_upsert_asset_meta(data.get("items") or [], auth)
+    msg = f"已保存 {r.get('saved', 0)} 张表" if r.get("ok") else r.get("msg", "保存失败")
+    return SuccessResponse(data=r, msg=msg)
 
 
 @AiQueryRouter.post("/assets/column/save", summary="数据资产(字段)保存")

@@ -4993,6 +4993,14 @@ class AiQueryService:
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
             "agno_tool_agent": "false",              # 工具化 Agent(多轮往返，慢)；false=单次生成+本地执行自纠错
             "kg_enabled": "true",                    # 知识图谱图遍历召回(补关联表/联表路径)
+            # ---- 召回服务（阶段1：多路并行 + RRF 融合）----
+            "recall_enabled": "true",                # 开关；false 时退回旧的分级检索
+            "recall_top_k": "12",                    # 融合后按分数保留的表数上限
+            "recall_min_score": "0",                 # RRF 分数下限（0=不过滤）
+            "recall_w_vector": "1.0",                # 向量通道权重
+            "recall_w_keyword": "0.8",               # 关键词通道权重
+            "recall_w_ontology": "1.2",              # 本体强信号权重（别名/同义词/属性）
+            "recall_w_entity": "0.6",                # 实体名词通道权重
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -6549,11 +6557,11 @@ class AiQueryService:
             picked = list(CORE_TABLES)
 
         # 关系/KG/AGE 扩表：仅作**补充**、不参与计分（阶段2 改用本体 Link Type）
-        schema_map = schema if schema is not None else await cls._system_schema()
         try:
             if cls._cfg_bool(cfg, "kg_enabled", True):
                 from .agno_kg import _ensure, age_expand_tables, kg_tables
 
+                schema_map = schema if schema is not None else await cls._system_schema()
                 kg = await _ensure()
                 extra: list[str] = []
                 if kg:
