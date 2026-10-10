@@ -140,8 +140,38 @@ async def verify_and_save(cases: list[dict], datasource: str, auth) -> dict:
 # ---------------------------------------------------------------------------
 # LLM 调用（复用问答模型；解析走 parse_cases）
 # ---------------------------------------------------------------------------
+async def generate_round(
+    datasource: str, difficulty: str, form: str, n: int, auth
+) -> dict:
+    """跑**一轮**出题：LLM → 解析 → **维度以调用方为准** → 校验入库。
+
+    返回 ``{"parsed", "saved", "rejected", "reasons"}``。
+    前端/接口可按需重复调用它来逐步补足题集。
+    """
+    from .service import SYSTEM_DS, AiQueryService, list_ds_schema
+
+    if (datasource or SYSTEM_DS) == SYSTEM_DS:
+        schema = await AiQueryService._system_schema()
+        rows = [
+            {"table": t, "comment": "", "columns": [
+                {"name": c.split("(", 1)[0], "comment": ""} for c in cols]}
+            for t, cols in schema.items()
+        ]
+    else:
+        rows = await list_ds_schema(int(str(datasource).split(":")[-1]))
+    metrics = await AiQueryService.list_metrics(datasource)
+    terms = await AiQueryService.list_terms(datasource)
+    text = await call_llm(build_prompt(rows, metrics, terms, difficulty, form, n))
+    cases = parse_cases(text)
+    # 实测：模型会忽略提示里指定的难度/形式（一律回「简单」）→ 以调用方为准
+    for c in cases:
+        c["difficulty"], c["form"] = difficulty, form
+    out = await verify_and_save(cases, datasource, auth)
+    out["parsed"] = len(cases)
+    return out
+
+
 async def call_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -> str:
-    """调用问答模型返回原始文本（失败返回空串）。"""
     try:
         from openai import AsyncOpenAI
 

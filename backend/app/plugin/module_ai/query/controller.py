@@ -795,6 +795,24 @@ async def eval_report(
     )
 
 
+@AiQueryRouter.post("/eval/generate", summary="生成一轮测试题（LLM 出题 + 金标执行校验）")
+async def eval_generate(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .eval_generate import generate_round
+
+    body = data or {}
+    out = await generate_round(
+        str(body.get("datasource") or "system"),
+        str(body.get("difficulty") or "简单"),
+        str(body.get("form") or "单维统计"),
+        int(body.get("n") or 5),
+        auth,
+    )
+    return SuccessResponse(data=out, msg="生成完成")
+
+
 @AiQueryRouter.get("/eval/runs", summary="历史评测运行")
 async def eval_runs(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
