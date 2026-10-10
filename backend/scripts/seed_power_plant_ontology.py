@@ -50,10 +50,12 @@ class Ctx:
         return self.use_llm and self.llm_calls < self.budget
 
 
-async def _llm_json(ctx: Ctx, prompt: str, *, timeout: int = 120) -> dict | None:
+async def _llm_json(ctx: Ctx, prompt: str, *, timeout: int = 120, tries: int = 2) -> dict | None:
     """调用问答模型并解析 JSON（复用 ``AiQueryService._get_runtime`` 的模型解析与请求头）。"""
     if not ctx.can_llm():
         return None
+    import re as _re
+
     try:
         from openai import AsyncOpenAI
 
@@ -67,18 +69,25 @@ async def _llm_json(ctx: Ctx, prompt: str, *, timeout: int = 120) -> dict | None
             timeout=timeout,
             default_headers=build_headers(rt["base_url"], rt.get("extra_headers"), "aistation-pp"),
         )
-        ctx.llm_calls += 1
-        resp = await client.chat.completions.create(
-            model=rt["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=2000,
-        )
-        text = (resp.choices[0].message.content or "").strip()
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end <= start:
-            return None
-        return json.loads(text[start : end + 1])
+        for attempt in range(max(1, tries)):
+            ctx.llm_calls += 1
+            resp = await client.chat.completions.create(
+                model=rt["model"],
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=4000,
+            )
+            text = (resp.choices[0].message.content or "").strip()
+            text = _re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text).strip()  # 去 markdown 围栏
+            start, end = text.find("{"), text.rfind("}")
+            if 0 <= start < end:
+                try:
+                    return json.loads(text[start : end + 1])
+                except Exception:  # noqa: BLE001 - 交给下一次重试
+                    print(f"   [LLM] JSON 解析失败（第 {attempt + 1} 次），头部: {text[:180]!r}")
+            else:
+                print(f"   [LLM] 未找到 JSON（第 {attempt + 1} 次），头部: {text[:180]!r}")
+        return None
     except Exception as e:  # noqa: BLE001 - LLM 失败不阻断整体流程
         print(f"   [LLM] 调用失败（忽略）: {str(e)[:120]}")
         return None
@@ -94,18 +103,20 @@ async def step_assets(ctx: Ctx, records: list[dict], auth) -> None:
     need_desc = [r for r in records if not str(r.get("comment") or "").strip()]
     gen: dict[str, str] = {}
     if need_desc:
-        batch = need_desc[:40]
+        batch = need_desc[:20]  # 批量太大易被截断
         prompt = (
             "你是电力行业（燃煤火电厂）数据库元数据专家。为下列数据库表生成简洁的中文业务名"
-            "（不超过20字，只说业务含义）。严格返回 JSON：{\"表名\":\"中文业务名\"}。\n"
+            "（不超过20字，只说业务含义）。严格只返回 JSON，不要解释："
+            "{\"表名\":\"中文业务名\"}。\n"
             + "\n".join(
-                f"{r['table']}：字段 {', '.join(str(c.get('name')) for c in (r.get('columns') or [])[:12])}"
+                f"{r['table']}：字段 {', '.join(str(c.get('name')) for c in (r.get('columns') or [])[:8])}"
                 for r in batch
             )
         )
         data = await _llm_json(ctx, prompt)
         if isinstance(data, dict):
             gen = {str(k): str(v) for k, v in data.items()}
+        print(f"   [资产] 无注释表 {len(need_desc)} 张，LLM 返回 {len(gen)} 个中文名")
     for rec in records:
         payload = asset_payload(rec, description=gen.get(rec["table"], rec.get("comment")))
         if not payload["alias"]:
@@ -203,22 +214,26 @@ async def step_semantics(ctx: Ctx, records: list[dict], ds_code: str, auth) -> N
         return
     table_names = {r["table"].upper() for r in records}
     prompt = (
-        "你是火电厂燃煤业务的数据分析师。根据下列表与中文名，给出 6 个最常用的**业务指标**"
+        "你是火电厂燃煤业务的数据分析师。根据下列表与中文名，给出 4 个最常用的**业务指标**"
         "（key 用英文小写下划线；sql_template 必须是 PostgreSQL 语法、只能引用给定表、只读 SELECT、"
-        "聚合列起中文别名；unit 可为空）与 8 条**业务术语**（燃煤行业口语 → 指标 key 或 表.字段）。"
-        "严格返回 JSON：{\"metrics\":[{\"key\",\"name\",\"description\",\"sql_template\",\"unit\"}],"
+        "聚合列起中文别名；unit 可为空）与 6 条**业务术语**（燃煤行业口语 → 指标 key 或 表.字段）。"
+        "严格只返回 JSON，不要解释：{\"metrics\":[{\"key\",\"name\",\"description\",\"sql_template\",\"unit\"}],"
         "\"terms\":[{\"term\",\"metric_key\",\"field_path\"}]}。\n"
-        + "\n".join(f"{r['table']}：{r.get('comment') or '(无中文名)'}" for r in records[:60])
+        + "\n".join(f"{r['table']}：{r.get('comment') or '(无中文名)'}" for r in records[:25])
     )
     data = await _llm_json(ctx, prompt)
     if not isinstance(data, dict):
         print("   [语义层] 未获得 LLM 建议（跳过指标/术语）")
         return
+    metrics_in = list(data.get("metrics") or [])
+    terms_in = list(data.get("terms") or [])
+    print(f"   [语义层] LLM 返回 指标 {len(metrics_in)} 条、术语 {len(terms_in)} 条")
 
     for m in data.get("metrics") or []:
         sql = str(m.get("sql_template") or "")
         refs = {w.strip('"').upper() for w in sql.replace("(", " ").replace(")", " ").split()}
         if not sql or not (refs & table_names):
+            ctx.bump("metric_skipped")
             continue  # 只保留确实引用核心域表的指标
         if ctx.dry:
             ctx.bump("metric_planned")
@@ -265,7 +280,7 @@ async def step_rebuild(ctx: Ctx) -> None:
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
-async def run(ds_id: int, ctx: Ctx, limit: int | None) -> None:
+async def run(ds_id: int, ctx: Ctx, limit: int | None, only: str = "") -> None:
     from main import create_app
 
     create_app()  # 触发模块发现，加载全部 ORM 模型
@@ -282,11 +297,21 @@ async def run(ds_id: int, ctx: Ctx, limit: int | None) -> None:
     print(f"数据源 ds:{ds_id} 共 {len(all_records)} 张表；核心业务域 {len(core)} 张"
           f"（{'dry-run' if ctx.dry else '写入'}，LLM={'开' if ctx.use_llm else '关'}）")
 
-    await step_assets(ctx, core, auth)
-    await step_columns(ctx, core, auth)
-    await step_ontology(ctx, core, auth)
-    await step_semantics(ctx, core, ds_code, auth)
-    await step_rebuild(ctx)
+    only = {x.strip() for x in (only or "").split(",") if x.strip()}
+
+    def want(name: str) -> bool:
+        return not only or name in only
+
+    if want("assets"):
+        await step_assets(ctx, core, auth)
+    if want("columns"):
+        await step_columns(ctx, core, auth)
+    if want("ontology"):
+        await step_ontology(ctx, core, auth)
+    if want("semantics"):
+        await step_semantics(ctx, core, ds_code, auth)
+    if want("rebuild"):
+        await step_rebuild(ctx)
     print("\n=== 覆盖率报告 ===")
     with_comment = sum(1 for r in core if str(r.get("comment") or "").strip())
     print(f"核心表 {len(core)} 张，其中 {with_comment} 张有上游注释（{with_comment / max(1, len(core)):.0%}）")
@@ -302,9 +327,10 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--no-llm", action="store_true")
     ap.add_argument("--llm-budget", type=int, default=8)
+    ap.add_argument("--only", default="", help="只跑指定步骤（逗号分隔：assets,columns,ontology,semantics,rebuild）")
     args = ap.parse_args()
     ctx = Ctx(dry=args.dry_run, use_llm=not args.no_llm, budget=args.llm_budget)
-    asyncio.run(run(args.ds, ctx, args.limit or None))
+    asyncio.run(run(args.ds, ctx, args.limit or None, args.only))
 
 
 if __name__ == "__main__":
