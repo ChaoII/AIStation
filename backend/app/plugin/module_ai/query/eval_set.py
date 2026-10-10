@@ -176,3 +176,65 @@ async def import_cases(items: list[dict]) -> dict:
         saved += 1
     log.info(f"[ai-eval] 测试集导入：新增/更新 {saved} 条，跳过 {skipped} 条")
     return {"saved": saved, "skipped": skipped}
+
+
+async def load_results(run_id: str) -> list[dict]:
+    """读回某轮的逐题结果（含 trace 关键字段），供报表聚合。"""
+    from sqlalchemy import text as _t
+
+    await ensure_eval_tables()
+    async with async_db_session() as db:
+        rows = (
+            await db.execute(
+                _t(
+                    "SELECT testcase_id,question,ok,is_error,path,metric_key,sql,n_rows,took_ms,"
+                    "gold_match,recall_hit,ontology_used,tool_calls,retries,trace "
+                    "FROM ai_query_testresult WHERE run_id=:r AND is_deleted=false ORDER BY id"
+                ),
+                {"r": run_id},
+            )
+        ).fetchall()
+    out: list[dict] = []
+    for r in rows:
+        recall = 0.0
+        try:
+            import json as _j
+
+            rh = r[10] if isinstance(r[10], dict) else _j.loads(r[10] or "{}")
+            exp, rec = set(rh.get("expected") or []), rh.get("recalled") or []
+            recall = (len(exp & set(rec)) / len(exp)) if exp else 1.0
+        except Exception:  # noqa: BLE001
+            recall = 0.0
+        tr = r[14] if isinstance(r[14], dict) else {}
+        out.append({
+            "testcase_id": r[0], "question": r[1], "ok": bool(r[2]), "is_error": bool(r[3]),
+            "path": r[4], "metric_key": r[5] or "", "sql": r[6] or "", "n_rows": r[7] or 0,
+            "took_ms": r[8] or 0, "gold_match": bool(r[9]), "recall": recall,
+            "ontology_used": r[11], "tool_calls": r[12], "retries": r[13] or 0,
+            "difficulty": (tr or {}).get("difficulty"), "scenario": (tr or {}).get("scenario"),
+            "form": (tr or {}).get("form"), "datasource": (tr or {}).get("datasource"),
+        })
+    return out
+
+
+async def list_runs(limit: int = 30) -> list[dict]:
+    """历史运行列表（最近在前）。"""
+    from sqlalchemy import text as _t
+
+    await ensure_eval_tables()
+    async with async_db_session() as db:
+        rows = (
+            await db.execute(
+                _t(
+                    "SELECT run_id,mode,ablation_group,status,total,done,started_at,finished_at,summary "
+                    "FROM ai_query_testrun WHERE is_deleted=false ORDER BY id DESC LIMIT :n"
+                ),
+                {"n": int(limit)},
+            )
+        ).fetchall()
+    return [
+        {"run_id": r[0], "mode": r[1], "ablation_group": r[2], "status": r[3],
+         "total": r[4], "done": r[5], "started_at": str(r[6] or ""), "finished_at": str(r[7] or ""),
+         "summary": r[8] if isinstance(r[8], dict) else None}
+        for r in rows
+    ]

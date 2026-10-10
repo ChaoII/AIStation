@@ -201,3 +201,24 @@ def test_ablation_runs_baseline_first_and_is_serial(monkeypatch):
         assert set(R.get_ablation_report(rid)["table"]) == {"baseline", "recall_enabled", "kg_enabled"}
 
     asyncio.run(_run())
+
+
+# ===========================================================================
+# 批次5：REST 接口
+# ===========================================================================
+def test_eval_cases_and_status_endpoints(test_client, auth_headers):
+    h = auth_headers
+    r = test_client.post(
+        "/api/v1/ai/query/eval/cases",
+        json={"question": "接口测试题EV", "gold_sql": "SELECT 1", "datasource": "system",
+              "difficulty": "简单", "scenario": "安防", "form": "单维统计"},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    r = test_client.get("/api/v1/ai/query/eval/cases", params={"difficulty": "简单"}, headers=h)
+    assert r.status_code == 200
+    assert any(c["question"] == "接口测试题EV" for c in r.json()["data"])
+    r = test_client.get("/api/v1/ai/query/eval/status", headers=h)
+    assert r.status_code == 200
+    r = test_client.get("/api/v1/ai/query/eval/runs", headers=h)
+    assert r.status_code == 200 and isinstance(r.json()["data"], list)

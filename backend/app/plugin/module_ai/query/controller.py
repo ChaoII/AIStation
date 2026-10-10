@@ -703,6 +703,130 @@ async def recall_probe(
     return SuccessResponse(data={"question": question, "final": final}, msg="查询成功")
 
 
+# ---- 问数评测（测试集 / 运行 / 报表 / 消融）----
+@AiQueryRouter.get("/eval/cases", summary="评测测试集列表")
+async def eval_list_cases(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str | None = None,
+    difficulty: str | None = None,
+    form: str | None = None,
+    scenario: str | None = None,
+) -> JSONResponse:
+    from .eval_set import list_cases
+
+    return SuccessResponse(
+        data=await list_cases(datasource, difficulty, form, scenario), msg="查询成功"
+    )
+
+
+@AiQueryRouter.post("/eval/cases", summary="新增/更新测试题")
+async def eval_upsert_case(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .eval_set import upsert_case
+
+    return SuccessResponse(data=await upsert_case(data), msg="保存成功")
+
+
+@AiQueryRouter.put("/eval/cases", summary="更新测试题（同 upsert）")
+async def eval_update_case(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .eval_set import upsert_case
+
+    return SuccessResponse(data=await upsert_case(data), msg="保存成功")
+
+
+@AiQueryRouter.delete("/eval/cases", summary="删除测试题")
+async def eval_delete_cases(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[list[int], Body()],
+) -> JSONResponse:
+    from .eval_set import delete_cases
+
+    return SuccessResponse(data={"deleted": await delete_cases(data)}, msg="已删除")
+
+
+@AiQueryRouter.post("/eval/run", summary="启动一轮评测")
+async def eval_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict | None, Body()] = None,
+) -> JSONResponse:
+    from .eval_runner import start_run
+
+    body = data or {}
+    rid = start_run(
+        auth, filter=body.get("filter"), mode=body.get("mode") or "full", config=body.get("config")
+    )
+    return SuccessResponse(data={"run_id": rid}, msg="已启动")
+
+
+@AiQueryRouter.get("/eval/status", summary="评测进度")
+async def eval_status(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    run_id: str | None = None,
+) -> JSONResponse:
+    from .eval_runner import get_status
+
+    return SuccessResponse(data=get_status(run_id), msg="查询成功")
+
+
+@AiQueryRouter.get("/eval/report", summary="评测结果（总览 + 分维度 + 逐题）")
+async def eval_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    run_id: str,
+) -> JSONResponse:
+    from .eval_metrics import group_by, summarize
+    from .eval_set import load_results
+
+    rows = await load_results(run_id)
+    return SuccessResponse(
+        data={
+            "summary": summarize(rows),
+            "by_difficulty": group_by(rows, "difficulty"),
+            "by_scenario": group_by(rows, "scenario"),
+            "by_form": group_by(rows, "form"),
+            "by_datasource": group_by(rows, "datasource"),
+            "results": rows[:200],
+        },
+        msg="查询成功",
+    )
+
+
+@AiQueryRouter.get("/eval/runs", summary="历史评测运行")
+async def eval_runs(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    limit: int = 30,
+) -> JSONResponse:
+    from .eval_set import list_runs
+
+    return SuccessResponse(data=await list_runs(limit), msg="查询成功")
+
+
+@AiQueryRouter.post("/eval/ablation", summary="启动消融评测")
+async def eval_ablation(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict | None, Body()] = None,
+) -> JSONResponse:
+    from .eval_runner import start_ablation
+
+    body = data or {}
+    rid = start_ablation(auth, keys=body.get("keys"), filter=body.get("filter"))
+    return SuccessResponse(data={"run_id": rid}, msg="已启动")
+
+
+@AiQueryRouter.get("/eval/ablation", summary="消融对照表")
+async def eval_ablation_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    run_id: str,
+) -> JSONResponse:
+    from .eval_runner import get_ablation_report
+
+    return SuccessResponse(data=get_ablation_report(run_id), msg="查询成功")
+
+
 # ---- P3-② Workshop 对象工作台(无代码应用) ----
 @AiQueryRouter.get("/workshop/list", summary="对象应用列表")
 async def workshop_list(
