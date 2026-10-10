@@ -6414,14 +6414,18 @@ class AiQueryService:
             return []
 
     @classmethod
-    async def _recall_keyword(cls, question: str) -> list[str]:
-        """关键词通道（薄包装：取数据后调纯函数 ``recall_keyword``）。"""
+    async def _recall_keyword(cls, question: str, schema: dict | None = None) -> list[str]:
+        """关键词通道（薄包装：取数据后调纯函数 ``recall_keyword``）。
+
+        ⚠️ 必须用**调用方传入的 schema**：外部数据源（如 ds:4 燃煤库）的表不在
+        ``_system_schema()`` 里，固定用系统 schema 会让该通道对外部源完全失效。
+        """
         from .recall import recall_keyword
 
         try:
-            schema = await cls._system_schema()
+            schemas = schema if schema is not None else await cls._system_schema()
             return recall_keyword(
-                question, schema,
+                question, schemas,
                 await cls.list_metrics(SYSTEM_DS), await cls.list_terms(SYSTEM_DS),
             )
         except Exception as e:  # noqa: BLE001
@@ -6453,15 +6457,14 @@ class AiQueryService:
             return []
 
     @classmethod
-    async def _recall_entity(cls, question: str) -> list[str]:
-        """实体名词通道（薄包装）。"""
+    async def _recall_entity(cls, question: str, schema: dict | None = None) -> list[str]:
+        """实体名词通道（薄包装）；同样必须用传入的 schema（外部数据源场景）。"""
         from .recall import recall_entity
 
         try:
             cfg = await cls._cfg()
-            return recall_entity(
-                question, cls._cfg_entity_map(cfg), await cls._system_schema()
-            )
+            schemas = schema if schema is not None else await cls._system_schema()
+            return recall_entity(question, cls._cfg_entity_map(cfg), schemas)
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query][recall] 实体通道失败: {e}")
             return []
@@ -6531,12 +6534,21 @@ class AiQueryService:
 
         from .recall import CORE_TABLES, DEFAULT_WEIGHTS, fuse_rrf
 
-        top_n = max(8, cls._cfg_int(cfg, "recall_top_k", 12) * 2)
+        top_k = cls._cfg_int(cfg, "recall_top_k", 12)
+        top_n = max(8, top_k * 2)
+        # schema 是**本次问答的数据源**的表结构（外部源时由调用方传入）：
+        # 关键词/实体通道必须用它，否则对外部数据源（如 ds:4 燃煤库）失效。
+        try:
+            schema_map = schema if schema is not None else await cls._system_schema()
+        except Exception as e:  # noqa: BLE001 - 取不到 schema 不阻断召回
+            log.warning(f"[query][recall] 取 schema 失败（通道将为空）: {e}")
+            schema_map = schema or {}
+
         results = await asyncio.gather(
             cls._recall_vector(question, top_n),
-            cls._recall_keyword(question),
+            cls._recall_keyword(question, schema_map),
             cls._recall_ontology(question),
-            cls._recall_entity(question),
+            cls._recall_entity(question, schema_map),
             return_exceptions=True,
         )
         channels: dict[str, list[str]] = {}
@@ -6551,17 +6563,17 @@ class AiQueryService:
         }
         fused = fuse_rrf(channels, weights)
         min_score = cls._cfg_float(cfg, "recall_min_score", 0.0)
-        top_k = cls._cfg_int(cfg, "recall_top_k", 12)
         picked = [t for t, s in fused if s >= min_score][:top_k]
         if not picked:  # 完全无匹配 → 回退核心业务表（不能返回空）
             picked = list(CORE_TABLES)
 
-        # 关系/KG/AGE 扩表：仅作**补充**、不参与计分（阶段2 改用本体 Link Type）
+        # 关系/KG/AGE 扩表：仅作**补充**、不参与计分。
+        # ⚠️ 必须有上限：无限制追加会把 prompt 撑大，实测让生成 P50 从 7.9s 涨到 9.0s。
         try:
             if cls._cfg_bool(cfg, "kg_enabled", True):
                 from .agno_kg import _ensure, age_expand_tables, kg_tables
 
-                schema_map = schema if schema is not None else await cls._system_schema()
+                limit = top_k + max(0, cls._cfg_int(cfg, "recall_expand_cap", 4))
                 kg = await _ensure()
                 extra: list[str] = []
                 if kg:
@@ -6569,6 +6581,8 @@ class AiQueryService:
                 if picked:
                     extra.extend(await age_expand_tables(sorted(picked)) or [])
                 for t in extra:
+                    if len(picked) >= limit:
+                        break
                     if t in schema_map and t not in picked:
                         picked.append(t)
         except Exception as e:  # noqa: BLE001

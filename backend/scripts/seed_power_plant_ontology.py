@@ -287,7 +287,6 @@ async def run(ds_id: int, ctx: Ctx, limit: int | None) -> None:
     await step_ontology(ctx, core, auth)
     await step_semantics(ctx, core, ds_code, auth)
     await step_rebuild(ctx)
-
     print("\n=== 覆盖率报告 ===")
     with_comment = sum(1 for r in core if str(r.get("comment") or "").strip())
     print(f"核心表 {len(core)} 张，其中 {with_comment} 张有上游注释（{with_comment / max(1, len(core)):.0%}）")

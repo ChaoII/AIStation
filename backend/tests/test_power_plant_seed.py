@@ -2,6 +2,8 @@
 
 落库/LLM 部分见 ``scripts/seed_power_plant_ontology.py``（不在单测里跑外部库与 LLM）。
 """
+import asyncio
+
 from app.plugin.module_ai.query import power_plant as PP
 
 
@@ -108,3 +110,44 @@ def test_infer_links_requires_target_to_have_id_and_dedups():
         idx, dict.fromkeys(tables, True),
     )
     assert len(links) == 1
+
+
+# ===========================================================================
+# 落库契约：我们构造的**字段载荷**必须能被真实 service 接受
+# ===========================================================================
+def test_column_payloads_are_accepted_by_service():
+    """``upsert_asset_column`` 接受我们的载荷（资产载荷形状由上面的纯测试覆盖）。
+
+    注：``upsert_asset`` 会额外写 ``ai_asset_version``（测试库未建该表），
+    故这里只验字段侧契约 —— 它同样是种子脚本逐表写入的路径。
+    """
+    async def _run():
+        from types import SimpleNamespace
+
+        from sqlalchemy import text
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.power_plant import column_payloads
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        auth = SimpleNamespace(user=SimpleNamespace(id=1))
+        rec = {
+            "table": "PP_SYNTH_T",
+            "comment": "合成测试表",
+            "columns": [{"name": "MONEY", "comment": "金额"}],
+        }
+        for payload in column_payloads(rec):
+            await S.upsert_asset_column(SimpleNamespace(**payload), auth)
+
+        async with async_db_session() as db:
+            col = (
+                await db.execute(
+                    text(
+                        "SELECT description FROM ai_query_asset_columns"
+                        " WHERE table_name='PP_SYNTH_T' AND column_name='MONEY'"
+                    )
+                )
+            ).fetchone()
+        assert col and col[0] == "金额"
+
+    asyncio.run(_run())
