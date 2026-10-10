@@ -564,3 +564,28 @@ Expected: 与基线一致（既有 3 个 Alembic 失败），无新增失败
 ```bash
 git commit -m "test(ai-eval): 100 题生成校验、全量实跑与消融验收；补 spec 实测结果"
 ```
+
+---
+
+## 附录：实现期修正（实跑暴露，均已修复）
+
+按文件合批执行 + 真实跑起来后，暴露出以下**只有真跑才能发现**的问题，已逐条修复并提交：
+
+| # | 症状 | 根因 | 修复 |
+|---|------|------|------|
+| 1 | 题集难度**全是「简单」** | 模型忽略提示里指定的 difficulty/form | 维度**以调用方请求为准**，解析后直接覆盖（`556a5c9d`） |
+| 2 | 整轮在第 3 题**中断**，`KeyError: slice(None,8,None)` | `_run_once` 里 `rec[:8]`，而 `retrieved` 是 **dict** | 归一化 `rec` 为 list（`8bd0792e`） |
+| 3 | **Recall@8 恒为 0** | `retrieved` 是 grounding 字典 `{"tables":[...],"objects":[...]}`，早期误取其 **keys**（得到 `["tables","objects"]`） | 取 `raw_rec["tables"]`（`0d66aea4`） |
+| 4 | 单题异常**拖垮整轮** | 行构造不在 `try` 内 | 每题异常兜底成 error 行，循环继续 |
+| 5 | 消融**只出 baseline** | 子 run `ab_xxx_baseline` 未注册进 `_RUNS` → `_RUNS[sub]` KeyError | `_run_ablation_group` 先注册子 run（`8bd0792e`） |
+| 6 | 慢路径大量报「表 xxx 不在可查询白名单内」 | 评测用 `_auth()` 未带 `is_superuser` → `_allowed_for_user` 走数据域/ABAC 分支，把 `sys_user`/`annotation_dataset` 挡掉 | 评测身份 = 管理员（`is_superuser=True`），**测生成质量而非权限配置**（`2860afd3`） |
+| 7 | `semantic_accuracy` 偏低 | 出题的 `expected_metric` 写成中文名/近似名，与真实指标 key 对不上 | 出题后把 `expected_metric` **对齐真实指标 key**（中文名→key 映射），对不上则置空（`2860afd3`） |
+
+> 结论：评测模块本身跑通需要这 7 处修正；其中 #2/#3/#5 是纯实现 bug，#1/#6/#7 是"口径/身份"问题。
+> 这些正是**立项做评测体系**的价值——不真跑，这些都发现不了。
+
+## 附录：执行脚本
+
+`backend/scripts/run_eval_once.py` —— 进程内跑「一轮全量 + 一次消融」，打印
+总览 / 分维度（难度·形式·数据源·场景）/ 逐题 trace / 消融对照 / **配置恢复检查**。
+参数：`--run-limit`、`--ablation-limit`、`--skip-run`。无需 HTTP 后端。
