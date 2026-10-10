@@ -145,12 +145,13 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
             except Exception as e:  # noqa: BLE001 - 单题异常不得中断整轮
                 d = {"is_error": True, "answer": str(e)[:200], "sql": "", "path": "slow"}
             ms = int((time.perf_counter() - t0) * 1000)
-            # `retrieved` 在不同路径可能是 list（系统源）或 dict{table:score}（自定义源）→ 统一成 list
+            # `retrieved` 是 grounding 字典 `{"tables":[...], "objects":[...]}`（见 service._answer）
+            # 早期误按 dict{table:score} 取 keys → recalled 变成 ["tables",...] → Recall 恒为 0。这里取 tables。
             raw_rec = d.get("retrieved")
             if isinstance(raw_rec, dict):
-                rec = list(raw_rec.keys())
+                rec = [str(t) for t in (raw_rec.get("tables") or [])]
             else:
-                rec = list(raw_rec or [])
+                rec = [str(t) for t in (raw_rec or [])]
             gt = gold_tables(c.get("gold_sql") or "", schemas.get(ds) or {})
             row = {
                 "testcase_id": c["id"], "question": c["question"],
