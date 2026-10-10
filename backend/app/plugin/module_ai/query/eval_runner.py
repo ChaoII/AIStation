@@ -27,7 +27,13 @@ _RUNS: dict[str, dict] = {}
 
 
 def _auth(user_id: int = 1):
-    return SimpleNamespace(user=SimpleNamespace(id=user_id))
+    """评测身份 = **管理员**。
+
+    必须带 ``is_superuser=True``：否则 `_allowed_for_user` 会走数据域 / ABAC 分支，
+    把 ``sys_user``、``annotation_dataset`` 等核心表挡在白名单外，慢路径直接报
+    「表 xxx 不在可查询白名单内」——那样测到的是**权限配置**而非 NL2SQL 生成质量。
+    """
+    return SimpleNamespace(user=SimpleNamespace(id=user_id, is_superuser=True))
 
 
 def get_status(run_id: str | None) -> dict | None:

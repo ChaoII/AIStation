@@ -164,8 +164,17 @@ async def generate_round(
     text = await call_llm(build_prompt(rows, metrics, terms, difficulty, form, n))
     cases = parse_cases(text)
     # 实测：模型会忽略提示里指定的难度/形式（一律回「简单」）→ 以调用方为准
+    # 同时把 expected_metric 对齐到**真实指标 key**（模型常写中文名/近似名），
+    # 否则语义准确率的分母被一堆「永远不可能命中」的题污染。
+    keys = {str(m.get("key")) for m in metrics if m.get("key")}
+    by_name = {str(m.get("name")): str(m.get("key")) for m in metrics if m.get("key")}
     for c in cases:
         c["difficulty"], c["form"] = difficulty, form
+        em = str(c.get("expected_metric") or "").strip()
+        if em and em not in keys:
+            c["expected_metric"] = by_name.get(em, "")
+        else:
+            c["expected_metric"] = em
     out = await verify_and_save(cases, datasource, auth)
     out["parsed"] = len(cases)
     return out
