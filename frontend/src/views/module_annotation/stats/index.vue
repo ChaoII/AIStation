@@ -16,7 +16,7 @@
       <el-col :span="24" style="margin-bottom: 16px">
         <el-card shadow="never">
           <template #header>
-            <span style="font-weight: 600; font-size: 14px">数据集详情</span>
+            <span class="dataset-detail-title">数据集详情</span>
             <el-select
               v-model="selectedDatasetId"
               placeholder="选择数据集"
@@ -301,6 +301,11 @@ onMounted(async () => {
 </script>
 
 <style>
+/* 数据集详情标题（替代内联 style） */
+.dataset-detail-title {
+  font-size: var(--el-font-size-base);
+  font-weight: 600;
+}
 .annotation-stats-page {
   padding: 16px;
 }
@@ -310,7 +315,7 @@ onMounted(async () => {
   height: 100%;
 }
 .stat-card__label {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: #909399;
   margin-bottom: 6px;
 }
@@ -345,7 +350,7 @@ onMounted(async () => {
   background: #fff;
 }
 .chart-title {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 600;
   color: #303133;
   margin-bottom: 12px;
@@ -356,6 +361,6 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   color: #c0c4cc;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 </style>

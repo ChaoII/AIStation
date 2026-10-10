@@ -103,7 +103,7 @@
               show-overflow-tooltip
             >
               <template #default="scope">
-                <span v-if="scope.row.api_url" style="font-family: monospace; font-size: 12px">
+                <span v-if="scope.row.api_url" class="api-url-cell">
                   {{ scope.row.api_url }}
                 </span>
                 <span v-else style="color: var(--el-text-color-secondary)">--</span>
@@ -316,7 +316,7 @@
           <el-button @click="copyText(keyInfo.apiKey)">复制</el-button>
         </template>
       </el-input>
-      <div style="margin-top: 12px; font-size: 12px; color: #909399">
+      <div class="key-warning">
         <el-icon><WarningFilled /></el-icon>
         密钥仅显示一次，关闭后可在管理页面重新生成。
       </div>
@@ -637,3 +637,18 @@ function stopPoll() {
 onMounted(() => startPoll());
 onBeforeUnmount(() => stopPoll());
 </script>
+
+<style scoped>
+/* API 地址单元格：等宽小字（替代内联 style） */
+.api-url-cell {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+}
+
+/* 密钥提示（替代内联 style，颜色改用主题变量） */
+.key-warning {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

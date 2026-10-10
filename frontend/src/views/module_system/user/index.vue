@@ -75,8 +75,8 @@
                 </el-table-column>
                 <el-table-column label="头像" prop="avatar" min-width="80" align="center">
                   <template #default="scope">
-                    <template v-if="scope.row.avatar">
-                      <el-avatar size="small" :src="scope.row.avatar" />
+                    <template v-if="normalizeAvatarUrl(scope.row.avatar)">
+                      <el-avatar size="small" :src="normalizeAvatarUrl(scope.row.avatar)" />
                     </template>
                     <template v-else>
                       <el-avatar size="small" icon="UserFilled" />
@@ -173,8 +173,8 @@
             {{ detailFormData.id }}
           </el-descriptions-item>
           <el-descriptions-item label="头像" :span="2">
-            <template v-if="detailFormData.avatar">
-              <el-avatar :src="detailFormData.avatar" size="small"></el-avatar>
+            <template v-if="normalizeAvatarUrl(detailFormData.avatar)">
+              <el-avatar :src="normalizeAvatarUrl(detailFormData.avatar)" size="small"></el-avatar>
             </template>
             <template v-else>
               <el-avatar icon="UserFilled" size="small"></el-avatar>
@@ -415,6 +415,7 @@ import EnhancedDrawer from "@/components/CURD/EnhancedDrawer.vue";
 import type { IContentConfig, ISearchConfig } from "@/components/CURD/types";
 import { ref, reactive, computed, markRaw, nextTick, unref } from "vue";
 import { fetchAllPages } from "@/utils/fetchAllPages";
+import { normalizeAvatarUrl } from "@/utils";
 
 const appStore = useAppStore();
 

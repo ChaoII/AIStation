@@ -92,7 +92,7 @@
             </el-table-column>
             <el-table-column label="轮巡" width="80" align="center">
               <template #default="scope">
-                <span v-if="scope.row.patrol_interval" style="font-size: 12px">
+                <span v-if="scope.row.patrol_interval" class="patrol-cell">
                   {{ scope.row.patrol_interval }}s
                 </span>
                 <span v-else style="color: var(--el-text-color-placeholder)">-</span>
@@ -220,7 +220,7 @@
               style="width: 140px"
               placeholder="0 表示不轮巡"
             />
-            <span style="font-size: 12px; color: var(--el-text-color-placeholder)">
+            <span class="field-hint">
               秒（0 表示不轮巡）
             </span>
           </div>
@@ -583,6 +583,16 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
+/* 轮巡列小字（替代内联 style） */
+.patrol-cell {
+  font-size: 12px;
+}
+
+/* 表单字段说明（替代内联 style） */
+.field-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
 /* Grid type picker (dialog) */
 .grid-type-picker {
   display: flex;
@@ -692,7 +702,7 @@ async function handleSubmit() {
   pointer-events: none;
 }
 .preview-cell-name {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
   color: var(--el-text-color-primary);
   text-align: center;

@@ -919,7 +919,7 @@ async function fetchWorkplaceStats() {
 }
 
 .workplace-panel-title {
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 600;
   color: var(--el-text-color-primary);
   letter-spacing: 0.02em;
@@ -968,7 +968,7 @@ async function fetchWorkplaceStats() {
 }
 
 .workplace-hero__meta {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.5;
   color: var(--el-text-color-secondary);
 }
@@ -990,7 +990,7 @@ async function fetchWorkplaceStats() {
 }
 
 .workplace-hero__login-time {
-  font-size: 17px;
+  font-size: var(--el-font-size-large);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--el-text-color-primary);
@@ -1049,7 +1049,7 @@ async function fetchWorkplaceStats() {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 600;
   color: var(--el-text-color-primary);
   white-space: nowrap;
@@ -1328,7 +1328,7 @@ async function fetchWorkplaceStats() {
 }
 
 .workplace-module-card__name {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   line-height: 1.3;
   color: var(--el-text-color-primary);
@@ -1521,7 +1521,7 @@ async function fetchWorkplaceStats() {
 }
 
 .workplace-notice-card__title {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   line-height: 1.35;
   color: var(--el-text-color-primary);
@@ -1539,7 +1539,7 @@ async function fetchWorkplaceStats() {
   overflow: hidden;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.55;
   color: var(--el-text-color-regular);
   -webkit-box-orient: vertical;
@@ -1584,7 +1584,7 @@ async function fetchWorkplaceStats() {
 
 .workplace-quick-empty__hint {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.55;
   color: var(--el-text-color-secondary);
 }
@@ -1680,7 +1680,7 @@ async function fetchWorkplaceStats() {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 600;
   line-height: 1.35;
   color: var(--el-text-color-primary);
@@ -1735,7 +1735,7 @@ async function fetchWorkplaceStats() {
   .workplace-quick-row__icon {
     width: 34px;
     height: 34px;
-    font-size: 18px;
+    font-size: var(--el-font-size-large);
   }
 
   .workplace-quick-row__accent {

@@ -728,7 +728,7 @@ onBeforeUnmount(() => {
 
 .event-detail__title {
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }

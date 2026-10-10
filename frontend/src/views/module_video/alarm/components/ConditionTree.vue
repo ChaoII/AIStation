@@ -451,7 +451,7 @@ onMounted(async () => {
 }
 
 .condition-tree__loading {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-secondary);
 }
 
@@ -461,7 +461,7 @@ onMounted(async () => {
 
 .condition-tree__section-title {
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-regular);
 }
 

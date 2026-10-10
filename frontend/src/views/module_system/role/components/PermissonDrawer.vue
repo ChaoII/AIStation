@@ -18,7 +18,7 @@
               <div style="display: flex; gap: 10px">
                 <div style="width: 10px; background-color: var(--el-color-primary)"></div>
                 <div>
-                  <span style="font-size: 16px">数据授权</span>
+                  <span class="perm-section-title">数据授权</span>
                   <el-tooltip placement="right">
                     <template #content>
                       <span>授权用户可操作的数据范围</span>
@@ -74,7 +74,7 @@
           <div style="display: flex; gap: 10px">
             <div style="width: 10px; background-color: var(--el-color-primary)"></div>
             <div>
-              <span style="font-size: 16px">菜单授权</span>
+              <span class="perm-section-title">菜单授权</span>
               <el-tooltip placement="right">
                 <template #content>
                   <span>授权用户可操作的菜单权限</span>
@@ -408,4 +408,9 @@ onMounted(async () => {
 });
 </script>
 
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+/* 分区标题：与 Element Plus 中号字号对齐（替代内联 style="font-size: var(--el-font-size-medium)"） */
+.perm-section-title {
+  font-size: var(--el-font-size-medium);
+}
+</style>

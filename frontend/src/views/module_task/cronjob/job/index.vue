@@ -910,7 +910,7 @@ function handleViewJobState(row: JobLogTable | IObject) {
   display: flex;
   align-items: center;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 
 .job-info-item:last-child {

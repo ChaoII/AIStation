@@ -233,7 +233,7 @@
                 :value="dict.dict_type || ''"
               >
                 <span style="float: left">{{ dict.dict_name }}</span>
-                <span style="float: right; font-size: 13px; color: #8492a6">
+                <span class="dict-option-type">
                   {{ dict.dict_type }}
                 </span>
               </el-option>
@@ -359,6 +359,13 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   user-select: none;
+}
+
+/* 下拉选项右侧的类型说明（替代内联 style，颜色改用主题变量） */
+.dict-option-type {
+  float: right;
+  font-size: var(--el-font-size-small);
+  color: var(--el-text-color-secondary);
 }
 
 .gencode-drag-handle {

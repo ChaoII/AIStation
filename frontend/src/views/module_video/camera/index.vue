@@ -709,7 +709,7 @@ function deviceTypeTag(type: string): any {
 }
 
 .test-camera-name {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
 }
 

@@ -383,7 +383,7 @@ async function handleSubmit() {
 }
 
 .market-title {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
@@ -462,7 +462,7 @@ async function handleSubmit() {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -492,7 +492,7 @@ async function handleSubmit() {
   overflow: hidden;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.55;
   color: var(--el-text-color-secondary);
   -webkit-box-orient: vertical;

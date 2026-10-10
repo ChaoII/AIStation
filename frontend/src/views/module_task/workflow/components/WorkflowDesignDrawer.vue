@@ -64,7 +64,7 @@
                   @dragend="onDragEnd"
                 >
                   {{ item.name }}
-                  <span style="margin-left: 4px; font-size: 10px; opacity: 0.7">
+                  <span class="node-category-tag">
                     [{{ getCategoryText(item.category) }}]
                   </span>
                 </el-tag>
@@ -881,6 +881,12 @@ function deleteEdge(edgeId: string, getEdges: () => Edge[], setEdges: (edges: Ed
 </script>
 
 <style scoped lang="scss">
+/* 节点分类角标（替代内联 style） */
+.node-category-tag {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+}
 .workflow-drawer {
   :deep(.el-drawer__body) {
     display: flex;

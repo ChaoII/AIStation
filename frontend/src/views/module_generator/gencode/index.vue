@@ -678,12 +678,12 @@ async function confirmWritePaths(tableId: number) {
     .join("");
   const listHtml = shown.length
     ? `<div class="gencode-write-path-list-wrap">${listRows}</div>${more}`
-    : `<div style="padding:16px;border-radius:8px;background:var(--el-fill-color-light);color:var(--el-text-color-secondary);font-size:13px;text-align:center">未获取到预览路径，仍将继续写入。</div>`;
+    : `<div style="padding:16px;border-radius:8px;background:var(--el-fill-color-light);color:var(--el-text-color-secondary);font-size: var(--el-font-size-small);text-align:center">未获取到预览路径，仍将继续写入。</div>`;
   const tipHtml = `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--el-border-color-lighter);font-size:12px;line-height:1.5;color:var(--el-text-color-secondary)">与「代码预览」同源；路径为相对项目根的落盘位置。</div>`;
   await ElMessageBox.confirm(
     `<div class="gencode-write-confirm-body" style="font-family:var(--el-font-family);line-height:1.5;color:var(--el-text-color-primary)">
       <div style="margin-bottom:12px">
-        <div style="font-size:15px;font-weight:600;letter-spacing:0.02em">将写入以下文件</div>
+        <div style="font-size: var(--el-font-size-base);font-weight:600;letter-spacing:0.02em">将写入以下文件</div>
         <div style="margin-top:4px;font-size:12px;color:var(--el-text-color-secondary)">共 ${keys.length} 项 · 相对项目根目录</div>
       </div>
       ${listHtml}

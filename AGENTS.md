@@ -522,7 +522,13 @@ PaddleX 官方 small det 训练 100 轮 hmean **0.926**（recall 0.968），rec 
 
 ### 连接超时（QueuePool 耗尽）排查与修复
 - 现象：长时运行或大量 e2e 后，登录/接口返回"请求超时"；日志 `QueuePool limit of size ... overflow ... reached, connection timed out`。
-- 修复：调大连接池 —— `setting.py` 与 `env/.env.dev` 的 `POOL_SIZE=20`、`MAX_OVERFLOW=40`、`POOL_TIMEOUT=30`，保留 `POOL_RECYCLE=1800`、`POOL_PRE_PING=true`；出现时先重启后端。
+- 根因（2026-10 实测）：一个请求最多同时吃 **3 条**连接（服务层普遍自己开 `async_db_session()`，不复用请求会话），
+  且**被取消的请求**（浏览器翻页/关闭）会把连接漏在 `idle in transaction`，池占满后**不自愈**。
+- 修复：`setting.py` 默认 `POOL_SIZE=20`、`MAX_OVERFLOW=0`、`POOL_TIMEOUT=30`，`env/.env.dev` 覆盖为
+  **`POOL_SIZE=48`**（`MAX_OVERFLOW` 保持 `0`：溢出连接归还即关闭，会反复建连，改用持久连接 + 启动预热），
+  保留 `POOL_RECYCLE=1800`、`POOL_PRE_PING=true`、`DB_POOL_WARMUP=true`。
+  另有连接泄漏看门狗 `db_leak_watchdog`（每 60s 回收空闲事务 >120s 的连接）作兜底。
+- 详细排查记录见 `docs/connection-pool-leak-diagnosis.md`。
 - 排查建议：关注流式接口/长事务是否长期占用会话；`OperationLogRoute` 会在响应后另开会话写日志。
 
 ## 工程原则：优先成熟第三方库（用户强制要求）

@@ -333,7 +333,7 @@
                 >
                   <span>{{ m.model_name }}</span>
                   <span
-                    style="float: right; color: var(--el-text-color-secondary); font-size: 12px"
+                    class="model-meta"
                   >
                     {{ m.task }} · {{ m.main_indicator || "—" }}
                   </span>
@@ -1143,6 +1143,12 @@ onBeforeUnmount(() => stopPoll());
 </script>
 
 <style scoped>
+/* 模型条目右侧元信息（替代内联 style） */
+.model-meta {
+  float: right;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 /* Tab 容器撑满高度，使列表分页沉到页面底部（与 cache 等 tabbed 列表页一致） */
 .train-task-tabs {
   display: flex;

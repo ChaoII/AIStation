@@ -825,7 +825,7 @@ onBeforeMount(async () => {
 }
 .config-value {
   min-width: 40px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
   color: var(--el-color-primary);
   text-align: right;

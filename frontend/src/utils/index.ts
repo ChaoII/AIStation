@@ -41,6 +41,22 @@ export function isExternal(path: string) {
 }
 
 /**
+ * 归一头像地址。
+ *
+ * 存量数据里存在指向 `service.aistation.com` 的失效外链（DNS 不可解析，
+ * 页面控制台报 ERR_NAME_NOT_RESOLVED）。这类地址统一降级为空字符串，
+ * 由各组件回退到默认图标；其余地址（相对路径 / 其它域名）原样返回。
+ *
+ * @param {string | null | undefined} url 原始头像地址
+ * @returns {string} 可用的头像地址；失效外链返回空字符串
+ */
+export function normalizeAvatarUrl(url?: string | null): string {
+  if (!url) return "";
+  if (/(^|\/\/)service\.aistation\.com\//.test(url)) return "";
+  return url;
+}
+
+/**
  * 格式化增长率，保留两位小数 ，并且去掉末尾的0  取绝对值
  *
  * @param growthRate

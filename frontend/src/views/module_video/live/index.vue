@@ -72,7 +72,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item v-for="ly in savedLayouts" :key="ly.id" :command="ly">
                   {{ ly.name }}
-                  <span style="color: var(--el-text-color-placeholder); font-size: 11px">
+                  <span class="layout-option-meta">
                     ({{ ly.grid_type }}路)
                   </span>
                 </el-dropdown-item>
@@ -107,7 +107,7 @@
           controls-position="right"
           style="width: 84px"
         >
-          <template #suffix><span style="font-size: 11px; color: #999">秒</span></template>
+          <template #suffix><span class="suffix-unit">秒</span></template>
         </el-input-number>
       </div>
 
@@ -401,7 +401,7 @@
         </template>
 
         <el-form-item label="当前布局">
-          <span style="font-size: 13px; color: var(--el-text-color-regular)">
+          <span class="live-layout-summary">
             {{ layoutType }}路 · {{ boundCount }} 个窗口
           </span>
         </el-form-item>
@@ -1022,7 +1022,7 @@ function onDeviceDragStart(camera: any, event: DragEvent) {
   const ghost = document.createElement("div");
   ghost.textContent = camera.name || "摄像头";
   ghost.style.cssText =
-    "display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:13px;color:#fff;background:rgba(0,0,0,.75);border-radius:4px;white-space:nowrap";
+    "display:flex;align-items:center;gap:6px;padding:4px 10px;font-size: var(--el-font-size-small);color:#fff;background:rgba(0,0,0,.75);border-radius:4px;white-space:nowrap";
   const icon = document.createElement("span");
   icon.innerHTML = "📷";
   icon.style.fontSize = "14px";
@@ -1192,14 +1192,31 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 布局下拉项里的规格说明（替代内联 style） */
+.layout-option-meta {
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+
+/* 输入框后缀单位（替代内联 style，颜色改用主题变量） */
+.suffix-unit {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
 .live-page {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-primary);
   background: var(--el-bg-color);
+}
+
+/* 「当前布局」摘要文字（替代内联 style） */
+.live-layout-summary {
+  font-size: var(--el-font-size-small);
+  color: var(--el-text-color-regular);
 }
 
 /* ==================== Toolbar ==================== */
@@ -1253,7 +1270,7 @@ onBeforeUnmount(() => {
 }
 
 .brand-text {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   color: var(--el-text-color-primary);
   letter-spacing: 0.5px;
@@ -1277,7 +1294,7 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 28px;
   padding: 0;
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   color: var(--el-text-color-secondary);
   cursor: pointer;
   background: var(--el-fill-color);
@@ -1321,7 +1338,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   color: var(--el-text-color-secondary);
   border-radius: 6px;
   transition: background 0.15s;
@@ -1331,7 +1348,7 @@ onBeforeUnmount(() => {
 }
 
 .more-btn {
-  font-size: 18px;
+  font-size: var(--el-font-size-large);
   line-height: 1;
 }
 
@@ -1382,7 +1399,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   height: 28px;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-regular);
   cursor: pointer;
   background: var(--el-fill-color);
@@ -1405,7 +1422,7 @@ onBeforeUnmount(() => {
   width: 28px;
   height: 28px;
   padding: 0;
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   color: var(--el-text-color-secondary);
   cursor: pointer;
   background: var(--el-fill-color);
@@ -1489,7 +1506,7 @@ onBeforeUnmount(() => {
   align-items: center;
   min-height: 36px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
   color: var(--el-text-color-primary);
   border-bottom: 1px solid var(--el-border-color-light);
@@ -1970,6 +1987,6 @@ onBeforeUnmount(() => {
 .live-grid-panel:fullscreen :deep(.action-btn) {
   width: 32px;
   height: 32px;
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
 }
 </style>

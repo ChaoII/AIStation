@@ -140,7 +140,7 @@
                     />
                   </div>
                 </div>
-                <span v-else style="color: var(--el-text-color-secondary); font-size: 12px">—</span>
+                <span v-else class="cell-muted">—</span>
               </template>
             </el-table-column>
             <el-table-column
@@ -541,7 +541,7 @@
             show-input
             style="width: 200px"
           />
-          <span style="margin-left: 8px; font-size: 12px; color: #909399">
+          <span class="form-hint">
             剩余 {{ 100 - trainRatio }}% 为验证集
           </span>
         </el-form-item>
@@ -1681,6 +1681,18 @@ async function handleExportSubmit() {
 </script>
 
 <style scoped>
+/* 表格空值占位（替代内联 style） */
+.cell-muted {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+/* 表单说明文字（替代内联 style，颜色改用主题变量） */
+.form-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 .task-banner {
   display: flex;
   flex-direction: column;
@@ -1695,7 +1707,7 @@ async function handleExportSubmit() {
   border: 1px solid var(--el-color-primary-light-7);
   background: var(--el-color-primary-light-9);
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 .task-banner-title {
   font-weight: 600;
@@ -1730,7 +1742,7 @@ async function handleExportSubmit() {
 }
 .import-file {
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-primary);
 }
 .import-file-name {
@@ -1749,7 +1761,7 @@ async function handleExportSubmit() {
 .import-line {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-regular);
 }
 .import-line--primary {
@@ -1775,7 +1787,7 @@ async function handleExportSubmit() {
 }
 .import-pop-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 .import-pop-row {
   font-size: 12px;

@@ -674,7 +674,7 @@ onBeforeUnmount(() => {
 }
 
 .rule-editor__hint {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-secondary);
 }
 
@@ -763,7 +763,7 @@ onBeforeUnmount(() => {
 .rollout-percent__value {
   flex-shrink: 0;
   min-width: 72px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-regular);
 }
 

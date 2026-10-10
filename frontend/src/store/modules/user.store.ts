@@ -4,6 +4,7 @@ import AuthAPI, { type LoginFormData } from "@/api/module_system/auth";
 import UserAPI, { type UserInfo } from "@/api/module_system/user";
 import type { MenuTable } from "@/api/module_system/menu";
 import { Auth } from "@/utils/auth";
+import { normalizeAvatarUrl } from "@/utils";
 import { ResultEnum } from "@/enums";
 
 export const useUserStore = defineStore("user", {
@@ -30,14 +31,18 @@ export const useUserStore = defineStore("user", {
       const response = await UserAPI.getCurrentUserInfo();
       const routers: MenuTable[] = response.data.data.menus || [];
       delete response.data.data.menus;
-      this.basicInfo = { ...this.basicInfo, ...response.data.data };
+      this.basicInfo = {
+        ...this.basicInfo,
+        ...response.data.data,
+        avatar: normalizeAvatarUrl(response.data.data.avatar),
+      };
       // 然后设置路由信息
       this.setRoute(routers);
     },
 
     // 设置用户信息
     setUserInfo(info: UserInfo) {
-      this.basicInfo = info;
+      this.basicInfo = { ...info, avatar: normalizeAvatarUrl(info.avatar) };
       // 设置用户信息后自动更新权限
       this.setPermissions([]);
     },
@@ -87,7 +92,7 @@ export const useUserStore = defineStore("user", {
       this.prems = Array.from(permissionSet);
     },
     setAvatar(avatar: string) {
-      this.basicInfo = { ...this.basicInfo, avatar };
+      this.basicInfo = { ...this.basicInfo, avatar: normalizeAvatarUrl(avatar) };
     },
     clearUserInfo() {
       this.basicInfo = {};

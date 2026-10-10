@@ -68,7 +68,7 @@ const rows = [
 
 .gencode-help-collapse :deep(.el-collapse-item__header) {
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
   background: var(--el-fill-color-light);
 }

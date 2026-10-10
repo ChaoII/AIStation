@@ -144,7 +144,7 @@
                     v-for="(v, k) in scope.row.metrics"
                     :key="k"
                     size="small"
-                    style="font-family: monospace; font-size: 12px"
+                    class="metric-mono-tag"
                   >
                     {{ k }}: {{ typeof v === "number" ? v.toFixed(4) : v }}
                   </el-tag>
@@ -617,3 +617,11 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => stopPoll());
 </script>
+
+<style scoped>
+/* 指标名标签：等宽小字（替代内联 style） */
+.metric-mono-tag {
+  font-family: var(--el-font-family-mono, monospace);
+  font-size: 12px;
+}
+</style>

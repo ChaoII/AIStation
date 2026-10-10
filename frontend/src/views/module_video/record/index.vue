@@ -170,7 +170,7 @@
                       class="status-dot"
                       :class="scope.row.is_running ? 'running' : 'stopped'"
                     />
-                    <span style="font-size: 12px">
+                    <span class="record-status-text">
                       {{ scope.row.is_running ? "录制中" : "已停止" }}
                     </span>
                   </div>
@@ -1035,6 +1035,10 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 录制状态文字（替代内联 style） */
+.record-status-text {
+  font-size: 12px;
+}
 .record-page {
   display: flex;
   flex-direction: column;
@@ -1186,7 +1190,7 @@ onBeforeUnmount(() => {
 }
 .config-unit {
   min-width: 20px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-secondary);
 }
 .config-hint {

@@ -121,7 +121,7 @@ function getFileTreeNodeIcon(label: string): string {
 .gencode-preview-empty-tip {
   max-width: 420px;
   margin: 0 auto;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.5;
   color: var(--el-text-color-secondary);
 }

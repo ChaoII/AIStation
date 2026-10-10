@@ -745,7 +745,7 @@ onBeforeUnmount(() => {
   background: var(--el-bg-color);
   color: var(--el-text-color-primary);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 
 .pb-topbar {
@@ -774,7 +774,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 6px color-mix(in srgb, var(--el-color-success) 50%, transparent);
 }
 .brand-text {
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   font-weight: 600;
   letter-spacing: 0.5px;
 }
@@ -795,7 +795,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  font-size: 15px;
+  font-size: var(--el-font-size-base);
   color: var(--el-text-color-secondary);
   border-radius: 6px;
   transition: background 0.15s;
@@ -828,7 +828,7 @@ onBeforeUnmount(() => {
 }
 .time-sep {
   color: var(--el-text-color-placeholder);
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
 }
 
@@ -854,7 +854,7 @@ onBeforeUnmount(() => {
   align-items: center;
   min-height: 36px;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
   border-bottom: 1px solid var(--el-border-color-light);
 }
@@ -971,7 +971,7 @@ onBeforeUnmount(() => {
 }
 .empty-text {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: rgba(255, 255, 255, 0.35);
   letter-spacing: 0.3px;
 }
