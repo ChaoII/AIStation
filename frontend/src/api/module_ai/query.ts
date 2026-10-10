@@ -534,3 +534,74 @@ export function runQueryBenchmark() {
 export function getQueryBenchmarkStatus(run_id: string) {
   return request({ url: `${API_PATH}/benchmark/status`, method: "get", params: { run_id } });
 }
+
+// ---------------------------------------------------------------------------
+// 问数评测（NL2SQL Eval）：测试集 / 生成 / 运行 / 报表 / 消融
+// ---------------------------------------------------------------------------
+export function getEvalCases(params?: {
+  datasource?: string;
+  difficulty?: string;
+  form?: string;
+  scenario?: string;
+}) {
+  return request({ url: `${API_PATH}/eval/cases`, method: "get", params });
+}
+
+export function upsertEvalCase(data: any) {
+  return request({ url: `${API_PATH}/eval/cases`, method: "post", data });
+}
+
+export function deleteEvalCases(ids: number[]) {
+  return request({ url: `${API_PATH}/eval/cases`, method: "delete", data: ids });
+}
+
+/** 生成一轮测试题：LLM 出题 + 金标执行校验，耗时较长（30~60s）。 */
+export function generateEvalRound(data: {
+  datasource: string;
+  difficulty: string;
+  form: string;
+  n: number;
+}) {
+  return request({
+    url: `${API_PATH}/eval/generate`,
+    method: "post",
+    data,
+    timeout: 180000,
+  });
+}
+
+/** 启动一轮评测（后台执行，立即返回 run_id）。 */
+export function startEvalRun(data?: { filter?: any; mode?: string; config?: any }) {
+  return request({ url: `${API_PATH}/eval/run`, method: "post", data: data ?? {} });
+}
+
+export function getEvalStatus(run_id: string) {
+  return request({
+    url: `${API_PATH}/eval/status`,
+    method: "get",
+    params: { run_id },
+    headers: { _silent: "true" },
+  });
+}
+
+export function getEvalReport(run_id: string) {
+  return request({ url: `${API_PATH}/eval/report`, method: "get", params: { run_id } });
+}
+
+export function getEvalRuns(limit = 30) {
+  return request({ url: `${API_PATH}/eval/runs`, method: "get", params: { limit } });
+}
+
+/** 启动消融评测（串行跑 baseline + 各组，立即返回 run_id）。 */
+export function startEvalAblation(data?: { keys?: string[]; filter?: any }) {
+  return request({ url: `${API_PATH}/eval/ablation`, method: "post", data: data ?? {} });
+}
+
+export function getEvalAblation(run_id: string) {
+  return request({
+    url: `${API_PATH}/eval/ablation`,
+    method: "get",
+    params: { run_id },
+    headers: { _silent: "true" },
+  });
+}
