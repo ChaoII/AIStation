@@ -112,3 +112,27 @@ def test_concept_unit_carries_synonyms_and_tables():
     assert u["meta"]["tables"] == ["FUEL_BATCH"]
     for token in ("燃煤批次", "一次入炉的煤", "炉次", "FUEL_BATCH"):
         assert token in u["text"]
+
+
+# ===========================================================================
+# Task 3: 单元表 + 重建（幂等）
+# ===========================================================================
+def test_rebuild_is_idempotent_and_upserts():
+    async def _run():
+        from sqlalchemy import text
+
+        from app.core.database import async_db_session
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        await S._ensure_recall_units_table()
+        first = await S.rebuild_recall_units()
+        second = await S.rebuild_recall_units()
+        assert first["units"] > 0
+        assert second["units"] == first["units"]  # 幂等：不重复膨胀
+        async with async_db_session() as db:
+            n = (
+                await db.execute(text("SELECT count(*) FROM ai_query_recall_units"))
+            ).scalar()
+        assert n == first["units"]
+
+    asyncio.run(_run())

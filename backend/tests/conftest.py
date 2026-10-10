@@ -11,6 +11,14 @@ sys.path.insert(0, _ROOT)
 os.environ.setdefault("ENVIRONMENT", "dev")
 os.environ["TESTING"] = "1"
 os.environ["DATABASE_TYPE"] = "sqlite"
+
+# 测试期关闭 DEBUG 级日志与 SQL/连接池回显。
+# 根因：``env/.env.dev`` 里 ``LOGGER_LEVEL=DEBUG``，测试因此把**每一条 SQL**
+# 都经 loguru 输出（格式化 + I/O），实测这是测试变慢的主因；
+# 这些输出对断言毫无价值，只在排障时临时打开。
+os.environ["LOGGER_LEVEL"] = "WARNING"
+os.environ["DATABASE_ECHO"] = "0"
+os.environ["ECHO_POOL"] = "0"
 # 每个 pytest 会话使用独立临时 SQLite 库：避免历史行跨运行累积，
 # 以及与并发运行的测试进程共用同一文件导致的计数漂移/写锁竞争。
 # 路径不含 ".db"，下游按 `{DATABASE_NAME}.db` 拼接（与源码约定一致）。
@@ -29,6 +37,25 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import create_app
+
+# SQLite 兼容：本体 service 层用了 ``updated_time=now()``（Postgres 有，SQLite 没有）。
+# 这是**测试环境差异**、不是产品缺陷，因此在连接上注册一个等价函数。
+# 必须在任何连接建立之前注册，所以放在模块顶层；测试若发现连接已建，
+# 先 dispose 一次连接池即可（见各测试模块的建表 fixture）。
+from sqlalchemy import event as _sa_event
+
+from app.core.database import async_engine as _async_engine
+
+
+@_sa_event.listens_for(_async_engine.sync_engine, "connect")
+def _register_sqlite_now(dbapi_conn, _rec):  # pragma: no cover - 运行时钩子
+    from datetime import datetime
+
+    try:
+        dbapi_conn.create_function(
+            "now", 0, lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    except Exception:  # noqa: BLE001
+        pass
 
 # 创建测试客户端（依赖上述环境变量）
 app = create_app()

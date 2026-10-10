@@ -148,14 +148,24 @@ async def sync_datasource_schema(datasource_id: int) -> dict:
     code = _ds_code(datasource_id)
     async with async_db_session.begin() as db:
         from sqlalchemy import delete
+        from sqlalchemy import text as _t
 
+        # 运行时补列（本项目 ai_* 表不走 Alembic，惯用 ADD COLUMN IF NOT EXISTS）
+        try:
+            await db.execute(_t(
+                "ALTER TABLE ai_query_schema "
+                "ADD COLUMN IF NOT EXISTS table_comment VARCHAR(255) DEFAULT ''"))
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 补 ai_query_schema.table_comment 失败: {e}")
         await db.execute(
             delete(AiQuerySchemaModel).where(AiQuerySchemaModel.datasource == code)
         )
         for t in tables:
             db.add(
                 AiQuerySchemaModel(
-                    datasource=code, table_name=t["table"], columns=t["columns"]
+                    datasource=code, table_name=t["table"],
+                    table_comment=str(t.get("comment") or "")[:255],
+                    columns=t["columns"],
                 )
             )
     return {"tables": len(tables)}
@@ -174,7 +184,8 @@ async def list_ds_schema(datasource_id: int) -> list[dict]:
                 )
             )
         ).scalars().all()
-    return [{"table": r.table_name, "columns": r.columns or []} for r in rows]
+    return [{"table": r.table_name, "comment": r.table_comment or "",
+             "columns": r.columns or []} for r in rows]
 
 
 def _user_role_codes(auth) -> set[str]:
@@ -544,7 +555,24 @@ def parse_time_range(question: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # SQL 安全校验
 # ---------------------------------------------------------------------------
-def validate_sql(sql: str, allowed_tables: set[str]) -> str:
+#: 问题里出现这些词，说明用户要的是**全量列举**（"每个告警规则各触发多少"）
+_ALL_LIST_HINTS = ("每个", "各", "所有", "全部", "分别", "每类", "每种", "列出",
+                   "逐个", "清单", "都有哪些", "有哪些")
+
+#: 但这些词出现时，用户要的是**前 N 条**，恰恰不能放宽 LIMIT。
+#: 真实踩过：`各算法类型的平均延迟，取前5名` 里含"各"，被误判成全量列举，
+#: 5 行被放到 1000 行——基准立刻从 ✓ 变 ✗（自己引入的回退，靠复测抓出来的）。
+_TOP_N_RE = re.compile(r"前\s*\d+|排名|排前|top\s*\d+|前几|最多前", re.IGNORECASE)
+
+
+def _wants_full_list(question: str) -> bool:
+    q = question or ""
+    if _TOP_N_RE.search(q):
+        return False
+    return any(h in q for h in _ALL_LIST_HINTS)
+
+
+def validate_sql(sql: str, allowed_tables: set[str], question: str = "") -> str:
     """校验并规范化 SQL：只读、单语句、白名单表、加 LIMIT。
 
     返回净化后的 SQL；不合法抛 CustomException。
@@ -594,9 +622,17 @@ def validate_sql(sql: str, allowed_tables: set[str]) -> str:
         raise
     except ImportError:
         pass  # 未安装 sqlglot 时跳过 AST 校验，交给正则层
-    # 限制行数
-    if not re.search(r"\blimit\s+\d+", removed_semis, re.IGNORECASE):
+    # 限制行数。
+    # 这里还顺手修一类**确定性**的错：问题要"每个/各/所有"这类全量列举时，
+    # 模型常自作主张加一个小 LIMIT（实测把 216 行截成 50 行，答案直接判错）。
+    # 提示词里已经写了"不要 LIMIT"，但模型不总听——所以在这里兜住：
+    # 放宽到系统上限（外层本来就有 MAX_ROWS 保护，放宽不会失控）。
+    m_lim = re.search(r"\blimit\s+(\d+)", removed_semis, re.IGNORECASE)
+    if not m_lim:
         removed_semis = removed_semis + f" LIMIT {MAX_ROWS}"
+    elif _wants_full_list(question) and int(m_lim.group(1)) < MAX_ROWS:
+        removed_semis = re.sub(r"\blimit\s+\d+", f"LIMIT {MAX_ROWS}",
+                               removed_semis, flags=re.IGNORECASE)
     return removed_semis
 
 
@@ -652,20 +688,120 @@ def _json_cell(v):
     return str(v)
 
 
+# ---------------------------------------------------------------------------
+# NL2SQL 的 **SQL 缓存**（不是结果缓存）
+#
+# 为什么只缓存 SQL：问数的"慢"几乎全在**生成 SQL 的那次 LLM 调用**上，
+# 而执行只要几十毫秒。缓存生成的 SQL 就能把重复提问从 ~10s 降到 ~百毫秒。
+#
+# 为什么**不能**缓存结果行：结果必须按调用者身份重新执行——
+# 行级/列级策略是在执行时下推的（见 security.secure_sql）。
+# 一旦把结果行缓存起来，A 看到的数据就会被 B 拿到。
+# 这是"快"与"安全"的边界，不能含糊。
+# ---------------------------------------------------------------------------
+_SQL_CACHE: dict[str, tuple[float, str]] = {}
+_SQL_CACHE_TTL = 1800.0      # 秒；schema/数据口径变化靠 TTL 兜底
+_SQL_CACHE_MAX = 500         # 上限，防内存无界增长
+
+
+def _sql_cache_key(question: str, datasource: str | None) -> str:
+    """归一化问题文本作为键（去空白、统一小写），避免大小写/空格差异漏命中。"""
+    q = re.sub(r"\s+", "", (question or "").strip().lower())
+    return f"{datasource or 'system'}::{q}"
+
+
+def _sql_cache_get(question: str, datasource: str | None) -> str | None:
+    key = _sql_cache_key(question, datasource)
+    hit = _SQL_CACHE.get(key)
+    if not hit:
+        return None
+    ts, sql = hit
+    if time.time() - ts > _SQL_CACHE_TTL:
+        _SQL_CACHE.pop(key, None)
+        return None
+    return sql
+
+
+def _sql_cache_set(question: str, datasource: str | None, sql: str) -> None:
+    if not sql or not sql.strip():
+        return
+    if len(_SQL_CACHE) >= _SQL_CACHE_MAX:
+        # 简单淘汰：删最早插入的一批，避免引入额外依赖
+        for k in list(_SQL_CACHE)[: max(1, _SQL_CACHE_MAX // 10)]:
+            _SQL_CACHE.pop(k, None)
+    _SQL_CACHE[_sql_cache_key(question, datasource)] = (time.time(), sql)
+
+
+def sql_cache_stats() -> dict:
+    """给运维/自检用：缓存规模与命中情况。"""
+    now = time.time()
+    alive = sum(1 for ts, _ in _SQL_CACHE.values() if now - ts <= _SQL_CACHE_TTL)
+    return {"size": len(_SQL_CACHE), "alive": alive, "ttl_s": int(_SQL_CACHE_TTL)}
+
+
+def sql_cache_clear() -> int:
+    n = len(_SQL_CACHE)
+    _SQL_CACHE.clear()
+    return n
+
+
+#: 别名检索一次最多补几张表。
+#: 对象名（如"告警记录表"）含"告警"这种通用词，若拿它当匹配信号，会给大量
+#: 无关问题塞进额外表 —— 实测这让 prompt 变大、生成 p50 从 3147ms 涨到 6483ms
+#: （精度还降了）。所以只匹配**人工登记的别名**，并且限量。
+_ONT_ALIAS_MAX_TABLES = 3
+
+#: 自定义数据源表结构的进程内缓存：{ds:表结构, (时间, {表: [列]})}。
+#: 331 张表的同步结果每次问答都读库太浪费。
+_DS_SCHEMA_CACHE: dict[str, tuple[float, dict]] = {}
+_DS_SCHEMA_TTL = 600.0
+
+
+#: 检索结果记忆缓存：同一问题在一次问答里会被检索两次（拼 prompt + 溯源），
+#: 而检索会走向量搜索。缓存它比缓存 SQL 更安全（不含数据、不含权限），
+#: 但同样要带 TTL —— 本体/资产目录变了要能自动失效。
+_RETRIEVAL_CACHE: dict[str, tuple[float, list[str]]] = {}
+_RETRIEVAL_CACHE_TTL = 600.0
+_RETRIEVAL_CACHE_MAX = 500
+
+
+def _retrieval_cache_key(question: str) -> str:
+    return re.sub(r"\s+", "", (question or "").strip().lower())
+
+
+def retrieval_cache_stats() -> dict:
+    now = time.time()
+    alive = sum(1 for ts, _ in _RETRIEVAL_CACHE.values()
+                if now - ts <= _RETRIEVAL_CACHE_TTL)
+    return {"size": len(_RETRIEVAL_CACHE), "alive": alive,
+            "ttl_s": int(_RETRIEVAL_CACHE_TTL)}
+
+
+def retrieval_cache_clear() -> int:
+    n = len(_RETRIEVAL_CACHE)
+    _RETRIEVAL_CACHE.clear()
+    return n
+
+
 async def _system_allowed() -> set[str]:
-    """可查询表白名单 = 系统表 + 本体物化表（ont_{code}）。"""
+    """可查询表白名单 = 系统表 + 本体对象支撑表。
+
+    注意：支撑表**不一定**叫 ``ont_{code}``——由数据源支撑的对象
+    （如 ``video_cameras`` / ``demo_sales``）支撑表就是它自己。
+    旧实现只拼 ``ont_{code}``，于是这些表**根本查不到**
+    （表现为「表 xxx 不在可查询白名单内」）。两种都收进来。
+    """
     global _ONT_ALLOW_CACHE
     if _ONT_ALLOW_CACHE is not None:
         return _ONT_ALLOW_CACHE
-    codes: list[str] = []
+    # 走本体的统一语义接口拿"真实支撑表名 → code"，不再自己拼 SQL
     try:
-        async with async_db_session() as db:
-            rows = (await db.execute(text(
-                "SELECT code FROM ai_ont_object WHERE is_deleted=false"))).fetchall()
-        codes = [r[0] for r in rows]
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        ont_tables = set((await _sem.object_table_map()).keys())
     except Exception:  # noqa: BLE001
-        codes = []
-    _ONT_ALLOW_CACHE = set(SYSTEM_ALLOWED_TABLES) | {f"ont_{c}" for c in codes}
+        ont_tables = set()
+    _ONT_ALLOW_CACHE = set(SYSTEM_ALLOWED_TABLES) | ont_tables
     return _ONT_ALLOW_CACHE
 
 
@@ -692,13 +828,51 @@ async def _execute_sql(sql: str) -> dict:
     return {"columns": cols, "rows": data, "took_ms": int((time.time() - start) * 1000)}
 
 
+async def _secure_ont_sql(sql: str, auth) -> dict:
+    """把问数生成的 SQL 交给本体的行级/列级策略改写。
+
+    返回 ``{"sql": <可能已改写>, "deny": bool, "msg": str, "rewritten": [...]}``。
+    取不到身份时**不改写**（保持既有行为），但会在日志里留痕——
+    宁可显式记录"这次没做权限改写"，也不要假装做了。
+    """
+    try:
+        uid = getattr(getattr(auth, "user", None), "id", None)
+    except Exception:  # noqa: BLE001
+        uid = None
+    if not uid:
+        log.warning("[query] 无调用者身份，跳过本体权限改写")
+        return {"sql": sql, "deny": False, "rewritten": [],
+                "msg": "无身份，未改写"}
+    try:
+        from app.plugin.module_ai.ontology import security as _ont_sec
+
+        principal = await _ont_sec.load_principal(uid)
+        r = await _ont_sec.secure_sql(sql, principal)
+    except Exception as e:  # noqa: BLE001
+        # 权限改写失败 → **fail-closed**：宁可拒绝，也不要放行未过滤的查询
+        log.warning(f"[query] 本体权限改写失败，拒绝执行：{e}")
+        return {"sql": sql, "deny": True, "rewritten": [],
+                "msg": f"权限校验失败，已拒绝执行：{str(e)[:120]}"}
+    if not r.get("ok"):
+        return {"sql": sql, "deny": True, "rewritten": r.get("rewritten") or [],
+                "msg": r.get("note") or "存在无法安全改写的表，已拒绝执行"}
+    return {"sql": r["sql"], "deny": False, "rewritten": r.get("rewritten") or [],
+            "msg": r.get("note") or ""}
+
+
 async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> dict:
     sql = _render_template(metric["sql_template"], params)
     ds_code = metric.get("datasource") or SYSTEM_DS
     if ds_code == SYSTEM_DS:
         table = await AiQueryService._allowed_for_user(auth)
         sql = validate_sql(sql, table)
-        res = await _execute_sql(sql)
+        # 指标模板同样要过本体行级/列级权限（否则走指标就能绕过）
+        secured = await _secure_ont_sql(sql, auth)
+        if secured.get("deny"):
+            raise CustomException(msg=secured["msg"])
+        res = await _execute_sql(secured["sql"])
+        if secured.get("rewritten"):
+            res["ont_secured"] = secured["rewritten"]
     else:
         # 自定义数据源：ds:{id}，走独立连接 + schema 白名单 + 角色授权
         try:
@@ -801,6 +975,35 @@ def _build_params(metric: dict, question: str) -> dict[str, Any]:
             else:
                 params[p["key"]] = 30
     return params
+
+
+# ---------------------------------------------------------------------------
+# 数据源 → 本体：批量导入时默认排除的「纯技术表」
+#
+# 这些表没有业务对象语义（迁移版本、调度器、日志、向量、配置、纯多对多关联表等），
+# 导入后只会在本体里制造噪声对象。需要全量导入时传 include_technical=True。
+# 名字做表名精确匹配（不支持通配）。
+# ---------------------------------------------------------------------------
+_ONT_IMPORT_EXCLUDE: set[str] = {
+    # 迁移 / 调度
+    "alembic_version", "apscheduler_jobs",
+    # 框架运行时（Agno 会话）
+    "agno_sessions", "agno_schema_versions",
+    # 纯日志
+    "sys_log", "ai_call_logs", "ai_search_logs", "ai_chunk_annotation_logs",
+    "ai_workflow_run_logs", "video_record_execution_logs",
+    # 代码生成器脚手架
+    "gen_demo", "gen_demo01",
+    # 会话/消息运行时
+    "ai_sessions", "ai_messages",
+    # 向量 / schema 注册 / 配置 / 前端布局
+    "ai_query_asset_vectors", "ai_query_schema", "ai_query_settings", "ai_query_kg_layout",
+    # 纯多对多关联表
+    "sys_role_menus", "sys_user_roles", "sys_user_positions", "sys_role_depts",
+    "ai_knowledge_entity_chunks",
+    # 调度/版本快照
+    "ai_workflow_schedules", "ai_workflow_versions",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1049,10 +1252,22 @@ class AiQueryService:
                     "type": obj.type}
 
     # ---- 数据资产目录（表/字段筛选 + 中文描述维护）----
+
     @classmethod
     async def list_assets(cls) -> list[dict]:
+        """资产目录列表。
+
+        ⚠️ **必须批量查，不能逐表查。** 旧实现对每张表各跑 3 次查询
+        （字段统计 + DQ 分 + 血缘计数），而 ``_asset_dq_score`` /
+        ``_asset_lineage_count`` 还各自**新开一个数据库会话**（又占一条池连接）。
+        实测 567 条资产 → 约 1700 次查询、**31.5 秒**，并直接把连接池拖满
+        （页面表现为 10 秒超时）。这里改成 3 次聚合查询一次拿全。
+        """
         async with async_db_session() as db:
+            from sqlalchemy import Integer as _Int
+            from sqlalchemy import func as _f
             from sqlalchemy import select
+            from sqlalchemy import text as _t
 
             rows = (
                 await db.execute(
@@ -1061,15 +1276,63 @@ class AiQueryService:
                     .order_by(AiQueryAssetModel.table_name)
                 )
             ).scalars().all()
+
+            # ① 字段统计：一条 GROUP BY 全拿
+            col_rows = (await db.execute(
+                select(
+                    AiQueryAssetColumnModel.table_name,
+                    _f.count().label("n"),
+                    _f.sum(_f.cast(AiQueryAssetColumnModel.sensitive, _Int)).label("sens"),
+                    _f.sum(_f.cast(AiQueryAssetColumnModel.included, _Int)).label("inc"),
+                )
+                .where(AiQueryAssetColumnModel.is_deleted.is_(False))
+                .group_by(AiQueryAssetColumnModel.table_name)
+            )).all()
+            col_stat = {r[0]: (int(r[1] or 0), int(r[2] or 0), int(r[3] or 0)) for r in col_rows}
+
+            # ② 敏感字段名（只取前 20 个/表，用于列表展示）
+            sens_rows = (await db.execute(
+                select(AiQueryAssetColumnModel.table_name, AiQueryAssetColumnModel.column_name)
+                .where(AiQueryAssetColumnModel.is_deleted.is_(False),
+                       AiQueryAssetColumnModel.sensitive.is_(True))
+            )).all()
+            sens_map: dict[str, list[str]] = {}
+            for t, c in sens_rows:
+                lst = sens_map.setdefault(t, [])
+                if len(lst) < 20:
+                    lst.append(c)
+
+            # ③ DQ 分：一条全拿（表可能不存在，容错）
+            dq_map: dict[str, float] = {}
+            try:
+                for t, s in (await db.execute(_t(
+                    "SELECT table_name, score FROM ai_dq_report WHERE is_deleted=false"
+                ))).all():
+                    if s is not None:
+                        dq_map[t] = float(s)
+            except Exception:  # noqa: BLE001
+                pass
+
+            # ④ 血缘计数：一条 GROUP BY（本表字段数 + 被引用数）
+            lin_map: dict[str, int] = {}
+            try:
+                for t, n in (await db.execute(_t(
+                    "SELECT t, SUM(n)::int FROM ("
+                    "  SELECT table_name AS t, count(*) AS n FROM ai_query_asset_columns"
+                    "   WHERE is_deleted=false GROUP BY table_name"
+                    "  UNION ALL"
+                    "  SELECT related_table AS t, count(*) AS n FROM ai_query_asset_columns"
+                    "   WHERE is_deleted=false AND related_table IS NOT NULL AND related_table <> ''"
+                    "   GROUP BY related_table"
+                    ") x GROUP BY t"
+                ))).all():
+                    lin_map[t] = int(n or 0)
+            except Exception:  # noqa: BLE001
+                pass
+
             out = []
             for a in rows:
-                cnt = (await db.execute(
-                    select(AiQueryAssetColumnModel)
-                    .where(
-                        AiQueryAssetColumnModel.table_name == a.table_name,
-                        AiQueryAssetColumnModel.is_deleted.is_(False),
-                    )
-                )).scalars().all()
+                n, sens, inc = col_stat.get(a.table_name, (0, 0, 0))
                 out.append({
                     "table_name": a.table_name, "alias": a.alias or "",
                     "domain": a.domain or "", "description": a.description or "",
@@ -1079,12 +1342,12 @@ class AiQueryService:
                     "object_key_col": getattr(a, "object_key_col", None) or "id",
                     "object_name_col": getattr(a, "object_name_col", None) or "name",
                     "object_icon": getattr(a, "object_icon", None) or "el-icon-Box",
-                    "column_count": len(cnt),
-                    "sensitive_count": sum(1 for c in cnt if getattr(c, "sensitive", False)),
-                    "sensitive_fields": [c.column_name for c in cnt if getattr(c, "sensitive", False)][:20],
-                    "included_columns": sum(1 for c in cnt if c.included),
-                    "dq_score": await cls._asset_dq_score(a.table_name),
-                    "lineage_count": await cls._asset_lineage_count(a.table_name),
+                    "column_count": n,
+                    "sensitive_count": sens,
+                    "sensitive_fields": sens_map.get(a.table_name, []),
+                    "included_columns": inc,
+                    "dq_score": dq_map.get(a.table_name),
+                    "lineage_count": lin_map.get(a.table_name, 0),
                 })
             return out
 
@@ -1104,7 +1367,9 @@ class AiQueryService:
     @classmethod
     async def _asset_lineage_count(cls, table_name: str) -> int:
         """资产血缘引用计数（字段资产里引用该表/被引用的条数）。"""
-        from sqlalchemy import select as _sel, func as _f
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
+
         from app.plugin.module_ai.query.model import AiQueryAssetColumnModel
         try:
             async with async_db_session() as db:
@@ -1119,7 +1384,11 @@ class AiQueryService:
     @classmethod
     async def scan_sensitive(cls, table_name: str) -> dict:
         """敏感数据扫描器（Palantir Sensitive Data Scanner）：
-        按字段名规则自动识别敏感列（PII/密码/凭证等），并标记 ai_query_asset_columns.sensitive=true。
+        按字段名规则自动识别敏感列（PII/密码/凭证等），并标记
+        ``ai_query_asset_columns.sensitive=true``。
+
+        **并把结果同步回本体**（``ai_ont_property.sensitive``）——本体是敏感标记的
+        唯一真相源，两套并行标记已经出现过不一致。
         """
         NAME_RULES = {
             "password": "密码/口令", "pwd": "密码/口令", "passwd": "密码/口令",
@@ -1129,6 +1398,14 @@ class AiQueryService:
             "email": "邮箱", "mail": "邮箱",
             "bank_card": "银行卡", "card_no": "银行卡号", "account_no": "银行账户",
         }
+        # 名字里含关键词但**不是**敏感字段的（真实误报）：
+        # `prompt_tokens` / `completion_tokens` 是**计数**，不是令牌；
+        # `tokenizer_model` 是模型名。旧规则用子串匹配，把这些也标成了敏感。
+        NOT_SECRET = (
+            "tokenizer", "prompt_tokens", "completion_tokens", "total_tokens",
+            "max_tokens", "token_count", "token_limit", "token_usage", "token_size",
+            "mailbox", "email_verified", "phone_verified",
+        )
         try:
             async with async_db_session() as db:
                 from sqlalchemy import text as _t
@@ -1146,6 +1423,9 @@ class AiQueryService:
         identified: list[dict] = []
         for col in col_names:
             lower = col.lower()
+            # 先排除已知误报（计数类 token、tokenizer_model、email_verified …）
+            if any(x in lower for x in NOT_SECRET):
+                continue
             for key, label in NAME_RULES.items():
                 if key in lower:
                     identified.append({"column": col, "reason": f"字段名含「{label}」"})
@@ -1166,7 +1446,26 @@ class AiQueryService:
                         db.add(AiQueryAssetColumnModel(
                             table_name=table_name, column_name=it["column"],
                             description="", sensitive=True, included=True))
-        return {"ok": True, "table": table_name, "identified": identified, "count": len(identified)}
+        # 同步回本体：本体是敏感标记的唯一真相源，两套并行标记会不一致
+        synced = 0
+        try:
+            from app.plugin.module_ai.ontology import semantic as _sem
+
+            tmap = dict(await _sem.object_table_map())
+            code = tmap.get(table_name)
+            if code:
+                from sqlalchemy import text as _t2
+                async with async_db_session.begin() as db:
+                    for it in identified:
+                        await db.execute(_t2(
+                            "UPDATE ai_ont_property SET sensitive=true "
+                            "WHERE object_code=:o AND code=:c AND is_deleted=false"),
+                            {"o": code, "c": it["column"]})
+                        synced += 1
+        except Exception:  # noqa: BLE001
+            synced = 0
+        return {"ok": True, "table": table_name, "identified": identified,
+                "count": len(identified), "ontology_synced": synced}
 
     @classmethod
     async def autopilot(cls) -> dict:
@@ -1446,9 +1745,9 @@ class AiQueryService:
         # 派生属性：为每个派生对象汇总列数/敏感/血缘
         for do in derived:
             do["attributes"] = {
-                "total_columns": sum((next((a.get("column_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"])),
-                "sensitive_fields": sum((next((a.get("sensitive_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"])),
-                "lineage_count": sum((next((a.get("lineage_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"])),
+                "total_columns": sum(next((a.get("column_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"]),
+                "sensitive_fields": sum(next((a.get("sensitive_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"]),
+                "lineage_count": sum(next((a.get("lineage_count", 0) for a in objs if a["table_name"] == t), 0) for t in do["base_objects"]),
             }
         return {"base_objects": len(objs), "derived_objects": derived,
                 "total_derived": len(derived), "domains": list(domains.keys())}
@@ -1472,6 +1771,15 @@ class AiQueryService:
 
     @classmethod
     async def list_asset_columns(cls, table_name: str) -> list[dict]:
+        """某张表的字段清单 = **真实字段 ∪ 已维护元数据**。
+
+        为什么必须并上真实字段：旧实现只返回 ``ai_query_asset_columns`` 里
+        **已维护过**的字段。于是新表/新字段在维护界面里**根本看不见，也就无从维护**
+        ——人工补元数据的第一步就卡住了（上游库注释缺失时尤其致命）。
+
+        真实字段来自该表所属数据源已同步的结构（``ai_query_schema.columns``），
+        带上 ``comment``（业务库的中文列注释），维护界面据此预填。
+        """
         async with async_db_session() as db:
             from sqlalchemy import select
 
@@ -1485,15 +1793,59 @@ class AiQueryService:
                     .order_by(AiQueryAssetColumnModel.id)
                 )
             ).scalars().all()
-            return [
-                {"table_name": c.table_name, "column_name": c.column_name,
-                 "description": c.description or "",
-                 "business_scenarios": c.business_scenarios or "",
-                 "related_table": c.related_table or "",
-                 "related_field": c.related_field or "",
-                 "included": c.included, "sensitive": c.sensitive}
-                for c in rows
-            ]
+            by_col = {c.column_name: c for c in rows}
+
+            out: list[dict] = []
+            seen: set[str] = set()
+            schemas = (
+                await db.execute(
+                    select(AiQuerySchemaModel).where(
+                        AiQuerySchemaModel.table_name == table_name,
+                        AiQuerySchemaModel.is_deleted.is_(False),
+                    )
+                )
+            ).scalars().all()
+            for s in schemas:
+                for c in (s.columns or []):
+                    if not isinstance(c, dict) or not c.get("name"):
+                        continue
+                    name = c["name"]
+                    if name in seen:
+                        continue
+                    seen.add(name)
+                    out.append({
+                        "table_name": table_name, "column_name": name,
+                        "type": c.get("type") or "",
+                        "comment": c.get("comment") or "",
+                        "datasource": s.datasource,
+                        "description": "", "business_scenarios": "",
+                        "related_table": "", "related_field": "",
+                        "included": True, "sensitive": False, "has_meta": False,
+                    })
+            # 已维护但真实结构里没有的字段也要保留，不能丢人工成果
+            for name in by_col:
+                if name not in seen:
+                    out.append({
+                        "table_name": table_name, "column_name": name,
+                        "type": "", "comment": "", "datasource": "",
+                        "description": "", "business_scenarios": "",
+                        "related_table": "", "related_field": "",
+                        "included": True, "sensitive": False, "has_meta": True,
+                    })
+            for item in out:
+                c = by_col.get(item["column_name"])
+                if c is None:
+                    continue
+                item.update({
+                    "description": c.description or "",
+                    "business_scenarios": c.business_scenarios or "",
+                    "related_table": c.related_table or "",
+                    "related_field": c.related_field or "",
+                    "included": c.included,
+                    "sensitive": c.sensitive,
+                    "has_meta": True,
+                })
+            return out
 
     @classmethod
     async def upsert_asset(cls, data, auth) -> dict:
@@ -1541,6 +1893,82 @@ class AiQueryService:
         _SEMANTIC_INDEX = None
         _ASSET_TMETA = None
         return {"table_name": data.table_name, "included": data.included}
+
+    @classmethod
+    async def batch_upsert_asset_meta(cls, items: list[dict], auth) -> dict:
+        """**批量**维护表级元数据（中文名/业务域/描述）。
+
+        为什么需要：上游业务库常缺注释（实测燃煤库 331 张表里 **137 张没有表注释**），
+        一张张填不现实。这里支持一次提交多行，**在同一个事务里**保存，
+        任何一行不合法都只跳过那一行，不影响其余。
+
+        每项只要求 ``table_name``，其余字段（alias/domain/description/
+        business_scenarios）**给了才覆盖**——这样"只补中文名"不会把已填的描述清空。
+        """
+        from sqlalchemy import select
+
+        items = items or []
+        if not items:
+            return {"ok": False, "msg": "没有要保存的内容", "saved": 0}
+
+        allowed = ("alias", "domain", "description", "business_scenarios", "remark")
+        saved: list[str] = []
+        skipped: list[dict] = []
+        operator = getattr(getattr(auth, "user", None), "id", None)
+
+        # **先取出已知表名**：只允许维护"确实存在的表"，防止把打字错
+        # （如 FUEL_CMCS_ASSAY 写成 FUEL_CMCS_ASSA）写进资产表污染数据。
+        # 已知 = 已同步过结构的表 ∪ 已有资产记录的表。
+        known: set[str] = set()
+        async with async_db_session() as db0:
+            from sqlalchemy import select as _sel
+
+            for (t,) in (await db0.execute(_sel(AiQuerySchemaModel.table_name).distinct())).all():
+                if t:
+                    known.add(t)
+            for (t,) in (await db0.execute(
+                _sel(AiQueryAssetModel.table_name).where(
+                    AiQueryAssetModel.is_deleted.is_(False))
+            )).all():
+                if t:
+                    known.add(t)
+
+        async with async_db_session.begin() as db:
+            for it in items:
+                table = str((it or {}).get("table_name") or "").strip()
+                if not table:
+                    skipped.append({"table_name": "", "msg": "表名为空"})
+                    continue
+                if known and table not in known:
+                    skipped.append({"table_name": table, "msg": "不在已同步的表里（检查拼写）"})
+                    continue
+                payload = {k: it[k] for k in allowed if k in it and it[k] is not None}
+                if not payload:
+                    skipped.append({"table_name": table, "msg": "没有可写入的字段"})
+                    continue
+                row = (await db.execute(
+                    select(AiQueryAssetModel).where(
+                        AiQueryAssetModel.table_name == table,
+                        AiQueryAssetModel.is_deleted.is_(False))
+                )).scalars().first()
+                if row is None:
+                    row = AiQueryAssetModel(table_name=table, included=True,
+                                            created_id=operator, updated_id=operator,
+                                            **payload)
+                    db.add(row)
+                else:
+                    for k, v in payload.items():
+                        setattr(row, k, v)
+                    row.updated_id = operator
+                saved.append(table)
+            await db.flush()
+
+        global _SCHEMA_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
+        _SCHEMA_CACHE = None
+        _SEMANTIC_INDEX = None
+        _ASSET_TMETA = None
+        return {"ok": True, "saved": len(saved), "tables": saved,
+                "skipped": skipped, "total": len(items)}
 
     @classmethod
     async def generate_asset_descriptions(cls, auth, force: bool = False) -> dict:
@@ -1716,47 +2144,50 @@ class AiQueryService:
         return len(ids)
 
     @classmethod
-    async def _ont_ctx_block(cls) -> str:
-        """本体对象语义块：对象类型 → 表 + 属性(中文名/类型)，供 LLM 以业务对象写查询（Palantir grounding）。"""
-        objs = await cls._ont_objs()
-        if not objs:
-            return ""
-        lines = ["【本体对象（业务对象语义，优先理解）】"]
-        try:
-            async with async_db_session() as db:
-                from sqlalchemy import text as _t
-                rows = (await db.execute(_t(
-                    "SELECT object_code,name,code,prop_type,required,sensitive,description FROM ai_ont_property "
-                    "WHERE is_deleted=false ORDER BY object_code,id"))).fetchall()
-                fnrows = (await db.execute(_t(
-                    "SELECT object_code,name,code,expr FROM ai_ont_function WHERE is_deleted=false")).fetchall())
-        except Exception:  # noqa: BLE001
-            rows, fnrows = [], []
-        propmap: dict[str, list[tuple]] = {}
-        for r in rows:
-            propmap.setdefault(r[0], []).append((r[1], r[2], r[3], bool(r[5]), r[6] or ""))
-        fnmap: dict[str, list[tuple]] = {}
-        for r in fnrows:
-            fnmap.setdefault(r[0], []).append((r[1], r[2], r[3] or ""))
-        for code, o in objs.items():
-            table = f"ont_{code}" if code else ""
-            head = f"- 对象「{o['name']}」→表 {table}"
-            ps = propmap.get(code, [])
-            cols = ", ".join(f"{p[1]}({p[0]})" + (" 敏感" if p[3] else "") for p in ps) if ps else ""
-            if cols:
-                head += f"：{cols}"
-            if o.get("description"):
-                head += f"（{o['description']}）"
-            lines.append(head)
-            fns = fnmap.get(code, [])
-            for fn in fns:
-                lines.append(f"   · 函数「{fn[0]}」({fn[1]}): {fn[2]}")
-        return "\n".join(lines)
+    async def _ont_ctx_block(cls, only_tables: set[str] | None = None) -> str:
+        """本体语义块（对象 + 属性 + 函数 + **关系**）。
+
+        **改为调用本体的统一语义接口** ``semantic.context_block()``：
+        语义只留本体那一份，问数不再自己拼 ``ai_ont_*`` 的 SQL。
+
+        ``only_tables`` 传检索命中的表 → 只带这几张表的语义（实测 37517 → 千余字符）。
+        """
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        return await _sem.context_block(only_tables=only_tables)
+
+    @classmethod
+    async def _ont_rel_block(cls, objs: dict) -> list[str]:
+        """保留旧签名（有测试/调用方依赖），改为从统一接口取关系。"""
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        ctx = await _sem.semantic_context(include_properties=False)
+        out = ["【本体关系（写多表查询时按此 join，不要靠字段名猜）】"]
+        for r in ctx["relations"]:
+            s, t = objs.get(r["source"]), objs.get(r["target"])
+            if not s or not t:
+                continue
+            st = s.get("table") or r["source"]
+            tt = t.get("table") or r["target"]
+            line = f"- 「{s['name']}」{st}"
+            if r["source_field"] and r["target_field"]:
+                line += f".{r['source_field']} = 「{t['name']}」{tt}.{r['target_field']}"
+            else:
+                line += f" ↔ 「{t['name']}」{tt}（{r['join_method']}）"
+            if r["name"]:
+                line += f"   关系名：{r['name']}"
+            if r["card"]:
+                line += f"，基数：{r['card']}"
+            out.append(line)
+        return out if len(out) > 1 else []
 
     @classmethod
     async def _concept_context(cls) -> str:
         """把本体/概念注入 prompt 上下文：概念+描述+同义词+映射。"""
-        cs = await cls.list_concepts()
+        # 概念也走本体统一语义接口（本体对象的别名/域 + 问数概念表，合并成一份）
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        cs = await _sem.concepts()
         if not cs:
             return ""
         lines = ["【业务概念(本体)】"]
@@ -1777,34 +2208,38 @@ class AiQueryService:
 
     @classmethod
     async def _ont_objs(cls) -> dict:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            rows = (await db.execute(_t(
-                "SELECT code,name,key_prop,name_prop,description FROM ai_ont_object WHERE is_deleted=false"))).fetchall()
-        return {r[0]: {"code": r[0], "name": r[1] or r[0], "key_prop": r[2] or "id",
-                       "name_prop": r[3] or "name", "description": r[4] or ""} for r in rows}
+        """本体对象 → dict。**改为走本体的统一语义接口**，不再自己拼 SQL。
+
+        历史上这里直连 ``ai_ont_object``，本体表结构一改就可能悄悄坏掉
+        （"看起来接上了，实际靠约定"）。语义只留本体那一份。
+        """
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        ctx = await _sem.semantic_context(include_properties=False)
+        return {o["code"]: {"code": o["code"], "name": o["name"],
+                            "key_prop": o["key_prop"], "name_prop": o["name_prop"],
+                            "description": o["description"],
+                            # table 是**真实支撑表名**（数据源支撑的对象就叫它自己）
+                            "table": o["table"]} for o in ctx["objects"]}
 
     @classmethod
     async def _ont_props(cls, code: str) -> list[dict]:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            rows = (await db.execute(_t(
-                "SELECT code,prop_type,sensitive,roles FROM ai_ont_property WHERE object_code=:c AND is_deleted=false"),
-                {"c": code})).fetchall()
-        out = []
-        for r in rows:
-            roles = r[3] if isinstance(r[3], list) else []
-            out.append({"code": r[0], "prop_type": r[1], "sensitive": bool(r[2]), "roles": roles})
-        return out
+        """某个对象的属性（含敏感/角色）。走统一语义接口。"""
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        ctx = await _sem.semantic_context()
+        return [{"code": p["code"], "prop_type": p["prop_type"],
+                 "sensitive": p["sensitive"], "roles": p["roles"]}
+                for p in ctx["properties"].get(code, [])]
 
     @classmethod
     async def _ont_links(cls, code: str) -> list[tuple]:
-        async with async_db_session() as db:
-            from sqlalchemy import text as _t
-            rows = (await db.execute(_t(
-                "SELECT target_object,source_field,target_field,name FROM ai_ont_link "
-                "WHERE source_object=:c AND is_deleted=false"), {"c": code})).fetchall()
-        return [tuple(r) for r in rows]
+        """某个对象的一跳关系。走统一语义接口。"""
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        ctx = await _sem.semantic_context(include_properties=False)
+        return [(r["target"], r["source_field"], r["target_field"], r["name"])
+                for r in ctx["relations"] if r["source"] == code]
 
     @classmethod
     async def _resolve_ont_entity(cls, entity: str, key: str, user_id: int | None = None) -> dict | None:
@@ -1822,7 +2257,9 @@ class AiQueryService:
         if not match:
             return None
         code = match["code"]
-        table = f"ont_{code}"
+        # 用**真实支撑表名**：这里原先硬拼 ont_{code}，而数据源支撑的对象
+        # 表名就是它自己（video_cameras），拼错会去查一张不存在的表
+        table = match.get("table") or code
         props = await cls._ont_props(code)
         name_prop, key_prop = match["name_prop"], match["key_prop"]
         try:
@@ -2424,6 +2861,7 @@ class AiQueryService:
             rb = (await db.execute(_t("SELECT table_name,field_name,snapshot,version_no FROM ai_asset_version WHERE id=:i AND is_deleted=false"), {"i": id_b})).fetchone()
         if not ra or not rb:
             return {"ok": False, "msg": "版本不存在"}
+
         def _load(raw):
             return raw if isinstance(raw, dict) else (_json.loads(raw) if raw else {})
         sa, sb = _load(ra[2]), _load(rb[2])
@@ -2440,7 +2878,6 @@ class AiQueryService:
     @classmethod
     async def asset_publish(cls, table_name: str, version_id: int, auth) -> dict:
         """数据集/对象版本发布：把指定版本标记为当前发布版本（可回滚发布）。"""
-        import json as _json
         async with async_db_session() as db:
             from sqlalchemy import text as _t
             v = (await db.execute(_t(
@@ -2836,6 +3273,7 @@ class AiQueryService:
     async def governance_report(cls) -> dict:
         """AIP 数据治理报告：聚合 治理总览 + 合规姿态 + 安全评分 + 护栏，生成可导出报告。"""
         from datetime import datetime
+
         from app.plugin.module_ai.overview.service import AiOverviewService
         try:
             gov = await cls.governance_overview()
@@ -2866,7 +3304,7 @@ class AiQueryService:
         except Exception:  # noqa: BLE001
             pass
         markdown = "\n".join([
-            f"# AIStation 数据治理报告",
+            "# AIStation 数据治理报告",
             f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
             "## 总览",
@@ -3951,6 +4389,95 @@ class AiQueryService:
         avg = round(sum((x["score"] or 0) for x in items) / len(items), 1) if items else 0
         return {"avg_score": avg, "items": items}
 
+    @staticmethod
+    async def _import_ont_table_core(datasource_id: int, table: str, cols: list[dict],
+                                     table_comment: str = "") -> dict:
+        """把一张表的列结构写成「本体对象 + 属性 + 物化表」。
+
+        幂等：对象按 code upsert（并复活软删对象），属性**先清后建**，
+        因此重复导入同一张表不会像旧实现那样累加重复属性。
+        """
+        from sqlalchemy import text as _t
+
+        col_names = [c["name"] for c in cols]
+        # 主键：有 id 用 id，否则退化为首列（保证 grounding 有键可用）
+        key_prop = "id" if "id" in col_names else col_names[0]
+        name_prop = key_prop
+        for c in cols:
+            if str(c["name"]).lower() in ("name", "title", "no"):
+                name_prop = c["name"]
+                break
+
+        def _pg_type(ctype) -> str:
+            """SQL 类型 → 本体属性类型。"""
+            t = str(ctype or "").lower()
+            if "bool" in t:
+                return "boolean"
+            if any(k in t for k in ("int", "float", "decimal", "numeric", "double", "real", "serial")):
+                return "number"
+            if any(k in t for k in ("date", "time")):
+                return "date"
+            if "json" in t:
+                return "json"
+            return "string"
+
+        # **中文注释就是语义**：真实业务库表/列名多是英文缩写
+        # （FUEL_CB_COALBALANCE / COALMONEY），注释（"燃煤采购结算主表" / "煤款金额"）
+        # 是"人话 → 字段"唯一的桥。旧实现拿英文列名同时当 code 和 name，
+        # 本体里零中文语义，问数只能瞎猜（实测编出 coal_amount 这种不存在的列）。
+        obj_name = (table_comment or "").strip() or table
+        prop_names = {}
+        for c in cols:
+            cname = c["name"]
+            label = str(c.get("comment") or "").strip()
+            # 注释跟列名一样（如 ID 的注释就是 "ID"）时没有信息量，不如用列名
+            prop_names[cname] = label if label and label.lower() != cname.lower() else cname
+
+        async with async_db_session.begin() as db:
+            # **必须记下"数据在哪"**：`datasource_id` 指向远端数据源、
+            # `backing_table` 是远端真实表名。旧实现两个都不写，于是本体只知道
+            # "有这么个对象"，问数不知道去哪儿查数据——本地那张 ont_{table}
+            # 只是**空结构镜像**，查出来永远是 0 行。
+            await db.execute(_t(
+                "INSERT INTO ai_ont_object(code,name,key_prop,name_prop,description,"
+                "enabled,is_deleted,datasource_id,backing_table) "
+                "VALUES (:c,:n,:k,:np,:d,true,false,:ds,:bt) "
+                "ON CONFLICT (code) DO UPDATE SET name=:n, key_prop=:k, name_prop=:np, "
+                "description=:d, is_deleted=false, datasource_id=:ds, "
+                "backing_table=:bt, updated_time=now()"),
+                {"c": table, "n": obj_name, "k": key_prop, "np": name_prop,
+                 "ds": datasource_id, "bt": table,
+                 "d": f"由数据源 {datasource_id} 的表 {table} 导入"})
+            await db.execute(_t("DELETE FROM ai_ont_property WHERE object_code=:c"), {"c": table})
+            for c in cols:
+                cname = c["name"]
+                await db.execute(_t(
+                    "INSERT INTO ai_ont_property(object_code,name,code,prop_type,sensitive,description) "
+                    "VALUES (:oc,:n,:c,:pt,:s,:d)"),
+                    {"oc": table, "n": prop_names[cname], "c": cname,
+                     "pt": _pg_type(c.get("type")),
+                     "s": bool(c.get("is_sensitive")),
+                     "d": str(c.get("comment") or f"来自 {table}.{cname}")[:255]})
+
+        # 物化建表 ont_{table}：已存在则补列，绝不删已有数据
+        # 跳过 id 列：它已作为自增主键声明，再作为普通列声明会报
+        # "column specified more than once"（旧实现因此从未建成任何物化表）。
+        extra_cols = list(dict.fromkeys(c for c in col_names if c.lower() != "id"))
+        cols_ddl = ", ".join(f'"{c}" TEXT' for c in extra_cols)
+        ddl = f'CREATE TABLE IF NOT EXISTS "ont_{table}" (id BIGSERIAL PRIMARY KEY'
+        if cols_ddl:
+            ddl += f", {cols_ddl}"
+        ddl += ")"
+        try:
+            async with async_db_session.begin() as db:
+                await db.execute(_t(ddl))
+                for c in extra_cols:
+                    await db.execute(_t(f'ALTER TABLE "ont_{table}" ADD COLUMN IF NOT EXISTS "{c}" TEXT'))
+            m = {"ok": True, "table": f"ont_{table}", "columns": extra_cols}
+        except Exception as e:  # noqa: BLE001
+            m = {"ok": False, "msg": str(e)[:60]}
+        return {"ok": True, "object": table, "props": len(cols), "materialize": m}
+
     @classmethod
     async def import_ds_table_as_ontology(cls, datasource_id: int, table: str) -> dict:
         """数据源连接器 → 本体对象：把外部数据源某张表结构自动生成本体对象（对象+属性+物化），连接器真正生根本体。"""
@@ -3958,54 +4485,54 @@ class AiQueryService:
         rec = next((r for r in records if r["table"] == table), None)
         if not rec:
             return {"ok": False, "msg": f"数据源 {datasource_id} 未同步表 {table}"}
-        cols = rec.get("columns") or []
-        name_prop = "id"
-        for c in cols:
-            if isinstance(c, dict) and str(c.get("name", "")).lower() in ("name", "title", "no"):
-                name_prop = c["name"]
-                break
-        async with async_db_session.begin() as db:
-            from sqlalchemy import text as _t
-            exists = (await db.execute(_t(
-                "SELECT id FROM ai_ont_object WHERE code=:c AND is_deleted=false"), {"c": table})).fetchone()
-            if not exists:
-                await db.execute(_t(
-                    "INSERT INTO ai_ont_object(code,name,key_prop,name_prop,description) "
-                    "VALUES (:c,:n,:k,:np,:d) ON CONFLICT (code) DO UPDATE SET name=:n, key_prop=:k, name_prop=:np, description=:d"),
-                    {"c": table, "n": table, "k": "id", "np": name_prop,
-                     "d": f"由数据源 {datasource_id} 的表 {table} 导入"})
-        prop_count = 0
-        for c in cols:
-            cname = c["name"] if isinstance(c, dict) else c
-            ctype = (c.get("type") if isinstance(c, dict) else None) or "string"
-            pg = "string"
-            if ctype and any(k in str(ctype).lower() for k in ("int", "float", "decimal", "numeric", "double")):
-                pg = "number"
-            elif ctype and any(k in str(ctype).lower() for k in ("date", "time")):
-                pg = "date"
-            elif ctype and "bool" in str(ctype).lower():
-                pg = "boolean"
-            async with async_db_session.begin() as db:
-                from sqlalchemy import text as _t
-                await db.execute(_t(
-                    "INSERT INTO ai_ont_property(object_code,name,code,prop_type,description) "
-                    "VALUES (:oc,:n,:c,:pt,:d)"), {"oc": table, "n": cname, "c": cname, "pt": pg,
-                                                   "d": f"来自 {table}.{cname}"})
-            prop_count += 1
-        # 物化建表 ont_{table}
-        m = {"ok": False, "msg": "无属性", "table": f"ont_{table}"}
-        if prop_count:
-            cols = [c["name"] if isinstance(c, dict) else c for c in cols]
-            cols_ddl = ", ".join(f'"{c}" TEXT' for c in cols)
+        cols = [c for c in (rec.get("columns") or []) if isinstance(c, dict) and c.get("name")]
+        if not cols:
+            return {"ok": False, "msg": f"表 {table} 无列信息"}
+        return await cls._import_ont_table_core(datasource_id, table, cols)
+
+    @classmethod
+    async def import_ds_tables_as_ontology(cls, datasource_id: int, tables: list[str] | None = None,
+                                           include_technical: bool = False) -> dict:
+        """批量把数据源的表结构导入为本体对象。
+
+        - ``tables`` 为空 → 导入该数据源已同步的全部表（默认排除 ``_ONT_IMPORT_EXCLUDE`` 纯技术表）
+        - ``tables`` 指定 → 只导入给定表（取与已同步表的交集）
+        - ``include_technical=True`` → 不排除纯技术表
+        """
+        records = await list_ds_schema(datasource_id)
+        all_tables = [r["table"] for r in records]
+        if not all_tables:
+            return {"ok": False, "msg": f"数据源 {datasource_id} 尚未同步任何表"}
+        by_table = {r["table"]: (r.get("columns") or []) for r in records}
+        cmt_of = {r["table"]: (r.get("comment") or "") for r in records}
+
+        if tables:
+            wanted = {t for t in tables if t}
+            targets = [t for t in all_tables if t in wanted]
+        elif include_technical:
+            targets = list(all_tables)
+        else:
+            targets = [t for t in all_tables if t not in _ONT_IMPORT_EXCLUDE]
+
+        ok: list[dict] = []
+        failed: list[dict] = []
+        for t in targets:
+            cols = [c for c in by_table.get(t, []) if isinstance(c, dict) and c.get("name")]
+            if not cols:
+                failed.append({"table": t, "msg": "无列信息"})
+                continue
             try:
-                async with async_db_session() as db:
-                    from sqlalchemy import text as _t
-                    await db.execute(_t(
-                        f'CREATE TABLE IF NOT EXISTS "ont_{table}" (id BIGSERIAL PRIMARY KEY, {cols_ddl})'))
-                m = {"ok": True, "table": f"ont_{table}", "columns": cols}
+                r = await cls._import_ont_table_core(datasource_id, t, cols,
+                                                     table_comment=cmt_of.get(t, ""))
+                ok.append({"table": t, "props": r.get("props", 0),
+                           "materialize": bool((r.get("materialize") or {}).get("ok"))})
             except Exception as e:  # noqa: BLE001
-                m = {"ok": False, "msg": str(e)[:60]}
-        return {"ok": True, "object": table, "props": prop_count, "materialize": m}
+                failed.append({"table": t, "msg": str(e)[:120]})
+
+        return {"ok": True, "datasource_id": datasource_id, "synced_total": len(all_tables),
+                "imported": len(ok), "failed": len(failed),
+                "skipped_technical": sorted(set(all_tables) - set(targets)) if not tables else [],
+                "objects": ok, "errors": failed}
 
     @classmethod
     async def governance_overview(cls) -> dict:
@@ -4464,7 +4991,7 @@ class AiQueryService:
             "fewshot_auto_curate": "true",           # 反馈正例自动沉淀为 few-shot
             "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
-            "agno_tool_agent": "true",               # 工具化 Agent(模型自主调用 schema/fewshots/cost)
+            "agno_tool_agent": "false",              # 工具化 Agent(多轮往返，慢)；false=单次生成+本地执行自纠错
             "kg_enabled": "true",                    # 知识图谱图遍历召回(补关联表/联表路径)
         }
         async with async_db_session() as db:
@@ -4670,6 +5197,7 @@ class AiQueryService:
     async def list_datasources(cls) -> list[dict]:
         async with async_db_session() as db:
             from sqlalchemy import select
+            from sqlalchemy import text as _t
 
             rows = (
                 await db.execute(
@@ -4678,11 +5206,17 @@ class AiQueryService:
                     .order_by(AiQueryDatasourceModel.id.desc())
                 )
             ).scalars().all()
+            # 已同步表数：供「本体导入」等界面判断该数据源是否可用
+            cnt_rows = (await db.execute(_t(
+                "SELECT datasource, count(*) FROM ai_query_schema "
+                "WHERE is_deleted=false GROUP BY datasource"))).fetchall()
+            counts = {r[0]: int(r[1] or 0) for r in cnt_rows}
             return [
                 {"id": d.id, "name": d.name, "code": d.code, "type": d.type,
                  "host": d.host, "port": d.port, "database": d.database,
                  "username": d.username, "read_only": d.read_only, "default": d.default,
                  "enabled": d.enabled, "allowed_roles": d.allowed_roles or [],
+                 "table_count": counts.get(f"ds:{d.id}", 0),
                  "remark": d.remark or ""}
                 for d in rows
             ]
@@ -4815,12 +5349,14 @@ class AiQueryService:
 
         sess = await cls.get_or_create_session(session_id, question[:30], auth)
 
-        metrics = await cls.list_metrics(datasource or None)
-        terms = await cls.list_terms(datasource or None)
-
-        # 评测强制慢路径：跳过模板匹配，直接用 LLM 生成 SQL
+        # 评测强制慢路径：跳过模板匹配，直接用 LLM 生成 SQL。
+        # 注意：这一步必须在加载指标/术语**之前** —— 旧实现先查了 metrics+terms，
+        # 慢路径里 `_nl2sql` 又查一遍，等于白跑两次库。
         if force_slow:
             return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
+
+        metrics = await cls.list_metrics(datasource or None)
+        terms = await cls.list_terms(datasource or None)
 
         # 列举类问题不走指标模板（快路径只认指标聚合），强制走 NL2SQL
         if not _is_listing_question(question):
@@ -4844,7 +5380,7 @@ class AiQueryService:
                 msg = await cls._save_message(
                     sess["id"], question, path="fast", datasource=metric["datasource"],
                     sql=res["sql"], columns=res["columns"], rows=res["rows"],
-                    result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=cached,
+                    result_rows=len(res["rows"]), took_ms=res.get("took_ms", 0), cached=cached,
                     summary=cls._summarize(metric, res),
                 )
                 return cls._answer(msg, metric=metric)
@@ -4898,7 +5434,13 @@ class AiQueryService:
         if datasource and datasource != SYSTEM_DS:
             ds_id = int(datasource.split(":")[-1])
             return await _execute_custom_ds_sql(ds_id, sql, auth)
-        return await _execute_sql(sql)
+        # 复用本体的行级/列级权限：把本体对象支撑表改写成"已过滤的子查询"。
+        # 问数是**任意形状的读**（聚合/分组/join），外面套 WHERE 是错的——
+        # 过滤必须在聚合之前，所以这里做子查询改写。
+        secured = await _secure_ont_sql(sql, auth)
+        if secured.get("deny"):
+            raise CustomException(msg=secured["msg"])
+        return await _execute_sql(secured["sql"])
 
     @classmethod
     async def _explain_rows(cls, sql: str) -> int:
@@ -4912,26 +5454,47 @@ class AiQueryService:
 
     @classmethod
     async def _slow_path(cls, question: str, session_id: int, datasource: str, auth) -> dict:
-        """Agno 生成 SQL；自一致性多候选 + EXPLAIN 代价护栏 + 自纠错重试。"""
+        """生成 SQL（带 SQL 缓存）→ EXPLAIN 代价护栏 → 按身份执行 → 失败自纠错。
+
+        **慢的地方只有"生成"这一步**（一次 LLM 调用），执行只要几十毫秒。
+        所以这里缓存**生成的 SQL**，重复提问直接跳过 LLM。
+        结果行**绝不缓存**——行级/列级策略在执行时下推，缓存结果会串权限。
+        """
         cfg = await cls._cfg()
         n = cls._cfg_int(cfg, "self_consistency_n", 1)
         cost_enabled = cls._cfg_bool(cfg, "query_cost_enabled", True)
         max_rows = cls._cfg_int(cfg, "query_cost_max_rows", 50000)
         last_err: str | None = None
         sql = ""
+        cached_sql = _sql_cache_get(question, datasource)
+        cache_used = bool(cached_sql)
+        # 阶段计时：问数是"慢"被投诉的功能，必须能一眼看出时间花在哪
+        t_start = time.perf_counter()
+        t_gen = t_start
+        t_exec = t_start
         for attempt in range(2):
             candidate_sqls: list[str] = []
-            try:
-                for i in range(max(n, 1)):
-                    # 自一致性：不同候选用不同温度增加多样性
-                    temp = round(0.2 * i, 2) if n > 1 else 0.0
-                    candidate_sqls.append(
-                        await cls._nl2sql(question, datasource, prev_error=last_err, temperature=temp, auth=auth)
-                    )
-            except CustomException as e:
-                last_err = e.msg
-                log.warning(f"[query] NL2SQL 生成/校验失败第 {attempt + 1} 轮: {e.msg}")
-                continue
+            if cached_sql and attempt == 0:
+                # 缓存命中：跳过生成（这是"快"的主要来源）
+                candidate_sqls = [cached_sql]
+            else:
+                try:
+                    for i in range(max(n, 1)):
+                        # 自一致性：不同候选用不同温度增加多样性
+                        temp = round(0.2 * i, 2) if n > 1 else 0.0
+                        candidate_sqls.append(
+                            await cls._nl2sql(question, datasource, prev_error=last_err, temperature=temp, auth=auth)
+                        )
+                except CustomException as e:
+                    last_err = e.msg
+                    # 模型偶发**返回空**（实测本地 284B 会这样）：原样重试基本没用，
+                    # 给一条可操作的提示才有意义——否则白等两轮（实测 28 秒）。
+                    if "未生成有效的查询语句" in (e.msg or ""):
+                        last_err = ("你上次**没有返回任何 SQL**。请只输出一条 SELECT 语句，"
+                                    "不要输出解释、不要输出空内容。")
+                    log.warning(f"[query] NL2SQL 生成/校验失败第 {attempt + 1} 轮: {e.msg}")
+                    continue
+            t_gen = time.perf_counter()
             # 逐一执行；代价护栏过滤超重查询；结果一致性分组取多数
             groups: dict = {}
             results: list[tuple[str, dict]] = []
@@ -4959,6 +5522,7 @@ class AiQueryService:
                 except Exception as e:  # noqa: BLE001
                     last_err = f"执行失败：{e}"
             if results:
+                t_exec = time.perf_counter()
                 # 优先非空结果；多数一致组内取第一候选；全空则按多数
                 if any(c[1]["rows"] for c in results):
                     nonempty_ids = {c for c, res in results if res["rows"]}
@@ -4967,20 +5531,42 @@ class AiQueryService:
                 else:
                     sql = max(groups.values(), key=len)[0]
                 res = next(r for (c, r) in results if c == sql)
+                # 缓存里的 SQL 执行失败（schema/口径变了）→ 清掉缓存，下一轮重新生成。
+                # 不这么做的话，一条坏 SQL 会被反复命中，变成"越缓存越慢还查不出东西"。
+                if cache_used and attempt == 0 and not res["rows"]:
+                    _SQL_CACHE.pop(_sql_cache_key(question, datasource), None)
+                    cached_sql, cache_used = None, False
+                    last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
+                    continue
                 # 执行反馈自纠错：结果为空且还有重试机会 → 携带空结果提示二次生成
                 if not res["rows"] and attempt == 0 and cls._cfg_bool(cfg, "empty_self_correct", True):
                     last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
                     continue
+                # 生成成功才入缓存（失败/空的 SQL 不入，避免污染）
+                _sql_cache_set(question, datasource, sql)
+                # 结果列头中文化 + 一句人话的答案（原先摘要是硬编码废话）
+                cn_cols = await cls._cn_columns(res["columns"], sql)
+                res["columns"] = cn_cols
+                summary = cls._summarize_rows(cn_cols, res["rows"])
+                # 收尾阶段单独计时：这一步里有两个"重"调用（再次检索 + DQ 概览），
+                # 缓存命中时生成阶段为 0，若收尾仍慢就会吃掉缓存的收益
+                t_tail = time.perf_counter()
                 retrieved = await cls._recall_grounding(question)
                 grounding = {"retrieved": retrieved, "ontology_used": _scan_ont_tables(sql)}
                 msg = await cls._save_message(
                     session_id, question, path="slow", datasource=datasource,
                     sql=sql, columns=res["columns"], rows=res["rows"],
-                    result_rows=len(res["rows"]), took_ms=res["took_ms"], cached=False,
-                    summary="以下是根据你的问题生成的结果：", grounding=grounding,
+                    result_rows=len(res["rows"]), took_ms=res.get("took_ms", 0),
+                    cached=cache_used,
+                    summary=summary, grounding=grounding,
                 )
                 ans = cls._answer(msg, sql=sql, retrieved=retrieved)
                 ans["dq_warning"] = await cls._dq_warning_for_sql(sql)
+                log.warning(
+                    "[query] 计时 缓存命中={} 生成={:.0f}ms 执行={:.0f}ms 收尾={:.0f}ms 总计={:.0f}ms",
+                    cache_used, (t_gen - t_start) * 1000, (t_exec - t_gen) * 1000,
+                    (time.perf_counter() - t_tail) * 1000,
+                    (time.perf_counter() - t_start) * 1000)
                 return ans
         await cls._save_message(
             session_id, question, path="slow", datasource=datasource,
@@ -4999,6 +5585,9 @@ class AiQueryService:
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
         schema_ctx = await cls._build_schema_context(question, datasource, metrics, terms)
+        # 留痕：prompt 体积。生成耗时几乎全在 prefill 上，prompt 一大就慢，
+        # 所以这个数字必须可见（实测全量倾倒时 37K 字符 → 生成 7s）
+        log.warning("[query] prompt 长度={} 字符", len(schema_ctx))
         cfg = await cls._cfg()
         rules = []
         if cls._cfg_bool(cfg, "entity_name_rule", True):
@@ -5008,8 +5597,11 @@ class AiQueryService:
             rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
         rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
         rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
+        rules.append("（5）**所有聚合列和计算列必须起中文别名**（如 COUNT(*) AS 告警数、"
+                     "SUM(amount) AS 销售额），不要用 c / count / total 这类占位名——"
+                     "用户会直接看到列头。")
         if cls._cfg_bool(cfg, "decomposed_planning", True):
-            rules.append("（5）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
+            rules.append("（6）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
         extra = ""
         if cls._cfg_bool(cfg, "full_entity_no_limit", True):
             extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
@@ -5031,12 +5623,28 @@ class AiQueryService:
             from agno.agent import Agent
             from agno.models.openai.like import OpenAILike
 
+            from app.plugin.module_ai.models.service import build_headers
+
+            # 必须注入网关请求头：opencode 网关要求 `x-opencode-session`，
+            # 缺了它会直接返回一段错误文本，而那段文本会被当成 SQL 去校验，
+            # 最终表现为「仅允许 SELECT 查询」——完全看不出真实原因。
+            # 本文件其它两处（embedding / 检索）都用了 build_headers，这里漏了。
             model = OpenAILike(
                 id=runtime["model"], base_url=runtime["base_url"],
                 api_key=runtime["api_key"] or "sk-none",
                 temperature=temperature, max_tokens=2000,
+                # 超时兜底：本地模型偶发长时间不返回 / 返回空。没有超时会把一次
+                # 问答拖到几十秒（实测 32 秒换一个错误，是最差的体验）。
+                timeout=60,
+                default_headers=build_headers(
+                    runtime["base_url"], runtime.get("extra_headers"), "aistation-query"),
             )
-            tool_agent = cls._cfg_bool(cfg, "agno_tool_agent", True)
+            # 默认**关掉工具往返**：实测每题触发 ~7.25 次工具调用，每次都是一轮
+            # LLM 往返；而工具能提供的信息（表结构 / 枚举值 / few-shot / join 路径 /
+            # 代价护栏 / 执行校验）本地检索与本地执行已全覆盖——花 7 次往返去
+            # "自主检索"是纯亏。执行反馈自纠错仍在（_slow_path 的 attempt 循环
+            # 会带真实报错重新生成）。
+            tool_agent = cls._cfg_bool(cfg, "agno_tool_agent", False)
             if tool_agent:
                 # 工具化 Agent：让模型自主决定何时调用 schema/fewshots/cost 工具
                 # （执行层不再叠加额外执行工具，避免重复；schema/fewshot 由模型自主检索）
@@ -5044,6 +5652,7 @@ class AiQueryService:
 
                 agent = Agent(
                     model=model,
+                    telemetry=False,
                     tools=list(QUERY_TOOLS),
                     tool_call_limit=6, instructions=(
                         "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
@@ -5057,20 +5666,22 @@ class AiQueryService:
                     ),
                 )
             else:
-                agent = Agent(model=model, instructions=system_prompt)
+                agent = Agent(model=model, telemetry=False, instructions=system_prompt)
             resp = await agent.arun(user_msg)
+            # 留痕：模型原始输出。问数失败时这是唯一能定位"模型到底给了什么"的地方
+            log.warning("[NL2SQL] 原始输出={}", (resp.content or "")[:500])
             sql = cls._extract_sql((resp.content or "").strip())
             table = await cls._allowed_for_user(auth) if datasource in (SYSTEM_DS, None) else None
             try:
-                return validate_sql(sql, table or set())
+                return validate_sql(sql, table or set(), question)
             except Exception:
                 # 工具化模式若模型未取到 schema 导致校验失败，回退到提示版完整上下文重新生成
                 if not tool_agent:
                     raise
-                fallback = Agent(model=model, instructions=system_prompt)
+                fallback = Agent(model=model, telemetry=False, instructions=system_prompt)
                 resp2 = await fallback.arun(user_msg)
                 sql2 = cls._extract_sql((resp2.content or "").strip())
-                return validate_sql(sql2, table or set())
+                return validate_sql(sql2, table or set(), question)
         except Exception as e:  # noqa: BLE001
             raise CustomException(msg=f"问答模型(Agno)调用失败：{e}")
 
@@ -5110,8 +5721,11 @@ class AiQueryService:
             rules.append("（2）status/framework/severity/task_type 等枚举字段必须使用【取值】里给出的原始值；")
         rules.append("（3）占比用“COUNT(*) * 100.0 / 总数”或“FILTER (WHERE ...)”计算；")
         rules.append("（4）多行 SQL 直接换行输出即可，不要加注释。")
+        rules.append("（5）**所有聚合列和计算列必须起中文别名**（如 COUNT(*) AS 告警数、"
+                     "SUM(amount) AS 销售额），不要用 c / count / total 这类占位名——"
+                     "用户会直接看到列头。")
         if cls._cfg_bool(cfg, "decomposed_planning", True):
-            rules.append("（5）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
+            rules.append("（6）先判断问题属于「单表聚合 / 多表联查 / 嵌套子查询」，再按此规划生成 SQL；")
         extra = ""
         if cls._cfg_bool(cfg, "full_entity_no_limit", True):
             extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
@@ -5130,14 +5744,20 @@ class AiQueryService:
         from agno.agent import Agent
         from agno.models.openai.like import OpenAILike
 
+        from app.plugin.module_ai.models.service import build_headers
+
         model = OpenAILike(
             id=runtime["model"], base_url=runtime["base_url"],
             api_key=runtime["api_key"] or "sk-none",
             temperature=0.0, max_tokens=2000,
+            timeout=60,
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-query"),
         )
-        if cls._cfg_bool(cfg, "agno_tool_agent", True):
+        if cls._cfg_bool(cfg, "agno_tool_agent", False):
             agent = Agent(
-                model=model, tools=list(QUERY_TOOLS), tool_call_limit=6,
+                model=model, telemetry=False,
+                tools=list(QUERY_TOOLS), tool_call_limit=6,
                 instructions=(
                     "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
                     "先调用 search_schema(question) 获取相关表/字段，可再用 "
@@ -5148,7 +5768,7 @@ class AiQueryService:
                 ),
             )
         else:
-            agent = Agent(model=model, instructions=system_prompt)
+            agent = Agent(model=model, telemetry=False, instructions=system_prompt)
 
         # ---- 流式运行 Agent，转发思考/工具/输出事件 ----
         content_buf: list[str] = []
@@ -5253,14 +5873,38 @@ class AiQueryService:
 
     @classmethod
     def _extract_sql(cls, s: str) -> str:
-        # 去除 markdown 代码块围栏
-        s = re.sub(r"```[a-zA-Z]*", "", s or "").strip()
-        # 取第一个 SELECT 开始
+        """从模型输出里抠出 SQL。
+
+        工具化 Agent 按指令要求输出 JSON（``{"sql": "<SELECT ...>"}``），
+        而旧实现只做「去围栏 + 取第一个 select + 截到分号」——
+        JSON 的**尾部 `"}` 会被留下**，SQL 因此解析不出 Select 节点，
+        整条问数报「仅允许 SELECT 查询」而失败（既有缺陷，已用 git stash 复现确认）。
+        """
+        s = (s or "").strip()
+        # 1) JSON 解包（工具化 Agent 的正常输出形态）
+        if s.startswith("{"):
+            try:
+                import json as _json
+
+                obj = _json.loads(s)
+                if isinstance(obj, dict) and obj.get("sql"):
+                    s = str(obj["sql"])
+            except Exception:  # noqa: BLE001
+                # JSON 被截断时的兜底：正则捞出 "sql": "..." 的内容
+                m = re.search(r'"sql"\s*:\s*"(.*?)"\s*\}?\s*$', s, re.S)
+                if m:
+                    s = m.group(1).replace('\\"', '"').replace("\\n", "\n")
+        # 2) 去 markdown 代码块围栏
+        s = re.sub(r"```[a-zA-Z]*", "", s).strip()
+        # 3) 取第一个 SELECT 开始
         idx = s.lower().find("select")
         if idx >= 0:
             s = s[idx:]
-        # 截到第一个分号，保留多行 SQL（JOIN/GROUP BY/窗口函数通常跨行）
+        # 4) 截到第一个分号，保留多行 SQL（JOIN/GROUP BY/窗口函数通常跨行）
         s = re.split(r";", s, maxsplit=1)[0].strip()
+        # 5) 去掉 JSON 残留的尾巴（只去 } ] 与空白，**不动引号**，
+        #    否则会把 `... = 'ONLINE'` 的收尾引号一起吃掉
+        s = re.sub(r"[}\]]+\s*$", "", s).strip()
         return s
 
     @classmethod
@@ -5550,6 +6194,174 @@ class AiQueryService:
             _AGNO_SEEDED = True
             _AGNO_SEEDING = False
 
+    # ---- 语义召回单元（阶段1：自建召回服务的底座）----
+    #
+    # 旧实现把「裸标识符」喂给向量库（`数据表 {t}` / `表 {t} 的字段 {c}`），
+    # 中文业务词检索不到；这里改为从「资产元数据 + 本体语义 + 指标/术语」构建
+    # **高语义密度**文本（见 recall.py 的 build_*）。
+    _RECALL_UNITS_COLS = (
+        "id BIGSERIAL PRIMARY KEY, kind VARCHAR(24) NOT NULL, ref VARCHAR(200) NOT NULL, "
+        "text TEXT, meta JSONB, version BIGINT, is_deleted BOOLEAN DEFAULT false, "
+        "created_time TIMESTAMP, updated_time TIMESTAMP, UNIQUE(kind, ref)"
+    )
+
+    @classmethod
+    async def _ensure_recall_units_table(cls) -> None:
+        """建语义单元表（幂等）。
+
+        ``embedding`` 列**只在 PostgreSQL 上创建**——测试用 SQLite，没有 pgvector。
+        """
+        cols = cls._RECALL_UNITS_COLS
+        from app.config.setting import settings
+
+        if settings.DATABASE_TYPE == "postgres":
+            cols = cols.replace("meta JSONB,", "meta JSONB, embedding vector(2560),")
+        async with async_db_session.begin() as db:
+            from sqlalchemy import text as _t
+
+            await db.execute(
+                _t(f"CREATE TABLE IF NOT EXISTS ai_query_recall_units ({cols})")
+            )
+
+    @staticmethod
+    def _parse_col_label(label: str) -> dict:
+        """从 ``_system_schema()`` 的列标签 ``col(type)【中文名】…`` 抽出列名与中文名。"""
+        name = (label or "").split("(", 1)[0].strip()
+        m = re.search(r"【([^】]+)】", label or "")
+        return {"column_name": name, "description": m.group(1) if m else ""}
+
+    @classmethod
+    async def _collect_recall_units(cls) -> list[dict]:
+        """收集召回单元：表 / 本体对象 / 概念 / 指标 / 术语。"""
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        from .recall import (
+            build_concept_unit,
+            build_metric_unit,
+            build_object_unit,
+            build_table_unit,
+            build_term_unit,
+        )
+
+        units: list[dict] = []
+        try:
+            schema = await cls._system_schema()
+            assets = {a.get("table_name"): a for a in await cls.list_assets()}
+            for table, labels in (schema or {}).items():
+                cols = [cls._parse_col_label(x) for x in (labels or [])]
+                units.append(build_table_unit(table, assets.get(table) or {}, cols))
+        except Exception as e:  # noqa: BLE001 - 单个来源失败不阻断整体重建
+            log.warning(f"[query][recall] 表单元构建失败: {e}")
+        try:
+            ctx = await _sem.semantic_context(include_properties=True)
+            rels = ctx.get("relations") or []
+            props = ctx.get("properties") or {}
+            for o in ctx.get("objects") or []:
+                code, table = o.get("code"), o.get("table")
+                mine = [
+                    r for r in rels
+                    if r.get("source") in (code, table) or r.get("target") in (code, table)
+                ]
+                units.append(build_object_unit(o, props.get(code) or [], mine))
+            # semantic_context 的 concepts 已合并「本体别名 + ai_query_concept」
+            for c in ctx.get("concepts") or []:
+                units.append(build_concept_unit(c))
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 本体单元构建失败: {e}")
+        try:
+            for m in await cls.list_metrics(SYSTEM_DS):
+                units.append(build_metric_unit(m))
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 指标单元构建失败: {e}")
+        try:
+            for t in await cls.list_terms(SYSTEM_DS):
+                units.append(build_term_unit(t))
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query][recall] 术语单元构建失败: {e}")
+
+        # 同一 (kind, ref) 只保留一条，保证幂等
+        seen: set[tuple[str, str]] = set()
+        out: list[dict] = []
+        for u in units:
+            key = (u.get("kind") or "", u.get("ref") or "")
+            if not key[1] or key in seen:
+                continue
+            seen.add(key)
+            out.append(u)
+        return out
+
+    @classmethod
+    async def rebuild_recall_units(cls) -> dict:
+        """重建语义召回单元（幂等，可重复执行）。
+
+        返回 ``{"units": 条数, "embedded": 已向量化条数, "version": 批次}``。
+        非 PostgreSQL 环境不写 ``embedding``（无 pgvector），只存文本。
+        """
+        import json as _json
+
+        from sqlalchemy import text as _t
+
+        from app.config.setting import settings
+        from app.plugin.module_ai.knowledge.embedding import embed_texts
+
+        await cls._ensure_recall_units_table()
+        units = await cls._collect_recall_units()
+        is_pg = settings.DATABASE_TYPE == "postgres"
+
+        vecs: list[list[float] | None] = [None] * len(units)
+        embedded = 0
+        if is_pg and units:
+            try:
+                got = await embed_texts([u["text"] for u in units])
+                for i, v in enumerate(got):
+                    if i < len(vecs):
+                        vecs[i] = v
+                embedded = len(got)
+            except Exception as e:  # noqa: BLE001 - 向量化失败仍保留文本单元
+                log.warning(f"[query][recall] 单元向量化失败（仅存文本）: {e}")
+
+        version = int(time.time())
+        async with async_db_session.begin() as db:
+            for u, v in zip(units, vecs, strict=False):
+                params = {
+                    "kind": u["kind"],
+                    "ref": u["ref"],
+                    "text": u["text"],
+                    "meta": _json.dumps(u.get("meta") or {}, ensure_ascii=False),
+                    "ver": version,
+                }
+                if is_pg:
+                    params["emb"] = _json.dumps(v) if v is not None else None
+                    await db.execute(
+                        _t(
+                            "INSERT INTO ai_query_recall_units"
+                            "(kind,ref,text,meta,embedding,version,is_deleted,"
+                            "created_time,updated_time) VALUES "
+                            "(:kind,:ref,:text,CAST(:meta AS jsonb),CAST(:emb AS vector),"
+                            ":ver,false,now(),now()) "
+                            "ON CONFLICT (kind,ref) DO UPDATE SET text=EXCLUDED.text, "
+                            "meta=EXCLUDED.meta, "
+                            "embedding=COALESCE(EXCLUDED.embedding, "
+                            "ai_query_recall_units.embedding), "
+                            "version=EXCLUDED.version, is_deleted=false, updated_time=now()"
+                        ),
+                        params,
+                    )
+                else:
+                    await db.execute(
+                        _t(
+                            "INSERT INTO ai_query_recall_units"
+                            "(kind,ref,text,meta,version,is_deleted,created_time,updated_time) "
+                            "VALUES (:kind,:ref,:text,:meta,:ver,false,now(),now()) "
+                            "ON CONFLICT (kind,ref) DO UPDATE SET text=EXCLUDED.text, "
+                            "meta=EXCLUDED.meta, version=EXCLUDED.version, "
+                            "is_deleted=false, updated_time=now()"
+                        ),
+                        params,
+                    )
+        log.info(f"[query][recall] 语义单元重建完成: {len(units)} 条（向量化 {embedded}）")
+        return {"units": len(units), "embedded": embedded, "version": version}
+
     @classmethod
     async def _agno_search_tables(cls, question: str, schema: dict, top_k: int) -> list[str]:
         """用 Agno Knowledge(PgVector) 语义检索，返回命中的表集合。
@@ -5580,6 +6392,27 @@ class AiQueryService:
     async def _semantic_tables(cls, question: str, schema: dict | None = None,
                                metrics: list[dict] | None = None,
                                terms: list[dict] | None = None) -> list[str]:
+        """分层检索（带**记忆缓存**）。
+
+        同一个问题在一次问答里会被问两次——`_build_schema_context` 拼 prompt、
+        `_recall_grounding` 做溯源——而这条路径会走向量检索。
+        不缓存就是白跑一次检索（实测收尾阶段因此花掉 1.2~1.8 秒）。
+        """
+        key = _retrieval_cache_key(question)
+        hit = _RETRIEVAL_CACHE.get(key)
+        if hit and time.time() - hit[0] <= _RETRIEVAL_CACHE_TTL:
+            return list(hit[1])
+        out = await cls._semantic_tables_uncached(question, schema, metrics, terms)
+        if len(_RETRIEVAL_CACHE) >= _RETRIEVAL_CACHE_MAX:
+            for k in list(_RETRIEVAL_CACHE)[: max(1, _RETRIEVAL_CACHE_MAX // 10)]:
+                _RETRIEVAL_CACHE.pop(k, None)
+        _RETRIEVAL_CACHE[key] = (time.time(), list(out))
+        return out
+
+    @classmethod
+    async def _semantic_tables_uncached(cls, question: str, schema: dict | None = None,
+                                        metrics: list[dict] | None = None,
+                                        terms: list[dict] | None = None) -> list[str]:
         """分层检索 + 关键词 + 实体表基线，合并出联表所需的表集合。
 
         优先 pgvector，回退内存融合(jieba+embedding)；再并上关键词相关表，
@@ -5643,6 +6476,38 @@ class AiQueryService:
             tables.update(cls._relevant_tables(question, schema, metrics, terms))
         except Exception:  # noqa: BLE001
             pass
+        # 3.5) **本体别名 → 表**（本体是唯一语义源，检索也必须用上）
+        #
+        # 真实踩过：问「各部门的销售额是多少」，本体里有对象「销售订单」
+        # （表 demo_sales，属性「销售额」），但检索只认**表名**，demo_sales 没被召回，
+        # 模型只好拿 `ai_call_logs.cost` 当"销售额"，返回 0。
+        #
+        # ⚠️ 只匹配**别名**，不匹配对象名：对象名（如"告警记录表"）含"告警"这种
+        # 通用词，会给大量无关问题塞进额外表 —— 实测这让 prompt 变大、
+        # 生成 p50 从 3147ms 涨到 6483ms（精度还降了）。别名是人工登记的强信号。
+        try:
+            from app.plugin.module_ai.ontology import semantic as _sem
+
+            ctx = await _sem.semantic_context(include_properties=False)
+            tmap = await _sem.object_table_map()
+            code_of: dict[str, str] = {}
+            for tbl, code in tmap.items():
+                code_of.setdefault(code, tbl)
+            q_low = (question or "").lower()
+            added = 0
+            for o in ctx["objects"]:
+                if added >= _ONT_ALIAS_MAX_TABLES:
+                    break
+                hits = [a for a in (o.get("aliases") or [])
+                        if a and len(str(a)) >= 2 and str(a).lower() in q_low]
+                if not hits:
+                    continue
+                tbl = code_of.get(o["code"]) or o["table"]
+                if tbl in schema and tbl not in tables:
+                    tables.add(tbl)
+                    added += 1
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 本体别名检索失败: {e}")
         # 4) 实体名词 → 表 基线（保证联表取名称的表在上下文）
         if cls._cfg_bool(cfg, "entity_enabled", True):
             entity_map = cls._cfg_entity_map(cfg)
@@ -5671,7 +6536,12 @@ class AiQueryService:
 
     @staticmethod
     def _relevant_tables(question: str, schema: dict, metrics: list[dict], terms: list[dict]) -> list[str]:
-        """依据问题关键词，只挑相关的表（列名/表名命中），控制注入 token 并聚焦。"""
+        """依据问题关键词，只挑相关的表（列名/表名/中文注释命中），控制注入 token 并聚焦。
+
+        **中文注释必须参与打分**：真实业务库的表名列名是英文缩写
+        （``FUEL_CB_COALBALANCE`` / ``COALMONEY``），中文问题（"煤款金额"）
+        只有靠注释才匹配得上。只认英文标识符的话，检索永远命中不了。
+        """
         q = question.lower()
         scores: dict[str, float] = {}
         for t in schema:
@@ -5680,7 +6550,12 @@ class AiQueryService:
             if tname in q:
                 s += 6.0
             for col in schema[t]:
-                colname = col.split("(")[0].lower()
+                parts = col.split("(", 1)
+                colname = parts[0].lower()
+                cmt = parts[1].rstrip(")").lower() if len(parts) > 1 else ""
+                # 中文注释命中权重最高——它才是业务语义
+                if len(cmt) >= 2 and cmt in q:
+                    s += 5.0
                 if len(colname) >= 3 and colname in q:
                     s += 3.0
                 for seg in colname.split("_"):
@@ -5724,6 +6599,45 @@ class AiQueryService:
         )
 
     @classmethod
+    async def _ds_schema_map(cls, datasource: str) -> dict[str, list[str]]:
+        """自定义数据源已同步的表结构：``{表名: [列标签]}``。
+
+        与 ``_system_schema`` 同形，方便复用同一套关键词检索（``_relevant_tables``）。
+        带进程内缓存——331 张表的同步结果每次问答都读库太浪费。
+        """
+        global _DS_SCHEMA_CACHE
+        key = str(datasource or "")
+        hit = _DS_SCHEMA_CACHE.get(key)
+        if hit and time.time() - hit[0] <= _DS_SCHEMA_TTL:
+            return hit[1]
+        out: dict[str, list[str]] = {}
+        try:
+            ds_id = int(key.split(":")[-1])
+            rows = await list_ds_schema(ds_id)
+            for r in rows:
+                cols = []
+                # 表注释放第一位，形如 `FUEL_CB_COALBALANCE(燃煤采购结算主表)`：
+                # 既让检索能按中文表名命中，也让模型在 prompt 里看到业务含义
+                tcmt = str(r.get("comment") or "").strip()
+                if tcmt:
+                    cols.append(f"{r['table']}({tcmt})")
+                for c in (r.get("columns") or []):
+                    if not isinstance(c, dict) or not c.get("name"):
+                        continue
+                    label = str(c["name"])
+                    if c.get("comment"):
+                        label += f"({c['comment']})"
+                    cols.append(label)
+                out[r["table"]] = cols
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 读取数据源 {key} 表结构失败: {e}")
+            return {}
+        if len(_DS_SCHEMA_CACHE) >= 20:
+            _DS_SCHEMA_CACHE.clear()
+        _DS_SCHEMA_CACHE[key] = (time.time(), out)
+        return out
+
+    @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
         lines = ["【可用指标】"]
         for m in metrics:
@@ -5737,13 +6651,16 @@ class AiQueryService:
             lines.append(conc)
         lines.append("【可查询表及字段】")
         if datasource in (SYSTEM_DS, None):
-            # 本体对象块（Palantir 式：以业务对象语义为 grounding）
-            ont = await cls._ont_ctx_block()
-            if ont:
-                lines.append(ont)
             schema = await cls._system_schema()
             tmeta = await cls._asset_tmeta()
+            # **先检索、再拼 prompt**：`_semantic_tables` 是本地检索（关键词+语义加权，
+            # top_k=16）。旧实现先把**全部 85 个对象、1500+ 属性**塞进本体块
+            # （实测 37517 字符），再把检索结果拼在后面——LLM 的前缀计算大半花在
+            # 与问题无关的对象上，又慢又干扰判断。现在只带检索命中的表。
             rel = await cls._semantic_tables(question, schema, metrics, terms)
+            ont = await cls._ont_ctx_block(only_tables=set(rel))
+            if ont:
+                lines.append(ont)
             for t in rel:
                 cols = schema.get(t, [])
                 meta = tmeta.get(t) or {}
@@ -5765,6 +6682,21 @@ class AiQueryService:
                     head = f"{t}【" + "；".join(extras) + "】"
                 lines.append(f"- {head}: {', '.join(cols) if cols else ''}")
             lines.append(cls._query_conventions())
+        else:
+            # **自定义数据源**：原先这里**什么都不加** —— 模型对 ds:{id} 一张表、
+            # 一个字段都不知道，只能瞎猜，问数必然答不对。
+            # 这里把该数据源**已同步的表结构**按问题检索后注入。
+            # 331 张表不能全塞，所以复用同一套关键词打分只取 top_k。
+            ds_schema = await cls._ds_schema_map(datasource)
+            if ds_schema:
+                rel = cls._relevant_tables(question, ds_schema, metrics, terms)
+                lines.append(
+                    f"（数据源 {datasource}，共 {len(ds_schema)} 张表，"
+                    f"下面是与问题最相关的 {len(rel)} 张）")
+                for t in rel:
+                    cols = ds_schema.get(t, [])
+                    lines.append(f"- {t}: {', '.join(cols) if cols else ''}")
+                lines.append(cls._query_conventions())
         lines.append("【示例问题→SQL】")
         for eg in await cls._dynamic_fewshots(question, datasource):
             lines.append(f"问：{eg['q']}")
@@ -5775,9 +6707,20 @@ class AiQueryService:
     async def _get_runtime(cls) -> dict:
         from app.plugin.module_ai.models.service import AiModelService
 
-        runtime = await AiModelService.get_runtime_model("query")
-        runtime = runtime or await AiModelService.get_runtime_model("chat")
-        runtime = runtime or await AiModelService.get_runtime_model()
+        # 顺序很关键：`get_runtime_model(usage)` 会把 **usage 为空**的模型也算命中
+        # （"通用"语义，兼容旧数据），于是专门为 chat 配的本地模型根本不参与，
+        # 问数被顶到那个"通用"模型上——而它可能是额度受限的外部网关，
+        # 表现为模型返回一段错误文本，最后报成「仅允许 SELECT 查询」，
+        # 完全看不出真实原因。所以这里要求**精确匹配用途**优先。
+        first = None
+        for u in ("query", "chat"):
+            r = await AiModelService.get_runtime_model(u)
+            first = first or r
+            if r and r.get("usage") == u:
+                return r
+        if first:
+            return first
+        runtime = await AiModelService.get_runtime_model()
         if not runtime:
             raise CustomException(msg="未配置可用的 chat 模型")
         return runtime
@@ -5790,6 +6733,68 @@ class AiQueryService:
             v = res["rows"][0][0]
             return f"{metric.get('name', '')}为 {v} {metric.get('unit', '')}".strip()
         return f"共 {len(res['rows'])} 行结果"
+
+    #: 模型偷懒时用的占位列名 —— 这些当成"没起名"，摘要里不念出来
+    _LAZY_COLS = {"c", "n", "cnt", "count", "total", "num", "value", "v",
+                  "数量", "总数", "个数", "结果", "值", "合计", "总计"}
+
+    @classmethod
+    def _summarize_rows(cls, columns: list, rows: list) -> str:
+        """把结果说成**一句人话**。
+
+        原先慢路径的摘要是硬编码的「以下是根据你的问题生成的结果：」——
+        等于没回答。用户问"一共有多少条告警记录"，看到的却是这句话。
+        """
+        cols = list(columns or [])
+        rows = list(rows or [])
+        if not rows:
+            return "没有查到符合条件的数据"
+        if not cols:
+            return f"共 {len(rows)} 行结果"
+        if len(rows) == 1 and len(cols) == 1:
+            v = rows[0][0]
+            name = str(cols[0]).strip()
+            if name.lower() in cls._LAZY_COLS:
+                return f"结果是 {v}"
+            return f"{name}：{v}"
+        if len(rows) == 1:
+            parts = [f"{c} {v}" for c, v in zip(cols, rows[0], strict=False)]
+            return "；".join(parts[:5])
+        # 多行：说清规模 + 给个头一条，让用户知道看到了什么
+        head = "；".join(f"{c} {v}" for c, v in zip(cols, rows[0], strict=False) if
+                         str(c).lower() not in cls._LAZY_COLS) or \
+               "；".join(f"{c} {v}" for c, v in zip(cols, rows[0], strict=False))
+        return f"共 {len(rows)} 行；第一行：{head}"
+
+    @classmethod
+    async def _cn_columns(cls, columns: list, sql: str) -> list:
+        """把结果列名里的**英文属性名换成中文名**（本体是唯一来源）。
+
+        模型经常写 `SELECT COUNT(*) AS c` 或直接 `SELECT status`，
+        表格里就出现 `c` / `status` 这种看不懂的列头。
+        """
+        cols = list(columns or [])
+        if not cols or not sql:
+            return cols
+        tables = _scan_ont_tables(sql)
+        if not tables:
+            return cols
+        mapping: dict[str, str] = {}
+        try:
+            from app.plugin.module_ai.ontology import semantic as _sem
+
+            ctx = await _sem.semantic_context()
+            code_of = await _sem.object_table_map()
+            want_codes = {code_of.get(t) for t in tables} - {None}
+            for code in want_codes:
+                for p in ctx["properties"].get(code, []):
+                    if p["name"] and p["name"] != p["code"]:
+                        mapping.setdefault(p["code"], p["name"])
+        except Exception:  # noqa: BLE001
+            return cols
+        if not mapping:
+            return cols
+        return [mapping.get(str(c).strip().strip('"'), c) for c in cols]
 
     @classmethod
     async def _save_message(cls, session_id: int, question: str, **kw) -> AiQueryMessageModel:
