@@ -136,3 +136,68 @@ def test_verify_and_save_rejects_unexecutable_or_empty_gold(monkeypatch):
         assert "EV_BAD" not in questions and "EV_EMPTY" not in questions
 
     asyncio.run(_run())
+
+
+# ===========================================================================
+# 批次4：执行器 + 配置覆盖 + 消融
+# ===========================================================================
+def test_override_settings_restores_original_values():
+    """决定性：配置覆盖退出后**必须恢复**（否则污染后续评测与业务请求）。"""
+    async def _run():
+        from app.plugin.module_ai.query.eval_runner import override_settings
+        from app.plugin.module_ai.query.service import AiQueryService as S
+
+        before = (await S._cfg()).get("recall_enabled")
+        flipped = "false" if before == "true" else "true"
+        async with override_settings({"recall_enabled": flipped}):
+            S._SETTINGS_CACHE = None
+            assert (await S._cfg()).get("recall_enabled") == flipped
+        S._SETTINGS_CACHE = None
+        assert (await S._cfg()).get("recall_enabled") == before
+
+    asyncio.run(_run())
+
+
+def test_run_finishes_normally_with_empty_filter(monkeypatch):
+    """筛选后无题 → 正常结束（total=0/done=0），不得报错。"""
+    async def _run():
+        from app.plugin.module_ai.query import eval_runner as R
+
+        async def fake_ask(question, auth, datasource, force_slow=False):
+            return {"path": "fast", "is_error": False, "sql": "SELECT 1", "rows": [[1]]}
+
+        monkeypatch.setattr(R, "_ask", fake_ask)
+        rid = R.start_run(R._auth(), filter={"difficulty": "不存在的难度"})
+        for _ in range(60):
+            st = R.get_status(rid)
+            if st and st["status"] in ("done", "error"):
+                break
+            await asyncio.sleep(0.05)
+        assert st["status"] == "done", st
+        assert st["total"] == 0 and st["done"] == 0
+
+    asyncio.run(_run())
+
+
+def test_ablation_runs_baseline_first_and_is_serial(monkeypatch):
+    async def _run():
+        from app.plugin.module_ai.query import eval_runner as R
+
+        order: list[str] = []
+
+        async def fake_group(name, auth, flt, overrides, run_id):
+            order.append(name)
+            return {"data_accuracy": 0.5}
+
+        monkeypatch.setattr(R, "_run_ablation_group", fake_group)
+        rid = R.start_ablation(R._auth(), keys=["recall_enabled", "kg_enabled"])
+        for _ in range(60):
+            rep = R.get_ablation_report(rid)
+            if rep and rep["status"] in ("done", "error"):
+                break
+            await asyncio.sleep(0.05)
+        assert order[0] == "baseline"  # 先跑全开基线
+        assert order == ["baseline", "recall_enabled", "kg_enabled"]  # 串行、每组一次
+        assert set(R.get_ablation_report(rid)["table"]) == {"baseline", "recall_enabled", "kg_enabled"}
+
+    asyncio.run(_run())
