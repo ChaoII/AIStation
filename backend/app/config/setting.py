@@ -588,10 +588,14 @@ class Settings(BaseSettings):
         - list[str | None]: 中间件 import 路径或 None。
         """
         # 中间件列表（注册时逆序叠加：下列第一项在列表中最前，最终位于最外层，优先生效）
+        # ⚠️ DBSessionMiddleware 必须**列在最后**（注册后位于最内层、紧贴端点）：
+        # 它依赖「中间件与端点同一任务」来判定请求会话归属，若放到
+        # RequestLogMiddleware（BaseHTTPMiddleware）外层会跨任务而失效。
         MIDDLEWARES: list[str | None] = [
             "app.core.middlewares.CustomCORSMiddleware" if self.CORS_ORIGIN_ENABLE else None,
             "app.core.middlewares.RequestLogMiddleware" if self.OPERATION_LOG_RECORD else None,
             "app.core.middlewares.CustomGZipMiddleware" if self.GZIP_ENABLE else None,
+            "app.core.middlewares.DBSessionMiddleware" if self.SQL_DB_ENABLE else None,
         ]
         return MIDDLEWARES
 
@@ -606,6 +610,9 @@ class Settings(BaseSettings):
         EVENTS: list[str | None] = [
             "app.core.database.redis_connect" if self.REDIS_ENABLE else None,
             "app.core.database.async_pool_warmup" if self.SQL_DB_ENABLE else None,
+            # 连接泄漏看门狗：被中断的请求会漏连接（详见该函数说明），
+            # 没有它池满后**不会自愈，只能重启后端**
+            "app.core.database.db_leak_watchdog" if self.SQL_DB_ENABLE else None,
         ]
         return EVENTS
 

@@ -236,10 +236,14 @@ def test_commits_on_success():
 
 def test_rolls_back_on_error():
     async def _run():
+        # 先独立建表并提交，使被测请求只负责插入（否则建表也会被一起回滚，
+        # SQLite 下后续查询会因表不存在而报错，测不出回滚语义）。
+        async with async_db_session.begin() as db:
+            await db.execute(text("CREATE TABLE IF NOT EXISTS _mw_probe2 (v int)"))
+            await db.execute(text("DELETE FROM _mw_probe2"))
+
         async def inner(scope, receive, send):
             async with async_db_session.begin() as db:
-                await db.execute(text("CREATE TABLE IF NOT EXISTS _mw_probe2 (v int)"))
-                await db.execute(text("DELETE FROM _mw_probe2"))
                 await db.execute(text("INSERT INTO _mw_probe2 VALUES (9)"))
             raise RuntimeError("boom")
 

@@ -1,5 +1,7 @@
+import asyncio
 import json
 import time
+from contextlib import suppress
 
 from starlette.middleware.base import (
     BaseHTTPMiddleware,
@@ -14,6 +16,11 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from app.api.v1.module_system.params.service import ParamsService
 from app.common.response import ErrorResponse
 from app.config.setting import settings
+from app.core.database import (
+    activate_request_session,
+    async_db_session,
+    deactivate_request_session,
+)
 from app.core.exceptions import CustomException
 from app.core.logger import log
 from app.core.security import decode_access_token
@@ -205,6 +212,49 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             log.exception(f"中间件处理异常: {e!s}")
             # 不回显异常细节，避免泄露内部实现/敏感信息
             return ErrorResponse(msg="系统异常，请联系管理员")
+
+
+class DBSessionMiddleware:
+    """请求作用域会话中间件：一请求一条连接，且保证归还。
+
+    必须是**纯 ASGI 中间件**：``BaseHTTPMiddleware`` 会把下游放进新任务执行，
+    使 ContextVar 的「owner task」判定失配（端点任务 ≠ 中间件任务），
+    服务层就无法复用请求会话。
+
+    行为（配合 ``app.core.database`` 的请求作用域会话）：
+
+    - ``http`` 请求：建一条会话 → 登记请求会话（记录 owner task）→ 交给下游；
+      正常结束提交、异常回滚；``finally`` 里关闭并归还连接。
+      用 ``asyncio.shield`` 保证即使当前任务已被取消（浏览器翻页/关闭/超时），
+      关闭动作仍能跑完——这正是连接泄漏的根因路径。
+    - 非 ``http``（lifespan / websocket）：直接透传，不建会话。
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # 此处尚未登记请求会话，拿到的是真会话（不会被复用成自身）。
+        async with async_db_session() as session:
+            token = activate_request_session(session)
+            try:
+                await self.app(scope, receive, send)
+            except BaseException:
+                with suppress(Exception):
+                    await asyncio.shield(session.rollback())
+                raise
+            else:
+                if session.in_transaction():
+                    with suppress(Exception):
+                        await asyncio.shield(session.commit())
+            finally:
+                deactivate_request_session(token)
+                with suppress(Exception):
+                    await asyncio.shield(session.close())
 
 
 class CustomGZipMiddleware(GZipMiddleware):
