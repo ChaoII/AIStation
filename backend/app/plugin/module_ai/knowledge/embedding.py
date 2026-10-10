@@ -53,7 +53,13 @@ async def _embed_agno(texts: list[str], model_id: int | None) -> list[list[float
 
     from app.plugin.module_ai.models.service import AiModelService, build_headers
 
-    runtime = await AiModelService.get_runtime_model(model_id=model_id)
+    runtime = (
+        await AiModelService.get_runtime_model(model_id=model_id)
+        if model_id is not None
+        else await AiModelService.get_runtime_model(usage="embedding")
+    )
+    if not runtime:  # 兜底：未标注 usage=embedding 时退回默认模型
+        runtime = await AiModelService.get_runtime_model(model_id=model_id)
     if not runtime:
         raise RuntimeError("未配置嵌入模型")
     base = runtime["base_url"].rstrip("/")
