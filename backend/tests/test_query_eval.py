@@ -204,6 +204,74 @@ def test_ablation_runs_baseline_first_and_is_serial(monkeypatch):
 
 
 # ===========================================================================
+# 批次7：生成专用题（指标答不了的题才算"考生成能力"）
+# ===========================================================================
+def test_verify_and_save_generation_only_rejects_metric_eligible(monkeypatch):
+    """快路径能答的题不算生成题：`generation_only=True` 时必须被拒。"""
+    async def _run():
+        from types import SimpleNamespace
+
+        from app.plugin.module_ai.query import eval_generate as G
+
+        async def fake_run(sql, ds, auth):
+            return {"ok": True, "rows": [[5]], "error": ""}
+
+        monkeypatch.setattr(G, "_run_gold", fake_run)
+        # 让"今日告警数"命中指标（快路径能答），"各部门平均单价"答不了
+        async def _elig(q, ds):
+            return "告警" in q
+
+        monkeypatch.setattr(G, "_metric_eligible_for", _elig)
+        auth = SimpleNamespace(user=SimpleNamespace(id=1))
+        out = await G.verify_and_save(
+            [
+                {"question": "今天一共产生了多少条告警？", "gold_sql": "SELECT 1",
+                 "difficulty": "简单", "form": "单维统计"},
+                {"question": "各部门的平均单价是多少？", "gold_sql": "SELECT 1",
+                 "difficulty": "中等", "form": "多维报表"},
+            ],
+            "system", auth, generation_only=True,
+        )
+        assert out["saved"] == 1, out
+        assert out["rejected_metric"] == 1, out
+
+        from app.plugin.module_ai.query.eval_set import list_cases
+
+        qs = {c["question"] for c in await list_cases(datasource="system")}
+        assert "各部门的平均单价是多少？" in qs
+        assert "今天一共产生了多少条告警？" not in qs
+
+    asyncio.run(_run())
+
+
+def test_verify_and_save_default_keeps_metric_questions(monkeypatch):
+    """默认（非 generation_only）仍然收录指标题 —— 快路径的枚举能力也要保住。"""
+    async def _run():
+        from types import SimpleNamespace
+
+        from app.plugin.module_ai.query import eval_generate as G
+
+        async def fake_run(sql, ds, auth):
+            return {"ok": True, "rows": [[5]], "error": ""}
+
+        monkeypatch.setattr(G, "_run_gold", fake_run)
+
+        async def _elig(q, ds):
+            return True
+
+        monkeypatch.setattr(G, "_metric_eligible_for", _elig)
+        auth = SimpleNamespace(user=SimpleNamespace(id=1))
+        out = await G.verify_and_save(
+            [{"question": "枚举题EV_METRIC", "gold_sql": "SELECT 1",
+              "difficulty": "简单", "form": "单维统计"}],
+            "system", auth,
+        )
+        assert out["saved"] == 1, out
+
+    asyncio.run(_run())
+
+
+# ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
 def test_lenient_match_normalizes_null_on_both_sides():

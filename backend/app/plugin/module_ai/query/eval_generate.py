@@ -21,6 +21,7 @@ def build_prompt(
     difficulty: str,
     form: str,
     n: int,
+    relations: list[str] | None = None,
 ) -> str:
     """构造出题提示：只给真实表/字段，要求可直接执行的只读 SELECT。"""
     lines = [
@@ -43,6 +44,11 @@ def build_prompt(
     if terms:
         lines.append("【业务术语】" + "；".join(
             f"{t.get('term')}→{t.get('metric_key') or t.get('field_path')}" for t in terms[:15]))
+    if relations:
+        lines.append("【表间关联（可用于 JOIN，格式 源表.源字段 → 目标表.目标字段）】")
+        for r in relations[:60]:
+            lines.append(f"  {r}")
+        lines.append("出「联表/占比/多维」类题目时，请使用上面给出的关联路径。")
     return "\n".join(lines)
 
 
@@ -116,7 +122,27 @@ async def _run_gold(sql: str, datasource: str, auth) -> dict:
     return {"ok": (not err) and bool(res.get("ok", True)), "rows": rows, "error": err}
 
 
-async def verify_and_save(cases: list[dict], datasource: str, auth) -> dict:
+async def _metric_eligible_for(question: str, datasource: str) -> bool:
+    """该问句能否被**指标快路径**答出。
+
+    能答出 → 它考的是"指标枚举"而不是"模型把自然语言推理成 SQL 的能力"，
+    生成专用题集（``generation_only``）应把它排除。
+    """
+    try:
+        from .service import AiQueryService, _is_listing_question, _match_metric
+
+        if _is_listing_question(question):
+            return False
+        metrics = await AiQueryService.list_metrics(datasource)
+        terms = await AiQueryService.list_terms(datasource)
+        return _match_metric(question, metrics, terms) is not None
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[ai-eval] 指标可答性判定失败（按不可答处理）: {str(e)[:100]}")
+        return False
+
+
+async def verify_and_save(cases: list[dict], datasource: str, auth,
+                          generation_only: bool = False) -> dict:
     """**执行校验后入库**：SQL 可执行且行数 > 0 才 ``verified=true`` 收录。
 
     同时识别**退化题**（金标结果为空/NULL/单值 0）：仍然收录以保留覆盖面，
@@ -126,7 +152,7 @@ async def verify_and_save(cases: list[dict], datasource: str, auth) -> dict:
     from .eval_metrics import is_degenerate_result
     from .eval_set import upsert_case
 
-    saved = rejected = degenerate = 0
+    saved = rejected = degenerate = rejected_metric = 0
     reasons: list[str] = []
     for c in cases or []:
         sql = str(c.get("gold_sql") or "").strip()
@@ -140,23 +166,32 @@ async def verify_and_save(cases: list[dict], datasource: str, auth) -> dict:
         deg = is_degenerate_result(res["rows"])
         if deg:
             degenerate += 1
+        # 生成专用题集：指标快路径能答的题不算"考生成能力"
+        eligible = await _metric_eligible_for(str(c.get("question") or ""), datasource)
+        if generation_only and eligible:
+            rejected_metric += 1
+            continue
+        notes = "degenerate" if deg else ""
+        if eligible:
+            notes = (notes + ",metric").strip(",")
         await upsert_case({
-            **c, "datasource": datasource, "verified": True,
-            "notes": "degenerate" if deg else "",
+            **c, "datasource": datasource, "verified": True, "notes": notes,
         })
         saved += 1
     log.info(
-        f"[ai-eval] 生成校验：收录 {saved} 题（其中退化 {degenerate} 题），拒绝 {rejected} 题"
+        f"[ai-eval] 生成校验：收录 {saved} 题（退化 {degenerate}），拒绝 {rejected} 题"
+        f"，因指标可答而拒 {rejected_metric} 题"
     )
     return {"saved": saved, "rejected": rejected, "degenerate": degenerate,
-            "reasons": reasons[:10]}
+            "rejected_metric": rejected_metric, "reasons": reasons[:10]}
 
 
 # ---------------------------------------------------------------------------
 # LLM 调用（复用问答模型；解析走 parse_cases）
 # ---------------------------------------------------------------------------
 async def generate_round(
-    datasource: str, difficulty: str, form: str, n: int, auth
+    datasource: str, difficulty: str, form: str, n: int, auth,
+    generation_only: bool = False,
 ) -> dict:
     """跑**一轮**出题：LLM → 解析 → **维度以调用方为准** → 校验入库。
 
@@ -190,7 +225,7 @@ async def generate_round(
             c["expected_metric"] = by_name.get(em, "")
         else:
             c["expected_metric"] = em
-    out = await verify_and_save(cases, datasource, auth)
+    out = await verify_and_save(cases, datasource, auth, generation_only=generation_only)
     out["parsed"] = len(cases)
     return out
 

@@ -73,6 +73,8 @@ def _case_row(r) -> dict:
         "notes": notes,
         # 退化题（金标结果空/NULL/单值 0）：精度统计不计入分母
         "degenerate": "degenerate" in notes,
+        # 指标快路径能答的题：它考的是"指标枚举"而非"模型生成 SQL"
+        "metric_eligible": "metric" in notes.split(","),
     }
 
 
