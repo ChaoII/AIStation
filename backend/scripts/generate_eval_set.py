@@ -47,7 +47,9 @@ async def _schema_rows(datasource: str) -> list[dict]:
                 {"name": c.split("(", 1)[0], "comment": ""} for c in cols]}
             for t, cols in schema.items()
         ]
-    return await list_ds_schema(int(datasource.split(":")[-1]))
+    # ⚠️ 自定义数据源只给**已纳入范围**的表（业务且有数据）——
+    # 旧实现给全部同步表，出题模型会拿空表出题 → 金标必空/退化。
+    return await list_ds_schema(int(datasource.split(":")[-1]), included_only=True)
 
 
 async def _relations(datasource: str) -> list[str]:

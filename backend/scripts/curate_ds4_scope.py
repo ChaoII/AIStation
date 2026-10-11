@@ -59,9 +59,10 @@ async def main(dry: bool) -> None:
     counts = {str(r[0]).upper(): int(r[1] or 0) for r in res["rows"]}
     kind = {t: classify(t) for t in counts}
 
-    on = sorted(t for t, k in kind.items() if k == "business")
-    off = sorted(t for t, k in kind.items() if k != "business")
-    print(f"ds:4 表 {len(counts)} 张：纳入 {len(on)}（业务），移出 {len(off)}（技术/其它）")
+    on = sorted(t for t, k in kind.items() if k == "business" and counts[t] > 0)
+    off = sorted(t for t, k in kind.items() if k != "business" or counts[t] == 0)
+    print(f"ds:4 表 {len(counts)} 张：纳入 {len(on)}（业务**且有数据**），"
+          f"移出 {len(off)}（技术/其它 **或空表**）")
 
     async with async_db_session() as db:
         cur = {
