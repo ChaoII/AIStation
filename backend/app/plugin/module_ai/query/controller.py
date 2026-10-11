@@ -703,6 +703,68 @@ async def recall_probe(
     return SuccessResponse(data={"question": question, "final": final}, msg="查询成功")
 
 
+# ---- 自定义报表模板（一次沉淀、长期复用）----
+@AiQueryRouter.get("/reports", summary="报表模板列表")
+async def report_list(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str | None = None,
+    verified_only: bool = False,
+) -> JSONResponse:
+    from .report import list_reports
+
+    return SuccessResponse(
+        data=await list_reports(datasource, verified_only), msg="查询成功"
+    )
+
+
+@AiQueryRouter.post("/reports", summary="新增/更新报表模板")
+async def report_upsert(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict, Body()],
+) -> JSONResponse:
+    from .report import upsert_report
+
+    return SuccessResponse(data=await upsert_report(data, auth), msg="保存成功")
+
+
+@AiQueryRouter.delete("/reports", summary="删除报表模板")
+async def report_delete(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[list[int], Body()],
+) -> JSONResponse:
+    from .report import delete_reports
+
+    return SuccessResponse(data={"deleted": await delete_reports(data)}, msg="已删除")
+
+
+@AiQueryRouter.post("/reports/{report_id}/run", summary="执行报表模板")
+async def report_run(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    report_id: int,
+    data: Annotated[dict | None, Body()] = None,
+) -> JSONResponse:
+    from .report import run_report
+
+    body = data or {}
+    return SuccessResponse(
+        data=await run_report(report_id, body.get("params"), auth), msg="执行成功"
+    )
+
+
+@AiQueryRouter.post("/reports/{report_id}/verify", summary="人工确认报表模板")
+async def report_verify(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    report_id: int,
+) -> JSONResponse:
+    from .report import get_report, upsert_report
+
+    rep = await get_report(report_id)
+    if not rep:
+        return ErrorResponse(msg="报表不存在")
+    await upsert_report({**rep, "key": rep["key"], "verified": True}, auth)
+    return SuccessResponse(data={"id": report_id, "verified": True}, msg="已确认")
+
+
 # ---- 问数评测（测试集 / 运行 / 报表 / 消融）----
 @AiQueryRouter.get("/eval/cases", summary="评测测试集列表")
 async def eval_list_cases(
