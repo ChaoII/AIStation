@@ -445,6 +445,16 @@ def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: li
         proj = sorted(tuple(str(_norm_cell(v)) for v in row[:k]) for row in llm_rows)
         if proj == gset:
             return True
+    # (3) 模型列**更少**（返回金标列的前缀子集）：把金标也投影到模型列数再比。
+    #     实测窗口函数题常是"逻辑完全正确、只少选了一列"，旧口径一律判错 → 大量假失败。
+    km = len(llm_cols)
+    if 1 <= km < k and all(len(r) >= km for r in llm_rows):
+        gproj = sorted(
+            tuple(str(_norm_cell(v)) for v in row[:km]) for row in (gold_rows or [])
+        )
+        proj = sorted(tuple(str(_norm_cell(v)) for v in row[:km]) for row in llm_rows)
+        if proj == gproj:
+            return True
     return False
 
 

@@ -345,6 +345,42 @@ def test_pick_fewshots_prefers_relevant_and_same_datasource():
     assert [p["sql"] for p in picked] == ["S3", "S2"], picked
 
 
+def test_lenient_match_allows_model_subset_of_gold_columns():
+    """模型只返回金标列的一个**前缀子集**时，只要行值对得上就算对。
+
+    实测：窗口函数题模型逻辑完全正确（ROW_NUMBER OVER + rn=1），
+    但少选了一列（金标多一列 CREATIONTIME）→ 旧口径一律判错，
+    导致「窗口函数 0%」里混进了大量"逻辑对、列少了"的假失败。
+    """
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold_cols = ["FACILITYID", "CODE", "NAME", "CREATIONTIME"]
+    gold_rows = [[1, "A", "测点A", "2024-01-01"], [2, "B", "测点B", "2024-01-02"]]
+    model_cols = ["设备ID", "测点编码", "测点名称"]
+    model_rows = [[1, "A", "测点A"], [2, "B", "测点B"]]
+    assert lenient_match(gold_cols, gold_rows, model_cols, model_rows) is True
+
+
+def test_lenient_match_still_rejects_wrong_values_with_subset_columns():
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold_cols = ["FACILITYID", "CODE", "NAME", "CREATIONTIME"]
+    gold_rows = [[1, "A", "测点A", "2024-01-01"]]
+    model_cols = ["设备ID", "测点编码", "测点名称"]
+    model_rows = [[1, "A", "别的名字"]]        # 值不对
+    assert lenient_match(gold_cols, gold_rows, model_cols, model_rows) is False
+
+
+def test_lenient_match_subset_requires_same_row_count():
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold_cols = ["A", "B", "C"]
+    gold_rows = [[1, "x", "p"], [2, "y", "q"]]
+    model_cols = ["A", "B"]
+    model_rows = [[1, "x"]]                    # 行数不同
+    assert lenient_match(gold_cols, gold_rows, model_cols, model_rows) is False
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
