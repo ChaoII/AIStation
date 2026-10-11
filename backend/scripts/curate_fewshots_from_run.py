@@ -66,10 +66,33 @@ async def main(datasource: str, run_id: str | None, dry: bool) -> None:
     print(f"候选 {out['candidates']}，入库 {out['added']}，跳过（金标不可用/退化）{out['skipped']}")
 
 
+async def _rollback() -> None:
+    from main import create_app
+
+    create_app()
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    async with async_db_session.begin() as db:
+        r = await db.execute(
+            text(
+                "UPDATE ai_query_fewshot SET is_deleted=true WHERE is_deleted=false "
+                "AND description='auto-curated:from-run'"
+            )
+        )
+    print(f"已回滚 auto-curated 沉淀 {getattr(r, 'rowcount', '?')} 条")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--datasource", default="ds:4")
     ap.add_argument("--run-id", default=None)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--rollback", action="store_true",
+                    help="回滚所有 auto-curated 沉淀（做留出法对照前先清干净）")
     a = ap.parse_args()
-    asyncio.run(main(a.datasource, a.run_id, a.dry_run))
+    if a.rollback:
+        asyncio.run(_rollback())
+    else:
+        asyncio.run(main(a.datasource, a.run_id, a.dry_run))
