@@ -5135,6 +5135,7 @@ class AiQueryService:
             "query_cost_max_rows": "50000",          # 代价护栏预估行数上限
             "fewshot_auto_curate": "true",           # 反馈正例自动沉淀为 few-shot
             "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
+            "two_stage_planning": "false",           # 两段式（先出执行计划再写 SQL）默认关：需 A/B 验证
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
             "agno_tool_agent": "false",              # 工具化 Agent(多轮往返，慢)；false=单次生成+本地执行自纠错
             "kg_enabled": "true",                    # 知识图谱图遍历召回(补关联表/联表路径)
@@ -5765,6 +5766,25 @@ class AiQueryService:
         return {"path": "slow", "is_error": True, "answer": f"查询失败：{last_err}", "sql": sql}
 
     @classmethod
+    async def _plan_llm(cls, prompt: str, runtime: dict, temperature: float = 0.0) -> str:
+        """计划阶段的一次 LLM 调用（只出 JSON 计划，不写 SQL）。"""
+        from openai import AsyncOpenAI
+
+        from app.plugin.module_ai.models.service import build_headers
+
+        client = AsyncOpenAI(
+            base_url=runtime["base_url"], api_key=runtime.get("api_key") or "sk-none",
+            timeout=60,
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-query-plan"),
+        )
+        resp = await client.chat.completions.create(
+            model=runtime["model"], messages=[{"role": "user", "content": prompt}],
+            temperature=temperature, max_tokens=nl2sql_max_tokens(None),
+        )
+        return resp.choices[0].message.content or ""
+
+    @classmethod
     async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None,
                       temperature: float = 0.0, auth=None) -> str:
         """Agno Agent 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
@@ -5779,6 +5799,25 @@ class AiQueryService:
         # 所以这个数字必须可见（实测全量倾倒时 37K 字符 → 生成 7s）
         log.warning("[query] prompt 长度={} 字符", len(schema_ctx))
         cfg = await cls._cfg()
+        # 两段式分解：**多步题先出执行计划**（可检查的中间产物），再据计划写 SQL。
+        # 失败即**降级**为单段生成（绝不因计划失败而答不出来）。
+        # ⚠️ 独立开关、**默认关**：实测对个别题会把 SQL 变空（prompt 变长 + 模型只输出计划），
+        #    必须先用留出法 A/B 验证再决定是否默认开启。
+        if cls._cfg_bool(cfg, "two_stage_planning", False):
+            try:
+                from .plan import format_plan, is_multistep, parse_plan, plan_prompt
+
+                if is_multistep(question):
+                    _plan_text = await cls._plan_llm(plan_prompt(question), runtime, temperature)
+                    _plan = parse_plan(_plan_text)
+                    if _plan:
+                        schema_ctx = schema_ctx + "\n\n" + format_plan(_plan)
+                        log.warning("[query] 两段式：计划已生成（表 {} 张）",
+                                    len(_plan.get("tables") or []))
+                    else:
+                        log.warning("[query] 两段式：计划解析失败，降级为单段生成")
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 计划阶段失败，降级为单段生成: {str(e)[:100]}")
         rules = []
         if cls._cfg_bool(cfg, "entity_name_rule", True):
             rules.append("（1）问题要求按实体（摄像头/设备/算法/数据集/规则等）展示时，"
