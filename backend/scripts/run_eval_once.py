@@ -33,7 +33,7 @@ async def _wait_run(run_id: str):
 
 async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
                force_slow: bool = False, datasource: str = "",
-               split: str = "") -> None:
+               split: str = "", config: dict | None = None) -> None:
     from main import create_app
 
     create_app()
@@ -54,7 +54,7 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
             flt["datasource"] = datasource
         if split:
             flt["split"] = split
-        rid = R.start_run(auth, filter=flt or None)
+        rid = R.start_run(auth, filter=flt or None, config=config or None)
         st = await _wait_run(rid)
         print("\n=== 全量运行 summary ===")
         print(json.dumps(st.get("summary") or {}, ensure_ascii=False))
@@ -106,9 +106,11 @@ def cli() -> None:
     ap.add_argument("--force-slow", action="store_true")
     ap.add_argument("--datasource", default="")
     ap.add_argument("--split", default="", help="留出法：只跑 A 或 B 半")
+    ap.add_argument("--config", default="", help='配置覆盖 JSON，如 {"two_stage_planning":"true"}')
     a = ap.parse_args()
+    cfg = json.loads(a.config) if a.config else None
     asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run, a.force_slow,
-                     a.datasource, a.split))
+                     a.datasource, a.split, cfg))
 
 
 if __name__ == "__main__":
