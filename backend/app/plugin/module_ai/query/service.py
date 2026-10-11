@@ -5511,6 +5511,26 @@ class AiQueryService:
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
 
+        # 澄清反问：命中**确定性歧义**（如「按原煤仓分组」而表里同时有名称/编号两列）
+        # → 先问用户，不生成 SQL。猜错的成本远高于问一句。
+        # 用户已回答（问句里带【澄清】）则跳过；每轮最多问一次。
+        if "【澄清】" not in question:
+            try:
+                from .clarify import detect_clarify
+
+                schema_map = (
+                    await cls._system_schema()
+                    if (datasource or SYSTEM_DS) == SYSTEM_DS
+                    else await cls._ds_schema_map(datasource)
+                )
+                _c = detect_clarify(question, schema_map)
+                if _c:
+                    return {"path": "clarify", "clarify": _c, "question": question,
+                            "is_error": False, "sql": "", "columns": [], "rows": [],
+                            "took_ms": 0, "metric": None, "ontology_used": []}
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 澄清检测失败（忽略，继续正常问答）: {str(e)[:100]}")
+
         # 列举类问题不走指标模板（快路径只认指标聚合），强制走 NL2SQL
         if not _is_listing_question(question):
             metric = _match_metric(question, metrics, terms)
