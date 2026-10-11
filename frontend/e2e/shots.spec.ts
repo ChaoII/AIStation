@@ -38,10 +38,10 @@ test("截图：问数页（澄清/存为报表/反馈）", async ({ page }) => {
   await prepare(page, "/#/ai/query");
   // 先提一个**快路径**问题（秒回），让行内按钮（存为报表/有用/没用）渲染出来
   const ta = page.locator("textarea").first();
-  await ta.fill("系统里有多少个用户？");
+  await ta.fill("统计每个摄像头的告警数量");
   await page.getByRole("button", { name: "提问" }).click();
-  await page.waitForSelector(".q-msg__fb", { timeout: 30_000 });
-  await page.waitForTimeout(800);
+  await page.waitForSelector(".q-msg__fb", { timeout: 60_000 });
+  await page.waitForTimeout(1_200);
   await page.screenshot({ path: "e2e/shots/ai-query.png", fullPage: true });
 });
 

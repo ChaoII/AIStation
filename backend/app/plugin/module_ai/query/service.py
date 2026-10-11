@@ -1059,6 +1059,15 @@ def _bigrams(text: str) -> set[str]:
     return out
 
 
+#: 「分组/逐个」诉求：单值指标答不了，快路径必须让位给慢路径（实测会答成语义完全错）
+_GROUPING_RE = re.compile(r"(每个|各|逐[个条]|分别|分布|按.{0,8}(分组|统计|汇总|分类))")
+
+
+def _wants_grouping(question: str) -> bool:
+    """问句是否要求**按实体分组/逐个**（单值指标答不了）。"""
+    return bool(_GROUPING_RE.search(question or ""))
+
+
 def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
     """按得分选指标：**指标自己的用词**命中 + 术语绑定 + 时间语境对齐。
 
@@ -5544,6 +5553,16 @@ class AiQueryService:
         # 列举类问题不走指标模板（快路径只认指标聚合），强制走 NL2SQL
         if not _is_listing_question(question):
             metric = _match_metric(question, metrics, terms)
+            # 「每个/各/按X分组」是**分组诉求**：单值指标答不了 →
+            # 除非命中本身就是「分组型」指标（agg=group），否则让位给慢路径。
+            # 实测 bug：问「统计每个摄像头的告警数量」被 alert_count_today 抢答成
+            # 「今日告警数=0」，语义完全错。
+            if metric and metric.get("agg") != "group" and _wants_grouping(question):
+                log.warning(
+                    "[query] 分组诉求，跳过单值指标快路径：metric={} question={}",
+                    metric.get("key"), question[:40],
+                )
+                metric = None
         else:
             metric = None
         if metric:

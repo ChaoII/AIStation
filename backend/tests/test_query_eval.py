@@ -547,6 +547,21 @@ def test_model_columns_rule_still_rejects_wrong_values(monkeypatch):
     assert B.lenient_match(gold_cols, gold_rows, model_cols, model_rows) is False
 
 
+def test_wants_grouping_detects_per_entity_questions():
+    """「每个/各/按X分组」是**分组**诉求，单值指标答不了 → 快路径必须让位给慢路径。
+
+    实测 bug：问「统计每个摄像头的告警数量」被指标 `alert_count_today` 抢答成
+    「今日告警数=0」——语义完全错（用户要按摄像头分组）。
+    """
+    from app.plugin.module_ai.query.service import _wants_grouping
+
+    assert _wants_grouping("统计每个摄像头的告警数量") is True
+    assert _wants_grouping("各摄像头组的告警数量") is True
+    assert _wants_grouping("按告警类型统计各有多少条") is True
+    assert _wants_grouping("今天一共有多少条告警") is False
+    assert _wants_grouping("系统里有多少个用户") is False
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================

@@ -148,9 +148,9 @@
                   存为报表
                 </el-button>
               </div>
-              <div v-if="(m.ontology_used || []).length" class="q-msg__ont">
-                <span class="q-msg__ont-label">用到的本体对象：</span>
-                <el-tag v-for="t in m.ontology_used" :key="t" size="small" effect="plain">
+              <div v-if="recalledOf(m).length" class="q-msg__ont">
+                <span class="q-msg__ont-label">本轮召回的表（来自本体/语义检索）：</span>
+                <el-tag v-for="t in recalledOf(m)" :key="t" size="small" effect="plain">
                   {{ t }}
                 </el-tag>
               </div>
@@ -384,6 +384,14 @@ async function submitSaveReport() {
   } finally {
     srLoading.value = false;
   }
+}
+
+/** 本轮召回的表（来自本体/语义检索）——这才是"本体怎么进到问数里"的可视证据。 */
+function recalledOf(m: any): string[] {
+  const ev = m?.evidence || {};
+  const rt = ev.retrieved_tables || [];
+  if (rt.length) return rt;
+  return m?.ontology_used || [];
 }
 
 async function feedback(m: any, kind: string) {
