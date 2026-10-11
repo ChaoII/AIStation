@@ -215,9 +215,20 @@ async def _execute_custom_ds_sql(datasource_id: int, sql: str, auth=None) -> dic
     schema_rows = await list_ds_schema(datasource_id)
     allowed = {r["table"] for r in schema_rows}
     from . import executor as _ex
+    from .sql_quote import quote_schema_identifiers
 
     sql = validate_sql(sql, allowed)
-    return await _ex.execute_select(_ds_cfg_from_model(ds), sql)
+    # 大小写敏感库（如 ds:4）必须把表/列名写成「真实大小写 + 双引号」，
+    # 否则 PG 折成小写 → 关系/列不存在（实测把整题打崩的根因之一）。
+    schema_map = {
+        r["table"]: [c.get("name") for c in (r.get("columns") or [])]
+        for r in schema_rows
+    }
+    sql = quote_schema_identifiers(sql, schema_map)
+    out = await _ex.execute_select(_ds_cfg_from_model(ds), sql)
+    # 回传**实际执行**的 SQL（已加引号）：否则展示/排查看到的是未加引号的模板，会被误导
+    out["sql"] = sql
+    return out
 
 
 def _to_metric_dict(m: AiQueryMetricModel) -> dict:
@@ -592,13 +603,15 @@ def validate_sql(sql: str, allowed_tables: set[str], question: str = "") -> str:
             raise CustomException(msg="仅允许 SELECT 查询")
     if _FORBIDDEN.search(removed_semis):
         raise CustomException(msg="查询包含被禁止的写/DDL 语句")
-    # 白名单表
+    # 白名单表（**大小写不敏感**：大小写敏感库里模型可能把小写名写出来，
+    # 后面 quote_schema_identifiers 会还原成真名并加引号，所以这里放宽是安全的）
     from_src = re.findall(
         r"\bfrom\s+([A-Za-z_][A-Za-z0-9_\.]*)", removed_semis, re.IGNORECASE
     )
+    allowed_lower = {str(t).lower() for t in allowed_tables} if allowed_tables else set()
     for tbl in from_src:
         base = tbl.split(".")[-1].strip().strip('"')
-        if allowed_tables and base not in allowed_tables:
+        if allowed_lower and base.lower() not in allowed_lower:
             raise CustomException(msg=f"表「{base}」不在可查询白名单内")
     # AST 级校验（sqlglot）：确保是合法且仅 SELECT 的单条语句
     try:
@@ -5392,12 +5405,14 @@ class AiQueryService:
                     summary=cls._summarize(metric, res),
                 )
                 return cls._answer(msg, metric=metric)
-            except CustomException as e:
-                # 快路径执行失败 → 记录错误并尝试慢路径
+            except Exception as e:  # noqa: BLE001
+                # 快路径**任何**失败（含驱动异常）都不得整题崩溃 → 记录错误并回退慢路径。
+                # 早期只 catch CustomException，裸 ProgrammingError 会直接冒泡（实测 ds:4）。
+                reason = getattr(e, "msg", None) or str(e)
                 await cls._save_message(
                     sess["id"], question, path="fast", datasource=metric["datasource"],
                     sql=metric["sql_template"], rows=[], is_error=True,
-                    summary=f"快路径执行失败：{e.msg}",
+                    summary=f"快路径执行失败：{reason}",
                 )
                 return await cls._slow_path(question, sess["id"], metric["datasource"], auth)
 

@@ -5,6 +5,8 @@ file / api 类型不支持自由 SQL，请用「指标模板」方式查询。
 """
 from __future__ import annotations
 
+import time
+
 from sqlalchemy import text
 
 from app.core.exceptions import CustomException
@@ -56,16 +58,28 @@ async def test_connection(cfg: dict) -> dict:
 
 
 async def execute_select(cfg: dict, sql: str) -> dict:
-    """对数据源执行只读 SELECT。"""
+    """对数据源执行只读 SELECT。
+
+    驱动/语法异常**必须包装成 ``CustomException``**：上层（``ask`` 的快路径）
+    只认 ``CustomException`` 才会「记录错误 → 回退慢路径」；
+    裸 ``ProgrammingError`` 会直接冒泡把整题打崩（实测 ds:4 未加引号时就是这样）。
+    """
     eng = build_engine(cfg)
+    start = time.time()
     try:
         async with eng.connect() as conn:
             result = await conn.execute(text(sql))
             rows = result.fetchall()
             cols = list(result.keys())
+    except Exception as e:  # noqa: BLE001
+        raise CustomException(msg=f"数据源执行失败：{str(e)[:300]}") from e
     finally:
         await eng.dispose()
-    return {"columns": cols, "rows": [[_json_cell(v) for v in r] for r in rows[:MAX_ROWS]]}
+    # 必须带 `took_ms`：调用方（_slow_path）会读它，缺了就是 KeyError
+    # ——外部数据源问数整条路会直接 400（真实踩过）。
+    return {"columns": cols,
+            "rows": [[_json_cell(v) for v in r] for r in rows[:MAX_ROWS]],
+            "took_ms": int((time.time() - start) * 1000)}
 
 
 def _json_cell(v):
@@ -103,14 +117,31 @@ async def introspect_schema(cfg: dict) -> list[dict]:
                 tables = [r[0] for r in rows]
                 out = []
                 for t in tables:
+                    # **注释才是语义**：真实业务库的表/列名常是英文缩写
+                    # （FUEL_CB_COALBALANCE / COALMONEY），中文注释（"燃煤采购结算主表"
+                    # / "煤款金额"）是"人话 → 字段"唯一的桥。
+                    # 旧实现把 `column_default`（默认值）塞进 comment 字段，
+                    # 于是注释**从来没被读过**；导入本体后属性名全是英文，
+                    # 问数只能瞎猜（实测编出 coal_amount 这种不存在的列）。
                     cols = (await conn.execute(text(
-                        "SELECT column_name, data_type, COALESCE(column_default,'') "
-                        "FROM information_schema.columns WHERE table_name=:t ORDER BY ordinal_position"
+                        "SELECT c.column_name, c.data_type, "
+                        "COALESCE(col_description("
+                        "  (quote_ident(c.table_schema)||'.'||quote_ident(c.table_name))::regclass,"
+                        "  c.ordinal_position)::text, '') AS comment "
+                        "FROM information_schema.columns c "
+                        "WHERE c.table_schema='public' AND c.table_name=:t "
+                        "ORDER BY c.ordinal_position"
                     ), {"t": t})).fetchall()
+                    tcmt = (await conn.execute(text(
+                        "SELECT COALESCE(obj_description("
+                        "  (quote_ident(:s)||'.'||quote_ident(:t))::regclass)::text, '')"
+                    ), {"s": "public", "t": t})).scalar() or ""
                     out.append({
                         "table": t,
+                        "comment": tcmt,
                         "columns": [
-                            {"name": c[0], "type": c[1], "comment": c[2], "is_sensitive": False}
+                            {"name": c[0], "type": c[1], "comment": c[2],
+                             "is_sensitive": False}
                             for c in cols
                         ],
                     })
