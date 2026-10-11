@@ -138,6 +138,17 @@ export function importDsAsOntology(datasource_id: number, table: string) {
     data: { datasource_id, table },
   });
 }
+export function importDsAsOntologyBatch(
+  datasource_id: number,
+  tables?: string[] | null,
+  include_technical = false
+) {
+  return request({
+    url: `${API_PATH}/ontology/import-from-ds/batch`,
+    method: "post",
+    data: { datasource_id, tables: tables || null, include_technical },
+  });
+}
 export function getQueryRoles() {
   return request({ url: `${API_PATH}/datasources/roles`, method: "get" });
 }
@@ -160,6 +171,29 @@ export function queryFeedback(data: {
   correct_sql?: string | null;
 }) {
   return request({ url: `${API_PATH}/feedback`, method: "post", data });
+}
+
+// ---------------------------------------------------------------------------
+// 自定义报表模板（一次沉淀、长期复用）
+// ---------------------------------------------------------------------------
+export function getQueryReports(params?: { datasource?: string; verified_only?: boolean }) {
+  return request({ url: `${API_PATH}/reports`, method: "get", params });
+}
+export function saveQueryReport(data: any) {
+  return request({ url: `${API_PATH}/reports`, method: "post", data });
+}
+export function deleteQueryReports(ids: number[]) {
+  return request({ url: `${API_PATH}/reports`, method: "delete", data: ids });
+}
+export function runQueryReport(reportId: number, params?: any) {
+  return request({
+    url: `${API_PATH}/reports/${reportId}/run`,
+    method: "post",
+    data: { params: params || {} },
+  });
+}
+export function verifyQueryReport(reportId: number) {
+  return request({ url: `${API_PATH}/reports/${reportId}/verify`, method: "post" });
 }
 
 // 示例工程 / 统计 / 限额
@@ -525,6 +559,23 @@ export function saveQueryAssetColumn(data: {
   sensitive: boolean;
 }) {
   return request({ url: `${API_PATH}/assets/column/save`, method: "post", data });
+}
+
+/**
+ * 批量维护表级元数据（中文名/业务域/描述）。
+ * 上游库常缺注释，一张张填不现实；这里一次提交多行，同一事务保存。
+ * 只传 alias 时不会清空已填的 description（服务端"给了才覆盖"）。
+ */
+export function batchSaveQueryAssetMeta(
+  items: Array<{
+    table_name: string;
+    alias?: string;
+    domain?: string;
+    description?: string;
+    business_scenarios?: string;
+  }>
+) {
+  return request({ url: `${API_PATH}/assets/batch-meta`, method: "post", data: { items } });
 }
 
 // 基准测试

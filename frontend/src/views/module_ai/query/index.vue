@@ -138,12 +138,67 @@
               <div v-if="m.id" class="q-msg__fb">
                 <el-button link size="small" @click="feedback(m, 'up')">有用</el-button>
                 <el-button link size="small" @click="openCorrect(m)">没用</el-button>
+                <el-button
+                  v-if="m.sql && !m.is_error"
+                  link
+                  type="primary"
+                  size="small"
+                  @click="openSaveReport(m)"
+                >
+                  存为报表
+                </el-button>
               </div>
             </template>
           </div>
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="clarifyVisible" title="需要确认一下" width="520px" append-to-body>
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        title="这个问题有歧义，选一个更准的口径（选完会按你的选择重新查询）。"
+        class="q-fb-tip"
+      />
+      <div class="q-fb-q">{{ clarify?.question }}</div>
+      <el-radio-group v-model="clarifyPick">
+        <el-radio v-for="o in clarify?.options || []" :key="o.value" :label="o.value">
+          {{ o.label }}
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="clarifyVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!clarifyPick" @click="answerClarify">
+          按这个口径查
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="srVisible" title="存为报表" width="520px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="存下来后同类问题可长期复用（一次沉淀、长期复用）。确认后才进入正式报表列表。"
+        class="q-fb-tip"
+      />
+      <el-form label-width="80px">
+        <el-form-item label="报表名">
+          <el-input v-model="srName" placeholder="例如：各煤种月度化验汇总" />
+        </el-form-item>
+        <el-form-item label="来源问题">
+          <el-input :model-value="srMsg?.question || ''" readonly />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="srVisible = false">取消</el-button>
+        <el-button type="primary" :loading="srLoading" @click="submitSaveReport">
+          保存草稿
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="fbVisible" title="纠正这次查询" width="600px" append-to-body>
       <el-alert
@@ -181,6 +236,7 @@ import {
   getQuerySessions,
   queryAsk,
   queryFeedback,
+  saveQueryReport,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
@@ -259,6 +315,13 @@ async function ask() {
     });
     const d = r.data?.data || {};
     if (d.session_id && !sessionId.value) sessionId.value = d.session_id;
+    // 澄清反问：系统不确定（如"按原煤仓分组"而表里有名称/编号两列）→ 先问用户，不猜
+    if (d.path === "clarify" && d.clarify) {
+      clarify.value = { ...d.clarify, _q: q };
+      clarifyPick.value = "";
+      clarifyVisible.value = true;
+      return;
+    }
     // 局部刷新：只把这一条问答追加进列表，不重拉整个会话
     messages.value = [...messages.value, { ...d, question: q }];
     question.value = "";
@@ -269,6 +332,51 @@ async function ask() {
     ElMessage.error(e?.msg || "提问失败");
   } finally {
     asking.value = false;
+  }
+}
+
+/** 用户回答澄清：把选择拼回问句再问一次（复用同一链路，形成多轮）。 */
+async function answerClarify() {
+  const c = clarify.value;
+  if (!c || !clarifyPick.value) return;
+  const label = (c.options || []).find((o: any) => o.value === clarifyPick.value)?.label
+    || clarifyPick.value;
+  clarifyVisible.value = false;
+  question.value = `${c._q}\n【澄清】分组口径使用 ${label}`;
+  await ask();
+}
+
+/** 把这次问答沉淀成报表模板（草稿，需人工确认后才长期复用）。 */
+function openSaveReport(m: any) {
+  srMsg.value = m;
+  srName.value = "";
+  srVisible.value = true;
+}
+
+async function submitSaveReport() {
+  const m = srMsg.value;
+  if (!m?.sql) {
+    ElMessage.warning("这次没有可保存的 SQL");
+    return;
+  }
+  srLoading.value = true;
+  try {
+    const key = `r_${Date.now().toString(36)}`;
+    await saveQueryReport({
+      key,
+      name: srName.value.trim() || m.question.slice(0, 20),
+      datasource: m.datasource || datasource.value || "system",
+      question: m.question,
+      sql_template: m.sql,
+      columns: (m.columns || []).map((c: string) => ({ name: c, label: c })),
+      verified: false,
+    });
+    ElMessage.success("已存为报表草稿，可在报表列表确认");
+    srVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    srLoading.value = false;
   }
 }
 
@@ -286,6 +394,17 @@ const fbVisible = ref(false);
 const fbLoading = ref(false);
 const fbSql = ref("");
 const fbMsg = ref<any>(null);
+
+// 澄清反问（系统不确定时先问，不猜）
+const clarifyVisible = ref(false);
+const clarifyPick = ref("");
+const clarify = ref<any>(null);
+
+// 存为报表模板
+const srVisible = ref(false);
+const srLoading = ref(false);
+const srName = ref("");
+const srMsg = ref<any>(null);
 
 function openCorrect(m: any) {
   fbMsg.value = m;
