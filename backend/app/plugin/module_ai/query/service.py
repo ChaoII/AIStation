@@ -5717,6 +5717,21 @@ class AiQueryService:
                 if not res["rows"] and attempt == 0 and cls._cfg_bool(cfg, "empty_self_correct", True):
                     last_err = "上一轮查询返回结果为空，可能是条件/表/字段选择不准确，请检查后再重新生成一条 SQL。"
                     continue
+                # 结果自校验：占比合计/累计单调/排名范围/分组行数 —— 可疑就**带具体错因**重试一次
+                if attempt == 0 and cls._cfg_bool(cfg, "empty_self_correct", True):
+                    try:
+                        from .selfcheck import format_issue, run_selfcheck
+
+                        _iss = run_selfcheck(
+                            question, res.get("columns") or [], res.get("rows") or []
+                        )
+                        if _iss:
+                            last_err = ("上一次结果看起来有问题：" + format_issue(_iss)
+                                        + "。请修正后重新只返回一条 SQL。")
+                            log.warning(f"[query] 自校验命中，重试一次：{format_issue(_iss)}")
+                            continue
+                    except Exception as e:  # noqa: BLE001
+                        log.warning(f"[query] 自校验失败（忽略）: {str(e)[:100]}")
                 # 生成成功才入缓存（失败/空的 SQL 不入，避免污染）
                 _sql_cache_set(question, datasource, sql)
                 # 结果列头中文化 + 一句人话的答案（原先摘要是硬编码废话）
