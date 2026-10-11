@@ -106,9 +106,15 @@ def cli() -> None:
     ap.add_argument("--force-slow", action="store_true")
     ap.add_argument("--datasource", default="")
     ap.add_argument("--split", default="", help="留出法：只跑 A 或 B 半")
-    ap.add_argument("--config", default="", help='配置覆盖 JSON，如 {"two_stage_planning":"true"}')
+    ap.add_argument("--config", default="", help="配置覆盖，k=v 逗号分隔，如 two_stage_planning=true")
     a = ap.parse_args()
-    cfg = json.loads(a.config) if a.config else None
+    cfg: dict | None = None
+    if a.config:
+        cfg = {}
+        for part in a.config.split(","):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                cfg[k.strip()] = v.strip()
     asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run, a.force_slow,
                      a.datasource, a.split, cfg))
 
