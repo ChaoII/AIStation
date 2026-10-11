@@ -159,6 +159,10 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
         )
         if flt.get("limit"):
             cases = cases[: int(flt["limit"])]
+        # 留出法：只跑指定分集（A/B）
+        if flt.get("split"):
+            want = str(flt["split"]).upper()
+            cases = [c for c in cases if str(c.get("split") or "").upper() == want]
         _RUNS[run_id].update(total=len(cases))
         results: list[dict] = []
         schemas: dict[str, dict] = {}

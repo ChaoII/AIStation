@@ -75,6 +75,8 @@ def _case_row(r) -> dict:
         "degenerate": "degenerate" in notes,
         # 指标快路径能答的题：它考的是"指标枚举"而非"模型生成 SQL"
         "metric_eligible": "metric" in notes.split(","),
+        # 留出法分集（A/B）：错题沉淀只在 A 上做，评测只在 B 上跑，避免近义题泄漏
+        "split": "B" if "split:B" in notes else ("A" if "split:A" in notes else ""),
     }
 
 
