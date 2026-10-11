@@ -76,6 +76,37 @@ def test_empty_schema_returns_sql_unchanged():
 # ===========================================================================
 # 1b) 白名单校验要大小写不敏感（模型可能把小写名写出来）
 # ===========================================================================
+def test_unqualified_column_resolves_against_query_tables_not_global_pool():
+    """全局列池里**别的表**有同名小写列时不能用它 —— 必须用本查询涉及表的真实列名。
+
+    实测：模型写 `p.facilityid`（别名限定/小写），全局池里另有某表的小写
+    `facilityid`，于是被"保持原样"引号成 `"facilityid"` → PG 找不到该列 → 整题报错。
+    """
+    from app.plugin.module_ai.query.sql_quote import quote_schema_identifiers
+
+    schema = {
+        "CMMS_POINT": ["ID", "FACILITYID", "CODE"],
+        "CMMS_FACILITY": ["ID", "NAME"],
+        "OTHER_T": ["facilityid"],          # 别的表有同名小写列（干扰项）
+    }
+    sql = (
+        'SELECT p.facilityid FROM (SELECT facilityid FROM "CMMS_POINT") p '
+        'JOIN "CMMS_FACILITY" f ON p.facilityid = f."ID"'
+    )
+    out = quote_schema_identifiers(sql, schema)
+    assert '"FACILITYID"' in out, out
+    assert '"facilityid"' not in out, out
+
+
+def test_unqualified_column_single_table_still_works():
+    from app.plugin.module_ai.query.sql_quote import quote_schema_identifiers
+
+    schema = {"CMMS_POINT": ["ID", "FACILITYID"], "OTHER_T": ["facilityid"]}
+    out = quote_schema_identifiers('SELECT facilityid FROM "CMMS_POINT"', schema)
+    assert '"FACILITYID"' in out, out
+    assert '"facilityid"' not in out, out
+
+
 def test_validate_sql_accepts_case_insensitive_table_name():
     from app.plugin.module_ai.query.service import validate_sql
 

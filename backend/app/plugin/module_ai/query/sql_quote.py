@@ -74,13 +74,21 @@ def quote_schema_identifiers(sql: str, schema: dict[str, list[str]] | None) -> s
             return name
         return cands[0]
 
-    # 本查询用到的表（去重）；只有一张时，无限定列名优先按它的真实列名解析
+    # 本查询用到的表（去重）
     q_tables: list[str] = []
     for t in tree.find_all(exp.Table):
         real = tables.get(_norm(t.name))
         if real and real not in q_tables:
             q_tables.append(real)
     single_pool = cols_by_table.get(_norm(q_tables[0])) if len(q_tables) == 1 else None
+    # 无限定/别名限定的列名：只用**本查询涉及的表的列**解析。
+    # 用全局列池会撞到"别的表的小写同名列"，把 `FACILITYID` 引号成 `"facilityid"` →
+    # PG 找不到该列（实测 ds:4 窗口函数题因此整题报错）。
+    q_pool: dict[str, list[str]] = {}
+    for t in q_tables:
+        for vs in cols_by_table.get(_norm(t), {}).values():
+            for v in vs:
+                _add(q_pool, v)
 
     def _fix_table(node) -> None:
         real = tables.get(_norm(node.name))
@@ -96,7 +104,7 @@ def quote_schema_identifiers(sql: str, schema: dict[str, list[str]] | None) -> s
                 if real_c:
                     node.set("this", _identifier(real_c))
                 return
-        real_c = _pick(single_pool or all_cols, node.name)
+        real_c = _pick(single_pool or q_pool or all_cols, node.name)
         if real_c:
             node.set("this", _identifier(real_c))
 
