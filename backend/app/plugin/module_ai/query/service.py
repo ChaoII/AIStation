@@ -5526,6 +5526,15 @@ class AiQueryService:
                 )
                 _c = detect_clarify(question, schema_map)
                 if _c:
+                    # 澄清这一轮也要**落库**：否则刷新后丢历史、会话标题不更新
+                    try:
+                        await cls._save_message(
+                            sess["id"], question, path="clarify",
+                            datasource=datasource or SYSTEM_DS, sql="", rows=[],
+                            summary=_c.get("question") or "需要确认口径", is_error=False,
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        log.warning(f"[query] 澄清轮落库失败（忽略）: {str(e)[:100]}")
                     return {"path": "clarify", "clarify": _c, "question": question,
                             "is_error": False, "sql": "", "columns": [], "rows": [],
                             "took_ms": 0, "metric": None, "ontology_used": []}
