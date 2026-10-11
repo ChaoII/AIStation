@@ -7252,6 +7252,8 @@ class AiQueryService:
     # ---- 反馈 ----
     @classmethod
     async def feedback(cls, message_id: int, feedback: str, correct_sql: str | None, auth) -> dict:
+        import uuid as _uuid
+
         from sqlalchemy import select as _sel
 
         async with async_db_session.begin() as db:
@@ -7261,32 +7263,43 @@ class AiQueryService:
             m.feedback = feedback
             m.updated_id = auth.user.id
             sunk = False
-            if correct_sql and cls._cfg_bool(await cls._cfg(), "fewshot_auto_curate", True):
-                # 校验正确 SQL 合法后才沉淀，避免把错误 SQL 推进 few-shot
-                try:
-                    validate_sql(correct_sql, await _system_allowed())
-                except Exception:  # noqa: BLE001
-                    return {"id": m.id, "feedback": feedback, "sunk": False, "reason": "SQL 非法未入库"}
+            reason = ""
+            if correct_sql:
+                # ① **先存下来**：人工修正的 SQL 本身就是最宝贵的样本，
+                #    绝不能因为"没通过校验/沉淀失败"就丢掉（旧实现在这里 return，直接丢了）
                 m.correct_sql = correct_sql
-                # 反馈闭环：把用户修正的正确 SQL 沉淀进示例库，后续可被动态 few-shot 复用
-                exists = (
-                    await db.execute(
-                        _sel(AiQueryFewshotModel).where(
-                            AiQueryFewshotModel.question == m.question,
-                            AiQueryFewshotModel.is_deleted.is_(False),
-                        )
-                    )
-                ).scalar_one_or_none()
-                if not exists:
-                    db.add(
-                        AiQueryFewshotModel(
-                            datasource=m.datasource, question=m.question,
-                            sql=correct_sql, enabled=True,
-                            created_id=auth.user.id, updated_id=auth.user.id,
-                        )
-                    )
-                    sunk = True
-            elif correct_sql:
-                m.correct_sql = correct_sql
+                # ② 再尝试沉淀成 few-shot：按**该消息的数据源**校验
+                #    （旧实现永远用系统白名单 → ds:4 的修正 SQL 一律被判非法）
+                if cls._cfg_bool(await cls._cfg(), "fewshot_auto_curate", True):
+                    try:
+                        if (m.datasource or SYSTEM_DS) == SYSTEM_DS:
+                            validate_sql(correct_sql, await _system_allowed())
+                        else:
+                            _ds_id = int(str(m.datasource).split(":")[-1])
+                            _rows = await list_ds_schema(_ds_id, included_only=True)
+                            validate_sql(correct_sql, {r["table"] for r in _rows})
+                    except Exception as e:  # noqa: BLE001
+                        reason = f"SQL 未通过校验，已保存但未沉淀：{getattr(e, 'msg', e)}"
+                    else:
+                        exists = (
+                            await db.execute(
+                                _sel(AiQueryFewshotModel).where(
+                                    AiQueryFewshotModel.question == m.question,
+                                    AiQueryFewshotModel.is_deleted.is_(False),
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if not exists:
+                            # ⚠️ uuid/status 是 NOT NULL：旧实现没赋值 →
+                            #    插入报错 → **整个事务回滚** → 连反馈都存不下（实测 0 条反馈的真因之一）
+                            db.add(
+                                AiQueryFewshotModel(
+                                    datasource=m.datasource, question=m.question,
+                                    sql=correct_sql, enabled=True, status="0",
+                                    uuid=_uuid.uuid4().hex,
+                                    created_id=auth.user.id, updated_id=auth.user.id,
+                                )
+                            )
+                            sunk = True
             await db.flush()
-            return {"id": m.id, "feedback": feedback, "sunk": sunk}
+            return {"id": m.id, "feedback": feedback, "sunk": sunk, "reason": reason}
