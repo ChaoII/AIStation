@@ -153,3 +153,61 @@ python scripts/verify_ds4_hypothesis.py        # 验证"加引号即可跑通"�
 python scripts/audit_ds4_cases.py ds:4         # 测试集有效性审计（退化题占比）
 python scripts/audit_ds4_cases.py system
 ```
+
+---
+
+## 9. 修复进展（本轮已落地，TDD）
+
+### ✅ P0-1 大小写敏感数据源标识符加引号
+
+新增 `app/plugin/module_ai/query/sql_quote.py::quote_schema_identifiers(sql, schema)`：
+用 sqlglot 解析后把命中 schema 的表名/列名改写成**真实大小写 + 双引号**，
+未命中（函数名/别名/未知表）原样保留；schema 为空或解析失败则原样返回。
+
+接入点：`_execute_custom_ds_sql`（所有自定义数据源，含快/慢路径）。
+
+**踩坑（已修）**：真库里**别的表有小写同名列**（`contractprice`），合并列池时把已写对的
+`CONTRACTPRICE` 覆盖成小写 → 仍报「字段 contractprice 不存在」。改为
+「大写键 → 真实名列表」不覆盖 + **精确大小写优先** + 单表查询按该表列名解析。
+
+### ✅ P0-2 驱动异常兜底 + 回退慢路径
+
+- `executor.execute_select`：驱动异常**包装成 `CustomException`**（原来裸抛）。
+- `ask()` 快路径：`except CustomException` → **`except Exception`**，
+  任何失败都「记录错误 → 回退慢路径」，不再整题崩溃。
+
+### ✅ P0-3 回报的 SQL 必须是实际执行的那条
+
+`_execute_custom_ds_sql` 回传加引号后的 SQL（原来展示的是未加引号的模板，排查会被误导）。
+
+### ✅ P1-4 评测真正比对结果值
+
+- 新增 `eval_runner._run_gold_sql()`：每轮**预取金标结果**（按题缓存），
+  交给 `_lenient` 走 `lenient_match` 真比对。
+- 修 `benchmark.lenient_match`：金标侧原来用 `str(v)`（`None → 'None'`），
+  模型侧用 `_norm_cell`（`None → '∅'`）→ **NULL 永远不等**。改为两侧都 `_norm()`。
+  （ds:4 有 48% 的题结果是 NULL，这条不修等于这些题永远判错。）
+
+### 修复效果（12 题子集，真实运行）
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| ds:4 准确率 | 25%（3 题崩溃） | **100%**（4/4） |
+| system 准确率 | 100% | **87.5%**（7/8） |
+| 口径 | 「SQL 跑通即算对」 | **真比对结果值** |
+
+> ⚠️ system 从 100% 降到 87.5% 不是退化，是**指标变诚实**了：之前那条错答
+> 因为"SQL 跑通了"被算对，现在被正确判错。
+>
+> ⚠️ **ds:4 的 100% 也不代表质量**：那 4 题里多数仍是**退化题**（金标为 NULL/0，
+> 模型同样返回 NULL/0 就算"一致"）。要让它有意义，必须再做 P1-5。
+
+### 待办（未做）
+
+- **P1-5 退化题闸门**：出题时若金标聚合结果为 **NULL / 全 0**，判为退化题，
+  不入集或不参与精度统计。（否则 ds:4 的数字始终虚高。）
+- **P2-6 ds:4 few-shot**：至少 5~10 条（示范双引号 / 单表聚合 / 联表 / 时间窗口）。
+- **P2-7 ds:4 join 边**：ds:4 目前 0 条关系、0 条 `related_table`、KG 仅 1 条。
+- **P2-8 指标匹配收紧**：避免「合同**数量**」命中「结算**量**」这类跨语义命中
+  （本轮 ds:4 唯一仍判错的那题就是它）。
+
