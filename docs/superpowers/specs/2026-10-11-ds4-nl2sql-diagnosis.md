@@ -262,3 +262,61 @@ python scripts/audit_ds4_cases.py system
 - **ds:4 指标仅 4 个 / 331 表**：且 `avg_lf`/`avg_rz` 因列是**文本**而不可执行（需 `AVG(NULLIF(LF,'')::numeric)`）。
 - **题集**：65% 退化题仍在库里（已标记、不参与统计，但若要扩集应补**有数据**的题）。
 
+---
+
+## 11. 第三批：表范围收敛 + 指标扩充 + 评测集补样 + 缺数据清单
+
+### 11.1 表范围：331 → **184 张关键业务表**（排除 119 张系统/技术表）
+
+**问题**：自定义数据源的 `_ds_schema_map` 读**全部同步表**（331 张），
+把 `SYS_*`/`_BAK`/`JIMU_*`/`OPS_*` 等技术表一起塞进检索与 prompt —— 污染召回。
+
+**盘点**（`scripts/ds4_table_scope_report.py`）：
+
+| 类别 | 表数 | 有数据 | 已纳入资产 | 有本体对象 |
+|------|------|--------|-----------|-----------|
+| 业务（FUEL_/CMMS_/DTXY_/FR_/RPT_/…） | **192** | **99** | 184 | 192 |
+| 技术/系统（SYS_/_BAK/_LOG/JIMU_/OPS_/加密表） | 92 | 46 | 46 | 2 |
+| 其它 | 27 | 9 | 9 | 0 |
+
+**收敛**（`scripts/curate_ds4_scope.py`）：`ai_query_assets.included` 只留业务表；
+非业务表的本体对象 `enabled=false`。
+
+**让检索真正生效**（TDD，`tests/test_ds4_scope.py`）：`list_ds_schema(id, included_only=True)`
++ `_ds_schema_map` 改用它。
+
+**验证**：同步表 331 → 纳入 **184**；检索映射 **184 张、0 张系统表**；召回只返回业务表。
+
+### 11.2 指标：4 → **67 个**（只建有数据的表，逐条执行验证）
+
+`scripts/seed_ds4_metrics.py`：对有数据的 99 张业务表
+生成「条数」指标（40 个）+ 数值列「合计」指标（23 个），**每条先在目标库执行**，
+结果非 NULL 才入库（65 个计划里 63 个通过）。
+
+> 原有 4 个指标里有 3 个建在 **0 行表**上（`FUEL_CB_COALBALANCE` 等）→ 恒返回 NULL，
+> 这也是"指标快路径没用"的原因之一。
+
+### 11.3 评测集：ds:4 50 → **110 道**（新增 60 道**非退化**题）
+
+`scripts/seed_eval_from_metrics.py`：用**已验证过的指标**反推问句
+（「<指标名>是多少？」→ 金标 = 指标模板），天然非退化。
+新增 60 道（2 道已存在、2 个指标不可执行、3 个结果退化被跳过）。
+
+### 11.4 缺数据清单（交给人工补数）
+
+`docs/ds4-missing-data.md`（由 `scripts/ds4_missing_data_report.py` 生成）：
+- 业务表 192，其中 **0 行 93 张**、有数据 99 张；
+- 按子域分组（采购结算 / 化验煤质 / 采样制样 / 煤场库存 / 入炉耗用 / 运输计量 / 计划报表 / 组织基础）；
+- 附补数优先级：**采购与结算**（现有 3 个指标全建在这批空表上）＞ 化验煤质 ＞ 煤场库存 ＞ 计划报表。
+
+### 11.5 新增脚本一览
+
+| 脚本 | 作用 |
+|------|------|
+| `ds4_table_scope_report.py` | 表范围盘点（业务/技术、行数、是否纳入） |
+| `curate_ds4_scope.py` | 收敛 included 范围 + 输出缺数据清单 |
+| `ds4_missing_data_report.py` | 生成 `docs/ds4-missing-data.md` |
+| `seed_ds4_metrics.py` | 批量播种可执行指标 |
+| `seed_eval_from_metrics.py` | 用指标生成非退化评测题 |
+| `seed_ds4_joins.py` / `seed_ds4_fewshots.py` | 关系边归属回填 + 验证过的 few-shot |
+
