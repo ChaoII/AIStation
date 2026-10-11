@@ -17,6 +17,10 @@ export interface EvalCase {
 /** 总览指标（后端 `summarize`）。 */
 export interface EvalSummary {
   total: number;
+  /** 全部题数（含退化题） */
+  all_total?: number;
+  /** 退化题数（金标为空/NULL/单值 0）：**不计入精度分母** */
+  degenerate_n?: number;
   data_accuracy: number;
   semantic_accuracy: number;
   fast_rate: number;

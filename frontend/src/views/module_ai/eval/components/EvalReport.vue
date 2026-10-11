@@ -31,6 +31,14 @@
       />
 
       <template v-else>
+        <el-alert
+          v-if="degenerateNote"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="degenerateNote"
+          class="ev-degenerate"
+        />
         <el-row :gutter="12">
           <el-col v-for="s in stats" :key="s.label" :xs="12" :sm="8" :md="4">
             <el-card shadow="never" class="ev-stat">
@@ -196,6 +204,15 @@ const stats = computed(() => {
   ];
 });
 
+/** 退化题说明：金标结果为空/NULL/单值 0，答对答错都没信息量 → 不计入精度分母。 */
+const degenerateNote = computed(() => {
+  const s = report.value?.summary;
+  if (!s || !s.degenerate_n) return "";
+  const all = s.all_total ?? s.total + s.degenerate_n;
+  return `共 ${all} 题，其中 ${s.degenerate_n} 题为退化题（金标为空/NULL/单值 0），`
+    + `已排除在准确率之外；实际参与统计 ${s.total} 题。`;
+});
+
 const filteredResults = computed(() => {
   if (only.value === "fail") return results.value.filter((r) => !r.gold_match);
   if (only.value === "slow") return results.value.filter((r) => r.path === "slow");
@@ -283,6 +300,9 @@ onMounted(async () => {
   gap: 8px;
 }
 .ev-stat {
+  margin-bottom: 12px;
+}
+.ev-degenerate {
   margin-bottom: 12px;
 }
 .ev-trace-filter {
