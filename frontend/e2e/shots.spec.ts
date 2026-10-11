@@ -7,33 +7,45 @@ import { test, type Page } from "@playwright/test";
  * 产物：`frontend/e2e/shots/*.png`。
  */
 async function dismissTour(page: Page) {
-  const tour = page.locator(".el-tour");
-  const appeared = await tour
-    .waitFor({ state: "visible", timeout: 4_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!appeared) return;
-  const skip = page.locator(".el-tour").getByRole("button", { name: "跳过" }).first();
-  const close = page.locator(".el-tour__close").first();
-  const target = (await skip.count()) ? skip : close;
-  if (await target.count()) {
-    await target.evaluate((el) => (el as HTMLElement).click()).catch(() => {});
+  // 首次登录会弹"菜单引导"浮层（localStorage.guideVisible），会挡住截图 → 兜底点掉
+  for (let i = 0; i < 3; i++) {
+    const skip = page.getByRole("button", { name: "跳过" }).first();
+    if ((await skip.count()) && (await skip.isVisible().catch(() => false))) {
+      await skip.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(400);
+      continue;
+    }
+    break;
   }
-  await tour.waitFor({ state: "hidden", timeout: 4_000 }).catch(() => {});
+}
+
+/** 关掉引导浮层（不依赖它的组件类名）。 */
+async function prepare(page: Page, hash: string) {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("guideVisible", "false");
+    } catch {
+      /* ignore */
+    }
+  });
+  await page.goto(hash, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".app-main .app-container", { timeout: 15_000 });
+  await dismissTour(page);
+  await page.waitForTimeout(1_200);
 }
 
 test("截图：问数页（澄清/存为报表/反馈）", async ({ page }) => {
-  await page.goto("/#/ai/query", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".app-main .app-container", { timeout: 15_000 });
-  await dismissTour(page);
-  await page.waitForTimeout(1_500);
+  await prepare(page, "/#/ai/query");
+  // 先提一个**快路径**问题（秒回），让行内按钮（存为报表/有用/没用）渲染出来
+  const ta = page.locator("textarea").first();
+  await ta.fill("系统里有多少个用户？");
+  await page.getByRole("button", { name: "提问" }).click();
+  await page.waitForSelector(".q-msg__fb", { timeout: 30_000 });
+  await page.waitForTimeout(800);
   await page.screenshot({ path: "e2e/shots/ai-query.png", fullPage: true });
 });
 
 test("截图：报表页（列表/运行/确认/删除）", async ({ page }) => {
-  await page.goto("/#/ai/query/reports", { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".app-main .app-container", { timeout: 15_000 });
-  await dismissTour(page);
-  await page.waitForTimeout(1_500);
+  await prepare(page, "/#/ai/query/reports");
   await page.screenshot({ path: "e2e/shots/ai-query-reports.png", fullPage: true });
 });
