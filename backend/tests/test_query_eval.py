@@ -338,7 +338,8 @@ def test_pick_fewshots_prefers_relevant_and_same_datasource():
     examples = [
         {"question": "化验记录一共有多少条？", "datasource": "ds:4", "sql": "S1"},
         {"question": "按煤种类型统计记录数并排名", "datasource": "ds:4", "sql": "S2"},
-        {"question": "各煤种类型的记录占比是多少", "datasource": "ds:4", "sql": "S3"},
+        # 注意：**不能与查询完全相同** —— 相同的示例会被防泄漏规则排除
+        {"question": "各煤种类型的记录占比是多少（按类型分组）", "datasource": "ds:4", "sql": "S3"},
         {"question": "按告警类型统计各类告警的数量", "datasource": "system", "sql": "S4"},
     ]
     picked = pick_fewshots("各煤种类型的记录占比是多少", examples, "ds:4", k=2)
@@ -406,6 +407,25 @@ def test_retrieval_cache_key_includes_datasource():
     a = _retrieval_cache_key("测点有多少个", "ds:4")
     b = _retrieval_cache_key("测点有多少个", "system")
     assert a != b, "检索缓存 key 必须含数据源，否则两个数据源互相串缓存"
+
+
+def test_pick_fewshots_excludes_the_question_itself():
+    """防泄漏：示例里与当前问句**完全相同**的那条必须被排除。
+
+    实测：把评测错题沉淀成示例后，评测时 top-4 里就有本题自己 →
+    模型等于看到答案 → 分数从 80.7% 虚高到 95.0%。
+    """
+    from app.plugin.module_ai.query.service import pick_fewshots
+
+    examples = [
+        {"question": "各煤种类型的记录占比是多少", "datasource": "ds:4", "sql": "S_self"},
+        {"question": "各煤种类型有多少条记录", "datasource": "ds:4", "sql": "S_other"},
+    ]
+    picked = pick_fewshots("各煤种类型的记录占比是多少", examples, "ds:4", k=2)
+    assert [p["sql"] for p in picked] == ["S_other"], picked
+    # 空格差异也算同一题
+    picked2 = pick_fewshots("各煤种类型的记录占比是多少 ", examples, "ds:4", k=2)
+    assert [p["sql"] for p in picked2] == ["S_other"], picked2
 
 
 def test_recall_grounding_scopes_to_datasource():

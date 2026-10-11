@@ -1028,10 +1028,18 @@ def score_fewshot(question: str, ex_question: str) -> int:
 
 def pick_fewshots(question: str, examples: list[dict], datasource: str | None = None,
                   k: int = 4) -> list[dict]:
-    """按相关度挑 top-K 示例；同数据源加权，同分时**新示例优先**。"""
+    """按相关度挑 top-K 示例；同数据源加权，同分时**新示例优先**。
+
+    ⚠️ **防泄漏**：排除与当前问句**完全相同**的示例 —— 否则"把错题沉淀成示例"
+    会让评测时模型直接看到本题答案，分数虚高（实测 80.7% → 95.0% 里有很大水分）。
+    """
+    qkey = re.sub(r"\s+", "", (question or "").strip())
     scored: list[tuple[int, int, dict]] = []
     for i, f in enumerate(examples or []):
-        s = score_fewshot(question, str(f.get("question") or ""))
+        fq = str(f.get("question") or "")
+        if re.sub(r"\s+", "", fq.strip()) == qkey:
+            continue
+        s = score_fewshot(question, fq)
         if not datasource or f.get("datasource") == datasource or datasource == SYSTEM_DS:
             s += 1
         scored.append((s, i, f))
