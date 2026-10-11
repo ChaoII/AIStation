@@ -80,7 +80,7 @@ async def _load_objects() -> list[dict]:
         rows = (await _exec(
             "SELECT code, name, backing_table, description, aliases, domain_code, "
             "key_prop, name_prop "
-            "FROM ai_ont_object WHERE is_deleted=false ORDER BY id", {})).fetchall()
+            "FROM ai_ont_object WHERE is_deleted=false AND enabled=true ORDER BY id", {})).fetchall()
     except Exception:  # noqa: BLE001
         return []
     existing = await _existing_tables()
@@ -119,6 +119,9 @@ async def semantic_context(include_properties: bool = True) -> dict[str, Any]:
             # required/sensitive 是 **boolean**、roles 是 **jsonb**：
             # 都不能 COALESCE 成 0 / ''，否则 Postgres 报类型不匹配，
             # 整句失败、属性列表变空。原样取，Python 侧兜底。
+            # ⚠️ 必须按 `enabled` 过滤：否则"禁用"是**装饰性的**——
+            #    用户/运营把对象关掉了，它仍然出现在问数的本体上下文里（实测 203/416 启用）。
+            #    白名单（object_table_map）**不过滤**：禁用只代表"不主动提供"，不代表"禁止查询"。
             rows = (await _exec(
                 "SELECT object_code, name, code, prop_type, required, sensitive, "
                 "description, roles "

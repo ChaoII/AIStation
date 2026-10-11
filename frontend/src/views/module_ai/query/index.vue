@@ -148,6 +148,12 @@
                   存为报表
                 </el-button>
               </div>
+              <div v-if="(m.ontology_used || []).length" class="q-msg__ont">
+                <span class="q-msg__ont-label">用到的本体对象：</span>
+                <el-tag v-for="t in m.ontology_used" :key="t" size="small" effect="plain">
+                  {{ t }}
+                </el-tag>
+              </div>
             </template>
           </div>
         </el-card>
@@ -568,6 +574,19 @@ onMounted(async () => {
 
 .q-fb-tip {
   margin-bottom: 12px;
+}
+
+.q-msg__ont {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.q-msg__ont-label {
+  color: var(--el-text-color-secondary);
 }
 
 .q-fb-q {
