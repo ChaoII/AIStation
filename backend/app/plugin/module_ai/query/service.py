@@ -971,6 +971,25 @@ def _latin_words(text: str) -> set[str]:
     return set(_LATIN_WORD_RE.findall((text or "").lower()))
 
 
+#: NL2SQL 生成的 token 下限。实测本机模型**先推理约 2084 token 才输出 SQL**，
+#: 低于此下限时预算被推理吃光 → finish_reason=length、正文为空 → "未生成有效的查询语句"。
+NL2SQL_MIN_MAX_TOKENS = 4000
+NL2SQL_DEFAULT_MAX_TOKENS = 8000
+
+
+def nl2sql_max_tokens(cfg: dict | None) -> int:
+    """NL2SQL 生成用的 max_tokens：取配置值，但**不得低于下限**。"""
+    raw = (cfg or {}).get("nl2sql_max_tokens")
+    try:
+        val = int(str(raw).strip()) if raw is not None else 0
+    except (TypeError, ValueError):
+        val = 0
+    if val < NL2SQL_MIN_MAX_TOKENS:
+        # 低于下限（含未配置/非法）一律用默认值，宁可多给预算也不要出空 SQL
+        return NL2SQL_DEFAULT_MAX_TOKENS
+    return val
+
+
 def score_fewshot(question: str, ex_question: str) -> int:
     """few-shot 示例与问句的相关度：**中文二元组** + 英文/数字词 的重叠数。
 
@@ -5736,7 +5755,7 @@ class AiQueryService:
             model = OpenAILike(
                 id=runtime["model"], base_url=runtime["base_url"],
                 api_key=runtime["api_key"] or "sk-none",
-                temperature=temperature, max_tokens=2000,
+                temperature=temperature, max_tokens=nl2sql_max_tokens(cfg),
                 # 超时兜底：本地模型偶发长时间不返回 / 返回空。没有超时会把一次
                 # 问答拖到几十秒（实测 32 秒换一个错误，是最差的体验）。
                 timeout=60,
@@ -5853,7 +5872,7 @@ class AiQueryService:
         model = OpenAILike(
             id=runtime["model"], base_url=runtime["base_url"],
             api_key=runtime["api_key"] or "sk-none",
-            temperature=0.0, max_tokens=2000,
+            temperature=0.0, max_tokens=nl2sql_max_tokens(cfg),
             timeout=60,
             default_headers=build_headers(
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-query"),

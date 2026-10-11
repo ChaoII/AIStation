@@ -382,6 +382,22 @@ def test_lenient_match_subset_requires_same_row_count():
 
 
 # ===========================================================================
+# 批次9：NL2SQL 生成的 token 预算（推理模型会先"想"再吐 SQL）
+# ===========================================================================
+def test_nl2sql_max_tokens_has_floor_because_reasoning_eats_budget():
+    """实测：本机模型**先推理约 2084 token 才输出 SQL**；
+    max_tokens=2000 时 finish_reason=length、正文为空 → "未生成有效的查询语句"。
+    所以配置值低于下限必须抬高（否则困难题必空）。"""
+    from app.plugin.module_ai.query.service import nl2sql_max_tokens
+
+    assert nl2sql_max_tokens({"nl2sql_max_tokens": "1200"}) >= 4000
+    assert nl2sql_max_tokens({}) >= 4000
+    assert nl2sql_max_tokens({"nl2sql_max_tokens": "9000"}) == 9000
+    # 非法值走默认
+    assert nl2sql_max_tokens({"nl2sql_max_tokens": "abc"}) >= 4000
+
+
+# ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
 def test_lenient_match_normalizes_null_on_both_sides():
