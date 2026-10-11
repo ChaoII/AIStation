@@ -935,42 +935,74 @@ def _is_listing_question(question: str) -> bool:
     return bool(_LISTING_RE.search(question or ""))
 
 
-def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
-    """按得分选指标：名词/key/术语命中 + 时间语境对齐。
+#: 无区分度的中文二元组：出现在问句里**不代表**指向某个指标（实测误命中的元凶）
+_GENERIC_BIGRAMS = {
+    "多少", "数量", "合计", "统计", "所有", "每个", "分别", "共有", "总数", "总共",
+    "一共", "几条", "几个", "哪些", "什么", "怎么", "是否", "有无", "多种", "多个",
+}
 
-    时间语境：问句带明确时间（本月→month / 今天→today / 最近7天→days）时，
-    优先选择时间维度一致且未带其它时间限制的指标，避免「本月报警」被默认
-    「今日告警」抢占。
+#: 指标命中的最低分（低于此分视为"只是碰巧撞了个通用词"）
+_MIN_METRIC_SCORE = 4
+
+
+def _bigrams(text: str) -> set[str]:
+    """取中文二元组（剔除非中文与通用词），用于"指标自己的用词"是否出现在问句里。"""
+    zh = re.sub(r"[^\u4e00-\u9fff]+", " ", text or "")
+    out: set[str] = set()
+    for part in zh.split():
+        for i in range(len(part) - 1):
+            bg = part[i:i + 2]
+            if bg not in _GENERIC_BIGRAMS:
+                out.add(bg)
+    return out
+
+
+def _match_metric(question: str, metrics: list[dict], terms: list[dict]) -> dict | None:
+    """按得分选指标：**指标自己的用词**命中 + 术语绑定 + 时间语境对齐。
+
+    打分（实测调过）：
+      - 指标名整体出现在问句：+6；key 出现：+4；绑定术语命中：+3；
+      - 与**指标名**的中文二元组重合：每个 +3；与**描述**重合：每个 +1
+        （名称比描述更具体，权重更高）；
+      - 时间语境一致 +4，冲突 -2；
+      - 总分需 ≥ ``_MIN_METRIC_SCORE`` 才算命中。
+
+    旧实现用「类型/分布/数量/多少」这类通用词给所有指标一起加分，
+    导致「合同**数量**」被描述里含「数量」的「结算**量**」抢走（真实误命中）。
     """
     q = question.lower()
+    q_grams = _bigrams(question)
     frame = _detect_time_frame(question)
     best = None
     best_score = 0
     for m in metrics:
         if not m["enabled"]:
             continue
-        score = 0
         name = (m.get("name") or "").lower()
         key = (m.get("key") or "").lower()
-        desc = (m.get("description") or "").lower()
+        # 「词证据」：指标自己的用词出现在问句里才算数；名称权重 > 描述，且不重复计同一个词
+        n_grams = _bigrams(m.get("name"))
+        d_grams = _bigrams(m.get("description")) - n_grams
+        word = 3 * len(q_grams & n_grams) + 1 * len(q_grams & d_grams)
         if name and name in q:
-            score += 5
+            word += 6
         if key and key in q:
-            score += 4
+            word += 4
         for t in terms:
             if t.get("metric_key") == m["key"] and t.get("term") and t["term"].lower() in q:
-                score += 3
-        # 名称/描述关键词重叠（如「按告警类型分布」↔ 指标名「按告警类型的分布」）
-        for kw in ("类型", "分布", "按", "占比", "趋势", "数量", "多少", "各类"):
-            if kw in q and (kw in name or kw in desc):
-                score += 2
-        # 时间语境对齐
+                word += 3
+        # 时间语境：指标自身的时间维度与问句一致（允许"只靠时间维度"选中，
+        # 如「这个月…报警」→ 本月告警数，其名称与问句没有共同词）
         mtime = _metric_time_hint(m)
-        if frame:
-            if frame == mtime:
-                score += 4
-            elif mtime and frame != mtime:
-                score -= 2  # 问本月却选了「今日」指标 → 减分
+        time_bonus = 0
+        if frame and mtime == frame:
+            time_bonus = 4
+        elif frame and mtime and mtime != frame:
+            time_bonus = -2
+        # 合格门槛：词证据够强，或时间维度正好对上
+        if word < _MIN_METRIC_SCORE and not (frame and mtime == frame):
+            continue
+        score = word + time_bonus
         if score > best_score:
             best_score = score
             best = m
