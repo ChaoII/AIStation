@@ -388,19 +388,68 @@ _NULL_TOKENS = {"", "none", "null", "nan", "未知", "未分组", "未分类", "
 _LABEL_SUFFIXES = ("名称", "编码", "代码", "编号", "号码", "标识", "数值", "数量",
                    "号", "值", "数", "量")
 
+#: 列名同义表（**统一归一到英文列代码**）：由本体属性 `code ↔ 中文名` 构建。
+#: 字符串启发式做不到 CODE≡编码、DQNAME≡地区名称（一个字符都不重合）。
+_LABEL_SYNONYMS: dict[str, str] = {}
+
+
+async def load_label_synonyms() -> dict[str, str]:
+    """从本体属性构建列名同义表：``{code: CODE, 中文名: CODE, ...}``（进程内缓存）。"""
+    global _LABEL_SYNONYMS
+    if _LABEL_SYNONYMS:
+        return _LABEL_SYNONYMS
+    out: dict[str, str] = {}
+    try:
+        from sqlalchemy import text
+
+        from app.core.database import async_db_session
+
+        async with async_db_session() as db:
+            rows = (
+                await db.execute(
+                    text(
+                        "SELECT DISTINCT code, name FROM ai_ont_property "
+                        "WHERE is_deleted=false AND COALESCE(name,'')<>'' AND COALESCE(code,'')<>''"
+                    )
+                )
+            ).fetchall()
+        for code, name in rows:
+            c = str(code).strip().upper()
+            n = str(name).strip()
+            if not c or not n:
+                continue
+            out.setdefault(c, c)
+            out.setdefault(n, c)
+    except Exception:  # noqa: BLE001
+        return _LABEL_SYNONYMS
+    _LABEL_SYNONYMS = out
+    return out
+
 
 def norm_label(label: str) -> str:
-    """列名归一：去空白、统一大小写，并**剥掉一个通用后缀**（名称/编码/号/值/数/量…）。
+    """列名归一：先查**本体同义表**（统一到英文列代码），再剥通用后缀。
 
-    实测：模型写「组织机构」而金标写「组织机构编码」（同一列）→ 旧口径对不上直接判错；
-    窗口函数题里这类"别名不同"是失败主因之一。
+    实测：模型写「编码」而金标写 `CODE`、模型写「地区名称」而金标写 `DQNAME`
+    —— 同一列却对不上 → 窗口函数题大量假失败。
     """
-    s = re.sub(r"[\s_]+", "", str(label or "")).upper()
+    raw = str(label or "").strip()
+    for k in (raw, raw.upper()):
+        if k in _LABEL_SYNONYMS:
+            return _LABEL_SYNONYMS[k]
+    s = re.sub(r"[\s_]+", "", raw.upper())
     for suf in _LABEL_SUFFIXES:
         u = suf.upper()
         if len(s) > len(u) and s.endswith(u):
             return s[: -len(u)]
     return s
+
+
+def _label_match(a: str, b: str) -> bool:
+    """两个列标签是否指同一列：归一后相等，或**一方包含另一方**（排名 ⊂ 类型内排名）。"""
+    na, nb = norm_label(a), norm_label(b)
+    if not na or not nb:
+        return False
+    return na == nb or na in nb or nb in na
 
 
 def _align_columns(gold_cols: list, llm_cols: list) -> list[int] | None:
@@ -470,6 +519,36 @@ def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: li
     k = len(gold_cols)
     if not llm_cols:
         return _norm(llm_rows) == gset
+    # (0) 模型列**全部**能在金标里找到对应（同义/包含）→ 按这些列比即可。
+    #     实测「按类型分区算排名」模型只返回 4 列（类型/编码/排名/总数），
+    #     金标 6 列（多 ID/NAME）—— 模型的信息是对的，旧口径一律判错。
+    if llm_cols and len(llm_cols) >= min(len(gold_cols), 2):
+        pairs: list[tuple[int, int]] = []
+        used_g: set[int] = set()
+        matched_all = True
+        for mi, mc in enumerate(llm_cols):
+            gi = next(
+                (i for i, gc in enumerate(gold_cols)
+                 if i not in used_g and _label_match(gc, mc)),
+                None,
+            )
+            if gi is None:
+                matched_all = False
+                break
+            used_g.add(gi)
+            pairs.append((gi, mi))
+        if matched_all and pairs:
+            gi_idx = [p[0] for p in pairs]
+            mi_idx = [p[1] for p in pairs]
+            gproj = sorted(
+                tuple(str(_norm_cell(v)) for v in (r[i] for i in gi_idx)) for r in gold_rows
+            )
+            mproj = sorted(
+                tuple(str(_norm_cell(v)) for v in (r[i] for i in mi_idx)) for r in llm_rows
+            )
+            if gproj == mproj:
+                return True
+
     # (1) 列名归一对齐（顺序无关；金标列找不到同名时按顺序补，允许多余列）
     order = _align_columns(gold_cols, llm_cols)
     if order is not None:

@@ -503,6 +503,50 @@ def test_norm_label_strips_generic_suffix():
     assert norm_label("创建时间") != norm_label("批次")
 
 
+def test_norm_label_uses_ontology_synonyms(monkeypatch):
+    """列名映射要用**本体属性中文名**（CODE≡编码、DQNAME≡地区名称）——
+    字符串启发式做不到（一个字符都不重合）。"""
+    from app.plugin.module_ai.query import benchmark as B
+
+    monkeypatch.setattr(B, "_LABEL_SYNONYMS", {
+        "CODE": "CODE", "编码": "CODE", "NAME": "NAME", "名称": "NAME",
+        "DQNAME": "DQNAME", "地区名称": "DQNAME",
+    })
+    assert B.norm_label("CODE") == B.norm_label("编码")
+    assert B.norm_label("DQNAME") == B.norm_label("地区名称")
+
+
+def test_lenient_match_accepts_model_columns_all_present_in_gold(monkeypatch):
+    """模型列**全部**能在金标里找到对应（含同义与包含）时，按这些列比即可。
+
+    实测：「按类型分区算排名+统计类型测点总数」模型只返回 4 列
+    （类型/编码/排名/类型测点总数），金标 6 列（多了 ID/NAME）——
+    模型的信息是对的，旧口径一律判错。
+    """
+    from app.plugin.module_ai.query import benchmark as B
+
+    monkeypatch.setattr(B, "_LABEL_SYNONYMS", {
+        "CODE": "CODE", "编码": "CODE", "NAME": "NAME", "名称": "NAME",
+        "TYPE": "TYPE", "类型": "TYPE",
+    })
+    gold_cols = ["ID", "CODE", "NAME", "TYPE", "类型内排名", "类型测点总数"]
+    gold_rows = [["id1", "dlj1", "斗轮斗", None, 1, 3]]
+    model_cols = ["类型", "编码", "排名", "类型测点总数"]
+    model_rows = [[None, "dlj1", 1, 3]]
+    assert B.lenient_match(gold_cols, gold_rows, model_cols, model_rows) is True
+
+
+def test_model_columns_rule_still_rejects_wrong_values(monkeypatch):
+    from app.plugin.module_ai.query import benchmark as B
+
+    monkeypatch.setattr(B, "_LABEL_SYNONYMS", {"CODE": "CODE", "编码": "CODE"})
+    gold_cols = ["CODE", "NAME"]
+    gold_rows = [["dlj1", "斗轮斗"]]
+    model_cols = ["编码"]
+    model_rows = [["别的"]]          # 值不对
+    assert B.lenient_match(gold_cols, gold_rows, model_cols, model_rows) is False
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================

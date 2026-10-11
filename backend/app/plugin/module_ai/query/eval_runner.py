@@ -159,6 +159,13 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
         )
         if flt.get("limit"):
             cases = cases[: int(flt["limit"])]
+        # 结果比对要用**本体列名同义表**（CODE≡编码）——每轮加载一次（进程内缓存）
+        try:
+            from .benchmark import load_label_synonyms
+
+            await load_label_synonyms()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[ai-eval] 列名同义表加载失败（退化为字符串启发式）: {str(e)[:100]}")
         # 留出法：只跑指定分集（A/B）
         if flt.get("split"):
             want = str(flt["split"]).upper()
