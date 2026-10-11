@@ -22,6 +22,7 @@ import os
 os.environ["ENVIRONMENT"] = os.environ.get("ENVIRONMENT", "dev")
 
 import asyncio
+import re
 import statistics
 import sys
 import time
@@ -384,6 +385,52 @@ async def _run_gold(sql: str) -> tuple[list, list]:
 _NULL_TOKENS = {"", "none", "null", "nan", "未知", "未分组", "未分类", "无", "-", "--", "n/a", "未命名"}
 
 
+_LABEL_SUFFIXES = ("名称", "编码", "代码", "编号", "号码", "标识", "数值", "数量",
+                   "号", "值", "数", "量")
+
+
+def norm_label(label: str) -> str:
+    """列名归一：去空白、统一大小写，并**剥掉一个通用后缀**（名称/编码/号/值/数/量…）。
+
+    实测：模型写「组织机构」而金标写「组织机构编码」（同一列）→ 旧口径对不上直接判错；
+    窗口函数题里这类"别名不同"是失败主因之一。
+    """
+    s = re.sub(r"[\s_]+", "", str(label or "")).upper()
+    for suf in _LABEL_SUFFIXES:
+        u = suf.upper()
+        if len(s) > len(u) and s.endswith(u):
+            return s[: -len(u)]
+    return s
+
+
+def _align_columns(gold_cols: list, llm_cols: list) -> list[int] | None:
+    """把金标列映射到模型列下标：先按**归一化列名**匹配（顺序无关），剩下的按**顺序**补。
+
+    返回 ``None`` 表示模型列数不够（交给后续的位置前缀规则）。
+    """
+    used: set[int] = set()
+    order: list[int] = []
+    n = len(llm_cols or [])
+    for gc in gold_cols or []:
+        want = norm_label(gc)
+        idx = next(
+            (i for i in range(n) if i not in used and norm_label(llm_cols[i]) == want), None
+        )
+        if idx is None:
+            # 找不到同名：在**剩余列**里挑与该金标列**字面重合最多**的
+            # （不能用"下一个未用列"——实测会抓到「创建时间」这种完全无关的列）
+            rest = [i for i in range(n) if i not in used]
+            if not rest:
+                return None
+            gchars = set(str(gc))
+            idx = max(rest, key=lambda i: len(gchars & set(str(llm_cols[i]))))
+        if idx is None:
+            return None
+        used.add(idx)
+        order.append(idx)
+    return order
+
+
 def _norm_cell(v) -> str:
     """单元格归一化：统一空值/占位符，数字统一到固定精度，去除噪声。"""
     if v is None:
@@ -423,23 +470,16 @@ def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: li
     k = len(gold_cols)
     if not llm_cols:
         return _norm(llm_rows) == gset
-    # (1) 列名对齐投影
-    used: set[int] = set()
-    order: list[int] = []
-    for gc in gold_cols:
-        idx = next(
-            (i for i, lc in enumerate(llm_cols)
-             if i not in used and str(lc).strip() == str(gc).strip()),
-            None,
-        )
-        if idx is None:
-            break
-        used.add(idx)
-        order.append(idx)
-    if len(order) == k and all(len(r) >= k for r in llm_rows):
-        proj = sorted(tuple(str(_norm_cell(v)) for v in (r[i] for i in order)) for r in llm_rows)
-        if proj == gset:
-            return True
+    # (1) 列名归一对齐（顺序无关；金标列找不到同名时按顺序补，允许多余列）
+    order = _align_columns(gold_cols, llm_cols)
+    if order is not None:
+        need = (max(order) + 1) if order else 0
+        if all(len(r) >= need for r in llm_rows):
+            proj = sorted(
+                tuple(str(_norm_cell(v)) for v in (r[i] for i in order)) for r in llm_rows
+            )
+            if proj == gset:
+                return True
     # (2) 位置前缀投影（忽略尾部冗余列）
     if all(len(r) >= k for r in llm_rows):
         proj = sorted(tuple(str(_norm_cell(v)) for v in row[:k]) for row in llm_rows)

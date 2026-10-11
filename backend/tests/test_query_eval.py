@@ -469,6 +469,40 @@ def test_gold_must_reference_entities_mentioned_in_question():
     assert missing_entity_tables('SELECT 1 FROM "CMMS_POINT"', 'SELECT 1 FROM "CMMS_POINT"', m) == []
 
 
+def test_lenient_match_aligns_columns_by_normalized_label():
+    """列名归一：`组织机构编码` ≡ `组织机构`；金标列找不到同名时**按顺序补齐**。
+
+    实测：窗口函数题模型多返回一列（创建时间），列名也不同（组织机构 vs 组织机构编码），
+    旧口径一律判错 —— 但它的窗口函数逻辑与金标**完全一致**，属于口径过严。
+    """
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold_cols = ["组织机构编码", "批次ID", "累计审批批次数量"]
+    gold_rows = [["A", 1, 5], ["A", 2, 6]]
+    model_cols = ["组织机构", "创建时间", "批次ID", "已审批批次数"]
+    model_rows = [["A", "2024-01-01", 1, 5], ["A", "2024-01-02", 2, 6]]
+    assert lenient_match(gold_cols, gold_rows, model_cols, model_rows) is True
+
+
+def test_lenient_match_alignment_still_rejects_wrong_values():
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    gold_cols = ["组织机构编码", "批次ID"]
+    gold_rows = [["A", 1]]
+    model_cols = ["组织机构", "创建时间", "批次ID"]
+    model_rows = [["A", "2024-01-01", 999]]        # 值不对
+    assert lenient_match(gold_cols, gold_rows, model_cols, model_rows) is False
+
+
+def test_norm_label_strips_generic_suffix():
+    from app.plugin.module_ai.query.benchmark import norm_label
+
+    assert norm_label("组织机构编码") == norm_label("组织机构")
+    assert norm_label("原煤仓名称") == norm_label("原煤仓")
+    assert norm_label("批次ID") == norm_label("批次id")
+    assert norm_label("创建时间") != norm_label("批次")
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
