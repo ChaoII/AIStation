@@ -179,6 +179,95 @@ async def _metric_eligible_for(question: str, datasource: str) -> bool:
         return False
 
 
+def missing_entity_tables(question: str, gold_sql: str,
+                          entity_table_map: dict[str, str] | None) -> list[str]:
+    """问题里提到的业务实体，其支撑表**必须出现在金标 SQL 里**；返回缺失的表名。
+
+    实测：问题「每个**设备**下上限最高的两个测点」的金标只用了 `CMMS_POINT`，
+    **没联设备表** —— 金标自己"抄近路"，与问题语义不一致；
+    模型老老实实联了设备表（设备表为空）反而被判错。属于**出题质量**问题。
+    """
+    from .eval_metrics import gold_tables
+
+    used = {str(t).upper() for t in gold_tables(gold_sql or "")}
+    miss: list[str] = []
+    # 长词优先；ASCII 词要求**词边界**（否则 `COAL` 会在 `DAYCOALSTORAGELEDGER` 里误命中）
+    items = sorted((entity_table_map or {}).items(), key=lambda kv: -len(str(kv[0] or "")))
+    for word, table in items:
+        w = str(word or "").strip()
+        t = str(table or "").strip()
+        if not w or not t:
+            continue
+        q = question or ""
+        if re.search(r"[A-Za-z]", w):
+            if not re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(w)}(?![A-Za-z0-9_])", q, re.IGNORECASE
+            ):
+                continue
+        elif w not in q:
+            continue
+        if t.upper() not in used and t not in miss:
+            miss.append(t)
+    return miss
+
+
+async def _entity_table_map(datasource: str) -> dict[str, str]:
+    """实体词 → 支撑表（本体对象名/别名 + 资产中文名），用于金标语义质检。"""
+    out: dict[str, str] = {}
+    try:
+        from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
+
+        ds_id = None if (datasource or "system") == "system" else int(
+            str(datasource).split(":")[-1])
+        async with async_db_session() as db:
+            q = (
+                "SELECT name, COALESCE(backing_table,'') FROM ai_ont_object "
+                "WHERE is_deleted=false AND COALESCE(backing_table,'')<>''"
+            )
+            params: dict = {}
+            if ds_id is not None:
+                q += " AND datasource_id=:d"
+                params["d"] = ds_id
+            for name, table in (await db.execute(_t(q), params)).fetchall():
+                nm = str(name or "").strip()
+                if nm and 2 <= len(nm) <= 12:
+                    out.setdefault(nm, str(table))
+            rows = (
+                await db.execute(
+                    _t(
+                        "SELECT COALESCE(alias,''), table_name FROM ai_query_assets "
+                        "WHERE is_deleted=false AND included=true AND COALESCE(alias,'')<>''"
+                    )
+                )
+            ).fetchall()
+            # ⚠️ 资产表**没有数据源列** → 必须按该数据源的 schema 表集过滤，
+            # 否则 system 的别名会漏进 ds:4（实测把「报表」错配到 ai_reports）
+            try:
+                from .service import list_ds_schema
+
+                if ds_id is not None:
+                    scoped = {
+                        str(r["table"]).upper()
+                        for r in await list_ds_schema(ds_id, included_only=True)
+                    }
+                else:
+                    scoped = None
+            except Exception:  # noqa: BLE001
+                scoped = None
+            for alias, table in rows:
+                al = str(alias or "").strip()
+                if not al or not (2 <= len(al) <= 12):
+                    continue
+                if scoped is not None and str(table).upper() not in scoped:
+                    continue
+                out.setdefault(al, str(table))
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[ai-eval] 实体表映射构建失败（跳过语义质检）: {str(e)[:100]}")
+    return out
+
+
 async def verify_and_save(cases: list[dict], datasource: str, auth,
                           generation_only: bool = False) -> dict:
     """**执行校验后入库**：SQL 可执行且行数 > 0 才 ``verified=true`` 收录。
@@ -218,7 +307,7 @@ async def verify_and_save(cases: list[dict], datasource: str, auth,
         saved += 1
     log.info(
         f"[ai-eval] 生成校验：收录 {saved} 题（退化 {degenerate}），拒绝 {rejected} 题"
-        f"，因指标可答而拒 {rejected_metric} 题"
+        f"，指标可答拒 {rejected_metric} 题"
     )
     return {"saved": saved, "rejected": rejected, "degenerate": degenerate,
             "rejected_metric": rejected_metric, "reasons": reasons[:10]}

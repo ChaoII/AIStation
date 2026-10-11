@@ -428,6 +428,27 @@ def test_recall_grounding_scopes_to_datasource():
         ["CMMS_POINT", "FUEL_CB_COALBALANCE"], schema, core, 1)) == 1
 
 
+def test_gold_must_reference_entities_mentioned_in_question():
+    """问题提到的业务实体，金标**必须引用对应表**。
+
+    实测：问题「每个**设备**下上限最高的两个测点」的金标只用了 `CMMS_POINT`，
+    **没联设备表** —— 金标自己"抄近路"，与问题语义不一致；
+    模型老老实实联了设备表（而设备表为空）反而被判错。这是**出题质量**问题。
+    """
+    from app.plugin.module_ai.query.eval_generate import missing_entity_tables
+
+    m = {"设备": "CMMS_FACILITY", "测点": "CMMS_POINT"}
+    assert missing_entity_tables(
+        "每个设备下上限最高的两个测点", 'SELECT * FROM "CMMS_POINT"', m
+    ) == ["CMMS_FACILITY"]
+    assert missing_entity_tables(
+        "每个设备下的测点",
+        'SELECT * FROM "CMMS_POINT" p JOIN "CMMS_FACILITY" f ON 1=1', m,
+    ) == []
+    # 问题没提到的实体不算缺
+    assert missing_entity_tables('SELECT 1 FROM "CMMS_POINT"', 'SELECT 1 FROM "CMMS_POINT"', m) == []
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
