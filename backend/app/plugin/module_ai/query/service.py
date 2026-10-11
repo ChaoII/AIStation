@@ -797,8 +797,32 @@ _RETRIEVAL_CACHE_TTL = 600.0
 _RETRIEVAL_CACHE_MAX = 500
 
 
-def _retrieval_cache_key(question: str) -> str:
-    return re.sub(r"\s+", "", (question or "").strip().lower())
+def scope_tables_to_schema(ranked: list[str], schema_map: dict, core_tables,
+                           top_k: int) -> list[str]:
+    """**数据源隔离**：把召回结果限制在本次数据源的 schema 内。
+
+    向量/本体通道是全局的（不认数据源），实测 ds:4 的问题会被召回到
+    video_*/ai_* 等 system 表 → prompt 里没有真正的业务表 → 模型**编表名** → 空 SQL。
+
+    ⚠️ ``schema_map`` 为空表示**schema 未知**（如测试库取不到 information_schema）
+    —— 此时不做隔离（否则会把召回清空），保持原行为。
+    """
+    if not schema_map:
+        picked = list(ranked or [])[:top_k]
+        return picked or list(core_tables or [])
+    picked = [t for t in (ranked or []) if t in schema_map][:top_k]
+    if not picked:
+        picked = [t for t in (core_tables or []) if t in schema_map][:top_k]
+    if not picked:
+        picked = list(schema_map)[:top_k]
+    return picked
+
+
+def _retrieval_cache_key(question: str, datasource: str | None = None) -> str:
+    """检索缓存 key：**必须含数据源** —— 否则同一句话在两个数据源之间互相串结果
+    （实测 ds:4 的问题会命中 system 源的缓存，召回到 video_*/ai_* 表）。"""
+    q = re.sub(r"\s+", "", (question or "").strip().lower())
+    return f"{datasource or ''}|{q}"
 
 
 def retrieval_cache_stats() -> dict:
@@ -5674,7 +5698,7 @@ class AiQueryService:
                 # 收尾阶段单独计时：这一步里有两个"重"调用（再次检索 + DQ 概览），
                 # 缓存命中时生成阶段为 0，若收尾仍慢就会吃掉缓存的收益
                 t_tail = time.perf_counter()
-                retrieved = await cls._recall_grounding(question)
+                retrieved = await cls._recall_grounding(question, datasource)
                 grounding = {"retrieved": retrieved, "ontology_used": _scan_ont_tables(sql)}
                 msg = await cls._save_message(
                     session_id, question, path="slow", datasource=datasource,
@@ -5983,7 +6007,7 @@ class AiQueryService:
                 summary="以下是根据你的问题生成的结果：",
             )
             # Grounding 可观测：返回本次混合检索锁定的表 + 关键字段
-            retrieved = await cls._recall_grounding(question)
+            retrieved = await cls._recall_grounding(question, datasource)
             yield {"type": "result", "columns": cols, "rows": rows, "result_rows": len(rows),
                    "retrieved": retrieved, "dq_warning": await cls._dq_warning_for_sql(sql)}
             yield {"type": "answer", "summary": "以下是根据你的问题生成的结果："}
@@ -6613,14 +6637,16 @@ class AiQueryService:
     @classmethod
     async def _semantic_tables(cls, question: str, schema: dict | None = None,
                                metrics: list[dict] | None = None,
-                               terms: list[dict] | None = None) -> list[str]:
+                               terms: list[dict] | None = None,
+                               datasource: str | None = None) -> list[str]:
         """分层检索（带**记忆缓存**）。
 
         同一个问题在一次问答里会被问两次——`_build_schema_context` 拼 prompt、
         `_recall_grounding` 做溯源——而这条路径会走向量检索。
         不缓存就是白跑一次检索（实测收尾阶段因此花掉 1.2~1.8 秒）。
+        缓存 key **含数据源**：否则两个数据源互相串结果。
         """
-        key = _retrieval_cache_key(question)
+        key = _retrieval_cache_key(question, datasource)
         hit = _RETRIEVAL_CACHE.get(key)
         if hit and time.time() - hit[0] <= _RETRIEVAL_CACHE_TTL:
             return list(hit[1])
@@ -6678,9 +6704,11 @@ class AiQueryService:
         }
         fused = fuse_rrf(channels, weights)
         min_score = cls._cfg_float(cfg, "recall_min_score", 0.0)
-        picked = [t for t, s in fused if s >= min_score][:top_k]
-        if not picked:  # 完全无匹配 → 回退核心业务表（不能返回空）
-            picked = list(CORE_TABLES)
+        # **数据源隔离**：只保留本次数据源 schema 里的表。
+        # 向量/本体通道是**全局**的（不认数据源），实测 ds:4 的问题被召回到
+        # video_*/ai_* 等 system 表 → prompt 里没有真正的业务表 → 模型**编表名** → 空 SQL。
+        ranked = [t for t, s in fused if s >= min_score]
+        picked = scope_tables_to_schema(ranked, schema_map, CORE_TABLES, top_k)
 
         # 关系/KG/AGE 扩表：仅作**补充**、不参与计分。
         # ⚠️ 必须有上限：无限制追加会把 prompt 撑大，实测让生成 P50 从 7.9s 涨到 9.0s。
@@ -6954,7 +6982,7 @@ class AiQueryService:
             # top_k=16）。旧实现先把**全部 85 个对象、1500+ 属性**塞进本体块
             # （实测 37517 字符），再把检索结果拼在后面——LLM 的前缀计算大半花在
             # 与问题无关的对象上，又慢又干扰判断。现在只带检索命中的表。
-            rel = await cls._semantic_tables(question, schema, metrics, terms)
+            rel = await cls._semantic_tables(question, schema, metrics, terms, datasource)
             ont = await cls._ont_ctx_block(only_tables=set(rel))
             if ont:
                 lines.append(ont)
@@ -7146,12 +7174,24 @@ class AiQueryService:
         }
 
     @classmethod
-    async def _recall_grounding(cls, question: str) -> dict | None:
-        """Grounding 可观测：返回本次混合检索锁定的表 + 关键字段，供前端展示「召回表/字段」。"""
+    async def _recall_grounding(cls, question: str, datasource: str | None = None) -> dict | None:
+        """Grounding 可观测：返回本次混合检索锁定的表 + 关键字段，供前端展示「召回表/字段」。
+
+        **必须传数据源**：否则 ds:4 的问题会用 system 源的 schema 去检索，
+        召回到 video_*/ai_* 表 → prompt 里没有真正的业务表 → 模型**编表名** → 空 SQL（实测）。
+        """
         try:
-            rel_tables = await cls._semantic_tables(question)
-            _sch = await cls._system_schema()
-            fields = {t: [lab.split("(")[0] for lab in _sch.get(t, [])][:8] for t in rel_tables}
+            if (datasource or SYSTEM_DS) == SYSTEM_DS:
+                schema = await cls._system_schema()
+            else:
+                schema = await cls._ds_schema_map(datasource)
+            metrics = await cls.list_metrics(datasource)
+            terms = await cls.list_terms(datasource)
+            rel_tables = await cls._semantic_tables(
+                question, schema, metrics, terms, datasource
+            )
+            fields = {t: [lab.split("(")[0] for lab in schema.get(t, [])][:8]
+                      for t in rel_tables}
             return {"tables": rel_tables, "fields": fields}
         except Exception:  # noqa: BLE001
             return None

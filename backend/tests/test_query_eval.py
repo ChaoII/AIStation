@@ -398,6 +398,37 @@ def test_nl2sql_max_tokens_has_floor_because_reasoning_eats_budget():
 
 
 # ===========================================================================
+# 批次10：检索必须按数据源隔离（否则 ds:4 问题召回到 system 源的表 → 表名幻觉）
+# ===========================================================================
+def test_retrieval_cache_key_includes_datasource():
+    from app.plugin.module_ai.query.service import _retrieval_cache_key
+
+    a = _retrieval_cache_key("测点有多少个", "ds:4")
+    b = _retrieval_cache_key("测点有多少个", "system")
+    assert a != b, "检索缓存 key 必须含数据源，否则两个数据源互相串缓存"
+
+
+def test_recall_grounding_scopes_to_datasource():
+    """召回结果必须被限制在本次数据源的 schema 内（纯函数，不依赖真库）。"""
+    from app.plugin.module_ai.query.service import scope_tables_to_schema
+
+    schema = {"CMMS_POINT": [], "FUEL_CB_COALBALANCE": []}
+    core = ("video_cameras",)      # system 源的核心表
+
+    # 命中：只留同源表
+    assert scope_tables_to_schema(
+        ["video_cameras", "CMMS_POINT"], schema, core, 12) == ["CMMS_POINT"]
+    # 全被过滤 → 用核心表里的同源表
+    assert scope_tables_to_schema(
+        ["video_cameras"], schema, ("CMMS_POINT",), 12) == ["CMMS_POINT"]
+    # 核心表也不匹配 → 兜底取该数据源前若干张（绝不返回空）
+    assert scope_tables_to_schema(["video_cameras"], schema, (), 1) == ["CMMS_POINT"]
+    # top_k 截断
+    assert len(scope_tables_to_schema(
+        ["CMMS_POINT", "FUEL_CB_COALBALANCE"], schema, core, 1)) == 1
+
+
+# ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
 def test_lenient_match_normalizes_null_on_both_sides():
