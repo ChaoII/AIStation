@@ -52,6 +52,40 @@ def build_prompt(
     return "\n".join(lines)
 
 
+def _salvage_objects(raw: str) -> list[dict]:
+    """从**被截断**的 JSON 里救回完整对象（花括号配平扫描，跳过字符串内的括号）。
+
+    注意：要能救回**嵌套**在 ``{"cases":[...]}`` 里的对象 —— 外层往往永不闭合，
+    所以用栈记录每个 ``{`` 的位置，每闭合一次就尝试解析该段。
+    """
+    out: list[dict] = []
+    stack: list[int] = []
+    in_str = False
+    esc = False
+    for i, ch in enumerate(raw):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            stack.append(i)
+        elif ch == "}" and stack:
+            start = stack.pop()
+            try:
+                obj = json.loads(raw[start : i + 1])
+            except Exception:  # noqa: BLE001
+                obj = None
+            if isinstance(obj, dict):
+                out.append(obj)
+    return out
+
+
 def parse_cases(text: str) -> list[dict]:
     """容错解析 LLM 输出：去 ``` 围栏、取 JSON；只保留有 question 与 gold_sql 的项。"""
     raw = (text or "").strip()
@@ -81,6 +115,10 @@ def parse_cases(text: str) -> list[dict]:
                 items = [data]  # 裸的单条 case
         elif isinstance(data, list):
             items = data
+    if not items:
+        # 兜底：输出被**截断**时（实测 reasoning 吃掉 max_tokens 会截断），
+        # 按花括号配平扫描，把前面**完整的对象**救回来。
+        items = _salvage_objects(raw) or None
     out: list[dict] = []
     for it in items or []:
         if not isinstance(it, dict):
@@ -230,7 +268,12 @@ async def generate_round(
     return out
 
 
-async def call_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -> str:
+async def call_llm(prompt: str, *, max_tokens: int = 8000, timeout: int = 180) -> str:
+    """调用问答模型出题。
+
+    ``max_tokens`` 给得比默认大：实测本机模型会先输出**推理**内容，
+    4000 时推理吃掉预算 → 可见正文被截断甚至为空（出题全部落空）。
+    """
     try:
         from openai import AsyncOpenAI
 
@@ -247,7 +290,15 @@ async def call_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -
             model=rt["model"], messages=[{"role": "user", "content": prompt}],
             temperature=0.2, max_tokens=max_tokens,
         )
-        return resp.choices[0].message.content or ""
+        content = resp.choices[0].message.content or ""
+        if not content.strip():
+            # 空正文必须留痕：否则"出题全落空"会被当成"模型没产出可解析用例"
+            log.warning(
+                "[ai-eval] LLM 返回空正文：finish_reason={} usage={}",
+                getattr(resp.choices[0], "finish_reason", "?"),
+                getattr(resp, "usage", None),
+            )
+        return content
     except Exception as e:  # noqa: BLE001
         log.warning(f"[ai-eval] LLM 调用失败: {str(e)[:120]}")
         return ""

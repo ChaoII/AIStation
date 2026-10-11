@@ -203,6 +203,33 @@ def test_ablation_runs_baseline_first_and_is_serial(monkeypatch):
     asyncio.run(_run())
 
 
+def test_parse_cases_recovers_complete_items_from_truncated_json():
+    """实测：模型输出常被**截断**（reasoning 吃掉 max_tokens），
+    旧解析器直接返回 0 条 → 硬形式出题全部落空。必须能**救回**前面完整的对象。"""
+    from app.plugin.module_ai.query.eval_generate import parse_cases
+
+    truncated = (
+        '{"cases":['
+        '{"question":"q1","gold_sql":"SELECT 1","difficulty":"简单",'
+        '"scenario":"s","form":"f","expected_metric":""},'
+        '{"question":"q2","gold_sql":"SELECT 2","difficulty":"中等",'
+        '"scenario":"s","form":"f","expected_metric":"'
+    )
+    cases = parse_cases(truncated)
+    assert len(cases) == 1, f"应救回 1 条完整对象，实际 {len(cases)}: {cases}"
+    assert cases[0]["question"] == "q1"
+    assert cases[0]["gold_sql"] == "SELECT 1"
+
+
+def test_parse_cases_still_handles_wellformed_json():
+    from app.plugin.module_ai.query.eval_generate import parse_cases
+
+    ok = ('```json\n{"cases":[{"question":"q","gold_sql":"SELECT 1",'
+          '"difficulty":"简单","scenario":"s","form":"f","expected_metric":""}]}\n```')
+    cases = parse_cases(ok)
+    assert len(cases) == 1 and cases[0]["question"] == "q"
+
+
 # ===========================================================================
 # 批次7：生成专用题（指标答不了的题才算"考生成能力"）
 # ===========================================================================
