@@ -32,7 +32,7 @@ async def _wait_run(run_id: str):
 
 
 async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
-               force_slow: bool = False) -> None:
+               force_slow: bool = False, datasource: str = "") -> None:
     from main import create_app
 
     create_app()
@@ -49,6 +49,8 @@ async def main(run_limit: int, abl_limit: int, skip_run: bool = False,
         flt = {"limit": run_limit} if run_limit else {}
         if force_slow:
             flt["force_slow"] = True
+        if datasource:
+            flt["datasource"] = datasource
         rid = R.start_run(auth, filter=flt or None)
         st = await _wait_run(rid)
         print("\n=== 全量运行 summary ===")
@@ -99,8 +101,9 @@ def cli() -> None:
     ap.add_argument("--ablation-limit", type=int, default=20)
     ap.add_argument("--skip-run", action="store_true")
     ap.add_argument("--force-slow", action="store_true")
+    ap.add_argument("--datasource", default="")
     a = ap.parse_args()
-    asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run, a.force_slow))
+    asyncio.run(main(a.run_limit, a.ablation_limit, a.skip_run, a.force_slow, a.datasource))
 
 
 if __name__ == "__main__":
