@@ -319,6 +319,33 @@ def test_summarize_reports_generation_accuracy_separately():
 
 
 # ===========================================================================
+# 批次8：few-shot 相关度选取（中文必须按字/二元组，不能整句当 token）
+# ===========================================================================
+def test_fewshot_scoring_is_chinese_aware():
+    """实测 bug：中文整句被当成一个 token → 相关度全为 0 → 选出的示例与问句无关。"""
+    from app.plugin.module_ai.query.service import score_fewshot
+
+    q = "按煤种类型统计记录数并排名"
+    related = score_fewshot(q, "按煤种类型统计记录数并排名")
+    unrelated = score_fewshot(q, "化验记录一共有多少条？")
+    assert related > unrelated, f"相关示例应得分更高: {related} vs {unrelated}"
+    assert related >= 6, f"完全相同的问句得分应较高，实际 {related}"
+
+
+def test_pick_fewshots_prefers_relevant_and_same_datasource():
+    from app.plugin.module_ai.query.service import pick_fewshots
+
+    examples = [
+        {"question": "化验记录一共有多少条？", "datasource": "ds:4", "sql": "S1"},
+        {"question": "按煤种类型统计记录数并排名", "datasource": "ds:4", "sql": "S2"},
+        {"question": "各煤种类型的记录占比是多少", "datasource": "ds:4", "sql": "S3"},
+        {"question": "按告警类型统计各类告警的数量", "datasource": "system", "sql": "S4"},
+    ]
+    picked = pick_fewshots("各煤种类型的记录占比是多少", examples, "ds:4", k=2)
+    assert [p["sql"] for p in picked] == ["S3", "S2"], picked
+
+
+# ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
 def test_lenient_match_normalizes_null_on_both_sides():

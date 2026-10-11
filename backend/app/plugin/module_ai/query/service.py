@@ -964,6 +964,38 @@ _GENERIC_BIGRAMS = {
 _MIN_METRIC_SCORE = 4
 
 
+_LATIN_WORD_RE = re.compile(r"[a-z0-9_]{2,}")
+
+
+def _latin_words(text: str) -> set[str]:
+    return set(_LATIN_WORD_RE.findall((text or "").lower()))
+
+
+def score_fewshot(question: str, ex_question: str) -> int:
+    """few-shot 示例与问句的相关度：**中文二元组** + 英文/数字词 的重叠数。
+
+    旧实现 `re.findall(r"[\\w\\u4e00-\\u9fa5]{2,}", question)` 把整句中文当成**一个 token**
+    （中文都是 `\\w`），于是 `tok in 示例问句` 几乎永不成立 → 所有示例同分 →
+    实际返回"最老的 4 条"，与问句无关（实测：补 few-shot 反而让准确率下降）。
+    """
+    return len(_bigrams(question) & _bigrams(ex_question)) + len(
+        _latin_words(question) & _latin_words(ex_question)
+    )
+
+
+def pick_fewshots(question: str, examples: list[dict], datasource: str | None = None,
+                  k: int = 4) -> list[dict]:
+    """按相关度挑 top-K 示例；同数据源加权，同分时**新示例优先**。"""
+    scored: list[tuple[int, int, dict]] = []
+    for i, f in enumerate(examples or []):
+        s = score_fewshot(question, str(f.get("question") or ""))
+        if not datasource or f.get("datasource") == datasource or datasource == SYSTEM_DS:
+            s += 1
+        scored.append((s, i, f))
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+    return [f for _, _, f in scored[:k]]
+
+
 def _bigrams(text: str) -> set[str]:
     """取中文二元组（剔除非中文与通用词），用于"指标自己的用词"是否出现在问句里。"""
     zh = re.sub(r"[^\u4e00-\u9fff]+", " ", text or "")
@@ -4992,20 +5024,18 @@ class AiQueryService:
                         AiQueryFewshotModel.is_deleted.is_(False),
                         AiQueryFewshotModel.enabled.is_(True),
                     )
-                    .order_by(AiQueryFewshotModel.id)
+                    .order_by(AiQueryFewshotModel.id.desc())
                     .limit(300)
                 )
             ).scalars().all()
-        raw_q = re.findall(r"[\w\u4e00-\u9fa5]{2,}", question.lower())
-        scored = []
-        for f in rows:
-            fq = f.question.lower()
-            s = sum(1 for tok in raw_q if tok in fq)
-            if f.datasource == datasource or datasource is None or datasource == SYSTEM_DS:
-                s += 1
-            scored.append((s, f))
-        scored.sort(key=lambda x: -x[0])
-        return [{"q": f.question, "sql": f.sql} for _, f in scored[:4]]
+        examples = [
+            {"question": f.question, "sql": f.sql, "datasource": f.datasource} for f in rows
+        ]
+        # 相关度选取（中文按二元组打分）——旧的整句 token 方案会让所有示例同分
+        return [
+            {"q": e["question"], "sql": e["sql"]}
+            for e in pick_fewshots(question, examples, datasource, k=4)
+        ]
 
     # ---- 查询限额配置 ----
     @staticmethod
