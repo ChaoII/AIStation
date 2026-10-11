@@ -320,3 +320,57 @@ python scripts/audit_ds4_cases.py system
 | `seed_eval_from_metrics.py` | 用指标生成非退化评测题 |
 | `seed_ds4_joins.py` / `seed_ds4_fewshots.py` | 关系边归属回填 + 验证过的 few-shot |
 
+---
+
+## 12. 架构边界：本体 ↔ 问数 怎么"有机结合"
+
+### 12.1 现状（改造前）：**双向直连**
+
+- **问数 → 本体（方向正确，接口调用）**：`object_table_map()` / `semantic_context()` /
+  `context_block(only_tables=召回表集)` / `_secure_ont_sql()`
+- **本体 → 问数（方向反了，直读问数的表）**：
+  `ontology/semantic.py` 读 `ai_query_concept`、读/写 `ai_query_asset_columns.sensitive`。
+  代码注释自己都写着"历史遗留：两套并行标记，实测已不一致（本体 11 vs 问数 2）"。
+
+### 12.2 边界（改造后）
+
+| 层 | 拥有什么 | 归属 |
+|----|----------|------|
+| **数据目录** | 表/字段中文名、业务域、敏感标记、**范围(included)**、业务概念 | 共用资产，单一真源 |
+| **本体** | 对象/属性/**关系(join)**/权限策略/支撑表映射 | 本体 |
+| **问数资产** | 指标、术语、few-shot | 问数 |
+| **问数运行时** | 检索、prompt、LLM、SQL 校验执行、评测 | 问数 |
+
+**唯一该有的耦合点**：`context_block(only_tables=召回表集)`
+—— **问数决定"看哪些表"，本体负责"这些表在业务上是什么"**。
+
+### 12.3 已做的重构
+
+新增 `app/plugin/module_ai/catalog.py`（共享目录接口）：
+`list_concepts()` / `list_sensitive_columns()` / `mark_sensitive()`（幂等）/ `included_tables()`。
+本体三处直读/直写**全部改走它**，并加**回归守卫测试**
+（扫 `ontology/*.py`，出现 `FROM|UPDATE|JOIN ai_query_` 即失败）。
+行为不变：187 passed。
+
+### 12.4 顺带纠正一个错误认知
+
+`ai_ont_object.enabled` 是**装饰性的** —— `semantic_context` 不按它过滤，
+所以 §11.1 里"把非业务表的本体对象 enabled=false"其实**没起作用**；
+真正的范围闸门是 `ai_query_assets.included`（检索已按它过滤）。
+
+---
+
+## 13. 硬形式出题一直落空的两个真 bug（已修）
+
+现象：`--generation-only --forms=联表,占比,…` 跑完只加了 1 道联表题，日志全是
+"LLM 未产出可解析用例"。
+
+| bug | 证据 | 修复 |
+|-----|------|------|
+| **`max_tokens=4000` 被推理吃光** | 联表/占比的**原始输出长度 = 0**；窗口函数那次是被**截断**的 JSON | 提到 **8000**；空正文时打印 `finish_reason`/`usage` 留痕 |
+| **`parse_cases` 不会救截断 JSON** | 738 字合法开头 → 解析出 **0 条** | 新增 `_salvage_objects()`：花括号**栈**配平，救回前面完整对象（TDD） |
+
+修后复测：联表/占比/窗口函数 **各解析出 2 条**（原 0）。
+题集随之扩容：占比 8→**14**、业务黑话 9→**12**、窗口函数 7→**12**、
+排名TopN 2→**7**、多维报表 1→**4**、联表 1→**2**。
+
