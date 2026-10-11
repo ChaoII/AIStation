@@ -206,6 +206,18 @@ def test_ablation_runs_baseline_first_and_is_serial(monkeypatch):
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================
+def test_lenient_match_normalizes_null_on_both_sides():
+    """NULL 必须两侧一致归一化，否则「金标 NULL vs 模型 NULL」被误判为错。
+
+    实测：ds:4 有 48% 的题结果是 NULL（空表聚合），金标侧没走 _norm_cell →
+    `'None' != '∅'` → 即使模型 SQL 与金标完全相同也被判错。
+    """
+    from app.plugin.module_ai.query.benchmark import lenient_match
+
+    assert lenient_match(["c"], [[None]], ["c"], [[None]]) is True
+    assert lenient_match(["c"], [[None]], ["c"], [["∅"]]) is True
+
+
 def test_eval_cases_and_status_endpoints(test_client, auth_headers):
     h = auth_headers
     r = test_client.post(

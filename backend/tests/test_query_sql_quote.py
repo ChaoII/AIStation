@@ -196,7 +196,60 @@ def test_execute_select_wraps_driver_error(monkeypatch):
 
 
 # ===========================================================================
-# 3) ask()：快路径任何异常都要回退慢路径，而不是整题崩溃
+# 4) 评测必须**比对结果值**（否则 data_accuracy 只是"SQL 跑通了"）
+# ===========================================================================
+def _run_once_with(monkeypatch, gold_rows, model_rows):
+    from app.plugin.module_ai.query import eval_runner as R
+    from app.plugin.module_ai.query import eval_set as ES
+
+    cases = [{"id": 1, "question": "q", "gold_sql": "SELECT 1 AS c", "datasource": "system",
+              "difficulty": "简单", "scenario": "s", "form": "f", "expected_metric": ""}]
+    saved: list = []
+
+    async def _cases(**k):
+        return cases
+
+    async def _schema(ds):
+        return {}
+
+    async def _ask(question, auth, ds, force_slow=False):
+        return {"path": "slow", "sql": "SELECT 2 AS c", "columns": ["c"], "rows": model_rows,
+                "is_error": False, "took_ms": 1, "metric": None, "retrieved": None}
+
+    async def _gold(ds, sql):
+        return {"columns": ["c"], "rows": gold_rows}
+
+    async def _save(run_id, row):
+        saved.append(row)
+
+    async def _finish(run_id, results, status="done"):
+        pass
+
+    monkeypatch.setattr(ES, "list_cases", _cases)
+    monkeypatch.setattr(R, "_resolve_schema", _schema)
+    monkeypatch.setattr(R, "_ask", _ask)
+    monkeypatch.setattr(R, "_run_gold_sql", _gold, raising=False)
+    monkeypatch.setattr(R, "_save_result", _save)
+    monkeypatch.setattr(R, "_finish_run", _finish)
+    R._RUNS["t_eval_gold"] = {"run_id": "t_eval_gold", "status": "running", "total": 0,
+                              "done": 0, "current": "", "summary": None, "error": ""}
+
+    asyncio.run(R._run_once("t_eval_gold", None, {}))
+    return saved[0]
+
+
+def test_run_once_marks_wrong_when_values_differ(monkeypatch):
+    row = _run_once_with(monkeypatch, gold_rows=[[1]], model_rows=[[2]])
+    assert row["gold_match"] is False, "金标 1 vs 模型 2 必须判错（不能只看 SQL 跑通）"
+
+
+def test_run_once_marks_correct_when_values_equal(monkeypatch):
+    row = _run_once_with(monkeypatch, gold_rows=[[1]], model_rows=[[1]])
+    assert row["gold_match"] is True
+
+
+# ===========================================================================
+# 5) ask()：快路径任何异常都要回退慢路径，而不是整题崩溃
 # ===========================================================================
 def test_ask_falls_back_to_slow_path_on_metric_crash(monkeypatch):
     from app.plugin.module_ai.query import service as svc

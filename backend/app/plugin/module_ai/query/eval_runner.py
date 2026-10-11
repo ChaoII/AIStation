@@ -124,6 +124,28 @@ async def override_settings(overrides: dict):
 # ---------------------------------------------------------------------------
 # 一轮运行
 # ---------------------------------------------------------------------------
+async def _run_gold_sql(datasource: str, sql: str) -> dict:
+    """执行**金标 SQL**取回列/行，供结果级比对。
+
+    早期不取金标结果 → ``_lenient`` 退化成「SQL 跑通即算对」，
+    于是 ``data_accuracy`` 实际只是**可执行率**（实测发现）。失败返回 ``{}``
+    （该题退化为跑通即可，不因取数失败把题判错）。
+    """
+    if not sql:
+        return {}
+    try:
+        from .service import SYSTEM_DS, _execute_custom_ds_sql, _execute_sql
+
+        if (datasource or SYSTEM_DS) == SYSTEM_DS:
+            res = await _execute_sql(sql)
+        else:
+            res = await _execute_custom_ds_sql(int(str(datasource).split(":")[-1]), sql)
+        return {"columns": res.get("columns") or [], "rows": res.get("rows") or []}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[ai-eval] 金标取数失败（该题退化为跑通即可）: {str(e)[:120]}")
+        return {}
+
+
 async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | None = None) -> None:
     from .eval_set import list_cases
 
@@ -140,6 +162,7 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
         _RUNS[run_id].update(total=len(cases))
         results: list[dict] = []
         schemas: dict[str, dict] = {}
+        gold_cache: dict[int, dict] = {}
         for c in cases:
             _RUNS[run_id]["current"] = c["question"]
             ds = c["datasource"] or "system"
@@ -159,6 +182,11 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
             else:
                 rec = [str(t) for t in (raw_rec or [])]
             gt = gold_tables(c.get("gold_sql") or "", schemas.get(ds) or {})
+            # 金标结果按题缓存：同一轮里同一题只取一次数
+            gc = gold_cache.get(c["id"])
+            if gc is None:
+                gc = await _run_gold_sql(ds, c.get("gold_sql") or "")
+                gold_cache[c["id"]] = gc
             row = {
                 "testcase_id": c["id"], "question": c["question"],
                 "ok": not d.get("is_error"), "is_error": bool(d.get("is_error")),
@@ -166,7 +194,9 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
                 "expected_metric": c.get("expected_metric") or "",
                 "sql": d.get("sql") or "", "n_rows": len(d.get("rows") or []),
                 "took_ms": d.get("took_ms") or ms,
-                "gold_match": _lenient(d, c),
+                "gold_match": _lenient(
+                    d, {**c, "_gold_cols": gc.get("columns"), "_gold_rows": gc.get("rows")}
+                ),
                 "recall": recall_at_k(gt, rec, k=8),
                 "recall_hit": json.dumps({"expected": sorted(gt), "recalled": rec[:8]},
                                          ensure_ascii=False),

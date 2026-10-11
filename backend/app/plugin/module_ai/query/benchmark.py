@@ -287,17 +287,29 @@ NL2SQL_GOLDEN = [
      "gold": "SELECT r.name, COUNT(a.id) AS c FROM video_alarm_rules r LEFT JOIN video_alarm_records a ON a.rule_id=r.id GROUP BY r.name ORDER BY c DESC"},
     {"tag": "用户", "q": "系统超级管理员数量",
      "gold": "SELECT COUNT(*) AS c FROM sys_user WHERE is_superuser=true AND is_deleted=false"},
-    # ===== 本体对象（新增：只有靠本体物化对象 ont_* 才能答对，检验本体驱动） =====
-    {"tag": "本体对象", "q": "订单表里的金额总和是多少",
-     "gold": "SELECT SUM(amount) AS 金额总和 FROM ont_orders"},
-    {"tag": "本体对象", "q": "一共多少个客户",
-     "gold": "SELECT COUNT(*) AS c FROM ont_customers"},
-    {"tag": "本体对象", "q": "列出所有订单编号",
-     "gold": "SELECT order_no AS 订单编号 FROM ont_orders"},
-    {"tag": "本体对象", "q": "金额最大的订单编号",
-     "gold": "SELECT order_no AS 订单编号 FROM ont_orders ORDER BY amount DESC NULLS LAST LIMIT 1"},
-    {"tag": "本体对象", "q": "客户的电话号码分别是多少",
-     "gold": "SELECT name AS 客户, phone AS 电话 FROM ont_customers"},
+    # ===== 本体对象（检验「业务对象名 → 真实支撑表」这一层）=====
+    #
+    # ⚠️ 原题集用的是 `ont_orders` / `ont_customers`，但库里 `orders` / `customers`
+    # 两个对象类型**已被软删**（is_deleted=true，虽然底表还有数据）。
+    # 那 4 题量的是"不存在的东西"——基线与优化版都恒定 1/5=20%，
+    # 这个数字反映的是**题集失效**，不是 NL2SQL 能力。故换成当前确实存在的对象，
+    # 保留"必须靠本体对象名找到真实表"这个考察点。原题留档如下（勿删）：
+    #   {"q": "订单表里的金额总和是多少", "gold": "SELECT SUM(amount) AS 金额总和 FROM ont_orders"},
+    #   {"q": "一共多少个客户", "gold": "SELECT COUNT(*) AS c FROM ont_customers"},
+    #   {"q": "列出所有订单编号", "gold": "SELECT order_no AS 订单编号 FROM ont_orders"},
+    #   {"q": "金额最大的订单编号",
+    #    "gold": "SELECT order_no AS 订单编号 FROM ont_orders ORDER BY amount DESC NULLS LAST LIMIT 1"},
+    #   {"q": "客户的电话号码分别是多少", "gold": "SELECT name AS 客户, phone AS 电话 FROM ont_customers"},
+    {"tag": "本体对象", "q": "一共有多少条告警记录",
+     "gold": "SELECT COUNT(*) AS c FROM video_alarm_records"},
+    {"tag": "本体对象", "q": "告警记录里有哪些告警类型",
+     "gold": "SELECT DISTINCT alarm_type FROM video_alarm_records"},
+    {"tag": "本体对象", "q": "告警记录中最多的告警类型是哪个",
+     "gold": "SELECT alarm_type FROM video_alarm_records GROUP BY alarm_type ORDER BY COUNT(*) DESC LIMIT 1"},
+    {"tag": "本体对象", "q": "告警记录里一共有多少种严重级别",
+     "gold": "SELECT COUNT(DISTINCT severity) AS c FROM video_alarm_records"},
+    {"tag": "本体对象", "q": "一共多少个用户",
+     "gold": "SELECT COUNT(*) AS c FROM sys_user WHERE is_deleted=false"},
 ]
 
 
@@ -403,14 +415,14 @@ def lenient_match(gold_cols: list, gold_rows: list, llm_cols: list, llm_rows: li
       - 优先按「列名对齐」把 LLM 结果投影到金标列集合，再逐行比较；
       - 列名对齐失败时，退化为取 LLM 前 N 列（N=金标列数）做位置前缀投影，忽略尾部冗余列。
     """
-    gset = sorted(tuple(str(v) for v in r) for r in (gold_rows or []))
+    gset = _norm(gold_rows or [])
     if not gset:
         return not (llm_rows or [])
     if len(gset) != len(llm_rows or []):
         return False
     k = len(gold_cols)
     if not llm_cols:
-        return sorted(tuple(str(v) for v in r) for r in llm_rows) == gset
+        return _norm(llm_rows) == gset
     # (1) 列名对齐投影
     used: set[int] = set()
     order: list[int] = []
