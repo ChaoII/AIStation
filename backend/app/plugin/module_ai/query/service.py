@@ -171,10 +171,16 @@ async def sync_datasource_schema(datasource_id: int) -> dict:
     return {"tables": len(tables)}
 
 
-async def list_ds_schema(datasource_id: int) -> list[dict]:
+async def list_ds_schema(datasource_id: int, included_only: bool = False) -> list[dict]:
+    """某自定义数据源已同步的表结构。
+
+    ``included_only=True`` 时只返回**数据资产目录里已纳入**的表 ——
+    用于检索/prompt 的范围收敛（实测 ds:4 同步了 311 张表，其中 92 张是
+    SYS_*/_BAK 等技术表，混进检索会污染召回与提示词）。
+    """
     code = _ds_code(datasource_id)
     async with async_db_session() as db:
-        from sqlalchemy import select
+        from sqlalchemy import select, text as _t
 
         rows = (
             await db.execute(
@@ -184,6 +190,19 @@ async def list_ds_schema(datasource_id: int) -> list[dict]:
                 )
             )
         ).scalars().all()
+        if included_only:
+            inc = {
+                str(r[0]).upper()
+                for r in (
+                    await db.execute(
+                        _t(
+                            "SELECT table_name FROM ai_query_assets "
+                            "WHERE is_deleted=false AND included=true"
+                        )
+                    )
+                ).fetchall()
+            }
+            rows = [r for r in rows if str(r.table_name).upper() in inc]
     return [{"table": r.table_name, "comment": r.table_comment or "",
              "columns": r.columns or []} for r in rows]
 
@@ -6840,7 +6859,9 @@ class AiQueryService:
         out: dict[str, list[str]] = {}
         try:
             ds_id = int(key.split(":")[-1])
-            rows = await list_ds_schema(ds_id)
+            # **只取已纳入资产目录的表**：范围收敛到关键业务表，
+            # 避免 SYS_*/_BAK 等技术表混进检索与 prompt（实测污染召回）。
+            rows = await list_ds_schema(ds_id, included_only=True)
             for r in rows:
                 cols = []
                 # 表注释放第一位，形如 `FUEL_CB_COALBALANCE(燃煤采购结算主表)`：
