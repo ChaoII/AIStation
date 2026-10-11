@@ -84,11 +84,17 @@ def summarize(results: list[dict], k: int = 8) -> dict:
         return {"total": 0, "all_total": len(rows_all), "degenerate_n": degenerate_n,
                 "data_accuracy": 0.0, "semantic_accuracy": 0.0,
                 "fast_rate": 0.0, "recall_at_k": 0.0, "avg_ms": 0.0,
-                "p50_ms": 0.0, "p95_ms": 0.0, "error_rate": 0.0}
+                "p50_ms": 0.0, "p95_ms": 0.0, "error_rate": 0.0,
+                "metric_total": 0, "metric_accuracy": 0.0,
+                "generation_total": 0, "generation_accuracy": 0.0}
     ms = [int(r.get("took_ms") or 0) for r in rows]
     with_metric = [r for r in rows if r.get("expected_metric")]
     sem_hit = sum(1 for r in with_metric if r.get("metric_key") == r.get("expected_metric"))
     recalls = [float(r.get("recall") or 0.0) for r in rows]
+    # 快路径能答的题（指标枚举） vs 只能靠模型生成 SQL 的题 —— **分开报**，
+    # 否则"指标命中率"会被误当成"NL2SQL 生成能力"。
+    metric_rows = [r for r in rows if r.get("metric_eligible")]
+    gen_rows = [r for r in rows if not r.get("metric_eligible")]
     return {
         "total": n,
         "all_total": len(rows_all),
@@ -101,6 +107,14 @@ def summarize(results: list[dict], k: int = 8) -> dict:
         "p50_ms": _pctile(ms, 0.5),
         "p95_ms": _pctile(ms, 0.95),
         "error_rate": _pct(sum(1 for r in rows if r.get("is_error")), n),
+        # 指标题（快路径枚举能力）
+        "metric_total": len(metric_rows),
+        "metric_accuracy": _pct(sum(1 for r in metric_rows if r.get("gold_match")),
+                                len(metric_rows)),
+        # 生成题（模型自己把自然语言推理成 SQL 的能力）——**这才是要考的重点**
+        "generation_total": len(gen_rows),
+        "generation_accuracy": _pct(sum(1 for r in gen_rows if r.get("gold_match")),
+                                    len(gen_rows)),
         "k": k,
     }
 

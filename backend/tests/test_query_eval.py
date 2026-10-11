@@ -271,6 +271,26 @@ def test_verify_and_save_default_keeps_metric_questions(monkeypatch):
     asyncio.run(_run())
 
 
+def test_summarize_reports_generation_accuracy_separately():
+    """「生成能力」必须能单独看到：快路径能答的题不算考生成。"""
+    from app.plugin.module_ai.query.eval_metrics import summarize
+
+    def row(match, eligible, degenerate=False):
+        return {"gold_match": match, "is_error": False, "path": "slow", "took_ms": 10,
+                "recall": 0.0, "degenerate": degenerate, "metric_eligible": eligible}
+
+    s = summarize([
+        row(True, True),        # 指标题：答对
+        row(False, False),      # 生成题：答错
+        row(True, False),       # 生成题：答对
+        row(True, True, True),  # 退化题：两边都不计
+    ])
+    assert s["total"] == 3
+    assert s["metric_total"] == 1 and s["metric_accuracy"] == 1.0
+    assert s["generation_total"] == 2, s
+    assert s["generation_accuracy"] == 0.5, s
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================

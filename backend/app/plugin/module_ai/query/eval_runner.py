@@ -206,6 +206,8 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
                 "expected_metric": c.get("expected_metric") or "",
                 # 退化题（金标为空/NULL/单值 0）：报表统计时不计入分母
                 "degenerate": bool(c.get("degenerate")),
+                # 指标快路径能答的题：报表里与"生成题"分开统计
+                "metric_eligible": bool(c.get("metric_eligible")),
             }
             results.append(row)
             await _save_result(run_id, row)
@@ -254,7 +256,7 @@ async def _save_result(run_id: str, row: dict) -> None:
                 "ou": row["ontology_used"], "tcalls": "[]", "rt": 0,
                 "tr": json.dumps(
                     {k: row[k] for k in ("difficulty", "scenario", "form", "datasource",
-                                         "expected_metric", "degenerate")},
+                                         "expected_metric", "degenerate", "metric_eligible")},
                     ensure_ascii=False),
             },
         )

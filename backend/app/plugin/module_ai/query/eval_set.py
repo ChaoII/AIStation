@@ -223,6 +223,8 @@ async def load_results(run_id: str) -> list[dict]:
             "expected_metric": (tr or {}).get("expected_metric") or "",
             # 退化题（金标为空/NULL/单值 0）：不计入精度分母
             "degenerate": bool((tr or {}).get("degenerate")),
+            # 指标快路径能答的题：与"生成题"分开统计
+            "metric_eligible": bool((tr or {}).get("metric_eligible")),
         })
     return out
 
