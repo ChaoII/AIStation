@@ -64,11 +64,15 @@ _CASE_FIELDS = (
 
 
 def _case_row(r) -> dict:
+    notes = (r[11] if len(r) > 11 else "") or ""
     return {
         "id": r[0], "question": r[1], "gold_sql": r[2], "datasource": r[3],
         "difficulty": r[4], "scenario": r[5], "form": r[6], "expected_metric": r[7],
         "tags": r[8] if isinstance(r[8], list) else (json.loads(r[8]) if r[8] else []),
         "verified": bool(r[9]), "enabled": bool(r[10]),
+        "notes": notes,
+        # 退化题（金标结果空/NULL/单值 0）：精度统计不计入分母
+        "degenerate": "degenerate" in notes,
     }
 
 
@@ -141,7 +145,7 @@ async def list_cases(
             await db.execute(
                 _t(
                     "SELECT id,question,gold_sql,datasource,difficulty,scenario,form,"
-                    "expected_metric,tags,verified,enabled FROM ai_query_testcase "
+                    "expected_metric,tags,verified,enabled,notes FROM ai_query_testcase "
                     "WHERE " + " AND ".join(conds) + " ORDER BY id"
                 ),
                 params,
@@ -215,6 +219,8 @@ async def load_results(run_id: str) -> list[dict]:
             "form": (tr or {}).get("form"), "datasource": (tr or {}).get("datasource"),
             # 语义准确率的分母需要它；早期漏存 → 报表里 semantic_accuracy 恒为 0（实测踩坑）
             "expected_metric": (tr or {}).get("expected_metric") or "",
+            # 退化题（金标为空/NULL/单值 0）：不计入精度分母
+            "degenerate": bool((tr or {}).get("degenerate")),
         })
     return out
 

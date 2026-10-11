@@ -218,6 +218,56 @@ def test_lenient_match_normalizes_null_on_both_sides():
     assert lenient_match(["c"], [[None]], ["c"], [["∅"]]) is True
 
 
+# ===========================================================================
+# 批次6：退化题闸门（金标结果为空/NULL/单值 0 的题不参与精度统计）
+# ===========================================================================
+def test_is_degenerate_result_detects_empty_null_and_single_zero():
+    from app.plugin.module_ai.query.eval_metrics import is_degenerate_result
+
+    assert is_degenerate_result([]) is True
+    assert is_degenerate_result([[None]]) is True
+    assert is_degenerate_result([[0]]) is True
+    assert is_degenerate_result([[0.0]]) is True
+    assert is_degenerate_result([[""]]) is True
+    assert is_degenerate_result([[None], [None]]) is True
+    # 有真实信息 → 不算退化
+    assert is_degenerate_result([[1]]) is False
+    assert is_degenerate_result([[0], [1]]) is False
+    assert is_degenerate_result([[None], [3]]) is False
+
+
+def test_summarize_excludes_degenerate_rows():
+    """退化题不能进分母：否则「任何 SQL 都能答对」把精度抬成虚高。"""
+    from app.plugin.module_ai.query.eval_metrics import summarize
+
+    rows = [
+        {"gold_match": True, "is_error": False, "path": "fast", "took_ms": 10,
+         "recall": 1.0, "degenerate": False},
+        {"gold_match": False, "is_error": True, "path": "slow", "took_ms": 20,
+         "recall": 0.0, "degenerate": False},
+        {"gold_match": True, "is_error": False, "path": "fast", "took_ms": 30,
+         "recall": 0.0, "degenerate": True},   # 退化题：不计入
+    ]
+    s = summarize(rows)
+    assert s["total"] == 2, f"total 应只算非退化题: {s}"
+    assert s["degenerate_n"] == 1
+    assert s["all_total"] == 3
+    assert s["data_accuracy"] == 0.5, s
+    assert s["avg_ms"] == 15.0, s
+
+
+def test_group_by_excludes_degenerate_rows():
+    from app.plugin.module_ai.query.eval_metrics import group_by
+
+    rows = [
+        {"difficulty": "简单", "gold_match": False, "degenerate": False},
+        {"difficulty": "简单", "gold_match": True, "degenerate": True},
+    ]
+    g = group_by(rows, "difficulty")
+    assert g["简单"]["total"] == 1, g
+    assert g["简单"]["accuracy"] == 0.0, g
+
+
 def test_eval_cases_and_status_endpoints(test_client, auth_headers):
     h = auth_headers
     r = test_client.post(

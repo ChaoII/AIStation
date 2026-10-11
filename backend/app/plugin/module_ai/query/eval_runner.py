@@ -203,6 +203,9 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
                 "ontology_used": json.dumps(d.get("ontology_used") or [], ensure_ascii=False),
                 "difficulty": c.get("difficulty"), "scenario": c.get("scenario"),
                 "form": c.get("form"), "datasource": ds,
+                "expected_metric": c.get("expected_metric") or "",
+                # 退化题（金标为空/NULL/单值 0）：报表统计时不计入分母
+                "degenerate": bool(c.get("degenerate")),
             }
             results.append(row)
             await _save_result(run_id, row)
@@ -251,7 +254,7 @@ async def _save_result(run_id: str, row: dict) -> None:
                 "ou": row["ontology_used"], "tcalls": "[]", "rt": 0,
                 "tr": json.dumps(
                     {k: row[k] for k in ("difficulty", "scenario", "form", "datasource",
-                                         "expected_metric")},
+                                         "expected_metric", "degenerate")},
                     ensure_ascii=False),
             },
         )

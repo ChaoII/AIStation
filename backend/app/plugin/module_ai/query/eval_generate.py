@@ -117,10 +117,16 @@ async def _run_gold(sql: str, datasource: str, auth) -> dict:
 
 
 async def verify_and_save(cases: list[dict], datasource: str, auth) -> dict:
-    """**执行校验后入库**：SQL 可执行且行数 > 0 才 ``verified=true`` 收录。"""
+    """**执行校验后入库**：SQL 可执行且行数 > 0 才 ``verified=true`` 收录。
+
+    同时识别**退化题**（金标结果为空/NULL/单值 0）：仍然收录以保留覆盖面，
+    但打上 ``degenerate`` 标记，精度统计时**不计入分母**
+    —— 否则「任何 SQL 都能答对」会把数字抬成虚高（实测 ds:4 有 92% 是这种题）。
+    """
+    from .eval_metrics import is_degenerate_result
     from .eval_set import upsert_case
 
-    saved = rejected = 0
+    saved = rejected = degenerate = 0
     reasons: list[str] = []
     for c in cases or []:
         sql = str(c.get("gold_sql") or "").strip()
@@ -131,10 +137,19 @@ async def verify_and_save(cases: list[dict], datasource: str, auth) -> dict:
                 f"{str(c.get('question') or '?')[:24]} → {(res.get('error') or '空结果')[:80]}"
             )
             continue
-        await upsert_case({**c, "datasource": datasource, "verified": True})
+        deg = is_degenerate_result(res["rows"])
+        if deg:
+            degenerate += 1
+        await upsert_case({
+            **c, "datasource": datasource, "verified": True,
+            "notes": "degenerate" if deg else "",
+        })
         saved += 1
-    log.info(f"[ai-eval] 生成校验：收录 {saved} 题，拒绝 {rejected} 题")
-    return {"saved": saved, "rejected": rejected, "reasons": reasons[:10]}
+    log.info(
+        f"[ai-eval] 生成校验：收录 {saved} 题（其中退化 {degenerate} 题），拒绝 {rejected} 题"
+    )
+    return {"saved": saved, "rejected": rejected, "degenerate": degenerate,
+            "reasons": reasons[:10]}
 
 
 # ---------------------------------------------------------------------------
