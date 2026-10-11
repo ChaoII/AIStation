@@ -29,6 +29,12 @@ export interface EvalSummary {
   p50_ms?: number;
   p95_ms?: number;
   error_rate: number;
+  /** 指标题（快路径能答）：考的是"指标枚举" */
+  metric_total?: number;
+  metric_accuracy?: number;
+  /** 生成题（指标答不了）：考的是"模型把自然语言推理成 SQL" */
+  generation_total?: number;
+  generation_accuracy?: number;
   k?: number;
 }
 

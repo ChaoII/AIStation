@@ -195,6 +195,8 @@ const stats = computed(() => {
   const s = report.value?.summary;
   if (!s) return [];
   return [
+    { label: "生成题准确率", value: +((s.generation_accuracy ?? 0) * 100).toFixed(1), suffix: "%" },
+    { label: "指标题准确率", value: +((s.metric_accuracy ?? 0) * 100).toFixed(1), suffix: "%" },
     { label: "数据准确率", value: +(s.data_accuracy * 100).toFixed(1), suffix: "%" },
     { label: "语义准确率", value: +(s.semantic_accuracy * 100).toFixed(1), suffix: "%" },
     { label: "快路径占比", value: +(s.fast_rate * 100).toFixed(1), suffix: "%" },
