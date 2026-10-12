@@ -7135,7 +7135,9 @@ class AiQueryService:
         lines.append("【术语】")
         for t in terms:
             lines.append(f"- {t['term']} -> {t['metric_key'] or t['field_path']}")
+        t_c0 = time.perf_counter()
         conc = await cls._concept_context()
+        t_c1 = time.perf_counter()
         if conc:
             lines.append(conc)
         lines.append("【可查询表及字段】")
@@ -7146,8 +7148,14 @@ class AiQueryService:
             # top_k=16）。旧实现先把**全部 85 个对象、1500+ 属性**塞进本体块
             # （实测 37517 字符），再把检索结果拼在后面——LLM 的前缀计算大半花在
             # 与问题无关的对象上，又慢又干扰判断。现在只带检索命中的表。
+            t_r0 = time.perf_counter()
             rel = await cls._semantic_tables(question, schema, metrics, terms, datasource)
+            t_r1 = time.perf_counter()
             ont = await cls._ont_ctx_block(only_tables=set(rel))
+            t_r2 = time.perf_counter()
+            log.warning("[schema] 分段：概念={}ms 召回={}ms 本体块={}ms",
+                        int((t_c1 - t_c0) * 1000), int((t_r1 - t_r0) * 1000),
+                        int((t_r2 - t_r1) * 1000))
             if ont:
                 lines.append(ont)
             for t in rel:
