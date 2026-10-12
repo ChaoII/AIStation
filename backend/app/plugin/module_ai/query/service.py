@@ -5129,6 +5129,9 @@ class AiQueryService:
             "query_timeout_sec": "10",
             "nl2sql_retry": "2",
             "nl2sql_max_tokens": "1200",
+            # agno 阶段的**硬天花板**（秒）：单次 HTTP 超时只是下层，agno 内部还可能重试/多段，
+            # 叠起来能把一道题拖到 467 秒（实测）。超时 → 抛错走自纠错/降级，不让用户干等。
+            "nl2sql_call_timeout": "90",
             # ---- 工程配置（schema 链接 / 提示词策略）----
             "schema_top_k": "16",                    # 注入 schema 上下文的表数量上限
             "schema_semantic_weight": "0.6",         # 语义检索权重
@@ -5830,10 +5833,13 @@ class AiQueryService:
             raise CustomException(msg=f"未配置可用的问答模型：{e}")
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
+        t_p0 = time.perf_counter()
         schema_ctx = await cls._build_schema_context(question, datasource, metrics, terms)
+        t_p1 = time.perf_counter()
         # 留痕：prompt 体积。生成耗时几乎全在 prefill 上，prompt 一大就慢，
         # 所以这个数字必须可见（实测全量倾倒时 37K 字符 → 生成 7s）
-        log.warning("[query] prompt 长度={} 字符", len(schema_ctx))
+        log.warning("[query] prompt 长度={} 字符（schema 构建={}ms）",
+                    len(schema_ctx), int((t_p1 - t_p0) * 1000))
         cfg = await cls._cfg()
         # 两段式分解：**多步题先出执行计划**（可检查的中间产物），再据计划写 SQL。
         # 失败即**降级**为单段生成（绝不因计划失败而答不出来）。
@@ -5945,7 +5951,16 @@ class AiQueryService:
                 )
             else:
                 agent = Agent(model=model, telemetry=False, instructions=system_prompt)
-            resp = await agent.arun(user_msg)
+            t_llm0 = time.perf_counter()
+            # 硬上限：agno 的 model 虽有 timeout=60，但那只是**单次 HTTP** 的超时；
+            # agno 内部还可能重试/多段请求，叠起来能把一道题拖到 467 秒（实测）。
+            # 在 agno **之外**用 wait_for 兜底，保证单次问答的 agno 阶段有天花板。
+            resp = await asyncio.wait_for(
+                agent.arun(user_msg),
+                timeout=cls._cfg_int(cfg, "nl2sql_call_timeout", 90),
+            )
+            log.warning("[NL2SQL] agno 阶段耗时={}ms（占 生成 计时的比例见上一条计时行）",
+                        int((time.perf_counter() - t_llm0) * 1000))
             # 留痕：模型原始输出。问数失败时这是唯一能定位"模型到底给了什么"的地方
             log.warning("[NL2SQL] 原始输出={}", (resp.content or "")[:500])
             sql = cls._extract_sql((resp.content or "").strip())
