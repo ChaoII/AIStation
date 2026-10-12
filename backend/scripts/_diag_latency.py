@@ -37,23 +37,36 @@ def main(path: str) -> None:
 
     recs: list[dict] = []
     last_prompt = 0
-    last_retried = False
+    last_schema_ms = 0
+    last_agno_ms = 0
+    agno_times: list[int] = []
+    schema_times: list[int] = []
     for ln in lines:
-        if "_nl2sql:5836" in ln:  # prompt 长度=N 字符（只取 ASCII 数字，绕开编码乱码）
-            m = re.findall(r"=(\d+)", ln)
-            if m:
-                last_prompt = int(m[0])
-            last_retried = False
-        elif "_slow_path:5768" in ln:  # 自校验命中 → 重试
-            last_retried = True
-        elif "_slow_path:5792" in ln:  # 计时：生成/执行/收尾/总计
+        if "_nl2sql:" in ln:  # prompt 长度=N 字符（schema 构建=Mms）/ agno 阶段耗时=Mms
+            nums_ms = [int(x) for x in re.findall(r"=(\d+)ms", ln)]
+            if "agno" in ln.lower() or (nums_ms and "阶段耗时" in ln):
+                if nums_ms:
+                    last_agno_ms = nums_ms[0]
+                    agno_times.append(nums_ms[0])
+            else:
+                m1 = re.findall(r"=(\d+)", ln)
+                if m1:
+                    last_prompt = int(m1[0])
+                if nums_ms:
+                    last_schema_ms = nums_ms[0]
+                    schema_times.append(nums_ms[0])
+                last_retried = False
+        elif "_slow_path:" in ln and ln.count("ms") >= 4:  # 计时：生成/执行/收尾/总计
             nums = [int(x) for x in re.findall(r"(\d+)ms", ln)]
             if len(nums) >= 4:
                 recs.append({
                     "gen": nums[0], "exec": nums[1],
                     "tail": nums[2], "total": nums[3],
-                    "prompt": last_prompt, "retry": last_retried,
+                    "prompt": last_prompt, "schema": last_schema_ms,
+                    "agno": last_agno_ms, "retry": last_retried,
                 })
+        elif "_slow_path:" in ln:  # 自校验命中 → 重试
+            last_retried = True
 
     if not recs:
         print("未解析到计时行")
@@ -68,6 +81,16 @@ def main(path: str) -> None:
     for name, xs in (("生成(LLM)", gen), ("执行(SQL)", exe), ("收尾(检索+DQ)", tail), ("总计", tot)):
         print(f"  {name:14s} 中位={median(xs):>8.0f}ms  P95={pct(xs, 0.95):>8.0f}ms  "
               f"最长={max(xs):>8.0f}ms  占总计={sum(xs)/max(1,sum(tot))*100:5.1f}%")
+
+    # 分段归因：生成 计时里，schema 构建 vs agno 调用各占多少
+    if schema_times or agno_times:
+        print("\n分段归因（新增计时）：")
+        if schema_times:
+            print(f"  schema 构建(含检索) n={len(schema_times)}  中位={median(schema_times):>7.0f}ms  "
+                  f"P95={pct(schema_times,0.95):>7.0f}ms  最长={max(schema_times):>7.0f}ms")
+        if agno_times:
+            print(f"  agno 阶段          n={len(agno_times)}  中位={median(agno_times):>7.0f}ms  "
+                  f"P95={pct(agno_times,0.95):>7.0f}ms  最长={max(agno_times):>7.0f}ms")
 
     # 相关性：prompt 长度 vs 生成耗时
     xs = [r["prompt"] for r in recs]
