@@ -656,3 +656,18 @@ export function getEvalAblation(run_id: string) {
     headers: { _silent: "true" },
   });
 }
+
+/** 启动**方差**评测：同一批题重复跑 N 次（串行），用于判断"差异是否真实"。 */
+export function startEvalVariance(data?: { repeats?: number; filter?: any }) {
+  return request({ url: `${API_PATH}/eval/variance`, method: "post", data: data ?? {} });
+}
+
+/** 方差报告：跨次均值/标准差/噪声带 + 逐题翻转 + McNemar。 */
+export function getEvalVariance(run_id: string) {
+  return request({
+    url: `${API_PATH}/eval/variance`,
+    method: "get",
+    params: { run_id },
+    headers: { _silent: "true" },
+  });
+}
