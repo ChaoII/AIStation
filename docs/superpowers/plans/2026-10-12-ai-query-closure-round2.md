@@ -92,3 +92,23 @@ def _cfg_bool(cls, cfg, key, default=True):
 真分解的开启方式（保留可复测）：`run_eval_once.py --config two_stage_planning=true`
 或设置项 `two_stage_planning=true`。
 
+## ✅ 重测结论（修复 `_cfg_bool` 后，B 半 53 题留出法 + 纯生成，唯一变量）
+
+| 指标 | 基线 `false` | 实验 `true` | Δ |
+|---|---|---|---|
+| **data_accuracy** | **83.02%** | **75.47%** | **−7.55 点** |
+| generation_accuracy | 81.82% | 75.00% | −6.82 点 |
+| **error_rate** | **0%** | **9.43%** | **+9.43 点**（5 题整题失败） |
+| 窗口函数 | 41.67% | 33.33% | −8.34 点 |
+| 排名TopN | 83.33% | 66.67% | −16.66 点 |
+| 困难题 | 42.86% | 35.71% | −7.15 点 |
+| recall@8 | 1.000 | 0.906 | 只因失败行记 0，**检索本身没变** |
+
+**机制（日志直接证据）**：计划阶段**诱发表名幻觉** —— 生成出 `FROM "bunker" JOIN
+"bunker_entry"`、`"facility" JOIN "measure_point"` 等**不存在的表**（真实表是
+`FUEL_CMCS_INCOALBUNKER` / `CMMS_POINT`）；另有 1 次 CTE 输出被校验拒绝（`Invalid expression`）。
+**多一次 LLM 调用没换来计划质量，反而破坏了"表名纪律"**。
+
+**结论**：`two_stage_planning` **保持默认关**（有可信依据，不再是"未验证"）。
+脚本：`scripts/_ab_two_stage.py`（可复跑）；配置恢复检查 `OK`。
+

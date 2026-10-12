@@ -5146,7 +5146,7 @@ class AiQueryService:
             # ⚠️ 名不副实的历史遗留：它**只在提示词里加一条**「先判断单表/联表/嵌套」，
             #    **不做真分解**（真分解是下面的 two_stage_planning）。别按名字理解它。
             "decomposed_planning": "true",           # 规划提示（仅提示词一条规则，**非真分解**）
-            "two_stage_planning": "false",           # 两段式**真分解**；旧 A/B 结论已作废(开关曾因 _cfg_bool bug 未生效)→待重测
+            "two_stage_planning": "false",           # 两段式**真分解**；B半A/B 实测 −7.55 分+错误率0→9.4%(计划诱发表名幻觉)→保持关
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
             "agno_tool_agent": "false",              # 工具化 Agent(多轮往返，慢)；false=单次生成+本地执行自纠错
             "kg_enabled": "true",                    # 知识图谱图遍历召回(补关联表/联表路径)
