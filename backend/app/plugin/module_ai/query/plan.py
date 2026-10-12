@@ -34,11 +34,26 @@ def is_multistep(question: str) -> bool:
     return bool(_MULTISTEP_RE.search(question or ""))
 
 
-def plan_prompt(question: str) -> str:
-    """第一段：只出**执行计划**（不写 SQL）。"""
+def plan_prompt(question: str, tables: list[str] | None = None) -> str:
+    """第一段：只出**执行计划**（不写 SQL）。
+
+    ⚠️ **必须传真实表清单**（``tables``）。第一段**看不到 schema**，
+    若不给词表，它只能**凭记忆编表名**（实测编出 ``coal_bunker``/``inbound_record``，
+    而真实表是 ``FUEL_CMCS_INCOALBUNKER``）——编出来的名字再被第二段当"命令"执行，
+    就变成了**毒先验**：有依据的 schema 输给无依据的猜测。
+    """
+    hint = ""
+    if tables:
+        shown = [str(t) for t in tables if str(t).strip()][:80]
+        hint = (
+            "\n**可用表清单（只能从下面这些表里选，严禁自创表名/字段名）**：\n"
+            + "、".join(shown)
+            + "\n自创的名字在库里不存在，SQL 会**直接执行失败**。"
+            "如果拿不准用哪张表，就把 `tables` 写成 `[]`（宁可不给计划，也不要编）。"
+        )
     return (
         "你是 SQL 执行规划助手。**只输出执行计划，不要写 SQL**。\n"
-        f"问题：{question}\n"
+        f"问题：{question}{hint}\n"
         "请严格只返回 JSON："
         '{"tables":["用到的表"],"joins":["a.x=b.y"],"group_by":["分组键"],'
         '"window":["窗口/排名表达式说明"],"filters":["过滤条件"],"outputs":["输出列"],'
@@ -111,7 +126,11 @@ def format_plan(plan: dict) -> str:
         "window": "窗口/排名", "filters": "过滤条件", "outputs": "输出列",
         "order_limit": "排序与截断",
     }
-    lines = ["【执行计划（请严格按它写 SQL）】"]
+    # ⚠️ 语气**不能**写「请严格按它写 SQL」：计划阶段看不到真实 schema，
+    #    一旦被当成命令，它编造的表名就会**压过**第二段里正确的 schema（实测 −7.55 分 + 错误率 +9.4%）。
+    #    正确姿势：计划只提供**思路**，标识符一律以 schema 为准。
+    lines = ["【参考执行计划（仅供思路参考；**表名/字段名一律以下方 schema 为准**，"
+             "计划里出现的表名若不在 schema 中，请忽略它）】"]
     for k, lab in labels.items():
         v = plan.get(k)
         if not v:
@@ -125,4 +144,5 @@ def format_plan(plan: dict) -> str:
 
 def sql_prompt(question: str, plan: dict, base_context: str) -> str:
     """第二段：把计划 + 原上下文交给模型写 SQL。"""
-    return f"{base_context}\n\n{format_plan(plan)}\n\n请按上面的执行计划，只返回一条 SELECT SQL。"
+    return (f"{base_context}\n\n{format_plan(plan)}\n\n"
+            "请只返回一条 SELECT SQL；**表名/字段名一律以下方 schema 为准**。")

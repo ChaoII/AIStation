@@ -657,6 +657,54 @@ def test_ablation_keys_match_frontend():
     )
 
 
+def test_plan_prompt_requires_real_vocabulary_and_format_plan_is_reference_only():
+    """两段式分解的两条根因（A/B 实测 −7.55 分 + 错误率 0→9.43%）：
+
+    ① 第一段**看不到 schema**却要它"报表名" → 它只能编（实测编出 `coal_bunker`）；
+    ② 编出来的计划被注入成「**请严格按它写 SQL**」→ 编造的名字**压过**正确的 schema（毒先验）。
+    """
+    from app.plugin.module_ai.query.plan import format_plan, plan_prompt
+
+    # ① 必须给真实表清单 + 明确禁止自创
+    p = plan_prompt("每个原煤仓的累计入仓煤量前 3 名",
+                    tables=["FUEL_CMCS_INCOALBUNKER", "CMMS_POINT"])
+    assert "FUEL_CMCS_INCOALBUNKER" in p and "CMMS_POINT" in p
+    assert "严禁自创" in p
+    assert "[]" in p  # 允许"宁可不给计划"
+
+    # ② 注入语气必须是"参考"，且表名以 schema 为准
+    fmt = format_plan({"tables": ["coal_bunker"], "joins": [], "group_by": [],
+                       "window": [], "filters": [], "outputs": [], "order_limit": ""})
+    assert "请严格按它写 SQL" not in fmt
+    assert "schema 为准" in fmt
+
+
+def test_nl2sql_two_stage_keeps_only_real_tables(monkeypatch):
+    """约束式解码：计划里编出来的表名必须被**丢弃**（否则毒化第二段）。"""
+    from app.plugin.module_ai.query import service as S
+
+    async def _fake_plan(prompt, runtime, temperature):  # 编了两张不存在的表
+        return '{"tables":["coal_bunker","inbound_record"],"group_by":["coal_bunker.bunker_id"]}'
+
+    async def _fake_schema(ds):  # 真实 schema 里没有它们
+        return {"FUEL_CMCS_INCOALBUNKER": ["BUNKERNAME", "INQTY"], "DTXY_PMXX": ["RZ"]}
+
+    async def _fake_runtime():
+        return {"model": "m", "base_url": "http://x"}
+
+    monkeypatch.setattr(S.AiQueryService, "_plan_llm", staticmethod(_fake_plan))
+    monkeypatch.setattr(S.AiQueryService, "_ds_schema_map", staticmethod(_fake_schema))
+    monkeypatch.setattr(S.AiQueryService, "_get_runtime", staticmethod(_fake_runtime))
+
+    import asyncio
+    import inspect
+
+    src = inspect.getsource(S.AiQueryService._nl2sql)
+    assert "_ds_schema_map(datasource" in src, "计划阶段必须注入真实表清单"
+    assert '_plan["tables"]' in src and "_ok_tables" in src, "必须过滤掉不在 schema 的表名"
+    assert "plan_prompt(question, tables=" in src
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================

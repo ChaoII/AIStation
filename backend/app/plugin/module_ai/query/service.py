@@ -5844,8 +5844,21 @@ class AiQueryService:
                 from .plan import format_plan, is_multistep, parse_plan, plan_prompt
 
                 if is_multistep(question):
-                    _plan_text = await cls._plan_llm(plan_prompt(question), runtime, temperature)
+                    # 必须把**真实表清单**给第一段：它看不到 schema，不给词表就只能编表名，
+                    # 而编出来的名字会被第二段当成计划执行 → 毒先验（实测 −7.55 分 + 错误率 +9.4%）。
+                    _sch = await cls._ds_schema_map(datasource or "")
+                    _plan_text = await cls._plan_llm(
+                        plan_prompt(question, tables=list(_sch.keys())), runtime, temperature
+                    )
                     _plan = parse_plan(_plan_text)
+                    # 约束：只保留**在真实 schema 里**的表；编出来的直接丢掉（宁可降级，不可毒化）
+                    if _plan:
+                        _ok_tables = [t for t in (_plan.get("tables") or []) if t in _sch]
+                        if not _ok_tables:
+                            _plan = None
+                            log.warning("[query] 两段式：计划里的表名全都不在 schema 中，丢弃计划")
+                        else:
+                            _plan["tables"] = _ok_tables
                     if _plan:
                         schema_ctx = schema_ctx + "\n\n" + format_plan(_plan)
                         log.warning("[query] 两段式：计划已生成（表 {} 张）",
