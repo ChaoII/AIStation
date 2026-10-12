@@ -41,9 +41,14 @@ async def _wait(R, rid: str) -> dict:
 
 
 async def _one(R, label: str, cfg: dict) -> tuple[dict, dict]:
+    from app.plugin.module_ai.query import service as S
     from app.plugin.module_ai.query.eval_metrics import group_by, summarize
     from app.plugin.module_ai.query.eval_set import load_results
 
+    # ⚠️ 必须清空**进程内 SQL 缓存**（TTL 30min）：否则第二轮会大量命中第一轮的生成结果，
+    #    实验组实际在"回放"基线 —— 两边指标会**逐项完全相同**（实测踩过，整轮作废）。
+    dropped = S.sql_cache_clear()
+    S._SETTINGS_CACHE = None
     t0 = time.perf_counter()
     rid = R.start_run(R._auth(), filter={"force_slow": True, "split": "B"}, config=cfg)
     st = await _wait(R, rid)
@@ -51,7 +56,7 @@ async def _one(R, label: str, cfg: dict) -> tuple[dict, dict]:
     s = summarize(rows)
     print(
         f"\n=== {label}  config={cfg}  status={st.get('status')}  "
-        f"题数={st.get('total')} 用时={time.perf_counter() - t0:.0f}s",
+        f"题数={st.get('total')} 用时={time.perf_counter() - t0:.0f}s  清缓存={dropped} 条",
         flush=True,
     )
     print("  summary: " + json.dumps(s, ensure_ascii=False), flush=True)
