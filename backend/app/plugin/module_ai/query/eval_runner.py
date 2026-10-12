@@ -394,3 +394,65 @@ def get_ablation_report(run_id: str | None) -> dict | None:
         return None
     return {"run_id": run_id, "status": r.get("status"), "groups": r.get("groups"),
             "current": r.get("current"), "table": r.get("table"), "error": r.get("error")}
+
+
+async def _wait_sub_run(sub_id: str) -> dict:
+    """等一个子评测跑完（供方差/重复执行使用）。"""
+    while True:
+        st = get_status(sub_id)
+        if st and st["status"] in ("done", "error"):
+            return st
+        await asyncio.sleep(2)
+
+
+def start_variance(auth, repeats: int = 3, filter: dict | None = None) -> str:
+    """启动**方差**评测：同一批题重复跑 N 次（串行），回答"这个差异是真的吗"。
+
+    为什么必须有它：同一配置（代码路径完全相同）三次跑同一批 B 半 53 题，
+    `data_accuracy` = 75.47% / 83.02% / 84.91%（差 10 分）→ 单次 A/B 的差值
+    **不能归因给功能**。对标 Palantir AIP Evals 的 "examine the variance across executions"。
+
+    ⚠️ 每次重复前**必须清空 SQL 缓存**：否则后次在回放前次的生成结果，
+    两轮指标会**逐项完全相同**（实测踩过，整轮作废）。
+    """
+    run_id = f"vr_{uuid.uuid4().hex[:12]}"
+    flt = dict(filter or {})
+    n = max(2, min(int(repeats or 3), 6))
+    _RUNS[run_id] = {
+        "run_id": run_id, "status": "running", "mode": "variance",
+        "repeats": n, "done": 0, "current": "", "runs": [], "report": None, "error": "",
+    }
+
+    async def _job() -> None:
+        try:
+            from .eval_set import load_results
+            from .eval_variance import variance_report
+            from .service import sql_cache_clear
+
+            for i in range(n):
+                sql_cache_clear()  # ← 不清就是回放，见 docstring
+                _RUNS[run_id].update(current=f"第 {i + 1}/{n} 次", done=i)
+                sub = start_run(auth, filter=flt or None)
+                st = await _wait_sub_run(sub)
+                if st.get("status") == "error":
+                    raise RuntimeError(f"第 {i + 1} 次失败：{st.get('error')}")
+                _RUNS[run_id]["runs"].append({"run_id": sub, "rows": await load_results(sub)})
+            _RUNS[run_id]["report"] = variance_report([x["rows"] for x in _RUNS[run_id]["runs"]])
+            _RUNS[run_id].update(status="done", done=n, current="")
+        except Exception as e:  # noqa: BLE001
+            _RUNS[run_id].update(status="error", error=str(e)[:300])
+
+    _RUNS[run_id]["_task"] = asyncio.ensure_future(_job())
+    return run_id
+
+
+def get_variance_report(run_id: str | None) -> dict | None:
+    r = _RUNS.get(run_id) if run_id else None
+    if not r:
+        return None
+    return {
+        "run_id": run_id, "status": r.get("status"), "repeats": r.get("repeats"),
+        "done": r.get("done"), "current": r.get("current"),
+        "sub_runs": [x["run_id"] for x in (r.get("runs") or [])],
+        "report": r.get("report"), "error": r.get("error"),
+    }

@@ -907,6 +907,29 @@ async def eval_ablation_report(
     return SuccessResponse(data=get_ablation_report(run_id), msg="查询成功")
 
 
+@AiQueryRouter.post("/eval/variance", summary="启动方差评测（同一批题重复跑 N 次）")
+async def eval_variance_start(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    data: Annotated[dict | None, Body()] = None,
+) -> JSONResponse:
+    """回答"这个差异是真的吗"：跨次均值/标准差/噪声带 + 逐题翻转 + McNemar。"""
+    from .eval_runner import start_variance
+
+    body = data or {}
+    rid = start_variance(auth, repeats=int(body.get("repeats") or 3), filter=body.get("filter"))
+    return SuccessResponse(data={"run_id": rid}, msg="已启动")
+
+
+@AiQueryRouter.get("/eval/variance", summary="方差报告")
+async def eval_variance_report(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    run_id: str,
+) -> JSONResponse:
+    from .eval_runner import get_variance_report
+
+    return SuccessResponse(data=get_variance_report(run_id), msg="查询成功")
+
+
 # ---- P3-② Workshop 对象工作台(无代码应用) ----
 @AiQueryRouter.get("/workshop/list", summary="对象应用列表")
 async def workshop_list(
