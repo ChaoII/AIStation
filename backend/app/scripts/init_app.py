@@ -1445,6 +1445,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
         asyncio.create_task(cleanup_loop())
         log.info("✅ 临时训练产物目录清理已启动")
 
+        # 问数模型保活：实测冷启动会把"首次问数"的 agno 调用拖到 29.7 秒（热了只要 1.8 秒）
+        from app.plugin.module_ai.query.keepalive import start_llm_keepalive
+        asyncio.create_task(start_llm_keepalive())
+        log.info("✅ 问数模型保活已启动")
+
         from app.api.v1.module_video.edge.retention import start_edge_event_retention
         start_edge_event_retention()
         log.info("✅ 边缘事件 TTL 清理已启动")

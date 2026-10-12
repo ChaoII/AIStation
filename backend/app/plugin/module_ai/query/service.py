@@ -5136,6 +5136,9 @@ class AiQueryService:
             # 思考模式：low（默认，保留少量思考）/ off（完全不思考，最快）/ on（不限制，会重现长尾）
             # 实测同一难题：无限制 22.3s ｜ low 4.6s ｜ off 3.8s
             "nl2sql_thinking_mode": "low",
+            # 模型保活：实测冷启动会把首次问数拖到 29.7s（热了 1.8s）→ 周期焐热
+            "llm_keepalive_enabled": "true",
+            "llm_keepalive_interval": "240",
             # ---- 工程配置（schema 链接 / 提示词策略）----
             "schema_top_k": "16",                    # 注入 schema 上下文的表数量上限
             "schema_semantic_weight": "0.6",         # 语义检索权重
