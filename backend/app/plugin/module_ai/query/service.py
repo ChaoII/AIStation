@@ -5133,6 +5133,9 @@ class AiQueryService:
             # agno 阶段的**硬天花板**（秒）：单次 HTTP 超时只是下层，agno 内部还可能重试/多段，
             # 叠起来能把一道题拖到 467 秒（实测）。超时 → 抛错走自纠错/降级，不让用户干等。
             "nl2sql_call_timeout": "90",
+            # 思考模式：low（默认，保留少量思考）/ off（完全不思考，最快）/ on（不限制，会重现长尾）
+            # 实测同一难题：无限制 22.3s ｜ low 4.6s ｜ off 3.8s
+            "nl2sql_thinking_mode": "low",
             # ---- 工程配置（schema 链接 / 提示词策略）----
             "schema_top_k": "16",                    # 注入 schema 上下文的表数量上限
             "schema_semantic_weight": "0.6",         # 语义检索权重
@@ -5914,6 +5917,19 @@ class AiQueryService:
             # 缺了它会直接返回一段错误文本，而那段文本会被当成 SQL 去校验，
             # 最终表现为「仅允许 SELECT 查询」——完全看不出真实原因。
             # 本文件其它两处（embedding / 检索）都用了 build_headers，这里漏了。
+            # 思考长度控制（关键）：模型是**推理型**，thinking **计入 max_tokens**。
+            # 之前把 max_tokens 从 2000 提到 8000（为了不被推理吃光而返回空 SQL），
+            # 等于给了思考 8000 token 的预算 → 难题会想到**几分钟**（实测最长 467 秒）。
+            # 实测同一难题：无限制 22.3s ｜ reasoning_effort=low 4.6s ｜ enable_thinking=false 3.8s
+            # 现在把"思考"与"SQL 输出"**分开控制**：SQL 输出仍给足空间，思考被压住。
+            _thinking = str(cfg.get("nl2sql_thinking_mode") or "low").strip().lower()
+            _extra: dict = {}
+            if _thinking == "off":
+                _extra = {"enable_thinking": False}
+            elif _thinking == "on":
+                _extra = {}          # 完全不限制（会重现长尾，仅用于排查）
+            else:
+                _extra = {"reasoning_effort": "low"}   # 默认：保留少量思考
             model = OpenAILike(
                 id=runtime["model"], base_url=runtime["base_url"],
                 api_key=runtime["api_key"] or "sk-none",
@@ -5921,6 +5937,7 @@ class AiQueryService:
                 # 超时兜底：本地模型偶发长时间不返回 / 返回空。没有超时会把一次
                 # 问答拖到几十秒（实测 32 秒换一个错误，是最差的体验）。
                 timeout=60,
+                extra_body=_extra or None,
                 default_headers=build_headers(
                     runtime["base_url"], runtime.get("extra_headers"), "aistation-query"),
             )
