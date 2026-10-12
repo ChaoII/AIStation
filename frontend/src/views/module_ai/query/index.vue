@@ -50,6 +50,9 @@
                     :value="d.code || `ds:${d.id}`"
                   />
                 </el-select>
+                <el-button link type="primary" size="small" @click="goOntology">
+                  查看本体
+                </el-button>
               </div>
             </div>
           </template>
@@ -148,11 +151,33 @@
                   存为报表
                 </el-button>
               </div>
-              <div v-if="recalledOf(m).length" class="q-msg__ont">
-                <span class="q-msg__ont-label">本轮召回的表（来自本体/语义检索）：</span>
-                <el-tag v-for="t in recalledOf(m)" :key="t" size="small" effect="plain">
-                  {{ t }}
-                </el-tag>
+              <div v-if="recalledOf(m).length || ontologyOf(m).length" class="q-msg__ont">
+                <template v-if="ontologyOf(m).length">
+                  <span class="q-msg__ont-label">本体对象：</span>
+                  <el-tag
+                    v-for="t in ontologyOf(m)"
+                    :key="`o-${t}`"
+                    size="small"
+                    type="success"
+                    effect="plain"
+                  >
+                    {{ t }}
+                  </el-tag>
+                </template>
+                <template v-if="recalledOf(m).length">
+                  <span class="q-msg__ont-label">召回的表：</span>
+                  <el-tag
+                    v-for="t in recalledOf(m).slice(0, 8)"
+                    :key="`t-${t}`"
+                    size="small"
+                    effect="plain"
+                  >
+                    {{ t }}
+                  </el-tag>
+                  <span v-if="recalledOf(m).length > 8" class="q-msg__ont-more">
+                    等 {{ recalledOf(m).length }} 张
+                  </span>
+                </template>
               </div>
             </template>
           </div>
@@ -197,6 +222,14 @@
         <el-form-item label="来源问题">
           <el-input :model-value="srMsg?.question || ''" readonly />
         </el-form-item>
+        <el-form-item v-if="srParams.length" label="参数">
+          <el-tag v-for="k in srParams" :key="k" size="small" effect="plain" class="q-sr__p">
+            {{ k }}
+          </el-tag>
+          <div class="q-sr__hint">
+            模板里检测到 {{ srParams.length }} 个参数；保存后可在「自定义报表」页调整中文名/类型/必填
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="srVisible = false">取消</el-button>
@@ -233,7 +266,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   deleteQuerySession,
@@ -246,6 +280,8 @@ import {
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
+
+const router = useRouter();
 
 const sessions = ref<any[]>([]);
 const messages = ref<any[]>([]);
@@ -386,13 +422,32 @@ async function submitSaveReport() {
   }
 }
 
-/** 本轮召回的表（来自本体/语义检索）——这才是"本体怎么进到问数里"的可视证据。 */
+/** 本轮召回的表——**优先读落库的 `grounding`**（历史消息也有），其次兼容即时响应。 */
 function recalledOf(m: any): string[] {
-  const ev = m?.evidence || {};
-  const rt = ev.retrieved_tables || [];
+  const fromGrounding = m?.grounding?.retrieved?.tables || [];
+  if (fromGrounding.length) return fromGrounding;
+  const rt = m?.evidence?.retrieved_tables || [];
   if (rt.length) return rt;
   return m?.ontology_used || [];
 }
+
+/** 命中的**本体对象**（本体物化表 `ont_*`）：证明"本体确实参与了这个回答"。 */
+function ontologyOf(m: any): string[] {
+  const fromGrounding = m?.grounding?.ontology_used || [];
+  if (fromGrounding.length) return fromGrounding;
+  return m?.ontology_used || [];
+}
+
+/** 双向闭环：问数 → 本体（去核对语义定义）。 */
+function goOntology() {
+  router.push("/ai/ontology");
+}
+
+/** 「存为报表」时提示模板里检测到的参数（与后端 extract_params 同一规则）。 */
+const srParams = computed<string[]>(() => {
+  const sql = srMsg.value?.sql || "";
+  return [...new Set([...sql.matchAll(/\{(\w+)\}/g)].map((m) => m[1]))];
+});
 
 async function feedback(m: any, kind: string) {
   try {
@@ -594,6 +649,20 @@ onMounted(async () => {
 }
 
 .q-msg__ont-label {
+  color: var(--el-text-color-secondary);
+}
+
+.q-msg__ont-more {
+  color: var(--el-text-color-secondary);
+}
+
+.q-sr__p {
+  margin-right: 4px;
+}
+
+.q-sr__hint {
+  width: 100%;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
 

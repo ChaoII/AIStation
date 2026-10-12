@@ -759,9 +759,26 @@ async def _ensure_ai_menus() -> None:
                 ("无代码应用", "AiWorkshop", "/ai/workshop", "module_ai/workshop/index", "module_ai:query:ask", 22, "el-icon-Monitor"),
                 ("治理", "AiGovernance", "/ai/governance", "module_ai/governance/index", "module_ai:query:ask", 23, "el-icon-Odometer"),
                 ("数据资产", "AiAsset", "/ai/asset", "module_ai/asset/index", "module_ai:query:ask", 24, "el-icon-DataBoard"),
+                # 问数工作区（本体 → 问数 → 评测/报表 的闭环，顺序相邻）
+                ("智能问数", "AiQuery", "/ai/query", "module_ai/query/index", "module_ai:query:ask", 33, "el-icon-ChatDotRound"),
+                ("问数评测", "AiEval", "/ai/eval", "module_ai/eval/index", "module_ai:query:ask", 34, "el-icon-DataAnalysis"),
+                ("自定义报表", "AiQueryReports", "/ai/query/reports", "module_ai/query/reports", "module_ai:query:ask", 35, "el-icon-Tickets"),
             ]
-            # 问数不再是独立模块，降为 Agent 能力：隐藏旧的「智能问数」入口
-            await db.execute(update(MenuModel).where(MenuModel.route_name == "AiQuery").values(hidden=True))
+            # 问数是「本体 → 问数 → 评测 / 报表」链路的**数据产生方**：
+            # 它是「存为报表」的唯一入口。历史上被隐藏（"降为 Agent 能力"），
+            # 导致「自定义报表 / 问数评测」可见、而其数据来源页点不到 → **闭环断裂**（实测踩过）。
+            # 故保持可见，并与评测/报表**相邻**成"问数工作区"（33/34/35）。
+            await db.execute(
+                update(MenuModel)
+                .where(MenuModel.route_name == "AiQuery")
+                .values(hidden=False, order=33, permission="module_ai:query:ask")
+            )
+            for _rn, _order in (("AiEval", 34), ("AiQueryReports", 35)):
+                await db.execute(
+                    update(MenuModel)
+                    .where(MenuModel.route_name == _rn)
+                    .values(hidden=False, order=_order)
+                )
             for title, rname, rpath, comp, perm, order, icon in pages:
                 exists = await db.scalar(
                     select(MenuModel).where(MenuModel.route_name == rname)
@@ -785,6 +802,23 @@ async def _ensure_ai_menus() -> None:
                 db.add(m)
                 await db.flush()
                 db.add(RoleMenusModel(role_id=1, menu_id=m.id))
+
+            # 幂等补齐角色授权：菜单存在但**未授权** → 用户依然看不到（"看不见的菜单"另一类坑）。
+            # 问数工作区是闭环链路，必须保证 admin 可见。
+            # ⚠️ 必须先 flush：上面 `pages` 循环刚 add 的关联还在 pending 里，
+            #    select 看不到 → 会重复 INSERT 撞 UNIQUE(role_id, menu_id)（实测把启动搞挂）。
+            await db.flush()
+            for _rn in ("AiQuery", "AiEval", "AiQueryReports", "AiOntology"):
+                _mm = await db.scalar(select(MenuModel).where(MenuModel.route_name == _rn))
+                if not _mm:
+                    continue
+                _link = await db.scalar(
+                    select(RoleMenusModel).where(
+                        RoleMenusModel.role_id == 1, RoleMenusModel.menu_id == _mm.id
+                    )
+                )
+                if not _link:
+                    db.add(RoleMenusModel(role_id=1, menu_id=_mm.id))
 
             existing = set(
                 (
