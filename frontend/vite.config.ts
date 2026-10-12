@@ -56,7 +56,7 @@ export default defineConfig(({ mode }: ConfigEnv): UserConfig => {
           ws: true,
         },
         "/recordings": {
-          target: "http://127.0.0.1:8001",
+          target: "http://127.0.0.1:8002",
           secure: false,
           changeOrigin: true,
         },
