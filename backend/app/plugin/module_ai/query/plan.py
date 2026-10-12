@@ -5,9 +5,15 @@
 就能在计划层纠正，而不是在 SQL 层反复猜。
 
 约束：
-- **只在** `decomposed_planning=true` **且**题目判定为多步时启用；
+- **只在** `two_stage_planning=true` **且**题目判定为多步时启用；
 - 计划失败/解析不了 → **降级**为单段生成（绝不因计划失败而答不出来）；
 - 多一次 LLM 调用 → 延迟↑，所以必须严格限定触发条件。
+
+⚠️ 旧结论**作废**（重要）：曾记录"留出法 A/B 实测 −3.78 分 → 默认关"，但当时
+   `AiQueryService._cfg_bool` 有 bug（值为真时返回 `default`）→ 以 `default=False`
+   读取的开关**根本没生效**，那次 A/B 测的是**噪声**。该结论无效、**需重测**；
+   默认关只是"未验证"，不代表"已验证为负"。
+   另注意别与 `decomposed_planning` 混淆：那个只在提示词里加一条规则，不是真分解。
 """
 from __future__ import annotations
 

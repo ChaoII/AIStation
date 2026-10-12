@@ -562,6 +562,101 @@ def test_wants_grouping_detects_per_entity_questions():
     assert _wants_grouping("系统里有多少个用户") is False
 
 
+def test_cfg_bool_honours_explicit_true_even_with_default_false():
+    """回归：`_cfg_bool` 曾把"值为真"写成**返回 default**。
+
+    后果：所有以 `default=False` 读取的开关（`two_stage_planning`、`agno_tool_agent`）
+    **永远不可能为真** —— 配置改了没反应，连 A/B 都测不出它的效果。
+    """
+    from app.plugin.module_ai.query.service import AiQueryService as S
+
+    # 显式真值 + default False → 必须 True（这就是被修掉的 bug）
+    assert S._cfg_bool({"two_stage_planning": "true"}, "two_stage_planning", False) is True
+    assert S._cfg_bool({"agno_tool_agent": "1"}, "agno_tool_agent", False) is True
+    assert S._cfg_bool({"k": "yes"}, "k", False) is True
+    # 显式假值 + default True → False
+    assert S._cfg_bool({"recall_enabled": "false"}, "recall_enabled", True) is False
+    assert S._cfg_bool({"k": "0"}, "k", True) is False
+    assert S._cfg_bool({"k": "off"}, "k", True) is False
+    # key 缺失 / 为空 → 回落 default
+    assert S._cfg_bool({}, "nope", False) is False
+    assert S._cfg_bool({}, "nope", True) is True
+    assert S._cfg_bool({"k": ""}, "k", True) is True
+
+
+def test_decomposed_planning_is_prompt_only_two_stage_is_the_real_one():
+    """「分解式规划」名不副实：它**只在提示词里加一条**判断，不做真分解。
+
+    真分解是 `two_stage_planning`（`plan.py`：先出执行计划再写 SQL），
+    因留出法 A/B 实测 **−3.78 分**而默认关。
+
+    本测试是**防回归**：一旦有人把真分解挂到 `decomposed_planning` 上、
+    或把提示词开关重新说成"分解"（名字夸大），立即失败。
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    src = (root / "app" / "plugin" / "module_ai" / "query" / "service.py").read_text(
+        encoding="utf-8"
+    )
+
+    # 1) 真分解（plan 模块）只允许挂在 two_stage_planning 分支下
+    i = src.index("from .plan import")
+    gate = src[max(0, i - 600) : i]
+    assert "two_stage_planning" in gate, "plan 模块必须在 two_stage_planning 开关下使用"
+
+    # 2) decomposed_planning 不得与真分解同现（它只能是提示词开关）
+    for ln in src.splitlines():
+        if "decomposed_planning" in ln:
+            assert "plan_prompt" not in ln and "is_multistep" not in ln and "from .plan" not in ln
+
+    # 3) 注册表注释必须说清"只是提示"（名字不夸大）
+    assert re.search(r'"decomposed_planning":\s*"[^"]*",\s*#[^\n]*提示', src), (
+        "decomposed_planning 的注册表注释必须说明它只是提示词规则"
+    )
+
+    # 4) 真分解的注册表注释必须写明 A/B 结论（防止被误默认开启）
+    assert re.search(r'"two_stage_planning":\s*"[^"]*",\s*#[^\n]*A/B', src)
+
+
+def test_plan_module_is_the_real_decomposition():
+    """plan.py 是**真分解**：先出计划（JSON）→ 再据计划写 SQL，且失败要能降级。"""
+    from app.plugin.module_ai.query.plan import is_multistep, parse_plan
+
+    # 多步特征才触发（严格：避免给简单题多花一次 LLM 调用）
+    assert is_multistep("每个摄像头告警数最高的前 3 个") is True
+    assert is_multistep("各类告警占比是多少") is True
+    assert is_multistep("今天有多少条告警") is False
+
+    # 计划解析：能容错取出 JSON（截断/带说明文字也要能解析）
+    plan = parse_plan('这是计划：{"tables":["video_cameras"],"group_by":["name"]} 完毕')
+    assert plan and plan.get("tables") == ["video_cameras"]
+    assert parse_plan("完全不是 JSON") is None
+
+
+def test_ablation_keys_match_frontend():
+    """消融开关：**后端清单 ↔ 前端展示清单必须一致**。
+
+    防"半接线"：前端能勾但后端不认（或反之）→ 消融跑出来的是假结论。
+    """
+    import pathlib
+    import re
+
+    from app.plugin.module_ai.query.eval_runner import ABLATION_KEYS
+
+    root = pathlib.Path(__file__).resolve().parents[1]          # backend/
+    ts = (root.parent / "frontend" / "src" / "views" / "module_ai" / "eval" / "types.ts").read_text(
+        encoding="utf-8"
+    )
+    fe = re.findall(r'\{\s*key:\s*"([a-z_]+)",\s*label:', ts)
+    assert fe, "未解析到前端 ABLATION_KEYS（选择器可能变了，需同步本测试）"
+    assert set(fe) == set(ABLATION_KEYS), (
+        f"前端多出={sorted(set(fe) - set(ABLATION_KEYS))} "
+        f"后端多出={sorted(set(ABLATION_KEYS) - set(fe))}"
+    )
+
+
 # ===========================================================================
 # 批次5：REST 接口
 # ===========================================================================

@@ -5143,8 +5143,10 @@ class AiQueryService:
             "query_cost_enabled": "true",            # 查询代价护栏(EXPLAIN 预估)
             "query_cost_max_rows": "50000",          # 代价护栏预估行数上限
             "fewshot_auto_curate": "true",           # 反馈正例自动沉淀为 few-shot
-            "decomposed_planning": "true",           # 分解式规划提示(单表/联表/嵌套)
-            "two_stage_planning": "false",           # 两段式（先出执行计划再写 SQL）默认关：需 A/B 验证
+            # ⚠️ 名不副实的历史遗留：它**只在提示词里加一条**「先判断单表/联表/嵌套」，
+            #    **不做真分解**（真分解是下面的 two_stage_planning）。别按名字理解它。
+            "decomposed_planning": "true",           # 规划提示（仅提示词一条规则，**非真分解**）
+            "two_stage_planning": "false",           # 两段式**真分解**；旧 A/B 结论已作废(开关曾因 _cfg_bool bug 未生效)→待重测
             "empty_self_correct": "true",            # 结果为空时自纠错重生成
             "agno_tool_agent": "false",              # 工具化 Agent(多轮往返，慢)；false=单次生成+本地执行自纠错
             "kg_enabled": "true",                    # 知识图谱图遍历召回(补关联表/联表路径)
@@ -5189,10 +5191,16 @@ class AiQueryService:
 
     @classmethod
     def _cfg_bool(cls, cfg: dict, key: str, default: bool = True) -> bool:
-        v = str(cfg.get(key, "true")).strip().lower()
-        if v in ("0", "false", "no", "off", ""):
-            return False
-        return default
+        """读布尔开关。
+
+        ⚠️ 曾经写成「值为真时返回 `default`」——于是**所有以 `default=False` 读取的开关
+        永远不可能为真**（`two_stage_planning`、`agno_tool_agent`），配置改了也没反应。
+        语义必须是：**显式值优先**，只有 key 缺失/为空才回落到 `default`。
+        """
+        raw = cfg.get(key)
+        if raw is None or str(raw).strip() == "":
+            return default
+        return str(raw).strip().lower() not in ("0", "false", "no", "off")
 
     @classmethod
     def _cfg_int(cls, cfg: dict, key: str, default: int) -> int:

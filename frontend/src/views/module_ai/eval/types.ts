@@ -114,7 +114,10 @@ export const ABLATION_KEYS: { key: string; label: string }[] = [
   { key: "agno_semantic_enabled", label: "语义向量召回" },
   { key: "kg_enabled", label: "知识图谱" },
   { key: "agno_tool_agent", label: "工具调用智能体" },
-  { key: "decomposed_planning", label: "分解式规划" },
+  // 诚实命名：它只在提示词里加一条「先判断单表/联表/嵌套」，**不是真分解**
+  // （真分解是 two_stage_planning：先出执行计划再写 SQL；它默认关，且旧的"A/B −3.78"结论
+  //  **已作废**——当时 `_cfg_bool` 有 bug，该开关从未生效，需重测。故本清单仍只做提示词这一项）
+  { key: "decomposed_planning", label: "规划提示（单表/联表/嵌套）" },
   { key: "empty_self_correct", label: "空结果自纠错" },
   { key: "fewshot_auto_curate", label: "Few-shot 自动沉淀" },
   { key: "enum_hint_enabled", label: "枚举取值提示" },
