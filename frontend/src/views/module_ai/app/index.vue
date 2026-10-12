@@ -114,15 +114,6 @@
                   详情
                 </el-button>
                 <el-button
-                  v-hasPerm="['module_ai:app:query']"
-                  size="small"
-                  link
-                  type="primary"
-                  @click="handleRun(row)"
-                >
-                  运行
-                </el-button>
-                <el-button
                   v-hasPerm="['module_ai:app:update']"
                   size="small"
                   link
@@ -794,9 +785,8 @@ async function handleSubmit() {
   }
 }
 
-function handleRun(row: any) {
-  router.push({ path: "/ai/chat", query: { app_id: String(row.id) } });
-}
+
+
 
 // ---- 详情 / 复制 / 运行调试 ----
 const detailVisible = ref(false);
