@@ -32,24 +32,21 @@
 
 ## 3. 设计
 
-### 3.1 每个数据源独立的筛选规则（每源独立配置）
-- `ai_query_datasources` 新增字段 `filter_rules JSONB`，结构：
-  ```jsonc
-  {
-    "enabled": true,                    // 是否启用自动打标
-    "system_table": {                   // 系统/技术表判定
-      "prefixes": ["SYS_", "FUEL_", "VIEW_", "V_"],
-      "keywords": ["_BAK", "_temp", "_bak", "log", "_log", "history", "_history"],
-      "exact": ["alembic_version", "apscheduler_jobs", "__EFMigrationsHistory"],
-      "regex": ""                        // 可选自定义正则（命中即系统表）
-    },
-    "audit_fields": [                    // 审计/技术字段判定（名称匹配）
-      "is_deleted","deleted_time","created_time","updated_time","deleted_id",
-      "created_id","updated_id","tenant_id","created_by","updated_by"
-    ]
-  }
-  ```
-- 无配置时用「缺省内置规则」（同上内置集合），每个源可覆盖。
+### 3.1 通用筛选规则模块（可复用的规则引擎）
+
+筛选不是只针对「表/字段」的专属逻辑，而是一个**通用规则引擎**：基于一组可配置规则，对任意「筛选对象」（数据源的表、字段，以及将来其它需要分类的元素）判定其归属类别并输出标记。规则类型可组合（命中任意一条即归入某类）：
+
+- **前缀匹配**：如 `SYS_` / `FUEL_` / `VIEW_` / `V_`
+- **关键词包含**：如 `_BAK` / `_temp` / `log` / `history`
+- **精确名集合**：如 `alembic_version` / `apscheduler_jobs` / `__EFMigrationsHistory`
+- **自定义正则**：表名/字段名命中即归入
+- **类别定义**：每条规则可指定判定类别（系统 / 技术 / 审计 / 业务），并可命名、启停
+
+能力组织为「筛选配置（Filter Profile）」：
+- 一个筛选配置 = 一组命名的规则 + 目标类别 + 启停开关。
+- **每个数据源独立**一份筛选配置（`ai_query_datasources.filter_rules`），缺省用内置默认规则（覆盖上述常见前缀/关键词/审计字段名）。
+- 同步时按该数据源的筛选配置，对**表**打「系统/技术」标记（`is_system`）、对**字段**打「审计/技术」标记（`is_audit`）。
+- 该模块为通用实现（规则引擎+配置存储），「系统表/审计字段」只是它的两个具体应用，后续可复用到其它分类场景。
 
 ### 3.2 表/字段打标与元数据
 - `ai_query_assets` 新增 `is_system BOOLEAN DEFAULT false`（是否系统/技术表）。
