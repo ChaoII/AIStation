@@ -37,7 +37,7 @@
     </div>
 
     <!-- 图谱 -->
-    <div class="ont-gw__canvas">
+    <div class="ont-gw__canvas" @click="closeCtx" @contextmenu.prevent>
       <GraphCanvas
         v-if="nodes.length"
         :key="layout"
@@ -52,18 +52,38 @@
         @node-tap="onNodeTap"
         @link-draw="onLinkDraw"
         @edge-ctx="onEdgeCtx"
+        @node-ctx="onNodeCtx"
+        @blank-ctx="onBlankCtx"
       />
       <el-empty
         v-else
         :image-size="70"
         description="该本体暂无对象类型，右键点空白处新建"
       />
+
+      <!-- 右键菜单 -->
+      <div
+        v-if="ctxMenu.visible"
+        class="ont-gw__ctx"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <template v-if="ctxMenu.kind === 'node'">
+          <div class="ont-gw__ctx-item" @click="ctxEdit">编辑元数据</div>
+          <div class="ont-gw__ctx-item" @click="ctxMaterialize">物化为表</div>
+          <div class="ont-gw__ctx-item ont-gw__ctx-danger" @click="ctxDelete">删除对象类型</div>
+        </template>
+        <template v-else>
+          <div class="ont-gw__ctx-item" @click="ctxCreate">新建对象类型</div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { FullScreen, Search, ZoomIn, ZoomOut } from "@element-plus/icons-vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
 import { useOntologyData } from "../composables/useOntologyData";
@@ -73,6 +93,10 @@ const emit = defineEmits<{
   (e: "node-tap", objectCode: string): void;
   (e: "link-draw", sourceCode: string, targetCode: string): void;
   (e: "edge-ctx", sourceCode: string, targetCode: string): void;
+  (e: "create-object"): void;
+  (e: "edit-object", objectCode: string): void;
+  (e: "delete-object", objectCode: string): void;
+  (e: "materialize-object", objectCode: string): void;
 }>();
 
 const { scopedObjects, scopedLinks } = useOntologyData();
@@ -96,6 +120,9 @@ const codeByName = computed(() => {
   return m;
 });
 
+/** 右键菜单状态 */
+const ctxMenu = reactive({ visible: false, kind: "blank" as "blank" | "node", x: 0, y: 0, code: "" });
+
 function onNodeTap(name: string) {
   const code = codeByName.value[name];
   if (code) emit("node-tap", code);
@@ -108,7 +135,43 @@ function onLinkDraw(sourceName: string, targetName: string) {
 function onEdgeCtx(sourceName: string, targetName: string) {
   const s = codeByName.value[sourceName];
   const t = codeByName.value[targetName];
-  if (s && t) emit("edge-ctx", s, t);
+  if (s && t) {
+    ctxMenu.visible = false;
+    emit("edge-ctx", s, t);
+  }
+}
+function onNodeCtx(name: string, x: number, y: number) {
+  ctxMenu.kind = "node";
+  ctxMenu.code = codeByName.value[name] || "";
+  ctxMenu.x = x;
+  ctxMenu.y = y;
+  ctxMenu.visible = true;
+}
+function onBlankCtx(x: number, y: number) {
+  ctxMenu.kind = "blank";
+  ctxMenu.code = "";
+  ctxMenu.x = x;
+  ctxMenu.y = y;
+  ctxMenu.visible = true;
+}
+function closeCtx() {
+  ctxMenu.visible = false;
+}
+function ctxEdit() {
+  closeCtx();
+  if (ctxMenu.code) emit("edit-object", ctxMenu.code);
+}
+function ctxDelete() {
+  closeCtx();
+  if (ctxMenu.code) emit("delete-object", ctxMenu.code);
+}
+function ctxMaterialize() {
+  closeCtx();
+  if (ctxMenu.code) emit("materialize-object", ctxMenu.code);
+}
+function ctxCreate() {
+  closeCtx();
+  emit("create-object");
 }
 
 let searchTimer: any = null;
@@ -147,5 +210,33 @@ defineExpose({ graphRef });
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+.ont-gw__ctx {
+  position: absolute;
+  z-index: 20;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--el-border-radius-base);
+  box-shadow: var(--el-box-shadow-light);
+}
+.ont-gw__ctx-item {
+  padding: 6px 12px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+  border-radius: var(--el-border-radius-base);
+  cursor: pointer;
+  user-select: none;
+}
+.ont-gw__ctx-item:hover {
+  background: var(--el-fill-color-light);
+}
+.ont-gw__ctx-danger {
+  color: var(--el-color-danger);
+}
+.ont-gw__ctx-danger:hover {
+  background: var(--el-color-danger-light-9);
 }
 </style>

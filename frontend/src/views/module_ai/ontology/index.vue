@@ -134,6 +134,9 @@
             @link-draw="onGraphLinkDraw"
             @edge-ctx="onGraphEdgeCtx"
             @create-object="openObjectEdit()"
+            @edit-object="onGraphEditObject"
+            @delete-object="onGraphDeleteObject"
+            @materialize-object="onGraphMaterializeObject"
           />
         </el-card>
       </el-col>
@@ -880,6 +883,19 @@ function onGraphEdgeCtx(sourceCode: string, targetCode: string) {
   } else {
     ElMessage.warning("未找到对应关系类型");
   }
+}
+function onGraphEditObject(objectCode: string) {
+  const obj = objectByCode(objectCode);
+  if (obj) openObjectEdit(obj);
+  else ElMessage.warning("该对象类型已不存在");
+}
+function onGraphDeleteObject(objectCode: string) {
+  const obj = objectByCode(objectCode);
+  if (obj) removeObj(obj);
+  else ElMessage.warning("该对象类型已不存在");
+}
+function onGraphMaterializeObject(objectCode: string) {
+  materialize(objectByCode(objectCode) || { code: objectCode });
 }
 
 function onDomainCmd(cmd: string, d: any) {
