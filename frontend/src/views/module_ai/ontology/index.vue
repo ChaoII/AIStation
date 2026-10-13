@@ -802,12 +802,7 @@ import { useOntologyData } from "./composables/useOntologyData";
 import OntGraphWorkspace from "./components/OntGraphWorkspace.vue";
 import OntOverviewDrawer from "./components/OntOverviewDrawer.vue";
 import OntMaintenanceDrawer from "./components/OntMaintenanceDrawer.vue";
-import OntInstanceExplorer from "./components/OntInstanceExplorer.vue";
-import OntAdvancedTypes from "./components/OntAdvancedTypes.vue";
 import OntObjectTypeView from "./components/OntObjectTypeView.vue";
-import OntLinkTypeView from "./components/OntLinkTypeView.vue";
-import OntActionTypeView from "./components/OntActionTypeView.vue";
-import OntDecisionView from "./components/OntDecisionView.vue";
 import {
   clearOntDemo,
   getOntObjectView,
@@ -815,9 +810,6 @@ import {
   getOntDemoStatus,
   loadOntDemo,
 } from "@/api/module_ai/ontology";
-import OntIndexView from "./components/OntIndexView.vue";
-import OntProposalView from "./components/OntProposalView.vue";
-import OntScenarioView from "./components/OntScenarioView.vue";
 import {
   ONT_CARDINALITY,
   ONT_JOIN_METHOD,
