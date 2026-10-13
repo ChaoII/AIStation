@@ -124,6 +124,33 @@
                       <el-dropdown-item command="pending">
                         待审批的版本发布（{{ pendingVersions.length }}）
                       </el-dropdown-item>
+                      <el-dropdown-item command="maintain-index" divided>
+                        索引
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-proposals">
+                        提案
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-scenarios">
+                        场景
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-decisions">
+                        决策
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-explore">
+                        对象探索
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-groups">
+                        对象类型组
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-valueTypes">
+                        值类型
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-shared">
+                        共享属性
+                      </el-dropdown-item>
+                      <el-dropdown-item command="maintain-interfaces">
+                        接口
+                      </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -171,6 +198,11 @@
     <!-- ================= 概览抽屉 ================= -->
     <el-drawer v-model="overviewDrawer" title="本体概览" size="480px">
       <OntOverviewDrawer />
+    </el-drawer>
+
+    <!-- ================= 维护抽屉（按面板切换） ================= -->
+    <el-drawer v-model="maintenanceDrawer" :title="maintPanelLabel" size="640px">
+      <OntMaintenanceDrawer :panel="maintPanel" />
     </el-drawer>
 
     <!-- ================= 弹窗 ================= -->
@@ -769,6 +801,7 @@ import {
 import { useOntologyData } from "./composables/useOntologyData";
 import OntGraphWorkspace from "./components/OntGraphWorkspace.vue";
 import OntOverviewDrawer from "./components/OntOverviewDrawer.vue";
+import OntMaintenanceDrawer from "./components/OntMaintenanceDrawer.vue";
 import OntInstanceExplorer from "./components/OntInstanceExplorer.vue";
 import OntAdvancedTypes from "./components/OntAdvancedTypes.vue";
 import OntObjectTypeView from "./components/OntObjectTypeView.vue";
@@ -828,6 +861,18 @@ const {
 } = useOntologyData();
 
 /* ---------------- 导航状态 ---------------- */
+/** 维护抽屉各面板标签 */
+const MAINT_PANELS: Record<string, { label: string }> = {
+  index: { label: "索引" },
+  proposals: { label: "提案" },
+  scenarios: { label: "场景" },
+  decisions: { label: "决策" },
+  explore: { label: "对象探索" },
+  groups: { label: "对象类型组" },
+  valueTypes: { label: "值类型" },
+  shared: { label: "共享属性" },
+  interfaces: { label: "接口" },
+};
 type Mode = "home" | "object" | "link" | "action";
 const mode = ref<Mode>("home");
 const page = ref("overview");
@@ -839,6 +884,9 @@ const selKey = ref(""); // 对象类型 / 动作类型的 code
 const selId = ref<number | null>(null); // 关系类型的 id
 const objectDrawer = ref(false); // 图谱点节点 → 对象详情抽屉
 const overviewDrawer = ref(false); // 概览抽屉
+const maintenanceDrawer = ref(false); // 维护抽屉
+const maintPanel = ref("index"); // 维护抽屉当前面板
+const maintPanelLabel = computed(() => MAINT_PANELS[maintPanel.value]?.label || "维护");
 
 /** 本体选择器：'__all__' 代表全部本体 */
 
@@ -1151,6 +1199,10 @@ async function onMaint(cmd: string) {
     const r = await getOntVersionPending();
     pendingVersions.value = r.data?.data || [];
     pendingDialog.value = true;
+  }
+  if (cmd.startsWith("maintain-")) {
+    maintPanel.value = cmd.slice("maintain-".length);
+    maintenanceDrawer.value = true;
   }
 }
 async function doEnrich() {
