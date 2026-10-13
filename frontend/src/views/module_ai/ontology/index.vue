@@ -102,6 +102,9 @@
                 <el-button size="small" :icon="Promotion" @click="goQuery">
                   去问数验证
                 </el-button>
+                <el-button size="small" :icon="DataAnalysis" @click="overviewDrawer = true">
+                  概览
+                </el-button>
                 <el-dropdown trigger="click" @command="onMaint">
                   <el-button size="small" :icon="Tools">
                     维护
@@ -163,6 +166,11 @@
         @go-properties="goObjectProperties"
         @refresh="reloadAll"
       />
+    </el-drawer>
+
+    <!-- ================= 概览抽屉 ================= -->
+    <el-drawer v-model="overviewDrawer" title="本体概览" size="480px">
+      <OntOverviewDrawer />
     </el-drawer>
 
     <!-- ================= 弹窗 ================= -->
@@ -721,6 +729,7 @@ import {
   ArrowDown,
   Box,
   Check,
+  DataAnalysis,
   MoreFilled,
   Plus,
   Promotion,
@@ -759,6 +768,7 @@ import {
 } from "@/api/module_ai/query";
 import { useOntologyData } from "./composables/useOntologyData";
 import OntGraphWorkspace from "./components/OntGraphWorkspace.vue";
+import OntOverviewDrawer from "./components/OntOverviewDrawer.vue";
 import OntInstanceExplorer from "./components/OntInstanceExplorer.vue";
 import OntAdvancedTypes from "./components/OntAdvancedTypes.vue";
 import OntObjectTypeView from "./components/OntObjectTypeView.vue";
@@ -828,6 +838,7 @@ const objectViewCode = ref("");
 const selKey = ref(""); // 对象类型 / 动作类型的 code
 const selId = ref<number | null>(null); // 关系类型的 id
 const objectDrawer = ref(false); // 图谱点节点 → 对象详情抽屉
+const overviewDrawer = ref(false); // 概览抽屉
 
 /** 本体选择器：'__all__' 代表全部本体 */
 
