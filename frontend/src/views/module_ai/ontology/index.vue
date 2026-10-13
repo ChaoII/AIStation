@@ -132,6 +132,7 @@
           <OntGraphWorkspace
             @node-tap="onGraphNodeTap"
             @link-draw="onGraphLinkDraw"
+            @edge-ctx="onGraphEdgeCtx"
             @create-object="openObjectEdit()"
           />
         </el-card>
@@ -864,10 +865,21 @@ function goObjectProperties() {
   ElMessage.info("属性定义见上方「属性」分区");
 }
 function onGraphLinkDraw(sourceCode: string, targetCode: string) {
-  // 阶段 2：拖拽建边 → 关系编辑
+  // 阶段 2：拖拽建边 → 关系编辑，预填源/目标对象类型
   openLinkEdit();
   linkForm.source_object = sourceCode;
   linkForm.target_object = targetCode;
+}
+function onGraphEdgeCtx(sourceCode: string, targetCode: string) {
+  // 点边编辑现有关系：按源/目标反查关系并打开编辑（同名取第一个）
+  const link = scopedLinks.value.find(
+    (l: any) => l.source_object === sourceCode && l.target_object === targetCode
+  );
+  if (link) {
+    openLinkEdit(link);
+  } else {
+    ElMessage.warning("未找到对应关系类型");
+  }
 }
 
 function onDomainCmd(cmd: string, d: any) {

@@ -45,10 +45,13 @@
         :nodes="nodes"
         :edges="edges"
         height="100%"
+        link-mode
         :layout-name="layout"
         :node-style="{ sizeMode: 'weight', shapeMode: 'uniform', uniformShape: 'round-rectangle', labelSize: 12 }"
         :edge-style="{ label: 'show', colorMode: 'type', arrow: 'triangle', opacity: 0.75 }"
         @node-tap="onNodeTap"
+        @link-draw="onLinkDraw"
+        @edge-ctx="onEdgeCtx"
       />
       <el-empty
         v-else
@@ -69,6 +72,7 @@ import { buildOntGraph } from "../graph";
 const emit = defineEmits<{
   (e: "node-tap", objectCode: string): void;
   (e: "link-draw", sourceCode: string, targetCode: string): void;
+  (e: "edge-ctx", sourceCode: string, targetCode: string): void;
 }>();
 
 const { scopedObjects, scopedLinks } = useOntologyData();
@@ -78,12 +82,33 @@ const layout = ref("cose");
 const onlyConnected = ref(false);
 const search = ref("");
 
-const nodes = computed(() => buildOntGraph(scopedObjects.value, scopedLinks.value, { onlyConnected: onlyConnected.value }).nodes);
-const edges = computed(() => buildOntGraph(scopedObjects.value, scopedLinks.value, { onlyConnected: onlyConnected.value }).edges);
+const graph = computed(() =>
+  buildOntGraph(scopedObjects.value, scopedLinks.value, { onlyConnected: onlyConnected.value })
+);
+const nodes = computed(() => graph.value.nodes);
+const edges = computed(() => graph.value.edges);
+/** 图谱节点显示名 → 对象编码 */
+const codeByName = computed(() => {
+  const m: Record<string, string> = {};
+  graph.value.nodes.forEach((n) => {
+    m[n.name] = n.objectCode;
+  });
+  return m;
+});
 
 function onNodeTap(name: string) {
-  const hit = scopedObjects.value.find((o: any) => o.name === name || String(name).startsWith(o.name));
-  if (hit) emit("node-tap", hit.code);
+  const code = codeByName.value[name];
+  if (code) emit("node-tap", code);
+}
+function onLinkDraw(sourceName: string, targetName: string) {
+  const s = codeByName.value[sourceName];
+  const t = codeByName.value[targetName];
+  if (s && t) emit("link-draw", s, t);
+}
+function onEdgeCtx(sourceName: string, targetName: string) {
+  const s = codeByName.value[sourceName];
+  const t = codeByName.value[targetName];
+  if (s && t) emit("edge-ctx", s, t);
 }
 
 let searchTimer: any = null;
