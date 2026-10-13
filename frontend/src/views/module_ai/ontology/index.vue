@@ -138,6 +138,29 @@
       </el-col>
     </el-row>
 
+    <!-- ================= 对象详情抽屉（点图谱节点打开） ================= -->
+    <el-drawer
+      v-model="objectDrawer"
+      :title="selObject?.name || '对象类型详情'"
+      size="620px"
+      class="ont-obj-drawer"
+    >
+      <template #header>
+        <div class="ont-obj-drawer__title">{{ selObject?.name || "对象类型详情" }}</div>
+      </template>
+      <OntObjectTypeView
+        v-if="selObject"
+        :key="`objdetail-${selKey}`"
+        :code="selKey"
+        page="overview"
+        @edit-object="openObjectEdit(selObject)"
+        @new-action="openActionEdit()"
+        @new-link="openLinkEdit()"
+        @go-properties="goObjectProperties"
+        @refresh="reloadAll"
+      />
+    </el-drawer>
+
     <!-- ================= 弹窗 ================= -->
     <!-- 对象类型 -->
     <el-dialog v-model="objDialog" title="对象类型" width="640px" append-to-body>
@@ -812,10 +835,10 @@ const scopedChangelog = computed(() =>
       )
 );
 
-const selObject = computed(() => (mode.value === "object" ? objectByCode(selKey.value) : null));
+const selObject = computed(() => objectByCode(selKey.value));
 const selLink = computed(() => scopedLinks.value.find((l: any) => l.id === selId.value) || null);
 const selAction = computed(() =>
-  mode.value === "action" ? actions.value.find((a: any) => a.code === selKey.value) || null : null
+  actions.value.find((a: any) => a.code === selKey.value) || null
 );
 
 /** 左栏导航项（资源清单与资源子导航共用） */
@@ -828,9 +851,17 @@ function onDomain(code: string) {
 
 /* ---------------- 图谱交互（阶段 2/3 完善） ---------------- */
 function onGraphNodeTap(objectCode: string) {
-  // 阶段 3：打开对象详情抽屉
+  // 点图谱节点 → 打开对象详情抽屉；对象不存在（数据过期）则提示并关闭
+  if (!objectByCode(objectCode)) {
+    objectDrawer.value = false;
+    return ElMessage.warning("该对象类型已不存在或不在当前作用域");
+  }
   selKey.value = objectCode;
   objectDrawer.value = true;
+}
+function goObjectProperties() {
+  // 概览已含属性分区，无需切换子页；保留该方法以兼容 go-properties 事件
+  ElMessage.info("属性定义见上方「属性」分区");
 }
 function onGraphLinkDraw(sourceCode: string, targetCode: string) {
   // 阶段 2：拖拽建边 → 关系编辑
