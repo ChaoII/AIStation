@@ -1018,6 +1018,27 @@ async def _secure_ont_sql(sql: str, auth) -> dict:
             "msg": r.get("note") or ""}
 
 
+def _metric_prompt_hint(metric: dict | None) -> str:
+    """命中指标时，给 IR 提示词加一条**确定性**建议（让模型直接填 metric）。"""
+    if not metric:
+        return ""
+    return (
+        f"【强烈建议】本问题已匹配到指标 `{metric.get('key')}`（{metric.get('name')}，"
+        f"对象 {metric.get('object_code')}）。请**直接填 `metric`**，"
+        "不要自己拼 group_by+aggregations——由系统用该指标的权威口径执行。\n\n"
+    )
+
+
+def _prioritize_metric_object(allowed: dict, metric: dict | None) -> dict:
+    """把命中指标所属对象排到白名单**最前**（提示词按顺序展示，越前越易被选中）。"""
+    if not metric or not allowed:
+        return allowed
+    code = str(metric.get("object_code") or "")
+    if code and code in allowed:
+        return {code: allowed[code], **{k: v for k, v in allowed.items() if k != code}}
+    return allowed
+
+
 async def _execute_bound_metric(metric: dict, auth=None) -> dict:
     """执行**绑定型指标**：口径由「本体对象 + 属性 + 聚合」确定性推导（不写 SQL）。
 
@@ -6630,13 +6651,20 @@ class AiQueryService:
 
         # 指标字典（供 IR 提示词注入 / 校验收敛 / 绑定型指标执行）
         try:
-            metrics_map = {m["key"]: m for m in await cls.list_metrics(datasource)}
+            metrics_list = await cls.list_metrics(datasource)
         except Exception:  # noqa: BLE001
-            metrics_map = {}
+            metrics_list = []
+        metrics_map = {m["key"]: m for m in metrics_list}
+        # 检索优化（S4）：问题命中某个指标时，把其对象排到最前并显式建议用 metric
+        try:
+            matched = _match_metric(question, metrics_list, await cls.list_terms(datasource))
+        except Exception:  # noqa: BLE001
+            matched = None
 
         # 对象白名单：系统库按授权过滤，自定义数据源按对象归属过滤（S2 放开）
         allowed = await cls._allowed_objects_for_query(
             question, auth, max_objects=max_objs, datasource=datasource)
+        allowed = _prioritize_metric_object(allowed, matched)
         # 「当前对象」即使没被检索命中，也**强制进词表并排在最前**：
         # 用户已经明确站在这个对象上提问，不该因为召回没命中就查不了它。
         if object_code:
@@ -6659,10 +6687,11 @@ class AiQueryService:
 
         try:
             text = await cls._ir_llm(
-                oq.render_ir_prompt(question, allowed, max_objects=max_objs,
-                                    max_traverse_depth=cls._cfg_int(
-                                        cfg, "object_query_max_traverse_depth", 1),
-                                    metrics=metrics_map),
+                _metric_prompt_hint(matched)
+                + oq.render_ir_prompt(question, allowed, max_objects=max_objs,
+                                      max_traverse_depth=cls._cfg_int(
+                                          cfg, "object_query_max_traverse_depth", 1),
+                                      metrics=metrics_map),
                 runtime)
         except Exception as e:  # noqa: BLE001
             # ⚠️ 必须打**异常类型**：TimeoutError 的 str(e) 是空串，只打 message 时
