@@ -252,7 +252,14 @@
           </el-descriptions>
 
           <el-alert
-            v-if="!compareItems.length && !compareLoading"
+            v-if="!compareLoaded && !compareLoading"
+            type="info"
+            :closable="false"
+            class="frwb-note"
+            title="尚未对比：点「刷新对比」后，再查看已保存规则与当前草稿的命中差异。"
+          />
+          <el-alert
+            v-else-if="!compareItems.length"
             type="success"
             :closable="false"
             class="frwb-note"
@@ -336,7 +343,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onBeforeUnmount } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Refresh, Right } from "@element-plus/icons-vue";
 import VChart from "vue-echarts";
@@ -364,6 +371,23 @@ function defaultRules() {
   };
 }
 
+// 防御性 normalize：后端返回的 filter_rules 可能缺子字段（如无 system_table），
+// 用默认结构逐项补齐，避免模板里 rules.system_table.prefixes 空指针
+function normalizeRules(raw: any) {
+  const r = raw || {};
+  const st = r.system_table || {};
+  return {
+    enabled: r.enabled !== false,
+    system_table: {
+      prefixes: Array.isArray(st.prefixes) ? st.prefixes : [],
+      keywords: Array.isArray(st.keywords) ? st.keywords : [],
+      exact: Array.isArray(st.exact) ? st.exact : [],
+      regex: st.regex || "",
+    },
+    audit_fields: Array.isArray(r.audit_fields) ? r.audit_fields : [],
+  };
+}
+
 // 深拷贝：规则是结构化对象，避免直接引用同一内存导致草稿与基准互相污染
 function deepClone(v: any) {
   return JSON.parse(JSON.stringify(v));
@@ -377,20 +401,25 @@ const savedRules = ref<any>(defaultRules());
 const savedPreview = ref<any>(null);
 const loading = ref(false);
 const saving = ref(false);
-const syncing = ref(false);
 const compareLoading = ref(false);
+// 前后对比是否已成功加载过基准（已保存规则的命中结果）
+const compareLoaded = ref(false);
+// 数据源切换代际守卫：仅接受当前代际的异步响应，避免旧数据源晚回覆盖新数据源
+let gen = 0;
 
 const enabledText = computed(() => (rules.value?.enabled ? "已启用" : "已停用"));
 
 const baseCounts = computed(() => {
+  const loaded = !!savedPreview.value;
   const s = savedPreview.value?.summary || {};
   const c = preview.value?.summary || {};
+  const num = (v: any) => (loaded ? v || 0 : "—");
   return {
     saved: {
-      sys: s.system_tables || 0,
-      biz: s.business_tables || 0,
-      audit: s.audit_fields || 0,
-      bizf: s.business_fields || 0,
+      sys: num(s.system_tables),
+      biz: num(s.business_tables),
+      audit: num(s.audit_fields),
+      bizf: num(s.business_fields),
     },
     draft: {
       sys: c.system_tables || 0,
@@ -482,14 +511,18 @@ const fieldPieOption = computed(() => {
 // 实时预览：用当前草稿规则请求命中结果
 async function doRefreshPreview() {
   if (!props.datasource?.id) return;
+  const myGen = gen;
+  const dsId = props.datasource.id;
   loading.value = true;
   try {
-    const r = await previewFilterRules(props.datasource.id, rules.value);
+    const r = await previewFilterRules(dsId, rules.value);
+    if (myGen !== gen) return; // 已切换数据源，丢弃旧响应
     preview.value = r.data?.data || null;
   } catch (e: any) {
+    if (myGen !== gen) return;
     ElMessage.error(e?.msg || "预览失败");
   } finally {
-    loading.value = false;
+    if (myGen === gen) loading.value = false;
   }
 }
 
@@ -503,17 +536,26 @@ function scheduleRefresh() {
 // 进入 / 切换数据源时加载详情与初始预览
 function loadAll() {
   if (!props.datasource?.id) return;
+  const myGen = ++gen; // 开启新一代际，使旧数据源的在途响应失效
+  // 切换数据源前清除 pending 防抖，避免旧 rules + 新 id 触发瞬时脏预览
+  if (previewTimer) {
+    clearTimeout(previewTimer);
+    previewTimer = null;
+  }
   getDatasourceDetail(props.datasource.id)
     .then((r) => {
+      if (myGen !== gen) return;
       const d = r.data?.data || {};
       dsDetail.value = d;
-      const fr = d.filter_rules || defaultRules();
+      const fr = normalizeRules(d.filter_rules);
       rules.value = deepClone(fr);
       savedRules.value = deepClone(fr);
       savedPreview.value = null;
+      compareLoaded.value = false;
       doRefreshPreview();
     })
     .catch((e: any) => {
+      if (myGen !== gen) return;
       ElMessage.error(e?.msg || "加载数据源详情失败");
     });
 }
@@ -521,22 +563,26 @@ function loadAll() {
 // 前后对比：用已保存规则重新请求一次命中，作为比对基准
 async function loadSavedPreview() {
   if (!props.datasource?.id) return;
+  const myGen = gen;
   compareLoading.value = true;
   try {
     const r = await previewFilterRules(props.datasource.id, savedRules.value);
+    if (myGen !== gen) return;
     savedPreview.value = r.data?.data || null;
+    compareLoaded.value = true;
   } catch (e: any) {
+    if (myGen !== gen) return;
     ElMessage.error(e?.msg || "对比加载失败");
   } finally {
-    compareLoading.value = false;
+    if (myGen === gen) compareLoading.value = false;
   }
 }
 
-// 保存（覆盖已保存规则，必须二次确认）
+// 保存（覆盖已保存规则，必须二次确认，并写明不可逆）
 async function confirmSave(apply: boolean) {
   try {
     await ElMessageBox.confirm(
-      "将用当前草稿覆盖该数据源已保存的筛选规则，是否继续？",
+      "将用当前草稿覆盖该数据源已保存的筛选规则，保存后原规则将被替换且不可恢复，是否继续？",
       apply ? "保存并应用" : "保存规则",
       { type: "warning", confirmButtonText: apply ? "保存并应用" : "保存", cancelButtonText: "取消" }
     );
@@ -545,19 +591,20 @@ async function confirmSave(apply: boolean) {
   }
   saving.value = true;
   try {
-    await saveQueryDatasource({ ...dsDetail.value, filter_rules: rules.value });
+    // 用快照作为 payload 与保存成功后的基准，避免保存期间用户继续编辑导致基准与实际不同步
+    const snapshot = deepClone(rules.value);
+    await saveQueryDatasource({ ...dsDetail.value, filter_rules: snapshot });
     if (apply) {
-      syncing.value = true;
       await syncQueryDatasourceSchema(props.datasource.id);
     }
-    savedRules.value = deepClone(rules.value);
+    savedRules.value = deepClone(snapshot);
     savedPreview.value = null;
+    compareLoaded.value = false;
     ElMessage.success(apply ? "规则已保存并应用" : "规则已保存");
   } catch (e: any) {
     ElMessage.error(e?.msg || "保存失败");
   } finally {
     saving.value = false;
-    syncing.value = false;
   }
 }
 
@@ -567,6 +614,14 @@ watch(
   () => loadAll(),
   { immediate: true }
 );
+
+// 组件卸载时清理 pending 防抖定时器
+onBeforeUnmount(() => {
+  if (previewTimer) {
+    clearTimeout(previewTimer);
+    previewTimer = null;
+  }
+});
 </script>
 
 <style lang="scss" scoped>
