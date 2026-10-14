@@ -1,0 +1,662 @@
+<!-- 筛选规则工作台：配置 / 实时预览 / 前后对比 / 概览（首期无大模型）
+     数据流：由父级传入选中数据源（列表行，含 id/name），此处用 getDatasourceDetail 拉全量详情（含 filter_rules），
+     草稿规则在「规则配置」区编辑，编辑即防抖刷新预览；「保存规则/保存并应用」会覆盖已保存规则，须二次确认。 -->
+<template>
+  <div class="frwb">
+    <!-- 顶栏：命中摘要 + 操作 -->
+    <div class="frwb-bar">
+      <el-descriptions :column="4" size="small" border class="frwb-summary">
+        <el-descriptions-item label="系统表">
+          {{ preview?.summary?.system_tables ?? "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="业务表">
+          {{ preview?.summary?.business_tables ?? "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="审计字段">
+          {{ preview?.summary?.audit_fields ?? "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="业务字段">
+          {{ preview?.summary?.business_fields ?? "-" }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <div class="frwb-bar__ops">
+        <el-button
+          v-hasPerm="['module_ai:query:ask']"
+          size="small"
+          :loading="saving"
+          :disabled="!dsDetail"
+          @click="confirmSave(false)"
+        >
+          保存规则
+        </el-button>
+        <el-button
+          v-hasPerm="['module_ai:query:ask']"
+          size="small"
+          type="primary"
+          :loading="saving"
+          :disabled="!dsDetail"
+          @click="confirmSave(true)"
+        >
+          保存并应用
+        </el-button>
+      </div>
+    </div>
+
+    <el-alert
+      type="info"
+      :closable="false"
+      class="frwb-note"
+      title="规则一改即自动刷新下方预览（只读，不影响已保存规则）；确认无误后再点「保存规则 / 保存并应用」。"
+    />
+
+    <!-- 内部子 tab -->
+    <el-tabs v-model="innerTab" class="frwb-tabs">
+      <!-- 1) 规则配置 -->
+      <el-tab-pane label="规则配置" name="config">
+        <div v-loading="loading" class="frwb-pane">
+          <el-form :model="rules" label-width="110px" size="small" class="frwb-form">
+            <el-form-item label="启用规则">
+              <el-switch v-model="rules.enabled" @change="scheduleRefresh" />
+              <span class="frwb-hint">关闭后不按规则自动打标系统表 / 审计字段</span>
+            </el-form-item>
+            <el-divider content-position="left" class="frwb-divider">系统表识别</el-divider>
+            <el-form-item label="表名前缀">
+              <el-select
+                v-model="rules.system_table.prefixes"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :multiple-limit="0"
+                placeholder="回车新增，如 SYS_ / FUEL_"
+                style="width: 100%"
+                @change="scheduleRefresh"
+              >
+                <el-option
+                  v-for="p in rules.system_table.prefixes"
+                  :key="p"
+                  :label="p"
+                  :value="p"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="表名关键词">
+              <el-select
+                v-model="rules.system_table.keywords"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :multiple-limit="0"
+                placeholder="回车新增，如 _BAK / log"
+                style="width: 100%"
+                @change="scheduleRefresh"
+              >
+                <el-option
+                  v-for="k in rules.system_table.keywords"
+                  :key="k"
+                  :label="k"
+                  :value="k"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="精确表名">
+              <el-select
+                v-model="rules.system_table.exact"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :multiple-limit="0"
+                placeholder="回车新增，如 alembic_version"
+                style="width: 100%"
+                @change="scheduleRefresh"
+              >
+                <el-option
+                  v-for="e in rules.system_table.exact"
+                  :key="e"
+                  :label="e"
+                  :value="e"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="表名正则">
+              <el-input
+                v-model="rules.system_table.regex"
+                placeholder="可空，如 ^TMP_"
+                @change="scheduleRefresh"
+              />
+            </el-form-item>
+            <el-divider content-position="left" class="frwb-divider">审计字段识别</el-divider>
+            <el-form-item label="审计字段">
+              <el-select
+                v-model="rules.audit_fields"
+                multiple
+                filterable
+                allow-create
+                default-first-option
+                :multiple-limit="0"
+                placeholder="回车新增，如 created_time / is_deleted"
+                style="width: 100%"
+                @change="scheduleRefresh"
+              >
+                <el-option
+                  v-for="a in rules.audit_fields"
+                  :key="a"
+                  :label="a"
+                  :value="a"
+                />
+              </el-select>
+            </el-form-item>
+          </el-form>
+          <div class="frwb-foot">
+            <el-tag size="small" type="info" effect="plain">
+              当前草稿：{{ enabledText }}；保存后可作为「前后对比」基准
+            </el-tag>
+          </div>
+        </div>
+      </el-tab-pane>
+
+      <!-- 2) 实时预览 -->
+      <el-tab-pane label="实时预览" name="preview">
+        <div v-loading="loading" class="frwb-pane frwb-preview">
+          <el-alert
+            type="success"
+            :closable="false"
+            class="frwb-note"
+            title="以下为当前草稿规则命中的结果（只读），不会影响已保存规则。"
+          />
+          <el-card shadow="never" class="frwb-card">
+            <template #header>
+              <span class="frwb-card__title">表清单（{{ preview?.tables?.length ?? 0 }}）</span>
+            </template>
+            <el-table :data="preview?.tables || []" size="small" border height="300">
+              <template #empty>
+                <el-empty description="暂无表数据，请先同步表结构" :image-size="50" />
+              </template>
+              <el-table-column label="表名" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="frwb-mono">{{ row.name }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="系统·业务" width="110" align="center">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.is_system ? 'info' : 'success'" effect="plain">
+                    {{ row.is_system ? "系统" : "业务" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="命中规则" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ row.reason || "—" }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+          <el-card shadow="never" class="frwb-card">
+            <template #header>
+              <span class="frwb-card__title">字段清单（{{ preview?.fields?.length ?? 0 }}）</span>
+            </template>
+            <el-table :data="preview?.fields || []" size="small" border height="300">
+              <template #empty>
+                <el-empty description="暂无字段数据，请先同步表结构" :image-size="50" />
+              </template>
+              <el-table-column label="字段名" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="frwb-mono">{{ row.name }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="审计·业务" width="110" align="center">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.is_audit ? 'info' : 'success'" effect="plain">
+                    {{ row.is_audit ? "审计" : "业务" }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="命中规则" min-width="220" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ row.reason || "—" }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </div>
+      </el-tab-pane>
+
+      <!-- 3) 前后对比 -->
+      <el-tab-pane label="前后对比" name="compare">
+        <div v-loading="compareLoading" class="frwb-pane">
+          <div class="frwb-bar frwb-bar--left">
+            <el-button size="small" :icon="Refresh" :loading="compareLoading" @click="loadSavedPreview">
+              刷新对比
+            </el-button>
+            <el-tag size="small" type="info" effect="plain">
+              已保存规则 vs 当前草稿（命中标记发生变化的表 / 字段）
+            </el-tag>
+          </div>
+
+          <!-- 基础计数对比 -->
+          <el-descriptions :column="4" size="small" border class="frwb-summary frwb-summary--cmp">
+            <el-descriptions-item label="系统表">
+              已保存 {{ baseCounts.saved.sys }} / 草稿 {{ baseCounts.draft.sys }}
+            </el-descriptions-item>
+            <el-descriptions-item label="业务表">
+              已保存 {{ baseCounts.saved.biz }} / 草稿 {{ baseCounts.draft.biz }}
+            </el-descriptions-item>
+            <el-descriptions-item label="审计字段">
+              已保存 {{ baseCounts.saved.audit }} / 草稿 {{ baseCounts.draft.audit }}
+            </el-descriptions-item>
+            <el-descriptions-item label="业务字段">
+              已保存 {{ baseCounts.saved.bizf }} / 草稿 {{ baseCounts.draft.bizf }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-alert
+            v-if="!compareItems.length && !compareLoading"
+            type="success"
+            :closable="false"
+            class="frwb-note"
+            title="已保存规则与当前草稿一致，无命中变化。"
+          />
+          <el-table
+            v-else
+            :data="compareItems"
+            size="small"
+            border
+            height="320"
+          >
+            <template #empty>
+              <el-empty description="暂无差异（先点「刷新对比」或修改草稿规则）" :image-size="50" />
+            </template>
+            <el-table-column label="类型" width="80" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.kind === '表' ? 'warning' : 'primary'" effect="plain">
+                  {{ row.kind }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="名称" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="frwb-mono">{{ row.name }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="命中变化" width="160" align="center">
+              <template #default="{ row }">
+                <span class="frwb-change">{{ row.from }}</span>
+                <el-icon class="frwb-arrow"><Right /></el-icon>
+                <span class="frwb-change frwb-change--to">{{ row.to }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="命中规则" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ row.reason || "—" }}
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-tab-pane>
+
+      <!-- 4) 概览 -->
+      <el-tab-pane label="概览" name="overview">
+        <div v-loading="loading" class="frwb-pane">
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="12">
+              <el-card shadow="never" class="frwb-card">
+                <template #header>
+                  <span class="frwb-card__title">系统 vs 业务表</span>
+                </template>
+                <VChart
+                  v-if="tablePieOption"
+                  :option="tablePieOption"
+                  style="height: 260px"
+                  autoresize
+                />
+                <el-empty v-else description="暂无数据" :image-size="60" />
+              </el-card>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-card shadow="never" class="frwb-card">
+                <template #header>
+                  <span class="frwb-card__title">审计 vs 业务字段</span>
+                </template>
+                <VChart
+                  v-if="fieldPieOption"
+                  :option="fieldPieOption"
+                  style="height: 260px"
+                  autoresize
+                />
+                <el-empty v-else description="暂无数据" :image-size="60" />
+              </el-card>
+            </el-col>
+          </el-row>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { Refresh, Right } from "@element-plus/icons-vue";
+import VChart from "vue-echarts";
+import { use } from "echarts/core";
+import { PieChart } from "echarts/charts";
+import { CanvasRenderer } from "echarts/renderers";
+import { TooltipComponent, LegendComponent } from "echarts/components";
+import {
+  getDatasourceDetail,
+  saveQueryDatasource,
+  syncQueryDatasourceSchema,
+  previewFilterRules,
+} from "@/api/module_ai/query";
+
+use([PieChart, CanvasRenderer, TooltipComponent, LegendComponent]);
+
+const props = defineProps<{ datasource: any }>();
+
+// 规则默认结构：与后端 filter_rules 一致
+function defaultRules() {
+  return {
+    enabled: true,
+    system_table: { prefixes: [], keywords: [], exact: [], regex: "" },
+    audit_fields: [],
+  };
+}
+
+// 深拷贝：规则是结构化对象，避免直接引用同一内存导致草稿与基准互相污染
+function deepClone(v: any) {
+  return JSON.parse(JSON.stringify(v));
+}
+
+const innerTab = ref("config");
+const dsDetail = ref<any>(null);
+const rules = ref<any>(defaultRules());
+const preview = ref<any>(null);
+const savedRules = ref<any>(defaultRules());
+const savedPreview = ref<any>(null);
+const loading = ref(false);
+const saving = ref(false);
+const syncing = ref(false);
+const compareLoading = ref(false);
+
+const enabledText = computed(() => (rules.value?.enabled ? "已启用" : "已停用"));
+
+const baseCounts = computed(() => {
+  const s = savedPreview.value?.summary || {};
+  const c = preview.value?.summary || {};
+  return {
+    saved: {
+      sys: s.system_tables || 0,
+      biz: s.business_tables || 0,
+      audit: s.audit_fields || 0,
+      bizf: s.business_fields || 0,
+    },
+    draft: {
+      sys: c.system_tables || 0,
+      biz: c.business_tables || 0,
+      audit: c.audit_fields || 0,
+      bizf: c.business_fields || 0,
+    },
+  };
+});
+
+// 前后对比：遍历当前草稿命中与已保存命中的表/字段，标记命中类别发生变化者
+const compareItems = computed(() => {
+  const out: any[] = [];
+  const curTables: any[] = preview.value?.tables || [];
+  const savedTables: any[] = savedPreview.value?.tables || [];
+  const savedByName = new Map(savedTables.map((t: any) => [t.name, t]));
+  for (const t of curTables) {
+    const s = savedByName.get(t.name);
+    if (s && !!s.is_system !== !!t.is_system) {
+      out.push({
+        kind: "表",
+        name: t.name,
+        from: s.is_system ? "系统" : "业务",
+        to: t.is_system ? "系统" : "业务",
+        reason: t.reason,
+      });
+    }
+  }
+  const curFields: any[] = preview.value?.fields || [];
+  const savedFields: any[] = savedPreview.value?.fields || [];
+  const savedFieldByName = new Map(savedFields.map((f: any) => [f.name, f]));
+  for (const f of curFields) {
+    const s = savedFieldByName.get(f.name);
+    if (s && !!s.is_audit !== !!f.is_audit) {
+      out.push({
+        kind: "字段",
+        name: f.name,
+        from: s.is_audit ? "审计" : "业务",
+        to: f.is_audit ? "审计" : "业务",
+        reason: f.reason,
+      });
+    }
+  }
+  return out;
+});
+
+// 概览：两张饼图（系统/业务表、审计/业务字段）
+const tablePieOption = computed(() => {
+  const s = preview.value?.summary;
+  if (!s) return null;
+  return {
+    tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+    legend: { bottom: 0 },
+    series: [
+      {
+        type: "pie",
+        radius: ["40%", "70%"],
+        center: ["50%", "45%"],
+        label: { show: true, formatter: "{b}\n{d}%" },
+        data: [
+          { name: "系统表", value: s.system_tables || 0 },
+          { name: "业务表", value: s.business_tables || 0 },
+        ],
+      },
+    ],
+  };
+});
+const fieldPieOption = computed(() => {
+  const s = preview.value?.summary;
+  if (!s) return null;
+  return {
+    tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+    legend: { bottom: 0 },
+    series: [
+      {
+        type: "pie",
+        radius: ["40%", "70%"],
+        center: ["50%", "45%"],
+        label: { show: true, formatter: "{b}\n{d}%" },
+        data: [
+          { name: "审计字段", value: s.audit_fields || 0 },
+          { name: "业务字段", value: s.business_fields || 0 },
+        ],
+      },
+    ],
+  };
+});
+
+// 实时预览：用当前草稿规则请求命中结果
+async function doRefreshPreview() {
+  if (!props.datasource?.id) return;
+  loading.value = true;
+  try {
+    const r = await previewFilterRules(props.datasource.id, rules.value);
+    preview.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "预览失败");
+  } finally {
+    loading.value = false;
+  }
+}
+
+// 防抖刷新：配置区 @change 触发，避免频繁改动时连续请求
+let previewTimer: any = null;
+function scheduleRefresh() {
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => doRefreshPreview(), 300);
+}
+
+// 进入 / 切换数据源时加载详情与初始预览
+function loadAll() {
+  if (!props.datasource?.id) return;
+  getDatasourceDetail(props.datasource.id)
+    .then((r) => {
+      const d = r.data?.data || {};
+      dsDetail.value = d;
+      const fr = d.filter_rules || defaultRules();
+      rules.value = deepClone(fr);
+      savedRules.value = deepClone(fr);
+      savedPreview.value = null;
+      doRefreshPreview();
+    })
+    .catch((e: any) => {
+      ElMessage.error(e?.msg || "加载数据源详情失败");
+    });
+}
+
+// 前后对比：用已保存规则重新请求一次命中，作为比对基准
+async function loadSavedPreview() {
+  if (!props.datasource?.id) return;
+  compareLoading.value = true;
+  try {
+    const r = await previewFilterRules(props.datasource.id, savedRules.value);
+    savedPreview.value = r.data?.data || null;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "对比加载失败");
+  } finally {
+    compareLoading.value = false;
+  }
+}
+
+// 保存（覆盖已保存规则，必须二次确认）
+async function confirmSave(apply: boolean) {
+  try {
+    await ElMessageBox.confirm(
+      "将用当前草稿覆盖该数据源已保存的筛选规则，是否继续？",
+      apply ? "保存并应用" : "保存规则",
+      { type: "warning", confirmButtonText: apply ? "保存并应用" : "保存", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  saving.value = true;
+  try {
+    await saveQueryDatasource({ ...dsDetail.value, filter_rules: rules.value });
+    if (apply) {
+      syncing.value = true;
+      await syncQueryDatasourceSchema(props.datasource.id);
+    }
+    savedRules.value = deepClone(rules.value);
+    savedPreview.value = null;
+    ElMessage.success(apply ? "规则已保存并应用" : "规则已保存");
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    saving.value = false;
+    syncing.value = false;
+  }
+}
+
+// 切换数据源时重新加载
+watch(
+  () => props.datasource?.id,
+  () => loadAll(),
+  { immediate: true }
+);
+</script>
+
+<style lang="scss" scoped>
+/* 单根容器：内部子 tab 撑满但不依赖外层 flex，避免被裁剪 */
+.frwb {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.frwb-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+.frwb-bar--left {
+  justify-content: flex-start;
+}
+.frwb-bar__ops {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.frwb-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.frwb-summary--cmp {
+  margin-bottom: 10px;
+}
+.frwb-note {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+.frwb-tabs,
+.frwb-tabs :deep(.el-tabs__content),
+.frwb-tabs :deep(.el-tab-pane) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.frwb-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 2px;
+}
+.frwb-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.frwb-form {
+  max-width: 720px;
+}
+.frwb-divider {
+  margin: 6px 0 10px;
+}
+.frwb-foot {
+  margin-top: 4px;
+}
+.frwb-card {
+  flex-shrink: 0;
+}
+.frwb-card__title {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.frwb-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.frwb-mono {
+  font-family: var(--el-font-family-mono, monospace);
+  color: var(--el-text-color-primary);
+}
+.frwb-change {
+  color: var(--el-text-color-secondary);
+}
+.frwb-change--to {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.frwb-arrow {
+  margin: 0 4px;
+  vertical-align: middle;
+}
+</style>

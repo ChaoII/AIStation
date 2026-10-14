@@ -497,6 +497,12 @@
                 <el-descriptions-item label="实体">{{ kg.entities ?? "-" }}</el-descriptions-item>
               </el-descriptions>
             </el-tab-pane>
+
+            <!-- 筛选规则工作台 -->
+            <el-tab-pane label="筛选规则" name="rules">
+              <FilterRulesWorkbench v-if="curDs" :datasource="curDs" />
+              <el-empty v-else description="请先选择左侧数据源" />
+            </el-tab-pane>
           </el-tabs>
         </el-card>
       </el-col>
@@ -947,6 +953,7 @@ import {
   rebuildQueryKg,
 } from "@/api/module_ai/query";
 import { getOntDomains } from "@/api/module_ai/ontology";
+import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
 
 const tab = ref("table");
 const datasources = ref<any[]>([]);
