@@ -503,6 +503,64 @@
               <FilterRulesWorkbench v-if="curDs" :datasource="curDs" />
               <el-empty v-else description="请先选择左侧数据源" />
             </el-tab-pane>
+
+            <!-- 语义建模：大模型自动生成指标/标注（S4） -->
+            <el-tab-pane label="语义建模" name="modeling">
+              <el-alert
+                type="info"
+                :closable="false"
+                show-icon
+                title="用大模型对所选数据源自动生成「绑定型指标」与「对象/属性标注」；生成结果可到「指标」标签页查看。"
+                style="margin-bottom: 12px"
+              />
+              <el-form inline>
+                <el-form-item label="数据源">
+                  <el-tag v-if="curDs">{{ curDs.name }}（{{ modelingDsCode }}）</el-tag>
+                  <el-text v-else type="info">请先选择左侧数据源</el-text>
+                </el-form-item>
+                <el-form-item label="处理对象数">
+                  <el-input-number v-model="modelingMax" :min="1" :max="50" />
+                </el-form-item>
+                <el-form-item>
+                  <el-button
+                    type="primary"
+                    :disabled="!curDs"
+                    :loading="modelingLoading"
+                    @click="handleModeling('metrics')"
+                  >
+                    生成绑定型指标
+                  </el-button>
+                  <el-button
+                    :disabled="!curDs"
+                    :loading="modelingLoading"
+                    @click="handleModeling('annotate')"
+                  >
+                    生成对象/属性标注
+                  </el-button>
+                </el-form-item>
+              </el-form>
+              <el-descriptions v-if="modelingResult" :column="3" border>
+                <el-descriptions-item label="解析（候选）">
+                  {{ modelingResult.parsed ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="落库">
+                  {{ modelingResult.saved ?? 0 }}
+                </el-descriptions-item>
+                <el-descriptions-item label="拒绝">
+                  {{ modelingResult.rejected ?? 0 }}
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-table
+                v-if="modelingResult?.reasons?.length"
+                :data="modelingResult.reasons"
+                size="small"
+                style="margin-top: 8px"
+              >
+                <el-table-column label="拒绝原因" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row }}</template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
           </el-tabs>
         </el-card>
       </el-col>
@@ -951,6 +1009,8 @@ import {
   deleteQueryConcepts,
   getQueryKgStats,
   rebuildQueryKg,
+  runModelingMetrics,
+  runModelingAnnotate,
 } from "@/api/module_ai/query";
 import { getOntDomains } from "@/api/module_ai/ontology";
 import FilterRulesWorkbench from "./components/FilterRulesWorkbench.vue";
@@ -1757,6 +1817,43 @@ async function loadMisc() {
 onMounted(async () => {
   await Promise.all([loadDs(), loadAssets(), loadMisc(), loadDomains()]);
 });
+
+// 语义建模（S4）：大模型自动生成指标/标注
+const modelingMax = ref(12);
+const modelingLoading = ref(false);
+const modelingResult = ref<any>(null);
+const modelingDsCode = computed(
+  () => curDs.value?.code || (curDs.value ? `ds:${curDs.value.id}` : ""),
+);
+
+async function handleModeling(kind: "metrics" | "annotate") {
+  if (!curDs.value) return;
+  const label = kind === "metrics" ? "绑定型指标" : "对象/属性标注";
+  try {
+    await ElMessageBox.confirm(
+      `将对「${curDs.value.name}」用大模型自动生成${label}（写入本体/指标库），是否继续？`,
+      "确认生成",
+      { type: "warning", confirmButtonText: "生成", cancelButtonText: "取消" },
+    );
+  } catch {
+    return;
+  }
+  modelingLoading.value = true;
+  try {
+    const fn = kind === "metrics" ? runModelingMetrics : runModelingAnnotate;
+    const r: any = await fn({
+      datasource: modelingDsCode.value,
+      max_objects: modelingMax.value,
+    });
+    modelingResult.value = r?.data ?? r;
+    ElMessage.success("生成完成");
+    await loadMisc();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "生成失败");
+  } finally {
+    modelingLoading.value = false;
+  }
+}
 </script>
 
 <style scoped lang="scss">
