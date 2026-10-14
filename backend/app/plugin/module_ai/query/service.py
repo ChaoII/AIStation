@@ -20,6 +20,7 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
 
+from .filtering import DEFAULT_FILTER_RULES, is_audit_field, is_system_table
 from .model import (
     AiQueryAssetColumnModel,
     AiQueryAssetModel,
@@ -33,7 +34,6 @@ from .model import (
     AiQuerySettingModel,
 )
 from .schema import QueryAssetUpsert
-from .filtering import DEFAULT_FILTER_RULES
 
 # ---------------------------------------------------------------------------
 # 本系统数据源保留编码
@@ -135,6 +135,25 @@ async def _load_ds(datasource_id: int):
         return ds
 
 
+async def _ensure_marking_columns(db):
+    """幂等补齐 Task3 打标/枚举列（本项目 ai_* 表不走 Alembic，用 ADD COLUMN IF NOT EXISTS）。
+
+    读取/写入 ai_query_assets.is_system、ai_query_asset_columns.is_audit/enum 前执行，
+    失败仅告警不影响主流程（参考 Task2 filter_rules 补列样板）。
+    """
+    for sql in (
+        "ALTER TABLE ai_query_assets ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT false",
+        "ALTER TABLE ai_query_asset_columns ADD COLUMN IF NOT EXISTS "
+        "is_audit BOOLEAN DEFAULT false",
+        "ALTER TABLE ai_query_asset_columns ADD COLUMN IF NOT EXISTS "
+        "enum JSONB DEFAULT '[]'",
+    ):
+        try:
+            await db.execute(text(sql))
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 补打标/枚举列失败: {e}")
+
+
 async def test_datasource_conn(datasource_id: int) -> dict:
     ds = await _load_ds(datasource_id)
     from . import executor as _ex
@@ -148,6 +167,8 @@ async def sync_datasource_schema(datasource_id: int) -> dict:
 
     tables = await _ex.introspect_schema(_ds_cfg_from_model(ds))
     code = _ds_code(datasource_id)
+    # Task3：同步时按该数据源 filter_rules 给每个字段打 is_audit 标
+    rules = ds.filter_rules or DEFAULT_FILTER_RULES
     async with async_db_session.begin() as db:
         from sqlalchemy import delete
         from sqlalchemy import text as _t
@@ -163,11 +184,15 @@ async def sync_datasource_schema(datasource_id: int) -> dict:
             delete(AiQuerySchemaModel).where(AiQuerySchemaModel.datasource == code)
         )
         for t in tables:
+            cols = t["columns"] or []
+            for c in cols:
+                if isinstance(c, dict) and c.get("name"):
+                    c["is_audit"] = is_audit_field(c["name"], rules)
             db.add(
                 AiQuerySchemaModel(
                     datasource=code, table_name=t["table"],
                     table_comment=str(t.get("comment") or "")[:255],
-                    columns=t["columns"],
+                    columns=cols,
                 )
             )
     return {"tables": len(tables)}
@@ -181,8 +206,14 @@ async def list_ds_schema(datasource_id: int, included_only: bool = False) -> lis
     SYS_*/_BAK 等技术表，混进检索会污染召回与提示词）。
     """
     code = _ds_code(datasource_id)
+    # Task3：按该数据源 filter_rules 现算 is_system/is_audit；数据源不存在时兜底默认规则
+    try:
+        rules = (await _load_ds(datasource_id)).filter_rules or DEFAULT_FILTER_RULES
+    except CustomException:
+        rules = DEFAULT_FILTER_RULES
     async with async_db_session() as db:
-        from sqlalchemy import select, text as _t
+        from sqlalchemy import select
+        from sqlalchemy import text as _t
 
         rows = (
             await db.execute(
@@ -205,8 +236,23 @@ async def list_ds_schema(datasource_id: int, included_only: bool = False) -> lis
                 ).fetchall()
             }
             rows = [r for r in rows if str(r.table_name).upper() in inc]
-    return [{"table": r.table_name, "comment": r.table_comment or "",
-             "columns": r.columns or []} for r in rows]
+    return [
+        {
+            "table": r.table_name,
+            "comment": r.table_comment or "",
+            # 每列现算 is_audit（存储的 columns 可能来自旧 schema，名字判定更可靠）
+            "columns": [
+                (
+                    {**c, "is_audit": is_audit_field(c.get("name", ""), rules)}
+                    if isinstance(c, dict)
+                    else c
+                )
+                for c in (r.columns or [])
+            ],
+            "is_system": is_system_table(r.table_name, rules),
+        }
+        for r in rows
+    ]
 
 
 def _user_role_codes(auth) -> set[str]:
@@ -1938,6 +1984,9 @@ class AiQueryService:
         真实字段来自该表所属数据源已同步的结构（``ai_query_schema.columns``），
         带上 ``comment``（业务库的中文列注释），维护界面据此预填。
         """
+        # Task3：读取打标/枚举列前幂等补列（独立事务提交，失败仅告警）
+        async with async_db_session.begin() as db:
+            await _ensure_marking_columns(db)
         async with async_db_session() as db:
             from sqlalchemy import select
 
@@ -1979,6 +2028,9 @@ class AiQueryService:
                         "description": "", "business_scenarios": "",
                         "related_table": "", "related_field": "",
                         "included": True, "sensitive": False, "has_meta": False,
+                        # Task3：真实字段的 is_audit 优先用同步时落库标，否则按默认规则现算
+                        "is_audit": bool(c.get("is_audit") or is_audit_field(name)),
+                        "enum": c.get("enum") or [],
                     })
             # 已维护但真实结构里没有的字段也要保留，不能丢人工成果
             for name in by_col:
@@ -1989,6 +2041,7 @@ class AiQueryService:
                         "description": "", "business_scenarios": "",
                         "related_table": "", "related_field": "",
                         "included": True, "sensitive": False, "has_meta": True,
+                        "is_audit": False, "enum": [],
                     })
             for item in out:
                 c = by_col.get(item["column_name"])
@@ -2001,6 +2054,8 @@ class AiQueryService:
                     "related_field": c.related_field or "",
                     "included": c.included,
                     "sensitive": c.sensitive,
+                    "is_audit": bool(c.is_audit),
+                    "enum": c.enum or [],
                     "has_meta": True,
                 })
             return out
@@ -4951,6 +5006,8 @@ class AiQueryService:
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
+            # Task3：写枚举列前幂等补列
+            await _ensure_marking_columns(db)
             existing = (
                 await db.execute(
                     select(AiQueryAssetColumnModel).where(
@@ -4960,6 +5017,7 @@ class AiQueryService:
                     )
                 )
             ).scalar_one_or_none()
+            enum = data.enum or []
             if existing:
                 existing.description = data.description
                 existing.business_scenarios = data.business_scenarios
@@ -4967,6 +5025,7 @@ class AiQueryService:
                 existing.related_field = data.related_field
                 existing.included = data.included
                 existing.sensitive = data.sensitive
+                existing.enum = enum
                 existing.updated_id = auth.user.id
             else:
                 db.add(AiQueryAssetColumnModel(table_name=data.table_name, column_name=data.column_name,
@@ -4975,6 +5034,7 @@ class AiQueryService:
                                                related_table=data.related_table,
                                                related_field=data.related_field,
                                                included=data.included, sensitive=data.sensitive,
+                                               enum=enum,
                                                created_id=auth.user.id, updated_id=auth.user.id))
             await db.flush()
         _SEMANTIC_INDEX = None
@@ -4999,16 +5059,24 @@ class AiQueryService:
         async with async_db_session.begin() as db:
             from sqlalchemy import select
 
+            # Task3：写打标列前幂等补列；本地库表/字段按默认规则打 is_system/is_audit
+            await _ensure_marking_columns(db)
             for t in tables:
                 inc = t in SYSTEM_ALLOWED_TABLES
+                is_sys = is_system_table(t)
                 exists = (
                     await db.execute(select(AiQueryAssetModel).where(AiQueryAssetModel.table_name == t))
                 ).scalar_one_or_none()
                 if not exists:
                     db.add(AiQueryAssetModel(table_name=t, description="", included=inc,
-                                             remark="", created_id=auth.user.id, updated_id=auth.user.id))
+                                             is_system=is_sys, remark="",
+                                             created_id=auth.user.id, updated_id=auth.user.id))
                     upserted += 1
+                else:
+                    # 重跑同步时校正已有行的系统表标记（按名字判定，幂等）
+                    exists.is_system = is_sys
             for t, c in cols:
+                is_aud = is_audit_field(c)
                 exists = (
                     await db.execute(select(AiQueryAssetColumnModel).where(
                         AiQueryAssetColumnModel.table_name == t,
@@ -5017,7 +5085,10 @@ class AiQueryService:
                 if not exists:
                     db.add(AiQueryAssetColumnModel(table_name=t, column_name=c, description="",
                                                    included=True, sensitive=False,
+                                                   is_audit=is_aud,
                                                    created_id=auth.user.id, updated_id=auth.user.id))
+                else:
+                    exists.is_audit = is_aud
         return {"tables": len(tables), "columns": len(cols), "new_tables": upserted}
 
     # ---- 示例工程（few-shot）----

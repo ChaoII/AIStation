@@ -114,6 +114,7 @@ class QueryAssetColumnUpsert(BaseModel):
     related_field: str = ""
     included: bool = True
     sensitive: bool = False
+    enum: list | None = None  # 枚举/选项（如燃煤类型 [低硫,高硫]）
 
 
 class QuerySettingUpsert(BaseModel):

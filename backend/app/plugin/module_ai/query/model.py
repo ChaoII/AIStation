@@ -155,6 +155,9 @@ class AiQueryAssetModel(ModelMixin, UserMixin):
     object_key_col: Mapped[str | None] = mapped_column(String(64), default="id", comment="对象主键列")
     object_name_col: Mapped[str | None] = mapped_column(String(64), default="name", comment="对象显示名列")
     object_icon: Mapped[str | None] = mapped_column(String(32), default="el-icon-Box", comment="对象图标")
+    # Task3·打标：是否系统/技术表（如 SYS_*、_BAK、定时任务表），过滤规则现算后在同步时落库。
+    # 用 Mapped[bool|None]（可空）避免既有 raw INSERT/种子数据缺该列时 NOT NULL 报错。
+    is_system: Mapped[bool | None] = mapped_column(Boolean, default=False, comment="是否系统/技术表")
 
 
 class AiQueryAssetColumnModel(ModelMixin, UserMixin):
@@ -179,6 +182,13 @@ class AiQueryAssetColumnModel(ModelMixin, UserMixin):
     )
     included: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否纳入")
     sensitive: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否敏感字段")
+    # Task3·打标：是否审计/技术字段（如 created_time、is_deleted），过滤规则现算后落库。
+    # 用 Mapped[bool|None]（可空）避免既有 raw INSERT/种子数据缺该列时 NOT NULL 报错。
+    is_audit: Mapped[bool | None] = mapped_column(Boolean, default=False, comment="是否审计/技术字段")
+    # Task3·枚举：字段可选值（选项列表），如燃煤类型 [低硫,高硫]
+    enum: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list, comment="枚举/选项"
+    )
 
 
 class AiQuerySettingModel(ModelMixin, UserMixin):
