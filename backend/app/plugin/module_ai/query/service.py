@@ -2028,8 +2028,13 @@ class AiQueryService:
                         "description": "", "business_scenarios": "",
                         "related_table": "", "related_field": "",
                         "included": True, "sensitive": False, "has_meta": False,
-                        # Task3：真实字段的 is_audit 优先用同步时落库标，否则按默认规则现算
-                        "is_audit": bool(c.get("is_audit") or is_audit_field(name)),
+                        # Task3：真实字段的 is_audit 优先用同步时落库标，否则按默认规则现算。
+                        # 用「键是否缺失」区分两种情况：数据源自定义规则可能把默认审计字段
+                        # （如 created_time）显式标为非审计(False)，此时必须尊重落库标，
+                        # 不能因 ``or`` 把 False 当作缺失再按默认规则重算成 True。
+                        "is_audit": (
+                            bool(c.get("is_audit")) if "is_audit" in c else is_audit_field(name)
+                        ),
                         "enum": c.get("enum") or [],
                     })
             # 已维护但真实结构里没有的字段也要保留，不能丢人工成果

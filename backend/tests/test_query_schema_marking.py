@@ -20,11 +20,13 @@ from sqlalchemy import text
 from app.core.database import async_db_session
 
 
-def _create_ds(test_client, auth_headers, code):
-    """新建数据源，返回其 id（不传 filter_rules，落默认规则）。"""
+def _create_ds(test_client, auth_headers, code, **overrides):
+    """新建数据源，返回其 id（不传 filter_rules 时落默认规则）。"""
+    payload = {"name": f"打标测试{code}", "code": code, "type": "postgres"}
+    payload.update(overrides)
     r = test_client.post(
         "/api/v1/ai/query/datasources/save",
-        json={"name": f"打标测试{code}", "code": code, "type": "postgres"},
+        json=payload,
         headers=auth_headers,
     )
     assert r.status_code == 200, r.text
@@ -151,6 +153,70 @@ def test_asset_column_outputs_audit_and_enum(test_client, auth_headers):
         ct = next(c for c in scols if c["column_name"] == "created_time")
         assert ct["is_audit"] is True, (
             f"created_time 真实字段应 is_audit=true，实际: {ct.get('is_audit')}"
+        )
+    finally:
+        asyncio.run(_cleanup(ds_id, code))
+
+
+def test_asset_column_honors_custom_non_audit_rule(test_client, auth_headers):
+    """数据源自定义规则把默认审计字段显式标为非审计时，list_asset_columns 应尊重落库标 false。
+
+    覆盖 review 指出的 ``or`` 混淆 bug：``c.get("is_audit") or is_audit_field(name)``
+    会把「显式 False」当成「键缺失」再用**默认规则**重算，把 created_time 又判回审计。
+    修复后按「键是否缺失」区分：键存在则用落库标，避免与 list_ds_schema（按数据源规则现算）矛盾。
+    """
+    code = f"ds_mark_custom_{uuid.uuid4().hex[:8]}"
+    custom = {
+        "enabled": True,
+        "system_table": {"prefixes": ["SYS_"], "keywords": [], "exact": [], "regex": ""},
+        "audit_fields": [],  # 数据源自定义：created_time 不算审计字段
+    }
+    ds_id = _create_ds(test_client, auth_headers, code, filter_rules=custom)
+
+    async def _seed():
+        async with async_db_session.begin() as db:
+            await db.execute(
+                text(
+                    "INSERT INTO ai_query_schema(datasource,table_name,columns,table_comment,"
+                    "status,uuid,is_deleted,created_time,updated_time) "
+                    "VALUES(:d,:t,:cols,'c','0',:u,false,now(),now())"
+                ),
+                {
+                    "d": f"ds:{ds_id}",
+                    "t": "FUEL_BIZ",
+                    # 模拟 sync_datasource_schema 在自定义规则下写入：created_time 落库标 is_audit=False
+                    "cols": json.dumps(
+                        [
+                            {"name": "id", "type": "int"},
+                            {"name": "created_time", "type": "timestamp", "is_audit": False},
+                        ]
+                    ),
+                    "u": "uFUEL_BIZ",
+                },
+            )
+
+    asyncio.run(_seed())
+    try:
+        # list_ds_schema 按数据源自定义规则（audit_fields 空）现算：created_time 应为非审计
+        r = test_client.get(
+            f"/api/v1/ai/query/datasources/{ds_id}/schema", headers=auth_headers
+        )
+        assert r.status_code == 200, r.text
+        row = next(x for x in r.json()["data"] if x["table"] == "FUEL_BIZ")
+        ct = next(c for c in row["columns"] if c["name"] == "created_time")
+        assert ct["is_audit"] is False, (
+            f"自定义规则下 created_time 应非审计，实际: {ct.get('is_audit')}"
+        )
+
+        # list_asset_columns 应尊重落库标 False，不能按默认规则重算成 True
+        cr = test_client.get(
+            "/api/v1/ai/query/assets/FUEL_BIZ/columns", headers=auth_headers
+        )
+        assert cr.status_code == 200, cr.text
+        cols = cr.json()["data"]
+        ct2 = next(c for c in cols if c["column_name"] == "created_time")
+        assert ct2["is_audit"] is False, (
+            f"list_asset_columns 应尊重落库非审计标，实际: {ct2.get('is_audit')}"
         )
     finally:
         asyncio.run(_cleanup(ds_id, code))
