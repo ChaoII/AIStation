@@ -28,6 +28,15 @@ def test_validate_keeps_known_metric():
     assert ir is not None and ir.metric == "batch_count"
 
 
+def test_validate_metric_only_infers_object():
+    ir, reasons = validate_ir(
+        parse_ir('{"metric":"batch_count","group_by":[{"field":"FUELKINDNAME","alias":"煤种"}]}'),
+        _allowed(),
+        metrics={"batch_count": {"key": "batch_count", "object_code": "coal_batch"}},
+    )
+    assert ir is not None and ir.object == "coal_batch" and ir.metric == "batch_count"
+
+
 def test_validate_drops_unknown_metric():
     ir, reasons = validate_ir(
         parse_ir('{"object":"coal_batch","metric":"nope",'

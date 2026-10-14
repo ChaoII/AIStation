@@ -173,7 +173,12 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict,
     if ir is None:
         return None, ["没有解析出对象查询结构"]
 
+    raw_metric = (ir.metric or "").strip()
     raw_object = (ir.object or "").strip()
+    if not raw_object and raw_metric:
+        # 指标隐含其对象：检索优化后模型常**只填 metric** → 从指标反推 object（否则白降级）
+        m0 = (metrics or {}).get(raw_metric) or {}
+        raw_object = str(m0.get("object_code") or "")
     if not raw_object:
         return None, ["缺少 object（要查的对象类型）"]
     code = _resolve_object(raw_object, allowed)
