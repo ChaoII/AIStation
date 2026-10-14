@@ -11,7 +11,10 @@ from app.core.dependencies import AuthPermission, redis_getter
 from app.core.router_class import OperationLogRoute
 
 from .schema import (
+    FilterRulesAdviseRequest,
+    FilterRulesParseRequest,
     FilterRulesPreviewRequest,
+    FilterRulesSuggestRequest,
     QueryAskRequest,
     QueryAssetColumnUpsert,
     QueryAssetUpsert,
@@ -376,6 +379,33 @@ async def rules_preview(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.preview_filter_rules(datasource_id, data.rules), msg="查询成功")
+
+
+@AiQueryRouter.post("/datasources/{datasource_id}/rules/suggest", summary="筛选规则生成建议")
+async def rules_suggest(
+    datasource_id: int,
+    data: FilterRulesSuggestRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.suggest_filter_rules(datasource_id, data.rules), msg="生成成功")
+
+
+@AiQueryRouter.post("/datasources/{datasource_id}/rules/parse", summary="自然语言转筛选规则")
+async def rules_parse(
+    datasource_id: int,
+    data: FilterRulesParseRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.parse_filter_rules(datasource_id, data.text), msg="解析成功")
+
+
+@AiQueryRouter.post("/datasources/{datasource_id}/rules/classify-advise", summary="逐表逐字段分类建议")
+async def rules_classify_advise(
+    datasource_id: int,
+    data: FilterRulesAdviseRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.classify_advise(datasource_id, data.rules), msg="建议成功")
 
 
 @AiQueryRouter.post("/datasources/save", summary="数据源保存")

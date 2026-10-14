@@ -136,3 +136,21 @@ class FilterRulesPreviewRequest(BaseModel):
     """筛选规则分类预览请求：传草稿规则（可为 None 用数据源已保存规则）。"""
 
     rules: dict | None = None
+
+
+class FilterRulesSuggestRequest(BaseModel):
+    """筛选规则生成建议请求：传当前规则作为参考（可为 None 用数据源已保存规则）。"""
+
+    rules: dict | None = None
+
+
+class FilterRulesParseRequest(BaseModel):
+    """自然语言转筛选规则请求：把用户描述转换成完整规则 JSON。"""
+
+    text: str
+
+
+class FilterRulesAdviseRequest(BaseModel):
+    """逐表逐字段分类建议请求：传当前规则作为参考（可为 None 用数据源已保存规则）。"""
+
+    rules: dict | None = None

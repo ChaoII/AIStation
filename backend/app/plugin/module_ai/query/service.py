@@ -5597,6 +5597,162 @@ class AiQueryService:
         }
         return {"tables": t, "fields": f, "summary": summary}
 
+    # ---- 大模型辅助：筛选规则（suggest / parse / classify-advise） ----
+    @classmethod
+    async def _llm_json(cls, prompt: str, temperature: float = 0.2) -> str:
+        """大模型辅助统一入口（走 agno，且 agno 外 wait_for 兜底超时）。
+
+        - 复用 ``_get_runtime()`` + ``build_headers`` + ``OpenAILike`` + ``Agent``；
+        - 只在 agno **之外**用 ``asyncio.wait_for`` 兜底超时（agno 的 timeout 只是单次 HTTP）；
+        - 返回 ``resp.content``（str），异常统一上报可读的 CustomException。
+        """
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
+
+        from app.plugin.module_ai.models.service import build_headers
+
+        try:
+            runtime = await cls._get_runtime()
+        except Exception as e:  # noqa: BLE001
+            raise CustomException(msg=f"未配置可用的辅助模型：{e}")
+        cfg = await cls._cfg()
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime["api_key"] or "sk-none",
+            temperature=temperature, max_tokens=4000, timeout=60,
+            # 辅助任务只要结果，压住思考避免长尾（参考 _nl2sql 的思考控制结论）
+            extra_body={"reasoning_effort": "low"},
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-suggest"),
+        )
+        agent = Agent(model=model, telemetry=False,
+                      instructions="只输出严格的 JSON，不要任何解释、不要 markdown 代码块以外的文字。")
+        try:
+            resp = await asyncio.wait_for(
+                agent.arun(prompt),
+                timeout=cls._cfg_int(cfg, "nl2sql_call_timeout", 90),
+            )
+            return (resp.content or "").strip()
+        except asyncio.TimeoutError:
+            raise CustomException(msg="大模型辅助调用超时，请稍后重试")
+        except Exception as e:  # noqa: BLE001
+            raise CustomException(msg=f"大模型辅助调用失败：{str(e)[:200]}")
+
+    @classmethod
+    def _extract_json(cls, s: str) -> str:
+        """去掉 ```json ... ``` 代码块包裹，返回内部 JSON 文本；否则原样返回。"""
+        t = (s or "").strip()
+        if t.startswith("```"):
+            t = t.split("\n", 1)[-1] if "\n" in t else t
+            t = t.rsplit("```", 1)[0]
+        return t.strip()
+
+    @classmethod
+    def _parse_llm_json(cls, raw: str) -> dict:
+        """解析 ``_llm_json`` 产出：``_extract_json`` + ``json.loads``，失败抛统一错误。"""
+        try:
+            return json.loads(cls._extract_json(raw))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raise CustomException(msg="大模型返回不是有效 JSON")
+
+    @classmethod
+    async def _ds_current_rules(cls, datasource_id: int, rules: dict | None) -> dict:
+        """取当前规则上下文：``rules`` 优先，其次数据源已保存规则，最后默认规则。"""
+        try:
+            ds = await _load_ds(datasource_id)
+            saved = getattr(ds, "filter_rules", None) or None
+        except CustomException:
+            saved = None
+        return rules if rules is not None else (saved or DEFAULT_FILTER_RULES)
+
+    @classmethod
+    async def suggest_filter_rules(cls, datasource_id: int, rules: dict | None = None) -> dict:
+        """按命名规律归纳系统表前缀/关键词/精确名/正则与审计字段，输出完整 rules JSON。
+
+        - 表名/字段名各截断最多 400 条（防超长）；
+        - ``rules`` 参数可作为当前规则参考，模型仍需输出**完整** ``rules``（含 enabled +
+          system_table + audit_fields）。
+        """
+        schema = await list_ds_schema(datasource_id)
+        tables = [s["table"] for s in schema][:400]
+        fields = [
+            c.get("name") or c.get("column_name")
+            for s in schema for c in (s.get("columns") or []) if isinstance(c, dict)
+        ][:400]
+        cur = await cls._ds_current_rules(datasource_id, rules)
+        prompt = (
+            "你是数据库表/字段命名规范专家。根据下面给定的数据源表与字段样例，"
+            "归纳出「系统表」与「审计字段」的识别规则。\n"
+            f"当前规则参考：{json.dumps(cur, ensure_ascii=False)}\n"
+            f"表名样例（{len(tables)}）：{json.dumps(tables, ensure_ascii=False)}\n"
+            f"字段样例（{len(fields)}）：{json.dumps(fields, ensure_ascii=False)}\n\n"
+            "请只输出严格的 JSON，结构为："
+            "{\"rules\": {\"enabled\": true, \"system_table\": "
+            "{\"prefixes\": [\"...\"], \"keywords\": [\"...\"], "
+            "\"exact\": [\"...\"], \"regex\": \"\"}, "
+            "\"audit_fields\": [\"...\"]}}\n"
+            "必须输出完整 rules（含 enabled、system_table 四要素与 audit_fields），"
+            "不要缺省字段，不要输出任何解释。"
+        )
+        raw = await cls._llm_json(prompt)
+        parsed = cls._parse_llm_json(raw)
+        return {"rules": parsed["rules"]}
+
+    @classmethod
+    async def parse_filter_rules(cls, datasource_id: int, text: str) -> dict:
+        """把自然语言（如「把 SYS_ 前缀当系统表，created_time 当审计字段」）转成完整 rules JSON。"""
+        # 把数据源表名样例作为背景，帮助模型理解命名上下文（非强制）
+        try:
+            schema = await list_ds_schema(datasource_id)
+            tables = [s["table"] for s in schema][:400]
+        except CustomException:
+            tables = []
+        prompt = (
+            "你是筛选规则解析助手。把用户的中文描述转换成规则 JSON，"
+            "规则用于识别「系统表」（前缀/关键词/精确名/正则）与「审计字段」。\n"
+            f"数据源表名样例（{len(tables)}）：{json.dumps(tables, ensure_ascii=False)}\n"
+            f"用户描述：{text}\n\n"
+            "请只输出严格的 JSON，结构为："
+            "{\"rules\": {\"enabled\": true, \"system_table\": "
+            "{\"prefixes\": [\"...\"], \"keywords\": [\"...\"], "
+            "\"exact\": [\"...\"], \"regex\": \"\"}, "
+            "\"audit_fields\": [\"...\"]}}\n"
+            "必须输出完整 rules（含 enabled、system_table 四要素与 audit_fields），"
+            "不要缺省字段，不要输出任何解释。"
+        )
+        raw = await cls._llm_json(prompt)
+        parsed = cls._parse_llm_json(raw)
+        return {"rules": parsed["rules"]}
+
+    @classmethod
+    async def classify_advise(cls, datasource_id: int, rules: dict | None = None) -> dict:
+        """逐表逐字段分类建议：根据当前规则推理哪些表可能为系统表、哪些字段为审计字段。
+
+        - 取表/字段样例（各截断 400 条）+ 当前规则作为推理依据；
+        - 返回 ``{"system_suggest": [{"name","reason"}], "audit_suggest": [{"name","reason"}]}``。
+        """
+        schema = await list_ds_schema(datasource_id)
+        tables = [s["table"] for s in schema][:400]
+        fields = [
+            c.get("name") or c.get("column_name")
+            for s in schema for c in (s.get("columns") or []) if isinstance(c, dict)
+        ][:400]
+        cur = await cls._ds_current_rules(datasource_id, rules)
+        prompt = (
+            "你是数据库表/字段分类专家。根据给定的当前规则，逐表判断是否疑似系统表、"
+            "逐字段判断是否疑似审计字段，并为每项给出中文判断依据（reason，如「命名含 _BAK，疑似备份表」）。\n"
+            f"当前规则：{json.dumps(cur, ensure_ascii=False)}\n"
+            f"表名样例（{len(tables)}）：{json.dumps(tables, ensure_ascii=False)}\n"
+            f"字段样例（{len(fields)}）：{json.dumps(fields, ensure_ascii=False)}\n\n"
+            "请只输出严格的 JSON，结构为："
+            "{\"system_suggest\": [{\"name\": \"...\", \"reason\": \"...\"}], "
+            "\"audit_suggest\": [{\"name\": \"...\", \"reason\": \"...\"}]}\n"
+            "只列出你认为应归为系统表/审计字段的表与字段，不要输出任何解释。"
+        )
+        raw = await cls._llm_json(prompt)
+        parsed = cls._parse_llm_json(raw)
+        return parsed
+
     # ---- 会话与问答 ----
     @classmethod
     async def get_or_create_session(cls, session_id: int | None, title: str, auth) -> dict:
