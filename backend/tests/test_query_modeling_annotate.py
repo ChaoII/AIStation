@@ -27,7 +27,7 @@ def test_generate_annotations_writes_name_and_description(monkeypatch):
     async def _go():
         from app.plugin.module_ai.query import modeling as M
 
-        async def _fake_collect(datasource, max_objects):
+        async def _fake_collect(datasource, max_objects, offset=0):
             return [{"code": "coal_batch", "name": "coal_batch", "table": "T",
                      "fields": [{"code": "FUELKINDNAME", "name": "FUELKINDNAME"}]}]
 

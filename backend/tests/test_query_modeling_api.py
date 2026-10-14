@@ -12,7 +12,7 @@ def test_generate_modeling_metrics_invalidates_cache(monkeypatch):
         from app.plugin.module_ai.query import modeling as M
         from app.plugin.module_ai.query import service as S
 
-        async def _fake_gen(datasource, auth, max_objects=12, dry=False):
+        async def _fake_gen(datasource, auth, max_objects=12, dry=False, offset=0):
             return {"parsed": 2, "verified": 1, "saved": 1, "rejected": 1, "reasons": []}
 
         monkeypatch.setattr(M, "generate_metrics", _fake_gen)
@@ -32,7 +32,7 @@ def test_generate_modeling_annotate_dispatch(monkeypatch):
 
         seen = {}
 
-        async def _fake_ann(datasource, auth, max_objects=12):
+        async def _fake_ann(datasource, auth, max_objects=12, offset=0):
             seen["datasource"] = datasource
             return {"parsed": 3, "saved": 3}
 

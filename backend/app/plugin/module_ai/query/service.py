@@ -1437,7 +1437,8 @@ class AiQueryService:
 
     @classmethod
     async def generate_modeling(cls, kind: str, datasource: str, auth,
-                                max_objects: int = 12, dry: bool = False) -> dict:
+                                max_objects: int = 12, dry: bool = False,
+                                offset: int = 0) -> dict:
         """触发大模型自动建模（``kind``：``metrics`` / ``annotate``），并失效语义缓存。
 
         建模会**写指标/对象/属性** → 必须失效缓存，否则前端与问数看不到刚生成的内容
@@ -1450,9 +1451,11 @@ class AiQueryService:
         datasource = await _norm_datasource(datasource)
 
         if kind == "metrics":
-            out = await _m.generate_metrics(datasource, auth, max_objects=max_objects, dry=dry)
+            out = await _m.generate_metrics(datasource, auth, max_objects=max_objects,
+                                            dry=dry, offset=offset)
         elif kind == "annotate":
-            out = await _m.generate_annotations(datasource, auth, max_objects=max_objects)
+            out = await _m.generate_annotations(datasource, auth, max_objects=max_objects,
+                                                offset=offset)
         else:
             raise CustomException(msg=f"未知建模类型：{kind}")
         if not dry:

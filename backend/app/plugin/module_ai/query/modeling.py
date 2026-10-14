@@ -179,8 +179,12 @@ async def verify_metric(metric: dict) -> dict:
     return {"ok": True, "rows": rows}
 
 
-async def collect_objects(datasource: str, max_objects: int = 12) -> list[dict]:
-    """收集某数据源的对象与字段（供建模提示词使用）。"""
+async def collect_objects(datasource: str, max_objects: int = 12,
+                          offset: int = 0) -> list[dict]:
+    """收集某数据源的对象与字段（供建模提示词使用）。
+
+    ``offset``/``max_objects`` 用于**分批**覆盖大量对象（数据集常有几百个对象）。
+    """
     from app.plugin.module_ai.ontology import semantic as _sem
     from app.plugin.module_ai.ontology import service as ont
 
@@ -197,8 +201,9 @@ async def collect_objects(datasource: str, max_objects: int = 12) -> list[dict]:
     objs = ctx.get("objects") or []
     if ds_id is not None:
         objs = [o for o in objs if int(o.get("datasource_id") or 0) == ds_id]
+    page = objs[max(0, int(offset)): max(0, int(offset)) + max(1, int(max_objects))]
     out: list[dict] = []
-    for o in objs[:max_objects]:
+    for o in page:
         code = str(o.get("code") or "")
         if not code:
             continue
@@ -218,7 +223,7 @@ async def collect_objects(datasource: str, max_objects: int = 12) -> list[dict]:
 
 
 async def generate_metrics(datasource: str, auth, max_objects: int = 12,
-                           dry: bool = False) -> dict:
+                           dry: bool = False, offset: int = 0) -> dict:
     """一轮「生成→验证→落库」绑定型指标。
 
     ``dry=True`` 只生成+验证、不落库（用于预览）。
@@ -228,7 +233,7 @@ async def generate_metrics(datasource: str, auth, max_objects: int = 12,
 
     from .service import AiQueryService
 
-    objects = await collect_objects(datasource, max_objects)
+    objects = await collect_objects(datasource, max_objects, offset)
     if not objects:
         return {"parsed": 0, "verified": 0, "saved": 0, "rejected": 0,
                 "reasons": ["无可用对象"]}
@@ -360,9 +365,10 @@ async def _annotate_property(object_code: str, code: str, name: str,
             params)
 
 
-async def generate_annotations(datasource: str, auth, max_objects: int = 12) -> dict:
+async def generate_annotations(datasource: str, auth, max_objects: int = 12,
+                                offset: int = 0) -> dict:
     """一轮「生成→落库」对象/属性标注。返回 ``{parsed, saved}``。"""
-    objects = await collect_objects(datasource, max_objects)
+    objects = await collect_objects(datasource, max_objects, offset)
     if not objects:
         return {"parsed": 0, "saved": 0, "reasons": ["无可用对象"]}
     text = await model_llm(build_annotate_prompt(objects))

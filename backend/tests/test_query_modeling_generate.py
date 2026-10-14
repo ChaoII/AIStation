@@ -8,7 +8,7 @@ def test_generate_metrics_mock_llm_and_save(monkeypatch):
         from app.plugin.module_ai.query import modeling as M
         from app.plugin.module_ai.query import service as S
 
-        async def _fake_collect(datasource, max_objects):
+        async def _fake_collect(datasource, max_objects, offset=0):
             return [{"code": "coal_batch", "name": "入厂煤批次", "table": "T",
                      "fields": [{"code": "FUELKINDNAME", "name": "煤种", "type": "string"}]}]
 
@@ -45,7 +45,7 @@ def test_generate_metrics_rejects_unverified(monkeypatch):
         from app.plugin.module_ai.query import modeling as M
         from app.plugin.module_ai.query import service as S
 
-        async def _fake_collect(datasource, max_objects):
+        async def _fake_collect(datasource, max_objects, offset=0):
             return [{"code": "coal_batch", "name": "x", "table": "T", "fields": []}]
 
         async def _fake_llm(prompt, **k):
