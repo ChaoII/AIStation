@@ -35,13 +35,13 @@ def _need_app(test_client):
 
 
 def _stub(monkeypatch, *, allowed=_ALLOWED, ir_text=_IR_OK, exec_ok=True):
-    async def _allowed(question, auth, max_objects=8):
+    async def _allowed(question, auth, max_objects=8, datasource="system"):
         return dict(allowed)
 
     async def _ir_llm(prompt, runtime):
         return ir_text
 
-    async def _exec(ir, principal=None):
+    async def _exec(ir, principal=None, metrics=None):
         if not exec_ok:
             return {"ok": False, "error": "实例层炸了"}
         return {"ok": True, "columns": ["状态", "数量"], "rows": [["ONLINE", 55]],
@@ -128,15 +128,16 @@ def test_object_path_degrades_when_execute_fails(monkeypatch):
     assert asyncio.run(_go()) is None
 
 
-def test_object_path_skips_custom_datasource(monkeypatch):
-    """对象查询只作用于系统库（本体支撑表在系统库里），自定义源直接降级。"""
+def test_object_path_attempts_custom_datasource(monkeypatch):
+    """S2：对象查询**放开**自定义数据源——按对象归属过滤词表，不再无条件降级。"""
     import asyncio
 
     called = {"n": 0}
 
-    async def _allowed(question, auth, max_objects=8):
+    async def _allowed(question, auth, max_objects=8, datasource="system"):
         called["n"] += 1
-        return dict(_ALLOWED)
+        called["datasource"] = datasource
+        return {}          # 无可用对象 → 仍降级，但**已构建过词表**
 
     monkeypatch.setattr(AiQueryService, "_allowed_objects_for_query", _allowed)
 
@@ -144,7 +145,8 @@ def test_object_path_skips_custom_datasource(monkeypatch):
         return await AiQueryService._object_query_path("统计摄像机状态", 1, "ds:4", _auth())
 
     assert asyncio.run(_go()) is None
-    assert called["n"] == 0                               # 连词表都不该构建
+    assert called["n"] == 1                               # 词表已构建（不再早退）
+    assert called.get("datasource") == "ds:4"
 
 
 # ---------------------------------------------------------------------------

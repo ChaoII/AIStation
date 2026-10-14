@@ -79,7 +79,7 @@ async def _load_objects() -> list[dict]:
         # 整个查询失败、对象列表变空。原样取，Python 侧兜底（跨方言也稳）。
         rows = (await _exec(
             "SELECT code, name, backing_table, description, aliases, domain_code, "
-            "key_prop, name_prop "
+            "key_prop, name_prop, COALESCE(datasource_id,0) "
             "FROM ai_ont_object WHERE is_deleted=false AND enabled=true ORDER BY id", {})).fetchall()
     except Exception:  # noqa: BLE001
         return []
@@ -89,6 +89,7 @@ async def _load_objects() -> list[dict]:
         "table": _resolve_table(r[0], r[2] or "", existing),
         "description": r[3] or "", "aliases": _split_aliases(r[4]),
         "domain": r[5] or "", "key_prop": r[6] or "id", "name_prop": r[7] or "name",
+        "datasource_id": int(r[8] or 0),
     } for r in rows]
 
 

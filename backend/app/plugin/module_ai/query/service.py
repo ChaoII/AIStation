@@ -6137,14 +6137,16 @@ class AiQueryService:
     # 设计：docs/superpowers/specs/2026-10-14-semantic-query-layer-design.md
     # ------------------------------------------------------------------
     @classmethod
-    async def _allowed_objects_for_query(cls, question: str, auth, max_objects: int = 8) -> dict:
+    async def _allowed_objects_for_query(cls, question: str, auth, max_objects: int = 8,
+                                         datasource: str = SYSTEM_DS) -> dict:
         """构建「授权 ∩ 检索命中」的对象白名单（scope 收敛的落点）。
 
-        - 只保留**已物化**（支撑表存在）且用户**有权访问**的对象类型；
-        - 用 ``_semantic_tables`` 的召回结果收窄（未命中则放宽到全部授权对象）；
-        - 字段只带**真实存在的列**，关系只带非隐藏项。
+        - 系统库：只保留**已物化**（支撑表存在）且用户**有权访问**的对象类型；
+        - 自定义数据源（``ds:{id}``）：保留**归属该数据源**（``datasource_id`` 相等）的对象；
+        - 用 ``_semantic_tables`` 的召回结果收窄（仅系统库；未命中则放宽到全部授权对象）；
+        - 字段只带**真实存在的列**，关系只带非隐藏项；并挂上**绑定到该对象的指标**。
 
-        这一步同时是**反幻觉**的架构保证：IR 里出现清单外的对象/字段会被丢弃。
+        这一步同时是**反幻觉**的架构保证：IR 里出现清单外的对象/字段/指标会被丢弃。
         """
         from app.plugin.module_ai.ontology import semantic as _sem
 
@@ -6153,6 +6155,15 @@ class AiQueryService:
         except Exception as e:  # noqa: BLE001
             log.warning(f"[query] 对象查询：本体语义读取失败 {str(e)[:100]}")
             return {}
+
+        # 自定义数据源 id（``ds:{id}``）；系统库为 None
+        ds_id: int | None = None
+        if datasource and datasource not in (SYSTEM_DS, None):
+            try:
+                ds_id = int(str(datasource).split(":")[-1])
+            except (TypeError, ValueError):
+                ds_id = None
+
         try:
             tmap = await _sem.object_table_map()
         except Exception:  # noqa: BLE001
@@ -6165,25 +6176,40 @@ class AiQueryService:
         cand: list[dict] = []
         for o in ctx.get("objects") or []:
             table = str(o.get("table") or "")
-            if not table or (allowed_tables and table not in allowed_tables):
+            if ds_id is not None:
+                # 自定义数据源：按对象归属的数据源过滤（跨库不越权）
+                if int(o.get("datasource_id") or 0) != ds_id:
+                    continue
+            elif not table or (allowed_tables and table not in allowed_tables):
                 continue
             cand.append(o)
 
-        # 按检索命中收窄（检索失败不影响主流程）
-        hit_codes: set[str] = set()
+        # 按检索命中收窄（仅系统库；检索基于系统 schema，对自定义源不适用）
+        if ds_id is None:
+            hit_codes: set[str] = set()
+            try:
+                schema = await cls._system_schema()
+                hits = await cls._semantic_tables(question, schema, None, None, SYSTEM_DS)
+                for t in hits or []:
+                    code = tmap.get(t) or (str(t)[4:] if str(t).startswith("ont_") else None)
+                    if code:
+                        hit_codes.add(code)
+            except Exception:  # noqa: BLE001
+                hit_codes = set()
+            if hit_codes:
+                narrowed = [o for o in cand if o.get("code") in hit_codes]
+                if narrowed:
+                    cand = narrowed
+
+        # 绑定指标：按 object_code 归组，挂到对象 spec 上（供 IR 提示词/校验/执行使用）
+        metrics_by_object: dict[str, list] = {}
         try:
-            schema = await cls._system_schema()
-            hits = await cls._semantic_tables(question, schema, None, None, SYSTEM_DS)
-            for t in hits or []:
-                code = tmap.get(t) or (str(t)[4:] if str(t).startswith("ont_") else None)
-                if code:
-                    hit_codes.add(code)
+            for m in await cls.list_metrics(datasource):
+                oc = str(m.get("object_code") or "")
+                if oc:
+                    metrics_by_object.setdefault(oc, []).append(m)
         except Exception:  # noqa: BLE001
-            hit_codes = set()
-        if hit_codes:
-            narrowed = [o for o in cand if o.get("code") in hit_codes]
-            if narrowed:
-                cand = narrowed
+            metrics_by_object = {}
 
         out: dict = {}
         for o in cand:
@@ -6194,6 +6220,7 @@ class AiQueryService:
                 continue
             spec = await cls._object_spec_for(code)
             if spec:
+                spec["metrics"] = {m["key"]: m for m in metrics_by_object.get(code, [])}
                 out[code] = spec
         return out
 
@@ -6500,14 +6527,18 @@ class AiQueryService:
         from . import object_query as oq
         from .object_exec import execute_ir
 
-        # 本体对象的支撑表在系统库里；自定义数据源暂不支持
-        if datasource not in (SYSTEM_DS, None):
-            return None
-
         cfg = await cls._cfg()
         max_objs = cls._cfg_int(cfg, "object_query_max_objects", 8)
 
-        allowed = await cls._allowed_objects_for_query(question, auth, max_objects=max_objs)
+        # 指标字典（供 IR 提示词注入 / 校验收敛 / 绑定型指标执行）
+        try:
+            metrics_map = {m["key"]: m for m in await cls.list_metrics(datasource)}
+        except Exception:  # noqa: BLE001
+            metrics_map = {}
+
+        # 对象白名单：系统库按授权过滤，自定义数据源按对象归属过滤（S2 放开）
+        allowed = await cls._allowed_objects_for_query(
+            question, auth, max_objects=max_objs, datasource=datasource)
         # 「当前对象」即使没被检索命中，也**强制进词表并排在最前**：
         # 用户已经明确站在这个对象上提问，不该因为召回没命中就查不了它。
         if object_code:
@@ -6532,7 +6563,8 @@ class AiQueryService:
             text = await cls._ir_llm(
                 oq.render_ir_prompt(question, allowed, max_objects=max_objs,
                                     max_traverse_depth=cls._cfg_int(
-                                        cfg, "object_query_max_traverse_depth", 1)),
+                                        cfg, "object_query_max_traverse_depth", 1),
+                                    metrics=metrics_map),
                 runtime)
         except Exception as e:  # noqa: BLE001
             # ⚠️ 必须打**异常类型**：TimeoutError 的 str(e) 是空串，只打 message 时
@@ -6550,7 +6582,8 @@ class AiQueryService:
             parsed.object_key = str(object_key)
         ir, reasons = oq.validate_ir(
             parsed, allowed,
-            max_traverse_depth=cls._cfg_int(cfg, "object_query_max_traverse_depth", 1))
+            max_traverse_depth=cls._cfg_int(cfg, "object_query_max_traverse_depth", 1),
+            metrics=metrics_map)
         if not ir:
             log.warning("[query] 对象查询未通过校验，降级 NL2SQL：{}", "；".join(reasons[:3]))
             return None
@@ -6560,7 +6593,7 @@ class AiQueryService:
             principal = await _ont_sec.load_principal(uid)
         except Exception:  # noqa: BLE001
             principal = None
-        res = await execute_ir(ir, principal)
+        res = await execute_ir(ir, principal, metrics=metrics_map)
         if not res.get("ok"):
             log.warning("[query] 对象查询执行失败，降级 NL2SQL：{}", res.get("error"))
             return None
