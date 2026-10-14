@@ -2,39 +2,45 @@
 <template>
   <div class="app-container ai-mod ai-integration-page">
     <el-row :gutter="12" class="ig-fill">
-      <!-- 左：数据源 -->
+      <!-- 左：数据源（纵向列表，仿「本体」左侧导航） -->
       <el-col :span="7" class="ig-fill">
         <el-card shadow="never" class="ig-card">
           <template #header>
             <div class="ig-head">
-              <span>数据源</span>
+              <span class="ig-side-title">数据源</span>
               <el-button type="primary" size="small" :icon="Plus" @click="openDs()">新建</el-button>
             </div>
           </template>
-          <el-table
-            :data="datasources"
-            size="small"
-            border
-            height="100%"
-            highlight-current-row
-            @current-change="pickDs"
-          >
-            <template #empty>
-              <el-empty description="暂无数据源" :image-size="60" />
-            </template>
-            <el-table-column prop="name" label="名称" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="type" label="类型" width="66" />
-            <el-table-column label="操作" width="92" align="center">
-              <template #default="{ row }">
-                <el-button link type="primary" size="small" @click.stop="testDs(row)">
-                  测试
-                </el-button>
-                <el-button link type="primary" size="small" @click.stop="openDs(row)">
-                  编辑
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+          <div class="ig-ds-list">
+            <div
+              v-for="d in datasources"
+              :key="d.id"
+              class="ig-ds-item"
+              :class="{ 'is-active': curDs && curDs.id === d.id }"
+              @click="pickDs(d)"
+            >
+              <el-icon class="ig-ds-item__icon"><Coin /></el-icon>
+              <div class="ig-ds-item__text">
+                <div class="ig-ds-item__name" :title="d.name">{{ d.name }}</div>
+                <div class="ig-ds-item__sub">
+                  <el-tag size="small" type="info" effect="plain">{{ d.type }}</el-tag>
+                  <span v-if="d.table_count != null" class="ig-ds-item__count">
+                    {{ d.table_count }} 表
+                  </span>
+                </div>
+              </div>
+              <div class="ig-ds-item__ops" @click.stop>
+                <el-button link type="primary" size="small" @click="testDs(d)">测试</el-button>
+                <el-button link type="primary" size="small" @click="openDs(d)">编辑</el-button>
+                <el-button link type="danger" size="small" @click="removeDs(d)">删除</el-button>
+              </div>
+            </div>
+            <el-empty
+              v-if="!datasources.length"
+              :image-size="60"
+              description="暂无数据源，点「新建」创建"
+            />
+          </div>
         </el-card>
       </el-col>
 
@@ -54,6 +60,7 @@
                       placeholder="搜索表名/中文名"
                       :prefix-icon="Search"
                       clearable
+                      class="ig-bar__search"
                     />
                     <el-button
                       size="small"
@@ -65,6 +72,31 @@
                       同步
                     </el-button>
                     <el-button size="small" :icon="EditPen" @click="openBatch">批量维护</el-button>
+                    <el-switch v-model="hideSys" active-text="只看业务表" />
+                    <span class="ig-bar__gap" />
+                    <el-select
+                      v-model="importDomain"
+                      size="small"
+                      clearable
+                      placeholder="目标本体域"
+                      class="ig-bar__domain"
+                    >
+                      <el-option
+                        v-for="dm in domains"
+                        :key="dm.code"
+                        :label="dm.name"
+                        :value="dm.code"
+                      />
+                    </el-select>
+                    <el-button
+                      size="small"
+                      :icon="DataBoard"
+                      :disabled="!curDs"
+                      :loading="importingBatch"
+                      @click="doBatchImport"
+                    >
+                      批量导入
+                    </el-button>
                   </div>
                   <el-table
                     :data="filteredTables"
@@ -75,10 +107,7 @@
                     @current-change="pickTable"
                   >
                     <template #empty>
-                      <el-empty
-                        :description="curDs ? '点「同步」拉取表结构' : '请先选择左侧数据源'"
-                        :image-size="50"
-                      />
+                      <el-empty :description="tableEmptyText" :image-size="50" />
                     </template>
                     <el-table-column label="表" min-width="180" show-overflow-tooltip>
                       <template #default="{ row }">
@@ -100,6 +129,14 @@
                   <template v-else>
                     <div class="ig-bar">
                       <span class="ig-title">{{ curTable }}</span>
+                      <el-tag
+                        v-if="curTableSys !== undefined"
+                        size="small"
+                        :type="curTableSys ? 'warning' : 'success'"
+                        effect="plain"
+                      >
+                        {{ curTableSys ? "系统表" : "业务表" }}
+                      </el-tag>
                       <el-button
                         size="small"
                         type="primary"
@@ -108,6 +145,20 @@
                       >
                         保存表信息
                       </el-button>
+                      <el-select
+                        v-model="importDomain"
+                        size="small"
+                        clearable
+                        placeholder="目标本体域"
+                        class="ig-bar__domain"
+                      >
+                        <el-option
+                          v-for="dm in domains"
+                          :key="dm.code"
+                          :label="dm.name"
+                          :value="dm.code"
+                        />
+                      </el-select>
                       <el-button
                         size="small"
                         :icon="DataBoard"
@@ -179,19 +230,20 @@
                     </el-form>
 
                     <div class="ig-bar">
-                      <span class="ig-sub">字段（{{ columns.length }}）</span>
+                      <span class="ig-sub">字段（{{ filteredColumns.length }}）</span>
+                      <el-switch v-model="hideAudit" active-text="只看业务字段" />
                       <el-tag size="small" type="info" effect="plain">
-                        上游注释可作参考，中文名可人工覆盖
+                        上游注释可作参考，中文名/枚举可人工维护
                       </el-tag>
                     </div>
-                    <el-table :data="columns" size="small" border height="100%">
+                    <el-table :data="filteredColumns" size="small" border height="100%">
                       <template #empty>
                         <el-empty description="该表暂无字段信息，请先同步表结构" :image-size="50" />
                       </template>
                       <el-table-column
                         prop="column_name"
                         label="字段"
-                        width="150"
+                        width="140"
                         show-overflow-tooltip
                       >
                         <template #default="{ row }">
@@ -202,12 +254,21 @@
                           </div>
                         </template>
                       </el-table-column>
-                      <el-table-column label="中文名" min-width="130">
+                      <el-table-column label="中文名" min-width="110">
                         <template #default="{ row }">
                           <el-input v-model="row.description" size="small" placeholder="中文名" />
                         </template>
                       </el-table-column>
-                      <el-table-column label="关联表" min-width="120">
+                      <el-table-column label="业务场景" min-width="110">
+                        <template #default="{ row }">
+                          <el-input
+                            v-model="row.business_scenarios"
+                            size="small"
+                            placeholder="哪些业务/报表用到"
+                          />
+                        </template>
+                      </el-table-column>
+                      <el-table-column label="关联表" min-width="100">
                         <template #default="{ row }">
                           <el-input
                             v-model="row.related_table"
@@ -216,7 +277,7 @@
                           />
                         </template>
                       </el-table-column>
-                      <el-table-column label="关联字段" min-width="110">
+                      <el-table-column label="关联字段" min-width="100">
                         <template #default="{ row }">
                           <el-input
                             v-model="row.related_field"
@@ -225,12 +286,38 @@
                           />
                         </template>
                       </el-table-column>
-                      <el-table-column label="纳入" width="58" align="center">
+                      <el-table-column label="枚举" min-width="160">
+                        <template #default="{ row }">
+                          <el-select
+                            v-model="row.enum"
+                            size="small"
+                            multiple
+                            filterable
+                            allow-create
+                            default-first-option
+                            placeholder="输入后回车新增"
+                            style="width: 100%"
+                          >
+                            <el-option
+                              v-for="opt in row.enum || []"
+                              :key="opt"
+                              :label="opt"
+                              :value="opt"
+                            />
+                          </el-select>
+                        </template>
+                      </el-table-column>
+                      <el-table-column label="纳入" width="54" align="center">
                         <template #default="{ row }">
                           <el-switch v-model="row.included" size="small" />
                         </template>
                       </el-table-column>
-                      <el-table-column label="操作" width="62" align="center">
+                      <el-table-column label="敏感" width="54" align="center">
+                        <template #default="{ row }">
+                          <el-switch v-model="row.sensitive" size="small" />
+                        </template>
+                      </el-table-column>
+                      <el-table-column label="操作" width="62" align="center" fixed="right">
                         <template #default="{ row }">
                           <el-button
                             link
@@ -673,14 +760,16 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Refresh, Search, DataBoard, EditPen } from "@element-plus/icons-vue";
+import { Plus, Refresh, Search, DataBoard, EditPen, Coin } from "@element-plus/icons-vue";
 import {
   getQueryDatasources,
   saveQueryDatasource,
   testQueryDatasource,
+  deleteQueryDatasources,
   syncQueryDatasourceSchema,
   getQueryDatasourceSchema,
   importDsAsOntology,
+  importDsAsOntologyBatch,
   getQueryAssetColumns,
   saveQueryAsset,
   saveQueryAssetColumn,
@@ -702,6 +791,7 @@ import {
   getQueryKgStats,
   rebuildQueryKg,
 } from "@/api/module_ai/query";
+import { getOntDomains } from "@/api/module_ai/ontology";
 
 const tab = ref("table");
 const datasources = ref<any[]>([]);
@@ -716,9 +806,16 @@ const terms = ref<any[]>([]);
 const concepts = ref<any[]>([]);
 const kg = ref<any>({});
 const assets = ref<any[]>([]);
+const domains = ref<any[]>([]);
 
 const syncing = ref(false);
 const importing = ref(false);
+const importingBatch = ref(false);
+// 纯前端显示过滤开关：只看业务表（隐藏系统表）/ 只看业务字段（隐藏审计字段）
+const hideSys = ref(false);
+const hideAudit = ref(false);
+// 导入时的目标本体域（单表与批量共用同一选择）
+const importDomain = ref("");
 const savingTable = ref(false);
 const savingCol = ref("");
 const savingDs = ref(false);
@@ -760,14 +857,37 @@ const tmeta = ref<any>({
 
 const filteredTables = computed(() => {
   const kw = tableKw.value.trim().toLowerCase();
-  if (!kw) return dsTables.value;
-  return dsTables.value.filter(
-    (t) =>
+  return dsTables.value.filter((t) => {
+    // 「只看业务表」= 隐藏系统表（is_system 来自后端 schema 接口）
+    if (hideSys.value && t.is_system) return false;
+    if (!kw) return true;
+    return (
       String(t.table).toLowerCase().includes(kw) ||
       String(t.comment || "")
         .toLowerCase()
         .includes(kw)
-  );
+    );
+  });
+});
+
+// 字段清单同样做纯前端过滤：隐藏审计字段（is_audit 来自后端 columns 接口）
+const filteredColumns = computed(() =>
+  hideAudit.value ? columns.value.filter((c) => !c.is_audit) : columns.value
+);
+
+// 当前选中表是否为系统表（从 schema 表清单取，用于标题旁的系统标记）
+const curTableSys = computed(() => {
+  const t = dsTables.value.find((x) => x.table === curTable.value);
+  return t ? !!t.is_system : undefined;
+});
+
+// 表清单空态文案：区分「未选数据源 / 被过滤清空 / 需同步」
+const tableEmptyText = computed(() => {
+  if (!curDs.value) return "请先选择左侧数据源";
+  if (dsTables.value.length && !filteredTables.value.length) {
+    return hideSys.value ? "已隐藏系统表，当前没有业务表" : "没有匹配的表";
+  }
+  return "点「同步」拉取表结构";
 });
 
 async function loadDs() {
@@ -796,6 +916,8 @@ async function loadDsTables() {
       table: x.table,
       comment: x.comment || "",
       column_count: (x.columns || []).length,
+      // Task：schema 接口给每表打 is_system 标，用于「只看业务表」过滤与系统标记
+      is_system: !!x.is_system,
     }));
   } catch {
     dsTables.value = [];
@@ -840,6 +962,8 @@ async function pickTable(row: any) {
       ...c,
       // 中文名优先用人工维护值；没有则预填上游注释，省一次手输
       description: c.description || c.comment || "",
+      // 枚举统一规范为数组，供 el-select multiple/allow-create 绑定
+      enum: Array.isArray(c.enum) ? c.enum : [],
     }));
   } catch {
     columns.value = [];
@@ -872,6 +996,7 @@ async function saveColumn(row: any) {
       related_field: row.related_field || "",
       included: row.included !== false,
       sensitive: !!row.sensitive,
+      enum: Array.isArray(row.enum) ? row.enum : [],
     });
     ElMessage.success(`字段「${row.column_name}」已保存`);
   } catch (e: any) {
@@ -885,7 +1010,7 @@ async function doImport() {
   if (!curDs.value || !curTable.value) return;
   importing.value = true;
   try {
-    const r = await importDsAsOntology(curDs.value.id, curTable.value);
+    const r = await importDsAsOntology(curDs.value.id, curTable.value, importDomain.value);
     const d = r.data?.data || {};
     ElMessage[d.ok ? "success" : "error"](
       d.ok ? `已导入为本体对象「${d.object}」，${d.props} 个属性` : d.msg
@@ -996,6 +1121,65 @@ async function testDs(row: any) {
     ElMessage[d.ok ? "success" : "error"](d.message || (d.ok ? "连接成功" : "连接失败"));
   } catch (e: any) {
     ElMessage.error(e?.msg || "测试失败");
+  }
+}
+
+/** 删除数据源（删除类操作必须二次确认，文案写明影响范围）。 */
+async function removeDs(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `将删除数据源「${row.name || row.code}」及其已同步的表结构，且不可恢复。是否继续？`,
+      "删除数据源",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await deleteQueryDatasources([row.id]);
+    ElMessage.success("已删除");
+    // 删除的是当前选中数据源时，清空选中态并回退到空表清单
+    if (curDs.value && curDs.value.id === row.id) {
+      curDs.value = null;
+      curTable.value = "";
+      columns.value = [];
+      dsTables.value = [];
+    }
+    await loadDs();
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "删除失败");
+  }
+}
+
+/** 批量导入：把当前数据源的业务表（非系统表）一次性导为目标本体对象，带到所选本体域。 */
+async function doBatchImport() {
+  if (!curDs.value) return;
+  const tables = filteredTables.value.filter((t) => !t.is_system).map((t) => t.table);
+  if (!tables.length) {
+    ElMessage.warning("当前没有可导入的业务表（已隐藏系统表）");
+    return;
+  }
+  importingBatch.value = true;
+  try {
+    const r = await importDsAsOntologyBatch(curDs.value.id, tables, false, importDomain.value);
+    const d = r.data?.data || {};
+    ElMessage[r.data?.msg && !d.ok ? "error" : "success"](
+      d.ok ? `已导入 ${d.imported ?? 0} 个本体对象` : d.msg || "导入失败"
+    );
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "批量导入失败");
+  } finally {
+    importingBatch.value = false;
+  }
+}
+
+/** 拉取本体域列表，供导入目标域下拉选中（GET /ai/ontology/domains）。 */
+async function loadDomains() {
+  try {
+    const r = await getOntDomains();
+    domains.value = r.data?.data || [];
+  } catch {
+    domains.value = [];
   }
 }
 
@@ -1285,7 +1469,7 @@ async function loadMisc() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDs(), loadAssets(), loadMisc()]);
+  await Promise.all([loadDs(), loadAssets(), loadMisc(), loadDomains()]);
 });
 </script>
 
@@ -1305,6 +1489,7 @@ onMounted(async () => {
   flex: 1;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 .ig-tabs,
 .ig-tabs :deep(.el-tabs__content),
@@ -1373,5 +1558,86 @@ onMounted(async () => {
 }
 .ig-batch-bar {
   margin-top: 8px;
+}
+/* 左栏：数据源标题 */
+.ig-side-title {
+  font-size: var(--el-font-size-base);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+/* 左栏：数据源纵向列表（仿本体左侧导航） */
+.ig-ds-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+}
+.ig-ds-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.ig-ds-item:hover {
+  background: var(--el-fill-color-light);
+}
+.ig-ds-item.is-active {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+}
+.ig-ds-item__icon {
+  flex-shrink: 0;
+  font-size: var(--el-font-size-medium);
+}
+.ig-ds-item__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ig-ds-item__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--el-font-size-base);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+}
+.ig-ds-item.is-active .ig-ds-item__name {
+  color: var(--el-color-primary);
+}
+.ig-ds-item__sub {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+.ig-ds-item__count {
+  font-size: var(--el-font-size-extra-small);
+  color: var(--el-text-color-secondary);
+}
+.ig-ds-item__ops {
+  display: flex;
+  /* 悬浮或选中时显示操作，避免挤占名称空间 */
+  visibility: hidden;
+  flex-shrink: 0;
+  align-items: center;
+}
+.ig-ds-item:hover .ig-ds-item__ops,
+.ig-ds-item.is-active .ig-ds-item__ops {
+  visibility: visible;
+}
+/* 表清单 / 字段清单工具条里的元素 */
+.ig-bar__search {
+  width: 180px;
+}
+.ig-bar__gap {
+  flex: 1 1 auto;
+}
+.ig-bar__domain {
+  width: 150px;
 }
 </style>

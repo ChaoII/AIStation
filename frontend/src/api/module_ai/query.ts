@@ -131,11 +131,7 @@ export function syncQueryDatasourceSchema(id: number) {
 export function getQueryDatasourceSchema(id: number) {
   return request({ url: `${API_PATH}/datasources/${id}/schema`, method: "get" });
 }
-export function importDsAsOntology(
-  datasource_id: number,
-  table: string,
-  domain_code = ""
-) {
+export function importDsAsOntology(datasource_id: number, table: string, domain_code = "") {
   return request({
     url: `${API_PATH}/ontology/import-from-ds`,
     method: "post",
@@ -562,6 +558,7 @@ export function saveQueryAssetColumn(data: {
   related_field?: string;
   included: boolean;
   sensitive: boolean;
+  enum?: string[];
 }) {
   return request({ url: `${API_PATH}/assets/column/save`, method: "post", data });
 }
