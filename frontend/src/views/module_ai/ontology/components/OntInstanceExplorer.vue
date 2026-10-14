@@ -86,10 +86,11 @@
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" align="center" fixed="right">
+      <el-table-column label="操作" width="210" align="center" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="openView(row)">视图</el-button>
           <el-button link type="primary" size="small" @click="openGraph(row)">图</el-button>
+          <el-button link type="success" size="small" @click="goQuery(row)">问数</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -310,6 +311,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { Search } from "@element-plus/icons-vue";
 import GraphCanvas from "@/views/module_ai/knowledge/GraphCanvas.vue";
@@ -330,6 +332,16 @@ interface ObjItem {
 }
 
 const props = defineProps<{ objects: ObjItem[] }>();
+
+const router = useRouter();
+
+/** 带着「当前对象」去问数：该对象会作为**确定性上下文**注入，用户不必重复说明。 */
+function goQuery(row: any) {
+  router.push({
+    path: "/ai/query",
+    query: { object_code: code.value, object_key: String(row?.key ?? "") },
+  });
+}
 
 /** 只有物化过（有支撑表）的对象类型才有实例可看 */
 const materializedObjects = computed(() =>

@@ -7,8 +7,18 @@ export function queryAsk(data: {
   question: string;
   session_id?: number | null;
   datasource?: string | null;
+  /** 当前对象上下文（从本体/实例页跳转时带上），作为确定性上下文注入 */
+  object_code?: string | null;
+  object_key?: string | null;
 }) {
-  return request({ url: `${API_PATH}/ask`, method: "post", data });
+  return request({
+    url: `${API_PATH}/ask`,
+    method: "post",
+    data,
+    // 问数是"慢"功能：对象查询 / NL2SQL 单次可达 10~40s，默认 10s 超时会把请求掐断，
+    // 表现为"页面没反应、输入框不清空"（实测踩到）。与其它长任务接口保持一致给足超时。
+    timeout: 120000,
+  });
 }
 
 /** 流式问数：返回 SSE 事件异步迭代器（思考/工具调用/结果/完成等）。 */

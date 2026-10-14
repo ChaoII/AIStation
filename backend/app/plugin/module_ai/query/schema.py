@@ -75,6 +75,10 @@ class QueryAskRequest(BaseModel):
     datasource: str | None = None  # 未指定则自动判定
     stream: bool = False
     force_slow: bool = False  # True 则跳过快路径模板，强制走 LLM 生成 SQL（评测用）
+    # 当前对象上下文（对齐 Palantir Retrieval Context 的 Fixed Object Set）：
+    # 从本体/实例页跳转问数时带上，作为**确定性上下文**注入（不由模型决定是否检索）。
+    object_code: str | None = None
+    object_key: str | None = None
 
 
 class QueryFeedbackRequest(BaseModel):

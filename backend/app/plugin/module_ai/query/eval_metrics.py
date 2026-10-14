@@ -83,7 +83,7 @@ def summarize(results: list[dict], k: int = 8) -> dict:
     if not n:
         return {"total": 0, "all_total": len(rows_all), "degenerate_n": degenerate_n,
                 "data_accuracy": 0.0, "semantic_accuracy": 0.0,
-                "fast_rate": 0.0, "recall_at_k": 0.0, "avg_ms": 0.0,
+                "fast_rate": 0.0, "object_rate": 0.0, "recall_at_k": 0.0, "avg_ms": 0.0,
                 "p50_ms": 0.0, "p95_ms": 0.0, "error_rate": 0.0,
                 "metric_total": 0, "metric_accuracy": 0.0,
                 "generation_total": 0, "generation_accuracy": 0.0}
@@ -102,6 +102,8 @@ def summarize(results: list[dict], k: int = 8) -> dict:
         "data_accuracy": _pct(sum(1 for r in rows if r.get("gold_match")), n),
         "semantic_accuracy": _pct(sem_hit, len(with_metric)),
         "fast_rate": _pct(sum(1 for r in rows if r.get("path") == "fast"), n),
+        # 对象查询（语义执行层）命中率：与 fast_rate 对称，便于按 path 观察三条路径的分布
+        "object_rate": _pct(sum(1 for r in rows if r.get("path") == "object"), n),
         "recall_at_k": round(sum(recalls) / n, 4),
         "avg_ms": round(sum(ms) / n, 1),
         "p50_ms": _pctile(ms, 0.5),

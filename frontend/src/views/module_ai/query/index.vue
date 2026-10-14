@@ -53,9 +53,22 @@
                 <el-button link type="primary" size="small" @click="goOntology">
                   查看本体
                 </el-button>
+                <el-button link type="primary" size="small" @click="openSettings">
+                  问数设置
+                </el-button>
               </div>
             </div>
           </template>
+
+          <el-alert
+            v-if="objectCode"
+            class="q-tip"
+            type="success"
+            :closable="true"
+            show-icon
+            :title="`当前对象上下文：${objectCode}${objectKey ? ' #' + objectKey : ''}（提问会自动带上它，无需重复说明）`"
+            @close="clearObjectContext"
+          />
 
           <el-alert
             type="info"
@@ -110,8 +123,11 @@
               <div v-if="m.summary" class="q-msg__sum">{{ m.summary }}</div>
               <div class="q-msg__meta">
                 <el-tag size="small" effect="plain">
-                  {{ m.path === "slow" ? "NL2SQL" : "指标" }}
+                  {{ pathLabel(m) }}
                 </el-tag>
+                <span v-if="m.evidence?.source" class="q-msg__src">
+                  {{ m.evidence.source }}
+                </span>
                 <span v-if="m.result_rows">共 {{ m.result_rows }} 行</span>
                 <span v-if="m.took_ms">{{ m.took_ms }} ms</span>
                 <span v-if="m.cached">命中缓存</span>
@@ -119,6 +135,15 @@
               <el-collapse v-if="m.sql" class="q-msg__sql">
                 <el-collapse-item title="查看生成的 SQL" name="sql">
                   <pre class="q-sql">{{ m.sql }}</pre>
+                </el-collapse-item>
+              </el-collapse>
+              <el-collapse v-if="irOf(m)" class="q-msg__sql">
+                <el-collapse-item title="查看对象查询（语义执行）" name="ir">
+                  <pre class="q-sql">{{ JSON.stringify(irOf(m), null, 2) }}</pre>
+                  <div class="q-msg__ir-note">
+                    由本体实例层确定性执行（不生成 SQL）；对象/字段均来自授权且检索命中的范围。
+                    <span v-if="m.object_query?.note"> · {{ m.object_query.note }}</span>
+                  </div>
                 </el-collapse-item>
               </el-collapse>
               <el-table
@@ -262,26 +287,73 @@
         </el-button>
       </template>
     </el-dialog>
+    <el-dialog v-model="setVisible" title="问数设置" width="620px" append-to-body>
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="这些是问数的工程开关，保存后即时生效。标「实验」的默认关闭，需先做对比验证再开启。"
+        class="q-fb-tip"
+      />
+      <div v-loading="setLoading">
+        <div v-for="d in SETTING_DEFS" :key="d.key" class="q-set__row">
+          <div class="q-set__main">
+            <div class="q-set__label">{{ d.label }}</div>
+            <div class="q-set__tip">{{ d.tip }}</div>
+          </div>
+          <el-switch
+            v-if="d.type === 'bool'"
+            v-model="setForm[d.key]"
+            active-value="true"
+            inactive-value="false"
+          />
+          <el-input
+            v-else-if="d.type === 'text'"
+            v-model="setForm[d.key]"
+            size="small"
+            clearable
+            placeholder="留空=默认"
+            style="width: 200px"
+          />
+          <el-input-number
+            v-else
+            :model-value="Number(setForm[d.key] || 1)"
+            :min="1"
+            :max="9"
+            size="small"
+            style="width: 120px"
+            @update:model-value="(v: number | undefined) => (setForm[d.key] = String(v ?? 1))"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="setVisible = false">取消</el-button>
+        <el-button type="primary" :loading="setSaving" @click="saveSettings">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   deleteQuerySession,
   getQueryDatasources,
   getQueryMessages,
   getQuerySessions,
+  getQuerySettings,
   queryAsk,
   queryFeedback,
   saveQueryReport,
+  saveQuerySetting,
 } from "@/api/module_ai/query";
 
 defineOptions({ name: "AiQuery" });
 
 const router = useRouter();
+const route = useRoute();
 
 const sessions = ref<any[]>([]);
 const messages = ref<any[]>([]);
@@ -290,6 +362,9 @@ const sessionId = ref<number | null>(null);
 const datasource = ref("system");
 const question = ref("");
 const asking = ref(false);
+// 当前对象上下文（从本体/实例页跳转而来）：作为**确定性上下文**注入，不是让模型自己找
+const objectCode = ref("");
+const objectKey = ref("");
 
 const examples = ["销售订单总共有多少笔", "各部门的销售额是多少", "统计摄像机的状态分布"];
 
@@ -303,6 +378,19 @@ function rowsOf(m: any) {
     });
     return o;
   });
+}
+
+/** 生成路径标签：指标模板 / 对象查询 / NL2SQL。 */
+function pathLabel(m: any): string {
+  if (m?.path === "fast") return "指标";
+  if (m?.path === "object") return "对象查询";
+  if (m?.path === "slow") return "NL2SQL";
+  return m?.path || "查询";
+}
+
+/** 对象查询 IR —— 优先读落库的 grounding（历史消息也有），其次兼容即时响应。 */
+function irOf(m: any): any | null {
+  return m?.grounding?.ir || m?.ir || null;
 }
 
 async function loadSessions() {
@@ -354,6 +442,8 @@ async function ask() {
       question: q,
       session_id: sessionId.value,
       datasource: datasource.value || null,
+      object_code: objectCode.value || null,
+      object_key: objectKey.value || null,
     });
     const d = r.data?.data || {};
     if (d.session_id && !sessionId.value) sessionId.value = d.session_id;
@@ -443,6 +533,126 @@ function goOntology() {
   router.push("/ai/ontology");
 }
 
+// ---------------------------------------------------------------------------
+// 问数设置（工程开关）：对象查询（语义执行）等
+// ---------------------------------------------------------------------------
+const SETTING_DEFS = [
+  {
+    key: "object_query_enabled",
+    label: "对象查询（语义执行）",
+    type: "bool",
+    tip: "LLM 只输出结构化对象查询 IR，由本体实例层确定性执行（不生成 SQL）；失败自动回退 SQL 生成。默认关闭，需对比验证后再开启。",
+  },
+  {
+    key: "query_cost_enabled",
+    label: "查询代价护栏",
+    type: "bool",
+    tip: "执行前用 EXPLAIN 预估行数，超过上限则拒绝并重新生成。",
+  },
+  {
+    key: "object_query_auto_index_enabled",
+    label: "对象查询 · 自动建索引",
+    type: "bool",
+    tip: "对象查询命中次数达阈值后，后台按建议为高频对象自动补索引（复用本体索引模块）。默认关闭。",
+  },
+  {
+    key: "object_query_model",
+    label: "对象查询 · IR 模型",
+    type: "text",
+    tip: "生成对象查询 IR 用哪个模型：留空=与 NL2SQL 同源。可填更快的模型名（如 LLM-27B-FP8）或模型 id。实测同一提示词：284B≈29s、27B≈9s、deepseek-flash≈4.4s。",
+  },
+  {
+    key: "empty_self_correct",
+    label: "空结果自纠错",
+    type: "bool",
+    tip: "查询结果为空时，带提示重新生成一次。",
+  },
+  {
+    key: "recall_enabled",
+    label: "多路召回（RRF 融合）",
+    type: "bool",
+    tip: "向量 / 关键词 / 本体 / 实体四路召回融合后再选表。",
+  },
+  {
+    key: "two_stage_planning",
+    label: "两段式规划（真分解）",
+    type: "bool",
+    tip: "先出执行计划再写 SQL。实测负收益（留出法 −7.55 分），默认关闭。",
+  },
+  {
+    key: "agno_tool_agent",
+    label: "工具化 Agent",
+    type: "bool",
+    tip: "让模型自主调用检索工具；多轮往返较慢，默认关闭。",
+  },
+  {
+    key: "self_consistency_n",
+    label: "自一致性候选数",
+    type: "int",
+    tip: "大于 1 时多次采样投票，提升稳定性但更慢。",
+  },
+] as const;
+
+const setVisible = ref(false);
+const setLoading = ref(false);
+const setSaving = ref(false);
+const setLoaded = ref<Record<string, string>>({});
+const setForm = ref<Record<string, string>>({});
+
+async function openSettings() {
+  setVisible.value = true;
+  setLoading.value = true;
+  // 先用默认值铺底：**必须在 await 之前**赋值，否则弹窗渲染时开关绑定到 undefined，
+  // Element Plus 会报 "[ElSwitch] model-value must be active-value or inactive-value"。
+  const base: Record<string, string> = {};
+  SETTING_DEFS.forEach((d) => {
+    base[d.key] = d.type === "bool" ? "false" : d.type === "text" ? "" : "1";
+  });
+  setForm.value = { ...base };
+  setLoaded.value = { ...base };
+  try {
+    const r = await getQuerySettings();
+    const d = r.data?.data || {};
+    const merged: Record<string, string> = { ...base };
+    SETTING_DEFS.forEach((x) => {
+      if (d[x.key] !== undefined && d[x.key] !== null) merged[x.key] = String(d[x.key]);
+    });
+    setLoaded.value = { ...merged };
+    setForm.value = { ...merged };
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "读取问数设置失败");
+  } finally {
+    setLoading.value = false;
+  }
+}
+
+async function saveSettings() {
+  setSaving.value = true;
+  try {
+    const changed = SETTING_DEFS.filter(
+      (d) => (setForm.value[d.key] ?? "") !== (setLoaded.value[d.key] ?? "")
+    );
+    if (!changed.length) {
+      ElMessage.info("没有需要保存的改动");
+      setVisible.value = false;
+      return;
+    }
+    for (const d of changed) {
+      await saveQuerySetting({
+        key: d.key,
+        value: String(setForm.value[d.key] ?? ""),
+        remark: d.label,
+      });
+    }
+    ElMessage.success(`已保存 ${changed.length} 项设置`);
+    setVisible.value = false;
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存设置失败");
+  } finally {
+    setSaving.value = false;
+  }
+}
+
 /** 「存为报表」时提示模板里检测到的参数（与后端 extract_params 同一规则）。 */
 const srParams = computed<string[]>(() => {
   const sql = srMsg.value?.sql || "";
@@ -502,7 +712,21 @@ async function submitFeedback(withSql: boolean) {
   }
 }
 
+/** 清除当前对象上下文（用户主动摘掉），并同步清掉地址栏参数。 */
+function clearObjectContext() {
+  objectCode.value = "";
+  objectKey.value = "";
+  const q = { ...(route.query || {}) } as Record<string, any>;
+  delete q.object_code;
+  delete q.object_key;
+  router.replace({ path: route.path, query: q });
+}
+
 onMounted(async () => {
+  // 从本体/实例页跳转而来时带上「当前对象」（对齐 Palantir Fixed Object Set）
+  const q = (route.query || {}) as Record<string, any>;
+  if (q.object_code) objectCode.value = String(q.object_code);
+  if (q.object_key) objectKey.value = String(q.object_key);
   await loadSessions();
   try {
     const r = await getQueryDatasources();
@@ -669,5 +893,44 @@ onMounted(async () => {
 .q-fb-q {
   margin-bottom: 8px;
   font-weight: 600;
+}
+
+.q-msg__src {
+  color: var(--el-text-color-secondary);
+}
+
+.q-msg__ir-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.q-set__row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.q-set__row:last-child {
+  border-bottom: none;
+}
+
+.q-set__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.q-set__label {
+  font-weight: 500;
+}
+
+.q-set__tip {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 </style>

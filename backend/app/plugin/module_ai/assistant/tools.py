@@ -17,6 +17,13 @@ QUERY_DS_CONTEXT: contextvars.ContextVar[str] = contextvars.ContextVar(
     "query_datasource", default="system"
 )
 
+#: 当前对象上下文（``对象编码|实例主键``），供 ai_query 读取。
+#: 对齐 Palantir Retrieval Context 的 Fixed Object Set：用户在某个对象上提问时，
+#: 助手把该对象一并带给问数，用户不必重复说明「我说的是哪台摄像机」。
+QUERY_OBJECT_CONTEXT: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "query_object", default=""
+)
+
 # 允许导航的系统页面（path -> 名称）
 NAV_ALLOWLIST: dict[str, str] = {
     "/annotation/dataset": "数据集管理",
@@ -258,8 +265,12 @@ async def ai_query(question: str, user_id: int | None = None) -> dict:
 
     auth = SimpleNamespace(user=SimpleNamespace(id=user_id))
     datasource = QUERY_DS_CONTEXT.get() or "system"
+    # 当前对象上下文（``编码|主键``）；缺省为空 → 与旧行为完全一致
+    _ocode, _, _okey = (QUERY_OBJECT_CONTEXT.get() or "").partition("|")
     try:
-        res = await AiQueryService.ask(question, auth, None, datasource)
+        res = await AiQueryService.ask(question, auth, None, datasource,
+                                       object_code=_ocode or None,
+                                       object_key=_okey or None)
     except Exception as e:  # noqa: BLE001
         return {"question": question, "error": str(getattr(e, "msg", e))}
     return {

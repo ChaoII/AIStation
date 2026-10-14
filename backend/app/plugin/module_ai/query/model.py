@@ -225,7 +225,7 @@ class AiQueryMessageModel(ModelMixin, UserMixin):
     session_id: Mapped[int] = mapped_column(Integer, nullable=False, comment="会话ID")
     question: Mapped[str] = mapped_column(Text, comment="用户问句")
     path: Mapped[str] = mapped_column(
-        String(16), default="fast", comment="路径: fast/slow"
+        String(16), default="fast", comment="路径: fast(指标模板)/object(对象查询)/slow(NL2SQL)"
     )
     datasource: Mapped[str] = mapped_column(String(64), default="system", comment="数据源")
     sql: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="执行的SQL")

@@ -47,6 +47,7 @@ async def ask(
         result = await AiQueryService.ask(
             data.question, auth, data.session_id, data.datasource,
             redis=redis, force_slow=data.force_slow,
+            object_code=data.object_code, object_key=data.object_key,
         )
     except Exception as e:  # noqa: BLE001
         return ErrorResponse(msg=str(getattr(e, "msg", e)))
@@ -65,7 +66,8 @@ async def ask_stream(
     async def _gen():
         try:
             async for ev in AiQueryService.ask_stream(
-                data.question, auth, data.session_id, data.datasource
+                data.question, auth, data.session_id, data.datasource,
+                object_code=data.object_code, object_key=data.object_key,
             ):
                 yield f"event: {ev.get('type', 'message')}\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
         except Exception as e:  # noqa: BLE001
@@ -891,6 +893,9 @@ async def eval_report(
             "by_scenario": group_by(rows, "scenario"),
             "by_form": group_by(rows, "form"),
             "by_datasource": group_by(rows, "datasource"),
+            # 按执行路径分组（fast=指标模板 / object=对象查询 / slow=NL2SQL）：
+            # 对象查询的收益要**按路径**看，混在一起会被快路径稀释掉。
+            "by_path": group_by(rows, "path"),
             "results": rows[:200],
         },
         msg="查询成功",

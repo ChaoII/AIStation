@@ -11,6 +11,7 @@ import asyncio
 import json
 import re
 import time
+from contextvars import ContextVar
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,6 +21,7 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
 
+from .dialect import build_system_prompt, dialect_name, templated_note
 from .filtering import (
     DEFAULT_FILTER_RULES,
     classify_fields,
@@ -65,6 +67,18 @@ _SETTINGS_CACHE: dict | None = None
 # 进程级缓存：表级资产元数据（中文名/业务域/描述/业务场景）
 _ASSET_TMETA: dict | None = None
 _ONT_ALLOW_CACHE: set | None = None
+
+#: 当前对象上下文（对齐 Palantir Retrieval Context 的 Fixed Object Set）。
+#: 由 ``ask()`` / ``ask_stream()`` 在请求开始时**确定性注入**（不由模型决定是否检索），
+#: 供 prompt（``_build_schema_context``）与对象查询共用。
+#: 用 ContextVar 而非类属性：请求作用域隔离，并发请求与子任务不会互相串。
+_OBJECT_CTX: ContextVar[str] = ContextVar("ai_query_object_ctx", default="")
+
+#: 对象查询热度（对象编码 → 命中次数）与「本进程已自动建过索引」的对象。
+#: 用途：**热度驱动自动建索引**（G4）。高频对象才值得建索引，避免无谓 DDL；
+#: ``_OQ_INDEXED`` 兼作并发去重（先占位再建，失败回滚占位）。
+_OQ_HEAT: dict[str, int] = {}
+_OQ_INDEXED: set[str] = set()
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -5279,6 +5293,33 @@ class AiQueryService:
             "recall_w_keyword": "0.8",               # 关键词通道权重
             "recall_w_ontology": "1.2",              # 本体强信号权重（别名/同义词/属性）
             "recall_w_entity": "0.6",                # 实体名词通道权重
+            # ---- 对象查询（语义执行层）----
+            # LLM 只输出结构化「对象查询 IR」，由本体实例层确定性执行；失败自动降级 NL2SQL。
+            # 默认关：需用留出法 A/B 验证（对齐 two_stage_planning 的纪律——多一层 LLM 输出
+            # 有翻车先例：两段式计划实测 −7.55 分）。
+            "object_query_enabled": "false",         # 语义执行层开关（默认关）
+            "object_query_max_objects": "5",         # 注入 IR 提示词的对象数上限（scope 收敛）
+            "object_query_call_timeout": "60",       # IR 生成单次 LLM 调用超时（秒）
+            # 为什么是 60：实测**裸调用** 11~19s，但经 agno Agent 包装后 17~32s（含波动）。
+            # 给 30 会频繁超时降级（实测踩到，日志只有空字符串的 TimeoutError）；
+            # 给 60 让绝大多数请求成功，真正的长尾再降级。
+            # IR 生成用哪个模型：**留空 = 与 NL2SQL 同源**（默认模型）。
+            # 可填模型名（如 LLM-27B-FP8）或模型 id —— 实测同一提示词：
+            # deepseek-flash ≈4.4s ｜ LLM-27B ≈8.9s ｜ LLM-284B ≈29.4s。
+            # IR 是纯结构化抽取，用大模型是浪费，且会把"优化路径"变成"更慢的路径"。
+            "object_query_model": "",
+            # ---- 热度驱动自动建索引（G4）----
+            # 对象查询的执行后端是实例层，其快慢取决于过滤/分组字段有无索引。
+            # 高频对象自动按建议补索引，比让用户自己去「索引」页点更现实。默认关。
+            "object_query_auto_index_enabled": "false",
+            "object_query_auto_index_after": "20",   # 命中多少次后触发自动建索引
+            # ---- P2 多方言（G6）----
+            # 把「你是 PostgreSQL 查询助手」按数据源方言参数化（纯提示词层，风险低，默认开）。
+            "multi_dialect_enabled": "true",
+            # ---- P2 多轮查询重写（G7）----
+            # 把「那上周呢」补全为自包含问题再路由。默认关：多一次 LLM 调用，需 A/B 证明值。
+            "query_rewrite_enabled": "false",
+            "query_rewrite_call_timeout": "60",      # 重写单次 LLM 调用超时（秒）
         }
         async with async_db_session() as db:
             from sqlalchemy import select
@@ -5907,10 +5948,15 @@ class AiQueryService:
     # ---- 核心：问答入口 ----
     @classmethod
     async def ask(cls, question: str, auth, session_id: int | None = None,
-                  datasource: str | None = None, redis=None, force_slow: bool = False) -> dict:
+                  datasource: str | None = None, redis=None, force_slow: bool = False,
+                  object_code: str | None = None, object_key: str | None = None) -> dict:
         """主入口：意图路由 → 快/慢路径 → 执行 → 落库。"""
         await cls.ensure_system_seed()
         question = (question or "").strip()
+        # 当前对象上下文：**确定性注入**（对齐 Palantir Retrieval Context）。
+        # ⚠️ 每次调用都**显式设置**（没有对象时置空）——否则同一个任务里连续调用 ask
+        #    （如评测逐题跑）会把上一题的上下文带进下一题。
+        _OBJECT_CTX.set(await cls._object_context_block(object_code, object_key, auth))
         if not question:
             raise CustomException(msg="请输入要查询的问题")
 
@@ -5921,6 +5967,11 @@ class AiQueryService:
         # 慢路径里 `_nl2sql` 又查一遍，等于白跑两次库。
         if force_slow:
             return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
+
+        # P2 多轮查询重写（G7）：把「那上周呢」补全为自包含问题，随后**重新走一遍路由**
+        # （可能命中指标快路径 / 对象查询）。放在 force_slow 之后：评测逐题生成不应受
+        # 历史重写影响，保持 A/B 公平。开关默认关，仅在判定不自包含时才多一次 LLM 调用。
+        question = await cls._maybe_rewrite(question, sess["id"], datasource)
 
         metrics = await cls.list_metrics(datasource or None)
         terms = await cls.list_terms(datasource or None)
@@ -6001,6 +6052,18 @@ class AiQueryService:
                 )
                 return await cls._slow_path(question, sess["id"], metric["datasource"], auth)
 
+        # 对象查询（语义执行层）：LLM 出 IR → 本体实例层执行；任何失败自动降级
+        cfg = await cls._cfg()
+        if cls._cfg_bool(cfg, "object_query_enabled", False):
+            try:
+                ans = await cls._object_query_path(
+                    question, sess["id"], datasource or SYSTEM_DS, auth,
+                    object_code=object_code, object_key=object_key)
+                if ans:
+                    return ans
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 对象查询异常，降级 NL2SQL：{str(e)[:120]}")
+
         # 慢路径
         return await cls._slow_path(question, sess["id"], datasource or SYSTEM_DS, auth)
 
@@ -6059,6 +6122,459 @@ class AiQueryService:
             row = (await db.execute(_t(f"EXPLAIN (FORMAT JSON) {sql.rstrip(';')}"))).scalar()
             plan = row[0] if isinstance(row, list) else row
             return int((plan.get("Plan") or {}).get("Plan Rows") or 0)
+
+    # ------------------------------------------------------------------
+    # 对象查询（语义执行层）：LLM 只输出 IR，由本体实例层确定性执行
+    # 设计：docs/superpowers/specs/2026-10-14-semantic-query-layer-design.md
+    # ------------------------------------------------------------------
+    @classmethod
+    async def _allowed_objects_for_query(cls, question: str, auth, max_objects: int = 8) -> dict:
+        """构建「授权 ∩ 检索命中」的对象白名单（scope 收敛的落点）。
+
+        - 只保留**已物化**（支撑表存在）且用户**有权访问**的对象类型；
+        - 用 ``_semantic_tables`` 的召回结果收窄（未命中则放宽到全部授权对象）；
+        - 字段只带**真实存在的列**，关系只带非隐藏项。
+
+        这一步同时是**反幻觉**的架构保证：IR 里出现清单外的对象/字段会被丢弃。
+        """
+        from app.plugin.module_ai.ontology import semantic as _sem
+
+        try:
+            ctx = await _sem.semantic_context()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 对象查询：本体语义读取失败 {str(e)[:100]}")
+            return {}
+        try:
+            tmap = await _sem.object_table_map()
+        except Exception:  # noqa: BLE001
+            tmap = {}
+        try:
+            allowed_tables = await cls._allowed_for_user(auth)
+        except Exception:  # noqa: BLE001
+            allowed_tables = set()
+
+        cand: list[dict] = []
+        for o in ctx.get("objects") or []:
+            table = str(o.get("table") or "")
+            if not table or (allowed_tables and table not in allowed_tables):
+                continue
+            cand.append(o)
+
+        # 按检索命中收窄（检索失败不影响主流程）
+        hit_codes: set[str] = set()
+        try:
+            schema = await cls._system_schema()
+            hits = await cls._semantic_tables(question, schema, None, None, SYSTEM_DS)
+            for t in hits or []:
+                code = tmap.get(t) or (str(t)[4:] if str(t).startswith("ont_") else None)
+                if code:
+                    hit_codes.add(code)
+        except Exception:  # noqa: BLE001
+            hit_codes = set()
+        if hit_codes:
+            narrowed = [o for o in cand if o.get("code") in hit_codes]
+            if narrowed:
+                cand = narrowed
+
+        out: dict = {}
+        for o in cand:
+            if len(out) >= max_objects:
+                break
+            code = str(o.get("code") or "")
+            if not code:
+                continue
+            spec = await cls._object_spec_for(code)
+            if spec:
+                out[code] = spec
+        return out
+
+    @classmethod
+    async def _object_spec_for(cls, code: str) -> dict | None:
+        """单个对象的可查询规格（已物化 + 真实列 + 非隐藏关系）；不可用返回 ``None``。
+
+        抽成独立方法是为了让「当前对象」能被**强制加入**词表（即使检索没命中它）。
+        """
+        from app.plugin.module_ai.ontology import service as ont
+
+        from . import object_query as oq
+
+        try:
+            meta = await ont._instance_meta(code)
+        except Exception:  # noqa: BLE001
+            return None
+        if not meta or meta.get("error") or not meta.get("materialized"):
+            return None
+        cols = set(meta.get("cols") or [])
+        fields = [
+            p for p in (meta.get("props") or [])
+            if p.get("code") in cols and (p.get("visibility") or "normal") != "hidden"
+        ]
+        if not fields:
+            return None
+        try:
+            links = [
+                lk for lk in await ont.list_links(code)
+                if (lk.get("visibility") or "normal") != "hidden"
+            ]
+        except Exception:  # noqa: BLE001
+            links = []
+        spec = oq.build_allowed(
+            [{"code": code, "name": meta.get("name") or code}], {code: fields}, {code: links})
+        return spec.get(code)
+
+    @classmethod
+    async def _object_context_block(cls, object_code: str | None, object_key: str | None,
+                                    auth) -> str:
+        """渲染「当前对象」上下文块（**确定性**注入，不调 LLM）。
+
+        对齐 Palantir Retrieval Context 的 Fixed Object Set：用户在某个对象上提问时，
+        系统**自动**把它带给模型，用户不必重复说明「我说的是哪台摄像机」。
+
+        取不到（对象不存在 / 未物化 / 无权限）→ 返回空串：**不报错、不阻断**。
+        """
+        code = (object_code or "").strip()
+        if not code:
+            return ""
+        from app.plugin.module_ai.ontology import security as _ont_sec
+        from app.plugin.module_ai.ontology import service as ont
+
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        try:
+            principal = await _ont_sec.load_principal(uid)
+        except Exception:  # noqa: BLE001
+            principal = None
+        try:
+            meta = await ont._instance_meta(code)
+        except Exception:  # noqa: BLE001
+            return ""
+        if not meta or meta.get("error") or not meta.get("materialized"):
+            return ""
+        if principal is not None:
+            try:
+                ok, _why = await _ont_sec.can_view_resource("object", code, principal)
+                if not ok:
+                    return ""
+            except Exception:  # noqa: BLE001
+                pass
+        name = meta.get("name") or code
+        if not object_key:
+            return f"【当前对象】{name}（{code}）：用户正在该对象上提问（未指定具体实例）。"
+        try:
+            inst = await ont.instance_get(code, str(object_key), principal=principal)
+        except Exception:  # noqa: BLE001
+            return ""
+        if not inst.get("ok"):
+            return ""
+        props = inst.get("props") or {}
+        np_ = meta.get("name_prop")
+        title = str(props.get(np_) or "") if np_ else ""
+        # 只带关键属性并截断：上下文块必须**小**，否则会吃掉 prompt 预算
+        keys = [k for k in props
+                if k not in ("password", "rtsp_url_main", "rtsp_url_sub")][:8]
+        parts = [f"{k}={props.get(k)}" for k in keys if props.get(k) not in (None, "")]
+        line = f"【当前对象】{name} #{object_key}" + (f"（{title}）" if title else "")
+        if parts:
+            line += "：" + "；".join(parts)
+        names: list[str] = []
+        for x in (inst.get("links") or [])[:6]:
+            if isinstance(x, dict):
+                nm_ = x.get("name") or x.get("link_name") or x.get("source_name") or ""
+                if nm_:
+                    names.append(str(nm_))
+        if names:
+            line += "。可用关系：" + "、".join(names)
+        return line
+
+    @classmethod
+    async def _ir_runtime(cls) -> dict:
+        """IR 生成用的模型。
+
+        默认与 NL2SQL 同源（``_get_runtime()``）；可用设置 ``object_query_model``
+        指定一个**更快的模型**（填模型名或 id）。
+
+        为什么留这个口子：实测同一提示词经 agno —— deepseek-flash ≈4.4s、
+        LLM-27B-FP8 ≈8.9s、LLM-284B-MXFP4 ≈29.4s（且长尾能到 60s+）。
+        IR 是纯结构化抽取，用大模型既浪费又把"优化路径"拖成"更慢的路径"。
+        """
+        cfg = await cls._cfg()
+        pick = str(cfg.get("object_query_model") or "").strip()
+        model_id: int | None = None
+        if pick:
+            if pick.isdigit():
+                model_id = int(pick)
+            else:
+                from sqlalchemy import text as _t
+
+                try:
+                    async with async_db_session() as db:
+                        row = (await db.execute(_t(
+                            "SELECT id FROM ai_models WHERE is_deleted=false AND enabled=true "
+                            "AND name=:n ORDER BY is_default DESC, id DESC LIMIT 1"),
+                            {"n": pick})).fetchone()
+                    model_id = int(row[0]) if row else None
+                except Exception:  # noqa: BLE001
+                    model_id = None
+        if model_id is not None:
+            from app.plugin.module_ai.models.service import AiModelService
+
+            try:
+                r = await AiModelService.get_runtime_model(model_id=model_id)
+                if r:
+                    return r
+            except Exception:  # noqa: BLE001
+                pass
+        return await cls._get_runtime()
+
+    @classmethod
+    async def _ir_llm(cls, prompt: str, runtime: dict) -> str:
+        """一次 LLM 调用生成对象查询 IR（复用 agno，与 NL2SQL 同源）。
+
+        模型解析走 ``_get_runtime()``：``usage`` 精确匹配优先（query → chat → 默认），
+        因此这里用的就是「模型配置」里那个默认 chat 模型（本项目为 LLM-284B-MXFP4）。
+        """
+        import asyncio as _asyncio
+
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
+
+        from app.plugin.module_ai.models.service import build_headers
+
+        cfg = await cls._cfg()
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime.get("api_key") or "sk-none",
+            # ⚠️ 必须用带下限的预算：本机模型是**推理型**，thinking 计入 max_tokens，
+            # 预算太小会被思考吃光 → finish_reason=length、正文为空（实测 1200 就会空）。
+            temperature=0.0, max_tokens=nl2sql_max_tokens(cfg), timeout=60,
+            # 思考压到 low：实测**原始调用** A(enable_thinking=false)=19.0s ｜
+            # B(reasoning_effort=low)=10.9s ｜ C(默认)=17.8s —— low 最快，故用 low。
+            # ⚠️ 注意 agno 包装会额外耗时（裸调用 11~19s，经 Agent 后 17~32s），
+            #    所以下面的 wait_for 超时必须留足余量（见 object_query_call_timeout 的说明）。
+            extra_body={"reasoning_effort": "low"},
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-query-ir"),
+        )
+        agent = Agent(model=model, telemetry=False, instructions=prompt)
+        resp = await _asyncio.wait_for(
+            agent.arun("请按上面的格式输出对象查询 JSON。"),
+            timeout=cls._cfg_int(cfg, "object_query_call_timeout", 60),
+        )
+        return (getattr(resp, "content", "") or "").strip()
+
+    @classmethod
+    async def _rewrite_llm(cls, prompt: str, runtime: dict) -> str:
+        """一次 LLM 调用把追问重写为自包含问题（G7，复用 agno）。
+
+        与 ``_ir_llm`` 同款：``_get_runtime()`` 解析模型 → ``OpenAILike`` → ``Agent``。
+        LLM 调用本身有 ``wait_for`` 兜底超时；失败由调用方 `_maybe_rewrite` 降级为
+        直接用原问题。
+        """
+        import asyncio as _asyncio
+
+        from agno.agent import Agent
+        from agno.models.openai.like import OpenAILike
+
+        from app.plugin.module_ai.models.service import build_headers
+
+        cfg = await cls._cfg()
+        model = OpenAILike(
+            id=runtime["model"], base_url=runtime["base_url"],
+            api_key=runtime.get("api_key") or "sk-none",
+            temperature=0.0, max_tokens=nl2sql_max_tokens(cfg), timeout=60,
+            # 重写是纯文本改写，不需要深度推理：压掉思考速度更快。
+            extra_body={"reasoning_effort": "low"},
+            default_headers=build_headers(
+                runtime["base_url"], runtime.get("extra_headers"), "aistation-query-rewrite"),
+        )
+        agent = Agent(model=model, telemetry=False, instructions=prompt)
+        resp = await _asyncio.wait_for(
+            agent.arun("请重写上面的问题。"),
+            timeout=cls._cfg_int(cfg, "query_rewrite_call_timeout", 60),
+        )
+        return (getattr(resp, "content", "") or "").strip()
+
+    @classmethod
+    async def _maybe_rewrite(cls, question: str, session_id: int | None,
+                             datasource: str | None = None) -> str:
+        """多轮查询重写（G7）：把「那上周呢 / 换成华东呢」补全成自包含问题。
+
+        - 仅在 ``query_rewrite_enabled`` 且 ``needs_rewrite`` 判定为「不自包含」时，
+          才发生一次 LLM 调用；否则**零额外开销**（成本纪律）。
+        - 重写失败 / 结果与原文相同 / 过长 → 用原问题（**不改变原意**，宁可不用）。
+        - 重写后的自包含问题会在 `ask`/`ask_stream` 里**重新走一遍路由**（可命中指标
+          快路径或对象查询），不硬进 NL2SQL。
+        - 越权防护：重写只改文字，对象/表白名单与权限校验仍在路由与执行层把关。
+        """
+        from .rewrite import (
+            build_rewrite_prompt,
+            finalize_rewrite,
+            needs_rewrite,
+            recent_history,
+        )
+
+        q = (question or "").strip()
+        if not q:
+            return q
+        cfg = await cls._cfg()
+        if not cls._cfg_bool(cfg, "query_rewrite_enabled", False):
+            return q
+        try:
+            msgs = await cls.list_messages(session_id) if session_id else []
+        except Exception as e:  # noqa: BLE001
+            log.warning("[query] 读会话历史失败，跳过重写：[{}] {}", type(e).__name__, str(e)[:80])
+            msgs = []
+        hist = recent_history(msgs)
+        if not needs_rewrite(q, hist):
+            return q
+        try:
+            runtime = await cls._get_runtime()
+        except Exception as e:  # noqa: BLE001
+            log.warning("[query] 获取模型失败，跳过重写：[{}] {}", type(e).__name__, str(e)[:80])
+            return q
+        try:
+            text = await cls._rewrite_llm(build_rewrite_prompt(q, hist), runtime)
+        except Exception as e:  # noqa: BLE001
+            log.warning("[query] 多轮重写调用失败，用原问题：[{}] {}",
+                        type(e).__name__, str(e)[:80])
+            return q
+        rw = finalize_rewrite(q, text)
+        if rw and rw != q:
+            log.warning("[query] 多轮重写：{} → {}", q[:40], rw[:40])
+            return rw
+        return q
+
+    @classmethod
+    async def _maybe_auto_index(cls, object_code: str, cfg: dict) -> None:
+        """热度驱动自动建索引（G4）：命中次数达阈值且尚未建过 → 后台按建议建索引。
+
+        为什么需要：对象查询的执行后端是实例层，**它的快慢直接取决于过滤/分组字段
+        有没有索引**。让高频对象自动补索引，比让用户自己去「索引」页手动点更现实。
+
+        设计取舍：只做**热度触发 + 后台执行**，不新建索引体系（复用 ``indexing.py``）；
+        失败不阻断问答，且允许下次重试。
+        """
+        if not object_code:
+            return
+        if not cls._cfg_bool(cfg, "object_query_auto_index_enabled", False):
+            return
+        threshold = cls._cfg_int(cfg, "object_query_auto_index_after", 20)
+        _OQ_HEAT[object_code] = _OQ_HEAT.get(object_code, 0) + 1
+        if _OQ_HEAT[object_code] < threshold or object_code in _OQ_INDEXED:
+            return
+        _OQ_INDEXED.add(object_code)      # 先占位：并发命中时只建一次
+        asyncio.create_task(cls._auto_index(object_code))   # 后台执行，不阻塞本次问答
+
+    @classmethod
+    async def _auto_index(cls, object_code: str) -> None:
+        """后台按建议为某对象建索引（失败不阻断、允许重试）。"""
+        from app.plugin.module_ai.ontology import indexing as _idx
+
+        try:
+            r = await _idx.apply_suggestions(object_code, only_high=True)
+            log.warning("[query] 自动建索引 object={} -> {}", object_code, r.get("msg"))
+        except Exception as e:  # noqa: BLE001
+            _OQ_INDEXED.discard(object_code)   # 失败回滚占位，下次可再试
+            log.warning(f"[query] 自动建索引失败（忽略）object={object_code}: {str(e)[:120]}")
+
+    @classmethod
+    async def _object_query_path(cls, question: str, session_id: int, datasource: str,
+                                 auth, object_code: str | None = None,
+                                 object_key: str | None = None) -> dict | None:
+        """对象查询路径：LLM 出 IR → 本体实例层执行。
+
+        **任何环节失败都返回 ``None``**（由调用方降级 NL2SQL）——
+        绝不因新路径失败而答不出来。返回 ``None`` 的时机：
+        非系统库 / 无可用对象 / 无可用模型 / IR 生成失败 / 校验不通过 / 执行失败。
+        """
+        from app.plugin.module_ai.ontology import security as _ont_sec
+
+        from . import object_query as oq
+        from .object_exec import execute_ir
+
+        # 本体对象的支撑表在系统库里；自定义数据源暂不支持
+        if datasource not in (SYSTEM_DS, None):
+            return None
+
+        cfg = await cls._cfg()
+        max_objs = cls._cfg_int(cfg, "object_query_max_objects", 8)
+
+        allowed = await cls._allowed_objects_for_query(question, auth, max_objects=max_objs)
+        # 「当前对象」即使没被检索命中，也**强制进词表并排在最前**：
+        # 用户已经明确站在这个对象上提问，不该因为召回没命中就查不了它。
+        if object_code:
+            if object_code not in allowed:
+                spec = await cls._object_spec_for(object_code)
+                if spec:
+                    allowed[object_code] = spec
+            if object_code in allowed:
+                allowed = {object_code: allowed[object_code],
+                           **{k: v for k, v in allowed.items() if k != object_code}}
+        if not allowed:
+            log.warning("[query] 对象查询：没有可用（已物化且授权）的对象，降级 NL2SQL")
+            return None
+
+        try:
+            runtime = await cls._ir_runtime()
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 对象查询：无可用模型 {str(e)[:100]}")
+            return None
+
+        try:
+            text = await cls._ir_llm(
+                oq.render_ir_prompt(question, allowed, max_objects=max_objs), runtime)
+        except Exception as e:  # noqa: BLE001
+            # ⚠️ 必须打**异常类型**：TimeoutError 的 str(e) 是空串，只打 message 时
+            #    日志里会是"IR 生成失败 "，完全看不出是超时（实测踩到，排查了半天）。
+            log.warning("[query] 对象查询：IR 生成失败 [{}] {}", type(e).__name__, str(e)[:120])
+            return None
+
+        # 留痕：模型原始输出（问数排查时这是唯一能定位"模型到底给了什么"的地方）
+        log.warning("[OQ] IR 原始输出={}", (text or "")[:800])
+
+        parsed = oq.parse_ir(text)
+        if (parsed is not None and object_key and not parsed.object_key
+                and oq._resolve_object(parsed.object, allowed) == object_code):
+            # 当前对象就是用户问的那个 → 把实例主键补进 IR（单对象读取 / 关系跳转需要它）
+            parsed.object_key = str(object_key)
+        ir, reasons = oq.validate_ir(parsed, allowed)
+        if not ir:
+            log.warning("[query] 对象查询未通过校验，降级 NL2SQL：{}", "；".join(reasons[:3]))
+            return None
+
+        uid = getattr(getattr(auth, "user", None), "id", None)
+        try:
+            principal = await _ont_sec.load_principal(uid)
+        except Exception:  # noqa: BLE001
+            principal = None
+        res = await execute_ir(ir, principal)
+        if not res.get("ok"):
+            log.warning("[query] 对象查询执行失败，降级 NL2SQL：{}", res.get("error"))
+            return None
+
+        cols = res.get("columns") or []
+        rows = res.get("rows") or []
+        retrieved = await cls._recall_grounding(question, SYSTEM_DS)
+        msg = await cls._save_message(
+            session_id, question, path="object", datasource=SYSTEM_DS,
+            sql="", columns=cols, rows=rows, result_rows=len(rows),
+            summary=cls._summarize_rows(cols, rows),
+            grounding={"ir": ir.to_dict(), "ir_reasons": reasons, "retrieved": retrieved},
+        )
+        ans = cls._answer(msg, sql="", retrieved=retrieved)
+        ans["ir"] = ir.to_dict()
+        ans["object_query"] = {
+            "shape": res.get("shape"), "note": res.get("note") or "", "reasons": reasons,
+        }
+        # 前端「本体对象」标签用（对象查询没有 SQL，故手动补）
+        ans["ontology_used"] = [ir.object]
+        # 热度驱动自动建索引：**放在答案构造之后**，且自带 try —— 绝不能影响这次问答
+        try:
+            await cls._maybe_auto_index(ir.object, cfg)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[query] 自动索引判定失败（忽略）: {str(e)[:100]}")
+        log.warning("[query] 对象查询命中：object={} shape={} rows={}",
+                    ir.object, res.get("shape"), len(rows))
+        return ans
 
     @classmethod
     async def _slow_path(cls, question: str, session_id: int, datasource: str, auth) -> dict:
@@ -6217,6 +6733,38 @@ class AiQueryService:
         return resp.choices[0].message.content or ""
 
     @classmethod
+    async def _resolve_dialect_info(cls, datasource: str) -> tuple[dict, str]:
+        """按数据源字符串解析方言配置。
+
+        返回 ``(dialect配置, 数据源类型)``。``datasource`` 取值：
+        - ``system`` / ``None`` → PostgreSQL；
+        - ``ds:{id}`` → 读该数据源模型的 ``type``（postgres/mysql/sqlite/file/api）；
+        - 其它 / 读取失败 → 回退 PostgreSQL（不报错，避免因方言问题整题失败）。
+
+        纯逻辑解析在 ``dialect.resolve_dialect`` 里做；此处只负责「数据源字符串 →
+        数据源类型」这一段，本文件已用 ``_ds_cfg_from_model`` 统一暴露类型。
+        """
+        from .dialect import resolve_dialect
+
+        cfg = await cls._cfg()
+        if not cls._cfg_bool(cfg, "multi_dialect_enabled", True):
+            # 开关关闭：回到旧的「统一 PostgreSQL 提示词」行为。
+            return resolve_dialect("postgres"), "postgres"
+        if not datasource or datasource == SYSTEM_DS:
+            return resolve_dialect("postgres"), "postgres"
+        if str(datasource).startswith("ds:"):
+            try:
+                _id = int(str(datasource).split(":")[-1])
+                _ds = await _load_ds(_id)
+                _t = (_ds_cfg_from_model(_ds).get("type") or "postgres")
+                return resolve_dialect(_t), _t
+            except Exception as e:  # noqa: BLE001
+                log.warning("[query] 读取数据源方言失败，回退 PostgreSQL：[{}] {}",
+                            type(e).__name__, str(e)[:80])
+                return resolve_dialect("postgres"), "postgres"
+        return resolve_dialect("postgres"), "postgres"
+
+    @classmethod
     async def _nl2sql(cls, question: str, datasource: str, prev_error: str | None = None,
                       temperature: float = 0.0, auth=None) -> str:
         """Agno Agent 生成 SQL（慢路径）。prev_error 为上一次执行报错，用于自纠错。"""
@@ -6283,13 +6831,9 @@ class AiQueryService:
         if cls._cfg_bool(cfg, "full_entity_no_limit", True):
             extra = ("注意：问题若要求列出/统计全量实体（每个摄像头/每台设备/每个数据集/每类…），"
                      "不要为了省事写 LIMIT 截断，应返回全部（系统最多保留 1000 行）。\n")
-        system_prompt = (
-            "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
-            "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
-            "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
-            "不要使用 DELETE/UPDATE/INSERT/DDL。\n注意：" + "".join(rules) + "\n" + extra
-            + schema_ctx
-        )
+        _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
+        system_prompt = build_system_prompt(
+            _dialect, rules, schema_ctx, extra + templated_note(_ds_type))
         user_msg = question
         if prev_error:
             user_msg = (
@@ -6346,7 +6890,7 @@ class AiQueryService:
                     telemetry=False,
                     tools=list(QUERY_TOOLS),
                     tool_call_limit=6, instructions=(
-                        "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
+                        f"你是 {dialect_name(_dialect)} 数据库查询助手，生成只读 SELECT。"
                         "先调用 search_schema(question) 获取相关表/字段，必要时再调用 "
                         "get_fewshots(question) 参考样例、check_cost(候选SQL) 评估代价；"
                         "获取足够上下文后，生成一条 SELECT SQL；若对字段/关联/枚举不确定，可用 "
@@ -6387,10 +6931,11 @@ class AiQueryService:
 
     @classmethod
     async def ask_stream(cls, question: str, auth, session_id: int | None = None,
-                         datasource: str | None = None) -> None:
+                         datasource: str | None = None, object_code: str | None = None,
+                         object_key: str | None = None) -> None:
         """流式问数：产出思考过程/工具调用/输出/最终结果的事件（作为 SSE 下发）。
 
-        事件类型：meta / reasoning_start / reasoning / reasoning_done /
+        事件类型：meta / ir / reasoning_start / reasoning / reasoning_done /
         tool_start / tool_result / tool_error / sql_delta / sql_final /
         result / done / error / answer。
         """
@@ -6401,10 +6946,38 @@ class AiQueryService:
         if not question:
             yield {"type": "error", "message": "请输入要查询的问题"}
             return
+        # 当前对象上下文：与 ask() 同款，**显式设置**（每次调用都覆盖，避免串题）
+        _OBJECT_CTX.set(await cls._object_context_block(object_code, object_key, auth))
         sess = await cls.get_or_create_session(session_id, question[:30], auth)
         datasource = datasource or SYSTEM_DS
         yield {"type": "meta", "session_id": sess["id"], "datasource": datasource,
                "question": question}
+
+        # P2 多轮重写（G7）：把追问补全为自包含问题，随后**重新走路由**（对象查询 / 流式
+        # NL2SQL）。meta 已带原始问题，这里只影响后续生成。开关默认关。
+        question = await cls._maybe_rewrite(question, sess["id"], datasource)
+
+        # ---- 对象查询（语义执行层）：能出合法 IR 就流式返回，否则继续 NL2SQL 流式 ----
+        cfg0 = await cls._cfg()
+        if cls._cfg_bool(cfg0, "object_query_enabled", False):
+            try:
+                ans = await cls._object_query_path(
+                    question, sess["id"], datasource, auth,
+                    object_code=object_code, object_key=object_key)
+            except Exception as e:  # noqa: BLE001
+                log.warning("[query] 流式对象查询异常，降级 NL2SQL：[{}] {}",
+                            type(e).__name__, str(e)[:120])
+                ans = None
+            if ans:
+                yield {"type": "ir", "ir": ans.get("ir") or {},
+                       "object_query": ans.get("object_query") or {},
+                       "confidence": ans.get("confidence")}
+                yield {"type": "result", "path": "object",
+                       "columns": ans.get("columns") or [], "rows": ans.get("rows") or [],
+                       "summary": ans.get("summary") or "",
+                       "ontology_used": ans.get("ontology_used") or []}
+                yield {"type": "done", "path": "object", "session_id": sess["id"]}
+                return
 
         # ---- 构建生成 Agent（与 _nl2sql 工具化模式一致） ----
         try:
@@ -6433,13 +7006,9 @@ class AiQueryService:
         schema_ctx = await cls._build_schema_context(question, datasource,
                                                      await cls.list_metrics(datasource),
                                                      await cls.list_terms(datasource))
-        system_prompt = (
-            "你是 PostgreSQL 数据库查询助手。根据用户问题生成只读 SELECT 查询。"
-            "必须使用 PostgreSQL 语法（日期用 CURRENT_DATE / date_trunc，别用 CURDATE）。"
-            "必须写 FROM 子句并只使用给定的表/字段。只返回一条 SQL，不要多余解释，"
-            "不要使用 DELETE/UPDATE/INSERT/DDL。\n注意：" + "".join(rules) + "\n" + extra
-            + schema_ctx
-        )
+        _dialect, _ds_type = await cls._resolve_dialect_info(datasource)
+        system_prompt = build_system_prompt(
+            _dialect, rules, schema_ctx, extra + templated_note(_ds_type))
 
         from agno.agent import Agent
         from agno.models.openai.like import OpenAILike
@@ -6459,7 +7028,7 @@ class AiQueryService:
                 model=model, telemetry=False,
                 tools=list(QUERY_TOOLS), tool_call_limit=6,
                 instructions=(
-                    "你是 PostgreSQL 数据库查询助手，生成只读 SELECT。"
+                    f"你是 {dialect_name(_dialect)} 数据库查询助手，生成只读 SELECT。"
                     "先调用 search_schema(question) 获取相关表/字段，可再用 "
                     "semantic_search(question) 做向量语义检索、table_metadata(表) 查看元数据标注、"
                     "get_fewshots(question) 参考样例、check_cost(候选SQL) 评估代价；"
@@ -7517,7 +8086,12 @@ class AiQueryService:
 
     @classmethod
     async def _build_schema_context(cls, question: str, datasource: str, metrics: list[dict], terms: list[dict]) -> str:
-        lines = ["【可用指标】"]
+        lines = []
+        # 当前对象上下文：**确定性注入**（对齐 Palantir Retrieval Context），放在最前面。
+        octx = _OBJECT_CTX.get()
+        if octx:
+            lines.append(octx)
+        lines.append("【可用指标】")
         for m in metrics:
             if m["enabled"]:
                 lines.append(f"- {m['key']}: {m['name']} ({m['description']})")
@@ -7715,10 +8289,16 @@ class AiQueryService:
         if not msg.is_error:
             if msg.path == "fast":
                 confidence = 1.0
-            elif msg.path == "slow":
+                src = "本体指标"
+            elif msg.path == "object":
+                # 对象查询：语义由本体定义、执行由实例层确定性完成，正确性高于 LLM 直写 SQL
+                confidence = 0.95
+                src = "本体对象查询"
+            else:
                 confidence = 0.85
+                src = "LLM 生成"
             evidence = {
-                "source": "本体指标" if msg.path == "fast" else "LLM 生成",
+                "source": src,
                 "ontology_used": _scan_ont_tables(msg.sql or sql or ""),
                 "retrieved_tables": (retrieved or {}).get("tables") or [],
             }
