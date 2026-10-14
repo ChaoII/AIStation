@@ -22,6 +22,7 @@ from .schema import (
     QueryFeedbackRequest,
     QueryFewshotUpsert,
     QueryMetricUpsert,
+    QueryModelingUpsert,
     QueryPromoteRequest,
     QuerySettingUpsert,
     QueryTermUpsert,
@@ -111,6 +112,38 @@ async def delete_metrics(
 ) -> JSONResponse:
     await AiQueryService.delete_metric(ids)
     return SuccessResponse(msg="删除成功")
+
+
+# ---- 大模型自动建模（S4） ----
+@AiQueryRouter.get("/modeling/objects", summary="建模：预览可用对象")
+async def modeling_objects(
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+    datasource: str = "system",
+) -> JSONResponse:
+    from . import modeling as _m
+
+    return SuccessResponse(
+        data={"objects": await _m.collect_objects(datasource, 12)}, msg="查询成功")
+
+
+@AiQueryRouter.post("/modeling/metrics", summary="建模：生成绑定型指标")
+async def modeling_metrics(
+    data: QueryModelingUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    out = await AiQueryService.generate_modeling(
+        "metrics", data.datasource, auth, max_objects=data.max_objects, dry=data.dry)
+    return SuccessResponse(data=out, msg="生成完成")
+
+
+@AiQueryRouter.post("/modeling/annotate", summary="建模：生成对象/属性标注")
+async def modeling_annotate(
+    data: QueryModelingUpsert,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    out = await AiQueryService.generate_modeling(
+        "annotate", data.datasource, auth, max_objects=data.max_objects)
+    return SuccessResponse(data=out, msg="生成完成")
 
 
 # ---- 术语运营 ----

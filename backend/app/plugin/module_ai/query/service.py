@@ -1368,6 +1368,30 @@ class AiQueryService:
             return _to_metric_dict(obj)
 
     @classmethod
+    async def generate_modeling(cls, kind: str, datasource: str, auth,
+                                max_objects: int = 12, dry: bool = False) -> dict:
+        """触发大模型自动建模（``kind``：``metrics`` / ``annotate``），并失效语义缓存。
+
+        建模会**写指标/对象/属性** → 必须失效缓存，否则前端与问数看不到刚生成的内容
+        （`_SETTINGS_CACHE`/`_SEMANTIC_INDEX`/`_ASSET_TMETA` 均为进程内缓存）。
+        """
+        global _SETTINGS_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
+
+        from . import modeling as _m
+
+        if kind == "metrics":
+            out = await _m.generate_metrics(datasource, auth, max_objects=max_objects, dry=dry)
+        elif kind == "annotate":
+            out = await _m.generate_annotations(datasource, auth, max_objects=max_objects)
+        else:
+            raise CustomException(msg=f"未知建模类型：{kind}")
+        if not dry:
+            _SETTINGS_CACHE = None
+            _SEMANTIC_INDEX = None
+            _ASSET_TMETA = None
+        return out
+
+    @classmethod
     async def promote_message_to_metric(cls, message_id: int, name: str, key: str, auth) -> dict:
         """FDE 复用闭环：把一条已验证问答沉淀为「可复用指标」（确定性快路径）。
 

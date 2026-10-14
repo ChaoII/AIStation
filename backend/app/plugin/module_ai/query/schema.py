@@ -41,6 +41,14 @@ class QueryMetricUpsert(BaseModel):
     bound_dimensions: list[str] = Field(default_factory=list)
 
 
+class QueryModelingUpsert(BaseModel):
+    """自动建模请求（S4）。"""
+
+    datasource: str = "system"
+    max_objects: int = 12
+    dry: bool = False
+
+
 class QueryTermUpsert(BaseModel):
     datasource: str = "system"
     term: str
