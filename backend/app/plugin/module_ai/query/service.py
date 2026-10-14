@@ -1018,7 +1018,44 @@ async def _secure_ont_sql(sql: str, auth) -> dict:
             "msg": r.get("note") or ""}
 
 
+async def _execute_bound_metric(metric: dict, auth=None) -> dict:
+    """执行**绑定型指标**：口径由「本体对象 + 属性 + 聚合」确定性推导（不写 SQL）。
+
+    对齐设计 §2.2：绑定型指标既可走对象查询路径，也可走指标快路径——这里让快路径
+    复用本体实例层（`instance_aggregate`），从而**无需 sql_template**。
+    """
+    from app.plugin.module_ai.ontology import security as _ont_sec
+    from app.plugin.module_ai.ontology import service as ont
+
+    obj = str(metric.get("object_code") or "")
+    prop = str(metric.get("property_code") or "")
+    fn = str(metric.get("agg_fn") or "count")
+    dims = metric.get("bound_dimensions") or []
+    gb = str(dims[0]) if dims else ""
+    a: dict = {"fn": fn}
+    if prop:
+        a["prop"] = prop
+    uid = getattr(getattr(auth, "user", None), "id", None)
+    try:
+        principal = await _ont_sec.load_principal(uid)
+    except Exception:  # noqa: BLE001
+        principal = None
+    r = await ont.instance_aggregate(obj, group_by=gb, aggs=[a], principal=principal)
+    if not r.get("ok"):
+        raise CustomException(msg=r.get("msg") or "指标执行失败")
+    rows = r.get("rows") or []
+    return {
+        "sql": f"-- 绑定型指标：本体实例层执行 {obj}.{fn}({prop or '*'})",
+        "columns": [gb or "合计", metric.get("name") or fn],
+        "rows": rows, "took_ms": 0,
+        "note": f"绑定型指标 {metric.get('key')} 由本体实例层确定性执行",
+    }
+
+
 async def _execute_metric(metric: dict, params: dict[str, Any], auth=None) -> dict:
+    # 绑定型指标（object_code + agg_fn）：走本体实例层，**不依赖 sql_template**
+    if str(metric.get("object_code") or "") and str(metric.get("agg_fn") or ""):
+        return await _execute_bound_metric(metric, auth)
     sql = _render_template(metric["sql_template"], params)
     ds_code = metric.get("datasource") or SYSTEM_DS
     if ds_code == SYSTEM_DS:
