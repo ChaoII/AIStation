@@ -5078,7 +5078,7 @@ class AiQueryService:
                     )
                 )
             ).scalar_one_or_none()
-            enum = data.enum or []
+            enum = getattr(data, "enum", None) or []
             if existing:
                 existing.description = data.description
                 existing.business_scenarios = data.business_scenarios

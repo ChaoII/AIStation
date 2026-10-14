@@ -57,6 +57,8 @@ def test_sqlite_upgrade_head_from_empty(tmp_path):
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=600,
     )
     assert proc.returncode == 0, (proc.stdout[-2000:] + "\n" + proc.stderr[-4000:])
@@ -98,6 +100,8 @@ def _run_alembic(db_stem: str, *args: str) -> subprocess.CompletedProcess:
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=600,
     )
 

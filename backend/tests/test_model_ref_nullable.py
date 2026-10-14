@@ -124,17 +124,25 @@ def test_migration_chain_has_single_head_and_no_cycle():
         tree = ast.parse(py.read_text(encoding="utf-8"))
         rev = down = None
         for node in tree.body:
+            # 兼容两种写法：带注解 `revision: str = "x"` 与普通赋值 `revision = "x"`
+            # （后者曾因只认 AnnAssign 被漏读，导致误报"两个头"——实测踩过）。
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                if node.target.id == "revision" and isinstance(node.value, ast.Constant):
-                    rev = node.value.value
-                elif node.target.id == "down_revision":
-                    if isinstance(node.value, ast.Constant):
-                        down = node.value.value
-                    else:  # `str | Sequence[str] | None = "x"` 这类带注解的简写
-                        val = node.value
-                        if isinstance(val, ast.BinOp):
-                            val = val.right
-                        down = val.value if isinstance(val, ast.Constant) else None
+                name, value = node.target.id, node.value
+            elif (isinstance(node, ast.Assign) and len(node.targets) == 1
+                  and isinstance(node.targets[0], ast.Name)):
+                name, value = node.targets[0].id, node.value
+            else:
+                continue
+            if name == "revision" and isinstance(value, ast.Constant):
+                rev = value.value
+            elif name == "down_revision":
+                if isinstance(value, ast.Constant):
+                    down = value.value
+                else:  # `str | Sequence[str] | None = "x"` 这类带注解的简写
+                    val = value
+                    if isinstance(val, ast.BinOp):
+                        val = val.right
+                    down = val.value if isinstance(val, ast.Constant) else None
         if rev:
             revs[rev] = down
 
@@ -156,8 +164,8 @@ def test_migration_chain_has_single_head_and_no_cycle():
 
     assert len(roots) == 1, f"迁移链有 {len(roots)} 个根：{roots}（应恰好 1 个）"
     assert len(heads) == 1, f"迁移链有 {len(heads)} 个头：{heads}（应恰好 1 个）"
-    assert heads[0] == "tk1m0d2l4r6", (
-        f"当前 head 是 {heads[0]}，但仓库里最新的迁移是 tk1m0d2l4r6——"
+    assert heads[0] == "935f817cdee4", (
+        f"当前 head 是 {heads[0]}，但仓库里最新的迁移是 935f817cdee4——"
         f"新迁移的 down_revision 可能写错"
     )
 

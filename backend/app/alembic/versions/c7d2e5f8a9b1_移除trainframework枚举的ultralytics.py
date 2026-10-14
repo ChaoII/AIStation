@@ -103,9 +103,11 @@ def upgrade() -> None:
             continue
         n = bind.execute(
             sa.text(
-                # 用 ::text 比较：若枚举类型已被（未记录地）收敛到仅 TORKILN，直接按
-                # 枚举值比较会抛 invalid input value；转文本后自然返回 0，前置校验通过。
-                f"SELECT count(*) FROM {table} WHERE framework::text IN ({quoted_removed})"
+                # 用 CAST(... AS text) 比较：若枚举类型已被（未记录地）收敛到仅 TORKILN，
+                # 直接按枚举值比较会抛 invalid input value；转文本后自然返回 0。
+                # ⚠️ 用 ``CAST(x AS text)`` 而非 PG 专有的 ``x::text``——本句在**所有方言**
+                # 都执行，``::`` 会让 SQLite 报 ``unrecognized token ":"``（实测踩过）。
+                f"SELECT count(*) FROM {table} WHERE CAST(framework AS text) IN ({quoted_removed})"
             )
         ).scalar()
         if n:
