@@ -4609,19 +4609,25 @@ class AiQueryService:
 
     @staticmethod
     async def _import_ont_table_core(datasource_id: int, table: str, cols: list[dict],
-                                     table_comment: str = "", domain_code: str = "") -> dict:
+                                     table_comment: str = "", domain_code: str = "",
+                                     rules: dict | None = None) -> dict:
         """把一张表的列结构写成「本体对象 + 属性 + 物化表」。
 
         幂等：对象按 code upsert（并复活软删对象），属性**先清后建**，
         因此重复导入同一张表不会像旧实现那样累加重复属性。
 
         - ``domain_code``：目标域编码，写到 ``ai_ont_object.domain_code``；
-        - ``is_business``：对象按 ``is_system_table`` 判定（系统表→false），
-          属性按 ``is_audit_field`` 判定（审计字段→false）。
+        - ``rules``：该数据源自定义 ``filter_rules``，用于 ``is_business`` 判定
+          （对象按 ``is_system_table``、属性按 ``is_audit_field``）；
+          为空/未配置时回退缺省规则，保持既有行为。
+        - ``is_business``：对象按 ``is_system_table(table, rules)`` 判定（系统表→false），
+          属性按 ``is_audit_field(cname, rules)`` 判定（审计字段→false）。
         """
         from sqlalchemy import text as _t
 
-        obj_is_business = not is_system_table(table)
+        # 用该数据源的自定义规则（与集成页打标口径一致），为空时回退缺省规则
+        rules = rules or DEFAULT_FILTER_RULES
+        obj_is_business = not is_system_table(table, rules)
         col_names = [c["name"] for c in cols]
         # 主键：有 id 用 id，否则退化为首列（保证 grounding 有键可用）
         key_prop = "id" if "id" in col_names else col_names[0]
@@ -4675,7 +4681,7 @@ class AiQueryService:
             await db.execute(_t("DELETE FROM ai_ont_property WHERE object_code=:c"), {"c": table})
             for c in cols:
                 cname = c["name"]
-                col_is_business = not is_audit_field(cname)
+                col_is_business = not is_audit_field(cname, rules)
                 await db.execute(_t(
                     "INSERT INTO ai_ont_property(object_code,name,code,prop_type,sensitive,"
                     "description,is_business) "
@@ -4712,6 +4718,8 @@ class AiQueryService:
 
         ``domain_code`` 指定导入的目标域，写到对象 ``domain_code`` 列。
         """
+        ds = await _load_ds(datasource_id)
+        rules = ds.filter_rules or DEFAULT_FILTER_RULES
         records = await list_ds_schema(datasource_id)
         rec = next((r for r in records if r["table"] == table), None)
         if not rec:
@@ -4719,7 +4727,8 @@ class AiQueryService:
         cols = [c for c in (rec.get("columns") or []) if isinstance(c, dict) and c.get("name")]
         if not cols:
             return {"ok": False, "msg": f"表 {table} 无列信息"}
-        return await cls._import_ont_table_core(datasource_id, table, cols, domain_code=domain_code)
+        return await cls._import_ont_table_core(
+            datasource_id, table, cols, domain_code=domain_code, rules=rules)
 
     @classmethod
     async def import_ds_tables_as_ontology(cls, datasource_id: int, tables: list[str] | None = None,
@@ -4732,6 +4741,8 @@ class AiQueryService:
         - ``include_technical=True`` → 不排除纯技术表
         - ``domain_code`` → 批量导入的每张表统一写入的目标域
         """
+        ds = await _load_ds(datasource_id)
+        rules = ds.filter_rules or DEFAULT_FILTER_RULES
         records = await list_ds_schema(datasource_id)
         all_tables = [r["table"] for r in records]
         if not all_tables:
@@ -4757,7 +4768,8 @@ class AiQueryService:
             try:
                 r = await cls._import_ont_table_core(datasource_id, t, cols,
                                                      table_comment=cmt_of.get(t, ""),
-                                                     domain_code=domain_code)
+                                                     domain_code=domain_code,
+                                                     rules=rules)
                 ok.append({"table": t, "props": r.get("props", 0),
                            "materialize": bool((r.get("materialize") or {}).get("ok"))})
             except Exception as e:  # noqa: BLE001

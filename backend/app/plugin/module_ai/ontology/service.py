@@ -1442,7 +1442,7 @@ async def list_objects(domain_code: str | None = None, owner_id: int | None = No
                "aliases,COALESCE(status,'experimental'),COALESCE(visibility,'normal'),"
                "COALESCE(index_status,'not_started'),edits_enabled,datasource_id,"
                "COALESCE(backing_table,''),COALESCE(point_of_contact,''),contributors,"
-               "COALESCE(rid,'') "
+               "COALESCE(rid,''),COALESCE(is_business,true) "
                "FROM ai_ont_object WHERE is_deleted=false")
         params: dict = {}
         if domain_code is not None:
@@ -1485,6 +1485,7 @@ async def list_objects(domain_code: str | None = None, owner_id: int | None = No
             "datasource_id": r[16], "backing_table": r[17] or "",
             "point_of_contact": r[18] or "", "contributors": _json_list(r[19]),
             "rid": r[20] or "",
+            "is_business": bool(r[21]),
             "property_count": prop_cnt.get(code, 0),
             "link_count": link_cnt.get(code, 0),
             "action_count": act_cnt.get(code, 0),
@@ -1586,7 +1587,8 @@ _PROP_COLS = ("SELECT id,object_code,name,code,prop_type,required,unique_col,sen
               "options,description,roles,COALESCE(api_name,''),COALESCE(base_type,''),title_key,"
               "COALESCE(visibility,'normal'),edit_only,value_formatting,conditional_formatting,"
               "COALESCE(render_hint,''),COALESCE(type_class,''),COALESCE(status,'experimental'),"
-              "COALESCE(shared_code,''),derived,struct_fields,COALESCE(value_type_code,'') "
+              "COALESCE(shared_code,''),derived,struct_fields,COALESCE(value_type_code,''),"
+              "COALESCE(is_business,true) "
               "FROM ai_ont_property ")
 
 
@@ -1610,7 +1612,8 @@ async def list_properties(object_code: str = "", owner_id: int | None = None) ->
             "status": x[21] or "experimental",
             # ---- P5 ----
             "shared_code": x[22] or "", "derived": _json_dict(x[23]),
-            "struct_fields": _json_list(x[24]), "value_type_code": x[25] or ""} for x in rows]
+            "struct_fields": _json_list(x[24]), "value_type_code": x[25] or "",
+            "is_business": bool(x[26])} for x in rows]
     out = await wip_overlay(owner_id, "property", out, "id", "code")
     if object_code:
         out = [p for p in out if p.get("object_code") == object_code]

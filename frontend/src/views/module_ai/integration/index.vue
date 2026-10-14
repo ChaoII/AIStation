@@ -32,7 +32,7 @@
               <div class="ig-ds-item__ops" @click.stop>
                 <el-button link type="primary" size="small" @click="testDs(d)">测试</el-button>
                 <el-button link type="primary" size="small" @click="openDs(d)">编辑</el-button>
-                <el-button link type="danger" size="small" @click="removeDs(d)">删除</el-button>
+                <el-button v-hasPerm="['module_ai:query:ask']" link type="danger" size="small" @click="removeDs(d)">删除</el-button>
               </div>
             </div>
             <el-empty

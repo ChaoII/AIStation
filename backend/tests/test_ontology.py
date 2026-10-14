@@ -139,6 +139,29 @@ class TestOntologyResolve:
 
 
 # ---------------------------------------------------------------------------
+# 对象/属性列表序列化暴露 is_business（Task 8）
+# ---------------------------------------------------------------------------
+class TestOntologySerializesIsBusiness:
+    def test_list_objects_serializes_is_business(self, test_client, auth_headers, ontology_obj):
+        r = test_client.get("/api/v1/ai/ontology/objects", headers=auth_headers)
+        assert r.status_code == 200
+        item = next(x for x in r.json()["data"] if x["code"] == "orders")
+        assert "is_business" in item, "对象列表应序列化 is_business 字段"
+        # 默认创建的对象（未手动置位）默认视为业务
+        assert isinstance(item["is_business"], bool)
+
+    def test_list_properties_serializes_is_business(self, test_client, auth_headers, ontology_obj):
+        r = test_client.get(
+            "/api/v1/ai/ontology/properties?object_code=orders", headers=auth_headers
+        )
+        assert r.status_code == 200
+        assert r.json()["data"], "orders 对象应含有属性"
+        for p in r.json()["data"]:
+            assert "is_business" in p, "属性列表应序列化 is_business 字段"
+            assert isinstance(p["is_business"], bool)
+
+
+# ---------------------------------------------------------------------------
 # 本体字段级 ACL（问数 SQL 拦截无权限敏感/受限属性）
 # ---------------------------------------------------------------------------
 class TestOntSqlAcl:
