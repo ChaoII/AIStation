@@ -42,6 +42,19 @@ def test_classify_case_insensitive_and_bad_regex():
     assert classify_tables(["sys_user_bak_x"], rules)[0]["is_system"] is True  # 非法正则被跳过不抛异常
 
 
+def test_classify_invalid_regex_isolation():
+    """非法正则应被跳过（不抛异常、不误命中），且仅靠非法正则时表名判为业务表。
+
+    与上方用例不同：此处 prefixes/keywords/exact 全空，表名 ``tmp_x`` 只可能因
+    非法正则 ``[`` 命中——`re.error` 被跳过后应返回 ``is_system=False``、``reason=""``，
+    真正覆盖 ``except re.error`` 路径。
+    """
+    rules = {"enabled": True, "system_table": {"prefixes": [], "keywords": [], "exact": [], "regex": "["}, "audit_fields": []}
+    r = classify_tables(["tmp_x"], rules)[0]
+    assert r["is_system"] is False
+    assert r["reason"] == ""
+
+
 def test_classify_fields_reason():
     r = classify_fields(["created_time", "coal_amount"])
     assert r[0]["is_audit"] is True and r[0]["reason"] == "审计字段 created_time"

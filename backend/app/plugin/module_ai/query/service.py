@@ -5638,23 +5638,73 @@ class AiQueryService:
         except Exception as e:  # noqa: BLE001
             raise CustomException(msg=f"大模型辅助调用失败：{str(e)[:200]}")
 
+    @staticmethod
+    def _first_balanced_brace(t: str) -> str | None:
+        """取文本中第一个**平衡**的 ``{ ... }`` 子串（跳过字符串内花括号与转义）。
+
+        用于模型在 JSON 前后附带自然语言解释（无围栏、无换行）时，
+        精确截取 JSON 对象本身。找不到平衡对象返回 ``None``。
+        """
+        start = t.find("{")
+        if start < 0:
+            return None
+        depth = 0
+        in_str = False
+        escape = False
+        for i in range(start, len(t)):
+            c = t[i]
+            if in_str:
+                if escape:
+                    escape = False
+                elif c == "\\":
+                    escape = True
+                elif c == '"':
+                    in_str = False
+                continue
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return t[start:i + 1]
+        return None
+
     @classmethod
     def _extract_json(cls, s: str) -> str:
-        """去掉 ```json ... ``` 代码块包裹，返回内部 JSON 文本；否则原样返回。"""
+        """从模型输出中提取 JSON 文本。
+
+        1. 先剥离 ```json ... ``` 代码块围栏；
+        2. 剥离后若已是合法 JSON，直接返回；
+        3. 若模型在 JSON 前后附带了自然语言解释（无围栏/无换行），
+           扫描文本找第一个**平衡**的 ``{ ... }`` 并截取该子串返回；
+        4. 均失败则原样返回，交由 ``json.loads`` 报错兜底。
+        """
         t = (s or "").strip()
         if t.startswith("```"):
             t = t.split("\n", 1)[-1] if "\n" in t else t
-            t = t.rsplit("```", 1)[0]
-        return t.strip()
+            t = t.rsplit("```", 1)[0].strip()
+        # 已是合法 JSON：直接返回，避免误截取解释里的花括号
+        try:
+            json.loads(t)
+            return t
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        obj = cls._first_balanced_brace(t)
+        return obj if obj is not None else t
 
     @classmethod
-    def _parse_llm_json(cls, raw: str, keys: list[str] | None = None) -> dict:
+    def _parse_llm_json(cls, raw: str, keys: list[str] | None = None,
+                        key_types: dict[str, type] | None = None) -> dict:
         """解析 ``_llm_json`` 产出：``_extract_json`` + ``json.loads``。
 
         - JSON 非法 → 抛 ``CustomException("大模型返回不是有效 JSON")``；
         - ``keys`` 非空且结果缺任一关键键 → 抛
           ``CustomException("大模型返回结构不完整：缺少 rules/system_suggest/audit_suggest 等")``
-          （避免模型返回合法 JSON 但缺键时泄漏 ``KeyError`` 变 500）。
+          （避免模型返回合法 JSON 但缺键时泄漏 ``KeyError`` 变 500）；
+        - ``key_types`` 指定某键的期望类型（如 ``rules`` 应为 dict、
+          ``system_suggest`` 应为 list），值类型不符时抛可读错误，避免下游 `dict/list` 用法崩溃。
         """
         try:
             parsed = json.loads(cls._extract_json(raw))
@@ -5667,6 +5717,11 @@ class AiQueryService:
             if missing:
                 raise CustomException(
                     msg="大模型返回结构不完整：缺少 " + "/".join(missing))
+        if key_types:
+            for k, want in key_types.items():
+                if k in parsed and not isinstance(parsed[k], want):
+                    raise CustomException(
+                        msg=f"大模型返回结构不完整：{k} 类型错误")
         return parsed
 
     @classmethod
@@ -5725,7 +5780,7 @@ class AiQueryService:
             "不要缺省字段，不要输出任何解释。"
         )
         raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw, keys=["rules"])
+        parsed = cls._parse_llm_json(raw, keys=["rules"], key_types={"rules": dict})
         return {"rules": parsed["rules"]}
 
     @classmethod
@@ -5747,7 +5802,7 @@ class AiQueryService:
             "不要缺省字段，不要输出任何解释。"
         )
         raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw, keys=["rules"])
+        parsed = cls._parse_llm_json(raw, keys=["rules"], key_types={"rules": dict})
         return {"rules": parsed["rules"]}
 
     @classmethod
@@ -5771,7 +5826,9 @@ class AiQueryService:
             "只列出你认为应归为系统表/审计字段的表与字段，不要输出任何解释。"
         )
         raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw, keys=["system_suggest", "audit_suggest"])
+        parsed = cls._parse_llm_json(
+            raw, keys=["system_suggest", "audit_suggest"],
+            key_types={"system_suggest": list, "audit_suggest": list})
         return parsed
 
     # ---- 会话与问答 ----
