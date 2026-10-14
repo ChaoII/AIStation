@@ -318,11 +318,11 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict,
 
 
 def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8,
-                     max_traverse_depth: int = 1) -> str:
+                     max_traverse_depth: int = 1, metrics: dict | None = None) -> str:
     """生成"输出对象查询 JSON"的提示词。
 
-    **只注入 allowed 里的对象/属性/关系**（不是全量 schema）—— 这既是 scope 收敛，
-    也避免模型编造清单外的对象名（`plan.py` 的教训：编出来的名字会被当命令执行）。
+    **只注入 allowed 里的对象/属性/关系（+ 绑定指标）**（不是全量 schema）—— 这既是
+    scope 收敛，也避免模型编造清单外的对象名（`plan.py` 的教训：编出来的名字会被当命令执行）。
     """
     lines: list[str] = []
     for code, spec in list((allowed or {}).items())[:max_objects]:
@@ -340,6 +340,15 @@ def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8,
         lnames = list((spec.get("links") or {}).keys())
         if lnames:
             lines.append("    可用关系：" + "、".join(lnames))
+        mspec = spec.get("metrics") or {}
+        if mspec:
+            mdesc = []
+            for mk, m in mspec.items():
+                dims = ",".join(m.get("bound_dimensions") or [])
+                mdesc.append(
+                    f"{mk}({m.get('name') or mk},聚合={m.get('agg_fn') or 'count'}"
+                    + (f",维度={dims}" if dims else "") + ")")
+            lines.append("    可用指标：" + "、".join(mdesc))
 
     schema_block = "\n".join(lines) if lines else "（没有可用的对象）"
     return (
@@ -354,6 +363,7 @@ def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8,
         '  "order_by": [{"field": "字段编码或聚合别名", "dir": "asc|desc"}],\n'
         '  "traverse": [{"link": "关系名", "direction": "auto|source|target", "filters": [{"field": "对端字段编码", "op": "eq|...", "value": 值}], "as": "别名"}],\n'
         '  "derived_property": "派生属性编码（可选）",\n'
+        '  "metric": "指标key（可选；问题命中「可用指标」时优先填它，不要自己拼聚合）",\n'
         '  "limit": 100\n'
         "}\n\n"
         "# 硬性要求\n"
@@ -367,7 +377,9 @@ def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8,
         "7. **禁止**返回「filters/group_by/aggregations 全为空」的结果——那等于没查。\n"
         f"8. 需要「沿关系跳转到另一类对象」时用 `traverse`（可连续多跳，最多 {max_traverse_depth} 跳；"
         "`direction` 默认 auto，`filters` 是对端过滤）。\n"
-        "9. 需要「派生属性」（如某对象的告警数/关联计数）时用 `derived_property` 填派生属性编码。\n\n"
+        "9. 需要「派生属性」（如某对象的告警数/关联计数）时用 `derived_property` 填派生属性编码。\n"
+        "10. 若问题正好是某个「可用指标」（如「批次量」），**优先**填 `metric`（填指标 key），"
+        "由系统用该指标的权威口径执行——**不要**自己再拼 group_by+aggregations。\n\n"
         "# 示例\n"
         "问：统计每个区域的设备数量\n"
         '答：{"object":"devices","group_by":[{"field":"region","alias":"区域"}],'
@@ -382,8 +394,9 @@ def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8,
     )
 
 
-def build_allowed(objects: list[dict], props_by_code: dict, links_by_code: dict) -> dict:
-    """把「对象 + 属性 + 关系」组装成 ``allowed`` 结构（纯函数，便于单测）。"""
+def build_allowed(objects: list[dict], props_by_code: dict, links_by_code: dict,
+                  metrics_by_object: dict | None = None) -> dict:
+    """把「对象 + 属性 + 关系（+ 绑定指标）」组装成 ``allowed`` 结构（纯函数，便于单测）。"""
     out: dict = {}
     for o in objects or []:
         code = str(o.get("code") or "").strip()
@@ -408,5 +421,11 @@ def build_allowed(objects: list[dict], props_by_code: dict, links_by_code: dict)
                 "target": lk.get("target_object"),
                 "card": lk.get("card"),
             }
-        out[code] = {"name": o.get("name") or code, "fields": fields, "links": links}
+        metrics: dict = {}
+        for m in (metrics_by_object or {}).get(code) or []:
+            mkey = str(m.get("key") or "").strip()
+            if mkey:
+                metrics[mkey] = m
+        out[code] = {"name": o.get("name") or code, "fields": fields,
+                     "links": links, "metrics": metrics}
     return out
