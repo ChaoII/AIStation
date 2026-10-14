@@ -5578,7 +5578,7 @@ class AiQueryService:
         - 不写库、不改变已保存规则；数据源不存在时由 ``_load_ds`` 抛 CustomException（直接透传）。
         """
         ds = await _load_ds(datasource_id)
-        eff = rules or ds.filter_rules or DEFAULT_FILTER_RULES
+        eff = rules if rules is not None else (ds.filter_rules or DEFAULT_FILTER_RULES)
         schema = await list_ds_schema(datasource_id)
         tables = [s["table"] for s in schema]
         fields = []
