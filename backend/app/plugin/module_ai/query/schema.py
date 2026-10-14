@@ -130,3 +130,9 @@ class QueryRunRequest(BaseModel):
     datasource: str | None = None
     sql: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class FilterRulesPreviewRequest(BaseModel):
+    """筛选规则分类预览请求：传草稿规则（可为 None 用数据源已保存规则）。"""
+
+    rules: dict | None = None

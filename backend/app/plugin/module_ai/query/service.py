@@ -20,7 +20,13 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import log
 
-from .filtering import DEFAULT_FILTER_RULES, is_audit_field, is_system_table
+from .filtering import (
+    DEFAULT_FILTER_RULES,
+    classify_fields,
+    classify_tables,
+    is_audit_field,
+    is_system_table,
+)
 from .model import (
     AiQueryAssetColumnModel,
     AiQueryAssetModel,
@@ -5563,6 +5569,33 @@ class AiQueryService:
                 d = await db.get(AiQueryDatasourceModel, did)
                 if d:
                     await db.delete(d)
+
+    @classmethod
+    async def preview_filter_rules(cls, datasource_id: int, rules: dict | None = None) -> dict:
+        """筛选规则分类预览（只读）：对数据源已同步 schema 全量分类并汇总。
+
+        - ``rules`` 为草稿规则（可传 ``None`` 用数据源已保存规则，再缺省用 ``DEFAULT_FILTER_RULES``）；
+        - 不写库、不改变已保存规则；数据源不存在时由 ``_load_ds`` 抛 CustomException（直接透传）。
+        """
+        ds = await _load_ds(datasource_id)
+        eff = rules or ds.filter_rules or DEFAULT_FILTER_RULES
+        schema = await list_ds_schema(datasource_id)
+        tables = [s["table"] for s in schema]
+        fields = []
+        for s in schema:
+            for c in s.get("columns") or []:
+                fields.append(c.get("name") or c.get("column_name"))
+        t = classify_tables(tables, eff)
+        f = classify_fields(fields, eff)
+        summary = {
+            "table_total": len(t),
+            "system_tables": sum(1 for x in t if x["is_system"]),
+            "business_tables": sum(1 for x in t if not x["is_system"]),
+            "field_total": len(f),
+            "audit_fields": sum(1 for x in f if x["is_audit"]),
+            "business_fields": sum(1 for x in f if not x["is_audit"]),
+        }
+        return {"tables": t, "fields": f, "summary": summary}
 
     # ---- 会话与问答 ----
     @classmethod

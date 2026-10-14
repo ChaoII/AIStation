@@ -11,6 +11,7 @@ from app.core.dependencies import AuthPermission, redis_getter
 from app.core.router_class import OperationLogRoute
 
 from .schema import (
+    FilterRulesPreviewRequest,
     QueryAskRequest,
     QueryAssetColumnUpsert,
     QueryAssetUpsert,
@@ -366,6 +367,15 @@ async def datasource_detail(
     auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
 ) -> JSONResponse:
     return SuccessResponse(data=await AiQueryService.datasource_detail(datasource_id), msg="查询成功")
+
+
+@AiQueryRouter.post("/datasources/{datasource_id}/rules/preview", summary="筛选规则分类预览")
+async def rules_preview(
+    datasource_id: int,
+    data: FilterRulesPreviewRequest,
+    auth: Annotated[AuthSchema, Depends(AuthPermission(["module_ai:query:ask"]))],
+) -> JSONResponse:
+    return SuccessResponse(data=await AiQueryService.preview_filter_rules(datasource_id, data.rules), msg="查询成功")
 
 
 @AiQueryRouter.post("/datasources/save", summary="数据源保存")
