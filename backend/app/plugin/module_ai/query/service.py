@@ -5648,22 +5648,57 @@ class AiQueryService:
         return t.strip()
 
     @classmethod
-    def _parse_llm_json(cls, raw: str) -> dict:
-        """解析 ``_llm_json`` 产出：``_extract_json`` + ``json.loads``，失败抛统一错误。"""
+    def _parse_llm_json(cls, raw: str, keys: list[str] | None = None) -> dict:
+        """解析 ``_llm_json`` 产出：``_extract_json`` + ``json.loads``。
+
+        - JSON 非法 → 抛 ``CustomException("大模型返回不是有效 JSON")``；
+        - ``keys`` 非空且结果缺任一关键键 → 抛
+          ``CustomException("大模型返回结构不完整：缺少 rules/system_suggest/audit_suggest 等")``
+          （避免模型返回合法 JSON 但缺键时泄漏 ``KeyError`` 变 500）。
+        """
         try:
-            return json.loads(cls._extract_json(raw))
+            parsed = json.loads(cls._extract_json(raw))
         except (json.JSONDecodeError, TypeError, ValueError):
             raise CustomException(msg="大模型返回不是有效 JSON")
+        if not isinstance(parsed, dict):
+            raise CustomException(msg="大模型返回不是有效 JSON")
+        if keys:
+            missing = [k for k in keys if k not in parsed]
+            if missing:
+                raise CustomException(
+                    msg="大模型返回结构不完整：缺少 " + "/".join(missing))
+        return parsed
 
     @classmethod
     async def _ds_current_rules(cls, datasource_id: int, rules: dict | None) -> dict:
-        """取当前规则上下文：``rules`` 优先，其次数据源已保存规则，最后默认规则。"""
+        """取当前规则上下文：``rules`` 显式非 None 时直接返回（免去多余 DB 查询）；
+        否则用数据源已保存规则，缺省回落到 ``DEFAULT_FILTER_RULES``。"""
+        if rules is not None:
+            return rules
         try:
             ds = await _load_ds(datasource_id)
             saved = getattr(ds, "filter_rules", None) or None
-        except CustomException:
+        except Exception:  # noqa: BLE001 - 取不到已保存规则时优雅降级到默认规则
             saved = None
-        return rules if rules is not None else (saved or DEFAULT_FILTER_RULES)
+        return saved or DEFAULT_FILTER_RULES
+
+    @classmethod
+    async def _ds_samples(cls, datasource_id: int) -> tuple[list[str], list[str]]:
+        """取表名/字段名样例（各截断 400 条）。
+
+        统一 try/except：``list_ds_schema`` 失败（如数据源不存在/DB 异常）时优雅降级为
+        空样例 ``([], [])``，不阻断大模型调用（suggest/parse/classify-advise 三处行为一致）。
+        """
+        try:
+            schema = await list_ds_schema(datasource_id)
+        except Exception:  # noqa: BLE001
+            return [], []
+        tables = [s["table"] for s in schema][:400]
+        fields = [
+            c.get("name") or c.get("column_name")
+            for s in schema for c in (s.get("columns") or []) if isinstance(c, dict)
+        ][:400]
+        return tables, fields
 
     @classmethod
     async def suggest_filter_rules(cls, datasource_id: int, rules: dict | None = None) -> dict:
@@ -5673,12 +5708,7 @@ class AiQueryService:
         - ``rules`` 参数可作为当前规则参考，模型仍需输出**完整** ``rules``（含 enabled +
           system_table + audit_fields）。
         """
-        schema = await list_ds_schema(datasource_id)
-        tables = [s["table"] for s in schema][:400]
-        fields = [
-            c.get("name") or c.get("column_name")
-            for s in schema for c in (s.get("columns") or []) if isinstance(c, dict)
-        ][:400]
+        tables, fields = await cls._ds_samples(datasource_id)
         cur = await cls._ds_current_rules(datasource_id, rules)
         prompt = (
             "你是数据库表/字段命名规范专家。根据下面给定的数据源表与字段样例，"
@@ -5695,18 +5725,14 @@ class AiQueryService:
             "不要缺省字段，不要输出任何解释。"
         )
         raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw)
+        parsed = cls._parse_llm_json(raw, keys=["rules"])
         return {"rules": parsed["rules"]}
 
     @classmethod
     async def parse_filter_rules(cls, datasource_id: int, text: str) -> dict:
         """把自然语言（如「把 SYS_ 前缀当系统表，created_time 当审计字段」）转成完整 rules JSON。"""
         # 把数据源表名样例作为背景，帮助模型理解命名上下文（非强制）
-        try:
-            schema = await list_ds_schema(datasource_id)
-            tables = [s["table"] for s in schema][:400]
-        except CustomException:
-            tables = []
+        tables, _fields = await cls._ds_samples(datasource_id)
         prompt = (
             "你是筛选规则解析助手。把用户的中文描述转换成规则 JSON，"
             "规则用于识别「系统表」（前缀/关键词/精确名/正则）与「审计字段」。\n"
@@ -5721,7 +5747,7 @@ class AiQueryService:
             "不要缺省字段，不要输出任何解释。"
         )
         raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw)
+        parsed = cls._parse_llm_json(raw, keys=["rules"])
         return {"rules": parsed["rules"]}
 
     @classmethod
@@ -5731,12 +5757,7 @@ class AiQueryService:
         - 取表/字段样例（各截断 400 条）+ 当前规则作为推理依据；
         - 返回 ``{"system_suggest": [{"name","reason"}], "audit_suggest": [{"name","reason"}]}``。
         """
-        schema = await list_ds_schema(datasource_id)
-        tables = [s["table"] for s in schema][:400]
-        fields = [
-            c.get("name") or c.get("column_name")
-            for s in schema for c in (s.get("columns") or []) if isinstance(c, dict)
-        ][:400]
+        tables, fields = await cls._ds_samples(datasource_id)
         cur = await cls._ds_current_rules(datasource_id, rules)
         prompt = (
             "你是数据库表/字段分类专家。根据给定的当前规则，逐表判断是否疑似系统表、"
@@ -5750,7 +5771,7 @@ class AiQueryService:
             "只列出你认为应归为系统表/审计字段的表与字段，不要输出任何解释。"
         )
         raw = await cls._llm_json(prompt)
-        parsed = cls._parse_llm_json(raw)
+        parsed = cls._parse_llm_json(raw, keys=["system_suggest", "audit_suggest"])
         return parsed
 
     # ---- 会话与问答 ----

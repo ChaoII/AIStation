@@ -75,3 +75,57 @@ def test_classify_advise(monkeypatch):
     out = asyncio.run(AiQueryService.classify_advise(4))
     assert out["system_suggest"][0]["name"] == "TMP_A"
     assert out["audit_suggest"][0]["reason"] == "审计字段"
+
+
+def test_suggest_missing_rules_key_raises(monkeypatch):
+    """模型返回合法 JSON 但缺 `rules` 键时，应抛可读 CustomException 而非 KeyError。"""
+    from app.core.exceptions import CustomException
+
+    async def fake_load(ds):
+        class D:
+            pass
+
+        d = D()
+        d.filter_rules = None
+        return d
+
+    monkeypatch.setattr("app.plugin.module_ai.query.service._load_ds", fake_load)
+
+    async def fake_schema(ds, included_only=False):
+        return [{"table": "SYS_A", "comment": "", "columns": [{"name": "created_time"}]}]
+
+    monkeypatch.setattr("app.plugin.module_ai.query.service.list_ds_schema", fake_schema)
+    monkeypatch.setattr(AiQueryService, "_llm_json", _fake_llm({"enabled": True}))
+    try:
+        asyncio.run(AiQueryService.suggest_filter_rules(4))
+    except CustomException as e:
+        assert "结构不完整" in e.msg
+    else:
+        raise AssertionError("应抛出 CustomException")
+
+
+def test_classify_advise_missing_keys_raises(monkeypatch):
+    """classify_advise 缺 `system_suggest`/`audit_suggest` 键时应抛可读 CustomException。"""
+    from app.core.exceptions import CustomException
+
+    async def fake_load(ds):
+        class D:
+            pass
+
+        d = D()
+        d.filter_rules = None
+        return d
+
+    monkeypatch.setattr("app.plugin.module_ai.query.service._load_ds", fake_load)
+
+    async def fake_schema(ds, included_only=False):
+        return [{"table": "TMP_A", "comment": "", "columns": [{"name": "deleted_time"}]}]
+
+    monkeypatch.setattr("app.plugin.module_ai.query.service.list_ds_schema", fake_schema)
+    monkeypatch.setattr(AiQueryService, "_llm_json", _fake_llm({"system_suggest": []}))
+    try:
+        asyncio.run(AiQueryService.classify_advise(4))
+    except CustomException as e:
+        assert "结构不完整" in e.msg
+    else:
+        raise AssertionError("应抛出 CustomException")
