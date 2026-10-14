@@ -65,6 +65,7 @@ class QueryDatasourceUpsert(BaseModel):
     default: bool = False
     enabled: bool = True
     allowed_roles: list[str] = Field(default_factory=list)
+    filter_rules: dict | None = None
     remark: str = ""
 
 

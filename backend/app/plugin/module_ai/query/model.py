@@ -32,6 +32,10 @@ class AiQueryDatasourceModel(ModelMixin, UserMixin):
     allowed_roles: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=list, comment="允许访问的角色 code 列表，空=所有"
     )
+    filter_rules: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True, default=dict,
+        comment="表/字段筛选规则(JSONB)：system_table 前缀/关键词/精确/正则 + audit_fields"
+    )
     remark: Mapped[str | None] = mapped_column(Text, nullable=True, default="", comment="备注")
 
 

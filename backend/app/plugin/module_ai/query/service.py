@@ -33,6 +33,7 @@ from .model import (
     AiQuerySettingModel,
 )
 from .schema import QueryAssetUpsert
+from .filtering import DEFAULT_FILTER_RULES
 
 # ---------------------------------------------------------------------------
 # 本系统数据源保留编码
@@ -5397,6 +5398,7 @@ class AiQueryService:
                  "host": d.host, "port": d.port, "database": d.database,
                  "username": d.username, "read_only": d.read_only, "default": d.default,
                  "enabled": d.enabled, "allowed_roles": d.allowed_roles or [],
+                 "filter_rules": d.filter_rules,
                  "table_count": counts.get(f"ds:{d.id}", 0),
                  "remark": d.remark or ""}
                 for d in rows
@@ -5406,6 +5408,14 @@ class AiQueryService:
     async def upsert_datasource(cls, data, auth) -> dict:
         # 密码加密由上层/前端处理，这里仅透传（演示环境明文存，生产应加密）
         async with async_db_session.begin() as db:
+            # 运行时补列（本项目 ai_* 表不走 Alembic，惯用 ADD COLUMN IF NOT EXISTS）；
+            # 确保既有库读到 filter_rules 列，失败仅告警不影响主流程。
+            try:
+                await db.execute(text(
+                    "ALTER TABLE ai_query_datasources "
+                    "ADD COLUMN IF NOT EXISTS filter_rules JSONB"))
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] 补 ai_query_datasources.filter_rules 失败: {e}")
             from sqlalchemy import select
 
             existing = (
@@ -5421,6 +5431,9 @@ class AiQueryService:
                           "read_only", "default", "enabled", "remark"):
                     setattr(existing, k, getattr(data, k))
                 existing.allowed_roles = data.allowed_roles or []
+                # filter_rules 未传(None)时保留既有配置，避免覆盖用户已保存的自定义规则
+                if data.filter_rules is not None:
+                    existing.filter_rules = data.filter_rules
                 if data.password:
                     existing.password = data.password
                 existing.updated_id = auth.user.id
@@ -5431,6 +5444,7 @@ class AiQueryService:
                     port=data.port, database=data.database, username=data.username,
                     password=data.password, read_only=data.read_only, default=data.default,
                     enabled=data.enabled, allowed_roles=data.allowed_roles or [],
+                    filter_rules=data.filter_rules or DEFAULT_FILTER_RULES,
                     remark=data.remark, created_id=auth.user.id, updated_id=auth.user.id,
                 )
                 db.add(obj)
