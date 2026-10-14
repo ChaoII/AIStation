@@ -50,6 +50,7 @@ class ObjectQueryIR:
     limit: int = DEFAULT_LIMIT
     object_key: str = ""
     derived_property: str = ""
+    metric: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +63,7 @@ class ObjectQueryIR:
             "limit": self.limit,
             "object_key": self.object_key,
             "derived_property": self.derived_property,
+            "metric": self.metric,
         }
 
     @classmethod
@@ -85,6 +87,7 @@ class ObjectQueryIR:
             limit=_int(d.get("limit")),
             object_key=str(d.get("object_key") or "").strip(),
             derived_property=str(d.get("derived_property") or "").strip(),
+            metric=str(d.get("metric") or "").strip(),
         )
 
 
@@ -149,7 +152,8 @@ def _resolve_field(val: str, fields: dict) -> str | None:
 
 
 def validate_ir(ir: ObjectQueryIR | None, allowed: dict,
-                max_traverse_depth: int = 1) -> tuple[ObjectQueryIR | None, list[str]]:
+                max_traverse_depth: int = 1,
+                metrics: dict | None = None) -> tuple[ObjectQueryIR | None, list[str]]:
     """按「授权 ∩ 检索命中」清单校验并清洗 IR。
 
     ``allowed`` 形如::
@@ -180,6 +184,21 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict,
     spec = allowed[code] or {}
     fields: dict = spec.get("fields") or {}
     links: dict = spec.get("links") or {}
+
+    # ---- metric（绑定指标，可选）：必须在可用指标白名单内，且绑定对象与查询对象一致 ----
+    raw_metric = (ir.metric or "").strip()
+    if raw_metric:
+        m = (metrics or {}).get(raw_metric)
+        if not m:
+            reasons.append(f"指标 {raw_metric} 不在可用范围，已忽略")
+            ir.metric = ""
+        else:
+            mo = str(m.get("object_code") or "")
+            if mo and mo != code:
+                reasons.append(f"指标 {raw_metric} 绑定对象 {mo} 与查询对象 {code} 不符，已忽略")
+                ir.metric = ""
+            else:
+                ir.metric = raw_metric
 
     # ---- filters ----
     keep_f: list[dict] = []
@@ -285,7 +304,7 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict,
         ir.derived_property = (ir.derived_property.split(",")[0] or "").strip()
 
     if not (ir.filters or ir.group_by or ir.aggregations or ir.traverse
-            or ir.object_key or ir.derived_property):
+            or ir.object_key or ir.derived_property or ir.metric):
         return None, ["没有可执行的查询条件"]
 
     # ---- limit ----
