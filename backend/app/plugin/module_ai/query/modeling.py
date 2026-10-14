@@ -179,6 +179,86 @@ async def verify_metric(metric: dict) -> dict:
     return {"ok": True, "rows": rows}
 
 
+async def collect_objects(datasource: str, max_objects: int = 12) -> list[dict]:
+    """收集某数据源的对象与字段（供建模提示词使用）。"""
+    from app.plugin.module_ai.ontology import semantic as _sem
+    from app.plugin.module_ai.ontology import service as ont
+
+    ds_id: int | None = None
+    if datasource and datasource not in ("system", None):
+        try:
+            ds_id = int(str(datasource).split(":")[-1])
+        except (TypeError, ValueError):
+            ds_id = None
+    try:
+        ctx = await _sem.semantic_context(include_properties=False)
+    except Exception:  # noqa: BLE001
+        return []
+    objs = ctx.get("objects") or []
+    if ds_id is not None:
+        objs = [o for o in objs if int(o.get("datasource_id") or 0) == ds_id]
+    out: list[dict] = []
+    for o in objs[:max_objects]:
+        code = str(o.get("code") or "")
+        if not code:
+            continue
+        try:
+            meta = await ont._instance_meta(code)
+        except Exception:  # noqa: BLE001
+            meta = {}
+        cols = set(meta.get("cols") or [])
+        fields = [
+            {"code": str(p.get("code")), "name": p.get("name"),
+             "type": p.get("prop_type") or p.get("type")}
+            for p in (meta.get("props") or []) if p.get("code") in cols
+        ]
+        out.append({"code": code, "name": o.get("name") or code,
+                    "table": o.get("table") or "", "fields": fields})
+    return out
+
+
+async def generate_metrics(datasource: str, auth, max_objects: int = 12,
+                           dry: bool = False) -> dict:
+    """一轮「生成→验证→落库」绑定型指标。
+
+    ``dry=True`` 只生成+验证、不落库（用于预览）。
+    返回 ``{parsed, verified, saved, rejected, reasons}``。
+    """
+    from types import SimpleNamespace
+
+    from .service import AiQueryService
+
+    objects = await collect_objects(datasource, max_objects)
+    if not objects:
+        return {"parsed": 0, "verified": 0, "saved": 0, "rejected": 0,
+                "reasons": ["无可用对象"]}
+    text = await model_llm(build_metric_prompt(objects))
+    valid = {o["code"]: o for o in objects}
+    metrics = parse_metrics(text, valid)
+    saved = rejected = 0
+    reasons: list[str] = []
+    for m in metrics:
+        v = await verify_metric(m)
+        if not v.get("ok"):
+            rejected += 1
+            reasons.append(f"{m['key']} → {v.get('reason')}")
+            continue
+        if not dry:
+            await AiQueryService.upsert_metric(
+                SimpleNamespace(
+                    datasource=datasource, key=m["key"], name=m["name"],
+                    description=m["description"], sql_template="SELECT 1 AS 数值",
+                    params=[], dimensions=[], agg=m["agg_fn"], unit="",
+                    permission_tag="", enabled=True, sort=0, cache_ttl=0,
+                    object_code=m["object_code"], property_code=m["property_code"],
+                    agg_fn=m["agg_fn"], bound_dimensions=m["bound_dimensions"]),
+                auth)
+        saved += 1
+    log.info(f"[modeling] 指标生成：解析 {len(metrics)}，通过/落库 {saved}，拒绝 {rejected}")
+    return {"parsed": len(metrics), "verified": saved, "saved": saved,
+            "rejected": rejected, "reasons": reasons[:10]}
+
+
 async def model_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -> str:
     """一次建模 LLM 调用（**走 agno**，与问数同源模型）。
 
