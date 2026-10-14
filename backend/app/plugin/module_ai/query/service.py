@@ -5300,6 +5300,7 @@ class AiQueryService:
             "object_query_enabled": "false",         # 语义执行层开关（默认关）
             "object_query_max_objects": "5",         # 注入 IR 提示词的对象数上限（scope 收敛）
             "object_query_call_timeout": "60",       # IR 生成单次 LLM 调用超时（秒）
+            "object_query_max_traverse_depth": "1",  # traverse 最大跳数（P3：可开 2–3；默认 1=不启用多跳）
             # 为什么是 60：实测**裸调用** 11~19s，但经 agno Agent 包装后 17~32s（含波动）。
             # 给 30 会频繁超时降级（实测踩到，日志只有空字符串的 TimeoutError）；
             # 给 60 让绝大多数请求成功，真正的长尾再降级。
@@ -6521,7 +6522,10 @@ class AiQueryService:
 
         try:
             text = await cls._ir_llm(
-                oq.render_ir_prompt(question, allowed, max_objects=max_objs), runtime)
+                oq.render_ir_prompt(question, allowed, max_objects=max_objs,
+                                    max_traverse_depth=cls._cfg_int(
+                                        cfg, "object_query_max_traverse_depth", 1)),
+                runtime)
         except Exception as e:  # noqa: BLE001
             # ⚠️ 必须打**异常类型**：TimeoutError 的 str(e) 是空串，只打 message 时
             #    日志里会是"IR 生成失败 "，完全看不出是超时（实测踩到，排查了半天）。
@@ -6536,7 +6540,9 @@ class AiQueryService:
                 and oq._resolve_object(parsed.object, allowed) == object_code):
             # 当前对象就是用户问的那个 → 把实例主键补进 IR（单对象读取 / 关系跳转需要它）
             parsed.object_key = str(object_key)
-        ir, reasons = oq.validate_ir(parsed, allowed)
+        ir, reasons = oq.validate_ir(
+            parsed, allowed,
+            max_traverse_depth=cls._cfg_int(cfg, "object_query_max_traverse_depth", 1))
         if not ir:
             log.warning("[query] 对象查询未通过校验，降级 NL2SQL：{}", "；".join(reasons[:3]))
             return None

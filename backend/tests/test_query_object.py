@@ -82,14 +82,17 @@ def test_validate_ir_rejects_unsupported_shapes():
         '{"object":"video_cameras","aggregations":[{"fn":"count"},{"fn":"min","field":"id"}]}')
     assert validate_ir(multi_agg, _allowed())[0] is None
 
+    # P3：多跳 traverse 超上限 → **截断**（保留前 N 跳），不再整条作废；
+    # 集合级 traverse（无 object_key，走 set-level pivot 收集）也放开。
     multi_hop = parse_ir(
         '{"object":"video_cameras","object_key":"1",'
         '"traverse":[{"link":"摄像机_告警记录"},{"link":"摄像机_告警记录"}]}')
-    assert validate_ir(multi_hop, _allowed())[0] is None
+    out, _reasons = validate_ir(multi_hop, _allowed())   # 默认 max_traverse_depth=1
+    assert out is not None and len(out.traverse) == 1
 
     traverse_no_key = parse_ir(
         '{"object":"video_cameras","traverse":[{"link":"摄像机_告警记录"}]}')
-    assert validate_ir(traverse_no_key, _allowed())[0] is None
+    assert validate_ir(traverse_no_key, _allowed())[0] is not None
 
 
 def test_validate_ir_rejects_empty_and_clamps_limit():

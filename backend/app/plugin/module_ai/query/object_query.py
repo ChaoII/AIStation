@@ -49,6 +49,7 @@ class ObjectQueryIR:
     order_by: list[dict] = field(default_factory=list)
     limit: int = DEFAULT_LIMIT
     object_key: str = ""
+    derived_property: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +61,7 @@ class ObjectQueryIR:
             "order_by": self.order_by,
             "limit": self.limit,
             "object_key": self.object_key,
+            "derived_property": self.derived_property,
         }
 
     @classmethod
@@ -82,6 +84,7 @@ class ObjectQueryIR:
             order_by=_list(d.get("order_by")),
             limit=_int(d.get("limit")),
             object_key=str(d.get("object_key") or "").strip(),
+            derived_property=str(d.get("derived_property") or "").strip(),
         )
 
 
@@ -145,7 +148,8 @@ def _resolve_field(val: str, fields: dict) -> str | None:
     return None
 
 
-def validate_ir(ir: ObjectQueryIR | None, allowed: dict) -> tuple[ObjectQueryIR | None, list[str]]:
+def validate_ir(ir: ObjectQueryIR | None, allowed: dict,
+                max_traverse_depth: int = 1) -> tuple[ObjectQueryIR | None, list[str]]:
     """按「授权 ∩ 检索命中」清单校验并清洗 IR。
 
     ``allowed`` 形如::
@@ -201,10 +205,22 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict) -> tuple[ObjectQueryIR 
         if not lname:
             reasons.append(f"关系 {raw or '(空)'} 不存在，已忽略")
             continue
+        # 目标过滤算子同样走词表（避免把任意 op 传进执行层）
+        _tf: list[dict] = []
+        for _f in (t.get("filters") or []):
+            if not isinstance(_f, dict):
+                continue
+            _op = str(_f.get("op") or "eq").strip().lower()
+            if _op not in IR_OPS:
+                reasons.append(f"关系过滤算子 {_op} 不支持，已忽略")
+                continue
+            _tf.append({"field": str(_f.get("field") or "").strip(),
+                        "op": _op, "value": _f.get("value")})
         keep_t.append({
             "link": lname,
             "direction": str(t.get("direction") or "auto").strip().lower(),
-            "filters": [x for x in (t.get("filters") or []) if isinstance(x, dict)],
+            "filters": _tf,
+            "as": str(t.get("as") or "").strip(),
         })
     ir.traverse = keep_t
 
@@ -253,17 +269,23 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict) -> tuple[ObjectQueryIR 
                        "dir": "desc" if str(o.get("dir") or "").lower() == "desc" else "asc"})
     ir.order_by = keep_o
 
-    # ---- 形态限制（P0）：不支持就降级，不返回半截结果 ----
+    # ---- 形态限制 ----
     if len(ir.group_by) > MAX_GROUP_BY:
         return None, ["暂不支持多字段分组"]
     if len(ir.aggregations) > MAX_AGGS:
         return None, ["暂不支持多个指标同时聚合"]
-    if len(ir.traverse) > MAX_TRAVERSE:
-        return None, ["暂不支持多跳关系"]
-    if ir.traverse and not ir.object_key:
-        return None, ["关系跳转需要指定具体对象"]
+    # P3：多跳 traverse 按上限**截断**（剔除超出的跳）而非整条作废；上限默认 1，可配 2–3。
+    max_depth = max(1, min(int(max_traverse_depth or 1), 3))
+    if len(ir.traverse) > max_depth:
+        reasons.append(f"多跳关系超过上限 {max_depth} 跳，仅保留前 {max_depth} 跳")
+        ir.traverse = ir.traverse[:max_depth]
+    # 派生属性暂只支持单个（对齐 compute_derived 的单对象、单属性语义）
+    if "," in ir.derived_property:
+        reasons.append("派生属性暂只支持单个，仅保留第一个")
+        ir.derived_property = (ir.derived_property.split(",")[0] or "").strip()
 
-    if not (ir.filters or ir.group_by or ir.aggregations or ir.traverse or ir.object_key):
+    if not (ir.filters or ir.group_by or ir.aggregations or ir.traverse
+            or ir.object_key or ir.derived_property):
         return None, ["没有可执行的查询条件"]
 
     # ---- limit ----
@@ -276,7 +298,8 @@ def validate_ir(ir: ObjectQueryIR | None, allowed: dict) -> tuple[ObjectQueryIR 
     return ir, reasons
 
 
-def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8) -> str:
+def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8,
+                     max_traverse_depth: int = 1) -> str:
     """生成"输出对象查询 JSON"的提示词。
 
     **只注入 allowed 里的对象/属性/关系**（不是全量 schema）—— 这既是 scope 收敛，
@@ -310,6 +333,8 @@ def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8) -> str:
         '  "group_by": [{"field": "字段编码", "alias": "中文列名"}],\n'
         '  "aggregations": [{"fn": "count|sum|avg|min|max", "field": "字段编码(count 可留空)", "alias": "中文列名"}],\n'
         '  "order_by": [{"field": "字段编码或聚合别名", "dir": "asc|desc"}],\n'
+        '  "traverse": [{"link": "关系名", "direction": "auto|source|target", "filters": [{"field": "对端字段编码", "op": "eq|...", "value": 值}], "as": "别名"}],\n'
+        '  "derived_property": "派生属性编码（可选）",\n'
         '  "limit": 100\n'
         "}\n\n"
         "# 硬性要求\n"
@@ -320,7 +345,10 @@ def render_ir_prompt(question: str, allowed: dict, max_objects: int = 8) -> str:
         "5. 所有聚合/分组列都要给中文 `alias`（用户会直接看到列头）。\n"
         "6. **只要问题里出现**「分布 / 统计 / 数量 / 有多少 / 几个 / 占比 / 各…的… / 每个… / 按…分组」"
         "**就必须同时给 `group_by` 与 `aggregations`**（这是最常见的统计诉求）。\n"
-        "7. **禁止**返回「filters/group_by/aggregations 全为空」的结果——那等于没查。\n\n"
+        "7. **禁止**返回「filters/group_by/aggregations 全为空」的结果——那等于没查。\n"
+        f"8. 需要「沿关系跳转到另一类对象」时用 `traverse`（可连续多跳，最多 {max_traverse_depth} 跳；"
+        "`direction` 默认 auto，`filters` 是对端过滤）。\n"
+        "9. 需要「派生属性」（如某对象的告警数/关联计数）时用 `derived_property` 填派生属性编码。\n\n"
         "# 示例\n"
         "问：统计每个区域的设备数量\n"
         '答：{"object":"devices","group_by":[{"field":"region","alias":"区域"}],'
