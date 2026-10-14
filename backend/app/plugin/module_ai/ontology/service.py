@@ -1576,6 +1576,16 @@ async def upsert_object(data: dict) -> dict:
         raise CustomException(msg=f"状态取值非法：{status}")
     if visibility not in ONT_VISIBILITY:
         raise CustomException(msg=f"可见性取值非法：{visibility}")
+    # S1：对象支撑表必须属于目标数据源的 schema（否则跨库实例查询必然失败）
+    dx = data.get("datasource_id")
+    bt = (data.get("backing_table") or "").strip() or code
+    if dx and bt:
+        from ..query import service as _qs
+
+        rows = await _qs.list_ds_schema(int(dx))
+        allowed = {r["table"] for r in rows}
+        if bt not in allowed:
+            raise CustomException(msg=f"支撑表 {bt} 不在数据源 #{dx} 的 schema 内")
     common = {
         "n": name or code, "i": data.get("icon", "el-icon-Box"),
         "k": data.get("key_prop", "id"), "np": data.get("name_prop", "name"),
