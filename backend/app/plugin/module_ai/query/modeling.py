@@ -378,11 +378,17 @@ async def generate_annotations(datasource: str, auth, max_objects: int = 12) -> 
     return {"parsed": len(anns), "saved": saved}
 
 
-async def model_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -> str:
+async def model_llm(prompt: str, *, max_tokens: int = 8000, timeout: int = 180) -> str:
     """一次建模 LLM 调用（**走 agno**，与问数同源模型）。
 
     失败一律 `log.warning` + 返回 `""`（不抛）——调用方按"无产出"处理。
+
+    ⚠️ 本机模型是**推理型**：thinking 计入 ``max_tokens``，预算给小了会被思考吃光、
+    正文为空（实测 4000 生成 12 个对象时就空了）。故：① ``max_tokens`` 给足；
+    ② ``reasoning_effort=low`` 压思考；③ 外层 ``wait_for`` 兜底超时。
     """
+    import asyncio as _asyncio
+
     try:
         from agno.agent import Agent
         from agno.models.openai.like import OpenAILike
@@ -396,14 +402,16 @@ async def model_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) 
             id=runtime["model"], base_url=runtime["base_url"],
             api_key=runtime.get("api_key") or "sk-none",
             temperature=0.0, max_tokens=max_tokens, timeout=timeout,
+            extra_body={"reasoning_effort": "low"},
             default_headers=build_headers(
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-modeling"),
         )
-        agent = Agent(model=model, telemetry=False)
-        resp = await agent.arun(prompt)
+        agent = Agent(model=model, telemetry=False, instructions=prompt)
+        resp = await _asyncio.wait_for(
+            agent.arun("请严格按上面的格式只返回 JSON。"), timeout=timeout)
         content = getattr(resp, "content", "") or ""
         if not content.strip():
-            log.warning("[modeling] LLM 返回空正文")
+            log.warning("[modeling] LLM 返回空正文（可能 thinking 吃光预算）")
         return content
     except Exception as e:  # noqa: BLE001
         log.warning(f"[modeling] LLM 调用失败 [{type(e).__name__}]: {str(e)[:120]}")
