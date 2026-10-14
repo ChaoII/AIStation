@@ -35,7 +35,8 @@ def _need_app(test_client):
 
 
 def _stub(monkeypatch, *, allowed=_ALLOWED, ir_text=_IR_OK, exec_ok=True):
-    async def _allowed(question, auth, max_objects=8, datasource="system"):
+    async def _allowed(question, auth, max_objects=8, datasource="system",
+                       prefer_object=None):
         return dict(allowed)
 
     async def _ir_llm(prompt, runtime):
@@ -134,7 +135,8 @@ def test_object_path_attempts_custom_datasource(monkeypatch):
 
     called = {"n": 0}
 
-    async def _allowed(question, auth, max_objects=8, datasource="system"):
+    async def _allowed(question, auth, max_objects=8, datasource="system",
+                       prefer_object=None):
         called["n"] += 1
         called["datasource"] = datasource
         return {}          # 无可用对象 → 仍降级，但**已构建过词表**

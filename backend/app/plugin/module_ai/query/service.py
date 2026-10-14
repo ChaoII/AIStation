@@ -6257,7 +6257,8 @@ class AiQueryService:
     # ------------------------------------------------------------------
     @classmethod
     async def _allowed_objects_for_query(cls, question: str, auth, max_objects: int = 8,
-                                         datasource: str = SYSTEM_DS) -> dict:
+                                         datasource: str = SYSTEM_DS,
+                                         prefer_object: str | None = None) -> dict:
         """构建「授权 ∩ 检索命中」的对象白名单（scope 收敛的落点）。
 
         - 系统库：只保留**已物化**（支撑表存在）且用户**有权访问**的对象类型；
@@ -6341,6 +6342,13 @@ class AiQueryService:
             if spec:
                 spec["metrics"] = {m["key"]: m for m in metrics_by_object.get(code, [])}
                 out[code] = spec
+        # 命中指标所属对象**强制包含**：数据集对象常有几百个，它很可能排在 max_objects 之外
+        # 被截掉（实测：`coal_batch` 排在 336 个对象之后 → IR 反推出它却"不在可查询范围"）。
+        if prefer_object and prefer_object not in out:
+            spec = await cls._object_spec_for(prefer_object)
+            if spec:
+                spec["metrics"] = {m["key"]: m for m in metrics_by_object.get(prefer_object, [])}
+                out[prefer_object] = spec
         return out
 
     @classmethod
@@ -6500,7 +6508,10 @@ class AiQueryService:
             api_key=runtime.get("api_key") or "sk-none",
             # ⚠️ 必须用带下限的预算：本机模型是**推理型**，thinking 计入 max_tokens，
             # 预算太小会被思考吃光 → finish_reason=length、正文为空（实测 1200 就会空）。
-            temperature=0.0, max_tokens=nl2sql_max_tokens(cfg), timeout=60,
+            # 可用 `object_query_max_tokens` 单独调大（默认沿用 NL2SQL 的预算）。
+            temperature=0.0,
+            max_tokens=cls._cfg_int(cfg, "object_query_max_tokens", nl2sql_max_tokens(cfg)),
+            timeout=60,
             # 思考压到 low：实测**原始调用** A(enable_thinking=false)=19.0s ｜
             # B(reasoning_effort=low)=10.9s ｜ C(默认)=17.8s —— low 最快，故用 low。
             # ⚠️ 注意 agno 包装会额外耗时（裸调用 11~19s，经 Agent 后 17~32s），
@@ -6510,11 +6521,25 @@ class AiQueryService:
                 runtime["base_url"], runtime.get("extra_headers"), "aistation-query-ir"),
         )
         agent = Agent(model=model, telemetry=False, instructions=prompt)
-        resp = await _asyncio.wait_for(
-            agent.arun("请按上面的格式输出对象查询 JSON。"),
-            timeout=cls._cfg_int(cfg, "object_query_call_timeout", 60),
-        )
-        return (getattr(resp, "content", "") or "").strip()
+
+        async def _call() -> str:
+            resp = await _asyncio.wait_for(
+                agent.arun("请严格按上面的格式只输出对象查询 JSON。"),
+                timeout=cls._cfg_int(cfg, "object_query_call_timeout", 60),
+            )
+            return (getattr(resp, "content", "") or "").strip()
+
+        out = await _call()
+        if not out:
+            # 偶发空正文（推理型模型把预算用在 thinking / 网关抖动）：**重试一次**。
+            # 空正文必然降级 NL2SQL，重试成本远低于降级成本。
+            log.warning("[query] IR 首次空正文，重试一次")
+            try:
+                out = await _call()
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[query] IR 重试失败 [{type(e).__name__}]: {str(e)[:100]}")
+                out = ""
+        return out
 
     @classmethod
     async def _rewrite_llm(cls, prompt: str, runtime: dict) -> str:
@@ -6663,7 +6688,8 @@ class AiQueryService:
 
         # 对象白名单：系统库按授权过滤，自定义数据源按对象归属过滤（S2 放开）
         allowed = await cls._allowed_objects_for_query(
-            question, auth, max_objects=max_objs, datasource=datasource)
+            question, auth, max_objects=max_objs, datasource=datasource,
+            prefer_object=(matched or {}).get("object_code"))
         allowed = _prioritize_metric_object(allowed, matched)
         # 「当前对象」即使没被检索命中，也**强制进词表并排在最前**：
         # 用户已经明确站在这个对象上提问，不该因为召回没命中就查不了它。

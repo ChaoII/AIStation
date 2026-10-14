@@ -13,15 +13,17 @@ def test_object_query_path_attempts_custom_ds(monkeypatch):
         async def _fake_cfg():
             return {}
 
-        async def _fake_allowed(question, auth, max_objects=8, datasource="system"):
+        async def _fake_allowed(question, auth, max_objects=8, datasource="system",
+                                prefer_object=None):
             seen["datasource"] = datasource
             return {}
 
         monkeypatch.setattr(S.AiQueryService, "_cfg", classmethod(lambda cls: _fake_cfg()))
         monkeypatch.setattr(
             S.AiQueryService, "_allowed_objects_for_query",
-            classmethod(lambda cls, q, a, max_objects=8, datasource="system":
-                        _fake_allowed(q, a, max_objects, datasource)))
+            classmethod(lambda cls, q, a, max_objects=8, datasource="system",
+                        prefer_object=None:
+                        _fake_allowed(q, a, max_objects, datasource, prefer_object)))
         auth = SimpleNamespace(user=SimpleNamespace(id=1, is_superuser=True))
         ans = await S.AiQueryService._object_query_path("各煤种批次量", 1, "ds:4", auth)
         return ans, seen
