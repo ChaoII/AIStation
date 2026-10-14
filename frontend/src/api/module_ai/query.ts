@@ -153,6 +153,10 @@ export function importDsAsOntologyBatch(
 export function getQueryRoles() {
   return request({ url: `${API_PATH}/datasources/roles`, method: "get" });
 }
+/** 筛选规则预览：提交筛选规则并返回命中/预览结果，rules 可为空（区分 None 与显式空规则）。 */
+export function previewFilterRules(datasource_id: number, rules?: any) {
+  return request({ url: `${API_PATH}/datasources/${datasource_id}/rules/preview`, method: "post", data: { rules } });
+}
 
 // 会话
 export function getQuerySessions() {
