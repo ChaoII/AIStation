@@ -2949,12 +2949,18 @@ async def instance_aggregate(object_code: str, group_by: str = "",
         rows = (await _exec_on(meta.get("datasource_id"), sql, {})).fetchall()
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "msg": f"聚合失败：{str(e)[:120]}"}
-    series = [{"label": (r[0] if gb else "合计"), "value": r[1]} for r in rows]
+    # ⚠️ 无分组时 SELECT 只产出 1 列（count(*) AS v），不能取 r[1]（越界，实测踩过）
+    if gb:
+        series = [{"label": r[0], "value": r[1]} for r in rows]
+        out_rows = [[_json_safe(r[0]), _json_safe(r[1])] for r in rows]
+    else:
+        series = [{"label": "合计", "value": r[0]} for r in rows]
+        out_rows = [["合计", _json_safe(r[0])] for r in rows]
     return {"ok": True, "object_code": object_code, "group_by": gb,
             "row_policy_applied": bool(where), "row_policy_mode": rf.get("mode"),
             "columns_restricted": bool(vis),
             "series": series, "count": len(series),
-            "rows": [[_json_safe(r[0]), _json_safe(r[1])] for r in rows]}
+            "rows": out_rows}
 
 
 async def instance_pivot(object_code: str, key: str, link_id: int, limit: int = 50,
