@@ -319,7 +319,8 @@ async def _execute_traverse(ir: ObjectQueryIR, principal: Any = None) -> dict:
             "note": f"沿 {hops} 跳关系到 {frontier_code}" + dropped}
 
 
-async def execute_ir(ir: ObjectQueryIR, principal: Any = None) -> dict:
+async def execute_ir(ir: ObjectQueryIR, principal: Any = None,
+                     metrics: dict | None = None) -> dict:
     """执行对象查询 IR。
 
     返回::
@@ -343,6 +344,30 @@ async def execute_ir(ir: ObjectQueryIR, principal: Any = None) -> dict:
         return {"ok": False, "error": f"对象 {ir.object} 未物化，无法查询"}
 
     layer_filters = _filters_to_layer(ir.filters)
+
+    # ---- 0) 绑定型指标（S2）：由「对象属性 + 聚合」确定性执行，不写 SQL ----
+    if ir.metric:
+        m = (metrics or {}).get(ir.metric) or {}
+        obj = str(m.get("object_code") or "")
+        prop = str(m.get("property_code") or "")
+        fn = str(m.get("agg_fn") or "")
+        if not (obj and fn) or (fn != "count" and not prop):
+            # 非绑定型（模板型）指标不在这里执行 → 交由调用方走模板快路径/降级
+            return {"ok": False, "error": f"指标 {ir.metric} 非绑定型，交由模板快路径"}
+        gb = ir.group_by[0]["field"] if ir.group_by else ""
+        a: dict = {"fn": fn}
+        if prop:
+            a["prop"] = prop
+        r = await ont.instance_aggregate(
+            obj, group_by=gb, aggs=[a], filters=layer_filters or None,
+            limit=ir.limit, principal=principal)
+        if not r.get("ok"):
+            return {"ok": False, "error": r.get("msg") or "指标聚合失败"}
+        col_label = (ir.group_by[0].get("alias") if ir.group_by else "") or (gb or "合计")
+        val_label = m.get("name") or f"{fn}({prop or '*'})"
+        return {"ok": True, "columns": [col_label, val_label],
+                "rows": [[_safe(x) for x in row] for row in (r.get("rows") or [])],
+                "shape": "metric-agg", "note": f"指标 {ir.metric} 口径"}
 
     # ---- 1) 派生属性（P3）：单对象、单属性（复用本体 compute_derived）----
     if ir.derived_property:
