@@ -85,6 +85,100 @@ def parse_json_objects(text: str) -> list[dict]:
     return [x for x in _salvage_objects(raw) if isinstance(x, dict)]
 
 
+_KEY_RE = re.compile(r"^[A-Za-z0-9_]+$")
+_AGG_FNS = ("count", "sum", "avg", "min", "max")
+
+
+def build_metric_prompt(objects: list[dict]) -> str:
+    """构造「生成绑定型指标」提示：只给对象与字段，要求可直接执行的口径。"""
+    lines = [
+        "你是数据指标建模专家。下面是一个业务数据源的对象与字段，",
+        "请为它们设计**可复用的绑定型指标**（指标 = 对象 + 聚合 + 可选维度）。",
+        "要求：",
+        "1) 只使用下面出现的 object_code 与字段 code；",
+        "2) key 用英文字母/数字/下划线，风格 `{对象}_{聚合}_{字段}`；",
+        "3) agg_fn ∈ count/sum/avg/min/max（count 可不需要字段，其余必须有字段）；",
+        "4) bound_dimensions 填适合分组的字段 code（可空）；",
+        '5) 严格只返回 JSON：{"metrics":[{"key","name","description","object_code",'
+        '"property_code","agg_fn","bound_dimensions"}]}。',
+        "【可用对象与字段】",
+    ]
+    for o in (objects or [])[:20]:
+        cols = ", ".join(
+            f"{f.get('code')}({f.get('name') or ''})" for f in (o.get("fields") or [])[:14])
+        lines.append(
+            f"{o.get('code')}（{o.get('name') or ''}，表 {o.get('table') or ''}）：{cols}")
+    return "\n".join(lines)
+
+
+def parse_metrics(text: str, valid_objects: dict) -> list[dict]:
+    """容错解析 LLM 产出的指标，清洗为可落库结构。
+
+    过滤：`object_code` 不在 `valid_objects`、`key` 非法字符、非 count 却缺字段。
+    """
+    out: list[dict] = []
+    for it in parse_json_objects(text):
+        key = str(it.get("key") or "").strip()
+        oc = str(it.get("object_code") or it.get("object") or "").strip()
+        if not key or not _KEY_RE.match(key):
+            continue
+        if oc not in (valid_objects or {}):
+            continue
+        fn = str(it.get("agg_fn") or it.get("agg") or "count").strip().lower()
+        if fn not in _AGG_FNS:
+            fn = "count"
+        prop = str(it.get("property_code") or it.get("field") or "").strip()
+        if fn != "count" and not prop:
+            continue
+        dims = it.get("bound_dimensions") or []
+        dims = [str(d) for d in dims if isinstance(d, (str, int)) and str(d).strip()]
+        out.append({
+            "key": key, "name": str(it.get("name") or key).strip(),
+            "description": str(it.get("description") or "").strip(),
+            "object_code": oc, "property_code": prop, "agg_fn": fn,
+            "bound_dimensions": dims,
+        })
+    return out
+
+
+async def verify_metric(metric: dict) -> dict:
+    """**执行验证**绑定型指标口径：能跑通且结果非空/非退化才通过。
+
+    验证用超级用户主体（口径能跑通与否与行策略无关）。
+    """
+    from app.plugin.module_ai.ontology import security as _sec
+    from app.plugin.module_ai.ontology import service as ont
+
+    obj = str(metric.get("object_code") or "")
+    if not obj:
+        return {"ok": False, "reason": "缺少 object_code"}
+    prop = str(metric.get("property_code") or "")
+    fn = str(metric.get("agg_fn") or "count")
+    dims = metric.get("bound_dimensions") or []
+    gb = str(dims[0]) if dims else ""
+    a: dict = {"fn": fn}
+    if prop:
+        a["prop"] = prop
+    principal = _sec.Principal(user_id=0, name="建模验证", is_superuser=True)
+    try:
+        r = await ont.instance_aggregate(obj, group_by=gb, aggs=[a], principal=principal)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "reason": f"{type(e).__name__}: {str(e)[:100]}"}
+    if not r.get("ok"):
+        return {"ok": False, "reason": r.get("msg") or "聚合失败"}
+    rows = r.get("rows") or []
+    if not rows:
+        return {"ok": False, "reason": "空结果"}
+    try:
+        from .eval_metrics import is_degenerate_result
+
+        if is_degenerate_result(rows):
+            return {"ok": False, "reason": "退化结果（无区分度）"}
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "rows": rows}
+
+
 async def model_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -> str:
     """一次建模 LLM 调用（**走 agno**，与问数同源模型）。
 
