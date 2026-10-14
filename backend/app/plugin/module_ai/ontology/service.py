@@ -35,12 +35,14 @@ _ONT_TABLES_SQL = (
     "id BIGSERIAL PRIMARY KEY, code VARCHAR(128) UNIQUE, name VARCHAR(160), "
     "icon VARCHAR(60) DEFAULT '', key_prop VARCHAR(80) DEFAULT '', name_prop VARCHAR(80) DEFAULT '', "
     "description TEXT DEFAULT '', enabled BOOLEAN DEFAULT true, "
-    "domain_code VARCHAR(80) DEFAULT '', is_deleted BOOLEAN DEFAULT false, "
+    "domain_code VARCHAR(80) DEFAULT '', is_business BOOLEAN DEFAULT true, "
+    "is_deleted BOOLEAN DEFAULT false, "
     "created_time TIMESTAMP DEFAULT now(), updated_time TIMESTAMP DEFAULT now())",
     "CREATE TABLE IF NOT EXISTS ai_ont_property ("
     "id BIGSERIAL PRIMARY KEY, object_code VARCHAR(128), name VARCHAR(160), code VARCHAR(128), "
     "prop_type VARCHAR(32) DEFAULT 'string', required BOOLEAN DEFAULT false, "
     "unique_col BOOLEAN DEFAULT false, sensitive BOOLEAN DEFAULT false, "
+    "is_business BOOLEAN DEFAULT true, "
     "source_col VARCHAR(128) DEFAULT '', options JSONB DEFAULT '[]', roles JSONB DEFAULT '[]', "
     "description TEXT DEFAULT '', is_deleted BOOLEAN DEFAULT false, "
     "created_time TIMESTAMP DEFAULT now())",
@@ -280,6 +282,7 @@ _ONT_ALTER_SQL = (
     "ALTER TABLE ai_ont_object_view ADD COLUMN IF NOT EXISTS share_mode VARCHAR(16) DEFAULT 'inherit'",
     # ---- 对象类型 ----
     "ALTER TABLE ai_ont_object ADD COLUMN IF NOT EXISTS domain_code VARCHAR(80) DEFAULT ''",
+    "ALTER TABLE ai_ont_object ADD COLUMN IF NOT EXISTS is_business BOOLEAN DEFAULT true",
     "ALTER TABLE ai_ont_object ADD COLUMN IF NOT EXISTS plural_name VARCHAR(160) DEFAULT ''",
     "ALTER TABLE ai_ont_object ADD COLUMN IF NOT EXISTS api_name VARCHAR(120) DEFAULT ''",
     "ALTER TABLE ai_ont_object ADD COLUMN IF NOT EXISTS aliases JSONB DEFAULT '[]'",
@@ -303,6 +306,7 @@ _ONT_ALTER_SQL = (
     "ALTER TABLE ai_ont_property ADD COLUMN IF NOT EXISTS render_hint VARCHAR(60) DEFAULT ''",
     "ALTER TABLE ai_ont_property ADD COLUMN IF NOT EXISTS type_class VARCHAR(60) DEFAULT ''",
     "ALTER TABLE ai_ont_property ADD COLUMN IF NOT EXISTS status VARCHAR(24) DEFAULT 'experimental'",
+    "ALTER TABLE ai_ont_property ADD COLUMN IF NOT EXISTS is_business BOOLEAN DEFAULT true",
     # ---- 关系类型 ----
     "ALTER TABLE ai_ont_link ADD COLUMN IF NOT EXISTS join_method VARCHAR(32) DEFAULT 'foreign_key'",
     "ALTER TABLE ai_ont_link ADD COLUMN IF NOT EXISTS api_name VARCHAR(120) DEFAULT ''",
