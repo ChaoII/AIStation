@@ -92,6 +92,26 @@ export function saveQueryMetric(data: any) {
 export function deleteQueryMetrics(ids: number[]) {
   return request({ url: `${API_PATH}/metrics/delete`, method: "delete", data: ids });
 }
+
+// 大模型自动建模（S4）
+export function getModelingObjects(datasource: string) {
+  return request({
+    url: `${API_PATH}/modeling/objects`,
+    method: "get",
+    params: { datasource },
+    timeout: 30000,
+  });
+}
+export function runModelingMetrics(data: {
+  datasource: string;
+  max_objects?: number;
+  dry?: boolean;
+}) {
+  return request({ url: `${API_PATH}/modeling/metrics`, method: "post", data, timeout: 180000 });
+}
+export function runModelingAnnotate(data: { datasource: string; max_objects?: number }) {
+  return request({ url: `${API_PATH}/modeling/annotate`, method: "post", data, timeout: 180000 });
+}
 export function promoteQueryMetric(data: { message_id: number; name: string; key: string }) {
   return request({ url: `${API_PATH}/metrics/promote`, method: "post", data });
 }
