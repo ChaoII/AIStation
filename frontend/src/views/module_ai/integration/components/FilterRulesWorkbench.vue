@@ -682,6 +682,13 @@ function scheduleRefresh() {
 
 // 大模型辅助：把候选/解析规则写入前端草稿（仅改草稿不落库，无需二次确认），并刷新预览、切回「规则配置」
 function applyRules(r: any) {
+  // 空对象保护：后端可能返回空对象/缺 rules，避免把草稿重置为全默认规则
+  const hasRules =
+    r && typeof r === "object" && Object.values(r).some((v) => v !== undefined && v !== null && v !== "");
+  if (!hasRules) {
+    ElMessage.warning("未返回有效规则，已取消应用");
+    return;
+  }
   rules.value = normalizeRules(r);
   doRefreshPreview();
   ElMessage.success("已应用到草稿（未落库），可回「规则配置」微调后再保存");
@@ -691,42 +698,51 @@ function applyRules(r: any) {
 // 生成候选规则：基于当前草稿交给大模型生成候选
 async function doSuggest() {
   if (!props.datasource?.id) return;
+  const myGen = gen; // 代际守卫：数据源切换后丢弃旧响应
   llmLoading.value = true;
   try {
     const r = await suggestFilterRules(props.datasource.id, rules.value);
+    if (myGen !== gen) return;
     suggestResult.value = r.data?.data?.rules || null;
   } catch (e: any) {
+    if (myGen !== gen) return;
     ElMessage.error(e?.msg || "生成候选规则失败");
   } finally {
-    llmLoading.value = false;
+    if (myGen === gen) llmLoading.value = false;
   }
 }
 
 // 自然语言解析：把自然语言描述转成筛选规则
 async function doParse() {
   if (!props.datasource?.id || !llmText.value.trim()) return;
+  const myGen = gen; // 代际守卫
   llmLoading.value = true;
   try {
     const r = await parseFilterRules(props.datasource.id, llmText.value);
+    if (myGen !== gen) return;
     parseResult.value = r.data?.data?.rules || null;
   } catch (e: any) {
+    if (myGen !== gen) return;
     ElMessage.error(e?.msg || "解析失败");
   } finally {
-    llmLoading.value = false;
+    if (myGen === gen) llmLoading.value = false;
   }
 }
 
 // 逐表逐字段分类建议：仅展示建议，不回填规则
 async function doClassify() {
   if (!props.datasource?.id) return;
+  const myGen = gen; // 代际守卫
   llmLoading.value = true;
   try {
     const r = await classifyAdvise(props.datasource.id, rules.value);
+    if (myGen !== gen) return;
     classifyResult.value = r.data?.data || null;
   } catch (e: any) {
+    if (myGen !== gen) return;
     ElMessage.error(e?.msg || "获取分类建议失败");
   } finally {
-    llmLoading.value = false;
+    if (myGen === gen) llmLoading.value = false;
   }
 }
 
