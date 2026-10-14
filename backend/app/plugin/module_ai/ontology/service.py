@@ -2568,18 +2568,33 @@ def _safe_ident(name: str) -> str:
     return n
 
 
-async def _table_columns(table: str) -> set[str]:
+async def _table_columns(table: str, datasource_id=None) -> set[str]:
     """真实表当前存在的列（用于剔除本体里已失效的属性）。
 
     **不要用 information_schema**：那是 Postgres/MySQL 专属，SQLite 上没有，
     会让"物化"判定在本项目支持的 SQLite 环境下**永远为假**（历史上就被
     ``except: return set()`` 藏住了）。这里统一走 SQLAlchemy 反射，跨方言可用。
+
+    ``datasource_id`` 非空时改为在**该数据源**上反射（对象支撑表在自定义库里）。
     """
     if not table or not _IDENT.match(table):
         return set()
     try:
         from sqlalchemy import inspect as _inspect
 
+        if datasource_id:
+            from ..query import executor as _ex
+            from ..query import service as _qs
+
+            ds = await _qs._load_ds(int(datasource_id))
+            eng = _ex.build_engine(_qs._ds_cfg_from_model(ds))
+            try:
+                async with eng.connect() as conn:
+                    cols = await conn.run_sync(
+                        lambda s: {c["name"] for c in _inspect(s).get_columns(table)})
+            finally:
+                await eng.dispose()
+            return set(cols or set())
         async with async_db_session() as db:
             cols = await db.run_sync(
                 lambda s: {c["name"] for c in _inspect(s.connection()).get_columns(table)})
@@ -2591,8 +2606,9 @@ async def _table_columns(table: str) -> set[str]:
 async def _instance_meta(code: str) -> dict:
     """实例层查询所需的对象元信息：支撑表、主键、标题、真实存在的列。"""
     r = await _exec(
-        "SELECT code,name,key_prop,name_prop,COALESCE(backing_table,''),edits_enabled "
-        "FROM ai_ont_object WHERE code=:c AND is_deleted=false", {"c": code})
+        "SELECT code,name,key_prop,name_prop,COALESCE(backing_table,''),edits_enabled,"
+        "COALESCE(datasource_id,0) FROM ai_ont_object WHERE code=:c AND is_deleted=false",
+        {"c": code})
     row = r.fetchone()
     if not row:
         return {}
@@ -2600,7 +2616,8 @@ async def _instance_meta(code: str) -> dict:
     if not _IDENT.match(table or ""):
         return {"error": f"对象 {code} 的支撑表名不合法：{table}"}
     props = await list_properties(code)
-    real_cols = await _table_columns(table)
+    ds_id = int(row[6] or 0)
+    real_cols = await _table_columns(table, datasource_id=ds_id or None)
     cols = [p["code"] for p in props if p["code"] in real_cols and _IDENT.match(p["code"])]
     key_prop = row[2] or "id"
     if key_prop not in real_cols:
@@ -2612,6 +2629,7 @@ async def _instance_meta(code: str) -> dict:
     return {
         "code": row[0], "name": row[1], "table": table, "key_prop": key_prop,
         "name_prop": name_prop, "edits_enabled": bool(row[5]),
+        "datasource_id": ds_id,
         "props": props, "cols": cols, "real_cols": real_cols,
         "materialized": bool(real_cols),
     }
@@ -2698,11 +2716,13 @@ async def instance_search(object_code: str, keyword: str = "", filters: dict | N
     wsql = ("WHERE " + " AND ".join(where)) if where else ""
     kc = _safe_ident(meta["key_prop"])
 
-    total = int((await _exec(
+    total = int((await _exec_on(
+        meta.get("datasource_id"),
         f'SELECT count(*) FROM "{table}" {wsql}', params)).scalar() or 0)
     lim = max(1, min(int(limit or 50), 500))
     off = max(0, int(offset or 0))
-    r = await _exec(
+    r = await _exec_on(
+        meta.get("datasource_id"),
         f'SELECT {collist} FROM "{table}" {wsql} ORDER BY "{kc}" LIMIT :_lim OFFSET :_off',
         {**params, "_lim": lim, "_off": off})
     rows = r.fetchall()
@@ -2754,7 +2774,9 @@ async def instance_get(object_code: str, key: str, principal: Any = None,
     cols = [_safe_ident(c) for c in meta["cols"]]
     kc = _safe_ident(meta["key_prop"])
     collist = ",".join(f'"{c}"' for c in cols)
-    r = await _exec(f'SELECT {collist} FROM "{table}" WHERE {_cast_text(_q(kc))} = :k', {"k": str(key)})
+    r = await _exec_on(meta.get("datasource_id"),
+                       f'SELECT {collist} FROM "{table}" WHERE {_cast_text(_q(kc))} = :k',
+                       {"k": str(key)})
     row = r.fetchone()
     if not row:
         return {"ok": False, "msg": f"实例 {key} 不存在"}
@@ -2914,7 +2936,7 @@ async def instance_aggregate(object_code: str, group_by: str = "",
         sql += " GROUP BY 1 ORDER BY 2 DESC"
     sql += f" LIMIT {lim}"
     try:
-        rows = (await _exec(sql, {})).fetchall()
+        rows = (await _exec_on(meta.get("datasource_id"), sql, {})).fetchall()
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "msg": f"聚合失败：{str(e)[:120]}"}
     series = [{"label": (r[0] if gb else "合计"), "value": r[1]} for r in rows]
@@ -2953,15 +2975,17 @@ async def instance_pivot(object_code: str, key: str, link_id: int, limit: int = 
     my_table, other_table = _safe_ident(mine["table"]), _safe_ident(other["table"])
     my_kc = _safe_ident(mine["key_prop"])
     mf, of = _safe_ident(my_field), _safe_ident(other_field)
-    src = (await _exec(f'SELECT "{mf}" FROM "{my_table}" WHERE {_cast_text(_q(my_kc))} = :k',
-                       {"k": str(key)})).fetchone()
+    src = (await _exec_on(mine.get("datasource_id"),
+                          f'SELECT "{mf}" FROM "{my_table}" WHERE {_cast_text(_q(my_kc))} = :k',
+                          {"k": str(key)})).fetchone()
     if not src or src[0] is None:
         return {"ok": True, "items": [], "total": 0, "link": lk, "other_object": other_code,
                 "msg": "该实例在这条关系上没有关联值"}
     cols = [_safe_ident(c) for c in other["cols"]]
     collist = ",".join(f'"{c}"' for c in cols)
     lim = max(1, min(int(limit or 50), 500))
-    r = await _exec(
+    r = await _exec_on(
+        other.get("datasource_id"),
         f'SELECT {collist} FROM "{other_table}" WHERE "{of}" = :v LIMIT :_lim',
         {"v": src[0], "_lim": lim})
     items = [_row_to_instance(other, x, cols) for x in r.fetchall()]
