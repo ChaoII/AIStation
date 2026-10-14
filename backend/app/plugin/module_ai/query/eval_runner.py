@@ -75,6 +75,7 @@ async def override_settings(overrides: dict):
     from sqlalchemy import text as _t
 
     from app.core.database import async_db_session
+
     from . import service as _svc
 
     saved: dict[str, str | None] = {}
@@ -146,19 +147,34 @@ async def _run_gold_sql(datasource: str, sql: str) -> dict:
         return {}
 
 
-async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | None = None) -> None:
+async def _pick_cases(flt: dict, datasource_override: str | None = None) -> list[dict]:
+    """按 filter 取题：``datasource/dataset/difficulty/form/scenario`` + ``limit`` + ``split``。
+
+    抽成独立函数便于单测，也把「数据集」纳入统一的取题口径（S4）。
+    """
     from .eval_set import list_cases
 
+    flt = flt or {}
+    cases = await list_cases(
+        datasource=datasource_override or flt.get("datasource"),
+        difficulty=flt.get("difficulty"),
+        form=flt.get("form"),
+        scenario=flt.get("scenario"),
+        enabled=True,
+        dataset=flt.get("dataset"),
+    )
+    if flt.get("limit"):
+        cases = cases[: int(flt["limit"])]
+    # 留出法：只跑指定分集（A/B）
+    if flt.get("split"):
+        want = str(flt["split"]).upper()
+        cases = [c for c in cases if str(c.get("split") or "").upper() == want]
+    return cases
+
+
+async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | None = None) -> None:
     try:
-        cases = await list_cases(
-            datasource=datasource_override or flt.get("datasource"),
-            difficulty=flt.get("difficulty"),
-            form=flt.get("form"),
-            scenario=flt.get("scenario"),
-            enabled=True,
-        )
-        if flt.get("limit"):
-            cases = cases[: int(flt["limit"])]
+        cases = await _pick_cases(flt, datasource_override)
         # 结果比对要用**本体列名同义表**（CODE≡编码）——每轮加载一次（进程内缓存）
         try:
             from .benchmark import load_label_synonyms
@@ -166,10 +182,6 @@ async def _run_once(run_id: str, auth, flt: dict, datasource_override: str | Non
             await load_label_synonyms()
         except Exception as e:  # noqa: BLE001
             log.warning(f"[ai-eval] 列名同义表加载失败（退化为字符串启发式）: {str(e)[:100]}")
-        # 留出法：只跑指定分集（A/B）
-        if flt.get("split"):
-            want = str(flt["split"]).upper()
-            cases = [c for c in cases if str(c.get("split") or "").upper() == want]
         _RUNS[run_id].update(total=len(cases))
         results: list[dict] = []
         schemas: dict[str, dict] = {}
@@ -297,6 +309,7 @@ def start_run(auth, filter: dict | None = None, mode: str = "full",
     from sqlalchemy import text as _t
 
     from app.core.database import async_db_session
+
     from .eval_set import ensure_eval_tables
 
     run_id = f"ev_{uuid.uuid4().hex[:12]}"

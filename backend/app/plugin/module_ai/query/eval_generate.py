@@ -269,7 +269,7 @@ async def _entity_table_map(datasource: str) -> dict[str, str]:
 
 
 async def verify_and_save(cases: list[dict], datasource: str, auth,
-                          generation_only: bool = False) -> dict:
+                          generation_only: bool = False, dataset: str = "") -> dict:
     """**执行校验后入库**：SQL 可执行且行数 > 0 才 ``verified=true`` 收录。
 
     同时识别**退化题**（金标结果为空/NULL/单值 0）：仍然收录以保留覆盖面，
@@ -303,6 +303,7 @@ async def verify_and_save(cases: list[dict], datasource: str, auth,
             notes = (notes + ",metric").strip(",")
         await upsert_case({
             **c, "datasource": datasource, "verified": True, "notes": notes,
+            "dataset": dataset,
         })
         saved += 1
     log.info(
@@ -318,7 +319,7 @@ async def verify_and_save(cases: list[dict], datasource: str, auth,
 # ---------------------------------------------------------------------------
 async def generate_round(
     datasource: str, difficulty: str, form: str, n: int, auth,
-    generation_only: bool = False,
+    generation_only: bool = False, dataset: str = "",
 ) -> dict:
     """跑**一轮**出题：LLM → 解析 → **维度以调用方为准** → 校验入库。
 
@@ -352,7 +353,8 @@ async def generate_round(
             c["expected_metric"] = by_name.get(em, "")
         else:
             c["expected_metric"] = em
-    out = await verify_and_save(cases, datasource, auth, generation_only=generation_only)
+    out = await verify_and_save(cases, datasource, auth,
+                                generation_only=generation_only, dataset=dataset)
     out["parsed"] = len(cases)
     return out
 
