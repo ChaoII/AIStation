@@ -940,7 +940,7 @@ onMounted(() => {
 }
 
 .tool-card__desc {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-regular);
 }
 

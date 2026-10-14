@@ -1,0 +1,165 @@
+{
+  "items": [
+    {
+      "type": "pageGroup",
+      "title": "Capabilities",
+      "pages": [
+        {
+          "type": "dropdownNavLink",
+          "id": "aip",
+          "link": {
+            "type": "urlLink",
+            "text": "AI Platform (AIP)",
+            "url": "/foundry/aip/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "data-integration",
+          "link": {
+            "type": "urlLink",
+            "text": "Data connectivity & integration",
+            "url": "/foundry/data-integration/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "model-integration",
+          "link": {
+            "type": "urlLink",
+            "text": "Model connectivity & development",
+            "url": "/foundry/model-integration/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "ontology",
+          "link": {
+            "type": "urlLink",
+            "text": "Ontology building",
+            "url": "/foundry/ontology/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "dev-toolchain",
+          "link": {
+            "type": "urlLink",
+            "text": "Developer toolchain",
+            "url": "/foundry/dev-toolchain/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "app-building",
+          "link": {
+            "type": "urlLink",
+            "text": "Use case development",
+            "url": "/foundry/app-building/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "observability",
+          "link": {
+            "type": "urlLink",
+            "text": "Observability",
+            "url": "/foundry/observability/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "analytics",
+          "link": {
+            "type": "urlLink",
+            "text": "Analytics",
+            "url": "/foundry/analytics/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "devops",
+          "link": {
+            "type": "urlLink",
+            "text": "Product delivery",
+            "url": "/foundry/devops/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "security",
+          "link": {
+            "type": "urlLink",
+            "text": "Security & governance",
+            "url": "/foundry/security/overview/",
+            "openInNewTab": false
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "administration",
+          "link": {
+            "type": "urlLink",
+            "text": "Management & enablement",
+            "url": "/foundry/administration/overview/",
+            "openInNewTab": false
+          }
+        }
+      ],
+      "dropdownFixedWidth": false
+    },
+    {
+      "type": "dropdownNavLink",
+      "id": "getting-started",
+      "link": {
+        "type": "urlLink",
+        "text": "Getting started",
+        "url": "/foundry/getting-started/overview/",
+        "openInNewTab": false
+      }
+    },
+    {
+      "type": "dropdownNavLink",
+      "id": "architecture-center",
+      "link": {
+        "type": "urlLink",
+        "text": "Architecture center",
+        "url": "/foundry/architecture-center/overview/",
+        "openInNewTab": false
+      }
+    },
+    {
+      "type": "pageGroup",
+      "pages": [
+        {
+          "type": "dropdownNavLink",
+          "id": "announcements",
+          "link": {
+            "type": "urlLink",
+            "url": "/foundry/announcements/",
+            "text": "Announcements"
+          }
+        },
+        {
+          "type": "dropdownNavLink",
+          "id": "release-notes",
+          "link": {
+            "type": "urlLink",
+            "url": "/foundry/announcements/release-notes/",
+            "text": "Release notes"
+          }
+        }
+      ],
+      "title": "Platform updates"
+    }
+  ]
+}

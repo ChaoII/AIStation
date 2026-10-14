@@ -475,7 +475,10 @@
           <el-input v-model="pipeForm.name" placeholder="如：燃煤台账入库" />
         </el-form-item>
         <el-form-item label="源连接">
-          <el-input v-model="pipeForm.source_connection" placeholder="留空=本系统表；填数据源 ID/编码" />
+          <el-input
+            v-model="pipeForm.source_connection"
+            placeholder="留空=本系统表；填数据源 ID/编码"
+          />
         </el-form-item>
         <el-form-item label="源表">
           <el-input v-model="pipeForm.source_table" placeholder="如：FUEL_CB_COALBALANCE" />
@@ -591,11 +594,7 @@
     </el-dialog>
 
     <!-- 新建/编辑概念 -->
-    <el-dialog
-      v-model="conceptDlg"
-      :title="conceptForm.id ? '编辑概念' : '新建概念'"
-      width="560px"
-    >
+    <el-dialog v-model="conceptDlg" :title="conceptForm.id ? '编辑概念' : '新建概念'" width="560px">
       <el-form :model="conceptForm" label-width="100px" size="small">
         <el-form-item label="概念名称">
           <el-input

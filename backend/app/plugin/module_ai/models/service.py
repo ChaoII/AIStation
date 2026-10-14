@@ -107,6 +107,7 @@ class AiModelService:
                         "base_url": base_url,
                         "api_key": api_key,
                         "model": m.model,
+                        "usage": m.usage,
                         "temperature": m.temperature,
                         "max_tokens": m.max_tokens,
                         "extra_headers": headers or None,

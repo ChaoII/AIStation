@@ -72,6 +72,14 @@ export const constantRoutes: RouteRecordRaw[] = [
     component: () => import("@/views/error/404.vue"),
     meta: { hidden: true, title: "404" },
   },
+  // 「数据资产」已并入「数据与集成」（选数据源 → 选表 → 就地维护元数据）。
+  // 保留这条重定向，避免老书签/老链接直接 404。
+  {
+    path: "/ai/asset",
+    name: "AiAssetMoved",
+    redirect: "/ai/integration",
+    meta: { hidden: true, title: "数据资产（已并入数据与集成）" },
+  },
   // Big screen display (standalone, no sidebar)
   {
     path: "/video/big-screen",

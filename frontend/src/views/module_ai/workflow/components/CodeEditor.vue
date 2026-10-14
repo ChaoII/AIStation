@@ -66,7 +66,7 @@ onBeforeUnmount(() => view?.destroy());
   overflow: hidden;
 
   :deep(.cm-editor) {
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
     min-height: 140px;
   }
 

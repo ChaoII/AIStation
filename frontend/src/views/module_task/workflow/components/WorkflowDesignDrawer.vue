@@ -64,9 +64,7 @@
                   @dragend="onDragEnd"
                 >
                   {{ item.name }}
-                  <span class="node-category-tag">
-                    [{{ getCategoryText(item.category) }}]
-                  </span>
+                  <span class="node-category-tag">[{{ getCategoryText(item.category) }}]</span>
                 </el-tag>
               </el-space>
             </div>

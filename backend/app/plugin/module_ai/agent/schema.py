@@ -16,6 +16,10 @@ class AiAgentCreateSchema(BaseModel):
     tool_ids: list[str] = Field(default_factory=list)
     skill_ids: list[int] = Field(default_factory=list)
     knowledge_ids: list[int] = Field(default_factory=list)
+    capabilities: list[str] = Field(
+        default_factory=list,
+        description="能力列表：功能标志（query/grounding/knowledge）+ 本体能力编码（本体函数/对象动作 code）",
+    )
     query_enabled: bool = False
     query_datasource: str | None = Field(default="system", max_length=64)
     input_schema: dict | None = None
@@ -38,6 +42,7 @@ class AiAgentUpdateSchema(BaseModel):
     tool_ids: list[str] | None = None
     skill_ids: list[int] | None = None
     knowledge_ids: list[int] | None = None
+    capabilities: list[str] | None = None
     query_enabled: bool | None = None
     query_datasource: str | None = Field(default=None, max_length=64)
     input_schema: dict | None = None

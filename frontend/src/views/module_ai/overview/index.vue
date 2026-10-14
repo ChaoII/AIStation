@@ -14,15 +14,10 @@
 
     <el-card shadow="never" class="ov-recent-card" style="margin-bottom: 12px">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>Compass 全局数据目录</span>
           <div class="ov-usage-row">
-            <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-              搜索 表 / 对象 / 指标 / 术语
-            </span>
-            <el-button size="small" type="primary" plain @click="router.push('/ai/chat')">
-              进入 AI 对话
-            </el-button>
+            <span class="ai-sub">搜索 表 / 对象 / 指标 / 术语</span>
           </div>
         </div>
       </template>
@@ -31,13 +26,13 @@
           v-model="compassKw"
           placeholder="输入关键词，如 摄像头 / 告警 / 订单"
           clearable
-          style="flex: 1"
+          class="flex-1"
           @keyup.enter="runCompass"
         />
         <el-button type="primary" :loading="compassLoading" @click="runCompass">搜索</el-button>
       </div>
       <template v-if="compassResult">
-        <div v-if="compassResult.assets?.length" class="gov-section" style="margin-top: 8px">
+        <div v-if="compassResult.assets?.length" class="gov-section mt-2">
           表（{{ compassResult.assets.length }}）
         </div>
         <div>
@@ -46,12 +41,12 @@
             :key="a.table"
             size="small"
             effect="plain"
-            style="margin: 0 3px 4px 0"
+            class="mr-1 mb-1"
           >
             {{ a.alias || a.table }}
           </el-tag>
         </div>
-        <div v-if="compassResult.objects?.length" class="gov-section" style="margin-top: 8px">
+        <div v-if="compassResult.objects?.length" class="gov-section mt-2">
           对象（{{ compassResult.objects.length }}）
         </div>
         <div>
@@ -61,12 +56,12 @@
             size="small"
             type="warning"
             effect="plain"
-            style="margin: 0 3px 4px 0"
+            class="mr-1 mb-1"
           >
             {{ o.name }}
           </el-tag>
         </div>
-        <div v-if="compassResult.metrics?.length" class="gov-section" style="margin-top: 8px">
+        <div v-if="compassResult.metrics?.length" class="gov-section mt-2">
           指标（{{ compassResult.metrics.length }}）
         </div>
         <div>
@@ -76,12 +71,12 @@
             size="small"
             type="primary"
             effect="plain"
-            style="margin: 0 3px 4px 0"
+            class="mr-1 mb-1"
           >
             {{ m.name }}
           </el-tag>
         </div>
-        <div v-if="compassResult.terms?.length" class="gov-section" style="margin-top: 8px">
+        <div v-if="compassResult.terms?.length" class="gov-section mt-2">
           术语（{{ compassResult.terms.length }}）
         </div>
         <div>
@@ -91,7 +86,7 @@
             size="small"
             type="info"
             effect="plain"
-            style="margin: 0 3px 4px 0"
+            class="mr-1 mb-1"
           >
             {{ t.term }}
           </el-tag>
@@ -189,7 +184,7 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>系统运行监控</template>
       <el-row v-if="runtime" :gutter="12">
         <el-col :span="4"><el-statistic title="应用" :value="runtime.apps ?? 0" /></el-col>
@@ -224,7 +219,7 @@
           <el-statistic title="近7天调用" :value="runtime.health?.calls ?? 0" />
         </el-col>
       </el-row>
-      <div v-if="runtime" class="gov-section" style="margin-top: 8px">管道运行状态</div>
+      <div v-if="runtime" class="gov-section mt-2">管道运行状态</div>
       <div v-if="runtime">
         <el-tag
           v-for="(cnt, st) in runtime.pipeline_status || {}"
@@ -249,23 +244,21 @@
       </div>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AIP 控制台 · 运行追踪</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            Agent/AI 调用运行追踪 · 用途分布 · 人工审核队列
-          </span>
+          <span class="ai-sub">Agent/AI 调用运行追踪 · 用途分布 · 人工审核队列</span>
         </div>
       </template>
-      <el-row v-if="aip" :gutter="12" style="margin-bottom: 8px">
+      <el-row v-if="aip" :gutter="12" class="mb-2">
         <el-col :span="8"><el-statistic title="运行记录" :value="aip.total ?? 0" /></el-col>
         <el-col :span="8">
           <el-statistic title="人工审核待办" :value="aip.pending_review ?? 0" />
         </el-col>
         <el-col :span="8">
           <div style="display: flex; align-items: center; gap: 6px">
-            <span style="font-size: 12px; color: var(--el-text-color-secondary)">用途分布</span>
+            <span class="ai-sub">用途分布</span>
             <el-tag
               v-for="(n, u) in aip.usage_dist || {}"
               :key="u"
@@ -305,16 +298,14 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>Agent 编排运行看板</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            运行量/错误率/延迟 + 绑定工具·技能·能力矩阵
-          </span>
+          <span class="ai-sub">运行量/错误率/延迟 + 绑定工具·技能·能力矩阵</span>
         </div>
       </template>
-      <el-row v-if="agentDash" :gutter="12" style="margin-bottom: 8px">
+      <el-row v-if="agentDash" :gutter="12" class="mb-2">
         <el-col :span="8">
           <el-statistic title="智能体总数" :value="agentDash.total_agents ?? 0" />
         </el-col>
@@ -349,13 +340,11 @@
         <el-table-column prop="avg_latency" label="延迟(ms)" width="90" align="center" />
         <el-table-column label="编排矩阵" min-width="200">
           <template #default="{ row }">
-            <el-tag size="small" effect="plain" style="margin: 0 2px 2px 0">
-              工具 {{ row.tools }}
-            </el-tag>
-            <el-tag size="small" type="warning" effect="plain" style="margin: 0 2px 2px 0">
+            <el-tag size="small" effect="plain" class="mr-1 mb-1">工具 {{ row.tools }}</el-tag>
+            <el-tag size="small" type="warning" effect="plain" class="mr-1 mb-1">
               技能 {{ row.skills }}
             </el-tag>
-            <el-tag size="small" type="info" effect="plain" style="margin: 0 2px 2px 0">
+            <el-tag size="small" type="info" effect="plain" class="mr-1 mb-1">
               知识 {{ row.knowledge }}
             </el-tag>
             <el-tag
@@ -364,7 +353,7 @@
               size="small"
               type="primary"
               effect="plain"
-              style="margin: 0 2px 2px 0"
+              class="mr-1 mb-1"
             >
               {{ cap }}
             </el-tag>
@@ -373,13 +362,11 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>安全与合规姿态</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            敏感识别 / 权限覆盖 / 数据域 / 数据质量 / 审批积压 / 调用合规
-          </span>
+          <span class="ai-sub">敏感识别 / 权限覆盖 / 数据域 / 数据质量 / 审批积压 / 调用合规</span>
         </div>
       </template>
       <div v-if="posture" class="ov-usage-row" style="margin-bottom: 8px; gap: 12px">
@@ -388,7 +375,7 @@
           type="circle"
           :width="90"
           :percentage="posture.score"
-          :color="posture.score >= 90 ? '#67C23A' : posture.score >= 70 ? '#E6A23C' : '#F56C6C'"
+          :status="posture.score >= 90 ? 'success' : posture.score >= 70 ? 'warning' : 'exception'"
         />
         <el-tag
           size="small"
@@ -412,18 +399,18 @@
             class="ov-usage-row"
             style="flex-direction: column; align-items: flex-start; gap: 4px"
           >
-            <span style="font-size: 12px; color: var(--el-text-color-secondary)">{{ d.name }}</span>
+            <span class="ai-sub">{{ d.name }}</span>
             <el-progress
               :percentage="d.score"
               :show-text="false"
-              :color="d.score >= 80 ? '#67C23A' : d.score >= 60 ? '#E6A23C' : '#F56C6C'"
-              style="width: 100%"
+              :status="d.score >= 80 ? 'success' : d.score >= 60 ? 'warning' : 'exception'"
+              class="w-full"
             />
             <b>{{ d.score }}</b>
           </div>
         </el-col>
       </el-row>
-      <div v-if="posture" class="gov-section" style="margin-top: 8px">整改项</div>
+      <div v-if="posture" class="gov-section mt-2">整改项</div>
       <div v-if="posture">
         <el-tag
           v-for="(f, i) in posture.findings"
@@ -431,20 +418,18 @@
           size="small"
           :type="f.level"
           effect="plain"
-          style="margin: 0 3px 4px 0"
+          class="mr-1 mb-1"
         >
           {{ f.msg }}
         </el-tag>
       </div>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>多智能体协作编排</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            输入问题，按本体能力分解子任务并匹配合适智能体
-          </span>
+          <span class="ai-sub">输入问题，按本体能力分解子任务并匹配合适智能体</span>
         </div>
       </template>
       <div class="compass-bar">
@@ -452,13 +437,13 @@
           v-model="orchInput"
           placeholder="如：今天有多少条告警？"
           clearable
-          style="flex: 1"
+          class="flex-1"
           @keyup.enter="runOrchestrate"
         />
         <el-button type="primary" :loading="orchLoading" @click="runOrchestrate">编排</el-button>
       </div>
       <template v-if="orchResult">
-        <div class="gov-section" style="margin-top: 8px">识别意图：{{ orchResult.intent }}</div>
+        <div class="gov-section mt-2">识别意图：{{ orchResult.intent }}</div>
         <el-steps :active="orchResult.steps.length" direction="vertical" style="margin-top: 4px">
           <el-step
             v-for="(s, i) in orchResult.steps"
@@ -467,9 +452,7 @@
             :description="`能力要求：${s.capability}`"
           />
         </el-steps>
-        <div class="gov-section" style="margin-top: 8px">
-          可参与智能体（{{ orchResult.agents_involved.length }}）
-        </div>
+        <div class="gov-section mt-2">可参与智能体（{{ orchResult.agents_involved.length }}）</div>
         <div>
           <el-tag v-if="!orchResult.agents_involved.length" size="small" type="info" effect="plain">
             未匹配到启用且具备能力属性的智能体
@@ -479,7 +462,7 @@
             :key="a.id"
             size="small"
             effect="plain"
-            style="margin: 0 3px 4px 0"
+            class="mr-1 mb-1"
           >
             {{ a.name }}（{{ a.role }}）
           </el-tag>
@@ -487,16 +470,14 @@
       </template>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AIP Autopilot 自主行动</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            规则扫描治理/质量/安全/审批，生成候选自主行动
-          </span>
+          <span class="ai-sub">规则扫描治理/质量/安全/审批，生成候选自主行动</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" :loading="autoLoading" @click="loadAutopilot">重新扫描</el-button>
         <el-button size="small" type="danger" :loading="autoFixing" @click="runAutoFix">
           一键自动修复
@@ -544,16 +525,14 @@
       </template>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>Ontology 派生指标</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            基于基础指标自动推导派生指标（分子/分母/除数规则引擎）
-          </span>
+          <span class="ai-sub">基于基础指标自动推导派生指标（分子/分母/除数规则引擎）</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" :loading="derivedLoading" @click="loadDerived">刷新</el-button>
       </div>
       <el-table :data="derived" size="small" border>
@@ -567,7 +546,7 @@
               size="small"
               type="info"
               effect="plain"
-              style="margin: 0 2px 2px 0"
+              class="mr-1 mb-1"
             >
               {{ b.name }}
             </el-tag>
@@ -578,7 +557,7 @@
             <span v-if="derivedValues[row.key]?.ok">
               {{ derivedValues[row.key].value }} {{ row.unit }}
             </span>
-            <span v-else style="color: var(--el-text-color-secondary)">—</span>
+            <span v-else class="ai-sub">—</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="90" align="center">
@@ -591,16 +570,14 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>数据安全与访问审计</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            敏感资产 · 数据源只读 · ABAC 规则 · 访问审计日志
-          </span>
+          <span class="ai-sub">敏感资产 · 数据源只读 · ABAC 规则 · 访问审计日志</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" :loading="securityLoading" @click="loadSecurity">刷新</el-button>
         <el-tag size="small" type="info" effect="plain">
           基础数据 {{ security?.assets ?? 0 }} 表 · 敏感字段 {{ security?.sensitive_fields ?? 0 }}
@@ -620,18 +597,18 @@
             class="ov-usage-row"
             style="flex-direction: column; align-items: flex-start; gap: 4px"
           >
-            <span style="font-size: 12px; color: var(--el-text-color-secondary)">{{ d.name }}</span>
+            <span class="ai-sub">{{ d.name }}</span>
             <el-progress
               :percentage="d.score"
               :show-text="false"
-              :color="d.score >= 80 ? '#67C23A' : d.score >= 60 ? '#E6A23C' : '#F56C6C'"
-              style="width: 100%"
+              :status="d.score >= 80 ? 'success' : d.score >= 60 ? 'warning' : 'exception'"
+              class="w-full"
             />
             <b>{{ d.score }}</b>
           </div>
         </el-col>
       </el-row>
-      <div v-if="security?.log_count" class="gov-section" style="margin-top: 8px">
+      <div v-if="security?.log_count" class="gov-section mt-2">
         访问审计日志（近 {{ security.log_count }} 条）
       </div>
       <el-table
@@ -664,16 +641,14 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>Ontology 派生对象</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            从启用对象的数据资产，按数据域聚类派生对象并汇总派生属性
-          </span>
+          <span class="ai-sub">从启用对象的数据资产，按数据域聚类派生对象并汇总派生属性</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" :loading="derivedObjLoading" @click="loadDerivedObj">
           刷新
         </el-button>
@@ -690,7 +665,7 @@
               :key="t"
               size="small"
               effect="plain"
-              style="margin: 0 2px 2px 0"
+              class="mr-1 mb-1"
             >
               {{ t }}
             </el-tag>
@@ -699,13 +674,13 @@
         <el-table-column prop="count" label="对象数" width="80" align="center" />
         <el-table-column label="派生属性" min-width="180">
           <template #default="{ row }">
-            <el-tag size="small" type="info" effect="plain" style="margin: 0 2px 2px 0">
+            <el-tag size="small" type="info" effect="plain" class="mr-1 mb-1">
               列 {{ row.attributes?.total_columns ?? 0 }}
             </el-tag>
-            <el-tag size="small" type="warning" effect="plain" style="margin: 0 2px 2px 0">
+            <el-tag size="small" type="warning" effect="plain" class="mr-1 mb-1">
               敏感 {{ row.attributes?.sensitive_fields ?? 0 }}
             </el-tag>
-            <el-tag size="small" type="success" effect="plain" style="margin: 0 2px 2px 0">
+            <el-tag size="small" type="success" effect="plain" class="mr-1 mb-1">
               血缘 {{ row.attributes?.lineage_count ?? 0 }}
             </el-tag>
           </template>
@@ -713,13 +688,11 @@
       </el-table>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>Compass 收藏与 AIP 插件</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            个人收藏引用 · AIP 插件/工具市场
-          </span>
+          <span class="ai-sub">个人收藏引用 · AIP 插件/工具市场</span>
         </div>
       </template>
       <el-row :gutter="12">
@@ -734,14 +707,7 @@
             >
               <div style="display: flex; align-items: center; gap: 6px; min-width: 0">
                 <el-tag size="small" type="info" effect="plain">{{ f.kind }}</el-tag>
-                <span
-                  style="
-                    font-size: 12px;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                  "
-                >
+                <span class="ai-ellipsis">
                   {{ f.ref }}
                 </span>
               </div>
@@ -752,29 +718,21 @@
         </el-col>
         <el-col :sm="24" :md="12">
           <div class="gov-section">AIP 插件（{{ plugins.length }}）</div>
-          <el-tag
-            v-for="p in plugins"
-            :key="p.key"
-            size="small"
-            effect="plain"
-            style="margin: 0 3px 4px 0"
-          >
+          <el-tag v-for="p in plugins" :key="p.key" size="small" effect="plain" class="mr-1 mb-1">
             {{ p.name }} · {{ p.kind }}
           </el-tag>
         </el-col>
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AI 异常检测与决策中心</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            按日聚合对比基线识别异常 · 汇聚行动决策建议
-          </span>
+          <span class="ai-sub">按日聚合对比基线识别异常 · 汇聚行动决策建议</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" @click="loadAnomaly">重扫异常</el-button>
         <el-button size="small" type="primary" @click="loadDecision">刷新决策</el-button>
       </div>
@@ -782,12 +740,7 @@
         <el-col :sm="24" :md="12">
           <div class="gov-section">异常（{{ anomaly?.total ?? 0 }}）</div>
           <div v-if="anomaly?.anomalies?.length">
-            <div
-              v-for="(a, i) in anomaly.anomalies"
-              :key="i"
-              class="ov-usage-row"
-              style="margin-bottom: 4px"
-            >
+            <div v-for="(a, i) in anomaly.anomalies" :key="i" class="ov-usage-row mb-1">
               <el-tag
                 size="small"
                 :type="a.severity === 'high' ? 'danger' : 'warning'"
@@ -795,7 +748,7 @@
               >
                 {{ a.type }}
               </el-tag>
-              <span style="font-size: 12px">{{ a.msg }}</span>
+              <span class="text-xs">{{ a.msg }}</span>
             </div>
           </div>
           <el-empty v-else-if="anomaly" :image-size="30" description="未见异常" />
@@ -804,7 +757,7 @@
           <div class="gov-section">决策建议（{{ decision?.total ?? 0 }}）</div>
           <div v-if="decision?.decisions?.length">
             <div v-for="(d, i) in decision.decisions" :key="i" class="decision-item">
-              <div class="ov-usage-row" style="justify-content: space-between">
+              <div class="ov-usage-row flex justify-between">
                 <b>{{ d.title }}</b>
                 <div class="ov-usage-row">
                   <el-tag
@@ -828,20 +781,18 @@
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>影响传播与数据质量规则</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            端到端影响传播（下游表/指标） · 数据质量规则引擎
-          </span>
+          <span class="ai-sub">端到端影响传播（下游表/指标） · 数据质量规则引擎</span>
         </div>
       </template>
-      <div class="compass-bar" style="margin-bottom: 8px">
+      <div class="compass-bar mb-2">
         <el-input
           v-model="propTable"
           placeholder="输入主表名，如 video_alarm_records"
-          style="flex: 1"
+          class="flex-1"
           @keyup.enter="runPropagate"
         />
         <el-button type="primary" :loading="propLoading" @click="runPropagate">影响传播</el-button>
@@ -878,7 +829,7 @@
               size="small"
               type="danger"
               effect="plain"
-              style="margin: 0 3px 4px 0"
+              class="mr-1 mb-1"
             >
               {{ t }}
             </el-tag>
@@ -891,7 +842,7 @@
               size="small"
               type="warning"
               effect="plain"
-              style="margin: 0 3px 4px 0"
+              class="mr-1 mb-1"
             >
               {{ m.name }}
             </el-tag>
@@ -906,10 +857,8 @@
             style="justify-content: space-between; margin-bottom: 4px"
           >
             <div>
-              <b style="font-size: 12px">{{ r.name }}</b>
-              <span
-                style="font-size: 12px; color: var(--el-text-color-secondary); margin-left: 6px"
-              >
+              <b class="text-xs">{{ r.name }}</b>
+              <span class="ai-sub ml-1.5">
                 {{ r.desc }}
               </span>
             </div>
@@ -927,16 +876,14 @@
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>我的数据分享</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            共享链接 · 一键复制 / 撤销
-          </span>
+          <span class="ai-sub">共享链接 · 一键复制 / 撤销</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" @click="loadShares">刷新</el-button>
         <el-tag size="small" type="info" effect="plain">{{ shares.length }} 条分享</el-tag>
       </div>
@@ -954,16 +901,14 @@
       <div v-else class="gov-empty">暂无分享，可在数据资产表格「分享」生成链接</div>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>统一活动时间线</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            AI 调用 / 动作 / 审批 统一时间线（近 7 天）
-          </span>
+          <span class="ai-sub">AI 调用 / 动作 / 审批 统一时间线（近 7 天）</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" @click="loadTimeline">刷新</el-button>
         <el-tag size="small" type="info" effect="plain">{{ timeline?.total ?? 0 }} 条事件</el-tag>
       </div>
@@ -974,8 +919,8 @@
           :timestamp="e.time"
           placement="top"
         >
-          <div class="ov-usage-row" style="justify-content: space-between">
-            <b style="font-size: 12px">{{ e.title }}</b>
+          <div class="ov-usage-row flex justify-between">
+            <b class="text-xs">{{ e.title }}</b>
             <el-tag
               size="small"
               :type="
@@ -990,32 +935,23 @@
               {{ e.result || e.kind }}
             </el-tag>
           </div>
-          <div style="font-size: 12px; color: var(--el-text-color-secondary)">
-            {{ e.detail }} · {{ e.actor }}
-          </div>
+          <div class="ai-sub">{{ e.detail }} · {{ e.actor }}</div>
         </el-timeline-item>
       </el-timeline>
       <div v-else class="gov-empty">近 7 天暂无活动</div>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>Compass 目录 · 对象关系 · 访问演练</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            数据目录分类 / 对象关系图 / 数据访问沙箱
-          </span>
+          <span class="ai-sub">数据目录分类 / 对象关系图 / 数据访问沙箱</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="8">
           <div class="gov-section">Compass 目录分类（{{ catalog?.category_count ?? 0 }}）</div>
-          <el-button
-            size="small"
-            style="margin-bottom: 4px"
-            :loading="catalogLoading"
-            @click="loadCatalog"
-          >
+          <el-button size="small" class="mb-1" :loading="catalogLoading" @click="loadCatalog">
             刷新
           </el-button>
           <div
@@ -1024,7 +960,7 @@
             class="ov-usage-row"
             style="justify-content: space-between; margin-bottom: 4px"
           >
-            <span style="font-size: 12px">{{ c.domain }}</span>
+            <span class="text-xs">{{ c.domain }}</span>
             <el-tag size="small" type="info" effect="plain">{{ c.count }}</el-tag>
           </div>
         </el-col>
@@ -1032,12 +968,7 @@
           <div class="gov-section">
             对象关系图（{{ objRel?.edge_count ?? 0 }} 边 / {{ objRel?.node_count ?? 0 }} 对象）
           </div>
-          <el-button
-            size="small"
-            style="margin-bottom: 4px"
-            :loading="objRelLoading"
-            @click="loadObjRel"
-          >
+          <el-button size="small" class="mb-1" :loading="objRelLoading" @click="loadObjRel">
             刷新
           </el-button>
           <div v-if="objRel?.edges?.length" class="obj-rel-graph">
@@ -1075,11 +1006,11 @@
         </el-col>
         <el-col :sm="24" :md="8">
           <div class="gov-section">数据访问演练（用户 {{ walkthroughId }}）</div>
-          <div class="compass-bar" style="margin-bottom: 4px">
+          <div class="compass-bar mb-1">
             <el-input-number v-model="walkthroughId" :min="0" size="small" style="width: 110px" />
             <el-button size="small" :loading="walkLoading" @click="loadWalkthrough">演练</el-button>
           </div>
-          <div v-if="walkthrough" class="ov-usage-row" style="margin-bottom: 4px">
+          <div v-if="walkthrough" class="ov-usage-row mb-1">
             <el-tag size="small" type="success" effect="plain">
               可访问 {{ walkthrough.allowed_count }}
             </el-tag>
@@ -1090,39 +1021,28 @@
               敏感可见 {{ walkthrough.can_see_sensitive ? "是" : "否" }}
             </el-tag>
           </div>
-          <div
-            v-if="walkthrough?.allowed?.length"
-            style="
-              font-size: 12px;
-              color: var(--el-text-color-secondary);
-              overflow: hidden;
-              text-overflow: ellipsis;
-              white-space: nowrap;
-            "
-          >
+          <div v-if="walkthrough?.allowed?.length" class="ai-sub ai-ellipsis">
             可访问：{{ walkthrough.allowed.map((x: any) => x.alias || x.table).join("、") }}
           </div>
         </el-col>
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AIP 安全护栏</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            ABAC / 数据域 / 敏感剔除 / 审批 / 审计 / 版本 护栏状态
-          </span>
+          <span class="ai-sub">ABAC / 数据域 / 敏感剔除 / 审批 / 审计 / 版本 护栏状态</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button size="small" @click="loadGuardrails">刷新</el-button>
         <el-progress
           :percentage="guardrails?.score ?? 0"
           :show-text="true"
           :stroke-width="12"
-          style="flex: 1"
-          :color="(guardrails?.score ?? 0) >= 80 ? '#67C23A' : '#E6A23C'"
+          class="flex-1"
+          :status="(guardrails?.score ?? 0) >= 80 ? 'success' : 'warning'"
         />
       </div>
       <el-row v-if="guardrails" :gutter="12">
@@ -1132,8 +1052,8 @@
               <CircleCheck v-if="c.enabled" />
               <CircleClose v-else />
             </el-icon>
-            <b style="font-size: 12px">{{ c.name }}</b>
-            <span style="font-size: 12px; color: var(--el-text-color-secondary)">
+            <b class="text-xs">{{ c.name }}</b>
+            <span class="ai-sub">
               {{ c.detail }}
             </span>
           </div>
@@ -1141,20 +1061,18 @@
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>对象数据浏览器</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            真实表数据分页浏览（对象实例预览）
-          </span>
+          <span class="ai-sub">真实表数据分页浏览（对象实例预览）</span>
         </div>
       </template>
-      <div class="compass-bar" style="margin-bottom: 8px">
+      <div class="compass-bar mb-2">
         <el-input
           v-model="browseTable"
           placeholder="输入表名，如 video_alarm_records"
-          style="flex: 1"
+          class="flex-1"
           @keyup.enter="
             browsePage = 1;
             loadBrowse();
@@ -1172,7 +1090,7 @@
         </el-button>
       </div>
       <template v-if="browse?.ok">
-        <div class="ov-usage-row" style="margin-bottom: 4px">
+        <div class="ov-usage-row mb-1">
           <el-tag size="small" type="info" effect="plain">
             共 {{ browse.total }} 行 · 第 {{ browse.page }} 页
           </el-tag>
@@ -1185,7 +1103,7 @@
             @current-change="loadBrowse"
           />
         </div>
-        <el-table :data="browse.rows" size="small" border max-height="320" style="width: 100%">
+        <el-table :data="browse.rows" size="small" border max-height="320" class="w-full">
           <el-table-column
             v-for="c in (browse.columns || []).slice(0, 10)"
             :key="c"
@@ -1199,16 +1117,14 @@
       <el-alert v-else-if="browse?.msg" type="error" :closable="false" :title="browse.msg" />
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AIP 数据治理报告</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            一键聚合治理总览 / 合规 / 安全 / 护栏，生成并导出 Markdown
-          </span>
+          <span class="ai-sub">一键聚合治理总览 / 合规 / 安全 / 护栏，生成并导出 Markdown</span>
         </div>
       </template>
-      <div class="ov-usage-row" style="margin-bottom: 8px">
+      <div class="ov-usage-row mb-2">
         <el-button type="primary" :loading="reportLoading" @click="loadReport">生成报告</el-button>
         <el-button :disabled="!report" @click="downloadReport">导出 MD</el-button>
         <el-tag v-if="report" size="small" type="info" effect="plain">
@@ -1216,7 +1132,7 @@
         </el-tag>
       </div>
       <template v-if="report">
-        <el-row :gutter="12" style="margin-bottom: 8px">
+        <el-row :gutter="12" class="mb-2">
           <el-col :span="8"><el-statistic title="合规" :value="report.scores.compliance" /></el-col>
           <el-col :span="8"><el-statistic title="安全" :value="report.scores.security" /></el-col>
           <el-col :span="8"><el-statistic title="护栏" :value="report.scores.guardrails" /></el-col>
@@ -1226,33 +1142,24 @@
       </template>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>资产热点与对象生命周期</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            被指标引用排行 · 对象发布状态概览
-          </span>
+          <span class="ai-sub">被指标引用排行 · 对象发布状态概览</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
           <div class="gov-section">数据资产热点（按指标引用）</div>
-          <el-button size="small" style="margin-bottom: 4px" @click="loadHotspots">刷新</el-button>
+          <el-button size="small" class="mb-1" @click="loadHotspots">刷新</el-button>
           <div
             v-for="h in (hotspots?.hot || []).slice(0, 8)"
             :key="h.table"
             class="ov-usage-row"
             style="justify-content: space-between; margin-bottom: 3px"
           >
-            <span
-              style="
-                font-size: 12px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-              "
-            >
+            <span class="ai-ellipsis">
               {{ h.alias || h.table }}
             </span>
             <el-tag size="small" type="info" effect="plain">引用 {{ h.refs }}</el-tag>
@@ -1260,7 +1167,7 @@
         </el-col>
         <el-col :sm="24" :md="12">
           <div class="gov-section">对象生命周期</div>
-          <el-button size="small" style="margin-bottom: 4px" @click="loadLifecycle">刷新</el-button>
+          <el-button size="small" class="mb-1" @click="loadLifecycle">刷新</el-button>
           <div v-if="lifecycle" class="ov-usage-row" style="margin-bottom: 6px">
             <el-tag size="small" type="success" effect="plain">对象 {{ lifecycle.objects }}</el-tag>
             <el-tag size="small" type="primary" effect="plain">
@@ -1277,7 +1184,7 @@
             :key="o.table"
             size="small"
             effect="plain"
-            style="margin: 0 3px 4px 0"
+            class="mr-1 mb-1"
           >
             {{ o.alias || o.table }}
           </el-tag>
@@ -1285,19 +1192,17 @@
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AIP 评测基准与统一审计</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
-            制品化回归对比 · 跨模块全链路审计
-          </span>
+          <span class="ai-sub">制品化回归对比 · 跨模块全链路审计</span>
         </div>
       </template>
       <el-row :gutter="12">
         <el-col :sm="24" :md="12">
           <div class="gov-section">评测基准（制品化回归）</div>
-          <div class="ov-usage-row" style="margin-bottom: 4px">
+          <div class="ov-usage-row mb-1">
             <el-button size="small" type="primary" @click="runBench">运行并固化</el-button>
             <el-button size="small" :loading="benchLoading" @click="loadBench">刷新</el-button>
           </div>
@@ -1308,7 +1213,7 @@
               class="ov-usage-row"
               style="justify-content: space-between; margin-bottom: 3px"
             >
-              <span style="font-size: 12px">
+              <span class="text-xs">
                 {{ b.name }}
                 <span style="color: var(--el-text-color-secondary)">
                   · {{ b.total }} 例 · {{ b.time }}
@@ -1342,14 +1247,7 @@
               class="ov-usage-row"
               style="justify-content: space-between; margin-bottom: 2px"
             >
-              <span
-                style="
-                  font-size: 12px;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                  white-space: nowrap;
-                "
-              >
+              <span class="ai-ellipsis">
                 {{ e.title }}
               </span>
               <el-tag
@@ -1365,11 +1263,11 @@
       </el-row>
     </el-card>
 
-    <el-card shadow="never" class="ov-recent-card" style="margin-top: 12px">
+    <el-card shadow="never" class="ov-recent-card mt-3">
       <template #header>
-        <div class="ov-usage-row" style="justify-content: space-between">
+        <div class="ov-usage-row flex justify-between">
           <span>AI 能力评估（影子回归）</span>
-          <span style="font-size: 12px; color: var(--el-text-color-secondary)">
+          <span class="ai-sub">
             每行 {input, expected_keywords[], actual}，命中关键断言即通过，输出精度
           </span>
         </div>
@@ -1380,7 +1278,7 @@
         :rows="5"
         placeholder='示例：[{"input":"订单金额总和","expected_keywords":["90500"],"actual":"订单金额总和是 90500"}]'
       />
-      <div class="ops-bar" style="margin-top: 8px">
+      <div class="ops-bar mt-2">
         <el-button type="primary" size="small" :loading="evalLoading" @click="runEval">
           运行评估
         </el-button>
@@ -1397,7 +1295,7 @@
         size="small"
         border
         max-height="220"
-        style="margin-top: 8px"
+        class="mt-2"
       >
         <el-table-column prop="input" label="输入" min-width="180" show-overflow-tooltip />
         <el-table-column label="通过" width="80" align="center">
@@ -1410,11 +1308,11 @@
       </el-table>
     </el-card>
 
-    <el-row :gutter="12" style="margin-top: 12px">
+    <el-row :gutter="12" class="mt-3">
       <el-col :span="12">
         <el-card shadow="never">
           <template #header>
-            <div class="ov-usage-row" style="justify-content: space-between">
+            <div class="ov-usage-row flex justify-between">
               <span>AI 健康（近 {{ health?.days ?? 7 }} 天）</span>
               <el-button size="small" @click="loadHealth">刷新</el-button>
             </div>
@@ -1435,7 +1333,7 @@
                 health.status === "healthy" ? "健康" : health.status === "warning" ? "预警" : "严重"
               }}
             </el-tag>
-            <div class="ov-usage-row" style="margin-top: 8px">
+            <div class="ov-usage-row mt-2">
               <span>调用</span>
               <b>{{ health.calls }}</b>
               <span>错误率</span>
@@ -1462,7 +1360,7 @@
       <el-col :span="12">
         <el-card shadow="never">
           <template #header>
-            <div class="ov-usage-row" style="justify-content: space-between">
+            <div class="ov-usage-row flex justify-between">
               <span>合规审计（近 {{ audit?.days ?? 7 }} 天）</span>
               <el-button size="small" @click="loadAudit">刷新</el-button>
             </div>
@@ -1471,7 +1369,7 @@
             <el-tag size="small" :type="audit.compliant ? 'success' : 'warning'" effect="plain">
               {{ audit.compliant ? "合规" : "存在风险" }}
             </el-tag>
-            <div class="ov-usage-row" style="margin-top: 8px">
+            <div class="ov-usage-row mt-2">
               <span>调用</span>
               <b>{{ audit.total }}</b>
               <span>未鉴权</span>
@@ -2201,6 +2099,18 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 次要说明文字：统一 12px + 次要色（替代 26 处重复的内联 style） */
+.ai-sub {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+/* 单行截断（替代重复的内联 overflow/ellipsis 组合） */
+.ai-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-overview-page {
   padding: 12px;
   overflow: auto;

@@ -14,10 +14,7 @@
     <!-- 决策 -->
     <OntDecisionView v-else-if="panel === 'decisions'" @refresh="reloadAll" />
     <!-- 对象探索 -->
-    <OntInstanceExplorer
-      v-else-if="panel === 'explore'"
-      :objects="scopedObjects"
-    />
+    <OntInstanceExplorer v-else-if="panel === 'explore'" :objects="scopedObjects" />
     <!-- 对象类型组 -->
     <OntAdvancedTypes
       v-else-if="panel === 'groups'"

@@ -220,9 +220,7 @@
               style="width: 140px"
               placeholder="0 表示不轮巡"
             />
-            <span class="field-hint">
-              秒（0 表示不轮巡）
-            </span>
+            <span class="field-hint">秒（0 表示不轮巡）</span>
           </div>
         </el-form-item>
         <el-form-item label="备注" prop="description">

@@ -3305,7 +3305,7 @@ async function handleApprove(decision: "approve" | "reject") {
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   cursor: move;
   background: #fff;
   border: 1px solid var(--el-border-color-light);
@@ -3409,7 +3409,7 @@ async function handleApprove(decision: "approve" | "reject") {
   .run-output__body {
     max-height: 220px;
     overflow: auto;
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -3445,7 +3445,7 @@ async function handleApprove(decision: "approve" | "reject") {
   padding: 32px 20px;
   text-align: center;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   line-height: 1.6;
 }
 
@@ -3461,7 +3461,7 @@ async function handleApprove(decision: "approve" | "reject") {
     max-width: 92%;
     padding: 8px 12px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
     line-height: 1.6;
   }
 
@@ -3752,7 +3752,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
     .stats-chart__title {
       margin-bottom: 6px;
-      font-size: 13px;
+      font-size: var(--el-font-size-small);
       font-weight: 600;
       color: var(--el-text-color-secondary);
     }
@@ -3780,7 +3780,7 @@ async function handleApprove(decision: "approve" | "reject") {
 
   .ctx-item {
     padding: 6px 8px;
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
     border-radius: 4px;
     cursor: pointer;
 
@@ -3964,7 +3964,7 @@ async function handleApprove(decision: "approve" | "reject") {
     gap: 8px;
     align-items: center;
     padding: 6px 8px;
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
     background: #fff;
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 6px;
@@ -4133,7 +4133,7 @@ async function handleApprove(decision: "approve" | "reject") {
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
   }
 
   .run-source-card__title {

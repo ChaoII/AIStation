@@ -10,11 +10,7 @@
       <template #header>
         <div class="ont-sec__head">
           <span class="ont-sec__title">演示数据</span>
-          <el-tag
-            size="small"
-            effect="plain"
-            :type="demoStatus?.loaded ? 'success' : 'info'"
-          >
+          <el-tag size="small" effect="plain" :type="demoStatus?.loaded ? 'success' : 'info'">
             {{ demoStatus?.loaded ? `已载入 ${demoStatus?.total ?? 0} 项` : "未载入" }}
           </el-tag>
         </div>
@@ -46,7 +42,8 @@
       >
         <template #default>
           <span v-for="(n, k) in demoReport" :key="k" class="ont-overview__hint-item">
-            {{ labelOfReport(k) }}：<b>{{ n }}</b>
+            {{ labelOfReport(k) }}：
+            <b>{{ n }}</b>
           </span>
         </template>
       </el-alert>
@@ -74,7 +71,12 @@
       </template>
       <el-form label-width="90px" label-position="left" size="small">
         <el-form-item label="数据源">
-          <el-select v-model="impDs" placeholder="选择数据源" style="width: 100%" @change="onImportDsChange">
+          <el-select
+            v-model="impDs"
+            placeholder="选择数据源"
+            style="width: 100%"
+            @change="onImportDsChange"
+          >
             <el-option
               v-for="d in datasources"
               :key="d.id"
@@ -108,11 +110,7 @@
             <div class="ont-overview__tpl-name">{{ t.name }}</div>
             <div class="ont-overview__muted">{{ t.description || "—" }}</div>
           </div>
-          <el-button
-            size="small"
-            :loading="tplLoading === t.id"
-            @click="applyTemplate(t)"
-          >
+          <el-button size="small" :loading="tplLoading === t.id" @click="applyTemplate(t)">
             应用
           </el-button>
         </div>
@@ -352,7 +350,7 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
 }
 .ont-overview__muted {
-  font-size: 12px;
+  font-size: var(--el-font-size-extra-small);
   color: var(--el-text-color-secondary);
 }
 .ont-overview__tpl {

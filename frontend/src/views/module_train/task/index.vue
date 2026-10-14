@@ -332,11 +332,7 @@
                   :value="m.model_name"
                 >
                   <span>{{ m.model_name }}</span>
-                  <span
-                    class="model-meta"
-                  >
-                    {{ m.task }} · {{ m.main_indicator || "—" }}
-                  </span>
+                  <span class="model-meta">{{ m.task }} · {{ m.main_indicator || "—" }}</span>
                 </el-option>
               </el-option-group>
             </el-select>

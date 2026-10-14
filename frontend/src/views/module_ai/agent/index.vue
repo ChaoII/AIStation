@@ -1844,7 +1844,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   font-size: 20px;
 }
 .studio-top__name {
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
@@ -1914,7 +1914,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   gap: 8px;
 }
 .cap-card__icon {
-  font-size: 18px;
+  font-size: var(--el-font-size-large);
   color: var(--el-text-color-secondary);
 }
 .cap-card--on .cap-card__icon {
@@ -1947,7 +1947,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   gap: 6px;
   padding: 8px 14px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 500;
   border: 1px solid var(--el-border-color);
   background: var(--el-fill-color-blank);
@@ -1979,7 +1979,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   padding: 20px;
   text-align: center;
   color: var(--el-text-color-placeholder);
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   border: 1px dashed var(--el-border-color);
   border-radius: 8px;
 }
@@ -2008,7 +2008,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   margin-top: 10px;
 }
 .studio-run__text {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-primary);
   white-space: pre-wrap;
   line-height: 1.6;
@@ -2041,7 +2041,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 600;
   color: var(--el-text-color-primary);
   border-bottom: 1px solid var(--el-border-color-lighter);
@@ -2089,13 +2089,13 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
 }
 .agent-chat-agent-item-name {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2115,7 +2115,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 700;
   color: #fff;
   background: linear-gradient(135deg, #667eea, #764ba2);
@@ -2155,7 +2155,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 }
 .agent-chat-sess-title {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2204,7 +2204,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   color: #fff;
   border-radius: 999px;
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   cursor: pointer;
   transition: background 0.2s;
 }
@@ -2224,13 +2224,13 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: var(--el-font-size-large);
   font-weight: 700;
   color: #fff;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
 .agent-chat-name {
-  font-size: 16px;
+  font-size: var(--el-font-size-medium);
   font-weight: 700;
 }
 .agent-chat-sub {
@@ -2285,7 +2285,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   background: var(--el-fill-color-light);
   border-radius: 10px;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   white-space: pre-wrap;
   border-left: 3px solid var(--el-color-primary);
 }
@@ -2322,7 +2322,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   font-size: 12px;
 }
 .agent-chat-tool__icon {
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 .agent-chat-tool--running {
   animation: agent-tool-pulse 1.2s ease-in-out infinite;
@@ -2333,7 +2333,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
 .agent-chat-tool-arrow {
   color: var(--el-text-color-placeholder);
   font-style: normal;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 @keyframes agent-tool-pulse {
   0%,
@@ -2352,7 +2352,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   align-items: center;
   gap: 6px;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 .agent-chat-composer {
   border-top: 1px solid var(--el-border-color-lighter);
@@ -2393,7 +2393,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   border-radius: 999px;
   background: var(--el-fill-color-blank);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-regular);
   transition: all 0.15s;
 }
@@ -2463,7 +2463,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-text-color-primary);
 }
 .cia-model-opt:hover {
@@ -2665,7 +2665,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClickChat));
     width: 44px;
     height: 44px;
     color: #fff;
-    font-size: 18px;
+    font-size: var(--el-font-size-large);
     border-radius: 10px;
   }
 

@@ -541,9 +541,7 @@
             show-input
             style="width: 200px"
           />
-          <span class="form-hint">
-            剩余 {{ 100 - trainRatio }}% 为验证集
-          </span>
+          <span class="form-hint">剩余 {{ 100 - trainRatio }}% 为验证集</span>
         </el-form-item>
         <el-alert type="info" :closable="false" show-icon>
           <template #title>将导出该数据集所有已标注图片和标注文件，打包为 ZIP 下载</template>

@@ -61,6 +61,12 @@ class AiAgentModel(ModelMixin, UserMixin):
     knowledge_ids: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=list, comment="知识库ID列表（RAG）"
     )
+    capabilities: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=list,
+        comment="能力列表：功能标志（query/grounding/knowledge）与本体能力编码（本体函数/对象动作 code）共用",
+    )
     query_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, comment="是否启用智能问数"
     )

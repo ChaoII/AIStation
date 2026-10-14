@@ -697,7 +697,7 @@ onMounted(() => {
 }
 .mg-score {
   margin-left: 8px;
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
   color: var(--el-color-warning);
 }
 .mg-down {

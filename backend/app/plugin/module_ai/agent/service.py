@@ -212,6 +212,7 @@ class AiAgentService:
                 tool_ids=data.tool_ids or [],
                 skill_ids=data.skill_ids or [],
                 knowledge_ids=data.knowledge_ids or [],
+                capabilities=getattr(data, "capabilities", None) or [],
                 query_enabled=data.query_enabled,
                 query_datasource=data.query_datasource or "system",
                 input_schema=data.input_schema,
@@ -428,7 +429,9 @@ class AiAgentService:
             grounding = [
                 s for s in ONTOLOGY_TOOL_SCHEMAS if s["function"]["name"] == "list_ontology"
             ]
-            sel_schemas, sel_names = await build_selected_ontology_tools(ont_codes)
+            # P4：按调用者权限过滤本体工具（看不到的资源不生成工具）
+            _uid = getattr(getattr(auth, "user", None), "id", None)
+            sel_schemas, sel_names = await build_selected_ontology_tools(ont_codes, _uid)
             tool_schemas = list(tool_schemas) + grounding + sel_schemas
 
             async def _dispatch(name: str, args: dict, user_id: int | None):
@@ -541,9 +544,13 @@ class AiAgentService:
         agents = await cls.list_agents()
         q = (question or "")
 
-        def _cap(agent, key):
-            caps = [str(c).lower() for c in (agent.get("capabilities") or [])]
-            return key in caps
+        # capabilities 同时承载「功能标志」与「本体能力编码」：
+        # 任何不属于功能标志的条目，都视为该智能体挂载了本体函数/动作，即具备数据问答能力。
+        feature_flags = {"query", "grounding", "knowledge", "general"}
+
+        def _has_ontology_cap(caps: list[str]) -> bool:
+            return any(c not in feature_flags for c in caps)
+
         intent = (
             "query" if any(k in q for k in ("多少", "统计", "数据", "个数", "数量", "分析", "表", "查询", "列出", "哪些", "几", "告警", "摄像头", "订单"))
             else "knowledge" if any(k in q for k in ("知识", "文档", "说明", "什么是", "介绍", "制度", "规范"))
@@ -570,7 +577,9 @@ class AiAgentService:
             if not a.get("enabled"):
                 continue
             caps_now = [str(c).lower() for c in (a.get("capabilities") or [])]
-            if intent == "query" and ("query" in caps_now or "grounding" in caps_now):
+            if intent == "query" and (
+                "query" in caps_now or "grounding" in caps_now or _has_ontology_cap(caps_now)
+            ):
                 matched.append({"id": a["id"], "name": a["agent_name"],
                                 "role": a["agent_role"] or "", "match": "query"})
             elif intent == "knowledge" and "knowledge" in caps_now:

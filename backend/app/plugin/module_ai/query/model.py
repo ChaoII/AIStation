@@ -45,6 +45,10 @@ class AiQuerySchemaModel(ModelMixin, UserMixin):
         String(64), nullable=False, comment="数据源编码"
     )
     table_name: Mapped[str] = mapped_column(String(128), nullable=False, comment="表名")
+    table_comment: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default="",
+        comment="表注释——业务库常是中文表名（如「燃煤采购结算主表」），是语义主来源"
+    )
     columns: Mapped[list | None] = mapped_column(
         JSONB, nullable=True, default=list, comment="字段 [{name,type,comment,is_sensitive}]"
     )

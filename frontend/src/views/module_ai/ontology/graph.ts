@@ -16,6 +16,8 @@ export interface OntNode {
   weight: number;
   /** 对象编码 */
   objectCode: string;
+  /** 所属本体分组键（按所属本体上色；无归属用「未分组」） */
+  category: string;
 }
 
 export interface OntEdge {
@@ -54,6 +56,7 @@ export function buildOntGraph(
       etype: "object",
       weight: Math.max(1, (o.link_count || 0) + 1),
       objectCode: o.code,
+      category: (o.domain_code || "")?.trim() || "未分组",
     });
   });
 

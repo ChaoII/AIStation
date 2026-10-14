@@ -72,9 +72,7 @@
               <el-dropdown-menu>
                 <el-dropdown-item v-for="ly in savedLayouts" :key="ly.id" :command="ly">
                   {{ ly.name }}
-                  <span class="layout-option-meta">
-                    ({{ ly.grid_type }}路)
-                  </span>
+                  <span class="layout-option-meta">({{ ly.grid_type }}路)</span>
                 </el-dropdown-item>
                 <el-dropdown-item v-if="!savedLayouts.length" disabled>暂无方案</el-dropdown-item>
               </el-dropdown-menu>
@@ -401,9 +399,7 @@
         </template>
 
         <el-form-item label="当前布局">
-          <span class="live-layout-summary">
-            {{ layoutType }}路 · {{ boundCount }} 个窗口
-          </span>
+          <span class="live-layout-summary">{{ layoutType }}路 · {{ boundCount }} 个窗口</span>
         </el-form-item>
       </el-form>
       <template #footer>

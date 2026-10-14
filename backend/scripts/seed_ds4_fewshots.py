@@ -58,6 +58,30 @@ EXAMPLES: list[tuple[str, str, str]] = [
     ("燃煤合同的合同数量合计是多少？",
      'SELECT SUM("CONTRACTAMOUNT") AS 合同数量合计 FROM "FUEL_CB_COALCONTRACT"',
      "合同数量取 CONTRACTAMOUNT（注意与结算量 BALANCEQTY 区分）"),
+    # ---- 弱项形式（实测：窗口函数 0%、多维报表 33%、排名TopN 60%）----
+    ("按煤种类型统计记录数并排名",
+     'SELECT "COALTYPE" AS 煤种类型, COUNT(*) AS 记录数, '
+     'RANK() OVER (ORDER BY COUNT(*) DESC) AS 排名 FROM "DTXY_PMXX" '
+     "GROUP BY \"COALTYPE\" ORDER BY 排名",
+     "排名：RANK() OVER (ORDER BY 聚合列 DESC)"),
+    ("化验记录最多的前 3 个品名",
+     'SELECT "VARIETY" AS 品名, COUNT(*) AS 记录数 FROM "DTXY_PMXX" '
+     "GROUP BY \"VARIETY\" ORDER BY 记录数 DESC LIMIT 3",
+     "TopN：GROUP BY + ORDER BY 聚合列 DESC + LIMIT"),
+    ("按月份统计化验数并给出累计值",
+     'SELECT TO_CHAR("ASSAYDATE", \'YYYY-MM\') AS 月份, COUNT(*) AS 化验数, '
+     'SUM(COUNT(*)) OVER (ORDER BY TO_CHAR("ASSAYDATE", \'YYYY-MM\')) AS 累计化验数 '
+     'FROM "FUEL_CMCS_ASSAY" GROUP BY 月份 ORDER BY 月份',
+     "窗口累计：SUM(聚合) OVER (ORDER BY 维度)"),
+    ("按煤种类型和品名统计记录数",
+     'SELECT "COALTYPE" AS 煤种类型, "VARIETY" AS 品名, COUNT(*) AS 记录数 '
+     'FROM "DTXY_PMXX" GROUP BY "COALTYPE", "VARIETY" ORDER BY 记录数 DESC',
+     "多维报表：多列 GROUP BY，每列都加双引号"),
+    ("各煤种类型的记录占比是多少",
+     'SELECT "COALTYPE" AS 煤种类型, '
+     'ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS 占比 FROM "DTXY_PMXX" '
+     "GROUP BY \"COALTYPE\" ORDER BY 占比 DESC",
+     "占比：COUNT(*)*100.0 / SUM(COUNT(*)) OVER ()"),
 ]
 
 

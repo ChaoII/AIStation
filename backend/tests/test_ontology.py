@@ -4,6 +4,7 @@
 """
 import asyncio
 
+import _ont_ddl
 import pytest
 
 from app.plugin.module_ai.query.service import (
@@ -29,30 +30,19 @@ class TestScanOntTables:
 # ---------------------------------------------------------------------------
 # 建本体元数据表（SQLite 兼容），供 service 级测试使用
 # ---------------------------------------------------------------------------
-DDL = {
-    "ai_ont_object": "CREATE TABLE IF NOT EXISTS ai_ont_object (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT, icon TEXT, key_prop TEXT, name_prop TEXT, description TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_property": "CREATE TABLE IF NOT EXISTS ai_ont_property (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, name TEXT, code TEXT, prop_type TEXT, required INTEGER DEFAULT 0, unique_col INTEGER DEFAULT 0, sensitive INTEGER DEFAULT 0, source_col TEXT, options TEXT, description TEXT, roles TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_link": "CREATE TABLE IF NOT EXISTS ai_ont_link (id INTEGER PRIMARY KEY AUTOINCREMENT, source_object TEXT, target_object TEXT, name TEXT, card TEXT, source_field TEXT, target_field TEXT, description TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_action": "CREATE TABLE IF NOT EXISTS ai_ont_action (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, name TEXT, code TEXT, input_schema TEXT, white_fields TEXT, approval INTEGER DEFAULT 0, target_table TEXT, method TEXT, description TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_function": "CREATE TABLE IF NOT EXISTS ai_ont_function (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, name TEXT, code TEXT, expr TEXT, description TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_capability": "CREATE TABLE IF NOT EXISTS ai_ont_capability (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT, type TEXT, description TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_version": "CREATE TABLE IF NOT EXISTS ai_ont_version (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, version INTEGER, snapshot TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_ont_change_log": "CREATE TABLE IF NOT EXISTS ai_ont_change_log (id INTEGER PRIMARY KEY AUTOINCREMENT, object_code TEXT, kind TEXT, action TEXT, detail TEXT, created_id INTEGER, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_access_rule": "CREATE TABLE IF NOT EXISTS ai_access_rule (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, attribute TEXT, value TEXT, allowed_tables TEXT, sensitive_ok INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
-    "ai_action_log": "CREATE TABLE IF NOT EXISTS ai_action_log (id INTEGER PRIMARY KEY AUTOINCREMENT, action_name TEXT, object_table TEXT, object_key TEXT, params TEXT, operator TEXT, result TEXT, detail TEXT, created_time TEXT, is_deleted INTEGER DEFAULT 0)",
-    "ai_domain": "CREATE TABLE IF NOT EXISTS ai_domain (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, code TEXT, description TEXT, tables TEXT, members TEXT, enabled INTEGER DEFAULT 1, is_deleted INTEGER DEFAULT 0)",
-    "ai_dq_report": "CREATE TABLE IF NOT EXISTS ai_dq_report (id INTEGER PRIMARY KEY AUTOINCREMENT, table_name TEXT, alias TEXT, total INTEGER, score REAL, completeness REAL, uniqueness REAL, freshness REAL, issues TEXT, checked_at TEXT, is_deleted INTEGER DEFAULT 0)",
-}
+# 建表语句统一从 _ont_ddl 取（新增表时不会再漏掉，避免测试假绿）
+ONT_DDL = _ont_ddl.ONT_DDL
 
 
 @pytest.fixture(scope="module", autouse=True)
 def _ont_tables(test_client):
     """在测试库建本体元数据表（SQLite）。"""
     async def _create():
-        from app.core.database import async_db_session
         from sqlalchemy import text as _t
+
+        from app.core.database import async_db_session
         async with async_db_session.begin() as db:
-            for ddl in DDL.values():
+            for ddl in ONT_DDL.values():
                 await db.execute(_t(ddl))
     asyncio.run(_create())
 
@@ -92,10 +82,30 @@ class TestOntologyCrud:
     def test_function_save_and_list(self, test_client, auth_headers, ontology_obj):
         test_client.post("/api/v1/ai/ontology/function/save", json={
             "object_code": "orders", "name": "平均金额", "code": "avg_amount",
-            "expr": "AVG(amount)", "description": "订单平均金额"}, headers=auth_headers)
+            "kind": "expression",
+            "expr": "total_amount / order_count",
+            "parameters": [
+                {"key": "total_amount", "name": "总金额", "type": "number", "required": True},
+                {"key": "order_count", "name": "订单数", "type": "number", "required": True},
+            ],
+            "outputs": [{"key": "avg", "name": "平均金额", "type": "number"}],
+            "description": "订单平均金额"}, headers=auth_headers)
         r = test_client.get("/api/v1/ai/ontology/functions?object_code=orders", headers=auth_headers)
         assert r.status_code == 200
-        assert any(x["code"] == "avg_amount" for x in r.json()["data"])
+        got = [x for x in r.json()["data"] if x["code"] == "avg_amount"]
+        assert got
+        # P2 新字段应能读回
+        assert got[0]["kind"] == "expression"
+        assert got[0]["outputs"][0]["key"] == "avg"
+
+    def test_function_rejects_broken_expression(self, test_client, auth_headers, ontology_obj):
+        """表达式引用了未声明变量 / 未知函数 → 保存时就应被拒绝（旧版只存不校验）。"""
+        r = test_client.post("/api/v1/ai/ontology/function/save", json={
+            "object_code": "orders", "name": "坏函数", "code": "bad_fn",
+            "expr": "AVG(amount)", "description": ""}, headers=auth_headers)
+        body = r.json()
+        msg = body.get("msg") or ""
+        assert ("AVG" in msg) or ("amount" in msg), msg
 
     def test_capability_save_and_list(self, test_client, auth_headers, ontology_obj):
         test_client.post("/api/v1/ai/ontology/capability/save", json={

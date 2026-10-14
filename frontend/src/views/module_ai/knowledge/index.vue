@@ -3578,7 +3578,7 @@ onMounted(() => {
 
     .ge-item__name {
       flex: 1;
-      font-size: 13px;
+      font-size: var(--el-font-size-small);
     }
     .ge-item__w {
       font-size: 12px;

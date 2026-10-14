@@ -403,7 +403,7 @@ function shortText(v: any, limit = 160): string {
   }
 
   .wf-node__icon {
-    font-size: 16px;
+    font-size: var(--el-font-size-medium);
   }
 
   .wf-node__label {

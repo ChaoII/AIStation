@@ -32,4 +32,17 @@ describe("buildOntGraph", () => {
     const g = buildOntGraph(objs, [...links, selfLink]);
     expect(g.edges.filter((e) => e.rtype === "自关联")).toHaveLength(1);
   });
+  it("节点带所属本体 category（按本体上色的分组键）", () => {
+    const domObjs = [
+      { code: "A", name: "客户", link_count: 1, domain_code: "sales" },
+      { code: "B", name: "订单", link_count: 1, domain_code: "sales" },
+      { code: "C", name: "设备", link_count: 1, domain_code: "iot" },
+      { code: "D", name: "未分组", link_count: 0, domain_code: "" },
+    ];
+    const g = buildOntGraph(domObjs, []);
+    const byCode = (code: string) => g.nodes.find((n) => n.objectCode === code)!;
+    expect(byCode("A").category).toBe("sales");
+    expect(byCode("C").category).toBe("iot");
+    expect(byCode("D").category).toBe("未分组");
+  });
 });

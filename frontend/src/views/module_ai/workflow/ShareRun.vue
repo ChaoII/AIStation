@@ -256,7 +256,7 @@ onMounted(() => {
 
   .share-title {
     display: block;
-    font-size: 16px;
+    font-size: var(--el-font-size-medium);
     font-weight: 600;
   }
   .share-sub {
@@ -282,7 +282,7 @@ onMounted(() => {
   padding: 30px;
   text-align: center;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--el-font-size-small);
 }
 
 .share-msg {
@@ -297,7 +297,7 @@ onMounted(() => {
     max-width: 92%;
     padding: 8px 12px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: var(--el-font-size-small);
     line-height: 1.6;
   }
 

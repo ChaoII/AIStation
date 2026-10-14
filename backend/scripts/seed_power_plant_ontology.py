@@ -214,12 +214,19 @@ async def step_semantics(ctx: Ctx, records: list[dict], ds_code: str, auth) -> N
         return
     table_names = {r["table"].upper() for r in records}
     prompt = (
-        "你是火电厂燃煤业务的数据分析师。根据下列表与中文名，给出 4 个最常用的**业务指标**"
-        "（key 用英文小写下划线；sql_template 必须是 PostgreSQL 语法、只能引用给定表、只读 SELECT、"
-        "聚合列起中文别名；unit 可为空）与 6 条**业务术语**（燃煤行业口语 → 指标 key 或 表.字段）。"
+        "你是火电厂燃煤业务的数据分析师。根据下列表、中文名与**真实字段**，给出 4 个最常用的**业务指标**"
+        "（key 用英文小写下划线；sql_template 必须是 PostgreSQL 语法、**只能使用下面给出的表名与字段名**、"
+        "只读 SELECT、聚合列起中文别名；unit 可为空）与 6 条**业务术语**"
+        "（燃煤行业口语 → 指标 key 或 表.字段）。"
         "严格只返回 JSON，不要解释：{\"metrics\":[{\"key\",\"name\",\"description\",\"sql_template\",\"unit\"}],"
         "\"terms\":[{\"term\",\"metric_key\",\"field_path\"}]}。\n"
-        + "\n".join(f"{r['table']}：{r.get('comment') or '(无中文名)'}" for r in records[:25])
+        + "\n".join(
+            f"{r['table']}（{r.get('comment') or '无中文名'}）：字段 "
+            + ", ".join(
+                f"{c.get('name')}({c.get('comment') or ''})" for c in (r.get("columns") or [])[:14]
+            )
+            for r in records[:20]
+        )
     )
     data = await _llm_json(ctx, prompt)
     if not isinstance(data, dict):

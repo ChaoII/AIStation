@@ -15,6 +15,7 @@ import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 // @ts-ignore 无类型声明
 import cytoscapeD3Force from "cytoscape-d3-force";
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { stableColor } from "../../../utils/color";
 
 cytoscape.use(cytoscapeD3Force);
 
@@ -27,6 +28,8 @@ const props = defineProps<{
     chunk_count?: number;
     x?: number | null;
     y?: number | null;
+    /** 分组键（如所属本体），供 colorMode='category' 稳定上色 */
+    category?: string;
   }[];
   edges: { source: string; target: string; rtype?: string; weight?: number }[];
   usePreset?: boolean;
@@ -36,13 +39,15 @@ const props = defineProps<{
   linkMode?: boolean;
   shortestMode?: boolean;
   physicsMode?: boolean;
+  /** 布局/适配后允许的最大 zoom（防止节点被 fit 放得过大） */
+  maxZoom?: number;
   edgeStyle?: {
     lineStyle?: "solid" | "dashed" | "dotted";
     curve?: "bezier" | "straight" | "taxi";
     arrow?: "triangle" | "vee" | "circle" | "none";
     widthMode?: "weight" | "fixed";
     fixedWidth?: number;
-    colorMode?: "type" | "single";
+    colorMode?: "type" | "single" | "category";
     singleColor?: string;
     label?: "show" | "nondefault" | "hover" | "none";
     opacity?: number;
@@ -53,7 +58,7 @@ const props = defineProps<{
     fixedSize?: number;
     shapeMode?: "type" | "uniform";
     uniformShape?: "ellipse" | "round-rectangle" | "diamond" | "circle";
-    colorMode?: "type" | "single";
+    colorMode?: "type" | "single" | "category";
     singleColor?: string;
     labelSize?: number;
   };
@@ -167,6 +172,25 @@ const THEMES: Record<string, any> = {
     grid: "#e2e4e7",
   },
 };
+
+// 节点 / 边分类色（主题无关）：切换主题只改变背景网格，节点与边的分类颜色保持稳定。
+const NODE_COLORS: Record<string, string> = {
+  keyword: "#4a86f7",
+  annotation: "#f7a733",
+  custom: "#5ac66b",
+  other: "#a0a6ad",
+};
+const RELATION_COLORS: Record<string, string> = {
+  属于: "#5ac66b",
+  包含: "#4a86f7",
+  依赖: "#f7a733",
+  相关: "#a8abb3",
+  引用: "#7f8fa6",
+  位于: "#3f9ad6",
+  用于: "#e6b455",
+  关联: "#f7a733",
+  default: "#a8abb3",
+};
 const NS = computed(() => ({
   sizeMode: props.nodeStyle?.sizeMode || "weight",
   fixedSize: props.nodeStyle?.fixedSize || 22,
@@ -180,17 +204,15 @@ function palette() {
   return THEMES[props.theme || "default"] || THEMES.default;
 }
 function nodeColorFor(etype?: string, hasChunk = false) {
-  const p = palette();
   if (NS.value.colorMode === "single") return NS.value.singleColor;
-  if (hasChunk || etype === "annotation") return p.node.annotation;
-  if (etype === "custom") return p.node.custom;
-  if (etype === "keyword" || !etype) return p.node.keyword;
-  return p.node.other;
+  if (hasChunk || etype === "annotation") return NODE_COLORS.annotation;
+  if (etype === "custom") return NODE_COLORS.custom;
+  if (etype === "keyword" || !etype) return NODE_COLORS.keyword;
+  return NODE_COLORS.other;
 }
 function edgeColor(rtype?: string) {
-  const p = palette();
-  if (p.edge[rtype || ""]) return p.edge[rtype || ""];
-  return p.edge.default || "#a8abb3";
+  if (RELATION_COLORS[rtype || ""]) return RELATION_COLORS[rtype || ""];
+  return RELATION_COLORS.default || "#a8abb3";
 }
 function nodeSize(weight?: number) {
   return NS.value.sizeMode === "fixed" ? NS.value.fixedSize : 14 + Math.min(weight || 1, 20) * 1.2;
@@ -221,6 +243,21 @@ const ES = computed(() => ({
   opacity: props.edgeStyle?.opacity ?? 0.75,
 }));
 
+/** 节点填充色：category 模式按分组键稳定上色（本体按所属本体、知识库按实体类型） */
+function nodeFill(ele: any) {
+  if (NS.value.colorMode === "category") {
+    return stableColor(ele.data("category") || ele.data("name"));
+  }
+  return nodeColorFor(ele.data("etype"), ele.data("chunk_count") > 0);
+}
+/** 边填充色：category 模式按关系名稳定上色 */
+function edgeFill(ele: any) {
+  if (ES.value.colorMode === "category") {
+    return stableColor(ele.data("rtype") || "");
+  }
+  return edgeColor(ele.data("rtype"));
+}
+
 function buildElements(): ElementDefinition[] {
   const nodes = props.nodes.map((n) => ({
     data: {
@@ -230,6 +267,7 @@ function buildElements(): ElementDefinition[] {
       etype: n.etype || "keyword",
       weight: n.weight || 1,
       chunk_count: n.chunk_count || 0,
+      category: n.category || n.etype || "未分组",
     },
     position: n.x != null && n.y != null ? { x: n.x, y: n.y } : undefined,
   }));
@@ -260,8 +298,7 @@ const graphStyle: any[] = [
       width: (ele: any) => nodeSize(ele.data("weight")),
       height: (ele: any) => nodeSize(ele.data("weight")),
       shape: (ele: any) => nodeShape(ele.data("etype")),
-      "background-color": (ele: any) =>
-        nodeColorFor(ele.data("etype"), ele.data("chunk_count") > 0),
+      "background-color": (ele: any) => nodeFill(ele),
       "border-width": 2,
       "border-color": "#ffffff",
       "shadow-blur": 8,
@@ -278,13 +315,11 @@ const graphStyle: any[] = [
         ES.value.widthMode === "fixed"
           ? ES.value.fixedWidth
           : 1.5 + Math.min(ele.data("weight") || 1, 5) * 0.6,
-      "line-color": (ele: any) =>
-        ES.value.colorMode === "single" ? ES.value.singleColor : edgeColor(ele.data("rtype")),
+      "line-color": (ele: any) => edgeFill(ele),
       "line-style": ES.value.lineStyle,
       "curve-style": ES.value.curve,
       "target-arrow-shape": ES.value.arrow,
-      "target-arrow-color": (ele: any) =>
-        ES.value.colorMode === "single" ? ES.value.singleColor : edgeColor(ele.data("rtype")),
+      "target-arrow-color": (ele: any) => edgeFill(ele),
       "arrow-scale": 0.9,
       label: (ele: any) => {
         const mode = ES.value.label;
@@ -307,8 +342,8 @@ const graphStyle: any[] = [
     style: {
       opacity: 1,
       width: 4,
-      "line-color": "#409eff",
-      "target-arrow-color": "#409eff",
+      "line-color": (ele: any) => edgeFill(ele),
+      "target-arrow-color": (ele: any) => edgeFill(ele),
       label: "data(label)",
     },
   },
@@ -327,10 +362,6 @@ const graphStyle: any[] = [
   {
     selector: "edge.dim",
     style: { opacity: 0.05 },
-  },
-  {
-    selector: "edge.hovered",
-    style: { opacity: 1, width: 3, "line-color": "#409eff" },
   },
   {
     selector: "node:selected",
@@ -531,7 +562,8 @@ function bind() {
       pos.y - 12
     );
   });
-  c.on("mouseout", "edge", () => {
+  c.on("mouseout", "edge", (e) => {
+    e.target.removeClass("hovered");
     hideTooltip();
   });
   // 单击节点
@@ -735,14 +767,20 @@ function applyElements() {
 }
 
 onMounted(() => {
+  // 仅当节点带坐标（preset）才在初始布局时 fit；否则 preset 会把无坐标节点放原点
+  // 再 fit 到极限（首帧被放大），这里改为不 fit，等 runLayout 的正式布局再自适应。
+  const hasPreset = props.usePreset && props.nodes.every((n) => n.x != null && n.y != null);
   cy = cytoscape({
     container: container.value,
     elements: buildElements(),
     style: graphStyle,
-    layout: { name: "preset", fit: true, padding: 30 },
+    layout: { name: "preset", fit: hasPreset, padding: 30 },
   });
+  if (props.maxZoom != null) cy.maxZoom(props.maxZoom);
   bind();
   runLayout();
+  // 鼠标移出整个图时兜底隐藏 tooltip（否则 node mouseout 不触发会残留）
+  container.value?.addEventListener("mouseleave", hideTooltip);
 });
 
 watch(
@@ -787,6 +825,7 @@ function png(): string {
 defineExpose({ emitPositions, png, setLayout, fit, center, zoom, search });
 
 onBeforeUnmount(() => {
+  container.value?.removeEventListener("mouseleave", hideTooltip);
   cy?.destroy();
   cy = null;
 });
@@ -807,7 +846,7 @@ onBeforeUnmount(() => {
   border: 1px solid #eef1f5;
 }
 .graph-tooltip {
-  position: fixed;
+  position: absolute;
   z-index: 4000;
   pointer-events: none;
   background: rgba(45, 55, 72, 0.92);
