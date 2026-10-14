@@ -155,6 +155,35 @@ async def _load_ds(datasource_id: int):
         return ds
 
 
+async def _norm_datasource(datasource) -> str | None:
+    """把数据源入参**归一化**为后端口径：``system`` / ``ds:{id}``。
+
+    背景（实测踩坑）：前端下拉的 `:value` 用的是**数据源编码**（如 ``ezdcs_pg``），
+    而后端语义层（指标 `datasource`、`list_ds_schema`、`_execute_custom_ds_sql`）
+    统一用 ``ds:{id}``。不归一化会导致 `int('ezdcs_pg')` 报错、
+    ``list_metrics('ezdcs_pg')`` 匹配不到任何指标。
+
+    接受 ``None``/``''``（→None，表示不限）、``system``、``ds:{id}``、编码（→查 id）。
+    """
+    from sqlalchemy import text as _t
+
+    ds = str(datasource or "").strip()
+    if not ds:
+        return None
+    if ds == SYSTEM_DS or ds.startswith("ds:"):
+        return ds
+    try:
+        async with async_db_session() as db:
+            row = (await db.execute(_t(
+                "SELECT id FROM ai_query_datasources WHERE code=:c AND is_deleted=false"),
+                {"c": ds})).fetchone()
+        if row:
+            return _ds_code(int(row[0]))
+    except Exception:  # noqa: BLE001
+        pass
+    return ds
+
+
 async def _ensure_marking_columns(db):
     """幂等补齐 Task3 打标/枚举列（本项目 ai_* 表不走 Alembic，用 ADD COLUMN IF NOT EXISTS）。
 
@@ -1321,6 +1350,7 @@ class AiQueryService:
     @classmethod
     async def list_metrics(cls, datasource: str | None = None) -> list[dict]:
         await cls.ensure_system_seed()
+        datasource = await _norm_datasource(datasource)
         async with async_db_session() as db:
             from sqlalchemy import select
 
@@ -1378,6 +1408,8 @@ class AiQueryService:
         global _SETTINGS_CACHE, _SEMANTIC_INDEX, _ASSET_TMETA
 
         from . import modeling as _m
+
+        datasource = await _norm_datasource(datasource)
 
         if kind == "metrics":
             out = await _m.generate_metrics(datasource, auth, max_objects=max_objects, dry=dry)
@@ -5986,6 +6018,7 @@ class AiQueryService:
         """主入口：意图路由 → 快/慢路径 → 执行 → 落库。"""
         await cls.ensure_system_seed()
         question = (question or "").strip()
+        datasource = await _norm_datasource(datasource)
         # 当前对象上下文：**确定性注入**（对齐 Palantir Retrieval Context）。
         # ⚠️ 每次调用都**显式设置**（没有对象时置空）——否则同一个任务里连续调用 ask
         #    （如评测逐题跑）会把上一题的上下文带进下一题。
@@ -7017,6 +7050,7 @@ class AiQueryService:
         if not question:
             yield {"type": "error", "message": "请输入要查询的问题"}
             return
+        datasource = await _norm_datasource(datasource)
         # 当前对象上下文：与 ask() 同款，**显式设置**（每次调用都覆盖，避免串题）
         _OBJECT_CTX.set(await cls._object_context_block(object_code, object_key, auth))
         sess = await cls.get_or_create_session(session_id, question[:30], auth)
