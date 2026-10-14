@@ -448,6 +448,45 @@ async def _exec_write(sql: str, params: dict | None = None):
         return await db.execute(_t(sql), params or {})
 
 
+class _Rows:
+    """`_exec_on` 的返回值包装：在连接内取好行，出连接后仍可 fetch。"""
+
+    def __init__(self, rows: list) -> None:
+        self._rows = list(rows)
+
+    def fetchall(self) -> list:
+        return list(self._rows)
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def scalar(self):
+        row = self.fetchone()
+        return row[0] if row is not None else None
+
+
+async def _exec_on(datasource_id, sql: str, params: dict | None = None) -> _Rows:
+    """按对象的 `datasource_id` 选择执行引擎：空→系统主库；非空→该数据源。
+
+    数据源引擎**用完即 dispose**（避免连接泄漏）。延迟导入 query 模块，
+    避免 `ontology ↔ query` 循环导入。
+    """
+    if not datasource_id:
+        res = await _exec(sql, params)
+        return _Rows(res.fetchall())
+    from ..query import executor as _ex
+    from ..query import service as _qs
+
+    ds = await _qs._load_ds(int(datasource_id))
+    eng = _ex.build_engine(_qs._ds_cfg_from_model(ds))
+    try:
+        async with eng.connect() as conn:
+            res = await conn.execute(_t(sql), params or {})
+            return _Rows(res.fetchall())
+    finally:
+        await eng.dispose()
+
+
 # ---------------------------------------------------------------------------
 # 本体（Ontology Domain）：对象类型的顶层容器
 #
