@@ -125,6 +125,9 @@
                 <el-tag size="small" effect="plain">
                   {{ pathLabel(m) }}
                 </el-tag>
+                <el-tag v-if="m.metric?.name" size="small" type="success" effect="plain">
+                  指标：{{ m.metric.name }}
+                </el-tag>
                 <span v-if="m.evidence?.source" class="q-msg__src">
                   {{ m.evidence.source }}
                 </span>

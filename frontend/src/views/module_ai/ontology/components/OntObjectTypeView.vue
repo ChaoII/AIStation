@@ -402,6 +402,30 @@
     <!-- ============ 导入 / 导出 ============ -->
     <OntImportExport v-else-if="page === 'importexport'" :code="props.code" />
 
+    <!-- ============ 指标（绑定到该对象的指标，S4） ============ -->
+    <section v-else-if="page === 'metrics'" class="ont-sec">
+      <div class="ont-sec__head">
+        <span class="ont-sec__title">指标</span>
+      </div>
+      <el-table v-loading="metricsLoading" :data="objectMetrics" size="small" border>
+        <el-table-column prop="name" label="指标名称" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="key" label="指标 key" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="agg_fn" label="聚合" width="90" />
+        <el-table-column label="维度" min-width="140">
+          <template #default="{ row }">
+            <span v-if="row.bound_dimensions?.length">
+              {{ row.bound_dimensions.join("、") }}
+            </span>
+            <span v-else class="ont-none">—</span>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty
+        v-if="!metricsLoading && !objectMetrics.length"
+        description="该对象暂无绑定指标（可在「数据与集成 / 语义建模」生成）"
+      />
+    </section>
+
     <!-- ============ Usage 子页 ============ -->
     <section v-else-if="page === 'usage'" class="ont-sec">
       <div class="ont-sec__head">
@@ -687,6 +711,7 @@ import {
   materializeOntObject,
 } from "@/api/module_ai/ontology";
 import { useOntologyData } from "../composables/useOntologyData";
+import { getQueryMetrics } from "@/api/module_ai/query";
 import OntTypeLinkGraph from "./OntTypeLinkGraph.vue";
 import OntObjectFunctions from "./OntObjectFunctions.vue";
 import OntObjectVersions from "./OntObjectVersions.vue";
@@ -730,6 +755,7 @@ const TABS = [
   { value: "versions", label: "版本历史" },
   { value: "cleanup", label: "清理建议" },
   { value: "importexport", label: "导入导出" },
+  { value: "metrics", label: "指标" },
 ];
 const activeTab = computed({
   get: () => props.page || "overview",
@@ -742,6 +768,37 @@ const obj = computed(() => objectByCode(props.code));
 const rels = computed(() => linksOf(props.code));
 const acts = computed(() => actionsOf(props.code));
 const funs = computed(() => functionsOf(props.code));
+
+/* ---------- 绑定指标（S4） ---------- */
+const objectMetrics = ref<any[]>([]);
+const metricsLoading = ref(false);
+
+async function loadObjectMetrics() {
+  if (!props.code) {
+    objectMetrics.value = [];
+    return;
+  }
+  const ds = obj.value?.datasource_id ? `ds:${obj.value.datasource_id}` : "system";
+  metricsLoading.value = true;
+  try {
+    const r: any = await getQueryMetrics(ds);
+    const all = r?.data?.data ?? r?.data ?? [];
+    objectMetrics.value = (Array.isArray(all) ? all : []).filter(
+      (m: any) => m.object_code === props.code
+    );
+  } catch {
+    objectMetrics.value = [];
+  } finally {
+    metricsLoading.value = false;
+  }
+}
+
+watch(
+  () => [props.page, props.code],
+  () => {
+    if (props.page === "metrics") loadObjectMetrics();
+  }
+);
 
 function domainName(code: string) {
   return domains.value.find((d: any) => d.code === code)?.name || code;
