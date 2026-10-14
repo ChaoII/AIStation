@@ -3,7 +3,7 @@
   <div class="app-container ai-mod ai-integration-page">
     <el-row :gutter="12" class="ig-fill">
       <!-- 左：数据源（纵向列表，仿「本体」左侧导航） -->
-      <el-col :span="7" class="ig-fill">
+      <el-col :xs="24" :sm="8" :md="6" :lg="5" class="ig-fill">
         <el-card shadow="never" class="ig-card">
           <template #header>
             <div class="ig-head">
@@ -45,13 +45,12 @@
       </el-col>
 
       <!-- 右：选中数据源的详情 -->
-      <el-col :span="17" class="ig-fill">
+      <el-col :xs="24" :sm="16" :md="18" :lg="19" class="ig-fill">
         <el-card shadow="never" class="ig-card">
           <el-tabs v-model="tab" class="ig-tabs">
             <!-- 表与字段：核心——选表后就地维护 -->
             <el-tab-pane label="表与字段" name="table">
-              <div class="ig-split">
-                <!-- 表清单 -->
+                <!-- 表清单：铺满 tab 高度，超出滚动 -->
                 <div class="ig-tables">
                   <div class="ig-bar">
                     <el-input
@@ -73,6 +72,7 @@
                     </el-button>
                     <el-button size="small" :icon="EditPen" @click="openBatch">批量维护</el-button>
                     <el-switch v-model="hideSys" active-text="只看业务表" />
+                    <el-switch v-model="hideUnmaintained" active-text="只看已维护" />
                     <span class="ig-bar__gap" />
                     <el-select
                       v-model="importDomain"
@@ -103,30 +103,65 @@
                     size="small"
                     border
                     height="100%"
-                    highlight-current-row
-                    @current-change="pickTable"
+                    row-key="table"
                   >
                     <template #empty>
                       <el-empty :description="tableEmptyText" :image-size="50" />
                     </template>
-                    <el-table-column label="表" min-width="180" show-overflow-tooltip>
+                    <el-table-column label="表名" min-width="200" show-overflow-tooltip>
                       <template #default="{ row }">
                         <div class="ig-tname">{{ row.table }}</div>
                         <div v-if="row.comment" class="ig-tcmt">{{ row.comment }}</div>
                       </template>
                     </el-table-column>
-                    <el-table-column label="字段" width="64" align="center">
+                    <el-table-column label="中文名" min-width="140" show-overflow-tooltip>
+                      <template #default="{ row }">{{ row.alias || "-" }}</template>
+                    </el-table-column>
+                    <el-table-column label="业务域" min-width="120" show-overflow-tooltip>
+                      <template #default="{ row }">{{ row.domain || "-" }}</template>
+                    </el-table-column>
+                    <el-table-column label="业务描述" min-width="180" show-overflow-tooltip>
+                      <template #default="{ row }">{{ row.description || "-" }}</template>
+                    </el-table-column>
+                    <el-table-column label="业务场景" min-width="140" show-overflow-tooltip>
+                      <template #default="{ row }">{{ row.business_scenarios || "-" }}</template>
+                    </el-table-column>
+                    <el-table-column label="字段数" width="70" align="center">
                       <template #default="{ row }">{{ row.column_count ?? "-" }}</template>
+                    </el-table-column>
+                    <el-table-column label="纳入" width="64" align="center">
+                      <template #default="{ row }">
+                        <el-tag size="small" :type="row.included === false ? 'info' : 'success'" effect="plain">
+                          {{ row.included === false ? "否" : "是" }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="系统/业务" width="92" align="center">
+                      <template #default="{ row }">
+                        <el-tag size="small" :type="row.is_system ? 'warning' : 'success'" effect="plain">
+                          {{ row.is_system ? "系统表" : "业务表" }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="90" align="center" fixed="right">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="openFieldDrawer(row)">
+                          字段
+                        </el-button>
+                      </template>
                     </el-table-column>
                   </el-table>
                 </div>
 
-                <!-- 选中表的元数据 + 字段 -->
-                <div class="ig-detail">
-                  <template v-if="!curTable">
-                    <el-empty description="请从左侧选择一张表" :image-size="60" />
-                  </template>
-                  <template v-else>
+                <!-- 选中表：抽屉里做元数据 + 字段维护 -->
+                <el-drawer
+                  v-model="fieldDrawer"
+                  :title="`字段维护：${curTable || ''}`"
+                  size="600px"
+                  append-to-body
+                  class="ig-field-drawer"
+                >
+                  <div class="ig-detail ig-detail-drawer">
                     <div class="ig-bar">
                       <span class="ig-title">{{ curTable }}</span>
                       <el-tag
@@ -168,19 +203,13 @@
                         导入为本体对象
                       </el-button>
                     </div>
-                    <el-form :model="tmeta" label-width="86px" size="small" class="ig-form">
-                      <el-row :gutter="8">
-                        <el-col :span="12">
-                          <el-form-item label="中文名">
-                            <el-input v-model="tmeta.alias" placeholder="如：燃煤采购结算主表" />
-                          </el-form-item>
-                        </el-col>
-                        <el-col :span="12">
-                          <el-form-item label="业务域">
-                            <el-input v-model="tmeta.domain" placeholder="如：燃煤/设备/人员" />
-                          </el-form-item>
-                        </el-col>
-                      </el-row>
+                    <el-form :model="tmeta" label-width="100px" size="small" class="ig-form">
+                      <el-form-item label="中文名">
+                        <el-input v-model="tmeta.alias" placeholder="如：燃煤采购结算主表" />
+                      </el-form-item>
+                      <el-form-item label="业务域">
+                        <el-input v-model="tmeta.domain" placeholder="如：燃煤/设备/人员" />
+                      </el-form-item>
                       <el-form-item label="业务描述">
                         <el-input
                           v-model="tmeta.description"
@@ -189,44 +218,33 @@
                           placeholder="这张表存什么、怎么用——问数会读它来理解表"
                         />
                       </el-form-item>
-                      <el-row :gutter="8">
-                        <el-col :span="12">
-                          <el-form-item label="业务场景">
-                            <el-input
-                              v-model="tmeta.business_scenarios"
-                              placeholder="哪些报表/业务用到"
-                            />
-                          </el-form-item>
-                        </el-col>
-                        <el-col :span="12">
-                          <el-form-item label="纳入问数">
-                            <el-switch v-model="tmeta.included" />
-                          </el-form-item>
-                        </el-col>
-                      </el-row>
-                      <el-row :gutter="8">
-                        <el-col :span="8">
-                          <el-form-item label="业务对象">
-                            <el-switch v-model="tmeta.object_enabled" />
-                          </el-form-item>
-                        </el-col>
-                        <el-col :span="8">
-                          <el-form-item label="主键列">
-                            <el-input
-                              v-model="tmeta.object_key_col"
-                              :disabled="!tmeta.object_enabled"
-                            />
-                          </el-form-item>
-                        </el-col>
-                        <el-col :span="8">
-                          <el-form-item label="显示名列">
-                            <el-input
-                              v-model="tmeta.object_name_col"
-                              :disabled="!tmeta.object_enabled"
-                            />
-                          </el-form-item>
-                        </el-col>
-                      </el-row>
+                      <el-form-item label="业务场景">
+                        <el-input
+                          v-model="tmeta.business_scenarios"
+                          placeholder="哪些报表/业务用到"
+                        />
+                      </el-form-item>
+                      <el-form-item label="纳入问数">
+                        <el-switch v-model="tmeta.included" />
+                      </el-form-item>
+                      <el-divider content-position="left" class="ig-form__divider">
+                        本体对象建模
+                      </el-divider>
+                      <el-form-item label="业务对象">
+                        <el-switch v-model="tmeta.object_enabled" />
+                      </el-form-item>
+                      <el-form-item label="主键列">
+                        <el-input
+                          v-model="tmeta.object_key_col"
+                          :disabled="!tmeta.object_enabled"
+                        />
+                      </el-form-item>
+                      <el-form-item label="显示名列">
+                        <el-input
+                          v-model="tmeta.object_name_col"
+                          :disabled="!tmeta.object_enabled"
+                        />
+                      </el-form-item>
                     </el-form>
 
                     <div class="ig-bar">
@@ -236,14 +254,15 @@
                         上游注释可作参考，中文名/枚举可人工维护
                       </el-tag>
                     </div>
-                    <el-table :data="filteredColumns" size="small" border height="100%">
+                    <div class="ig-fields-wrap">
+                      <el-table :data="filteredColumns" size="small" border height="100%">
                       <template #empty>
                         <el-empty description="该表暂无字段信息，请先同步表结构" :image-size="50" />
                       </template>
                       <el-table-column
                         prop="column_name"
                         label="字段"
-                        width="140"
+                        width="150"
                         show-overflow-tooltip
                       >
                         <template #default="{ row }">
@@ -254,86 +273,63 @@
                           </div>
                         </template>
                       </el-table-column>
-                      <el-table-column label="中文名" min-width="110">
+                      <el-table-column label="中文名" min-width="110" show-overflow-tooltip>
+                        <template #default="{ row }">{{ row.description || "-" }}</template>
+                      </el-table-column>
+                      <el-table-column label="业务场景" min-width="120" show-overflow-tooltip>
+                        <template #default="{ row }">{{ row.business_scenarios || "-" }}</template>
+                      </el-table-column>
+                      <el-table-column label="关联表" min-width="110" show-overflow-tooltip>
+                        <template #default="{ row }">{{ row.related_table || "-" }}</template>
+                      </el-table-column>
+                      <el-table-column label="关联字段" min-width="100" show-overflow-tooltip>
+                        <template #default="{ row }">{{ row.related_field || "-" }}</template>
+                      </el-table-column>
+                      <el-table-column label="枚举" min-width="120" show-overflow-tooltip>
                         <template #default="{ row }">
-                          <el-input v-model="row.description" size="small" placeholder="中文名" />
+                          <template v-if="row.enum && row.enum.length">
+                            <el-tag
+                              v-for="e in row.enum"
+                              :key="e"
+                              size="small"
+                              effect="plain"
+                              class="ig-tag"
+                            >
+                              {{ e }}
+                            </el-tag>
+                          </template>
+                          <template v-else>-</template>
                         </template>
                       </el-table-column>
-                      <el-table-column label="业务场景" min-width="110">
+                      <el-table-column label="纳入" width="56" align="center">
                         <template #default="{ row }">
-                          <el-input
-                            v-model="row.business_scenarios"
+                          <el-switch
+                            v-model="row.included"
                             size="small"
-                            placeholder="哪些业务/报表用到"
+                            @change="saveColumn(row, true)"
                           />
                         </template>
                       </el-table-column>
-                      <el-table-column label="关联表" min-width="100">
+                      <el-table-column label="敏感" width="56" align="center">
                         <template #default="{ row }">
-                          <el-input
-                            v-model="row.related_table"
+                          <el-switch
+                            v-model="row.sensitive"
                             size="small"
-                            placeholder="指向哪张表"
+                            @change="saveColumn(row, true)"
                           />
                         </template>
                       </el-table-column>
-                      <el-table-column label="关联字段" min-width="100">
+                      <el-table-column label="操作" width="96" align="center" fixed="right">
                         <template #default="{ row }">
-                          <el-input
-                            v-model="row.related_field"
-                            size="small"
-                            placeholder="对应字段"
-                          />
-                        </template>
-                      </el-table-column>
-                      <el-table-column label="枚举" min-width="160">
-                        <template #default="{ row }">
-                          <el-select
-                            v-model="row.enum"
-                            size="small"
-                            multiple
-                            filterable
-                            allow-create
-                            default-first-option
-                            placeholder="输入后回车新增"
-                            style="width: 100%"
-                          >
-                            <el-option
-                              v-for="opt in row.enum || []"
-                              :key="opt"
-                              :label="opt"
-                              :value="opt"
-                            />
-                          </el-select>
-                        </template>
-                      </el-table-column>
-                      <el-table-column label="纳入" width="54" align="center">
-                        <template #default="{ row }">
-                          <el-switch v-model="row.included" size="small" />
-                        </template>
-                      </el-table-column>
-                      <el-table-column label="敏感" width="54" align="center">
-                        <template #default="{ row }">
-                          <el-switch v-model="row.sensitive" size="small" />
-                        </template>
-                      </el-table-column>
-                      <el-table-column label="操作" width="62" align="center" fixed="right">
-                        <template #default="{ row }">
-                          <el-button
-                            link
-                            type="primary"
-                            size="small"
-                            :loading="savingCol === row.column_name"
-                            @click="saveColumn(row)"
-                          >
-                            保存
+                          <el-button link type="primary" size="small" @click="openColEdit(row)">
+                            编辑属性
                           </el-button>
                         </template>
                       </el-table-column>
                     </el-table>
-                  </template>
-                </div>
-              </div>
+                    </div>
+                  </div>
+                </el-drawer>
             </el-tab-pane>
 
             <!-- 管道 -->
@@ -715,6 +711,74 @@
       </template>
     </el-dialog>
 
+    <!-- 编辑单字段属性 -->
+    <el-dialog v-model="colDlg" :title="`编辑字段属性：${colForm.column_name || ''}`" width="520px">
+      <el-form :model="colForm" label-width="90px" size="small">
+        <el-form-item label="字段名">
+          <span class="ig-tname">{{ colForm.column_name }}</span>
+        </el-form-item>
+        <el-form-item label="中文名">
+          <el-input v-model="colForm.description" placeholder="如 结算数量" />
+        </el-form-item>
+        <el-form-item label="业务场景">
+          <el-input v-model="colForm.business_scenarios" placeholder="哪些报表/业务用到" />
+        </el-form-item>
+        <el-form-item label="关联表">
+          <el-select-v2
+            v-model="colForm.related_table"
+            :options="relTableOptions"
+            size="small"
+            filterable
+            clearable
+            placeholder="选择关联表"
+            style="width: 100%"
+            @change="colForm.related_field = ''"
+          />
+        </el-form-item>
+        <el-form-item label="关联字段">
+          <el-select-v2
+            v-model="colForm.related_field"
+            :options="relFieldOptions(colForm.related_table)"
+            size="small"
+            filterable
+            clearable
+            placeholder="选择对应字段"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="枚举">
+          <el-select
+            v-model="colForm.enum"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            size="small"
+            placeholder="输入后回车新增"
+            style="width: 100%"
+          >
+            <el-option v-for="e in colForm.enum" :key="e" :label="e" :value="e" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="纳入问数">
+          <el-switch v-model="colForm.included" />
+        </el-form-item>
+        <el-form-item label="敏感">
+          <el-switch v-model="colForm.sensitive" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="colDlg = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="savingCol === colForm.column_name"
+          @click="saveColEdit"
+        >
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 新建/编辑数据源 -->
     <el-dialog v-model="dsDlg" :title="dsForm.id ? '编辑数据源' : '新建数据源'" width="520px">
       <el-form :model="dsForm" label-width="90px" size="small">
@@ -748,6 +812,96 @@
         <el-form-item label="会话只读">
           <el-switch v-model="dsForm.read_only" />
         </el-form-item>
+        <template v-if="dsForm.filter_rules">
+          <el-divider content-position="left" class="ig-form__divider">
+            筛选规则（自动打标系统表/审计字段）
+          </el-divider>
+          <el-form-item label="启用规则">
+            <el-switch v-model="dsForm.filter_rules.enabled" />
+          </el-form-item>
+          <el-form-item label="系统表前缀">
+            <el-select
+              v-model="dsForm.filter_rules.system_table.prefixes"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              placeholder="回车新增，如 SYS_ / FUEL_"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="p in dsForm.filter_rules.system_table.prefixes"
+                :key="p"
+                :label="p"
+                :value="p"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="系统表关键词">
+            <el-select
+              v-model="dsForm.filter_rules.system_table.keywords"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              placeholder="回车新增，如 _BAK / log"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="k in dsForm.filter_rules.system_table.keywords"
+                :key="k"
+                :label="k"
+                :value="k"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="精确表名">
+            <el-select
+              v-model="dsForm.filter_rules.system_table.exact"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              placeholder="回车新增，如 alembic_version"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="e in dsForm.filter_rules.system_table.exact"
+                :key="e"
+                :label="e"
+                :value="e"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="表名正则">
+            <el-input
+              v-model="dsForm.filter_rules.system_table.regex"
+              placeholder="可空，如 ^TMP_"
+            />
+          </el-form-item>
+          <el-form-item label="审计字段">
+            <el-select
+              v-model="dsForm.filter_rules.audit_fields"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              size="small"
+              placeholder="回车新增，如 created_time / is_deleted"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="a in dsForm.filter_rules.audit_fields"
+                :key="a"
+                :label="a"
+                :value="a"
+              />
+            </el-select>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="dsDlg = false">取消</el-button>
@@ -764,6 +918,7 @@ import { Plus, Refresh, Search, DataBoard, EditPen, Coin } from "@element-plus/i
 import {
   getQueryDatasources,
   saveQueryDatasource,
+  getDatasourceDetail,
   testQueryDatasource,
   deleteQueryDatasources,
   syncQueryDatasourceSchema,
@@ -797,6 +952,7 @@ const tab = ref("table");
 const datasources = ref<any[]>([]);
 const curDs = ref<any>(null);
 const dsTables = ref<any[]>([]);
+const schemaRows = ref<any[]>([]);
 const tableKw = ref("");
 const curTable = ref("");
 const columns = ref<any[]>([]);
@@ -814,12 +970,14 @@ const importingBatch = ref(false);
 // 纯前端显示过滤开关：只看业务表（隐藏系统表）/ 只看业务字段（隐藏审计字段）
 const hideSys = ref(false);
 const hideAudit = ref(false);
+const hideUnmaintained = ref(false);
 // 导入时的目标本体域（单表与批量共用同一选择）
 const importDomain = ref("");
 const savingTable = ref(false);
 const savingCol = ref("");
 const savingDs = ref(false);
 const dsDlg = ref(false);
+const fieldDrawer = ref(false);
 const batchDlg = ref(false);
 const batchText = ref("");
 const batchSaving = ref(false);
@@ -855,20 +1013,62 @@ const tmeta = ref<any>({
   object_name_col: "name",
 });
 
+// 表行 = schema 表清单（table/comment/is_system/字段数） + 语义元数据（来自 assets）
+const tableRows = computed(() => {
+  const amap = new Map(assets.value.map((a) => [a.table_name, a]));
+  return dsTables.value.map((t) => {
+    const a = amap.get(t.table);
+    return {
+      table: t.table,
+      comment: t.comment || "",
+      column_count: t.column_count ?? 0,
+      is_system: !!t.is_system,
+      alias: a?.alias || "",
+      domain: a?.domain || "",
+      description: a?.description || "",
+      business_scenarios: a?.business_scenarios || "",
+      included: a?.included ?? true,
+      object_enabled: a?.object_enabled ?? false,
+    };
+  });
+});
+
 const filteredTables = computed(() => {
   const kw = tableKw.value.trim().toLowerCase();
-  return dsTables.value.filter((t) => {
+  return tableRows.value.filter((t) => {
     // 「只看业务表」= 隐藏系统表（is_system 来自后端 schema 接口）
     if (hideSys.value && t.is_system) return false;
+    // 「只看已维护」= 隐藏未纳入问数的表
+    if (hideUnmaintained.value && t.included === false) return false;
     if (!kw) return true;
     return (
       String(t.table).toLowerCase().includes(kw) ||
-      String(t.comment || "")
-        .toLowerCase()
-        .includes(kw)
+      String(t.comment).toLowerCase().includes(kw) ||
+      String(t.alias || "").toLowerCase().includes(kw)
     );
   });
 });
+
+// 关联表下拉选项：当前数据源的所有表（el-select-v2 需 value/label）
+const relTableOptions = computed(() =>
+  tableRows.value.map((t) => ({
+    value: t.table,
+    label: t.alias ? `${t.alias}（${t.table}）` : t.table,
+  }))
+);
+
+// 关联字段下拉选项：某张关联表的所有字段（取自已同步的 schema columns）
+function relFieldOptions(table: string) {
+  if (!table) return [];
+  const row = schemaRows.value.find((x) => x.table === table);
+  return (row?.columns || []).map((c: any) => {
+    const name = c?.name ?? c?.column_name;
+    return {
+      value: name,
+      label: c?.comment ? `${name}（${c.comment}）` : name,
+    };
+  });
+}
 
 // 字段清单同样做纯前端过滤：隐藏审计字段（is_audit 来自后端 columns 接口）
 const filteredColumns = computed(() =>
@@ -912,6 +1112,7 @@ async function loadDsTables() {
   try {
     const r = await getQueryDatasourceSchema(curDs.value.id);
     const rows = r.data?.data || [];
+    schemaRows.value = rows;
     dsTables.value = rows.map((x: any) => ({
       table: x.table,
       comment: x.comment || "",
@@ -970,6 +1171,12 @@ async function pickTable(row: any) {
   }
 }
 
+// 点表清单「字段」：加载该表字段并打开字段维护抽屉
+async function openFieldDrawer(row: any) {
+  await pickTable(row);
+  fieldDrawer.value = true;
+}
+
 async function saveTable() {
   if (!curTable.value) return;
   savingTable.value = true;
@@ -984,8 +1191,8 @@ async function saveTable() {
   }
 }
 
-async function saveColumn(row: any) {
-  savingCol.value = row.column_name;
+async function saveColumn(row: any, quiet = false) {
+  savingCol.value = typeof row === "string" ? row : row.column_name;
   try {
     await saveQueryAssetColumn({
       table_name: curTable.value,
@@ -998,7 +1205,50 @@ async function saveColumn(row: any) {
       sensitive: !!row.sensitive,
       enum: Array.isArray(row.enum) ? row.enum : [],
     });
-    ElMessage.success(`字段「${row.column_name}」已保存`);
+    if (!quiet) ElMessage.success(`字段「${row.column_name}」已保存`);
+  } catch (e: any) {
+    ElMessage.error(e?.msg || "保存失败");
+  } finally {
+    savingCol.value = "";
+  }
+}
+
+const colDlg = ref(false);
+const colForm = ref<any>({
+  column_name: "",
+  description: "",
+  business_scenarios: "",
+  related_table: "",
+  related_field: "",
+  enum: [],
+  included: true,
+  sensitive: false,
+});
+
+// 点字段行「编辑属性」：打开单字段属性弹窗，中文名/业务场景/关联表/关联字段/枚举集中编辑
+function openColEdit(row: any) {
+  colForm.value = {
+    column_name: row.column_name,
+    description: row.description || "",
+    business_scenarios: row.business_scenarios || "",
+    related_table: row.related_table || "",
+    related_field: row.related_field || "",
+    enum: Array.isArray(row.enum) ? [...row.enum] : [],
+    included: row.included !== false,
+    sensitive: !!row.sensitive,
+  };
+  colDlg.value = true;
+}
+
+async function saveColEdit() {
+  savingCol.value = colForm.value.column_name;
+  try {
+    await saveQueryAssetColumn({ table_name: curTable.value, ...colForm.value });
+    ElMessage.success(`字段「${colForm.value.column_name}」已保存`);
+    // 同步回字段清单行
+    const row = columns.value.find((c) => c.column_name === colForm.value.column_name);
+    if (row) Object.assign(row, colForm.value);
+    colDlg.value = false;
   } catch (e: any) {
     ElMessage.error(e?.msg || "保存失败");
   } finally {
@@ -1084,6 +1334,16 @@ async function doBatchSave() {
 function openDs(row?: any) {
   if (row) {
     dsForm.value = { ...row, password: "" };
+    normalizeRules(dsForm.value);
+    // 编辑时拉取详情（含已解析的 filter_rules），密码留空由用户按需重填
+    getDatasourceDetail(row.id)
+      .then((r) => {
+        dsForm.value = { ...dsForm.value, ...(r.data?.data || {}), password: "" };
+        normalizeRules(dsForm.value);
+      })
+      .catch(() => {
+        /* 拉取详情失败则保留列表数据 */
+      });
   } else {
     dsForm.value = {
       code: "",
@@ -1095,9 +1355,26 @@ function openDs(row?: any) {
       username: "",
       password: "",
       read_only: true,
+      filter_rules: null,
     };
+    normalizeRules(dsForm.value);
   }
   dsDlg.value = true;
+}
+
+// 确保 dsForm.filter_rules 结构完整，供编辑弹窗绑定
+function normalizeRules(f: any) {
+  const fr = f?.filter_rules || {};
+  f.filter_rules = {
+    enabled: fr.enabled !== false,
+    system_table: {
+      prefixes: Array.isArray(fr?.system_table?.prefixes) ? fr.system_table.prefixes : [],
+      keywords: Array.isArray(fr?.system_table?.keywords) ? fr.system_table.keywords : [],
+      exact: Array.isArray(fr?.system_table?.exact) ? fr.system_table.exact : [],
+      regex: fr?.system_table?.regex || "",
+    },
+    audit_fields: Array.isArray(fr?.audit_fields) ? fr.audit_fields : [],
+  };
 }
 
 async function saveDs() {
@@ -1523,15 +1800,29 @@ onMounted(async () => {
 }
 .ig-tables {
   display: flex;
-  flex: 0 0 240px;
+  flex: 1;
   flex-direction: column;
+  min-height: 0;
+}
+/* 字段维护抽屉：内容占满、字段表独立滚动 */
+.ig-field-drawer :deep(.el-drawer__body) {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: hidden;
+}
+.ig-detail-drawer {
+  flex: 1;
   min-height: 0;
 }
 .ig-detail {
   display: flex;
-  flex: 1;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+}
+.ig-fields-wrap {
+  flex: 1;
   min-height: 0;
 }
 .ig-tname {
@@ -1551,6 +1842,12 @@ onMounted(async () => {
 }
 .ig-form {
   flex-shrink: 0;
+}
+.ig-form__divider {
+  margin: 18px 0 10px;
+}
+.ig-cell-select {
+  width: 100%;
 }
 .ig-note {
   margin-bottom: 10px;
