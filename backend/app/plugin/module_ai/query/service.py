@@ -1030,8 +1030,9 @@ async def _execute_bound_metric(metric: dict, auth=None) -> dict:
     obj = str(metric.get("object_code") or "")
     prop = str(metric.get("property_code") or "")
     fn = str(metric.get("agg_fn") or "count")
-    dims = metric.get("bound_dimensions") or []
-    gb = str(dims[0]) if dims else ""
+    # 快路径是**单值**语义（分组诉求由 `_wants_grouping` 挡在门外，交给对象查询路径）：
+    # 故这里不按 bound_dimensions 自动分组，只给总量。
+    gb = ""
     a: dict = {"fn": fn}
     if prop:
         a["prop"] = prop
