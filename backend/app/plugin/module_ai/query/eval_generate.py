@@ -362,34 +362,10 @@ async def generate_round(
 async def call_llm(prompt: str, *, max_tokens: int = 8000, timeout: int = 180) -> str:
     """调用问答模型出题。
 
-    ``max_tokens`` 给得比默认大：实测本机模型会先输出**推理**内容，
-    4000 时推理吃掉预算 → 可见正文被截断甚至为空（出题全部落空）。
+    **走 agno**（委托 `modeling.model_llm`，与建模/问数同源），不再直连 `AsyncOpenAI`。
+    ``max_tokens`` 给得比默认大：实测本机模型会先输出**推理**内容，预算太小会被思考
+    吃光 → 可见正文被截断甚至为空（出题全部落空）。
     """
-    try:
-        from openai import AsyncOpenAI
+    from .modeling import model_llm
 
-        from app.plugin.module_ai.models.service import build_headers
-
-        from .service import AiQueryService
-
-        rt = await AiQueryService._get_runtime()
-        client = AsyncOpenAI(
-            base_url=rt["base_url"], api_key=rt.get("api_key") or "sk-none", timeout=timeout,
-            default_headers=build_headers(rt["base_url"], rt.get("extra_headers"), "aistation-eval"),
-        )
-        resp = await client.chat.completions.create(
-            model=rt["model"], messages=[{"role": "user", "content": prompt}],
-            temperature=0.2, max_tokens=max_tokens,
-        )
-        content = resp.choices[0].message.content or ""
-        if not content.strip():
-            # 空正文必须留痕：否则"出题全落空"会被当成"模型没产出可解析用例"
-            log.warning(
-                "[ai-eval] LLM 返回空正文：finish_reason={} usage={}",
-                getattr(resp.choices[0], "finish_reason", "?"),
-                getattr(resp, "usage", None),
-            )
-        return content
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"[ai-eval] LLM 调用失败: {str(e)[:120]}")
-        return ""
+    return await model_llm(prompt, max_tokens=max_tokens, timeout=timeout)
