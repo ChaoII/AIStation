@@ -259,6 +259,125 @@ async def generate_metrics(datasource: str, auth, max_objects: int = 12,
             "rejected": rejected, "reasons": reasons[:10]}
 
 
+def build_annotate_prompt(objects: list[dict]) -> str:
+    """构造「对象/属性标注」提示：补中文名、业务描述、字段枚举。"""
+    lines = [
+        "你是数据语义标注专家。下面是一个业务数据源的对象与字段，请为它们补**简明中文名**与"
+        "**一句话业务描述**；字段若有明确枚举取值请给出 options。",
+        "要求：",
+        "1) 只标注下面出现的 object_code 与字段 code；",
+        "2) 中文名要短、专业、便于业务人员理解；描述一句话说清用途；",
+        '3) 严格只返回 JSON：{"annotations":[{"object_code","object_name","description",'
+        '"fields":[{"code","name","options"}]}]}。',
+        "【可用对象与字段】",
+    ]
+    for o in (objects or [])[:20]:
+        cols = ", ".join(
+            f"{f.get('code')}({f.get('name') or ''})" for f in (o.get("fields") or [])[:14])
+        lines.append(
+            f"{o.get('code')}（表 {o.get('table') or ''}）：{cols}")
+    return "\n".join(lines)
+
+
+def parse_annotations(text: str, valid_objects: dict) -> list[dict]:
+    """容错解析标注结果，过滤未知对象/字段。"""
+    out: list[dict] = []
+    for it in parse_json_objects(text):
+        oc = str(it.get("object_code") or "").strip()
+        if oc not in (valid_objects or {}):
+            continue
+        valid_fields = {
+            str(f.get("code")) for f in (valid_objects.get(oc, {}).get("fields") or [])
+            if f.get("code")
+        }
+        fields: list[dict] = []
+        for f in (it.get("fields") or []):
+            if not isinstance(f, dict):
+                continue
+            fc = str(f.get("code") or "").strip()
+            if not fc or (valid_fields and fc not in valid_fields):
+                continue
+            opts = f.get("options") or []
+            opts = ([str(o) for o in opts if isinstance(o, (str, int))]
+                    if isinstance(opts, list) else [])
+            fields.append({"code": fc, "name": str(f.get("name") or "").strip(),
+                           "options": opts})
+        out.append({
+            "object_code": oc,
+            "object_name": str(it.get("object_name") or it.get("name") or "").strip(),
+            "description": str(it.get("description") or "").strip(),
+            "fields": fields,
+        })
+    return out
+
+
+async def _annotate_object(code: str, name: str, description: str) -> None:
+    """**定向**更新对象的中文名/描述。
+
+    ⚠️ 不能用 `upsert_object` 做局部更新：它会把 `datasource_id`/`backing_table`/
+    `key_prop` 一并写回默认值，把对象的跨库绑定清掉（实测会破坏 ds:4 对象）。
+    """
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    sets, params = [], {"c": code}
+    if name:
+        sets.append("name=:n")
+        params["n"] = name
+    if description:
+        sets.append("description=:d")
+        params["d"] = description
+    if not sets:
+        return
+    async with async_db_session.begin() as db:
+        await db.execute(text(
+            f"UPDATE ai_ont_object SET {','.join(sets)}, updated_time=now() WHERE code=:c"),
+            params)
+
+
+async def _annotate_property(object_code: str, code: str, name: str,
+                             options: list | None = None) -> None:
+    """**定向**更新属性的中文名/枚举（同样不能用 upsert_property 做局部更新）。"""
+    import json as _json
+
+    from sqlalchemy import text
+
+    from app.core.database import async_db_session
+
+    sets, params = [], {"oc": object_code, "c": code}
+    if name:
+        sets.append("name=:n")
+        params["n"] = name
+    if options:
+        sets.append("options=CAST(:o AS jsonb)")
+        params["o"] = _json.dumps(options, ensure_ascii=False)
+    if not sets:
+        return
+    async with async_db_session.begin() as db:
+        await db.execute(text(
+            f"UPDATE ai_ont_property SET {','.join(sets)} WHERE object_code=:oc AND code=:c"),
+            params)
+
+
+async def generate_annotations(datasource: str, auth, max_objects: int = 12) -> dict:
+    """一轮「生成→落库」对象/属性标注。返回 ``{parsed, saved}``。"""
+    objects = await collect_objects(datasource, max_objects)
+    if not objects:
+        return {"parsed": 0, "saved": 0, "reasons": ["无可用对象"]}
+    text = await model_llm(build_annotate_prompt(objects))
+    valid = {o["code"]: o for o in objects}
+    anns = parse_annotations(text, valid)
+    saved = 0
+    for a in anns:
+        await _annotate_object(a["object_code"], a["object_name"], a["description"])
+        for f in a["fields"]:
+            await _annotate_property(a["object_code"], f["code"], f["name"], f["options"])
+        saved += 1
+    log.info(f"[modeling] 标注生成：解析 {len(anns)}，落库 {saved}")
+    return {"parsed": len(anns), "saved": saved}
+
+
 async def model_llm(prompt: str, *, max_tokens: int = 4000, timeout: int = 120) -> str:
     """一次建模 LLM 调用（**走 agno**，与问数同源模型）。
 
