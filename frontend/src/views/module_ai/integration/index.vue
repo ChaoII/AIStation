@@ -1151,10 +1151,12 @@ async function removeDs(row: any) {
   }
 }
 
-/** 批量导入：把当前数据源的业务表（非系统表）一次性导为目标本体对象，带到所选本体域。 */
+/** 批量导入：把当前数据源的业务表（非系统表）一次性导为目标本体对象，带到所选本体域。
+ *  注意基于 dsTables 而非 filteredTables：搜索关键字（tableKw）只是表清单的显示过滤，
+ *  不应影响批量导入的范围——始终导入当前数据源的全部业务表。 */
 async function doBatchImport() {
   if (!curDs.value) return;
-  const tables = filteredTables.value.filter((t) => !t.is_system).map((t) => t.table);
+  const tables = dsTables.value.filter((t) => !t.is_system).map((t) => t.table);
   if (!tables.length) {
     ElMessage.warning("当前没有可导入的业务表（已隐藏系统表）");
     return;
