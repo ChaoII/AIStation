@@ -294,7 +294,7 @@
                 <span class="frwb-change frwb-change--to">{{ row.to }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="命中规则" min-width="220" show-overflow-tooltip>
+            <el-table-column label="命中规则（已保存 → 草稿）" min-width="300" show-overflow-tooltip>
               <template #default="{ row }">
                 {{ row.reason || "—" }}
               </template>
@@ -591,7 +591,9 @@ const compareItems = computed(() => {
         name: t.name,
         from: s.is_system ? "系统" : "业务",
         to: t.is_system ? "系统" : "业务",
-        reason: t.reason,
+        // 同时展示已保存侧与草稿侧命中原因：翻转方向（如系统→业务 / 审计→业务）时，
+        // 草稿侧为空，用户仍能看到「它之前为何被判为系统/审计」（已保存侧原因）。
+        reason: `已保存 ${s.reason || "—"} → 草稿 ${t.reason || "—"}`,
       });
     }
   }
@@ -606,7 +608,8 @@ const compareItems = computed(() => {
         name: f.name,
         from: s.is_audit ? "审计" : "业务",
         to: f.is_audit ? "审计" : "业务",
-        reason: f.reason,
+        // 同表：叠加展示已保存侧与草稿侧命中原因，翻转方向时也不丢失历史依据
+        reason: `已保存 ${s.reason || "—"} → 草稿 ${f.reason || "—"}`,
       });
     }
   }
@@ -804,9 +807,13 @@ async function confirmSave(apply: boolean) {
   }
   saving.value = true;
   try {
-    // 用快照作为 payload 与保存成功后的基准，避免保存期间用户继续编辑导致基准与实际不同步
+    // 用快照作为 payload 与保存成功后的基准，避免保存期间用户继续编辑导致基准与实际不同步。
+    // 注意：dsDetail（getDatasourceDetail 返回）是 { source:{...}, tables, connector, asset_count }
+    // 嵌套结构，顶层没有 name/code；而后端 QueryDatasourceUpsert 要求顶层必填 name/code。
+    // 因此这里用父级传入的 props.datasource（列表行 curDs，含 id/name/code/type/host/port/...），
+    // Pydantic 会忽略其中的 table_count 等额外字段；password 缺省为空串，可直接保存。
     const snapshot = deepClone(rules.value);
-    await saveQueryDatasource({ ...dsDetail.value, filter_rules: snapshot });
+    await saveQueryDatasource({ ...props.datasource, filter_rules: snapshot });
     if (apply) {
       await syncQueryDatasourceSchema(props.datasource.id);
     }
