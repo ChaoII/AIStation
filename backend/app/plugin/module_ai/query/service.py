@@ -325,6 +325,11 @@ def _to_metric_dict(m: AiQueryMetricModel) -> dict:
         "params": m.params or [], "dimensions": m.dimensions or [], "agg": m.agg,
         "unit": m.unit or "", "permission_tag": m.permission_tag or "",
         "enabled": m.enabled, "sort": m.sort or 0, "cache_ttl": m.cache_ttl or 0,
+        # 指标 ↔ 本体绑定（S1）
+        "object_code": getattr(m, "object_code", "") or "",
+        "property_code": getattr(m, "property_code", "") or "",
+        "agg_fn": getattr(m, "agg_fn", "") or "",
+        "bound_dimensions": getattr(m, "bound_dimensions", None) or [],
     }
 
 
@@ -1342,7 +1347,8 @@ class AiQueryService:
             ).scalar_one_or_none()
             if existing:
                 for k in ("name", "description", "sql_template", "params", "dimensions",
-                          "agg", "unit", "permission_tag", "enabled", "sort", "cache_ttl"):
+                          "agg", "unit", "permission_tag", "enabled", "sort", "cache_ttl",
+                          "object_code", "property_code", "agg_fn", "bound_dimensions"):
                     setattr(existing, k, getattr(data, k))
                 existing.updated_id = auth.user.id
                 obj = existing
@@ -1353,6 +1359,8 @@ class AiQueryService:
                     params=data.params, dimensions=data.dimensions, agg=data.agg,
                     unit=data.unit, permission_tag=data.permission_tag,
                     enabled=data.enabled, sort=data.sort, cache_ttl=data.cache_ttl,
+                    object_code=data.object_code, property_code=data.property_code,
+                    agg_fn=data.agg_fn, bound_dimensions=data.bound_dimensions,
                     created_id=auth.user.id, updated_id=auth.user.id,
                 )
                 db.add(obj)

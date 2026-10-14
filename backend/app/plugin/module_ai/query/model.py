@@ -89,6 +89,19 @@ class AiQueryMetricModel(ModelMixin, UserMixin):
     cache_ttl: Mapped[int] = mapped_column(
         Integer, default=0, comment="缓存秒数，0=不缓存"
     )
+    # ---- 指标 ↔ 本体绑定（S1）：绑定型指标口径可由「对象属性 + 聚合」确定性推导 ----
+    object_code: Mapped[str] = mapped_column(
+        String(80), default="", comment="绑定本体对象 code（空=模板型指标）"
+    )
+    property_code: Mapped[str] = mapped_column(
+        String(80), default="", comment="绑定本体属性 code（聚合对象）"
+    )
+    agg_fn: Mapped[str] = mapped_column(
+        String(16), default="", comment="绑定型指标聚合: count/sum/avg/min/max"
+    )
+    bound_dimensions: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True, default=list, comment="可选维度（本体属性 code 列表）"
+    )
 
 
 class AiQueryDictionaryModel(ModelMixin, UserMixin):

@@ -17,7 +17,8 @@ _TESTCASE_DDL = (
     "datasource VARCHAR(32) DEFAULT 'system', difficulty VARCHAR(16), "
     "scenario VARCHAR(32), form VARCHAR(32), expected_metric VARCHAR(80), "
     "tags JSONB, verified BOOLEAN DEFAULT false, enabled BOOLEAN DEFAULT true, "
-    "last_verified_at TIMESTAMP, notes TEXT, is_deleted BOOLEAN DEFAULT false, "
+    "last_verified_at TIMESTAMP, notes TEXT, dataset VARCHAR(64) DEFAULT '', "
+    "is_deleted BOOLEAN DEFAULT false, "
     "created_time TIMESTAMP, updated_time TIMESTAMP, UNIQUE(datasource, question))"
 )
 
@@ -52,6 +53,23 @@ async def ensure_eval_tables() -> None:
         await db.execute(
             _t("CREATE INDEX IF NOT EXISTS ix_ai_query_testcase_ds ON ai_query_testcase(datasource)")
         )
+        # S1：既有库补 `dataset` 列（方言无关；SQLite 不支持 ADD COLUMN IF NOT EXISTS）
+        await _ensure_column(db, "ai_query_testcase", "dataset", "VARCHAR(64) DEFAULT ''")
+
+
+async def _ensure_column(db, table: str, col: str, ddl: str) -> None:
+    """方言无关补列：仅当列不存在时 ALTER（PG/SQLite 均可用）。"""
+    from sqlalchemy import inspect as _inspect
+    from sqlalchemy import text as _t
+
+    try:
+        cols = await db.run_sync(
+            lambda s: {c["name"] for c in _inspect(s.connection()).get_columns(table)}
+        )
+    except Exception:  # noqa: BLE001
+        return
+    if col not in cols:
+        await db.execute(_t(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +77,7 @@ async def ensure_eval_tables() -> None:
 # ---------------------------------------------------------------------------
 _CASE_FIELDS = (
     "question", "gold_sql", "datasource", "difficulty", "scenario",
-    "form", "expected_metric", "tags", "verified", "enabled", "notes",
+    "form", "expected_metric", "tags", "verified", "enabled", "notes", "dataset",
 )
 
 
@@ -71,6 +89,8 @@ def _case_row(r) -> dict:
         "tags": r[8] if isinstance(r[8], list) else (json.loads(r[8]) if r[8] else []),
         "verified": bool(r[9]), "enabled": bool(r[10]),
         "notes": notes,
+        # 评测数据集（S1）：用于组织「燃煤业务语义执行层评测集」等命名数据集
+        "dataset": (r[12] if len(r) > 12 else "") or "",
         # 退化题（金标结果空/NULL/单值 0）：精度统计不计入分母
         "degenerate": "degenerate" in notes,
         # 指标快路径能答的题：它考的是"指标枚举"而非"模型生成 SQL"
@@ -96,19 +116,21 @@ async def upsert_case(data: dict) -> dict:
         "tags": json.dumps(data.get("tags") or [], ensure_ascii=False),
         "verified": bool(data.get("verified", False)), "enabled": bool(data.get("enabled", True)),
         "notes": str(data.get("notes") or ""),
+        "dataset": str(data.get("dataset") or ""),
     }
     async with async_db_session.begin() as db:
         await db.execute(
             _t(
                 "INSERT INTO ai_query_testcase"
                 "(question,gold_sql,datasource,difficulty,scenario,form,expected_metric,"
-                "tags,verified,enabled,notes,is_deleted,created_time,updated_time) "
+                "tags,verified,enabled,notes,dataset,is_deleted,created_time,updated_time) "
                 "VALUES (:q,:gold,:ds,:difficulty,:scenario,:form,:metric,"
-                "CAST(:tags AS jsonb),:verified,:enabled,:notes,false,now(),now()) "
+                "CAST(:tags AS jsonb),:verified,:enabled,:notes,:dataset,false,now(),now()) "
                 "ON CONFLICT (datasource,question) DO UPDATE SET gold_sql=EXCLUDED.gold_sql, "
                 "difficulty=EXCLUDED.difficulty, scenario=EXCLUDED.scenario, form=EXCLUDED.form, "
                 "expected_metric=EXCLUDED.expected_metric, tags=EXCLUDED.tags, "
                 "verified=EXCLUDED.verified, enabled=EXCLUDED.enabled, notes=EXCLUDED.notes, "
+                "dataset=EXCLUDED.dataset, "
                 "is_deleted=false, updated_time=now()"
             ),
             params,
@@ -122,6 +144,7 @@ async def list_cases(
     form: str | None = None,
     scenario: str | None = None,
     enabled: bool | None = None,
+    dataset: str | None = None,
 ) -> list[dict]:
     """按条件列出测试题（均按 ``id`` 升序，保证确定性）。"""
     from sqlalchemy import text as _t
@@ -144,12 +167,15 @@ async def list_cases(
     if enabled is not None:
         conds.append("enabled = :e")
         params["e"] = bool(enabled)
+    if dataset:
+        conds.append("dataset = :dset")
+        params["dset"] = dataset
     async with async_db_session() as db:
         rows = (
             await db.execute(
                 _t(
                     "SELECT id,question,gold_sql,datasource,difficulty,scenario,form,"
-                    "expected_metric,tags,verified,enabled,notes FROM ai_query_testcase "
+                    "expected_metric,tags,verified,enabled,notes,dataset FROM ai_query_testcase "
                     "WHERE " + " AND ".join(conds) + " ORDER BY id"
                 ),
                 params,

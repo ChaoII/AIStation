@@ -78,6 +78,13 @@ ENSURE_NEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("source", "VARCHAR(16) DEFAULT 'system'"),
         ("config", "JSONB"),
     ],
+    # 语义层融合 S1：指标 ↔ 本体绑定列（既有库不跑 Alembic 时的兜底补列）
+    "ai_query_metrics": [
+        ("object_code", "VARCHAR(80) DEFAULT ''"),
+        ("property_code", "VARCHAR(80) DEFAULT ''"),
+        ("agg_fn", "VARCHAR(16) DEFAULT ''"),
+        ("bound_dimensions", "JSONB DEFAULT '[]'"),
+    ],
     # B4：底库表新增 kind 判别列（face/reid，复用同一张表；与迁移 c1d2e3f4a5b6 对齐）
     "video_face_gallery": [
         ("kind", "VARCHAR(16) NOT NULL DEFAULT 'face'"),

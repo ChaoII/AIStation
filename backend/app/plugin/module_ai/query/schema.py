@@ -34,6 +34,11 @@ class QueryMetricUpsert(BaseModel):
     enabled: bool = True
     sort: int = 0
     cache_ttl: int = 0
+    # 指标 ↔ 本体绑定（S1）
+    object_code: str = ""
+    property_code: str = ""
+    agg_fn: str = ""
+    bound_dimensions: list[str] = Field(default_factory=list)
 
 
 class QueryTermUpsert(BaseModel):
