@@ -5362,7 +5362,8 @@ class AiQueryService:
             return {}
         source = {"id": d.id, "name": d.name, "type": d.type, "host": d.host, "port": d.port,
                   "database": d.database, "username": d.username, "read_only": d.read_only,
-                  "enabled": d.enabled, "remark": d.remark or ""}
+                  "enabled": d.enabled, "filter_rules": d.filter_rules or DEFAULT_FILTER_RULES,
+                  "remark": d.remark or ""}
         tables = await list_ds_schema(datasource_id)
         connector = next((c for c in await cls.connector_types() if c["type"] == d.type), None)
         asset_count = 0

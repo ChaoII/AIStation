@@ -56,3 +56,16 @@ def test_datasource_with_custom_filter_rules_preserved(test_client, auth_headers
     assert ds["filter_rules"] == custom, (
         f"自定义 filter_rules 不应被默认覆盖，实际: {ds.get('filter_rules')}"
     )
+
+
+def test_update_without_filter_rules_preserves_existing(test_client, auth_headers):
+    """同 code 再次保存但不传 filter_rules 时，应保留已保存的自定义配置（不被默认覆盖）。"""
+    code = f"ds_test_filter_update_{uuid.uuid4().hex[:8]}"
+    custom = {"enabled": False}
+    _save_ds(test_client, auth_headers, code, filter_rules=custom)
+    # 第二次保存同一 code，不传 filter_rules
+    _save_ds(test_client, auth_headers, code)
+    ds = _find_ds(test_client, auth_headers, code)
+    assert ds["filter_rules"] == custom, (
+        f"更新时不传 filter_rules 应保留既有配置，实际: {ds.get('filter_rules')}"
+    )
